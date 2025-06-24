@@ -2,7 +2,7 @@
 -export([init/1, send/2, close/1]).
 
 init(Opts) ->
-    httpc:start(),
+    inets:start(),
     case maps:get(protocol, Opts, http) of
         https ->
             ssl:start();
