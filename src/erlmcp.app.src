@@ -5,8 +5,7 @@
   {applications, [
       kernel,
       stdlib,
-      jsx,
-      gun
+      jsx
   ]},
   {mod, {erlmcp_app, []}},
   {env, []},
