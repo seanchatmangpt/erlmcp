@@ -49,7 +49,7 @@ jobs:
     - uses: erlef/setup-beam@v1
       with:
         otp-version: ${{ matrix.otp_version }}
-        rebar3-version: '3.25'
+        rebar3-version: ${{ matrix.otp_version >= 26 && '3.25' || '3.22' }}
     - name: Check rebar3 Version
       run: rebar3 --version
     - name: Compile
