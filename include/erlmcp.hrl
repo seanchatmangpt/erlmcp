@@ -40,7 +40,8 @@
 
 -record(mcp_client_capabilities, {
     roots :: #mcp_capability{} | undefined,
-    sampling :: #mcp_capability{} | undefined
+    sampling :: #mcp_capability{} | undefined,
+    experimental :: map() | undefined
 }).
 
 -record(mcp_server_capabilities, {
