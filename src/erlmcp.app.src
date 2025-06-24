@@ -1,0 +1,16 @@
+{application, erlmcp,
+ [{description, "Erlang Model Context Protocol (MCP) SDK"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [
+      kernel,
+      stdlib,
+      jsx,
+      gun
+  ]},
+  {mod, {erlmcp_app, []}},
+  {env, []},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]}
+ ]}.
