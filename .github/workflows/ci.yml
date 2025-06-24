@@ -9,35 +9,9 @@ on:
 
 jobs:
 
-  older-builds:
+  test:
     name: Erlang ${{ matrix.otp_version }} build
-    runs-on: ubuntu-20.04
-
-    strategy:
-      matrix:
-        otp_version: [20, 21, 22, 23]
-
-    steps:
-    - uses: actions/checkout@v4
-    - uses: erlef/setup-beam@v1
-      with:
-        otp-version: ${{ matrix.otp_version }}
-        rebar3-version: '3.15'
-    - name: Check ./rebar3 Version
-      run: rebar3 --version
-    - name: Compile
-      run: rebar3 compile
-    - name: Xref Checks
-      run: rebar3 xref
-
-    - name: Run Tests
-      run: rebar3 eunit -v
-    - name: Test Coverage
-      run: rebar3 as test cover -v --min_coverage=0
-
-  newer-builds:
-    name: Erlang ${{ matrix.otp_version }} build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     strategy:
       matrix:
