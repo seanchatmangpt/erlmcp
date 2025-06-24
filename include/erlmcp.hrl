@@ -46,7 +46,8 @@
 -record(mcp_server_capabilities, {
     prompts :: #mcp_capability{} | undefined,
     resources :: #mcp_capability{} | undefined,
-    tools :: #mcp_capability{} | undefined
+    tools :: #mcp_capability{} | undefined,
+    logging :: #mcp_capability{} | undefined
 }).
 
 -record(mcp_initialize_request, {
@@ -59,6 +60,72 @@
     protocol_version :: binary(),
     capabilities :: #mcp_server_capabilities{} | #mcp_client_capabilities{},
     server_info :: map() | undefined
+}).
+
+-record(mcp_resource, {
+    uri :: binary(),
+    name :: binary(),
+    description :: binary() | undefined,
+    mime_type :: binary() | undefined,
+    metadata :: map() | undefined
+}).
+
+-record(mcp_resource_template, {
+    uri_template :: binary(),
+    name :: binary(),
+    description :: binary() | undefined,
+    mime_type :: binary() | undefined
+}).
+
+-record(mcp_tool, {
+    name :: binary(),
+    description :: binary(),
+    input_schema :: map() | undefined
+}).
+
+-record(mcp_tool_annotation, {
+    audience :: [binary()],
+    priority :: float() | undefined
+}).
+
+-record(mcp_prompt_argument, {
+    name :: binary(),
+    description :: binary() | undefined,
+    required :: boolean()
+}).
+
+-record(mcp_prompt, {
+    name :: binary(),
+    description :: binary() | undefined,
+    arguments :: [#mcp_prompt_argument{}] | undefined
+}).
+
+-record(mcp_content, {
+    type :: binary(),
+    text :: binary() | undefined,
+    data :: binary() | undefined,
+    mime_type :: binary() | undefined
+}).
+
+-record(mcp_progress_token, {
+    token :: binary() | integer()
+}).
+
+-record(mcp_progress_notification, {
+    progress_token :: #mcp_progress_token{},
+    progress :: float(),
+    total :: float() | undefined
+}).
+
+-record(mcp_resource_subscription, {
+    uri :: binary(),
+    subscriber :: pid()
+}).
+
+-record(mcp_log_message, {
+    level :: binary(),
+    data :: term(),
+    logger :: binary() | undefined
 }).
 
 -endif.

@@ -146,6 +146,35 @@ handle_call({call_tool, Name, Arguments}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+handle_call(list_prompts, _From, State) ->
+    RequestId = State#state.request_id,
+    Json = erlmcp_json_rpc:encode_request(RequestId, <<"prompts/list">>, #{}),
+    case send_message(State, Json) of
+        ok ->
+            NewState = State#state{
+                request_id = RequestId + 1,
+                pending_requests = maps:put(RequestId, {list_prompts, self()}, State#state.pending_requests)
+            },
+            {noreply, NewState};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
+
+handle_call({get_prompt, Name}, _From, State) ->
+    RequestId = State#state.request_id,
+    Params = #{<<"name">> => Name},
+    Json = erlmcp_json_rpc:encode_request(RequestId, <<"prompts/get">>, Params),
+    case send_message(State, Json) of
+        ok ->
+            NewState = State#state{
+                request_id = RequestId + 1,
+                pending_requests = maps:put(RequestId, {get_prompt, self()}, State#state.pending_requests)
+            },
+            {noreply, NewState};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 

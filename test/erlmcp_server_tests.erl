@@ -28,7 +28,7 @@ cleanup(Server) ->
     erlmcp_server:stop(Server).
 
 test_add_resource(Server) ->
-    Handler = fun() -> <<"test resource content">> end,
+    Handler = fun(_Uri) -> <<"test resource content">> end,
     ?assertEqual(ok, erlmcp_server:add_resource(Server, <<"test_resource">>, Handler)).
 
 test_add_tool(Server) ->
