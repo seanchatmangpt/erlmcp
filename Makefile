@@ -17,6 +17,9 @@ dialyzer:
 xref:
 	$(REBAR3) xref
 
+lint:
+	$(REBAR3) xref && $(REBAR3) dialyzer
+
 shell:
 	$(REBAR3) shell
 
