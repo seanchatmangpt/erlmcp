@@ -91,6 +91,10 @@ See the [examples directory](examples/README.md) for comprehensive examples:
 
 Apache 2.0
 
+## External Resources
+
+- [Get started with the Model Context Protocol (MCP)](https://modelcontextprotocol.io/introduction)
+
 [//]: ---Named-Links---
 
 [logo]: priv/images/logo.png
