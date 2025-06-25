@@ -1,6 +1,10 @@
 # erlmcp
 
-Erlang implementation of the Model Context Protocol (MCP) SDK.
+[![Build Status][gh-actions-badge]][gh-actions]
+
+[![Project Logo][logo]][logo]
+
+*Erlang implementation of the Model Context Protocol (MCP) SDK.*
 
 MCP enables seamless communication between AI assistants and local services through a standardized protocol. This SDK provides both client and server implementations with full OTP compliance, allowing you to build robust, fault-tolerant integrations that expose resources, tools, and prompts to AI systems.
 
@@ -28,15 +32,15 @@ rebar3 compile
 {ok, Server} = erlmcp_server:start_link({stdio, []}, Capabilities),
 
 %% Add a resource
-erlmcp_server:add_resource(Server, <<"hello://world">>, 
+erlmcp_server:add_resource(Server, <<"hello://world">>,
     fun(_Uri) -> <<"Hello from Erlang!">> end),
 
 %% Add a tool with JSON Schema validation
-Schema = #{<<"type">> => <<"object">>, 
+Schema = #{<<"type">> => <<"object">>,
            <<"properties">> => #{<<"name">> => #{<<"type">> => <<"string">>}}},
 erlmcp_server:add_tool_with_schema(Server, <<"greet">>,
-    fun(#{<<"name">> := Name}) -> 
-        <<"Hello, ", Name/binary, "!">> 
+    fun(#{<<"name">> := Name}) ->
+        <<"Hello, ", Name/binary, "!">>
     end, Schema).
 ```
 
@@ -53,7 +57,7 @@ erlmcp_server:add_tool_with_schema(Server, <<"greet">>,
 {ok, #{<<"resources">> := Resources}} = erlmcp_client:list_resources(Client),
 
 %% Call a tool
-{ok, Result} = erlmcp_client:call_tool(Client, <<"greet">>, 
+{ok, Result} = erlmcp_client:call_tool(Client, <<"greet">>,
                                         #{<<"name">> => <<"World">>}).
 ```
 
@@ -86,3 +90,9 @@ See the [examples directory](examples/README.md) for comprehensive examples:
 ## License
 
 Apache 2.0
+
+[//]: ---Named-Links---
+
+[logo]: priv/images/logo.png
+[gh-actions-badge]: https://github.com/banyan-platform/erlmcp/workflows/ci%2Fcd/badge.svg
+[gh-actions]: https://github.com/banyan-platform/erlmcp/actions?query=workflow%3Acicd
