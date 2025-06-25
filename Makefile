@@ -10,7 +10,7 @@ compile:
 	@$(REBAR) compile
 
 clean:
-	@$(REBAR) clean
+	@$(REBAR) cleanplus
 	@rm -rf _build logs erl_crash.dump
 
 test:
