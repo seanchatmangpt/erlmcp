@@ -94,5 +94,5 @@ Apache 2.0
 [//]: ---Named-Links---
 
 [logo]: priv/images/logo.png
-[gh-actions-badge]: https://github.com/banyan-platform/erlmcp/workflows/ci%2Fcd/badge.svg
-[gh-actions]: https://github.com/banyan-platform/erlmcp/actions?query=workflow%3Acicd
+[gh-actions-badge]: https://github.com/banyan-platform/erlmcp/workflows/ci/badge.svg
+[gh-actions]: https://github.com/banyan-platform/erlmcp/actions?query=workflow%3Aci
