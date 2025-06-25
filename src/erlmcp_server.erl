@@ -25,11 +25,12 @@
 
 %% Types
 -type server() :: pid().
+-type transport_opts() :: {stdio, list()} | {tcp, map()} | {http, map()}.
 -type resource_handler() :: fun((binary()) -> binary() | #mcp_content{}).
 -type tool_handler() :: fun((map()) -> binary() | #mcp_content{} | [#mcp_content{}]).
 -type prompt_handler() :: fun((map()) -> binary() | [map()]).
 
--export_type([server/0]).
+-export_type([server/0, transport_opts/0]).
 
 %% State record
 -record(state, {

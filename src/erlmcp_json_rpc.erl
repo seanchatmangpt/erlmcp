@@ -206,15 +206,3 @@ validate_params(undefined) -> undefined;
 validate_params(Params) when is_map(Params) -> Params;
 validate_params(Params) when is_list(Params) -> Params;
 validate_params(_) -> undefined.  % Invalid params become undefined
-
-%%====================================================================
-%% Error Helpers
-%%====================================================================
-
--spec format_error({atom(), term()}) -> binary().
-format_error({parse_error, Reason}) ->
-    iolist_to_binary(io_lib:format("Parse error: ~p", [Reason]));
-format_error({invalid_request, Reason}) ->
-    iolist_to_binary(io_lib:format("Invalid request: ~p", [Reason]));
-format_error(Reason) ->
-    iolist_to_binary(io_lib:format("Error: ~p", [Reason])).
