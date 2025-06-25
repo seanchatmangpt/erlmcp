@@ -1,9 +1,8 @@
 -module(erlmcp_transport_http).
 -behaviour(gen_server).
--behaviour(erlmcp_transport).
 
 %% Transport behavior callbacks
--export([init/1, send/2, close/1]).
+-export([send/2, close/1]).
 
 %% API
 -export([start_link/1]).
@@ -57,16 +56,7 @@
 %% Transport Behavior Implementation
 %%====================================================================
 
--spec init(http_opts()) -> {ok, state()} | {error, term()}.
-init(Opts) when is_map(Opts) ->
-    %% Ensure required applications are started
-    ensure_apps_started(),
-    
-    %% Build initial state
-    State = build_initial_state(Opts),
-    
-    %% Return state for transport use
-    {ok, State}.
+
 
 -spec send(state(), iodata()) -> ok | {error, term()}.
 send(State, Data) when is_map(State) ->
@@ -274,7 +264,7 @@ build_http_options(Opts) ->
     end ++ maps:get(http_options, Opts, []).
 
 -spec build_request_options(http_opts()) -> [term()].
-build_request_options(Opts) ->
+build_request_options(_Opts) ->
     [
         {sync, false},  % Always use async for better concurrency
         {stream, self},
@@ -446,7 +436,7 @@ schedule_retry(RequestId, Data, From, Attempts, State) ->
     State#{pending_requests := NewPending}.
 
 -spec retry_request(reference(), binary(), non_neg_integer(), state()) -> state().
-retry_request(RequestId, Data, Attempts, State) ->
+retry_request(RequestId, Data, _Attempts, State) ->
     case maps:get(RequestId, maps:get(pending_requests, State), undefined) of
         {From, Data, _} ->
             %% Remove from pending and resend

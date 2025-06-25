@@ -1,8 +1,7 @@
 -module(erlmcp_transport_tcp).
 -behaviour(gen_server).
--behaviour(erlmcp_transport).
 
-%% Transport behavior callbacks
+%% Transport API
 -export([send/2, close/1]).
 
 %% API

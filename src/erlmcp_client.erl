@@ -208,8 +208,8 @@ handle_call(list_resources, From, State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             send_request(State, <<"resources/list">>, #{}, {list_resources, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call({read_resource, Uri}, From, State) ->
@@ -217,16 +217,16 @@ handle_call({read_resource, Uri}, From, State) ->
         do_request ->
             Params = #{<<"uri">> => Uri},
             send_request(State, <<"resources/read">>, Params, {read_resource, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call(list_tools, From, State) ->
     case ?CHECK_CAPABILITY(State, tools) of
         do_request ->
             send_request(State, <<"tools/list">>, #{}, {list_tools, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call({call_tool, Name, Arguments}, From, State) ->
@@ -234,16 +234,16 @@ handle_call({call_tool, Name, Arguments}, From, State) ->
         do_request ->
             Params = #{<<"name">> => Name, <<"arguments">> => Arguments},
             send_request(State, <<"tools/call">>, Params, {call_tool, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call(list_prompts, From, State) ->
     case ?CHECK_CAPABILITY(State, prompts) of
         do_request ->
             send_request(State, <<"prompts/list">>, #{}, {list_prompts, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call({get_prompt, Name, Arguments}, From, State) ->
@@ -251,16 +251,16 @@ handle_call({get_prompt, Name, Arguments}, From, State) ->
         do_request ->
             Params = build_prompt_params(Name, Arguments),
             send_request(State, <<"prompts/get">>, Params, {get_prompt, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call(list_resource_templates, From, State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             send_request(State, <<"resources/templates/list">>, #{}, {list_resource_templates, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call({subscribe_resource, Uri}, From, State) ->
@@ -271,8 +271,8 @@ handle_call({subscribe_resource, Uri}, From, State) ->
                 subscriptions = sets:add_element(Uri, State#state.subscriptions)
             },
             send_request(NewState, <<"resources/subscribe">>, Params, {subscribe_resource, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call({unsubscribe_resource, Uri}, From, State) ->
@@ -283,8 +283,8 @@ handle_call({unsubscribe_resource, Uri}, From, State) ->
                 subscriptions = sets:del_element(Uri, State#state.subscriptions)
             },
             send_request(NewState, <<"resources/unsubscribe">>, Params, {unsubscribe_resource, From});
-        Error ->
-            {reply, Error, State}
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
     end;
 
 handle_call({start_batch, BatchId}, _From, State) ->
@@ -409,7 +409,8 @@ send_request(State, Method, Params, RequestInfo) ->
             {noreply, NewState};
         {error, Reason} ->
             {_, From} = RequestInfo,
-            {reply, {error, Reason}, State}
+            gen_server:reply(From, {error, Reason}),
+            {noreply, State}
     end.
 
 -spec send_message(state(), binary()) -> ok | {error, term()}.
