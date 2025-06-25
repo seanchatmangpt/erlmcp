@@ -6,6 +6,8 @@ MCP enables seamless communication between AI assistants and local services thro
 
 ## Installation
 
+**Requirements:** Erlang/OTP 25 or later
+
 ```bash
 # Add to your rebar.config deps
 {deps, [
