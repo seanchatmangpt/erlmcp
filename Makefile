@@ -1,6 +1,6 @@
 .PHONY: all compile clean test dialyzer xref format lint docs console release docker check
 
-REBAR := ./rebar3
+REBAR := rebar3
 APP_NAME := erlmcp
 APP_VERSION := $(shell grep vsn src/$(APP_NAME).app.src | cut -d'"' -f2)
 
@@ -28,7 +28,7 @@ format:
 	@$(REBAR) format
 
 lint:
-	@$(REBAR) lint
+	@$(MAKE) xref dialyzer
 
 docs:
 	@$(REBAR) ex_doc
@@ -39,7 +39,7 @@ console:
 release:
 	@$(REBAR) as prod release
 
-check: xref dialyzer test
+check: clean compile xref dialyzer test
 	@echo "All checks passed!"
 
 # Development helpers
