@@ -1,0 +1,18 @@
+{application, memory_server,
+ [{description, "MCP Memory Server - Knowledge Graph Example"},
+  {vsn, "1.0.0"},
+  {registered, [memory_server]},
+  {mod, {memory_server_app, []}},
+  {applications, [
+      kernel,
+      stdlib,
+      jsx,
+      jesse
+  ]},
+  {env, [
+      {memory_file_path, "memory.json"}
+  ]},
+  {modules, []},
+  {licenses, ["MIT"]},
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]}
+ ]}.
