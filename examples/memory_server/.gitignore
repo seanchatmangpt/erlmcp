@@ -1,0 +1,10 @@
+_build/
+*.beam
+*.app
+rebar.lock
+logs/
+erl_crash.dump
+.rebar3/
+memory.json
+memory.json.tmp
+backups/
