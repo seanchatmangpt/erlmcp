@@ -42,7 +42,7 @@
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
   {build_tools, ["rebar3"]},
-  {files, ["src", "include", "priv/release-notes", "rebar.config", "README.md", "LICENSE"]},
+  {files, ["src", "include", "priv/release-notes", "rebar.config", "config", "docs", "examples", "README.md", "LICENSE"]},
 
   %% OTP application upgrade instructions
   {runtime_dependencies, [

@@ -30,9 +30,6 @@ format:
 lint:
 	@$(MAKE) xref dialyzer
 
-docs:
-	@$(REBAR) ex_doc
-
 console:
 	@$(REBAR) shell
 
@@ -104,6 +101,10 @@ distclean: clean
 	@rm -rf _build
 	@echo "Deep clean complete"
 
+publish:
+	@echo "Publishing $(APP_NAME) v$(APP_VERSION)..."
+	@$(REBAR) hex publish package
+
 # Help
 help:
 	@echo "$(APP_NAME) v$(APP_VERSION) - Available targets:"
@@ -113,9 +114,9 @@ help:
 	@echo "  make xref         - Run xref analysis"
 	@echo "  make format       - Format code"
 	@echo "  make lint         - Run linter"
-	@echo "  make docs         - Generate documentation"
 	@echo "  make console      - Start Erlang shell with app loaded"
 	@echo "  make release      - Build production release"
 	@echo "  make check        - Run all checks (xref, dialyzer, tests)"
 	@echo "  make coverage-report - Generate coverage report"
+	@echo "  make publish	   - Publish to Hex"
 	@echo "  make help         - Show this help message"
