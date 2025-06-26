@@ -1,0 +1,12 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -pa _build/default/lib/*/ebin
+
+main(_Args) ->
+    application:ensure_all_started(jsx),
+    application:ensure_all_started(jesse),
+    application:ensure_all_started(memory_server),
+    
+    receive
+        _ -> ok
+    end.
