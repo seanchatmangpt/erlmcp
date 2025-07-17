@@ -1,4 +1,7 @@
+% Fixed erlmcp_stdio.erl module
 -module(erlmcp_stdio).
+
+%% API exports
 -export([
     start/0, start/1, stop/0,
     add_tool/3, add_tool/4,
@@ -6,11 +9,6 @@
     add_prompt/3, add_prompt/4,
     is_running/0
 ]).
-
-%% Types
--type tool_handler() :: fun((map()) -> binary() | iolist()).
--type resource_handler() :: fun((binary()) -> binary() | iolist()).
--type prompt_handler() :: fun((map()) -> binary() | iolist() | [map()]).
 
 %%====================================================================
 %% API Functions
@@ -22,13 +20,9 @@ start() ->
 
 -spec start(map()) -> ok | {error, term()}.
 start(Options) ->
-    % Ensure the main erlmcp application is started
-    case application:ensure_all_started(erlmcp) of
-        {ok, _} ->
-            case erlmcp_sup:start_stdio_server(Options) of
-                {ok, _Pid} -> ok;
-                Error -> Error
-            end;
+    case erlmcp_sup:start_stdio_server(Options) of
+        {ok, _Pid} -> ok;
+        {error, {already_started, _Pid}} -> ok;
         Error -> Error
     end.
 
@@ -36,41 +30,62 @@ start(Options) ->
 stop() ->
     erlmcp_sup:stop_stdio_server().
 
--spec add_tool(binary(), binary(), tool_handler()) -> ok | {error, term()}.
+-spec add_tool(binary(), binary(), fun()) -> ok | {error, term()}.
 add_tool(Name, Description, Handler) ->
     add_tool(Name, Description, Handler, undefined).
 
--spec add_tool(binary(), binary(), tool_handler(), map() | undefined) -> ok | {error, term()}.
+-spec add_tool(binary(), binary(), fun(), map() | undefined) -> ok | {error, term()}.
 add_tool(Name, Description, Handler, Schema) ->
     case is_running() of
         true ->
-            erlmcp_stdio_server:add_tool(Name, Description, Handler, Schema);
+            try
+                gen_server:call(erlmcp_stdio_server, {add_tool, Name, Description, Handler, Schema})
+            catch
+                exit:{noproc, _} ->
+                    {error, stdio_server_not_running};
+                exit:{timeout, _} ->
+                    {error, timeout}
+            end;
         false ->
             {error, stdio_server_not_running}
     end.
 
--spec add_resource(binary(), binary(), resource_handler()) -> ok | {error, term()}.
+-spec add_resource(binary(), binary(), fun()) -> ok | {error, term()}.
 add_resource(Uri, Description, Handler) ->
     add_resource(Uri, Description, Handler, <<"text/plain">>).
 
--spec add_resource(binary(), binary(), resource_handler(), binary()) -> ok | {error, term()}.
+-spec add_resource(binary(), binary(), fun(), binary()) -> ok | {error, term()}.
 add_resource(Uri, Description, Handler, MimeType) ->
     case is_running() of
         true ->
-            erlmcp_stdio_server:add_resource(Uri, Description, Handler, MimeType);
+            try
+                gen_server:call(erlmcp_stdio_server, {add_resource, Uri, Description, Handler, MimeType})
+            catch
+                exit:{noproc, _} ->
+                    {error, stdio_server_not_running};
+                exit:{timeout, _} ->
+                    {error, timeout}
+            end;
         false ->
             {error, stdio_server_not_running}
     end.
 
--spec add_prompt(binary(), binary(), prompt_handler()) -> ok | {error, term()}.
+-spec add_prompt(binary(), binary(), fun()) -> ok | {error, term()}.
 add_prompt(Name, Description, Handler) ->
     add_prompt(Name, Description, Handler, undefined).
 
--spec add_prompt(binary(), binary(), prompt_handler(), [map()] | undefined) -> ok | {error, term()}.
+-spec add_prompt(binary(), binary(), fun(), [map()] | undefined) -> ok | {error, term()}.
 add_prompt(Name, Description, Handler, Arguments) ->
     case is_running() of
         true ->
-            erlmcp_stdio_server:add_prompt(Name, Description, Handler, Arguments);
+            try
+                gen_server:call(erlmcp_stdio_server, {add_prompt, Name, Description, Handler, Arguments})
+            catch
+                exit:{noproc, _} ->
+                    {error, stdio_server_not_running};
+                exit:{timeout, _} ->
+                    {error, timeout}
+            end;
         false ->
             {error, stdio_server_not_running}
     end.
