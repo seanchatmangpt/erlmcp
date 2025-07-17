@@ -26,9 +26,13 @@ start_link(Owner) when is_pid(Owner) ->
 -spec send(pid() | term(), iodata()) -> ok | {error, term()}.
 send(_TransportState, Message) ->
     try
-        %% FIXED: Send raw message to stdout without formatting
-        io:put_chars(Message),
-        io:nl(),
+        % Message is already JSON-encoded binary/iolist
+        case is_binary(Message) of
+            true ->
+                io:format("~s~n", [Message]);
+            false ->
+                io:format("~s~n", [iolist_to_binary(Message)])
+        end,
         ok
     catch
         error:Reason ->
