@@ -42,7 +42,7 @@ main(_Args) ->
         }),
     
     erlmcp_stdio_server:add_tool(<<"system_info">>, <<"Get system information">>, 
-        fun(_Args) ->
+        fun(_) ->
             {ok, Hostname} = inet:gethostname(),
             iolist_to_binary(io_lib:format("Hostname: ~s, Erlang: ~s, stdio working!",
                                            [Hostname, erlang:system_info(otp_release)]))

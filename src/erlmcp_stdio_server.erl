@@ -23,7 +23,7 @@
 
 -record(state, {
     tools = #{} :: #{binary() => {binary(), tool_handler(), map() | undefined}},
-    resources = #{} :: #{binary() => {binary(), resource_handler()}},
+    resources = #{} :: #{binary() => {binary(), resource_handler()} | {binary(), resource_handler(), binary()}},
     prompts = #{} :: #{binary() => {binary(), prompt_handler(), [map()] | undefined}},
     initialized = false :: boolean()
 }).
@@ -249,13 +249,23 @@ send_tools_list(Id, State) ->
 
 -spec send_resources_list(term(), state()) -> ok.
 send_resources_list(Id, State) ->
-    Resources = maps:fold(fun(Uri, {Description, _Handler}, Acc) ->
-        Resource = #{
-            <<"uri">> => Uri,
-            <<"name">> => Description,
-            <<"mimeType">> => <<"text/plain">>
-        },
-        [Resource | Acc]
+    Resources = maps:fold(fun
+        (Uri, {Description, _Handler}, Acc) ->
+            % 2-tuple format (backward compatibility)
+            Resource = #{
+                <<"uri">> => Uri,
+                <<"name">> => Description,
+                <<"mimeType">> => <<"text/plain">>
+            },
+            [Resource | Acc];
+        (Uri, {Description, _Handler, MimeType}, Acc) ->
+            % 3-tuple format (with mime type)
+            Resource = #{
+                <<"uri">> => Uri,
+                <<"name">> => Description,
+                <<"mimeType">> => MimeType
+            },
+            [Resource | Acc]
     end, [], State#state.resources),
     
     Response = #{
@@ -315,6 +325,7 @@ handle_resource_read(Id, #{<<"uri">> := Uri}, State) ->
         undefined ->
             send_error(Id, -32602, <<"Resource not found">>);
         {_Description, Handler} ->
+            % 2-tuple format (backward compatibility)
             try
                 Content = Handler(Uri),
                 ContentBinary = to_binary(Content),
@@ -325,6 +336,28 @@ handle_resource_read(Id, #{<<"uri">> := Uri}, State) ->
                         <<"contents">> => [#{
                             <<"uri">> => Uri,
                             <<"mimeType">> => <<"text/plain">>,
+                            <<"text">> => ContentBinary
+                        }]
+                    }
+                },
+                send_response(Response)
+            catch
+                Class:Reason:Stack ->
+                    io:format(standard_error, "Resource handler crashed: ~p:~p~n~p~n", [Class, Reason, Stack]),
+                    send_error(Id, -32603, <<"Internal error">>)
+            end;
+        {_Description, Handler, MimeType} ->
+            % 3-tuple format (with mime type)
+            try
+                Content = Handler(Uri),
+                ContentBinary = to_binary(Content),
+                Response = #{
+                    <<"jsonrpc">> => <<"2.0">>,
+                    <<"id">> => Id,
+                    <<"result">> => #{
+                        <<"contents">> => [#{
+                            <<"uri">> => Uri,
+                            <<"mimeType">> => MimeType,
                             <<"text">> => ContentBinary
                         }]
                     }
