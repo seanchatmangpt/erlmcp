@@ -77,7 +77,7 @@ add_prompt(Name, Description, Handler, Arguments) ->
 
 -spec is_running() -> boolean().
 is_running() ->
-    case whereis(erlmcp_stdio_supervisor) of
+    case whereis(erlmcp_stdio_server) of
         undefined -> false;
         Pid when is_pid(Pid) -> is_process_alive(Pid)
     end.
