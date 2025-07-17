@@ -102,8 +102,8 @@ handle_call({add_tool, Name, Description, Handler, Schema}, _From, State) ->
     NewTools = maps:put(Name, {Description, Handler, Schema}, State#state.tools),
     {reply, ok, State#state{tools = NewTools}};
 
-handle_call({add_resource, Uri, Description, Handler, _MimeType}, _From, State) ->
-    NewResources = maps:put(Uri, {Description, Handler}, State#state.resources),
+handle_call({add_resource, Uri, Description, Handler, MimeType}, _From, State) ->
+    NewResources = maps:put(Uri, {Description, Handler, MimeType}, State#state.resources),
     {reply, ok, State#state{resources = NewResources}};
 
 handle_call({add_prompt, Name, Description, Handler, Arguments}, _From, State) ->
