@@ -41,45 +41,31 @@ rebar3 compile
 
 Claude Desktop uses an `mcp.json` configuration file. The location depends on your operating system:
 
-- **macOS**: `~/Library/Application Support/Claude/mcp.json`
-- **Windows**: `%APPDATA%\Claude\mcp.json`
-- **Linux**: `~/.config/Claude/mcp.json`
+- **macOS**: `~/Library/Application Support/Claude/claud_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claud_desktop_config.json`
+- **Linux**: `~/.config/Claude/claud_desktop_config.json`
 
 ### 2. Create or Edit mcp.json
 
-Create or edit the `mcp.json` file with the following content:
+Create or edit the `claud_desktop_config.json` file with the following content:
 
 ```json
 {
   "mcpServers": {
-    "erlmcp-stdio": {
-      "command": "erl",
-      "args": [
-        "-noshell",
-        "-pa", "/path/to/erlmcp/ebin",
-        "-eval", "simple_server_stdio:start()."
-      ]
-    }
-  }
-}
-```
-
-**Important**: Replace `/path/to/erlmcp/ebin` with the actual absolute path to your erlmcp `ebin` directory.
-
-### Example Configuration
-
-Here's a complete example for macOS:
-
-```json
-{
-  "mcpServers": {
-    "erlmcp-stdio": {
-      "command": "erl",
-      "args": [
-        "-noshell",
-        "-pa", "/Users/yourname/projects/erlmcp/ebin",
-        "-eval", "simple_server_stdio:start()."
-      ]
+    "erlmcp-simple": {
+        "command": "erl",
+        "args": [
+            "-pa",
+            "<ABS PATH>/erlsci/erlmcp/_build/simple/lib/erlmcp/ebin",
+            "-pa",
+            "<ABS PATH>/erlsci/erlmcp/_build/simple/lib/jsx/ebin",
+            "-pa",
+            "<ABS PATH>/erlsci/erlmcp/_build/simple/lib/jesse/ebin",
+            "-eval",
+            "code:load_file(simple_server_stdio), simple_server_stdio:start()",
+            "-noshell"
+        ],
+        "cwd": "'$(pwd)'"
     }
   }
 }
@@ -107,25 +93,31 @@ Once Claude Desktop restarts, the MCP server should be automatically connected. 
 The stdio server provides three tools:
 
 #### 1. Echo Tool
+
 Returns the input message with "Echo: " prefix.
 
 **Example prompt:**
+
 ```
 Use the echo tool to repeat "Hello, World!"
 ```
 
 #### 2. Add Tool
+
 Adds two numbers together.
 
 **Example prompt:**
+
 ```
 Use the add tool to calculate 15 + 27
 ```
 
 #### 3. System Info Tool
+
 Returns system information including hostname and Erlang version.
 
 **Example prompt:**
+
 ```
 Use the system_info tool to show me information about this system
 ```
@@ -133,9 +125,11 @@ Use the system_info tool to show me information about this system
 ### Available Resources
 
 #### Example Text File
+
 A sample text resource that demonstrates resource access.
 
 **Example prompt:**
+
 ```
 Read the example.txt resource and show me its contents
 ```
@@ -143,9 +137,11 @@ Read the example.txt resource and show me its contents
 ### Available Prompts
 
 #### Essay Writing Prompt
+
 A template for generating essay writing prompts.
 
 **Example prompt:**
+
 ```
 Use the write_essay prompt to create a persuasive essay prompt about climate change
 ```
@@ -196,12 +192,14 @@ The example.txt resource contains:
 ### Debug Steps
 
 1. Test the server manually:
+
    ```bash
    cd /path/to/erlmcp
    erl -noshell -pa ebin -eval "simple_server_stdio:start()."
    ```
 
 2. Send a test message:
+
    ```json
    {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
    ```
@@ -211,6 +209,7 @@ The example.txt resource contains:
 ### Getting Help
 
 If you encounter issues:
+
 1. Verify the erlmcp project compiles successfully
 2. Test the server manually from the command line
 3. Check that the path in `mcp.json` is correct and absolute
@@ -219,6 +218,7 @@ If you encounter issues:
 ## Next Steps
 
 Once you have the basic server working, you can:
+
 1. Modify the server to add your own tools and resources
 2. Explore the erlmcp library for more advanced features
 3. Create additional MCP servers for different use cases
