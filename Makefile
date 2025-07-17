@@ -93,7 +93,8 @@ test-property:
 	@$(REBAR) proper -c
 
 test-local:
-	@$(REBAR) as testlocal euniv -v
+	@rm -rf _build/testlocal+test
+	@$(REBAR) as testlocal eunit -v
 
 # Static analysis
 analyze: xref dialyzer lint
