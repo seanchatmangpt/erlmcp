@@ -52,7 +52,7 @@
 %% API Functions
 %%====================================================================
 
--spec start_link(transport_opts(), #mcp_server_capabilities{}) -> 
+-spec start_link(transport_opts(), #mcp_server_capabilities{}) ->
     {ok, server()} | {error, term()}.
 start_link(TransportOpts, Capabilities) ->
     gen_server:start_link(?MODULE, [TransportOpts, Capabilities], []).
@@ -62,7 +62,7 @@ add_resource(Server, Uri, Handler) when is_binary(Uri), is_function(Handler, 1) 
     gen_server:call(Server, {add_resource, Uri, Handler}).
 
 -spec add_resource_template(server(), binary(), binary(), resource_handler()) -> ok.
-add_resource_template(Server, UriTemplate, Name, Handler) 
+add_resource_template(Server, UriTemplate, Name, Handler)
   when is_binary(UriTemplate), is_binary(Name), is_function(Handler, 1) ->
     gen_server:call(Server, {add_resource_template, UriTemplate, Name, Handler}).
 
@@ -71,7 +71,7 @@ add_tool(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
     gen_server:call(Server, {add_tool, Name, Handler}).
 
 -spec add_tool_with_schema(server(), binary(), tool_handler(), map()) -> ok.
-add_tool_with_schema(Server, Name, Handler, Schema) 
+add_tool_with_schema(Server, Name, Handler, Schema)
   when is_binary(Name), is_function(Handler, 1), is_map(Schema) ->
     gen_server:call(Server, {add_tool_with_schema, Name, Handler, Schema}).
 
@@ -80,7 +80,7 @@ add_prompt(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) 
     gen_server:call(Server, {add_prompt, Name, Handler}).
 
 -spec add_prompt_with_args(server(), binary(), prompt_handler(), [#mcp_prompt_argument{}]) -> ok.
-add_prompt_with_args(Server, Name, Handler, Arguments) 
+add_prompt_with_args(Server, Name, Handler, Arguments)
   when is_binary(Name), is_function(Handler, 1), is_list(Arguments) ->
     gen_server:call(Server, {add_prompt_with_args, Name, Handler, Arguments}).
 
@@ -93,7 +93,7 @@ unsubscribe_resource(Server, Uri) when is_binary(Uri) ->
     gen_server:call(Server, {unsubscribe_resource, Uri}).
 
 -spec report_progress(server(), binary() | integer(), float(), float()) -> ok.
-report_progress(Server, Token, Progress, Total) 
+report_progress(Server, Token, Progress, Total)
   when is_number(Progress), is_number(Total) ->
     gen_server:cast(Server, {report_progress, Token, Progress, Total}).
 
@@ -246,7 +246,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions - Request Handling
 %%====================================================================
 
--spec handle_request(json_rpc_id(), binary(), json_rpc_params(), state()) -> 
+-spec handle_request(json_rpc_id(), binary(), json_rpc_params(), state()) ->
     {noreply, state()}.
 
 handle_request(Id, <<"initialize">>, _Params, State) ->
@@ -336,14 +336,25 @@ handle_notification(_Method, _Params, State) ->
 %% Internal functions - Transport
 %%====================================================================
 
--spec init_transport(transport_opts()) -> 
+-spec init_transport(transport_opts()) ->
     {ok, module(), term()} | {error, term()}.
 init_transport({stdio, _Opts}) ->
-    {ok, erlmcp_transport_stdio, self()};
+    %% For stdio, start the transport process and return its PID
+    case erlmcp_transport_stdio:start_link(self()) of
+        {ok, Pid} ->
+            {ok, erlmcp_transport_stdio, Pid};
+        {error, Reason} ->
+            {error, Reason}
+    end;
 init_transport({tcp, Opts}) ->
-    {ok, erlmcp_transport_tcp, Opts};
+    case erlmcp_transport_tcp:start_link(Opts) of
+        {ok, Pid} ->
+            {ok, erlmcp_transport_tcp, Pid};
+        {error, Reason} ->
+            {error, Reason}
+    end;
 init_transport({http, Opts}) ->
-    case erlmcp_transport_http:init(Opts) of
+    case erlmcp_transport_http:start_link(Opts) of
         {ok, State} -> {ok, erlmcp_transport_http, State};
         {error, _} = Error -> Error
     end.
@@ -372,7 +383,7 @@ send_notification(State, Method, Params) ->
     Json = erlmcp_json_rpc:encode_notification(Method, Params),
     send_message(State, Json).
 
--spec send_progress_notification(state(), binary() | integer(), float(), float()) -> 
+-spec send_progress_notification(state(), binary() | integer(), float(), float()) ->
     ok | {error, term()}.
 send_progress_notification(State, Token, Progress, Total) ->
     Params = #{
@@ -400,15 +411,15 @@ build_initialize_response(Capabilities) ->
 -spec encode_server_capabilities(#mcp_server_capabilities{}) -> map().
 encode_server_capabilities(#mcp_server_capabilities{} = Caps) ->
     Base = #{},
-    Base1 = maybe_add_server_capability(Base, <<"resources">>, 
+    Base1 = maybe_add_server_capability(Base, <<"resources">>,
                                         Caps#mcp_server_capabilities.resources,
                                         #{<<"subscribe">> => true, <<"listChanged">> => true}),
-    Base2 = maybe_add_server_capability(Base1, <<"tools">>, 
+    Base2 = maybe_add_server_capability(Base1, <<"tools">>,
                                         Caps#mcp_server_capabilities.tools, #{}),
-    Base3 = maybe_add_server_capability(Base2, <<"prompts">>, 
+    Base3 = maybe_add_server_capability(Base2, <<"prompts">>,
                                         Caps#mcp_server_capabilities.prompts,
                                         #{<<"listChanged">> => true}),
-    maybe_add_server_capability(Base3, <<"logging">>, 
+    maybe_add_server_capability(Base3, <<"logging">>,
                                 Caps#mcp_server_capabilities.logging, #{}).
 
 -spec maybe_add_server_capability(map(), binary(), #mcp_capability{} | undefined, map()) -> map().
@@ -470,7 +481,7 @@ handle_read_resource(Id, Uri, State) ->
                 send_response(State, Id, #{<<"contents">> => [ContentItem]})
             catch
                 Class:Reason:Stack ->
-                    logger:error("Resource handler crashed: ~p:~p~n~p", 
+                    logger:error("Resource handler crashed: ~p:~p~n~p",
                                  [Class, Reason, Stack]),
                     send_error(State, Id, -32603, <<"Internal error">>)
             end;
@@ -478,8 +489,8 @@ handle_read_resource(Id, Uri, State) ->
             send_error(State, Id, -32602, <<"Resource not found">>)
     end.
 
--spec find_resource(binary(), state()) -> 
-    {ok, {#mcp_resource{} | #mcp_resource_template{}, resource_handler()}} | 
+-spec find_resource(binary(), state()) ->
+    {ok, {#mcp_resource{} | #mcp_resource_template{}, resource_handler()}} |
     {error, not_found}.
 find_resource(Uri, State) ->
     case maps:get(Uri, State#state.resources, undefined) of
@@ -489,8 +500,8 @@ find_resource(Uri, State) ->
             {ok, Resource}
     end.
 
--spec find_resource_by_template(binary(), state()) -> 
-    {ok, {#mcp_resource_template{}, resource_handler()}} | 
+-spec find_resource_by_template(binary(), state()) ->
+    {ok, {#mcp_resource_template{}, resource_handler()}} |
     {error, not_found}.
 find_resource_by_template(Uri, State) ->
     Templates = maps:to_list(State#state.resource_templates),
@@ -520,12 +531,12 @@ match_uri_template(Uri, UriTemplate) ->
 
 -spec uri_template_to_regex(binary()) -> binary().
 uri_template_to_regex(UriTemplate) ->
-    Escaped = re:replace(UriTemplate, <<"\\{[^}]+\\}">>, <<"([^/]+)">>, 
+    Escaped = re:replace(UriTemplate, <<"\\{[^}]+\\}">>, <<"([^/]+)">>,
                          [global, {return, binary}]),
     <<"^", Escaped/binary, "$">>.
 
--spec encode_content_item(binary() | #mcp_content{}, 
-                          #mcp_resource{} | #mcp_resource_template{}, 
+-spec encode_content_item(binary() | #mcp_content{},
+                          #mcp_resource{} | #mcp_resource_template{},
                           binary()) -> map().
 encode_content_item(#mcp_content{} = Content, _Resource, _Uri) ->
     encode_content(Content);
@@ -600,7 +611,7 @@ format_validation_errors(Errors) ->
 
 -spec format_single_error(term()) -> string().
 format_single_error({data_invalid, Schema, Error, Data}) ->
-    io_lib:format("Validation error: ~p for data ~p with schema ~p", 
+    io_lib:format("Validation error: ~p for data ~p with schema ~p",
                   [Error, Data, Schema]);
 format_single_error(Error) ->
     io_lib:format("Validation error: ~p", [Error]).
@@ -613,7 +624,7 @@ execute_tool(Id, Handler, Arguments, State) ->
         send_response(State, Id, #{<<"content">> => ContentList})
     catch
         Class:Reason:Stack ->
-            logger:error("Tool handler crashed: ~p:~p~n~p", 
+            logger:error("Tool handler crashed: ~p:~p~n~p",
                          [Class, Reason, Stack]),
             send_error(State, Id, -32603, <<"Internal error">>)
     end.
@@ -672,12 +683,12 @@ execute_prompt(Id, Prompt, Handler, Arguments, State) ->
         Response = #{
             <<"messages">> => Messages
         },
-        Response1 = maybe_add_field(Response, <<"description">>, 
+        Response1 = maybe_add_field(Response, <<"description">>,
                                     Prompt#mcp_prompt.description),
         send_response(State, Id, Response1)
     catch
         Class:Reason:Stack ->
-            logger:error("Prompt handler crashed: ~p:~p~n~p", 
+            logger:error("Prompt handler crashed: ~p:~p~n~p",
                          [Class, Reason, Stack]),
             send_error(State, Id, -32603, <<"Internal error">>)
     end.

@@ -99,6 +99,7 @@ init(Options) ->
     logger:info("Weather server started with MCP interface"),
     {ok, State}.
 
+%% FIXED: Single handle_call function with all cases
 handle_call({add_alert_subscriber, Email, Thresholds}, _From, State) ->
     AlertConfig = #{email => Email, thresholds => Thresholds},
     NewSubscribers = maps:put(Email, AlertConfig, State#state.alert_subscribers),
@@ -107,6 +108,15 @@ handle_call({add_alert_subscriber, Email, Thresholds}, _From, State) ->
 handle_call({remove_alert_subscriber, Email}, _From, State) ->
     NewSubscribers = maps:remove(Email, State#state.alert_subscribers),
     {reply, ok, State#state{alert_subscribers = NewSubscribers}};
+
+handle_call({get_weather, City}, _From, State) ->
+    case maps:get(City, State#state.weather_data, undefined) of
+        undefined -> {reply, {error, not_found}, State};
+        Reading -> {reply, {ok, Reading}, State}
+    end;
+
+handle_call(get_state, _From, State) ->
+    {reply, {ok, State}, State};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -486,8 +496,11 @@ weather_report_prompt(#{<<"city">> := City} = Args) ->
         undefined ->
             [#{
                 <<"role">> => <<"assistant">>,
-                <<"content">> => <<"I don't have current weather data for ", City/binary, 
-                                   ". Please check if the city name is correct.">>
+                <<"content">> => #{
+                    <<"type">> => <<"text">>,
+                    <<"text">> => <<"I don't have current weather data for ", City/binary, 
+                                     ". Please check if the city name is correct.">>
+                }
             }];
         Reading ->
             ReportText = case Format of
@@ -496,7 +509,10 @@ weather_report_prompt(#{<<"city">> := City} = Args) ->
             end,
             [#{
                 <<"role">> => <<"assistant">>,
-                <<"content">> => ReportText
+                <<"content">> => #{
+                    <<"type">> => <<"text">>,
+                    <<"text">> => ReportText
+                }
             }]
     end.
 
@@ -507,14 +523,20 @@ travel_advice_prompt(#{<<"destination">> := Destination, <<"duration">> := Durat
         undefined ->
             [#{
                 <<"role">> => <<"assistant">>,
-                <<"content">> => <<"I don't have weather data for ", Destination/binary, 
-                                   ". Please check the destination name.">>
+                <<"content">> => #{
+                    <<"type">> => <<"text">>,
+                    <<"text">> => <<"I don't have weather data for ", Destination/binary, 
+                                     ". Please check the destination name.">>
+                }
             }];
         Reading ->
             Advice = generate_travel_advice(Destination, Duration, Reading),
             [#{
                 <<"role">> => <<"assistant">>,
-                <<"content">> => Advice
+                <<"content">> => #{
+                    <<"type">> => <<"text">>,
+                    <<"text">> => Advice
+                }
             }]
     end.
 
@@ -587,11 +609,17 @@ generate_travel_advice(Destination, Duration, Reading) ->
         _ -> ""
     end,
     
+    %% Convert Duration to string format
+    DurationStr = case is_binary(Duration) of
+        true -> Duration;
+        false -> iolist_to_binary(io_lib:format("~p", [Duration]))
+    end,
+    
     iolist_to_binary(io_lib:format(
         "Travel advice for ~s (~s days):\n"
         "Current temperature: ~.1f°C with ~s conditions.\n"
         "~s~s",
-        [Destination, Duration, Temp, Conditions, ClothingAdvice, ConditionsAdvice]
+        [Destination, DurationStr, Temp, Conditions, ClothingAdvice, ConditionsAdvice]
     )).
 
 format_timestamp({MegaSecs, Secs, _MicroSecs}) ->
@@ -599,16 +627,3 @@ format_timestamp({MegaSecs, Secs, _MicroSecs}) ->
     {{Y, M, D}, {H, Mi, S}} = DateTime,
     io_lib:format("~4..0B-~2..0B-~2..0B ~2..0B:~2..0B:~2..0B",
                   [Y, M, D, H, Mi, S]).
-
-%%====================================================================
-%% gen_server API for handlers
-%%====================================================================
-
-handle_call({get_weather, City}, _From, State) ->
-    case maps:get(City, State#state.weather_data, undefined) of
-        undefined -> {reply, {error, not_found}, State};
-        Reading -> {reply, {ok, Reading}, State}
-    end;
-
-handle_call(get_state, _From, State) ->
-    {reply, {ok, State}, State}.

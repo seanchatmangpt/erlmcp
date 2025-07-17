@@ -26,7 +26,9 @@ start_link(Owner) when is_pid(Owner) ->
 -spec send(pid() | term(), iodata()) -> ok | {error, term()}.
 send(_TransportState, Message) ->
     try
-        io:format("~s~n", [Message]),
+        %% FIXED: Send raw message to stdout without formatting
+        io:put_chars(Message),
+        io:nl(),
         ok
     catch
         error:Reason ->
