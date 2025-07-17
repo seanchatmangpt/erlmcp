@@ -2,6 +2,8 @@
 -behaviour(application).
 -behaviour(supervisor).
 
+-include("erlmcp.hrl").
+
 %% Application callbacks
 -export([start/0, start/2, stop/1]).
 
@@ -227,7 +229,7 @@ start_test_server(Name, Port) ->
         tools = #mcp_capability{enabled = true}
     },
     
-    {ok, Server} = erlmcp_server:start_link({tcp, Port}, Capabilities),
+    {ok, Server} = erlmcp_server:start_link({tcp, #{port => Port}}, Capabilities),
     
     %% Add some test resources
     erlmcp_server:add_resource(
@@ -243,7 +245,8 @@ start_test_server(Name, Port) ->
         fun(#{<<"message">> := Msg}) ->
             #mcp_content{
                 type = <<"text">>,
-                text = <<"Echo from ", Name/binary, ": ", Msg/binary>>
+                text = <<"Echo from ", Name/binary, ": ", Msg/binary>>,
+                mime_type = <<"text/plain">>
             }
         end
     ),
@@ -429,39 +432,3 @@ resource_subscription_scenario() ->
     timer:sleep(30000),
     
     erlmcp_client:stop(Client).
-
-%%====================================================================
-%% Calculator Client Supervisor
-%%====================================================================
-
--module(calculator_client_sup).
--behaviour(supervisor).
-
--export([start_link/0, start_calculator/0]).
--export([init/1]).
-
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
-
-start_calculator() ->
-    supervisor:start_child(?MODULE, []).
-
-init([]) ->
-    SupFlags = #{
-        strategy => simple_one_for_one,
-        intensity => 5,
-        period => 10
-    },
-    
-    ChildSpecs = [
-        #{
-            id => calculator_client,
-            start => {calculator_client, start_link, []},
-            restart => temporary,
-            shutdown => 5000,
-            type => worker,
-            modules => [calculator_client]
-        }
-    ],
-    
-    {ok, {SupFlags, ChildSpecs}}.

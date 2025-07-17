@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 -include_lib("erlmcp/include/erlmcp.hrl").
--include("../include/memory_server.hrl").
+-include("memory_server.hrl").
 
 %% API
 -export([start_link/1]).
@@ -100,7 +100,7 @@ setup_tools(McpServer) ->
 %%====================================================================
 
 handle_create_entities(#{<<"entities">> := EntitiesJson}) ->
-    case gen_server:call(memory_server, {create_entities, EntitiesJson}) of
+    case memory_server:create_entities(EntitiesJson) of
         {ok, Count} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -112,7 +112,7 @@ handle_create_entities(#{<<"entities">> := EntitiesJson}) ->
     end.
 
 handle_create_relations(#{<<"relations">> := RelationsJson}) ->
-    case gen_server:call(memory_server, {create_relations, RelationsJson}) of
+    case memory_server:create_relations(RelationsJson) of
         {ok, Count} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -124,7 +124,7 @@ handle_create_relations(#{<<"relations">> := RelationsJson}) ->
     end.
 
 handle_add_observations(#{<<"entityName">> := EntityName, <<"observations">> := Observations}) ->
-    case gen_server:call(memory_server, {add_observations, EntityName, Observations}) of
+    case memory_server:add_observations(EntityName, Observations) of
         {ok, Count} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -137,7 +137,7 @@ handle_add_observations(#{<<"entityName">> := EntityName, <<"observations">> := 
     end.
 
 handle_delete_entities(#{<<"entityNames">> := EntityNames}) ->
-    case gen_server:call(memory_server, {delete_entities, EntityNames}) of
+    case memory_server:delete_entities(EntityNames) of
         {ok, Count} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -149,7 +149,7 @@ handle_delete_entities(#{<<"entityNames">> := EntityNames}) ->
     end.
 
 handle_delete_observations(#{<<"entityName">> := EntityName, <<"observations">> := Observations}) ->
-    case gen_server:call(memory_server, {delete_observations, EntityName, Observations}) of
+    case memory_server:delete_observations(EntityName, Observations) of
         {ok, Count} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -162,7 +162,7 @@ handle_delete_observations(#{<<"entityName">> := EntityName, <<"observations">> 
     end.
 
 handle_delete_relations(#{<<"relations">> := RelationsJson}) ->
-    case gen_server:call(memory_server, {delete_relations, RelationsJson}) of
+    case memory_server:delete_relations(RelationsJson) of
         {ok, Count} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -174,7 +174,7 @@ handle_delete_relations(#{<<"relations">> := RelationsJson}) ->
     end.
 
 handle_read_graph(_Arguments) ->
-    case gen_server:call(memory_server, read_graph) of
+    case memory_server:read_graph() of
         {ok, GraphJson} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -186,7 +186,7 @@ handle_read_graph(_Arguments) ->
     end.
 
 handle_search_nodes(#{<<"query">> := Query}) ->
-    case gen_server:call(memory_server, {search_nodes, Query}) of
+    case memory_server:search_nodes(Query) of
         {ok, Results} ->
             [#mcp_content{
                 type = <<"text">>,
@@ -198,7 +198,7 @@ handle_search_nodes(#{<<"query">> := Query}) ->
     end.
 
 handle_open_nodes(#{<<"entityNames">> := EntityNames}) ->
-    case gen_server:call(memory_server, {open_nodes, EntityNames}) of
+    case memory_server:open_nodes(EntityNames) of
         {ok, Results} ->
             [#mcp_content{
                 type = <<"text">>,

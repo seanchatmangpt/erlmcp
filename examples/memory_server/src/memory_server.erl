@@ -1,7 +1,7 @@
 -module(memory_server).
 -behaviour(gen_server).
 
--include("../include/memory_server.hrl").
+-include("memory_server.hrl").
 
 %% API
 -export([start_link/0, start_link/1]).
@@ -183,20 +183,6 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%====================================================================
-%% State record update
-%%====================================================================
-
--record(state, {
-    knowledge_graph :: #knowledge_graph{},
-    memory_file_path :: binary(),
-    mcp_server :: pid() | undefined,
-    save_timer :: reference() | undefined,
-    auto_save :: boolean(),
-    save_interval :: pos_integer(),
-    dirty :: boolean()
-}).
-
-%%====================================================================
 %% Internal functions - State Management
 %%====================================================================
 
@@ -209,8 +195,8 @@ save_if_dirty(#state{dirty = true} = State) ->
     case save_graph(State#state.knowledge_graph, State#state.memory_file_path) of
         ok ->
             State#state{dirty = false};
-        {error, Reason} ->
-            logger:error("Failed to save knowledge graph: ~p", [Reason]),
+        {error, _Reason} ->
+            logger:error("Failed to save knowledge graph: ~p", [_Reason]),
             State
     end.
 
@@ -292,7 +278,7 @@ save_graph(KnowledgeGraph, FilePath) ->
                 ok -> 
                     logger:debug("Knowledge graph saved to ~s", [FilePath]),
                     ok;
-                {error, Reason} = Error ->
+                {error, _Reason} = Error ->
                     file:delete(TempFile),
                     Error
             end;
