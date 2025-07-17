@@ -5,14 +5,19 @@ start() ->
     main([]).
 
 main(_Args) ->
-    %% Start applications
-    application:ensure_all_started(jsx),
-    
-    %% Initialize stdio server
-    {ok, _} = erlmcp_stdio_server:start(),
-    
+    %% Start the stdio MCP server
+    case erlmcp_stdio:start() of
+        ok ->
+            setup_server(),
+            wait_for_shutdown();
+        {error, Reason} ->
+            io:format(standard_error, "Failed to start stdio server: ~p~n", [Reason]),
+            halt(1)
+    end.
+
+setup_server() ->
     %% Add tools
-    erlmcp_stdio_server:add_tool(<<"echo">>, <<"Echo back a message">>, 
+    ok = erlmcp_stdio:add_tool(<<"echo">>, <<"Echo back a message">>, 
         fun(#{<<"message">> := Message}) ->
             <<"Echo: ", Message/binary>>
         end,
@@ -24,7 +29,7 @@ main(_Args) ->
             <<"required">> => [<<"message">>]
         }),
     
-    erlmcp_stdio_server:add_tool(<<"add">>, <<"Add two numbers">>, 
+    ok = erlmcp_stdio:add_tool(<<"add">>, <<"Add two numbers">>, 
         fun(#{<<"a">> := A, <<"b">> := B}) ->
             Result = A + B,
             if
@@ -41,7 +46,7 @@ main(_Args) ->
             <<"required">> => [<<"a">>, <<"b">>]
         }),
     
-    erlmcp_stdio_server:add_tool(<<"system_info">>, <<"Get system information">>, 
+    ok = erlmcp_stdio:add_tool(<<"system_info">>, <<"Get system information">>, 
         fun(_) ->
             {ok, Hostname} = inet:gethostname(),
             iolist_to_binary(io_lib:format("Hostname: ~s, Erlang: ~s, stdio working!",
@@ -54,13 +59,13 @@ main(_Args) ->
         }),
     
     %% Add resources
-    erlmcp_stdio_server:add_resource(<<"file://example.txt">>, <<"example.txt">>, 
+    ok = erlmcp_stdio:add_resource(<<"file://example.txt">>, <<"example.txt">>, 
         fun(_Uri) ->
             <<"This is example content from a stdio MCP resource.">>
         end),
     
     %% Add prompts
-    erlmcp_stdio_server:add_prompt(<<"write_essay">>, <<"Generate essay writing prompt">>, 
+    ok = erlmcp_stdio:add_prompt(<<"write_essay">>, <<"Generate essay writing prompt">>, 
         fun(Args) ->
             Topic = maps:get(<<"topic">>, Args, <<"general topic">>),
             Style = maps:get(<<"style">>, Args, <<"formal">>),
@@ -78,5 +83,18 @@ main(_Args) ->
             #{<<"name">> => <<"style">>, <<"description">> => <<"Writing style">>, <<"required">> => false}
         ]),
     
-    %% Run the server
-    erlmcp_stdio_server:run().
+    io:format("Server configured and ready~n").
+
+wait_for_shutdown() ->
+    %% The server will run until the stdio protocol terminates (EOF)
+    %% We can monitor the supervisor to know when it's done
+    case whereis(erlmcp_stdio_supervisor) of
+        undefined ->
+            io:format("Stdio supervisor not found, exiting~n");
+        Pid ->
+            monitor(process, Pid),
+            receive
+                {'DOWN', _Ref, process, Pid, _Reason} ->
+                    io:format("Stdio supervisor terminated, exiting~n")
+            end
+    end.
