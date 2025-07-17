@@ -92,6 +92,9 @@ test-integration:
 test-property:
 	@$(REBAR) proper -c
 
+test-local:
+	@$(REBAR) as testlocal euniv -v
+
 # Static analysis
 analyze: xref dialyzer lint
 	@echo "Static analysis complete"
