@@ -19,9 +19,9 @@ advanced_server_test_() ->
 
 setup_advanced() ->
     Capabilities = #mcp_server_capabilities{
-        resources = #mcp_capability{name = <<"resources">>, enabled = true},
-        tools = #mcp_capability{name = <<"tools">>, enabled = true},
-        prompts = #mcp_capability{name = <<"prompts">>, enabled = true}
+        resources = #mcp_capability{enabled = true},
+        tools = #mcp_capability{enabled = true},
+        prompts = #mcp_capability{enabled = true}
     },
     {ok, Server} = erlmcp_server:start_link({stdio, []}, Capabilities),
     
