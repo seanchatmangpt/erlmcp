@@ -1,3 +1,4 @@
+% Fix for erlmcp_stdio_tests.erl
 -module(erlmcp_stdio_tests).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -22,11 +23,15 @@ setup() ->
     application:ensure_all_started(erlmcp),
     % Make sure stdio server is stopped before tests
     erlmcp_stdio:stop(),
+    % Give it a moment to fully stop
+    timer:sleep(100),
     ok.
 
 cleanup(_) ->
     % Stop the stdio server if it's running
-    erlmcp_stdio:stop().
+    erlmcp_stdio:stop(),
+    % Give it a moment to stop
+    timer:sleep(100).
 
 test_server_lifecycle() ->
     % Initially not running
@@ -34,10 +39,16 @@ test_server_lifecycle() ->
     
     % Test starting the server
     ?assertEqual(ok, erlmcp_stdio:start()),
+    
+    % Wait for server to be fully started
+    wait_for_server_start(),
     ?assertEqual(true, erlmcp_stdio:is_running()),
     
     % Test stopping the server
     ?assertEqual(ok, erlmcp_stdio:stop()),
+    
+    % Wait for server to be fully stopped
+    wait_for_server_stop(),
     ?assertEqual(false, erlmcp_stdio:is_running()),
     
     % Test that stopping again is ok
@@ -46,6 +57,10 @@ test_server_lifecycle() ->
 test_add_tool() ->
     % Start server
     ?assertEqual(ok, erlmcp_stdio:start()),
+    
+    % Wait for server to be fully started
+    wait_for_server_start(),
+    ?assertEqual(true, erlmcp_stdio:is_running()),
     
     % Add a simple tool
     Handler = fun(#{<<"input">> := Input}) ->
@@ -72,6 +87,10 @@ test_add_resource() ->
     % Start server
     ?assertEqual(ok, erlmcp_stdio:start()),
     
+    % Wait for server to be fully started
+    wait_for_server_start(),
+    ?assertEqual(true, erlmcp_stdio:is_running()),
+    
     % Add a simple resource
     Handler = fun(Uri) ->
         <<"Content for ", Uri/binary>>
@@ -88,6 +107,10 @@ test_add_resource() ->
 test_add_prompt() ->
     % Start server
     ?assertEqual(ok, erlmcp_stdio:start()),
+    
+    % Wait for server to be fully started
+    wait_for_server_start(),
+    ?assertEqual(true, erlmcp_stdio:is_running()),
     
     % Add a simple prompt
     Handler = fun(Args) ->
@@ -119,15 +142,18 @@ test_is_running() ->
     
     % Start and check
     ?assertEqual(ok, erlmcp_stdio:start()),
+    wait_for_server_start(),
     ?assertEqual(true, erlmcp_stdio:is_running()),
     
     % Stop and check
     ?assertEqual(ok, erlmcp_stdio:stop()),
+    wait_for_server_stop(),
     ?assertEqual(false, erlmcp_stdio:is_running()).
 
 test_error_when_not_running() ->
     % Ensure server is not running
     erlmcp_stdio:stop(),
+    wait_for_server_stop(),
     
     % Test that API calls fail when server is not running
     Handler = fun(_) -> <<"test">> end,
@@ -138,3 +164,30 @@ test_error_when_not_running() ->
                  erlmcp_stdio:add_resource(<<"test://uri">>, <<"Test">>, Handler)),
     ?assertEqual({error, stdio_server_not_running}, 
                  erlmcp_stdio:add_prompt(<<"test">>, <<"Test">>, Handler)).
+
+%% Helper functions
+wait_for_server_start() ->
+    wait_for_server_start(50).  % 50 * 10ms = 500ms max wait
+
+wait_for_server_start(0) ->
+    ?assert(erlmcp_stdio:is_running());
+wait_for_server_start(N) ->
+    case erlmcp_stdio:is_running() of
+        true -> ok;
+        false ->
+            timer:sleep(10),
+            wait_for_server_start(N - 1)
+    end.
+
+wait_for_server_stop() ->
+    wait_for_server_stop(50).  % 50 * 10ms = 500ms max wait
+
+wait_for_server_stop(0) ->
+    ?assertNot(erlmcp_stdio:is_running());
+wait_for_server_stop(N) ->
+    case erlmcp_stdio:is_running() of
+        false -> ok;
+        true ->
+            timer:sleep(10),
+            wait_for_server_stop(N - 1)
+    end.
