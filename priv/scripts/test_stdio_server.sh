@@ -17,7 +17,9 @@ sleep 1
 send_message() {
     local message="$1"
     echo "Sending: $message"
-    echo "$message" | nc -q 1 localhost 8080 2>/dev/null || echo "$message"
+    echo "$message" >&3
+    read -r response <&3
+    echo "Response: $response"
 }
 
 # Test initialize
