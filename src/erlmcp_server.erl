@@ -227,8 +227,21 @@ handle_info({transport_message, Data}, State) ->
     end;
 
 handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.transport_state ->
-    logger:error("Transport process died: ~p", [Reason]),
-    {stop, {transport_died, Reason}, State};
+    case Reason of
+        normal ->
+            % Transport finished normally (e.g., in test mode or EOF)
+            % Don't crash the server, just log it
+            logger:info("Transport process finished normally"),
+            {noreply, State#state{transport_state = undefined}};
+        shutdown ->
+            % Controlled shutdown
+            logger:info("Transport process shut down"),
+            {stop, normal, State};
+        _ ->
+            % Unexpected termination
+            logger:error("Transport process died: ~p", [Reason]),
+            {stop, {transport_died, Reason}, State}
+    end;
 
 handle_info(_Info, State) ->
     {noreply, State}.
