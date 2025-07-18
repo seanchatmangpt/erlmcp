@@ -1,7 +1,0 @@
-_build/
-*.beam
-*.app
-rebar.lock
-logs/
-erl_crash.dump
-.rebar3/
