@@ -39,13 +39,13 @@ rebar3 compile
 
 ### 1. Locate the Configuration File
 
-Claude Desktop uses an `mcp.json` configuration file. The location depends on your operating system:
+Claude Desktop uses an `claud_desktop_config.json` configuration file. The location depends on your operating system:
 
 - **macOS**: `~/Library/Application Support/Claude/claud_desktop_config.json`
 - **Windows**: `%APPDATA%\Claude\claud_desktop_config.json`
 - **Linux**: `~/.config/Claude/claud_desktop_config.json`
 
-### 2. Create or Edit mcp.json
+### 2. Create or Edit claud_desktop_config.json
 
 Create or edit the `claud_desktop_config.json` file with the following content:
 

@@ -5,6 +5,15 @@ start() ->
     main([]).
 
 main(_Args) ->
+    %% Start the erlmcp application first
+    case application:ensure_all_started(erlmcp) of
+        {ok, _Started} ->
+            logger:info("Successfully started erlmcp application~n");
+        {error, Reason} ->
+            logger:error("Failed to start erlmcp application: ~p~n", [Reason]),
+            halt(1)
+    end,
+
     %% Enable debug logging
     logger:remove_handler(default),
     logger:add_handler(stderr_handler, logger_std_h, #{
@@ -22,8 +31,8 @@ main(_Args) ->
             setup_calculator_server(),
             logger:info("Calculator server setup complete, waiting for shutdown...~n"),
             wait_for_shutdown();
-        {error, Reason} ->
-            logger:error("Failed to start stdio server: ~p", [Reason]),
+        {error, StartErrReason} ->
+            logger:error("Failed to start stdio server: ~p", [StartErrReason]),
             halt(1)
     end.
 
@@ -229,8 +238,14 @@ setup_calculator_server() ->
 format_number(N) when is_integer(N) ->
     integer_to_binary(N);
 format_number(N) when is_float(N) ->
+    %% Handle negative zero by checking if the number is zero
+    ActualN = if
+        N == 0.0 -> 0.0;  % Convert both 0.0 and -0.0 to 0.0
+        true -> N
+    end,
+    
     %% Format float with up to 10 decimal places, removing trailing zeros
-    Formatted = io_lib:format("~.10f", [N]),
+    Formatted = io_lib:format("~.10f", [ActualN]),
     Trimmed = lists:reverse(string:trim(lists:reverse(Formatted), both, "0")),
     Result = case Trimmed of
         "." -> "0";  % Handle 0.0 case
@@ -311,28 +326,91 @@ parse_number(NumStr) ->
     end.
 
 evaluate_tokens(Tokens) ->
-    %% Simple expression evaluator (left-to-right, no operator precedence)
-    %% In a real implementation, you'd want proper precedence handling
     case Tokens of
         [] -> throw(empty_expression);
         [Number] when is_number(Number) -> Number;
-        _ -> evaluate_simple(lists:reverse(Tokens))
+        _ -> 
+            %% First handle parentheses, then operator precedence
+            TokensWithoutParens = evaluate_parentheses(Tokens),
+            evaluate_with_precedence(TokensWithoutParens)
     end.
 
-evaluate_simple([Result]) when is_number(Result) ->
-    Result;
-evaluate_simple([Op, B, A | Rest]) when is_number(A), is_number(B) ->
-    Result = case Op of
-        add -> A + B;
-        subtract -> A - B;
-        multiply -> A * B;
-        divide when B =/= 0 -> A / B;
-        divide -> throw(division_by_zero);
-        _ -> throw({unknown_operator, Op})
-    end,
-    evaluate_simple([Result | Rest]);
-evaluate_simple(_) ->
-    throw(invalid_expression).
+%% Handle parentheses by evaluating innermost expressions first
+evaluate_parentheses(Tokens) ->
+    case find_innermost_parens(Tokens) of
+        {Start, End} ->
+            %% Extract the expression inside parentheses
+            {Before, ParenExpr, After} = extract_paren_expr(Tokens, Start, End),
+            %% Evaluate the expression inside parentheses
+            Result = evaluate_with_precedence(ParenExpr),
+            %% Replace the parentheses expression with the result
+            NewTokens = Before ++ [Result] ++ After,
+            %% Recursively handle any remaining parentheses
+            evaluate_parentheses(NewTokens);
+        not_found ->
+            Tokens
+    end.
+
+%% Find the innermost parentheses (rightmost opening paren)
+find_innermost_parens(Tokens) ->
+    find_innermost_parens(Tokens, 0, not_found, not_found).
+
+find_innermost_parens([], _Pos, _LastOpen, not_found) ->
+    not_found;
+find_innermost_parens([], _Pos, LastOpen, _Close) when LastOpen =/= not_found ->
+    throw(unmatched_parentheses);
+find_innermost_parens([lparen | Rest], Pos, _LastOpen, Close) ->
+    find_innermost_parens(Rest, Pos + 1, Pos, Close);
+find_innermost_parens([rparen | _Rest], Pos, LastOpen, _Close) when LastOpen =/= not_found ->
+    {LastOpen, Pos};
+find_innermost_parens([rparen | _Rest], _Pos, not_found, _Close) ->
+    throw(unmatched_parentheses);
+find_innermost_parens([_Token | Rest], Pos, LastOpen, Close) ->
+    find_innermost_parens(Rest, Pos + 1, LastOpen, Close).
+
+%% Extract expression inside parentheses
+extract_paren_expr(Tokens, Start, End) ->
+    {Before, Rest1} = lists:split(Start, Tokens),
+    {_LParen, Rest2} = lists:split(1, Rest1),  % Remove lparen
+    {ParenExpr, Rest3} = lists:split(End - Start - 1, Rest2),
+    {_RParen, After} = lists:split(1, Rest3),  % Remove rparen
+    {Before, ParenExpr, After}.
+
+%% Evaluate with proper operator precedence
+evaluate_with_precedence(Tokens) ->
+    %% First pass: handle multiplication and division (left to right)
+    Tokens1 = handle_high_precedence(Tokens, []),
+    %% Second pass: handle addition and subtraction (left to right)
+    handle_low_precedence(Tokens1, []).
+
+handle_high_precedence([], Acc) ->
+    lists:reverse(Acc);
+handle_high_precedence([A, multiply, B | Rest], Acc) when is_number(A), is_number(B) ->
+    Result = A * B,
+    handle_high_precedence([Result | Rest], Acc);
+handle_high_precedence([A, divide, B | Rest], Acc) when is_number(A), is_number(B) ->
+    if
+        B =:= 0 -> throw(division_by_zero);
+        true -> 
+            Result = A / B,
+            handle_high_precedence([Result | Rest], Acc)
+    end;
+handle_high_precedence([Token | Rest], Acc) ->
+    handle_high_precedence(Rest, [Token | Acc]).
+
+handle_low_precedence([], Acc) ->
+    case lists:reverse(Acc) of
+        [Result] when is_number(Result) -> Result;
+        _ -> throw(invalid_expression)
+    end;
+handle_low_precedence([A, add, B | Rest], Acc) when is_number(A), is_number(B) ->
+    Result = A + B,
+    handle_low_precedence([Result | Rest], Acc);
+handle_low_precedence([A, subtract, B | Rest], Acc) when is_number(A), is_number(B) ->
+    Result = A - B,
+    handle_low_precedence([Result | Rest], Acc);
+handle_low_precedence([Token | Rest], Acc) ->
+    handle_low_precedence(Rest, [Token | Acc]).
 
 wait_for_shutdown() ->
     %% Monitor the stdio server process to know when it's done
