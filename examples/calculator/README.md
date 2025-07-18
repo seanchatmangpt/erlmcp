@@ -7,8 +7,9 @@ This is an updated calculator MCP server built with erlmcp 0.3.1 that provides m
 ## Features
 
 ### Tools
+
 - **add**: Add two numbers
-- **subtract**: Subtract two numbers  
+- **subtract**: Subtract two numbers
 - **multiply**: Multiply two numbers
 - **divide**: Divide two numbers (with zero-division protection)
 - **power**: Calculate power (a^b)
@@ -17,19 +18,23 @@ This is an updated calculator MCP server built with erlmcp 0.3.1 that provides m
 - **calculate**: Evaluate mathematical expressions
 
 ### Resources
+
 - **calculator://history**: View calculation history
 - **calculator://help**: Get help on using the calculator
 
 ### Prompts
+
 - **math_problem**: Generate math problems with configurable difficulty and type
 
 ## Building and Running
 
 ### Prerequisites
+
 - Erlang/OTP 24 or later
 - Rebar3 build tool
 
 ### Build the Project
+
 ```bash
 # Clone the erlmcp repository
 git clone <repository-url>
@@ -40,6 +45,7 @@ rebar3 compile
 ```
 
 ### Testing the Server
+
 ```bash
 # Run the test directly
 erl -pa _build/default/lib/erlmcp/ebin -noshell -eval "calculator_test:run(), halt()."
@@ -47,24 +53,35 @@ erl -pa _build/default/lib/erlmcp/ebin -noshell -eval "calculator_test:run(), ha
 
 ## Claude Desktop Integration
 
-### 1. Configuration File Location
-Create or edit the `mcp.json` file in your Claude Desktop configuration directory:
+### 1. Locate the Configuration File
 
-- **macOS**: `~/Library/Application Support/Claude/mcp.json`
-- **Windows**: `%APPDATA%\Claude\mcp.json`
-- **Linux**: `~/.config/Claude/mcp.json`
+Claude Desktop uses an `claud_desktop_config.json` configuration file. The location depends on your operating system:
 
-### 2. Configuration
+- **macOS**: `~/Library/Application Support/Claude/claud_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claud_desktop_config.json`
+- **Linux**: `~/.config/Claude/claud_desktop_config.json`
+
+### 2. Create or Edit claud_desktop_config.json
+
+Create or edit the `claud_desktop_config.json` file with the following content:
+
 ```json
 {
   "mcpServers": {
-    "calculator": {
-      "command": "erl",
-      "args": [
-        "-noshell",
-        "-pa", "/path/to/erlmcp/_build/default/lib/erlmcp/ebin",
-        "-eval", "calculator_server_stdio:start()."
-      ]
+    "erlmcp-calculator": {
+        "command": "erl",
+        "args": [
+            "-pa",
+            "<ABS PATH>/erlsci/erlmcp/_build/calculator/lib/erlmcp/ebin",
+            "-pa",
+            "<ABS PATH>/erlsci/erlmcp/_build/calculator/lib/jsx/ebin",
+            "-pa",
+            "<ABS PATH>/erlsci/erlmcp/_build/calculator/lib/jesse/ebin",
+            "-eval",
+            "code:load_file(calculator_server_stdio), calculator_server_stdio:start()",
+            "-noshell"
+        ],
+        "cwd": "'$(pwd)'"
     }
   }
 }
@@ -73,11 +90,13 @@ Create or edit the `mcp.json` file in your Claude Desktop configuration director
 **Important**: Replace `/path/to/erlmcp/_build/default/lib/erlmcp/ebin` with the actual absolute path to your compiled erlmcp library.
 
 ### 3. Restart Claude Desktop
+
 After editing the configuration, completely restart Claude Desktop for the changes to take effect.
 
 ## Usage Examples
 
 ### Basic Arithmetic
+
 ```
 User: Use the add tool to calculate 25 + 17
 
@@ -89,6 +108,7 @@ The result is 42.
 ```
 
 ### Advanced Operations
+
 ```
 User: Use the power tool to calculate 2^10
 
@@ -100,6 +120,7 @@ The result is 1024.
 ```
 
 ### Expression Evaluation
+
 ```
 User: Use the calculate tool to evaluate "(15 + 8) * 3 - 12"
 
@@ -111,6 +132,7 @@ The result is 57.
 ```
 
 ### Getting Help
+
 ```
 User: Read the calculator://help resource
 
@@ -122,6 +144,7 @@ The help resource shows the available operations and usage examples for the calc
 ```
 
 ### Generating Math Problems
+
 ```
 User: Use the math_problem prompt to create a hard algebra problem
 
@@ -145,6 +168,7 @@ The calculator server includes comprehensive error handling:
 ## Implementation Details
 
 ### Key Changes from Original
+
 1. **Updated API**: Uses the current erlmcp 0.3.1 API
 2. **Improved Error Handling**: Better error messages and validation
 3. **Schema Validation**: Includes JSON schema for tool parameters
@@ -153,6 +177,7 @@ The calculator server includes comprehensive error handling:
 6. **Expression Evaluator**: Simple mathematical expression parser
 
 ### Architecture
+
 - **stdio Transport**: Uses standard input/output for communication
 - **JSON-RPC**: Follows MCP protocol specification
 - **Stateless Design**: Each calculation is independent
@@ -168,6 +193,7 @@ To add new mathematical functions:
 4. Update the help resource with new functionality
 
 Example:
+
 ```erlang
 ok = erlmcp_stdio:add_tool(<<"sin">>, <<"Calculate sine of angle in radians">>,
     fun(#{<<"angle">> := Angle}) ->
@@ -193,6 +219,7 @@ ok = erlmcp_stdio:add_tool(<<"sin">>, <<"Calculate sine of angle in radians">>,
 4. **Connection errors**: Ensure Claude Desktop was restarted after configuration changes
 
 ### Debug Mode
+
 Enable debug logging by modifying the logger configuration in `main/1`:
 
 ```erlang
@@ -200,7 +227,9 @@ logger:set_primary_config(level, debug),
 ```
 
 ### Manual Testing
+
 Test the server manually by running:
+
 ```bash
 erl -pa _build/default/lib/erlmcp/ebin -eval "calculator_server_stdio:start()."
 ```
