@@ -3,14 +3,9 @@
 
 -include("erlmcp.hrl").
 
-%% gen_server functions
--export([start_link/2, stop/1]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-
 %% API exports
 -export([
+    start_link/2,
     add_resource/3,
     add_resource_template/4,
     add_tool/3,
@@ -21,8 +16,12 @@
     unsubscribe_resource/2,
     report_progress/4,
     notify_resource_updated/3,
-    notify_resources_changed/1
+    notify_resources_changed/1,
+    stop/1
 ]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
 -type server() :: pid().
@@ -50,13 +49,61 @@
 -type state() :: #state{}.
 
 %%====================================================================
-%% gen_server functions
+%% API Functions
 %%====================================================================
 
 -spec start_link(transport_opts(), #mcp_server_capabilities{}) ->
     {ok, server()} | {error, term()}.
 start_link(TransportOpts, Capabilities) ->
     gen_server:start_link(?MODULE, [TransportOpts, Capabilities], []).
+
+-spec add_resource(server(), binary(), resource_handler()) -> ok.
+add_resource(Server, Uri, Handler) when is_binary(Uri), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_resource, Uri, Handler}).
+
+-spec add_resource_template(server(), binary(), binary(), resource_handler()) -> ok.
+add_resource_template(Server, UriTemplate, Name, Handler)
+  when is_binary(UriTemplate), is_binary(Name), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_resource_template, UriTemplate, Name, Handler}).
+
+-spec add_tool(server(), binary(), tool_handler()) -> ok.
+add_tool(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_tool, Name, Handler}).
+
+-spec add_tool_with_schema(server(), binary(), tool_handler(), map()) -> ok.
+add_tool_with_schema(Server, Name, Handler, Schema)
+  when is_binary(Name), is_function(Handler, 1), is_map(Schema) ->
+    gen_server:call(Server, {add_tool_with_schema, Name, Handler, Schema}).
+
+-spec add_prompt(server(), binary(), prompt_handler()) -> ok.
+add_prompt(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_prompt, Name, Handler}).
+
+-spec add_prompt_with_args(server(), binary(), prompt_handler(), [#mcp_prompt_argument{}]) -> ok.
+add_prompt_with_args(Server, Name, Handler, Arguments)
+  when is_binary(Name), is_function(Handler, 1), is_list(Arguments) ->
+    gen_server:call(Server, {add_prompt_with_args, Name, Handler, Arguments}).
+
+-spec subscribe_resource(server(), binary(), pid()) -> ok.
+subscribe_resource(Server, Uri, Subscriber) when is_binary(Uri), is_pid(Subscriber) ->
+    gen_server:call(Server, {subscribe_resource, Uri, Subscriber}).
+
+-spec unsubscribe_resource(server(), binary()) -> ok.
+unsubscribe_resource(Server, Uri) when is_binary(Uri) ->
+    gen_server:call(Server, {unsubscribe_resource, Uri}).
+
+-spec report_progress(server(), binary() | integer(), float(), float()) -> ok.
+report_progress(Server, Token, Progress, Total)
+  when is_number(Progress), is_number(Total) ->
+    gen_server:cast(Server, {report_progress, Token, Progress, Total}).
+
+-spec notify_resource_updated(server(), binary(), map()) -> ok.
+notify_resource_updated(Server, Uri, Metadata) when is_binary(Uri), is_map(Metadata) ->
+    gen_server:cast(Server, {notify_resource_updated, Uri, Metadata}).
+
+-spec notify_resources_changed(server()) -> ok.
+notify_resources_changed(Server) ->
+    gen_server:cast(Server, notify_resources_changed).
 
 -spec stop(server()) -> ok.
 stop(Server) ->
@@ -151,7 +198,7 @@ handle_cast({report_progress, Token, Progress, Total}, State) ->
         progress = Progress,
         total = Total
     },
-    send_progress_notification(State, Token, Progress, Total),
+    send_progress_notification_safe(State, Token, Progress, Total),
     NewTokens = maps:put(Token, Notification, State#state.progress_tokens),
     {noreply, State#state{progress_tokens = NewTokens}};
 
@@ -160,7 +207,7 @@ handle_cast({notify_resource_updated, Uri, Metadata}, State) ->
     {noreply, State};
 
 handle_cast(notify_resources_changed, State) ->
-    send_notification(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED, #{}),
+    send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED, #{}),
     {noreply, State};
 
 handle_cast(_Msg, State) ->
@@ -205,58 +252,6 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%====================================================================
-%% API Functions
-%%====================================================================
-
--spec add_resource(server(), binary(), resource_handler()) -> ok.
-add_resource(Server, Uri, Handler) when is_binary(Uri), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_resource, Uri, Handler}).
-
--spec add_resource_template(server(), binary(), binary(), resource_handler()) -> ok.
-add_resource_template(Server, UriTemplate, Name, Handler)
-  when is_binary(UriTemplate), is_binary(Name), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_resource_template, UriTemplate, Name, Handler}).
-
--spec add_tool(server(), binary(), tool_handler()) -> ok.
-add_tool(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_tool, Name, Handler}).
-
--spec add_tool_with_schema(server(), binary(), tool_handler(), map()) -> ok.
-add_tool_with_schema(Server, Name, Handler, Schema)
-  when is_binary(Name), is_function(Handler, 1), is_map(Schema) ->
-    gen_server:call(Server, {add_tool_with_schema, Name, Handler, Schema}).
-
--spec add_prompt(server(), binary(), prompt_handler()) -> ok.
-add_prompt(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_prompt, Name, Handler}).
-
--spec add_prompt_with_args(server(), binary(), prompt_handler(), [#mcp_prompt_argument{}]) -> ok.
-add_prompt_with_args(Server, Name, Handler, Arguments)
-  when is_binary(Name), is_function(Handler, 1), is_list(Arguments) ->
-    gen_server:call(Server, {add_prompt_with_args, Name, Handler, Arguments}).
-
--spec subscribe_resource(server(), binary(), pid()) -> ok.
-subscribe_resource(Server, Uri, Subscriber) when is_binary(Uri), is_pid(Subscriber) ->
-    gen_server:call(Server, {subscribe_resource, Uri, Subscriber}).
-
--spec unsubscribe_resource(server(), binary()) -> ok.
-unsubscribe_resource(Server, Uri) when is_binary(Uri) ->
-    gen_server:call(Server, {unsubscribe_resource, Uri}).
-
--spec report_progress(server(), binary() | integer(), float(), float()) -> ok.
-report_progress(Server, Token, Progress, Total)
-  when is_number(Progress), is_number(Total) ->
-    gen_server:cast(Server, {report_progress, Token, Progress, Total}).
-
--spec notify_resource_updated(server(), binary(), map()) -> ok.
-notify_resource_updated(Server, Uri, Metadata) when is_binary(Uri), is_map(Metadata) ->
-    gen_server:cast(Server, {notify_resource_updated, Uri, Metadata}).
-
--spec notify_resources_changed(server()) -> ok.
-notify_resources_changed(Server) ->
-    gen_server:cast(Server, notify_resources_changed).
-
-%%====================================================================
 %% Internal functions - Request Handling
 %%====================================================================
 
@@ -265,18 +260,18 @@ notify_resources_changed(Server) ->
 
 handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, State) ->
     Response = build_initialize_response(State#state.capabilities),
-    send_response(State, Id, Response),
+    send_response_safe(State, Id, Response),
     {noreply, State#state{initialized = true}};
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_LIST, _Params, State) ->
     Resources = list_all_resources(State),
-    send_response(State, Id, #{?MCP_PARAM_RESOURCES => Resources}),
+    send_response_safe(State, Id, #{?MCP_PARAM_RESOURCES => Resources}),
     {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_READ, Params, State) ->
     case maps:get(?MCP_PARAM_URI, Params, undefined) of
         undefined ->
-            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
+            send_error_safe(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
             handle_read_resource(Id, Uri, State)
     end,
@@ -284,7 +279,7 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_READ, Params, State) ->
 
 handle_request(Id, ?MCP_METHOD_TOOLS_LIST, _Params, State) ->
     Tools = list_all_tools(State),
-    send_response(State, Id, #{?MCP_PARAM_TOOLS => Tools}),
+    send_response_safe(State, Id, #{?MCP_PARAM_TOOLS => Tools}),
     {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, State) ->
@@ -292,7 +287,7 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, State) ->
     Args = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
     case {Name, Args} of
         {undefined, _} ->
-            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
+            send_error_safe(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
         {ToolName, Arguments} ->
             handle_tool_call(Id, ToolName, Arguments, State)
     end,
@@ -300,38 +295,38 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, State) ->
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, _Params, State) ->
     Templates = list_all_templates(State),
-    send_response(State, Id, #{?MCP_PARAM_RESOURCE_TEMPLATES => Templates}),
+    send_response_safe(State, Id, #{?MCP_PARAM_RESOURCE_TEMPLATES => Templates}),
     {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_SUBSCRIBE, Params, State) ->
     case maps:get(?MCP_PARAM_URI, Params, undefined) of
         undefined ->
-            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
+            send_error_safe(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
             NewSubscriptions = add_subscription(Uri, self(), State#state.subscriptions),
-            send_response(State, Id, #{}),
+            send_response_safe(State, Id, #{}),
             {noreply, State#state{subscriptions = NewSubscriptions}}
     end;
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, State) ->
     case maps:get(?MCP_PARAM_URI, Params, undefined) of
         undefined ->
-            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
+            send_error_safe(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
             NewSubscriptions = remove_subscription(Uri, State#state.subscriptions),
-            send_response(State, Id, #{}),
+            send_response_safe(State, Id, #{}),
             {noreply, State#state{subscriptions = NewSubscriptions}}
     end;
 
 handle_request(Id, ?MCP_METHOD_PROMPTS_LIST, _Params, State) ->
     Prompts = list_all_prompts(State),
-    send_response(State, Id, #{?MCP_PARAM_PROMPTS => Prompts}),
+    send_response_safe(State, Id, #{?MCP_PARAM_PROMPTS => Prompts}),
     {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_PROMPTS_GET, Params, State) ->
     case maps:get(?MCP_PARAM_NAME, Params, undefined) of
         undefined ->
-            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_PROMPT_NAME);
+            send_error_safe(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_PROMPT_NAME);
         Name ->
             Arguments = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
             handle_get_prompt(Id, Name, Arguments, State)
@@ -339,7 +334,7 @@ handle_request(Id, ?MCP_METHOD_PROMPTS_GET, Params, State) ->
     {noreply, State};
 
 handle_request(Id, _Method, _Params, State) ->
-    send_error(State, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
+    send_error_safe(State, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
     {noreply, State}.
 
 -spec handle_notification(binary(), map(), state()) -> {noreply, state()}.
@@ -405,6 +400,55 @@ send_progress_notification(State, Token, Progress, Total) ->
         ?MCP_PARAM_TOTAL => Total
     },
     send_notification(State, ?MCP_METHOD_NOTIFICATIONS_PROGRESS, Params).
+
+%%====================================================================
+%% Safe Transport Functions - Better Error Handling
+%%====================================================================
+
+%% These functions handle transport errors gracefully by logging them
+%% instead of crashing the server process
+
+-spec send_response_safe(state(), json_rpc_id(), map()) -> ok.
+send_response_safe(State, Id, Result) ->
+    case send_response(State, Id, Result) of
+        ok -> 
+            ok;
+        {error, Reason} -> 
+            logger:warning("Failed to send response for request ~p: ~p", [Id, Reason]),
+            ok
+    end.
+
+-spec send_error_safe(state(), json_rpc_id(), integer(), binary()) -> ok.
+send_error_safe(State, Id, Code, Message) ->
+    case send_error(State, Id, Code, Message) of
+        ok -> 
+            ok;
+        {error, Reason} -> 
+            logger:warning("Failed to send error response for request ~p (code ~p): ~p", 
+                          [Id, Code, Reason]),
+            ok
+    end.
+
+-spec send_notification_safe(state(), binary(), map()) -> ok.
+send_notification_safe(State, Method, Params) ->
+    case send_notification(State, Method, Params) of
+        ok -> 
+            ok;
+        {error, Reason} -> 
+            logger:warning("Failed to send notification ~p: ~p", [Method, Reason]),
+            ok
+    end.
+
+-spec send_progress_notification_safe(state(), binary() | integer(), float(), float()) -> ok.
+send_progress_notification_safe(State, Token, Progress, Total) ->
+    case send_progress_notification(State, Token, Progress, Total) of
+        ok -> 
+            ok;
+        {error, Reason} -> 
+            logger:warning("Failed to send progress notification for token ~p: ~p", 
+                          [Token, Reason]),
+            ok
+    end.
 
 %%====================================================================
 %% Internal functions - Response Building
@@ -493,15 +537,15 @@ handle_read_resource(Id, Uri, State) ->
             try
                 Content = Handler(Uri),
                 ContentItem = encode_content_item(Content, Resource, Uri),
-                send_response(State, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]})
+                send_response_safe(State, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]})
             catch
                 Class:Reason:Stack ->
                     logger:error("Resource handler crashed: ~p:~p~n~p",
                                  [Class, Reason, Stack]),
-                    send_error(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+                    send_error_safe(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
             end;
         {error, not_found} ->
-            send_error(State, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
+            send_error_safe(State, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
     end.
 
 -spec find_resource(binary(), state()) ->
@@ -597,13 +641,13 @@ encode_tool(#mcp_tool{} = Tool) ->
 handle_tool_call(Id, Name, Arguments, State) ->
     case maps:get(Name, State#state.tools, undefined) of
         undefined ->
-            send_error(State, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
+            send_error_safe(State, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
         {_Tool, Handler, Schema} ->
             case validate_tool_input(Arguments, Schema) of
                 ok ->
                     execute_tool(Id, Handler, Arguments, State);
                 {error, ValidationError} ->
-                    send_error(State, Id, ?MCP_ERROR_VALIDATION_FAILED, ValidationError)
+                    send_error_safe(State, Id, ?MCP_ERROR_VALIDATION_FAILED, ValidationError)
             end
     end.
 
@@ -636,12 +680,12 @@ execute_tool(Id, Handler, Arguments, State) ->
     try
         Result = Handler(Arguments),
         ContentList = normalize_tool_result(Result),
-        send_response(State, Id, #{?MCP_PARAM_CONTENT => ContentList})
+        send_response_safe(State, Id, #{?MCP_PARAM_CONTENT => ContentList})
     catch
         Class:Reason:Stack ->
             logger:error("Tool handler crashed: ~p:~p~n~p",
                          [Class, Reason, Stack]),
-            send_error(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+            send_error_safe(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
     end.
 
 -spec normalize_tool_result(term()) -> [map()].
@@ -685,7 +729,7 @@ encode_prompt_argument(#mcp_prompt_argument{} = Arg) ->
 handle_get_prompt(Id, Name, Arguments, State) ->
     case maps:get(Name, State#state.prompts, undefined) of
         undefined ->
-            send_error(State, Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND);
+            send_error_safe(State, Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND);
         {Prompt, Handler} ->
             execute_prompt(Id, Prompt, Handler, Arguments, State)
     end.
@@ -700,12 +744,12 @@ execute_prompt(Id, Prompt, Handler, Arguments, State) ->
         },
         Response1 = maybe_add_field(Response, ?MCP_PARAM_DESCRIPTION,
                                     Prompt#mcp_prompt.description),
-        send_response(State, Id, Response1)
+        send_response_safe(State, Id, Response1)
     catch
         Class:Reason:Stack ->
             logger:error("Prompt handler crashed: ~p:~p~n~p",
                          [Class, Reason, Stack]),
-            send_error(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+            send_error_safe(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
     end.
 
 -spec normalize_prompt_result(term()) -> [map()].
@@ -745,8 +789,8 @@ notify_subscribers(Uri, Metadata, State) ->
                 ?MCP_PARAM_METADATA => Metadata
             },
             sets:fold(fun(Subscriber, _) ->
-                Subscriber ! {resource_updated, Uri, Metadata},
+                _ = Subscriber ! {resource_updated, Uri, Metadata},
                 ok
             end, ok, Subscribers),
-            send_notification(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_UPDATED, Params)
+            send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_UPDATED, Params)
     end.

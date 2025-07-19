@@ -174,7 +174,7 @@ stdin_available() ->
         _ -> true
     end.
 
--spec read_loop(pid(), pid()) -> no_return().
+%% Alternative approach - more concise:
 read_loop(Parent, Owner) ->
     case io:get_line("") of
         eof ->
@@ -184,24 +184,19 @@ read_loop(Parent, Owner) ->
             logger:error("Read error: ~p", [Reason]),
             exit({read_error, Reason});
         Line when is_list(Line) ->
-            BinaryLine = iolist_to_binary(Line),
-            CleanLine = trim_line(BinaryLine),
-            case byte_size(CleanLine) of
-                0 ->
-                    ok;  % Skip empty lines
-                _ ->
-                    Parent ! {line, CleanLine}
-            end,
+            process_line(Parent, iolist_to_binary(Line)),
             read_loop(Parent, Owner);
         Line when is_binary(Line) ->
-            CleanLine = trim_line(Line),
-            case byte_size(CleanLine) of
-                0 ->
-                    ok;  % Skip empty lines
-                _ ->
-                    Parent ! {line, CleanLine}
-            end,
+            process_line(Parent, Line),
             read_loop(Parent, Owner)
+    end.
+
+%% Helper function to handle line processing
+process_line(Parent, Line) ->
+    CleanLine = trim_line(Line),
+    case byte_size(CleanLine) of
+        0 -> ok;  %% Skip empty lines
+        _ -> Parent ! {line, CleanLine}, ok  %% Send and return ok
     end.
 
 -spec trim_line(binary()) -> binary().

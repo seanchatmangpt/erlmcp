@@ -81,14 +81,14 @@ close(_) ->
 -spec init(tcp_opts()) -> {ok, state()}.
 init(Opts) ->
     process_flag(trap_exit, true),
-    
+
     Host = maps:get(host, Opts),
     Port = maps:get(port, Opts),
     Owner = maps:get(owner, Opts),
-    
+
     %% Monitor the owner process
     monitor(process, Owner),
-    
+
     State = #{
         socket => undefined,
         owner => Owner,
@@ -99,16 +99,16 @@ init(Opts) ->
         connected => false,
         reconnect_timer => undefined,
         reconnect_attempts => 0,
-        max_reconnect_attempts => maps:get(max_reconnect_attempts, Opts, 
+        max_reconnect_attempts => maps:get(max_reconnect_attempts, Opts,
                                           ?DEFAULT_MAX_RECONNECT_ATTEMPTS)
     },
-    
+
     %% Attempt initial connection
     self() ! connect,
-    
+
     {ok, State}.
 
--spec handle_call(term(), {pid(), term()}, state()) -> 
+-spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()} | {noreply, state()}.
 
 handle_call({connect, NewOpts}, _From, State) ->
@@ -118,7 +118,7 @@ handle_call({connect, NewOpts}, _From, State) ->
         port := maps:get(port, NewOpts, maps:get(port, State)),
         options := build_socket_options(NewOpts)
     },
-    
+
     %% Disconnect if currently connected
     FinalState = case maps:get(socket, NewState) of
         undefined -> NewState;
@@ -126,10 +126,10 @@ handle_call({connect, NewOpts}, _From, State) ->
             gen_tcp:close(Socket),
             NewState#{socket := undefined, connected := false}
     end,
-    
+
     %% Trigger reconnection
     self() ! connect,
-    
+
     {reply, ok, FinalState};
 
 handle_call({send, Data}, _From, #{connected := true, socket := Socket} = State) ->
@@ -156,7 +156,7 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
--spec handle_info(term(), state()) -> 
+-spec handle_info(term(), state()) ->
     {noreply, state()} | {stop, term(), state()}.
 
 handle_info(connect, State) ->
@@ -165,15 +165,15 @@ handle_info(connect, State) ->
 handle_info({tcp, Socket, Data}, #{socket := Socket, buffer := Buffer} = State) ->
     %% Accumulate data in buffer
     NewBuffer = <<Buffer/binary, Data/binary>>,
-    
+
     %% Process complete messages
     {Messages, RemainingBuffer} = extract_messages(NewBuffer),
-    
+
     %% Send messages to owner
     lists:foreach(fun(Msg) ->
         maps:get(owner, State) ! {transport_message, Msg}
     end, Messages),
-    
+
     {noreply, State#{buffer := RemainingBuffer}};
 
 handle_info({tcp_closed, Socket}, #{socket := Socket} = State) ->
@@ -187,7 +187,7 @@ handle_info({tcp_error, Socket, Reason}, #{socket := Socket} = State) ->
 handle_info(reconnect, State) ->
     {noreply, attempt_connection(State#{reconnect_timer := undefined})};
 
-handle_info({'DOWN', _MonitorRef, process, Owner, Reason}, 
+handle_info({'DOWN', _MonitorRef, process, Owner, Reason},
             #{owner := Owner} = State) ->
     logger:info("Owner process ~p died: ~p", [Owner, Reason]),
     {stop, {owner_died, Reason}, State};
@@ -203,7 +203,7 @@ handle_info(_Info, State) ->
 terminate(_Reason, State) ->
     %% Cancel reconnect timer if active
     cancel_reconnect_timer(State),
-    
+
     %% Close socket if connected
     case maps:get(socket, State, undefined) of
         undefined -> ok;
@@ -229,7 +229,7 @@ build_socket_options(Opts) ->
         {send_timeout, 5000},
         {send_timeout_close, true}
     ],
-    
+
     %% Add optional settings
     OptionalOpts = lists:foldl(fun({Key, OptKey}, Acc) ->
         case maps:get(Key, Opts, undefined) of
@@ -241,7 +241,7 @@ build_socket_options(Opts) ->
         {nodelay, nodelay},
         {buffer_size, buffer}
     ]),
-    
+
     %% Ensure we have appropriate buffer sizes
     BufferSize = maps:get(buffer_size, Opts, ?DEFAULT_BUFFER_SIZE),
     [
@@ -259,15 +259,15 @@ attempt_connection(#{reconnect_attempts := Attempts,
 
 attempt_connection(#{host := Host, port := Port, options := Options} = State) ->
     ConnectTimeout = maps:get(connect_timeout, State, ?DEFAULT_CONNECT_TIMEOUT),
-    
+
     logger:info("Attempting TCP connection to ~s:~p", [Host, Port]),
-    
+
     case gen_tcp:connect(Host, Port, Options, ConnectTimeout) of
         {ok, Socket} ->
             logger:info("TCP connection established"),
             %% Notify owner of successful connection
             maps:get(owner, State) ! {transport_connected, self()},
-            
+
             State#{
                 socket := Socket,
                 connected := true,
@@ -285,17 +285,17 @@ handle_disconnect(#{socket := undefined} = State, _Reason) ->
 handle_disconnect(#{socket := Socket} = State, Reason) ->
     %% Close the socket
     catch gen_tcp:close(Socket),
-    
+
     %% Notify owner
     maps:get(owner, State) ! {transport_disconnected, self(), Reason},
-    
+
     %% Schedule reconnection
     NewState = State#{
         socket := undefined,
         connected := false,
         buffer := <<>>
     },
-    
+
     schedule_reconnect(NewState).
 
 -spec schedule_reconnect(state()) -> state().
@@ -305,12 +305,12 @@ schedule_reconnect(#{reconnect_timer := Timer} = State) when Timer =/= undefined
 schedule_reconnect(#{reconnect_attempts := Attempts} = State) ->
     %% Calculate backoff delay
     Delay = calculate_backoff(Attempts),
-    
-    logger:info("Scheduling reconnection in ~p ms (attempt ~p)", 
+
+    logger:info("Scheduling reconnection in ~p ms (attempt ~p)",
                 [Delay, Attempts + 1]),
-    
+
     Timer = erlang:send_after(Delay, self(), reconnect),
-    
+
     State#{
         reconnect_timer := Timer,
         reconnect_attempts := Attempts + 1
@@ -319,7 +319,7 @@ schedule_reconnect(#{reconnect_attempts := Attempts} = State) ->
 -spec calculate_backoff(non_neg_integer()) -> pos_integer().
 calculate_backoff(Attempts) ->
     %% Exponential backoff with jitter
-    BaseDelay = min(?INITIAL_RECONNECT_DELAY * (1 bsl Attempts), 
+    BaseDelay = min(?INITIAL_RECONNECT_DELAY * (1 bsl Attempts),
                     ?MAX_RECONNECT_DELAY),
     Jitter = rand:uniform(BaseDelay div 4),
     BaseDelay + Jitter.
@@ -328,8 +328,10 @@ calculate_backoff(Attempts) ->
 cancel_reconnect_timer(#{reconnect_timer := undefined}) ->
     ok;
 cancel_reconnect_timer(#{reconnect_timer := Timer}) ->
-    erlang:cancel_timer(Timer),
-    ok.
+    case erlang:cancel_timer(Timer) of
+        false -> ok;           %% Timer already fired
+        _ -> ok         %% Timer cancelled, TimeLeft is remaining milliseconds
+    end.
 
 -spec extract_messages(binary()) -> {[binary()], binary()}.
 extract_messages(Buffer) ->

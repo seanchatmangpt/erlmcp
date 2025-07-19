@@ -58,7 +58,7 @@
 %% Macros for common patterns
 -define(CALL_TIMEOUT(State), State#state.timeout).
 -define(IS_INITIALIZED(State), State#state.initialized).
--define(CHECK_CAPABILITY(State, Cap), 
+-define(CHECK_CAPABILITY(State, Cap),
     case validate_capability(State, Cap) of
         ok -> do_request;
         {error, _} = Error -> Error
@@ -76,12 +76,12 @@ start_link(TransportOpts) ->
 start_link(TransportOpts, Options) ->
     gen_server:start_link(?MODULE, [TransportOpts, Options], []).
 
--spec initialize(client(), #mcp_client_capabilities{}) -> 
+-spec initialize(client(), #mcp_client_capabilities{}) ->
     {ok, map()} | {error, term()}.
 initialize(Client, Capabilities) ->
     initialize(Client, Capabilities, #{}).
 
--spec initialize(client(), #mcp_client_capabilities{}, map()) -> 
+-spec initialize(client(), #mcp_client_capabilities{}, map()) ->
     {ok, map()} | {error, term()}.
 initialize(Client, Capabilities, Options) ->
     gen_server:call(Client, {initialize, Capabilities, Options}, infinity).
@@ -148,9 +148,9 @@ with_batch(Client, BatchFun) when is_function(BatchFun, 1) ->
             erlang:raise(Class, Reason, Stacktrace)
     end.
 
--spec send_batch_request(client(), batch_id(), binary(), map()) -> 
+-spec send_batch_request(client(), batch_id(), binary(), map()) ->
     {ok, request_id()} | {error, term()}.
-send_batch_request(Client, BatchId, Method, Params) 
+send_batch_request(Client, BatchId, Method, Params)
   when is_reference(BatchId), is_binary(Method), is_map(Params) ->
     gen_server:call(Client, {add_to_batch, BatchId, Method, Params}).
 
@@ -195,8 +195,8 @@ init([TransportOpts, Options]) ->
             {stop, Reason}
     end.
 
--spec handle_call(term(), {pid(), term()}, state()) -> 
-    {reply, term(), state()} | 
+-spec handle_call(term(), {pid(), term()}, state()) ->
+    {reply, term(), state()} |
     {noreply, state()} |
     {stop, term(), term(), state()}.
 
@@ -378,7 +378,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %%====================================================================
 
--spec init_transport(transport_opts()) -> 
+-spec init_transport(transport_opts()) ->
     {ok, module(), term()} | {error, term()}.
 init_transport({stdio, _Opts}) ->
     {ok, erlmcp_transport_stdio, self()};
@@ -395,7 +395,7 @@ close_transport(#state{transport = Transport, transport_state = TransportState})
     catch Transport:close(TransportState),
     ok.
 
--spec send_request(state(), binary(), map(), {atom(), pid()}) -> 
+-spec send_request(state(), binary(), map(), {atom(), pid()}) ->
     {noreply, state()} | {reply, {error, term()}, state()}.
 send_request(State, Method, Params, RequestInfo) ->
     RequestId = State#state.request_id,
@@ -467,7 +467,7 @@ validate_capability(#state{capabilities = undefined}, _) ->
 validate_capability(#state{capabilities = Caps}, Capability) ->
     check_server_capability(Caps, Capability).
 
--spec check_server_capability(#mcp_server_capabilities{}, atom()) -> 
+-spec check_server_capability(#mcp_server_capabilities{}, atom()) ->
     ok | {error, capability_not_supported}.
 check_server_capability(Caps, resources) ->
     check_capability_enabled(Caps#mcp_server_capabilities.resources);
@@ -478,14 +478,14 @@ check_server_capability(Caps, prompts) ->
 check_server_capability(_Caps, _) ->
     ok.
 
--spec check_capability_enabled(#mcp_capability{} | undefined) -> 
+-spec check_capability_enabled(#mcp_capability{} | undefined) ->
     ok | {error, capability_not_supported}.
 check_capability_enabled(#mcp_capability{enabled = true}) ->
     ok;
 check_capability_enabled(_) ->
     {error, capability_not_supported}.
 
--spec handle_response(request_id(), {ok, map()} | {error, map()}, state()) -> 
+-spec handle_response(request_id(), {ok, map()} | {error, map()}, state()) ->
     {noreply, state()}.
 handle_response(Id, Result, State) ->
     case maps:take(Id, State#state.pending_requests) of
@@ -573,7 +573,7 @@ spawn_handler(undefined, Method, _Params) ->
     logger:warning("No handler for: ~p", [Method]),
     ok;
 spawn_handler(Handler, Method, Params) when is_function(Handler, 2) ->
-    spawn(fun() -> 
+    spawn(fun() ->
         try Handler(Method, Params)
         catch Class:Reason:Stack ->
             logger:error("Handler crashed: ~p:~p~n~p", [Class, Reason, Stack])
@@ -581,7 +581,7 @@ spawn_handler(Handler, Method, Params) when is_function(Handler, 2) ->
     end),
     ok;
 spawn_handler({Module, Function}, Method, Params) ->
-    spawn(fun() -> 
+    spawn(fun() ->
         try Module:Function(Method, Params)
         catch Class:Reason:Stack ->
             logger:error("Handler crashed: ~p:~p~n~p", [Class, Reason, Stack])
@@ -597,5 +597,10 @@ execute_batch_requests([], _State) ->
     ok;
 execute_batch_requests([{RequestId, Method, Params} | Rest], State) ->
     Json = erlmcp_json_rpc:encode_request(RequestId, Method, Params),
-    send_message(State, Json),
-    execute_batch_requests(Rest, State).
+    case send_message(State, Json) of
+        ok ->
+            execute_batch_requests(Rest, State);
+        {error, Reason} ->
+            logger:warning("Failed to send batch request ~p: ~p", [RequestId, Reason]),
+            execute_batch_requests(Rest, State)
+    end.
