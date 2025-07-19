@@ -3,9 +3,14 @@
 
 -include("erlmcp.hrl").
 
+%% gen_server functions
+-export([start_link/2, stop/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
 %% API exports
 -export([
-    start_link/2,
     add_resource/3,
     add_resource_template/4,
     add_tool/3,
@@ -16,12 +21,8 @@
     unsubscribe_resource/2,
     report_progress/4,
     notify_resource_updated/3,
-    notify_resources_changed/1,
-    stop/1
+    notify_resources_changed/1
 ]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
 -type server() :: pid().
@@ -49,61 +50,13 @@
 -type state() :: #state{}.
 
 %%====================================================================
-%% API Functions
+%% gen_server functions
 %%====================================================================
 
 -spec start_link(transport_opts(), #mcp_server_capabilities{}) ->
     {ok, server()} | {error, term()}.
 start_link(TransportOpts, Capabilities) ->
     gen_server:start_link(?MODULE, [TransportOpts, Capabilities], []).
-
--spec add_resource(server(), binary(), resource_handler()) -> ok.
-add_resource(Server, Uri, Handler) when is_binary(Uri), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_resource, Uri, Handler}).
-
--spec add_resource_template(server(), binary(), binary(), resource_handler()) -> ok.
-add_resource_template(Server, UriTemplate, Name, Handler)
-  when is_binary(UriTemplate), is_binary(Name), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_resource_template, UriTemplate, Name, Handler}).
-
--spec add_tool(server(), binary(), tool_handler()) -> ok.
-add_tool(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_tool, Name, Handler}).
-
--spec add_tool_with_schema(server(), binary(), tool_handler(), map()) -> ok.
-add_tool_with_schema(Server, Name, Handler, Schema)
-  when is_binary(Name), is_function(Handler, 1), is_map(Schema) ->
-    gen_server:call(Server, {add_tool_with_schema, Name, Handler, Schema}).
-
--spec add_prompt(server(), binary(), prompt_handler()) -> ok.
-add_prompt(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
-    gen_server:call(Server, {add_prompt, Name, Handler}).
-
--spec add_prompt_with_args(server(), binary(), prompt_handler(), [#mcp_prompt_argument{}]) -> ok.
-add_prompt_with_args(Server, Name, Handler, Arguments)
-  when is_binary(Name), is_function(Handler, 1), is_list(Arguments) ->
-    gen_server:call(Server, {add_prompt_with_args, Name, Handler, Arguments}).
-
--spec subscribe_resource(server(), binary(), pid()) -> ok.
-subscribe_resource(Server, Uri, Subscriber) when is_binary(Uri), is_pid(Subscriber) ->
-    gen_server:call(Server, {subscribe_resource, Uri, Subscriber}).
-
--spec unsubscribe_resource(server(), binary()) -> ok.
-unsubscribe_resource(Server, Uri) when is_binary(Uri) ->
-    gen_server:call(Server, {unsubscribe_resource, Uri}).
-
--spec report_progress(server(), binary() | integer(), float(), float()) -> ok.
-report_progress(Server, Token, Progress, Total)
-  when is_number(Progress), is_number(Total) ->
-    gen_server:cast(Server, {report_progress, Token, Progress, Total}).
-
--spec notify_resource_updated(server(), binary(), map()) -> ok.
-notify_resource_updated(Server, Uri, Metadata) when is_binary(Uri), is_map(Metadata) ->
-    gen_server:cast(Server, {notify_resource_updated, Uri, Metadata}).
-
--spec notify_resources_changed(server()) -> ok.
-notify_resources_changed(Server) ->
-    gen_server:cast(Server, notify_resources_changed).
 
 -spec stop(server()) -> ok.
 stop(Server) ->
@@ -250,6 +203,58 @@ terminate(_Reason, State) ->
 -spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+-spec add_resource(server(), binary(), resource_handler()) -> ok.
+add_resource(Server, Uri, Handler) when is_binary(Uri), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_resource, Uri, Handler}).
+
+-spec add_resource_template(server(), binary(), binary(), resource_handler()) -> ok.
+add_resource_template(Server, UriTemplate, Name, Handler)
+  when is_binary(UriTemplate), is_binary(Name), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_resource_template, UriTemplate, Name, Handler}).
+
+-spec add_tool(server(), binary(), tool_handler()) -> ok.
+add_tool(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_tool, Name, Handler}).
+
+-spec add_tool_with_schema(server(), binary(), tool_handler(), map()) -> ok.
+add_tool_with_schema(Server, Name, Handler, Schema)
+  when is_binary(Name), is_function(Handler, 1), is_map(Schema) ->
+    gen_server:call(Server, {add_tool_with_schema, Name, Handler, Schema}).
+
+-spec add_prompt(server(), binary(), prompt_handler()) -> ok.
+add_prompt(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_prompt, Name, Handler}).
+
+-spec add_prompt_with_args(server(), binary(), prompt_handler(), [#mcp_prompt_argument{}]) -> ok.
+add_prompt_with_args(Server, Name, Handler, Arguments)
+  when is_binary(Name), is_function(Handler, 1), is_list(Arguments) ->
+    gen_server:call(Server, {add_prompt_with_args, Name, Handler, Arguments}).
+
+-spec subscribe_resource(server(), binary(), pid()) -> ok.
+subscribe_resource(Server, Uri, Subscriber) when is_binary(Uri), is_pid(Subscriber) ->
+    gen_server:call(Server, {subscribe_resource, Uri, Subscriber}).
+
+-spec unsubscribe_resource(server(), binary()) -> ok.
+unsubscribe_resource(Server, Uri) when is_binary(Uri) ->
+    gen_server:call(Server, {unsubscribe_resource, Uri}).
+
+-spec report_progress(server(), binary() | integer(), float(), float()) -> ok.
+report_progress(Server, Token, Progress, Total)
+  when is_number(Progress), is_number(Total) ->
+    gen_server:cast(Server, {report_progress, Token, Progress, Total}).
+
+-spec notify_resource_updated(server(), binary(), map()) -> ok.
+notify_resource_updated(Server, Uri, Metadata) when is_binary(Uri), is_map(Metadata) ->
+    gen_server:cast(Server, {notify_resource_updated, Uri, Metadata}).
+
+-spec notify_resources_changed(server()) -> ok.
+notify_resources_changed(Server) ->
+    gen_server:cast(Server, notify_resources_changed).
 
 %%====================================================================
 %% Internal functions - Request Handling
