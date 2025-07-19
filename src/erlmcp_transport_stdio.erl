@@ -1,3 +1,21 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% stdio Transport module - an abstraction layer for stdio MCP comms
+%%%
+%%% Key Responsibilities:
+%%% 1. Transport Abstraction
+%%%     - Implements the transport behavior interface
+%%%     - Adheres to a transport-agnostic API
+%%% 2. Stdio Communication Management
+%%%     - Spawns a background process to continuously read from stdin
+%%%     - Provides a means of writing JSON messages to stdout
+%%%     - Handles line-based message framing
+%%%
+%%% This module is specifically designed to be used by erlmcp_server
+%%% when the transport is configured as `{stdio, []}`.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(erlmcp_transport_stdio).
 -behaviour(gen_server).
 
@@ -53,16 +71,16 @@ close(_) ->
 -spec init([pid()]) -> {ok, state()}.
 init([Owner]) ->
     process_flag(trap_exit, true),
-    
+
     % Check if we're in test mode by looking at the process dictionary
     % or checking if stdin is available
     TestMode = is_test_environment(),
-    
+
     State = #state{
         owner = Owner,
         test_mode = TestMode
     },
-    
+
     % Only start the reader if we're not in test mode
     case TestMode of
         true ->
@@ -135,13 +153,13 @@ is_test_environment() ->
         _ ->
             % Check if EUnit is running
             case whereis(eunit_proc) of
-                undefined -> 
+                undefined ->
                     % Check if we can read from stdin without blocking
                     case stdin_available() of
                         true -> false;
                         false -> true  % Assume test mode if stdin not available
                     end;
-                _ -> 
+                _ ->
                     true  % EUnit is running
             end
     end.

@@ -135,7 +135,7 @@ handle_call({add_resource, Uri, Handler}, _From, State) ->
     Resource = #mcp_resource{
         uri = Uri,
         name = Uri,
-        mime_type = <<"text/plain">>
+        mime_type = ?MCP_MIME_TEXT_PLAIN
     },
     NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
     {reply, ok, State#state{resources = NewResources}};
@@ -144,7 +144,7 @@ handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) -
     Template = #mcp_resource_template{
         uri_template = UriTemplate,
         name = Name,
-        mime_type = <<"text/plain">>
+        mime_type = ?MCP_MIME_TEXT_PLAIN
     },
     NewTemplates = maps:put(UriTemplate, {Template, Handler}, State#state.resource_templates),
     {reply, ok, State#state{resource_templates = NewTemplates}};
@@ -207,7 +207,7 @@ handle_cast({notify_resource_updated, Uri, Metadata}, State) ->
     {noreply, State};
 
 handle_cast(notify_resources_changed, State) ->
-    send_notification(State, <<"resources/list_changed">>, #{}),
+    send_notification(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED, #{}),
     {noreply, State};
 
 handle_cast(_Msg, State) ->
@@ -229,16 +229,12 @@ handle_info({transport_message, Data}, State) ->
 handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.transport_state ->
     case Reason of
         normal ->
-            % Transport finished normally (e.g., in test mode or EOF)
-            % Don't crash the server, just log it
             logger:info("Transport process finished normally"),
             {noreply, State#state{transport_state = undefined}};
         shutdown ->
-            % Controlled shutdown
             logger:info("Transport process shut down"),
             {stop, normal, State};
         _ ->
-            % Unexpected termination
             logger:error("Transport process died: ~p", [Reason]),
             {stop, {transport_died, Reason}, State}
     end;
@@ -262,83 +258,83 @@ code_change(_OldVsn, State, _Extra) ->
 -spec handle_request(json_rpc_id(), binary(), json_rpc_params(), state()) ->
     {noreply, state()}.
 
-handle_request(Id, <<"initialize">>, _Params, State) ->
+handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, State) ->
     Response = build_initialize_response(State#state.capabilities),
     send_response(State, Id, Response),
     {noreply, State#state{initialized = true}};
 
-handle_request(Id, <<"resources/list">>, _Params, State) ->
+handle_request(Id, ?MCP_METHOD_RESOURCES_LIST, _Params, State) ->
     Resources = list_all_resources(State),
-    send_response(State, Id, #{<<"resources">> => Resources}),
+    send_response(State, Id, #{?MCP_PARAM_RESOURCES => Resources}),
     {noreply, State};
 
-handle_request(Id, <<"resources/read">>, Params, State) ->
-    case maps:get(<<"uri">>, Params, undefined) of
+handle_request(Id, ?MCP_METHOD_RESOURCES_READ, Params, State) ->
+    case maps:get(?MCP_PARAM_URI, Params, undefined) of
         undefined ->
-            send_error(State, Id, -32602, <<"Missing uri parameter">>);
+            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
             handle_read_resource(Id, Uri, State)
     end,
     {noreply, State};
 
-handle_request(Id, <<"tools/list">>, _Params, State) ->
+handle_request(Id, ?MCP_METHOD_TOOLS_LIST, _Params, State) ->
     Tools = list_all_tools(State),
-    send_response(State, Id, #{<<"tools">> => Tools}),
+    send_response(State, Id, #{?MCP_PARAM_TOOLS => Tools}),
     {noreply, State};
 
-handle_request(Id, <<"tools/call">>, Params, State) ->
-    Name = maps:get(<<"name">>, Params, undefined),
-    Args = maps:get(<<"arguments">>, Params, #{}),
+handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, State) ->
+    Name = maps:get(?MCP_PARAM_NAME, Params, undefined),
+    Args = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
     case {Name, Args} of
         {undefined, _} ->
-            send_error(State, Id, -32602, <<"Missing tool name">>);
+            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
         {ToolName, Arguments} ->
             handle_tool_call(Id, ToolName, Arguments, State)
     end,
     {noreply, State};
 
-handle_request(Id, <<"resources/templates/list">>, _Params, State) ->
+handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, _Params, State) ->
     Templates = list_all_templates(State),
-    send_response(State, Id, #{<<"resourceTemplates">> => Templates}),
+    send_response(State, Id, #{?MCP_PARAM_RESOURCE_TEMPLATES => Templates}),
     {noreply, State};
 
-handle_request(Id, <<"resources/subscribe">>, Params, State) ->
-    case maps:get(<<"uri">>, Params, undefined) of
+handle_request(Id, ?MCP_METHOD_RESOURCES_SUBSCRIBE, Params, State) ->
+    case maps:get(?MCP_PARAM_URI, Params, undefined) of
         undefined ->
-            send_error(State, Id, -32602, <<"Missing uri parameter">>);
+            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
             NewSubscriptions = add_subscription(Uri, self(), State#state.subscriptions),
             send_response(State, Id, #{}),
             {noreply, State#state{subscriptions = NewSubscriptions}}
     end;
 
-handle_request(Id, <<"resources/unsubscribe">>, Params, State) ->
-    case maps:get(<<"uri">>, Params, undefined) of
+handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, State) ->
+    case maps:get(?MCP_PARAM_URI, Params, undefined) of
         undefined ->
-            send_error(State, Id, -32602, <<"Missing uri parameter">>);
+            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
             NewSubscriptions = remove_subscription(Uri, State#state.subscriptions),
             send_response(State, Id, #{}),
             {noreply, State#state{subscriptions = NewSubscriptions}}
     end;
 
-handle_request(Id, <<"prompts/list">>, _Params, State) ->
+handle_request(Id, ?MCP_METHOD_PROMPTS_LIST, _Params, State) ->
     Prompts = list_all_prompts(State),
-    send_response(State, Id, #{<<"prompts">> => Prompts}),
+    send_response(State, Id, #{?MCP_PARAM_PROMPTS => Prompts}),
     {noreply, State};
 
-handle_request(Id, <<"prompts/get">>, Params, State) ->
-    case maps:get(<<"name">>, Params, undefined) of
+handle_request(Id, ?MCP_METHOD_PROMPTS_GET, Params, State) ->
+    case maps:get(?MCP_PARAM_NAME, Params, undefined) of
         undefined ->
-            send_error(State, Id, -32602, <<"Missing prompt name">>);
+            send_error(State, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_PROMPT_NAME);
         Name ->
-            Arguments = maps:get(<<"arguments">>, Params, #{}),
+            Arguments = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
             handle_get_prompt(Id, Name, Arguments, State)
     end,
     {noreply, State};
 
 handle_request(Id, _Method, _Params, State) ->
-    send_error(State, Id, -32601, <<"Method not found">>),
+    send_error(State, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
     {noreply, State}.
 
 -spec handle_notification(binary(), map(), state()) -> {noreply, state()}.
@@ -352,7 +348,6 @@ handle_notification(_Method, _Params, State) ->
 -spec init_transport(transport_opts()) ->
     {ok, module(), term()} | {error, term()}.
 init_transport({stdio, _Opts}) ->
-    %% For stdio, start the transport process and return its PID
     case erlmcp_transport_stdio:start_link(self()) of
         {ok, Pid} ->
             {ok, erlmcp_transport_stdio, Pid};
@@ -400,11 +395,11 @@ send_notification(State, Method, Params) ->
     ok | {error, term()}.
 send_progress_notification(State, Token, Progress, Total) ->
     Params = #{
-        <<"progressToken">> => Token,
-        <<"progress">> => Progress,
-        <<"total">> => Total
+        ?MCP_PARAM_PROGRESS_TOKEN => Token,
+        ?MCP_PARAM_PROGRESS => Progress,
+        ?MCP_PARAM_TOTAL => Total
     },
-    send_notification(State, <<"notifications/progress">>, Params).
+    send_notification(State, ?MCP_METHOD_NOTIFICATIONS_PROGRESS, Params).
 
 %%====================================================================
 %% Internal functions - Response Building
@@ -412,27 +407,29 @@ send_progress_notification(State, Token, Progress, Total) ->
 
 -spec build_initialize_response(#mcp_server_capabilities{}) -> map().
 build_initialize_response(Capabilities) ->
+    {ok, Version} = application:get_key(list_to_atom(binary_to_list(?APP_NAME)), vsn),
     #{
-        <<"protocolVersion">> => ?MCP_VERSION,
-        <<"capabilities">> => encode_server_capabilities(Capabilities),
-        <<"serverInfo">> => #{
-            <<"name">> => <<"erlmcp">>,
-            <<"version">> => <<"0.1.0">>
+        ?MCP_FIELD_PROTOCOL_VERSION => ?MCP_VERSION,
+        ?MCP_FIELD_CAPABILITIES => encode_server_capabilities(Capabilities),
+        ?MCP_FIELD_SERVER_INFO => #{
+            ?MCP_INFO_NAME => ?APP_NAME,
+            ?MCP_INFO_VERSION => list_to_binary(Version)
         }
     }.
 
 -spec encode_server_capabilities(#mcp_server_capabilities{}) -> map().
 encode_server_capabilities(#mcp_server_capabilities{} = Caps) ->
     Base = #{},
-    Base1 = maybe_add_server_capability(Base, <<"resources">>,
+    Base1 = maybe_add_server_capability(Base, ?MCP_CAPABILITY_RESOURCES,
                                         Caps#mcp_server_capabilities.resources,
-                                        #{<<"subscribe">> => true, <<"listChanged">> => true}),
-    Base2 = maybe_add_server_capability(Base1, <<"tools">>,
+                                        #{?MCP_FEATURE_SUBSCRIBE => true,
+                                          ?MCP_FEATURE_LIST_CHANGED => true}),
+    Base2 = maybe_add_server_capability(Base1, ?MCP_CAPABILITY_TOOLS,
                                         Caps#mcp_server_capabilities.tools, #{}),
-    Base3 = maybe_add_server_capability(Base2, <<"prompts">>,
+    Base3 = maybe_add_server_capability(Base2, ?MCP_CAPABILITY_PROMPTS,
                                         Caps#mcp_server_capabilities.prompts,
-                                        #{<<"listChanged">> => true}),
-    maybe_add_server_capability(Base3, <<"logging">>,
+                                        #{?MCP_FEATURE_LIST_CHANGED => true}),
+    maybe_add_server_capability(Base3, ?MCP_CAPABILITY_LOGGING,
                                 Caps#mcp_server_capabilities.logging, #{}).
 
 -spec maybe_add_server_capability(map(), binary(), #mcp_capability{} | undefined, map()) -> map().
@@ -462,21 +459,21 @@ list_all_templates(State) ->
 -spec encode_resource(#mcp_resource{}) -> map().
 encode_resource(#mcp_resource{} = Resource) ->
     Base = #{
-        <<"uri">> => Resource#mcp_resource.uri,
-        <<"name">> => Resource#mcp_resource.name
+        ?MCP_PARAM_URI => Resource#mcp_resource.uri,
+        ?MCP_PARAM_NAME => Resource#mcp_resource.name
     },
-    Base1 = maybe_add_field(Base, <<"description">>, Resource#mcp_resource.description),
-    Base2 = maybe_add_field(Base1, <<"mimeType">>, Resource#mcp_resource.mime_type),
-    maybe_add_field(Base2, <<"metadata">>, Resource#mcp_resource.metadata).
+    Base1 = maybe_add_field(Base, ?MCP_PARAM_DESCRIPTION, Resource#mcp_resource.description),
+    Base2 = maybe_add_field(Base1, ?MCP_PARAM_MIME_TYPE, Resource#mcp_resource.mime_type),
+    maybe_add_field(Base2, ?MCP_PARAM_METADATA, Resource#mcp_resource.metadata).
 
 -spec encode_resource_template(#mcp_resource_template{}) -> map().
 encode_resource_template(#mcp_resource_template{} = Template) ->
     Base = #{
-        <<"uriTemplate">> => Template#mcp_resource_template.uri_template,
-        <<"name">> => Template#mcp_resource_template.name
+        ?MCP_PARAM_URI_TEMPLATE => Template#mcp_resource_template.uri_template,
+        ?MCP_PARAM_NAME => Template#mcp_resource_template.name
     },
-    Base1 = maybe_add_field(Base, <<"description">>, Template#mcp_resource_template.description),
-    maybe_add_field(Base1, <<"mimeType">>, Template#mcp_resource_template.mime_type).
+    Base1 = maybe_add_field(Base, ?MCP_PARAM_DESCRIPTION, Template#mcp_resource_template.description),
+    maybe_add_field(Base1, ?MCP_PARAM_MIME_TYPE, Template#mcp_resource_template.mime_type).
 
 -spec maybe_add_field(map(), binary(), term()) -> map().
 maybe_add_field(Map, _Key, undefined) ->
@@ -491,15 +488,15 @@ handle_read_resource(Id, Uri, State) ->
             try
                 Content = Handler(Uri),
                 ContentItem = encode_content_item(Content, Resource, Uri),
-                send_response(State, Id, #{<<"contents">> => [ContentItem]})
+                send_response(State, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]})
             catch
                 Class:Reason:Stack ->
                     logger:error("Resource handler crashed: ~p:~p~n~p",
                                  [Class, Reason, Stack]),
-                    send_error(State, Id, -32603, <<"Internal error">>)
+                    send_error(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
             end;
         {error, not_found} ->
-            send_error(State, Id, -32602, <<"Resource not found">>)
+            send_error(State, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
     end.
 
 -spec find_resource(binary(), state()) ->
@@ -555,9 +552,9 @@ encode_content_item(#mcp_content{} = Content, _Resource, _Uri) ->
     encode_content(Content);
 encode_content_item(BinaryContent, Resource, Uri) when is_binary(BinaryContent) ->
     #{
-        <<"uri">> => Uri,
-        <<"mimeType">> => get_mime_type(Resource),
-        <<"text">> => BinaryContent
+        ?MCP_PARAM_URI => Uri,
+        ?MCP_PARAM_MIME_TYPE => get_mime_type(Resource),
+        ?MCP_PARAM_TEXT => BinaryContent
     }.
 
 -spec get_mime_type(#mcp_resource{} | #mcp_resource_template{}) -> binary().
@@ -568,10 +565,10 @@ get_mime_type(#mcp_resource_template{mime_type = MimeType}) ->
 
 -spec encode_content(#mcp_content{}) -> map().
 encode_content(#mcp_content{} = Content) ->
-    Base = #{<<"type">> => Content#mcp_content.type},
-    Base1 = maybe_add_field(Base, <<"text">>, Content#mcp_content.text),
-    Base2 = maybe_add_field(Base1, <<"data">>, Content#mcp_content.data),
-    maybe_add_field(Base2, <<"mimeType">>, Content#mcp_content.mime_type).
+    Base = #{?MCP_PARAM_TYPE => Content#mcp_content.type},
+    Base1 = maybe_add_field(Base, ?MCP_PARAM_TEXT, Content#mcp_content.text),
+    Base2 = maybe_add_field(Base1, ?MCP_PARAM_DATA, Content#mcp_content.data),
+    maybe_add_field(Base2, ?MCP_PARAM_MIME_TYPE, Content#mcp_content.mime_type).
 
 %%====================================================================
 %% Internal functions - Tool Handling
@@ -586,22 +583,22 @@ list_all_tools(State) ->
 -spec encode_tool(#mcp_tool{}) -> map().
 encode_tool(#mcp_tool{} = Tool) ->
     Base = #{
-        <<"name">> => Tool#mcp_tool.name,
-        <<"description">> => Tool#mcp_tool.description
+        ?MCP_PARAM_NAME => Tool#mcp_tool.name,
+        ?MCP_PARAM_DESCRIPTION => Tool#mcp_tool.description
     },
-    maybe_add_field(Base, <<"inputSchema">>, Tool#mcp_tool.input_schema).
+    maybe_add_field(Base, ?MCP_PARAM_INPUT_SCHEMA, Tool#mcp_tool.input_schema).
 
 -spec handle_tool_call(json_rpc_id(), binary(), map(), state()) -> ok.
 handle_tool_call(Id, Name, Arguments, State) ->
     case maps:get(Name, State#state.tools, undefined) of
         undefined ->
-            send_error(State, Id, -32602, <<"Tool not found">>);
+            send_error(State, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
         {_Tool, Handler, Schema} ->
             case validate_tool_input(Arguments, Schema) of
                 ok ->
                     execute_tool(Id, Handler, Arguments, State);
                 {error, ValidationError} ->
-                    send_error(State, Id, -32602, ValidationError)
+                    send_error(State, Id, ?MCP_ERROR_VALIDATION_FAILED, ValidationError)
             end
     end.
 
@@ -634,19 +631,19 @@ execute_tool(Id, Handler, Arguments, State) ->
     try
         Result = Handler(Arguments),
         ContentList = normalize_tool_result(Result),
-        send_response(State, Id, #{<<"content">> => ContentList})
+        send_response(State, Id, #{?MCP_PARAM_CONTENT => ContentList})
     catch
         Class:Reason:Stack ->
             logger:error("Tool handler crashed: ~p:~p~n~p",
                          [Class, Reason, Stack]),
-            send_error(State, Id, -32603, <<"Internal error">>)
+            send_error(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
     end.
 
 -spec normalize_tool_result(term()) -> [map()].
 normalize_tool_result(#mcp_content{} = Content) ->
     [encode_content(Content)];
 normalize_tool_result(BinaryResult) when is_binary(BinaryResult) ->
-    [#{<<"type">> => <<"text">>, <<"text">> => BinaryResult}];
+    [#{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT, ?MCP_PARAM_TEXT => BinaryResult}];
 normalize_tool_result(ResultList) when is_list(ResultList) ->
     [encode_content(C) || C <- ResultList].
 
@@ -662,28 +659,28 @@ list_all_prompts(State) ->
 
 -spec encode_prompt(#mcp_prompt{}) -> map().
 encode_prompt(#mcp_prompt{} = Prompt) ->
-    Base = #{<<"name">> => Prompt#mcp_prompt.name},
-    Base1 = maybe_add_field(Base, <<"description">>, Prompt#mcp_prompt.description),
+    Base = #{?MCP_PARAM_NAME => Prompt#mcp_prompt.name},
+    Base1 = maybe_add_field(Base, ?MCP_PARAM_DESCRIPTION, Prompt#mcp_prompt.description),
     case Prompt#mcp_prompt.arguments of
         undefined ->
             Base1;
         Args ->
-            Base1#{<<"arguments">> => [encode_prompt_argument(Arg) || Arg <- Args]}
+            Base1#{?MCP_PARAM_ARGUMENTS => [encode_prompt_argument(Arg) || Arg <- Args]}
     end.
 
 -spec encode_prompt_argument(#mcp_prompt_argument{}) -> map().
 encode_prompt_argument(#mcp_prompt_argument{} = Arg) ->
     Base = #{
-        <<"name">> => Arg#mcp_prompt_argument.name,
-        <<"required">> => Arg#mcp_prompt_argument.required
+        ?MCP_PARAM_NAME => Arg#mcp_prompt_argument.name,
+        ?MCP_PARAM_REQUIRED => Arg#mcp_prompt_argument.required
     },
-    maybe_add_field(Base, <<"description">>, Arg#mcp_prompt_argument.description).
+    maybe_add_field(Base, ?MCP_PARAM_DESCRIPTION, Arg#mcp_prompt_argument.description).
 
 -spec handle_get_prompt(json_rpc_id(), binary(), map(), state()) -> ok.
 handle_get_prompt(Id, Name, Arguments, State) ->
     case maps:get(Name, State#state.prompts, undefined) of
         undefined ->
-            send_error(State, Id, -32602, <<"Prompt not found">>);
+            send_error(State, Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND);
         {Prompt, Handler} ->
             execute_prompt(Id, Prompt, Handler, Arguments, State)
     end.
@@ -694,25 +691,25 @@ execute_prompt(Id, Prompt, Handler, Arguments, State) ->
         Result = Handler(Arguments),
         Messages = normalize_prompt_result(Result),
         Response = #{
-            <<"messages">> => Messages
+            ?MCP_PARAM_MESSAGES => Messages
         },
-        Response1 = maybe_add_field(Response, <<"description">>,
+        Response1 = maybe_add_field(Response, ?MCP_PARAM_DESCRIPTION,
                                     Prompt#mcp_prompt.description),
         send_response(State, Id, Response1)
     catch
         Class:Reason:Stack ->
             logger:error("Prompt handler crashed: ~p:~p~n~p",
                          [Class, Reason, Stack]),
-            send_error(State, Id, -32603, <<"Internal error">>)
+            send_error(State, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
     end.
 
 -spec normalize_prompt_result(term()) -> [map()].
 normalize_prompt_result(BinaryResult) when is_binary(BinaryResult) ->
     [#{
-        <<"role">> => <<"user">>,
-        <<"content">> => #{
-            <<"type">> => <<"text">>,
-            <<"text">> => BinaryResult
+        ?MCP_PARAM_ROLE => ?MCP_ROLE_USER,
+        ?MCP_PARAM_CONTENT => #{
+            ?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT,
+            ?MCP_PARAM_TEXT => BinaryResult
         }
     }];
 normalize_prompt_result(MessageList) when is_list(MessageList) ->
@@ -739,12 +736,12 @@ notify_subscribers(Uri, Metadata, State) ->
             ok;
         Subscribers ->
             Params = #{
-                <<"uri">> => Uri,
-                <<"metadata">> => Metadata
+                ?MCP_PARAM_URI => Uri,
+                ?MCP_PARAM_METADATA => Metadata
             },
             sets:fold(fun(Subscriber, _) ->
                 Subscriber ! {resource_updated, Uri, Metadata},
                 ok
             end, ok, Subscribers),
-            send_notification(State, <<"resources/updated">>, Params)
+            send_notification(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_UPDATED, Params)
     end.

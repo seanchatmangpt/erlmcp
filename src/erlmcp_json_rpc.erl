@@ -12,13 +12,6 @@
     create_error/3
 ]).
 
-%% Error codes
--define(PARSE_ERROR, -32700).
--define(INVALID_REQUEST, -32600).
--define(METHOD_NOT_FOUND, -32601).
--define(INVALID_PARAMS, -32602).
--define(INTERNAL_ERROR, -32603).
-
 %% Types
 -type json_rpc_message() :: #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}.
 -type decode_result() :: {ok, json_rpc_message()} | {error, {atom(), term()}}.
@@ -49,8 +42,8 @@ encode_response(Id, Result) ->
 -spec encode_error_response(json_rpc_id(), integer(), binary()) -> binary().
 encode_error_response(Id, Code, Message) when is_integer(Code), is_binary(Message) ->
     Error = #{
-        <<"code">> => Code,
-        <<"message">> => Message
+        ?JSONRPC_ERROR_FIELD_CODE => Code,
+        ?JSONRPC_ERROR_FIELD_MESSAGE => Message
     },
     Response = #json_rpc_response{
         id = Id,
@@ -100,23 +93,23 @@ encode_message(Message) ->
 -spec build_message_map(json_rpc_message()) -> map().
 build_message_map(#json_rpc_request{id = Id, method = Method, params = Params}) ->
     Base = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => encode_id(Id),
-        <<"method">> => Method
+        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+        ?JSONRPC_FIELD_ID => encode_id(Id),
+        ?JSONRPC_FIELD_METHOD => Method
     },
     maybe_add_params(Base, Params);
 
 build_message_map(#json_rpc_response{id = Id, result = Result, error = Error}) ->
     Base = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => encode_id(Id)
+        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+        ?JSONRPC_FIELD_ID => encode_id(Id)
     },
     add_result_or_error(Base, Result, Error);
 
 build_message_map(#json_rpc_notification{method = Method, params = Params}) ->
     Base = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => Method
+        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+        ?JSONRPC_FIELD_METHOD => Method
     },
     maybe_add_params(Base, Params).
 
@@ -129,13 +122,13 @@ encode_id(Id) when is_integer(Id) -> Id.
 maybe_add_params(Map, undefined) ->
     Map;
 maybe_add_params(Map, Params) ->
-    Map#{<<"params">> => Params}.
+    Map#{?JSONRPC_FIELD_PARAMS => Params}.
 
 -spec add_result_or_error(map(), term(), map() | undefined) -> map().
 add_result_or_error(Map, _Result, Error) when is_map(Error) ->
-    Map#{<<"error">> => Error};
+    Map#{?JSONRPC_FIELD_ERROR => Error};
 add_result_or_error(Map, Result, undefined) ->
-    Map#{<<"result">> => Result}.
+    Map#{?JSONRPC_FIELD_RESULT => Result}.
 
 -spec parse_json_rpc(map()) -> decode_result().
 parse_json_rpc(Data) ->
@@ -147,28 +140,28 @@ parse_json_rpc(Data) ->
     end.
 
 -spec validate_jsonrpc_version(map()) -> ok | {error, {invalid_request, term()}}.
-validate_jsonrpc_version(#{<<"jsonrpc">> := <<"2.0">>}) ->
+validate_jsonrpc_version(#{?JSONRPC_FIELD_JSONRPC := ?JSONRPC_VERSION}) ->
     ok;
-validate_jsonrpc_version(#{<<"jsonrpc">> := Version}) ->
+validate_jsonrpc_version(#{?JSONRPC_FIELD_JSONRPC := Version}) ->
     {error, {invalid_request, {wrong_version, Version}}};
 validate_jsonrpc_version(_) ->
     {error, {invalid_request, missing_jsonrpc}}.
 
 -spec parse_by_type(map()) -> decode_result().
-parse_by_type(#{<<"id">> := Id, <<"method">> := Method} = Data) ->
+parse_by_type(#{?JSONRPC_FIELD_ID := Id, ?JSONRPC_FIELD_METHOD := Method} = Data) ->
     parse_request(Id, Method, Data);
-parse_by_type(#{<<"id">> := Id, <<"result">> := Result}) ->
+parse_by_type(#{?JSONRPC_FIELD_ID := Id, ?JSONRPC_FIELD_RESULT := Result}) ->
     parse_response(Id, Result, undefined);
-parse_by_type(#{<<"id">> := Id, <<"error">> := Error}) ->
+parse_by_type(#{?JSONRPC_FIELD_ID := Id, ?JSONRPC_FIELD_ERROR := Error}) ->
     parse_response(Id, undefined, Error);
-parse_by_type(#{<<"method">> := Method} = Data) ->
+parse_by_type(#{?JSONRPC_FIELD_METHOD := Method} = Data) ->
     parse_notification(Method, Data);
 parse_by_type(_) ->
     {error, {invalid_request, unknown_message_type}}.
 
 -spec parse_request(json_rpc_id(), binary(), map()) -> decode_result().
 parse_request(Id, Method, Data) when is_binary(Method) ->
-    Params = maps:get(<<"params">>, Data, undefined),
+    Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, undefined),
     {ok, #json_rpc_request{
         id = decode_id(Id),
         method = Method,
@@ -187,7 +180,7 @@ parse_response(Id, Result, Error) ->
 
 -spec parse_notification(binary(), map()) -> decode_result().
 parse_notification(Method, Data) when is_binary(Method) ->
-    Params = maps:get(<<"params">>, Data, undefined),
+    Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, undefined),
     {ok, #json_rpc_notification{
         method = Method,
         params = validate_params(Params)
