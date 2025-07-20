@@ -9,6 +9,8 @@
   {applications, [
       kernel,
       stdlib,
+      crypto,
+      public_key,
       ssl,
       inets,
       jsx,
