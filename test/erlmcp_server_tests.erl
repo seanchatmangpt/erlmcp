@@ -344,7 +344,7 @@ test_api_legacy_compatibility() ->
     % Test that legacy stdio server functions still work
     % Note: This might not work in test environment without proper stdio setup
     case catch erlmcp:start_stdio_server() of
-        {ok, _Pid} ->
+        {ok, _StdioPid} ->
             % If it works, test that we can stop it
             ?assertEqual(ok, erlmcp:stop_stdio_server());
         {error, _Reason} ->
@@ -358,7 +358,7 @@ test_api_legacy_compatibility() ->
     % Test API compatibility in registry-free mode
     % This tests similar scenarios to what the validation script tests
     case catch erlmcp:start_server(api_compat_test) of
-        {ok, _Pid} ->
+        {ok, _ServerPid} ->
             % High-level API worked even without registry
             case catch erlmcp:add_tool(api_compat_test, <<"test">>, fun(_) -> <<"ok">> end) of
                 ok ->
