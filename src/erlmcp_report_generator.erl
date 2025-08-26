@@ -32,7 +32,7 @@ generate_report(Results, Format, Options) ->
         
         Output = case Format of
             html -> generate_html(Report, Options);
-            json -> jiffy:encode(Report);
+            json -> jsx:encode(Report);
             markdown -> generate_markdown(Report, Options);
             pdf -> generate_pdf(Report, Options);
             csv -> generate_csv(Report)

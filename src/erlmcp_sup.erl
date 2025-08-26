@@ -28,6 +28,12 @@ start_server(ServerId, Config) ->
         {ok, ServerPid} ->
             % Register with registry
             ok = erlmcp_registry:register_server(ServerId, ServerPid, Config),
+            
+            % Register with recovery manager and health monitor
+            RecoveryPolicy = maps:get(recovery_policy, Config, #{}),
+            ok = erlmcp_recovery_manager:register_component(ServerId, ServerPid, RecoveryPolicy),
+            ok = erlmcp_health_monitor:register_component(ServerId, ServerPid),
+            
             {ok, ServerPid};
         {error, _} = Error ->
             Error
@@ -37,7 +43,10 @@ start_server(ServerId, Config) ->
 stop_server(ServerId) ->
     case erlmcp_registry:find_server(ServerId) of
         {ok, {ServerPid, _Config}} ->
+            % Unregister from all systems
             ok = erlmcp_registry:unregister_server(ServerId),
+            ok = erlmcp_recovery_manager:unregister_component(ServerId),
+            ok = erlmcp_health_monitor:unregister_component(ServerId),
             supervisor:terminate_child(erlmcp_server_sup, ServerPid);
         {error, not_found} ->
             ok
@@ -50,6 +59,12 @@ start_transport(TransportId, Type, Config) ->
         {ok, TransportPid} ->
             TransportConfig = Config#{type => Type},
             ok = erlmcp_registry:register_transport(TransportId, TransportPid, TransportConfig),
+            
+            % Register with recovery manager and health monitor
+            RecoveryPolicy = maps:get(recovery_policy, Config, #{}),
+            ok = erlmcp_recovery_manager:register_component(TransportId, TransportPid, RecoveryPolicy),
+            ok = erlmcp_health_monitor:register_component(TransportId, TransportPid),
+            
             {ok, TransportPid};
         {error, _} = Error ->
             Error
@@ -59,7 +74,10 @@ start_transport(TransportId, Type, Config) ->
 stop_transport(TransportId) ->
     case erlmcp_registry:find_transport(TransportId) of
         {ok, {TransportPid, _Config}} ->
+            % Unregister from all systems
             ok = erlmcp_registry:unregister_transport(TransportId),
+            ok = erlmcp_recovery_manager:unregister_component(TransportId),
+            ok = erlmcp_health_monitor:unregister_component(TransportId),
             supervisor:terminate_child(erlmcp_transport_sup, TransportPid);
         {error, not_found} ->
             ok
@@ -93,14 +111,34 @@ stop_stdio_server() ->
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     SupFlags = #{
-        strategy => one_for_all,  % If registry fails, restart everything
-        intensity => 3,
+        strategy => one_for_all,  % If critical components fail, restart everything
+        intensity => 5,           % Enhanced: Increased restart intensity for recovery
         period => 60
     },
 
-    % Core infrastructure components
+    % Core infrastructure components with recovery integration
     ChildSpecs = [
-        % Registry - central message router
+        % Health monitor - system health monitoring (start first)
+        #{
+            id => erlmcp_health_monitor,
+            start => {erlmcp_health_monitor, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_health_monitor]
+        },
+
+        % Recovery manager - failure recovery coordination (start second)
+        #{
+            id => erlmcp_recovery_manager,
+            start => {erlmcp_recovery_manager, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_recovery_manager]
+        },
+
+        % Registry - central message router with recovery registration
         #{
             id => erlmcp_registry,
             start => {erlmcp_registry, start_link, []},

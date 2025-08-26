@@ -80,14 +80,27 @@
 %% All messages sent through transports must follow this structure
 -type transport_message() :: #{binary() => term()}.
 
+%% @doc Standard transport messages sent to the registry
+%% These are the message types that transports send to notify about events
+-type transport_event_message() :: 
+    {transport_data, Data :: binary()} |
+    {transport_connected, Info :: map()} |
+    {transport_disconnected, Reason :: term()} |
+    {transport_error, Type :: atom(), Reason :: term()}.
+
 %% @doc Transport information map
 %% Contains metadata about transport capabilities and state
 -type transport_info() :: #{
     type => stdio | tcp | http | websocket | custom,
+    status => connected | disconnected | connecting | error,
+    peer => term(),
     version => binary(),
     capabilities => [atom()],
     connection_state => connected | disconnected | connecting | error,
-    statistics => #{atom() => non_neg_integer()}
+    statistics => #{atom() => non_neg_integer()},
+    transport_id => atom(),
+    started_at => non_neg_integer(),
+    last_activity => non_neg_integer()
 }.
 
 %% @doc Transport-specific option types
@@ -134,7 +147,18 @@
 %% Callback Definitions
 %% =============================================================================
 
-%% @doc Initialize the transport with given options
+%% @doc Initialize the transport with given options (legacy single-parameter)
+%% 
+%% This callback provides backward compatibility for existing transport implementations.
+%% New implementations should prefer the init/2 callback.
+%%
+%% @param Opts Transport-specific configuration options
+%% @returns {ok, State} on success, {error, Reason} on failure
+-callback init(Opts :: transport_opts()) -> 
+    {ok, State :: transport_state()} | 
+    {error, Reason :: term()}.
+
+%% @doc Initialize the transport with transport ID and configuration (recommended)
 %% 
 %% This callback is called when the transport is started. It should:
 %% - Validate the provided options
@@ -142,9 +166,10 @@
 %% - Establish initial connections if required
 %% - Return the initial transport state
 %%
-%% @param Opts Transport-specific configuration options
+%% @param TransportId Unique identifier for this transport instance
+%% @param Config Transport-specific configuration options
 %% @returns {ok, State} on success, {error, Reason} on failure
--callback init(Opts :: transport_opts()) -> 
+-callback init(TransportId :: atom(), Config :: transport_opts()) -> 
     {ok, State :: transport_state()} | 
     {error, Reason :: term()}.
 
@@ -179,6 +204,17 @@
 %%
 %% This optional callback provides introspection into transport state.
 %% Useful for monitoring, debugging, and health checks.
+%% 
+%% The returned information should include:
+%% - type: Transport type (stdio, tcp, http, websocket, custom)
+%% - status: Current connection status 
+%% - peer: Peer information (if applicable)
+%% - version: Transport version/protocol information
+%% - capabilities: List of supported features
+%% - statistics: Performance metrics and counters
+%% - transport_id: Unique transport identifier
+%% - started_at: Timestamp when transport was initialized
+%% - last_activity: Timestamp of last message activity
 %%
 %% @param State Current transport state
 %% @returns Map containing transport information
@@ -199,7 +235,10 @@
     {error, Reason :: term()}.
 
 %% Specify optional callbacks
+%% Note: Either init/1 OR init/2 must be implemented, but not both
+%% New implementations should use init/2, existing ones can keep init/1
 -optional_callbacks([
+    init/2,
     get_info/1,
     handle_transport_call/2
 ]).
@@ -208,24 +247,35 @@
 %% Type Exports
 %% =============================================================================
 
--export([
-    validate_message/1,
-    validate_transport_opts/2,
-    create_message/3,
-    create_notification/2,
-    create_response/2,
-    create_error_response/4
-]).
-
 -export_type([
     transport_state/0,
     transport_opts/0,
     transport_message/0,
+    transport_event_message/0,
     transport_info/0,
     stdio_opts/0,
     tcp_opts/0,
     http_opts/0,
     websocket_opts/0
+]).
+
+%% =============================================================================
+%% Function Exports
+%% =============================================================================
+
+-export([
+    validate_message/1,
+    validate_transport_opts/2,
+    validate_transport_config/3,
+    validate_transport_event_message/1,
+    create_message/3,
+    create_notification/2,
+    create_response/2,
+    create_error_response/4,
+    create_transport_data_message/1,
+    create_transport_connected_message/1,
+    create_transport_disconnected_message/1,
+    create_transport_error_message/2
 ]).
 
 %% =============================================================================
@@ -244,6 +294,21 @@ validate_message(Message) when is_map(Message) ->
 validate_message(_) ->
     {error, {invalid_message, not_a_map}}.
 
+%% @doc Validate a transport event message format
+%% @param Message The transport event message to validate
+%% @returns ok if valid, {error, Reason} if invalid
+-spec validate_transport_event_message(transport_event_message()) -> ok | {error, term()}.
+validate_transport_event_message({transport_data, Data}) when is_binary(Data) ->
+    ok;
+validate_transport_event_message({transport_connected, Info}) when is_map(Info) ->
+    ok;
+validate_transport_event_message({transport_disconnected, _Reason}) ->
+    ok;
+validate_transport_event_message({transport_error, Type, _Reason}) when is_atom(Type) ->
+    ok;
+validate_transport_event_message(_) ->
+    {error, invalid_transport_event_message}.
+
 %% @doc Validate transport options
 %% @param Type Transport type
 %% @param Opts Options to validate
@@ -259,6 +324,17 @@ validate_transport_opts(websocket, Opts) ->
     validate_websocket_opts(Opts);
 validate_transport_opts(Type, _Opts) ->
     {error, {unsupported_transport_type, Type}}.
+
+%% @doc Validate transport configuration for a specific transport ID
+%% @param TransportId Unique transport identifier
+%% @param Type Transport type
+%% @param Config Configuration map
+%% @returns ok if valid, {error, Reason} if invalid
+-spec validate_transport_config(atom(), atom(), map()) -> ok | {error, term()}.
+validate_transport_config(_TransportId, Type, Config) when is_map(Config) ->
+    validate_transport_opts(Type, Config);
+validate_transport_config(_TransportId, _Type, _Config) ->
+    {error, invalid_config_format}.
 
 %% @doc Create a standard transport message
 %% @param Method JSON-RPC method name
@@ -328,6 +404,35 @@ create_error_response(Id, Code, Message, Data) ->
         ?JSONRPC_FIELD_ID => Id,
         ?JSONRPC_FIELD_ERROR => Error
     }.
+
+%% @doc Create a transport data event message
+%% @param Data Binary data received from transport
+%% @returns Transport data event message
+-spec create_transport_data_message(binary()) -> transport_event_message().
+create_transport_data_message(Data) when is_binary(Data) ->
+    {transport_data, Data}.
+
+%% @doc Create a transport connected event message
+%% @param Info Connection information map
+%% @returns Transport connected event message
+-spec create_transport_connected_message(map()) -> transport_event_message().
+create_transport_connected_message(Info) when is_map(Info) ->
+    {transport_connected, Info}.
+
+%% @doc Create a transport disconnected event message
+%% @param Reason Disconnection reason
+%% @returns Transport disconnected event message
+-spec create_transport_disconnected_message(term()) -> transport_event_message().
+create_transport_disconnected_message(Reason) ->
+    {transport_disconnected, Reason}.
+
+%% @doc Create a transport error event message
+%% @param Type Error type atom
+%% @param Reason Error reason
+%% @returns Transport error event message
+-spec create_transport_error_message(atom(), term()) -> transport_event_message().
+create_transport_error_message(Type, Reason) when is_atom(Type) ->
+    {transport_error, Type, Reason}.
 
 %% =============================================================================
 %% Validation Helper Functions (Private)

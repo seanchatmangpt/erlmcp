@@ -18,172 +18,120 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include("../src/erlmcp.hrl").
+
+-include("erlmcp.hrl").
 
 %% Suite callbacks
--export([all/0, groups/0, init_per_suite/1, end_per_suite/1,
-         init_per_group/2, end_per_group/2,
-         init_per_testcase/2, end_per_testcase/2]).
-
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2,
+         end_per_group/2, init_per_testcase/2, end_per_testcase/2]).
 %% Behavior compliance tests
--export([
-    behavior_init_compliance/1,
-    behavior_send_compliance/1,
-    behavior_close_compliance/1,
-    behavior_get_info_compliance/1,
-    behavior_handle_transport_call_compliance/1,
-    behavior_exports_validation/1
-]).
-
+-export([behavior_init_compliance/1, behavior_send_compliance/1,
+         behavior_close_compliance/1, behavior_get_info_compliance/1,
+         behavior_handle_transport_call_compliance/1, behavior_exports_validation/1]).
 %% Connection management tests
--export([
-    connection_establishment/1,
-    connection_parameters_validation/1,
-    connection_timeout_handling/1,
-    connection_keepalive/1,
-    connection_nodelay/1,
-    connection_buffer_sizing/1
-]).
-
+-export([connection_establishment/1, connection_parameters_validation/1,
+         connection_timeout_handling/1, connection_keepalive/1, connection_nodelay/1,
+         connection_buffer_sizing/1]).
 %% Network error handling tests
--export([
-    network_connection_refused/1,
-    network_connection_timeout/1,
-    network_host_unreachable/1,
-    network_connection_reset/1,
-    network_partial_write/1,
-    network_socket_closure/1
-]).
-
+-export([network_connection_refused/1, network_connection_timeout/1,
+         network_host_unreachable/1, network_connection_reset/1, network_partial_write/1,
+         network_socket_closure/1]).
 %% Reconnection logic tests
--export([
-    reconnection_automatic/1,
-    reconnection_max_attempts/1,
-    reconnection_backoff_strategy/1,
-    reconnection_state_preservation/1,
-    reconnection_message_queuing/1,
-    reconnection_failure_handling/1
-]).
-
+-export([reconnection_automatic/1, reconnection_max_attempts/1,
+         reconnection_backoff_strategy/1, reconnection_state_preservation/1,
+         reconnection_message_queuing/1, reconnection_failure_handling/1]).
 %% Registry integration tests
--export([
-    registry_auto_registration/1,
-    registry_connection_status/1,
-    registry_failover_coordination/1,
-    registry_transport_discovery/1
-]).
-
+-export([registry_auto_registration/1, registry_connection_status/1,
+         registry_failover_coordination/1, registry_transport_discovery/1]).
 %% Message handling tests
--export([
-    message_framing_tcp/1,
-    message_large_payloads/1,
-    message_fragmentation/1,
-    message_ordering/1,
-    message_concurrent_send/1,
-    message_backpressure/1
-]).
-
+-export([message_framing_tcp/1, message_large_payloads/1, message_fragmentation/1,
+         message_ordering/1, message_concurrent_send/1, message_backpressure/1]).
 %% Performance tests
--export([
-    performance_throughput/1,
-    performance_latency/1,
-    performance_concurrent_connections/1,
-    performance_memory_usage/1,
-    performance_cpu_utilization/1,
-    performance_socket_pooling/1
-]).
-
+-export([performance_throughput/1, performance_latency/1,
+         performance_concurrent_connections/1, performance_memory_usage/1,
+         performance_cpu_utilization/1, performance_socket_pooling/1]).
 %% Resource management tests
--export([
-    resource_socket_cleanup/1,
-    resource_process_cleanup/1,
-    resource_memory_leaks/1,
-    resource_file_descriptor_limits/1,
-    resource_port_exhaustion/1,
-    resource_graceful_shutdown/1
-]).
+-export([resource_socket_cleanup/1, resource_process_cleanup/1, resource_memory_leaks/1,
+         resource_file_descriptor_limits/1, resource_port_exhaustion/1,
+         resource_graceful_shutdown/1]).
 
 %%====================================================================
 %% Suite Configuration
 %%====================================================================
 
 all() ->
-    [
-        {group, behavior_compliance},
-        {group, connection_management},
-        {group, network_error_handling},
-        {group, reconnection_logic},
-        {group, registry_integration},
-        {group, message_handling},
-        {group, performance},
-        {group, resource_management}
-    ].
+    [{group, behavior_compliance},
+     {group, connection_management},
+     {group, network_error_handling},
+     {group, reconnection_logic},
+     {group, registry_integration},
+     {group, message_handling},
+     {group, performance},
+     {group, resource_management}].
 
 groups() ->
-    [
-        {behavior_compliance, [sequential], [
-            behavior_exports_validation,
-            behavior_init_compliance,
-            behavior_send_compliance,
-            behavior_close_compliance,
-            behavior_get_info_compliance,
-            behavior_handle_transport_call_compliance
-        ]},
-        {connection_management, [sequential], [
-            connection_establishment,
-            connection_parameters_validation,
-            connection_timeout_handling,
-            connection_keepalive,
-            connection_nodelay,
-            connection_buffer_sizing
-        ]},
-        {network_error_handling, [sequential], [
-            network_connection_refused,
-            network_connection_timeout,
-            network_host_unreachable,
-            network_connection_reset,
-            network_partial_write,
-            network_socket_closure
-        ]},
-        {reconnection_logic, [sequential], [
-            reconnection_automatic,
-            reconnection_max_attempts,
-            reconnection_backoff_strategy,
-            reconnection_state_preservation,
-            reconnection_message_queuing,
-            reconnection_failure_handling
-        ]},
-        {registry_integration, [sequential], [
-            registry_auto_registration,
-            registry_connection_status,
-            registry_failover_coordination,
-            registry_transport_discovery
-        ]},
-        {message_handling, [parallel], [
-            message_framing_tcp,
-            message_large_payloads,
-            message_fragmentation,
-            message_ordering,
-            message_concurrent_send,
-            message_backpressure
-        ]},
-        {performance, [sequential], [
-            performance_throughput,
-            performance_latency,
-            performance_concurrent_connections,
-            performance_memory_usage,
-            performance_cpu_utilization,
-            performance_socket_pooling
-        ]},
-        {resource_management, [sequential], [
-            resource_socket_cleanup,
-            resource_process_cleanup,
-            resource_memory_leaks,
-            resource_file_descriptor_limits,
-            resource_port_exhaustion,
-            resource_graceful_shutdown
-        ]}
-    ].
+    [{behavior_compliance,
+      [sequential],
+      [behavior_exports_validation,
+       behavior_init_compliance,
+       behavior_send_compliance,
+       behavior_close_compliance,
+       behavior_get_info_compliance,
+       behavior_handle_transport_call_compliance]},
+     {connection_management,
+      [sequential],
+      [connection_establishment,
+       connection_parameters_validation,
+       connection_timeout_handling,
+       connection_keepalive,
+       connection_nodelay,
+       connection_buffer_sizing]},
+     {network_error_handling,
+      [sequential],
+      [network_connection_refused,
+       network_connection_timeout,
+       network_host_unreachable,
+       network_connection_reset,
+       network_partial_write,
+       network_socket_closure]},
+     {reconnection_logic,
+      [sequential],
+      [reconnection_automatic,
+       reconnection_max_attempts,
+       reconnection_backoff_strategy,
+       reconnection_state_preservation,
+       reconnection_message_queuing,
+       reconnection_failure_handling]},
+     {registry_integration,
+      [sequential],
+      [registry_auto_registration,
+       registry_connection_status,
+       registry_failover_coordination,
+       registry_transport_discovery]},
+     {message_handling,
+      [parallel],
+      [message_framing_tcp,
+       message_large_payloads,
+       message_fragmentation,
+       message_ordering,
+       message_concurrent_send,
+       message_backpressure]},
+     {performance,
+      [sequential],
+      [performance_throughput,
+       performance_latency,
+       performance_concurrent_connections,
+       performance_memory_usage,
+       performance_cpu_utilization,
+       performance_socket_pooling]},
+     {resource_management,
+      [sequential],
+      [resource_socket_cleanup,
+       resource_process_cleanup,
+       resource_memory_leaks,
+       resource_file_descriptor_limits,
+       resource_port_exhaustion,
+       resource_graceful_shutdown]}].
 
 %%====================================================================
 %% Suite Setup/Teardown
@@ -191,25 +139,28 @@ groups() ->
 
 init_per_suite(Config) ->
     ct:pal("Starting TCP transport standard test suite"),
-    
+
     %% Start required applications
     ok = application:ensure_started(crypto),
     ok = application:ensure_started(sasl),
-    
+
     %% Initialize registry
     case erlmcp_registry:start_link() of
-        {ok, _} -> ok;
-        {error, {already_started, _}} -> ok
+        {ok, _} ->
+            ok;
+        {error, {already_started, _}} ->
+            ok
     end,
-    
+
     %% Start test TCP server for connection tests
     {ok, TestServer} = start_test_tcp_server(),
     TestPort = get_test_server_port(TestServer),
-    
-    [{test_module, erlmcp_transport_tcp}, 
+
+    [{test_module, erlmcp_transport_tcp},
      {test_server, TestServer},
      {test_port, TestPort},
-     {test_host, "127.0.0.1"} | Config].
+     {test_host, "127.0.0.1"}
+     | Config].
 
 end_per_suite(Config) ->
     TestServer = ?config(test_server, Config),
@@ -227,7 +178,9 @@ end_per_group(GroupName, _Config) ->
 
 init_per_testcase(TestCase, Config) ->
     ct:pal("Starting test case: ~p", [TestCase]),
-    TransportId = list_to_atom(lists:flatten(io_lib:format("~p_~p", [TestCase, erlang:unique_integer([positive])]))),
+    TransportId =
+        list_to_atom(lists:flatten(
+                         io_lib:format("~p_~p", [TestCase, erlang:unique_integer([positive])]))),
     [{transport_id, TransportId} | Config].
 
 end_per_testcase(TestCase, Config) ->
@@ -241,32 +194,27 @@ end_per_testcase(TestCase, Config) ->
 
 behavior_exports_validation(Config) ->
     Module = ?config(test_module, Config),
-    
-    RequiredExports = [
-        {init, 1},
-        {send, 2},
-        {close, 1}
-    ],
-    
-    OptionalExports = [
-        {get_info, 1},
-        {handle_transport_call, 2}
-    ],
-    
+
+    RequiredExports = [{init, 1}, {send, 2}, {close, 1}],
+
+    OptionalExports = [{get_info, 1}, {handle_transport_call, 2}],
+
     ModuleExports = Module:module_info(exports),
-    
+
     lists:foreach(fun(Export) ->
-        ?assert(lists:member(Export, ModuleExports)),
-        ct:pal("Required export ~p found", [Export])
-    end, RequiredExports),
-    
+                     ?assert(lists:member(Export, ModuleExports)),
+                     ct:pal("Required export ~p found", [Export])
+                  end,
+                  RequiredExports),
+
     lists:foreach(fun(Export) ->
-        case lists:member(Export, ModuleExports) of
-            true -> ct:pal("Optional export ~p implemented", [Export]);
-            false -> ct:pal("Optional export ~p not implemented", [Export])
-        end
-    end, OptionalExports),
-    
+                     case lists:member(Export, ModuleExports) of
+                         true -> ct:pal("Optional export ~p implemented", [Export]);
+                         false -> ct:pal("Optional export ~p not implemented", [Export])
+                     end
+                  end,
+                  OptionalExports),
+
     ok.
 
 behavior_init_compliance(Config) ->
@@ -274,44 +222,41 @@ behavior_init_compliance(Config) ->
     Module = ?config(test_module, Config),
     TestHost = ?config(test_host, Config),
     TestPort = ?config(test_port, Config),
-    
+
     %% Test successful initialization
-    ValidOpts = #{
-        host => TestHost,
-        port => TestPort,
-        owner => self(),
-        transport_id => TransportId
-    },
-    
+    ValidOpts =
+        #{host => TestHost,
+          port => TestPort,
+          owner => self(),
+          transport_id => TransportId},
+
     {ok, State} = Module:init(ValidOpts),
     ?assert(State =/= undefined),
     ct:pal("TCP init successful with valid options"),
-    
+
     %% Test initialization with optional parameters
-    ExtendedOpts = ValidOpts#{
-        connect_timeout => 5000,
-        keepalive => true,
-        nodelay => true,
-        buffer_size => 8192
-    },
-    
+    ExtendedOpts =
+        ValidOpts#{connect_timeout => 5000,
+                   keepalive => true,
+                   nodelay => true,
+                   buffer_size => 8192},
+
     {ok, _ExtendedState} = Module:init(ExtendedOpts),
     ct:pal("TCP init successful with extended options"),
-    
+
     %% Test initialization with invalid options
-    InvalidOpts = #{
-        host => "invalid.host.that.does.not.exist",
-        port => 99999,  % Invalid port
-        owner => self()
-    },
-    
+    InvalidOpts =
+        #{host => "invalid.host.that.does.not.exist",
+          port => 99999,  % Invalid port
+          owner => self()},
+
     case Module:init(InvalidOpts) of
         {ok, _} ->
             ct:pal("Warning: TCP init accepted invalid options");
         {error, Reason} ->
             ct:pal("TCP init properly rejected invalid options: ~p", [Reason])
     end,
-    
+
     ok.
 
 behavior_send_compliance(Config) ->
@@ -319,33 +264,31 @@ behavior_send_compliance(Config) ->
     Module = ?config(test_module, Config),
     TestHost = ?config(test_host, Config),
     TestPort = ?config(test_port, Config),
-    
-    ValidOpts = #{
-        host => TestHost,
-        port => TestPort,
-        owner => self(),
-        transport_id => TransportId
-    },
-    
+
+    ValidOpts =
+        #{host => TestHost,
+          port => TestPort,
+          owner => self(),
+          transport_id => TransportId},
+
     {ok, State} = Module:init(ValidOpts),
-    
+
     %% Test various data types
-    TestData = [
-        <<"binary message">>,
-        "string message",
-        [<<"iodata ">>, <<"message">>],
-        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"test">>})
-    ],
-    
+    TestData =
+        [<<"binary message">>,
+         "string message",
+         [<<"iodata ">>, <<"message">>],
+         jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"test">>})],
+
     lists:foreach(fun(Data) ->
-        case Module:send(State, Data) of
-            ok ->
-                ct:pal("TCP send successful for data type: ~p", [typeof(Data)]);
-            {error, Reason} ->
-                ct:pal("TCP send failed for data type ~p: ~p", [typeof(Data), Reason])
-        end
-    end, TestData),
-    
+                     case Module:send(State, Data) of
+                         ok -> ct:pal("TCP send successful for data type: ~p", [typeof(Data)]);
+                         {error, Reason} ->
+                             ct:pal("TCP send failed for data type ~p: ~p", [typeof(Data), Reason])
+                     end
+                  end,
+                  TestData),
+
     ok.
 
 behavior_close_compliance(Config) ->
@@ -353,26 +296,25 @@ behavior_close_compliance(Config) ->
     Module = ?config(test_module, Config),
     TestHost = ?config(test_host, Config),
     TestPort = ?config(test_port, Config),
-    
-    ValidOpts = #{
-        host => TestHost,
-        port => TestPort,
-        owner => self(),
-        transport_id => TransportId
-    },
-    
+
+    ValidOpts =
+        #{host => TestHost,
+          port => TestPort,
+          owner => self(),
+          transport_id => TransportId},
+
     {ok, State} = Module:init(ValidOpts),
-    
+
     %% Test close
     Result = Module:close(State),
     ?assertEqual(ok, Result),
     ct:pal("TCP close successful"),
-    
+
     %% Test idempotent close
     Result2 = Module:close(State),
     ?assertEqual(ok, Result2),
     ct:pal("TCP close is idempotent"),
-    
+
     ok.
 
 behavior_get_info_compliance(Config) ->
@@ -380,21 +322,20 @@ behavior_get_info_compliance(Config) ->
     Module = ?config(test_module, Config),
     TestHost = ?config(test_host, Config),
     TestPort = ?config(test_port, Config),
-    
-    ValidOpts = #{
-        host => TestHost,
-        port => TestPort,
-        owner => self(),
-        transport_id => TransportId
-    },
-    
+
+    ValidOpts =
+        #{host => TestHost,
+          port => TestPort,
+          owner => self(),
+          transport_id => TransportId},
+
     {ok, State} = Module:init(ValidOpts),
-    
+
     Info = Module:get_info(State),
     ?assert(is_map(Info)),
     ?assertMatch(#{type := tcp}, Info),
     ?assert(maps:is_key(connection_state, Info)),
-    
+
     ct:pal("TCP transport info: ~p", [Info]),
     ok.
 
@@ -403,32 +344,28 @@ behavior_handle_transport_call_compliance(Config) ->
     Module = ?config(test_module, Config),
     TestHost = ?config(test_host, Config),
     TestPort = ?config(test_port, Config),
-    
-    ValidOpts = #{
-        host => TestHost,
-        port => TestPort,
-        owner => self(),
-        transport_id => TransportId
-    },
-    
+
+    ValidOpts =
+        #{host => TestHost,
+          port => TestPort,
+          owner => self(),
+          transport_id => TransportId},
+
     {ok, State} = Module:init(ValidOpts),
-    
+
     %% Test valid transport calls
-    ValidCalls = [
-        get_connection_state,
-        get_socket_info,
-        reconnect
-    ],
-    
+    ValidCalls = [get_connection_state, get_socket_info, reconnect],
+
     lists:foreach(fun(Call) ->
-        case Module:handle_transport_call(Call, State) of
-            {reply, Reply, NewState} ->
-                ct:pal("TCP transport call ~p replied: ~p", [Call, Reply]);
-            {error, Reason} ->
-                ct:pal("TCP transport call ~p failed: ~p", [Call, Reason])
-        end
-    end, ValidCalls),
-    
+                     case Module:handle_transport_call(Call, State) of
+                         {reply, Reply, NewState} ->
+                             ct:pal("TCP transport call ~p replied: ~p", [Call, Reply]);
+                         {error, Reason} ->
+                             ct:pal("TCP transport call ~p failed: ~p", [Call, Reason])
+                     end
+                  end,
+                  ValidCalls),
+
     ok.
 
 %%====================================================================
@@ -440,20 +377,19 @@ connection_establishment(Config) ->
     Module = ?config(test_module, Config),
     TestHost = ?config(test_host, Config),
     TestPort = ?config(test_port, Config),
-    
-    ValidOpts = #{
-        host => TestHost,
-        port => TestPort,
-        owner => self(),
-        transport_id => TransportId
-    },
-    
+
+    ValidOpts =
+        #{host => TestHost,
+          port => TestPort,
+          owner => self(),
+          transport_id => TransportId},
+
     {ok, State} = Module:init(ValidOpts),
-    
+
     %% Verify connection is established
     Info = Module:get_info(State),
     ConnectionState = maps:get(connection_state, Info, disconnected),
-    
+
     case ConnectionState of
         connected ->
             ct:pal("TCP connection established successfully");
@@ -464,48 +400,62 @@ connection_establishment(Config) ->
         error ->
             ct:pal("TCP connection error")
     end,
-    
+
     ok.
 
 connection_parameters_validation(Config) ->
     Module = ?config(test_module, Config),
-    
+
     %% Test various parameter combinations
-    TestCases = [
-        #{host => "127.0.0.1", port => 8080, owner => self()},
-        #{host => {127,0,0,1}, port => 8080, owner => self()},
-        #{host => "localhost", port => 8080, owner => self()},
-        #{host => "127.0.0.1", port => 8080, owner => self(), keepalive => true},
-        #{host => "127.0.0.1", port => 8080, owner => self(), nodelay => true},
-        #{host => "127.0.0.1", port => 8080, owner => self(), buffer_size => 4096}
-    ],
-    
+    TestCases =
+        [#{host => "127.0.0.1",
+           port => 8080,
+           owner => self()},
+         #{host => {127, 0, 0, 1},
+           port => 8080,
+           owner => self()},
+         #{host => "localhost",
+           port => 8080,
+           owner => self()},
+         #{host => "127.0.0.1",
+           port => 8080,
+           owner => self(),
+           keepalive => true},
+         #{host => "127.0.0.1",
+           port => 8080,
+           owner => self(),
+           nodelay => true},
+         #{host => "127.0.0.1",
+           port => 8080,
+           owner => self(),
+           buffer_size => 4096}],
+
     lists:foreach(fun(Opts) ->
-        case Module:init(Opts) of
-            {ok, _State} ->
-                ct:pal("Valid TCP options accepted: ~p", [maps:keys(Opts)]);
-            {error, Reason} ->
-                ct:pal("TCP options rejected: ~p (~p)", [maps:keys(Opts), Reason])
-        end
-    end, TestCases),
-    
+                     case Module:init(Opts) of
+                         {ok, _State} ->
+                             ct:pal("Valid TCP options accepted: ~p", [maps:keys(Opts)]);
+                         {error, Reason} ->
+                             ct:pal("TCP options rejected: ~p (~p)", [maps:keys(Opts), Reason])
+                     end
+                  end,
+                  TestCases),
+
     ok.
 
 connection_timeout_handling(Config) ->
     TransportId = ?config(transport_id, Config),
     Module = ?config(test_module, Config),
-    
+
     %% Test connection timeout to non-existent server
-    TimeoutOpts = #{
-        host => "127.0.0.1",
-        port => 9999,  % Assume this port is closed
-        owner => self(),
-        transport_id => TransportId,
-        connect_timeout => 1000  % Short timeout
-    },
-    
+    TimeoutOpts =
+        #{host => "127.0.0.1",
+          port => 9999,  % Assume this port is closed
+          owner => self(),
+          transport_id => TransportId,
+          connect_timeout => 1000},  % Short timeout
+
     StartTime = erlang:monotonic_time(millisecond),
-    
+
     case Module:init(TimeoutOpts) of
         {ok, State} ->
             ct:pal("Connection succeeded unexpectedly"),
@@ -519,7 +469,7 @@ connection_timeout_handling(Config) ->
         {error, Reason} ->
             ct:pal("Connection failed with reason: ~p", [Reason])
     end,
-    
+
     ok.
 
 connection_keepalive(Config) ->
@@ -531,7 +481,8 @@ connection_nodelay(Config) ->
     ok.
 
 connection_buffer_sizing(Config) ->
-    ct:pal("TCP buffer sizing test - implementation depends on OS socket options"),
+    ct:pal("TCP buffer sizing test - implementation depends on OS socket "
+           "options"),
     ok.
 
 %%====================================================================
@@ -541,15 +492,14 @@ connection_buffer_sizing(Config) ->
 network_connection_refused(Config) ->
     TransportId = ?config(transport_id, Config),
     Module = ?config(test_module, Config),
-    
+
     %% Try to connect to a port that should be closed
-    RefusedOpts = #{
-        host => "127.0.0.1",
-        port => 9998,  % Assume this port is closed
-        owner => self(),
-        transport_id => TransportId
-    },
-    
+    RefusedOpts =
+        #{host => "127.0.0.1",
+          port => 9998,  % Assume this port is closed
+          owner => self(),
+          transport_id => TransportId},
+
     case Module:init(RefusedOpts) of
         {ok, State} ->
             ct:pal("Connection succeeded unexpectedly"),
@@ -559,7 +509,7 @@ network_connection_refused(Config) ->
         {error, Reason} ->
             ct:pal("Connection failed with reason: ~p", [Reason])
     end,
-    
+
     ok.
 
 network_connection_timeout(Config) ->
@@ -619,16 +569,16 @@ registry_auto_registration(Config) ->
     Module = ?config(test_module, Config),
     TestHost = ?config(test_host, Config),
     TestPort = ?config(test_port, Config),
-    
+
     %% Start transport and verify auto-registration
-    {ok, Pid} = Module:start_link(TransportId, #{
-        host => TestHost,
-        port => TestPort,
-        owner => self()
-    }),
-    
+    {ok, Pid} =
+        Module:start_link(TransportId,
+                          #{host => TestHost,
+                            port => TestPort,
+                            owner => self()}),
+
     timer:sleep(100), % Allow registration to complete
-    
+
     case erlmcp_registry:find_transport(TransportId) of
         {ok, {RegPid, RegConfig}} ->
             ?assertEqual(Pid, RegPid),
@@ -637,7 +587,7 @@ registry_auto_registration(Config) ->
         {error, not_found} ->
             ct:pal("Warning: TCP transport not auto-registered")
     end,
-    
+
     ok = gen_server:stop(Pid),
     ok.
 
@@ -745,18 +695,22 @@ cleanup_test_resources(_Config) ->
     %% Cleanup any test resources
     timer:sleep(50).
 
-typeof(Term) when is_binary(Term) -> binary;
-typeof(Term) when is_list(Term) -> list;
-typeof(Term) when is_atom(Term) -> atom;
-typeof(_) -> unknown.
+typeof(Term) when is_binary(Term) ->
+    binary;
+typeof(Term) when is_list(Term) ->
+    list;
+typeof(Term) when is_atom(Term) ->
+    atom;
+typeof(_) ->
+    unknown.
 
 %% Test TCP server functions
 start_test_tcp_server() ->
     {ok, ListenSocket} = gen_tcp:listen(0, [binary, {active, false}, {reuseaddr, true}]),
     {ok, Port} = inet:port(ListenSocket),
-    
+
     ServerPid = spawn(fun() -> test_tcp_server_loop(ListenSocket) end),
-    
+
     {ok, {ServerPid, Port}}.
 
 get_test_server_port({_Pid, Port}) ->

@@ -681,8 +681,8 @@ compact_error_table() ->
 % Simple JSON encoding (for basic metrics export)
 -spec encode_json(term()) -> binary().
 encode_json(Term) ->
-    % This is a very basic JSON encoder - in production use a proper library
-    list_to_binary(io_lib:format("~p", [Term])).
+    % Use jsx for proper JSON encoding
+    jsx:encode(Term).
 
 % Simple CSV encoding
 -spec encode_csv(map()) -> string().

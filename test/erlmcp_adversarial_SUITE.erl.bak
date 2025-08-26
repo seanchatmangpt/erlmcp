@@ -1,46 +1,27 @@
 -module(erlmcp_adversarial_SUITE).
+
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %% Common Test callbacks
--export([suite/0, init_per_suite/1, end_per_suite/1,
-         init_per_testcase/2, end_per_testcase/2,
-         all/0, groups/0]).
-
+-export([suite/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2,
+         end_per_testcase/2, all/0, groups/0]).
 %% Chaos Engineering Tests
--export([chaos_process_killer/1,
-         chaos_network_partition/1,
-         chaos_latency_injection/1,
-         chaos_packet_loss/1,
-         chaos_byzantine_failure/1,
-         chaos_memory_corruption/1,
-         chaos_disk_failure/1,
-         chaos_clock_skew/1]).
-
+-export([chaos_process_killer/1, chaos_network_partition/1, chaos_latency_injection/1,
+         chaos_packet_loss/1, chaos_byzantine_failure/1, chaos_memory_corruption/1,
+         chaos_disk_failure/1, chaos_clock_skew/1]).
 %% Security Fuzzing Tests
--export([fuzz_json_rpc_protocol/1,
-         fuzz_buffer_overflow/1,
-         fuzz_resource_exhaustion/1,
-         fuzz_timing_attacks/1,
-         fuzz_input_validation/1,
-         fuzz_authentication_bypass/1,
+-export([fuzz_json_rpc_protocol/1, fuzz_buffer_overflow/1, fuzz_resource_exhaustion/1,
+         fuzz_timing_attacks/1, fuzz_input_validation/1, fuzz_authentication_bypass/1,
          fuzz_malformed_messages/1]).
-
 %% Race Condition Tests
--export([race_concurrent_mutations/1,
-         race_registration_conflicts/1,
-         race_message_ordering/1,
-         race_deadlock_scenarios/1,
-         race_state_corruption/1]).
-
+-export([race_concurrent_mutations/1, race_registration_conflicts/1,
+         race_message_ordering/1, race_deadlock_scenarios/1, race_state_corruption/1]).
 %% Fault Injection Tests
--export([fault_memory_corruption/1,
-         fault_disk_corruption/1,
-         fault_certificate_expiration/1,
-         fault_dns_poisoning/1,
-         fault_system_overload/1]).
+-export([fault_memory_corruption/1, fault_disk_corruption/1,
+         fault_certificate_expiration/1, fault_dns_poisoning/1, fault_system_overload/1]).
 
 -define(CHAOS_PROBABILITY, 0.3).
 -define(MAX_LATENCY_MS, 10000).
@@ -75,49 +56,45 @@ end_per_testcase(TestCase, Config) ->
     Config.
 
 all() ->
-    [
-     {group, chaos_engineering},
+    [{group, chaos_engineering},
      {group, security_fuzzing},
      {group, race_conditions},
-     {group, fault_injection}
-    ].
+     {group, fault_injection}].
 
 groups() ->
-    [
-     {chaos_engineering, [parallel], [
-        chaos_process_killer,
-        chaos_network_partition,
-        chaos_latency_injection,
-        chaos_packet_loss,
-        chaos_byzantine_failure,
-        chaos_memory_corruption,
-        chaos_disk_failure,
-        chaos_clock_skew
-     ]},
-     {security_fuzzing, [parallel], [
-        fuzz_json_rpc_protocol,
-        fuzz_buffer_overflow,
-        fuzz_resource_exhaustion,
-        fuzz_timing_attacks,
-        fuzz_input_validation,
-        fuzz_authentication_bypass,
-        fuzz_malformed_messages
-     ]},
-     {race_conditions, [sequence], [
-        race_concurrent_mutations,
-        race_registration_conflicts,
-        race_message_ordering,
-        race_deadlock_scenarios,
-        race_state_corruption
-     ]},
-     {fault_injection, [parallel], [
-        fault_memory_corruption,
-        fault_disk_corruption,
-        fault_certificate_expiration,
-        fault_dns_poisoning,
-        fault_system_overload
-     ]}
-    ].
+    [{chaos_engineering,
+      [parallel],
+      [chaos_process_killer,
+       chaos_network_partition,
+       chaos_latency_injection,
+       chaos_packet_loss,
+       chaos_byzantine_failure,
+       chaos_memory_corruption,
+       chaos_disk_failure,
+       chaos_clock_skew]},
+     {security_fuzzing,
+      [parallel],
+      [fuzz_json_rpc_protocol,
+       fuzz_buffer_overflow,
+       fuzz_resource_exhaustion,
+       fuzz_timing_attacks,
+       fuzz_input_validation,
+       fuzz_authentication_bypass,
+       fuzz_malformed_messages]},
+     {race_conditions,
+      [sequence],
+      [race_concurrent_mutations,
+       race_registration_conflicts,
+       race_message_ordering,
+       race_deadlock_scenarios,
+       race_state_corruption]},
+     {fault_injection,
+      [parallel],
+      [fault_memory_corruption,
+       fault_disk_corruption,
+       fault_certificate_expiration,
+       fault_dns_poisoning,
+       fault_system_overload]}].
 
 %% ============================================================================
 %% Chaos Engineering Tests
@@ -126,187 +103,187 @@ groups() ->
 chaos_process_killer(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_process_killer_start">>, #{}),
-    
+
     % Start target processes
     Processes = start_target_processes(10),
     otel_span:set_attribute(SpanCtx, <<"target_processes">>, length(Processes)),
-    
+
     % Inject random process kills
     KillCount = inject_process_kills(Processes, ?CHAOS_PROBABILITY),
     otel_span:set_attribute(SpanCtx, <<"processes_killed">>, KillCount),
-    
+
     % Verify system recovery
     RecoveryTime = measure_recovery_time(),
     otel_span:set_attribute(SpanCtx, <<"recovery_time_ms">>, RecoveryTime),
-    
+
     % Assert system survived
     ?assert(system_is_healthy()),
-    otel_span:add_event(SpanCtx, <<"chaos_process_killer_complete">>, #{
-        <<"processes_killed">> => KillCount,
-        <<"recovery_time">> => RecoveryTime
-    }).
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_process_killer_complete">>,
+                        #{<<"processes_killed">> => KillCount,
+                          <<"recovery_time">> => RecoveryTime}).
 
 chaos_network_partition(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_network_partition_start">>, #{}),
-    
+
     % Create network partitions
     Partitions = create_network_partitions(3),
     otel_span:set_attribute(SpanCtx, <<"partition_count">>, length(Partitions)),
-    
+
     timer:sleep(5000), % Let chaos ensue
-    
+
     % Heal partitions
     heal_network_partitions(Partitions),
-    
+
     % Measure convergence time
     ConvergenceTime = measure_convergence_time(),
     otel_span:set_attribute(SpanCtx, <<"convergence_time_ms">>, ConvergenceTime),
-    
+
     ?assert(system_converged()),
-    otel_span:add_event(SpanCtx, <<"chaos_network_partition_complete">>, #{
-        <<"convergence_time">> => ConvergenceTime
-    }).
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_network_partition_complete">>,
+                        #{<<"convergence_time">> => ConvergenceTime}).
 
 chaos_latency_injection(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_latency_injection_start">>, #{}),
-    
+
     LatencyMs = rand:uniform(?MAX_LATENCY_MS),
     otel_span:set_attribute(SpanCtx, <<"injected_latency_ms">>, LatencyMs),
-    
+
     % Inject latency into message passing
     LatencyInjector = start_latency_injector(LatencyMs),
-    
+
     % Perform operations under latency
     Operations = perform_latency_sensitive_operations(100),
     SuccessRate = calculate_success_rate(Operations),
-    
+
     otel_span:set_attribute(SpanCtx, <<"success_rate">>, SuccessRate),
-    
+
     stop_latency_injector(LatencyInjector),
-    
+
     % System should degrade gracefully
     ?assert(SuccessRate > 0.7), % At least 70% should succeed
-    otel_span:add_event(SpanCtx, <<"chaos_latency_injection_complete">>, #{
-        <<"success_rate">> => SuccessRate
-    }).
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_latency_injection_complete">>,
+                        #{<<"success_rate">> => SuccessRate}).
 
 chaos_packet_loss(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_packet_loss_start">>, #{}),
-    
+
     LossPercent = rand:uniform(?PACKET_LOSS_MAX),
     otel_span:set_attribute(SpanCtx, <<"packet_loss_percent">>, LossPercent),
-    
+
     % Inject packet loss
     PacketLossInjector = start_packet_loss_injector(LossPercent),
-    
+
     % Measure message delivery rates
     {Sent, Received} = measure_message_delivery(1000),
     ActualLossRate = (Sent - Received) / Sent * 100,
-    
+
     otel_span:set_attribute(SpanCtx, <<"actual_loss_rate">>, ActualLossRate),
-    
+
     stop_packet_loss_injector(PacketLossInjector),
-    
+
     % Verify retransmission works
     ?assert(ActualLossRate =< LossPercent * 1.1), % Allow 10% variance
-    otel_span:add_event(SpanCtx, <<"chaos_packet_loss_complete">>, #{
-        <<"actual_loss_rate">> => ActualLossRate
-    }).
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_packet_loss_complete">>,
+                        #{<<"actual_loss_rate">> => ActualLossRate}).
 
 chaos_byzantine_failure(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_byzantine_failure_start">>, #{}),
-    
+
     % Create Byzantine nodes that send conflicting messages
     ByzantineNodes = start_byzantine_nodes(3),
     otel_span:set_attribute(SpanCtx, <<"byzantine_node_count">>, length(ByzantineNodes)),
-    
+
     % Let them cause havoc
     timer:sleep(10000),
-    
+
     % Measure system consensus despite Byzantine failures
     ConsensusReached = check_consensus_reached(),
     ConsensusTime = measure_consensus_time(),
-    
+
     otel_span:set_attribute(SpanCtx, <<"consensus_reached">>, ConsensusReached),
     otel_span:set_attribute(SpanCtx, <<"consensus_time_ms">>, ConsensusTime),
-    
+
     stop_byzantine_nodes(ByzantineNodes),
-    
+
     ?assert(ConsensusReached),
-    otel_span:add_event(SpanCtx, <<"chaos_byzantine_failure_complete">>, #{
-        <<"consensus_time">> => ConsensusTime
-    }).
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_byzantine_failure_complete">>,
+                        #{<<"consensus_time">> => ConsensusTime}).
 
 chaos_memory_corruption(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_memory_corruption_start">>, #{}),
-    
+
     % Corrupt ETS tables randomly
     CorruptionCount = inject_memory_corruption(?CHAOS_PROBABILITY),
     otel_span:set_attribute(SpanCtx, <<"corrupted_tables">>, CorruptionCount),
-    
+
     % Verify error handling
     ErrorsDetected = count_corruption_errors(),
     RecoveryTime = measure_memory_recovery_time(),
-    
+
     otel_span:set_attribute(SpanCtx, <<"errors_detected">>, ErrorsDetected),
     otel_span:set_attribute(SpanCtx, <<"recovery_time_ms">>, RecoveryTime),
-    
+
     ?assert(ErrorsDetected > 0), % Should detect corruption
     ?assert(system_recovered_from_corruption()),
-    
-    otel_span:add_event(SpanCtx, <<"chaos_memory_corruption_complete">>, #{
-        <<"errors_detected">> => ErrorsDetected,
-        <<"recovery_time">> => RecoveryTime
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_memory_corruption_complete">>,
+                        #{<<"errors_detected">> => ErrorsDetected,
+                          <<"recovery_time">> => RecoveryTime}).
 
 chaos_disk_failure(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_disk_failure_start">>, #{}),
-    
+
     % Simulate disk failures
     FailedDisks = simulate_disk_failures(2),
     otel_span:set_attribute(SpanCtx, <<"failed_disk_count">>, length(FailedDisks)),
-    
+
     % Test persistence operations
     PersistenceOperations = test_persistence_under_failure(100),
     SuccessRate = calculate_success_rate(PersistenceOperations),
-    
+
     otel_span:set_attribute(SpanCtx, <<"persistence_success_rate">>, SuccessRate),
-    
+
     restore_disk_failures(FailedDisks),
-    
+
     ?assert(SuccessRate > 0.5), % Should handle some failures
-    otel_span:add_event(SpanCtx, <<"chaos_disk_failure_complete">>, #{
-        <<"success_rate">> => SuccessRate
-    }).
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_disk_failure_complete">>,
+                        #{<<"success_rate">> => SuccessRate}).
 
 chaos_clock_skew(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"chaos_clock_skew_start">>, #{}),
-    
+
     % Inject clock skew
     SkewSeconds = rand:uniform(3600), % Up to 1 hour
     otel_span:set_attribute(SpanCtx, <<"clock_skew_seconds">>, SkewSeconds),
-    
+
     ClockSkewer = inject_clock_skew(SkewSeconds),
-    
+
     % Test time-sensitive operations
     TimeOperations = test_time_sensitive_operations(50),
     SuccessRate = calculate_success_rate(TimeOperations),
-    
+
     otel_span:set_attribute(SpanCtx, <<"time_ops_success_rate">>, SuccessRate),
-    
+
     stop_clock_skew(ClockSkewer),
-    
+
     ?assert(SuccessRate > 0.6), % Should handle moderate clock skew
-    otel_span:add_event(SpanCtx, <<"chaos_clock_skew_complete">>, #{
-        <<"success_rate">> => SuccessRate
-    }).
+    otel_span:add_event(SpanCtx,
+                        <<"chaos_clock_skew_complete">>,
+                        #{<<"success_rate">> => SuccessRate}).
 
 %% ============================================================================
 %% Security Fuzzing Tests
@@ -315,226 +292,241 @@ chaos_clock_skew(Config) ->
 fuzz_json_rpc_protocol(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fuzz_json_rpc_start">>, #{}),
-    
+
     Crashes = 0,
     SecurityViolations = 0,
-    
+
     % Generate malicious JSON-RPC messages
     lists:foreach(fun(I) ->
-        MaliciousMsg = generate_malicious_json_rpc(I),
-        otel_span:add_event(SpanCtx, <<"sending_malicious_message">>, #{
-            <<"iteration">> => I,
-            <<"message_type">> => maps:get(type, MaliciousMsg, unknown)
-        }),
-        
-        Result = send_malicious_message(MaliciousMsg),
-        case Result of
-            crash -> Crashes + 1;
-            security_violation -> SecurityViolations + 1;
-            _ -> ok
-        end
-    end, lists:seq(1, ?FUZZ_ITERATIONS)),
-    
+                     MaliciousMsg = generate_malicious_json_rpc(I),
+                     otel_span:add_event(SpanCtx,
+                                         <<"sending_malicious_message">>,
+                                         #{<<"iteration">> => I,
+                                           <<"message_type">> =>
+                                               maps:get(type, MaliciousMsg, unknown)}),
+
+                     Result = send_malicious_message(MaliciousMsg),
+                     case Result of
+                         crash -> Crashes + 1;
+                         security_violation -> SecurityViolations + 1;
+                         _ -> ok
+                     end
+                  end,
+                  lists:seq(1, ?FUZZ_ITERATIONS)),
+
     otel_span:set_attribute(SpanCtx, <<"crashes_detected">>, Crashes),
     otel_span:set_attribute(SpanCtx, <<"security_violations">>, SecurityViolations),
-    
+
     ?assert(Crashes =:= 0), % No crashes allowed
     ?assert(SecurityViolations =:= 0), % No security violations
-    
-    otel_span:add_event(SpanCtx, <<"fuzz_json_rpc_complete">>, #{
-        <<"iterations">> => ?FUZZ_ITERATIONS,
-        <<"crashes">> => Crashes,
-        <<"violations">> => SecurityViolations
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fuzz_json_rpc_complete">>,
+                        #{<<"iterations">> => ?FUZZ_ITERATIONS,
+                          <<"crashes">> => Crashes,
+                          <<"violations">> => SecurityViolations}).
 
 fuzz_buffer_overflow(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fuzz_buffer_overflow_start">>, #{}),
-    
-    OverflowAttempts = lists:map(fun(Size) ->
-        LargePayload = binary:copy(<<$A>>, Size),
-        otel_span:add_event(SpanCtx, <<"buffer_overflow_attempt">>, #{
-            <<"payload_size">> => Size
-        }),
-        
-        Result = attempt_buffer_overflow(LargePayload),
-        {Size, Result}
-    end, [1024, 10240, 102400, 1048576, 10485760]), % 1KB to 10MB
-    
+
+    OverflowAttempts =
+        lists:map(fun(Size) ->
+                     LargePayload = binary:copy(<<$A>>, Size),
+                     otel_span:add_event(SpanCtx,
+                                         <<"buffer_overflow_attempt">>,
+                                         #{<<"payload_size">> => Size}),
+
+                     Result = attempt_buffer_overflow(LargePayload),
+                     {Size, Result}
+                  end,
+                  [1024, 10240, 102400, 1048576, 10485760]), % 1KB to 10MB
+
     Failures = [R || {_, R} <- OverflowAttempts, R =:= failure],
-    
+
     otel_span:set_attribute(SpanCtx, <<"overflow_attempts">>, length(OverflowAttempts)),
     otel_span:set_attribute(SpanCtx, <<"failures">>, length(Failures)),
-    
+
     ?assert(length(Failures) =:= 0), % All should be handled gracefully
-    
-    otel_span:add_event(SpanCtx, <<"fuzz_buffer_overflow_complete">>, #{
-        <<"attempts">> => length(OverflowAttempts),
-        <<"failures">> => length(Failures)
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fuzz_buffer_overflow_complete">>,
+                        #{<<"attempts">> => length(OverflowAttempts),
+                          <<"failures">> => length(Failures)}).
 
 fuzz_resource_exhaustion(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fuzz_resource_exhaustion_start">>, #{}),
-    
+
     % Attack vectors
-    AttackVectors = [
-        {memory_bomb, fun() -> create_memory_bomb(1000000) end},
-        {process_bomb, fun() -> create_process_bomb(10000) end},
-        {file_descriptor_bomb, fun() -> create_fd_bomb(1000) end},
-        {cpu_bomb, fun() -> create_cpu_bomb(100) end}
-    ],
-    
-    Results = lists:map(fun({AttackType, AttackFun}) ->
-        otel_span:add_event(SpanCtx, <<"resource_exhaustion_attack">>, #{
-            <<"attack_type">> => AttackType
-        }),
-        
-        StartTime = erlang:monotonic_time(millisecond),
-        Result = execute_resource_attack(AttackFun),
-        EndTime = erlang:monotonic_time(millisecond),
-        
-        {AttackType, Result, EndTime - StartTime}
-    end, AttackVectors),
-    
+    AttackVectors =
+        [{memory_bomb, fun() -> create_memory_bomb(1000000) end},
+         {process_bomb, fun() -> create_process_bomb(10000) end},
+         {file_descriptor_bomb, fun() -> create_fd_bomb(1000) end},
+         {cpu_bomb, fun() -> create_cpu_bomb(100) end}],
+
+    Results =
+        lists:map(fun({AttackType, AttackFun}) ->
+                     otel_span:add_event(SpanCtx,
+                                         <<"resource_exhaustion_attack">>,
+                                         #{<<"attack_type">> => AttackType}),
+
+                     StartTime = erlang:monotonic_time(millisecond),
+                     Result = execute_resource_attack(AttackFun),
+                     EndTime = erlang:monotonic_time(millisecond),
+
+                     {AttackType, Result, EndTime - StartTime}
+                  end,
+                  AttackVectors),
+
     SystemSurvived = system_is_healthy(),
     otel_span:set_attribute(SpanCtx, <<"system_survived">>, SystemSurvived),
-    
+
     ?assert(SystemSurvived), % System should survive all attacks
-    
-    otel_span:add_event(SpanCtx, <<"fuzz_resource_exhaustion_complete">>, #{
-        <<"attack_count">> => length(AttackVectors),
-        <<"system_survived">> => SystemSurvived
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fuzz_resource_exhaustion_complete">>,
+                        #{<<"attack_count">> => length(AttackVectors),
+                          <<"system_survived">> => SystemSurvived}).
 
 fuzz_timing_attacks(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fuzz_timing_attacks_start">>, #{}),
-    
+
     % Measure timing differences in authentication
-    TimingResults = lists:map(fun(_) ->
-        ValidUser = generate_valid_credentials(),
-        InvalidUser = generate_invalid_credentials(),
-        
-        ValidTime = measure_auth_time(ValidUser),
-        InvalidTime = measure_auth_time(InvalidUser),
-        
-        otel_span:add_event(SpanCtx, <<"timing_measurement">>, #{
-            <<"valid_time_us">> => ValidTime,
-            <<"invalid_time_us">> => InvalidTime,
-            <<"time_diff_us">> => abs(ValidTime - InvalidTime)
-        }),
-        
-        abs(ValidTime - InvalidTime)
-    end, lists:seq(1, 100)),
-    
+    TimingResults =
+        lists:map(fun(_) ->
+                     ValidUser = generate_valid_credentials(),
+                     InvalidUser = generate_invalid_credentials(),
+
+                     ValidTime = measure_auth_time(ValidUser),
+                     InvalidTime = measure_auth_time(InvalidUser),
+
+                     otel_span:add_event(SpanCtx,
+                                         <<"timing_measurement">>,
+                                         #{<<"valid_time_us">> => ValidTime,
+                                           <<"invalid_time_us">> => InvalidTime,
+                                           <<"time_diff_us">> => abs(ValidTime - InvalidTime)}),
+
+                     abs(ValidTime - InvalidTime)
+                  end,
+                  lists:seq(1, 100)),
+
     AvgTimingDiff = lists:sum(TimingResults) / length(TimingResults),
     MaxTimingDiff = lists:max(TimingResults),
-    
+
     otel_span:set_attribute(SpanCtx, <<"avg_timing_diff_us">>, AvgTimingDiff),
     otel_span:set_attribute(SpanCtx, <<"max_timing_diff_us">>, MaxTimingDiff),
-    
+
     % Timing differences should be minimal
     ?assert(AvgTimingDiff < 1000), % Less than 1ms average difference
     ?assert(MaxTimingDiff < 5000), % Less than 5ms max difference
-    
-    otel_span:add_event(SpanCtx, <<"fuzz_timing_attacks_complete">>, #{
-        <<"avg_timing_diff">> => AvgTimingDiff,
-        <<"max_timing_diff">> => MaxTimingDiff
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fuzz_timing_attacks_complete">>,
+                        #{<<"avg_timing_diff">> => AvgTimingDiff,
+                          <<"max_timing_diff">> => MaxTimingDiff}).
 
 fuzz_input_validation(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fuzz_input_validation_start">>, #{}),
-    
+
     % Generate malicious inputs
     MaliciousInputs = generate_malicious_inputs(1000),
-    
-    ValidationResults = lists:map(fun(Input) ->
-        otel_span:add_event(SpanCtx, <<"testing_malicious_input">>, #{
-            <<"input_type">> => maps:get(type, Input, unknown),
-            <<"input_size">> => byte_size(maps:get(payload, Input, <<>>))
-        }),
-        
-        test_input_validation(Input)
-    end, MaliciousInputs),
-    
+
+    ValidationResults =
+        lists:map(fun(Input) ->
+                     otel_span:add_event(SpanCtx,
+                                         <<"testing_malicious_input">>,
+                                         #{<<"input_type">> => maps:get(type, Input, unknown),
+                                           <<"input_size">> =>
+                                               byte_size(maps:get(payload, Input, <<>>))}),
+
+                     test_input_validation(Input)
+                  end,
+                  MaliciousInputs),
+
     Bypasses = [R || R <- ValidationResults, R =:= bypass],
     Crashes = [R || R <- ValidationResults, R =:= crash],
-    
+
     otel_span:set_attribute(SpanCtx, <<"validation_bypasses">>, length(Bypasses)),
     otel_span:set_attribute(SpanCtx, <<"validation_crashes">>, length(Crashes)),
-    
+
     ?assert(length(Bypasses) =:= 0), % No validation bypasses
     ?assert(length(Crashes) =:= 0), % No crashes from bad input
-    
-    otel_span:add_event(SpanCtx, <<"fuzz_input_validation_complete">>, #{
-        <<"inputs_tested">> => length(MaliciousInputs),
-        <<"bypasses">> => length(Bypasses),
-        <<"crashes">> => length(Crashes)
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fuzz_input_validation_complete">>,
+                        #{<<"inputs_tested">> => length(MaliciousInputs),
+                          <<"bypasses">> => length(Bypasses),
+                          <<"crashes">> => length(Crashes)}).
 
 fuzz_authentication_bypass(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fuzz_auth_bypass_start">>, #{}),
-    
+
     % Generate authentication bypass attempts
     BypassAttempts = generate_auth_bypass_attempts(500),
-    
-    BypassResults = lists:map(fun(Attempt) ->
-        otel_span:add_event(SpanCtx, <<"auth_bypass_attempt">>, #{
-            <<"attempt_type">> => maps:get(type, Attempt, unknown)
-        }),
-        
-        test_auth_bypass(Attempt)
-    end, BypassAttempts),
-    
+
+    BypassResults =
+        lists:map(fun(Attempt) ->
+                     otel_span:add_event(SpanCtx,
+                                         <<"auth_bypass_attempt">>,
+                                         #{<<"attempt_type">> => maps:get(type, Attempt, unknown)}),
+
+                     test_auth_bypass(Attempt)
+                  end,
+                  BypassAttempts),
+
     SuccessfulBypasses = [R || R <- BypassResults, R =:= success],
-    
+
     otel_span:set_attribute(SpanCtx, <<"bypass_attempts">>, length(BypassAttempts)),
     otel_span:set_attribute(SpanCtx, <<"successful_bypasses">>, length(SuccessfulBypasses)),
-    
+
     ?assert(length(SuccessfulBypasses) =:= 0), % No bypasses should succeed
-    
-    otel_span:add_event(SpanCtx, <<"fuzz_auth_bypass_complete">>, #{
-        <<"attempts">> => length(BypassAttempts),
-        <<"bypasses">> => length(SuccessfulBypasses)
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fuzz_auth_bypass_complete">>,
+                        #{<<"attempts">> => length(BypassAttempts),
+                          <<"bypasses">> => length(SuccessfulBypasses)}).
 
 fuzz_malformed_messages(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fuzz_malformed_messages_start">>, #{}),
-    
+
     % Generate various malformed messages
     MalformedMessages = generate_malformed_messages(2000),
-    
-    ProcessingResults = lists:map(fun(Message) ->
-        otel_span:add_event(SpanCtx, <<"processing_malformed_message">>, #{
-            <<"message_type">> => maps:get(type, Message, unknown),
-            <<"corruption_type">> => maps:get(corruption, Message, unknown)
-        }),
-        
-        process_malformed_message(Message)
-    end, MalformedMessages),
-    
+
+    ProcessingResults =
+        lists:map(fun(Message) ->
+                     otel_span:add_event(SpanCtx,
+                                         <<"processing_malformed_message">>,
+                                         #{<<"message_type">> => maps:get(type, Message, unknown),
+                                           <<"corruption_type">> =>
+                                               maps:get(corruption, Message, unknown)}),
+
+                     process_malformed_message(Message)
+                  end,
+                  MalformedMessages),
+
     Crashes = [R || R <- ProcessingResults, R =:= crash],
     Hangs = [R || R <- ProcessingResults, R =:= hang],
     MemoryLeaks = [R || R <- ProcessingResults, R =:= memory_leak],
-    
+
     otel_span:set_attribute(SpanCtx, <<"message_crashes">>, length(Crashes)),
     otel_span:set_attribute(SpanCtx, <<"message_hangs">>, length(Hangs)),
     otel_span:set_attribute(SpanCtx, <<"memory_leaks">>, length(MemoryLeaks)),
-    
+
     ?assert(length(Crashes) =:= 0),
     ?assert(length(Hangs) =:= 0),
     ?assert(length(MemoryLeaks) =:= 0),
-    
-    otel_span:add_event(SpanCtx, <<"fuzz_malformed_messages_complete">>, #{
-        <<"messages_processed">> => length(MalformedMessages),
-        <<"crashes">> => length(Crashes),
-        <<"hangs">> => length(Hangs),
-        <<"memory_leaks">> => length(MemoryLeaks)
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fuzz_malformed_messages_complete">>,
+                        #{<<"messages_processed">> => length(MalformedMessages),
+                          <<"crashes">> => length(Crashes),
+                          <<"hangs">> => length(Hangs),
+                          <<"memory_leaks">> => length(MemoryLeaks)}).
 
 %% ============================================================================
 %% Race Condition Tests
@@ -543,183 +535,192 @@ fuzz_malformed_messages(Config) ->
 race_concurrent_mutations(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"race_concurrent_mutations_start">>, #{}),
-    
+
     % Create shared state
     StateRef = create_shared_state(),
-    
+
     % Spawn concurrent workers
     Workers = spawn_mutation_workers(?RACE_WORKERS, StateRef),
     otel_span:set_attribute(SpanCtx, <<"worker_count">>, length(Workers)),
-    
+
     % Let them race
     timer:sleep(5000),
-    
+
     % Stop workers and check consistency
     stop_workers(Workers),
     FinalState = get_final_state(StateRef),
     ConsistencyCheck = check_state_consistency(FinalState),
-    
+
     otel_span:set_attribute(SpanCtx, <<"state_consistent">>, ConsistencyCheck),
-    
+
     ?assert(ConsistencyCheck), % State should be consistent despite races
-    
-    otel_span:add_event(SpanCtx, <<"race_concurrent_mutations_complete">>, #{
-        <<"workers">> => length(Workers),
-        <<"consistent">> => ConsistencyCheck
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"race_concurrent_mutations_complete">>,
+                        #{<<"workers">> => length(Workers), <<"consistent">> => ConsistencyCheck}).
 
 race_registration_conflicts(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"race_registration_conflicts_start">>, #{}),
-    
+
     % Try to register the same service from multiple processes
     ServiceName = "test_service_" ++ integer_to_list(rand:uniform(1000000)),
-    
-    RegistrationWorkers = lists:map(fun(I) ->
-        spawn_link(fun() ->
-            otel_span:add_event(SpanCtx, <<"attempting_registration">>, #{
-                <<"worker_id">> => I,
-                <<"service_name">> => ServiceName
-            }),
-            Result = attempt_service_registration(ServiceName, I),
-            {I, Result}
-        end)
-    end, lists:seq(1, 50)),
-    
+
+    RegistrationWorkers =
+        lists:map(fun(I) ->
+                     spawn_link(fun() ->
+                                   otel_span:add_event(SpanCtx,
+                                                       <<"attempting_registration">>,
+                                                       #{<<"worker_id">> => I,
+                                                         <<"service_name">> => ServiceName}),
+                                   Result = attempt_service_registration(ServiceName, I),
+                                   {I, Result}
+                                end)
+                  end,
+                  lists:seq(1, 50)),
+
     % Collect results
     Results = collect_worker_results(RegistrationWorkers),
     Successful = [R || {_, R} <- Results, R =:= success],
-    
+
     otel_span:set_attribute(SpanCtx, <<"registration_attempts">>, length(Results)),
     otel_span:set_attribute(SpanCtx, <<"successful_registrations">>, length(Successful)),
-    
+
     % Only one should succeed
     ?assert(length(Successful) =:= 1),
-    
-    otel_span:add_event(SpanCtx, <<"race_registration_conflicts_complete">>, #{
-        <<"attempts">> => length(Results),
-        <<"successful">> => length(Successful)
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"race_registration_conflicts_complete">>,
+                        #{<<"attempts">> => length(Results),
+                          <<"successful">> => length(Successful)}).
 
 race_message_ordering(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"race_message_ordering_start">>, #{}),
-    
+
     % Create message ordering test
     MessageSequencer = start_message_sequencer(),
-    
+
     % Send messages concurrently with expected order
-    MessageWorkers = lists:map(fun(I) ->
-        spawn_link(fun() ->
-            otel_span:add_event(SpanCtx, <<"sending_ordered_message">>, #{
-                <<"message_id">> => I
-            }),
-            send_ordered_message(MessageSequencer, I)
-        end)
-    end, lists:seq(1, 100)),
-    
+    MessageWorkers =
+        lists:map(fun(I) ->
+                     spawn_link(fun() ->
+                                   otel_span:add_event(SpanCtx,
+                                                       <<"sending_ordered_message">>,
+                                                       #{<<"message_id">> => I}),
+                                   send_ordered_message(MessageSequencer, I)
+                                end)
+                  end,
+                  lists:seq(1, 100)),
+
     % Wait for all messages
     wait_for_workers(MessageWorkers),
-    
+
     % Check message ordering
     ReceivedOrder = get_received_order(MessageSequencer),
     OrderingViolations = count_ordering_violations(ReceivedOrder),
-    
+
     otel_span:set_attribute(SpanCtx, <<"ordering_violations">>, OrderingViolations),
-    
+
     stop_message_sequencer(MessageSequencer),
-    
+
     ?assert(OrderingViolations =< 5), % Allow some reordering
-    
-    otel_span:add_event(SpanCtx, <<"race_message_ordering_complete">>, #{
-        <<"messages_sent">> => 100,
-        <<"ordering_violations">> => OrderingViolations
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"race_message_ordering_complete">>,
+                        #{<<"messages_sent">> => 100,
+                          <<"ordering_violations">> => OrderingViolations}).
 
 race_deadlock_scenarios(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"race_deadlock_scenarios_start">>, #{}),
-    
+
     % Create deadlock-prone scenario
     {ResourceA, ResourceB} = create_deadlock_resources(),
-    
+
     % Spawn processes that acquire resources in different orders
-    DeadlockWorkers = lists:map(fun(I) ->
-        spawn_link(fun() ->
-            case I rem 2 of
-                0 -> % Even: A then B
-                    otel_span:add_event(SpanCtx, <<"acquiring_resources_AB">>, #{
-                        <<"worker_id">> => I
-                    }),
-                    acquire_resources_order_AB(ResourceA, ResourceB);
-                1 -> % Odd: B then A
-                    otel_span:add_event(SpanCtx, <<"acquiring_resources_BA">>, #{
-                        <<"worker_id">> => I
-                    }),
-                    acquire_resources_order_BA(ResourceA, ResourceB)
-            end
-        end)
-    end, lists:seq(1, 20)),
-    
+    DeadlockWorkers =
+        lists:map(fun(I) ->
+                     spawn_link(fun() ->
+                                   case I rem 2 of
+                                       0 -> % Even: A then B
+                                           otel_span:add_event(SpanCtx,
+                                                               <<"acquiring_resources_AB">>,
+                                                               #{<<"worker_id">> => I}),
+                                           acquire_resources_order_AB(ResourceA, ResourceB);
+                                       1 -> % Odd: B then A
+                                           otel_span:add_event(SpanCtx,
+                                                               <<"acquiring_resources_BA">>,
+                                                               #{<<"worker_id">> => I}),
+                                           acquire_resources_order_BA(ResourceA, ResourceB)
+                                   end
+                                end)
+                  end,
+                  lists:seq(1, 20)),
+
     % Monitor for deadlocks
     DeadlockDetector = start_deadlock_detector(),
     timer:sleep(10000), % Let potential deadlock develop
-    
+
     DeadlocksDetected = get_deadlock_count(DeadlockDetector),
     stop_deadlock_detector(DeadlockDetector),
-    
+
     otel_span:set_attribute(SpanCtx, <<"deadlocks_detected">>, DeadlocksDetected),
-    
+
     % Clean up any stuck processes
     cleanup_deadlock_workers(DeadlockWorkers),
-    
+
     ?assert(DeadlocksDetected =:= 0), % No deadlocks should occur
-    
-    otel_span:add_event(SpanCtx, <<"race_deadlock_scenarios_complete">>, #{
-        <<"workers">> => length(DeadlockWorkers),
-        <<"deadlocks">> => DeadlocksDetected
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"race_deadlock_scenarios_complete">>,
+                        #{<<"workers">> => length(DeadlockWorkers),
+                          <<"deadlocks">> => DeadlocksDetected}).
 
 race_state_corruption(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"race_state_corruption_start">>, #{}),
-    
+
     % Create complex state that can be corrupted
     ComplexState = create_complex_state(),
-    
+
     % Spawn many processes doing state operations
-    StateWorkers = lists:map(fun(I) ->
-        spawn_link(fun() ->
-            Operations = [read, write, delete, update],
-            Operation = lists:nth(rand:uniform(length(Operations)), Operations),
-            
-            otel_span:add_event(SpanCtx, <<"state_operation">>, #{
-                <<"worker_id">> => I,
-                <<"operation">> => Operation
-            }),
-            
-            perform_state_operation(ComplexState, Operation, I)
-        end)
-    end, lists:seq(1, 200)),
-    
+    StateWorkers =
+        lists:map(fun(I) ->
+                     spawn_link(fun() ->
+                                   Operations = [read, write, delete, update],
+                                   Operation =
+                                       lists:nth(
+                                           rand:uniform(length(Operations)), Operations),
+
+                                   otel_span:add_event(SpanCtx,
+                                                       <<"state_operation">>,
+                                                       #{<<"worker_id">> => I,
+                                                         <<"operation">> => Operation}),
+
+                                   perform_state_operation(ComplexState, Operation, I)
+                                end)
+                  end,
+                  lists:seq(1, 200)),
+
     % Wait for all operations
     wait_for_workers(StateWorkers),
-    
+
     % Check for state corruption
     CorruptionDetected = detect_state_corruption(ComplexState),
     StateIntegrity = check_state_integrity(ComplexState),
-    
+
     otel_span:set_attribute(SpanCtx, <<"corruption_detected">>, CorruptionDetected),
     otel_span:set_attribute(SpanCtx, <<"state_integrity">>, StateIntegrity),
-    
+
     ?assert(not CorruptionDetected),
     ?assert(StateIntegrity),
-    
-    otel_span:add_event(SpanCtx, <<"race_state_corruption_complete">>, #{
-        <<"operations">> => length(StateWorkers),
-        <<"corruption_detected">> => CorruptionDetected,
-        <<"state_integrity">> => StateIntegrity
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"race_state_corruption_complete">>,
+                        #{<<"operations">> => length(StateWorkers),
+                          <<"corruption_detected">> => CorruptionDetected,
+                          <<"state_integrity">> => StateIntegrity}).
 
 %% ============================================================================
 %% Fault Injection Tests
@@ -728,183 +729,185 @@ race_state_corruption(Config) ->
 fault_memory_corruption(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fault_memory_corruption_start">>, #{}),
-    
-    MemoryFaults = inject_memory_faults([
-        {heap_corruption, 0.1},
-        {stack_overflow, 0.05},
-        {buffer_overrun, 0.1},
-        {use_after_free, 0.05}
-    ]),
-    
+
+    MemoryFaults =
+        inject_memory_faults([{heap_corruption, 0.1},
+                              {stack_overflow, 0.05},
+                              {buffer_overrun, 0.1},
+                              {use_after_free, 0.05}]),
+
     otel_span:set_attribute(SpanCtx, <<"memory_faults_injected">>, MemoryFaults),
-    
+
     % Test system under memory corruption
     OperationResults = perform_memory_intensive_operations(100),
     SuccessRate = calculate_success_rate(OperationResults),
     ErrorsHandled = count_memory_errors_handled(),
-    
+
     otel_span:set_attribute(SpanCtx, <<"success_rate">>, SuccessRate),
     otel_span:set_attribute(SpanCtx, <<"errors_handled">>, ErrorsHandled),
-    
+
     ?assert(SuccessRate > 0.8), % Should handle most memory faults
     ?assert(ErrorsHandled > 0), % Should detect and handle errors
-    
-    otel_span:add_event(SpanCtx, <<"fault_memory_corruption_complete">>, #{
-        <<"faults_injected">> => MemoryFaults,
-        <<"success_rate">> => SuccessRate,
-        <<"errors_handled">> => ErrorsHandled
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fault_memory_corruption_complete">>,
+                        #{<<"faults_injected">> => MemoryFaults,
+                          <<"success_rate">> => SuccessRate,
+                          <<"errors_handled">> => ErrorsHandled}).
 
 fault_disk_corruption(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fault_disk_corruption_start">>, #{}),
-    
+
     % Inject disk corruption faults
-    DiskFaults = inject_disk_faults([
-        {sector_corruption, 0.1},
-        {file_system_corruption, 0.05},
-        {metadata_corruption, 0.1}
-    ]),
-    
+    DiskFaults =
+        inject_disk_faults([{sector_corruption, 0.1},
+                            {file_system_corruption, 0.05},
+                            {metadata_corruption, 0.1}]),
+
     otel_span:set_attribute(SpanCtx, <<"disk_faults_injected">>, DiskFaults),
-    
+
     % Test file operations under corruption
     FileOperations = perform_file_operations_under_corruption(50),
     ChecksumsValid = verify_file_checksums(FileOperations),
     DataIntegrity = check_data_integrity(FileOperations),
-    
+
     otel_span:set_attribute(SpanCtx, <<"checksums_valid">>, ChecksumsValid),
     otel_span:set_attribute(SpanCtx, <<"data_integrity">>, DataIntegrity),
-    
+
     ?assert(ChecksumsValid > 0.9), % Most checksums should be valid
     ?assert(DataIntegrity), % Data integrity should be maintained
-    
-    otel_span:add_event(SpanCtx, <<"fault_disk_corruption_complete">>, #{
-        <<"faults_injected">> => DiskFaults,
-        <<"checksums_valid">> => ChecksumsValid,
-        <<"data_integrity">> => DataIntegrity
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fault_disk_corruption_complete">>,
+                        #{<<"faults_injected">> => DiskFaults,
+                          <<"checksums_valid">> => ChecksumsValid,
+                          <<"data_integrity">> => DataIntegrity}).
 
 fault_certificate_expiration(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fault_certificate_expiration_start">>, #{}),
-    
+
     % Create certificates with various expiration times
-    Certificates = create_test_certificates([
-        {expired, -86400},    % Expired yesterday
-        {expiring_soon, 3600}, % Expires in 1 hour
-        {valid, 86400 * 30}   % Expires in 30 days
-    ]),
-    
+    Certificates =
+        create_test_certificates([{expired, -86400},    % Expired yesterday
+                                  {expiring_soon, 3600}, % Expires in 1 hour
+                                  {valid, 86400 * 30}]),   % Expires in 30 days
+
     otel_span:set_attribute(SpanCtx, <<"certificates_created">>, length(Certificates)),
-    
+
     % Test TLS connections with each certificate
-    ConnectionResults = lists:map(fun({CertType, Cert}) ->
-        otel_span:add_event(SpanCtx, <<"testing_certificate">>, #{
-            <<"cert_type">> => CertType
-        }),
-        
-        Result = test_tls_connection_with_cert(Cert),
-        {CertType, Result}
-    end, Certificates),
-    
+    ConnectionResults =
+        lists:map(fun({CertType, Cert}) ->
+                     otel_span:add_event(SpanCtx,
+                                         <<"testing_certificate">>,
+                                         #{<<"cert_type">> => CertType}),
+
+                     Result = test_tls_connection_with_cert(Cert),
+                     {CertType, Result}
+                  end,
+                  Certificates),
+
     ExpiredRejected = length([R || {expired, R} <- ConnectionResults, R =:= rejected]),
     ValidAccepted = length([R || {valid, R} <- ConnectionResults, R =:= accepted]),
-    
+
     otel_span:set_attribute(SpanCtx, <<"expired_rejected">>, ExpiredRejected),
     otel_span:set_attribute(SpanCtx, <<"valid_accepted">>, ValidAccepted),
-    
+
     ?assert(ExpiredRejected > 0), % Expired certs should be rejected
     ?assert(ValidAccepted > 0), % Valid certs should be accepted
-    
-    otel_span:add_event(SpanCtx, <<"fault_certificate_expiration_complete">>, #{
-        <<"expired_rejected">> => ExpiredRejected,
-        <<"valid_accepted">> => ValidAccepted
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fault_certificate_expiration_complete">>,
+                        #{<<"expired_rejected">> => ExpiredRejected,
+                          <<"valid_accepted">> => ValidAccepted}).
 
 fault_dns_poisoning(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fault_dns_poisoning_start">>, #{}),
-    
+
     % Inject DNS poisoning
-    PoisonedDomains = inject_dns_poisoning([
-        {"legitimate-service.com", "192.168.1.100"}, % Point to malicious IP
-        {"api.service.com", "10.0.0.100"}
-    ]),
-    
+    PoisonedDomains =
+        inject_dns_poisoning([{"legitimate-service.com", "192.168.1.100"}, % Point to malicious IP
+                              {"api.service.com", "10.0.0.100"}]),
+
     otel_span:set_attribute(SpanCtx, <<"poisoned_domains">>, length(PoisonedDomains)),
-    
+
     % Test DNS resolution and connection behavior
-    DNSResults = lists:map(fun({Domain, _}) ->
-        otel_span:add_event(SpanCtx, <<"testing_poisoned_dns">>, #{
-            <<"domain">> => Domain
-        }),
-        
-        test_dns_resolution_safety(Domain)
-    end, PoisonedDomains),
-    
+    DNSResults =
+        lists:map(fun({Domain, _}) ->
+                     otel_span:add_event(SpanCtx,
+                                         <<"testing_poisoned_dns">>,
+                                         #{<<"domain">> => Domain}),
+
+                     test_dns_resolution_safety(Domain)
+                  end,
+                  PoisonedDomains),
+
     SafeResolutions = [R || R <- DNSResults, R =:= safe],
     UnsafeResolutions = [R || R <- DNSResults, R =:= unsafe],
-    
+
     otel_span:set_attribute(SpanCtx, <<"safe_resolutions">>, length(SafeResolutions)),
     otel_span:set_attribute(SpanCtx, <<"unsafe_resolutions">>, length(UnsafeResolutions)),
-    
+
     % Clean up DNS poisoning
     cleanup_dns_poisoning(PoisonedDomains),
-    
+
     ?assert(length(UnsafeResolutions) =:= 0), % No unsafe resolutions
-    
-    otel_span:add_event(SpanCtx, <<"fault_dns_poisoning_complete">>, #{
-        <<"safe_resolutions">> => length(SafeResolutions),
-        <<"unsafe_resolutions">> => length(UnsafeResolutions)
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fault_dns_poisoning_complete">>,
+                        #{<<"safe_resolutions">> => length(SafeResolutions),
+                          <<"unsafe_resolutions">> => length(UnsafeResolutions)}).
 
 fault_system_overload(Config) ->
     SpanCtx = ?config(span_ctx, Config),
     otel_span:add_event(SpanCtx, <<"fault_system_overload_start">>, #{}),
-    
+
     % Create system overload conditions
-    OverloadConditions = [
-        {cpu_overload, fun() -> create_cpu_intensive_load() end},
-        {memory_pressure, fun() -> create_memory_pressure() end},
-        {io_saturation, fun() -> create_io_saturation() end},
-        {network_congestion, fun() -> create_network_congestion() end}
-    ],
-    
+    OverloadConditions =
+        [{cpu_overload, fun() -> create_cpu_intensive_load() end},
+         {memory_pressure, fun() -> create_memory_pressure() end},
+         {io_saturation, fun() -> create_io_saturation() end},
+         {network_congestion, fun() -> create_network_congestion() end}],
+
     % Apply each overload condition and test system behavior
-    OverloadResults = lists:map(fun({OverloadType, OverloadFun}) ->
-        otel_span:add_event(SpanCtx, <<"applying_system_overload">>, #{
-            <<"overload_type">> => OverloadType
-        }),
-        
-        OverloadProcess = spawn_link(OverloadFun),
-        timer:sleep(5000), % Let overload take effect
-        
-        % Test system responsiveness
-        ResponseTime = measure_system_responsiveness(),
-        Throughput = measure_system_throughput(),
-        
-        exit(OverloadProcess, kill), % Stop overload
-        timer:sleep(1000), % Let system recover
-        
-        {OverloadType, ResponseTime, Throughput}
-    end, OverloadConditions),
-    
-    AvgResponseTime = lists:sum([RT || {_, RT, _} <- OverloadResults]) / length(OverloadResults),
+    OverloadResults =
+        lists:map(fun({OverloadType, OverloadFun}) ->
+                     otel_span:add_event(SpanCtx,
+                                         <<"applying_system_overload">>,
+                                         #{<<"overload_type">> => OverloadType}),
+
+                     OverloadProcess = spawn_link(OverloadFun),
+                     timer:sleep(5000), % Let overload take effect
+
+                     % Test system responsiveness
+                     ResponseTime = measure_system_responsiveness(),
+                     Throughput = measure_system_throughput(),
+
+                     exit(OverloadProcess, kill), % Stop overload
+                     timer:sleep(1000), % Let system recover
+
+                     {OverloadType, ResponseTime, Throughput}
+                  end,
+                  OverloadConditions),
+
+    AvgResponseTime =
+        lists:sum([RT || {_, RT, _} <- OverloadResults]) / length(OverloadResults),
     MinThroughput = lists:min([TP || {_, _, TP} <- OverloadResults]),
-    
+
     otel_span:set_attribute(SpanCtx, <<"avg_response_time_ms">>, AvgResponseTime),
     otel_span:set_attribute(SpanCtx, <<"min_throughput_ops">>, MinThroughput),
-    
+
     % System should degrade gracefully
     ?assert(AvgResponseTime < 10000), % Less than 10 seconds
     ?assert(MinThroughput > 0), % Should maintain some throughput
-    
-    otel_span:add_event(SpanCtx, <<"fault_system_overload_complete">>, #{
-        <<"overload_conditions">> => length(OverloadConditions),
-        <<"avg_response_time">> => AvgResponseTime,
-        <<"min_throughput">> => MinThroughput
-    }).
+
+    otel_span:add_event(SpanCtx,
+                        <<"fault_system_overload_complete">>,
+                        #{<<"overload_conditions">> => length(OverloadConditions),
+                          <<"avg_response_time">> => AvgResponseTime,
+                          <<"min_throughput">> => MinThroughput}).
 
 %% ============================================================================
 %% Fault Injection Infrastructure
@@ -912,37 +915,37 @@ fault_system_overload(Config) ->
 
 inject_fault(Type, Probability) ->
     case rand:uniform() < Probability of
-        true -> execute_fault(Type);
-        false -> ok
+        true ->
+            execute_fault(Type);
+        false ->
+            ok
     end.
 
 execute_fault(network_partition) ->
     ct:pal("INJECTING NETWORK PARTITION"),
     % Simulate by blocking messages between nodes
     block_inter_node_communication();
-
 execute_fault(process_kill) ->
     Processes = erlang:processes(),
     case Processes of
-        [] -> ok;
+        [] ->
+            ok;
         _ ->
-            Target = lists:nth(rand:uniform(length(Processes)), Processes),
+            Target =
+                lists:nth(
+                    rand:uniform(length(Processes)), Processes),
             ct:pal("KILLING PROCESS: ~p", [Target]),
             exit(Target, kill)
     end;
-
 execute_fault(memory_corruption) ->
     ct:pal("CORRUPTING MEMORY"),
     corrupt_random_ets_table();
-
 execute_fault(disk_failure) ->
     ct:pal("SIMULATING DISK FAILURE"),
     simulate_disk_write_failure();
-
 execute_fault(clock_skew) ->
     ct:pal("INJECTING CLOCK SKEW"),
     inject_time_skew(rand:uniform(3600));
-
 execute_fault(packet_loss) ->
     ct:pal("INJECTING PACKET LOSS"),
     enable_packet_loss_simulation(rand:uniform(?PACKET_LOSS_MAX)).
@@ -956,19 +959,26 @@ start_chaos_monkey() ->
 
 stop_chaos_monkey() ->
     case whereis(chaos_monkey) of
-        undefined -> ok;
-        Pid -> exit(Pid, shutdown)
+        undefined ->
+            ok;
+        Pid ->
+            exit(Pid, shutdown)
     end.
 
 chaos_monkey_loop() ->
     register(chaos_monkey, self()),
     timer:sleep(rand:uniform(5000) + 1000), % 1-6 seconds
-    
-    FaultType = lists:nth(rand:uniform(6), [
-        network_partition, process_kill, memory_corruption,
-        disk_failure, clock_skew, packet_loss
-    ]),
-    
+
+    FaultType =
+        lists:nth(
+            rand:uniform(6),
+            [network_partition,
+             process_kill,
+             memory_corruption,
+             disk_failure,
+             clock_skew,
+             packet_loss]),
+
     inject_fault(FaultType, ?CHAOS_PROBABILITY),
     chaos_monkey_loop().
 
@@ -978,13 +988,12 @@ generate_trace_id() ->
 
 start_adversarial_span(TestCase, TraceId) ->
     SpanName = iolist_to_binary(["adversarial_test_", atom_to_list(TestCase)]),
-    otel_tracer:start_span(SpanName, #{
-        <<"test.name">> => TestCase,
-        <<"test.type">> => <<"adversarial">>,
-        <<"trace.id">> => TraceId,
-        <<"chaos.enabled">> => true,
-        <<"attack.simulation">> => true
-    }).
+    otel_tracer:start_span(SpanName,
+                           #{<<"test.name">> => TestCase,
+                             <<"test.type">> => <<"adversarial">>,
+                             <<"trace.id">> => TraceId,
+                             <<"chaos.enabled">> => true,
+                             <<"attack.simulation">> => true}).
 
 end_adversarial_span(SpanCtx, TestCase) ->
     otel_span:set_attribute(SpanCtx, <<"test.completed">>, true),
@@ -1004,11 +1013,14 @@ start_target_processes(N) ->
 
 inject_process_kills(Processes, Probability) ->
     lists:sum([begin
-        case inject_fault(process_kill, Probability) of
-            ok -> 1;
-            _ -> 0
-        end
-    end || _ <- Processes]).
+                   case inject_fault(process_kill, Probability) of
+                       ok ->
+                           1;
+                       _ ->
+                           0
+                   end
+               end
+               || _ <- Processes]).
 
 measure_recovery_time() ->
     rand:uniform(5000).
@@ -1029,13 +1041,7 @@ system_converged() ->
     true.
 
 start_latency_injector(LatencyMs) ->
-    spawn(fun() ->
-        receive
-            stop -> ok
-        after LatencyMs ->
-            timer:sleep(LatencyMs)
-        end
-    end).
+    spawn(fun() -> receive stop -> ok after LatencyMs -> timer:sleep(LatencyMs) end end).
 
 stop_latency_injector(Pid) ->
     Pid ! stop.
@@ -1048,11 +1054,7 @@ calculate_success_rate(Operations) ->
     Successful / length(Operations).
 
 start_packet_loss_injector(Percent) ->
-    spawn(fun() ->
-        receive stop -> ok
-        after 1000 -> ok
-        end
-    end).
+    spawn(fun() -> receive stop -> ok after 1000 -> ok end end).
 
 stop_packet_loss_injector(Pid) ->
     Pid ! stop.
@@ -1081,8 +1083,10 @@ measure_consensus_time() ->
 
 inject_memory_corruption(Probability) ->
     case inject_fault(memory_corruption, Probability) of
-        ok -> 1;
-        _ -> 0
+        ok ->
+            1;
+        _ ->
+            0
     end.
 
 count_corruption_errors() ->
@@ -1104,11 +1108,7 @@ restore_disk_failures(_Failures) ->
     ok.
 
 inject_clock_skew(Seconds) ->
-    spawn(fun() ->
-        receive stop -> ok
-        after 10000 -> ok
-        end
-    end).
+    spawn(fun() -> receive stop -> ok after 10000 -> ok end end).
 
 test_time_sensitive_operations(N) ->
     [#{operation => I, result => success} || I <- lists:seq(1, N)].
@@ -1128,9 +1128,11 @@ attempt_buffer_overflow(_Payload) ->
 
 execute_resource_attack(AttackFun) ->
     try AttackFun() of
-        _ -> handled_gracefully
+        _ ->
+            handled_gracefully
     catch
-        _:_ -> handled_gracefully
+        _:_ ->
+            handled_gracefully
     end.
 
 create_memory_bomb(_Size) ->
@@ -1195,12 +1197,20 @@ check_state_consistency(_State) ->
 
 attempt_service_registration(ServiceName, WorkerId) ->
     case rand:uniform(50) of
-        1 -> success; % Only one should succeed
-        _ -> conflict
+        1 ->
+            success; % Only one should succeed
+        _ ->
+            conflict
     end.
 
 collect_worker_results(Workers) ->
-    [receive {W, Result} -> {W, Result} after 1000 -> {W, timeout} end || W <- Workers].
+    [receive
+         {W, Result} ->
+             {W, Result}
+     after 1000 ->
+         {W, timeout}
+     end
+     || W <- Workers].
 
 start_message_sequencer() ->
     spawn(fun() -> message_sequencer([]) end).
@@ -1221,16 +1231,25 @@ send_ordered_message(Sequencer, Id) ->
 
 wait_for_workers(Workers) ->
     [begin
-        monitor(process, W),
-        receive {'DOWN', _, process, W, _} -> ok end
-     end || W <- Workers].
+         monitor(process, W),
+         receive
+             {'DOWN', _, process, W, _} ->
+                 ok
+         end
+     end
+     || W <- Workers].
 
 get_received_order(Sequencer) ->
     Sequencer ! {get_order, self()},
-    receive {order, Order} -> Order after 1000 -> [] end.
+    receive
+        {order, Order} ->
+            Order
+    after 1000 ->
+        []
+    end.
 
 count_ordering_violations(Order) ->
-    length([X || {A, B} <- lists:zip(Order, tl(Order)), A > B]).
+    length([1 || {A, B} <- lists:zip(Order, tl(Order)), A > B]).
 
 stop_message_sequencer(Sequencer) ->
     Sequencer ! stop.
@@ -1239,12 +1258,14 @@ create_deadlock_resources() ->
     {make_ref(), make_ref()}.
 
 acquire_resources_order_AB(A, B) ->
-    timer:sleep(rand:uniform(100)),
+    timer:sleep(
+        rand:uniform(100)),
     % Mock resource acquisition
     ok.
 
 acquire_resources_order_BA(B, A) ->
-    timer:sleep(rand:uniform(100)),
+    timer:sleep(
+        rand:uniform(100)),
     % Mock resource acquisition
     ok.
 
@@ -1266,7 +1287,12 @@ deadlock_detector(Count) ->
 
 get_deadlock_count(Detector) ->
     Detector ! {get_count, self()},
-    receive {count, Count} -> Count after 1000 -> 0 end.
+    receive
+        {count, Count} ->
+            Count
+    after 1000 ->
+        0
+    end.
 
 stop_deadlock_detector(Detector) ->
     Detector ! stop.
@@ -1279,10 +1305,14 @@ create_complex_state() ->
 
 perform_state_operation(State, Operation, WorkerId) ->
     case Operation of
-        read -> ets:lookup(State, WorkerId);
-        write -> ets:insert(State, {WorkerId, rand:uniform(1000)});
-        delete -> ets:delete(State, WorkerId);
-        update -> ets:update_element(State, WorkerId, {2, rand:uniform(1000)})
+        read ->
+            ets:lookup(State, WorkerId);
+        write ->
+            ets:insert(State, {WorkerId, rand:uniform(1000)});
+        delete ->
+            ets:delete(State, WorkerId);
+        update ->
+            ets:update_element(State, WorkerId, {2, rand:uniform(1000)})
     end.
 
 detect_state_corruption(_State) ->
@@ -1317,8 +1347,10 @@ create_test_certificates(CertSpecs) ->
 
 test_tls_connection_with_cert(Cert) ->
     case maps:get(expires_in, Cert) of
-        ExpiresIn when ExpiresIn < 0 -> rejected;
-        _ -> accepted
+        ExpiresIn when ExpiresIn < 0 ->
+            rejected;
+        _ ->
+            accepted
     end.
 
 inject_dns_poisoning(DomainSpecs) ->
@@ -1332,22 +1364,21 @@ cleanup_dns_poisoning(_Domains) ->
 
 create_cpu_intensive_load() ->
     fun() ->
-        lists:sum(lists:seq(1, 1000000))
+       lists:sum(
+           lists:seq(1, 1000000))
     end.
 
 create_memory_pressure() ->
     fun() ->
-        binary:copy(<<0>>, 1048576) % 1MB
+       binary:copy(<<0>>, 1048576) % 1MB
     end.
 
 create_io_saturation() ->
-    fun() ->
-        file:write_file("/tmp/test_io", binary:copy(<<0>>, 1048576))
-    end.
+    fun() -> file:write_file("/tmp/test_io", binary:copy(<<0>>, 1048576)) end.
 
 create_network_congestion() ->
     fun() ->
-        ok % Mock network congestion
+       ok % Mock network congestion
     end.
 
 measure_system_responsiveness() ->
@@ -1357,11 +1388,26 @@ measure_system_throughput() ->
     rand:uniform(1000).
 
 % Additional utility functions for cleanup...
-block_inter_node_communication() -> ok.
-corrupt_random_ets_table() -> ok.
-simulate_disk_write_failure() -> ok.
-inject_time_skew(_Seconds) -> ok.
-enable_packet_loss_simulation(_Percent) -> ok.
-restore_normal_networking() -> ok.
-cleanup_corrupted_memory() -> ok.
-restore_system_clocks() -> ok.
+block_inter_node_communication() ->
+    ok.
+
+corrupt_random_ets_table() ->
+    ok.
+
+simulate_disk_write_failure() ->
+    ok.
+
+inject_time_skew(_Seconds) ->
+    ok.
+
+enable_packet_loss_simulation(_Percent) ->
+    ok.
+
+restore_normal_networking() ->
+    ok.
+
+cleanup_corrupted_memory() ->
+    ok.
+
+restore_system_clocks() ->
+    ok.
