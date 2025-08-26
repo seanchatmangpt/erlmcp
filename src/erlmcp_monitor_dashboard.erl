@@ -290,8 +290,8 @@ notify_websocket_clients(State, Message) ->
 export_metrics_json(State) ->
     DashboardData = create_dashboard_data(State),
     try
-        % For testing without jsx dependency
-        JSON = iolist_to_binary(io_lib:format("~p", [DashboardData])),
+        % Use jsx for proper JSON encoding
+        JSON = jsx:encode(DashboardData),
         {ok, JSON}
     catch
         Error:Reason ->

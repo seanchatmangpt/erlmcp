@@ -109,11 +109,18 @@ publish:
 	@echo "Publishing $(APP_NAME) v$(APP_VERSION)..."
 	@$(REBAR) hex publish package
 
+# Integration test
+test-integration: compile
+	@echo "Running ErlMCP Integration Test..."
+	@erlc -I include -o test test/erlmcp_integration_test.erl
+	@erl -pa _build/default/lib/*/ebin -pa test -noshell -eval "application:start(sasl), application:start(jsx), erlmcp_integration_test:run()"
+
 # Help
 help:
 	@echo "$(APP_NAME) v$(APP_VERSION) - Available targets:"
 	@echo "  make compile       - Compile the project"
 	@echo "  make test         - Run all tests"
+	@echo "  make test-integration - Run integration test"
 	@echo "  make dialyzer     - Run Dialyzer"
 	@echo "  make xref         - Run xref analysis"
 	@echo "  make format       - Format code"

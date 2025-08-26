@@ -147,7 +147,13 @@ current_trace() ->
 -spec format_trace_json(trace_context()) -> binary().
 format_trace_json(Context) ->
     JsonData = format_trace_for_json(Context),
-    jsx:encode(JsonData).
+    try
+        jsx:encode(JsonData)
+    catch
+        _:_ ->
+            %% Fallback to basic representation if jsx fails
+            iolist_to_binary(io_lib:format("~p", [JsonData]))
+    end.
 
 %%====================================================================
 %% Convenience Functions
@@ -471,3 +477,4 @@ format_stacktrace(Stacktrace) when length(Stacktrace) > 10 ->
     First ++ [{'...', truncated, []}];
 format_stacktrace(Stacktrace) ->
     Stacktrace.
+

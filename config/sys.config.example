@@ -1,0 +1,91 @@
+%% Example system configuration for erlmcp
+%% Copy this file to sys.config and modify as needed
+[
+    {erlmcp, [
+        %% Server configuration
+        {server_name, erlmcp_server},
+        {port, 8080},
+        {max_connections, 100},
+        {timeout, 5000},
+        {acceptors, 10},
+        
+        %% Socket options
+        {socket_opts, [
+            {reuseaddr, true},
+            {keepalive, true},
+            {nodelay, true}
+        ]},
+        
+        %% Protocol options
+        {protocol_opts, [
+            {timeout, 5000},
+            {max_message_size, 1048576}  % 1MB
+        ]},
+        
+        %% Transport configurations
+        {transports, [
+            %% Standard I/O transport (enabled by default)
+            {stdio, #{
+                enabled => true,
+                buffer_size => 1024,
+                timeout => 5000,
+                encoding => utf8
+            }},
+            
+            %% TCP transport (disabled by default)
+            {tcp, #{
+                enabled => false,
+                port => 8080,
+                acceptors => 10,
+                socket_opts => [{reuseaddr, true}],
+                backlog => 1024
+            }},
+            
+            %% HTTP transport (disabled by default)
+            {http, #{
+                enabled => false,
+                port => 8081,
+                path => "/mcp",
+                ssl_opts => [],
+                cors_enabled => true
+            }}
+        ]},
+        
+        %% Logging configuration
+        {log_level, info},
+        {log_file, undefined},  % Use undefined for console logging
+        
+        %% Monitoring and metrics
+        {metrics_enabled, true},
+        {tracing_enabled, false}
+    ]},
+    
+    %% Kernel configuration
+    {kernel, [
+        {logger_level, info},
+        {logger, [
+            {handler, default, logger_std_h, #{
+                level => info,
+                config => #{
+                    type => standard_io,
+                    sync_mode_qlen => 10,
+                    drop_mode_qlen => 1000,
+                    flush_qlen => 2000
+                },
+                formatter => {logger_formatter, #{
+                    single_line => true,
+                    template => [time, " [", level, "] ", pid, " - ", msg, "\n"]
+                }}
+            }}
+        ]}
+    ]},
+    
+    %% SASL configuration
+    {sasl, [
+        {sasl_error_logger, {file, "log/sasl-error.log"}},
+        {errlog_type, error},
+        {error_logger_mf_dir, "log/sasl"},
+        {error_logger_mf_maxbytes, 10485760},  % 10MB
+        {error_logger_mf_maxfiles, 5}
+    ]}
+].

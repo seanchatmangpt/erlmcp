@@ -607,7 +607,7 @@ test_integration_workflow(_Config) ->
     
     %% Step 1: Incoming transport message
     TransportSpan = erlmcp_otel_integration:create_transport_span(
-        stdio, receive, #{
+        stdio, 'receive', #{
             <<"message.id">> => RequestId,
             <<"message.size">> => 256
         }

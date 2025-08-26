@@ -1,0 +1,18 @@
+{
+    "sourceFile": "test/erlmcp_quick_wins_SUITE.erl",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1756188576709,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1756188576709,
+            "name": "Commit-0",
+            "content": "-module(erlmcp_quick_wins_SUITE).\n\n-include_lib(\"common_test/include/ct.hrl\").\n-include_lib(\"eunit/include/eunit.hrl\").\n\n-export([all/0, init_per_suite/1, end_per_suite/1]).\n-export([\n    stdio_exports/1,\n    stdio_info_shape/1,\n    stdio_registry_registration/1\n]).\n\nall() ->\n    [stdio_exports, stdio_info_shape, stdio_registry_registration].\n\ninit_per_suite(Config) ->\n    Config.\n\nend_per_suite(_Config) ->\n    ok.\n\nstdio_exports(_Config) ->\n    Exports = erlmcp_transport_stdio_new:module_info(exports),\n    ?assert(lists:member({start_link, 2}, Exports)),\n    ?assert(lists:member({send, 2}, Exports)),\n    ?assert(lists:member({close, 1}, Exports)),\n    ?assert(lists:member({get_info, 1}, Exports)).\n\nstdio_info_shape(_Config) ->\n    {ok, Pid} = erlmcp_transport_stdio_new:start_link(stdio_qw, #{test_mode => true}),\n    Info = erlmcp_transport_stdio_new:get_info(Pid),\n    ?assertEqual(stdio, maps:get(type, Info, undefined)),\n    ?assert(maps:is_key(version, Info)),\n    ?assert(maps:is_key(capabilities, Info)),\n    ?assert(maps:is_key(connection_state, Info)),\n    ?assert(maps:is_key(statistics, Info)),\n    ok = erlmcp_transport_stdio_new:close(Pid).\n\nstdio_registry_registration(_Config) ->\n    case whereis(erlmcp_registry) of\n        undefined -> {ok, _} = erlmcp_registry:start_link();\n        _ -> ok\n    end,\n    {ok, Pid} = erlmcp_transport_stdio_new:start_link(stdio_reg_qw, #{test_mode => true}),\n    timer:sleep(100),\n    case erlmcp_registry:find_transport(stdio_reg_qw) of\n        {ok, {RegPid, RegConfig}} ->\n            ?assertEqual(Pid, RegPid),\n            ?assert(maps:is_key(type, RegConfig));\n        {error, not_found} ->\n            ct:fail(\"Transport not registered in registry\")\n    end,\n    ok = erlmcp_transport_stdio_new:close(Pid),\n    ok.\n"
+        }
+    ]
+}
