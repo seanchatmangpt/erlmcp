@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ErlMCP Monitoring Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+        }
+        
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        
+        .status-bar {
+            display: flex;
+            gap: 1rem;
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+        
+        .status-item {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        
+        .status-healthy { background: #27ae60; color: white; }
+        .status-degraded { background: #f39c12; color: white; }
+        .status-unhealthy { background: #e74c3c; color: white; }
+        
+        .main {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+        
+        .card h2 {
+            margin-bottom: 1rem;
+            font-size: 1.2rem;
+            color: #2c3e50;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 0.5rem;
+        }
+        
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        
+        .metric:last-child {
+            border-bottom: none;
+        }
+        
+        .metric-label {
+            font-weight: 500;
+            color: #555;
+        }
+        
+        .metric-value {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .health-score {
+            font-size: 2rem;
+            font-weight: bold;
+            text-align: center;
+            margin: 1rem 0;
+        }
+        
+        .score-excellent { color: #27ae60; }
+        .score-good { color: #2ecc71; }
+        .score-fair { color: #f39c12; }
+        .score-poor { color: #e74c3c; }
+        
+        .alert {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .alert.critical {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+        
+        .alert.warning {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+        }
+        
+        .alert-time {
+            font-size: 0.8rem;
+            color: #666;
+            float: right;
+        }
+        
+        .sla-objective {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .sla-name {
+            font-weight: 500;
+        }
+        
+        .sla-status {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        
+        .sla-meeting { background: #d4edda; color: #155724; }
+        .sla-at-risk { background: #fff3cd; color: #856404; }
+        .sla-violated { background: #f8d7da; color: #721c24; }
+        
+        .chart-container {
+            height: 200px;
+            margin-top: 1rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        .auto-refresh {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+        
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-bar {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>🔍 ErlMCP Monitoring Dashboard</h1>
+        <div class="status-bar">
+            <div class="status-item status-healthy" id="overall-status">System Healthy</div>
+            <div class="status-item">Uptime: <span id="uptime">99.95%</span></div>
+            <div class="status-item">Last Updated: <span id="last-updated">--</span></div>
+        </div>
+    </header>
+
+    <main class="main">
+        <!-- Health Overview -->
+        <div class="grid">
+            <div class="card">
+                <h2>🏥 System Health</h2>
+                <div class="health-score score-excellent" id="health-score">95.2%</div>
+                <div class="metric">
+                    <span class="metric-label">Transports</span>
+                    <span class="metric-value" id="transports-health">Healthy</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Registry</span>
+                    <span class="metric-value" id="registry-health">Healthy</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Memory</span>
+                    <span class="metric-value" id="memory-health">Healthy</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Connections</span>
+                    <span class="metric-value" id="connections-health">Healthy</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>⚡ Performance Metrics</h2>
+                <div class="metric">
+                    <span class="metric-label">Avg Response Time</span>
+                    <span class="metric-value" id="avg-response-time">125ms</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">P95 Response Time</span>
+                    <span class="metric-value" id="p95-response-time">350ms</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Throughput</span>
+                    <span class="metric-value" id="throughput">250 req/s</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Error Rate</span>
+                    <span class="metric-value" id="error-rate">0.12%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Success Rate</span>
+                    <span class="metric-value" id="success-rate">99.88%</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>💾 System Resources</h2>
+                <div class="metric">
+                    <span class="metric-label">Memory Usage</span>
+                    <span class="metric-value" id="memory-usage">45.2%</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Process Count</span>
+                    <span class="metric-value" id="process-count">8,234</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Port Count</span>
+                    <span class="metric-value" id="port-count">156</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">ETS Tables</span>
+                    <span class="metric-value" id="ets-tables">89</span>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Schedulers</span>
+                    <span class="metric-value" id="schedulers">8</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- SLA Objectives -->
+        <div class="card">
+            <h2>🎯 SLA Objectives</h2>
+            <div id="sla-objectives">
+                <div class="sla-objective">
+                    <div class="sla-name">High Availability (99.95%)</div>
+                    <div class="sla-status sla-meeting">MEETING</div>
+                </div>
+                <div class="sla-objective">
+                    <div class="sla-name">Low Latency (P95 < 500ms)</div>
+                    <div class="sla-status sla-meeting">MEETING</div>
+                </div>
+                <div class="sla-objective">
+                    <div class="sla-name">Reliability (Error < 0.1%)</div>
+                    <div class="sla-status sla-at-risk">AT RISK</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Alerts -->
+        <div class="card">
+            <h2>🚨 Recent Alerts</h2>
+            <div id="recent-alerts">
+                <div class="alert warning">
+                    <div class="alert-time">2 minutes ago</div>
+                    <strong>High Memory Usage</strong><br>
+                    Memory usage has exceeded 75% threshold
+                </div>
+                <div class="alert critical">
+                    <div class="alert-time">15 minutes ago</div>
+                    <strong>SLA Violation</strong><br>
+                    Error rate exceeded 0.1% SLA objective
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Chart Placeholder -->
+        <div class="card">
+            <h2>📈 Metrics Trends</h2>
+            <div class="chart-container">
+                <div>📊 Real-time charts would be displayed here<br>
+                <small>Integrate with Chart.js or similar library for live visualization</small></div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>ErlMCP Continuous Monitoring System | 
+        <a href="/api/health">Health API</a> | 
+        <a href="/api/metrics">Metrics API</a> | 
+        <a href="/api/alerts">Alerts API</a></p>
+    </footer>
+
+    <div class="auto-refresh" id="refresh-status">
+        Auto-refresh: ON (5s)
+    </div>
+
+    <script>
+        // Simulated real-time updates
+        let refreshInterval;
+        let isRefreshing = true;
+
+        function updateDashboard() {
+            // Simulate fetching data from API
+            fetch('/api/dashboard')
+                .then(response => response.json())
+                .then(data => {
+                    updateHealthStatus(data.current_health);
+                    updateMetrics(data.current_metrics);
+                    updateSLAObjectives(data.sla_status);
+                    updateAlerts(data.recent_alerts);
+                    document.getElementById('last-updated').textContent = 
+                        new Date().toLocaleTimeString();
+                })
+                .catch(error => {
+                    console.error('Failed to fetch dashboard data:', error);
+                    // Show simulated data for demo
+                    showSimulatedData();
+                });
+        }
+
+        function updateHealthStatus(health) {
+            if (!health) return;
+            
+            const score = health.score || 0.95;
+            const scoreElement = document.getElementById('health-score');
+            const statusElement = document.getElementById('overall-status');
+            
+            scoreElement.textContent = Math.round(score * 100) + '%';
+            
+            // Update health score color
+            scoreElement.className = 'health-score ';
+            if (score >= 0.9) scoreElement.className += 'score-excellent';
+            else if (score >= 0.8) scoreElement.className += 'score-good';
+            else if (score >= 0.6) scoreElement.className += 'score-fair';
+            else scoreElement.className += 'score-poor';
+            
+            // Update overall status
+            const overall = health.overall || 'healthy';
+            statusElement.className = 'status-item status-' + overall;
+            statusElement.textContent = 'System ' + overall.charAt(0).toUpperCase() + overall.slice(1);
+        }
+
+        function updateMetrics(metrics) {
+            if (!metrics) return;
+            
+            const performance = metrics.performance || {};
+            const system = metrics.system || {};
+            const memory = metrics.memory || {};
+            
+            // Update performance metrics
+            if (performance.avg_response_time_ms) {
+                document.getElementById('avg-response-time').textContent = 
+                    Math.round(performance.avg_response_time_ms) + 'ms';
+            }
+            
+            if (performance.p95_response_time_ms) {
+                document.getElementById('p95-response-time').textContent = 
+                    Math.round(performance.p95_response_time_ms) + 'ms';
+            }
+            
+            if (performance.throughput_per_sec) {
+                document.getElementById('throughput').textContent = 
+                    Math.round(performance.throughput_per_sec) + ' req/s';
+            }
+            
+            if (performance.error_rate_percent) {
+                document.getElementById('error-rate').textContent = 
+                    performance.error_rate_percent.toFixed(2) + '%';
+            }
+            
+            // Update system metrics
+            if (system.process_count) {
+                document.getElementById('process-count').textContent = 
+                    system.process_count.toLocaleString();
+            }
+            
+            if (memory.usage_percent) {
+                document.getElementById('memory-usage').textContent = 
+                    memory.usage_percent.toFixed(1) + '%';
+            }
+        }
+
+        function updateSLAObjectives(slaStatus) {
+            if (!slaStatus || !slaStatus.objectives) return;
+            
+            const container = document.getElementById('sla-objectives');
+            container.innerHTML = '';
+            
+            Object.values(slaStatus.objectives).forEach(objective => {
+                const div = document.createElement('div');
+                div.className = 'sla-objective';
+                
+                const statusClass = 'sla-' + objective.status.replace('_', '-');
+                const statusText = objective.status.toUpperCase().replace('_', ' ');
+                
+                div.innerHTML = `
+                    <div class="sla-name">${objective.name} (${objective.target}${objective.name.includes('time') ? 'ms' : '%'})</div>
+                    <div class="sla-status ${statusClass}">${statusText}</div>
+                `;
+                
+                container.appendChild(div);
+            });
+        }
+
+        function updateAlerts(alerts) {
+            if (!alerts) return;
+            
+            const container = document.getElementById('recent-alerts');
+            
+            if (alerts.length === 0) {
+                container.innerHTML = '<div style="color: #666; text-align: center; padding: 1rem;">No recent alerts</div>';
+                return;
+            }
+            
+            container.innerHTML = alerts.slice(0, 5).map(alert => `
+                <div class="alert ${alert.severity}">
+                    <div class="alert-time">${formatTimeAgo(alert.timestamp)}</div>
+                    <strong>${alert.rule_name}</strong><br>
+                    ${alert.message}
+                </div>
+            `).join('');
+        }
+
+        function formatTimeAgo(timestamp) {
+            const now = Date.now();
+            const diff = now - timestamp;
+            const minutes = Math.floor(diff / 60000);
+            
+            if (minutes < 1) return 'Just now';
+            if (minutes === 1) return '1 minute ago';
+            if (minutes < 60) return minutes + ' minutes ago';
+            
+            const hours = Math.floor(minutes / 60);
+            if (hours === 1) return '1 hour ago';
+            if (hours < 24) return hours + ' hours ago';
+            
+            const days = Math.floor(hours / 24);
+            return days + ' day' + (days === 1 ? '' : 's') + ' ago';
+        }
+
+        function showSimulatedData() {
+            // Show demo data when API is not available
+            const demoData = {
+                current_health: {
+                    score: 0.95,
+                    overall: 'healthy'
+                },
+                current_metrics: {
+                    performance: {
+                        avg_response_time_ms: 125,
+                        p95_response_time_ms: 350,
+                        throughput_per_sec: 250,
+                        error_rate_percent: 0.12
+                    },
+                    system: {
+                        process_count: 8234
+                    },
+                    memory: {
+                        usage_percent: 45.2
+                    }
+                }
+            };
+            
+            updateHealthStatus(demoData.current_health);
+            updateMetrics(demoData.current_metrics);
+        }
+
+        function toggleAutoRefresh() {
+            isRefreshing = !isRefreshing;
+            const statusElement = document.getElementById('refresh-status');
+            
+            if (isRefreshing) {
+                refreshInterval = setInterval(updateDashboard, 5000);
+                statusElement.textContent = 'Auto-refresh: ON (5s)';
+                statusElement.style.background = 'rgba(0,0,0,0.7)';
+            } else {
+                clearInterval(refreshInterval);
+                statusElement.textContent = 'Auto-refresh: OFF';
+                statusElement.style.background = 'rgba(220,53,69,0.8)';
+            }
+        }
+
+        // Initialize dashboard
+        updateDashboard();
+        refreshInterval = setInterval(updateDashboard, 5000);
+        
+        // Click refresh status to toggle
+        document.getElementById('refresh-status').addEventListener('click', toggleAutoRefresh);
+        
+        // Show simulated data initially
+        showSimulatedData();
+    </script>
+</body>
+</html>

@@ -2,6 +2,8 @@
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
+% Disable opentelemetry for now until dependency is available
+% -include_lib("opentelemetry/include/otel_tracer.hrl").
 
 %% API exports
 -export([
@@ -57,11 +59,51 @@ start_link() ->
 
 -spec register_server(server_id(), pid(), server_config()) -> ok | {error, term()}.
 register_server(ServerId, ServerPid, Config) when is_pid(ServerPid) ->
-    gen_server:call(?MODULE, {register_server, ServerId, ServerPid, Config}).
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.register_server">>),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId,
+            <<"server_pid">> => ServerPid
+        }),
+        Result = gen_server:call(?MODULE, {register_server, ServerId, ServerPid, Config}),
+        case Result of
+            ok -> erlmcp_tracing:set_status(SpanCtx, ok);
+            {error, _} -> erlmcp_tracing:set_status(SpanCtx, {error, registration_failed})
+        end,
+        Result
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
 
 -spec register_transport(transport_id(), pid(), transport_config()) -> ok | {error, term()}.
 register_transport(TransportId, TransportPid, Config) when is_pid(TransportPid) ->
-    gen_server:call(?MODULE, {register_transport, TransportId, TransportPid, Config}).
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.register_transport">>),
+    try
+        TransportType = maps:get(type, Config, unknown),
+        ServerId = maps:get(server_id, Config, undefined),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport_id">> => TransportId,
+            <<"transport_pid">> => TransportPid,
+            <<"transport_type">> => TransportType,
+            <<"server_id">> => ServerId
+        }),
+        Result = gen_server:call(?MODULE, {register_transport, TransportId, TransportPid, Config}),
+        case Result of
+            ok -> erlmcp_tracing:set_status(SpanCtx, ok);
+            {error, _} -> erlmcp_tracing:set_status(SpanCtx, {error, registration_failed})
+        end,
+        Result
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
 
 -spec unregister_server(server_id()) -> ok.
 unregister_server(ServerId) ->
@@ -73,11 +115,53 @@ unregister_transport(TransportId) ->
 
 -spec route_to_server(server_id(), transport_id(), term()) -> ok | {error, term()}.
 route_to_server(ServerId, TransportId, Message) ->
-    gen_server:cast(?MODULE, {route_to_server, ServerId, TransportId, Message}).
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.route_to_server">>),
+    try
+        MessageSize = case Message of
+            M when is_binary(M) -> byte_size(M);
+            M when is_list(M) -> iolist_size(M);
+            _ -> unknown
+        end,
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId,
+            <<"transport_id">> => TransportId,
+            <<"message.size">> => MessageSize
+        }),
+        Result = gen_server:cast(?MODULE, {route_to_server, ServerId, TransportId, Message}),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        Result
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
 
 -spec route_to_transport(transport_id(), server_id(), term()) -> ok | {error, term()}.
 route_to_transport(TransportId, ServerId, Message) ->
-    gen_server:cast(?MODULE, {route_to_transport, TransportId, ServerId, Message}).
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.route_to_transport">>),
+    try
+        MessageSize = case Message of
+            M when is_binary(M) -> byte_size(M);
+            M when is_list(M) -> iolist_size(M);
+            _ -> unknown
+        end,
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport_id">> => TransportId,
+            <<"server_id">> => ServerId,
+            <<"message.size">> => MessageSize
+        }),
+        Result = gen_server:cast(?MODULE, {route_to_transport, TransportId, ServerId, Message}),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        Result
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
 
 -spec find_server(server_id()) -> {ok, {pid(), server_config()}} | {error, not_found}.
 find_server(ServerId) ->
@@ -121,31 +205,51 @@ init([]) ->
     {reply, term(), state()}.
 
 handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
-    case maps:get(ServerId, State#registry_state.servers, undefined) of
-        undefined ->
-            MonitorRef = monitor(process, ServerPid),
-            Capabilities = maps:get(capabilities, Config, undefined),
-            
-            NewServers = maps:put(ServerId, {ServerPid, Config}, State#registry_state.servers),
-            NewCapabilities = case Capabilities of
-                undefined -> State#registry_state.capabilities;
-                _ -> maps:put(ServerId, Capabilities, State#registry_state.capabilities)
-            end,
-            NewMonitors = maps:put(ServerPid, {ServerId, server}, State#registry_state.monitors),
-            NewMonitorRefs = maps:put(ServerPid, MonitorRef, State#registry_state.monitor_refs),
-            
-            NewState = State#registry_state{
-                servers = NewServers,
-                capabilities = NewCapabilities,
-                monitors = NewMonitors,
-                monitor_refs = NewMonitorRefs
-            },
-            
-            logger:info("Registered server ~p with pid ~p", [ServerId, ServerPid]),
-            {reply, ok, NewState};
-        {ExistingPid, _} ->
-            logger:warning("Server ~p already registered with pid ~p", [ServerId, ExistingPid]),
-            {reply, {error, already_registered}, State}
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.handle_register_server">>),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId,
+            <<"server_pid">> => ServerPid,
+            <<"existing_servers_count">> => maps:size(State#registry_state.servers)
+        }),
+        
+        case maps:get(ServerId, State#registry_state.servers, undefined) of
+            undefined ->
+                MonitorRef = monitor(process, ServerPid),
+                Capabilities = maps:get(capabilities, Config, undefined),
+                
+                NewServers = maps:put(ServerId, {ServerPid, Config}, State#registry_state.servers),
+                NewCapabilities = case Capabilities of
+                    undefined -> State#registry_state.capabilities;
+                    _ -> maps:put(ServerId, Capabilities, State#registry_state.capabilities)
+                end,
+                NewMonitors = maps:put(ServerPid, {ServerId, server}, State#registry_state.monitors),
+                NewMonitorRefs = maps:put(ServerPid, MonitorRef, State#registry_state.monitor_refs),
+                
+                NewState = State#registry_state{
+                    servers = NewServers,
+                    capabilities = NewCapabilities,
+                    monitors = NewMonitors,
+                    monitor_refs = NewMonitorRefs
+                },
+                
+                erlmcp_tracing:record_performance_metrics(SpanCtx, #{
+                    memory_usage => erlang:process_info(self(), memory)
+                }),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                logger:info("Registered server ~p with pid ~p", [ServerId, ServerPid]),
+                {reply, ok, NewState};
+            {ExistingPid, _} ->
+                erlmcp_tracing:record_error_details(SpanCtx, already_registered, ExistingPid),
+                logger:warning("Server ~p already registered with pid ~p", [ServerId, ExistingPid]),
+                {reply, {error, already_registered}, State}
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end;
 
 handle_call({register_transport, TransportId, TransportPid, Config}, _From, State) ->
@@ -290,23 +394,69 @@ handle_call(_Request, _From, State) ->
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
 handle_cast({route_to_server, ServerId, TransportId, Message}, State) ->
-    case get_server_pid(ServerId, State) of
-        {ok, ServerPid} ->
-            ServerPid ! {mcp_message, TransportId, Message},
-            {noreply, State};
-        {error, not_found} ->
-            logger:warning("Cannot route to server ~p: not found", [ServerId]),
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.handle_route_to_server">>),
+    try
+        MessageSize = case Message of
+            M when is_binary(M) -> byte_size(M);
+            M when is_list(M) -> iolist_size(M);
+            _ -> unknown
+        end,
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId,
+            <<"transport_id">> => TransportId,
+            <<"message.size">> => MessageSize
+        }),
+        
+        case get_server_pid(ServerId, State) of
+            {ok, ServerPid} ->
+                erlmcp_tracing:set_attributes(SpanCtx, #{<<"server_pid">> => ServerPid}),
+                ServerPid ! {mcp_message, TransportId, Message},
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                {noreply, State};
+            {error, not_found} ->
+                erlmcp_tracing:record_error_details(SpanCtx, server_not_found, ServerId),
+                logger:warning("Cannot route to server ~p: not found", [ServerId]),
+                {noreply, State}
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
             {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end;
 
 handle_cast({route_to_transport, TransportId, ServerId, Message}, State) ->
-    case get_transport_pid(TransportId, State) of
-        {ok, TransportPid} ->
-            TransportPid ! {mcp_response, ServerId, Message},
-            {noreply, State};
-        {error, not_found} ->
-            logger:warning("Cannot route to transport ~p: not found", [TransportId]),
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.handle_route_to_transport">>),
+    try
+        MessageSize = case Message of
+            M when is_binary(M) -> byte_size(M);
+            M when is_list(M) -> iolist_size(M);
+            _ -> unknown
+        end,
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport_id">> => TransportId,
+            <<"server_id">> => ServerId,
+            <<"message.size">> => MessageSize
+        }),
+        
+        case get_transport_pid(TransportId, State) of
+            {ok, TransportPid} ->
+                erlmcp_tracing:set_attributes(SpanCtx, #{<<"transport_pid">> => TransportPid}),
+                TransportPid ! {mcp_response, ServerId, Message},
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                {noreply, State};
+            {error, not_found} ->
+                erlmcp_tracing:record_error_details(SpanCtx, transport_not_found, TransportId),
+                logger:warning("Cannot route to transport ~p: not found", [TransportId]),
+                {noreply, State}
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
             {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end;
 
 handle_cast(_Msg, State) ->

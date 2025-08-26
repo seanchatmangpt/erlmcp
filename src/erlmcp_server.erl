@@ -2,6 +2,7 @@
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 %% API exports
 -export([
@@ -117,15 +118,29 @@ stop(Server) ->
 
 -spec init([server_id() | #mcp_server_capabilities{}]) -> {ok, state()}.
 init([ServerId, Capabilities]) ->
-    process_flag(trap_exit, true),
-    
-    State = #state{
-        server_id = ServerId,
-        capabilities = Capabilities
-    },
-    
-    logger:info("Starting MCP server ~p (refactored)", [ServerId]),
-    {ok, State}.
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.init">>, ServerId),
+    try
+        process_flag(trap_exit, true),
+        
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId
+        }),
+        
+        State = #state{
+            server_id = ServerId,
+            capabilities = Capabilities
+        },
+        
+        logger:info("Starting MCP server ~p (refactored)", [ServerId]),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {ok, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
@@ -215,15 +230,40 @@ handle_cast(_Msg, State) ->
 -spec handle_info(term(), state()) -> {noreply, state()}.
 
 % Handle messages routed from registry - this is the key change!
-handle_info({mcp_message, TransportId, Data}, State) ->
-    case erlmcp_json_rpc:decode_message(Data) of
-        {ok, #json_rpc_request{id = Id, method = Method, params = Params}} ->
-            handle_request(Id, Method, Params, TransportId, State);
-        {ok, #json_rpc_notification{method = Method, params = Params}} ->
-            handle_notification(Method, Params, State);
-        {error, Reason} ->
-            logger:error("Failed to decode message: ~p", [Reason]),
-            {noreply, State}
+handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_mcp_message">>, ServerId),
+    try
+        DataSize = byte_size(Data),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport_id">> => TransportId,
+            <<"data.size">> => DataSize
+        }),
+        
+        DecodeSpanCtx = erlmcp_tracing:start_span(<<"json_rpc.decode">>),
+        try
+            case erlmcp_json_rpc:decode_message(Data) of
+                {ok, #json_rpc_request{id = Id, method = Method, params = Params}} ->
+                    erlmcp_tracing:set_status(DecodeSpanCtx, ok),
+                    erlmcp_tracing:record_message_metrics(SpanCtx, Method, DataSize),
+                    handle_request(Id, Method, Params, TransportId, State);
+                {ok, #json_rpc_notification{method = Method, params = Params}} ->
+                    erlmcp_tracing:set_status(DecodeSpanCtx, ok),
+                    erlmcp_tracing:record_message_metrics(SpanCtx, Method, DataSize),
+                    handle_notification(Method, Params, State);
+                {error, Reason} ->
+                    erlmcp_tracing:record_error_details(DecodeSpanCtx, decode_failed, Reason),
+                    logger:error("Failed to decode message: ~p", [Reason]),
+                    {noreply, State}
+            end
+        after
+            erlmcp_tracing:end_span(DecodeSpanCtx)
+        end
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end;
 
 handle_info(_Info, State) ->
@@ -245,40 +285,97 @@ code_change(_OldVsn, State, _Extra) ->
 -spec handle_request(json_rpc_id(), binary(), json_rpc_params(), atom(), state()) ->
     {noreply, state()}.
 
-handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, State) ->
-    Response = build_initialize_response(State#state.capabilities),
-    send_response_via_registry(State, TransportId, Id, Response),
-    {noreply, State#state{initialized = true}};
+handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_initialize">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_INITIALIZE
+        }),
+        
+        Response = build_initialize_response(State#state.capabilities),
+        send_response_via_registry(State, TransportId, Id, Response),
+        
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {noreply, State#state{initialized = true}}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_LIST, _Params, TransportId, State) ->
     Resources = list_all_resources(State),
     send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_RESOURCES => Resources}),
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_RESOURCES_READ, Params, TransportId, State) ->
-    case maps:get(?MCP_PARAM_URI, Params, undefined) of
-        undefined ->
-            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
-        Uri ->
-            handle_read_resource(Id, Uri, TransportId, State)
-    end,
-    {noreply, State};
+handle_request(Id, ?MCP_METHOD_RESOURCES_READ, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_resources_read">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_RESOURCES_READ
+        }),
+        
+        case maps:get(?MCP_PARAM_URI, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_uri_parameter, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
+            Uri ->
+                erlmcp_tracing:set_attributes(SpanCtx, #{<<"resource.uri">> => Uri}),
+                handle_read_resource(Id, Uri, TransportId, State)
+        end,
+        
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
 handle_request(Id, ?MCP_METHOD_TOOLS_LIST, _Params, TransportId, State) ->
     Tools = list_all_tools(State),
     send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_TOOLS => Tools}),
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, State) ->
-    Name = maps:get(?MCP_PARAM_NAME, Params, undefined),
-    Args = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
-    case {Name, Args} of
-        {undefined, _} ->
-            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
-        {ToolName, Arguments} ->
-            handle_tool_call(Id, ToolName, Arguments, TransportId, State)
-    end,
-    {noreply, State};
+handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tools_call">>, ServerId),
+    try
+        Name = maps:get(?MCP_PARAM_NAME, Params, undefined),
+        Args = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
+        
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TOOLS_CALL,
+            <<"tool.name">> => Name,
+            <<"arguments_count">> => maps:size(Args)
+        }),
+        
+        case {Name, Args} of
+            {undefined, _} ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_tool_name, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
+            {ToolName, Arguments} ->
+                handle_tool_call(Id, ToolName, Arguments, TransportId, State)
+        end,
+        
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, _Params, TransportId, State) ->
     Templates = list_all_templates(State),
@@ -468,37 +565,97 @@ list_all_prompts(State) ->
 
 % Resource handling functions (abbreviated for brevity - using same logic as original)
 -spec handle_read_resource(json_rpc_id(), binary(), atom(), state()) -> ok.
-handle_read_resource(Id, Uri, TransportId, State) ->
-    case find_resource(Uri, State) of
-        {ok, {Resource, Handler}} ->
-            try
-                Content = Handler(Uri),
-                ContentItem = encode_content_item(Content, Resource, Uri),
-                send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]})
-            catch
-                Class:Reason:Stack ->
-                    logger:error("Resource handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
-                    send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
-            end;
-        {error, not_found} ->
-            send_error_safe(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
+handle_read_resource(Id, Uri, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.read_resource">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"resource.uri">> => Uri,
+            <<"transport_id">> => TransportId
+        }),
+        
+        case find_resource(Uri, State) of
+            {ok, {Resource, Handler}} ->
+                HandlerSpanCtx = erlmcp_tracing:start_span(<<"resource.handler">>),
+                try
+                    Content = Handler(Uri),
+                    ContentItem = encode_content_item(Content, Resource, Uri),
+                    ContentSize = case Content of
+                        C when is_binary(C) -> byte_size(C);
+                        _ -> unknown
+                    end,
+                    erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
+                        <<"content.size">> => ContentSize
+                    }),
+                    erlmcp_tracing:set_status(HandlerSpanCtx, ok),
+                    send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]}),
+                    erlmcp_tracing:set_status(SpanCtx, ok)
+                catch
+                    Class:Reason:Stack ->
+                        erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
+                        logger:error("Resource handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
+                        send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+                after
+                    erlmcp_tracing:end_span(HandlerSpanCtx)
+                end;
+            {error, not_found} ->
+                erlmcp_tracing:record_error_details(SpanCtx, resource_not_found, Uri),
+                send_error_safe(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
+        end
+    catch
+        ClassOuter:ExceptionReason:StacktraceOuter ->
+            erlmcp_tracing:record_exception(SpanCtx, ClassOuter, ExceptionReason, StacktraceOuter),
+            erlang:raise(ClassOuter, ExceptionReason, StacktraceOuter)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end.
 
 -spec handle_tool_call(json_rpc_id(), binary(), map(), atom(), state()) -> ok.
-handle_tool_call(Id, Name, Arguments, TransportId, State) ->
-    case maps:get(Name, State#state.tools, undefined) of
-        undefined ->
-            send_error_safe(State, TransportId, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
-        {_Tool, Handler, _Schema} ->
-            try
-                Result = Handler(Arguments),
-                ContentList = normalize_tool_result(Result),
-                send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENT => ContentList})
-            catch
-                Class:Reason:Stack ->
-                    logger:error("Tool handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
-                    send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
-            end
+handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.call_tool">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"tool.name">> => Name,
+            <<"transport_id">> => TransportId,
+            <<"arguments_count">> => maps:size(Arguments)
+        }),
+        
+        case maps:get(Name, State#state.tools, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, tool_not_found, Name),
+                send_error_safe(State, TransportId, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
+            {_Tool, Handler, _Schema} ->
+                HandlerSpanCtx = erlmcp_tracing:start_span(<<"tool.handler">>),
+                try
+                    Result = Handler(Arguments),
+                    ContentList = normalize_tool_result(Result),
+                    ContentSize = case Result of
+                        R when is_binary(R) -> byte_size(R);
+                        R when is_list(R) -> length(R);
+                        _ -> unknown
+                    end,
+                    erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
+                        <<"result.size">> => ContentSize
+                    }),
+                    erlmcp_tracing:set_status(HandlerSpanCtx, ok),
+                    send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENT => ContentList}),
+                    erlmcp_tracing:set_status(SpanCtx, ok)
+                catch
+                    Class:Reason:Stack ->
+                        erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
+                        logger:error("Tool handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
+                        send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+                after
+                    erlmcp_tracing:end_span(HandlerSpanCtx)
+                end
+        end
+    catch
+        ClassTool:ExceptionReasonTool:StacktraceTool ->
+            erlmcp_tracing:record_exception(SpanCtx, ClassTool, ExceptionReasonTool, StacktraceTool),
+            erlang:raise(ClassTool, ExceptionReasonTool, StacktraceTool)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end.
 
 -spec handle_get_prompt(json_rpc_id(), binary(), map(), atom(), state()) -> ok.

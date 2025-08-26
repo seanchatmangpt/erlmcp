@@ -1,0 +1,269 @@
+-module(erlmcp_tracing_test).
+
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("opentelemetry/include/otel_tracer.hrl").
+
+%%====================================================================
+%% Test Suite
+%%====================================================================
+
+-define(TRACER_NAME, 'erlmcp.tracer').
+
+tracing_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     [
+        fun test_basic_span_creation/0,
+        fun test_span_attributes/0,
+        fun test_exception_recording/0,
+        fun test_with_span/0,
+        fun test_transport_spans/0,
+        fun test_server_spans/0,
+        fun test_registry_spans/0,
+        fun test_performance_metrics/0,
+        fun test_message_metrics/0,
+        fun test_error_details/0
+     ]}.
+
+%%====================================================================
+%% Setup and Cleanup
+%%====================================================================
+
+setup() ->
+    % Mock OpenTelemetry calls if not available
+    meck:new(otel_tracer, [unstick, passthrough]),
+    meck:new(otel_span, [unstick, passthrough]),
+    
+    % Mock basic tracer functions
+    meck:expect(otel_tracer, get_tracer, fun(_) -> test_tracer end),
+    meck:expect(otel_tracer, start_span, fun(_, Name, _) -> {span, Name, erlang:timestamp()} end),
+    meck:expect(otel_span, end_span, fun(_) -> ok end),
+    meck:expect(otel_span, set_attributes, fun(_, _) -> ok end),
+    meck:expect(otel_span, set_status, fun(_, _) -> ok end),
+    meck:expect(otel_span, record_exception, fun(_, _, _, _) -> ok end),
+    meck:expect(otel_span, add_event, fun(_, _, _) -> ok end),
+    meck:expect(otel_tracer, current_span_ctx, fun() -> undefined end),
+    ok.
+
+cleanup(_) ->
+    meck:unload([otel_tracer, otel_span]).
+
+%%====================================================================
+%% Test Cases
+%%====================================================================
+
+test_basic_span_creation() ->
+    SpanName = <<"test.span">>,
+    SpanCtx = erlmcp_tracing:start_span(SpanName),
+    
+    ?assertMatch({span, SpanName, _}, SpanCtx),
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_span_attributes() ->
+    SpanCtx = erlmcp_tracing:start_span(<<"test.attributes">>),
+    
+    Attributes = #{
+        <<"string_key">> => <<"string_value">>,
+        <<"integer_key">> => 42,
+        <<"boolean_key">> => true,
+        <<"atom_key">> => test_atom
+    },
+    
+    ?assertEqual(ok, erlmcp_tracing:set_attributes(SpanCtx, Attributes)),
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_exception_recording() ->
+    SpanCtx = erlmcp_tracing:start_span(<<"test.exception">>),
+    
+    Class = error,
+    Reason = {badmatch, test},
+    Stacktrace = [{module, function, 1, []}],
+    
+    ?assertEqual(ok, erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace)),
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_with_span() ->
+    SpanName = <<"test.with_span">>,
+    Attributes = #{<<"test">> => true},
+    
+    Result = erlmcp_tracing:with_span(SpanName, Attributes, fun() ->
+        {ok, test_result}
+    end),
+    
+    ?assertEqual({ok, test_result}, Result).
+
+test_transport_spans() ->
+    TransportId = test_transport,
+    TransportType = tcp,
+    
+    % Test transport span creation
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.test">>, TransportId, TransportType),
+    ?assertMatch({span, <<"transport.test">>, _}, SpanCtx),
+    
+    % Test performance metrics recording
+    Metrics = #{
+        latency => 100,
+        throughput => 50,
+        buffer_size => 1024,
+        retry_count => 2
+    },
+    ?assertEqual(ok, erlmcp_tracing:record_performance_metrics(SpanCtx, Metrics)),
+    
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_server_spans() ->
+    ServerId = test_server,
+    
+    % Test server span creation
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.test">>, ServerId),
+    ?assertMatch({span, <<"server.test">>, _}, SpanCtx),
+    
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_registry_spans() ->
+    % Test registry span creation
+    SpanCtx = erlmcp_tracing:start_registry_span(<<"registry.test">>),
+    ?assertMatch({span, <<"registry.test">>, _}, SpanCtx),
+    
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_performance_metrics() ->
+    SpanCtx = erlmcp_tracing:start_span(<<"test.performance">>),
+    
+    Metrics = #{
+        latency => 250.5,
+        throughput => 1000,
+        buffer_size => 4096,
+        queue_length => 10,
+        connection_count => 5,
+        retry_count => 1,
+        memory_usage => 1048576
+    },
+    
+    ?assertEqual(ok, erlmcp_tracing:record_performance_metrics(SpanCtx, Metrics)),
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_message_metrics() ->
+    SpanCtx = erlmcp_tracing:start_span(<<"test.message">>),
+    
+    Method = <<"test.method">>,
+    Size = 512,
+    
+    ?assertEqual(ok, erlmcp_tracing:record_message_metrics(SpanCtx, Method, Size)),
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+test_error_details() ->
+    SpanCtx = erlmcp_tracing:start_span(<<"test.error">>),
+    
+    ErrorType = connection_failed,
+    ErrorMessage = "Connection timeout",
+    
+    ?assertEqual(ok, erlmcp_tracing:record_error_details(SpanCtx, ErrorType, ErrorMessage)),
+    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx)).
+
+%%====================================================================
+%% Helper Functions for Integration Testing
+%%====================================================================
+
+% Test that tracing works with actual transport operations
+transport_integration_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun test_transport_send_with_tracing/0}.
+
+test_transport_send_with_tracing() ->
+    % Test that transport send operations create proper spans
+    TransportId = test_transport_integration,
+    Data = <<"test message">>,
+    
+    % Create a mock state for transport
+    State = #{
+        transport_id => TransportId,
+        test_mode => true
+    },
+    
+    % This would normally call the actual transport send function
+    % but for testing we'll just verify the tracing calls are made
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.send">>, TransportId, stdio),
+    try
+        DataSize = byte_size(Data),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"test_mode">> => true,
+            <<"data.size">> => DataSize
+        }),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        ok
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end,
+    
+    % Verify meck expectations
+    ?assert(meck:validate([otel_tracer, otel_span])),
+    
+    % Check that the expected calls were made
+    History = meck:history(otel_tracer),
+    ?assert(length(History) > 0).
+
+%%====================================================================
+%% Property-Based Tests
+%%====================================================================
+
+% Test attribute normalization with various input types
+attribute_normalization_test_() ->
+    [
+        ?_assertEqual(<<"test">>, erlmcp_tracing:normalize_attr_key(test)),
+        ?_assertEqual(<<"test">>, erlmcp_tracing:normalize_attr_key("test")),
+        ?_assertEqual(<<"test">>, erlmcp_tracing:normalize_attr_key(<<"test">>)),
+        ?_assertEqual(<<"123">>, erlmcp_tracing:normalize_attr_key(123)),
+        
+        ?_assertEqual(<<"test">>, erlmcp_tracing:normalize_attr_value(test)),
+        ?_assertEqual(<<"test">>, erlmcp_tracing:normalize_attr_value("test")),
+        ?_assertEqual(<<"test">>, erlmcp_tracing:normalize_attr_value(<<"test">>)),
+        ?_assertEqual(42, erlmcp_tracing:normalize_attr_value(42)),
+        ?_assertEqual(3.14, erlmcp_tracing:normalize_attr_value(3.14)),
+        ?_assertEqual(true, erlmcp_tracing:normalize_attr_value(true))
+    ].
+
+%%====================================================================
+%% Error Handling Tests
+%%====================================================================
+
+error_handling_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     [
+        fun test_span_with_exception/0,
+        fun test_nested_span_exceptions/0
+     ]}.
+
+test_span_with_exception() ->
+    % Test that exceptions in spans are properly recorded
+    Result = try
+        erlmcp_tracing:with_span(<<"test.exception">>, #{}, fun() ->
+            error({test_error, "This is a test error"})
+        end)
+    catch
+        error:{test_error, _} -> caught_exception
+    end,
+    
+    ?assertEqual(caught_exception, Result),
+    
+    % Verify that record_exception was called
+    ?assert(meck:called(otel_span, record_exception, '_')).
+
+test_nested_span_exceptions() ->
+    % Test exception handling with nested spans
+    Result = try
+        erlmcp_tracing:with_span(<<"outer.span">>, #{}, fun() ->
+            erlmcp_tracing:with_span(<<"inner.span">>, #{}, fun() ->
+                error({nested_error, "Nested error"})
+            end)
+        end)
+    catch
+        error:{nested_error, _} -> caught_nested_exception
+    end,
+    
+    ?assertEqual(caught_nested_exception, Result).

@@ -1,0 +1,1569 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Common Test suite for erlmcp_transport_tcp module
+%%%
+%%% This comprehensive test suite covers TCP transport functionality
+%%% including connection management, reconnection logic, data transfer,
+%%% error handling, and performance characteristics.
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_tcp_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("../src/erlmcp.hrl").
+
+%% Suite callbacks
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1,
+         init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
+
+%% Test cases
+-export([
+    % Basic functionality
+    basic_startup_test/1,
+    basic_connection_test/1,
+    basic_send_test/1,
+    basic_close_test/1,
+    
+    % Transport behavior tests
+    transport_behavior_init/1,
+    transport_behavior_send/1,
+    transport_behavior_close/1,
+    transport_get_state/1,
+    
+    % Connection management
+    connection_establishment/1,
+    connection_failure_handling/1,
+    connection_timeout/1,
+    connection_parameters_update/1,
+    
+    % Reconnection logic
+    automatic_reconnection/1,
+    reconnection_backoff/1,
+    max_reconnection_attempts/1,
+    manual_reconnection/1,
+    
+    % Data transfer
+    data_send_receive/1,
+    large_message_handling/1,
+    binary_vs_string_data/1,
+    message_framing/1,
+    
+    % Buffer management
+    buffer_accumulation/1,
+    message_extraction/1,
+    partial_message_handling/1,
+    buffer_overflow_protection/1,
+    
+    % Registry integration
+    registry_registration/1,
+    registry_message_routing/1,
+    registry_response_handling/1,
+    registry_unregistration/1,
+    
+    % Error handling
+    tcp_errors/1,
+    network_failures/1,
+    malformed_data/1,
+    socket_cleanup/1,
+    
+    % Configuration
+    socket_options/1,
+    config_validation/1,
+    default_values/1,
+    ssl_options/1,
+    
+    % Performance
+    throughput_test/1,
+    latency_test/1,
+    concurrent_connections/1,
+    memory_usage_test/1,
+    
+    % Stress and load testing
+    stress_test/1,
+    connection_churn/1,
+    high_frequency_reconnections/1,
+    
+    % Integration tests
+    full_duplex_communication/1,
+    multiple_transports/1,
+    supervisor_integration/1
+]).
+
+%%====================================================================
+%% Suite Configuration
+%%====================================================================
+
+all() ->
+    [
+        {group, basic_functionality},
+        {group, transport_behavior},
+        {group, connection_management},
+        {group, reconnection_logic},
+        {group, data_transfer},
+        {group, buffer_management},
+        {group, registry_integration},
+        {group, error_handling},
+        {group, configuration},
+        {group, performance},
+        {group, stress_testing},
+        {group, integration}
+    ].
+
+groups() ->
+    [
+        {basic_functionality, [parallel], [
+            basic_startup_test,
+            basic_connection_test,
+            basic_send_test,
+            basic_close_test
+        ]},
+        {transport_behavior, [sequential], [
+            transport_behavior_init,
+            transport_behavior_send,
+            transport_behavior_close,
+            transport_get_state
+        ]},
+        {connection_management, [sequential], [
+            connection_establishment,
+            connection_failure_handling,
+            connection_timeout,
+            connection_parameters_update
+        ]},
+        {reconnection_logic, [sequential], [
+            automatic_reconnection,
+            reconnection_backoff,
+            max_reconnection_attempts,
+            manual_reconnection
+        ]},
+        {data_transfer, [sequential], [
+            data_send_receive,
+            large_message_handling,
+            binary_vs_string_data,
+            message_framing
+        ]},
+        {buffer_management, [parallel], [
+            buffer_accumulation,
+            message_extraction,
+            partial_message_handling,
+            buffer_overflow_protection
+        ]},
+        {registry_integration, [sequential], [
+            registry_registration,
+            registry_message_routing,
+            registry_response_handling,
+            registry_unregistration
+        ]},
+        {error_handling, [sequential], [
+            tcp_errors,
+            network_failures,
+            malformed_data,
+            socket_cleanup
+        ]},
+        {configuration, [parallel], [
+            socket_options,
+            config_validation,
+            default_values,
+            ssl_options
+        ]},
+        {performance, [sequential], [
+            throughput_test,
+            latency_test,
+            concurrent_connections,
+            memory_usage_test
+        ]},
+        {stress_testing, [sequential], [
+            stress_test,
+            connection_churn,
+            high_frequency_reconnections
+        ]},
+        {integration, [sequential], [
+            full_duplex_communication,
+            multiple_transports,
+            supervisor_integration
+        ]}
+    ].
+
+%%====================================================================
+%% Suite Setup/Teardown
+%%====================================================================
+
+init_per_suite(Config) ->
+    ct:pal("Starting TCP transport test suite"),
+    
+    % Start necessary applications
+    ok = application:ensure_started(crypto),
+    ok = application:ensure_started(sasl),
+    
+    % Start registry
+    case erlmcp_registry:start_link() of
+        {ok, _} -> ok;
+        {error, {already_started, _}} -> ok
+    end,
+    
+    % Start mock TCP server for testing
+    {ok, MockServer} = start_mock_tcp_server(),
+    ServerPort = get_mock_server_port(MockServer),
+    
+    [{mock_server, MockServer}, {server_port, ServerPort} | Config].
+
+end_per_suite(Config) ->
+    MockServer = ?config(mock_server, Config),
+    stop_mock_tcp_server(MockServer),
+    ct:pal("Ending TCP transport test suite"),
+    ok.
+
+init_per_group(GroupName, Config) ->
+    ct:pal("Starting group: ~p", [GroupName]),
+    Config.
+
+end_per_group(GroupName, _Config) ->
+    ct:pal("Ending group: ~p", [GroupName]),
+    ok.
+
+init_per_testcase(TestCase, Config) ->
+    ct:pal("Starting test case: ~p", [TestCase]),
+    Config.
+
+end_per_testcase(TestCase, _Config) ->
+    ct:pal("Ending test case: ~p", [TestCase]),
+    cleanup_processes(),
+    ok.
+
+%%====================================================================
+%% Test Cases - Basic Functionality
+%%====================================================================
+
+basic_startup_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_basic,
+        server_id => test_server_basic,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    ?assert(is_pid(Pid)),
+    ?assert(is_process_alive(Pid)),
+    
+    % Wait for connection
+    timer:sleep(100),
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(true, State#state.connected),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+basic_connection_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_connection,
+        server_id => test_server_connection,
+        host => "localhost", 
+        port => ServerPort,
+        connect_timeout => 5000
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    
+    % Wait for connection to establish
+    timer:sleep(200),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(true, State#state.connected),
+    ?assert(State#state.socket =/= undefined),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+basic_send_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_send,
+        server_id => test_server_send,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Test sending data
+    TestData = <<"test message">>,
+    ?assertEqual(ok, gen_server:call(Pid, {send, TestData})),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+basic_close_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_close,
+        server_id => test_server_close,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_transport_state),
+    ?assertEqual(ok, erlmcp_transport_tcp:close(State)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Transport Behavior
+%%====================================================================
+
+transport_behavior_init(Config) ->
+    Opts = #{
+        transport_id => test_tcp_init,
+        server_id => test_server_init,
+        host => "localhost",
+        port => 12345
+    },
+    
+    {ok, State} = erlmcp_transport_tcp:init(Opts),
+    ?assertEqual(test_tcp_init, State#state.transport_id),
+    ?assertEqual(test_server_init, State#state.server_id),
+    ?assertEqual("localhost", State#state.host),
+    ?assertEqual(12345, State#state.port),
+    ok.
+
+transport_behavior_send(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_behavior_send,
+        server_id => test_server_behavior_send,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_transport_state),
+    
+    % Test different data types
+    TestCases = [
+        <<"binary data">>,
+        "string data",
+        [<<"io">>, "data"]
+    ],
+    
+    lists:foreach(fun(Data) ->
+        Result = erlmcp_transport_tcp:send(State, Data),
+        case State#state.connected of
+            true -> ?assertEqual(ok, Result);
+            false -> ?assertEqual({error, not_connected}, Result)
+        end
+    end, TestCases),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+transport_behavior_close(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_behavior_close,
+        server_id => test_server_behavior_close,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_transport_state),
+    ?assertEqual(ok, erlmcp_transport_tcp:close(State)),
+    
+    % Verify socket is closed
+    timer:sleep(50),
+    {ok, NewState} = gen_server:call(Pid, get_transport_state),
+    ?assertEqual(false, NewState#state.connected),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+transport_get_state(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_get_state,
+        server_id => test_server_get_state,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(test_tcp_get_state, State#state.transport_id),
+    ?assertEqual(test_server_get_state, State#state.server_id),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Connection Management
+%%====================================================================
+
+connection_establishment(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_establish,
+        server_id => test_server_establish,
+        host => "localhost",
+        port => ServerPort,
+        connect_timeout => 2000
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    
+    % Monitor connection establishment
+    timer:sleep(300),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(true, State#state.connected),
+    ?assert(State#state.socket =/= undefined),
+    ?assertEqual(0, State#state.reconnect_attempts),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+connection_failure_handling(Config) ->
+    % Use non-existent port
+    Opts = #{
+        transport_id => test_tcp_failure,
+        server_id => test_server_failure,
+        host => "localhost",
+        port => 99999, % Non-existent port
+        max_reconnect_attempts => 2,
+        connect_timeout => 1000
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    
+    % Wait for connection attempts
+    timer:sleep(500),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(false, State#state.connected),
+    ?assertEqual(undefined, State#state.socket),
+    ?assert(State#state.reconnect_attempts > 0),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+connection_timeout(Config) ->
+    % Use a host that will timeout (non-routable IP)
+    Opts = #{
+        transport_id => test_tcp_timeout,
+        server_id => test_server_timeout,
+        host => "192.0.2.1", % TEST-NET-1, should timeout
+        port => 80,
+        connect_timeout => 100, % Very short timeout
+        max_reconnect_attempts => 1
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    
+    % Wait for timeout
+    timer:sleep(1000),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(false, State#state.connected),
+    ?assertEqual(undefined, State#state.socket),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+connection_parameters_update(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_update,
+        server_id => test_server_update,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Update connection parameters
+    NewOpts = #{host => "127.0.0.1", port => ServerPort},
+    ?assertEqual(ok, gen_server:call(Pid, {connect, NewOpts})),
+    
+    timer:sleep(100),
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual("127.0.0.1", State#state.host),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Reconnection Logic
+%%====================================================================
+
+automatic_reconnection(Config) ->
+    ServerPort = ?config(server_port, Config),
+    MockServer = ?config(mock_server, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_auto_reconnect,
+        server_id => test_server_auto_reconnect,
+        host => "localhost",
+        port => ServerPort,
+        max_reconnect_attempts => 3
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Verify connected
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(true, State#state.connected),
+    
+    % Simulate connection drop
+    stop_mock_tcp_server(MockServer),
+    timer:sleep(200),
+    
+    % Should attempt reconnection
+    {ok, State2} = gen_server:call(Pid, get_state),
+    ?assertEqual(false, State2#state.connected),
+    ?assert(State2#state.reconnect_attempts > 0),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+reconnection_backoff(Config) ->
+    Opts = #{
+        transport_id => test_tcp_backoff,
+        server_id => test_server_backoff,
+        host => "localhost",
+        port => 99998, % Non-existent port
+        max_reconnect_attempts => 5
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    
+    % Measure reconnection timing
+    StartTime = erlang:monotonic_time(millisecond),
+    timer:sleep(100),
+    
+    {ok, State1} = gen_server:call(Pid, get_state),
+    Attempts1 = State1#state.reconnect_attempts,
+    
+    timer:sleep(2000),
+    
+    {ok, State2} = gen_server:call(Pid, get_state),
+    Attempts2 = State2#state.reconnect_attempts,
+    
+    EndTime = erlang:monotonic_time(millisecond),
+    
+    % Should show progressive backoff (fewer attempts per unit time)
+    ?assert(Attempts2 > Attempts1),
+    ct:pal("Reconnection attempts: ~p -> ~p in ~p ms", 
+           [Attempts1, Attempts2, EndTime - StartTime]),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+max_reconnection_attempts(Config) ->
+    Opts = #{
+        transport_id => test_tcp_max_attempts,
+        server_id => test_server_max_attempts,
+        host => "localhost",
+        port => 99997, % Non-existent port
+        max_reconnect_attempts => 2
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    
+    % Wait for max attempts to be reached
+    timer:sleep(5000),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(2, State#state.max_reconnect_attempts),
+    ?assert(State#state.reconnect_attempts >= 2),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+manual_reconnection(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_manual_reconnect,
+        server_id => test_server_manual_reconnect,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Force manual reconnection
+    ?assertEqual(ok, gen_server:call(Pid, reconnect)),
+    
+    timer:sleep(100),
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(0, State#state.reconnect_attempts), % Should reset
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Data Transfer
+%%====================================================================
+
+data_send_receive(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    % Start mock server that echoes
+    MockServer = start_echo_server(ServerPort + 1),
+    
+    Opts = #{
+        transport_id => test_tcp_data_transfer,
+        server_id => test_server_data_transfer,
+        host => "localhost",
+        port => ServerPort + 1
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Send data and verify echo
+    TestData = <<"hello world">>,
+    ?assertEqual(ok, gen_server:call(Pid, {send, TestData})),
+    
+    % Should receive echoed data
+    timer:sleep(100),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    stop_echo_server(MockServer),
+    ok = gen_server:stop(Pid),
+    ok.
+
+large_message_handling(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_large_msg,
+        server_id => test_server_large_msg,
+        host => "localhost",
+        port => ServerPort,
+        buffer_size => 1024 * 1024 % 1MB buffer
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Send large message
+    LargeData = binary:copy(<<"A">>, 100000), % 100KB
+    ?assertEqual(ok, gen_server:call(Pid, {send, LargeData})),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+binary_vs_string_data(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_data_types,
+        server_id => test_server_data_types,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Test different data formats
+    TestCases = [
+        <<"binary data">>,
+        "string data",
+        [<<"mixed">>, " ", "iodata"],
+        iolist_to_binary([<<"nested">>, [" ", <<"iodata">>]])
+    ],
+    
+    lists:foreach(fun(Data) ->
+        ?assertEqual(ok, gen_server:call(Pid, {send, Data}))
+    end, TestCases),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+message_framing(Config) ->
+    % Test that messages are properly framed with newlines
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_framing,
+        server_id => test_server_framing,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Messages should be automatically framed
+    ?assertEqual(ok, gen_server:call(Pid, {send, <<"message without newline">>})),
+    ?assertEqual(ok, gen_server:call(Pid, {send, <<"message with newline\n">>})),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Buffer Management
+%%====================================================================
+
+buffer_accumulation(Config) ->
+    % Test buffer functionality with partial messages
+    Buffer1 = <<"partial">>,
+    Buffer2 = <<"partial\nmessage\ndata">>,
+    
+    {Messages1, Remaining1} = extract_messages_test(Buffer1),
+    ?assertEqual([], Messages1),
+    ?assertEqual(<<"partial">>, Remaining1),
+    
+    {Messages2, Remaining2} = extract_messages_test(Buffer2),
+    ?assertEqual([<<"partial">>, <<"message">>], Messages2),
+    ?assertEqual(<<"data">>, Remaining2),
+    ok.
+
+message_extraction(Config) ->
+    TestCases = [
+        {<<"single\n">>, {[<<"single">>], <<>>}},
+        {<<"multi\nline\n">>, {[<<"multi">>, <<"line">>], <<>>}},
+        {<<"partial">>, {[], <<"partial">>}},
+        {<<"complete\npartial">>, {[<<"complete">>], <<"partial">>}},
+        {<<"\n">>, {[<<>>], <<>>}},
+        {<<"">>, {[], <<>>}}
+    ],
+    
+    lists:foreach(fun({Input, Expected}) ->
+        Result = extract_messages_test(Input),
+        ?assertEqual(Expected, Result)
+    end, TestCases),
+    ok.
+
+partial_message_handling(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_partial,
+        server_id => test_server_partial,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Simulate receiving partial data
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(<<>>, State#state.buffer),
+    
+    % Partial message should be buffered
+    Pid ! {tcp, State#state.socket, <<"partial">>},
+    timer:sleep(50),
+    
+    {ok, State2} = gen_server:call(Pid, get_state),
+    ?assertEqual(<<"partial">>, State2#state.buffer),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+buffer_overflow_protection(Config) ->
+    % Test buffer size management for very large messages
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_buffer_overflow,
+        server_id => test_server_buffer_overflow,
+        host => "localhost",
+        port => ServerPort,
+        buffer_size => 1024 % Small buffer for testing
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Send data larger than buffer
+    LargeData = binary:copy(<<"X">>, 2048),
+    
+    % Should handle gracefully without crash
+    Result = gen_server:call(Pid, {send, LargeData}),
+    ?assertMatch({error, _}, Result),
+    
+    % Process should still be alive
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Registry Integration
+%%====================================================================
+
+registry_registration(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    TransportId = test_tcp_registry_reg,
+    ServerId = test_server_registry_reg,
+    
+    Opts = #{
+        transport_id => TransportId,
+        server_id => ServerId,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Verify registration
+    {ok, {RegPid, Config}} = erlmcp_registry:find_transport(TransportId),
+    ?assertEqual(Pid, RegPid),
+    ?assertMatch(#{type := tcp}, Config),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+registry_message_routing(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    TransportId = test_tcp_registry_routing,
+    ServerId = test_server_registry_routing,
+    
+    % Start mock server
+    MockServer = spawn_mock_server(ServerId),
+    
+    Opts = #{
+        transport_id => TransportId,
+        server_id => ServerId,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Simulate receiving message
+    {ok, State} = gen_server:call(Pid, get_state),
+    Pid ! {tcp, State#state.socket, <<"test message\n">>},
+    
+    % Verify server received message
+    receive
+        {mock_server, ServerId, Message} ->
+            ?assertEqual(<<"test message">>, Message)
+    after 1000 ->
+        ?assert(false, "Message not routed to server")
+    end,
+    
+    cleanup_mock_server(MockServer),
+    ok = gen_server:stop(Pid),
+    ok.
+
+registry_response_handling(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    TransportId = test_tcp_registry_response,
+    ServerId = test_server_registry_response,
+    
+    Opts = #{
+        transport_id => TransportId,
+        server_id => ServerId,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Send response via registry
+    Pid ! {mcp_response, ServerId, <<"response data">>},
+    timer:sleep(100),
+    
+    % Should handle gracefully
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+registry_unregistration(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    TransportId = test_tcp_registry_unreg,
+    ServerId = test_server_registry_unreg,
+    
+    Opts = #{
+        transport_id => TransportId,
+        server_id => ServerId,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Verify registered
+    {ok, _} = erlmcp_registry:find_transport(TransportId),
+    
+    % Stop and verify unregistration
+    ok = gen_server:stop(Pid),
+    timer:sleep(100),
+    
+    ?assertEqual({error, not_found}, erlmcp_registry:find_transport(TransportId)),
+    ok.
+
+%%====================================================================
+%% Test Cases - Error Handling
+%%====================================================================
+
+tcp_errors(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_errors,
+        server_id => test_server_errors,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    Socket = State#state.socket,
+    
+    % Simulate TCP error
+    Pid ! {tcp_error, Socket, econnreset},
+    timer:sleep(100),
+    
+    % Should handle error and attempt reconnection
+    {ok, NewState} = gen_server:call(Pid, get_state),
+    ?assertNotEqual(Socket, NewState#state.socket),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+network_failures(Config) ->
+    ServerPort = ?config(server_port, Config),
+    MockServer = ?config(mock_server, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_network_failures,
+        server_id => test_server_network_failures,
+        host => "localhost",
+        port => ServerPort,
+        max_reconnect_attempts => 2
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Simulate network failure by stopping server
+    stop_mock_tcp_server(MockServer),
+    timer:sleep(100),
+    
+    % Should detect disconnection and attempt reconnection
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(false, State#state.connected),
+    ?assert(State#state.reconnect_attempts >= 0),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+malformed_data(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_malformed,
+        server_id => test_server_malformed,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    Socket = State#state.socket,
+    
+    % Send malformed data
+    MalformedData = [
+        <<255, 254, 253>>, % Binary data
+        <<"">>,            % Empty
+        <<0, 0, 0>>,      % Null bytes
+        <<"very long line without newline", (binary:copy(<<"x">>, 10000))/binary>>
+    ],
+    
+    lists:foreach(fun(Data) ->
+        Pid ! {tcp, Socket, Data},
+        timer:sleep(10)
+    end, MalformedData),
+    
+    % Should handle gracefully without crashing
+    timer:sleep(100),
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+socket_cleanup(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_cleanup,
+        server_id => test_server_cleanup,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    Socket = State#state.socket,
+    ?assert(Socket =/= undefined),
+    
+    % Stop transport and verify socket cleanup
+    ok = gen_server:stop(Pid),
+    timer:sleep(100),
+    
+    % Socket should be closed (this may vary based on implementation)
+    % We mainly verify the process stopped cleanly
+    ?assertNot(is_process_alive(Pid)),
+    ok.
+
+%%====================================================================
+%% Test Cases - Configuration
+%%====================================================================
+
+socket_options(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_socket_opts,
+        server_id => test_server_socket_opts,
+        host => "localhost",
+        port => ServerPort,
+        keepalive => true,
+        nodelay => true,
+        buffer_size => 8192,
+        connect_timeout => 3000
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assert(lists:member({keepalive, true}, State#state.options)),
+    ?assert(lists:member({nodelay, true}, State#state.options)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+config_validation(Config) ->
+    % Test various configuration combinations
+    ValidConfigs = [
+        #{transport_id => test1, server_id => server1, host => "localhost", port => 8080},
+        #{transport_id => test2, server_id => server2, host => {127,0,0,1}, port => 8081},
+        #{transport_id => test3, server_id => server3, host => "example.com", port => 80, keepalive => true}
+    ],
+    
+    lists:foreach(fun(Opts) ->
+        {ok, State} = erlmcp_transport_tcp:init(Opts),
+        ?assert(State#state.transport_id =/= undefined),
+        ?assert(State#state.server_id =/= undefined)
+    end, ValidConfigs),
+    ok.
+
+default_values(Config) ->
+    Opts = #{
+        transport_id => test_tcp_defaults,
+        server_id => test_server_defaults,
+        host => "localhost",
+        port => 8080
+    },
+    
+    {ok, State} = erlmcp_transport_tcp:init(Opts),
+    
+    % Verify default values
+    ?assertEqual(infinity, State#state.max_reconnect_attempts),
+    ?assertEqual(0, State#state.reconnect_attempts),
+    ?assertEqual(<<>>, State#state.buffer),
+    ?assertEqual(false, State#state.connected),
+    
+    ok.
+
+ssl_options(Config) ->
+    % Test SSL-related configuration (if supported)
+    Opts = #{
+        transport_id => test_tcp_ssl,
+        server_id => test_server_ssl,
+        host => "localhost",
+        port => 8443
+    },
+    
+    {ok, State} = erlmcp_transport_tcp:init(Opts),
+    ?assert(is_list(State#state.options)),
+    ok.
+
+%%====================================================================
+%% Test Cases - Performance
+%%====================================================================
+
+throughput_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_throughput,
+        server_id => test_server_throughput,
+        host => "localhost",
+        port => ServerPort,
+        buffer_size => 64 * 1024
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Measure throughput
+    MessageCount = 1000,
+    MessageSize = 1024,
+    TestMessage = binary:copy(<<"X">>, MessageSize),
+    
+    StartTime = erlang:monotonic_time(millisecond),
+    
+    lists:foreach(fun(_) ->
+        ok = gen_server:call(Pid, {send, TestMessage})
+    end, lists:seq(1, MessageCount)),
+    
+    EndTime = erlang:monotonic_time(millisecond),
+    Duration = EndTime - StartTime,
+    TotalBytes = MessageCount * MessageSize,
+    Throughput = (TotalBytes * 1000) / Duration, % bytes/sec
+    
+    ct:pal("Throughput: ~.2f MB/s (~p messages in ~p ms)", 
+           [Throughput / (1024 * 1024), MessageCount, Duration]),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+latency_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_latency,
+        server_id => test_server_latency,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Measure send latency
+    TestMessage = <<"latency test message">>,
+    MessageCount = 100,
+    
+    Latencies = lists:map(fun(_) ->
+        StartTime = erlang:monotonic_time(microsecond),
+        ok = gen_server:call(Pid, {send, TestMessage}),
+        EndTime = erlang:monotonic_time(microsecond),
+        EndTime - StartTime
+    end, lists:seq(1, MessageCount)),
+    
+    AvgLatency = lists:sum(Latencies) / length(Latencies),
+    MaxLatency = lists:max(Latencies),
+    MinLatency = lists:min(Latencies),
+    
+    ct:pal("Latency - Avg: ~.2f μs, Min: ~p μs, Max: ~p μs", 
+           [AvgLatency, MinLatency, MaxLatency]),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+concurrent_connections(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    % Start multiple concurrent connections
+    ConnectionCount = 10,
+    Connections = lists:map(fun(N) ->
+        Opts = #{
+            transport_id => list_to_atom("test_tcp_concurrent_" ++ integer_to_list(N)),
+            server_id => list_to_atom("test_server_concurrent_" ++ integer_to_list(N)),
+            host => "localhost",
+            port => ServerPort
+        },
+        {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+        Pid
+    end, lists:seq(1, ConnectionCount)),
+    
+    % Wait for all to connect
+    timer:sleep(200),
+    
+    % Verify all connected
+    ConnectedCount = length([Pid || Pid <- Connections,
+                                   begin
+                                       {ok, State} = gen_server:call(Pid, get_state),
+                                       State#state.connected
+                                   end]),
+    
+    ct:pal("Connected ~p/~p concurrent connections", [ConnectedCount, ConnectionCount]),
+    ?assert(ConnectedCount >= ConnectionCount div 2), % At least half should connect
+    
+    % Cleanup
+    lists:foreach(fun(Pid) ->
+        gen_server:stop(Pid)
+    end, Connections),
+    
+    ok.
+
+memory_usage_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_memory,
+        server_id => test_server_memory,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Measure memory usage
+    {memory, Memory} = erlang:process_info(Pid, memory),
+    ct:pal("TCP transport memory usage: ~p bytes", [Memory]),
+    
+    % Verify reasonable memory usage (< 10MB)
+    ?assert(Memory < 10 * 1024 * 1024),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Stress Testing
+%%====================================================================
+
+stress_test(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    Opts = #{
+        transport_id => test_tcp_stress,
+        server_id => test_server_stress,
+        host => "localhost",
+        port => ServerPort,
+        buffer_size => 64 * 1024
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Stress test with rapid operations
+    OperationCount = 1000,
+    
+    % Concurrent operations
+    Parent = self(),
+    Workers = [spawn(fun() ->
+        lists:foreach(fun(_) ->
+            case rand:uniform(3) of
+                1 -> gen_server:call(Pid, get_state);
+                2 -> gen_server:call(Pid, {send, <<"stress test">>});
+                3 -> {reply, {ok, _}, _} = gen_server:call(Pid, {transport_call, get_buffer})
+            end
+        end, lists:seq(1, OperationCount div 5)),
+        Parent ! {worker_done, self()}
+    end) || _ <- lists:seq(1, 5)],
+    
+    StartTime = erlang:monotonic_time(millisecond),
+    
+    % Wait for workers
+    lists:foreach(fun(Worker) ->
+        receive
+            {worker_done, Worker} -> ok
+        after 10000 ->
+            ?assert(false, "Stress test worker timeout")
+        end
+    end, Workers),
+    
+    EndTime = erlang:monotonic_time(millisecond),
+    Duration = EndTime - StartTime,
+    
+    ct:pal("Stress test: ~p operations in ~p ms", [OperationCount, Duration]),
+    
+    % Should survive stress test
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+connection_churn(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    % Rapidly connect and disconnect
+    ChurnCount = 20,
+    
+    lists:foreach(fun(N) ->
+        Opts = #{
+            transport_id => list_to_atom("test_tcp_churn_" ++ integer_to_list(N)),
+            server_id => list_to_atom("test_server_churn_" ++ integer_to_list(N)),
+            host => "localhost",
+            port => ServerPort
+        },
+        
+        {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+        timer:sleep(10), % Brief connection
+        ok = gen_server:stop(Pid)
+    end, lists:seq(1, ChurnCount)),
+    
+    ct:pal("Completed ~p connection churn cycles", [ChurnCount]),
+    ok.
+
+high_frequency_reconnections(Config) ->
+    % Test reconnection under high frequency
+    Opts = #{
+        transport_id => test_tcp_high_freq_reconnect,
+        server_id => test_server_high_freq_reconnect,
+        host => "localhost",
+        port => 99996, % Non-existent port
+        max_reconnect_attempts => 10
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    
+    % Let it attempt many reconnections
+    timer:sleep(2000),
+    
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assert(State#state.reconnect_attempts > 5),
+    
+    ct:pal("High frequency reconnections: ~p attempts", [State#state.reconnect_attempts]),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Integration
+%%====================================================================
+
+full_duplex_communication(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    % Create echo server
+    EchoServer = start_echo_server(ServerPort + 2),
+    
+    Opts = #{
+        transport_id => test_tcp_full_duplex,
+        server_id => test_server_full_duplex,
+        host => "localhost",
+        port => ServerPort + 2
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    % Send multiple messages
+    Messages = [<<"msg1">>, <<"msg2">>, <<"msg3">>],
+    
+    lists:foreach(fun(Msg) ->
+        ok = gen_server:call(Pid, {send, Msg})
+    end, Messages),
+    
+    % Should handle bidirectional communication
+    timer:sleep(200),
+    ?assert(is_process_alive(Pid)),
+    
+    stop_echo_server(EchoServer),
+    ok = gen_server:stop(Pid),
+    ok.
+
+multiple_transports(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    % Start multiple transports to same server
+    TransportCount = 5,
+    Transports = lists:map(fun(N) ->
+        Opts = #{
+            transport_id => list_to_atom("test_tcp_multi_" ++ integer_to_list(N)),
+            server_id => test_server_multi,
+            host => "localhost",
+            port => ServerPort
+        },
+        {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+        Pid
+    end, lists:seq(1, TransportCount)),
+    
+    timer:sleep(200),
+    
+    % All should be connected
+    ConnectedCount = length([Pid || Pid <- Transports,
+                                   begin
+                                       {ok, State} = gen_server:call(Pid, get_state),
+                                       State#state.connected
+                                   end]),
+    
+    ct:pal("Multiple transports: ~p/~p connected", [ConnectedCount, TransportCount]),
+    
+    % Cleanup
+    lists:foreach(fun(Pid) ->
+        gen_server:stop(Pid)
+    end, Transports),
+    
+    ok.
+
+supervisor_integration(Config) ->
+    ServerPort = ?config(server_port, Config),
+    
+    % This would test supervisor integration
+    % For now, verify transport can be managed
+    Opts = #{
+        transport_id => test_tcp_supervisor,
+        server_id => test_server_supervisor,
+        host => "localhost",
+        port => ServerPort
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    timer:sleep(100),
+    
+    ?assert(is_process_alive(Pid)),
+    
+    % Simulate supervisor restart
+    MRef = monitor(process, Pid),
+    exit(Pid, shutdown),
+    
+    receive
+        {'DOWN', MRef, process, Pid, shutdown} -> ok
+    after 1000 ->
+        ?assert(false, "Process did not terminate")
+    end,
+    
+    ok.
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+cleanup_processes() ->
+    % Cleanup any test processes
+    TestProcesses = [test_server_latency, test_server_e2e],
+    lists:foreach(fun(Name) ->
+        case whereis(Name) of
+            undefined -> ok;
+            Pid -> exit(Pid, kill)
+        end
+    end, TestProcesses).
+
+%% Mock TCP server for testing
+start_mock_tcp_server() ->
+    spawn(fun() ->
+        {ok, LSock} = gen_tcp:listen(0, [binary, {packet, line}, {active, true}, {reuseaddr, true}]),
+        {ok, Port} = inet:port(LSock),
+        put(server_port, Port),
+        mock_server_loop(LSock)
+    end).
+
+get_mock_server_port(ServerPid) ->
+    ServerPid ! {get_port, self()},
+    receive
+        {port, Port} -> Port
+    after 1000 -> error(timeout_getting_port)
+    end.
+
+stop_mock_tcp_server(ServerPid) ->
+    ServerPid ! stop,
+    timer:sleep(50).
+
+mock_server_loop(LSock) ->
+    receive
+        {get_port, From} ->
+            From ! {port, get(server_port)},
+            mock_server_loop(LSock);
+        stop ->
+            gen_tcp:close(LSock);
+        _ ->
+            mock_server_loop(LSock)
+    end.
+
+%% Echo server for testing
+start_echo_server(Port) ->
+    spawn(fun() ->
+        {ok, LSock} = gen_tcp:listen(Port, [binary, {packet, line}, {active, true}, {reuseaddr, true}]),
+        echo_server_accept(LSock)
+    end).
+
+stop_echo_server(ServerPid) ->
+    ServerPid ! stop.
+
+echo_server_accept(LSock) ->
+    case gen_tcp:accept(LSock) of
+        {ok, Socket} ->
+            spawn(fun() -> echo_client_handler(Socket) end),
+            echo_server_accept(LSock);
+        _ ->
+            ok
+    end.
+
+echo_client_handler(Socket) ->
+    receive
+        {tcp, Socket, Data} ->
+            gen_tcp:send(Socket, Data),
+            echo_client_handler(Socket);
+        {tcp_closed, Socket} ->
+            gen_tcp:close(Socket);
+        stop ->
+            gen_tcp:close(Socket)
+    end.
+
+%% Message extraction for testing
+extract_messages_test(Buffer) ->
+    extract_messages_test(Buffer, []).
+
+extract_messages_test(Buffer, Acc) ->
+    case binary:split(Buffer, <<"\n">>) of
+        [_] ->
+            {lists:reverse(Acc), Buffer};
+        [Message, Rest] ->
+            extract_messages_test(Rest, [Message | Acc])
+    end.
+
+%% Mock server for registry testing
+spawn_mock_server(ServerId) ->
+    Parent = self(),
+    Pid = spawn(fun() ->
+        register(ServerId, self()),
+        Config = #{capabilities => #{}, options => #{}},
+        erlmcp_registry:register_server(ServerId, self(), Config),
+        mock_server_loop_registry(Parent, ServerId)
+    end),
+    Pid.
+
+mock_server_loop_registry(Parent, ServerId) ->
+    receive
+        {route_message, TransportId, Message} ->
+            Parent ! {mock_server, ServerId, Message},
+            mock_server_loop_registry(Parent, ServerId);
+        stop ->
+            erlmcp_registry:unregister_server(ServerId)
+    end.
+
+cleanup_mock_server(Pid) ->
+    Pid ! stop,
+    timer:sleep(50).

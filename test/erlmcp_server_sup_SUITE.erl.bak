@@ -1,0 +1,1143 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Server Supervisor Test Suite
+%%% 
+%%% Comprehensive tests for the Server Supervisor focusing on:
+%%% - Simple-one-for-one behavior
+%%% - Dynamic server addition/removal
+%%% - Server crash isolation
+%%% - Concurrent server management
+%%% - Resource cleanup
+%%% - Performance under load
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_server_sup_SUITE).
+
+-compile(export_all).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%--------------------------------------------------------------------
+%% CT Callbacks
+%%--------------------------------------------------------------------
+
+suite() ->
+    [{timetrap, {seconds, 30}}].
+
+all() ->
+    [
+        {group, supervisor_behavior},
+        {group, dynamic_management},
+        {group, crash_isolation},
+        {group, concurrent_operations},
+        {group, resource_management},
+        {group, performance_tests},
+        {group, integration_tests}
+    ].
+
+groups() ->
+    [
+        {supervisor_behavior, [parallel], [
+            test_simple_one_for_one_strategy,
+            test_supervisor_initialization,
+            test_child_spec_template,
+            test_restart_strategies
+        ]},
+        {dynamic_management, [sequence], [
+            test_dynamic_server_addition,
+            test_dynamic_server_removal,
+            test_server_lifecycle_management,
+            test_duplicate_server_handling
+        ]},
+        {crash_isolation, [parallel], [
+            test_server_crash_isolation,
+            test_multiple_server_crashes,
+            test_supervisor_resilience,
+            test_cleanup_after_crashes
+        ]},
+        {concurrent_operations, [parallel], [
+            test_concurrent_server_creation,
+            test_concurrent_server_termination,
+            test_mixed_concurrent_operations,
+            test_high_concurrency_stress
+        ]},
+        {resource_management, [sequence], [
+            test_resource_cleanup_on_termination,
+            test_memory_usage_monitoring,
+            test_process_count_limits,
+            test_registry_integration
+        ]},
+        {performance_tests, [parallel], [
+            test_server_startup_performance,
+            test_bulk_operations_performance,
+            test_sustained_load_performance,
+            test_recovery_performance
+        ]},
+        {integration_tests, [sequence], [
+            test_integration_with_main_supervisor,
+            test_integration_with_registry,
+            test_integration_with_transport_sup,
+            test_full_system_coordination
+        ]}
+    ].
+
+%%--------------------------------------------------------------------
+%% Test Case Setup/Teardown
+%%--------------------------------------------------------------------
+
+init_per_suite(Config) ->
+    application:ensure_all_started(erlmcp),
+    [{test_start_time, erlang:system_time(millisecond)} | Config].
+
+end_per_suite(Config) ->
+    application:stop(erlmcp),
+    Config.
+
+init_per_group(Group, Config) ->
+    ct:pal("Starting server supervisor test group: ~p", [Group]),
+    [{group, Group} | Config].
+
+end_per_group(Group, Config) ->
+    ct:pal("Completed server supervisor test group: ~p", [Group]),
+    cleanup_test_servers(),
+    Config.
+
+init_per_testcase(TestCase, Config) ->
+    ct:pal("Starting server supervisor test case: ~p", [TestCase]),
+    % Ensure clean slate
+    cleanup_test_servers(),
+    
+    % Start the application supervisor first
+    {ok, _AppSupPid} = erlmcp_sup:start_link(),
+    
+    [{test_case, TestCase}, {start_memory, get_memory_usage()} | Config].
+
+end_per_testcase(TestCase, Config) ->
+    StartMemory = proplists:get_value(start_memory, Config, 0),
+    EndMemory = get_memory_usage(),
+    MemoryDiff = EndMemory - StartMemory,
+    ct:pal("Server supervisor test case ~p completed. Memory diff: ~p bytes", 
+           [TestCase, MemoryDiff]),
+    
+    % Cleanup
+    cleanup_test_servers(),
+    case whereis(erlmcp_sup) of
+        undefined -> ok;
+        Pid when is_pid(Pid) ->
+            supervisor:terminate_child(erlmcp_sup, erlmcp_sup)
+    end,
+    timer:sleep(100),
+    Config.
+
+%%--------------------------------------------------------------------
+%% Supervisor Behavior Tests
+%%--------------------------------------------------------------------
+
+test_simple_one_for_one_strategy(Config) ->
+    ServerSupPid = whereis(erlmcp_server_sup),
+    ?assert(is_pid(ServerSupPid)),
+    
+    % Verify supervisor is running with correct strategy
+    {status, _, _, [_, _, _, _, [_, _, _, _, Config1]]} = sys:get_status(ServerSupPid),
+    [{data, [{"State", SupState}]}] = Config1,
+    
+    % Extract supervisor flags (this is internal structure, may vary)
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual([], Children), % Should start empty
+    
+    % Test dynamic child addition
+    {ok, ServerPid1} = erlmcp_server_sup:start_child(test_server_1, #{capabilities => []}),
+    ?assert(is_pid(ServerPid1)),
+    
+    % Verify child was added
+    UpdatedChildren = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(1, length(UpdatedChildren)),
+    
+    {test_server_1, ServerPid1, worker, [erlmcp_server_new]} = hd(UpdatedChildren),
+    
+    % Add another server
+    {ok, ServerPid2} = erlmcp_server_sup:start_child(test_server_2, #{capabilities => []}),
+    ?assertNotEqual(ServerPid1, ServerPid2),
+    
+    FinalChildren = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(2, length(FinalChildren)).
+
+test_supervisor_initialization(Config) ->
+    ServerSupPid = whereis(erlmcp_server_sup),
+    
+    % Verify supervisor is properly registered
+    ?assertEqual(ServerSupPid, whereis(erlmcp_server_sup)),
+    
+    % Verify supervisor is alive
+    ?assert(is_process_alive(ServerSupPid)),
+    
+    % Test supervisor info
+    SupInfo = supervisor:count_children(erlmcp_server_sup),
+    ?assertMatch([{specs, 1}, {active, 0}, {supervisors, 0}, {workers, 0}], 
+                 lists:sort(SupInfo)),
+    
+    % Verify supervisor can handle standard messages
+    State = sys:get_state(ServerSupPid),
+    ?assertNotEqual(undefined, State).
+
+test_child_spec_template(Config) ->
+    % Test that child spec template works correctly
+    {ok, ServerPid} = erlmcp_server_sup:start_child(template_test_server, #{
+        capabilities => [],
+        config => #{test => true}
+    }),
+    
+    ?assert(is_pid(ServerPid)),
+    
+    % Verify server is actually running and configured
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(1, length(Children)),
+    
+    {template_test_server, ServerPid, worker, [erlmcp_server_new]} = hd(Children),
+    
+    % Verify server can be called (basic functionality test)
+    ?assertMatch({ok, _}, gen_server:call(ServerPid, get_state, 1000)).
+
+test_restart_strategies(Config) ->
+    % Test temporary restart strategy (servers don't auto-restart)
+    {ok, ServerPid1} = erlmcp_server_sup:start_child(restart_test_server, #{capabilities => []}),
+    
+    % Kill the server
+    exit(ServerPid1, kill),
+    timer:sleep(100),
+    
+    % Server should not restart automatically (temporary restart)
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(0, length(Children)),
+    
+    % Supervisor should still be alive
+    ?assert(is_process_alive(whereis(erlmcp_server_sup))).
+
+%%--------------------------------------------------------------------
+%% Dynamic Management Tests
+%%--------------------------------------------------------------------
+
+test_dynamic_server_addition(Config) ->
+    % Test adding servers with different configurations
+    Configs = [
+        {server1, #{capabilities => [], priority => high}},
+        {server2, #{capabilities => [tool_call], priority => normal}},
+        {server3, #{capabilities => [resource_access], priority => low}}
+    ],
+    
+    ServerPids = lists:map(fun({ServerId, ServerConfig}) ->
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, ServerConfig),
+        {ServerId, Pid}
+    end, Configs),
+    
+    % Verify all servers are running
+    ?assertEqual(3, length(ServerPids)),
+    
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(3, length(Children)),
+    
+    % Verify each server is properly configured
+    lists:foreach(fun({ServerId, ServerPid}) ->
+        ?assert(is_pid(ServerPid)),
+        ?assert(is_process_alive(ServerPid)),
+        
+        % Find in children list
+        ?assertMatch({ServerId, ServerPid, worker, [erlmcp_server_new]},
+                     lists:keyfind(ServerId, 1, Children))
+    end, ServerPids).
+
+test_dynamic_server_removal(Config) ->
+    % Add several servers
+    ServerIds = [server_rem_1, server_rem_2, server_rem_3],
+    
+    ServerPids = lists:map(fun(ServerId) ->
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        {ServerId, Pid}
+    end, ServerIds),
+    
+    ?assertEqual(3, length(supervisor:which_children(erlmcp_server_sup))),
+    
+    % Remove middle server
+    {server_rem_2, ServerPid2} = lists:keyfind(server_rem_2, 1, ServerPids),
+    ok = supervisor:terminate_child(erlmcp_server_sup, server_rem_2),
+    ok = supervisor:delete_child(erlmcp_server_sup, server_rem_2),
+    
+    % Verify removal
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(2, length(Children)),
+    ?assertNot(is_process_alive(ServerPid2)),
+    
+    % Verify other servers still running
+    RemainingIds = [Id || {Id, _Pid, _Type, _Modules} <- Children],
+    ?assertEqual([server_rem_1, server_rem_3], lists:sort(RemainingIds)).
+
+test_server_lifecycle_management(Config) ->
+    ServerId = lifecycle_test_server,
+    
+    % Test full lifecycle: start -> run -> stop -> restart
+    
+    % Start
+    {ok, ServerPid1} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+    ?assert(is_process_alive(ServerPid1)),
+    
+    % Run - verify server is functional
+    ?assertMatch({ok, _}, gen_server:call(ServerPid1, get_state, 1000)),
+    
+    % Stop
+    ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+    ?assertNot(is_process_alive(ServerPid1)),
+    
+    % Delete child spec
+    ok = supervisor:delete_child(erlmcp_server_sup, ServerId),
+    
+    % Restart with different config
+    {ok, ServerPid2} = erlmcp_server_sup:start_child(ServerId, #{
+        capabilities => [tool_call],
+        config => #{new_setting => true}
+    }),
+    
+    ?assert(is_process_alive(ServerPid2)),
+    ?assertNotEqual(ServerPid1, ServerPid2),
+    
+    % Verify new server is functional
+    ?assertMatch({ok, _}, gen_server:call(ServerPid2, get_state, 1000)).
+
+test_duplicate_server_handling(Config) ->
+    ServerId = duplicate_test_server,
+    
+    % Start first server
+    {ok, ServerPid1} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+    
+    % Try to start duplicate - should fail
+    ?assertMatch({error, {already_started, ServerPid1}}, 
+                 erlmcp_server_sup:start_child(ServerId, #{capabilities => []})),
+    
+    % Verify only one instance exists
+    Children = supervisor:which_children(erlmcp_server_sup),
+    DuplicateChildren = [Child || {Id, _Pid, _Type, _Modules} = Child <- Children, 
+                                  Id =:= ServerId],
+    ?assertEqual(1, length(DuplicateChildren)).
+
+%%--------------------------------------------------------------------
+%% Crash Isolation Tests
+%%--------------------------------------------------------------------
+
+test_server_crash_isolation(Config) ->
+    % Start multiple servers
+    ServerIds = [crash_iso_1, crash_iso_2, crash_iso_3],
+    
+    ServerPids = lists:map(fun(ServerId) ->
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        {ServerId, Pid}
+    end, ServerIds),
+    
+    % Kill one server
+    {crash_iso_2, CrashPid} = lists:keyfind(crash_iso_2, 1, ServerPids),
+    exit(CrashPid, kill),
+    
+    timer:sleep(200),
+    
+    % Verify supervisor is still alive
+    ?assert(is_process_alive(whereis(erlmcp_server_sup))),
+    
+    % Verify other servers are still alive
+    {crash_iso_1, Pid1} = lists:keyfind(crash_iso_1, 1, ServerPids),
+    {crash_iso_3, Pid3} = lists:keyfind(crash_iso_3, 1, ServerPids),
+    
+    ?assert(is_process_alive(Pid1)),
+    ?assert(is_process_alive(Pid3)),
+    
+    % Verify crashed server is gone
+    ?assertNot(is_process_alive(CrashPid)),
+    
+    % Check supervisor children list
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(2, length(Children)), % Only 2 remaining
+    
+    ChildIds = [Id || {Id, _Pid, _Type, _Modules} <- Children],
+    ?assertEqual([crash_iso_1, crash_iso_3], lists:sort(ChildIds)).
+
+test_multiple_server_crashes(Config) ->
+    % Start many servers
+    NumServers = 10,
+    ServerIds = [list_to_atom("multi_crash_" ++ integer_to_list(N)) 
+                 || N <- lists:seq(1, NumServers)],
+    
+    ServerPids = lists:map(fun(ServerId) ->
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        {ServerId, Pid}
+    end, ServerIds),
+    
+    % Kill half of them rapidly
+    CrashIds = lists:sublist(ServerIds, 1, NumServers div 2),
+    CrashPids = [Pid || {Id, Pid} <- ServerPids, lists:member(Id, CrashIds)],
+    
+    lists:foreach(fun(Pid) -> exit(Pid, kill) end, CrashPids),
+    
+    timer:sleep(500),
+    
+    % Verify supervisor survived
+    ?assert(is_process_alive(whereis(erlmcp_server_sup))),
+    
+    % Verify remaining servers survived
+    RemainingIds = ServerIds -- CrashIds,
+    RemainingPids = [Pid || {Id, Pid} <- ServerPids, lists:member(Id, RemainingIds)],
+    
+    lists:foreach(fun(Pid) ->
+        ?assert(is_process_alive(Pid))
+    end, RemainingPids),
+    
+    % Verify crashed servers are gone
+    lists:foreach(fun(Pid) ->
+        ?assertNot(is_process_alive(Pid))
+    end, CrashPids),
+    
+    % Check final children count
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(NumServers - length(CrashIds), length(Children)).
+
+test_supervisor_resilience(Config) ->
+    % Test supervisor resilience under various failure conditions
+    
+    % Start servers
+    {ok, ServerPid1} = erlmcp_server_sup:start_child(resilience_1, #{capabilities => []}),
+    {ok, ServerPid2} = erlmcp_server_sup:start_child(resilience_2, #{capabilities => []}),
+    
+    SupervisorPid = whereis(erlmcp_server_sup),
+    
+    % Test various exit reasons
+    ExitReasons = [kill, shutdown, normal, {error, test_reason}, timeout],
+    
+    lists:foreach(fun(Reason) ->
+        {ok, TempPid} = erlmcp_server_sup:start_child(
+            list_to_atom("temp_" ++ atom_to_list(Reason)), 
+            #{capabilities => []}
+        ),
+        exit(TempPid, Reason),
+        timer:sleep(100),
+        
+        % Supervisor should survive
+        ?assertEqual(SupervisorPid, whereis(erlmcp_server_sup)),
+        ?assert(is_process_alive(SupervisorPid))
+    end, ExitReasons),
+    
+    % Original servers should still be alive
+    ?assert(is_process_alive(ServerPid1)),
+    ?assert(is_process_alive(ServerPid2)).
+
+test_cleanup_after_crashes(Config) ->
+    InitialMemory = get_memory_usage(),
+    
+    % Create and crash many servers to test cleanup
+    NumIterations = 50,
+    
+    lists:foreach(fun(N) ->
+        ServerId = list_to_atom("cleanup_test_" ++ integer_to_list(N)),
+        {ok, ServerPid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        
+        % Do some work to create state
+        gen_server:call(ServerPid, get_state, 1000),
+        
+        % Crash it
+        exit(ServerPid, kill),
+        
+        % Force garbage collection periodically
+        case N rem 10 of
+            0 -> erlang:garbage_collect();
+            _ -> ok
+        end
+    end, lists:seq(1, NumIterations)),
+    
+    % Final cleanup
+    timer:sleep(1000),
+    erlang:garbage_collect(),
+    
+    FinalMemory = get_memory_usage(),
+    MemoryGrowth = FinalMemory - InitialMemory,
+    
+    ct:pal("Memory growth after ~p crash cycles: ~p bytes", [NumIterations, MemoryGrowth]),
+    
+    % Should not leak significant memory
+    ?assert(MemoryGrowth < 2097152), % 2MB threshold
+    
+    % Supervisor should be clean
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual([], Children).
+
+%%--------------------------------------------------------------------
+%% Concurrent Operations Tests
+%%--------------------------------------------------------------------
+
+test_concurrent_server_creation(Config) ->
+    NumWorkers = 20,
+    Parent = self(),
+    
+    % Spawn concurrent workers
+    Workers = lists:map(fun(N) ->
+        spawn_link(fun() ->
+            ServerId = list_to_atom("concurrent_create_" ++ integer_to_list(N)),
+            try
+                {ok, ServerPid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+                ?assert(is_pid(ServerPid)),
+                Parent ! {success, N, ServerPid}
+            catch
+                Class:Reason:Stacktrace ->
+                    Parent ! {error, N, Class, Reason, Stacktrace}
+            end
+        end)
+    end, lists:seq(1, NumWorkers)),
+    
+    % Collect results
+    Results = collect_worker_results(NumWorkers, []),
+    SuccessCount = length([R || {success, _, _} <- Results]),
+    ErrorCount = length([R || {error, _, _, _, _} <- Results]),
+    
+    ct:pal("Concurrent creation: ~p successes, ~p errors", [SuccessCount, ErrorCount]),
+    
+    % All should succeed
+    ?assertEqual(NumWorkers, SuccessCount),
+    ?assertEqual(0, ErrorCount),
+    
+    % Verify all servers are actually running
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(NumWorkers, length(Children)),
+    
+    % Wait for workers to finish
+    lists:foreach(fun(Worker) -> wait_for_worker(Worker) end, Workers).
+
+test_concurrent_server_termination(Config) ->
+    NumServers = 15,
+    
+    % Create servers first
+    ServerPids = lists:map(fun(N) ->
+        ServerId = list_to_atom("concurrent_term_" ++ integer_to_list(N)),
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        {ServerId, Pid}
+    end, lists:seq(1, NumServers)),
+    
+    ?assertEqual(NumServers, length(supervisor:which_children(erlmcp_server_sup))),
+    
+    Parent = self(),
+    
+    % Terminate concurrently
+    Workers = lists:map(fun({ServerId, ServerPid}) ->
+        spawn_link(fun() ->
+            try
+                ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+                ok = supervisor:delete_child(erlmcp_server_sup, ServerId),
+                Parent ! {terminated, ServerId}
+            catch
+                Class:Reason:Stacktrace ->
+                    Parent ! {term_error, ServerId, Class, Reason, Stacktrace}
+            end
+        end)
+    end, ServerPids),
+    
+    % Collect termination results
+    TermResults = collect_termination_results(NumServers, []),
+    SuccessTerms = length([R || {terminated, _} <- TermResults]),
+    
+    ct:pal("Concurrent termination: ~p successes", [SuccessTerms]),
+    
+    ?assertEqual(NumServers, SuccessTerms),
+    
+    % Verify all servers terminated
+    timer:sleep(200),
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual([], Children),
+    
+    % Wait for workers
+    lists:foreach(fun(Worker) -> wait_for_worker(Worker) end, Workers).
+
+test_mixed_concurrent_operations(Config) ->
+    NumOps = 30,
+    Parent = self(),
+    
+    % Mix of create/terminate operations
+    Workers = lists:map(fun(N) ->
+        spawn_link(fun() ->
+            ServerId = list_to_atom("mixed_op_" ++ integer_to_list(N)),
+            try
+                case N rem 3 of
+                    0 -> % Create server
+                        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+                        Parent ! {created, ServerId, Pid};
+                    1 -> % Create then terminate
+                        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+                        timer:sleep(rand:uniform(100)),
+                        ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+                        ok = supervisor:delete_child(erlmcp_server_sup, ServerId),
+                        Parent ! {created_and_terminated, ServerId, Pid};
+                    2 -> % Just create (will be cleaned up)
+                        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+                        Parent ! {created, ServerId, Pid}
+                end
+            catch
+                Class:Reason:Stacktrace ->
+                    Parent ! {mixed_error, N, Class, Reason, Stacktrace}
+            end
+        end)
+    end, lists:seq(1, NumOps)),
+    
+    % Collect results
+    MixedResults = collect_mixed_results(NumOps, []),
+    
+    Errors = [R || {mixed_error, _, _, _, _} <- MixedResults],
+    ?assertEqual([], Errors),
+    
+    % Supervisor should be stable
+    ?assert(is_process_alive(whereis(erlmcp_server_sup))),
+    
+    % Wait for workers
+    lists:foreach(fun(Worker) -> wait_for_worker(Worker) end, Workers).
+
+test_high_concurrency_stress(Config) ->
+    NumWorkers = 50,
+    Duration = 3000, % 3 seconds
+    StartTime = erlang:system_time(millisecond),
+    Parent = self(),
+    
+    % High concurrency stress test
+    Workers = lists:map(fun(N) ->
+        spawn_link(fun() ->
+            stress_worker_loop(N, Parent, StartTime, Duration)
+        end)
+    end, lists:seq(1, NumWorkers)),
+    
+    % Monitor supervisor stability
+    SupervisorPid = whereis(erlmcp_server_sup),
+    SupervisorRef = monitor(process, SupervisorPid),
+    
+    % Wait for stress test completion
+    timer:sleep(Duration + 1000),
+    
+    % Verify supervisor survived
+    ?assert(is_process_alive(SupervisorPid)),
+    
+    receive
+        {'DOWN', SupervisorRef, process, SupervisorPid, Reason} ->
+            ?assert(false, lists:flatten(io_lib:format("Supervisor crashed: ~p", [Reason])))
+    after 0 ->
+        ok
+    end,
+    
+    % Cleanup workers
+    lists:foreach(fun(Worker) -> exit(Worker, shutdown) end, Workers),
+    
+    % Supervisor should still be functional
+    {ok, TestPid} = erlmcp_server_sup:start_child(post_stress_test, #{capabilities => []}),
+    ?assert(is_process_alive(TestPid)).
+
+%%--------------------------------------------------------------------
+%% Resource Management Tests
+%%--------------------------------------------------------------------
+
+test_resource_cleanup_on_termination(Config) ->
+    InitialMemory = get_memory_usage(),
+    ServerId = resource_cleanup_test,
+    
+    % Create server with some state
+    {ok, ServerPid} = erlmcp_server_sup:start_child(ServerId, #{
+        capabilities => [],
+        config => #{large_data => lists:duplicate(1000, test_data)}
+    }),
+    
+    % Verify server is using memory
+    MemoryAfterCreate = get_memory_usage(),
+    ?assert(MemoryAfterCreate > InitialMemory),
+    
+    % Terminate server
+    ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+    ok = supervisor:delete_child(erlmcp_server_sup, ServerId),
+    
+    % Force garbage collection
+    erlang:garbage_collect(),
+    timer:sleep(500),
+    
+    % Memory should be cleaned up
+    FinalMemory = get_memory_usage(),
+    MemoryIncrease = FinalMemory - InitialMemory,
+    
+    ct:pal("Memory usage - Initial: ~p, After create: ~p, Final: ~p", 
+           [InitialMemory, MemoryAfterCreate, FinalMemory]),
+    
+    % Should not leak significant memory
+    ?assert(MemoryIncrease < 100000), % 100KB threshold
+    
+    % Server should be gone
+    ?assertNot(is_process_alive(ServerPid)).
+
+test_memory_usage_monitoring(Config) ->
+    InitialMemory = get_memory_usage(),
+    ServerCount = 20,
+    
+    % Create many servers
+    ServerPids = lists:map(fun(N) ->
+        ServerId = list_to_atom("memory_test_" ++ integer_to_list(N)),
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        {ServerId, Pid}
+    end, lists:seq(1, ServerCount)),
+    
+    MemoryAfterCreate = get_memory_usage(),
+    MemoryPerServer = (MemoryAfterCreate - InitialMemory) / ServerCount,
+    
+    ct:pal("Memory per server: ~p bytes", [MemoryPerServer]),
+    
+    % Remove half
+    HalfCount = ServerCount div 2,
+    {ToRemove, ToKeep} = lists:split(HalfCount, ServerPids),
+    
+    lists:foreach(fun({ServerId, _Pid}) ->
+        ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+        ok = supervisor:delete_child(erlmcp_server_sup, ServerId)
+    end, ToRemove),
+    
+    erlang:garbage_collect(),
+    timer:sleep(500),
+    
+    MemoryAfterRemoval = get_memory_usage(),
+    
+    % Memory should decrease proportionally
+    ExpectedReduction = MemoryPerServer * HalfCount,
+    ActualReduction = MemoryAfterCreate - MemoryAfterRemoval,
+    
+    ct:pal("Expected reduction: ~p, Actual reduction: ~p", 
+           [ExpectedReduction, ActualReduction]),
+    
+    % Allow 20% variance in memory cleanup
+    ?assert(ActualReduction > ExpectedReduction * 0.8),
+    ?assert(ActualReduction < ExpectedReduction * 1.2).
+
+test_process_count_limits(Config) ->
+    % Test that we can handle reasonable numbers of servers
+    MaxServers = 100,
+    
+    StartTime = erlang:system_time(microsecond),
+    
+    % Create many servers
+    ServerPids = lists:map(fun(N) ->
+        ServerId = list_to_atom("limit_test_" ++ integer_to_list(N)),
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        {ServerId, Pid}
+    end, lists:seq(1, MaxServers)),
+    
+    EndTime = erlang:system_time(microsecond),
+    CreationTime = EndTime - StartTime,
+    
+    ct:pal("Created ~p servers in ~p microseconds (~p μs/server)", 
+           [MaxServers, CreationTime, CreationTime/MaxServers]),
+    
+    % All should be created successfully
+    ?assertEqual(MaxServers, length(ServerPids)),
+    
+    % All should be alive
+    lists:foreach(fun({_ServerId, Pid}) ->
+        ?assert(is_process_alive(Pid))
+    end, ServerPids),
+    
+    % Supervisor should still be responsive
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(MaxServers, length(Children)),
+    
+    % Cleanup in batches to avoid timeout
+    cleanup_servers_in_batches(ServerPids, 10).
+
+test_registry_integration(Config) ->
+    % Test integration with registry for server management
+    ServerId = registry_integration_test,
+    
+    % Create server
+    {ok, ServerPid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+    
+    % Server should be automatically registered
+    timer:sleep(100), % Allow time for registration
+    ?assertMatch({ok, {ServerPid, _Config}}, erlmcp_registry:find_server(ServerId)),
+    
+    % Terminate server
+    ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+    ok = supervisor:delete_child(erlmcp_server_sup, ServerId),
+    
+    % Server should be automatically unregistered
+    timer:sleep(100),
+    ?assertMatch({error, not_found}, erlmcp_registry:find_server(ServerId)).
+
+%%--------------------------------------------------------------------
+%% Performance Tests
+%%--------------------------------------------------------------------
+
+test_server_startup_performance(Config) ->
+    NumTests = 10,
+    
+    StartupTimes = lists:map(fun(_) ->
+        ServerId = list_to_atom("perf_test_" ++ integer_to_list(rand:uniform(10000))),
+        
+        StartTime = erlang:system_time(microsecond),
+        {ok, ServerPid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        EndTime = erlang:system_time(microsecond),
+        
+        % Cleanup
+        ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+        ok = supervisor:delete_child(erlmcp_server_sup, ServerId),
+        
+        EndTime - StartTime
+    end, lists:seq(1, NumTests)),
+    
+    AvgTime = lists:sum(StartupTimes) / length(StartupTimes),
+    MaxTime = lists:max(StartupTimes),
+    MinTime = lists:min(StartupTimes),
+    
+    ct:pal("Server startup performance - Avg: ~p μs, Min: ~p μs, Max: ~p μs", 
+           [AvgTime, MinTime, MaxTime]),
+    
+    % Performance requirements
+    ?assert(AvgTime < 10000), % 10ms average
+    ?assert(MaxTime < 50000), % 50ms max
+    ?assert(MinTime > 0).
+
+test_bulk_operations_performance(Config) ->
+    NumServers = 50,
+    
+    % Bulk creation
+    StartTime = erlang:system_time(microsecond),
+    
+    ServerIds = lists:map(fun(N) ->
+        ServerId = list_to_atom("bulk_test_" ++ integer_to_list(N)),
+        {ok, _Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        ServerId
+    end, lists:seq(1, NumServers)),
+    
+    CreationEndTime = erlang:system_time(microsecond),
+    CreationTime = CreationEndTime - StartTime,
+    
+    % Bulk termination
+    TerminationStartTime = erlang:system_time(microsecond),
+    
+    lists:foreach(fun(ServerId) ->
+        ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+        ok = supervisor:delete_child(erlmcp_server_sup, ServerId)
+    end, ServerIds),
+    
+    TerminationEndTime = erlang:system_time(microsecond),
+    TerminationTime = TerminationEndTime - TerminationStartTime,
+    
+    ct:pal("Bulk operations - Creation: ~p μs (~p μs/server), Termination: ~p μs (~p μs/server)", 
+           [CreationTime, CreationTime/NumServers, TerminationTime, TerminationTime/NumServers]),
+    
+    % Performance requirements
+    ?assert(CreationTime / NumServers < 5000), % 5ms per server creation
+    ?assert(TerminationTime / NumServers < 3000). % 3ms per server termination
+
+test_sustained_load_performance(Config) ->
+    Duration = 5000, % 5 seconds
+    StartTime = erlang:system_time(millisecond),
+    OperationCount = 0,
+    
+    % Sustained load test
+    FinalCount = sustained_load_loop(StartTime, Duration, 0),
+    
+    ActualDuration = erlang:system_time(millisecond) - StartTime,
+    OperationsPerSecond = (FinalCount * 1000) / ActualDuration,
+    
+    ct:pal("Sustained load: ~p operations in ~p ms (~p ops/sec)", 
+           [FinalCount, ActualDuration, OperationsPerSecond]),
+    
+    % Should handle reasonable load
+    ?assert(OperationsPerSecond > 10), % At least 10 ops/sec
+    ?assert(FinalCount > 50). % At least 50 operations total
+
+test_recovery_performance(Config) ->
+    % Create initial servers
+    InitialServers = lists:map(fun(N) ->
+        ServerId = list_to_atom("recovery_test_" ++ integer_to_list(N)),
+        {ok, Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        {ServerId, Pid}
+    end, lists:seq(1, 10)),
+    
+    % Kill half of them
+    {ToCrash, ToKeep} = lists:split(5, InitialServers),
+    
+    CrashStartTime = erlang:system_time(microsecond),
+    lists:foreach(fun({_ServerId, Pid}) ->
+        exit(Pid, kill)
+    end, ToCrash),
+    
+    % Wait for cleanup to complete
+    wait_for_cleanup_completion(length(ToCrash)),
+    
+    RecoveryEndTime = erlang:system_time(microsecond),
+    RecoveryTime = RecoveryEndTime - CrashStartTime,
+    
+    ct:pal("Recovery time for ~p crashed servers: ~p μs", [length(ToCrash), RecoveryTime]),
+    
+    % Verify supervisor is still functional
+    {ok, TestPid} = erlmcp_server_sup:start_child(post_recovery_test, #{capabilities => []}),
+    ?assert(is_process_alive(TestPid)),
+    
+    % Recovery should be fast
+    ?assert(RecoveryTime < 1000000). % 1 second
+
+%%--------------------------------------------------------------------
+%% Integration Tests
+%%--------------------------------------------------------------------
+
+test_integration_with_main_supervisor(Config) ->
+    MainSupPid = whereis(erlmcp_sup),
+    ServerSupPid = whereis(erlmcp_server_sup),
+    
+    ?assert(is_pid(MainSupPid)),
+    ?assert(is_pid(ServerSupPid)),
+    
+    % Kill server supervisor - should be restarted by main supervisor
+    exit(ServerSupPid, kill),
+    
+    timer:sleep(1000),
+    
+    % Main supervisor should restart server supervisor
+    ?assert(is_process_alive(MainSupPid)),
+    
+    NewServerSupPid = whereis(erlmcp_server_sup),
+    ?assert(is_pid(NewServerSupPid)),
+    ?assertNotEqual(ServerSupPid, NewServerSupPid),
+    
+    % New server supervisor should be functional
+    {ok, TestPid} = erlmcp_server_sup:start_child(integration_test, #{capabilities => []}),
+    ?assert(is_process_alive(TestPid)).
+
+test_integration_with_registry(Config) ->
+    % Test server supervisor + registry coordination
+    ServerId = registry_coord_test,
+    
+    % Verify registry is available
+    ?assertMatch({ok, _}, erlmcp_registry:list_servers()),
+    
+    % Create server
+    {ok, ServerPid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+    
+    % Should be in registry
+    timer:sleep(100),
+    ?assertMatch({ok, {ServerPid, _}}, erlmcp_registry:find_server(ServerId)),
+    
+    % Kill registry - should restart and lose server registrations
+    RegistryPid = whereis(erlmcp_registry),
+    exit(RegistryPid, kill),
+    
+    timer:sleep(1000),
+    
+    % Registry should be restarted
+    ?assert(is_process_alive(whereis(erlmcp_registry))),
+    ?assertNotEqual(RegistryPid, whereis(erlmcp_registry)),
+    
+    % Server should still be alive but not in registry (one_for_all restart)
+    % Actually, one_for_all should have restarted everything
+    NewServerSupPid = whereis(erlmcp_server_sup),
+    ?assert(is_process_alive(NewServerSupPid)).
+
+test_integration_with_transport_sup(Config) ->
+    % Test server and transport supervisor coordination
+    ServerId = transport_coord_test_server,
+    TransportId = transport_coord_test_transport,
+    
+    % Create server and transport
+    {ok, ServerPid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+    {ok, TransportPid} = erlmcp_sup:start_transport(TransportId, stdio, #{}),
+    
+    % Bind them
+    timer:sleep(100),
+    ok = erlmcp_registry:bind_transport_to_server(TransportId, ServerId),
+    
+    % Verify binding
+    ?assertMatch({ok, ServerId}, erlmcp_registry:get_server_for_transport(TransportId)),
+    
+    % Both should be alive and coordinated
+    ?assert(is_process_alive(ServerPid)),
+    ?assert(is_process_alive(TransportPid)).
+
+test_full_system_coordination(Config) ->
+    % Test full system with multiple servers and transports
+    NumServers = 5,
+    NumTransports = 3,
+    
+    % Create servers
+    ServerIds = lists:map(fun(N) ->
+        ServerId = list_to_atom("sys_server_" ++ integer_to_list(N)),
+        {ok, _Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+        ServerId
+    end, lists:seq(1, NumServers)),
+    
+    % Create transports
+    TransportIds = lists:map(fun(N) ->
+        TransportId = list_to_atom("sys_transport_" ++ integer_to_list(N)),
+        {ok, _Pid} = erlmcp_sup:start_transport(TransportId, stdio, #{}),
+        TransportId
+    end, lists:seq(1, NumTransports)),
+    
+    timer:sleep(200),
+    
+    % Bind some transports to servers
+    ok = erlmcp_registry:bind_transport_to_server(hd(TransportIds), hd(ServerIds)),
+    
+    % Verify system state
+    {ok, Servers} = erlmcp_registry:list_servers(),
+    {ok, Transports} = erlmcp_registry:list_transports(),
+    
+    ?assertEqual(NumServers, length(Servers)),
+    ?assertEqual(NumTransports, length(Transports)),
+    
+    % System should be fully functional
+    Children = supervisor:which_children(erlmcp_server_sup),
+    ?assertEqual(NumServers, length(Children)).
+
+%%--------------------------------------------------------------------
+%% Helper Functions
+%%--------------------------------------------------------------------
+
+get_memory_usage() ->
+    erlang:memory(total).
+
+cleanup_test_servers() ->
+    Children = supervisor:which_children(erlmcp_server_sup),
+    lists:foreach(fun({Id, _Pid, _Type, _Modules}) ->
+        case atom_to_list(Id) of
+            "test_" ++ _ ->
+                supervisor:terminate_child(erlmcp_server_sup, Id),
+                supervisor:delete_child(erlmcp_server_sup, Id);
+            _ -> ok
+        end
+    end, Children).
+
+collect_worker_results(0, Acc) ->
+    Acc;
+collect_worker_results(N, Acc) ->
+    receive
+        {success, WorkerId, Pid} ->
+            collect_worker_results(N-1, [{success, WorkerId, Pid} | Acc]);
+        {error, WorkerId, Class, Reason, Stacktrace} ->
+            ct:pal("Worker ~p error: ~p:~p~n~p", [WorkerId, Class, Reason, Stacktrace]),
+            collect_worker_results(N-1, [{error, WorkerId, Class, Reason, Stacktrace} | Acc])
+    after 10000 ->
+        ?assert(false, "Timeout collecting worker results")
+    end.
+
+collect_termination_results(0, Acc) ->
+    Acc;
+collect_termination_results(N, Acc) ->
+    receive
+        {terminated, ServerId} ->
+            collect_termination_results(N-1, [{terminated, ServerId} | Acc]);
+        {term_error, ServerId, Class, Reason, Stacktrace} ->
+            ct:pal("Termination error ~p: ~p:~p~n~p", [ServerId, Class, Reason, Stacktrace]),
+            collect_termination_results(N-1, [{term_error, ServerId, Class, Reason, Stacktrace} | Acc])
+    after 5000 ->
+        ?assert(false, "Timeout collecting termination results")
+    end.
+
+collect_mixed_results(0, Acc) ->
+    Acc;
+collect_mixed_results(N, Acc) ->
+    receive
+        {created, ServerId, Pid} ->
+            collect_mixed_results(N-1, [{created, ServerId, Pid} | Acc]);
+        {created_and_terminated, ServerId, Pid} ->
+            collect_mixed_results(N-1, [{created_and_terminated, ServerId, Pid} | Acc]);
+        {mixed_error, WorkerId, Class, Reason, Stacktrace} ->
+            ct:pal("Mixed operation error ~p: ~p:~p~n~p", [WorkerId, Class, Reason, Stacktrace]),
+            collect_mixed_results(N-1, [{mixed_error, WorkerId, Class, Reason, Stacktrace} | Acc])
+    after 10000 ->
+        ?assert(false, "Timeout collecting mixed results")
+    end.
+
+wait_for_worker(Worker) ->
+    Ref = monitor(process, Worker),
+    receive
+        {'DOWN', Ref, process, Worker, _Reason} ->
+            ok
+    after 5000 ->
+        exit(Worker, kill),
+        ok
+    end.
+
+stress_worker_loop(WorkerId, StartTime, Duration) ->
+    case erlang:system_time(millisecond) - StartTime of
+        Elapsed when Elapsed > Duration ->
+            ok;
+        _ ->
+            try
+                % Random operations
+                case rand:uniform(3) of
+                    1 -> % Create server
+                        ServerId = list_to_atom("stress_" ++ integer_to_list(WorkerId) 
+                                              ++ "_" ++ integer_to_list(rand:uniform(1000))),
+                        {ok, _Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+                        timer:sleep(rand:uniform(50));
+                    2 -> % Create and terminate
+                        ServerId = list_to_atom("stress_temp_" ++ integer_to_list(WorkerId) 
+                                              ++ "_" ++ integer_to_list(rand:uniform(1000))),
+                        {ok, _Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+                        timer:sleep(rand:uniform(10)),
+                        supervisor:terminate_child(erlmcp_server_sup, ServerId),
+                        supervisor:delete_child(erlmcp_server_sup, ServerId);
+                    3 -> % Just wait
+                        timer:sleep(rand:uniform(100))
+                end,
+                stress_worker_loop(WorkerId, StartTime, Duration)
+            catch
+                _:_ ->
+                    % Ignore errors during stress test
+                    timer:sleep(rand:uniform(50)),
+                    stress_worker_loop(WorkerId, StartTime, Duration)
+            end
+    end.
+
+sustained_load_loop(StartTime, Duration, Count) ->
+    case erlang:system_time(millisecond) - StartTime of
+        Elapsed when Elapsed > Duration ->
+            Count;
+        _ ->
+            try
+                % Perform operation
+                ServerId = list_to_atom("sustained_" ++ integer_to_list(Count)),
+                {ok, _Pid} = erlmcp_server_sup:start_child(ServerId, #{capabilities => []}),
+                ok = supervisor:terminate_child(erlmcp_server_sup, ServerId),
+                ok = supervisor:delete_child(erlmcp_server_sup, ServerId),
+                sustained_load_loop(StartTime, Duration, Count + 1)
+            catch
+                _:_ ->
+                    sustained_load_loop(StartTime, Duration, Count)
+            end
+    end.
+
+wait_for_cleanup_completion(ExpectedCleanupCount) ->
+    wait_for_cleanup_completion(ExpectedCleanupCount, 50). % 5 second timeout
+
+wait_for_cleanup_completion(_ExpectedCount, 0) ->
+    ok; % Timeout
+wait_for_cleanup_completion(ExpectedCount, Retries) ->
+    Children = supervisor:which_children(erlmcp_server_sup),
+    CurrentCount = length(Children),
+    ExpectedFinal = 10 - ExpectedCount, % We started with 10, crashed ExpectedCount
+    
+    case CurrentCount =< ExpectedFinal of
+        true -> ok;
+        false ->
+            timer:sleep(100),
+            wait_for_cleanup_completion(ExpectedCount, Retries - 1)
+    end.
+
+cleanup_servers_in_batches([], _BatchSize) ->
+    ok;
+cleanup_servers_in_batches(ServerPids, BatchSize) ->
+    {Batch, Rest} = case length(ServerPids) > BatchSize of
+        true -> lists:split(BatchSize, ServerPids);
+        false -> {ServerPids, []}
+    end,
+    
+    % Cleanup batch
+    lists:foreach(fun({ServerId, _Pid}) ->
+        supervisor:terminate_child(erlmcp_server_sup, ServerId),
+        supervisor:delete_child(erlmcp_server_sup, ServerId)
+    end, Batch),
+    
+    timer:sleep(100), % Brief pause between batches
+    cleanup_servers_in_batches(Rest, BatchSize).

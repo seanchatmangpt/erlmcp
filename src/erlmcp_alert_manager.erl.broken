@@ -1,0 +1,600 @@
+%%%-------------------------------------------------------------------
+%%% @doc ErlMCP Alert Manager
+%%% Manages alert delivery, escalation, and notification channels.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_alert_manager).
+-behaviour(gen_server).
+
+%% API
+-export([
+    start_link/1,
+    send_alert/1,
+    add_notification_channel/2,
+    remove_notification_channel/1,
+    get_alert_history/0,
+    get_alert_history/1,
+    acknowledge_alert/1,
+    resolve_alert/1,
+    escalate_alert/1
+]).
+
+%% gen_server callbacks
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
+
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
+
+%% Records
+-record(state, {
+    config :: map(),
+    notification_channels :: map(),
+    alert_history :: [alert()],
+    active_alerts :: map(),
+    escalation_rules :: [escalation_rule()]
+}).
+
+-record(alert, {
+    id :: binary(),
+    rule_id :: binary(),
+    rule_name :: binary(),
+    severity :: critical | warning | info,
+    message :: binary(),
+    timestamp :: non_neg_integer(),
+    status :: active | acknowledged | resolved,
+    acknowledged_by :: binary() | undefined,
+    acknowledged_at :: non_neg_integer() | undefined,
+    resolved_at :: non_neg_integer() | undefined,
+    escalation_level :: non_neg_integer(),
+    metadata :: map()
+}).
+
+-record(escalation_rule, {
+    severity :: critical | warning | info,
+    delays :: [non_neg_integer()],
+    channels :: [atom()]
+}).
+
+-record(notification_channel, {
+    id :: atom(),
+    type :: email | slack | webhook | console | sms,
+    config :: map(),
+    enabled :: boolean(),
+    rate_limit :: #{count := integer(), window_ms := integer()}
+}).
+
+%% Types
+-type alert() :: #alert{}.
+-type escalation_rule() :: #escalation_rule{}.
+-type notification_channel() :: #notification_channel{}.
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+%% @doc Start the alert manager
+-spec start_link(Config :: map()) -> {ok, pid()} | {error, term()}.
+start_link(Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
+
+%% @doc Send alert
+-spec send_alert(Alert :: map()) -> ok | {error, term()}.
+send_alert(Alert) ->
+    gen_server:cast(?MODULE, {send_alert, Alert}).
+
+%% @doc Add notification channel
+-spec add_notification_channel(Id :: atom(), Channel :: notification_channel()) -> ok.
+add_notification_channel(Id, Channel) ->
+    gen_server:call(?MODULE, {add_notification_channel, Id, Channel}).
+
+%% @doc Remove notification channel
+-spec remove_notification_channel(Id :: atom()) -> ok.
+remove_notification_channel(Id) ->
+    gen_server:call(?MODULE, {remove_notification_channel, Id}).
+
+%% @doc Get alert history
+-spec get_alert_history() -> [alert()].
+get_alert_history() ->
+    gen_server:call(?MODULE, get_alert_history).
+
+%% @doc Get alert history for specific time range
+-spec get_alert_history(TimeRangeMs :: non_neg_integer()) -> [alert()].
+get_alert_history(TimeRangeMs) ->
+    gen_server:call(?MODULE, {get_alert_history, TimeRangeMs}).
+
+%% @doc Acknowledge alert
+-spec acknowledge_alert(AlertId :: binary()) -> ok | {error, term()}.
+acknowledge_alert(AlertId) ->
+    gen_server:call(?MODULE, {acknowledge_alert, AlertId}).
+
+%% @doc Resolve alert
+-spec resolve_alert(AlertId :: binary()) -> ok | {error, term()}.
+resolve_alert(AlertId) ->
+    gen_server:call(?MODULE, {resolve_alert, AlertId}).
+
+%% @doc Escalate alert
+-spec escalate_alert(AlertId :: binary()) -> ok | {error, term()}.
+escalate_alert(AlertId) ->
+    gen_server:call(?MODULE, {escalate_alert, AlertId}).
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+init([Config]) ->
+    SpanCtx = ?start_span(<<"alert_manager_init">>),
+    
+    State = #state{
+        config = Config,
+        notification_channels = create_default_channels(Config),
+        alert_history = [],
+        active_alerts = #{},
+        escalation_rules = create_default_escalation_rules(Config)
+    },
+    
+    % Start escalation timer
+    erlang:send_after(60000, self(), check_escalations), % Check every minute
+    
+    ?set_attributes(SpanCtx, [
+        {<<"alert_manager.channels">>, maps:size(State#state.notification_channels)},
+        {<<"alert_manager.escalation_rules">>, length(State#state.escalation_rules)}
+    ]),
+    ?end_span(SpanCtx),
+    
+    {ok, State}.
+
+handle_call({add_notification_channel, Id, Channel}, _From, State) ->
+    SpanCtx = ?start_span(<<"add_notification_channel">>),
+    
+    Channels = maps:put(Id, Channel, State#state.notification_channels),
+    NewState = State#state{notification_channels = Channels},
+    
+    ?set_attributes(SpanCtx, [
+        {<<"alert.channel_id">>, atom_to_binary(Id)},
+        {<<"alert.channel_type">>, atom_to_binary(Channel#notification_channel.type)}
+    ]),
+    ?end_span(SpanCtx),
+    
+    {reply, ok, NewState};
+
+handle_call({remove_notification_channel, Id}, _From, State) ->
+    SpanCtx = ?start_span(<<"remove_notification_channel">>),
+    
+    Channels = maps:remove(Id, State#state.notification_channels),
+    NewState = State#state{notification_channels = Channels},
+    
+    ?set_attributes(SpanCtx, [{<<"alert.channel_id">>, atom_to_binary(Id)}]),
+    ?end_span(SpanCtx),
+    
+    {reply, ok, NewState};
+
+handle_call(get_alert_history, _From, State) ->
+    {reply, State#state.alert_history, State};
+
+handle_call({get_alert_history, TimeRangeMs}, _From, State) ->
+    Now = erlang:system_time(millisecond),
+    Since = Now - TimeRangeMs,
+    
+    FilteredHistory = [A || A <- State#state.alert_history, A#alert.timestamp >= Since],
+    {reply, FilteredHistory, State};
+
+handle_call({acknowledge_alert, AlertId}, _From, State) ->
+    SpanCtx = ?start_span(<<"acknowledge_alert">>),
+    
+    case maps:get(AlertId, State#state.active_alerts, undefined) of
+        undefined ->
+            ?set_attributes(SpanCtx, [
+                {<<"alert.id">>, AlertId},
+                {<<"alert.action">>, <<"acknowledge_failed">>},
+                {<<"alert.reason">>, <<"not_found">>}
+            ]),
+            ?end_span(SpanCtx),
+            {reply, {error, alert_not_found}, State};
+        Alert ->
+            Now = erlang:system_time(millisecond),
+            UpdatedAlert = Alert#alert{
+                status = acknowledged,
+                acknowledged_by = <<"system">>, % Would be user in real system
+                acknowledged_at = Now
+            },
+            
+            ActiveAlerts = maps:put(AlertId, UpdatedAlert, State#state.active_alerts),
+            History = update_alert_in_history(UpdatedAlert, State#state.alert_history),
+            
+            NewState = State#state{
+                active_alerts = ActiveAlerts,
+                alert_history = History
+            },
+            
+            ?set_attributes(SpanCtx, [
+                {<<"alert.id">>, AlertId},
+                {<<"alert.action">>, <<"acknowledged">>}
+            ]),
+            ?end_span(SpanCtx),
+            
+            {reply, ok, NewState}
+    end;
+
+handle_call({resolve_alert, AlertId}, _From, State) ->
+    SpanCtx = ?start_span(<<"resolve_alert">>),
+    
+    case maps:get(AlertId, State#state.active_alerts, undefined) of
+        undefined ->
+            {reply, {error, alert_not_found}, State};
+        Alert ->
+            Now = erlang:system_time(millisecond),
+            UpdatedAlert = Alert#alert{
+                status = resolved,
+                resolved_at = Now
+            },
+            
+            ActiveAlerts = maps:remove(AlertId, State#state.active_alerts),
+            History = update_alert_in_history(UpdatedAlert, State#state.alert_history),
+            
+            NewState = State#state{
+                active_alerts = ActiveAlerts,
+                alert_history = History
+            },
+            
+            ?set_attributes(SpanCtx, [
+                {<<"alert.id">>, AlertId},
+                {<<"alert.action">>, <<"resolved">>}
+            ]),
+            ?end_span(SpanCtx),
+            
+            {reply, ok, NewState}
+    end;
+
+handle_call({escalate_alert, AlertId}, _From, State) ->
+    SpanCtx = ?start_span(<<"escalate_alert">>),
+    
+    case maps:get(AlertId, State#state.active_alerts, undefined) of
+        undefined ->
+            {reply, {error, alert_not_found}, State};
+        Alert ->
+            UpdatedAlert = Alert#alert{escalation_level = Alert#alert.escalation_level + 1},
+            
+            % Send escalation notification
+            escalate_alert_internal(UpdatedAlert, State),
+            
+            ActiveAlerts = maps:put(AlertId, UpdatedAlert, State#state.active_alerts),
+            History = update_alert_in_history(UpdatedAlert, State#state.alert_history),
+            
+            NewState = State#state{
+                active_alerts = ActiveAlerts,
+                alert_history = History
+            },
+            
+            ?set_attributes(SpanCtx, [
+                {<<"alert.id">>, AlertId},
+                {<<"alert.escalation_level">>, UpdatedAlert#alert.escalation_level}
+            ]),
+            ?end_span(SpanCtx),
+            
+            {reply, ok, NewState}
+    end.
+
+handle_cast({send_alert, AlertData}, State) ->
+    SpanCtx = ?start_span(<<"send_alert">>),
+    
+    AlertId = generate_alert_id(),
+    Now = erlang:system_time(millisecond),
+    
+    Alert = #alert{
+        id = AlertId,
+        rule_id = maps:get(rule_id, AlertData, <<"unknown">>),
+        rule_name = maps:get(rule_name, AlertData, <<"Unknown Rule">>),
+        severity = maps:get(severity, AlertData, info),
+        message = create_alert_message(AlertData),
+        timestamp = Now,
+        status = active,
+        escalation_level = 0,
+        metadata = maps:get(metadata, AlertData, #{})
+    },
+    
+    % Store alert
+    ActiveAlerts = maps:put(AlertId, Alert, State#state.active_alerts),
+    History = [Alert | State#state.alert_history],
+    
+    % Send initial notification
+    send_alert_notifications(Alert, State),
+    
+    % Schedule escalation if needed
+    schedule_escalation(Alert, State),
+    
+    NewState = State#state{
+        active_alerts = ActiveAlerts,
+        alert_history = trim_alert_history(History, State#state.config)
+    },
+    
+    ?set_attributes(SpanCtx, [
+        {<<"alert.id">>, AlertId},
+        {<<"alert.rule_id">>, Alert#alert.rule_id},
+        {<<"alert.severity">>, atom_to_binary(Alert#alert.severity)},
+        {<<"alert.message">>, Alert#alert.message}
+    ]),
+    ?end_span(SpanCtx),
+    
+    {noreply, NewState};
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(check_escalations, State) ->
+    SpanCtx = ?start_span(<<"check_escalations">>),
+    
+    Now = erlang:system_time(millisecond),
+    EscalatedCount = check_and_escalate_alerts(Now, State),
+    
+    % Schedule next check
+    erlang:send_after(60000, self(), check_escalations),
+    
+    ?set_attributes(SpanCtx, [{<<"escalations.processed">>, EscalatedCount}]),
+    ?end_span(SpanCtx),
+    
+    {noreply, State};
+
+handle_info({escalate_alert, AlertId}, State) ->
+    % Handle scheduled escalation
+    case maps:get(AlertId, State#state.active_alerts, undefined) of
+        undefined ->
+            {noreply, State}; % Alert no longer active
+        Alert ->
+            case Alert#alert.status of
+                active ->
+                    escalate_alert(AlertId),
+                    {noreply, State};
+                _ ->
+                    {noreply, State} % Alert acknowledged/resolved, no escalation
+            end
+    end;
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+%% @doc Create default notification channels
+create_default_channels(Config) ->
+    Channels = #{
+        console => #notification_channel{
+            id = console,
+            type = console,
+            config = #{},
+            enabled = true,
+            rate_limit = #{count => 10, window_ms => 60000}
+        },
+        
+        log => #notification_channel{
+            id = log,
+            type = log,
+            config = #{log_level => warning},
+            enabled = true,
+            rate_limit = #{count => 100, window_ms => 60000}
+        }
+    },
+    
+    % Add additional channels from config
+    ConfigChannels = maps:get(notification_channels, Config, #{}),
+    maps:merge(Channels, ConfigChannels).
+
+%% @doc Create default escalation rules
+create_default_escalation_rules(_Config) ->
+    [
+        #escalation_rule{
+            severity = critical,
+            delays = [300000, 900000, 1800000], % 5min, 15min, 30min
+            channels = [console, log, email, slack]
+        },
+        
+        #escalation_rule{
+            severity = warning,
+            delays = [900000, 3600000], % 15min, 1hour
+            channels = [console, log, email]
+        },
+        
+        #escalation_rule{
+            severity = info,
+            delays = [1800000], % 30min
+            channels = [log]
+        }
+    ].
+
+%% @doc Generate unique alert ID
+generate_alert_id() ->
+    Timestamp = integer_to_binary(erlang:system_time(microsecond)),
+    Random = integer_to_binary(rand:uniform(999999)),
+    <<"alert_", Timestamp/binary, "_", Random/binary>>.
+
+%% @doc Create alert message from alert data
+create_alert_message(AlertData) ->
+    RuleName = maps:get(rule_name, AlertData, <<"Unknown Rule">>),
+    Severity = maps:get(severity, AlertData, info),
+    
+    case maps:get(custom_message, AlertData, undefined) of
+        undefined ->
+            iolist_to_binary(io_lib:format("Alert: ~s [~s]", [RuleName, Severity]));
+        CustomMessage ->
+            CustomMessage
+    end.
+
+%% @doc Send alert notifications through all applicable channels
+send_alert_notifications(Alert, State) ->
+    Channels = get_channels_for_severity(Alert#alert.severity, State),
+    
+    lists:foreach(
+        fun(Channel) ->
+            case maps:get(Channel, State#state.notification_channels, undefined) of
+                undefined -> ok;
+                ChannelConfig -> send_notification(Alert, ChannelConfig)
+            end
+        end,
+        Channels
+    ).
+
+%% @doc Get notification channels for severity level
+get_channels_for_severity(Severity, State) ->
+    Rules = State#state.escalation_rules,
+    
+    case lists:keyfind(Severity, #escalation_rule.severity, Rules) of
+        false -> [console, log]; % Default channels
+        Rule -> Rule#escalation_rule.channels
+    end.
+
+%% @doc Send notification through specific channel
+send_notification(Alert, #notification_channel{type = console} = _Channel) ->
+    io:format("ALERT [~s]: ~s - ~s~n", [
+        Alert#alert.severity,
+        Alert#alert.rule_name,
+        Alert#alert.message
+    ]);
+
+send_notification(Alert, #notification_channel{type = log} = _Channel) ->
+    % Would integrate with actual logging system
+    io:format("LOG ALERT: ~s~n", [Alert#alert.message]);
+
+send_notification(Alert, #notification_channel{type = email} = Channel) ->
+    % Would integrate with email service
+    Config = Channel#notification_channel.config,
+    Recipients = maps:get(recipients, Config, []),
+    
+    io:format("EMAIL ALERT to ~p: ~s~n", [Recipients, Alert#alert.message]);
+
+send_notification(Alert, #notification_channel{type = slack} = Channel) ->
+    % Would integrate with Slack API
+    Config = Channel#notification_channel.config,
+    WebhookUrl = maps:get(webhook_url, Config, ""),
+    
+    io:format("SLACK ALERT to ~s: ~s~n", [WebhookUrl, Alert#alert.message]);
+
+send_notification(Alert, #notification_channel{type = webhook} = Channel) ->
+    % Would make HTTP POST to webhook
+    Config = Channel#notification_channel.config,
+    Url = maps:get(url, Config, ""),
+    
+    io:format("WEBHOOK ALERT to ~s: ~s~n", [Url, Alert#alert.message]);
+
+send_notification(Alert, #notification_channel{type = sms} = Channel) ->
+    % Would integrate with SMS service
+    Config = Channel#notification_channel.config,
+    PhoneNumbers = maps:get(phone_numbers, Config, []),
+    
+    io:format("SMS ALERT to ~p: ~s~n", [PhoneNumbers, Alert#alert.message]);
+
+send_notification(Alert, _Channel) ->
+    io:format("UNKNOWN CHANNEL ALERT: ~s~n", [Alert#alert.message]).
+
+%% @doc Schedule alert escalation
+schedule_escalation(Alert, State) ->
+    Rules = State#state.escalation_rules,
+    
+    case lists:keyfind(Alert#alert.severity, #escalation_rule.severity, Rules) of
+        false -> ok; % No escalation rule
+        Rule ->
+            Delays = Rule#escalation_rule.delays,
+            case length(Delays) > Alert#alert.escalation_level of
+                true ->
+                    DelayIndex = min(Alert#alert.escalation_level, length(Delays) - 1),
+                    Delay = lists:nth(DelayIndex + 1, Delays),
+                    erlang:send_after(Delay, self(), {escalate_alert, Alert#alert.id});
+                false ->
+                    ok % No more escalation levels
+            end
+    end.
+
+%% @doc Check and escalate alerts that need escalation
+check_and_escalate_alerts(Now, State) ->
+    ActiveAlerts = maps:values(State#state.active_alerts),
+    
+    lists:foldl(
+        fun(Alert, Acc) ->
+            case should_escalate_alert(Alert, Now, State) of
+                true ->
+                    escalate_alert_internal(Alert, State),
+                    Acc + 1;
+                false ->
+                    Acc
+            end
+        end,
+        0,
+        ActiveAlerts
+    ).
+
+%% @doc Check if alert should be escalated
+should_escalate_alert(Alert, Now, State) ->
+    case Alert#alert.status of
+        active ->
+            Rules = State#state.escalation_rules,
+            case lists:keyfind(Alert#alert.severity, #escalation_rule.severity, Rules) of
+                false -> false;
+                Rule ->
+                    Delays = Rule#escalation_rule.delays,
+                    case length(Delays) > Alert#alert.escalation_level of
+                        true ->
+                            DelayIndex = min(Alert#alert.escalation_level, length(Delays) - 1),
+                            RequiredDelay = lists:nth(DelayIndex + 1, Delays),
+                            (Now - Alert#alert.timestamp) >= RequiredDelay;
+                        false ->
+                            false
+                    end
+            end;
+        _ ->
+            false % Not active
+    end.
+
+%% @doc Escalate alert internally
+escalate_alert_internal(Alert, State) ->
+    SpanCtx = ?start_span(<<"escalate_alert_internal">>),
+    
+    % Send escalation notification
+    EscalationMessage = iolist_to_binary(io_lib:format(
+        "ESCALATION Level ~p: ~s", 
+        [Alert#alert.escalation_level + 1, Alert#alert.message]
+    )),
+    
+    EscalatedAlert = Alert#alert{
+        message = EscalationMessage,
+        escalation_level = Alert#alert.escalation_level + 1
+    },
+    
+    send_alert_notifications(EscalatedAlert, State),
+    
+    ?set_attributes(SpanCtx, [
+        {<<"alert.id">>, Alert#alert.id},
+        {<<"alert.escalation_level">>, EscalatedAlert#alert.escalation_level}
+    ]),
+    ?end_span(SpanCtx),
+    
+    ok.
+
+%% @doc Update alert in history
+update_alert_in_history(UpdatedAlert, History) ->
+    lists:keyreplace(UpdatedAlert#alert.id, #alert.id, History, UpdatedAlert).
+
+%% @doc Trim alert history to configured maximum
+trim_alert_history(History, Config) ->
+    MaxHistory = maps:get(max_alert_history, Config, 10000),
+    case length(History) > MaxHistory of
+        true -> lists:sublist(History, MaxHistory);
+        false -> History
+    end.
+
+%% @doc Convert atom to binary safely
+atom_to_binary(Atom) when is_atom(Atom) ->
+    list_to_binary(atom_to_list(Atom));
+atom_to_binary(Other) ->
+    iolist_to_binary(io_lib:format("~p", [Other])).
