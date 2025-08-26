@@ -1,0 +1,980 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Common Test suite for erlmcp_transport_stdio_new module
+%%%
+%%% This comprehensive test suite covers all aspects of the stdio transport
+%%% including behavior compliance, registry integration, error handling,
+%%% and performance characteristics.
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_stdio_new_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("../src/erlmcp.hrl").
+
+%% Suite callbacks
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1,
+         init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
+
+%% Test cases
+-export([
+    % Basic functionality
+    basic_startup_test/1,
+    basic_send_test/1,
+    basic_close_test/1,
+    get_state_test/1,
+    
+    % Transport behavior tests
+    transport_behavior_send/1,
+    transport_behavior_close/1,
+    transport_behavior_get_info/1,
+    transport_behavior_handle_transport_call/1,
+    
+    % Registry integration
+    registry_registration/1,
+    registry_unregistration/1,
+    registry_message_routing/1,
+    registry_response_handling/1,
+    
+    % Configuration and startup
+    config_validation/1,
+    config_defaults/1,
+    test_mode_startup/1,
+    server_binding/1,
+    
+    % Error handling
+    error_handling_no_server/1,
+    error_handling_routing_failure/1,
+    error_handling_reader_crash/1,
+    error_handling_invalid_messages/1,
+    
+    % Message processing
+    message_parsing/1,
+    message_buffering/1,
+    line_trimming/1,
+    empty_line_handling/1,
+    
+    % Process lifecycle
+    supervisor_integration/1,
+    graceful_shutdown/1,
+    abnormal_termination/1,
+    
+    % Performance tests
+    high_volume_messages/1,
+    memory_usage/1,
+    latency_measurement/1,
+    
+    % Integration tests
+    end_to_end_communication/1,
+    concurrent_operations/1,
+    stress_test/1
+]).
+
+%%====================================================================
+%% Suite Configuration
+%%====================================================================
+
+all() ->
+    [
+        {group, basic_functionality},
+        {group, transport_behavior},
+        {group, registry_integration},
+        {group, configuration},
+        {group, error_handling},
+        {group, message_processing},
+        {group, lifecycle},
+        {group, performance},
+        {group, integration}
+    ].
+
+groups() ->
+    [
+        {basic_functionality, [parallel], [
+            basic_startup_test,
+            basic_send_test,
+            basic_close_test,
+            get_state_test
+        ]},
+        {transport_behavior, [sequential], [
+            transport_behavior_send,
+            transport_behavior_close,
+            transport_behavior_get_info,
+            transport_behavior_handle_transport_call
+        ]},
+        {registry_integration, [sequential], [
+            registry_registration,
+            registry_unregistration,
+            registry_message_routing,
+            registry_response_handling
+        ]},
+        {configuration, [parallel], [
+            config_validation,
+            config_defaults,
+            test_mode_startup,
+            server_binding
+        ]},
+        {error_handling, [sequential], [
+            error_handling_no_server,
+            error_handling_routing_failure,
+            error_handling_reader_crash,
+            error_handling_invalid_messages
+        ]},
+        {message_processing, [parallel], [
+            message_parsing,
+            message_buffering,
+            line_trimming,
+            empty_line_handling
+        ]},
+        {lifecycle, [sequential], [
+            supervisor_integration,
+            graceful_shutdown,
+            abnormal_termination
+        ]},
+        {performance, [sequential], [
+            high_volume_messages,
+            memory_usage,
+            latency_measurement
+        ]},
+        {integration, [sequential], [
+            end_to_end_communication,
+            concurrent_operations,
+            stress_test
+        ]}
+    ].
+
+%%====================================================================
+%% Suite Setup/Teardown
+%%====================================================================
+
+init_per_suite(Config) ->
+    ct:pal("Starting stdio transport test suite"),
+    
+    % Start necessary applications
+    ok = application:ensure_started(crypto),
+    ok = application:ensure_started(sasl),
+    
+    % Start registry for integration tests
+    case erlmcp_registry:start_link() of
+        {ok, _} -> ok;
+        {error, {already_started, _}} -> ok
+    end,
+    
+    % Enable test mode
+    put(test_mode, true),
+    
+    [{test_mode, true} | Config].
+
+end_per_suite(_Config) ->
+    ct:pal("Ending stdio transport test suite"),
+    ok.
+
+init_per_group(GroupName, Config) ->
+    ct:pal("Starting group: ~p", [GroupName]),
+    Config.
+
+end_per_group(GroupName, _Config) ->
+    ct:pal("Ending group: ~p", [GroupName]),
+    ok.
+
+init_per_testcase(TestCase, Config) ->
+    ct:pal("Starting test case: ~p", [TestCase]),
+    Config.
+
+end_per_testcase(TestCase, _Config) ->
+    ct:pal("Ending test case: ~p", [TestCase]),
+    % Cleanup any processes started during test
+    cleanup_processes(),
+    ok.
+
+%%====================================================================
+%% Test Cases - Basic Functionality
+%%====================================================================
+
+basic_startup_test(Config) ->
+    TransportId = test_transport_basic,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    ?assert(is_pid(Pid)),
+    ?assert(is_process_alive(Pid)),
+    
+    % Verify state
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assertEqual(TransportId, maps:get(transport_id, State)),
+    ?assertEqual(true, maps:get(test_mode, State)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+basic_send_test(Config) ->
+    TransportId = test_transport_send,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    % Test sending in test mode (should succeed without actual I/O)
+    ?assertEqual(ok, erlmcp_transport_stdio_new:send(State, <<"test message">>)),
+    ?assertEqual(ok, erlmcp_transport_stdio_new:send(State, "test string")),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+basic_close_test(Config) ->
+    TransportId = test_transport_close,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    % Test close operation
+    ?assertEqual(ok, erlmcp_transport_stdio_new:close(State)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+get_state_test(Config) ->
+    TransportId = test_transport_state,
+    TestConfig = #{test_mode => true, server_id => test_server},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    ?assertMatch(#{transport_id := TransportId}, State),
+    ?assertMatch(#{test_mode := true}, State),
+    ?assertMatch(#{server_id := test_server}, State),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Transport Behavior
+%%====================================================================
+
+transport_behavior_send(Config) ->
+    TransportId = test_transport_behavior_send,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    % Test different data types
+    TestCases = [
+        <<"binary data">>,
+        "string data",
+        [<<"list">>, " ", <<"of">>, " ", <<"iodata">>]
+    ],
+    
+    lists:foreach(fun(Data) ->
+        ?assertEqual(ok, erlmcp_transport_stdio_new:send(State, Data))
+    end, TestCases),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+transport_behavior_close(Config) ->
+    TransportId = test_transport_behavior_close,
+    
+    % Test with reader
+    TestConfig1 = #{test_mode => false},
+    {ok, Pid1} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig1),
+    {ok, State1} = gen_server:call(Pid1, get_state),
+    
+    ?assertEqual(ok, erlmcp_transport_stdio_new:close(State1)),
+    ok = gen_server:stop(Pid1),
+    
+    % Test without reader (test mode)
+    TestConfig2 = #{test_mode => true},
+    {ok, Pid2} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig2),
+    {ok, State2} = gen_server:call(Pid2, get_state),
+    
+    ?assertEqual(ok, erlmcp_transport_stdio_new:close(State2)),
+    ok = gen_server:stop(Pid2),
+    ok.
+
+transport_behavior_get_info(Config) ->
+    TransportId = test_transport_behavior_info,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    Info = erlmcp_transport_stdio_new:get_info(State),
+    
+    ?assertMatch(#{type := stdio}, Info),
+    ?assertMatch(#{status := connected}, Info),
+    ?assertMatch(#{peer := test_environment}, Info),
+    ?assertMatch(#{test_mode := true}, Info),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+transport_behavior_handle_transport_call(Config) ->
+    TransportId = test_transport_behavior_call,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    
+    % Test valid calls
+    {reply, {ok, _}, _} = gen_server:call(Pid, {transport_call, get_buffer}),
+    {reply, {ok, true}, _} = gen_server:call(Pid, {transport_call, get_test_mode}),
+    {reply, {ok, _}, _} = gen_server:call(Pid, {transport_call, get_reader_pid}),
+    
+    % Test invalid call
+    {reply, {error, unknown_transport_request}, _} = 
+        gen_server:call(Pid, {transport_call, invalid_request}),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Registry Integration
+%%====================================================================
+
+registry_registration(Config) ->
+    TransportId = test_transport_registry_reg,
+    ServerId = test_server_reg,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    
+    % Verify registration
+    timer:sleep(100), % Allow registration to complete
+    {ok, {RegPid, RegConfig}} = erlmcp_registry:find_transport(TransportId),
+    ?assertEqual(Pid, RegPid),
+    ?assertMatch(#{type := stdio}, RegConfig),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+registry_unregistration(Config) ->
+    TransportId = test_transport_registry_unreg,
+    ServerId = test_server_unreg,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Verify registered
+    {ok, _} = erlmcp_registry:find_transport(TransportId),
+    
+    % Stop and verify unregistered
+    ok = gen_server:stop(Pid),
+    timer:sleep(100),
+    
+    ?assertEqual({error, not_found}, erlmcp_registry:find_transport(TransportId)),
+    ok.
+
+registry_message_routing(Config) ->
+    TransportId = test_transport_registry_routing,
+    ServerId = test_server_routing,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    % Start mock server
+    MockServer = spawn_mock_server(ServerId),
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Simulate message input
+    gen_server:call(Pid, {simulate_input, <<"test message">>}),
+    
+    % Verify server received message
+    receive
+        {mock_server, ServerId, Message} ->
+            ?assertEqual(<<"test message">>, Message)
+    after 1000 ->
+        ?assert(false, "Message not received by server")
+    end,
+    
+    cleanup_mock_server(MockServer),
+    ok = gen_server:stop(Pid),
+    ok.
+
+registry_response_handling(Config) ->
+    TransportId = test_transport_registry_response,
+    ServerId = test_server_response,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Send response via registry mechanism
+    Pid ! {mcp_response, ServerId, <<"response data">>},
+    timer:sleep(100),
+    
+    % Verify transport handled response (would normally send to stdout)
+    % In test mode, this just verifies no crash occurred
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Configuration
+%%====================================================================
+
+config_validation(Config) ->
+    % Test valid configurations
+    ValidConfigs = [
+        #{test_mode => true},
+        #{test_mode => false},
+        #{server_id => test_server},
+        #{test_mode => true, server_id => test_server}
+    ],
+    
+    lists:foreach(fun(TestConfig) ->
+        {ok, Pid} = erlmcp_transport_stdio_new:start_link(test_transport_config, TestConfig),
+        ?assert(is_process_alive(Pid)),
+        ok = gen_server:stop(Pid)
+    end, ValidConfigs),
+    ok.
+
+config_defaults(Config) ->
+    TransportId = test_transport_defaults,
+    TestConfig = #{}, % Empty config
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    % Verify defaults
+    ?assertEqual(undefined, maps:get(server_id, State)),
+    ?assertEqual(connected, maps:get(status, State)),
+    ?assertEqual(<<>>, maps:get(buffer, State)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+test_mode_startup(Config) ->
+    TransportId = test_transport_test_mode,
+    
+    % Test mode enabled
+    TestConfig1 = #{test_mode => true},
+    {ok, Pid1} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig1),
+    {ok, State1} = gen_server:call(Pid1, get_state),
+    
+    ?assertEqual(true, maps:get(test_mode, State1)),
+    ?assertEqual(undefined, maps:get(reader, State1)),
+    
+    ok = gen_server:stop(Pid1),
+    
+    % Test mode auto-detection
+    put(test_mode, true),
+    TestConfig2 = #{},
+    {ok, Pid2} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig2),
+    {ok, State2} = gen_server:call(Pid2, get_state),
+    
+    ?assertEqual(true, maps:get(test_mode, State2)),
+    
+    ok = gen_server:stop(Pid2),
+    ok.
+
+server_binding(Config) ->
+    TransportId = test_transport_binding,
+    ServerId = test_server_binding,
+    
+    % Test with server binding
+    TestConfig1 = #{test_mode => true, server_id => ServerId},
+    {ok, Pid1} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig1),
+    {ok, State1} = gen_server:call(Pid1, get_state),
+    
+    ?assertEqual(ServerId, maps:get(server_id, State1)),
+    
+    ok = gen_server:stop(Pid1),
+    
+    % Test without server binding
+    TestConfig2 = #{test_mode => true},
+    {ok, Pid2} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig2),
+    {ok, State2} = gen_server:call(Pid2, get_state),
+    
+    ?assertEqual(undefined, maps:get(server_id, State2)),
+    
+    ok = gen_server:stop(Pid2),
+    ok.
+
+%%====================================================================
+%% Test Cases - Error Handling
+%%====================================================================
+
+error_handling_no_server(Config) ->
+    TransportId = test_transport_no_server,
+    TestConfig = #{test_mode => true}, % No server_id
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    
+    % Simulate message without server binding
+    gen_server:call(Pid, {simulate_input, <<"test message">>}),
+    
+    % Should not crash
+    timer:sleep(100),
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+error_handling_routing_failure(Config) ->
+    TransportId = test_transport_routing_failure,
+    ServerId = non_existent_server,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Simulate message to non-existent server
+    gen_server:call(Pid, {simulate_input, <<"test message">>}),
+    
+    % Should not crash
+    timer:sleep(100),
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+error_handling_reader_crash(Config) ->
+    TransportId = test_transport_reader_crash,
+    TestConfig = #{test_mode => false}, % Real reader
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    ReaderPid = maps:get(reader, State),
+    ?assert(is_pid(ReaderPid)),
+    
+    % Kill reader and verify handling
+    exit(ReaderPid, kill),
+    timer:sleep(100),
+    
+    % Check if transport handled reader death
+    {ok, NewState} = gen_server:call(Pid, get_state),
+    ?assertEqual(error, maps:get(status, NewState)),
+    
+    ok.
+
+error_handling_invalid_messages(Config) ->
+    TransportId = test_transport_invalid_msg,
+    ServerId = test_server_invalid,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    MockServer = spawn_mock_server(ServerId),
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Send various invalid/edge case messages
+    InvalidMessages = [
+        <<>>,
+        <<"">>,
+        <<"\n">>,
+        <<"\r\n">>,
+        <<"single line">>,
+        <<"multi\nline\nmessage">>
+    ],
+    
+    lists:foreach(fun(Msg) ->
+        gen_server:call(Pid, {simulate_input, Msg})
+    end, InvalidMessages),
+    
+    % Should not crash
+    timer:sleep(100),
+    ?assert(is_process_alive(Pid)),
+    
+    cleanup_mock_server(MockServer),
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Message Processing
+%%====================================================================
+
+message_parsing(Config) ->
+    % Test line trimming functions directly
+    ?assertEqual(<<"hello">>, erlmcp_transport_stdio_new:trim_line(<<"hello\n">>)),
+    ?assertEqual(<<"hello">>, erlmcp_transport_stdio_new:trim_line(<<"hello\r\n">>)),
+    ?assertEqual(<<"hello">>, erlmcp_transport_stdio_new:trim_line(<<"hello\r">>)),
+    ?assertEqual(<<"hello">>, erlmcp_transport_stdio_new:trim_line(<<"hello">>)),
+    ?assertEqual(<<>>, erlmcp_transport_stdio_new:trim_line(<<"\n">>)),
+    ?assertEqual(<<>>, erlmcp_transport_stdio_new:trim_line(<<>>)),
+    ok.
+
+message_buffering(Config) ->
+    TransportId = test_transport_buffering,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, InitialState} = gen_server:call(Pid, get_state),
+    
+    % Verify initial buffer is empty
+    ?assertEqual(<<>>, maps:get(buffer, InitialState)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+line_trimming(Config) ->
+    TestCases = [
+        {<<"hello world">>, <<"hello world">>},
+        {<<"hello world\n">>, <<"hello world">>},
+        {<<"hello world\r\n">>, <<"hello world">>},
+        {<<"hello world\r">>, <<"hello world">>},
+        {<<"\n">>, <<>>},
+        {<<"\r\n">>, <<>>},
+        {<<"\r">>, <<>>},
+        {<<>>, <<>>}
+    ],
+    
+    lists:foreach(fun({Input, Expected}) ->
+        Result = erlmcp_transport_stdio_new:trim_line(Input),
+        ?assertEqual(Expected, Result)
+    end, TestCases),
+    ok.
+
+empty_line_handling(Config) ->
+    TransportId = test_transport_empty_lines,
+    ServerId = test_server_empty,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    MockServer = spawn_mock_server(ServerId),
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Send empty lines (should be ignored)
+    EmptyLines = [<<>>, <<"\n">>, <<"\r\n">>, <<"\r">>, <<"  ">>],
+    
+    lists:foreach(fun(Line) ->
+        gen_server:call(Pid, {simulate_input, Line})
+    end, EmptyLines),
+    
+    % Should not receive any messages at server
+    receive
+        {mock_server, ServerId, _} ->
+            ?assert(false, "Empty line was processed")
+    after 200 ->
+        ok % Expected - no messages
+    end,
+    
+    cleanup_mock_server(MockServer),
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Lifecycle
+%%====================================================================
+
+supervisor_integration(Config) ->
+    % This test would typically verify supervisor behavior
+    % For now, just verify the transport can be started/stopped cleanly
+    TransportId = test_transport_supervisor,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    ?assert(is_process_alive(Pid)),
+    
+    % Verify clean shutdown
+    ok = gen_server:stop(Pid),
+    ?assertNot(is_process_alive(Pid)),
+    ok.
+
+graceful_shutdown(Config) ->
+    TransportId = test_transport_graceful,
+    TestConfig = #{test_mode => false}, % With reader
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    ReaderPid = maps:get(reader, State),
+    ?assert(is_pid(ReaderPid)),
+    ?assert(is_process_alive(ReaderPid)),
+    
+    % Graceful stop should clean up reader
+    ok = gen_server:stop(Pid),
+    timer:sleep(100),
+    
+    ?assertNot(is_process_alive(ReaderPid)),
+    ok.
+
+abnormal_termination(Config) ->
+    TransportId = test_transport_abnormal,
+    TestConfig = #{test_mode => false}, % With reader
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    {ok, State} = gen_server:call(Pid, get_state),
+    
+    ReaderPid = maps:get(reader, State),
+    ?assert(is_pid(ReaderPid)),
+    
+    % Kill the transport process
+    exit(Pid, kill),
+    timer:sleep(100),
+    
+    ?assertNot(is_process_alive(Pid)),
+    % Reader should also be cleaned up
+    ?assertNot(is_process_alive(ReaderPid)),
+    ok.
+
+%%====================================================================
+%% Test Cases - Performance
+%%====================================================================
+
+high_volume_messages(Config) ->
+    TransportId = test_transport_volume,
+    ServerId = test_server_volume,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    MockServer = spawn_mock_server(ServerId),
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Send many messages quickly
+    MessageCount = 1000,
+    StartTime = erlang:monotonic_time(millisecond),
+    
+    lists:foreach(fun(N) ->
+        Message = iolist_to_binary([<<"message_">>, integer_to_list(N)]),
+        gen_server:call(Pid, {simulate_input, Message})
+    end, lists:seq(1, MessageCount)),
+    
+    EndTime = erlang:monotonic_time(millisecond),
+    Duration = EndTime - StartTime,
+    
+    ct:pal("Processed ~p messages in ~p ms (~p msg/sec)", 
+           [MessageCount, Duration, round(MessageCount * 1000 / Duration)]),
+    
+    % Should handle high volume without crashing
+    ?assert(is_process_alive(Pid)),
+    
+    cleanup_mock_server(MockServer),
+    ok = gen_server:stop(Pid),
+    ok.
+
+memory_usage(Config) ->
+    TransportId = test_transport_memory,
+    TestConfig = #{test_mode => true},
+    
+    % Measure memory before
+    {memory, MemBefore} = erlang:process_info(self(), memory),
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Measure transport memory
+    {memory, TransportMem} = erlang:process_info(Pid, memory),
+    
+    ct:pal("Transport memory usage: ~p bytes", [TransportMem]),
+    
+    % Verify reasonable memory usage (< 1MB for basic transport)
+    ?assert(TransportMem < 1024 * 1024),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+latency_measurement(Config) ->
+    TransportId = test_transport_latency,
+    ServerId = test_server_latency,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    % Create latency-measuring mock server
+    LatencyServer = spawn(fun() -> latency_server_loop([]) end),
+    register(test_server_latency, LatencyServer),
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Measure latency for message processing
+    MessageCount = 100,
+    Latencies = lists:map(fun(N) ->
+        Message = iolist_to_binary([<<"latency_test_">>, integer_to_list(N)]),
+        StartTime = erlang:monotonic_time(microsecond),
+        gen_server:call(Pid, {simulate_input, Message}),
+        EndTime = erlang:monotonic_time(microsecond),
+        EndTime - StartTime
+    end, lists:seq(1, MessageCount)),
+    
+    AvgLatency = lists:sum(Latencies) / length(Latencies),
+    MaxLatency = lists:max(Latencies),
+    MinLatency = lists:min(Latencies),
+    
+    ct:pal("Latency stats - Avg: ~.2f μs, Min: ~p μs, Max: ~p μs", 
+           [AvgLatency, MinLatency, MaxLatency]),
+    
+    % Verify reasonable latency (< 1ms average for test mode)
+    ?assert(AvgLatency < 1000),
+    
+    LatencyServer ! stop,
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Test Cases - Integration
+%%====================================================================
+
+end_to_end_communication(Config) ->
+    TransportId = test_transport_e2e,
+    ServerId = test_server_e2e,
+    TestConfig = #{test_mode => true, server_id => ServerId},
+    
+    % Start mock server that echoes messages
+    EchoServer = spawn(fun() -> echo_server_loop() end),
+    register(test_server_e2e, EchoServer),
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    timer:sleep(100),
+    
+    % Send message and verify echo
+    TestMessage = <<"end_to_end_test">>,
+    gen_server:call(Pid, {simulate_input, TestMessage}),
+    
+    % Should receive echoed message
+    receive
+        {mcp_response, ServerId, EchoedMessage} ->
+            ?assertEqual(TestMessage, EchoedMessage)
+    after 1000 ->
+        ?assert(false, "Echo not received")
+    end,
+    
+    EchoServer ! stop,
+    ok = gen_server:stop(Pid),
+    ok.
+
+concurrent_operations(Config) ->
+    TransportId = test_transport_concurrent,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    
+    % Spawn multiple processes doing operations concurrently
+    NumProcesses = 10,
+    OperationsPerProcess = 100,
+    
+    Parent = self(),
+    Processes = [spawn(fun() ->
+        lists:foreach(fun(N) ->
+            {ok, _} = gen_server:call(Pid, get_state),
+            {reply, {ok, _}, _} = gen_server:call(Pid, {transport_call, get_buffer})
+        end, lists:seq(1, OperationsPerProcess)),
+        Parent ! {done, self()}
+    end) || _ <- lists:seq(1, NumProcesses)],
+    
+    % Wait for all to complete
+    lists:foreach(fun(ProcessPid) ->
+        receive
+            {done, ProcessPid} -> ok
+        after 5000 ->
+            ?assert(false, "Concurrent operation timed out")
+        end
+    end, Processes),
+    
+    % Transport should still be alive
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+stress_test(Config) ->
+    % Combined stress test
+    TransportId = test_transport_stress,
+    TestConfig = #{test_mode => true},
+    
+    {ok, Pid} = erlmcp_transport_stdio_new:start_link(TransportId, TestConfig),
+    
+    % Multiple concurrent clients
+    NumClients = 5,
+    MessagesPerClient = 200,
+    
+    Parent = self(),
+    Clients = [spawn(fun() ->
+        lists:foreach(fun(N) ->
+            % Mix of different operations
+            case N rem 3 of
+                0 ->
+                    {ok, _} = gen_server:call(Pid, get_state);
+                1 ->
+                    gen_server:call(Pid, {simulate_input, 
+                                        iolist_to_binary([<<"stress_">>, integer_to_list(N)])});
+                2 ->
+                    {reply, {ok, _}, _} = gen_server:call(Pid, {transport_call, get_test_mode})
+            end
+        end, lists:seq(1, MessagesPerClient)),
+        Parent ! {client_done, self()}
+    end) || _ <- lists:seq(1, NumClients)],
+    
+    StartTime = erlang:monotonic_time(millisecond),
+    
+    % Wait for all clients
+    lists:foreach(fun(ClientPid) ->
+        receive
+            {client_done, ClientPid} -> ok
+        after 10000 ->
+            ?assert(false, "Stress test client timed out")
+        end
+    end, Clients),
+    
+    EndTime = erlang:monotonic_time(millisecond),
+    TotalOps = NumClients * MessagesPerClient,
+    Duration = EndTime - StartTime,
+    
+    ct:pal("Stress test: ~p ops in ~p ms (~.2f ops/sec)", 
+           [TotalOps, Duration, TotalOps * 1000 / Duration]),
+    
+    % Should survive stress test
+    ?assert(is_process_alive(Pid)),
+    
+    ok = gen_server:stop(Pid),
+    ok.
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+cleanup_processes() ->
+    % Kill any stray registered processes
+    lists:foreach(fun(Name) ->
+        case whereis(Name) of
+            undefined -> ok;
+            Pid -> exit(Pid, kill)
+        end
+    end, [test_server_latency, test_server_e2e]).
+
+spawn_mock_server(ServerId) ->
+    Parent = self(),
+    Pid = spawn(fun() ->
+        register(ServerId, self()),
+        mock_server_loop(Parent, ServerId)
+    end),
+    % Register with registry
+    Config = #{capabilities => #{}, options => #{}},
+    erlmcp_registry:register_server(ServerId, Pid, Config),
+    Pid.
+
+mock_server_loop(Parent, ServerId) ->
+    receive
+        {route_message, _TransportId, Message} ->
+            Parent ! {mock_server, ServerId, Message},
+            mock_server_loop(Parent, ServerId);
+        stop ->
+            erlmcp_registry:unregister_server(ServerId),
+            ok
+    end.
+
+cleanup_mock_server(Pid) ->
+    Pid ! stop,
+    timer:sleep(50).
+
+latency_server_loop(Messages) ->
+    receive
+        {route_message, _TransportId, Message} ->
+            latency_server_loop([Message | Messages]);
+        stop ->
+            ok
+    end.
+
+echo_server_loop() ->
+    receive
+        {route_message, TransportId, Message} ->
+            % Echo back to transport
+            TransportId ! {mcp_response, test_server_e2e, Message},
+            echo_server_loop();
+        stop ->
+            ok
+    end.

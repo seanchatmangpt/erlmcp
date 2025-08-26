@@ -1,0 +1,729 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% OpenTelemetry Test Suite for ErlMCP
+%%%
+%%% Comprehensive test suite that validates OpenTelemetry tracing
+%%% functionality, span creation, context propagation, error recording,
+%%% and integration with ErlMCP components.
+%%%
+%%% This test suite focuses on SPAN VALIDATION - we only trust what
+%%% the spans tell us about system behavior and performance.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_otel_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%% CT callbacks
+-export([
+    all/0,
+    init_per_suite/1,
+    end_per_suite/1,
+    init_per_testcase/2,
+    end_per_testcase/2
+]).
+
+%% Test cases
+-export([
+    test_otel_initialization/1,
+    test_span_creation_and_lifecycle/1,
+    test_parent_child_relationships/1,
+    test_context_propagation/1,
+    test_baggage_management/1,
+    test_error_recording/1,
+    test_transport_tracing/1,
+    test_json_rpc_tracing/1,
+    test_method_execution_tracing/1,
+    test_registry_tracing/1,
+    test_performance_attributes/1,
+    test_sampling_strategies/1,
+    test_exporter_configuration/1,
+    test_concurrent_span_handling/1,
+    test_integration_workflow/1
+]).
+
+%% Helper functions
+-export([
+    create_test_config/0,
+    validate_span_attributes/2,
+    collect_test_spans/0,
+    simulate_rpc_call/3,
+    simulate_transport_operation/2
+]).
+
+%% =============================================================================
+%% CT Configuration
+%% =============================================================================
+
+all() ->
+    [
+        test_otel_initialization,
+        test_span_creation_and_lifecycle,
+        test_parent_child_relationships,
+        test_context_propagation,
+        test_baggage_management,
+        test_error_recording,
+        test_transport_tracing,
+        test_json_rpc_tracing,
+        test_method_execution_tracing,
+        test_registry_tracing,
+        test_performance_attributes,
+        test_sampling_strategies,
+        test_exporter_configuration,
+        test_concurrent_span_handling,
+        test_integration_workflow
+    ].
+
+init_per_suite(Config) ->
+    %% Start required applications
+    application:start(crypto),
+    application:start(jsx),
+    
+    %% Initialize test OpenTelemetry configuration
+    TestConfig = create_test_config(),
+    case erlmcp_otel:init(TestConfig) of
+        ok -> 
+            ct:pal("OpenTelemetry initialized successfully"),
+            [{test_config, TestConfig} | Config];
+        {error, Reason} -> 
+            ct:fail("Failed to initialize OpenTelemetry: ~p", [Reason])
+    end.
+
+end_per_suite(_Config) ->
+    erlmcp_otel:shutdown(),
+    application:stop(jsx),
+    application:stop(crypto),
+    ok.
+
+init_per_testcase(TestCase, Config) ->
+    ct:pal("Starting test case: ~p", [TestCase]),
+    %% Clear any previous context
+    erlang:erase(erlmcp_otel_current_context),
+    %% Start collecting spans for this test
+    erlang:put(test_spans, []),
+    Config.
+
+end_per_testcase(TestCase, _Config) ->
+    %% Validate that no spans are left unclosed
+    case erlang:get(erlmcp_otel_current_context) of
+        undefined -> ok;
+        _ -> ct:fail("Test ~p left spans unclosed", [TestCase])
+    end,
+    
+    %% Clean up test data
+    erlang:erase(test_spans),
+    erlang:erase(erlmcp_otel_current_context),
+    ok.
+
+%% =============================================================================
+%% Test Cases
+%% =============================================================================
+
+%% @doc Test OpenTelemetry initialization with various configurations
+test_otel_initialization(_Config) ->
+    %% Test basic initialization
+    Config1 = #{
+        service_name => <<"test-service">>,
+        service_version => <<"1.0.0">>,
+        exporters => [console],
+        sampling => always_on
+    },
+    
+    ?assertEqual(ok, erlmcp_otel:init(Config1)),
+    
+    %% Test initialization with multiple exporters
+    Config2 = Config1#{exporters => [console, jaeger, prometheus]},
+    ?assertEqual(ok, erlmcp_otel:init(Config2)),
+    
+    %% Test initialization with custom resource attributes
+    Config3 = Config2#{
+        resource_attributes => #{
+            <<"environment">> => <<"test">>,
+            <<"version">> => <<"0.5.0">>
+        }
+    },
+    ?assertEqual(ok, erlmcp_otel:init(Config3)),
+    
+    ct:pal("OpenTelemetry initialization tests passed").
+
+%% @doc Test span creation, attributes, and lifecycle management
+test_span_creation_and_lifecycle(_Config) ->
+    SpanName = <<"test.span">>,
+    Attributes = #{
+        <<"test.attribute">> => <<"test_value">>,
+        <<"test.number">> => 42
+    },
+    
+    %% Test span creation
+    SpanCtx = erlmcp_otel:start_span(SpanName, Attributes),
+    
+    %% Validate span context structure
+    ?assertMatch(#{
+        trace_id := _,
+        span_id := _,
+        start_time := _,
+        attributes := _,
+        status := ok
+    }, SpanCtx),
+    
+    %% Test adding attributes
+    ExtraAttributes = #{<<"extra.attr">> => <<"extra_value">>},
+    ?assertEqual(ok, erlmcp_otel:add_attributes(SpanCtx, ExtraAttributes)),
+    
+    %% Test adding events
+    ?assertEqual(ok, erlmcp_otel:add_event(SpanCtx, <<"test.event">>)),
+    ?assertEqual(ok, erlmcp_otel:add_event(SpanCtx, <<"test.event.with.attrs">>, #{
+        <<"event.data">> => <<"event_value">>
+    })),
+    
+    %% Test span ending
+    ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx)),
+    
+    %% Validate span was properly closed
+    ?assertEqual(undefined, erlang:get(erlmcp_otel_current_context)),
+    
+    ct:pal("Span creation and lifecycle tests passed").
+
+%% @doc Test parent-child span relationships
+test_parent_child_relationships(_Config) ->
+    %% Create parent span
+    ParentSpan = erlmcp_otel:start_span(<<"parent.span">>, #{
+        <<"operation">> => <<"parent_operation">>
+    }),
+    
+    %% Create child span with explicit parent
+    ChildSpan = erlmcp_otel:start_span(<<"child.span">>, #{
+        <<"operation">> => <<"child_operation">>
+    }, ParentSpan),
+    
+    %% Validate parent-child relationship
+    ?assertEqual(maps:get(trace_id, ParentSpan), maps:get(trace_id, ChildSpan)),
+    ?assertEqual(maps:get(span_id, ParentSpan), maps:get(parent_span_id, ChildSpan)),
+    ?assertNotEqual(maps:get(span_id, ParentSpan), maps:get(span_id, ChildSpan)),
+    
+    %% Create grandchild span using automatic parent detection
+    erlang:put(erlmcp_otel_current_context, ChildSpan),
+    GrandchildSpan = erlmcp_otel:start_span(<<"grandchild.span">>, #{
+        <<"operation">> => <<"grandchild_operation">>
+    }),
+    
+    %% Validate grandchild relationship
+    ?assertEqual(maps:get(trace_id, ChildSpan), maps:get(trace_id, GrandchildSpan)),
+    ?assertEqual(maps:get(span_id, ChildSpan), maps:get(parent_span_id, GrandchildSpan)),
+    
+    %% End spans in correct order
+    ?assertEqual(ok, erlmcp_otel:end_span(GrandchildSpan)),
+    ?assertEqual(ok, erlmcp_otel:end_span(ChildSpan)),
+    ?assertEqual(ok, erlmcp_otel:end_span(ParentSpan)),
+    
+    ct:pal("Parent-child relationship tests passed").
+
+%% @doc Test context propagation across process boundaries
+test_context_propagation(_Config) ->
+    %% Create parent span
+    ParentSpan = erlmcp_otel:start_span(<<"propagation.test">>, #{
+        <<"test.type">> => <<"context_propagation">>
+    }),
+    
+    %% Set baggage
+    ?assertEqual(ok, erlmcp_otel:set_baggage(<<"request.id">>, <<"test-123">>)),
+    ?assertEqual(ok, erlmcp_otel:set_baggage(<<"user.id">>, <<"user-456">>)),
+    
+    %% Extract context for propagation
+    Headers = erlmcp_otel:propagate_context(ParentSpan),
+    
+    %% Validate propagation headers
+    ?assertMatch(#{
+        <<"traceparent">> := _,
+        <<"tracestate">> := _,
+        <<"baggage">> := _
+    }, Headers),
+    
+    %% Test context restoration
+    RestoredCtx = erlmcp_otel:restore_context(Headers),
+    ?assertNotEqual(undefined, RestoredCtx),
+    
+    %% Validate baggage propagation
+    erlang:put(erlmcp_otel_current_context, RestoredCtx),
+    ?assertEqual(<<"test-123">>, erlmcp_otel:get_baggage(<<"request.id">>)),
+    ?assertEqual(<<"user-456">>, erlmcp_otel:get_baggage(<<"user.id">>)),
+    
+    %% Create child span from restored context
+    ChildSpan = erlmcp_otel:start_span(<<"propagated.child">>, #{
+        <<"propagated">> => true
+    }),
+    
+    %% Validate trace continuity
+    ?assertEqual(maps:get(trace_id, ParentSpan), maps:get(trace_id, ChildSpan)),
+    
+    %% Clean up
+    ?assertEqual(ok, erlmcp_otel:end_span(ChildSpan)),
+    ?assertEqual(ok, erlmcp_otel:end_span(ParentSpan)),
+    
+    ct:pal("Context propagation tests passed").
+
+%% @doc Test baggage management and inheritance
+test_baggage_management(_Config) ->
+    %% Test baggage setting and getting
+    ?assertEqual(ok, erlmcp_otel:set_baggage(<<"key1">>, <<"value1">>)),
+    ?assertEqual(ok, erlmcp_otel:set_baggage(<<"key2">>, <<"value2">>)),
+    
+    ?assertEqual(<<"value1">>, erlmcp_otel:get_baggage(<<"key1">>)),
+    ?assertEqual(<<"value2">>, erlmcp_otel:get_baggage(<<"key2">>)),
+    ?assertEqual(undefined, erlmcp_otel:get_baggage(<<"nonexistent">>)),
+    
+    %% Create span and verify baggage inheritance
+    SpanCtx = erlmcp_otel:start_span(<<"baggage.test">>, #{}),
+    BaggageMap = maps:get(baggage, SpanCtx, #{}),
+    
+    ?assertEqual(<<"value1">>, maps:get(<<"key1">>, BaggageMap)),
+    ?assertEqual(<<"value2">>, maps:get(<<"key2">>, BaggageMap)),
+    
+    %% Test baggage modification in child spans
+    erlang:put(erlmcp_otel_current_context, SpanCtx),
+    ?assertEqual(ok, erlmcp_otel:set_baggage(<<"key3">>, <<"value3">>)),
+    
+    ChildSpan = erlmcp_otel:start_span(<<"child.with.baggage">>, #{}),
+    ChildBaggage = maps:get(baggage, ChildSpan, #{}),
+    
+    ?assertEqual(3, map_size(ChildBaggage)),
+    ?assertEqual(<<"value3">>, maps:get(<<"key3">>, ChildBaggage)),
+    
+    %% Clean up
+    ?assertEqual(ok, erlmcp_otel:end_span(ChildSpan)),
+    ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx)),
+    
+    ct:pal("Baggage management tests passed").
+
+%% @doc Test error recording and span status
+test_error_recording(_Config) ->
+    SpanCtx = erlmcp_otel:start_span(<<"error.test">>, #{}),
+    
+    %% Test error recording
+    TestError = {error, test_error, [
+        {?MODULE, test_function, 0, [{file, "test.erl"}, {line, 100}]}
+    ]},
+    
+    ?assertEqual(ok, erlmcp_otel:record_error(SpanCtx, TestError)),
+    
+    %% Validate span status changed to error
+    UpdatedCtx = erlang:get(erlmcp_otel_current_context),
+    ?assertEqual(error, maps:get(status, UpdatedCtx)),
+    
+    %% Test error recording with additional attributes
+    ExtraAttrs = #{
+        <<"error.context">> => <<"test_context">>,
+        <<"error.severity">> => <<"high">>
+    },
+    
+    ?assertEqual(ok, erlmcp_otel:record_error(SpanCtx, TestError, ExtraAttrs)),
+    
+    %% Test with_span error handling
+    ?assertException(error, test_exception, 
+        erlmcp_otel:with_span(<<"exception.test">>, #{}, fun() ->
+            error(test_exception)
+        end)
+    ),
+    
+    %% Clean up
+    ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx)),
+    
+    ct:pal("Error recording tests passed").
+
+%% @doc Test transport layer tracing integration
+test_transport_tracing(_Config) ->
+    %% Test transport send tracing
+    TestData = jsx:encode(#{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => <<"test-123">>,
+        <<"method">> => <<"test/method">>,
+        <<"params">> => #{<<"key">> => <<"value">>}
+    }),
+    
+    ?assertEqual(ok, erlmcp_otel_integration:trace_transport_send(
+        erlmcp_transport_stdio, dummy_state, TestData
+    )),
+    
+    %% Test transport receive tracing  
+    ?assertEqual(ok, erlmcp_otel_integration:trace_transport_receive(
+        erlmcp_transport_stdio, dummy_state, TestData
+    )),
+    
+    %% Test transport span creation
+    SpanCtx = erlmcp_otel_integration:create_transport_span(
+        stdio, send, #{<<"message.id">> => <<"test-123">>}
+    ),
+    
+    %% Validate transport span attributes
+    Attributes = maps:get(attributes, SpanCtx),
+    ?assertEqual(<<"stdio">>, maps:get(<<"transport.type">>, Attributes)),
+    ?assertEqual(<<"send">>, maps:get(<<"transport.operation">>, Attributes)),
+    ?assertEqual(<<"test-123">>, maps:get(<<"message.id">>, Attributes)),
+    
+    ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx)),
+    
+    ct:pal("Transport tracing tests passed").
+
+%% @doc Test JSON-RPC tracing integration
+test_json_rpc_tracing(_Config) ->
+    Method = <<"tools/call">>,
+    Params = #{
+        <<"name">> => <<"test_tool">>,
+        <<"arguments">> => #{<<"arg1">> => <<"value1">>}
+    },
+    Id = <<"rpc-123">>,
+    
+    %% Test RPC request tracing
+    SpanCtx = erlmcp_otel_integration:trace_json_rpc_request(Method, Params, Id),
+    
+    %% Validate RPC span attributes
+    Attributes = maps:get(attributes, SpanCtx),
+    ?assertEqual(<<"jsonrpc">>, maps:get(<<"rpc.system">>, Attributes)),
+    ?assertEqual(<<"mcp">>, maps:get(<<"rpc.service">>, Attributes)),
+    ?assertEqual(Method, maps:get(<<"rpc.method">>, Attributes)),
+    ?assertEqual(Id, maps:get(<<"rpc.request_id">>, Attributes)),
+    
+    %% Test successful response tracing
+    Result = #{<<"success">> => true, <<"data">> => <<"response_data">>},
+    ?assertEqual(ok, erlmcp_otel_integration:trace_json_rpc_response(
+        SpanCtx, Result, undefined
+    )),
+    
+    %% Test error response tracing
+    SpanCtx2 = erlmcp_otel_integration:trace_json_rpc_request(Method, Params, Id),
+    Error = #{
+        <<"code">> => ?JSONRPC_METHOD_NOT_FOUND,
+        <<"message">> => <<"Method not found">>
+    },
+    ?assertEqual(ok, erlmcp_otel_integration:trace_json_rpc_response(
+        SpanCtx2, undefined, Error
+    )),
+    
+    ct:pal("JSON-RPC tracing tests passed").
+
+%% @doc Test method execution tracing
+test_method_execution_tracing(_Config) ->
+    Method = <<"resources/list">>,
+    Params = #{},
+    Id = <<"method-test-123">>,
+    
+    %% Test successful method execution
+    Result = erlmcp_otel_integration:trace_method_call(Method, Params, Id, fun() ->
+        %% Simulate method execution
+        timer:sleep(10),
+        #{<<"resources">> => []}
+    end),
+    
+    ?assertMatch(#{<<"resources">> := []}, Result),
+    
+    %% Test method execution with error
+    ?assertException(error, test_method_error,
+        erlmcp_otel_integration:trace_method_call(Method, Params, Id, fun() ->
+            error(test_method_error)
+        end)
+    ),
+    
+    ct:pal("Method execution tracing tests passed").
+
+%% @doc Test registry operation tracing
+test_registry_tracing(_Config) ->
+    %% Test registry lookup
+    ?assertEqual(ok, erlmcp_otel_integration:trace_registry_operation(
+        lookup, <<"test_key">>, undefined
+    )),
+    
+    %% Test registry registration
+    ?assertEqual(ok, erlmcp_otel_integration:trace_registry_operation(
+        register, <<"test_key">>, <<"test_value">>
+    )),
+    
+    %% Test registry update
+    ?assertEqual(ok, erlmcp_otel_integration:trace_registry_operation(
+        update, <<"test_key">>, <<"updated_value">>
+    )),
+    
+    %% Test registry span creation
+    SpanCtx = erlmcp_otel_integration:create_registry_span(
+        lookup, <<"test_key">>, #{<<"cache.hit">> => false}
+    ),
+    
+    Attributes = maps:get(attributes, SpanCtx),
+    ?assertEqual(<<"lookup">>, maps:get(<<"registry.operation">>, Attributes)),
+    ?assertEqual(false, maps:get(<<"cache.hit">>, Attributes)),
+    
+    ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx)),
+    
+    ct:pal("Registry tracing tests passed").
+
+%% @doc Test performance metrics in span attributes
+test_performance_attributes(_Config) ->
+    StartTime = erlang:system_time(nanosecond),
+    
+    SpanCtx = erlmcp_otel:start_span(<<"performance.test">>, #{
+        <<"operation">> => <<"cpu_intensive">>
+    }),
+    
+    %% Simulate CPU-intensive work
+    timer:sleep(50),
+    
+    %% Add performance metrics
+    ProcessInfo = erlang:process_info(self(), [memory, message_queue_len, reductions]),
+    PerfAttrs = #{
+        <<"process.memory">> => proplists:get_value(memory, ProcessInfo),
+        <<"process.message_queue_len">> => proplists:get_value(message_queue_len, ProcessInfo),
+        <<"process.reductions">> => proplists:get_value(reductions, ProcessInfo)
+    },
+    
+    ?assertEqual(ok, erlmcp_otel:add_attributes(SpanCtx, PerfAttrs)),
+    
+    ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx)),
+    
+    %% Validate duration was recorded
+    EndTime = erlang:system_time(nanosecond),
+    Duration = EndTime - StartTime,
+    ?assert(Duration > 50_000_000), % At least 50ms
+    
+    ct:pal("Performance attributes tests passed").
+
+%% @doc Test sampling strategies
+test_sampling_strategies(_Config) ->
+    %% Test always_on sampling
+    ?assertEqual(ok, erlmcp_otel:set_sampling_rate(1.0)),
+    
+    SpanCtx1 = erlmcp_otel:start_span(<<"always.sampled">>, #{}),
+    ?assertEqual(1, maps:get(trace_flags, SpanCtx1)), % sampled flag
+    ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx1)),
+    
+    %% Test trace_id_ratio sampling
+    ?assertEqual(ok, erlmcp_otel:set_sampling_rate(0.5)),
+    
+    %% Create multiple spans to test sampling
+    SampledCount = lists:foldl(fun(N, Acc) ->
+        SpanName = iolist_to_binary([<<"sample.test.">>, integer_to_binary(N)]),
+        SpanCtx = erlmcp_otel:start_span(SpanName, #{}),
+        IsSampled = maps:get(trace_flags, SpanCtx) band 1,
+        ?assertEqual(ok, erlmcp_otel:end_span(SpanCtx)),
+        Acc + IsSampled
+    end, 0, lists:seq(1, 100)),
+    
+    %% With 50% sampling, we expect roughly 50 sampled spans (allow some variance)
+    ?assert(SampledCount >= 30 andalso SampledCount =< 70),
+    
+    ct:pal("Sampling strategies tests passed").
+
+%% @doc Test exporter configuration
+test_exporter_configuration(_Config) ->
+    %% Test console exporter
+    ?assertEqual(ok, erlmcp_otel:configure_exporter(console, #{})),
+    
+    %% Test Jaeger exporter configuration
+    JaegerConfig = #{
+        endpoint => <<"http://localhost:14268/api/traces">>,
+        service_name => <<"test-service">>
+    },
+    ?assertEqual(ok, erlmcp_otel:configure_exporter(jaeger, JaegerConfig)),
+    
+    %% Test Zipkin exporter configuration
+    ZipkinConfig = #{
+        endpoint => <<"http://localhost:9411/api/v2/spans">>,
+        service_name => <<"test-service">>
+    },
+    ?assertEqual(ok, erlmcp_otel:configure_exporter(zipkin, ZipkinConfig)),
+    
+    %% Test Prometheus exporter configuration
+    PrometheusConfig = #{
+        port => 9090,
+        endpoint => <<"/metrics">>
+    },
+    ?assertEqual(ok, erlmcp_otel:configure_exporter(prometheus, PrometheusConfig)),
+    
+    %% Test unsupported exporter
+    ?assertMatch({error, {unsupported_exporter, _}}, 
+        erlmcp_otel:configure_exporter(unsupported, #{})),
+    
+    ct:pal("Exporter configuration tests passed").
+
+%% @doc Test concurrent span handling
+test_concurrent_span_handling(_Config) ->
+    ParentSpan = erlmcp_otel:start_span(<<"concurrent.parent">>, #{}),
+    
+    %% Spawn multiple processes that create child spans
+    Pids = [spawn_link(fun() ->
+        ChildSpan = erlmcp_otel:start_span(
+            iolist_to_binary([<<"concurrent.child.">>, integer_to_binary(N)]),
+            #{<<"child.id">> => N},
+            ParentSpan
+        ),
+        
+        %% Simulate work
+        timer:sleep(10),
+        
+        %% Add some events and attributes
+        ?assertEqual(ok, erlmcp_otel:add_event(ChildSpan, <<"work.started">>)),
+        ?assertEqual(ok, erlmcp_otel:add_attributes(ChildSpan, #{
+            <<"work.type">> => <<"concurrent">>,
+            <<"process.pid">> => list_to_binary(pid_to_list(self()))
+        })),
+        ?assertEqual(ok, erlmcp_otel:add_event(ChildSpan, <<"work.completed">>)),
+        
+        ?assertEqual(ok, erlmcp_otel:end_span(ChildSpan)),
+        
+        %% Send completion signal
+        receive
+            {get_result, From} -> From ! {result, ChildSpan}
+        end
+    end) || N <- lists:seq(1, 5)],
+    
+    %% Collect results
+    Results = [begin
+        Pid ! {get_result, self()},
+        receive
+            {result, SpanCtx} -> SpanCtx
+        after 1000 ->
+            ct:fail("Timeout waiting for child span")
+        end
+    end || Pid <- Pids],
+    
+    %% Validate all child spans have the same trace ID as parent
+    ParentTraceId = maps:get(trace_id, ParentSpan),
+    lists:foreach(fun(ChildSpan) ->
+        ?assertEqual(ParentTraceId, maps:get(trace_id, ChildSpan))
+    end, Results),
+    
+    %% Clean up
+    ?assertEqual(ok, erlmcp_otel:end_span(ParentSpan)),
+    
+    ct:pal("Concurrent span handling tests passed").
+
+%% @doc Test complete integration workflow
+test_integration_workflow(_Config) ->
+    %% Simulate a complete MCP request-response workflow
+    RequestId = <<"integration-test-123">>,
+    Method = <<"tools/call">>,
+    ToolName = <<"calculator">>,
+    
+    %% Step 1: Incoming transport message
+    TransportSpan = erlmcp_otel_integration:create_transport_span(
+        stdio, receive, #{
+            <<"message.id">> => RequestId,
+            <<"message.size">> => 256
+        }
+    ),
+    
+    %% Step 2: JSON-RPC processing
+    erlang:put(erlmcp_otel_current_context, TransportSpan),
+    RpcSpan = erlmcp_otel_integration:trace_json_rpc_request(Method, #{
+        <<"name">> => ToolName,
+        <<"arguments">> => #{<<"operation">> => <<"add">>, <<"a">> => 5, <<"b">> => 3}
+    }, RequestId),
+    
+    %% Step 3: Method execution with registry lookup
+    erlang:put(erlmcp_otel_current_context, RpcSpan),
+    
+    %% Registry lookup for tool
+    ?assertEqual(ok, erlmcp_otel_integration:trace_registry_operation(
+        lookup, ToolName, undefined
+    )),
+    
+    %% Tool execution
+    Result = erlmcp_otel:with_span(
+        iolist_to_binary([<<"tool.execute.">>, ToolName]),
+        #{
+            <<"tool.name">> => ToolName,
+            <<"tool.operation">> => <<"add">>
+        },
+        fun() ->
+            timer:sleep(5), % Simulate tool execution
+            #{<<"result">> => 8}
+        end
+    ),
+    
+    %% Step 4: Response processing
+    ?assertEqual(ok, erlmcp_otel_integration:trace_json_rpc_response(
+        RpcSpan, Result, undefined
+    )),
+    
+    %% Step 5: Transport response
+    erlang:put(erlmcp_otel_current_context, TransportSpan),
+    ?assertEqual(ok, erlmcp_otel_integration:trace_transport_send(
+        erlmcp_transport_stdio, dummy_state, jsx:encode(#{
+            <<"jsonrpc">> => <<"2.0">>,
+            <<"id">> => RequestId,
+            <<"result">> => Result
+        })
+    )),
+    
+    %% Clean up spans
+    ?assertEqual(ok, erlmcp_otel:end_span(TransportSpan)),
+    
+    %% Validate the complete trace
+    ?assertEqual(#{<<"result">> => 8}, Result),
+    
+    ct:pal("Integration workflow tests passed").
+
+%% =============================================================================
+%% Helper Functions
+%% =============================================================================
+
+%% @doc Create test configuration for OpenTelemetry
+create_test_config() ->
+    #{
+        service_name => <<"erlmcp-test">>,
+        service_version => <<"0.5.0-test">>,
+        exporters => [console],
+        sampling => always_on,
+        resource_attributes => #{
+            <<"environment">> => <<"test">>,
+            <<"test.suite">> => <<"erlmcp_otel_SUITE">>
+        },
+        batch_timeout => 1000,
+        max_queue_size => 100,
+        max_export_batch_size => 50
+    }.
+
+%% @doc Validate span attributes contain expected values
+validate_span_attributes(SpanCtx, ExpectedAttrs) ->
+    ActualAttrs = maps:get(attributes, SpanCtx, #{}),
+    maps:fold(fun(Key, Expected, ok) ->
+        case maps:get(Key, ActualAttrs, undefined) of
+            Expected -> ok;
+            Actual -> ct:fail("Attribute ~p: expected ~p, got ~p", [Key, Expected, Actual])
+        end
+    end, ok, ExpectedAttrs).
+
+%% @doc Collect spans created during test for validation
+collect_test_spans() ->
+    erlang:get(test_spans).
+
+%% @doc Simulate RPC call for testing
+simulate_rpc_call(Method, Params, Id) ->
+    SpanCtx = erlmcp_otel_integration:trace_json_rpc_request(Method, Params, Id),
+    
+    %% Simulate method execution
+    Result = case Method of
+        <<"tools/list">> -> #{<<"tools">> => []};
+        <<"resources/list">> -> #{<<"resources">> => []};
+        <<"prompts/list">> -> #{<<"prompts">> => []};
+        _ -> #{<<"success">> => true}
+    end,
+    
+    ok = erlmcp_otel_integration:trace_json_rpc_response(SpanCtx, Result, undefined),
+    Result.
+
+%% @doc Simulate transport operation for testing
+simulate_transport_operation(Operation, Data) ->
+    SpanCtx = erlmcp_otel_integration:create_transport_span(
+        stdio, Operation, #{
+            <<"data.size">> => byte_size(Data),
+            <<"test.simulation">> => true
+        }
+    ),
+    
+    %% Simulate transport work
+    timer:sleep(1),
+    
+    ok = erlmcp_otel:end_span(SpanCtx),
+    ok.

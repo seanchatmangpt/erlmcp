@@ -16,17 +16,8 @@ start_link() ->
 
 -spec start_child(atom(), map()) -> {ok, pid()} | {error, term()}.
 start_child(ServerId, Config) ->
-    % Use temporary restart strategy since servers are managed dynamically
-    % and failures are handled by the registry cleanup
-    ChildSpec = #{
-        id => ServerId,
-        start => {erlmcp_server_new, start_link, [ServerId, Config]},
-        restart => temporary,  % Don't auto-restart - let registry handle failures
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_server_new]
-    },
-    supervisor:start_child(?MODULE, ChildSpec).
+    % For simple_one_for_one, we just pass the arguments
+    supervisor:start_child(?MODULE, [ServerId, Config]).
 
 %%====================================================================
 %% supervisor callbacks

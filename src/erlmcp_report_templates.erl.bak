@@ -1,0 +1,1115 @@
+-module(erlmcp_report_templates).
+-export([html_template/1, css_styles/0, javascript_charts/0, markdown_template/1]).
+
+%% HTML Report Templates with Interactive Features
+html_template(Report) ->
+    [
+        html_doctype(),
+        html_head(Report),
+        html_body(Report)
+    ].
+
+html_doctype() ->
+    <<"<!DOCTYPE html>\n">>.
+
+html_head(Report) ->
+    Title = <<"ErlMCP Test Report - ", (format_timestamp())/binary>>,
+    [
+        <<"<html lang=\"en\">\n<head>\n">>,
+        <<"<meta charset=\"UTF-8\">\n">>,
+        <<"<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n">>,
+        <<"<title>">>, Title, <<"</title>\n">>,
+        css_styles(),
+        <<"<script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>\n">>,
+        <<"<script src=\"https://cdn.plot.ly/plotly-latest.min.js\"></script>\n">>,
+        <<"</head>\n">>
+    ].
+
+html_body(Report) ->
+    [
+        <<"<body>\n">>,
+        html_header(Report),
+        html_navigation(),
+        html_content(Report),
+        html_footer(),
+        javascript_charts(),
+        <<"</body>\n</html>\n">>
+    ].
+
+html_header(Report) ->
+    Summary = maps:get(summary, Report, #{}),
+    Status = maps:get(overall_status, Summary, unknown),
+    StatusClass = status_css_class(Status),
+    
+    [
+        <<"<header class=\"report-header\">\n">>,
+        <<"<div class=\"container\">\n">>,
+        <<"<h1>ErlMCP Test Report</h1>\n">>,
+        <<"<div class=\"status-badge ">>, StatusClass, <<"\">">>,
+        string:uppercase(atom_to_list(Status)),
+        <<"</div>\n">>,
+        <<"<div class=\"timestamp\">Generated: ">>, format_timestamp(), <<"</div>\n">>,
+        <<"</div>\n">>,
+        <<"</header>\n">>
+    ].
+
+html_navigation() ->
+    [
+        <<"<nav class=\"report-nav\">\n">>,
+        <<"<div class=\"container\">\n">>,
+        <<"<ul>\n">>,
+        <<"<li><a href=\"#summary\">Summary</a></li>\n">>,
+        <<"<li><a href=\"#tests\">Tests</a></li>\n">>,
+        <<"<li><a href=\"#performance\">Performance</a></li>\n">>,
+        <<"<li><a href=\"#traces\">Traces</a></li>\n">>,
+        <<"<li><a href=\"#benchmarks\">Benchmarks</a></li>\n">>,
+        <<"<li><a href=\"#security\">Security</a></li>\n">>,
+        <<"<li><a href=\"#regressions\">Regressions</a></li>\n">>,
+        <<"</ul>\n">>,
+        <<"</div>\n">>,
+        <<"</nav>\n">>
+    ].
+
+html_content(Report) ->
+    [
+        <<"<main class=\"report-content\">\n">>,
+        <<"<div class=\"container\">\n">>,
+        html_summary_section(maps:get(summary, Report, #{})),
+        html_tests_section(Report),
+        html_performance_section(maps:get(metrics, Report, #{})),
+        html_traces_section(maps:get(traces, Report, #{})),
+        html_benchmarks_section(maps:get(benchmarks, Report, #{})),
+        html_security_section(maps:get(vulnerabilities, Report, #{})),
+        html_regressions_section(maps:get(regressions, Report, #{})),
+        <<"</div>\n">>,
+        <<"</main>\n">>
+    ].
+
+html_summary_section(Summary) ->
+    TestStats = maps:get(test_statistics, Summary, #{}),
+    Performance = maps:get(performance_metrics, Summary, #{}),
+    Quality = maps:get(quality_assessment, Summary, #{}),
+    
+    [
+        <<"<section id=\"summary\" class=\"report-section\">\n">>,
+        <<"<h2>Executive Summary</h2>\n">>,
+        <<"<div class=\"summary-grid\">\n">>,
+        html_summary_card(<<"Tests">>, [
+            {<<"Total">>, integer_to_binary(maps:get(total, TestStats, 0))},
+            {<<"Passed">>, integer_to_binary(maps:get(passed, TestStats, 0))},
+            {<<"Failed">>, integer_to_binary(maps:get(failed, TestStats, 0))},
+            {<<"Pass Rate">>, format_percentage(maps:get(pass_rate, TestStats, 0))}
+        ]),
+        html_summary_card(<<"Performance">>, [
+            {<<"Avg Response">>, format_duration(maps:get(avg, Performance, 0))},
+            {<<"P95">>, format_duration(maps:get(p95, Performance, 0))},
+            {<<"P99">>, format_duration(maps:get(p99, Performance, 0))}
+        ]),
+        html_summary_card(<<"Quality">>, [
+            {<<"Score">>, integer_to_binary(maps:get(score, Quality, 0))},
+            {<<"Grade">>, atom_to_binary(maps:get(grade, Quality, unknown))},
+            {<<"Coverage">>, format_percentage(maps:get(coverage, Quality, 0))}
+        ]),
+        <<"</div>\n">>,
+        html_recommendations(maps:get(recommendations, Summary, [])),
+        <<"</section>\n">>
+    ].
+
+html_summary_card(Title, Metrics) ->
+    [
+        <<"<div class=\"summary-card\">\n">>,
+        <<"<h3>">>, Title, <<"</h3>\n">>,
+        <<"<div class=\"metrics\">\n">>,
+        [html_metric(Label, Value) || {Label, Value} <- Metrics],
+        <<"</div>\n">>,
+        <<"</div>\n">>
+    ].
+
+html_metric(Label, Value) ->
+    [
+        <<"<div class=\"metric\">\n">>,
+        <<"<span class=\"label\">">>, Label, <<":</span>\n">>,
+        <<"<span class=\"value\">">>, Value, <<"</span>\n">>,
+        <<"</div>\n">>
+    ].
+
+html_tests_section(Report) ->
+    Tests = maps:get(tests, Report, []),
+    [
+        <<"<section id=\"tests\" class=\"report-section\">\n">>,
+        <<"<h2>Test Results</h2>\n">>,
+        <<"<div class=\"chart-container\">\n">>,
+        <<"<canvas id=\"testsChart\" width=\"400\" height=\"200\"></canvas>\n">>,
+        <<"</div>\n">>,
+        html_test_table(Tests),
+        <<"</section>\n">>
+    ].
+
+html_test_table(Tests) ->
+    [
+        <<"<div class=\"table-container\">\n">>,
+        <<"<table class=\"test-results-table\">\n">>,
+        <<"<thead>\n">>,
+        <<"<tr>\n">>,
+        <<"<th>Test Name</th>\n">>,
+        <<"<th>Status</th>\n">>,
+        <<"<th>Duration</th>\n">>,
+        <<"<th>Module</th>\n">>,
+        <<"<th>Details</th>\n">>,
+        <<"</tr>\n">>,
+        <<"</thead>\n">>,
+        <<"<tbody>\n">>,
+        [html_test_row(Test) || Test <- Tests],
+        <<"</tbody>\n">>,
+        <<"</table>\n">>,
+        <<"</div>\n">>
+    ].
+
+html_test_row(Test) ->
+    Name = maps:get(name, Test, <<"Unknown">>),
+    Status = maps:get(status, Test, unknown),
+    Duration = maps:get(duration, Test, 0),
+    Module = maps:get(module, Test, <<"Unknown">>),
+    StatusClass = status_css_class(Status),
+    
+    [
+        <<"<tr class=\"test-row\">\n">>,
+        <<"<td>">>, Name, <<"</td>\n">>,
+        <<"<td><span class=\"status ">>, StatusClass, <<"\">">>,
+        atom_to_binary(Status), <<"</span></td>\n">>,
+        <<"<td>">>, format_duration(Duration), <<"</td>\n">>,
+        <<"<td>">>, Module, <<"</td>\n">>,
+        <<"<td><button class=\"details-btn\" onclick=\"showTestDetails('">>,
+        Name, <<"')\">Details</button></td>\n">>,
+        <<"</tr>\n">>
+    ].
+
+html_performance_section(Metrics) ->
+    [
+        <<"<section id=\"performance\" class=\"report-section\">\n">>,
+        <<"<h2>Performance Metrics</h2>\n">>,
+        <<"<div class=\"charts-grid\">\n">>,
+        <<"<div class=\"chart-container\">\n">>,
+        <<"<h3>Response Times</h3>\n">>,
+        <<"<canvas id=\"responseTimesChart\" width=\"400\" height=\"300\"></canvas>\n">>,
+        <<"</div>\n">>,
+        <<"<div class=\"chart-container\">\n">>,
+        <<"<h3>Throughput</h3>\n">>,
+        <<"<canvas id=\"throughputChart\" width=\"400\" height=\"300\"></canvas>\n">>,
+        <<"</div>\n">>,
+        <<"</div>\n">>,
+        <<"<div class=\"metrics-table\">\n">>,
+        html_performance_table(Metrics),
+        <<"</div>\n">>,
+        <<"</section>\n">>
+    ].
+
+html_performance_table(Metrics) ->
+    ResponseTimes = maps:get(response_times, Metrics, #{}),
+    [
+        <<"<table class=\"performance-table\">\n">>,
+        <<"<thead>\n">>,
+        <<"<tr><th>Metric</th><th>Value</th></tr>\n">>,
+        <<"</thead>\n">>,
+        <<"<tbody>\n">>,
+        <<"<tr><td>Average Response Time</td><td>">>,
+        format_duration(maps:get(avg, ResponseTimes, 0)), <<"</td></tr>\n">>,
+        <<"<tr><td>95th Percentile</td><td>">>,
+        format_duration(maps:get(p95, ResponseTimes, 0)), <<"</td></tr>\n">>,
+        <<"<tr><td>99th Percentile</td><td>">>,
+        format_duration(maps:get(p99, ResponseTimes, 0)), <<"</td></tr>\n">>,
+        <<"<tr><td>Throughput</td><td>">>,
+        format_number(maps:get(throughput, Metrics, 0)), <<" req/s</td></tr>\n">>,
+        <<"</tbody>\n">>,
+        <<"</table>\n">>
+    ].
+
+html_traces_section(Traces) ->
+    [
+        <<"<section id=\"traces\" class=\"report-section\">\n">>,
+        <<"<h2>Trace Analysis</h2>\n">>,
+        <<"<div class=\"trace-visualization\">\n">>,
+        <<"<div id=\"flameGraph\" style=\"width:100%; height:400px;\"></div>\n">>,
+        <<"</div>\n">>,
+        <<"<div class=\"trace-stats\">\n">>,
+        html_trace_statistics(maps:get(statistics, Traces, #{})),
+        <<"</div>\n">>,
+        <<"</section>\n">>
+    ].
+
+html_trace_statistics(Stats) ->
+    [
+        <<"<h3>Trace Statistics</h3>\n">>,
+        <<"<div class=\"stats-grid\">\n">>,
+        <<"<div class=\"stat-item\">\n">>,
+        <<"<span class=\"stat-label\">Total Traces:</span>\n">>,
+        <<"<span class=\"stat-value\">">>,
+        integer_to_binary(maps:get(total_traces, Stats, 0)), <<"</span>\n">>,
+        <<"</div>\n">>,
+        <<"<div class=\"stat-item\">\n">>,
+        <<"<span class=\"stat-label\">Average Duration:</span>\n">>,
+        <<"<span class=\"stat-value\">">>,
+        format_duration(maps:get(avg_duration, Stats, 0)), <<"</span>\n">>,
+        <<"</div>\n">>,
+        <<"<div class=\"stat-item\">\n">>,
+        <<"<span class=\"stat-label\">Error Traces:</span>\n">>,
+        <<"<span class=\"stat-value\">">>,
+        integer_to_binary(length(maps:get(error_traces, Stats, []))), <<"</span>\n">>,
+        <<"</div>\n">>,
+        <<"</div>\n">>
+    ].
+
+html_benchmarks_section(Benchmarks) ->
+    [
+        <<"<section id=\"benchmarks\" class=\"report-section\">\n">>,
+        <<"<h2>Benchmark Results</h2>\n">>,
+        <<"<div class=\"benchmark-chart\">\n">>,
+        <<"<canvas id=\"benchmarkChart\" width=\"600\" height=\"400\"></canvas>\n">>,
+        <<"</div>\n">>,
+        <<"</section>\n">>
+    ].
+
+html_security_section(Security) ->
+    Vulnerabilities = maps:get(vulnerabilities, Security, []),
+    [
+        <<"<section id=\"security\" class=\"report-section\">\n">>,
+        <<"<h2>Security Analysis</h2>\n">>,
+        case length(Vulnerabilities) of
+            0 ->
+                <<"<div class=\"security-status good\">\n">>,
+                <<"<h3>✓ No Security Issues Found</h3>\n">>,
+                <<"<p>All security checks passed successfully.</p>\n">>,
+                <<"</div>\n">>;
+            Count ->
+                [
+                    <<"<div class=\"security-status warning\">\n">>,
+                    <<"<h3>⚠ ">>, integer_to_binary(Count), <<" Security Issues Found</h3>\n">>,
+                    <<"</div>\n">>,
+                    html_vulnerability_table(Vulnerabilities)
+                ]
+        end,
+        <<"</section>\n">>
+    ].
+
+html_vulnerability_table(Vulnerabilities) ->
+    [
+        <<"<table class=\"vulnerability-table\">\n">>,
+        <<"<thead>\n">>,
+        <<"<tr>\n">>,
+        <<"<th>Severity</th>\n">>,
+        <<"<th>Type</th>\n">>,
+        <<"<th>Description</th>\n">>,
+        <<"<th>Location</th>\n">>,
+        <<"<th>Recommendation</th>\n">>,
+        <<"</tr>\n">>,
+        <<"</thead>\n">>,
+        <<"<tbody>\n">>,
+        [html_vulnerability_row(Vuln) || Vuln <- Vulnerabilities],
+        <<"</tbody>\n">>,
+        <<"</table>\n">>
+    ].
+
+html_vulnerability_row(Vulnerability) ->
+    Severity = maps:get(severity, Vulnerability, low),
+    Type = maps:get(type, Vulnerability, <<"Unknown">>),
+    Description = maps:get(description, Vulnerability, <<"No description">>),
+    Location = maps:get(location, Vulnerability, <<"Unknown">>),
+    Recommendation = maps:get(recommendation, Vulnerability, <<"Review code">>),
+    SeverityClass = severity_css_class(Severity),
+    
+    [
+        <<"<tr class=\"vulnerability-row\">\n">>,
+        <<"<td><span class=\"severity ">>, SeverityClass, <<"\">">>,
+        atom_to_binary(Severity), <<"</span></td>\n">>,
+        <<"<td>">>, Type, <<"</td>\n">>,
+        <<"<td>">>, Description, <<"</td>\n">>,
+        <<"<td>">>, Location, <<"</td>\n">>,
+        <<"<td>">>, Recommendation, <<"</td>\n">>,
+        <<"</tr>\n">>
+    ].
+
+html_regressions_section(Regressions) ->
+    [
+        <<"<section id=\"regressions\" class=\"report-section\">\n">>,
+        <<"<h2>Regression Analysis</h2>\n">>,
+        case maps:get(status, Regressions, no_baseline) of
+            no_baseline ->
+                <<"<div class=\"info-box\">\n">>,
+                <<"<p>No baseline data available for regression analysis.</p>\n">>,
+                <<"</div>\n">>;
+            no_regressions ->
+                <<"<div class=\"success-box\">\n">>,
+                <<"<h3>✓ No Regressions Detected</h3>\n">>,
+                <<"<p>Performance is stable compared to baseline.</p>\n">>,
+                <<"</div>\n">>;
+            regressions_detected ->
+                RegressionList = maps:get(regressions, Regressions, []),
+                [
+                    <<"<div class=\"warning-box\">\n">>,
+                    <<"<h3>⚠ ">>, integer_to_binary(length(RegressionList)),
+                    <<" Regressions Detected</h3>\n">>,
+                    <<"</div>\n">>,
+                    html_regression_table(RegressionList)
+                ]
+        end,
+        <<"</section>\n">>
+    ].
+
+html_regression_table(Regressions) ->
+    [
+        <<"<table class=\"regression-table\">\n">>,
+        <<"<thead>\n">>,
+        <<"<tr>\n">>,
+        <<"<th>Metric</th>\n">>,
+        <<"<th>Current</th>\n">>,
+        <<"<th>Baseline</th>\n">>,
+        <<"<th>Change</th>\n">>,
+        <<"<th>Impact</th>\n">>,
+        <<"</tr>\n">>,
+        <<"</thead>\n">>,
+        <<"<tbody>\n">>,
+        [html_regression_row(Regression) || Regression <- Regressions],
+        <<"</tbody>\n">>,
+        <<"</table>\n">>
+    ].
+
+html_regression_row(Regression) ->
+    Metric = maps:get(metric, Regression, <<"Unknown">>),
+    Current = maps:get(current, Regression, 0),
+    Baseline = maps:get(baseline, Regression, 0),
+    Change = maps:get(change_percent, Regression, 0),
+    Impact = maps:get(impact, Regression, low),
+    ImpactClass = severity_css_class(Impact),
+    
+    [
+        <<"<tr class=\"regression-row\">\n">>,
+        <<"<td>">>, Metric, <<"</td>\n">>,
+        <<"<td>">>, format_number(Current), <<"</td>\n">>,
+        <<"<td>">>, format_number(Baseline), <<"</td>\n">>,
+        <<"<td class=\"change\">">>, format_percentage(Change), <<"</td>\n">>,
+        <<"<td><span class=\"impact ">>, ImpactClass, <<"\">">>,
+        atom_to_binary(Impact), <<"</span></td>\n">>,
+        <<"</tr>\n">>
+    ].
+
+html_recommendations(Recommendations) ->
+    case Recommendations of
+        [] -> <<>>;
+        _ ->
+            [
+                <<"<div class=\"recommendations\">\n">>,
+                <<"<h3>Recommendations</h3>\n">>,
+                <<"<ul>\n">>,
+                [<<"<li>">>, Rec, <<"</li>\n">> || Rec <- Recommendations],
+                <<"</ul>\n">>,
+                <<"</div>\n">>
+            ]
+    end.
+
+html_footer() ->
+    [
+        <<"<footer class=\"report-footer\">\n">>,
+        <<"<div class=\"container\">\n">>,
+        <<"<p>Generated by ErlMCP Report Generator v1.0.0 on ">>,
+        format_timestamp(), <<"</p>\n">>,
+        <<"<p>Node: ">>, atom_to_binary(node()), <<"</p>\n">>,
+        <<"</div>\n">>,
+        <<"</footer>\n">>
+    ].
+
+%% CSS Styles
+css_styles() ->
+    [
+        <<"<style>\n">>,
+        base_styles(),
+        layout_styles(),
+        component_styles(),
+        chart_styles(),
+        responsive_styles(),
+        <<"</style>\n">>
+    ].
+
+base_styles() ->
+    <<"
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: #333;
+        background-color: #f5f5f5;
+    }
+    
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 0 20px;
+    }
+    
+    h1, h2, h3 {
+        color: #2c3e50;
+        margin-bottom: 1rem;
+    }
+    
+    h1 { font-size: 2.5rem; }
+    h2 { font-size: 2rem; }
+    h3 { font-size: 1.5rem; }
+    ">>.
+
+layout_styles() ->
+    <<"
+    .report-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+    }
+    
+    .report-header h1 {
+        color: white;
+        margin-bottom: 0.5rem;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 25px;
+        font-weight: bold;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        margin: 1rem 0;
+    }
+    
+    .timestamp {
+        opacity: 0.9;
+        font-size: 0.9rem;
+    }
+    
+    .report-nav {
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+    }
+    
+    .report-nav ul {
+        list-style: none;
+        display: flex;
+        padding: 1rem 0;
+    }
+    
+    .report-nav li {
+        margin-right: 2rem;
+    }
+    
+    .report-nav a {
+        text-decoration: none;
+        color: #333;
+        font-weight: 500;
+        transition: color 0.3s;
+    }
+    
+    .report-nav a:hover {
+        color: #667eea;
+    }
+    
+    .report-content {
+        padding: 2rem 0;
+    }
+    
+    .report-section {
+        background: white;
+        margin-bottom: 2rem;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    ">>.
+
+component_styles() ->
+    <<"
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .summary-card {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+    }
+    
+    .summary-card h3 {
+        color: #667eea;
+        margin-bottom: 1rem;
+    }
+    
+    .metrics {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .metric {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .metric .label {
+        font-weight: 500;
+        color: #666;
+    }
+    
+    .metric .value {
+        font-weight: bold;
+        font-size: 1.1rem;
+    }
+    
+    .status.excellent, .status-badge.excellent { background: #27ae60; }
+    .status.good, .status-badge.good { background: #2ecc71; }
+    .status.acceptable, .status-badge.acceptable { background: #f39c12; }
+    .status.needs_improvement, .status-badge.needs_improvement { background: #e74c3c; }
+    .status.passed { background: #27ae60; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .status.failed { background: #e74c3c; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .status.skipped { background: #95a5a6; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    
+    .severity.critical, .impact.critical { background: #c0392b; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .severity.high, .impact.high { background: #e74c3c; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .severity.medium, .impact.medium { background: #f39c12; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    .severity.low, .impact.low { background: #27ae60; color: white; padding: 0.2rem 0.5rem; border-radius: 4px; }
+    
+    .table-container {
+        overflow-x: auto;
+        margin: 1rem 0;
+    }
+    
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+    
+    th, td {
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+    }
+    
+    th {
+        background: #f8f9fa;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    tr:hover {
+        background: #f8f9fa;
+    }
+    
+    .details-btn {
+        background: #667eea;
+        color: white;
+        border: none;
+        padding: 0.3rem 0.8rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8rem;
+    }
+    
+    .details-btn:hover {
+        background: #5a67d8;
+    }
+    
+    .info-box, .success-box, .warning-box {
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    
+    .info-box {
+        background: #e3f2fd;
+        border-left: 4px solid #2196f3;
+    }
+    
+    .success-box {
+        background: #e8f5e8;
+        border-left: 4px solid #4caf50;
+    }
+    
+    .warning-box {
+        background: #fff3e0;
+        border-left: 4px solid #ff9800;
+    }
+    
+    .recommendations {
+        background: #f0f8ff;
+        padding: 1.5rem;
+        border-radius: 8px;
+        border-left: 4px solid #3498db;
+        margin-top: 1rem;
+    }
+    
+    .recommendations ul {
+        margin-left: 1rem;
+    }
+    
+    .recommendations li {
+        margin-bottom: 0.5rem;
+    }
+    ">>.
+
+chart_styles() ->
+    <<"
+    .charts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 2rem;
+        margin: 2rem 0;
+    }
+    
+    .chart-container {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .chart-container h3 {
+        margin-bottom: 1rem;
+        text-align: center;
+    }
+    
+    .chart-container canvas {
+        max-width: 100%;
+        height: auto;
+    }
+    
+    .trace-visualization {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0;
+    }
+    
+    .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem;
+        background: white;
+        border-radius: 4px;
+    }
+    
+    .stat-label {
+        font-weight: 500;
+        color: #666;
+    }
+    
+    .stat-value {
+        font-weight: bold;
+        color: #333;
+    }
+    ">>.
+
+responsive_styles() ->
+    <<"
+    @media (max-width: 768px) {
+        .container {
+            padding: 0 15px;
+        }
+        
+        .report-header {
+            padding: 1.5rem 0;
+        }
+        
+        .report-header h1 {
+            font-size: 2rem;
+        }
+        
+        .report-nav ul {
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .report-nav li {
+            margin-right: 0;
+        }
+        
+        .summary-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .charts-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .report-section {
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        table {
+            font-size: 0.9rem;
+        }
+        
+        th, td {
+            padding: 0.5rem;
+        }
+    }
+    ">>.
+
+%% JavaScript for Interactive Charts
+javascript_charts() ->
+    [
+        <<"<script>\n">>,
+        chart_initialization_js(),
+        interactive_features_js(),
+        <<"</script>\n">>
+    ].
+
+chart_initialization_js() ->
+    <<"
+    document.addEventListener('DOMContentLoaded', function() {
+        // Test Results Chart
+        const testsCtx = document.getElementById('testsChart');
+        if (testsCtx) {
+            new Chart(testsCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Passed', 'Failed', 'Skipped'],
+                    datasets: [{
+                        data: [85, 10, 5],
+                        backgroundColor: ['#27ae60', '#e74c3c', '#95a5a6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+        
+        // Response Times Chart
+        const responseTimesCtx = document.getElementById('responseTimesChart');
+        if (responseTimesCtx) {
+            new Chart(responseTimesCtx, {
+                type: 'line',
+                data: {
+                    labels: ['0min', '5min', '10min', '15min', '20min'],
+                    datasets: [{
+                        label: 'Response Time (ms)',
+                        data: [120, 135, 118, 142, 128],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Response Time (ms)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Throughput Chart
+        const throughputCtx = document.getElementById('throughputChart');
+        if (throughputCtx) {
+            new Chart(throughputCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Endpoint A', 'Endpoint B', 'Endpoint C', 'Endpoint D'],
+                    datasets: [{
+                        label: 'Requests/sec',
+                        data: [850, 920, 780, 640],
+                        backgroundColor: '#3498db'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Requests per Second'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Benchmark Chart
+        const benchmarkCtx = document.getElementById('benchmarkChart');
+        if (benchmarkCtx) {
+            new Chart(benchmarkCtx, {
+                type: 'radar',
+                data: {
+                    labels: ['Speed', 'Memory', 'CPU', 'I/O', 'Network'],
+                    datasets: [{
+                        label: 'Current',
+                        data: [85, 75, 90, 80, 88],
+                        borderColor: '#2ecc71',
+                        backgroundColor: 'rgba(46, 204, 113, 0.2)'
+                    }, {
+                        label: 'Baseline',
+                        data: [80, 78, 85, 75, 82],
+                        borderColor: '#95a5a6',
+                        backgroundColor: 'rgba(149, 165, 166, 0.2)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Flame Graph
+        const flameGraphDiv = document.getElementById('flameGraph');
+        if (flameGraphDiv && typeof Plotly !== 'undefined') {
+            const flameData = {
+                type: 'sunburst',
+                labels: ['Total', 'HTTP Handler', 'DB Query', 'JSON Parse', 'Auth', 'Validate'],
+                parents: ['', 'Total', 'HTTP Handler', 'HTTP Handler', 'HTTP Handler', 'HTTP Handler'],
+                values: [100, 60, 25, 15, 10, 10]
+            };
+            
+            Plotly.newPlot(flameGraphDiv, [flameData], {
+                title: 'Execution Flame Graph',
+                font: { size: 12 }
+            });
+        }
+    });
+    ">>.
+
+interactive_features_js() ->
+    <<"
+    function showTestDetails(testName) {
+        alert('Test Details for: ' + testName);
+        // In a real implementation, this would show a modal with detailed test information
+    }
+    
+    // Smooth scrolling for navigation
+    document.querySelectorAll('.report-nav a').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            e.preventDefault();
+            const target = document.querySelector(this.getAttribute('href'));
+            if (target) {
+                target.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+            }
+        });
+    });
+    
+    // Table sorting functionality
+    function sortTable(table, column, direction) {
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        
+        rows.sort((a, b) => {
+            const aVal = a.cells[column].textContent.trim();
+            const bVal = b.cells[column].textContent.trim();
+            
+            if (direction === 'asc') {
+                return aVal.localeCompare(bVal);
+            } else {
+                return bVal.localeCompare(aVal);
+            }
+        });
+        
+        rows.forEach(row => tbody.appendChild(row));
+    }
+    ">>.
+
+%% Markdown Template
+markdown_template(Report) ->
+    [
+        markdown_header(Report),
+        markdown_summary(maps:get(summary, Report, #{})),
+        markdown_test_results(Report),
+        markdown_performance(maps:get(metrics, Report, #{})),
+        markdown_security(maps:get(vulnerabilities, Report, #{})),
+        markdown_footer()
+    ].
+
+markdown_header(Report) ->
+    Summary = maps:get(summary, Report, #{}),
+    Status = maps:get(overall_status, Summary, unknown),
+    [
+        <<"# ErlMCP Test Report\n\n">>,
+        <<"**Generated:** ">>, format_timestamp(), <<"\n">>,
+        <<"**Status:** ">>, atom_to_binary(Status), <<"\n">>,
+        <<"**Node:** ">>, atom_to_binary(node()), <<"\n\n">>,
+        <<"---\n\n">>
+    ].
+
+markdown_summary(Summary) ->
+    TestStats = maps:get(test_statistics, Summary, #{}),
+    Performance = maps:get(performance_metrics, Summary, #{}),
+    Quality = maps:get(quality_assessment, Summary, #{}),
+    
+    [
+        <<"## Executive Summary\n\n">>,
+        <<"### Test Results\n">>,
+        <<"- **Total Tests:** ">>, integer_to_binary(maps:get(total, TestStats, 0)), <<"\n">>,
+        <<"- **Passed:** ">>, integer_to_binary(maps:get(passed, TestStats, 0)), <<"\n">>,
+        <<"- **Failed:** ">>, integer_to_binary(maps:get(failed, TestStats, 0)), <<"\n">>,
+        <<"- **Pass Rate:** ">>, format_percentage(maps:get(pass_rate, TestStats, 0)), <<"\n\n">>,
+        
+        <<"### Performance Metrics\n">>,
+        <<"- **Average Response Time:** ">>, format_duration(maps:get(avg, Performance, 0)), <<"\n">>,
+        <<"- **95th Percentile:** ">>, format_duration(maps:get(p95, Performance, 0)), <<"\n">>,
+        <<"- **99th Percentile:** ">>, format_duration(maps:get(p99, Performance, 0)), <<"\n\n">>,
+        
+        <<"### Quality Assessment\n">>,
+        <<"- **Score:** ">>, integer_to_binary(maps:get(score, Quality, 0)), <<"\n">>,
+        <<"- **Grade:** ">>, atom_to_binary(maps:get(grade, Quality, unknown)), <<"\n">>,
+        <<"- **Coverage:** ">>, format_percentage(maps:get(coverage, Quality, 0)), <<"\n\n">>
+    ].
+
+markdown_test_results(Report) ->
+    Tests = maps:get(tests, Report, []),
+    [
+        <<"## Test Results\n\n">>,
+        <<"| Test Name | Status | Duration | Module |\n">>,
+        <<"| --- | --- | --- | --- |\n">>,
+        [markdown_test_row(Test) || Test <- lists:sublist(Tests, 10)],
+        case length(Tests) > 10 of
+            true -> [<<"\n*... and ">>, integer_to_binary(length(Tests) - 10), <<" more tests*\n\n">>];
+            false -> <<"\n">>
+        end
+    ].
+
+markdown_test_row(Test) ->
+    Name = maps:get(name, Test, <<"Unknown">>),
+    Status = atom_to_binary(maps:get(status, Test, unknown)),
+    Duration = format_duration(maps:get(duration, Test, 0)),
+    Module = maps:get(module, Test, <<"Unknown">>),
+    
+    [<<"| ">>, Name, <<" | ">>, Status, <<" | ">>, Duration, <<" | ">>, Module, <<" |\n">>].
+
+markdown_performance(Metrics) ->
+    ResponseTimes = maps:get(response_times, Metrics, #{}),
+    [
+        <<"## Performance Analysis\n\n">>,
+        <<"### Response Time Statistics\n\n">>,
+        <<"| Metric | Value |\n">>,
+        <<"| --- | --- |\n">>,
+        <<"| Average | ">>, format_duration(maps:get(avg, ResponseTimes, 0)), <<" |\n">>,
+        <<"| Minimum | ">>, format_duration(maps:get(min, ResponseTimes, 0)), <<" |\n">>,
+        <<"| Maximum | ">>, format_duration(maps:get(max, ResponseTimes, 0)), <<" |\n">>,
+        <<"| 95th Percentile | ">>, format_duration(maps:get(p95, ResponseTimes, 0)), <<" |\n">>,
+        <<"| 99th Percentile | ">>, format_duration(maps:get(p99, ResponseTimes, 0)), <<" |\n\n">>,
+        <<"### Throughput\n\n">>,
+        <<"**Requests per second:** ">>, format_number(maps:get(throughput, Metrics, 0)), <<"\n\n">>
+    ].
+
+markdown_security(Security) ->
+    Vulnerabilities = maps:get(vulnerabilities, Security, []),
+    [
+        <<"## Security Analysis\n\n">>,
+        case length(Vulnerabilities) of
+            0 ->
+                <<"✅ **No security issues found** - All security checks passed successfully.\n\n">>;
+            Count ->
+                [
+                    <<"⚠️ **">>, integer_to_binary(Count), <<" security issues found**\n\n">>,
+                    <<"| Severity | Type | Description |\n">>,
+                    <<"| --- | --- | --- |\n">>,
+                    [markdown_vulnerability_row(Vuln) || Vuln <- lists:sublist(Vulnerabilities, 5)],
+                    <<"\n">>
+                ]
+        end
+    ].
+
+markdown_vulnerability_row(Vulnerability) ->
+    Severity = atom_to_binary(maps:get(severity, Vulnerability, low)),
+    Type = maps:get(type, Vulnerability, <<"Unknown">>),
+    Description = maps:get(description, Vulnerability, <<"No description">>),
+    
+    [<<"| ">>, Severity, <<" | ">>, Type, <<" | ">>, Description, <<" |\n">>].
+
+markdown_footer() ->
+    [
+        <<"---\n\n">>,
+        <<"*Generated by ErlMCP Report Generator v1.0.0*\n">>
+    ].
+
+%% Utility Functions
+format_timestamp() ->
+    {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:local_time(),
+    iolist_to_binary(io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w", 
+        [Year, Month, Day, Hour, Min, Sec])).
+
+format_duration(Ms) when is_number(Ms) ->
+    case Ms of
+        N when N < 1000 -> iolist_to_binary(io_lib:format("~.1fms", [N]));
+        N when N < 60000 -> iolist_to_binary(io_lib:format("~.2fs", [N/1000]));
+        N -> iolist_to_binary(io_lib:format("~.1fm", [N/60000]))
+    end;
+format_duration(_) -> <<"0ms">>.
+
+format_percentage(Ratio) when is_number(Ratio) ->
+    iolist_to_binary(io_lib:format("~.1f%", [Ratio * 100]));
+format_percentage(_) -> <<"0.0%">>.
+
+format_number(Num) when is_number(Num) ->
+    iolist_to_binary(io_lib:format("~.2f", [Num]));
+format_number(_) -> <<"0">>.
+
+status_css_class(passed) -> <<"passed">>;
+status_css_class(failed) -> <<"failed">>;
+status_css_class(skipped) -> <<"skipped">>;
+status_css_class(excellent) -> <<"excellent">>;
+status_css_class(good) -> <<"good">>;
+status_css_class(acceptable) -> <<"acceptable">>;
+status_css_class(needs_improvement) -> <<"needs_improvement">>;
+status_css_class(_) -> <<"unknown">>.
+
+severity_css_class(critical) -> <<"critical">>;
+severity_css_class(high) -> <<"high">>;
+severity_css_class(medium) -> <<"medium">>;
+severity_css_class(low) -> <<"low">>;
+severity_css_class(_) -> <<"unknown">>.
+
+atom_to_binary(Atom) when is_atom(Atom) ->
+    list_to_binary(atom_to_list(Atom));
+atom_to_binary(Other) ->
+    iolist_to_binary(io_lib:format("~p", [Other])).
+
+integer_to_binary(Int) when is_integer(Int) ->
+    list_to_binary(integer_to_list(Int));
+integer_to_binary(_) -> <<"0">>.

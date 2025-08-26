@@ -73,6 +73,9 @@ See the [examples directory](examples/README.md) for comprehensive examples:
 
 - [Architecture Overview](docs/architecture.md) - System design and components
 - [Protocol Guide](docs/protocol.md) - MCP protocol implementation details
+- [Transport Behavior](docs/transport_behavior.md) - Transport interface and implementation guide
+- [Transport Configuration](docs/transport_configuration.md) - Configuration examples for all transports
+- [Migration Guide](docs/migration_guide.md) - Upgrade guide from v0.5.x to v0.6.0
 - [OTP Patterns](docs/otp-patterns.md) - Erlang/OTP best practices used
 - [API Reference](docs/api-reference.md) - Complete API documentation
 
@@ -80,12 +83,14 @@ See the [examples directory](examples/README.md) for comprehensive examples:
 
 - ✅ Full MCP protocol support (resources, tools, prompts)
 - ✅ OTP-compliant with supervision trees
-- ✅ Multiple transport layers (stdio, TCP, HTTP)
+- ✅ **Pluggable transport architecture** (stdio, TCP, HTTP, custom)
+- ✅ **Behavior-based transport interface** for extensibility
 - ✅ JSON Schema validation for tools
 - ✅ Resource subscriptions with notifications
-- ✅ Automatic reconnection with backoff
-- ✅ Comprehensive error handling
-- ✅ Production-ready logging and monitoring
+- ✅ **Automatic reconnection with exponential backoff**
+- ✅ Comprehensive error handling and transport-specific errors
+- ✅ **Production-ready logging and monitoring**
+- ✅ **Test-friendly with transport mocking support**
 
 ## License
 

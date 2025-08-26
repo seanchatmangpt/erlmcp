@@ -1,0 +1,791 @@
+-module(erlmcp_transport_tcp).
+-behaviour(gen_server).
+-behaviour(erlmcp_transport).
+
+-include("erlmcp.hrl").
+-include_lib("opentelemetry/include/otel_tracer.hrl").
+
+%% Transport behavior callbacks
+-export([init/1, send/2, close/1]).
+
+%% API
+-export([start_link/1, start_link/2]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% Types
+-type tcp_opts() :: #{
+    host := inet:hostname() | inet:ip_address(),
+    port := inet:port_number(),
+    server_id => atom(),
+    transport_id => atom(),
+    connect_timeout => timeout(),
+    keepalive => boolean(),
+    nodelay => boolean(),
+    buffer_size => pos_integer(),
+    max_reconnect_attempts => pos_integer() | infinity
+}.
+
+%% State record as specified in the requirements
+-record(state, {
+    transport_id :: atom(),
+    server_id :: atom(),
+    config :: map(),
+    socket :: gen_tcp:socket() | undefined,
+    host :: inet:hostname(),
+    port :: inet:port_number(),
+    buffer = <<>> :: binary(),
+    connected = false :: boolean(),
+    reconnect_timer :: reference() | undefined,
+    reconnect_attempts = 0 :: non_neg_integer(),
+    max_reconnect_attempts :: pos_integer() | infinity,
+    options :: [gen_tcp:connect_option()]
+}).
+
+-type state() :: #state{}.
+
+-export_type([tcp_opts/0]).
+
+%% Default values
+-define(DEFAULT_CONNECT_TIMEOUT, 5000).
+-define(DEFAULT_BUFFER_SIZE, 65536).
+-define(INITIAL_RECONNECT_DELAY, 1000).
+-define(MAX_RECONNECT_DELAY, 60000).
+-define(DEFAULT_MAX_RECONNECT_ATTEMPTS, infinity).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% Start with auto-generated transport ID
+-spec start_link(tcp_opts()) -> {ok, pid()} | {error, term()}.
+start_link(Opts) when is_map(Opts) ->
+    TransportId = maps:get(transport_id, Opts, generate_transport_id()),
+    start_link(TransportId, Opts).
+
+%% Start with specific transport ID
+-spec start_link(atom(), tcp_opts()) -> {ok, pid()} | {error, term()}.
+start_link(TransportId, Opts) when is_atom(TransportId), is_map(Opts) ->
+    OptsWithId = Opts#{transport_id => TransportId},
+    gen_server:start_link(?MODULE, OptsWithId, []).
+
+%%====================================================================
+%% Transport Behavior Callbacks
+%%====================================================================
+
+%% Transport behavior init callback - also serves as gen_server init
+%% This satisfies both erlmcp_transport and gen_server behaviors
+-spec init(tcp_opts()) -> {ok, state()} | {error, term()}.
+init(Opts) ->
+    TransportId = maps:get(transport_id, Opts),
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.init">>, TransportId, tcp),
+    try
+        process_flag(trap_exit, true),
+        
+        ServerId = maps:get(server_id, Opts, undefined),
+        Host = maps:get(host, Opts),
+        Port = maps:get(port, Opts),
+        MaxReconnectAttempts = maps:get(max_reconnect_attempts, Opts, ?DEFAULT_MAX_RECONNECT_ATTEMPTS),
+
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId,
+            <<"host">> => Host,
+            <<"port">> => Port,
+            <<"max_reconnect_attempts">> => MaxReconnectAttempts
+        }),
+
+        State = #state{
+            transport_id = TransportId,
+            server_id = ServerId,
+            config = Opts,
+            socket = undefined,
+            host = Host,
+            port = Port,
+            buffer = <<>>,
+            connected = false,
+            reconnect_timer = undefined,
+            reconnect_attempts = 0,
+            max_reconnect_attempts = MaxReconnectAttempts,
+            options = build_socket_options(Opts)
+        },
+    
+        %% Register with the registry
+        TransportConfig = #{
+            type => tcp,
+            server_id => ServerId,
+            config => Opts
+        },
+        
+        RegSpanCtx = erlmcp_tracing:start_span(<<"registry.register_transport">>),
+        try
+            case erlmcp_registry:register_transport(TransportId, self(), TransportConfig) of
+                ok ->
+                    erlmcp_tracing:set_status(RegSpanCtx, ok),
+                    logger:info("TCP transport ~p registered successfully", [TransportId]),
+                    %% Attempt initial connection
+                    self() ! connect,
+                    erlmcp_tracing:set_status(SpanCtx, ok),
+                    {ok, State};
+                {error, Reason} ->
+                    erlmcp_tracing:record_error_details(RegSpanCtx, registration_failed, Reason),
+                    logger:error("Failed to register TCP transport ~p: ~p", [TransportId, Reason]),
+                    {stop, {registration_failed, Reason}}
+            end
+        finally
+            erlmcp_tracing:end_span(RegSpanCtx)
+        end
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+%% Transport behavior send callback
+-spec send(state(), iodata()) -> ok | {error, term()}.
+send(#state{socket = undefined, transport_id = TransportId}, Data) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.send">>, TransportId, tcp),
+    try
+        DataSize = iolist_size(Data),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"connected">> => false,
+            <<"data.size">> => DataSize
+        }),
+        erlmcp_tracing:record_error_details(SpanCtx, not_connected, undefined),
+        {error, not_connected}
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+send(#state{socket = Socket, connected = true, transport_id = TransportId}, Data) when Socket =/= undefined ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.send">>, TransportId, tcp),
+    try
+        DataSize = iolist_size(Data),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"connected">> => true,
+            <<"data.size">> => DataSize
+        }),
+        
+        SendSpanCtx = erlmcp_tracing:start_span(<<"tcp.send">>),
+        try
+            case gen_tcp:send(Socket, [Data, "\n"]) of
+                ok -> 
+                    erlmcp_tracing:set_status(SendSpanCtx, ok),
+                    erlmcp_tracing:set_status(SpanCtx, ok),
+                    ok;
+                {error, Reason} -> 
+                    erlmcp_tracing:record_error_details(SendSpanCtx, tcp_send_failed, Reason),
+                    {error, {tcp_send_failed, Reason}}
+            end
+        finally
+            erlmcp_tracing:end_span(SendSpanCtx)
+        end
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+send(#state{transport_id = TransportId}, Data) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.send">>, TransportId, tcp),
+    try
+        DataSize = iolist_size(Data),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"connected">> => false,
+            <<"data.size">> => DataSize
+        }),
+        erlmcp_tracing:record_error_details(SpanCtx, not_connected, undefined),
+        {error, not_connected}
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+%% Transport behavior close callback
+-spec close(state()) -> ok.
+close(#state{socket = undefined, transport_id = TransportId}) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.close">>, TransportId, tcp),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{<<"has_socket">> => false}),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        ok
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+close(#state{socket = Socket, transport_id = TransportId}) when Socket =/= undefined ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.close">>, TransportId, tcp),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{<<"has_socket">> => true}),
+        gen_tcp:close(Socket),
+        erlmcp_tracing:set_status(SpanCtx, ok)
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+close(State) ->
+    TransportId = case State of
+        #state{transport_id = TId} -> TId;
+        _ -> unknown
+    end,
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.close">>, TransportId, tcp),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{<<"has_socket">> => unknown}),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        ok
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+%% The gen_server init callback uses the transport behavior init/1
+%% which is already defined above, so we don't need to redefine it here.
+
+-spec handle_call(term(), {pid(), term()}, state()) ->
+    {reply, term(), state()} | {noreply, state()}.
+
+%% Update connection parameters
+handle_call({connect, NewOpts}, _From, State) ->
+    %% Update connection parameters
+    NewHost = maps:get(host, NewOpts, State#state.host),
+    NewPort = maps:get(port, NewOpts, State#state.port),
+    NewOptions = build_socket_options(NewOpts),
+
+    %% Disconnect if currently connected
+    case State#state.socket of
+        undefined -> ok;
+        Socket ->
+            gen_tcp:close(Socket)
+    end,
+
+    NewState = State#state{
+        host = NewHost,
+        port = NewPort,
+        options = NewOptions,
+        socket = undefined,
+        connected = false,
+        reconnect_attempts = 0
+    },
+
+    %% Trigger reconnection
+    self() ! connect,
+
+    {reply, ok, NewState};
+
+%% Send data through connected socket
+handle_call({send, Data}, _From, #state{connected = true, socket = Socket} = State) 
+  when Socket =/= undefined ->
+    case gen_tcp:send(Socket, [Data, "\n"]) of
+        ok ->
+            {reply, ok, State};
+        {error, Reason} = Error ->
+            logger:error("TCP send failed: ~p", [Reason]),
+            %% Connection lost, trigger reconnection
+            self() ! {tcp_error, Socket, Reason},
+            {reply, Error, State}
+    end;
+
+%% Send when not connected
+handle_call({send, _Data}, _From, State) ->
+    {reply, {error, not_connected}, State};
+
+%% Get current state
+handle_call(get_state, _From, State) ->
+    {reply, {ok, State}, State};
+
+%% Get transport info for behavior
+handle_call(get_transport_state, _From, State) ->
+    {reply, {ok, State}, State};
+
+%% Force reconnect
+handle_call(reconnect, _From, State) ->
+    %% Cancel existing timer if any
+    NewState = cancel_reconnect_timer(State),
+    self() ! connect,
+    {reply, ok, NewState#state{reconnect_attempts = 0}};
+
+%% Unknown request
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+-spec handle_cast(term(), state()) -> {noreply, state()}.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+-spec handle_info(term(), state()) ->
+    {noreply, state()} | {stop, term(), state()}.
+
+%% Attempt connection
+handle_info(connect, State) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.handle_connect">>, State#state.transport_id, tcp),
+    try
+        NewState = attempt_connection(State),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"connected">> => NewState#state.connected,
+            <<"attempts">> => NewState#state.reconnect_attempts
+        }),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {noreply, NewState}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Handle incoming TCP data
+handle_info({tcp, Socket, Data}, #state{socket = Socket, buffer = Buffer, transport_id = TransportId} = State) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.handle_tcp_data">>, TransportId, tcp),
+    try
+        DataSize = byte_size(Data),
+        BufferSize = byte_size(Buffer),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"data.size">> => DataSize,
+            <<"buffer.size_before">> => BufferSize
+        }),
+        
+        %% Accumulate data in buffer
+        NewBuffer = <<Buffer/binary, Data/binary>>,
+        NewBufferSize = byte_size(NewBuffer),
+        
+        %% Process complete messages
+        {Messages, RemainingBuffer} = extract_messages(NewBuffer),
+        MessageCount = length(Messages),
+        
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"buffer.size_after">> => byte_size(RemainingBuffer),
+            <<"messages.count">> => MessageCount
+        }),
+        
+        %% Route messages to server via registry
+        lists:foreach(fun(Msg) ->
+            RouteSpanCtx = erlmcp_tracing:start_span(<<"message.route">>),
+            try
+                MsgSize = byte_size(Msg),
+                erlmcp_tracing:set_attributes(RouteSpanCtx, #{<<"message.size">> => MsgSize}),
+                route_message_to_server(State#state.transport_id, State#state.server_id, Msg),
+                erlmcp_tracing:set_status(RouteSpanCtx, ok)
+            catch
+                Class:Reason:Stack ->
+                    erlmcp_tracing:record_exception(RouteSpanCtx, Class, Reason, Stack)
+            after
+                erlmcp_tracing:end_span(RouteSpanCtx)
+            end
+        end, Messages),
+        
+        erlmcp_tracing:record_performance_metrics(SpanCtx, #{
+            throughput => MessageCount,
+            buffer_size => byte_size(RemainingBuffer)
+        }),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {noreply, State#state{buffer = RemainingBuffer}}
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Handle TCP connection closed
+handle_info({tcp_closed, Socket}, #state{socket = Socket, transport_id = TransportId} = State) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.handle_tcp_closed">>, TransportId, tcp),
+    try
+        erlmcp_tracing:add_event(SpanCtx, <<"connection_closed">>),
+        logger:info("TCP connection closed for transport ~p", [TransportId]),
+        NewState = handle_disconnect(State, normal),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {noreply, NewState}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Handle TCP errors
+handle_info({tcp_error, Socket, Reason}, #state{socket = Socket, transport_id = TransportId} = State) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.handle_tcp_error">>, TransportId, tcp),
+    try
+        erlmcp_tracing:record_error_details(SpanCtx, tcp_error, Reason),
+        logger:error("TCP error on transport ~p: ~p", [TransportId, Reason]),
+        NewState = handle_disconnect(State, Reason),
+        {noreply, NewState}
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Reconnect timer fired
+handle_info(reconnect, State) ->
+    NewState = State#state{reconnect_timer = undefined},
+    {noreply, attempt_connection(NewState)};
+
+%% Handle MCP responses from server
+handle_info({mcp_response, ServerId, Message}, #state{transport_id = TransportId} = State) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.handle_mcp_response">>, TransportId, tcp),
+    try
+        MessageSize = iolist_size(Message),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId,
+            <<"message.size">> => MessageSize,
+            <<"expected_server">> => State#state.server_id
+        }),
+        
+        case State#state.server_id of
+            ServerId ->
+                %% Send response to connected client
+                case send(State, Message) of
+                    ok -> 
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        {noreply, State};
+                    {error, Reason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, response_send_failed, Reason),
+                        logger:warning("Failed to send response on transport ~p: ~p", 
+                                     [TransportId, Reason]),
+                        {noreply, State}
+                end;
+            _ ->
+                erlmcp_tracing:record_error_details(SpanCtx, unexpected_server, ServerId),
+                logger:warning("Received response from unexpected server ~p on transport ~p", 
+                             [ServerId, TransportId]),
+                {noreply, State}
+        end
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Handle socket process exit
+handle_info({'EXIT', Socket, Reason}, #state{socket = Socket} = State) ->
+    logger:warning("Socket process died on transport ~p: ~p", [State#state.transport_id, Reason]),
+    {noreply, handle_disconnect(State, Reason)};
+
+%% Unknown message
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+-spec terminate(term(), state()) -> ok.
+terminate(Reason, State) ->
+    logger:info("Terminating TCP transport ~p: ~p", [State#state.transport_id, Reason]),
+    
+    %% Unregister from registry
+    erlmcp_registry:unregister_transport(State#state.transport_id),
+    
+    %% Cancel reconnect timer if active
+    cancel_reconnect_timer(State),
+
+    %% Close socket if connected
+    case State#state.socket of
+        undefined -> ok;
+        Socket -> gen_tcp:close(Socket)
+    end,
+    ok.
+
+-spec code_change(term(), state(), term()) -> {ok, state()}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+-spec build_socket_options(tcp_opts()) -> [gen_tcp:connect_option()].
+build_socket_options(Opts) ->
+    BaseOpts = [
+        binary,
+        {active, true},
+        {packet, line},
+        {reuseaddr, true},
+        {send_timeout, 5000},
+        {send_timeout_close, true}
+    ],
+
+    %% Add optional settings
+    OptionalOpts = lists:foldl(fun({Key, OptKey}, Acc) ->
+        case maps:get(Key, Opts, undefined) of
+            undefined -> Acc;
+            Value -> [{OptKey, Value} | Acc]
+        end
+    end, BaseOpts, [
+        {keepalive, keepalive},
+        {nodelay, nodelay},
+        {buffer_size, buffer}
+    ]),
+
+    %% Ensure we have appropriate buffer sizes
+    BufferSize = maps:get(buffer_size, Opts, ?DEFAULT_BUFFER_SIZE),
+    [
+        {recbuf, BufferSize},
+        {sndbuf, BufferSize}
+        | OptionalOpts
+    ].
+
+-spec attempt_connection(state()) -> state().
+attempt_connection(#state{reconnect_attempts = Attempts,
+                         max_reconnect_attempts = MaxAttempts,
+                         transport_id = TransportId} = State)
+  when is_integer(MaxAttempts), Attempts >= MaxAttempts ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.max_attempts_reached">>, TransportId, tcp),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"attempts">> => Attempts,
+            <<"max_attempts">> => MaxAttempts
+        }),
+        erlmcp_tracing:record_error_details(SpanCtx, max_attempts_reached, MaxAttempts),
+        logger:error("Maximum reconnection attempts (~p) reached for transport ~p", 
+                    [MaxAttempts, TransportId]),
+        State#state{connected = false}
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+attempt_connection(#state{host = Host, port = Port, options = Options, 
+                         transport_id = TransportId, config = Config} = State) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.attempt_connection">>, TransportId, tcp),
+    try
+        ConnectTimeout = maps:get(connect_timeout, Config, ?DEFAULT_CONNECT_TIMEOUT),
+        
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"host">> => Host,
+            <<"port">> => Port,
+            <<"connect_timeout">> => ConnectTimeout,
+            <<"attempt_number">> => State#state.reconnect_attempts + 1
+        }),
+
+        logger:info("Attempting TCP connection to ~s:~p for transport ~p", [Host, Port, TransportId]),
+        
+        ConnectSpanCtx = erlmcp_tracing:start_span(<<"tcp.connect">>),
+        try
+            case gen_tcp:connect(Host, Port, Options, ConnectTimeout) of
+                {ok, Socket} ->
+                    erlmcp_tracing:set_status(ConnectSpanCtx, ok),
+                    logger:info("TCP connection established for transport ~p", [TransportId]),
+                    
+                    %% Notify registry of successful connection
+                    notify_connection_status(TransportId, connected),
+                    
+                    erlmcp_tracing:record_performance_metrics(SpanCtx, #{
+                        connection_count => 1,
+                        retry_count => State#state.reconnect_attempts
+                    }),
+                    erlmcp_tracing:set_status(SpanCtx, ok),
+
+                    State#state{
+                        socket = Socket,
+                        connected = true,
+                        reconnect_attempts = 0,
+                        buffer = <<>>
+                    };
+                {error, Reason} ->
+                    erlmcp_tracing:record_error_details(ConnectSpanCtx, connection_failed, Reason),
+                    logger:error("TCP connection failed for transport ~p: ~p", [TransportId, Reason]),
+                    schedule_reconnect(State)
+            end
+        finally
+            erlmcp_tracing:end_span(ConnectSpanCtx)
+        end
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+-spec handle_disconnect(state(), term()) -> state().
+handle_disconnect(#state{socket = undefined, transport_id = TransportId} = State, Reason) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.handle_disconnect">>, TransportId, tcp),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"has_socket">> => false,
+            <<"reason">> => Reason
+        }),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        State
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+handle_disconnect(#state{socket = Socket, transport_id = TransportId} = State, Reason) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.handle_disconnect">>, TransportId, tcp),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"has_socket">> => true,
+            <<"reason">> => Reason
+        }),
+        
+        %% Close the socket
+        catch gen_tcp:close(Socket),
+        
+        %% Notify registry of disconnection
+        notify_connection_status(TransportId, {disconnected, Reason}),
+        
+        %% Schedule reconnection
+        NewState = State#state{
+            socket = undefined,
+            connected = false,
+            buffer = <<>>
+        },
+        
+        FinalState = schedule_reconnect(NewState),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        FinalState
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            erlang:raise(Class, ExceptionReason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+-spec schedule_reconnect(state()) -> state().
+schedule_reconnect(#state{reconnect_timer = Timer, transport_id = TransportId} = State) when Timer =/= undefined ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.schedule_reconnect_already_scheduled">>, TransportId, tcp),
+    try
+        erlmcp_tracing:add_event(SpanCtx, <<"reconnect_already_scheduled">>),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        State
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+schedule_reconnect(#state{reconnect_attempts = Attempts, 
+                         transport_id = TransportId} = State) ->
+    SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.schedule_reconnect">>, TransportId, tcp),
+    try
+        %% Calculate backoff delay
+        Delay = calculate_backoff(Attempts),
+        NewAttempts = Attempts + 1,
+        
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"attempts">> => Attempts,
+            <<"new_attempts">> => NewAttempts,
+            <<"delay_ms">> => Delay
+        }),
+
+        logger:info("Scheduling reconnection in ~p ms (attempt ~p) for transport ~p",
+                    [Delay, NewAttempts, TransportId]),
+
+        Timer = erlang:send_after(Delay, self(), reconnect),
+        
+        erlmcp_tracing:record_performance_metrics(SpanCtx, #{
+            retry_count => NewAttempts,
+            latency => Delay
+        }),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+
+        State#state{
+            reconnect_timer = Timer,
+            reconnect_attempts = NewAttempts
+        }
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+-spec calculate_backoff(non_neg_integer()) -> pos_integer().
+calculate_backoff(Attempts) ->
+    %% Exponential backoff with jitter
+    BaseDelay = min(?INITIAL_RECONNECT_DELAY * (1 bsl Attempts),
+                    ?MAX_RECONNECT_DELAY),
+    Jitter = rand:uniform(BaseDelay div 4),
+    BaseDelay + Jitter.
+
+-spec cancel_reconnect_timer(state()) -> state().
+cancel_reconnect_timer(#state{reconnect_timer = undefined} = State) ->
+    State;
+cancel_reconnect_timer(#state{reconnect_timer = Timer} = State) ->
+    case erlang:cancel_timer(Timer) of
+        false -> ok;           %% Timer already fired
+        _ -> ok         %% Timer cancelled, TimeLeft is remaining milliseconds
+    end,
+    State#state{reconnect_timer = undefined}.
+
+-spec extract_messages(binary()) -> {[binary()], binary()}.
+extract_messages(Buffer) ->
+    extract_messages(Buffer, []).
+
+-spec extract_messages(binary(), [binary()]) -> {[binary()], binary()}.
+extract_messages(Buffer, Acc) ->
+    case binary:split(Buffer, <<"\n">>) of
+        [_] ->
+            %% No complete message
+            {lists:reverse(Acc), Buffer};
+        [Message, Rest] ->
+            %% Found a complete message
+            extract_messages(Rest, [Message | Acc])
+    end.
+
+%% Generate a unique transport ID
+-spec generate_transport_id() -> atom().
+generate_transport_id() ->
+    Timestamp = erlang:system_time(microsecond),
+    Random = rand:uniform(999999),
+    list_to_atom("tcp_transport_" ++ integer_to_list(Timestamp) ++ "_" ++ integer_to_list(Random)).
+
+%% Route incoming message to server via registry
+-spec route_message_to_server(atom(), atom() | undefined, binary()) -> ok.
+route_message_to_server(TransportId, undefined, Message) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"message.route_no_server">>),
+    try
+        MessageSize = byte_size(Message),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport_id">> => TransportId,
+            <<"message.size">> => MessageSize
+        }),
+        erlmcp_tracing:record_error_details(SpanCtx, no_server_bound, undefined),
+        logger:warning("Cannot route message from transport ~p: no server bound", [TransportId]),
+        ok
+    finally
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+route_message_to_server(TransportId, ServerId, Message) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"message.route_to_server">>),
+    try
+        MessageSize = byte_size(Message),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport_id">> => TransportId,
+            <<"server_id">> => ServerId,
+            <<"message.size">> => MessageSize
+        }),
+        
+        case erlmcp_registry:route_to_server(ServerId, TransportId, Message) of
+            ok -> 
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                ok;
+            {error, Reason} ->
+                erlmcp_tracing:record_error_details(SpanCtx, routing_failed, Reason),
+                logger:warning("Failed to route message from transport ~p to server ~p: ~p", 
+                             [TransportId, ServerId, Reason]),
+                ok
+        end
+    catch
+        Class:ExceptionReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+            ok
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+%% Notify connection status (placeholder for future enhancement)
+-spec notify_connection_status(atom(), connected | {disconnected, term()}) -> ok.
+notify_connection_status(TransportId, Status) ->
+    logger:debug("Transport ~p status: ~p", [TransportId, Status]),
+    %% Could be extended to notify monitoring systems, update metrics, etc.
+    ok.

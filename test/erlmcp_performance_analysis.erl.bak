@@ -1,0 +1,1164 @@
+-module(erlmcp_performance_analysis).
+-behaviour(gen_server).
+
+%% API
+-export([
+    start_link/0, start_link/1,
+    run_transport_benchmark/2,
+    run_throughput_test/3,
+    run_latency_test/3,
+    run_stress_test/3,
+    run_concurrent_test/4,
+    monitor_resources/2,
+    analyze_bottlenecks/1,
+    generate_report/2,
+    stop/0
+]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% Performance metrics record
+-record(metrics, {
+    timestamp :: integer(),
+    transport_type :: stdio | tcp | http,
+    operation :: atom(),
+    duration :: integer(),  % microseconds
+    bytes_sent :: integer(),
+    bytes_received :: integer(),
+    errors :: integer(),
+    memory_usage :: integer(),
+    cpu_usage :: float(),
+    message_latency :: integer(),
+    queue_depth :: integer()
+}).
+
+%% State record
+-record(state, {
+    metrics = [] :: [#metrics{}],
+    active_tests = #{} :: #{reference() => term()},
+    config :: map(),
+    start_time :: integer()
+}).
+
+-type metrics() :: #metrics{}.
+-type state() :: #state{}.
+
+%% Configuration defaults
+-define(DEFAULT_CONFIG, #{
+    sample_size => 1000,
+    concurrent_connections => 10,
+    test_duration => 60000, % 60 seconds
+    message_size => 1024,
+    memory_check_interval => 1000,
+    cpu_check_interval => 1000
+}).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    start_link(?DEFAULT_CONFIG).
+
+-spec start_link(map()) -> {ok, pid()} | {error, term()}.
+start_link(Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Config, []).
+
+-spec run_transport_benchmark(stdio | tcp | http, map()) -> 
+    {ok, {throughput, float()}, {latency_p50, integer()}, {latency_p95, integer()}} | {error, term()}.
+run_transport_benchmark(TransportType, Options) ->
+    gen_server:call(?MODULE, {run_benchmark, TransportType, Options}, 120000).
+
+-spec run_throughput_test(stdio | tcp | http, integer(), integer()) -> 
+    {ok, float()} | {error, term()}.
+run_throughput_test(TransportType, MessageCount, MessageSize) ->
+    Options = #{
+        test_type => throughput,
+        message_count => MessageCount,
+        message_size => MessageSize
+    },
+    case run_transport_benchmark(TransportType, Options) of
+        {ok, {throughput, Rate}, _, _} -> {ok, Rate};
+        Error -> Error
+    end.
+
+-spec run_latency_test(stdio | tcp | http, integer(), integer()) -> 
+    {ok, {integer(), integer(), integer()}} | {error, term()}.
+run_latency_test(TransportType, MessageCount, MessageSize) ->
+    Options = #{
+        test_type => latency,
+        message_count => MessageCount,
+        message_size => MessageSize
+    },
+    case run_transport_benchmark(TransportType, Options) of
+        {ok, _, {latency_p50, P50}, {latency_p95, P95}} -> 
+            {ok, {P50, P95, calculate_p99_estimate(P50, P95)}};
+        Error -> Error
+    end.
+
+-spec run_stress_test(stdio | tcp | http, integer(), integer()) -> 
+    {ok, #{failures => integer(), success_rate => float()}} | {error, term()}.
+run_stress_test(TransportType, Duration, ConcurrentCount) ->
+    gen_server:call(?MODULE, {stress_test, TransportType, Duration, ConcurrentCount}, Duration + 10000).
+
+-spec run_concurrent_test(stdio | tcp | http, integer(), integer(), integer()) -> 
+    {ok, map()} | {error, term()}.
+run_concurrent_test(TransportType, ConcurrentConnections, MessageCount, MessageSize) ->
+    gen_server:call(?MODULE, {concurrent_test, TransportType, ConcurrentConnections, MessageCount, MessageSize}, 300000).
+
+-spec monitor_resources(integer(), integer()) -> {ok, pid()} | {error, term()}.
+monitor_resources(Duration, Interval) ->
+    gen_server:call(?MODULE, {monitor_resources, Duration, Interval}).
+
+-spec analyze_bottlenecks([metrics()]) -> map().
+analyze_bottlenecks(Metrics) ->
+    gen_server:call(?MODULE, {analyze_bottlenecks, Metrics}).
+
+-spec generate_report([metrics()], map()) -> binary().
+generate_report(Metrics, Config) ->
+    gen_server:call(?MODULE, {generate_report, Metrics, Config}).
+
+-spec stop() -> ok.
+stop() ->
+    gen_server:stop(?MODULE).
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+-spec init(map()) -> {ok, state()}.
+init(Config) ->
+    process_flag(trap_exit, true),
+    logger:info("Performance analyzer started with config: ~p", [Config]),
+    State = #state{
+        config = maps:merge(?DEFAULT_CONFIG, Config),
+        start_time = erlang:system_time(microsecond)
+    },
+    {ok, State}.
+
+-spec handle_call(term(), {pid(), term()}, state()) -> 
+    {reply, term(), state()}.
+
+handle_call({run_benchmark, TransportType, Options}, _From, State) ->
+    {Reply, NewState} = execute_benchmark(TransportType, Options, State),
+    {reply, Reply, NewState};
+
+handle_call({stress_test, TransportType, Duration, ConcurrentCount}, _From, State) ->
+    {Reply, NewState} = execute_stress_test(TransportType, Duration, ConcurrentCount, State),
+    {reply, Reply, NewState};
+
+handle_call({concurrent_test, TransportType, Connections, MessageCount, MessageSize}, _From, State) ->
+    {Reply, NewState} = execute_concurrent_test(TransportType, Connections, MessageCount, MessageSize, State),
+    {reply, Reply, NewState};
+
+handle_call({monitor_resources, Duration, Interval}, _From, State) ->
+    {Reply, NewState} = start_resource_monitoring(Duration, Interval, State),
+    {reply, Reply, NewState};
+
+handle_call({analyze_bottlenecks, Metrics}, _From, State) ->
+    Analysis = perform_bottleneck_analysis(Metrics),
+    {reply, Analysis, State};
+
+handle_call({generate_report, Metrics, Config}, _From, State) ->
+    Report = generate_performance_report(Metrics, Config),
+    {reply, Report, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+-spec handle_cast(term(), state()) -> {noreply, state()}.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+-spec handle_info(term(), state()) -> 
+    {noreply, state()} | {stop, term(), state()}.
+
+handle_info({resource_sample, Ref}, State) ->
+    case maps:get(Ref, State#state.active_tests, undefined) of
+        undefined ->
+            {noreply, State};
+        {monitor, Interval, EndTime} ->
+            Now = erlang:system_time(millisecond),
+            if
+                Now >= EndTime ->
+                    % Monitoring complete
+                    NewActiveTests = maps:remove(Ref, State#state.active_tests),
+                    {noreply, State#state{active_tests = NewActiveTests}};
+                true ->
+                    % Take resource sample
+                    Metric = create_resource_metric(),
+                    NewMetrics = [Metric | State#state.metrics],
+                    
+                    % Schedule next sample
+                    erlang:send_after(Interval, self(), {resource_sample, Ref}),
+                    {noreply, State#state{metrics = NewMetrics}}
+            end
+    end;
+
+handle_info({test_complete, Ref, Results}, State) ->
+    case maps:get(Ref, State#state.active_tests, undefined) of
+        undefined ->
+            {noreply, State};
+        TestInfo ->
+            logger:info("Test completed: ~p, Results: ~p", [TestInfo, Results]),
+            NewActiveTests = maps:remove(Ref, State#state.active_tests),
+            {noreply, State#state{active_tests = NewActiveTests}}
+    end;
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+-spec terminate(term(), state()) -> ok.
+terminate(_Reason, State) ->
+    % Cancel all active tests
+    maps:foreach(fun(Ref, _) ->
+        case erlang:cancel_timer(Ref) of
+            false -> ok;
+            _ -> ok
+        end
+    end, State#state.active_tests),
+    logger:info("Performance analyzer terminating"),
+    ok.
+
+-spec code_change(term(), state(), term()) -> {ok, state()}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions - Benchmark Execution
+%%====================================================================
+
+-spec execute_benchmark(stdio | tcp | http, map(), state()) -> 
+    {term(), state()}.
+execute_benchmark(TransportType, Options, State) ->
+    TestType = maps:get(test_type, Options, throughput),
+    MessageCount = maps:get(message_count, Options, 1000),
+    MessageSize = maps:get(message_size, Options, 1024),
+    
+    logger:info("Starting ~p benchmark for ~p transport: ~p messages, ~p bytes each", 
+                [TestType, TransportType, MessageCount, MessageSize]),
+    
+    StartTime = erlang:system_time(microsecond),
+    
+    try
+        case TestType of
+            throughput ->
+                Metrics = run_throughput_benchmark(TransportType, MessageCount, MessageSize),
+                calculate_throughput_results(Metrics, StartTime, State);
+            latency ->
+                Metrics = run_latency_benchmark(TransportType, MessageCount, MessageSize),
+                calculate_latency_results(Metrics, State);
+            mixed ->
+                Metrics = run_mixed_benchmark(TransportType, MessageCount, MessageSize),
+                calculate_mixed_results(Metrics, State)
+        end
+    catch
+        error:Reason:Stacktrace ->
+            logger:error("Benchmark failed: ~p~nStacktrace: ~p", [Reason, Stacktrace]),
+            {{error, {benchmark_failed, Reason}}, State}
+    end.
+
+-spec run_throughput_benchmark(stdio | tcp | http, integer(), integer()) -> [metrics()].
+run_throughput_benchmark(TransportType, MessageCount, MessageSize) ->
+    TestData = generate_test_data(MessageSize),
+    
+    % Start transport
+    {ok, TransportPid, ServerId} = setup_test_transport(TransportType),
+    
+    try
+        Metrics = lists:map(fun(_) ->
+            StartTime = erlang:system_time(microsecond),
+            
+            case TransportType of
+                stdio ->
+                    ok = erlmcp_transport_stdio_new:send(TransportPid, TestData);
+                tcp ->
+                    ok = erlmcp_transport_tcp:send(TransportPid, TestData);
+                http ->
+                    ok = gen_server:call(TransportPid, {send, TestData})
+            end,
+            
+            EndTime = erlang:system_time(microsecond),
+            
+            #metrics{
+                timestamp = StartTime,
+                transport_type = TransportType,
+                operation = send,
+                duration = EndTime - StartTime,
+                bytes_sent = MessageSize,
+                bytes_received = 0,
+                errors = 0
+            }
+        end, lists:seq(1, MessageCount)),
+        
+        Metrics
+    after
+        cleanup_test_transport(TransportPid, ServerId)
+    end.
+
+-spec run_latency_benchmark(stdio | tcp | http, integer(), integer()) -> [metrics()].
+run_latency_benchmark(TransportType, MessageCount, MessageSize) ->
+    TestData = generate_test_data(MessageSize),
+    
+    % Start transport
+    {ok, TransportPid, ServerId} = setup_test_transport(TransportType),
+    
+    try
+        % For latency testing, we need round-trip measurements
+        % This requires more complex setup with echo server
+        Metrics = run_echo_test(TransportPid, TransportType, TestData, MessageCount),
+        Metrics
+    after
+        cleanup_test_transport(TransportPid, ServerId)
+    end.
+
+-spec run_mixed_benchmark(stdio | tcp | http, integer(), integer()) -> [metrics()].
+run_mixed_benchmark(TransportType, MessageCount, MessageSize) ->
+    % Mix of different message sizes and operations
+    SmallData = generate_test_data(MessageSize div 4),
+    MediumData = generate_test_data(MessageSize),
+    LargeData = generate_test_data(MessageSize * 4),
+    
+    {ok, TransportPid, ServerId} = setup_test_transport(TransportType),
+    
+    try
+        Metrics = lists:flatmap(fun(I) ->
+            Data = case I rem 3 of
+                0 -> SmallData;
+                1 -> MediumData;
+                2 -> LargeData
+            end,
+            
+            StartTime = erlang:system_time(microsecond),
+            Result = case TransportType of
+                stdio -> erlmcp_transport_stdio_new:send(TransportPid, Data);
+                tcp -> erlmcp_transport_tcp:send(TransportPid, Data);
+                http -> gen_server:call(TransportPid, {send, Data})
+            end,
+            EndTime = erlang:system_time(microsecond),
+            
+            Errors = case Result of
+                ok -> 0;
+                _ -> 1
+            end,
+            
+            [#metrics{
+                timestamp = StartTime,
+                transport_type = TransportType,
+                operation = send,
+                duration = EndTime - StartTime,
+                bytes_sent = byte_size(Data),
+                bytes_received = 0,
+                errors = Errors
+            }]
+        end, lists:seq(1, MessageCount)),
+        
+        Metrics
+    after
+        cleanup_test_transport(TransportPid, ServerId)
+    end.
+
+%%====================================================================
+%% Internal Functions - Stress Testing
+%%====================================================================
+
+-spec execute_stress_test(stdio | tcp | http, integer(), integer(), state()) ->
+    {term(), state()}.
+execute_stress_test(TransportType, Duration, ConcurrentCount, State) ->
+    logger:info("Starting stress test: ~p transport, ~p ms duration, ~p concurrent connections", 
+                [TransportType, Duration, ConcurrentCount]),
+    
+    StartTime = erlang:system_time(millisecond),
+    EndTime = StartTime + Duration,
+    
+    % Start multiple concurrent processes
+    TestProcesses = lists:map(fun(I) ->
+        spawn_link(fun() -> stress_test_worker(TransportType, EndTime, I) end)
+    end, lists:seq(1, ConcurrentCount)),
+    
+    % Wait for completion
+    Results = collect_stress_results(TestProcesses, Duration + 5000),
+    
+    % Analyze results
+    TotalOperations = lists:sum([maps:get(operations, R, 0) || R <- Results]),
+    TotalErrors = lists:sum([maps:get(errors, R, 0) || R <- Results]),
+    SuccessRate = case TotalOperations of
+        0 -> 0.0;
+        _ -> (TotalOperations - TotalErrors) / TotalOperations * 100.0
+    end,
+    
+    Result = #{
+        total_operations => TotalOperations,
+        total_errors => TotalErrors,
+        success_rate => SuccessRate,
+        concurrent_connections => ConcurrentCount,
+        duration => Duration,
+        operations_per_second => TotalOperations / (Duration / 1000)
+    },
+    
+    {{ok, Result}, State}.
+
+-spec stress_test_worker(stdio | tcp | http, integer(), integer()) -> map().
+stress_test_worker(TransportType, EndTime, WorkerId) ->
+    {ok, TransportPid, ServerId} = setup_test_transport(TransportType),
+    TestData = generate_test_data(1024),
+    
+    try
+        stress_loop(TransportPid, TransportType, TestData, EndTime, 0, 0)
+    catch
+        error:Reason ->
+            logger:error("Stress worker ~p failed: ~p", [WorkerId, Reason]),
+            #{operations => 0, errors => 1}
+    after
+        cleanup_test_transport(TransportPid, ServerId)
+    end.
+
+-spec stress_loop(pid(), atom(), binary(), integer(), integer(), integer()) -> map().
+stress_loop(TransportPid, TransportType, TestData, EndTime, Operations, Errors) ->
+    Now = erlang:system_time(millisecond),
+    if
+        Now >= EndTime ->
+            #{operations => Operations, errors => Errors};
+        true ->
+            Result = case TransportType of
+                stdio -> erlmcp_transport_stdio_new:send(TransportPid, TestData);
+                tcp -> erlmcp_transport_tcp:send(TransportPid, TestData);
+                http -> gen_server:call(TransportPid, {send, TestData})
+            end,
+            
+            NewErrors = case Result of
+                ok -> Errors;
+                _ -> Errors + 1
+            end,
+            
+            stress_loop(TransportPid, TransportType, TestData, EndTime, Operations + 1, NewErrors)
+    end.
+
+%%====================================================================
+%% Internal Functions - Concurrent Testing
+%%====================================================================
+
+-spec execute_concurrent_test(stdio | tcp | http, integer(), integer(), integer(), state()) ->
+    {term(), state()}.
+execute_concurrent_test(TransportType, Connections, MessageCount, MessageSize, State) ->
+    logger:info("Starting concurrent test: ~p transport, ~p connections, ~p messages, ~p bytes", 
+                [TransportType, Connections, MessageCount, MessageSize]),
+    
+    StartTime = erlang:system_time(microsecond),
+    
+    % Start concurrent test processes
+    TestProcesses = lists:map(fun(I) ->
+        spawn_link(fun() -> 
+            concurrent_test_worker(TransportType, MessageCount, MessageSize, I)
+        end)
+    end, lists:seq(1, Connections)),
+    
+    % Collect results
+    Results = collect_concurrent_results(TestProcesses, 300000),
+    EndTime = erlang:system_time(microsecond),
+    
+    % Calculate aggregate metrics
+    TotalOperations = lists:sum([maps:get(operations, R, 0) || R <- Results]),
+    TotalErrors = lists:sum([maps:get(errors, R, 0) || R <- Results]),
+    TotalDuration = EndTime - StartTime,
+    
+    Latencies = lists:flatten([maps:get(latencies, R, []) || R <- Results]),
+    AvgLatency = case Latencies of
+        [] -> 0;
+        _ -> lists:sum(Latencies) / length(Latencies)
+    end,
+    
+    Result = #{
+        total_operations => TotalOperations,
+        total_errors => TotalErrors,
+        concurrent_connections => Connections,
+        duration_us => TotalDuration,
+        throughput => TotalOperations / (TotalDuration / 1000000),
+        avg_latency_us => AvgLatency,
+        success_rate => case TotalOperations of
+            0 -> 0.0;
+            _ -> (TotalOperations - TotalErrors) / TotalOperations * 100.0
+        end
+    },
+    
+    {{ok, Result}, State}.
+
+-spec concurrent_test_worker(stdio | tcp | http, integer(), integer(), integer()) -> map().
+concurrent_test_worker(TransportType, MessageCount, MessageSize, WorkerId) ->
+    {ok, TransportPid, ServerId} = setup_test_transport(TransportType),
+    TestData = generate_test_data(MessageSize),
+    
+    try
+        {Operations, Errors, Latencies} = concurrent_message_loop(TransportPid, TransportType, TestData, MessageCount, 0, 0, []),
+        #{
+            worker_id => WorkerId,
+            operations => Operations,
+            errors => Errors,
+            latencies => Latencies
+        }
+    catch
+        error:Reason ->
+            logger:error("Concurrent worker ~p failed: ~p", [WorkerId, Reason]),
+            #{worker_id => WorkerId, operations => 0, errors => 1, latencies => []}
+    after
+        cleanup_test_transport(TransportPid, ServerId)
+    end.
+
+-spec concurrent_message_loop(pid(), atom(), binary(), integer(), integer(), integer(), [integer()]) ->
+    {integer(), integer(), [integer()]}.
+concurrent_message_loop(_TransportPid, _TransportType, _TestData, 0, Operations, Errors, Latencies) ->
+    {Operations, Errors, Latencies};
+concurrent_message_loop(TransportPid, TransportType, TestData, Remaining, Operations, Errors, Latencies) ->
+    StartTime = erlang:system_time(microsecond),
+    
+    Result = case TransportType of
+        stdio -> erlmcp_transport_stdio_new:send(TransportPid, TestData);
+        tcp -> erlmcp_transport_tcp:send(TransportPid, TestData);
+        http -> gen_server:call(TransportPid, {send, TestData})
+    end,
+    
+    EndTime = erlang:system_time(microsecond),
+    Latency = EndTime - StartTime,
+    
+    {NewErrors, NewLatencies} = case Result of
+        ok -> {Errors, [Latency | Latencies]};
+        _ -> {Errors + 1, Latencies}
+    end,
+    
+    concurrent_message_loop(TransportPid, TransportType, TestData, Remaining - 1, 
+                           Operations + 1, NewErrors, NewLatencies).
+
+%%====================================================================
+%% Internal Functions - Resource Monitoring
+%%====================================================================
+
+-spec start_resource_monitoring(integer(), integer(), state()) -> {term(), state()}.
+start_resource_monitoring(Duration, Interval, State) ->
+    Ref = make_ref(),
+    EndTime = erlang:system_time(millisecond) + Duration,
+    
+    % Start monitoring
+    erlang:send_after(Interval, self(), {resource_sample, Ref}),
+    
+    NewActiveTests = maps:put(Ref, {monitor, Interval, EndTime}, State#state.active_tests),
+    NewState = State#state{active_tests = NewActiveTests},
+    
+    MonitorPid = spawn_link(fun() -> resource_monitor_process(Duration, Interval) end),
+    {{ok, MonitorPid}, NewState}.
+
+-spec resource_monitor_process(integer(), integer()) -> ok.
+resource_monitor_process(Duration, Interval) ->
+    EndTime = erlang:system_time(millisecond) + Duration,
+    resource_monitor_loop(EndTime, Interval).
+
+-spec resource_monitor_loop(integer(), integer()) -> ok.
+resource_monitor_loop(EndTime, Interval) ->
+    Now = erlang:system_time(millisecond),
+    if
+        Now >= EndTime ->
+            ok;
+        true ->
+            Metric = create_resource_metric(),
+            gen_server:cast(?MODULE, {resource_metric, Metric}),
+            timer:sleep(Interval),
+            resource_monitor_loop(EndTime, Interval)
+    end.
+
+-spec create_resource_metric() -> metrics().
+create_resource_metric() ->
+    {MemoryUsage, _} = process_info(self(), memory),
+    ProcessCount = erlang:system_info(process_count),
+    
+    % Get system memory info if available
+    SystemMemory = case erlang:memory() of
+        Memory when is_list(Memory) ->
+            proplists:get_value(total, Memory, 0);
+        _ -> 0
+    end,
+    
+    #metrics{
+        timestamp = erlang:system_time(microsecond),
+        transport_type = system,
+        operation = resource_sample,
+        duration = 0,
+        bytes_sent = 0,
+        bytes_received = 0,
+        errors = 0,
+        memory_usage = MemoryUsage,
+        cpu_usage = get_cpu_usage(),
+        message_latency = 0,
+        queue_depth = ProcessCount
+    }.
+
+-spec get_cpu_usage() -> float().
+get_cpu_usage() ->
+    % Simplified CPU usage estimation
+    case erlang:statistics(scheduler_wall_time) of
+        undefined -> 0.0;
+        Stats ->
+            % Calculate average scheduler utilization
+            TotalActive = lists:sum([Active || {_Id, Active, _Total} <- Stats]),
+            TotalTime = lists:sum([Total || {_Id, _Active, Total} <- Stats]),
+            case TotalTime of
+                0 -> 0.0;
+                _ -> (TotalActive / TotalTime) * 100.0
+            end
+    end.
+
+%%====================================================================
+%% Internal Functions - Analysis
+%%====================================================================
+
+-spec perform_bottleneck_analysis([metrics()]) -> map().
+perform_bottleneck_analysis(Metrics) ->
+    % Group metrics by transport type and operation
+    GroupedMetrics = group_metrics_by_type(Metrics),
+    
+    Analysis = maps:map(fun(TransportType, TypeMetrics) ->
+        #{
+            avg_duration => calculate_average_duration(TypeMetrics),
+            p95_duration => calculate_percentile(TypeMetrics, 95),
+            p99_duration => calculate_percentile(TypeMetrics, 99),
+            error_rate => calculate_error_rate(TypeMetrics),
+            throughput => calculate_throughput(TypeMetrics),
+            memory_peak => calculate_peak_memory(TypeMetrics),
+            bottlenecks => identify_bottlenecks(TypeMetrics)
+        }
+    end, GroupedMetrics),
+    
+    Overall = #{
+        transport_comparison => compare_transports(Analysis),
+        recommendations => generate_recommendations(Analysis),
+        critical_issues => identify_critical_issues(Analysis)
+    },
+    
+    maps:put(overall, Overall, Analysis).
+
+-spec group_metrics_by_type([metrics()]) -> #{atom() => [metrics()]}.
+group_metrics_by_type(Metrics) ->
+    lists:foldl(fun(Metric, Acc) ->
+        Type = Metric#metrics.transport_type,
+        Current = maps:get(Type, Acc, []),
+        maps:put(Type, [Metric | Current], Acc)
+    end, #{}, Metrics).
+
+-spec calculate_average_duration([metrics()]) -> float().
+calculate_average_duration([]) -> 0.0;
+calculate_average_duration(Metrics) ->
+    Durations = [M#metrics.duration || M <- Metrics, M#metrics.duration > 0],
+    case Durations of
+        [] -> 0.0;
+        _ -> lists:sum(Durations) / length(Durations)
+    end.
+
+-spec calculate_percentile([metrics()], integer()) -> integer().
+calculate_percentile([], _) -> 0;
+calculate_percentile(Metrics, Percentile) ->
+    Durations = lists:sort([M#metrics.duration || M <- Metrics, M#metrics.duration > 0]),
+    case Durations of
+        [] -> 0;
+        _ ->
+            Index = max(1, round(length(Durations) * Percentile / 100)),
+            lists:nth(min(Index, length(Durations)), Durations)
+    end.
+
+-spec calculate_error_rate([metrics()]) -> float().
+calculate_error_rate([]) -> 0.0;
+calculate_error_rate(Metrics) ->
+    TotalErrors = lists:sum([M#metrics.errors || M <- Metrics]),
+    TotalOperations = length(Metrics),
+    case TotalOperations of
+        0 -> 0.0;
+        _ -> TotalErrors / TotalOperations * 100.0
+    end.
+
+-spec calculate_throughput([metrics()]) -> float().
+calculate_throughput([]) -> 0.0;
+calculate_throughput(Metrics) ->
+    ValidMetrics = [M || M <- Metrics, M#metrics.duration > 0],
+    case ValidMetrics of
+        [] -> 0.0;
+        _ ->
+            TotalBytes = lists:sum([M#metrics.bytes_sent || M <- ValidMetrics]),
+            TotalTime = lists:sum([M#metrics.duration || M <- ValidMetrics]) / 1000000, % Convert to seconds
+            case TotalTime of
+                0.0 -> 0.0;
+                _ -> TotalBytes / TotalTime
+            end
+    end.
+
+-spec calculate_peak_memory([metrics()]) -> integer().
+calculate_peak_memory([]) -> 0;
+calculate_peak_memory(Metrics) ->
+    MemoryValues = [M#metrics.memory_usage || M <- Metrics, M#metrics.memory_usage > 0],
+    case MemoryValues of
+        [] -> 0;
+        _ -> lists:max(MemoryValues)
+    end.
+
+-spec identify_bottlenecks([metrics()]) -> [atom()].
+identify_bottlenecks(Metrics) ->
+    Bottlenecks = [],
+    
+    % Check for high latency
+    AvgDuration = calculate_average_duration(Metrics),
+    HighLatency = AvgDuration > 10000, % 10ms threshold
+    
+    % Check for high error rate
+    ErrorRate = calculate_error_rate(Metrics),
+    HighErrors = ErrorRate > 5.0, % 5% threshold
+    
+    % Check for low throughput
+    Throughput = calculate_throughput(Metrics),
+    LowThroughput = Throughput < 1000, % 1KB/s threshold
+    
+    % Check for memory issues
+    PeakMemory = calculate_peak_memory(Metrics),
+    HighMemory = PeakMemory > 100 * 1024 * 1024, % 100MB threshold
+    
+    lists:foldl(fun({Condition, Issue}, Acc) ->
+        case Condition of
+            true -> [Issue | Acc];
+            false -> Acc
+        end
+    end, Bottlenecks, [
+        {HighLatency, high_latency},
+        {HighErrors, high_error_rate},
+        {LowThroughput, low_throughput},
+        {HighMemory, high_memory_usage}
+    ]).
+
+-spec compare_transports(map()) -> map().
+compare_transports(Analysis) ->
+    TransportTypes = maps:keys(Analysis),
+    Comparisons = lists:foldl(fun(Type1, Acc1) ->
+        lists:foldl(fun(Type2, Acc2) ->
+            if
+                Type1 =/= Type2, Type1 < Type2 ->
+                    Comparison = compare_transport_pair(
+                        maps:get(Type1, Analysis, #{}), 
+                        maps:get(Type2, Analysis, #{})
+                    ),
+                    Key = {Type1, Type2},
+                    maps:put(Key, Comparison, Acc2);
+                true -> Acc2
+            end
+        end, Acc1, TransportTypes)
+    end, #{}, TransportTypes),
+    Comparisons.
+
+-spec compare_transport_pair(map(), map()) -> map().
+compare_transport_pair(Analysis1, Analysis2) ->
+    Throughput1 = maps:get(throughput, Analysis1, 0),
+    Throughput2 = maps:get(throughput, Analysis2, 0),
+    
+    Latency1 = maps:get(p95_duration, Analysis1, 0),
+    Latency2 = maps:get(p95_duration, Analysis2, 0),
+    
+    ErrorRate1 = maps:get(error_rate, Analysis1, 0),
+    ErrorRate2 = maps:get(error_rate, Analysis2, 0),
+    
+    #{
+        throughput_ratio => safe_divide(Throughput1, Throughput2),
+        latency_ratio => safe_divide(Latency2, Latency1), % Lower is better
+        error_rate_diff => ErrorRate2 - ErrorRate1
+    }.
+
+-spec safe_divide(number(), number()) -> float().
+safe_divide(_, 0) -> 0.0;
+safe_divide(A, B) -> A / B.
+
+%%====================================================================
+%% Internal Functions - Utilities
+%%====================================================================
+
+-spec generate_test_data(integer()) -> binary().
+generate_test_data(Size) ->
+    % Generate pseudo-random test data
+    Data = iolist_to_binary([
+        "{\"jsonrpc\": \"2.0\", \"method\": \"test\", \"params\": {\"data\": \"",
+        lists:duplicate(max(0, Size - 100), $x),
+        "\"}, \"id\": 1}"
+    ]),
+    
+    % Pad or trim to exact size
+    CurrentSize = byte_size(Data),
+    if
+        CurrentSize > Size ->
+            binary:part(Data, 0, Size);
+        CurrentSize < Size ->
+            Padding = binary:copy(<<$\s>>, Size - CurrentSize),
+            <<Data/binary, Padding/binary>>;
+        true ->
+            Data
+    end.
+
+-spec setup_test_transport(stdio | tcp | http) -> {ok, pid(), atom()} | {error, term()}.
+setup_test_transport(stdio) ->
+    TransportId = make_transport_id(stdio),
+    Config = #{server_id => test_server, test_mode => true},
+    case erlmcp_transport_stdio_new:start_link(TransportId, Config) of
+        {ok, Pid} ->
+            % Register with mock server
+            ServerId = test_server,
+            {ok, Pid, ServerId};
+        Error -> Error
+    end;
+
+setup_test_transport(tcp) ->
+    TransportId = make_transport_id(tcp),
+    Opts = #{
+        host => "127.0.0.1",
+        port => 8080,
+        owner => self(),
+        connect_timeout => 1000
+    },
+    case erlmcp_transport_tcp:start_link(Opts) of
+        {ok, Pid} ->
+            ServerId = test_server,
+            {ok, Pid, ServerId};
+        Error -> Error
+    end;
+
+setup_test_transport(http) ->
+    TransportId = make_transport_id(http),
+    Opts = #{
+        url => "http://localhost:8080/test",
+        owner => self(),
+        timeout => 5000
+    },
+    case erlmcp_transport_http:start_link(Opts) of
+        {ok, Pid} ->
+            ServerId = test_server,
+            {ok, Pid, ServerId};
+        Error -> Error
+    end.
+
+-spec cleanup_test_transport(pid(), atom()) -> ok.
+cleanup_test_transport(TransportPid, _ServerId) ->
+    case is_process_alive(TransportPid) of
+        true ->
+            exit(TransportPid, shutdown),
+            ok;
+        false ->
+            ok
+    end.
+
+-spec make_transport_id(atom()) -> atom().
+make_transport_id(Type) ->
+    Ref = make_ref(),
+    RefStr = erlang:ref_to_list(Ref),
+    % Extract unique part from reference
+    CleanRef = lists:filter(fun(C) -> C >= $0 andalso C =< $9 end, RefStr),
+    list_to_atom(atom_to_list(Type) ++ "_" ++ CleanRef).
+
+-spec run_echo_test(pid(), atom(), binary(), integer()) -> [metrics()].
+run_echo_test(_TransportPid, _TransportType, _TestData, 0) ->
+    [];
+run_echo_test(TransportPid, TransportType, TestData, Count) ->
+    % For simplicity, measure send time only
+    % Real echo test would require server setup
+    StartTime = erlang:system_time(microsecond),
+    
+    Result = case TransportType of
+        stdio -> erlmcp_transport_stdio_new:send(TransportPid, TestData);
+        tcp -> erlmcp_transport_tcp:send(TransportPid, TestData);
+        http -> gen_server:call(TransportPid, {send, TestData})
+    end,
+    
+    EndTime = erlang:system_time(microsecond),
+    
+    Errors = case Result of
+        ok -> 0;
+        _ -> 1
+    end,
+    
+    Metric = #metrics{
+        timestamp = StartTime,
+        transport_type = TransportType,
+        operation = echo,
+        duration = EndTime - StartTime,
+        bytes_sent = byte_size(TestData),
+        bytes_received = byte_size(TestData),
+        errors = Errors,
+        message_latency = EndTime - StartTime
+    },
+    
+    [Metric | run_echo_test(TransportPid, TransportType, TestData, Count - 1)].
+
+-spec calculate_throughput_results([metrics()], integer(), state()) -> {term(), state()}.
+calculate_throughput_results(Metrics, StartTime, State) ->
+    EndTime = erlang:system_time(microsecond),
+    TotalTime = (EndTime - StartTime) / 1000000, % Convert to seconds
+    
+    TotalBytes = lists:sum([M#metrics.bytes_sent || M <- Metrics]),
+    TotalMessages = length(Metrics),
+    
+    Throughput = case TotalTime of
+        0.0 -> 0.0;
+        _ -> TotalBytes / TotalTime
+    end,
+    
+    % Calculate latency percentiles
+    Durations = lists:sort([M#metrics.duration || M <- Metrics]),
+    P50 = calculate_percentile_from_list(Durations, 50),
+    P95 = calculate_percentile_from_list(Durations, 95),
+    
+    Result = {ok, {throughput, Throughput}, {latency_p50, P50}, {latency_p95, P95}},
+    NewState = State#state{metrics = Metrics ++ State#state.metrics},
+    {Result, NewState}.
+
+-spec calculate_latency_results([metrics()], state()) -> {term(), state()}.
+calculate_latency_results(Metrics, State) ->
+    Durations = lists:sort([M#metrics.duration || M <- Metrics]),
+    P50 = calculate_percentile_from_list(Durations, 50),
+    P95 = calculate_percentile_from_list(Durations, 95),
+    P99 = calculate_percentile_from_list(Durations, 99),
+    
+    % Dummy throughput for compatibility
+    TotalBytes = lists:sum([M#metrics.bytes_sent || M <- Metrics]),
+    TotalTime = lists:sum([M#metrics.duration || M <- Metrics]) / 1000000,
+    Throughput = case TotalTime of
+        0.0 -> 0.0;
+        _ -> TotalBytes / TotalTime
+    end,
+    
+    Result = {ok, {throughput, Throughput}, {latency_p50, P50}, {latency_p95, P95}},
+    NewState = State#state{metrics = Metrics ++ State#state.metrics},
+    {Result, NewState}.
+
+-spec calculate_mixed_results([metrics()], state()) -> {term(), state()}.
+calculate_mixed_results(Metrics, State) ->
+    % Similar to throughput but with mixed analysis
+    calculate_throughput_results(Metrics, erlang:system_time(microsecond), State).
+
+-spec calculate_percentile_from_list([integer()], integer()) -> integer().
+calculate_percentile_from_list([], _) -> 0;
+calculate_percentile_from_list(SortedList, Percentile) ->
+    Index = max(1, round(length(SortedList) * Percentile / 100)),
+    lists:nth(min(Index, length(SortedList)), SortedList).
+
+-spec calculate_p99_estimate(integer(), integer()) -> integer().
+calculate_p99_estimate(P50, P95) ->
+    % Rough estimation: P99 ≈ P95 + 2 * (P95 - P50)
+    P95 + 2 * (P95 - P50).
+
+-spec collect_stress_results([pid()], integer()) -> [map()].
+collect_stress_results(Processes, Timeout) ->
+    collect_results(Processes, Timeout, []).
+
+-spec collect_concurrent_results([pid()], integer()) -> [map()].
+collect_concurrent_results(Processes, Timeout) ->
+    collect_results(Processes, Timeout, []).
+
+-spec collect_results([pid()], integer(), [map()]) -> [map()].
+collect_results([], _Timeout, Results) ->
+    Results;
+collect_results([Pid | Rest], Timeout, Results) ->
+    receive
+        {'EXIT', Pid, Result} when is_map(Result) ->
+            collect_results(Rest, Timeout, [Result | Results]);
+        {'EXIT', Pid, _Reason} ->
+            collect_results(Rest, Timeout, [#{operations => 0, errors => 1} | Results])
+    after Timeout ->
+        % Force kill remaining processes
+        [exit(P, kill) || P <- [Pid | Rest]],
+        [#{operations => 0, errors => 1, timeout => true} | Results]
+    end.
+
+-spec generate_recommendations(map()) -> [binary()].
+generate_recommendations(Analysis) ->
+    Recommendations = lists:foldl(fun({TransportType, TypeAnalysis}, Acc) ->
+        TypeRecs = generate_transport_recommendations(TransportType, TypeAnalysis),
+        TypeRecs ++ Acc
+    end, [], maps:to_list(Analysis)),
+    
+    % Add general recommendations
+    General = [
+        <<"Consider connection pooling for HTTP transport to reduce overhead">>,
+        <<"Use TCP keepalive to detect disconnected clients">>,
+        <<"Implement backpressure mechanisms for high-throughput scenarios">>,
+        <<"Monitor memory usage during peak loads">>,
+        <<"Consider message batching for small, frequent messages">>
+    ],
+    
+    lists:usort(Recommendations ++ General).
+
+-spec generate_transport_recommendations(atom(), map()) -> [binary()].
+generate_transport_recommendations(TransportType, Analysis) ->
+    Bottlenecks = maps:get(bottlenecks, Analysis, []),
+    ErrorRate = maps:get(error_rate, Analysis, 0),
+    Throughput = maps:get(throughput, Analysis, 0),
+    
+    BaseRecs = case TransportType of
+        stdio -> [<<"STDIO transport is efficient for local communication">>];
+        tcp -> [<<"TCP transport provides reliable connection-oriented communication">>];
+        http -> [<<"HTTP transport is best for request-response patterns">>];
+        _ -> []
+    end,
+    
+    BottleneckRecs = lists:flatmap(fun(Bottleneck) ->
+        case Bottleneck of
+            high_latency -> [<<"Optimize message serialization and transport buffers">>];
+            high_error_rate -> [<<"Implement retry mechanisms and better error handling">>];
+            low_throughput -> [<<"Consider message batching or compression">>];
+            high_memory_usage -> [<<"Implement message streaming or pagination">>];
+            _ -> []
+        end
+    end, Bottlenecks),
+    
+    PerformanceRecs = 
+        if
+            ErrorRate > 10 -> [<<"High error rate detected - review error handling logic">>];
+            true -> []
+        end ++
+        if
+            Throughput < 100 -> [<<"Low throughput detected - consider performance optimization">>];
+            true -> []
+        end,
+    
+    BaseRecs ++ BottleneckRecs ++ PerformanceRecs.
+
+-spec identify_critical_issues(map()) -> [binary()].
+identify_critical_issues(Analysis) ->
+    lists:foldl(fun({TransportType, TypeAnalysis}, Acc) ->
+        ErrorRate = maps:get(error_rate, TypeAnalysis, 0),
+        Bottlenecks = maps:get(bottlenecks, TypeAnalysis, []),
+        
+        Issues = 
+            if
+                ErrorRate > 25 -> 
+                    [list_to_binary(io_lib:format("CRITICAL: ~p transport error rate ~.1f%%", 
+                                                  [TransportType, ErrorRate]))];
+                true -> []
+            end ++
+            case lists:member(high_memory_usage, Bottlenecks) of
+                true -> 
+                    [list_to_binary(io_lib:format("WARNING: ~p transport high memory usage", 
+                                                  [TransportType]))];
+                false -> []
+            end,
+        Issues ++ Acc
+    end, [], maps:to_list(Analysis)).
+
+-spec generate_performance_report([metrics()], map()) -> binary().
+generate_performance_report(Metrics, Config) ->
+    Analysis = perform_bottleneck_analysis(Metrics),
+    
+    Report = [
+        "=== MCP Transport Performance Analysis Report ===\n\n",
+        format_summary(Metrics, Config),
+        "\n\n=== Transport Performance Breakdown ===\n",
+        format_transport_analysis(Analysis),
+        "\n\n=== Bottleneck Analysis ===\n",
+        format_bottleneck_analysis(Analysis),
+        "\n\n=== Recommendations ===\n",
+        format_recommendations(Analysis),
+        "\n\n=== Critical Issues ===\n",
+        format_critical_issues(Analysis),
+        "\n\n=== Test Configuration ===\n",
+        format_config(Config)
+    ],
+    
+    iolist_to_binary(Report).
+
+-spec format_summary([metrics()], map()) -> iolist().
+format_summary(Metrics, Config) ->
+    TestDuration = maps:get(test_duration, Config, 60000) div 1000,
+    TotalOperations = length(Metrics),
+    OperationsPerSec = case TestDuration of
+        0 -> 0;
+        _ -> TotalOperations / TestDuration
+    end,
+    
+    [
+        "Test Duration: ", integer_to_list(TestDuration), " seconds\n",
+        "Total Operations: ", integer_to_list(TotalOperations), "\n",
+        "Operations/sec: ", io_lib:format("~.2f", [OperationsPerSec]), "\n"
+    ].
+
+-spec format_transport_analysis(map()) -> iolist().
+format_transport_analysis(Analysis) ->
+    TransportTypes = lists:sort(maps:keys(Analysis)) -- [overall],
+    lists:map(fun(Type) ->
+        TypeAnalysis = maps:get(Type, Analysis, #{}),
+        [
+            io_lib:format("~p Transport:\n", [Type]),
+            "  Throughput: ", format_throughput(maps:get(throughput, TypeAnalysis, 0)), "\n",
+            "  P95 Latency: ", format_duration(maps:get(p95_duration, TypeAnalysis, 0)), "\n",
+            "  Error Rate: ", io_lib:format("~.2f%%", [maps:get(error_rate, TypeAnalysis, 0)]), "\n",
+            "  Peak Memory: ", format_memory(maps:get(memory_peak, TypeAnalysis, 0)), "\n\n"
+        ]
+    end, TransportTypes).
+
+-spec format_bottleneck_analysis(map()) -> iolist().
+format_bottleneck_analysis(Analysis) ->
+    Overall = maps:get(overall, Analysis, #{}),
+    Comparison = maps:get(transport_comparison, Overall, #{}),
+    
+    [
+        "Transport Comparisons:\n",
+        lists:map(fun({{T1, T2}, CompResult}) ->
+            ThroughputRatio = maps:get(throughput_ratio, CompResult, 1.0),
+            LatencyRatio = maps:get(latency_ratio, CompResult, 1.0),
+            [
+                io_lib:format("  ~p vs ~p:\n", [T1, T2]),
+                io_lib:format("    Throughput Ratio: ~.2f\n", [ThroughputRatio]),
+                io_lib:format("    Latency Ratio: ~.2f\n", [LatencyRatio])
+            ]
+        end, maps:to_list(Comparison))
+    ].
+
+-spec format_recommendations(map()) -> iolist().
+format_recommendations(Analysis) ->
+    Overall = maps:get(overall, Analysis, #{}),
+    Recommendations = maps:get(recommendations, Overall, []),
+    
+    lists:map(fun(Rec) ->
+        ["- ", Rec, "\n"]
+    end, Recommendations).
+
+-spec format_critical_issues(map()) -> iolist().
+format_critical_issues(Analysis) ->
+    Overall = maps:get(overall, Analysis, #{}),
+    Issues = maps:get(critical_issues, Overall, []),
+    
+    case Issues of
+        [] -> "No critical issues detected.\n";
+        _ ->
+            lists:map(fun(Issue) ->
+                ["! ", Issue, "\n"]
+            end, Issues)
+    end.
+
+-spec format_config(map()) -> iolist().
+format_config(Config) ->
+    [
+        "Sample Size: ", integer_to_list(maps:get(sample_size, Config, 1000)), "\n",
+        "Message Size: ", integer_to_list(maps:get(message_size, Config, 1024)), " bytes\n",
+        "Concurrent Connections: ", integer_to_list(maps:get(concurrent_connections, Config, 10)), "\n"
+    ].
+
+-spec format_throughput(float()) -> iolist().
+format_throughput(Throughput) when Throughput > 1024*1024 ->
+    io_lib:format("~.2f MB/s", [Throughput / (1024*1024)]);
+format_throughput(Throughput) when Throughput > 1024 ->
+    io_lib:format("~.2f KB/s", [Throughput / 1024]);
+format_throughput(Throughput) ->
+    io_lib:format("~.2f B/s", [Throughput]).
+
+-spec format_duration(integer()) -> iolist().
+format_duration(Duration) when Duration > 1000 ->
+    io_lib:format("~.2f ms", [Duration / 1000]);
+format_duration(Duration) ->
+    io_lib:format("~p μs", [Duration]).
+
+-spec format_memory(integer()) -> iolist().
+format_memory(Memory) when Memory > 1024*1024 ->
+    io_lib:format("~.2f MB", [Memory / (1024*1024)]);
+format_memory(Memory) when Memory > 1024 ->
+    io_lib:format("~.2f KB", [Memory / 1024]);
+format_memory(Memory) ->
+    io_lib:format("~p B", [Memory]).

@@ -1,0 +1,848 @@
+-module(erlmcp_load_generator).
+
+-behaviour(gen_server).
+
+%% API
+-export([
+    start_link/0,
+    start_link/1,
+    generate_traffic/1,
+    generate_traffic/2,
+    stop_generation/1,
+    get_metrics/1,
+    list_active_generators/0
+]).
+
+%% gen_server callbacks
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
+
+%% Internal exports
+-export([
+    generator_loop/4,
+    connection_manager_loop/2
+]).
+
+-include_lib("kernel/include/logger.hrl").
+
+-record(state, {
+    generators = #{},
+    metrics = #{},
+    config = #{}
+}).
+
+-record(generator, {
+    id,
+    pid,
+    pattern,
+    config,
+    start_time,
+    metrics = #{
+        requests_sent = 0,
+        responses_received = 0,
+        errors = 0,
+        latencies = [],
+        throughput = 0,
+        connections = 0
+    }
+}).
+
+-record(load_config, {
+    pattern = constant,           % constant, burst, ramp_up, sine_wave, random_walk, poisson
+    rate = 10,                   % requests per second
+    duration = 60000,            % milliseconds
+    message_size = small,        % small, medium, large, mixed
+    connection_type = long_lived, % long_lived, short_lived, pooled
+    workload = balanced,         % read_heavy, write_heavy, balanced, batch, stream
+    max_connections = 100,
+    batch_size = 1,
+    trace_every_request = true,
+    target_host = "localhost",
+    target_port = 8080,
+    protocol = http              % http, websocket, tcp, mcp
+}).
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+start_link() ->
+    start_link(#{}).
+
+start_link(Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
+
+%% Generate traffic with default span context
+generate_traffic(Config) ->
+    SpanCtx = otel_tracer:start_span(<<"load_generation_setup">>),
+    generate_traffic(Config, SpanCtx).
+
+%% Generate traffic with explicit span context
+generate_traffic(Config, ParentSpan) ->
+    gen_server:call(?MODULE, {generate_traffic, Config, ParentSpan}).
+
+stop_generation(GeneratorId) ->
+    gen_server:call(?MODULE, {stop_generation, GeneratorId}).
+
+get_metrics(GeneratorId) ->
+    gen_server:call(?MODULE, {get_metrics, GeneratorId}).
+
+list_active_generators() ->
+    gen_server:call(?MODULE, list_active_generators).
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+init([Config]) ->
+    process_flag(trap_exit, true),
+    ?LOG_INFO("Load generator started with config: ~p", [Config]),
+    {ok, #state{config = Config}}.
+
+handle_call({generate_traffic, Config, ParentSpan}, _From, State) ->
+    GeneratorId = generate_id(),
+    LoadConfig = parse_config(Config),
+    
+    SpanCtx = otel_tracer:start_span(ParentSpan, <<"load_generation">>),
+    otel_span:set_attributes(SpanCtx, [
+        {<<"generator_id">>, GeneratorId},
+        {<<"pattern">>, atom_to_binary(LoadConfig#load_config.pattern)},
+        {<<"rate">>, LoadConfig#load_config.rate},
+        {<<"duration">>, LoadConfig#load_config.duration},
+        {<<"message_size">>, atom_to_binary(LoadConfig#load_config.message_size)},
+        {<<"connection_type">>, atom_to_binary(LoadConfig#load_config.connection_type)},
+        {<<"workload">>, atom_to_binary(LoadConfig#load_config.workload)}
+    ]),
+    
+    case start_generator(GeneratorId, LoadConfig, SpanCtx) of
+        {ok, Pid} ->
+            Generator = #generator{
+                id = GeneratorId,
+                pid = Pid,
+                pattern = LoadConfig#load_config.pattern,
+                config = LoadConfig,
+                start_time = erlang:system_time(millisecond)
+            },
+            NewGenerators = maps:put(GeneratorId, Generator, State#state.generators),
+            {reply, {ok, GeneratorId}, State#state{generators = NewGenerators}};
+        {error, Reason} ->
+            otel_span:add_event(SpanCtx, <<"generator_start_failed">>, [
+                {<<"reason">>, atom_to_binary(Reason)}
+            ]),
+            otel_span:end_span(SpanCtx),
+            {reply, {error, Reason}, State}
+    end;
+
+handle_call({stop_generation, GeneratorId}, _From, State) ->
+    case maps:get(GeneratorId, State#state.generators, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        Generator ->
+            exit(Generator#generator.pid, shutdown),
+            NewGenerators = maps:remove(GeneratorId, State#state.generators),
+            {reply, ok, State#state{generators = NewGenerators}}
+    end;
+
+handle_call({get_metrics, GeneratorId}, _From, State) ->
+    case maps:get(GeneratorId, State#state.generators, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        Generator ->
+            Metrics = calculate_metrics(Generator),
+            {reply, {ok, Metrics}, State}
+    end;
+
+handle_call(list_active_generators, _From, State) ->
+    Generators = maps:fold(fun(Id, Gen, Acc) ->
+        [{Id, Gen#generator.pattern, Gen#generator.start_time} | Acc]
+    end, [], State#state.generators),
+    {reply, {ok, Generators}, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+handle_cast({update_metrics, GeneratorId, Metrics}, State) ->
+    case maps:get(GeneratorId, State#state.generators, undefined) of
+        undefined ->
+            {noreply, State};
+        Generator ->
+            UpdatedGenerator = Generator#generator{metrics = Metrics},
+            NewGenerators = maps:put(GeneratorId, UpdatedGenerator, State#state.generators),
+            {noreply, State#state{generators = NewGenerators}}
+    end;
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info({'EXIT', Pid, Reason}, State) ->
+    % Find and remove the generator that exited
+    NewGenerators = maps:filter(fun(_, Gen) ->
+        Gen#generator.pid =/= Pid
+    end, State#state.generators),
+    
+    ?LOG_INFO("Generator ~p exited with reason: ~p", [Pid, Reason]),
+    {noreply, State#state{generators = NewGenerators}};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+parse_config(Config) when is_map(Config) ->
+    #load_config{
+        pattern = maps:get(pattern, Config, constant),
+        rate = maps:get(rate, Config, 10),
+        duration = maps:get(duration, Config, 60000),
+        message_size = maps:get(message_size, Config, small),
+        connection_type = maps:get(connection_type, Config, long_lived),
+        workload = maps:get(workload, Config, balanced),
+        max_connections = maps:get(max_connections, Config, 100),
+        batch_size = maps:get(batch_size, Config, 1),
+        trace_every_request = maps:get(trace_every_request, Config, true),
+        target_host = maps:get(target_host, Config, "localhost"),
+        target_port = maps:get(target_port, Config, 8080),
+        protocol = maps:get(protocol, Config, http)
+    };
+parse_config(Config) ->
+    parse_config(#{}).
+
+start_generator(GeneratorId, Config, SpanCtx) ->
+    Pid = spawn_link(?MODULE, generator_loop, [GeneratorId, Config, SpanCtx, self()]),
+    {ok, Pid}.
+
+generator_loop(GeneratorId, Config, SpanCtx, Parent) ->
+    ?LOG_INFO("Starting generator ~p with pattern ~p", [GeneratorId, Config#load_config.pattern]),
+    
+    % Initialize metrics
+    Metrics = #{
+        requests_sent => 0,
+        responses_received => 0,
+        errors => 0,
+        latencies => [],
+        throughput => 0,
+        connections => 0,
+        start_time => erlang:system_time(millisecond)
+    },
+    
+    % Start connection manager
+    ConnMgr = spawn_link(?MODULE, connection_manager_loop, [Config, self()]),
+    
+    % Start generation based on pattern
+    case Config#load_config.pattern of
+        constant ->
+            generate_constant_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics);
+        burst ->
+            generate_burst_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics);
+        ramp_up ->
+            generate_ramp_up_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics);
+        sine_wave ->
+            generate_sine_wave_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics);
+        random_walk ->
+            generate_random_walk_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics);
+        poisson ->
+            generate_poisson_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics);
+        _ ->
+            ?LOG_ERROR("Unknown pattern: ~p", [Config#load_config.pattern]),
+            otel_span:add_event(SpanCtx, <<"unknown_pattern">>, [
+                {<<"pattern">>, atom_to_binary(Config#load_config.pattern)}
+            ]),
+            otel_span:end_span(SpanCtx)
+    end.
+
+generate_constant_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    Rate = Config#load_config.rate,
+    Duration = Config#load_config.duration,
+    IntervalMs = 1000 / Rate,
+    EndTime = erlang:system_time(millisecond) + Duration,
+    
+    otel_span:add_event(SpanCtx, <<"constant_load_start">>, [
+        {<<"rate">>, Rate},
+        {<<"interval_ms">>, IntervalMs}
+    ]),
+    
+    generate_loop(constant, IntervalMs, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics).
+
+generate_burst_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    BaseRate = Config#load_config.rate,
+    Duration = Config#load_config.duration,
+    BurstMultiplier = 10,
+    BurstDurationMs = 5000, % 5 second bursts
+    QuietDurationMs = 15000, % 15 second quiet periods
+    
+    otel_span:add_event(SpanCtx, <<"burst_load_start">>, [
+        {<<"base_rate">>, BaseRate},
+        {<<"burst_multiplier">>, BurstMultiplier},
+        {<<"burst_duration_ms">>, BurstDurationMs}
+    ]),
+    
+    EndTime = erlang:system_time(millisecond) + Duration,
+    burst_loop(BaseRate, BurstMultiplier, BurstDurationMs, QuietDurationMs, EndTime,
+               GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics).
+
+generate_ramp_up_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    MaxRate = Config#load_config.rate,
+    Duration = Config#load_config.duration,
+    StartTime = erlang:system_time(millisecond),
+    EndTime = StartTime + Duration,
+    
+    otel_span:add_event(SpanCtx, <<"ramp_up_load_start">>, [
+        {<<"max_rate">>, MaxRate},
+        {<<"ramp_duration">>, Duration}
+    ]),
+    
+    ramp_up_loop(0, MaxRate, StartTime, EndTime, 
+                 GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics).
+
+generate_sine_wave_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    BaseRate = Config#load_config.rate,
+    Duration = Config#load_config.duration,
+    Amplitude = BaseRate * 0.8, % 80% variation
+    PeriodMs = 30000, % 30 second period
+    StartTime = erlang:system_time(millisecond),
+    EndTime = StartTime + Duration,
+    
+    otel_span:add_event(SpanCtx, <<"sine_wave_load_start">>, [
+        {<<"base_rate">>, BaseRate},
+        {<<"amplitude">>, Amplitude},
+        {<<"period_ms">>, PeriodMs}
+    ]),
+    
+    sine_wave_loop(BaseRate, Amplitude, PeriodMs, StartTime, EndTime,
+                   GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics).
+
+generate_random_walk_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    BaseRate = Config#load_config.rate,
+    Duration = Config#load_config.duration,
+    MaxStep = BaseRate * 0.2, % 20% step size
+    MinRate = 1,
+    MaxRate = BaseRate * 2,
+    EndTime = erlang:system_time(millisecond) + Duration,
+    
+    otel_span:add_event(SpanCtx, <<"random_walk_load_start">>, [
+        {<<"base_rate">>, BaseRate},
+        {<<"max_step">>, MaxStep},
+        {<<"min_rate">>, MinRate},
+        {<<"max_rate">>, MaxRate}
+    ]),
+    
+    random_walk_loop(BaseRate, MaxStep, MinRate, MaxRate, EndTime,
+                     GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics).
+
+generate_poisson_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    Lambda = Config#load_config.rate, % Average rate
+    Duration = Config#load_config.duration,
+    EndTime = erlang:system_time(millisecond) + Duration,
+    
+    otel_span:add_event(SpanCtx, <<"poisson_load_start">>, [
+        {<<"lambda">>, Lambda}
+    ]),
+    
+    poisson_loop(Lambda, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics).
+
+% Main generation loops for each pattern
+generate_loop(Pattern, IntervalMs, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            otel_span:add_event(SpanCtx, <<"generation_complete">>, [
+                {<<"total_requests">>, maps:get(requests_sent, Metrics)},
+                {<<"total_responses">>, maps:get(responses_received, Metrics)},
+                {<<"total_errors">>, maps:get(errors, Metrics)}
+            ]),
+            otel_span:end_span(SpanCtx),
+            gen_server:cast(Parent, {update_metrics, GeneratorId, Metrics});
+        false ->
+            NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            timer:sleep(round(IntervalMs)),
+            generate_loop(Pattern, IntervalMs, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, NewMetrics)
+    end.
+
+burst_loop(BaseRate, BurstMultiplier, BurstDurationMs, QuietDurationMs, EndTime,
+           GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            otel_span:end_span(SpanCtx),
+            gen_server:cast(Parent, {update_metrics, GeneratorId, Metrics});
+        false ->
+            % Burst phase
+            BurstRate = BaseRate * BurstMultiplier,
+            BurstEndTime = min(erlang:system_time(millisecond) + BurstDurationMs, EndTime),
+            BurstMetrics = burst_phase(BurstRate, BurstEndTime, GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            
+            % Quiet phase
+            case erlang:system_time(millisecond) >= EndTime of
+                true ->
+                    otel_span:end_span(SpanCtx),
+                    gen_server:cast(Parent, {update_metrics, GeneratorId, BurstMetrics});
+                false ->
+                    QuietEndTime = min(erlang:system_time(millisecond) + QuietDurationMs, EndTime),
+                    QuietMetrics = quiet_phase(BaseRate, QuietEndTime, GeneratorId, Config, SpanCtx, ConnMgr, BurstMetrics),
+                    burst_loop(BaseRate, BurstMultiplier, BurstDurationMs, QuietDurationMs, EndTime,
+                               GeneratorId, Config, SpanCtx, Parent, ConnMgr, QuietMetrics)
+            end
+    end.
+
+ramp_up_loop(CurrentRate, MaxRate, StartTime, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            otel_span:end_span(SpanCtx),
+            gen_server:cast(Parent, {update_metrics, GeneratorId, Metrics});
+        false ->
+            Now = erlang:system_time(millisecond),
+            Progress = (Now - StartTime) / (EndTime - StartTime),
+            NewRate = round(MaxRate * Progress),
+            IntervalMs = case NewRate of
+                0 -> 1000; % Avoid division by zero
+                N -> 1000 / N
+            end,
+            NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            timer:sleep(round(IntervalMs)),
+            ramp_up_loop(NewRate, MaxRate, StartTime, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, NewMetrics)
+    end.
+
+sine_wave_loop(BaseRate, Amplitude, PeriodMs, StartTime, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            otel_span:end_span(SpanCtx),
+            gen_server:cast(Parent, {update_metrics, GeneratorId, Metrics});
+        false ->
+            Now = erlang:system_time(millisecond),
+            Phase = (2 * math:pi() * (Now - StartTime)) / PeriodMs,
+            CurrentRate = round(BaseRate + Amplitude * math:sin(Phase)),
+            IntervalMs = case CurrentRate of
+                R when R =< 0 -> 1000;
+                R -> 1000 / R
+            end,
+            NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            timer:sleep(round(IntervalMs)),
+            sine_wave_loop(BaseRate, Amplitude, PeriodMs, StartTime, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, NewMetrics)
+    end.
+
+random_walk_loop(CurrentRate, MaxStep, MinRate, MaxRate, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            otel_span:end_span(SpanCtx),
+            gen_server:cast(Parent, {update_metrics, GeneratorId, Metrics});
+        false ->
+            Step = (rand:uniform() - 0.5) * 2 * MaxStep, % Random step between -MaxStep and +MaxStep
+            NewRate = max(MinRate, min(MaxRate, CurrentRate + Step)),
+            IntervalMs = 1000 / NewRate,
+            NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            timer:sleep(round(IntervalMs)),
+            random_walk_loop(NewRate, MaxStep, MinRate, MaxRate, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, NewMetrics)
+    end.
+
+poisson_loop(Lambda, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            otel_span:end_span(SpanCtx),
+            gen_server:cast(Parent, {update_metrics, GeneratorId, Metrics});
+        false ->
+            % Generate Poisson-distributed interval
+            IntervalMs = poisson_interval(Lambda),
+            NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            timer:sleep(round(IntervalMs)),
+            poisson_loop(Lambda, EndTime, GeneratorId, Config, SpanCtx, Parent, ConnMgr, NewMetrics)
+    end.
+
+% Helper functions for burst phases
+burst_phase(Rate, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, Metrics) ->
+    IntervalMs = 1000 / Rate,
+    burst_phase_loop(IntervalMs, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, Metrics).
+
+burst_phase_loop(IntervalMs, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            Metrics;
+        false ->
+            NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            timer:sleep(round(IntervalMs)),
+            burst_phase_loop(IntervalMs, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, NewMetrics)
+    end.
+
+quiet_phase(Rate, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, Metrics) ->
+    IntervalMs = 1000 / Rate,
+    quiet_phase_loop(IntervalMs, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, Metrics).
+
+quiet_phase_loop(IntervalMs, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, Metrics) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true ->
+            Metrics;
+        false ->
+            NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
+            timer:sleep(round(IntervalMs)),
+            quiet_phase_loop(IntervalMs, EndTime, GeneratorId, Config, SpanCtx, ConnMgr, NewMetrics)
+    end.
+
+% Core request sending function with detailed tracing
+send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics) ->
+    RequestId = generate_request_id(),
+    StartTime = erlang:system_time(microsecond),
+    
+    % Create child span for this request if tracing every request
+    {RequestSpan, ShouldTrace} = case Config#load_config.trace_every_request of
+        true ->
+            Span = otel_tracer:start_span(SpanCtx, <<"load_request">>),
+            otel_span:set_attributes(Span, [
+                {<<"request_id">>, RequestId},
+                {<<"generator_id">>, GeneratorId}
+            ]),
+            {Span, true};
+        false ->
+            {undefined, false}
+    end,
+    
+    try
+        % Generate message based on configuration
+        Message = generate_message(Config, RequestId),
+        
+        % Select workload type
+        Operation = select_operation(Config#load_config.workload),
+        
+        if ShouldTrace ->
+            otel_span:set_attributes(RequestSpan, [
+                {<<"operation">>, atom_to_binary(Operation)},
+                {<<"message_size">>, byte_size(Message)},
+                {<<"connection_type">>, atom_to_binary(Config#load_config.connection_type)}
+            ]);
+           true -> ok
+        end,
+        
+        % Get or create connection
+        Connection = get_connection(ConnMgr, Config),
+        
+        % Send request
+        Result = case Config#load_config.protocol of
+            http ->
+                send_http_request(Connection, Operation, Message, RequestId);
+            websocket ->
+                send_websocket_message(Connection, Operation, Message, RequestId);
+            tcp ->
+                send_tcp_message(Connection, Operation, Message, RequestId);
+            mcp ->
+                send_mcp_request(Connection, Operation, Message, RequestId);
+            _ ->
+                send_generic_request(Connection, Operation, Message, RequestId)
+        end,
+        
+        EndTime = erlang:system_time(microsecond),
+        Latency = EndTime - StartTime,
+        
+        % Update metrics based on result
+        NewMetrics = case Result of
+            {ok, Response} ->
+                if ShouldTrace ->
+                    otel_span:add_event(RequestSpan, <<"request_success">>, [
+                        {<<"latency_us">>, Latency},
+                        {<<"response_size">>, response_size(Response)}
+                    ]);
+                   true -> ok
+                end,
+                update_success_metrics(Metrics, Latency);
+            {error, Reason} ->
+                if ShouldTrace ->
+                    otel_span:add_event(RequestSpan, <<"request_error">>, [
+                        {<<"reason">>, atom_to_binary(Reason)},
+                        {<<"latency_us">>, Latency}
+                    ]);
+                   true -> ok
+                end,
+                update_error_metrics(Metrics, Reason)
+        end,
+        
+        if ShouldTrace ->
+            otel_span:end_span(RequestSpan);
+           true -> ok
+        end,
+        
+        NewMetrics
+        
+    catch
+        Error:Reason:Stacktrace ->
+            if ShouldTrace ->
+                otel_span:record_exception(RequestSpan, Error, Reason, Stacktrace),
+                otel_span:end_span(RequestSpan);
+               true -> ok
+            end,
+            update_error_metrics(Metrics, {Error, Reason})
+    end.
+
+% Message generation functions
+generate_message(Config, RequestId) ->
+    BaseContent = #{
+        <<"request_id">> => RequestId,
+        <<"timestamp">> => erlang:system_time(millisecond),
+        <<"generator">> => <<"erlmcp_load_generator">>
+    },
+    
+    case Config#load_config.message_size of
+        small ->
+            jsx:encode(BaseContent#{<<"data">> => <<"small_payload">>});
+        medium ->
+            LargeData = binary:copy(<<"x">>, 1024), % 1KB
+            jsx:encode(BaseContent#{<<"data">> => LargeData});
+        large ->
+            LargeData = binary:copy(<<"x">>, 1024 * 1024), % 1MB
+            jsx:encode(BaseContent#{<<"data">> => LargeData});
+        mixed ->
+            Size = case rand:uniform(100) of
+                N when N =< 70 -> small;
+                N when N =< 95 -> medium;
+                _ -> large
+            end,
+            generate_message(Config#load_config{message_size = Size}, RequestId)
+    end.
+
+select_operation(Workload) ->
+    case Workload of
+        read_heavy ->
+            case rand:uniform(100) of
+                N when N =< 90 -> read;
+                _ -> write
+            end;
+        write_heavy ->
+            case rand:uniform(100) of
+                N when N =< 90 -> write;
+                _ -> read
+            end;
+        balanced ->
+            case rand:uniform(2) of
+                1 -> read;
+                2 -> write
+            end;
+        batch ->
+            batch_operation;
+        stream ->
+            stream_operation
+    end.
+
+% Connection management
+connection_manager_loop(Config, Parent) ->
+    Connections = #{},
+    connection_manager_loop(Config, Parent, Connections).
+
+connection_manager_loop(Config, Parent, Connections) ->
+    receive
+        {get_connection, From} ->
+            Connection = get_or_create_connection(Config, Connections),
+            From ! {connection, Connection},
+            connection_manager_loop(Config, Parent, Connection);
+        {release_connection, ConnId} ->
+            NewConnections = release_connection(ConnId, Connections),
+            connection_manager_loop(Config, Parent, NewConnections);
+        stop ->
+            cleanup_connections(Connections),
+            ok;
+        _ ->
+            connection_manager_loop(Config, Parent, Connections)
+    end.
+
+get_connection(ConnMgrPid, Config) ->
+    ConnMgrPid ! {get_connection, self()},
+    receive
+        {connection, Connection} -> Connection
+    after 5000 ->
+        {error, timeout}
+    end.
+
+get_or_create_connection(Config, Connections) ->
+    case Config#load_config.connection_type of
+        long_lived ->
+            case maps:get(main_connection, Connections, undefined) of
+                undefined ->
+                    Conn = create_connection(Config),
+                    maps:put(main_connection, Conn, Connections);
+                Conn ->
+                    Connections
+            end;
+        short_lived ->
+            create_connection(Config);
+        pooled ->
+            % Simple round-robin connection pooling
+            MaxConns = Config#load_config.max_connections,
+            ConnId = rand:uniform(MaxConns),
+            case maps:get(ConnId, Connections, undefined) of
+                undefined ->
+                    Conn = create_connection(Config),
+                    maps:put(ConnId, Conn, Connections);
+                Conn ->
+                    Connections
+            end
+    end.
+
+create_connection(Config) ->
+    #{
+        id => generate_id(),
+        type => Config#load_config.protocol,
+        host => Config#load_config.target_host,
+        port => Config#load_config.target_port,
+        created_at => erlang:system_time(millisecond),
+        requests_sent => 0
+    }.
+
+% Protocol-specific request handlers
+send_http_request(Connection, Operation, Message, RequestId) ->
+    % Simulate HTTP request
+    Latency = rand:uniform(100) + 10, % 10-110ms
+    timer:sleep(Latency),
+    
+    case rand:uniform(100) of
+        N when N =< 95 -> {ok, #{status => 200, body => <<"success">>, size => 100}};
+        N when N =< 98 -> {error, timeout};
+        _ -> {error, server_error}
+    end.
+
+send_websocket_message(Connection, Operation, Message, RequestId) ->
+    % Simulate WebSocket message
+    Latency = rand:uniform(50) + 5, % 5-55ms
+    timer:sleep(Latency),
+    
+    case rand:uniform(100) of
+        N when N =< 97 -> {ok, #{type => response, data => <<"ws_response">>, size => 50}};
+        N when N =< 99 -> {error, connection_closed};
+        _ -> {error, frame_error}
+    end.
+
+send_tcp_message(Connection, Operation, Message, RequestId) ->
+    % Simulate TCP message
+    Latency = rand:uniform(30) + 2, % 2-32ms
+    timer:sleep(Latency),
+    
+    case rand:uniform(100) of
+        N when N =< 98 -> {ok, #{data => <<"tcp_response">>, size => 64}};
+        _ -> {error, connection_reset}
+    end.
+
+send_mcp_request(Connection, Operation, Message, RequestId) ->
+    % Simulate MCP request
+    Latency = rand:uniform(200) + 20, % 20-220ms (higher latency for MCP processing)
+    timer:sleep(Latency),
+    
+    case rand:uniform(100) of
+        N when N =< 93 -> {ok, #{jsonrpc => <<"2.0">>, result => #{}, id => RequestId, size => 150}};
+        N when N =< 97 -> {error, method_not_found};
+        N when N =< 99 -> {error, invalid_params};
+        _ -> {error, internal_error}
+    end.
+
+send_generic_request(Connection, Operation, Message, RequestId) ->
+    % Generic request simulation
+    Latency = rand:uniform(100) + 10,
+    timer:sleep(Latency),
+    
+    case rand:uniform(100) of
+        N when N =< 95 -> {ok, #{response => <<"generic_response">>, size => 80}};
+        _ -> {error, generic_error}
+    end.
+
+% Metrics calculation
+update_success_metrics(Metrics, Latency) ->
+    RequestsSent = maps:get(requests_sent, Metrics) + 1,
+    ResponsesReceived = maps:get(responses_received, Metrics) + 1,
+    Latencies = [Latency | maps:get(latencies, Metrics)],
+    
+    Metrics#{
+        requests_sent => RequestsSent,
+        responses_received => ResponsesReceived,
+        latencies => lists:sublist(Latencies, 1000) % Keep last 1000 measurements
+    }.
+
+update_error_metrics(Metrics, Reason) ->
+    RequestsSent = maps:get(requests_sent, Metrics) + 1,
+    Errors = maps:get(errors, Metrics) + 1,
+    
+    Metrics#{
+        requests_sent => RequestsSent,
+        errors => Errors
+    }.
+
+calculate_metrics(Generator) ->
+    Metrics = Generator#generator.metrics,
+    CurrentTime = erlang:system_time(millisecond),
+    Duration = CurrentTime - Generator#generator.start_time,
+    
+    RequestsSent = maps:get(requests_sent, Metrics),
+    ResponsesReceived = maps:get(responses_received, Metrics),
+    Errors = maps:get(errors, Metrics),
+    Latencies = maps:get(latencies, Metrics),
+    
+    Throughput = case Duration > 0 of
+        true -> (RequestsSent * 1000) / Duration;
+        false -> 0
+    end,
+    
+    {AvgLatency, P50, P95, P99} = case Latencies of
+        [] -> {0, 0, 0, 0};
+        _ ->
+            SortedLatencies = lists:sort(Latencies),
+            Len = length(SortedLatencies),
+            Avg = lists:sum(SortedLatencies) / Len,
+            P50Val = lists:nth(max(1, round(Len * 0.5)), SortedLatencies),
+            P95Val = lists:nth(max(1, round(Len * 0.95)), SortedLatencies),
+            P99Val = lists:nth(max(1, round(Len * 0.99)), SortedLatencies),
+            {Avg, P50Val, P95Val, P99Val}
+    end,
+    
+    #{
+        generator_id => Generator#generator.id,
+        pattern => Generator#generator.pattern,
+        duration_ms => Duration,
+        requests_sent => RequestsSent,
+        responses_received => ResponsesReceived,
+        errors => Errors,
+        success_rate => case RequestsSent > 0 of
+            true -> ResponsesReceived / RequestsSent;
+            false -> 0
+        end,
+        throughput_rps => Throughput,
+        avg_latency_us => AvgLatency,
+        p50_latency_us => P50,
+        p95_latency_us => P95,
+        p99_latency_us => P99,
+        start_time => Generator#generator.start_time
+    }.
+
+% Utility functions
+generate_id() ->
+    list_to_binary(io_lib:format("~p_~p", [erlang:system_time(microsecond), rand:uniform(1000000)])).
+
+generate_request_id() ->
+    list_to_binary(io_lib:format("req_~p_~p", [erlang:system_time(microsecond), rand:uniform(1000)])).
+
+poisson_interval(Lambda) ->
+    % Generate Poisson-distributed interval
+    U = rand:uniform(),
+    (-1000 * math:log(1 - U)) / Lambda.
+
+response_size(Response) when is_map(Response) ->
+    maps:get(size, Response, 0);
+response_size(_) ->
+    0.
+
+atom_to_binary(Atom) when is_atom(Atom) ->
+    list_to_binary(atom_to_list(Atom));
+atom_to_binary(Binary) when is_binary(Binary) ->
+    Binary.
+
+release_connection(ConnId, Connections) ->
+    maps:remove(ConnId, Connections).
+
+cleanup_connections(Connections) ->
+    % Close all connections
+    maps:fold(fun(_, Conn, Acc) ->
+        % In a real implementation, this would close actual connections
+        ok
+    end, ok, Connections).

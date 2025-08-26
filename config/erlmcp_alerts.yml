@@ -1,0 +1,164 @@
+# Prometheus alerting rules for ErlMCP
+groups:
+- name: erlmcp.rules
+  rules:
+  # System health alerts
+  - alert: HighCPUUsage
+    expr: system_cpu_utilization > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage detected"
+      description: "CPU utilization is above 80% for more than 5 minutes"
+
+  - alert: HighMemoryUsage
+    expr: (system_memory_bytes{type="total"} - system_memory_bytes{type="free"}) / system_memory_bytes{type="total"} * 100 > 85
+    for: 3m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High memory usage"
+      description: "Memory usage is above 85% for more than 3 minutes"
+
+  - alert: ProcessLimitApproaching
+    expr: system_process_count / system_process_limit * 100 > 80
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Process limit approaching"
+      description: "Process count is above 80% of limit"
+
+  # Transport alerts
+  - alert: HighErrorRate
+    expr: transport_metric{metric="error_rate"} > 0.05
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "High error rate on {{ $labels.transport }}"
+      description: "Error rate is above 5% for transport {{ $labels.transport }}"
+
+  - alert: LowRequestRate
+    expr: rate(transport_metric{metric="requests_per_second"}[5m]) < 10
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low request rate"
+      description: "Request rate dropped below 10 req/s on {{ $labels.transport }}"
+
+  # Queue alerts
+  - alert: HighQueueDepth
+    expr: queue_metric{metric="depth"} > 1000
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High queue depth"
+      description: "Queue {{ $labels.queue }} depth is above 1000"
+
+  - alert: QueueStalled
+    expr: increase(queue_metric{metric="depth"}[5m]) > 100
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Queue appears stalled"
+      description: "Queue {{ $labels.queue }} depth increased by more than 100 in 5 minutes"
+
+  # Business metric alerts
+  - alert: LowSuccessRate
+    expr: business_metric{metric="success_rate"} < 0.95
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Low success rate"
+      description: "Success rate dropped below 95% for operation {{ $labels.operation }}"
+
+  - alert: HighProcessingTime
+    expr: histogram_quantile(0.95, timer_duration_microseconds_bucket) > 1000000
+    for: 3m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High processing time"
+      description: "95th percentile processing time is above 1 second"
+
+  # SLA alerts
+  - alert: SLABreach
+    expr: sla_metric{metric="uptime_percentage"} < 99.0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "SLA breach detected"
+      description: "Service {{ $labels.service }} uptime dropped below 99%"
+
+  - alert: HighResponseTime
+    expr: sla_metric{metric="response_time_p95"} > 500
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High response time"
+      description: "95th percentile response time for {{ $labels.service }} is above 500ms"
+
+  # System resource alerts
+  - alert: HighContextSwitches
+    expr: rate(system_context_switches[1m]) > 10000
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High context switch rate"
+      description: "Context switches per second is above 10,000"
+
+  - alert: ExcessiveGC
+    expr: rate(system_gc_count[1m]) > 100
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Excessive garbage collection"
+      description: "GC rate is above 100 collections per minute"
+
+  - alert: HighIOLoad
+    expr: rate(system_io_input_bytes[1m]) + rate(system_io_output_bytes[1m]) > 100000000
+    for: 3m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High I/O load"
+      description: "Combined I/O rate is above 100MB/s"
+
+  # Connection pool alerts
+  - alert: ConnectionPoolExhausted
+    expr: connection_pool_metric{metric="active_connections"} / (connection_pool_metric{metric="active_connections"} + connection_pool_metric{metric="idle_connections"}) > 0.9
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Connection pool nearly exhausted"
+      description: "Pool {{ $labels.pool }} is above 90% utilization"
+
+  - alert: HighPendingRequests
+    expr: connection_pool_metric{metric="pending_requests"} > 50
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High pending requests"
+      description: "Pool {{ $labels.pool }} has more than 50 pending requests"
+
+  # Anomaly detection alerts
+  - alert: MetricAnomaly
+    expr: abs(rate(system_memory_bytes{type="total"}[5m])) > 1000000
+    for: 1m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Metric anomaly detected"
+      description: "Unusual change in system metrics detected"

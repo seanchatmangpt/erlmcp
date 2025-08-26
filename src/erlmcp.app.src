@@ -14,7 +14,10 @@
       ssl,
       inets,
       jsx,
-      jesse
+      jesse,
+      opentelemetry_api,
+      opentelemetry,
+      opentelemetry_exporter
   ]},
   {mod, {erlmcp_app, []}},
   {env, [
