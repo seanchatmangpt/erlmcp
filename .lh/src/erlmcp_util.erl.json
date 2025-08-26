@@ -1,0 +1,22 @@
+{
+    "sourceFile": "src/erlmcp_util.erl",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1756190395710,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1756190592733,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -3,14 +3,14 @@\n -export([create_transport_id/2, get_process_status/1, list_supported_transport_types/0,\n          get_config_examples/0]).\n \n create_transport_id(ServerId, TypeBin) ->\n-    erlmcp:create_transport_id(ServerId, TypeBin).\n+  erlmcp:create_transport_id(ServerId, TypeBin).\n \n get_process_status(Pid) ->\n-    erlmcp:get_process_status(Pid).\n+  erlmcp:get_process_status(Pid).\n \n list_supported_transport_types() ->\n-    erlmcp:list_supported_transport_types().\n+  erlmcp:list_supported_transport_types().\n \n get_config_examples() ->\n-    erlmcp:get_config_examples().\n+  erlmcp:get_config_examples().\n"
+                }
+            ],
+            "date": 1756190395710,
+            "name": "Commit-0",
+            "content": "-module(erlmcp_util).\n\n-export([create_transport_id/2, get_process_status/1, list_supported_transport_types/0,\n         get_config_examples/0]).\n\ncreate_transport_id(ServerId, TypeBin) ->\n    erlmcp:create_transport_id(ServerId, TypeBin).\n\nget_process_status(Pid) ->\n    erlmcp:get_process_status(Pid).\n\nlist_supported_transport_types() ->\n    erlmcp:list_supported_transport_types().\n\nget_config_examples() ->\n    erlmcp:get_config_examples().\n"
+        }
+    ]
+}

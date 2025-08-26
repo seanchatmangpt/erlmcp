@@ -1,6 +1,6 @@
 %%%-------------------------------------------------------------------
 %%% @doc
-%%% Common Test suite for erlmcp_transport_tcp_new module
+%%% Common Test suite for erlmcp_transport_tcp module
 %%%
 %%% This comprehensive test suite covers all aspects of the TCP transport
 %%% including behavior compliance, connection management, error handling,
@@ -17,7 +17,7 @@
 -export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2,
          end_per_group/2, init_per_testcase/2, end_per_testcase/2]).
 %% Test cases
--export([basic_startup_test/1, basic_send_test/1, basic_close_test/1, get_state_test/1,
+-export([basic_startup_test/1, basic_send_test/1, basic_close_test/1, enhanced_info_test/1,
          get_info_test/1, transport_behavior_send/1, transport_behavior_close/1, 
          transport_behavior_get_info/1, transport_behavior_handle_transport_call/1,
          registry_registration/1, registry_unregistration/1, registry_message_routing/1,
@@ -49,7 +49,7 @@ all() ->
 groups() ->
     [{basic_functionality,
       [parallel],
-      [basic_startup_test, basic_send_test, basic_close_test, get_state_test, get_info_test]},
+      [basic_startup_test, basic_send_test, basic_close_test, enhanced_info_test, get_info_test]},
      {transport_behavior,
       [sequential],
       [transport_behavior_send,
@@ -148,16 +148,16 @@ basic_startup_test(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     ?assert(is_pid(Pid)),
     ?assert(is_process_alive(Pid)),
 
-    % Verify state
-    {ok, State} = gen_server:call(Pid, get_state),
-    ?assertMatch(#{transport_id := TransportId}, maps:from_list([
-        {transport_id, element(2, State)},
-        {test_mode, element(13, State)}
-    ])),
+    % Verify transport info instead of internal state
+    Info = erlmcp_transport_tcp:get_info(Pid),
+    ?assertMatch(#{transport_id := TransportId}, Info),
+    ?assertMatch(#{type := tcp}, Info),
+    ?assertMatch(#{test_mode := true}, Info),
+    ?assertMatch(#{status := running}, Info),
 
     ok = gen_server:stop(Pid),
     ok.
@@ -166,12 +166,12 @@ basic_send_test(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
-    {ok, State} = gen_server:call(Pid, get_state),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
-    % Test sending in test mode (should succeed without actual socket)
-    ?assertEqual(ok, erlmcp_transport_tcp_new:send(State, <<"test message">>)),
-    ?assertEqual(ok, erlmcp_transport_tcp_new:send(State, "test string")),
+    % Test sending via PID in test mode (should succeed without actual socket)
+    ?assertEqual(ok, erlmcp_transport_tcp:send(Pid, <<"test message">>)),
+    ?assertEqual(ok, erlmcp_transport_tcp:send(Pid, "test string")),
+    ?assertEqual(ok, erlmcp_transport_tcp:send(Pid, [<<"iolist">>, " data"])),
 
     ok = gen_server:stop(Pid),
     ok.
@@ -180,25 +180,48 @@ basic_close_test(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
-    {ok, State} = gen_server:call(Pid, get_state),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
-    % Test close operation
-    ?assertEqual(ok, erlmcp_transport_tcp_new:close(State)),
+    % Test close operation via PID
+    ?assertEqual(ok, erlmcp_transport_tcp:close(Pid)),
+
+    % Verify transport still responds
+    Info = erlmcp_transport_tcp:get_info(Pid),
+    ?assertMatch(#{type := tcp}, Info),
 
     ok = gen_server:stop(Pid),
     ok.
 
-get_state_test(Config) ->
+enhanced_info_test(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
-    {ok, State} = gen_server:call(Pid, get_state),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
-    % Verify state structure
-    ?assert(is_tuple(State)),
-    ?assert(tuple_size(State) > 5), % Should have multiple fields
+    % Test enhanced get_info functionality
+    Info = erlmcp_transport_tcp:get_info(Pid),
+    
+    % Verify required fields
+    ?assertMatch(#{transport_id := TransportId}, Info),
+    ?assertMatch(#{type := tcp}, Info),
+    ?assertMatch(#{test_mode := true}, Info),
+    ?assertMatch(#{status := running}, Info),
+    
+    % Verify connection info structure
+    ?assert(maps:is_key(connection, Info)),
+    Connection = maps:get(connection, Info),
+    ?assertMatch(#{host := "127.0.0.1"}, Connection),
+    ?assertMatch(#{port := 8080}, Connection),
+    ?assertMatch(#{connected := false}, Connection),
+    ?assertMatch(#{reconnect_attempts := 0}, Connection),
+    ?assert(maps:is_key(uptime, Connection)),
+    
+    % Verify statistics structure
+    ?assert(maps:is_key(statistics, Info)),
+    Stats = maps:get(statistics, Info),
+    ?assert(maps:is_key(messages_sent, Stats)),
+    ?assert(maps:is_key(messages_received, Stats)),
+    ?assert(maps:is_key(errors, Stats)),
 
     ok = gen_server:stop(Pid),
     ok.
@@ -207,14 +230,14 @@ get_info_test(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
-    Info = erlmcp_transport_tcp_new:get_info(Pid),
+    Info = erlmcp_transport_tcp:get_info(Pid),
     ?assert(is_map(Info)),
     ?assertMatch(#{type := tcp}, Info),
     ?assertMatch(#{transport_id := TransportId}, Info),
-    ?assertMatch(#{host := "127.0.0.1"}, Info),
-    ?assertMatch(#{port := 8080}, Info),
+    ?assertMatch(#{connection := #{host := "127.0.0.1"}}, Info),
+    ?assertMatch(#{connection := #{port := 8080}}, Info),
 
     ok = gen_server:stop(Pid),
     ok.
@@ -227,7 +250,7 @@ transport_behavior_send(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     {ok, State} = gen_server:call(Pid, get_state),
 
     % Test different data types
@@ -238,7 +261,7 @@ transport_behavior_send(Config) ->
     ],
 
     lists:foreach(fun(Data) ->
-        ?assertEqual(ok, erlmcp_transport_tcp_new:send(State, Data))
+        ?assertEqual(ok, erlmcp_transport_tcp:send(State, Data))
     end, TestCases),
 
     ok = gen_server:stop(Pid),
@@ -254,10 +277,10 @@ transport_behavior_close(Config) ->
     ],
 
     lists:foreach(fun(TestConfig) ->
-        case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig) of
+        case erlmcp_transport_tcp:start_link(TransportId, TestConfig) of
             {ok, Pid} ->
                 {ok, State} = gen_server:call(Pid, get_state),
-                ?assertEqual(ok, erlmcp_transport_tcp_new:close(State)),
+                ?assertEqual(ok, erlmcp_transport_tcp:close(State)),
                 ok = gen_server:stop(Pid);
             {error, _} ->
                 % Expected for invalid configurations
@@ -271,10 +294,10 @@ transport_behavior_get_info(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     {ok, State} = gen_server:call(Pid, get_state),
 
-    Info = erlmcp_transport_tcp_new:get_info(State),
+    Info = erlmcp_transport_tcp:get_info(State),
 
     ?assertMatch(#{type := tcp}, Info),
     ?assertMatch(#{status := running}, Info),
@@ -288,11 +311,15 @@ transport_behavior_handle_transport_call(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
+
+    % Test transport call - should handle properly
+    Response = gen_server:call(Pid, {transport_call, get_stats}),
+    ?assertMatch({reply, {reply, {ok, _}, _}}, Response),
 
     % Test unknown call - should return error
-    {reply, {error, unknown_request}, _} = 
-        gen_server:call(Pid, {unknown_transport_call, test}),
+    UnknownResponse = gen_server:call(Pid, {transport_call, unknown_request}),
+    ?assertMatch({reply, {error, unknown_request}}, UnknownResponse),
 
     ok = gen_server:stop(Pid),
     ok.
@@ -305,7 +332,7 @@ registry_registration(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Wait for registration to complete
     timer:sleep(100),
@@ -326,7 +353,7 @@ registry_unregistration(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     timer:sleep(100),
 
     % Verify registered (if registry is available)
@@ -346,7 +373,7 @@ registry_message_routing(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     timer:sleep(100),
 
     % Test message sending through registry
@@ -377,7 +404,7 @@ config_validation(Config) ->
     lists:foreach(fun(TestConfig) ->
         TransportId = list_to_atom("test_" ++ integer_to_list(erlang:unique_integer([positive]))),
         try
-            {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+            {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
             ?assert(is_process_alive(Pid)),
             ok = gen_server:stop(Pid)
         catch
@@ -389,14 +416,14 @@ config_validation(Config) ->
 
 config_defaults(Config) ->
     TransportId = ?config(transport_id, Config),
-    MinimalConfig = #{test_mode => true},  % Minimal config
+    MinimalConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},  % Valid minimal config
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, MinimalConfig),
-    Info = erlmcp_transport_tcp_new:get_info(Pid),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, MinimalConfig),
+    Info = erlmcp_transport_tcp:get_info(Pid),
 
-    % Verify default values are applied
-    ?assertMatch(#{port := 8080}, Info),  % Default port
-    ?assertMatch(#{host := "127.0.0.1"}, Info),  % Default host
+    % Verify basic configuration is applied
+    ?assertMatch(#{connection := #{port := 8080}}, Info),
+    ?assertMatch(#{connection := #{host := "127.0.0.1"}}, Info),
 
     ok = gen_server:stop(Pid),
     ok.
@@ -406,16 +433,16 @@ test_mode_startup(Config) ->
 
     % Test mode enabled
     TestConfig1 = #{test_mode => true, host => "127.0.0.1", port => 8080},
-    {ok, Pid1} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig1),
+    {ok, Pid1} = erlmcp_transport_tcp:start_link(TransportId, TestConfig1),
     
-    Info1 = erlmcp_transport_tcp_new:get_info(Pid1),
+    Info1 = erlmcp_transport_tcp:get_info(Pid1),
     ?assertMatch(#{test_mode := true}, Info1),
 
     ok = gen_server:stop(Pid1),
 
     % Test mode disabled (should attempt real connection and may fail)
     TestConfig2 = #{test_mode => false, host => "127.0.0.1", port => 9999},
-    case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig2) of
+    case erlmcp_transport_tcp:start_link(TransportId, TestConfig2) of
         {ok, Pid2} ->
             ok = gen_server:stop(Pid2);
         {error, _Reason} ->
@@ -437,11 +464,13 @@ connection_parameters(Config) ->
 
     lists:foreach(fun(TestConfig) ->
         TestId = list_to_atom("test_" ++ integer_to_list(erlang:unique_integer([positive]))),
-        {ok, Pid} = erlmcp_transport_tcp_new:start_link(TestId, TestConfig),
-        Info = erlmcp_transport_tcp_new:get_info(Pid),
+        {ok, Pid} = erlmcp_transport_tcp:start_link(TestId, TestConfig),
+        Info = erlmcp_transport_tcp:get_info(Pid),
         
-        ?assert(maps:is_key(host, Info)),
-        ?assert(maps:is_key(port, Info)),
+        ?assert(maps:is_key(connection, Info)),
+        Connection = maps:get(connection, Info),
+        ?assert(maps:is_key(host, Connection)),
+        ?assert(maps:is_key(port, Connection)),
         
         ok = gen_server:stop(Pid)
     end, TestCases),
@@ -455,11 +484,11 @@ error_handling_no_socket(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     {ok, State} = gen_server:call(Pid, get_state),
 
     % In test mode, socket operations should succeed
-    ?assertEqual(ok, erlmcp_transport_tcp_new:send(State, <<"test">>)),
+    ?assertEqual(ok, erlmcp_transport_tcp:send(State, <<"test">>)),
 
     ok = gen_server:stop(Pid),
     ok.
@@ -469,7 +498,7 @@ error_handling_connection_refused(Config) ->
     % Try to connect to a port that should be closed
     TestConfig = #{test_mode => false, host => "127.0.0.1", port => 9999},
 
-    case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig) of
+    case erlmcp_transport_tcp:start_link(TransportId, TestConfig) of
         {ok, Pid} ->
             ct:pal("Unexpected success connecting to closed port"),
             ok = gen_server:stop(Pid);
@@ -483,7 +512,7 @@ error_handling_socket_error(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Simulate socket error
     Pid ! {tcp_error, fake_socket, connection_lost},
@@ -506,7 +535,7 @@ error_handling_invalid_host(Config) ->
     % Test with invalid host
     TestConfig = #{test_mode => false, host => "invalid.host.that.does.not.exist", port => 8080},
 
-    case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig) of
+    case erlmcp_transport_tcp:start_link(TransportId, TestConfig) of
         {ok, Pid} ->
             ct:pal("Unexpected success with invalid host"),
             ok = gen_server:stop(Pid);
@@ -527,7 +556,7 @@ message_parsing(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Send various message formats
     TestMessages = [
@@ -551,7 +580,7 @@ message_buffering(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Send partial messages that need buffering
     gen_server:cast(Pid, {data, <<"partial">>}),
@@ -569,7 +598,7 @@ line_extraction(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Test various line formats
     TestData = [
@@ -593,7 +622,7 @@ large_message_handling(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Create large message (1MB)
     LargeMessage = binary:copy(<<"X">>, 1024 * 1024),
@@ -620,12 +649,12 @@ connection_establishment(Config) ->
     % Test connection to real test server
     TestConfig = #{test_mode => false, host => TestHost, port => TestPort},
 
-    case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig) of
+    case erlmcp_transport_tcp:start_link(TransportId, TestConfig) of
         {ok, Pid} ->
-            Info = erlmcp_transport_tcp_new:get_info(Pid),
+            Info = erlmcp_transport_tcp:get_info(Pid),
             ?assertMatch(#{type := tcp}, Info),
-            ?assertMatch(#{host := TestHost}, Info),
-            ?assertMatch(#{port := TestPort}, Info),
+            ?assertMatch(#{connection := #{host := TestHost}}, Info),
+            ?assertMatch(#{connection := #{port := TestPort}}, Info),
             
             ok = gen_server:stop(Pid);
         {error, Reason} ->
@@ -641,7 +670,7 @@ connection_failure_handling(Config) ->
     % Test connection to non-existent server
     TestConfig = #{test_mode => false, host => "127.0.0.1", port => 9998},
 
-    case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig) of
+    case erlmcp_transport_tcp:start_link(TransportId, TestConfig) of
         {ok, Pid} ->
             ct:pal("Unexpected connection success"),
             ok = gen_server:stop(Pid);
@@ -656,8 +685,8 @@ socket_options_validation(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
-    Info = erlmcp_transport_tcp_new:get_info(Pid),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
+    Info = erlmcp_transport_tcp:get_info(Pid),
     
     % Verify basic configuration is present
     ?assert(maps:is_key(config, Info)),
@@ -674,7 +703,7 @@ supervisor_integration(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     ?assert(is_process_alive(Pid)),
 
     % Verify clean shutdown
@@ -686,7 +715,7 @@ graceful_shutdown(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => false, host => "127.0.0.1", port => 9997},
 
-    case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig) of
+    case erlmcp_transport_tcp:start_link(TransportId, TestConfig) of
         {ok, Pid} ->
             % Test graceful shutdown
             ok = gen_server:stop(Pid),
@@ -702,7 +731,7 @@ abnormal_termination(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     
     % Kill the transport process
     exit(Pid, kill),
@@ -719,7 +748,7 @@ high_volume_messages(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     
     % Send many messages quickly
     MessageCount = 1000,
@@ -750,7 +779,7 @@ memory_usage(Config) ->
     % Measure memory before
     {memory, MemBefore} = erlang:process_info(self(), memory),
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
     timer:sleep(100),
 
     % Measure transport memory
@@ -768,13 +797,13 @@ latency_measurement(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Measure latency for get_info calls
     MessageCount = 100,
     Latencies = lists:map(fun(_N) ->
         StartTime = erlang:monotonic_time(microsecond),
-        _Info = erlmcp_transport_tcp_new:get_info(Pid),
+        _Info = erlmcp_transport_tcp:get_info(Pid),
         EndTime = erlang:monotonic_time(microsecond),
         EndTime - StartTime
     end, lists:seq(1, MessageCount)),
@@ -808,7 +837,7 @@ concurrent_connections(Config) ->
     Pids = [
         begin
             TransportId = list_to_atom("transport_" ++ integer_to_list(N)),
-            {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, Config),
+            {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
             spawn(fun() ->
                 lists:foreach(fun(I) ->
                     Message = iolist_to_binary([<<"msg_">>, integer_to_list(I), <<"\n">>]),
@@ -843,7 +872,7 @@ stress_test(Config) ->
     TransportId = ?config(transport_id, Config),
     TestConfig = #{test_mode => true, host => "127.0.0.1", port => 8080},
 
-    {ok, Pid} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig),
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, TestConfig),
 
     % Multiple concurrent operations
     NumClients = 3,
@@ -856,7 +885,7 @@ stress_test(Config) ->
                 % Mix of different operations
                 case N rem 3 of
                     0 -> 
-                        _Info = erlmcp_transport_tcp_new:get_info(Pid);
+                        _Info = erlmcp_transport_tcp:get_info(Pid);
                     1 -> 
                         Message = iolist_to_binary([<<"stress_">>, integer_to_list(N), <<"\n">>]),
                         gen_server:cast(Pid, {data, Message});
@@ -899,14 +928,14 @@ socket_cleanup(Config) ->
     
     % Test cleanup in test mode
     TestConfig1 = #{test_mode => true, host => "127.0.0.1", port => 8080},
-    {ok, Pid1} = erlmcp_transport_tcp_new:start_link(TransportId, TestConfig1),
+    {ok, Pid1} = erlmcp_transport_tcp:start_link(TransportId, TestConfig1),
     ok = gen_server:stop(Pid1),
     timer:sleep(100),
     ?assertNot(is_process_alive(Pid1)),
 
     % Test cleanup with potential real socket (may fail to create)
     TestConfig2 = #{test_mode => false, host => "127.0.0.1", port => 9996},
-    case erlmcp_transport_tcp_new:start_link(TransportId, TestConfig2) of
+    case erlmcp_transport_tcp:start_link(TransportId, TestConfig2) of
         {ok, Pid2} ->
             ok = gen_server:stop(Pid2),
             timer:sleep(100),

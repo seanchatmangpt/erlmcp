@@ -27,7 +27,10 @@
          message_buffering/1, line_trimming/1, empty_line_handling/1, supervisor_integration/1,
          graceful_shutdown/1, abnormal_termination/1, high_volume_messages/1, memory_usage/1,
          latency_measurement/1, end_to_end_communication/1, concurrent_operations/1,
-         stress_test/1]).    % Basic functionality
+         stress_test/1,
+         supervisor_restart_transport/1, supervisor_crash_recovery/1, supervisor_child_spec/1,
+         config_edge_cases/1, buffer_edge_cases/1, message_edge_cases/1,
+         reader_crash_recovery/1, registry_unavailable_recovery/1, message_flood_recovery/1]).    % Basic functionality
 
     % Transport behavior tests
 
@@ -58,7 +61,10 @@ all() ->
      {group, message_processing},
      {group, lifecycle},
      {group, performance},
-     {group, integration}].
+     {group, integration},
+     {group, supervisor_tests},
+     {group, validation_edge_cases},
+     {group, recovery_scenarios}].
 
 groups() ->
     [{basic_functionality,
@@ -94,7 +100,16 @@ groups() ->
      {performance, [sequential], [high_volume_messages, memory_usage, latency_measurement]},
      {integration,
       [sequential],
-      [end_to_end_communication, concurrent_operations, stress_test]}].
+      [end_to_end_communication, concurrent_operations, stress_test]},
+     {supervisor_tests,
+      [sequential],
+      [supervisor_restart_transport, supervisor_crash_recovery, supervisor_child_spec]},
+     {validation_edge_cases,
+      [parallel],
+      [config_edge_cases, buffer_edge_cases, message_edge_cases]},
+     {recovery_scenarios,
+      [sequential],
+      [reader_crash_recovery, registry_unavailable_recovery, message_flood_recovery]}].
 
 %%====================================================================
 %% Suite Setup/Teardown

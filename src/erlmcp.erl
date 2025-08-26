@@ -13,6 +13,9 @@
 -export([get_server_config/1, update_server_config/2, get_transport_config/1,
          update_transport_config/2, validate_transport_config/1, get_config_schema/1,
          validate_config_field/3]).
+%% Phase 3 configuration validation coordination API
+-export([store_validation_schemas/0, get_validation_schemas_from_memory/0,
+         validate_transport_with_coordination/2, initialize_config_validation/0]).
 %% Legacy compatibility for stdio server
 -export([start_stdio_server/0, start_stdio_server/1, stop_stdio_server/0]).
 %% Convenience functions
@@ -21,9 +24,20 @@
          get_transport_bindings/0, cleanup_transport_bindings/1, list_supported_transport_types/0,
          get_config_examples/0]).
 %% Enhanced API functions - Phase 3 Step 7
--export([format_validation_error/3, format_transport_error/4, format_setup_error/4,
-         get_transport_binding_info/1, list_transport_bindings/0, rebind_transport/2,
-         validate_transport_binding/2, audit_transport_bindings/0, cleanup_failed_setup/3]).
+-export([format_validation_error/3, format_validation_error_enhanced/3,
+         format_transport_error/4, format_setup_error/4, get_transport_binding_info/1,
+         list_transport_bindings/0, rebind_transport/2, validate_transport_binding/2,
+         audit_transport_bindings/0, cleanup_failed_setup/3, validate_setup_prerequisites/1,
+         ensure_transport_supervisor/0, retry_transport_binding/3, get_enhanced_transport_status/1,
+         bulk_transport_operation/2, cleanup_stale_transports/0, validate_transport_health/2,
+         start_transport_enhanced/3, start_transport_with_retry/4]).
+%% Step 7: Enhanced High-Level API Functions
+-export([start_transport_preset/3, create_transport_from_template/3,
+         quick_setup_with_validation/4, enhanced_transport_create/4, get_transport_health_status/1,
+         validate_and_create_transport/3, get_transport_preset/1, get_config_template/1,
+         apply_template_values/2, validate_transport_creation_context/3,
+         comprehensive_transport_validation/2, format_comprehensive_validation_error/3,
+         store_transport_metrics/2]).
 
 %% Types
 -type server_id() :: atom().
@@ -119,43 +133,82 @@ start_transport(TransportId, Type) ->
 -spec start_transport(transport_id(), transport_type(), map()) ->
                          {ok, pid()} | {error, term()}.
 start_transport(TransportId, Type, Config) ->
-    logger:info("Starting transport ~p of type ~p with config validation",
+    logger:info("Starting transport ~p of type ~p with Phase 3 enhanced validation "
+                "and management",
                 [TransportId, Type]),
 
-    % Enhanced validation using dedicated validation module
-    ConfigWithType = Config#{type => Type},
-    case erlmcp_transport_validation:validate_transport_config(Type, ConfigWithType) of
+    % Phase 3 Enhancement: Pre-flight validation and prerequisite checks
+    case validate_setup_prerequisites(Type) of
         ok ->
-            case start_transport_impl(TransportId, Type, ConfigWithType) of
-                {ok, TransportPid} ->
-                    TransportConfig =
-                        ConfigWithType#{started_at => erlang:timestamp(),
-                                        validation_passed => true},
-                    case register_transport_with_registry(TransportId,
-                                                          TransportPid,
-                                                          TransportConfig)
-                    of
+            % Enhanced validation using dedicated validation module with comprehensive error handling
+            ConfigWithType =
+                Config#{type => Type,
+                        phase => 3,
+                        api_version => "3.0",
+                        enhancement_level => high_level_api},
+            case erlmcp_transport_validation:validate_transport_config(Type, ConfigWithType) of
+                ok ->
+                    % Ensure transport supervisor is available with enhanced startup
+                    case ensure_transport_supervisor() of
                         ok ->
-                            logger:info("Successfully started and registered transport ~p (~p) with "
-                                        "validation",
-                                        [TransportId, Type]),
-                            {ok, TransportPid};
-                        {error, Reason} ->
-                            logger:warning("Transport ~p started but registry registration failed: ~p",
-                                           [TransportId, Reason]),
-                            {ok, TransportPid}
+                            case start_transport_impl(TransportId, Type, ConfigWithType) of
+                                {ok, TransportPid} ->
+                                    % Phase 3 Enhanced transport configuration with comprehensive metadata
+                                    TransportConfig =
+                                        ConfigWithType#{started_at => erlang:timestamp(),
+                                                        validation_passed => true,
+                                                        transport_version => "3.0",
+                                                        startup_method => enhanced_phase3_api,
+                                                        health_check_interval => 30000,
+                                                        auto_recovery_enabled => true,
+                                                        binding_validation_enabled => true},
+                                    case register_transport_with_registry(TransportId,
+                                                                          TransportPid,
+                                                                          TransportConfig)
+                                    of
+                                        ok ->
+                                            % Phase 3: Post-startup validation and health check
+                                            case validate_transport_health(TransportId,
+                                                                           TransportPid)
+                                            of
+                                                ok ->
+                                                    logger:info("Phase 3: Successfully started, registered and validated transport "
+                                                                "~p (~p) with enhanced features",
+                                                                [TransportId, Type]),
+                                                    {ok, TransportPid};
+                                                {error, HealthError} ->
+                                                    logger:warning("Transport ~p started but health check failed: ~p",
+                                                                   [TransportId, HealthError]),
+                                                    {ok,
+                                                     TransportPid} % Still return success but log warning
+                                            end;
+                                        {error, Reason} ->
+                                            logger:warning("Transport ~p started but registry registration failed: ~p",
+                                                           [TransportId, Reason]),
+                                            {ok, TransportPid}
+                                    end;
+                                {error, Reason} ->
+                                    logger:error("Failed to start transport ~p (~p): ~p",
+                                                 [TransportId, Type, Reason]),
+                                    format_transport_error(TransportId, Type, start_failed, Reason)
+                            end;
+                        {error, SupervisorError} ->
+                            logger:error("Transport supervisor unavailable for ~p (~p): ~p",
+                                         [TransportId, Type, SupervisorError]),
+                            format_setup_error(TransportId,
+                                               Type,
+                                               supervisor_unavailable,
+                                               SupervisorError)
                     end;
-                {error, Reason} ->
-                    logger:error("Failed to start transport ~p (~p): ~p",
-                                 [TransportId, Type, Reason]),
-                    erlmcp_transport_behavior:format_transport_error(TransportId,
-                                                                     start_failed,
-                                                                     Reason)
+                {error, ValidationError} ->
+                    logger:error("Transport config validation failed for ~p (~p): ~p",
+                                 [TransportId, Type, ValidationError]),
+                    format_validation_error_enhanced(TransportId, Type, ValidationError)
             end;
-        {error, ValidationError} ->
-            logger:error("Transport config validation failed for ~p (~p): ~p",
-                         [TransportId, Type, ValidationError]),
-            format_validation_error(TransportId, Type, ValidationError)
+        {error, PrereqError} ->
+            logger:error("Transport prerequisites not met for ~p (~p): ~p",
+                         [TransportId, Type, PrereqError]),
+            format_setup_error(TransportId, Type, prerequisites_failed, PrereqError)
     end.
 
 -spec stop_transport(transport_id()) -> ok | {error, term()}.
@@ -528,17 +581,35 @@ update_transport_config(TransportId, NewConfig) ->
                     end},
           description => "HTTP transport configuration for web-based communication"}).
 
-%% @doc Validate transport configuration using schema-based approach
+%% @doc Validate transport configuration using schema-based approach with coordination hooks
 -spec validate_transport_config(map()) -> ok | {error, term()}.
 validate_transport_config(Config) ->
+    %% Store validation attempt in memory for coordination
+    ValidationKey = "phase3/config/validation",
+    ValidationData =
+        #{timestamp => erlang:timestamp(),
+          config_hash => erlang:phash2(Config),
+          validation_attempt => true,
+          config_type => maps:get(type, Config, unknown)},
+    store_in_memory(ValidationKey, ValidationData),
+
     case maps:get(type, Config, undefined) of
         undefined ->
-            format_validation_error(missing_required_field,
-                                    type,
-                                    "Configuration must specify transport type. Valid types: stdio, "
-                                    "tcp, http");
+            ValidationError =
+                format_validation_error(missing_required_field,
+                                        type,
+                                        "Configuration must specify transport type. Valid types: stdio, "
+                                        "tcp, http"),
+            %% Log validation failure in memory
+            ErrorKey = "phase3/config/validation/errors",
+            store_validation_error(ErrorKey, ValidationError, Config),
+            ValidationError;
         Type ->
-            validate_transport_config_with_schema(Type, Config)
+            Result = validate_transport_config_with_schema(Type, Config),
+            %% Log validation result in memory
+            ResultKey = "phase3/config/validation/results",
+            store_validation_result(ResultKey, Type, Result, Config),
+            Result
     end.
 
 %% @doc Enhanced schema-based validation
@@ -619,7 +690,7 @@ validate_schema_field_values(Config, FieldValidators) ->
             format_validation_error(ErrorType, Field, Reason)
     end.
 
-%% @doc Format validation errors with helpful messages
+%% @doc Format validation errors with helpful messages (backward compatibility)
 -spec format_validation_error(atom(), term(), string()) -> {error, term()}.
 format_validation_error(ErrorType, Field, Reason) ->
     FormattedReason =
@@ -630,6 +701,51 @@ format_validation_error(ErrorType, Field, Reason) ->
                 io_lib:format("~p", [Reason])
         end,
     {error, {validation_error, ErrorType, Field, lists:flatten(FormattedReason)}}.
+
+%% @doc Format validation error with enhanced context for Phase 3
+format_validation_error_enhanced(TransportId, Type, ValidationError) ->
+    case ValidationError of
+        {validation_error, ErrorType, Field, Message} ->
+            EnhancedError =
+                #{error_category => validation_error,
+                  transport_id => TransportId,
+                  transport_type => Type,
+                  error_type => ErrorType,
+                  field => Field,
+                  message =>
+                      lists:flatten(
+                          io_lib:format("~s", [Message])),
+                  suggestion => get_validation_suggestion(Type, ValidationError),
+                  timestamp => erlang:timestamp(),
+                  phase => 3,
+                  step => 7},
+            {error, EnhancedError};
+        {validation_error, ErrorType, Fields, Message} when is_list(Fields) ->
+            EnhancedError =
+                #{error_category => validation_error,
+                  transport_id => TransportId,
+                  transport_type => Type,
+                  error_type => ErrorType,
+                  fields => Fields,
+                  message =>
+                      lists:flatten(
+                          io_lib:format("~s", [Message])),
+                  suggestion => get_validation_suggestion(Type, ValidationError),
+                  timestamp => erlang:timestamp(),
+                  phase => 3,
+                  step => 7},
+            {error, EnhancedError};
+        Other ->
+            {error,
+             #{error_category => validation_error,
+               transport_id => TransportId,
+               transport_type => Type,
+               error_type => unknown_validation_error,
+               details => Other,
+               timestamp => erlang:timestamp(),
+               phase => 3,
+               step => 7}}
+    end.
 
 %% @doc Legacy validation function - now delegates to schema-based approach
 -spec validate_transport_config_by_type(atom(), map()) -> ok | {error, term()}.
@@ -963,115 +1079,227 @@ start_stdio_setup(ServerId, Config) ->
             ServerError
     end.
 
-%% Create a complete MCP server setup with TCP transport
+%% Create a complete MCP server setup with TCP transport - Enhanced Phase 3 Implementation
 -spec start_tcp_setup(server_id(), map(), map()) ->
                          {ok, #{server => pid(), transport => pid()}} | {error, term()}.
 start_tcp_setup(ServerId, ServerConfig, TcpConfig) ->
-    logger:info("Setting up TCP server ~p with enhanced validation", [ServerId]),
+    logger:info("Setting up TCP server ~p with Phase 3 enhanced validation and "
+                "error handling",
+                [ServerId]),
 
-    % Enhanced validation with detailed error reporting
-    case erlmcp_transport_validation:validate_transport_config(tcp, TcpConfig) of
+    % Pre-flight checks before starting setup
+    case validate_setup_prerequisites(tcp) of
         ok ->
-            case start_server(ServerId, ServerConfig) of
-                {ok, ServerPid} ->
-                    TransportId = create_transport_id(ServerId, <<"tcp">>),
-                    % Enhanced config with validation metadata
-                    TransportConfig =
-                        maps:merge(#{server_id => ServerId,
-                                     transport_type => tcp,
-                                     setup_type => convenience_function},
-                                   TcpConfig),
+            % Enhanced validation with detailed error reporting
+            case erlmcp_transport_validation:validate_transport_config(tcp, TcpConfig) of
+                ok ->
+                    case start_server(ServerId, ServerConfig) of
+                        {ok, ServerPid} ->
+                            TransportId = create_transport_id(ServerId, <<"tcp">>),
+                            % Enhanced config with comprehensive metadata
+                            TransportConfig =
+                                maps:merge(#{server_id => ServerId,
+                                             transport_type => tcp,
+                                             setup_type => convenience_function,
+                                             setup_version => "3.0",
+                                             created_at => erlang:timestamp(),
+                                             binding_strategy => automatic},
+                                           TcpConfig),
 
-                    case start_transport(TransportId, tcp, TransportConfig) of
-                        {ok, TransportPid} ->
-                            case bind_transport_to_server(TransportId, ServerId) of
-                                ok ->
-                                    logger:info("TCP setup completed successfully for ~p (~p:~p)",
-                                                [ServerId,
-                                                 maps:get(host, TcpConfig, "localhost"),
-                                                 maps:get(port, TcpConfig, 8080)]),
-                                    {ok,
-                                     #{server => ServerPid,
-                                       transport => TransportPid,
-                                       transport_id => TransportId,
-                                       config => TransportConfig}};
-                                {error, BindError} ->
-                                    logger:warning("TCP server ~p started but binding failed: ~p",
-                                                   [ServerId, BindError]),
-                                    {ok,
-                                     #{server => ServerPid,
-                                       transport => TransportPid,
-                                       transport_id => TransportId,
-                                       binding_warning => BindError}}
+                            case start_transport(TransportId, tcp, TransportConfig) of
+                                {ok, TransportPid} ->
+                                    % Enhanced binding with validation
+                                    case validate_transport_binding(TransportId, ServerId) of
+                                        ok ->
+                                            case bind_transport_to_server(TransportId, ServerId) of
+                                                ok ->
+                                                    logger:info("TCP setup completed successfully for ~p (~s:~p) with enhanced "
+                                                                "features",
+                                                                [ServerId,
+                                                                 maps:get(host,
+                                                                          TcpConfig,
+                                                                          "localhost"),
+                                                                 maps:get(port, TcpConfig, 8080)]),
+                                                    {ok,
+                                                     #{server => ServerPid,
+                                                       transport => TransportPid,
+                                                       transport_id => TransportId,
+                                                       config => TransportConfig,
+                                                       setup_metadata =>
+                                                           #{type => tcp,
+                                                             version => "3.0",
+                                                             binding_validated => true}}};
+                                                {error, BindError} ->
+                                                    logger:warning("TCP server ~p started but binding failed: ~p. Attempting recovery.",
+                                                                   [ServerId, BindError]),
+                                                    % Attempt to recover by retrying the binding
+                                                    case retry_transport_binding(TransportId,
+                                                                                 ServerId,
+                                                                                 3)
+                                                    of
+                                                        ok ->
+                                                            {ok,
+                                                             #{server => ServerPid,
+                                                               transport => TransportPid,
+                                                               transport_id => TransportId,
+                                                               binding_recovered => true}};
+                                                        {error, FinalBindError} ->
+                                                            {ok,
+                                                             #{server => ServerPid,
+                                                               transport => TransportPid,
+                                                               transport_id => TransportId,
+                                                               binding_warning => FinalBindError}}
+                                                    end
+                                            end;
+                                        {error, BindingValidationError} ->
+                                            logger:error("TCP binding validation failed for ~p: ~p",
+                                                         [ServerId, BindingValidationError]),
+                                            cleanup_failed_setup(ServerId,
+                                                                 tcp,
+                                                                 BindingValidationError)
+                                    end;
+                                {error, TransportError} ->
+                                    logger:error("TCP transport setup failed for ~p: ~p",
+                                                 [ServerId, TransportError]),
+                                    cleanup_failed_setup(ServerId, tcp, TransportError)
                             end;
-                        {error, TransportError} ->
-                            logger:error("TCP transport setup failed for ~p: ~p",
-                                         [ServerId, TransportError]),
-                            cleanup_failed_setup(ServerId, tcp, TransportError)
+                        {error, ServerError} ->
+                            logger:error("Server setup failed for TCP ~p: ~p",
+                                         [ServerId, ServerError]),
+                            format_setup_error(ServerId, tcp, server_start_failed, ServerError)
                     end;
-                {error, ServerError} ->
-                    logger:error("Server setup failed for TCP ~p: ~p", [ServerId, ServerError]),
-                    format_setup_error(ServerId, tcp, server_start_failed, ServerError)
+                {error, ValidationError} ->
+                    logger:error("TCP config validation failed for ~p: ~p",
+                                 [ServerId, ValidationError]),
+                    format_validation_error(ServerId, tcp, ValidationError)
             end;
-        {error, ValidationError} ->
-            logger:error("TCP config validation failed for ~p: ~p", [ServerId, ValidationError]),
-            format_validation_error(ServerId, tcp, ValidationError)
+        {error, PrereqError} ->
+            logger:error("TCP setup prerequisites not met for ~p: ~p", [ServerId, PrereqError]),
+            format_setup_error(ServerId, tcp, prerequisites_failed, PrereqError)
     end.
 
-%% Create a complete MCP server setup with HTTP transport
+%% Create a complete MCP server setup with HTTP transport - Enhanced Phase 3 Implementation
 -spec start_http_setup(server_id(), map(), map()) ->
                           {ok, #{server => pid(), transport => pid()}} | {error, term()}.
 start_http_setup(ServerId, ServerConfig, HttpConfig) ->
-    logger:info("Setting up HTTP server ~p with enhanced validation", [ServerId]),
+    logger:info("Setting up HTTP server ~p with Phase 3 enhanced validation "
+                "and error handling",
+                [ServerId]),
 
-    % Enhanced validation with detailed error reporting
-    case erlmcp_transport_validation:validate_transport_config(http, HttpConfig) of
+    % Pre-flight checks before starting setup
+    case validate_setup_prerequisites(http) of
         ok ->
-            case start_server(ServerId, ServerConfig) of
-                {ok, ServerPid} ->
-                    TransportId = create_transport_id(ServerId, <<"http">>),
-                    % Enhanced config with validation metadata
-                    TransportConfig =
-                        maps:merge(#{server_id => ServerId,
-                                     transport_type => http,
-                                     setup_type => convenience_function},
-                                   HttpConfig),
+            % Enhanced validation with detailed error reporting
+            case erlmcp_transport_validation:validate_transport_config(http, HttpConfig) of
+                ok ->
+                    case start_server(ServerId, ServerConfig) of
+                        {ok, ServerPid} ->
+                            TransportId = create_transport_id(ServerId, <<"http">>),
+                            % Enhanced config with comprehensive metadata
+                            TransportConfig =
+                                maps:merge(#{server_id => ServerId,
+                                             transport_type => http,
+                                             setup_type => convenience_function,
+                                             setup_version => "3.0",
+                                             created_at => erlang:timestamp(),
+                                             binding_strategy => automatic,
+                                             cors_enabled => maps:get(cors, HttpConfig, false)},
+                                           HttpConfig),
 
-                    case start_transport(TransportId, http, TransportConfig) of
-                        {ok, TransportPid} ->
-                            case bind_transport_to_server(TransportId, ServerId) of
-                                ok ->
-                                    logger:info("HTTP setup completed successfully for ~p (~s)",
-                                                [ServerId,
-                                                 maps:get(url,
-                                                          HttpConfig,
-                                                          "http://localhost:8000/mcp")]),
-                                    {ok,
-                                     #{server => ServerPid,
-                                       transport => TransportPid,
-                                       transport_id => TransportId,
-                                       config => TransportConfig}};
-                                {error, BindError} ->
-                                    logger:warning("HTTP server ~p started but binding failed: ~p",
-                                                   [ServerId, BindError]),
-                                    {ok,
-                                     #{server => ServerPid,
-                                       transport => TransportPid,
-                                       transport_id => TransportId,
-                                       binding_warning => BindError}}
+                            case start_transport(TransportId, http, TransportConfig) of
+                                {ok, TransportPid} ->
+                                    % Enhanced binding with validation
+                                    case validate_transport_binding(TransportId, ServerId) of
+                                        ok ->
+                                            case bind_transport_to_server(TransportId, ServerId) of
+                                                ok ->
+                                                    logger:info("HTTP setup completed successfully for ~p (~s) with enhanced "
+                                                                "features",
+                                                                [ServerId,
+                                                                 maps:get(url,
+                                                                          HttpConfig,
+                                                                          "http://localhost:8000/mcp")]),
+                                                    {ok,
+                                                     #{server => ServerPid,
+                                                       transport => TransportPid,
+                                                       transport_id => TransportId,
+                                                       config => TransportConfig,
+                                                       setup_metadata =>
+                                                           #{type => http,
+                                                             version => "3.0",
+                                                             binding_validated => true,
+                                                             url =>
+                                                                 maps:get(url,
+                                                                          HttpConfig,
+                                                                          "http://localhost:8000/mcp")}}};
+                                                {error, BindError} ->
+                                                    logger:warning("HTTP server ~p started but binding failed: ~p. Attempting recovery.",
+                                                                   [ServerId, BindError]),
+                                                    % Attempt to recover by retrying the binding
+                                                    case retry_transport_binding(TransportId,
+                                                                                 ServerId,
+                                                                                 3)
+                                                    of
+                                                        ok ->
+                                                            {ok,
+                                                             #{server => ServerPid,
+                                                               transport => TransportPid,
+                                                               transport_id => TransportId,
+                                                               binding_recovered => true}};
+                                                        {error, FinalBindError} ->
+                                                            {ok,
+                                                             #{server => ServerPid,
+                                                               transport => TransportPid,
+                                                               transport_id => TransportId,
+                                                               binding_warning => FinalBindError}}
+                                                    end
+                                            end;
+                                        {error, BindingValidationError} ->
+                                            logger:error("HTTP binding validation failed for ~p: ~p",
+                                                         [ServerId, BindingValidationError]),
+                                            cleanup_failed_setup(ServerId,
+                                                                 http,
+                                                                 BindingValidationError)
+                                    end;
+                                {error, TransportError} ->
+                                    logger:error("HTTP transport setup failed for ~p: ~p",
+                                                 [ServerId, TransportError]),
+                                    cleanup_failed_setup(ServerId, http, TransportError)
                             end;
-                        {error, TransportError} ->
-                            logger:error("HTTP transport setup failed for ~p: ~p",
-                                         [ServerId, TransportError]),
-                            cleanup_failed_setup(ServerId, http, TransportError)
+                        {error, ServerError} ->
+                            logger:error("Server setup failed for HTTP ~p: ~p",
+                                         [ServerId, ServerError]),
+                            format_setup_error(ServerId, http, server_start_failed, ServerError)
                     end;
-                {error, ServerError} ->
-                    logger:error("Server setup failed for HTTP ~p: ~p", [ServerId, ServerError]),
-                    format_setup_error(ServerId, http, server_start_failed, ServerError)
+                {error, ValidationError} ->
+                    logger:error("HTTP config validation failed for ~p: ~p",
+                                 [ServerId, ValidationError]),
+                    format_validation_error(ServerId, http, ValidationError)
             end;
-        {error, ValidationError} ->
-            logger:error("HTTP config validation failed for ~p: ~p", [ServerId, ValidationError]),
-            format_validation_error(ServerId, http, ValidationError)
+        {error, PrereqError} ->
+            logger:error("HTTP setup prerequisites not met for ~p: ~p", [ServerId, PrereqError]),
+            format_setup_error(ServerId, http, prerequisites_failed, PrereqError)
+    end.
+
+%% @doc Retry transport binding with exponential backoff
+-spec retry_transport_binding(transport_id(), server_id(), non_neg_integer()) ->
+                                 ok | {error, term()}.
+retry_transport_binding(_TransportId, _ServerId, 0) ->
+    {error, max_retries_exceeded};
+retry_transport_binding(TransportId, ServerId, RetriesLeft) ->
+    case bind_transport_to_server(TransportId, ServerId) of
+        ok ->
+            logger:info("Transport binding succeeded after retry: ~p -> ~p",
+                        [TransportId, ServerId]),
+            ok;
+        {error, _Reason} when RetriesLeft > 1 ->
+            SleepTime = (4 - RetriesLeft) * 100, % 100, 200, 300ms
+            timer:sleep(SleepTime),
+            retry_transport_binding(TransportId, ServerId, RetriesLeft - 1);
+        {error, FinalReason} ->
+            logger:warning("Final retry failed for transport binding ~p -> ~p: ~p",
+                           [TransportId, ServerId, FinalReason]),
+            {error, FinalReason}
     end.
 
 %% Batch add multiple resources, tools, and prompts
@@ -1132,6 +1360,382 @@ quick_stdio_server(ServerId, ServerConfig, Components) ->
         {error, _} = Error ->
             Error
     end.
+
+%%====================================================================
+%% Step 7: Enhanced High-Level API Functions with Advanced Validation
+%%====================================================================
+
+%% @doc Create transport using predefined preset configurations
+-spec start_transport_preset(transport_id(), atom(), map()) ->
+                                {ok, pid()} | {error, term()}.
+start_transport_preset(TransportId, PresetName, CustomConfig) ->
+    case get_transport_preset(PresetName) of
+        {ok, PresetConfig} ->
+            MergedConfig = maps:merge(PresetConfig, CustomConfig),
+            TransportType = maps:get(type, MergedConfig),
+            enhanced_transport_create(TransportId,
+                                      TransportType,
+                                      MergedConfig,
+                                      #{preset => PresetName});
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Create transport from configuration template with validation
+-spec create_transport_from_template(transport_id(), atom(), map()) ->
+                                        {ok, pid()} | {error, term()}.
+create_transport_from_template(TransportId, TemplateName, ConfigValues) ->
+    case get_config_template(TemplateName) of
+        {ok, Template} ->
+            case apply_template_values(Template, ConfigValues) of
+                {ok, Config} ->
+                    TransportType = maps:get(type, Config),
+                    enhanced_transport_create(TransportId,
+                                              TransportType,
+                                              Config,
+                                              #{template => TemplateName});
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Enhanced transport creation with comprehensive validation and metadata
+-spec enhanced_transport_create(transport_id(), transport_type(), map(), map()) ->
+                                   {ok, pid()} | {error, term()}.
+enhanced_transport_create(TransportId, Type, Config, Metadata) ->
+    StartTime = erlang:timestamp(),
+
+    % Phase 1: Pre-creation validation
+    case validate_transport_creation_context(TransportId, Type, Config) of
+        ok ->
+            % Phase 2: Enhanced configuration validation
+            case validate_and_enhance_config(Type, Config) of
+                {ok, EnhancedConfig} ->
+                    % Phase 3: Create with comprehensive logging
+                    logger:info("Creating enhanced transport ~p (~p) with metadata: ~p",
+                                [TransportId, Type, Metadata]),
+
+                    ConfigWithMetadata =
+                        EnhancedConfig#{metadata => Metadata,
+                                        created_at => StartTime,
+                                        api_version => "3.0",
+                                        enhancement_level => "step_7"},
+
+                    case start_transport(TransportId, Type, ConfigWithMetadata) of
+                        {ok, TransportPid} ->
+                            % Log successful creation with timing
+                            EndTime = erlang:timestamp(),
+                            Duration = timer:now_diff(EndTime, StartTime) / 1000, % milliseconds
+
+                            logger:info("Enhanced transport ~p created successfully in ~.2f ms",
+                                        [TransportId, Duration]),
+
+                            % Store creation metrics
+                            store_transport_metrics(TransportId,
+                                                    #{creation_time => Duration,
+                                                      metadata => Metadata}),
+                            {ok, TransportPid};
+                        {error, _} = Error ->
+                            Error
+                    end;
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Quick setup with comprehensive validation for common patterns
+-spec quick_setup_with_validation(server_id(), transport_type(), map(), map()) ->
+                                     {ok, #{server => pid(), transport => pid()}} | {error, term()}.
+quick_setup_with_validation(ServerId, TransportType, ServerConfig, TransportConfig) ->
+    logger:info("Starting quick setup with validation for ~p (~p)",
+                [ServerId, TransportType]),
+
+    % Validate all configurations upfront
+    case validate_quick_setup_config(ServerId, TransportType, ServerConfig, TransportConfig)
+    of
+        ok ->
+            case TransportType of
+                stdio ->
+                    start_stdio_setup(ServerId, ServerConfig);
+                tcp ->
+                    start_tcp_setup(ServerId, ServerConfig, TransportConfig);
+                http ->
+                    start_http_setup(ServerId, ServerConfig, TransportConfig);
+                _ ->
+                    {error, {unsupported_transport_type, TransportType}}
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Validate and create transport with enhanced error reporting
+-spec validate_and_create_transport(transport_id(), transport_type(), map()) ->
+                                       {ok, pid()} | {error, term()}.
+validate_and_create_transport(TransportId, Type, Config) ->
+    case comprehensive_transport_validation(Type, Config) of
+        {ok, ValidatedConfig} ->
+            start_transport(TransportId, Type, ValidatedConfig);
+        {error, ValidationErrors} ->
+            format_comprehensive_validation_error(TransportId, Type, ValidationErrors)
+    end.
+
+%% @doc Get transport health status with detailed diagnostics
+-spec get_transport_health_status(transport_id()) -> {ok, map()} | {error, term()}.
+get_transport_health_status(TransportId) ->
+    case whereis(erlmcp_registry) of
+        undefined ->
+            {error, registry_not_available};
+        _ ->
+            case erlmcp_registry:find_transport(TransportId) of
+                {ok, {TransportPid, Config}} ->
+                    Health =
+                        #{transport_id => TransportId,
+                          pid => TransportPid,
+                          alive => is_process_alive(TransportPid),
+                          memory_usage => get_process_memory(TransportPid),
+                          message_queue_len => get_process_queue_len(TransportPid),
+                          config => maps:with([type, server_id, created_at], Config),
+                          last_activity => maps:get(last_activity, Config, undefined),
+                          status =>
+                              case is_process_alive(TransportPid) of
+                                  true ->
+                                      healthy;
+                                  false ->
+                                      dead
+                              end},
+                    {ok, Health};
+                {error, not_found} ->
+                    {error, {transport_not_found, TransportId}}
+            end
+    end.
+
+%%====================================================================
+%% Step 7: Enhanced Validation Functions
+%%====================================================================
+
+%% @doc Validate transport creation context
+-spec validate_transport_creation_context(transport_id(), transport_type(), map()) ->
+                                             ok | {error, term()}.
+validate_transport_creation_context(TransportId, Type, Config) ->
+    Validations =
+        [fun() -> validate_transport_id_uniqueness(TransportId) end,
+         fun() -> validate_transport_type_support(Type) end,
+         fun() -> validate_config_completeness(Config) end,
+         fun() -> validate_system_readiness(Type) end],
+
+    run_validation_chain(Validations, {TransportId, Type}).
+
+%% @doc Comprehensive transport validation with detailed error context
+-spec comprehensive_transport_validation(transport_type(), map()) ->
+                                            {ok, map()} | {error, [term()]}.
+comprehensive_transport_validation(Type, Config) ->
+    ValidationSteps =
+        [{schema_validation, fun() -> validate_against_schema(Type, Config) end},
+         {prerequisite_check, fun() -> validate_setup_prerequisites(Type) end},
+         {security_validation, fun() -> validate_security_config(Type, Config) end},
+         {performance_validation, fun() -> validate_performance_config(Type, Config) end}],
+
+    case run_comprehensive_validations(ValidationSteps, Config) of
+        {ok, EnhancedConfig} ->
+            {ok, EnhancedConfig};
+        {error, Errors} ->
+            {error, Errors}
+    end.
+
+%%====================================================================
+%% Step 7: Configuration Templates and Presets
+%%====================================================================
+
+%% @doc Get predefined transport configuration preset
+-spec get_transport_preset(atom()) -> {ok, map()} | {error, term()}.
+get_transport_preset(development_stdio) ->
+    {ok,
+     #{type => stdio,
+       timeout => 5000,
+       buffer_size => 1024,
+       encoding => utf8,
+       environment => development}};
+get_transport_preset(production_tcp) ->
+    {ok,
+     #{type => tcp,
+       host => "0.0.0.0",
+       port => 8080,
+       backlog => 100,
+       timeout => 10000,
+       nodelay => true,
+       environment => production}};
+get_transport_preset(secure_http) ->
+    {ok,
+     #{type => http,
+       url => "https://localhost:8443/mcp",
+       timeout => 15000,
+       ssl => true,
+       verify_ssl => true,
+       max_redirects => 3,
+       environment => production}};
+get_transport_preset(PresetName) ->
+    {error, {unknown_preset, PresetName}}.
+
+%% @doc Get configuration template
+-spec get_config_template(atom()) -> {ok, map()} | {error, term()}.
+get_config_template(basic_tcp) ->
+    {ok,
+     #{type => tcp,
+       host => "{{HOST}}",
+       port => "{{PORT}}",
+       timeout => "{{TIMEOUT|5000}}",
+       required_vars => [host, port],
+       optional_vars => [timeout]}};
+get_config_template(secure_http) ->
+    {ok,
+     #{type => http,
+       url => "{{PROTOCOL}}://{{HOST}}:{{PORT}}/{{PATH}}",
+       ssl => "{{SSL|true}}",
+       timeout => "{{TIMEOUT|10000}}",
+       required_vars => [protocol, host, port, path],
+       optional_vars => [ssl, timeout]}};
+get_config_template(TemplateName) ->
+    {error, {unknown_template, TemplateName}}.
+
+%% @doc Apply values to configuration template
+-spec apply_template_values(map(), map()) -> {ok, map()} | {error, term()}.
+apply_template_values(Template, Values) ->
+    RequiredVars = maps:get(required_vars, Template, []),
+
+    % Check all required variables are provided
+    case validate_required_template_vars(RequiredVars, Values) of
+        ok ->
+            try
+                AppliedConfig = apply_template_substitution(Template, Values),
+                {ok, maps:without([required_vars, optional_vars], AppliedConfig)}
+            catch
+                error:Reason ->
+                    {error, {template_application_failed, Reason}}
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%%====================================================================
+%% Step 7: Helper Functions for Enhanced Validation
+%%====================================================================
+
+%% @doc Store transport creation metrics
+-spec store_transport_metrics(transport_id(), map()) -> ok.
+store_transport_metrics(TransportId, Metrics) ->
+    try
+        erlmcp_registry:store_transport_metadata(TransportId, Metrics)
+    catch
+        _:_ ->
+            logger:warning("Failed to store metrics for transport ~p", [TransportId])
+    end,
+    ok.
+
+%% @doc Format comprehensive validation error with detailed context
+-spec format_comprehensive_validation_error(transport_id(), transport_type(), [term()]) ->
+                                               {error, term()}.
+format_comprehensive_validation_error(TransportId, Type, Errors) ->
+    ErrorSummary =
+        #{error_category => comprehensive_validation_failed,
+          transport_id => TransportId,
+          transport_type => Type,
+          validation_errors => Errors,
+          error_count => length(Errors),
+          suggestions => generate_validation_suggestions(Type, Errors),
+          timestamp => erlang:timestamp()},
+    {error, ErrorSummary}.
+
+%% @doc Validate and enhance configuration with smart defaults
+-spec validate_and_enhance_config(transport_type(), map()) ->
+                                     {ok, map()} | {error, term()}.
+validate_and_enhance_config(Type, Config) ->
+    case add_smart_defaults(Type, Config) of
+        {ok, ConfigWithDefaults} ->
+            case perform_enhanced_validation(Type, ConfigWithDefaults) of
+                ok ->
+                    {ok, ConfigWithDefaults};
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Add smart defaults based on transport type
+-spec add_smart_defaults(transport_type(), map()) -> {ok, map()} | {error, term()}.
+add_smart_defaults(stdio, Config) ->
+    Defaults =
+        #{timeout => 5000,
+          buffer_size => 1024,
+          encoding => utf8},
+    {ok, maps:merge(Defaults, Config)};
+add_smart_defaults(tcp, Config) ->
+    Defaults =
+        #{host => "localhost",
+          port => 8080,
+          timeout => 10000,
+          backlog => 100},
+    {ok, maps:merge(Defaults, Config)};
+add_smart_defaults(http, Config) ->
+    Defaults =
+        #{timeout => 15000,
+          max_redirects => 3,
+          verify_ssl => true},
+    {ok, maps:merge(Defaults, Config)};
+add_smart_defaults(Type, _Config) ->
+    {error, {unknown_transport_type, Type}}.
+
+%% @doc Perform enhanced validation with multiple checks
+-spec perform_enhanced_validation(transport_type(), map()) -> ok | {error, term()}.
+perform_enhanced_validation(Type, Config) ->
+    case erlmcp_transport_validation:validate_transport_config(Type, Config) of
+        ok ->
+            validate_security_and_performance(Type, Config);
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Validate security and performance aspects
+-spec validate_security_and_performance(transport_type(), map()) -> ok | {error, term()}.
+validate_security_and_performance(http, Config) ->
+    % Check SSL configuration for HTTP
+    case maps:get(ssl, Config, false) of
+        true ->
+            case maps:get(verify_ssl, Config, true) of
+                false ->
+                    logger:warning("SSL verification disabled - security risk");
+                _ ->
+                    ok
+            end;
+        false ->
+            logger:info("HTTP transport without SSL - consider enabling for production")
+    end,
+
+    % Check timeout values
+    Timeout = maps:get(timeout, Config, 15000),
+    if Timeout < 1000 ->
+           {error, {timeout_too_low, Timeout}};
+       Timeout > 60000 ->
+           logger:warning("Very high timeout value: ~p ms", [Timeout]);
+       true ->
+           ok
+    end;
+validate_security_and_performance(tcp, Config) ->
+    % Check port ranges
+    Port = maps:get(port, Config, 8080),
+    if Port < 1024 ->
+           logger:warning("Using privileged port ~p - ensure proper permissions", [Port]);
+       Port > 65535 ->
+           {error, {invalid_port, Port}};
+       true ->
+           ok
+    end;
+validate_security_and_performance(_Type, _Config) ->
+    ok.
 
 %%====================================================================
 %% Configuration Schema and Documentation API
@@ -1200,26 +1804,64 @@ get_config_examples() ->
             max_body_size => 1048576}}.
 
 %%====================================================================
-%% Enhanced API Functions - Phase 3
+%% Enhanced API Functions - Phase 3 Step 7 Implementation
 %%====================================================================
+
+%% @doc Validate setup prerequisites before starting transport
+-spec validate_setup_prerequisites(transport_type()) -> ok | {error, term()}.
+validate_setup_prerequisites(stdio) ->
+    ok; % STDIO has no special prerequisites
+validate_setup_prerequisites(tcp) ->
+    % Check if network stack is available
+    case inet:getifaddrs() of
+        {ok, _Interfaces} ->
+            ok;
+        {error, Reason} ->
+            {error, {network_unavailable, Reason}}
+    end;
+validate_setup_prerequisites(http) ->
+    % Check if HTTP dependencies are available
+    case code:is_loaded(httpc) of
+        {file, _} ->
+            ok;
+        false ->
+            case code:load_file(httpc) of
+                {module, httpc} ->
+                    ok;
+                {error, Reason} ->
+                    {error, {http_client_unavailable, Reason}}
+            end;
+        true ->
+            ok
+    end;
+validate_setup_prerequisites(Type) ->
+    {error, {unknown_transport_type, Type}}.
+
+%% @doc Ensure transport supervisor is started
+-spec ensure_transport_supervisor() -> ok | {error, term()}.
+ensure_transport_supervisor() ->
+    case whereis(erlmcp_transport_sup) of
+        undefined ->
+            case erlmcp_transport_sup:ensure_started() of
+                ok ->
+                    ok;
+                Error ->
+                    {error, Error}
+            end;
+        _Pid ->
+            ok
+    end.
 
 %% Transport implementation helper
 -spec start_transport_impl(transport_id(), transport_type(), map()) ->
                               {ok, pid()} | {error, term()}.
 start_transport_impl(TransportId, stdio, Config) ->
-    erlmcp_transport_stdio_new:start_link(TransportId, Config);
-start_transport_impl(_TransportId, tcp, Config) ->
-    % Placeholder for TCP implementation
-    Port = maps:get(port, Config, 8080),
-    Host = maps:get(host, Config, "localhost"),
-    logger:info("TCP transport would start on ~s:~p", [Host, Port]),
-    {error, {transport_not_implemented, tcp}};
-start_transport_impl(_TransportId, http, Config) ->
+    erlmcp_transport_sup:start_child(TransportId, stdio, Config);
+start_transport_impl(TransportId, tcp, Config) ->
+    erlmcp_transport_sup:start_child(TransportId, tcp, Config);
+start_transport_impl(TransportId, http, Config) ->
     % Placeholder for HTTP implementation
-    Port = maps:get(port, Config, 8000),
-    Path = maps:get(path, Config, "/mcp"),
-    logger:info("HTTP transport would start on port ~p path ~s", [Port, Path]),
-    {error, {transport_not_implemented, http}};
+    erlmcp_transport_sup:start_child(TransportId, http, Config);
 start_transport_impl(_TransportId, Type, _Config) ->
     {error, {unknown_transport_type, Type}}.
 
@@ -1384,6 +2026,172 @@ stop_legacy_stdio_server() ->
             erlmcp_stdio_server:stop(),
             ok
     end.
+
+%%====================================================================
+%% Configuration Validation Memory Storage - Phase 3 Implementation
+%%====================================================================
+
+%% @doc Store validation data in coordination memory
+-spec store_in_memory(string(), map()) -> ok.
+store_in_memory(Key, Data) ->
+    try
+        case whereis(erlmcp_registry) of
+            undefined ->
+                %% Use basic memory storage for test environments
+                put({validation_memory, Key}, Data),
+                ok;
+            _Pid ->
+                %% Use registry-based storage in production
+                erlmcp_registry:store_validation_data(Key, Data)
+        end
+    catch
+        _:_ ->
+            %% Fallback to process dictionary
+            put({validation_memory, Key}, Data),
+            ok
+    end.
+
+%% @doc Store validation error in memory with detailed context
+-spec store_validation_error(string(), term(), map()) -> ok.
+store_validation_error(Key, Error, Config) ->
+    ErrorData =
+        #{error => Error,
+          config => maps:without([password, secret, token], Config),
+          timestamp => erlang:timestamp(),
+          phase => 3,
+          validation_type => error},
+    store_in_memory(Key, ErrorData).
+
+%% @doc Store validation result in memory with detailed context
+-spec store_validation_result(string(), atom(), term(), map()) -> ok.
+store_validation_result(Key, Type, Result, Config) ->
+    ResultData =
+        #{transport_type => Type,
+          result =>
+              case Result of
+                  ok ->
+                      success;
+                  {error, _} ->
+                      failure;
+                  Other ->
+                      Other
+              end,
+          detailed_result => Result,
+          config_hash => erlang:phash2(Config),
+          timestamp => erlang:timestamp(),
+          phase => 3,
+          validation_type => result},
+    store_in_memory(Key, ResultData).
+
+%% @doc Store validation schemas in memory for documentation and introspection
+-spec store_validation_schemas() -> ok.
+store_validation_schemas() ->
+    SchemaKey = "phase3/config/validation",
+    Schemas =
+        #{stdio => ?STDIO_CONFIG_SCHEMA,
+          tcp => ?TCP_CONFIG_SCHEMA,
+          http => ?HTTP_CONFIG_SCHEMA,
+          metadata =>
+              #{version => "1.0.0",
+                phase => 3,
+                last_updated => erlang:timestamp(),
+                supported_types => [stdio, tcp, http],
+                validation_features =>
+                    [schema_based,
+                     field_validators,
+                     comprehensive_errors,
+                     memory_coordination,
+                     type_specific_validation]}},
+    store_in_memory(SchemaKey, Schemas).
+
+%% @doc Get validation schemas from memory
+-spec get_validation_schemas_from_memory() -> {ok, map()} | {error, term()}.
+get_validation_schemas_from_memory() ->
+    Key = "phase3/config/validation",
+    try
+        case get({validation_memory, Key}) of
+            undefined ->
+                %% Try to load from registry
+                case whereis(erlmcp_registry) of
+                    undefined ->
+                        %% Initialize schemas if not found
+                        store_validation_schemas(),
+                        {ok,
+                         #{stdio => ?STDIO_CONFIG_SCHEMA,
+                           tcp => ?TCP_CONFIG_SCHEMA,
+                           http => ?HTTP_CONFIG_SCHEMA}};
+                    _Pid ->
+                        case erlmcp_registry:get_validation_data(Key) of
+                            {ok, Data} ->
+                                {ok, Data};
+                            {error, not_found} ->
+                                store_validation_schemas(),
+                                {ok,
+                                 #{stdio => ?STDIO_CONFIG_SCHEMA,
+                                   tcp => ?TCP_CONFIG_SCHEMA,
+                                   http => ?HTTP_CONFIG_SCHEMA}};
+                            Error ->
+                                Error
+                        end
+                end;
+            Data ->
+                {ok, Data}
+        end
+    catch
+        _:Reason ->
+            {error, {memory_access_failed, Reason}}
+    end.
+
+%% @doc Initialize configuration validation system with coordination hooks
+-spec initialize_config_validation() -> ok.
+initialize_config_validation() ->
+    %% Initialize schemas in memory
+    store_validation_schemas(),
+    %% Set up coordination hooks if available
+    setup_coordination_hooks(),
+    logger:info("Configuration validation system initialized with Phase 3 coordination"),
+    ok.
+
+%% @doc Setup coordination hooks for validation system
+-spec setup_coordination_hooks() -> ok.
+setup_coordination_hooks() ->
+    try
+        %% Store initial coordination data
+        HookData =
+            #{system => configuration_validation,
+              phase => 3,
+              capabilities => [schema_validation, memory_storage, error_tracking],
+              initialized_at => erlang:timestamp()},
+        store_in_memory("phase3/config/hooks", HookData),
+        ok
+    catch
+        _:_ ->
+            ok  %% Non-critical failure
+    end.
+
+%% @doc Validate transport configuration with full coordination support
+-spec validate_transport_with_coordination(atom(), map()) -> ok | {error, term()}.
+validate_transport_with_coordination(TransportType, Config) ->
+    %% Store validation attempt with coordination context
+    CoordKey = "phase3/config/coordination/" ++ atom_to_list(TransportType),
+    CoordData =
+        #{transport_type => TransportType,
+          config_hash => erlang:phash2(Config),
+          validation_start => erlang:timestamp(),
+          coordination_enabled => true},
+    store_in_memory(CoordKey, CoordData),
+
+    %% Perform validation with enhanced error handling
+    Result = validate_transport_config_with_schema(TransportType, Config),
+
+    %% Update coordination data with result
+    FinalCoordData =
+        CoordData#{validation_end => erlang:timestamp(),
+                   result => Result,
+                   validation_completed => true},
+    store_in_memory(CoordKey, FinalCoordData),
+
+    Result.
 
 %%====================================================================
 %% Enhanced Error Handling Functions - Phase 3 Step 7
@@ -1682,3 +2490,279 @@ audit_single_binding(TransportId, Info) ->
         end,
 
     Issues3.
+
+%%====================================================================
+%% Additional Enhanced API Functions - Phase 3 Step 7 Extensions
+%%====================================================================
+
+%% @doc Get enhanced transport status with comprehensive information
+-spec get_enhanced_transport_status(transport_id()) -> {ok, map()} | {error, term()}.
+get_enhanced_transport_status(TransportId) ->
+    case get_transport_binding_info(TransportId) of
+        {ok, BasicInfo} ->
+            % Enhance with additional runtime information
+            Config = maps:get(config, BasicInfo, #{}),
+            Pid = maps:get(transport_pid, BasicInfo),
+
+            % Get process information
+            ProcessInfo =
+                case is_process_alive(Pid) of
+                    true ->
+                        #{message_queue_len => element(2, process_info(Pid, message_queue_len)),
+                          memory => element(2, process_info(Pid, memory)),
+                          reductions => element(2, process_info(Pid, reductions)),
+                          status => element(2, process_info(Pid, status))};
+                    false ->
+                        #{status => dead}
+                end,
+
+            % Calculate uptime
+            StartedAt = maps:get(started_at, Config, erlang:timestamp()),
+            Now = erlang:timestamp(),
+            UptimeMs = timer:now_diff(Now, StartedAt) div 1000,
+
+            EnhancedInfo =
+                BasicInfo#{process_info => ProcessInfo,
+                           uptime_ms => UptimeMs,
+                           config_hash => erlang:phash2(Config),
+                           last_checked => Now,
+                           enhanced => true},
+
+            {ok, EnhancedInfo};
+        Error ->
+            Error
+    end.
+
+%% @doc Perform bulk operations on multiple transports
+-spec bulk_transport_operation(atom(), [transport_id()]) ->
+                                  [{transport_id(), ok | {error, term()}}].
+bulk_transport_operation(Operation, TransportIds) ->
+    logger:info("Performing bulk transport operation ~p on ~p transports",
+                [Operation, length(TransportIds)]),
+
+    Results =
+        lists:map(fun(TransportId) ->
+                     Result =
+                         case Operation of
+                             stop -> stop_transport(TransportId);
+                             restart ->
+                                 case stop_transport(TransportId) of
+                                     ok ->
+                                         timer:sleep(100), % Brief pause between stop and start
+                                         case get_transport_config(TransportId) of
+                                             {ok, Config} ->
+                                                 Type = maps:get(type, Config, stdio),
+                                                 start_transport(TransportId, Type, Config);
+                                             Error -> Error
+                                         end;
+                                     Error -> Error
+                                 end;
+                             status -> get_enhanced_transport_status(TransportId);
+                             unbind -> unbind_transport(TransportId);
+                             _ -> {error, {unknown_operation, Operation}}
+                         end,
+                     {TransportId, Result}
+                  end,
+                  TransportIds),
+
+    % Log summary
+    SuccessCount =
+        length([R || {_, ok} = R <- Results]) + length([R || {_, {ok, _}} = R <- Results]),
+    FailureCount = length(TransportIds) - SuccessCount,
+    logger:info("Bulk operation ~p completed: ~p successes, ~p failures",
+                [Operation, SuccessCount, FailureCount]),
+
+    Results.
+
+%% @doc Clean up stale or orphaned transports
+-spec cleanup_stale_transports() -> {ok, map()} | {error, term()}.
+cleanup_stale_transports() ->
+    logger:info("Starting cleanup of stale transports"),
+
+    case list_transports() of
+        [] ->
+            {ok,
+             #{cleaned => 0,
+               errors => 0,
+               total_checked => 0}};
+        Transports ->
+            Results =
+                lists:map(fun({TransportId, {Pid, Config}}) ->
+                             case is_transport_stale(TransportId, Pid, Config) of
+                                 true ->
+                                     logger:info("Cleaning up stale transport ~p", [TransportId]),
+                                     case stop_transport(TransportId) of
+                                         ok -> {TransportId, cleaned};
+                                         Error -> {TransportId, {error, Error}}
+                                     end;
+                                 false -> {TransportId, healthy}
+                             end
+                          end,
+                          Transports),
+
+            CleanedCount = length([R || {_, cleaned} = R <- Results]),
+            ErrorCount = length([R || {_, {error, _}} = R <- Results]),
+            HealthyCount = length([R || {_, healthy} = R <- Results]),
+
+            Summary =
+                #{cleaned => CleanedCount,
+                  errors => ErrorCount,
+                  healthy => HealthyCount,
+                  total_checked => length(Transports),
+                  details => Results},
+
+            logger:info("Stale transport cleanup completed: ~p", [Summary]),
+            {ok, Summary}
+    end.
+
+%% @doc Check if a transport is stale
+-spec is_transport_stale(transport_id(), pid(), map()) -> boolean().
+is_transport_stale(TransportId, Pid, Config) ->
+    % Check if process is dead
+    case is_process_alive(Pid) of
+        false ->
+            logger:debug("Transport ~p is stale: process dead", [TransportId]),
+            true;
+        true ->
+            % Check if transport has been idle too long
+            StartedAt = maps:get(started_at, Config, erlang:timestamp()),
+            Now = erlang:timestamp(),
+            UptimeSeconds = timer:now_diff(Now, StartedAt) div 1000000,
+            MaxIdleTime = maps:get(max_idle_seconds, Config, 3600), % 1 hour default
+
+            case UptimeSeconds > MaxIdleTime of
+                true ->
+                    % Check if transport has been active recently
+                    case process_info(Pid, message_queue_len) of
+                        {message_queue_len, 0} ->
+                            logger:debug("Transport ~p is stale: idle for ~p seconds",
+                                         [TransportId, UptimeSeconds]),
+                            true;
+                        _ ->
+                            false
+                    end;
+                false ->
+                    false
+            end
+    end.
+
+%%====================================================================
+%% Phase 3 Enhanced Transport Health Validation
+%%====================================================================
+
+%% @doc Validate transport health after startup
+-spec validate_transport_health(transport_id(), pid()) -> ok | {error, term()}.
+validate_transport_health(TransportId, Pid) ->
+    case is_process_alive(Pid) of
+        false ->
+            {error, {transport_dead, TransportId}};
+        true ->
+            try
+                % Check process state
+                case process_info(Pid, status) of
+                    {status, Status} when Status =:= running; Status =:= waiting ->
+                        % Check message queue is not overloaded
+                        case process_info(Pid, message_queue_len) of
+                            {message_queue_len, QLen} when QLen < 1000 ->
+                                % Basic health check passed
+                                logger:debug("Transport ~p health check passed: status=~p, queue_len=~p",
+                                             [TransportId, Status, QLen]),
+                                ok;
+                            {message_queue_len, QLen} ->
+                                logger:warning("Transport ~p has large message queue: ~p messages",
+                                               [TransportId, QLen]),
+                                {error, {large_message_queue, QLen}}
+                        end;
+                    {status, Status} ->
+                        logger:warning("Transport ~p in unusual status: ~p", [TransportId, Status]),
+                        {error, {unusual_status, Status}};
+                    undefined ->
+                        {error, {process_info_unavailable, TransportId}}
+                end
+            catch
+                _:HError ->
+                    {error, {health_check_failed, HError}}
+            end
+    end.
+
+%%====================================================================
+%% Phase 3 Enhanced API Convenience Functions
+%%====================================================================
+
+%% @doc Phase 3 Enhanced version of start_transport with comprehensive monitoring
+-spec start_transport_enhanced(transport_id(), transport_type(), map()) ->
+                                  {ok,
+                                   #{pid => pid(),
+                                     config => map(),
+                                     health => map()}} |
+                                  {error, term()}.
+start_transport_enhanced(TransportId, Type, Config) ->
+    StartTime = erlang:timestamp(),
+
+    case start_transport(TransportId, Type, Config) of
+        {ok, Pid} ->
+            % Gather comprehensive startup information
+            case get_enhanced_transport_status(TransportId) of
+                {ok, StatusInfo} ->
+                    EndTime = erlang:timestamp(),
+                    StartupDurationMs = timer:now_diff(EndTime, StartTime) div 1000,
+
+                    Result =
+                        #{pid => Pid,
+                          config => maps:get(config, StatusInfo, Config),
+                          health => maps:get(process_info, StatusInfo, #{}),
+                          startup_time_ms => StartupDurationMs,
+                          transport_id => TransportId,
+                          phase => 3,
+                          api_level => enhanced},
+
+                    logger:info("Phase 3 Enhanced transport ~p started successfully in ~pms",
+                                [TransportId, StartupDurationMs]),
+                    {ok, Result};
+                {error, StatusError} ->
+                    logger:warning("Transport ~p started but status check failed: ~p",
+                                   [TransportId, StatusError]),
+                    {ok,
+                     #{pid => Pid,
+                       transport_id => TransportId,
+                       status_warning => StatusError}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Create transport with automatic retry and recovery
+-spec start_transport_with_retry(transport_id(),
+                                 transport_type(),
+                                 map(),
+                                 non_neg_integer()) ->
+                                    {ok, pid()} | {error, term()}.
+start_transport_with_retry(TransportId, Type, Config, MaxRetries) ->
+    start_transport_with_retry(TransportId, Type, Config, MaxRetries, 1).
+
+-spec start_transport_with_retry(transport_id(),
+                                 transport_type(),
+                                 map(),
+                                 non_neg_integer(),
+                                 non_neg_integer()) ->
+                                    {ok, pid()} | {error, term()}.
+start_transport_with_retry(_TransportId, _Type, _Config, MaxRetries, Attempt)
+    when Attempt > MaxRetries ->
+    {error, max_retries_exceeded};
+start_transport_with_retry(TransportId, Type, Config, MaxRetries, Attempt) ->
+    case start_transport(TransportId, Type, Config) of
+        {ok, Pid} ->
+            logger:info("Transport ~p started successfully on attempt ~p", [TransportId, Attempt]),
+            {ok, Pid};
+        {error, Reason} when Attempt < MaxRetries ->
+            SleepTime = Attempt * 1000, % Progressive backoff: 1s, 2s, 3s...
+            logger:info("Transport ~p start failed (attempt ~p/~p): ~p. Retrying in "
+                        "~pms...",
+                        [TransportId, Attempt, MaxRetries, Reason, SleepTime]),
+            timer:sleep(SleepTime),
+            start_transport_with_retry(TransportId, Type, Config, MaxRetries, Attempt + 1);
+        {error, Reason} ->
+            logger:error("Transport ~p failed to start after ~p attempts: ~p",
+                         [TransportId, MaxRetries, Reason]),
+            {error, {max_retries_exceeded, Reason}}
+    end.

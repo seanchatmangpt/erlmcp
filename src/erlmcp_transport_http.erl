@@ -2,18 +2,15 @@
 %%% @doc
 %%% Simplified HTTP Transport for Erlang MCP (Model Context Protocol)
 %%%
-%%% This module provides a simplified HTTP client transport implementation
-%%% for MCP. It focuses on the core use case: making HTTP requests to MCP
-%%% servers and handling JSON-RPC 2.0 responses over HTTP.
+%%% Major simplification of HTTP transport focusing on MCP request/response
+%%% patterns with registry integration and proper error handling.
 %%%
-%%% Features:
-%%% - HTTP/HTTPS client functionality
-%%% - JSON-RPC 2.0 over HTTP
-%%% - Registry integration
+%%% Key Features:
+%%% - Clean MCP HTTP client functionality
+%%% - Registry integration for transport management
 %%% - Proper error handling and timeouts
-%%% - SSL/TLS support
-%%% - Connection pooling
-%%% - Retry logic
+%%% - Simplified state management
+%%% - Standard behavior callbacks
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -25,125 +22,154 @@
 
 -include_lib("kernel/include/logger.hrl").
 
-%% Transport API
--export([send/2, close/1, get_info/1, handle_transport_call/2]).
+%% Transport API (mimics behavior interface)
+-export([init_transport/2, send/2, close/1, get_info/1, handle_transport_call/2]).
 %% API
--export([start_link/2, start_link/3, stop/1]).
+-export([start_link/2, stop/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
-%% Types
--type http_method() :: get | post | put | delete.
--type http_headers() :: [{string(), string()}].
-
-%% Simplified state record focused on MCP use case
+%% Simplified state record (Phase 3 Enhancement) - aligned with behavior pattern
 -record(state,
-        {%% Core identification
-         transport_id :: atom(),
-         owner_pid :: pid(),
-         registry_pid :: pid() | undefined,
-         %% HTTP client configuration
-         url :: binary(),
-         method = post :: http_method(),
-         headers = [] :: http_headers(),
-         %% Connection settings
-         timeout = 30000 :: timeout(),
-         connect_timeout = 10000 :: timeout(),
-         ssl_options = [] :: [ssl:tls_client_option()],
-         %% Retry and reliability
-         max_retries = 3 :: non_neg_integer(),
-         retry_delay = 1000 :: pos_integer(),
-         %% State tracking
-         connected = false :: boolean(),
-         error_count = 0 :: non_neg_integer(),
-         last_error :: term() | undefined,
-         %% Statistics
-         requests_sent = 0 :: non_neg_integer(),
-         responses_received = 0 :: non_neg_integer(),
-         bytes_sent = 0 :: non_neg_integer(),
-         bytes_received = 0 :: non_neg_integer(),
-         %% Internal
-         http_client_options :: map()}).
-
--type state() :: #state{}.
+        {transport_id :: atom(),
+         config :: map(),
+         url :: string(),
+         headers :: [{string(), string()}],
+         http_options :: [term()],
+         statistics :: map(),
+         connection_state = connecting :: connecting | connected | disconnected | error,
+         last_error :: term() | undefined}).
 
 %% Default HTTP headers for MCP
 -define(DEFAULT_HEADERS,
         [{"Content-Type", "application/json"},
          {"Accept", "application/json"},
          {"User-Agent", "erlmcp-http-transport/1.0"}]).
+%% Default timeouts
+-define(DEFAULT_TIMEOUT, 30000).
+-define(DEFAULT_CONNECT_TIMEOUT, 10000).
 
 %%====================================================================
-%% Transport API Implementation
+%% Transport API (mimics behavior interface)
 %%====================================================================
 
--spec send(state(), iodata()) -> ok | {error, term()}.
+%% @doc Internal initialization function
+-spec init_transport(atom(), map()) -> {ok, #state{}} | {error, term()}.
+init_transport(TransportId, Config) ->
+    ?LOG_DEBUG("Initializing HTTP transport ~p with config: ~p",
+               [TransportId, maps:without([password, secret, token], Config)]),
+
+    case validate_config(Config) of
+        ok ->
+            Url = ensure_string(maps:get(url, Config)),
+            Headers = merge_headers(maps:get(headers, Config, [])),
+            HttpOptions = build_http_options(Config),
+            Statistics =
+                #{messages_sent => 0,
+                  messages_received => 0,
+                  bytes_sent => 0,
+                  bytes_received => 0,
+                  errors => 0,
+                  started_at => erlang:system_time(millisecond),
+                  last_activity => erlang:system_time(millisecond)},
+
+            State =
+                #state{transport_id = TransportId,
+                       config = Config,
+                       url = Url,
+                       headers = Headers,
+                       http_options = HttpOptions,
+                       statistics = Statistics,
+                       connection_state = connected,
+                       last_error = undefined},
+
+            register_with_registry(State),
+            ?LOG_INFO("HTTP transport ~p initialized for URL: ~s", [TransportId, Url]),
+            {ok, State};
+        {error, Reason} ->
+            ?LOG_ERROR("Failed to initialize HTTP transport ~p: ~p", [TransportId, Reason]),
+            {error, Reason}
+    end.
+
+%% @doc Send data via HTTP transport
+-spec send(#state{}, iodata()) -> ok | {error, term()}.
 send(State, Data) ->
-    send_with_retry(State, Data, State#state.max_retries).
+    ?LOG_DEBUG("Sending HTTP request to ~s", [State#state.url]),
 
--spec close(state()) -> ok.
+    try
+        Body = iolist_to_binary(Data),
+
+        case httpc:request(post,
+                           {State#state.url, State#state.headers, "application/json", Body},
+                           State#state.http_options,
+                           [{body_format, binary}])
+        of
+            {ok, {{_, Status, _}, _ResponseHeaders, _ResponseBody}}
+                when Status >= 200, Status < 300 ->
+                ?LOG_DEBUG("HTTP request successful, status: ~p", [Status]),
+                ok;
+            {ok, {{_, Status, _}, _Headers, ResponseBody}} ->
+                ?LOG_WARNING("HTTP request failed with status: ~p, body: ~p",
+                             [Status, ResponseBody]),
+                {error, {http_status, Status}};
+            {error, Reason} ->
+                ?LOG_ERROR("HTTP request failed: ~p", [Reason]),
+                {error, {http_error, Reason}}
+        end
+    catch
+        Class:ErrorReason:Stacktrace ->
+            ?LOG_ERROR("HTTP request exception: ~p:~p~n~p", [Class, ErrorReason, Stacktrace]),
+            {error, {request_exception, Class, ErrorReason}}
+    end.
+
+%% @doc Close the HTTP transport
+-spec close(#state{}) -> ok.
 close(State) ->
     unregister_from_registry(State),
-    ?LOG_INFO("HTTP transport closed for URL: ~s", [State#state.url]),
+    ?LOG_INFO("HTTP transport ~p closed", [State#state.transport_id]),
     ok.
 
--spec get_info(state()) -> erlmcp_transport:transport_info().
+%% @doc Get transport information - enhanced with state tracking
+-spec get_info(#state{}) -> erlmcp_transport:transport_info().
 get_info(State) ->
-    #{type => http,
-      version => <<"1.0">>,
-      capabilities => [client, json_rpc, ssl, retry],
-      connection_state =>
-          case State#state.connected of
-              true ->
-                  connected;
-              false ->
-                  disconnected
-          end,
-      statistics =>
-          #{requests_sent => State#state.requests_sent,
-            responses_received => State#state.responses_received,
-            bytes_sent => State#state.bytes_sent,
-            bytes_received => State#state.bytes_received,
-            error_count => State#state.error_count},
-      url => State#state.url,
-      method => State#state.method,
-      timeout => State#state.timeout,
-      last_error => State#state.last_error}.
+    Info =
+        #{transport_id => State#state.transport_id,
+          type => http,
+          status => State#state.connection_state,
+          peer => State#state.url,
+          version => <<"1.0.0">>,
+          capabilities => [client, json_rpc, ssl],
+          connection_state => State#state.connection_state,
+          statistics => State#state.statistics,
+          started_at =>
+              maps:get(started_at, State#state.statistics, erlang:system_time(millisecond)),
+          last_activity =>
+              maps:get(last_activity, State#state.statistics, erlang:system_time(millisecond)),
+          config => maps:without([password, secret, token], State#state.config)},
 
--spec handle_transport_call(term(), state()) ->
-                               {reply, term(), state()} | {error, term()}.
+    % Add last error if present
+    case State#state.last_error of
+        undefined ->
+            Info;
+        Error ->
+            Info#{last_error => Error}
+    end.
+
+%% @doc Handle transport-specific calls
+-spec handle_transport_call(term(), #state{}) ->
+                               {reply, term(), #state{}} | {error, term()}.
 handle_transport_call(get_url, State) ->
-    {reply, State#state.url, State};
+    {reply, {ok, State#state.url}, State};
+handle_transport_call({set_headers, Headers}, State) when is_list(Headers) ->
+    NewHeaders = merge_headers(Headers),
+    NewState = State#state{headers = NewHeaders},
+    {reply, ok, NewState};
 handle_transport_call({set_timeout, Timeout}, State)
     when is_integer(Timeout), Timeout > 0 ->
-    NewState = State#state{timeout = Timeout},
+    NewHttpOptions = update_http_timeout(State#state.http_options, Timeout),
+    NewState = State#state{http_options = NewHttpOptions},
     {reply, ok, NewState};
-handle_transport_call({set_headers, Headers}, State) when is_list(Headers) ->
-    NewState = State#state{headers = merge_headers(Headers)},
-    {reply, ok, NewState};
-handle_transport_call(reset_stats, State) ->
-    NewState =
-        State#state{requests_sent = 0,
-                    responses_received = 0,
-                    bytes_sent = 0,
-                    bytes_received = 0,
-                    error_count = 0,
-                    last_error = undefined},
-    {reply, ok, NewState};
-handle_transport_call(reconnect, State) ->
-    % For HTTP, reconnect means testing the connection
-    case test_connection(State) of
-        ok ->
-            NewState = State#state{connected = true, last_error = undefined},
-            {reply, ok, NewState};
-        {error, Reason} ->
-            NewState =
-                State#state{connected = false,
-                            last_error = Reason,
-                            error_count = State#state.error_count + 1},
-            {reply, {error, Reason}, NewState}
-    end;
 handle_transport_call(_Request, _State) ->
     {error, unknown_request}.
 
@@ -152,12 +178,8 @@ handle_transport_call(_Request, _State) ->
 %%====================================================================
 
 -spec start_link(atom(), map()) -> {ok, pid()} | {error, term()}.
-start_link(TransportId, Opts) ->
-    gen_server:start_link(?MODULE, [TransportId, Opts], []).
-
--spec start_link(atom(), atom(), map()) -> {ok, pid()} | {error, term()}.
-start_link(TransportId, Name, Opts) ->
-    gen_server:start_link({local, Name}, ?MODULE, [TransportId, Opts], []).
+start_link(TransportId, Config) ->
+    gen_server:start_link(?MODULE, [TransportId, Config], []).
 
 -spec stop(pid()) -> ok.
 stop(Pid) ->
@@ -167,64 +189,30 @@ stop(Pid) ->
 %% gen_server callbacks
 %%====================================================================
 
-init([TransportId, Opts]) ->
+%% @doc Initialize the gen_server process (gen_server callback)
+%% Note: This shadows the behavior init/1 callback by design
+init([TransportId, Config]) ->
     process_flag(trap_exit, true),
-
-    ?LOG_DEBUG("Initializing HTTP transport ~p with opts: ~p", [TransportId, Opts]),
-
-    case validate_http_opts(Opts) of
-        ok ->
-            Url = maps:get(url, Opts),
-            OwnerPid = maps:get(owner, Opts),
-
-            State =
-                #state{transport_id = TransportId,
-                       url = ensure_binary(Url),
-                       owner_pid = OwnerPid,
-                       method = maps:get(method, Opts, post),
-                       headers = merge_headers(maps:get(headers, Opts, [])),
-                       timeout = maps:get(timeout, Opts, 30000),
-                       connect_timeout = maps:get(connect_timeout, Opts, 10000),
-                       ssl_options = maps:get(ssl_options, Opts, []),
-                       max_retries = maps:get(max_retries, Opts, 3),
-                       retry_delay = maps:get(retry_delay, Opts, 1000),
-                       http_client_options = build_client_options(Opts)},
-
-            % Register with registry if available
-            register_with_registry(State),
-
-            % Test initial connection
-            case test_connection(State) of
-                ok ->
-                    FinalState = State#state{connected = true},
-                    ?LOG_INFO("HTTP transport ~p started successfully", [TransportId]),
-                    {ok, FinalState};
-                {error, Reason} ->
-                    ?LOG_WARNING("HTTP transport ~p started but connection test failed: ~p",
-                                 [TransportId, Reason]),
-                    FinalState =
-                        State#state{connected = false,
-                                    last_error = Reason,
-                                    error_count = 1},
-                    {ok, FinalState}
-            end;
+    ConfigWithId = Config#{transport_id => TransportId},
+    case init_transport(TransportId, ConfigWithId) of
+        {ok, State} ->
+            {ok, State};
         {error, Reason} ->
-            ?LOG_ERROR("Failed to initialize HTTP transport ~p: ~p", [TransportId, Reason]),
             {stop, Reason}
     end.
 
 handle_call({send, Data}, _From, State) ->
     case send(State, Data) of
         ok ->
-            NewState =
-                State#state{requests_sent = State#state.requests_sent + 1,
-                            bytes_sent = State#state.bytes_sent + iolist_size(Data)},
+            NewStats = update_statistics(State#state.statistics, messages_sent, 1),
+            NewState = State#state{statistics = NewStats, last_error = undefined},
             {reply, ok, NewState};
         {error, Reason} = Error ->
+            NewStats = update_statistics(State#state.statistics, errors, 1),
             NewState =
-                State#state{error_count = State#state.error_count + 1,
-                            last_error = Reason,
-                            connected = false},
+                State#state{statistics = NewStats,
+                            connection_state = error,
+                            last_error = Reason},
             {reply, Error, NewState}
     end;
 handle_call(close, _From, State) ->
@@ -246,11 +234,6 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({http_response, Response}, State) ->
-    % Handle asynchronous HTTP response if needed
-    ?LOG_DEBUG("Received HTTP response: ~p", [Response]),
-    NewState = State#state{responses_received = State#state.responses_received + 1},
-    {noreply, NewState};
 handle_info({'EXIT', _Pid, Reason}, State) ->
     ?LOG_WARNING("HTTP transport received EXIT signal: ~p", [Reason]),
     {noreply, State};
@@ -269,76 +252,46 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 %% @private
-%% Validate HTTP transport options
--spec validate_http_opts(map()) -> ok | {error, term()}.
-validate_http_opts(Opts) ->
+%% Validate transport configuration using comprehensive schema
+-spec validate_config(map()) -> ok | {error, term()}.
+validate_config(Config) ->
+    case erlmcp_config_validation:validate_transport_config(http, http, Config) of
+        ok ->
+            ok;
+        {error, ValidationErrors} ->
+            % Convert validation errors to legacy format for compatibility
+            FirstError = hd(ValidationErrors),
+            ErrorMessage = maps:get(message, FirstError, <<"Configuration validation failed">>),
+            {error, {validation_failed, ErrorMessage, ValidationErrors}}
+    end.
+
+%% @private Legacy validation (kept for reference)
+validate_config_legacy(Config) ->
     try
-        % Check required fields
-        case maps:get(url, Opts, undefined) of
+        case maps:get(url, Config, undefined) of
             undefined ->
                 throw(missing_url);
             Url ->
                 validate_url(Url)
         end,
 
-        case maps:get(owner, Opts, undefined) of
+        % Validate optional fields
+        case maps:get(timeout, Config, undefined) of
             undefined ->
-                throw(missing_owner);
-            Owner when is_pid(Owner) ->
+                ok;
+            Timeout when is_integer(Timeout), Timeout > 0 ->
                 ok;
             _ ->
-                throw(invalid_owner)
+                throw({invalid_timeout, maps:get(timeout, Config)})
         end,
 
-        validate_extended_http_opts(Opts)
-    catch
-        Reason ->
-            {error, Reason};
-        Class:Reason ->
-            {error, {validation_error, Class, Reason}}
-    end.
-
-%% @private
-%% duplicate older helper removed; canonical version exists below
-
-%% @private
-%% Validate extended HTTP options
--spec validate_extended_http_opts(map()) -> ok | {error, term()}.
-validate_extended_http_opts(Opts) ->
-    try
-        % Validate method
-        Method = maps:get(method, Opts, post),
-        case lists:member(Method, [get, post, put, delete]) of
-            true ->
+        case maps:get(headers, Config, undefined) of
+            undefined ->
                 ok;
-            false ->
-                throw({invalid_method, Method})
-        end,
-
-        % Validate timeouts
-        Timeout = maps:get(timeout, Opts, 30000),
-        case is_integer(Timeout) andalso Timeout > 0 of
-            true ->
+            Headers when is_list(Headers) ->
                 ok;
-            false ->
-                throw({invalid_timeout, Timeout})
-        end,
-
-        ConnectTimeout = maps:get(connect_timeout, Opts, 10000),
-        case is_integer(ConnectTimeout) andalso ConnectTimeout > 0 of
-            true ->
-                ok;
-            false ->
-                throw({invalid_connect_timeout, ConnectTimeout})
-        end,
-
-        % Validate retries
-        MaxRetries = maps:get(max_retries, Opts, 3),
-        case is_integer(MaxRetries) andalso MaxRetries >= 0 of
-            true ->
-                ok;
-            false ->
-                throw({invalid_max_retries, MaxRetries})
+            _ ->
+                throw({invalid_headers, maps:get(headers, Config)})
         end,
 
         ok
@@ -348,117 +301,6 @@ validate_extended_http_opts(Opts) ->
         Class:Reason ->
             {error, {validation_error, Class, Reason}}
     end.
-
-%% @private
-%% Send data with retry logic
--spec send_with_retry(state(), iodata(), non_neg_integer()) -> ok | {error, term()}.
-send_with_retry(_State, _Data, 0) ->
-    {error, max_retries_exceeded};
-send_with_retry(State, Data, RetriesLeft) ->
-    case send_http_request(State, Data) of
-        {ok, _Response} ->
-            ok;
-        {error, Reason} = Error ->
-            case should_retry(Reason) of
-                true when RetriesLeft > 1 ->
-                    timer:sleep(State#state.retry_delay),
-                    send_with_retry(State, Data, RetriesLeft - 1);
-                _ ->
-                    Error
-            end
-    end.
-
-%% @private
-%% Send actual HTTP request
--spec send_http_request(state(), iodata()) -> {ok, term()} | {error, term()}.
-send_http_request(State, Data) ->
-    #state{url = Url,
-           method = Method,
-           headers = Headers,
-           timeout = _Timeout,
-           ssl_options = _SSLOpts,
-           http_client_options = _ClientOpts} =
-        State,
-
-    try
-        % Ensure data is binary
-        Body = iolist_to_binary(Data),
-
-        % Build request options
-        RequestOpts = build_request_options(State),
-
-        % Make HTTP request using httpc
-        case Method of
-            get ->
-                httpc:request(get, {binary_to_list(Url), Headers}, RequestOpts, []);
-            post ->
-                ContentType = proplists:get_value("Content-Type", Headers, "application/json"),
-                httpc:request(post,
-                              {binary_to_list(Url), Headers, ContentType, Body},
-                              RequestOpts,
-                              []);
-            put ->
-                ContentType = proplists:get_value("Content-Type", Headers, "application/json"),
-                httpc:request(put,
-                              {binary_to_list(Url), Headers, ContentType, Body},
-                              RequestOpts,
-                              []);
-            delete ->
-                httpc:request(delete, {binary_to_list(Url), Headers}, RequestOpts, [])
-        end
-    catch
-        Class:Reason:Stacktrace ->
-            ?LOG_ERROR("HTTP request failed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
-            {error, {http_request_failed, Class, Reason}}
-    end.
-
-%% @private
-%% Build HTTP request options
--spec build_request_options(state()) -> proplists:proplist().
-build_request_options(State) ->
-    BaseOpts =
-        [{timeout, State#state.timeout}, {connect_timeout, State#state.connect_timeout}],
-
-    % Add SSL options if URL is HTTPS
-    case binary:match(State#state.url, <<"https://">>) of
-        {0, _} ->
-            [{ssl, State#state.ssl_options} | BaseOpts];
-        nomatch ->
-            BaseOpts
-    end.
-
-%% @private
-%% Test connection to the HTTP endpoint
--spec test_connection(state()) -> ok | {error, term()}.
-test_connection(State) ->
-    % Simple HEAD request to test connectivity
-    TestUrl = binary_to_list(State#state.url),
-    RequestOpts = build_request_options(State#state{timeout = 5000}),
-
-    case httpc:request(head, {TestUrl, []}, RequestOpts, []) of
-        {ok, {{_, Status, _}, _, _}} when Status >= 200, Status < 400 ->
-            ok;
-        {ok, {{_, Status, _}, _, _}} ->
-            {error, {http_status, Status}};
-        {error, Reason} ->
-            {error, {connection_test_failed, Reason}}
-    end.
-
-%% @private
-%% Determine if an error should trigger a retry
--spec should_retry(term()) -> boolean().
-should_retry({http_status, Status}) when Status >= 500 ->
-    true;
-should_retry({connection_test_failed, _}) ->
-    true;
-should_retry(timeout) ->
-    true;
-should_retry(connect_timeout) ->
-    true;
-should_retry({socket_error, _}) ->
-    true;
-should_retry(_) ->
-    false.
 
 %% @private
 %% Merge user headers with defaults
@@ -473,12 +315,35 @@ merge_headers(UserHeaders) ->
     maps:to_list(MergedMap).
 
 %% @private
-%% Build HTTP client options
--spec build_client_options(map()) -> map().
-build_client_options(Opts) ->
-    #{pool_size => maps:get(pool_size, Opts, 10),
-      max_sessions => maps:get(max_sessions, Opts, 20),
-      keep_alive => maps:get(keep_alive, Opts, true)}.
+%% Build HTTP options
+-spec build_http_options(map()) -> [term()].
+build_http_options(Config) ->
+    BaseOpts =
+        [{timeout, maps:get(timeout, Config, ?DEFAULT_TIMEOUT)},
+         {connect_timeout, maps:get(connect_timeout, Config, ?DEFAULT_CONNECT_TIMEOUT)}],
+
+    % Add SSL options if URL is HTTPS
+    Url = maps:get(url, Config),
+    case is_https_url(Url) of
+        true ->
+            SslOpts = maps:get(ssl_options, Config, []),
+            [{ssl, SslOpts} | BaseOpts];
+        false ->
+            BaseOpts
+    end.
+
+%% @private
+%% Check if URL is HTTPS
+-spec is_https_url(binary() | string()) -> boolean().
+is_https_url(Url) when is_binary(Url) ->
+    is_https_url(binary_to_list(Url));
+is_https_url(Url) when is_list(Url) ->
+    case string:prefix(Url, "https://") of
+        nomatch ->
+            false;
+        _ ->
+            true
+    end.
 
 %% @private
 %% Validate URL format
@@ -510,55 +375,52 @@ validate_url(_) ->
     throw(invalid_url_type).
 
 %% @private
-%% Ensure value is binary
--spec ensure_binary(binary() | string()) -> binary().
-ensure_binary(Value) when is_binary(Value) ->
-    Value;
-ensure_binary(Value) when is_list(Value) ->
-    list_to_binary(Value).
+%% Ensure value is string
+-spec ensure_string(binary() | string()) -> string().
+ensure_string(Value) when is_binary(Value) ->
+    binary_to_list(Value);
+ensure_string(Value) when is_list(Value) ->
+    Value.
 
 %% @private
-%% Register transport with the registry
--spec register_with_registry(state()) -> ok.
-register_with_registry(#state{transport_id = TransportId} = State) ->
-    case whereis(erlmcp_registry) of
-        undefined ->
-            ?LOG_WARNING("Registry not available for HTTP transport ~p", [TransportId]),
+%% Update HTTP timeout in options
+-spec update_http_timeout(list(), pos_integer()) -> list().
+update_http_timeout(HttpOptions, NewTimeout) ->
+    lists:keystore(timeout, 1, HttpOptions, {timeout, NewTimeout}).
+
+%% @private
+%% Update statistics counter
+-spec update_statistics(map(), atom(), non_neg_integer()) -> map().
+update_statistics(Stats, Key, Value) ->
+    CurrentValue = maps:get(Key, Stats, 0),
+    Stats#{Key => CurrentValue + Value, last_activity => erlang:system_time(millisecond)}.
+
+%% @private
+%% Register transport with the registry using standard behavior helper
+-spec register_with_registry(#state{}) -> ok.
+register_with_registry(#state{transport_id = TransportId, config = Config}) ->
+    TransportConfig =
+        Config#{type => http,
+                url => maps:get(url, Config),
+                timeout => maps:get(timeout, Config, ?DEFAULT_TIMEOUT),
+                capabilities => [client, json_rpc, ssl],
+                pid => self()},
+    case erlmcp_transport_behavior:register_with_registry(TransportId,
+                                                          self(),
+                                                          TransportConfig)
+    of
+        ok ->
+            ?LOG_DEBUG("Registered HTTP transport ~p with registry", [TransportId]),
             ok;
-        RegistryPid when is_pid(RegistryPid) ->
-            Config =
-                #{type => http,
-                  url => State#state.url,
-                  method => State#state.method,
-                  timeout => State#state.timeout,
-                  capabilities => [client, json_rpc, ssl, retry]},
-            case erlmcp_registry:register_transport(TransportId, self(), Config) of
-                ok ->
-                    ?LOG_DEBUG("Registered HTTP transport ~p with registry", [TransportId]),
-                    ok;
-                {error, Reason} ->
-                    ?LOG_ERROR("Failed to register HTTP transport ~p: ~p", [TransportId, Reason]),
-                    ok
-            end
+        {error, Reason} ->
+            ?LOG_ERROR("Failed to register HTTP transport ~p: ~p", [TransportId, Reason]),
+            ok  % Don't fail initialization if registry isn't available
     end.
 
 %% @private
-%% Unregister transport from the registry
--spec unregister_from_registry(state()) -> ok.
-unregister_from_registry(#state{transport_id = undefined}) ->
-    ok;
+%% Unregister transport from the registry using standard behavior helper
+-spec unregister_from_registry(#state{}) -> ok.
 unregister_from_registry(#state{transport_id = TransportId}) ->
-    case whereis(erlmcp_registry) of
-        undefined ->
-            ok;
-        RegistryPid when is_pid(RegistryPid) ->
-            case erlmcp_registry:unregister_transport(TransportId) of
-                ok ->
-                    ?LOG_DEBUG("Unregistered HTTP transport ~p from registry", [TransportId]),
-                    ok;
-                {error, Reason} ->
-                    ?LOG_WARNING("Failed to unregister HTTP transport ~p: ~p",
-                                 [TransportId, Reason]),
-                    ok
-            end
-    end.
+    erlmcp_transport_behavior:unregister_from_registry(TransportId),
+    ?LOG_DEBUG("Unregistered HTTP transport ~p from registry", [TransportId]),
+    ok.
