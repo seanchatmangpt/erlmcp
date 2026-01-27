@@ -4,6 +4,8 @@
 -module(erlmcp_task_manager).
 -behaviour(gen_server).
 
+-compile({no_auto_import, [max/2]}).
+
 -include("erlmcp.hrl").
 
 -export([
@@ -33,7 +35,6 @@
 }).
 
 -type task_id() :: binary().
--type task_status() :: queued | running | completed | failed | cancelled | cancel_requested.
 -type server_id() :: atom() | binary().
 
 %%%===================================================================
@@ -164,7 +165,7 @@ handle_call({cancel_task, TaskId}, _From, State) ->
             end;
         error -> {error, not_found}
     end,
-    {reply, Reply, State};
+    {reply, Reply, State}.
 
 handle_cast({complete_task, TaskId, Result}, State) ->
     State1 = finalize_task(TaskId, completed, Result, State),
@@ -173,6 +174,9 @@ handle_cast({complete_task, TaskId, Result}, State) ->
 handle_cast({fail_task, TaskId, Reason}, State) ->
     State1 = finalize_task(TaskId, failed, Reason, State),
     {noreply, State1};
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
 
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, #state{subscribers = Subs, monitors = Mons} = State) ->
     case maps:find(Pid, Mons) of
@@ -299,4 +303,3 @@ now_ms() -> erlang:system_time(millisecond).
 
 max(A, B) when A >= B -> A;
 max(_, B) -> B.
-*** End Patch

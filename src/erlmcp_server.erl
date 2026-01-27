@@ -37,12 +37,15 @@
 -record(state, {
     server_id :: server_id(),
     capabilities :: #mcp_server_capabilities{},
+    client_capabilities :: #mcp_client_capabilities{} | undefined,
+    protocol_version :: binary() | undefined,
     resources = #{} :: #{binary() => {#mcp_resource{}, resource_handler()}},
     resource_templates = #{} :: #{binary() => {#mcp_resource_template{}, resource_handler()}},
     tools = #{} :: #{binary() => {#mcp_tool{}, tool_handler(), map() | undefined}},
     prompts = #{} :: #{binary() => {#mcp_prompt{}, prompt_handler()}},
     subscriptions = #{} :: #{binary() => sets:set(pid())},
     progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
+    notifier_pid :: pid() | undefined,
     initialized = false :: boolean()
 }).
 
@@ -122,18 +125,25 @@ init([ServerId, Capabilities]) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.init">>, ServerId),
     try
         process_flag(trap_exit, true),
-        
+
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"server_id">> => ServerId
         }),
-        
+
         ok = erlmcp_task_manager:register_server(ServerId, self()),
+
+        % Start or get change notifier
+        NotifierPid = case erlmcp_change_notifier:start_link() of
+            {ok, Pid} -> Pid;
+            {error, {already_started, Pid}} -> Pid
+        end,
 
         State = #state{
             server_id = ServerId,
-            capabilities = Capabilities
+            capabilities = Capabilities,
+            notifier_pid = NotifierPid
         },
-        
+
         logger:info("Starting MCP server ~p (refactored)", [ServerId]),
         erlmcp_tracing:set_status(SpanCtx, ok),
         {ok, State}
@@ -155,6 +165,7 @@ handle_call({add_resource, Uri, Handler}, _From, State) ->
         mime_type = ?MCP_MIME_TEXT_PLAIN
     },
     NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
+    notify_list_changed(resources, State),
     {reply, ok, State#state{resources = NewResources}};
 
 handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) ->
@@ -164,6 +175,7 @@ handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) -
         mime_type = ?MCP_MIME_TEXT_PLAIN
     },
     NewTemplates = maps:put(UriTemplate, {Template, Handler}, State#state.resource_templates),
+    notify_list_changed(resources, State),
     {reply, ok, State#state{resource_templates = NewTemplates}};
 
 handle_call({add_tool, Name, Handler}, _From, State) ->
@@ -172,6 +184,7 @@ handle_call({add_tool, Name, Handler}, _From, State) ->
         description = <<"Tool: ", Name/binary>>
     },
     NewTools = maps:put(Name, {Tool, Handler, undefined}, State#state.tools),
+    notify_list_changed(tools, State),
     {reply, ok, State#state{tools = NewTools}};
 
 handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
@@ -181,11 +194,13 @@ handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
         input_schema = Schema
     },
     NewTools = maps:put(Name, {Tool, Handler, Schema}, State#state.tools),
+    notify_list_changed(tools, State),
     {reply, ok, State#state{tools = NewTools}};
 
 handle_call({add_prompt, Name, Handler}, _From, State) ->
     Prompt = #mcp_prompt{name = Name},
     NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
+    notify_list_changed(prompts, State),
     {reply, ok, State#state{prompts = NewPrompts}};
 
 handle_call({add_prompt_with_args, Name, Handler, Arguments}, _From, State) ->
@@ -194,6 +209,7 @@ handle_call({add_prompt_with_args, Name, Handler, Arguments}, _From, State) ->
         arguments = Arguments
     },
     NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
+    notify_list_changed(prompts, State),
     {reply, ok, State#state{prompts = NewPrompts}};
 
 handle_call({subscribe_resource, Uri, Subscriber}, _From, State) ->
@@ -301,7 +317,7 @@ code_change(_OldVsn, State, _Extra) ->
 -spec handle_request(json_rpc_id(), binary(), json_rpc_params(), atom(), state()) ->
     {noreply, state()}.
 
-handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, #state{server_id = ServerId} = State) ->
+handle_request(Id, ?MCP_METHOD_INITIALIZE, Params, TransportId, #state{server_id = ServerId, initialized = false} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_initialize">>, ServerId),
     try
         erlmcp_tracing:set_attributes(SpanCtx, #{
@@ -309,12 +325,32 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, #state{server_i
             <<"transport_id">> => TransportId,
             <<"method">> => ?MCP_METHOD_INITIALIZE
         }),
-        
-        Response = build_initialize_response(State#state.capabilities),
-        send_response_via_registry(State, TransportId, Id, Response),
-        
-        erlmcp_tracing:set_status(SpanCtx, ok),
-        {noreply, State#state{initialized = true}}
+
+        %% Extract and validate client capabilities
+        ClientCapabilities = erlmcp_capabilities:extract_client_capabilities(Params),
+        ProtocolVersion = maps:get(?MCP_FIELD_PROTOCOL_VERSION, Params, ?MCP_VERSION),
+
+        %% Validate protocol version
+        case erlmcp_capabilities:validate_protocol_version(ProtocolVersion) of
+            ok ->
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"client.protocol_version">> => ProtocolVersion,
+                    <<"client.capabilities">> => <<"negotiated">>
+                }),
+                Response = build_initialize_response(State#state.capabilities),
+                send_response_via_registry(State, TransportId, Id, Response),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                NewState = State#state{
+                    initialized = true,
+                    client_capabilities = ClientCapabilities,
+                    protocol_version = ProtocolVersion
+                },
+                {noreply, NewState};
+            {error, ErrorMsg} ->
+                erlmcp_tracing:record_error_details(SpanCtx, protocol_version_mismatch, ErrorMsg),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ErrorMsg),
+                {noreply, State}
+        end
     catch
         Class:Reason:Stacktrace ->
             erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
@@ -322,6 +358,18 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, #state{server_i
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
+
+%% Reject initialize if already initialized
+handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, #state{initialized = true} = State) ->
+    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_NOT_INITIALIZED,
+        <<"Server already initialized. Initialize must be called only once.">>),
+    {noreply, State};
+
+%% Reject resources/list before initialization
+handle_request(Id, ?MCP_METHOD_RESOURCES_LIST, _Params, TransportId, #state{initialized = false} = State) ->
+    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_NOT_INITIALIZED,
+        <<"Cannot list resources before server initialization">>),
+    {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_LIST, _Params, TransportId, State) ->
     Resources = list_all_resources(State),
@@ -522,8 +570,12 @@ send_response_via_registry(#state{server_id = ServerId}, TransportId, Id, Result
     erlmcp_registry:route_to_transport(TransportId, ServerId, Json).
 
 -spec send_error_via_registry(state(), atom(), json_rpc_id(), integer(), binary()) -> ok.
-send_error_via_registry(#state{server_id = ServerId}, TransportId, Id, Code, Message) ->
-    Json = erlmcp_json_rpc:encode_error_response(Id, Code, Message),
+send_error_via_registry(State, TransportId, Id, Code, Message) ->
+    send_error_via_registry(State, TransportId, Id, Code, Message, undefined).
+
+-spec send_error_via_registry(state(), atom(), json_rpc_id(), integer(), binary(), term()) -> ok.
+send_error_via_registry(#state{server_id = ServerId}, TransportId, Id, Code, Message, Data) ->
+    Json = erlmcp_json_rpc:encode_error_response(Id, Code, Message, Data),
     erlmcp_registry:route_to_transport(TransportId, ServerId, Json).
 
 -spec send_notification_via_registry(state(), binary(), map()) -> ok.

@@ -37,10 +37,14 @@
 
 -export_type([client/0, transport_opts/0, client_opts/0]).
 
+%% Client lifecycle phase for initialization enforcement
+-type client_phase() :: pre_initialization | initializing | initialized | error | closed.
+
 %% State record with better type specifications
 -record(state, {
     transport :: module(),
     transport_state :: term(),
+    phase = pre_initialization :: client_phase(),
     capabilities :: #mcp_server_capabilities{} | undefined,
     request_id = 1 :: request_id(),
     pending_requests = #{} :: #{request_id() => {atom(), pid()}},
@@ -50,7 +54,10 @@
     strict_mode = false :: boolean(),
     subscriptions = sets:set() :: sets:set(binary()),
     initialized = false :: boolean(),
-    timeout = 5000 :: timeout()
+    timeout = 5000 :: timeout(),
+    last_event_id :: binary() | undefined,
+    reconnect_timer :: reference() | undefined,
+    auto_reconnect = true :: boolean()
 }).
 
 -type state() :: #state{}.
@@ -62,6 +69,13 @@
     case validate_capability(State, Cap) of
         ok -> do_request;
         {error, _} = Error -> Error
+    end).
+
+%% Phase enforcement macro - check if client is initialized
+-define(CHECK_INITIALIZED(State, From),
+    case State#state.phase of
+        initialized -> ok;
+        Phase -> {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State}
     end).
 
 %%====================================================================
@@ -200,11 +214,19 @@ init([TransportOpts, Options]) ->
     {noreply, state()} |
     {stop, term(), term(), state()}.
 
-handle_call({initialize, Capabilities, _Options}, From, State) ->
+%% Initialize must be called during pre_initialization phase
+handle_call({initialize, Capabilities, _Options}, From, #state{phase = pre_initialization} = State) ->
     Request = build_initialize_request(Capabilities),
-    send_request(State, <<"initialize">>, Request, {initialize, From});
+    NewState = State#state{phase = initializing},
+    send_request(NewState, <<"initialize">>, Request, {initialize, From});
 
-handle_call(list_resources, From, State) ->
+%% Initialize not allowed in other phases
+handle_call({initialize, _Capabilities, _Options}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {invalid_phase, Phase, <<"Initialize must be called in pre_initialization phase">>}}),
+    {noreply, State};
+
+%% All capability requests require initialized phase
+handle_call(list_resources, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             send_request(State, <<"resources/list">>, #{}, {list_resources, From});
@@ -212,7 +234,12 @@ handle_call(list_resources, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call({read_resource, Uri}, From, State) ->
+handle_call(list_resources, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Server must complete initialization first">>}}),
+    {noreply, State};
+
+%% Read resource requires initialized phase
+handle_call({read_resource, Uri}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             Params = #{<<"uri">> => Uri},
@@ -221,7 +248,12 @@ handle_call({read_resource, Uri}, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call(list_tools, From, State) ->
+handle_call({read_resource, _Uri}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% List tools requires initialized phase
+handle_call(list_tools, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, tools) of
         do_request ->
             send_request(State, <<"tools/list">>, #{}, {list_tools, From});
@@ -229,7 +261,12 @@ handle_call(list_tools, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call({call_tool, Name, Arguments}, From, State) ->
+handle_call(list_tools, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% Call tool requires initialized phase
+handle_call({call_tool, Name, Arguments}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, tools) of
         do_request ->
             Params = #{<<"name">> => Name, <<"arguments">> => Arguments},
@@ -238,7 +275,12 @@ handle_call({call_tool, Name, Arguments}, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call(list_prompts, From, State) ->
+handle_call({call_tool, _, _}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% List prompts requires initialized phase
+handle_call(list_prompts, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, prompts) of
         do_request ->
             send_request(State, <<"prompts/list">>, #{}, {list_prompts, From});
@@ -246,7 +288,12 @@ handle_call(list_prompts, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call({get_prompt, Name, Arguments}, From, State) ->
+handle_call(list_prompts, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% Get prompt requires initialized phase
+handle_call({get_prompt, Name, Arguments}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, prompts) of
         do_request ->
             Params = build_prompt_params(Name, Arguments),
@@ -255,7 +302,12 @@ handle_call({get_prompt, Name, Arguments}, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call(list_resource_templates, From, State) ->
+handle_call({get_prompt, _, _}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% List resource templates requires initialized phase
+handle_call(list_resource_templates, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             send_request(State, <<"resources/templates/list">>, #{}, {list_resource_templates, From});
@@ -263,7 +315,12 @@ handle_call(list_resource_templates, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call({subscribe_resource, Uri}, From, State) ->
+handle_call(list_resource_templates, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% Subscribe resource requires initialized phase
+handle_call({subscribe_resource, Uri}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             Params = #{<<"uri">> => Uri},
@@ -275,7 +332,12 @@ handle_call({subscribe_resource, Uri}, From, State) ->
             {reply, ErrorTuple, State}
     end;
 
-handle_call({unsubscribe_resource, Uri}, From, State) ->
+handle_call({subscribe_resource, _Uri}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% Unsubscribe resource requires initialized phase
+handle_call({unsubscribe_resource, Uri}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             Params = #{<<"uri">> => Uri},
@@ -286,6 +348,10 @@ handle_call({unsubscribe_resource, Uri}, From, State) ->
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
+
+handle_call({unsubscribe_resource, _Uri}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
 
 handle_call({start_batch, BatchId}, _From, State) ->
     NewBatches = maps:put(BatchId, [], State#state.batch_requests),
@@ -494,14 +560,21 @@ handle_response(Id, Result, State) ->
             case Result of
                 {ok, InitResult} ->
                     ServerCapabilities = extract_server_capabilities(InitResult),
+                    %% Stay in initializing phase until client sends initialized notification
                     NewState = State#state{
                         pending_requests = NewPending,
                         capabilities = ServerCapabilities,
-                        initialized = true
+                        initialized = true,
+                        phase = initializing
                     },
                     {noreply, NewState};
                 {error, _} ->
-                    {noreply, State#state{pending_requests = NewPending}}
+                    %% Go to error phase on initialization failure
+                    NewState = State#state{
+                        pending_requests = NewPending,
+                        phase = error
+                    },
+                    {noreply, NewState}
             end;
         {{_RequestType, From}, NewPending} ->
             gen_server:reply(From, Result),
@@ -534,6 +607,12 @@ extract_capability(_) ->
     undefined.
 
 -spec handle_notification(binary(), map(), state()) -> {noreply, state()}.
+
+%% INITIALIZED notification transitions to initialized phase
+handle_notification(<<"notifications/initialized">> = _Method, _Params, #state{phase = initializing} = State) ->
+    logger:info("Client received initialized notification, transitioning to initialized phase"),
+    {noreply, State#state{phase = initialized}};
+
 handle_notification(<<"sampling/createMessage">> = Method, Params, State) ->
     spawn_handler(State#state.sampling_handler, Method, Params),
     {noreply, State};

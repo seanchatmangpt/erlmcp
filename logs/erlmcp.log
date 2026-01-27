@@ -16,3 +16,58 @@
 2026-01-26T21:51:00.123592-08:00 [info] <0.557.0> erlmcp_transport_sup:init/0:63 what: transport_supervisor_init
 2026-01-26T21:51:00.123629-08:00 [info] <0.554.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_transport_sup,pid=<0.557.0>.
 2026-01-26T21:51:00.123694-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: erlmcp. Started at: nonode@nohost.
+2026-01-27T10:17:38.049877-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: jsx. Started at: nonode@nohost.
+2026-01-27T10:17:38.049949-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: jesse. Started at: nonode@nohost.
+2026-01-27T10:17:38.058061-08:00 [info] <0.1007.0> supervisor:report_progress/3:2135 Supervisor: {local,gproc_sup}. Started: id=gproc,pid=<0.1008.0>.
+2026-01-27T10:17:38.059331-08:00 [info] <0.1007.0> supervisor:report_progress/3:2135 Supervisor: {local,gproc_sup}. Started: id=gproc_monitor,pid=<0.1009.0>.
+2026-01-27T10:17:38.060942-08:00 [info] <0.1007.0> supervisor:report_progress/3:2135 Supervisor: {local,gproc_sup}. Started: id=gproc_bcast,pid=<0.1010.0>.
+2026-01-27T10:17:38.063157-08:00 [info] <0.1007.0> supervisor:report_progress/3:2135 Supervisor: {local,gproc_sup}. Started: id=gproc_pool,pid=<0.1011.0>.
+2026-01-27T10:17:38.063242-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: gproc. Started at: nonode@nohost.
+2026-01-27T10:17:38.063301-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: cowlib. Started at: nonode@nohost.
+2026-01-27T10:17:38.067205-08:00 [info] <0.1014.0> supervisor:report_progress/3:2135 Supervisor: {local,gun_sup}. Started: id=gun_conns_sup,pid=<0.1015.0>.
+2026-01-27T10:17:38.068327-08:00 [info] <0.1014.0> supervisor:report_progress/3:2135 Supervisor: {local,gun_sup}. Started: id=gun_pools_sup,pid=<0.1016.0>.
+2026-01-27T10:17:38.068404-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: gun. Started at: nonode@nohost.
+2026-01-27T10:17:38.073498-08:00 [info] <0.1019.0> supervisor:report_progress/3:2135 Supervisor: {local,ranch_sup}. Started: id=ranch_server,pid=<0.1020.0>.
+2026-01-27T10:17:38.073589-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: ranch. Started at: nonode@nohost.
+2026-01-27T10:17:38.073643-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: poolboy. Started at: nonode@nohost.
+2026-01-27T10:17:38.073670-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: bbmustache. Started at: nonode@nohost.
+2026-01-27T10:17:38.076456-08:00 [info] <0.1023.0> supervisor:report_progress/3:2135 Supervisor: {local,cowboy_sup}. Started: id=cowboy_clock,pid=<0.1024.0>.
+2026-01-27T10:17:38.076621-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: cowboy. Started at: nonode@nohost.
+2026-01-27T10:17:38.076688-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: opentelemetry_api. Started at: nonode@nohost.
+2026-01-27T10:17:38.093020-08:00 [info] <0.1028.0> supervisor:report_progress/3:2135 Supervisor: {local,otel_span_sup}. Started: id=otel_span_ets,pid=<0.1029.0>.
+2026-01-27T10:17:38.094801-08:00 [info] <0.1028.0> supervisor:report_progress/3:2135 Supervisor: {local,otel_span_sup}. Started: id=otel_span_sweeper,pid=<0.1030.0>.
+2026-01-27T10:17:38.094863-08:00 [info] <0.1027.0> supervisor:report_progress/3:2135 Supervisor: {local,opentelemetry_sup}. Started: id=otel_span_sup,pid=<0.1028.0>.
+2026-01-27T10:17:38.099435-08:00 [info] <0.1027.0> supervisor:report_progress/3:2135 Supervisor: {local,opentelemetry_sup}. Started: id=otel_resource_detector,pid=<0.1031.0>.
+2026-01-27T10:17:38.102216-08:00 [info] <0.1027.0> supervisor:report_progress/3:2135 Supervisor: {local,opentelemetry_sup}. Started: id=otel_tracer_provider_sup,pid=<0.1034.0>.
+2026-01-27T10:17:38.112477-08:00 [info] <0.1035.0> supervisor:report_progress/3:2135 Supervisor: {<0.1035.0>,otel_tracer_server_sup}. Started: id=otel_span_processor_sup,pid=<0.1036.0>.
+2026-01-27T10:17:38.126866-08:00 [info] <0.1035.0> supervisor:report_progress/3:2135 Supervisor: {<0.1035.0>,otel_tracer_server_sup}. Started: id=otel_tracer_server,pid=<0.1037.0>.
+2026-01-27T10:17:38.131258-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: opentelemetry. Started at: nonode@nohost.
+2026-01-27T10:17:38.145589-08:00 [info] <0.1041.0> supervisor:report_progress/3:2135 Supervisor: {local,jobs_app}. Started: id=jobs_server,pid=<0.1042.0>.
+2026-01-27T10:17:38.149716-08:00 [info] <0.1041.0> supervisor:report_progress/3:2135 Supervisor: {local,jobs_app}. Started: id=jobs_sampler,pid=<0.1044.0>.
+2026-01-27T10:17:38.151720-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: jobs. Started at: nonode@nohost.
+2026-01-27T10:17:38.158032-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: ssl_verify_fun. Started at: nonode@nohost.
+2026-01-27T10:17:38.160652-08:00 [info] <0.1049.0> supervisor:report_progress/3:2135 Supervisor: {local,fs_sup}. Started: id=fs_server,pid=<0.1052.0>.
+2026-01-27T10:17:38.160741-08:00 [info] <0.1049.0> supervisor:report_progress/3:2135 Supervisor: {local,fs_sup}. Started: id=gen_event,pid=<0.1053.0>.
+2026-01-27T10:17:38.160788-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: fs. Started at: nonode@nohost.
+2026-01-27T10:17:38.171403-08:00 [info] <0.1060.0> erlmcp_health_monitor:init/1:130 Starting health monitor with options: []
+2026-01-27T10:17:38.171483-08:00 [info] <0.1060.0> erlmcp_health_monitor:init/1:150 Health monitor initialized
+2026-01-27T10:17:38.171509-08:00 [info] <0.1059.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_health_monitor,pid=<0.1060.0>.
+2026-01-27T10:17:38.173477-08:00 [info] <0.1063.0> erlmcp_recovery_manager:init/1:129 Starting recovery manager with options: []
+2026-01-27T10:17:38.173549-08:00 [info] <0.1063.0> erlmcp_recovery_manager:init/1:152 Recovery manager initialized
+2026-01-27T10:17:38.173576-08:00 [info] <0.1059.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_recovery_manager,pid=<0.1063.0>.
+2026-01-27T10:17:38.174742-08:00 [info] <0.1065.0> : Session manager started (timeout: 1800s, cleanup: 300000ms)
+2026-01-27T10:17:38.174777-08:00 [info] <0.1059.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_session_manager,pid=<0.1065.0>.
+2026-01-27T10:17:38.176061-08:00 [info] <0.1059.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_task_manager,pid=<0.1066.0>.
+2026-01-27T10:17:38.176977-08:00 [info] <0.1067.0> : Starting resource subscriptions manager
+2026-01-27T10:17:38.177008-08:00 [info] <0.1059.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_resource_subscriptions,pid=<0.1067.0>.
+2026-01-27T10:17:38.182011-08:00 [error] <0.1068.0> proc_lib:crash_report/4:950 crasher: initial call: erlmcp_sse_event_store:init/1, pid: <0.1068.0>, registered_name: [], error: {undef,[{otel_tracer,get_tracer,['erlmcp.tracer'],[]},{erlmcp_tracing,start_span,3,[{file,"/Users/sac/erlmcp/src/erlmcp_tracing.erl"},{line,60}]},{erlmcp_sse_event_store,init,1,[{file,"/Users/sac/erlmcp/src/erlmcp_sse_event_store.erl"},{line,294}]},{gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},{gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}, ancestors: [erlmcp_sup,<0.1055.0>], message_queue_len: 0, messages: [], links: [<0.1059.0>], dictionary: [], trap_exit: false, status: running, heap_size: 28690, stack_size: 29, reductions: 17264; neighbours:
+2026-01-27T10:17:38.182239-08:00 [error] <0.1059.0> supervisor:start_children/2:937 Supervisor: {local,erlmcp_sup}. Context: start_error. Reason: {undef,[{otel_tracer,get_tracer,['erlmcp.tracer'],[]},{erlmcp_tracing,start_span,3,[{file,"/Users/sac/erlmcp/src/erlmcp_tracing.erl"},{line,60}]},{erlmcp_sse_event_store,init,1,[{file,"/Users/sac/erlmcp/src/erlmcp_sse_event_store.erl"},{line,294}]},{gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},{gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}. Offender: id=erlmcp_sse_event_store,pid=undefined.
+2026-01-27T10:17:38.182427-08:00 [info] <0.1067.0> : Resource subscriptions manager terminating: shutdown
+2026-01-27T10:17:38.182509-08:00 [info] <0.1063.0> erlmcp_recovery_manager:terminate/2:301 Recovery manager terminating: shutdown
+2026-01-27T10:17:38.182557-08:00 [info] <0.1060.0> erlmcp_health_monitor:terminate/2:311 Health monitor terminating: shutdown
+2026-01-27T10:17:38.182632-08:00 [notice] <0.45.0> application_controller:info_exited/3:2125 Application: erlmcp. Exited: {{shutdown,{failed_to_start_child,erlmcp_sse_event_store,{undef,[{otel_tracer,get_tracer,['erlmcp.tracer'],[]},{erlmcp_tracing,start_span,3,[{file,"/Users/sac/erlmcp/src/erlmcp_tracing.erl"},{line,60}]},{erlmcp_sse_event_store,init,1,[{file,"/Users/sac/erlmcp/src/erlmcp_sse_event_store.erl"},{line,294}]},{gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},{gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}}},{erlmcp_app,start,[normal,[]]}}. Type: temporary.
+2026-01-27T10:17:38.182641-08:00 [error] <0.1054.0> proc_lib:crash_report/4:950 crasher: initial call: application_master:init/3, pid: <0.1054.0>, registered_name: [], exit: {{{shutdown,{failed_to_start_child,erlmcp_sse_event_store,{undef,[{otel_tracer,get_tracer,['erlmcp.tracer'],[]},{erlmcp_tracing,start_span,3,[{file,"/Users/sac/erlmcp/src/erlmcp_tracing.erl"},{line,60}]},{erlmcp_sse_event_store,init,1,[{file,"/Users/sac/erlmcp/src/erlmcp_sse_event_store.erl"},{line,294}]},{gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},{gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}}},{erlmcp_app,start,[normal,[]]}},[{application_master,init,3,[{file,"application_master.erl"},{line,143}]},{proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}, ancestors: [application_controller,<0.10.0>], message_queue_len: 1, messages: [{'EXIT',<0.1055.0>,normal}], links: [<0.45.0>], dictionary: [], trap_exit: true, status: running, heap_size: 987, stack_size: 29, reductions: 136; neighbours:
+2026-01-27T10:17:38.183284-08:00 [notice] <0.45.0> application_controller:info_exited/3:2125 Application: fs. Exited: stopped. Type: temporary.
+2026-01-27T10:17:38.183860-08:00 [notice] <0.45.0> application_controller:info_exited/3:2125 Application: jobs. Exited: stopped. Type: temporary.
+2026-01-27T10:17:38.214570-08:00 [info] <0.1057.0> tls_certificate_check_shared_state:handle_shared_state_initialization/2:273 Loading 159 CA(s) from otp store
+2026-01-27T10:17:38.214638-08:00 [info] <0.1056.0> supervisor:report_progress/3:2135 Supervisor: {local,tls_certificate_check_sup}. Started: id=tls_certificate_check_shared_state,pid=<0.1057.0>.

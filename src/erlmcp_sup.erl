@@ -138,6 +138,16 @@ init([]) ->
             modules => [erlmcp_recovery_manager]
         },
 
+        % Session manager - HTTP session management and tracking
+        #{
+            id => erlmcp_session_manager,
+            start => {erlmcp_session_manager, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_session_manager]
+        },
+
         % Task manager - MCP tasks API / async job queue
         #{
             id => erlmcp_task_manager,
@@ -146,6 +156,26 @@ init([]) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_task_manager]
+        },
+
+        % Resource subscriptions manager - handles resource update subscriptions
+        #{
+            id => erlmcp_resource_subscriptions,
+            start => {erlmcp_resource_subscriptions, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_resource_subscriptions]
+        },
+
+        % SSE Event Store - maintains recent events for stream resumability
+        #{
+            id => erlmcp_sse_event_store,
+            start => {erlmcp_sse_event_store, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_sse_event_store]
         },
 
         % Registry - central message router with recovery registration
