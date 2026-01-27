@@ -353,5 +353,3 @@ binary_join([H|T], Sep) ->
     lists:foldl(fun(E, Acc) ->
         <<Acc/binary, Sep/binary, E/binary>>
     end, H, T).
-
-end.

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ErlMCP Swarm Benchmarks</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .header { background: #333; color: white; padding: 20px; border-radius: 5px; }
+        .scenario { background: white; padding: 15px; margin: 10px 0; border-left: 4px solid #007bff; }
+        .summary { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background: #f8f9fa; }
+        .metric { font-family: monospace; }
+        .success { color: #28a745; }
+        .warning { color: #ffc107; }
+        .error { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>ErlMCP Swarm Benchmarking Report</h1>
+        <p>Generated: 2026-01-27 20:51:45 UTC</p>
+    </div>
+
+    <div class="summary">
+        <h2>Summary</h2>
+        <table>
+            <tr>
+                <th>Metric</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>Total Scenarios</td>
+                <td class="metric">3</td>
+            </tr>
+            <tr>
+                <td>Results Directory</td>
+                <td class="metric">/Users/sac/erlmcp/swarm/test-results</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="scenario">
+        <h3>baseline</h3>
+        <p>Files: 1</p>
+        <ul>
+        <li>metrics.json (0 bytes)</li>
+        </ul>
+    </div>
+
+    <div class="scenario">
+        <h3>connection_flood</h3>
+        <p>Files: 5</p>
+        <ul>
+        <li>connections.jsonl (0 bytes)</li>
+        <li>cooldown_connections.jsonl (0 bytes)</li>
+        <li>error_rate.jsonl (0 bytes)</li>
+        <li>peak_connections.jsonl (0 bytes)</li>
+        <li>peak_latency_p95.jsonl (0 bytes)</li>
+        </ul>
+    </div>
+
+    <div class="scenario">
+        <h3>message_bombing</h3>
+        <p>Files: 0</p>
+        <ul>
+        </ul>
+    </div>
+
+    <div class="summary" style="margin-top: 30px;">
+        <h2>Next Steps</h2>
+        <ol>
+            <li>Review metric data in individual scenario directories</li>
+            <li>Check Prometheus/Grafana dashboards for real-time visualizations</li>
+            <li>Analyze latency percentiles and throughput metrics</li>
+            <li>Compare baseline against stress test results</li>
+            <li>Document bottlenecks and tuning recommendations</li>
+        </ol>
+    </div>
+
+    <script>
+        // Optionally load additional analytics
+        console.log('Benchmark report generated successfully');
+    </script>
+</body>
+</html>
