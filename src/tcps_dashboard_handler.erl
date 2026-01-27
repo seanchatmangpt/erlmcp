@@ -18,10 +18,12 @@
 %%% Cowboy REST Handler Callbacks
 %%%===================================================================
 
+-spec init(cowboy_req:req(), term()) -> {cowboy_rest, cowboy_req:req(), map()}.
 init(Req, Opts) ->
     Endpoint = maps:get(endpoint, Opts, unknown),
     {cowboy_rest, Req, #{endpoint => Endpoint}}.
 
+-spec allowed_methods(cowboy_req:req(), map()) -> {[binary()], cowboy_req:req(), map()}.
 allowed_methods(Req, State = #{endpoint := work_orders}) ->
     {[<<"GET">>, <<"POST">>], Req, State};
 allowed_methods(Req, State = #{endpoint := andon_resolve}) ->
@@ -29,12 +31,14 @@ allowed_methods(Req, State = #{endpoint := andon_resolve}) ->
 allowed_methods(Req, State) ->
     {[<<"GET">>], Req, State}.
 
+-spec content_types_provided(cowboy_req:req(), map()) -> {list(), cowboy_req:req(), map()}.
 content_types_provided(Req, State) ->
     {[
         {<<"application/json">>, to_json},
         {<<"text/html">>, to_html}
     ], Req, State}.
 
+-spec content_types_accepted(cowboy_req:req(), map()) -> {list(), cowboy_req:req(), map()}.
 content_types_accepted(Req, State) ->
     {[
         {<<"application/json">>, from_json}
@@ -181,6 +185,7 @@ from_json(Req, State) ->
     Req2 = cowboy_req:set_resp_body(Body, Req),
     {false, Req2, State}.
 
+-spec terminate(term(), cowboy_req:req(), map()) -> ok.
 terminate(_Reason, _Req, _State) ->
     ok.
 

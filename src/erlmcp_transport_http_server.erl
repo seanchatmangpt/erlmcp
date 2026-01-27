@@ -397,11 +397,22 @@ connect(#state{gun_pid = OldPid, gun_monitor = OldMon} = State) ->
 
 -spec build_gun_opts(state()) -> map().
 build_gun_opts(#state{scheme = https, ssl_options = SslOpts,
-                      connect_timeout = ConnTimeout, timeout = Timeout}) ->
+                      connect_timeout = ConnTimeout, timeout = Timeout,
+                      host = Host}) ->
+    %% CRITICAL SECURITY FIX (CVSS 9.8): Enable TLS certificate validation
+    ValidatedOpts = case erlmcp_tls_validation:build_tls_options(SslOpts, Host) of
+        {ok, Opts} ->
+            Opts;
+        {error, Reason} ->
+            logger:error("TLS validation failed: ~p - using strict defaults", [Reason]),
+            %% Use strict defaults on validation failure
+            build_strict_tls_options(Host)
+    end,
+
     #{
         protocols => [http2, http],
         transport => ssl,
-        tls_opts => SslOpts,
+        tls_opts => ValidatedOpts,
         connect_timeout => ConnTimeout,
         http_opts => #{keepalive => Timeout},
         http2_opts => #{keepalive => Timeout}
@@ -414,6 +425,21 @@ build_gun_opts(#state{connect_timeout = ConnTimeout, timeout = Timeout}) ->
         http_opts => #{keepalive => Timeout},
         http2_opts => #{keepalive => Timeout}
     }.
+
+-spec build_strict_tls_options(string()) -> [ssl:tls_client_option()].
+build_strict_tls_options(Hostname) ->
+    %% Strict TLS defaults: verify_peer REQUIRED
+    [
+        {verify, verify_peer},
+        {server_name_indication, Hostname},
+        {versions, ['tlsv1.2', 'tlsv1.3']},
+        {depth, 3},
+        {ciphers, [
+            "ECDHE-RSA-AES256-GCM-SHA384",
+            "ECDHE-RSA-AES128-GCM-SHA256",
+            "ECDHE-RSA-CHACHA20-POLY1305"
+        ]}
+    ].
 
 %%====================================================================
 %% Internal functions - Request Handling

@@ -12,6 +12,10 @@
 
 -include_lib("kernel/include/logger.hrl").
 
+-spec init(cowboy_req:req(), term()) -> {cowboy_loop, cowboy_req:req(), map()}.
+-spec info(term(), cowboy_req:req(), map()) -> {ok, cowboy_req:req(), map()}.
+-spec terminate(term(), cowboy_req:req(), map()) -> ok.
+
 -define(HEARTBEAT_INTERVAL, 30000). %% 30 seconds
 
 %%%===================================================================

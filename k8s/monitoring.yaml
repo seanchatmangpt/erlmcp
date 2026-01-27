@@ -1,0 +1,175 @@
+---
+# Monitoring configuration for erlmcp
+# ServiceMonitor for Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: erlmcp
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  selector:
+    matchLabels:
+      app: erlmcp
+      component: server
+  endpoints:
+    - port: metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      path: /metrics
+
+---
+# PrometheusRule for alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: erlmcp-alerts
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  groups:
+    - name: erlmcp
+      interval: 30s
+      rules:
+        - alert: ErlmcpHighErrorRate
+          expr: |
+            (sum(rate(erlmcp_http_requests_total{status=~"5.."}[5m])) by (job)) /
+            (sum(rate(erlmcp_http_requests_total[5m])) by (job)) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "erlmcp high error rate"
+            description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.job }}"
+
+        - alert: ErlmcpHighLatency
+          expr: |
+            histogram_quantile(0.95, sum(rate(erlmcp_http_duration_seconds_bucket[5m])) by (le)) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "erlmcp high latency"
+            description: "P95 latency is {{ $value }}s"
+
+        - alert: ErlmcpHighMemoryUsage
+          expr: |
+            erlmcp_erlang_memory_bytes{type="total"} / erlmcp_erlang_memory_bytes{type="system"} > 0.9
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "erlmcp high memory usage"
+            description: "Memory usage is {{ $value | humanizePercentage }}"
+
+        - alert: ErlmcpPodCrashing
+          expr: |
+            rate(kube_pod_container_status_restarts_total{pod=~"erlmcp-.*"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "erlmcp pod is crashing"
+            description: "Pod {{ $labels.pod }} has restarted {{ $value }} times in 15m"
+
+        - alert: ErlmcpDatabaseConnectionErrors
+          expr: |
+            rate(erlmcp_db_connection_errors_total[5m]) > 0.1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "erlmcp database connection errors"
+            description: "{{ $value }} connection errors per second"
+
+---
+# Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-grafana-dashboard
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    grafana_dashboard: "1"
+data:
+  erlmcp-dashboard.json: |
+    {
+      "dashboard": {
+        "title": "erlmcp - Erlang MCP Server",
+        "panels": [
+          {
+            "title": "HTTP Request Rate",
+            "targets": [
+              {
+                "expr": "sum(rate(erlmcp_http_requests_total[5m])) by (method)"
+              }
+            ]
+          },
+          {
+            "title": "Request Latency (P95)",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, sum(rate(erlmcp_http_duration_seconds_bucket[5m])) by (le))"
+              }
+            ]
+          },
+          {
+            "title": "Error Rate",
+            "targets": [
+              {
+                "expr": "sum(rate(erlmcp_http_requests_total{status=~\"5..\"}[5m]))"
+              }
+            ]
+          },
+          {
+            "title": "Memory Usage",
+            "targets": [
+              {
+                "expr": "erlmcp_erlang_memory_bytes"
+              }
+            ]
+          },
+          {
+            "title": "Process Count",
+            "targets": [
+              {
+                "expr": "erlmcp_erlang_processes"
+              }
+            ]
+          },
+          {
+            "title": "Database Connections",
+            "targets": [
+              {
+                "expr": "erlmcp_db_connections_active"
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+---
+# Logging Configuration (optional - for log aggregation)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-logging-config
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+data:
+  promtail-config.yaml: |
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+    scrape_configs:
+      - job_name: erlmcp
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: erlmcp
+              __path__: /var/log/erlmcp/*.log

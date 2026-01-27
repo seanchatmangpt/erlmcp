@@ -1,0 +1,146 @@
+---
+# Backup and restore resources for erlmcp
+# Supports automated backups of persistent data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: erlmcp-backup
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: standard
+
+---
+# Backup Job using Kubernetes Job
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: erlmcp-backup
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: backup
+spec:
+  # Run daily at 2 AM UTC
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: erlmcp
+            component: backup
+        spec:
+          serviceAccountName: erlmcp
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            fsGroup: 1000
+
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  BACKUP_FILE="/backup/erlmcp-$(date +%Y%m%d-%H%M%S).sql"
+
+                  echo "Starting database backup..."
+                  pg_dump \
+                    -h postgres \
+                    -U $ERLMCP_DB_USER \
+                    -d $ERLMCP_DB_NAME \
+                    > $BACKUP_FILE
+
+                  echo "Backup completed: $BACKUP_FILE"
+
+                  # Keep only last 7 days of backups
+                  find /backup -name "erlmcp-*.sql" -mtime +7 -delete
+
+                  echo "Cleanup completed"
+
+              env:
+                - name: ERLMCP_DB_USER
+                  valueFrom:
+                    secretKeyRef:
+                      name: erlmcp-secrets
+                      key: db-user
+                - name: ERLMCP_DB_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: erlmcp-secrets
+                      key: db-name
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: erlmcp-secrets
+                      key: db-password
+
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backup
+
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: erlmcp-backup
+
+          restartPolicy: OnFailure
+
+---
+# Restore Job template
+# Use to restore from backup: kubectl apply -f - << 'EOF'
+# apiVersion: batch/v1
+# kind: Job
+# metadata:
+#   name: erlmcp-restore
+#   namespace: erlmcp
+# spec:
+#   template:
+#     spec:
+#       containers:
+#       - name: restore
+#         image: postgres:16-alpine
+#         command:
+#         - /bin/sh
+#         - -c
+#         - |
+#           psql -h postgres -U $ERLMCP_DB_USER -d $ERLMCP_DB_NAME < /backup/erlmcp-YYYYMMDD-HHMMSS.sql
+#         env:
+#         - name: ERLMCP_DB_USER
+#           valueFrom:
+#             secretKeyRef:
+#               name: erlmcp-secrets
+#               key: db-user
+#         - name: ERLMCP_DB_NAME
+#           valueFrom:
+#             secretKeyRef:
+#               name: erlmcp-secrets
+#               key: db-name
+#         - name: PGPASSWORD
+#           valueFrom:
+#             secretKeyRef:
+#               name: erlmcp-secrets
+#               key: db-password
+#         volumeMounts:
+#         - name: backup-storage
+#           mountPath: /backup
+#       volumes:
+#       - name: backup-storage
+#         persistentVolumeClaim:
+#           claimName: erlmcp-backup
+#       restartPolicy: Never
+# EOF

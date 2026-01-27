@@ -1,0 +1,89 @@
+groups:
+  - name: erlmcp_alerts
+    interval: 10s
+    rules:
+      # Server health alerts
+      - alert: ErlMCPServerDown
+        expr: up{job="erlmcp-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ErlMCP Server instance {{ $labels.instance }} is down"
+          description: "ErlMCP Server {{ $labels.instance }} has not responded for 2 minutes"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: |
+          (container_memory_usage_bytes{name=~"erlmcp-server.*"} /
+           container_spec_memory_limit_bytes{name=~"erlmcp-server.*"}) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.name }}"
+          description: "Memory usage is above 80% on {{ $labels.name }}"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: |
+          rate(container_cpu_usage_seconds_total{name=~"erlmcp-server.*"}[5m]) > 1.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.name }}"
+          description: "CPU usage is above 1.5 cores on {{ $labels.name }}"
+
+      # Error rate too high
+      - alert: HighErrorRate
+        expr: |
+          rate(erlmcp_errors_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is above 1% in the last 5 minutes"
+
+      # Connection limit approaching
+      - alert: ConnectionLimitApproaching
+        expr: |
+          erlmcp_connections_active / erlmcp_connections_limit > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Connection limit approaching on {{ $labels.instance }}"
+          description: "Active connections are above 80% of limit"
+
+      # Latency SLA breach
+      - alert: LatencySLABreach
+        expr: |
+          histogram_quantile(0.95, rate(erlmcp_request_duration_ms_bucket[5m])) > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "95th percentile latency exceeds 500ms"
+          description: "p95 latency is {{ $value }}ms, target is <500ms"
+
+      # Load balancer health
+      - alert: LoadBalancerUnhealthy
+        expr: up{job="traefik"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Load balancer is down"
+          description: "Traefik load balancer is not responding"
+
+      # Prometheus scrape failure
+      - alert: PrometheusScrapeFailed
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus scrape failed for {{ $labels.job }}"
+          description: "Job {{ $labels.job }} failed to scrape"

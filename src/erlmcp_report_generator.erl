@@ -4,9 +4,11 @@
 -include_lib("kernel/include/logger.hrl").
 
 %% Report generation with OpenTelemetry tracing
+-spec generate_report(map(), atom()) -> {ok, binary()} | {error, term()}.
 generate_report(Results, Format) ->
     generate_report(Results, Format, #{}).
 
+-spec generate_report(map(), atom(), map()) -> {ok, binary()} | {error, term()}.
 generate_report(Results, Format, Options) ->
     SpanCtx = otel_tracer:start_span(<<"report_generation">>),
     
@@ -56,6 +58,7 @@ generate_report(Results, Format, Options) ->
     end.
 
 %% Generate executive summary
+-spec generate_summary(map()) -> map().
 generate_summary(Results) ->
     SpanCtx = otel_tracer:start_span(<<"generate_summary">>),
     

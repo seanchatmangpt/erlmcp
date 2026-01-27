@@ -1,0 +1,189 @@
+---
+# Network Policies for erlmcp
+# Implements zero-trust network security with explicit allow rules
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-deny-all
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+
+---
+# Allow ingress from Nginx Ingress Controller
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-allow-ingress
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from Nginx Ingress Controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+
+    # Allow from Prometheus for metrics
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090
+
+    # Allow inter-pod communication within erlmcp namespace
+    - from:
+        - podSelector:
+            matchLabels:
+              app: erlmcp
+      ports:
+        - protocol: TCP
+          port: 4369  # EPMD port for Erlang clustering
+        - protocol: TCP
+          port: 9100  # Range for distributed Erlang
+
+---
+# Allow egress from erlmcp pods
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-allow-egress
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+    - Egress
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Allow to PostgreSQL
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+
+    # Allow to Redis
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+
+    # Allow to OpenTelemetry Collector
+    - to:
+        - podSelector:
+            matchLabels:
+              app: otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317  # OTLP gRPC receiver
+
+    # Allow inter-pod communication for clustering
+    - to:
+        - podSelector:
+            matchLabels:
+              app: erlmcp
+      ports:
+        - protocol: TCP
+          port: 4369  # EPMD
+        - protocol: TCP
+          port: 9100  # Distributed Erlang range
+
+    # Allow external HTTPS for client connections
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Network Policy for database access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-allow-erlmcp
+  namespace: erlmcp
+  labels:
+    app: postgres
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from erlmcp pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: erlmcp
+      ports:
+        - protocol: TCP
+          port: 5432
+
+---
+# Network Policy for Redis access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-allow-erlmcp
+  namespace: erlmcp
+  labels:
+    app: redis
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow from erlmcp pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: erlmcp
+      ports:
+        - protocol: TCP
+          port: 6379

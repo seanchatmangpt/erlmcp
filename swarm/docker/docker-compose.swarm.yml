@@ -1,0 +1,351 @@
+version: '3.8'
+
+services:
+  # =============================================================================
+  # ERLMCP SERVER CLUSTER
+  # =============================================================================
+  erlmcp-server:
+    image: erlmcp:latest
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.production
+    deploy:
+      replicas: 8
+      placement:
+        constraints: [node.role != manager]
+      update_config:
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '1'
+          memory: 256M
+    environment:
+      ERLMCP_ENV: swarm
+      ERLANG_COOKIE: erlmcp_swarm_secret
+      ERL_MAX_PORTS: 65536
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://prometheus:9090
+      METRICS_PORT: 9100
+      HTTP_PORT: 8080
+      TCP_PORT: 5555
+    ports:
+      - "8080"
+      - "5555"
+      - "9100-9107"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - mcp-network
+      - monitoring
+    volumes:
+      - erlmcp-data:/var/lib/erlmcp
+      - erlmcp-logs:/var/log/erlmcp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # LOAD BALANCER (Traefik)
+  # =============================================================================
+  traefik:
+    image: traefik:v3.0
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.swarmmode=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websocket.address=:5555"
+      - "--entrypoints.metrics.address=:9090"
+      - "--metrics.prometheus.addEntryPointsLabels=true"
+      - "--metrics.prometheus.addServicesLabels=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "5555:5555"
+      - "8081:8080"
+      - "9090:9090"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./traefik.yml:/traefik.yml:ro
+      - ./acme.json:/acme.json
+    networks:
+      - mcp-network
+      - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # PROMETHEUS METRICS COLLECTION
+  # =============================================================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus-alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # GRAFANA DASHBOARDS
+  # =============================================================================
+  grafana:
+    image: grafana/grafana:10.2.0
+    deploy:
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # MCP CLIENT LOAD GENERATORS
+  # =============================================================================
+  mcp-client-high-load:
+    image: mcp-client-simulator:latest
+    build:
+      context: ../clients
+      dockerfile: Dockerfile.go
+    deploy:
+      replicas: 3
+      placement:
+        constraints: [node.role != manager]
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+    environment:
+      CLIENT_TYPE: high-load
+      TARGET_SERVERS: erlmcp-server
+      CLIENT_COUNT: 50
+      MESSAGE_RATE: 1000
+      DURATION_SECONDS: 3600
+      METRICS_ENABLED: "true"
+      METRICS_PORT: 8888
+    networks:
+      - mcp-network
+      - monitoring
+    depends_on:
+      - erlmcp-server
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mcp-client-normal:
+    image: mcp-client-simulator:latest
+    build:
+      context: ../clients
+      dockerfile: Dockerfile.go
+    deploy:
+      replicas: 5
+      placement:
+        constraints: [node.role != manager]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+    environment:
+      CLIENT_TYPE: normal
+      TARGET_SERVERS: erlmcp-server
+      CLIENT_COUNT: 25
+      MESSAGE_RATE: 100
+      DURATION_SECONDS: 3600
+      METRICS_ENABLED: "true"
+      METRICS_PORT: 8888
+    networks:
+      - mcp-network
+      - monitoring
+    depends_on:
+      - erlmcp-server
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  mcp-client-low-load:
+    image: mcp-client-simulator:latest
+    build:
+      context: ../clients
+      dockerfile: Dockerfile.go
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.role != manager]
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    environment:
+      CLIENT_TYPE: low-load
+      TARGET_SERVERS: erlmcp-server
+      CLIENT_COUNT: 10
+      MESSAGE_RATE: 10
+      DURATION_SECONDS: 3600
+      METRICS_ENABLED: "true"
+      METRICS_PORT: 8888
+    networks:
+      - mcp-network
+      - monitoring
+    depends_on:
+      - erlmcp-server
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # TEST ORCHESTRATOR/CONTROLLER
+  # =============================================================================
+  test-controller:
+    image: mcp-test-controller:latest
+    build:
+      context: ../scripts
+      dockerfile: Dockerfile.controller
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+    environment:
+      PROMETHEUS_URL: http://prometheus:9090
+      GRAFANA_URL: http://grafana:3000
+      GRAFANA_API_KEY: ${GRAFANA_API_KEY:-admin}
+      TEST_RESULTS_DIR: /test-results
+    ports:
+      - "8888:8888"
+    volumes:
+      - test-results:/test-results
+      - ./scenarios:/scenarios:ro
+    networks:
+      - monitoring
+      - mcp-network
+    depends_on:
+      - prometheus
+      - grafana
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # NODE EXPORTER (Host Metrics)
+  # =============================================================================
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.role != manager]
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+    command:
+      - "--path.rootfs=/rootfs"
+      - "--path.procfs=/proc"
+      - "--path.sysfs=/sys"
+    volumes:
+      - /:/rootfs:ro
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+    networks:
+      - monitoring
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  mcp-network:
+    driver: overlay
+    driver_opts:
+      com.docker.network.driver.overlay.vxlanid: 4096
+  monitoring:
+    driver: overlay
+    driver_opts:
+      com.docker.network.driver.overlay.vxlanid: 4097
+
+volumes:
+  erlmcp-data:
+    driver: local
+  erlmcp-logs:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  test-results:
+    driver: local

@@ -59,7 +59,6 @@ validate_model_preferences(#mcp_model_preferences{
 
 %% Apply preferences to a sampling handler by passing them as context
 %% This allows the handler to use the preferences when generating messages
--spec apply_preferences_to_handler(preferences(), function()) -> term().
 apply_preferences_to_handler(Prefs, Handler) when is_function(Handler) ->
     try
         Handler(Prefs)

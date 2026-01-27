@@ -10,6 +10,12 @@
 
 -export([init/2, websocket_init/1, websocket_handle/2, websocket_info/2, terminate/3]).
 
+-spec init(cowboy_req:req(), term()) -> {cowboy_websocket, cowboy_req:req(), map()}.
+-spec websocket_init(map()) -> {ok, map()}.
+-spec websocket_handle(term(), map()) -> {ok, map()}.
+-spec websocket_info(term(), map()) -> {ok, map()}.
+-spec terminate(term(), cowboy_req:req(), map()) -> ok.
+
 -include_lib("kernel/include/logger.hrl").
 
 -record(state, {

@@ -1,0 +1,68 @@
+api:
+  insecure: true
+  debug: true
+  dashboard: true
+
+providers:
+  docker:
+    swarmMode: true
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: mcp-network
+  file:
+    directory: /traefik
+    watch: true
+
+entrypoints:
+  web:
+    address: ':80'
+    http:
+      redirections:
+        entrypoint:
+          regex: '^http://(.*)$'
+          replacement: 'https://$1'
+          permanent: true
+  websocket:
+    address: ':5555'
+    tcp:
+      tls:
+        enabled: false
+  metrics:
+    address: ':9090'
+
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true
+    addMiddelwaresLabels: true
+    buckets:
+      - 0.001
+      - 0.01
+      - 0.1
+      - 1
+      - 5
+      - 10
+
+# Timeout configurations
+api:
+  insecure: true
+  timeout: 30s
+
+# Global configuration
+global:
+  checkNewVersion: true
+  sendAnonymousUsage: false
+
+# TLS configuration (if using HTTPS)
+tls:
+  certificates: []
+  # - certFile: /acme/cert.pem
+  #   keyFile: /acme/key.pem
+  options:
+    default:
+      minVersion: VersionTLS12
+      cipherSuites:
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256

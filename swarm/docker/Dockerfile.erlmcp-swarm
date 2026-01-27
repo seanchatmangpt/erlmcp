@@ -1,0 +1,80 @@
+# Multi-stage optimized Erlang build for Docker Swarm
+# Designed for horizontal scaling and minimal resource footprint
+
+FROM erlang:26-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    make \
+    gcc \
+    musl-dev \
+    openssl-dev \
+    libssl3
+
+WORKDIR /build
+
+# Copy only rebar files first for better layer caching
+COPY rebar.config rebar.lock* ./
+RUN rebar3 fetch-deps
+
+# Copy source code
+COPY src ./src
+COPY include ./include
+COPY config ./config
+
+# Build release with prod optimizations
+RUN rebar3 as prod release
+
+# Extract and prepare release
+RUN mkdir -p /opt && \
+    cp -r _build/prod/rel/erlmcp /opt/erlmcp && \
+    strip /opt/erlmcp/erts-*/bin/* 2>/dev/null || true
+
+# =============================================================================
+# Runtime Stage - Minimal image
+# =============================================================================
+
+FROM alpine:3.18
+
+# Install minimal runtime dependencies
+RUN apk add --no-cache \
+    openssl \
+    ncurses-libs \
+    libstdc++ \
+    ca-certificates \
+    bash \
+    curl \
+    libssl3 \
+    musl
+
+# Create application user
+RUN addgroup -g 1000 erlmcp && \
+    adduser -D -u 1000 -G erlmcp erlmcp
+
+# Create runtime directories
+RUN mkdir -p /opt/erlmcp /var/log/erlmcp /var/lib/erlmcp && \
+    chown -R erlmcp:erlmcp /opt/erlmcp /var/log/erlmcp /var/lib/erlmcp
+
+# Copy release from builder
+COPY --from=builder --chown=erlmcp:erlmcp /opt/erlmcp /opt/erlmcp
+
+WORKDIR /opt/erlmcp
+
+USER erlmcp
+
+# Expose standard ports
+EXPOSE 8080 5555 9100
+
+# Environment for swarm mode
+ENV ERLMCP_ENV=swarm \
+    PATH=/opt/erlmcp/bin:$PATH \
+    ERL_CRASH_DUMP=/var/log/erlmcp/erl_crash.dump \
+    ERLANG_COOKIE=erlmcp_swarm_secret
+
+# Health check for Docker Swarm liveness
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Start erlmcp in foreground for container log collection
+CMD ["/opt/erlmcp/bin/erlmcp", "foreground"]
