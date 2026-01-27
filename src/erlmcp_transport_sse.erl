@@ -21,6 +21,7 @@
 
 -define(PING_INTERVAL, 30000). %% 30 seconds
 -define(MAX_RETRIES, 3).
+-define(DEFAULT_RETRY_TIMEOUT, 5000). %% 5 seconds (Gap #29)
 
 -record(sse_state, {
     transport_id :: binary(),

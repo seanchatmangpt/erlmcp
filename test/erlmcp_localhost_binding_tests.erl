@@ -218,7 +218,11 @@ edge_case_ipv6_with_port_test() ->
     Result = erlmcp_localhost_binding:validate_bind_address("[::1]:8080", true),
     %% Colons and brackets are valid chars, but address semantics might reject this
     %% For now it should normalize but might not match localhost
-    ?assertMatch({ok, "[::1]:8080"} | {error, _}, Result).
+    case Result of
+        {ok, "[::1]:8080"} -> ok;
+        {error, _} -> ok;
+        _ -> throw(unexpected_result)
+    end.
 
 %% Test localhost with port suffix (should not match)
 edge_case_localhost_with_port_test() ->

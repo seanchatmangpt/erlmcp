@@ -10,6 +10,10 @@
     encode_error_response/4,
     encode_notification/2,
     decode_message/1,
+    decode_message/2,
+    decode_batch/1,
+    encode_batch/1,
+    is_batch_request/1,
     create_error/3,
     create_error_with_data/4,
     validate_error_code/1,
@@ -21,6 +25,7 @@
     error_capability_not_supported/2,
     error_not_initialized/1,
     error_validation_failed/2,
+    error_message_too_large/2,
     error_internal/1,
     error_parse/1
 ]).
@@ -28,8 +33,10 @@
 %% Types
 -type json_rpc_message() :: #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}.
 -type decode_result() :: {ok, json_rpc_message()} | {error, {atom(), term()}}.
+-type batch_request() :: [json_rpc_message()].
+-type batch_decode_result() :: {ok, batch_request()} | {error, {atom(), term()}}.
 
--export_type([json_rpc_message/0]).
+-export_type([json_rpc_message/0, batch_request/0]).
 
 %%====================================================================
 %% API Functions
@@ -82,16 +89,67 @@ encode_notification(Method, Params) when is_binary(Method) ->
 
 -spec decode_message(binary()) -> decode_result().
 decode_message(Json) when is_binary(Json) ->
+    decode_message(Json, default).
+
+%% @doc Decode JSON-RPC message with optional size validation
+%% Validates message size before decoding if a transport type is specified
+-spec decode_message(binary(), atom() | default) -> decode_result().
+decode_message(Json, TransportType) when is_binary(Json) ->
+    %% Validate message size first (Gap #45: Message Size Limits)
+    case erlmcp_message_size:validate_message_size(TransportType, Json) of
+        ok ->
+            try jsx:decode(Json, [return_maps]) of
+                Data when is_map(Data) ->
+                    parse_json_rpc(Data);
+                Data when is_list(Data) ->
+                    %% Batch request detected - should use decode_batch instead
+                    {error, {batch_request, length(Data)}};
+                _ ->
+                    {error, {invalid_json, not_object}}
+            catch
+                error:badarg ->
+                    {error, {parse_error, invalid_json}};
+                Class:Reason ->
+                    {error, {parse_error, {Class, Reason}}}
+            end;
+        {error, {message_too_large, ErrorResponse}} ->
+            {error, {message_too_large, ErrorResponse}}
+    end.
+
+-spec decode_batch(binary()) -> batch_decode_result().
+decode_batch(Json) when is_binary(Json) ->
     try jsx:decode(Json, [return_maps]) of
+        Data when is_list(Data) ->
+            parse_batch(Data);
         Data when is_map(Data) ->
-            parse_json_rpc(Data);
+            %% Single request, wrap in list
+            case parse_json_rpc(Data) of
+                {ok, Message} -> {ok, [Message]};
+                Error -> Error
+            end;
         _ ->
-            {error, {invalid_json, not_object}}
+            {error, {invalid_json, not_array_or_object}}
     catch
         error:badarg ->
             {error, {parse_error, invalid_json}};
         Class:Reason ->
             {error, {parse_error, {Class, Reason}}}
+    end.
+
+-spec encode_batch([json_rpc_message()]) -> binary().
+encode_batch(Messages) when is_list(Messages) ->
+    Maps = [build_message_map(Msg) || Msg <- Messages],
+    jsx:encode(Maps).
+
+-spec is_batch_request(binary()) -> boolean().
+is_batch_request(Json) when is_binary(Json) ->
+    try
+        case jsx:decode(Json, [return_maps]) of
+            L when is_list(L) -> true;
+            _ -> false
+        end
+    catch
+        _:_ -> false
     end.
 
 -spec create_error(integer(), binary(), term()) -> #mcp_error{}.
@@ -187,6 +245,47 @@ error_internal(Id) ->
 -spec error_parse(json_rpc_id()) -> binary().
 error_parse(Id) ->
     encode_error_response(Id, ?JSONRPC_PARSE_ERROR, ?JSONRPC_MSG_PARSE_ERROR, undefined).
+
+%% Message too large error (Gap #45: Message Size Limits)
+-spec error_message_too_large(json_rpc_id(), non_neg_integer()) -> binary().
+error_message_too_large(Id, MaxSize) when is_integer(MaxSize), MaxSize > 0 ->
+    Data = #{
+        <<"maxSize">> => MaxSize,
+        <<"unit">> => <<"bytes">>
+    },
+    encode_error_response(Id, ?MCP_ERROR_MESSAGE_TOO_LARGE, ?MCP_MSG_MESSAGE_TOO_LARGE, Data).
+
+%%====================================================================
+%% Batch Processing Functions
+%%====================================================================
+
+-spec parse_batch(list()) -> batch_decode_result().
+parse_batch([]) ->
+    %% Empty batch is invalid per JSON-RPC 2.0 spec
+    {error, {invalid_request, empty_batch}};
+parse_batch(Requests) when is_list(Requests) ->
+    %% Process each request in the batch
+    case parse_batch_requests(Requests, []) of
+        {ok, Messages} -> {ok, Messages};
+        Error -> Error
+    end.
+
+-spec parse_batch_requests(list(), [json_rpc_message()]) ->
+    {ok, [json_rpc_message()]} | {error, {atom(), term()}}.
+parse_batch_requests([], Acc) ->
+    %% All requests processed successfully, return in original order
+    {ok, lists:reverse(Acc)};
+parse_batch_requests([Request | Rest], Acc) when is_map(Request) ->
+    case parse_json_rpc(Request) of
+        {ok, Message} ->
+            parse_batch_requests(Rest, [Message | Acc]);
+        {error, _} ->
+            %% Continue processing batch even on error, collect all errors
+            parse_batch_requests(Rest, Acc)
+    end;
+parse_batch_requests([_Invalid | Rest], Acc) ->
+    %% Invalid request in batch, skip and continue
+    parse_batch_requests(Rest, Acc).
 
 %%====================================================================
 %% Internal Functions

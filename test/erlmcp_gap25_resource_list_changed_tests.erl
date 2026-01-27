@@ -54,13 +54,13 @@ test_resource_added_sends_notification({ServerPid, _NotifierPid}) ->
                     ?assertMatch(#{<<"uri">> := Uri}, Params),
                     ?assertMatch(#{<<"resource">> := _}, Params);
                 {error, _} ->
-                    ?fail("Failed to decode notification")
+                    ?assert(false)
             end;
         _Other ->
-            ?fail("Expected list changed notification")
+            ?assert(false)
     after
         1000 ->
-            ?fail("Timeout waiting for notification")
+            ?assert(false)
     end.
 
 resource_removed_sends_notification_test_() ->
@@ -94,13 +94,13 @@ test_resource_removed_sends_notification({ServerPid, _NotifierPid}) ->
                     ?assertMatch(#{<<"operation">> := <<"removed">>}, Params),
                     ?assertMatch(#{<<"uri">> := Uri}, Params);
                 {error, _} ->
-                    ?fail("Failed to decode notification")
+                    ?assert(false)
             end;
         _Other ->
-            ?fail("Expected list changed notification")
+            ?assert(false)
     after
         1000 ->
-            ?fail("Timeout waiting for notification")
+            ?assert(false)
     end.
 
 resource_updated_sends_notification_test_() ->
@@ -141,13 +141,13 @@ test_resource_updated_sends_notification({ServerPid, _NotifierPid}) ->
                     ?assertMatch(#{<<"uri">> := Uri}, Params),
                     ?assertMatch(#{<<"resource">> := _}, Params);
                 {error, _} ->
-                    ?fail("Failed to decode notification")
+                    ?assert(false)
             end;
         _Other ->
-            ?fail("Expected list changed notification")
+            ?assert(false)
     after
         1000 ->
-            ?fail("Timeout waiting for notification")
+            ?assert(false)
     end.
 
 notification_contains_operation_metadata_test_() ->
@@ -179,13 +179,13 @@ test_notification_contains_operation_metadata({ServerPid, _NotifierPid}) ->
                     ?assertMatch(#{<<"name">> := Uri}, Resource),
                     ?assertMatch(#{<<"mimeType">> := _}, Resource);
                 {error, _} ->
-                    ?fail("Failed to decode notification")
+                    ?assert(false)
             end;
         _Other ->
-            ?fail("Expected list changed notification")
+            ?assert(false)
     after
         1000 ->
-            ?fail("Timeout waiting for notification")
+            ?assert(false)
     end.
 
 notification_format_is_jsonrpc_test_() ->
@@ -211,16 +211,16 @@ test_notification_format_is_jsonrpc({ServerPid, _NotifierPid}) ->
                     NotificationBin = jsx:encode(jsx:decode(Notification)),
                     DecodedMap = jsx:decode(NotificationBin),
                     ?assertNot(maps:is_key(<<"id">>, DecodedMap)),
-                    ?assertTrue(maps:is_key(<<"method">>, DecodedMap)),
-                    ?assertTrue(maps:is_key(<<"params">>, DecodedMap));
+                    ?assert(maps:is_key(<<"method">>, DecodedMap)),
+                    ?assert(maps:is_key(<<"params">>, DecodedMap));
                 {error, _} ->
-                    ?fail("Failed to decode notification")
+                    ?assert(false)
             end;
         _Other ->
-            ?fail("Expected list changed notification")
+            ?assert(false)
     after
         1000 ->
-            ?fail("Timeout waiting for notification")
+            ?assert(false)
     end.
 
 remove_nonexistent_resource_returns_error_test_() ->
@@ -278,13 +278,13 @@ test_resource_with_description_in_notification({ServerPid, _NotifierPid}) ->
                     Resource = maps:get(<<"resource">>, Params),
                     ?assertMatch(#{<<"description">> := <<"This is a test resource">>}, Resource);
                 {error, _} ->
-                    ?fail("Failed to decode notification")
+                    ?assert(false)
             end;
         _Other ->
-            ?fail("Expected list changed notification")
+            ?assert(false)
     after
         1000 ->
-            ?fail("Timeout waiting for notification")
+            ?assert(false)
     end.
 
 resource_with_metadata_in_notification_test_() ->
@@ -326,11 +326,11 @@ test_resource_with_metadata_in_notification({ServerPid, _NotifierPid}) ->
                     NotifMetadata = maps:get(<<"metadata">>, Resource),
                     ?assertEqual(Metadata, NotifMetadata);
                 {error, _} ->
-                    ?fail("Failed to decode notification")
+                    ?assert(false)
             end;
         _Other ->
-            ?fail("Expected list changed notification")
+            ?assert(false)
     after
         1000 ->
-            ?fail("Timeout waiting for notification")
+            ?assert(false)
     end.

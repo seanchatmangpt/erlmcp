@@ -54,6 +54,12 @@
     is_certificate_valid/0,
     get_certificate_info/0,
 
+    %% Localhost binding validation (Gap #32)
+    validate_bind_address/1,
+    validate_bind_address/2,
+    get_bind_address/0,
+    get_ipv6_bind_address/0,
+
     %% Utilities
     extract_host_from_request/1,
     is_secure_protocol/1
@@ -151,26 +157,31 @@ get_security_config() ->
 -spec validate_config() -> {ok, https_config()} | {error, string()}.
 validate_config() ->
     Config = get_config(),
-    try
-        %% Check if HTTPS is enabled
-        case maps:get(enabled, Config) of
-            true ->
-                %% Certificate and key files must exist
-                CertFile = maps:get(certfile, Config),
-                KeyFile = maps:get(keyfile, Config),
-
-                case validate_certificate_files(CertFile, KeyFile) of
-                    ok ->
-                        {ok, Config};
-                    {error, Reason} ->
-                        {error, Reason}
-                end;
-            false ->
-                {ok, Config}
-        end
+    try validate_config_internal(Config) of
+        Result -> Result
     catch
-        error:Reason ->
-            {error, io_lib:format("Configuration validation error: ~p", [Reason])}
+        error:Err ->
+            {error, io_lib:format("Configuration validation error: ~p", [Err])}
+    end.
+
+%% Internal validation helper
+-spec validate_config_internal(https_config()) -> {ok, https_config()} | {error, string()}.
+validate_config_internal(Config) ->
+    %% Check if HTTPS is enabled
+    case maps:get(enabled, Config) of
+        true ->
+            %% Certificate and key files must exist
+            CertFile = maps:get(certfile, Config),
+            KeyFile = maps:get(keyfile, Config),
+
+            case validate_certificate_files(CertFile, KeyFile) of
+                ok ->
+                    {ok, Config};
+                {error, Error} ->
+                    {error, Error}
+            end;
+        false ->
+            {ok, Config}
     end.
 
 %% @doc Load SSL certificates and return ssl options
@@ -182,25 +193,30 @@ load_certificates() ->
 %% @doc Load SSL certificates with provided config
 -spec load_certificates(https_config()) -> {ok, [ssl:tls_server_option()]} | {error, string()}.
 load_certificates(Config) ->
-    try
-        %% Only load if HTTPS is enabled
-        case maps:get(enabled, Config) of
-            false ->
-                {ok, []};
-            true ->
-                CertFile = maps:get(certfile, Config),
-                KeyFile = maps:get(keyfile, Config),
-
-                case validate_certificate_files(CertFile, KeyFile) of
-                    ok ->
-                        build_ssl_options(Config);
-                    {error, Reason} ->
-                        {error, Reason}
-                end
-        end
+    try load_certificates_internal(Config) of
+        Result -> Result
     catch
-        error:Reason ->
-            {error, io_lib:format("Failed to load certificates: ~p", [Reason])}
+        error:Err ->
+            {error, io_lib:format("Failed to load certificates: ~p", [Err])}
+    end.
+
+%% Internal certificate loading helper
+-spec load_certificates_internal(https_config()) -> {ok, [ssl:tls_server_option()]} | {error, string()}.
+load_certificates_internal(Config) ->
+    %% Only load if HTTPS is enabled
+    case maps:get(enabled, Config) of
+        false ->
+            {ok, []};
+        true ->
+            CertFile = maps:get(certfile, Config),
+            KeyFile = maps:get(keyfile, Config),
+
+            case validate_certificate_files(CertFile, KeyFile) of
+                ok ->
+                    build_ssl_options(Config);
+                {error, Error} ->
+                    {error, Error}
+            end
     end.
 
 %%====================================================================
@@ -271,7 +287,7 @@ get_hsts_header() ->
 %% @doc Build HTTP to HTTPS redirect response
 %% Returns {StatusCode, Headers, Body}
 -spec build_redirect_response(atom(), binary()) -> {integer(), map(), binary()}.
-build_redirect_response(Scheme, Host) ->
+build_redirect_response(_Scheme, Host) ->
     %% Extract host without port if necessary
     HostStr = case Host of
         B when is_binary(B) -> binary_to_list(B);
@@ -338,6 +354,37 @@ get_certificate_info() ->
                     {error, io_lib:format("Failed to read certificate: ~p", [Reason])}
             end
     end.
+
+%%====================================================================
+%% API Functions - Localhost Binding Validation (Gap #32)
+%%====================================================================
+
+%% @doc Validate bind address against localhost-only restriction
+%% Uses configuration from localhost_binding or http_security sections
+-spec validate_bind_address(string() | binary()) -> {ok, string()} | {error, term()}.
+validate_bind_address(Address) ->
+    LocalhostOnly = application:get_env(erlmcp, enforce_localhost_only, true),
+    validate_bind_address(Address, LocalhostOnly).
+
+%% @doc Validate bind address with explicit localhost-only policy
+%% @param Address The bind address (IPv4, IPv6, or hostname)
+%% @param LocalhostOnly Whether to enforce localhost-only binding
+%% @returns {ok, NormalizedAddress} or {error, Reason}
+-spec validate_bind_address(string() | binary(), boolean()) -> {ok, string()} | {error, term()}.
+validate_bind_address(Address, LocalhostOnly) ->
+    erlmcp_localhost_binding:validate_bind_address(Address, LocalhostOnly).
+
+%% @doc Get configured IPv4 bind address
+%% Validates against localhost-only policy (Gap #32)
+-spec get_bind_address() -> string().
+get_bind_address() ->
+    erlmcp_localhost_binding:get_localhost_binding().
+
+%% @doc Get configured IPv6 bind address
+%% Validates against localhost-only policy (Gap #32)
+-spec get_ipv6_bind_address() -> string().
+get_ipv6_bind_address() ->
+    erlmcp_localhost_binding:get_ipv6_localhost().
 
 %%====================================================================
 %% API Functions - Utilities
@@ -477,14 +524,14 @@ format_ciphers(Ciphers) ->
 
 %% @doc Parse certificate info from decoded cert
 -spec parse_certificate_info(term()) -> {ok, map()} | {error, string()}.
-parse_certificate_info(DecodedCert) ->
+parse_certificate_info(_DecodedCert) ->
     try
         %% Extract subject and validity info
         Info = maps:new(),
         {ok, Info}
     catch
-        error:Reason ->
-            {error, io_lib:format("Failed to parse certificate: ~p", [Reason])}
+        error:Error ->
+            {error, io_lib:format("Failed to parse certificate: ~p", [Error])}
     end.
 
 %% @doc Convert term to string

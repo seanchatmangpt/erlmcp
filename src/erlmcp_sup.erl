@@ -178,6 +178,16 @@ init([]) ->
             modules => [erlmcp_sse_event_store]
         },
 
+        % Icon Cache - caches icon metadata with TTL enforcement (Gap #37)
+        #{
+            id => erlmcp_icon_cache,
+            start => {erlmcp_icon_cache, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_icon_cache]
+        },
+
         % Registry - central message router with recovery registration
         #{
             id => erlmcp_registry,

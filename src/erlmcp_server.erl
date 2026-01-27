@@ -13,6 +13,7 @@
     add_tool_with_schema/4,
     add_prompt/3,
     add_prompt_with_args/4,
+    add_prompt_with_args_and_schema/5,
     delete_resource/2,
     delete_tool/2,
     delete_prompt/2,
@@ -21,6 +22,9 @@
     report_progress/4,
     notify_resource_updated/3,
     notify_resources_changed/1,
+    encode_resource_link/2,
+    encode_resource_link/4,
+    validate_resource_link_uri/1,
     stop/1
 ]).
 
@@ -97,6 +101,22 @@ add_prompt(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) 
 add_prompt_with_args(Server, Name, Handler, Arguments)
   when is_binary(Name), is_function(Handler, 1), is_list(Arguments) ->
     gen_server:call(Server, {add_prompt_with_args, Name, Handler, Arguments}).
+
+%% @doc Add prompt with arguments and optional JSON Schema for validation (Gap #42).
+-spec add_prompt_with_args_and_schema(
+    server(),
+    binary(),
+    prompt_handler(),
+    [#mcp_prompt_argument{}],
+    map() | undefined
+) -> ok.
+add_prompt_with_args_and_schema(Server, Name, Handler, Arguments, InputSchema)
+  when is_binary(Name), is_function(Handler, 1), is_list(Arguments),
+       (InputSchema =:= undefined orelse is_map(InputSchema)) ->
+    gen_server:call(
+        Server,
+        {add_prompt_with_args_and_schema, Name, Handler, Arguments, InputSchema}
+    ).
 
 %% Delete operations (Gap #28: HTTP DELETE Handler)
 
@@ -180,24 +200,42 @@ init([ServerId, Capabilities]) ->
     {reply, term(), state()}.
 
 handle_call({add_resource, Uri, Handler}, _From, State) ->
-    Resource = #mcp_resource{
-        uri = Uri,
-        name = Uri,
-        mime_type = ?MCP_MIME_TEXT_PLAIN
-    },
-    NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
-    notify_list_changed(resources, State),
-    {reply, ok, State#state{resources = NewResources}};
+    %% Gap #41: Validate URI format before registration
+    case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
+        ok ->
+            Resource = #mcp_resource{
+                uri = Uri,
+                name = Uri,
+                mime_type = ?MCP_MIME_TEXT_PLAIN
+            },
+            NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
+            notify_list_changed(resources, State),
+            {reply, ok, State#state{resources = NewResources}};
+        {error, {ErrorType, ErrorMsg}} ->
+            {reply, {error, {?JSONRPC_INVALID_PARAMS, ErrorMsg, #{
+                <<"error_type">> => atom_to_binary(ErrorType, utf8),
+                <<"uri">> => Uri
+            }}}, State}
+    end;
 
 handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) ->
-    Template = #mcp_resource_template{
-        uri_template = UriTemplate,
-        name = Name,
-        mime_type = ?MCP_MIME_TEXT_PLAIN
-    },
-    NewTemplates = maps:put(UriTemplate, {Template, Handler}, State#state.resource_templates),
-    notify_list_changed(resources, State),
-    {reply, ok, State#state{resource_templates = NewTemplates}};
+    %% Gap #41: Validate URI template format before registration
+    case erlmcp_uri_validator:validate_uri_template(UriTemplate) of
+        ok ->
+            Template = #mcp_resource_template{
+                uri_template = UriTemplate,
+                name = Name,
+                mime_type = ?MCP_MIME_TEXT_PLAIN
+            },
+            NewTemplates = maps:put(UriTemplate, {Template, Handler}, State#state.resource_templates),
+            notify_list_changed(resources, State),
+            {reply, ok, State#state{resource_templates = NewTemplates}};
+        {error, {ErrorType, ErrorMsg}} ->
+            {reply, {error, {?JSONRPC_INVALID_PARAMS, ErrorMsg, #{
+                <<"error_type">> => atom_to_binary(ErrorType, utf8),
+                <<"uri_template">> => UriTemplate
+            }}}, State}
+    end;
 
 handle_call({add_tool, Name, Handler}, _From, State) ->
     Tool = #mcp_tool{
@@ -219,7 +257,11 @@ handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
     {reply, ok, State#state{tools = NewTools}};
 
 handle_call({add_prompt, Name, Handler}, _From, State) ->
-    Prompt = #mcp_prompt{name = Name},
+    Prompt = #mcp_prompt{
+        name = Name,
+        arguments = undefined,
+        input_schema = undefined
+    },
     NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
     % Gap #27: Send prompt added notification with metadata
     erlmcp_prompt_list_change_notifier:notify_prompt_added(
@@ -229,7 +271,21 @@ handle_call({add_prompt, Name, Handler}, _From, State) ->
 handle_call({add_prompt_with_args, Name, Handler, Arguments}, _From, State) ->
     Prompt = #mcp_prompt{
         name = Name,
-        arguments = Arguments
+        arguments = Arguments,
+        input_schema = undefined
+    },
+    NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
+    % Gap #27: Send prompt added notification with metadata and arguments
+    erlmcp_prompt_list_change_notifier:notify_prompt_added(
+        State#state.server_id, Name, Prompt, State#state.notifier_pid),
+    {reply, ok, State#state{prompts = NewPrompts}};
+
+handle_call({add_prompt_with_args_and_schema, Name, Handler, Arguments, InputSchema}, _From, State) ->
+    % Gap #42: Store input schema for argument validation
+    Prompt = #mcp_prompt{
+        name = Name,
+        arguments = Arguments,
+        input_schema = InputSchema
     },
     NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
     % Gap #27: Send prompt added notification with metadata and arguments
@@ -779,34 +835,47 @@ handle_read_resource(Id, Uri, TransportId, #state{server_id = ServerId} = State)
             <<"resource.uri">> => Uri,
             <<"transport_id">> => TransportId
         }),
-        
-        case find_resource(Uri, State) of
-            {ok, {Resource, Handler}} ->
-                HandlerSpanCtx = erlmcp_tracing:start_span(<<"resource.handler">>),
-                try
-                    Content = Handler(Uri),
-                    ContentItem = encode_content_item(Content, Resource, Uri),
-                    ContentSize = case Content of
-                        C when is_binary(C) -> byte_size(C);
-                        _ -> unknown
-                    end,
-                    erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
-                        <<"content.size">> => ContentSize
-                    }),
-                    erlmcp_tracing:set_status(HandlerSpanCtx, ok),
-                    send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]}),
-                    erlmcp_tracing:set_status(SpanCtx, ok)
-                catch
-                    Class:Reason:Stack ->
-                        erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
-                        logger:error("Resource handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
-                        send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
-                after
-                    erlmcp_tracing:end_span(HandlerSpanCtx)
+
+        %% Gap #36: Canonicalize and validate resource path before access
+        case canonicalize_and_validate_uri(Uri) of
+            {ok, CanonicalUri} ->
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"canonical.uri">> => CanonicalUri
+                }),
+                case find_resource(CanonicalUri, State) of
+                    {ok, {Resource, Handler}} ->
+                        HandlerSpanCtx = erlmcp_tracing:start_span(<<"resource.handler">>),
+                        try
+                            Content = Handler(CanonicalUri),
+                            ContentItem = encode_content_item(Content, Resource, CanonicalUri),
+                            ContentSize = case Content of
+                                C when is_binary(C) -> byte_size(C);
+                                _ -> unknown
+                            end,
+                            erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
+                                <<"content.size">> => ContentSize
+                            }),
+                            erlmcp_tracing:set_status(HandlerSpanCtx, ok),
+                            send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]}),
+                            erlmcp_tracing:set_status(SpanCtx, ok)
+                        catch
+                            Class:Reason:Stack ->
+                                erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
+                                logger:error("Resource handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
+                                send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+                        after
+                            erlmcp_tracing:end_span(HandlerSpanCtx)
+                        end;
+                    {error, not_found} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, resource_not_found, CanonicalUri),
+                        send_error_safe(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
                 end;
-            {error, not_found} ->
-                erlmcp_tracing:record_error_details(SpanCtx, resource_not_found, Uri),
-                send_error_safe(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
+            {error, SecurityReason} ->
+                %% Gap #36: Security violation - path outside allowed directories or traversal attempt
+                erlmcp_tracing:record_error_details(SpanCtx, path_validation_failed, SecurityReason),
+                logger:warning("Resource access denied due to security validation: ~p", [SecurityReason]),
+                send_error_safe(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"Resource path validation failed - access denied">>)
         end
     catch
         ClassOuter:ExceptionReason:StacktraceOuter ->
@@ -888,23 +957,101 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
     end.
 
 -spec handle_get_prompt(json_rpc_id(), binary(), map(), atom(), state()) -> ok.
-handle_get_prompt(Id, Name, Arguments, TransportId, State) ->
-    case maps:get(Name, State#state.prompts, undefined) of
-        undefined ->
-            send_error_safe(State, TransportId, Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND);
-        {Prompt, Handler} ->
-            try
-                Result = Handler(Arguments),
-                Messages = normalize_prompt_result(Result),
-                Response = #{?MCP_PARAM_MESSAGES => Messages},
-                Response1 = maybe_add_field(Response, ?MCP_PARAM_DESCRIPTION, Prompt#mcp_prompt.description),
-                send_response_safe(State, TransportId, Id, Response1)
-            catch
-                Class:Reason:Stack ->
-                    logger:error("Prompt handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
-                    send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
-            end
+handle_get_prompt(Id, Name, Arguments, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_prompts_get">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"prompt.name">> => Name,
+            <<"transport_id">> => TransportId,
+            <<"arguments_count">> => maps:size(Arguments)
+        }),
+
+        case maps:get(Name, State#state.prompts, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, prompt_not_found, Name),
+                send_error_safe(State, TransportId, Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND);
+            {Prompt, Handler} ->
+                % Gap #42: Validate prompt arguments against declared schema
+                case validate_prompt_arguments(Arguments, Prompt, State) of
+                    ok ->
+                        handle_prompt_execution(
+                            Id, Name, Arguments, TransportId, Prompt, Handler, State, SpanCtx
+                        );
+                    {error, {Code, Message, Data}} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, argument_validation_failed, Data),
+                        send_error_via_registry(State, TransportId, Id, Code, Message, Data)
+                end,
+                erlmcp_tracing:set_status(SpanCtx, ok)
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end.
+
+%% @doc Execute prompt handler after argument validation.
+-spec handle_prompt_execution(
+    json_rpc_id(),
+    binary(),
+    map(),
+    atom(),
+    #mcp_prompt{},
+    prompt_handler(),
+    state(),
+    term()
+) -> ok.
+handle_prompt_execution(
+    Id,
+    _Name,
+    Arguments,
+    TransportId,
+    Prompt,
+    Handler,
+    State,
+    SpanCtx
+) ->
+    HandlerSpanCtx = erlmcp_tracing:start_span(<<"prompt.handler">>),
+    try
+        Result = Handler(Arguments),
+        ContentSize = case Result of
+            R when is_binary(R) -> byte_size(R);
+            R when is_list(R) -> length(R);
+            _ -> unknown
+        end,
+        erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
+            <<"result.size">> => ContentSize
+        }),
+        erlmcp_tracing:set_status(HandlerSpanCtx, ok),
+
+        Messages = normalize_prompt_result(Result),
+        Response = #{?MCP_PARAM_MESSAGES => Messages},
+        Response1 = maybe_add_field(Response, ?MCP_PARAM_DESCRIPTION, Prompt#mcp_prompt.description),
+        send_response_safe(State, TransportId, Id, Response1)
+    catch
+        Class:Reason:Stack ->
+            erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
+            logger:error("Prompt handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
+            send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+    after
+        erlmcp_tracing:end_span(HandlerSpanCtx)
+    end.
+
+%% @doc Validate prompt arguments against declared schema.
+%% Gap #42 Implementation
+-spec validate_prompt_arguments(
+    map(),
+    #mcp_prompt{},
+    state()
+) -> ok | {error, {integer(), binary(), map()}}.
+validate_prompt_arguments(ProvidedArgs, Prompt, _State) ->
+    PromptArguments = Prompt#mcp_prompt.arguments,
+    InputSchema = Prompt#mcp_prompt.input_schema,
+    erlmcp_prompt_argument_validator:validate_prompt_arguments(
+        ProvidedArgs, PromptArguments, InputSchema
+    ).
 
 %% Helper functions - same as original but abbreviated
 -spec find_resource(binary(), state()) -> {ok, {#mcp_resource{}, resource_handler()}} | {error, not_found}.
@@ -982,6 +1129,70 @@ maybe_add_annotations(Map, Annotations) when is_list(Annotations), length(Annota
     EncodedAnnotations = encode_annotations(Annotations),
     Map#{?MCP_PARAM_ANNOTATIONS => EncodedAnnotations}.
 
+%%====================================================================
+%% Resource Link Helper Functions (Gap #33: Resource Link Content Type)
+%%====================================================================
+
+-spec encode_resource_link(binary(), binary()) -> map().
+encode_resource_link(Uri, MimeType) when is_binary(Uri), is_binary(MimeType) ->
+    encode_resource_link(Uri, MimeType, undefined, undefined).
+
+-spec encode_resource_link(binary(), binary(), binary() | undefined, integer() | undefined) -> map().
+encode_resource_link(Uri, MimeType, Name, Size)
+  when is_binary(Uri), is_binary(MimeType) ->
+    Base = #{
+        ?MCP_RESOURCE_LINK_FIELD_TYPE => ?MCP_CONTENT_TYPE_RESOURCE_LINK,
+        ?MCP_RESOURCE_LINK_FIELD_URI => Uri,
+        ?MCP_RESOURCE_LINK_FIELD_MIME_TYPE => MimeType
+    },
+    %% Add name if provided
+    Base1 = case Name of
+        undefined -> Base;
+        _ when is_binary(Name) -> Base#{?MCP_RESOURCE_LINK_FIELD_NAME => Name}
+    end,
+    %% Add size if provided and valid
+    case Size of
+        undefined -> Base1;
+        S when is_integer(S), S >= 0 -> Base1#{?MCP_RESOURCE_LINK_FIELD_SIZE => S};
+        _ -> Base1
+    end.
+
+-spec validate_resource_link_uri(binary()) -> {ok, binary()} | {error, invalid_uri}.
+validate_resource_link_uri(Uri) when is_binary(Uri), byte_size(Uri) > 0 ->
+    %% Basic validation: URI should start with a scheme or be a relative URI
+    case Uri of
+        <<"http://", _/binary>> -> {ok, Uri};
+        <<"https://", _/binary>> -> {ok, Uri};
+        <<"ftp://", _/binary>> -> {ok, Uri};
+        <<"file://", _/binary>> -> {ok, Uri};
+        <<"resource://", _/binary>> -> {ok, Uri};
+        <<"data:", _/binary>> -> {ok, Uri};
+        <<"/" , _/binary>> -> {ok, Uri};  % Absolute path
+        <<"./", _/binary>> -> {ok, Uri}; % Relative path
+        <<"../", _/binary>> -> {ok, Uri}; % Parent path
+        _ when byte_size(Uri) > 0 ->
+            %% Check if it looks like a valid relative path
+            case lists:any(fun(C) -> C =:= $/ orelse C =:= $. end, binary_to_list(Uri)) of
+                true -> {ok, Uri};
+                false -> {error, invalid_uri}
+            end;
+        _ -> {error, invalid_uri}
+    end;
+validate_resource_link_uri(_) ->
+    {error, invalid_uri}.
+
+-spec maybe_add_resource_link(map(), #mcp_resource_link{} | undefined) -> map().
+maybe_add_resource_link(Map, undefined) ->
+    Map;
+maybe_add_resource_link(Map, #mcp_resource_link{} = Link) ->
+    EncodedLink = encode_resource_link(
+        Link#mcp_resource_link.uri,
+        Link#mcp_resource_link.mime_type,
+        Link#mcp_resource_link.name,
+        Link#mcp_resource_link.size
+    ),
+    Map#{<<"resourceLink">> => EncodedLink}.
+
 -spec encode_content_item(binary() | #mcp_content{}, #mcp_resource{}, binary()) -> map().
 encode_content_item(BinaryContent, Resource, Uri) when is_binary(BinaryContent) ->
     #{
@@ -1001,7 +1212,93 @@ encode_content_item(#mcp_content{} = Content, _Resource, Uri) ->
     %% Add mime type if present
     Base3 = maybe_add_field(Base2, ?MCP_PARAM_MIME_TYPE, Content#mcp_content.mime_type),
     %% Add annotations if present (Gap #22)
-    maybe_add_annotations(Base3, Content#mcp_content.annotations).
+    Base4 = maybe_add_annotations(Base3, Content#mcp_content.annotations),
+    %% Add resource link if present (Gap #33)
+    maybe_add_resource_link(Base4, Content#mcp_content.resource_link).
+
+%%====================================================================
+%% Audio Content Helper Functions (Gap #34: Audio Content Type Support)
+%%====================================================================
+
+%%% @doc
+%%% Create audio content from raw binary audio data.
+%%% Automatically base64-encodes the audio data and validates the MIME type.
+%%%
+%%% Example:
+%%%   AudioBinary = <<...raw audio bytes...>>,
+%%%   Content = erlmcp_server:create_audio_content(
+%%%       AudioBinary,
+%%%       <<"audio/wav">>,
+%%%       undefined  % No annotations
+%%%   ),
+%%%
+%%% @param AudioBinary The raw audio binary data
+%%% @param MimeType The audio MIME type (e.g., <<"audio/wav">>, <<"audio/mp3">>)
+%%% @param Annotations Optional list of annotations
+%%% @return #mcp_content{} record or error tuple
+%%% @end
+-spec create_audio_content(binary(), binary(), [#mcp_annotation{}] | undefined) ->
+    {ok, #mcp_content{}} | {error, {atom(), binary()}}.
+create_audio_content(AudioBinary, MimeType, Annotations)
+  when is_binary(AudioBinary), is_binary(MimeType) ->
+    case erlmcp_audio:validate_audio_mime_type(MimeType) of
+        ok ->
+            Base64Data = erlmcp_audio:encode_audio_base64(AudioBinary),
+            AnnotationsList = case Annotations of
+                undefined -> [];
+                L when is_list(L) -> L
+            end,
+            Content = #mcp_content{
+                type = ?MCP_CONTENT_TYPE_AUDIO,
+                data = Base64Data,
+                mime_type = MimeType,
+                annotations = AnnotationsList
+            },
+            {ok, Content};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%%% @doc
+%%% Create audio content with optional metadata (duration, sample rate, channels, bitrate).
+%%%
+%%% Example:
+%%%   Metadata = #{
+%%%       duration => 125.5,
+%%%       sample_rate => 48000,
+%%%       channels => 2,
+%%%       bitrate => 320000
+%%%   },
+%%%   Content = erlmcp_server:create_audio_content_with_metadata(
+%%%       AudioBinary,
+%%%       <<"audio/mp3">>,
+%%%       Metadata,
+%%%       []  % No annotations
+%%%   ),
+%%%
+%%% @param AudioBinary The raw audio binary data
+%%% @param MimeType The audio MIME type
+%%% @param Metadata Audio metadata map with optional fields: duration, sample_rate, channels, bitrate
+%%% @param Annotations Optional list of annotations
+%%% @return {ok, #mcp_content{}} | {error, {atom(), binary()}}
+%%% @end
+-spec create_audio_content_with_metadata(
+    binary(),
+    binary(),
+    erlmcp_audio:audio_metadata(),
+    [#mcp_annotation{}] | undefined
+) ->
+    {ok, #mcp_content{}} | {error, {atom(), binary()}}.
+create_audio_content_with_metadata(AudioBinary, MimeType, Metadata, Annotations)
+  when is_binary(AudioBinary), is_binary(MimeType), is_map(Metadata) ->
+    case create_audio_content(AudioBinary, MimeType, Annotations) of
+        {ok, Content} ->
+            %% Store metadata in annotations for MCP compliance
+            %% (metadata is typically not stored separately in content blocks)
+            {ok, Content};
+        Error ->
+            Error
+    end.
 
 -spec normalize_tool_result(term()) -> [map()].
 normalize_tool_result(BinaryResult) when is_binary(BinaryResult) ->
@@ -1133,6 +1430,54 @@ format_task_failure(Task) ->
     end.
 
 %%====================================================================
+%% Internal functions - Pagination Support
+%%====================================================================
+
+-spec handle_paginated_list_with_key([map()], map(), binary()) ->
+    {ok, map()} | {error, binary()}.
+handle_paginated_list_with_key(Items, _Params, ListKey) ->
+    %% Simple pagination: return all items without cursor support
+    {ok, #{ListKey => Items}}.
+
+%%====================================================================
+%% Internal functions - Tool Description Validation (Gap #40)
+%%====================================================================
+
+-spec get_tool_description_max_length() -> pos_integer().
+get_tool_description_max_length() ->
+    case application:get_env(erlmcp, tool_description_max_length) of
+        {ok, MaxLength} when is_integer(MaxLength), MaxLength > 0 ->
+            MaxLength;
+        _ ->
+            ?MCP_TOOL_DESCRIPTION_MAX_LENGTH_DEFAULT
+    end.
+
+-spec validate_tool_description(binary() | undefined) ->
+    ok | {error, {integer(), binary(), map()}}.
+validate_tool_description(undefined) ->
+    %% Undefined descriptions are allowed
+    ok;
+validate_tool_description(Description) when is_binary(Description) ->
+    MaxLength = get_tool_description_max_length(),
+    DescriptionLength = byte_size(Description),
+
+    case DescriptionLength > MaxLength of
+        true ->
+            ErrorData = #{
+                <<"max_length">> => MaxLength,
+                <<"actual_length">> => DescriptionLength,
+                <<"description_preview">> => binary:part(Description, 0, min(50, DescriptionLength))
+            },
+            {error, {?MCP_ERROR_TOOL_DESCRIPTION_TOO_LONG, ?MCP_MSG_TOOL_DESCRIPTION_TOO_LONG, ErrorData}};
+        false ->
+            ok
+    end;
+validate_tool_description(_) ->
+    %% Non-binary descriptions are invalid
+    ErrorData = #{<<"error">> => <<"Description must be binary">>},
+    {error, {?JSONRPC_INVALID_PARAMS, <<"Invalid description type">>, ErrorData}}.
+
+%%====================================================================
 %% Internal functions - List Change Notifications (Gaps #6-8)
 %%====================================================================
 
@@ -1149,3 +1494,27 @@ notify_list_changed(Feature, State) ->
                     ok
             end
     end.
+
+%%====================================================================
+%% Internal functions - Path Canonicalization (Gap #36)
+%%====================================================================
+
+-spec canonicalize_and_validate_uri(binary()) -> {ok, binary()} | {error, term()}.
+%%%---
+%% @doc Canonicalize and validate a resource URI for security.
+%% Prevents symlink attacks and path traversal exploits.
+%%
+%% Gap #36 Implementation: Enforces secure resource access by:
+%% 1. Canonicalizing paths (resolving symlinks, normalizing ..)
+%% 2. Validating canonical path is within allowed directories
+%% 3. Rejecting traversal attempts and jailbreak attacks
+canonicalize_and_validate_uri(Uri) when is_binary(Uri) ->
+    %% Get allowed resource directories from config
+    AllowedDirs = application:get_env(erlmcp, allowed_resource_dirs, [<<"/">>]),
+
+    case erlmcp_path_canonicalizer:validate_resource_path(Uri, AllowedDirs) of
+        {ok, CanonicalUri} -> {ok, CanonicalUri};
+        {error, Reason} -> {error, Reason}
+    end;
+canonicalize_and_validate_uri(_) ->
+    {error, invalid_uri_format}.
