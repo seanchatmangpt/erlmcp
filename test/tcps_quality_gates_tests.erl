@@ -46,7 +46,9 @@ quality_gates_test_() ->
              {"Quality metrics calculation tests", fun test_quality_metrics_calculation/0},
              {"Receipt generation tests", fun test_receipt_generation/0},
              {"Andon integration tests", fun test_andon_integration/0},
-             {"Stage to gate mapping tests", fun test_stage_gate_mapping/0}
+             {"Stage to gate mapping tests", fun test_stage_gate_mapping/0},
+             {"Unknown gate error handling tests", fun test_unknown_gate/0},
+             {"Can proceed validation tests", fun test_can_proceed/0}
          ]
      end}.
 

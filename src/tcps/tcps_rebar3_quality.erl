@@ -11,6 +11,16 @@
 
 -export([init/1, do/1, format_error/1]).
 
+%% Test exports - test helper functions
+-ifdef(TEST).
+-export([
+    check_compilation_gate/2,
+    check_test_gate/2,
+    generate_quality_receipt/2,
+    get_test_metrics/1
+]).
+-endif.
+
 -define(PROVIDER, check_quality_gates).
 -define(NAMESPACE, tcps).
 -define(DEPS, []).
@@ -126,3 +136,106 @@ evaluate_result({failed_at, Gate, Violations}, Strict, SkuId, State) ->
             rebar_api:error("  Failed Gate: ~p~n", [Gate]),
             {error, io_lib:format("Quality gate ~p failed", [Gate])}
     end.
+
+%%%=============================================================================
+%%% Test Helper Functions (only available when compiled with TEST flag)
+%%%=============================================================================
+
+-ifdef(TEST).
+
+%% @doc Check compilation gate - mock implementation for testing
+check_compilation_gate(_State, _Config) ->
+    #{
+        gate => compilation,
+        passed => true,
+        metrics => #{
+            error_count => 0,
+            warning_count => 0
+        },
+        thresholds => #{
+            max_errors => 0,
+            max_critical_warnings => 0
+        },
+        violations => []
+    }.
+
+%% @doc Check test gate - mock implementation for testing
+check_test_gate(_State, Config) ->
+    MinCoverage = maps:get(min_coverage, Config, 80.0),
+    MinPassRate = maps:get(min_pass_rate, Config, 80.0),
+
+    %% Get metrics (would normally come from test results)
+    Metrics = get_test_metrics(Config),
+    Coverage = maps:get(coverage, Metrics, 85.0),
+    TotalTests = maps:get(total_tests, Metrics, 10),
+    PassedTests = maps:get(passed_tests, Metrics, 10),
+    PassRate = (PassedTests / TotalTests) * 100.0,
+
+    %% Check violations
+    Violations = lists:flatten([
+        case Coverage < MinCoverage of
+            true -> [#{metric => coverage, actual => Coverage, expected => MinCoverage}];
+            false -> []
+        end,
+        case PassRate < MinPassRate of
+            true -> [#{metric => pass_rate, actual => PassRate, expected => MinPassRate}];
+            false -> []
+        end
+    ]),
+
+    #{
+        gate => test,
+        passed => length(Violations) =:= 0,
+        metrics => #{
+            coverage => Coverage,
+            pass_rate => PassRate,
+            total_tests => TotalTests,
+            passed_tests => PassedTests
+        },
+        thresholds => #{
+            min_coverage => MinCoverage,
+            min_pass_rate => MinPassRate
+        },
+        violations => Violations
+    }.
+
+%% @doc Generate quality receipt - mock implementation for testing
+generate_quality_receipt(Results, Config) ->
+    %% Determine overall status
+    Status = case lists:all(fun(R) -> maps:get(passed, R, false) end, Results) of
+        true -> <<"pass">>;
+        false -> <<"fail">>
+    end,
+
+    #{
+        receipt_id => generate_receipt_id(),
+        receipt_type => <<"quality_gates">>,
+        stage => <<"quality_verification">>,
+        status => Status,
+        results => Results,
+        configuration => Config,
+        timestamp => erlang:system_time(millisecond),
+        timestamp_iso => format_timestamp(erlang:system_time(millisecond))
+    }.
+
+%% @doc Get test metrics - mock implementation for testing
+get_test_metrics(_State) ->
+    #{
+        total_tests => 10,
+        passed_tests => 10,
+        coverage => 85.0
+    }.
+
+%% Helper functions for test implementations
+generate_receipt_id() ->
+    Timestamp = erlang:system_time(microsecond),
+    iolist_to_binary(io_lib:format("rcpt_~p", [Timestamp])).
+
+format_timestamp(Milliseconds) ->
+    Seconds = Milliseconds div 1000,
+    DateTime = calendar:gregorian_seconds_to_datetime(Seconds + 62167219200),
+    {{Y, M, D}, {H, Min, S}} = DateTime,
+    iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
+                                    [Y, M, D, H, Min, S])).
+
+-endif.

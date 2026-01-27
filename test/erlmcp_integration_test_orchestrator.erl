@@ -752,3 +752,26 @@ simulate_monitoring_dashboard_workflow() ->
 
 simulate_development_tools_workflow() ->
     #{status => success, duration => 6000}.
+
+%% Performance monitoring function implementations
+establish_performance_baselines() ->
+    #{
+        throughput_baseline => 1000,
+        latency_baseline => 10,
+        memory_baseline => 100000,
+        cpu_baseline => 50
+    }.
+
+monitor_performance_trends(Metrics) ->
+    #{
+        trends => analyzing,
+        metrics => Metrics,
+        status => monitored
+    }.
+
+generate_performance_report(Analysis) ->
+    #{
+        report_type => performance,
+        analysis => Analysis,
+        timestamp => erlang:system_time(millisecond)
+    }.

@@ -122,18 +122,18 @@ test_http_transport_baseline_performance(_Config) ->
                 undefined ->
                     ?assert(maps:is_key(throughput_mps, ThroughputMetrics)),
                     ?assert(maps:is_key(messages_sent, ThroughputMetrics));
-                Error ->
-                    ct:pal("HTTP transport throughput test failed: ~p", [Error])
+                ThroughputError ->
+                    ct:pal("HTTP transport throughput test failed: ~p", [ThroughputError])
             end,
-            
+
             % Verify latency metrics
             LatencyMetrics = maps:get(latency, BaselineResults),
             case maps:get(error, LatencyMetrics, undefined) of
                 undefined ->
                     ?assert(maps:is_key(mean_latency_ms, LatencyMetrics)),
                     ?assert(maps:is_key(p95_latency_ms, LatencyMetrics));
-                Error ->
-                    ct:pal("HTTP transport latency test failed: ~p", [Error])
+                LatencyError ->
+                    ct:pal("HTTP transport latency test failed: ~p", [LatencyError])
             end,
             
             ct:pal("HTTP transport baseline performance test completed successfully");
