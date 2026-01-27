@@ -49,7 +49,7 @@ test_init_sse() ->
     ?assert(is_pid(Pid)).
 
 test_send_event() ->
-    TransportId = <<"sse_test_2">>,
+    _TransportId = <<"sse_test_2">>,
     ClientPid = spawn(fun() -> receive stop -> ok end end),
 
     Message = jsx:encode(#{
@@ -69,7 +69,7 @@ test_close_stream() ->
 
 test_format_sse_event() ->
     %% Test SSE event formatting
-    Data = <<"test event data">>,
+    _Data = <<"test event data">>,
     Formatted = <<"event: message\ndata: test event data\n\n">>,
 
     ?assert(is_binary(Formatted)),

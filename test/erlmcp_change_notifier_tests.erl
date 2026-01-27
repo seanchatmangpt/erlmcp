@@ -50,7 +50,7 @@ setup() ->
 
     #{notifier => NotifierPid, test_pids => []}.
 
-cleanup(#{notifier := NotifierPid} = State) ->
+cleanup(#{notifier := _NotifierPid} = State) ->
     TestPids = maps:get(test_pids, State, []),
 
     % Kill all test client processes
@@ -166,7 +166,7 @@ test_client_cleanup_on_exit(#{notifier := _Notifier} = State) ->
 
     % Verify subscriptions exist
     Subscribers1 = erlmcp_change_notifier:get_subscribers(prompts),
-    ?_assert(lists:member(ClientPid, Subscribers1)),
+    ?assert(lists:member(ClientPid, Subscribers1)),
 
     % Kill the client
     exit(ClientPid, kill),
@@ -231,9 +231,9 @@ test_notify_multiple_subscribers(#{notifier := _Notifier} = State) ->
     Client2 ! {get_messages, self()},
     Client3 ! {get_messages, self()},
 
-    Msg1 = receive {messages, M} -> M after 500 -> [] end,
-    Msg2 = receive {messages, M} -> M after 500 -> [] end,
-    Msg3 = receive {messages, M} -> M after 500 -> [] end,
+    Msg1 = receive {messages, M1} -> M1 after 500 -> [] end,
+    Msg2 = receive {messages, M2} -> M2 after 500 -> [] end,
+    Msg3 = receive {messages, M3} -> M3 after 500 -> [] end,
 
     [
         ?_assert(length(Msg1) > 0),

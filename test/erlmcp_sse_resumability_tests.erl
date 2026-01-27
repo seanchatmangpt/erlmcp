@@ -79,7 +79,7 @@ test_event_id_parsing() ->
 
     %% Test invalid event ID
     ?assertEqual(0, parse_event_id(<<"invalid">>)),
-    ?assertEqual(0, parse_event_id(<<">>)).
+    ?assertEqual(0, parse_event_id(<<>>)).
 
 %%====================================================================
 %% Unit Tests - Event Store Operations
@@ -88,7 +88,7 @@ test_event_id_parsing() ->
 test_add_event_to_store() ->
     SessionId = <<"session_test_add">>,
     EventNumber = 1,
-    EventData = <<"{\\"jsonrpc\\":\\"2.0\\",\\"method\\":\\"test\\"}">>,
+    EventData = <<"{\"jsonrpc\":\"2.0\",\"method\":\"test\"}">>,
 
     %% Add event and get event ID back
     {ok, EventId} = erlmcp_sse_event_store:add_event(SessionId, EventNumber, EventData),
@@ -104,8 +104,8 @@ test_get_events_since_all() ->
     erlmcp_sse_event_store:clear_session(SessionId),
 
     %% Add multiple events
-    {ok, EventId1} = erlmcp_sse_event_store:add_event(SessionId, 1, <<"event1">>),
-    {ok, EventId2} = erlmcp_sse_event_store:add_event(SessionId, 2, <<"event2">>),
+    {ok, _EventId1} = erlmcp_sse_event_store:add_event(SessionId, 1, <<"event1">>),
+    {ok, _EventId2} = erlmcp_sse_event_store:add_event(SessionId, 2, <<"event2">>),
     {ok, _EventId3} = erlmcp_sse_event_store:add_event(SessionId, 3, <<"event3">>),
 
     %% Get all events (undefined LastEventId)
@@ -167,11 +167,11 @@ test_event_replay_sequence() ->
     erlmcp_sse_event_store:clear_session(SessionId),
 
     Events = [
-        {1, <<"{\\"id\\":1,\\"msg\\":\\"first\\"}">>},
-        {2, <<"{\\"id\\":2,\\"msg\\":\\"second\\"}">>},
-        {3, <<"{\\"id\\":3,\\"msg\\":\\"third\\"}">>},
-        {4, <<"{\\"id\\":4,\\"msg\\":\\"fourth\\"}">>},
-        {5, <<"{\\"id\\":5,\\"msg\\":\\"fifth\\"}">>}
+        {1, <<"{\"id\":1,\"msg\":\"first\"}">>},
+        {2, <<"{\"id\":2,\"msg\":\"second\"}">>},
+        {3, <<"{\"id\":3,\"msg\":\"third\"}">>},
+        {4, <<"{\"id\":4,\"msg\":\"fourth\"}">>},
+        {5, <<"{\"id\":5,\"msg\":\"fifth\"}">>}
     ],
 
     %% Add all events
@@ -190,7 +190,7 @@ test_event_replay_sequence() ->
 
 test_connection_closure_with_retry() ->
     %% Verify SSE event format includes retry hint
-    EventData = <<"{\\"status\\":\\"closed\\"}">>,
+    _EventData = <<"{\"status\":\"closed\"}">>,
 
     %% Format should include retry: 3000
     FormattedClose = format_close_event(),
@@ -207,7 +207,7 @@ test_stream_resumption_after_disconnect() ->
 
     %% Clear and set up initial events
     erlmcp_sse_event_store:clear_session(SessionId),
-    {ok, EventId1} = erlmcp_sse_event_store:add_event(SessionId, 1, <<"msg1">>),
+    {ok, _EventId1} = erlmcp_sse_event_store:add_event(SessionId, 1, <<"msg1">>),
     {ok, EventId2} = erlmcp_sse_event_store:add_event(SessionId, 2, <<"msg2">>),
     {ok, _EventId3} = erlmcp_sse_event_store:add_event(SessionId, 3, <<"msg3">>),
 
@@ -278,7 +278,7 @@ test_concurrent_streams() ->
     lists:foreach(fun(Pid) ->
         receive
             {Pid, done} -> ok
-        after 5000 -> ?fail("Timeout waiting for concurrent session")
+        after 5000 -> ct:fail("Timeout waiting for concurrent session")
         end
     end, Pids),
 
@@ -338,7 +338,7 @@ test_session_info_tracking() ->
 test_sse_format_with_event_id() ->
     %% Verify SSE event format with event ID
     EventId = <<"session_test_456">>,
-    EventData = <<"{\\"jsonrpc\\":\\"2.0\\",\\"method\\":\\"test\\"}">>,
+    EventData = <<"{\"jsonrpc\":\"2.0\",\"method\":\"test\"}">>,
 
     Formatted = format_sse_event_with_id(EventId, EventData),
 

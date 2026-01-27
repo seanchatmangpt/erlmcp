@@ -101,6 +101,11 @@ handle_call({send, Data}, From, State) ->
 handle_call(get_state, _From, State) ->
     {reply, {ok, State}, State};
 
+handle_call({extract_session_id, Req}, _From, State) ->
+    %% Extract session ID from request headers
+    SessionId = cowboy_req:header(<<"mcp-session-id">>, Req, undefined),
+    {reply, SessionId, State};
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 

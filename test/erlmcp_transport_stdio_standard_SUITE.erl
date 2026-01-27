@@ -193,7 +193,7 @@ end_per_testcase(TestCase, Config) ->
 %% Behavior Compliance Tests
 %%====================================================================
 
-behavior_exports_validation(Config) ->
+behavior_exports_validation(_Config) ->
     Module = erlmcp_transport_stdio_new,
 
     %% Required exports
@@ -321,7 +321,7 @@ behavior_handle_transport_call_compliance(Config) ->
 
     lists:foreach(fun(Call) ->
                      case Module:handle_transport_call(Call, State) of
-                         {reply, Reply, NewState} ->
+                         {reply, Reply, _NewState} ->
                              ct:pal("Transport call ~p replied: ~p", [Call, Reply]);
                          {error, Reason} -> ct:pal("Transport call ~p failed: ~p", [Call, Reason])
                      end
@@ -669,8 +669,8 @@ message_routing_buffer_management(Config) ->
     ok = gen_server:stop(Pid),
     ok.
 
-message_routing_line_processing(Config) ->
-    TransportId = ?config(transport_id, Config),
+message_routing_line_processing(_Config) ->
+    %% TransportId = ?config(transport_id, _Config),
     Module = erlmcp_transport_stdio_new,
 
     %% Test line trimming directly

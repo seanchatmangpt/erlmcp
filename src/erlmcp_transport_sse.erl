@@ -120,14 +120,29 @@ handle(Req, #{transport_id := TransportId} = State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle">>),
 
     try
-        case cowboy_req:method(Req) of
-            <<"GET">> ->
-                handle_sse_stream(Req, TransportId, State);
-            <<"POST">> ->
-                handle_post_request(Req, TransportId, State);
-            _ ->
-                ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
-                {ok, ReqReply, State}
+        %% Validate Origin header (DNS rebinding protection)
+        case validate_request_origin(Req, SpanCtx) of
+            {error, forbidden} ->
+                erlmcp_tracing:record_error_details(SpanCtx, origin_validation_failed, <<"Invalid origin">>),
+                ReqForbidden = cowboy_req:reply(403, #{
+                    <<"content-type">> => <<"application/json">>
+                }, jsx:encode(#{
+                    <<"error">> => <<"Forbidden">>,
+                    <<"message">> => <<"Origin not allowed">>
+                }), Req),
+                {ok, ReqForbidden, State};
+            {ok, _ValidOrigin} ->
+                case cowboy_req:method(Req) of
+                    <<"GET">> ->
+                        handle_sse_stream(Req, TransportId, State);
+                    <<"POST">> ->
+                        handle_post_request(Req, TransportId, State);
+                    <<"DELETE">> ->
+                        handle_delete_session(Req, TransportId, State);
+                    _ ->
+                        ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
+                        {ok, ReqReply, State}
+                end
         end
     catch
         Class:CaughtReason:Stacktrace ->
@@ -141,102 +156,128 @@ handle(Req, #{transport_id := TransportId} = State) ->
 handle_sse_stream(Req, TransportId, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle_stream">>),
 
-    %% Generate unique client ID and session ID
-    ClientId = erlang:list_to_binary(erlang:pid_to_list(self())),
-    SessionId = generate_session_id(ClientId),
+    %% Validate HTTP headers per MCP spec (Gap #10)
+    ReqHeaders = maps:to_list(cowboy_req:headers(Req)),
+    case erlmcp_http_header_validator:validate_request_headers(ReqHeaders, get) of
+        {error, {StatusCode, Message, Data}} ->
+            erlmcp_tracing:record_error_details(SpanCtx, header_validation_failed, Data),
+            {_StatusCode2, ResponseHeaders, Body} =
+                erlmcp_http_header_validator:format_error_response(StatusCode, Message, Data),
+            Req2 = cowboy_req:reply(StatusCode, maps:from_list(ResponseHeaders), Body, Req),
+            {ok, Req2, State};
+        {ok, ValidatedHeaders} ->
+            %% Generate unique client ID and session ID
+            ClientId = erlang:list_to_binary(erlang:pid_to_list(self())),
+            SessionId = generate_session_id(ClientId),
 
-    %% Extract Last-Event-ID header for stream resumption
-    LastEventId = cowboy_req:header(<<"last-event-id">>, Req, undefined),
+            %% Extract Last-Event-ID header for stream resumption
+            LastEventId = cowboy_req:header(<<"last-event-id">>, Req, undefined),
 
-    erlmcp_tracing:set_attributes(SpanCtx, #{
-        <<"client_id">> => ClientId,
-        <<"session_id">> => SessionId,
-        <<"transport_id">> => TransportId,
-        <<"last_event_id">> => case LastEventId of
-            undefined -> <<"undefined">>;
-            _ -> LastEventId
-        end
-    }),
+            erlmcp_tracing:set_attributes(SpanCtx, #{
+                <<"client_id">> => ClientId,
+                <<"session_id">> => SessionId,
+                <<"transport_id">> => TransportId,
+                <<"protocol_version">> => maps:get(protocol_version, ValidatedHeaders),
+                <<"last_event_id">> => case LastEventId of
+                    undefined -> <<"undefined">>;
+                    _ -> LastEventId
+                end
+            }),
 
-    %% Set SSE headers with support for resumption
-    Headers = #{
-        <<"content-type">> => <<"text/event-stream">>,
-        <<"cache-control">> => <<"no-cache">>,
-        <<"connection">> => <<"keep-alive">>,
-        <<"x-accel-buffering">> => <<"no">>
-    },
+            %% Set SSE headers with support for resumption
+            %% Include MCP-required headers (Gap #10)
+            Headers = #{
+                <<"content-type">> => <<"text/event-stream">>,
+                <<"cache-control">> => <<"no-cache">>,
+                <<"connection">> => <<"keep-alive">>,
+                <<"x-accel-buffering">> => <<"no">>,
+                <<"mcp-protocol-version">> => maps:get(protocol_version, ValidatedHeaders),
+                <<"mcp-session-id">> => SessionId
+            },
 
-    Req2 = cowboy_req:reply(200, Headers, Req),
+            Req2 = cowboy_req:reply(200, Headers, Req),
 
-    %% Register with registry
-    RegistryPid = erlmcp_registry:get_pid(),
-    RegistryPid ! {transport_connected, TransportId, #{
-        client_id => ClientId,
-        session_id => SessionId
-    }},
-
-    %% Start ping timer
-    {ok, PingRef} = timer:send_interval(?PING_INTERVAL, ping),
-
-    %% Prepare initial state
-    SseState = #sse_state{
-        transport_id = TransportId,
-        client_id = ClientId,
-        session_id = SessionId,
-        ping_timer = PingRef,
-        last_received_event_id = LastEventId
-    },
-
-    %% If resuming, replay missed events
-    case LastEventId of
-        undefined ->
-            %% New stream - start fresh
-            sse_event_loop(Req2, #{
-                transport_id => TransportId,
+            %% Register with registry
+            RegistryPid = erlmcp_registry:get_pid(),
+            RegistryPid ! {transport_connected, TransportId, #{
                 client_id => ClientId,
-                session_id => SessionId,
-                registry_pid => RegistryPid,
-                ping_timer => PingRef,
-                span_ctx => SpanCtx,
-                sse_state => SseState
-            }, State);
-        _ ->
-            %% Resuming - replay events after Last-Event-ID
-            handle_stream_resumption(Req2, TransportId, SessionId, LastEventId, SpanCtx, SseState, RegistryPid, PingRef, State)
+                session_id => SessionId
+            }},
+
+            %% Start ping timer
+            {ok, PingRef} = timer:send_interval(?PING_INTERVAL, ping),
+
+            %% Prepare initial state
+            SseState = #sse_state{
+                transport_id = TransportId,
+                client_id = ClientId,
+                session_id = SessionId,
+                ping_timer = PingRef,
+                last_received_event_id = LastEventId
+            },
+
+            %% If resuming, replay missed events
+            case LastEventId of
+                undefined ->
+                    %% New stream - start fresh
+                    sse_event_loop(Req2, #{
+                        transport_id => TransportId,
+                        client_id => ClientId,
+                        session_id => SessionId,
+                        registry_pid => RegistryPid,
+                        ping_timer => PingRef,
+                        span_ctx => SpanCtx,
+                        sse_state => SseState
+                    }, State);
+                _ ->
+                    %% Resuming - replay events after Last-Event-ID
+                    handle_stream_resumption(Req2, TransportId, SessionId, LastEventId, SpanCtx, SseState, RegistryPid, PingRef, State)
+            end
     end.
 
 handle_post_request(Req, TransportId, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle_post">>),
 
-    %% POST requests deliver messages to the SSE stream
-    {ok, Body, Req2} = cowboy_req:read_body(Req),
+    %% Validate HTTP headers per MCP spec (Gap #10)
+    ReqHeaders = maps:to_list(cowboy_req:headers(Req)),
+    case erlmcp_http_header_validator:validate_request_headers(ReqHeaders, post) of
+        {error, {StatusCode, Message, Data}} ->
+            erlmcp_tracing:record_error_details(SpanCtx, header_validation_failed, Data),
+            {_StatusCode2, ResponseHeaders, Body} =
+                erlmcp_http_header_validator:format_error_response(StatusCode, Message, Data),
+            Req2 = cowboy_req:reply(StatusCode, maps:from_list(ResponseHeaders), Body, Req),
+            {ok, Req2, State};
+        {ok, _ValidatedHeaders} ->
+            %% POST requests deliver messages to the SSE stream
+            {ok, Body, Req2} = cowboy_req:read_body(Req),
 
-    try
-        case jsx:decode(Body) of
-            {error, _} ->
-                erlmcp_tracing:record_error_details(SpanCtx, parse_error, Body),
-                Req3 = cowboy_req:reply(400, #{}, <<"Invalid JSON">>, Req2),
-                {ok, Req3, State};
-            Message ->
-                erlmcp_tracing:set_attributes(SpanCtx, #{
-                    <<"message_size">> => byte_size(Body)
-                }),
+            try
+                case jsx:decode(Body) of
+                    {error, _} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, parse_error, Body),
+                        Req3 = cowboy_req:reply(400, #{}, <<"Invalid JSON">>, Req2),
+                        {ok, Req3, State};
+                    Message ->
+                        erlmcp_tracing:set_attributes(SpanCtx, #{
+                            <<"message_size">> => byte_size(Body)
+                        }),
 
-                %% Route to registry
-                RegistryPid = erlmcp_registry:get_pid(),
-                RegistryPid ! {transport_data, TransportId, Message},
+                        %% Route to registry
+                        RegistryPid = erlmcp_registry:get_pid(),
+                        RegistryPid ! {transport_data, TransportId, Message},
 
-                erlmcp_tracing:set_status(SpanCtx, ok),
-                ReqFinal = cowboy_req:reply(202, #{}, <<"Accepted">>, Req2),
-                {ok, ReqFinal, State}
-        end
-    catch
-        Class:CaughtReason:Stacktrace ->
-            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
-            ReqFinalError = cowboy_req:reply(500, #{}, <<"Internal error">>, Req2),
-            {ok, ReqFinalError, State}
-    after
-        erlmcp_tracing:end_span(SpanCtx)
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        ReqFinal = cowboy_req:reply(202, #{}, <<"Accepted">>, Req2),
+                        {ok, ReqFinal, State}
+                end
+            catch
+                Class:CaughtReason:Stacktrace ->
+                    erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+                    ReqFinalError = cowboy_req:reply(500, #{}, <<"Internal error">>, Req2),
+                    {ok, ReqFinalError, State}
+            after
+                erlmcp_tracing:end_span(SpanCtx)
+            end
     end.
 
 sse_event_loop(Req, StreamState, State) ->
@@ -354,4 +395,101 @@ handle_stream_resumption(Req, TransportId, SessionId, LastEventId, SpanCtx, SseS
             cowboy_req:reply(500, #{}, <<"Resume failed">>, Req),
             {ok, Req, State}
     end.
+
+%%====================================================================
+%% Security and Validation Functions
+%%====================================================================
+
+%% @doc Validate Origin header to prevent DNS rebinding attacks
+%% @private
+-spec validate_request_origin(term(), term()) -> {ok, binary()} | {error, forbidden}.
+validate_request_origin(Req, SpanCtx) ->
+    Origin = cowboy_req:header(<<"origin">>, Req, undefined),
+    AllowedOrigins = get_allowed_origins(),
+
+    erlmcp_tracing:set_attributes(SpanCtx, #{
+        <<"origin_validation">> => <<"checking">>
+    }),
+
+    case erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins) of
+        {ok, ValidOrigin} ->
+            erlmcp_tracing:set_attributes(SpanCtx, #{
+                <<"origin_valid">> => <<"true">>,
+                <<"origin">> => ensure_binary(ValidOrigin)
+            }),
+            {ok, ValidOrigin};
+        {error, forbidden} ->
+            erlmcp_tracing:set_attributes(SpanCtx, #{
+                <<"origin_valid">> => <<"false">>,
+                <<"origin">> => case Origin of
+                    undefined -> <<"undefined">>;
+                    O -> ensure_binary(O)
+                end
+            }),
+            {error, forbidden}
+    end.
+
+%% @doc Get allowed origins from configuration or defaults
+%% @private
+-spec get_allowed_origins() -> [string()].
+get_allowed_origins() ->
+    case application:get_env(erlmcp, http_security) of
+        undefined ->
+            erlmcp_origin_validator:get_default_allowed_origins();
+        {ok, SecurityConfig} ->
+            case proplists:get_value(allowed_origins, SecurityConfig) of
+                undefined ->
+                    erlmcp_origin_validator:get_default_allowed_origins();
+                Origins ->
+                    Origins
+            end
+    end.
+
+%% @doc Handle DELETE request to terminate session
+%% @private
+-spec handle_delete_session(term(), binary(), term()) -> {ok, term(), term()}.
+handle_delete_session(Req, _TransportId, State) ->
+    %% Extract session ID from header
+    SessionId = cowboy_req:header(<<"mcp-session-id">>, Req, undefined),
+
+    case SessionId of
+        undefined ->
+            %% No session ID provided
+            ReqReply = cowboy_req:reply(400, #{
+                <<"content-type">> => <<"application/json">>
+            }, jsx:encode(#{
+                <<"error">> => <<"Bad Request">>,
+                <<"message">> => <<"Missing MCP-Session-Id header">>
+            }), Req),
+            {ok, ReqReply, State};
+        _ ->
+            %% Validate and delete session
+            case erlmcp_session_manager:validate_session(SessionId) of
+                {ok, _SessionInfo} ->
+                    erlmcp_session_manager:delete_session(SessionId),
+                    ReqReply = cowboy_req:reply(204, #{}, Req),
+                    {ok, ReqReply, State};
+                {error, _Reason} ->
+                    %% Session not found or expired
+                    ReqReply = cowboy_req:reply(404, #{
+                        <<"content-type">> => <<"application/json">>
+                    }, jsx:encode(#{
+                        <<"error">> => <<"Not Found">>,
+                        <<"message">> => <<"Session not found or expired">>
+                    }), Req),
+                    {ok, ReqReply, State}
+            end
+    end.
+
+%% @doc Ensure value is binary
+%% @private
+-spec ensure_binary(term()) -> binary().
+ensure_binary(B) when is_binary(B) ->
+    B;
+ensure_binary(S) when is_list(S) ->
+    list_to_binary(S);
+ensure_binary(A) when is_atom(A) ->
+    atom_to_binary(A, utf8);
+ensure_binary(X) ->
+    iolist_to_binary(io_lib:format("~p", [X])).
 

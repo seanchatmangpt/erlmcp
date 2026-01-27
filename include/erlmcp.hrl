@@ -40,6 +40,25 @@
 -define(MCP_ERROR_TIMEOUT, -32009).
 -define(MCP_ERROR_RATE_LIMITED, -32010).
 
+%%% Convenience list of all valid error codes for validation
+-define(VALID_ERROR_CODES, [
+    -32700,  % Parse error
+    -32600,  % Invalid Request
+    -32601,  % Method not found
+    -32602,  % Invalid params
+    -32603,  % Internal error
+    -32001,  % Resource not found
+    -32002,  % Tool not found
+    -32003,  % Prompt not found
+    -32004,  % Capability not supported
+    -32005,  % Not initialized
+    -32006,  % Subscription failed
+    -32007,  % Validation failed
+    -32008,  % Transport error
+    -32009,  % Timeout
+    -32010   % Rate limited
+]).
+
 %%% Error Messages (for consistency)
 -define(JSONRPC_MSG_PARSE_ERROR, <<"Parse error">>).
 -define(JSONRPC_MSG_INVALID_REQUEST, <<"Invalid Request">>).
@@ -66,6 +85,23 @@
 -define(ERROR_RESOURCE_NOT_FOUND, {?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND}).
 -define(ERROR_TOOL_NOT_FOUND, {?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND}).
 -define(ERROR_PROMPT_NOT_FOUND, {?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND}).
+
+%%% Phase State Machine Constants (Gap #4: Initialization Phase Machine)
+-define(MCP_DEFAULT_INIT_TIMEOUT_MS, 30000).  % 30 seconds default
+-define(MCP_PHASE_INITIALIZATION, initialization).
+-define(MCP_PHASE_INITIALIZED, initialized).
+-define(MCP_PHASE_DISCONNECTED, disconnected).
+-define(MCP_PHASE_CLOSED, closed).
+
+%%% Phase Violation Error Messages
+-define(MCP_MSG_PHASE_VIOLATION, <<"Operation not allowed in current phase">>).
+-define(MCP_MSG_NOT_INITIALIZING, <<"Server is not in initialization phase">>).
+-define(MCP_MSG_ALREADY_INITIALIZED, <<"Server already initialized">>).
+-define(MCP_MSG_INIT_TIMEOUT, <<"Initialization timeout exceeded">>).
+
+%%% Phase type for type specs
+-type mcp_server_phase() :: initialization | initialized | disconnected | closed.
+-type mcp_client_phase() :: pre_initialization | initializing | initialized | error | closed.
 
 %%% MCP Protocol Methods - defined in MCP specification
 %%% These constants should be added to erlmcp.hrl
@@ -196,21 +232,56 @@
 }).
 
 %%% MCP Capability Records
+%% Base capability with enabled flag
 -record(mcp_capability, {
     enabled = false :: boolean()
 }).
 
--record(mcp_client_capabilities, {
-    roots :: #mcp_capability{} | undefined,
-    sampling :: #mcp_capability{} | undefined,
-    experimental :: map() | undefined
+%% Feature flags for resources capability
+-record(mcp_resources_capability, {
+    subscribe = false :: boolean(),
+    listChanged = false :: boolean()
 }).
 
+%% Feature flags for tools capability
+-record(mcp_tools_capability, {
+    listChanged = false :: boolean()
+}).
+
+%% Feature flags for prompts capability
+-record(mcp_prompts_capability, {
+    listChanged = false :: boolean()
+}).
+
+%% Logging capability (no specific features)
+-record(mcp_logging_capability, {
+}).
+
+%% Sampling capability with model preferences
+-record(mcp_sampling_capability, {
+    modelPreferences = undefined :: map() | undefined
+}).
+
+%% Roots capability
+-record(mcp_roots_capability, {
+}).
+
+%% Client capabilities sent during initialize
+-record(mcp_client_capabilities, {
+    roots = #mcp_capability{} :: #mcp_capability{},
+    sampling = #mcp_capability{} :: #mcp_capability{},
+    experimental = undefined :: map() | undefined
+}).
+
+%% Server capabilities sent in initialize response
 -record(mcp_server_capabilities, {
-    resources :: #mcp_capability{} | undefined,
-    tools :: #mcp_capability{} | undefined,
-    prompts :: #mcp_capability{} | undefined,
-    logging :: #mcp_capability{} | undefined
+    resources = #mcp_resources_capability{} :: #mcp_resources_capability{},
+    tools = #mcp_tools_capability{} :: #mcp_tools_capability{},
+    prompts = #mcp_prompts_capability{} :: #mcp_prompts_capability{},
+    logging = #mcp_logging_capability{} :: #mcp_logging_capability{},
+    sampling = #mcp_sampling_capability{} :: #mcp_sampling_capability{},
+    roots = #mcp_roots_capability{} :: #mcp_roots_capability{},
+    experimental = undefined :: map() | undefined
 }).
 
 %%% MCP Content Records
