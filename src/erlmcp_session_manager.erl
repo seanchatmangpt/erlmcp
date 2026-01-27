@@ -29,6 +29,8 @@
 -type session_id() :: binary().
 -type validation_result() :: {ok, session_info()} | {error, term()}.
 -type session_info() :: #{created_at := integer(), expires_at := integer()}.
+-type entropy_bits() :: pos_integer().
+-type base64_encoded() :: binary().
 
 %%====================================================================
 %% API Functions
@@ -309,29 +311,42 @@ get_config() ->
     {SessionTimeout, CleanupInterval}.
 
 %% @private
-%% Generate a random session ID as UUID v4
+%% Generate a cryptographically secure session ID using strong random bytes
+%% Returns: Base64 URL-safe encoded 32-byte (256-bit) random session ID
+%% This prevents session hijacking by ensuring non-predictable IDs
+%% SECURITY: Uses crypto:strong_rand_bytes/1 exclusively
+%% ENTROPY: 32 bytes = 256 bits minimum cryptographic strength
+%% ENCODING: Base64 URL-safe format (RFC 4648) for safe transmission
 -spec generate_session_id() -> binary().
 generate_session_id() ->
-    %% Generate 16 random bytes
-    RandomBytes = crypto:strong_rand_bytes(16),
+    %% Generate 32 bytes (256 bits) of cryptographically secure random data
+    %% This exceeds the 32-byte minimum requirement for CVSS 8.7 mitigation
+    RandomBytes = crypto:strong_rand_bytes(32),
 
-    %% UUID v4 format: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
-    %% where x is random and y is 8, 9, A, or B
-    case RandomBytes of
-        <<
-            A:32, B:16, C:16, D:16, E:48
-        >> ->
-            %% Set version to 4 and variant bits
-            VersionedC = (C band 16#0fff) bor 16#4000,
-            VariantD = (D band 16#3fff) bor 16#8000,
+    %% Encode as Base64 URL-safe format (RFC 4648 section 5)
+    %% Replace '+' with '-', '/' with '_', remove padding
+    encode_session_id(RandomBytes).
 
-            %% Format as UUID string with hex
-            UUID = io_lib:format(
-                "~8.16.0b-~4.16.0b-~4.16.0b-~4.16.0b-~12.16.0b",
-                [A, B, VersionedC, VariantD, E]
-            ),
-            list_to_binary(UUID)
-    end.
+%% @private
+%% Encode random bytes to Base64 URL-safe format
+%% Implements RFC 4648 section 5 (URL- and Filename-safe Base64 Alphabet)
+-spec encode_session_id(binary()) -> binary().
+encode_session_id(RandomBytes) ->
+    %% Standard Base64 encoding
+    Base64 = base64:encode(RandomBytes),
+
+    %% Replace characters for URL-safe variant
+    %% '+' -> '-', '/' -> '_'
+    UrlSafe = binary:replace(binary:replace(Base64, <<"+">>, <<"-">>, [global]), <<"/">>, <<"_">>, [global]),
+
+    %% Remove padding ('=') for cleaner session IDs
+    remove_padding(UrlSafe).
+
+%% @private
+%% Remove Base64 padding characters ('=')
+-spec remove_padding(binary()) -> binary().
+remove_padding(Base64) ->
+    binary:replace(Base64, <<"=">>, <<"">>, [global]).
 
 %% @private
 %% Normalize session ID to binary

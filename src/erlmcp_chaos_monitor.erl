@@ -15,6 +15,12 @@
 -export([set_alert_thresholds/2, get_alerts/1]).
 -export([export_metrics/2, generate_report/1]).
 
+%% Type exports
+-type monitor_session() :: #monitor_session{}.
+-type system_metrics() :: #system_metrics{}.
+-type chaos_alert() :: #chaos_alert{}.
+-export_type([monitor_session/0, system_metrics/0, chaos_alert/0]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 -export([terminate/2, code_change/3]).
@@ -69,41 +75,51 @@
 %%% API
 %%%===================================================================
 
+-spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     start_link([]).
 
+-spec start_link(list()) -> {ok, pid()} | {error, term()}.
 start_link(Config) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Config, []).
 
 %% @doc Start monitoring for a chaos experiment
+-spec start_monitoring(binary(), map()) -> {ok, binary()} | {error, term()}.
 start_monitoring(ExperimentId, MonitorConfig) ->
     gen_server:call(?MODULE, {start_monitoring, ExperimentId, MonitorConfig}).
 
 %% @doc Stop monitoring session
+-spec stop_monitoring(binary()) -> ok | {error, term()}.
 stop_monitoring(MonitorId) ->
     gen_server:call(?MODULE, {stop_monitoring, MonitorId}).
 
 %% @doc Get collected metrics for monitoring session
+-spec get_metrics(binary()) -> {ok, [term()]} | {error, term()}.
 get_metrics(MonitorId) ->
     gen_server:call(?MODULE, {get_metrics, MonitorId}).
 
 %% @doc Get real-time metrics snapshot
+-spec get_real_time_metrics([atom()]) -> {ok, map()} | {error, term()}.
 get_real_time_metrics(MetricTypes) ->
     gen_server:call(?MODULE, {get_real_time_metrics, MetricTypes}).
 
 %% @doc Set alert thresholds for monitoring
+-spec set_alert_thresholds(binary(), map()) -> ok | {error, term()}.
 set_alert_thresholds(MonitorId, Thresholds) ->
     gen_server:call(?MODULE, {set_alert_thresholds, MonitorId, Thresholds}).
 
 %% @doc Get active alerts
+-spec get_alerts(binary()) -> {ok, [chaos_alert()]} | {error, term()}.
 get_alerts(MonitorId) ->
     gen_server:call(?MODULE, {get_alerts, MonitorId}).
 
 %% @doc Export metrics to specified format
+-spec export_metrics(binary(), atom()) -> {ok, binary()} | {error, term()}.
 export_metrics(MonitorId, Format) ->
     gen_server:call(?MODULE, {export_metrics, MonitorId, Format}).
 
 %% @doc Generate comprehensive monitoring report
+-spec generate_report(binary()) -> {ok, map()} | {error, term()}.
 generate_report(MonitorId) ->
     gen_server:call(?MODULE, {generate_report, MonitorId}).
 

@@ -1,0 +1,450 @@
+[
+    {erlmcp, [
+        %% Logging configuration
+        {log_level, info},
+        
+        %% Client defaults
+        {client_defaults, #{
+            timeout => 5000,
+            strict_mode => false,
+            max_pending_requests => 100
+        }},
+        
+        %% Server defaults
+        {server_defaults, #{
+            max_subscriptions_per_resource => 1000,
+            max_progress_tokens => 10000
+        }},
+
+        %% Message Size Limits (Gap #45: Message Size Limits)
+        %% MCP 2025-11-25 Compliance: Configurable message size limits per transport
+        {message_size_limits, #{
+            %% Default message size limit (16 MB)
+            default => 16777216,
+            %% HTTP POST body size limit
+            http_body => 16777216,
+            %% SSE event size limit
+            sse_event => 16777216,
+            %% WebSocket message size limit
+            websocket => 16777216,
+            %% TCP message size limit
+            tcp => 16777216,
+            %% Stdio message size limit
+            stdio => 16777216
+        }},
+        
+        %% Transport settings
+        {transport_defaults, #{
+            tcp => #{
+                connect_timeout => 5000,
+                keepalive => true,
+                nodelay => true
+            },
+            http => #{
+                connect_timeout => 5000,
+                request_timeout => 30000,
+                max_connections => 100
+            }
+        }},
+
+        %% HTTP Security Configuration
+        {http_security, [
+            %% Allowed origins for CORS/Origin validation
+            {allowed_origins, [
+                "http://localhost",
+                "http://localhost:*",
+                "https://localhost",
+                "https://localhost:*",
+                "http://127.0.0.1",
+                "http://127.0.0.1:*",
+                "https://127.0.0.1",
+                "https://127.0.0.1:*"
+            ]},
+            %% Session timeout in seconds (30 minutes default)
+            {session_timeout, 1800},
+            %% Require HTTPS (false for development, true for production)
+            {require_https, false},
+            %% Redirect HTTP to HTTPS (only if require_https is true)
+            {http_redirect_to_https, true},
+            %% HTTP bind address (for development, bind to localhost only)
+            {http_bind_address, "127.0.0.1"},
+            %% HTTPS bind address
+            {https_bind_address, "0.0.0.0"}
+        ]},
+
+        %% Localhost Binding Security Configuration (Gap #32)
+        %% MCP 2025-11-25 Compliance: HTTP servers MUST bind to localhost only
+        {localhost_binding, [
+            %% Enforce localhost-only binding (true = security best practice)
+            %% When true, HTTP servers can only bind to 127.0.0.1, ::1, or localhost
+            %% Set to false to allow binding to any address (NOT RECOMMENDED)
+            {enforce_localhost_only, true},
+
+            %% IPv4 localhost address (default: 127.0.0.1)
+            {http_bind_address, "127.0.0.1"},
+
+            %% IPv6 localhost address (default: ::1)
+            {http_bind_ipv6, "::1"},
+
+            %% Security warning: binding to 0.0.0.0 is NOT allowed when enforce_localhost_only=true
+            %% For production environments, ALWAYS use localhost-only binding
+            %% If you need remote access, use a reverse proxy with authentication
+            %% See docs/SECURITY.md for more information
+            {security_policy, "localhost_only"}
+        ]},
+
+        %% HTTPS/TLS Configuration
+        {https_config, [
+            %% Enable HTTPS support (default: false for development)
+            {enabled, false},
+            %% Path to SSL certificate file (PEM format)
+            {certfile, "priv/cert.pem"},
+            %% Path to SSL private key file (PEM format)
+            {keyfile, "priv/key.pem"},
+            %% Optional: Path to certificate chain file
+            {cacertfile, undefined},
+            %% Minimum TLS version (tlsv1_2 or higher for security)
+            {min_tls_version, 'tlsv1.2'},
+            %% Cipher suites (modern and secure)
+            {ciphers, [
+                "ECDHE-RSA-AES256-GCM-SHA384",
+                "ECDHE-RSA-AES128-GCM-SHA256",
+                "ECDHE-RSA-CHACHA20-POLY1305",
+                "DHE-RSA-AES256-GCM-SHA384",
+                "DHE-RSA-AES128-GCM-SHA256"
+            ]},
+            %% Enable HSTS (HTTP Strict-Transport-Security)
+            {enable_hsts, true},
+            %% HSTS max age in seconds (1 year = 31536000)
+            {hsts_max_age, 31536000},
+            %% Include subdomains in HSTS
+            {hsts_include_subdomains, false},
+            %% CRITICAL SECURITY FIX (CVSS 9.8): Certificate verification MUST be verify_peer
+            %% verify_none DISABLES all TLS validation and enables MITM attacks
+            %% CHANGED FROM: {verify_mode, 'verify_none'} -- INSECURE
+            {verify_mode, 'verify_peer'},
+            %% Enable SNI (Server Name Indication) for hostname verification
+            {sni_enabled, true},
+            %% Enable hostname verification to prevent certificate spoofing
+            {verify_hostname, true},
+            %% Certificate chain validation depth (default 3 for most CAs)
+            {verify_depth, 3},
+            %% Optional: Certificate pinning support (advanced security)
+            {pinned_certs, undefined}
+        ]},
+
+        %% Session Manager Configuration
+        {session_manager, [
+            %% Session timeout in seconds (30 minutes)
+            {timeout, 1800},
+            %% Automatic cleanup interval in milliseconds (5 minutes)
+            {cleanup_interval, 300000}
+        ]}
+    ]},
+    
+    {kernel, [
+        %% Use the new logger (OTP 21+)
+        {logger_level, info},
+        {logger, [
+            {handler, default, logger_std_h, #{
+                config => #{
+                    type => standard_io,
+                    sync_mode_qlen => 100,
+                    drop_mode_qlen => 1000,
+                    flush_qlen => 2000
+                },
+                formatter => {logger_formatter, #{
+                    %% Better format for debugging
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"],
+                    %% ISO 8601 timestamps
+                    time_offset => "",
+                    time_designator => $T,
+                    %% Include metadata
+                    single_line => false,
+                    max_size => 4096
+                }},
+                filters => [
+                    %% Filter out debug messages in production
+                    {progress_reports, {fun logger_filters:progress/2, stop}},
+                    {sasl_reports, {fun logger_filters:domain/2, {stop, sub, [otp, sasl]}}}
+                ],
+                %% Log level per handler
+                level => info
+            }},
+            %% Add file handler for persistent logs
+            {handler, file_log, logger_std_h, #{
+                config => #{
+                    file => "logs/erlmcp.log",
+                    max_no_bytes => 10485760,  %% 10 MB
+                    max_no_files => 5,
+                    compress_on_rotate => true
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"]
+                }},
+                level => debug
+            }}
+        ]}
+    ]},
+    
+    %% SASL configuration for better error reports
+    {sasl, [
+        {sasl_error_logger, false},  %% Use kernel logger instead
+        {errlog_type, error},
+        {error_logger_format_depth, 20}
+    ]},
+
+    %% OpenTelemetry Configuration
+    {opentelemetry, [
+        {span_processor, batch},
+        {traces_exporter, otlp}
+    ]},
+
+    {opentelemetry_exporter, [
+        {otlp_protocol, http_protobuf},
+        {otlp_endpoint, "http://localhost:4318"}
+    ]},
+
+    %% TCPS Health Monitoring Configuration
+    {tcps_health, [
+        %% OpenTelemetry OTLP endpoint
+        {otel_endpoint, "http://localhost:4318"},
+
+        %% Service identification
+        {service_name, "tcps-erlmcp"},
+        {service_version, "0.5.0"},
+        {environment, "development"},
+
+        %% Health check intervals (milliseconds)
+        {check_interval, 30000},         % 30 seconds
+        {alert_check_interval, 10000},   % 10 seconds
+
+        %% Metrics configuration
+        {metrics_port, 9090},             % Prometheus scrape endpoint
+        {metrics_retention_days, 7},
+
+        %% Alert channels and configuration
+        {alert_channels, [slack, email]},
+        {enable_auto_remediation, true},
+
+        %% Slack integration
+        {slack_webhook, {env, "ERLMCP_SLACK_WEBHOOK"}},
+        {slack_channel, "#tcps-alerts"},
+        {slack_username, "TCPS Health Monitor"},
+
+        %% Email (SMTP) integration
+        {email_smtp, "smtp.example.com:587"},
+        {email_from, "tcps-alerts@example.com"},
+        {email_to, ["ops-team@example.com", "oncall@example.com"]},
+        {email_username, "alerts@example.com"},
+        {email_password, {env, "ERLMCP_EMAIL_PASSWORD"}},
+
+        %% PagerDuty integration
+        {pagerduty_enabled, false},
+        {pagerduty_integration_key, {env, "ERLMCP_PAGERDUTY_KEY"}},
+
+        %% Generic webhook
+        {webhook_enabled, false},
+        {webhook_url, "https://api.example.com/tcps/alerts"},
+        {webhook_auth_header, {env, "ERLMCP_WEBHOOK_AUTH_TOKEN"}},
+
+        %% SLO targets (Service Level Objectives)
+        {slo_targets, #{
+            % Lead time P90 < 2 hours (7200000 ms)
+            lead_time_p90 => 7200000,
+
+            % Quality gate pass rate >= 95%
+            quality_gate_pass_rate => 0.95,
+
+            % Deployment success rate >= 99%
+            deployment_success_rate => 0.99,
+
+            % Andon resolution time < 4 hours (14400000 ms)
+            andon_avg_resolution_time => 14400000,
+
+            % System uptime >= 99.9%
+            uptime_percent => 0.999
+        }},
+
+        %% Error budget (monthly allowance)
+        {error_budget_percent, 0.001},  % 0.1% = 99.9% uptime
+
+        %% Platform integrations
+        {datadog_enabled, false},
+        {datadog_api_key, {env, "ERLMCP_DATADOG_API_KEY"}},
+        {datadog_site, "datadoghq.com"},
+
+        {newrelic_enabled, false},
+        {newrelic_api_key, {env, "ERLMCP_NEWRELIC_API_KEY"}},
+        {newrelic_account_id, {env, "ERLMCP_NEWRELIC_ACCOUNT_ID"}},
+
+        {grafana_cloud_enabled, false},
+        {grafana_cloud_url, "https://prometheus-prod-us-central1.grafana.net"},
+        {grafana_cloud_username, {env, "ERLMCP_GRAFANA_USERNAME"}},
+        {grafana_cloud_password, {env, "ERLMCP_GRAFANA_PASSWORD"}},
+
+        %% WIP thresholds for alerts
+        {wip_alert_threshold, 0.9},      % Alert at 90% utilization
+        {wip_critical_threshold, 1.0},   % Critical at 100%
+
+        %% Quality thresholds
+        {defect_rate_warning, 0.03},     % 3%
+        {defect_rate_critical, 0.05},    % 5%
+
+        %% Lead time thresholds (milliseconds)
+        {lead_time_warning, 5400000},    % 1.5 hours
+        {lead_time_critical, 7200000},   % 2 hours
+
+        %% Andon thresholds
+        {andon_critical_duration, 3600000}, % 1 hour
+        {andon_escalation_duration, 7200000}, % 2 hours
+
+        %% Background process configuration
+        {enable_background_checks, true},
+        {enable_metric_export, true},
+        {enable_log_correlation, true},
+
+        %% Trace sampling (0.0 to 1.0)
+        {trace_sample_rate, 1.0},        % 100% in dev, 0.1 in prod
+
+        %% Dashboard configuration
+        {dashboard_enabled, true},
+        {dashboard_port, 8080},
+        {dashboard_refresh_interval, 5000}, % 5 seconds
+
+        %% Debug mode
+        {debug_mode, false},
+        {verbose_logging, false}
+    ]},
+
+    %% OAuth 2.0 Configuration (RFC 8707 Resource Indicators)
+    %% CRITICAL SECURITY FIX (CVSS 9.1): OAuth secrets MUST be loaded from environment variables ONLY
+    %% DO NOT hardcode secrets in this config file
+    %% See docs/TLS_AND_OAUTH_SECURITY_FIX.md for complete security documentation
+    {oauth, [
+        {enabled, true},
+        %% Client credentials MUST be provided via environment variables at runtime
+        %% Set: export OAUTH_CLIENT_ID="your_client_id"
+        %% Set: export OAUTH_CLIENT_SECRET="your_client_secret"
+        {client_id, {env, "OAUTH_CLIENT_ID"}},
+        {client_secret, {env, "OAUTH_CLIENT_SECRET"}},
+        %% Token endpoint URL (can be hardcoded as non-sensitive)
+        {token_endpoint, {env, "OAUTH_TOKEN_ENDPOINT", "https://oauth.example.com/token"}},
+        %% Resource indicator for RFC 8707 support
+        {resource_indicator, {env, "OAUTH_RESOURCE_INDICATOR", "https://mcp.example.com"}},
+        %% Token cache time-to-live in seconds
+        {cache_ttl, 3600}
+    ]},
+
+    %% WebSocket Transport Configuration
+    %% Gap #46: WebSocket Backpressure and Connection Limiting (DoS prevention)
+    {websocket, [
+        {enabled, true},
+        {port, 8080},
+        {path, "/mcp/ws"},
+        {ping_interval, 30000},           % 30 seconds
+        {idle_timeout, 300000},           % 5 minutes
+
+        %% Connection Limiting Configuration
+        %% Max concurrent WebSocket connections per server
+        %% Default: 1000 connections (prevent connection flooding DoS)
+        %% Recommended: 1000-10000 depending on server resources
+        {max_connections, 1000},
+
+        %% Connection timeout (milliseconds)
+        %% Default: 5000 (5 seconds)
+        %% Time to wait for connection establishment
+        {connect_timeout, 5000},
+
+        %% Backpressure Configuration
+        %% Frame buffer size per connection (bytes)
+        %% Default: 102400 (100KB per connection)
+        %% If buffer exceeds this, backpressure is activated
+        {frame_buffer_size, 102400},
+
+        %% Buffer drain threshold (0.0 to 1.0)
+        %% When to resume reading after backpressure
+        %% Default: 0.5 (resume at 50% of max buffer)
+        {buffer_drain_threshold, 0.5},
+
+        %% Backpressure timeout (milliseconds)
+        %% Force resume reading after this timeout
+        %% Default: 5000 (5 seconds)
+        {backpressure_timeout, 5000}
+    ]},
+
+    %% Server-Sent Events (SSE) Transport Configuration
+    {sse, [
+        {enabled, true},
+        {port, 8081},
+        {path, "/mcp/sse"},
+        {keepalive_interval, 30000},  % 30 seconds
+        {stream_timeout, 300000},      % 5 minutes
+        {retry_timeout, 5000}          % 5 seconds - tells client when to reconnect (Gap #29)
+    ]},
+
+    %% Roots Enforcement Configuration (Path Security)
+    {roots, [
+        {allowed_paths, {env, "ERLMCP_ALLOWED_PATHS", ["/tmp"]}},
+        {symlink_follow, false},
+        {canonicalize_paths, true},
+        {watch_changes, true}
+    ]},
+
+    %% Job Queue Configuration (Tasks API)
+    {jobs, [
+        {queues, [
+            {mcp_tasks, [
+                {regulators, [{counter, [{limit, 10}]}]},
+                {max_time, 300000}  % 5 minutes
+            ]}
+        ]}
+    ]},
+
+    %% Elicitation Configuration (Forms & URLs)
+    {elicitation, [
+        {enabled, true},
+        {form_timeout, 600000},      % 10 minutes
+        {max_concurrent_forms, 100},
+        {sandbox_enabled, true},
+        {require_user_confirmation, true}
+    ]},
+
+    %% Icon Metadata Configuration
+    {icons, [
+        {enabled, true},
+        {max_data_uri_size, 102400},  % 100KB
+        {cache_enabled, true},
+        {cache_ttl_ms, 3600000}       % 1 hour (3600000 milliseconds) - Default TTL for icon cache
+    ]},
+
+    %% Icon Cache Configuration (Gap #37: Icon Metadata Caching with TTL)
+    {icon_cache_ttl_ms, 3600000},     % 1 hour default TTL in milliseconds
+
+    %% Form Timeout Configuration (Gap #38: Form Timeout Validation)
+    %% MCP 2025-11-25 Specification Compliance
+    %% Configurable bounds for form timeout validation in milliseconds
+    %%
+    %% Default form timeout (milliseconds) - used when no timeout specified
+    %% Default: 600000 (10 minutes)
+    %% Note: This should ideally be <= max_timeout for consistency
+    %% {erlmcp_form_timeout_ms, 600000},
+    %%
+    %% Minimum allowed form timeout (milliseconds)
+    %% Default: 1000 (1 second) - per MCP spec
+    %% Must be a positive integer
+    %% {erlmcp_form_timeout_min_ms, 1000},
+    %%
+    %% Maximum allowed form timeout (milliseconds)
+    %% Default: 300000 (5 minutes) - per MCP spec
+    %% Must be a positive integer greater than form_timeout_min_ms
+    %% {erlmcp_form_timeout_max_ms, 300000},
+
+    %% Initialization Timeout Configuration (Gap #4: Initialization Timeout Enforcement)
+    %% MCP 2025-11-25 Specification Compliance
+    %% Time (in milliseconds) to wait for initialize request from client
+    %% Default: 30000 (30 seconds) - per MCP specification
+    %% If initialization timeout expires, server closes connection with error
+    %% Set to 0 or undefined to disable timeout (NOT RECOMMENDED for production)
+    {init_timeout_ms, 30000}
+].

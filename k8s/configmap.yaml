@@ -1,0 +1,252 @@
+---
+# ConfigMap for erlmcp configuration
+# Contains application configuration that can be updated without redeploying
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+data:
+  sys.config: |
+    [
+      {erlmcp, [
+        %% Logging configuration
+        {log_level, info},
+        {log_output, [
+          {file, "/var/log/erlmcp/production.log"},
+          {console, false}
+        ]},
+        {log_rotation, #{
+          enabled => true,
+          max_size_mb => 100,
+          max_files => 10
+        }},
+
+        %% Server defaults
+        {server_defaults, #{
+          max_subscriptions_per_resource => 5000,
+          max_progress_tokens => 50000,
+          request_timeout => 30000,
+          max_concurrent_requests => 1000
+        }},
+
+        %% Client defaults
+        {client_defaults, #{
+          timeout => 5000,
+          strict_mode => true,
+          max_pending_requests => 500,
+          retry_attempts => 3,
+          retry_delay => 2000
+        }},
+
+        %% Transport configuration
+        {transport_defaults, #{
+          tcp => #{
+            host => "0.0.0.0",
+            port => 8080,
+            connect_timeout => 5000,
+            keepalive => true,
+            nodelay => true,
+            max_connections => 1000,
+            backlog => 1024
+          },
+          http => #{
+            connect_timeout => 5000,
+            request_timeout => 30000,
+            max_connections => 500
+          },
+          stdio => #{
+            buffer_size => 16384
+          }
+        }},
+
+        %% Message size limits
+        {message_size_limits, #{
+          default => 16777216,
+          http_body => 16777216,
+          sse_event => 16777216,
+          websocket => 16777216,
+          tcp => 16777216,
+          stdio => 16777216
+        }},
+
+        %% HTTP Security Configuration
+        {http_security, [
+          {allowed_origins, [
+            "https://erlmcp.example.com",
+            "https://dashboard.erlmcp.example.com"
+          ]},
+          {session_timeout, 1800},
+          {require_https, true},
+          {http_redirect_to_https, true},
+          {http_bind_address, "127.0.0.1"},
+          {https_bind_address, "0.0.0.0"}
+        ]},
+
+        %% Authentication & Authorization
+        {auth, #{
+          enabled => true,
+          type => jwt,
+          jwt => #{
+            secret_key => {env, "ERLMCP_JWT_SECRET"},
+            algorithm => hs256,
+            expiration => 3600,
+            issuer => "erlmcp-production"
+          },
+          oauth2 => #{
+            enabled => false,
+            provider => "https://auth.example.com",
+            client_id => {env, "OAUTH2_CLIENT_ID"},
+            client_secret => {env, "OAUTH2_CLIENT_SECRET"}
+          },
+          rbac => #{
+            enabled => true,
+            roles => [admin, operator, readonly]
+          }
+        }},
+
+        %% Connection Pooling
+        {poolboy, [
+          {size, 50},
+          {max_overflow, 100},
+          {strategy, lifo}
+        ]},
+
+        %% Performance Tuning
+        {performance, #{
+          gc_strategy => aggressive,
+          process_limit => 262144,
+          max_heap_size => 4294967296,
+          message_queue_limit => 10000
+        }},
+
+        %% Monitoring & Alerting
+        {monitoring, #{
+          enabled => true,
+          prometheus_port => 9090,
+          health_check_interval => 30,
+          metrics_retention_days => 30
+        }},
+
+        %% OpenTelemetry Configuration
+        {otel, #{
+          enabled => true,
+          exporter => otlp,
+          endpoint => {env, "OTEL_EXPORTER_OTLP_ENDPOINT"},
+          headers => {env, "OTEL_EXPORTER_OTLP_HEADERS"},
+          sampling => #{
+            type => probability,
+            probability => 0.1
+          },
+          trace_config => #{
+            span_processor => batch,
+            max_queue_size => 2048,
+            max_export_batch_size => 512
+          }
+        }}
+      ]},
+
+      %% SASL (System Architecture Support Libraries)
+      {sasl, [
+        {sasl_error_logger, {file, "/var/log/erlmcp/production-sasl.log"}},
+        {errlog_type, error},
+        {error_logger_format_depth, 50}
+      ]},
+
+      %% Kernel configuration
+      {kernel, [
+        {logger_level, info},
+        {logger, [
+          {handler, default, logger_std_h, #{
+            config => #{
+              file => "/var/log/erlmcp/production-kernel.log",
+              max_no_bytes => 104857600,
+              max_no_files => 10,
+              compress_on_rotate => true
+            },
+            formatter => {logger_formatter, #{
+              single_line => true,
+              time_designator => $
+            }}
+          }}
+        ]},
+        {inet_dist_listen_min, 9100},
+        {inet_dist_listen_max, 9200}
+      ]},
+
+      %% SSL/TLS
+      {ssl, [
+        {session_lifetime, 300},
+        {protocol_version, ['tlsv1.2', 'tlsv1.3']}
+      ]}
+    ].
+
+  vm.args: |
+    ## Name of the node
+    -name erlmcp@${ERLMCP_NODE_NAME:-erlmcp.erlmcp.svc.cluster.local}
+
+    ## Cookie for distributed Erlang
+    -setcookie ${ERLANG_COOKIE:-erlmcp_prod_cookie}
+
+    ## Memory allocation strategy
+    -pa /opt/erlmcp/lib/*/ebin
+
+    ## Distributed Erlang configuration
+    -kernel inet_dist_listen_min 9100
+    -kernel inet_dist_listen_max 9200
+
+    ## Performance tuning
+    +K true
+    +A 256
+    +IOt 256
+
+    ## Scheduler threads
+    +sbt db
+
+    ## Garbage collection tuning
+    +t 524288
+    -env ERL_FULLSWEEP_AFTER 0
+
+    ## Runtime system parameters
+    +P 262144
+    +Q 262144
+    +R 1
+
+    ## TCP tuning
+    -kernel net_setuptime 7000
+
+    ## Logger
+    -kernel logger_level info
+
+    ## Foreground mode for container
+    -noshell
+    -noinput
+
+    ## Terminate Erlang when controller exits
+    +JMsacrb true
+
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        monitor: 'erlmcp-monitor'
+
+    scrape_configs:
+      - job_name: 'erlmcp'
+        scheme: http
+        static_configs:
+          - targets: ['localhost:9090']
+        relabel_configs:
+          - source_labels: [__address__]
+            target_label: instance
+
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token

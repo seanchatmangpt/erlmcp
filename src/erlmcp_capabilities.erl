@@ -22,10 +22,16 @@
     supported_versions/0
 ]).
 
+%% Type exports
+-type capability_name() :: resources | tools | prompts | logging | sampling | roots.
+-type feature_name() :: subscribe | listChanged.
+-export_type([capability_name/0, feature_name/0]).
+
 %%====================================================================
 %% Public API - Capability Building
 %%====================================================================
 
+-spec build_server_capabilities() -> #mcp_server_capabilities{}.
 build_server_capabilities() ->
     #mcp_server_capabilities{
         resources = #mcp_resources_capability{
@@ -44,6 +50,7 @@ build_server_capabilities() ->
         experimental = undefined
     }.
 
+-spec build_server_capabilities(map()) -> #mcp_server_capabilities{}.
 build_server_capabilities(Config) when is_map(Config) ->
     Default = build_server_capabilities(),
     case maps:get(resources, Config, undefined) of
@@ -66,6 +73,7 @@ build_server_capabilities(Config) when is_map(Config) ->
 %% Public API - Capability Extraction
 %%====================================================================
 
+-spec extract_client_capabilities(undefined | map()) -> #mcp_client_capabilities{}.
 extract_client_capabilities(undefined) ->
     #mcp_client_capabilities{};
 extract_client_capabilities(Params) when is_map(Params) ->
@@ -80,6 +88,7 @@ extract_client_capabilities(Params) when is_map(Params) ->
 %% Public API - Capability Validation
 %%====================================================================
 
+-spec validate_protocol_version(binary()) -> ok | {error, binary()}.
 validate_protocol_version(Version) when is_binary(Version) ->
     SupportedVersions = [<<"2025-11-25">>, <<"2024-11-05">>],
     case lists:member(Version, SupportedVersions) of
@@ -87,6 +96,7 @@ validate_protocol_version(Version) when is_binary(Version) ->
         false -> {error, <<"Unsupported protocol version">>}
     end.
 
+-spec validate_capability(#mcp_server_capabilities{}, capability_name()) -> ok | {error, atom()}.
 validate_capability(#mcp_server_capabilities{resources = Resources}, resources) ->
     case Resources of
         #mcp_resources_capability{} -> ok;
@@ -120,6 +130,7 @@ validate_capability(#mcp_server_capabilities{roots = RootsC}, roots) ->
 validate_capability(_, _) ->
     {error, unknown_capability}.
 
+-spec validate_feature(#mcp_server_capabilities{}, capability_name(), feature_name()) -> ok | {error, atom()}.
 validate_feature(Caps, resources, subscribe) ->
     case validate_capability(Caps, resources) of
         ok ->
@@ -167,6 +178,7 @@ validate_feature(_, _, _) ->
 %% Public API - Serialization
 %%====================================================================
 
+-spec capability_to_map(#mcp_server_capabilities{} | #mcp_resources_capability{} | #mcp_tools_capability{} | #mcp_prompts_capability{} | #mcp_logging_capability{} | #mcp_sampling_capability{} | #mcp_roots_capability{} | term()) -> map().
 capability_to_map(#mcp_server_capabilities{} = Caps) ->
     server_capabilities_to_map(Caps);
 capability_to_map(#mcp_resources_capability{} = Res) ->
@@ -194,6 +206,7 @@ capability_to_map(#mcp_roots_capability{}) ->
 capability_to_map(_) ->
     #{}.
 
+-spec server_capabilities_to_map(#mcp_server_capabilities{}) -> map().
 server_capabilities_to_map(#mcp_server_capabilities{} = Caps) ->
     M = #{},
     M1 = case Caps#mcp_server_capabilities.resources of
@@ -231,6 +244,7 @@ server_capabilities_to_map(#mcp_server_capabilities{} = Caps) ->
         Exp -> M6#{<<"experimental">> => Exp}
     end.
 
+-spec client_capabilities_to_map(#mcp_client_capabilities{}) -> map().
 client_capabilities_to_map(#mcp_client_capabilities{} = Caps) ->
     M = #{},
     M1 = case Caps#mcp_client_capabilities.roots of
@@ -252,6 +266,7 @@ client_capabilities_to_map(#mcp_client_capabilities{} = Caps) ->
 %% Public API - Deserialization
 %%====================================================================
 
+-spec server_capabilities_from_map(map()) -> #mcp_server_capabilities{}.
 server_capabilities_from_map(Map) when is_map(Map) ->
     #mcp_server_capabilities{
         resources = extract_resources_capability(Map),
@@ -263,6 +278,7 @@ server_capabilities_from_map(Map) when is_map(Map) ->
         experimental = maps:get(<<"experimental">>, Map, undefined)
     }.
 
+-spec client_capabilities_from_map(map()) -> #mcp_client_capabilities{}.
 client_capabilities_from_map(Map) when is_map(Map) ->
     #mcp_client_capabilities{
         roots = extract_client_root_capability(Map),
@@ -274,6 +290,7 @@ client_capabilities_from_map(Map) when is_map(Map) ->
 %% Internal Functions - Capability Extraction
 %%====================================================================
 
+-spec extract_resources_capability(map()) -> #mcp_resources_capability{}.
 extract_resources_capability(Map) ->
     case maps:get(?MCP_CAPABILITY_RESOURCES, Map, #{}) of
         ResourcesMap when is_map(ResourcesMap) ->
@@ -285,6 +302,7 @@ extract_resources_capability(Map) ->
             #mcp_resources_capability{}
     end.
 
+-spec extract_tools_capability(map()) -> #mcp_tools_capability{}.
 extract_tools_capability(Map) ->
     case maps:get(?MCP_CAPABILITY_TOOLS, Map, #{}) of
         ToolsMap when is_map(ToolsMap) ->
@@ -295,6 +313,7 @@ extract_tools_capability(Map) ->
             #mcp_tools_capability{}
     end.
 
+-spec extract_prompts_capability(map()) -> #mcp_prompts_capability{}.
 extract_prompts_capability(Map) ->
     case maps:get(?MCP_CAPABILITY_PROMPTS, Map, #{}) of
         PromptsMap when is_map(PromptsMap) ->
@@ -305,6 +324,7 @@ extract_prompts_capability(Map) ->
             #mcp_prompts_capability{}
     end.
 
+-spec extract_logging_capability(map()) -> #mcp_logging_capability{}.
 extract_logging_capability(Map) ->
     case maps:get(?MCP_CAPABILITY_LOGGING, Map, undefined) of
         LoggingMap when is_map(LoggingMap) ->
@@ -313,6 +333,7 @@ extract_logging_capability(Map) ->
             #mcp_logging_capability{}
     end.
 
+-spec extract_sampling_capability(map()) -> #mcp_sampling_capability{}.
 extract_sampling_capability(Map) ->
     case maps:get(<<"sampling">>, Map, #{}) of
         SamplingMap when is_map(SamplingMap) ->
@@ -323,6 +344,7 @@ extract_sampling_capability(Map) ->
             #mcp_sampling_capability{}
     end.
 
+-spec extract_roots_capability(map()) -> #mcp_roots_capability{}.
 extract_roots_capability(Map) ->
     case maps:get(?MCP_CAPABILITY_ROOTS, Map, undefined) of
         RootsMap when is_map(RootsMap) ->
@@ -331,6 +353,7 @@ extract_roots_capability(Map) ->
             #mcp_roots_capability{}
     end.
 
+-spec extract_client_root_capability(map()) -> #mcp_capability{}.
 extract_client_root_capability(Map) ->
     case maps:get(?MCP_CAPABILITY_ROOTS, Map, undefined) of
         RootsMap when is_map(RootsMap) ->
@@ -339,6 +362,7 @@ extract_client_root_capability(Map) ->
             #mcp_capability{enabled = false}
     end.
 
+-spec extract_client_sampling_capability(map()) -> #mcp_capability{}.
 extract_client_sampling_capability(Map) ->
     case maps:get(<<"sampling">>, Map, undefined) of
         SamplingMap when is_map(SamplingMap) ->
@@ -351,5 +375,6 @@ extract_client_sampling_capability(Map) ->
 %% Public API - Supported Versions
 %%====================================================================
 
+-spec supported_versions() -> [binary()].
 supported_versions() ->
     [<<"2025-11-25">>, <<"2024-11-05">>].

@@ -534,7 +534,6 @@ store_config(Config) ->
 
 %% @private
 %% Create OpenTelemetry span
--spec create_otel_span(binary(), binary(), binary(), binary() | undefined, integer()) -> term().
 create_otel_span(_Name, _TraceId, _SpanId, _ParentSpanId, _StartTime) ->
     % Implementation depends on OpenTelemetry library
     make_ref().

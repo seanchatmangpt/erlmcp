@@ -20,7 +20,7 @@
 -behaviour(gen_server).
 
 %% API exports
--export([send/2, start_link/1, close/1]).
+-export([send/2, start_link/1, close/1, validate_message_size/2, get_max_message_size/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -29,10 +29,14 @@
     owner :: pid(),
     reader :: pid() | undefined,
     buffer = <<>> :: binary(),
-    test_mode = false :: boolean()
+    test_mode = false :: boolean(),
+    max_message_size :: pos_integer()  % Maximum allowed message size in bytes
 }).
 
 -type state() :: #state{}.
+
+%% Default maximum message size: 16 MB
+-define(DEFAULT_MAX_MESSAGE_SIZE, 16777216).
 
 %%====================================================================
 %% API Functions
@@ -76,9 +80,13 @@ init([Owner]) ->
     % or checking if stdin is available
     TestMode = is_test_environment(),
 
+    % Get max message size from config, default to 16MB
+    MaxMessageSize = get_max_message_size(),
+
     State = #state{
         owner = Owner,
-        test_mode = TestMode
+        test_mode = TestMode,
+        max_message_size = MaxMessageSize
     },
 
     % Only start the reader if we're not in test mode
@@ -87,7 +95,7 @@ init([Owner]) ->
             % In test mode, don't start a reader process
             {ok, State};
         false ->
-            ReaderPid = spawn_link(fun() -> read_loop(self(), Owner) end),
+            ReaderPid = spawn_link(fun() -> read_loop(self(), Owner, MaxMessageSize) end),
             {ok, State#state{reader = ReaderPid}}
     end.
 
@@ -174,8 +182,9 @@ stdin_available() ->
         _ -> true
     end.
 
-%% Alternative approach - more concise:
-read_loop(Parent, Owner) ->
+%% Main read loop with message size validation
+-spec read_loop(pid(), pid(), pos_integer()) -> no_return().
+read_loop(Parent, Owner, MaxMessageSize) ->
     case io:get_line("") of
         eof ->
             logger:info("EOF received, stopping reader"),
@@ -184,11 +193,42 @@ read_loop(Parent, Owner) ->
             logger:error("Read error: ~p", [Reason]),
             exit({read_error, Reason});
         Line when is_list(Line) ->
-            process_line(Parent, iolist_to_binary(Line)),
-            read_loop(Parent, Owner);
+            BinaryLine = iolist_to_binary(Line),
+            case validate_message_size(BinaryLine, MaxMessageSize) of
+                ok ->
+                    process_line(Parent, BinaryLine),
+                    read_loop(Parent, Owner, MaxMessageSize);
+                {error, size_exceeded} ->
+                    logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
+                        [byte_size(BinaryLine), MaxMessageSize]),
+                    ErrorMsg = jsx:encode(#{
+                        jsonrpc => <<"2.0">>,
+                        error => #{
+                            code => -32700,
+                            message => <<"Message too large">>
+                        }
+                    }),
+                    Parent ! {line, ErrorMsg},
+                    read_loop(Parent, Owner, MaxMessageSize)
+            end;
         Line when is_binary(Line) ->
-            process_line(Parent, Line),
-            read_loop(Parent, Owner)
+            case validate_message_size(Line, MaxMessageSize) of
+                ok ->
+                    process_line(Parent, Line),
+                    read_loop(Parent, Owner, MaxMessageSize);
+                {error, size_exceeded} ->
+                    logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
+                        [byte_size(Line), MaxMessageSize]),
+                    ErrorMsg = jsx:encode(#{
+                        jsonrpc => <<"2.0">>,
+                        error => #{
+                            code => -32700,
+                            message => <<"Message too large">>
+                        }
+                    }),
+                    Parent ! {line, ErrorMsg},
+                    read_loop(Parent, Owner, MaxMessageSize)
+            end
     end.
 
 %% Helper function to handle line processing
@@ -225,3 +265,24 @@ trim_end(Binary) ->
         _ ->
             Binary
     end.
+
+%% @doc Get the maximum allowed message size from configuration.
+%% Falls back to default 16MB if not configured.
+-spec get_max_message_size() -> pos_integer().
+get_max_message_size() ->
+    case application:get_env(erlmcp, message_size_limits) of
+        {ok, Limits} when is_map(Limits) ->
+            maps:get(stdio, Limits, ?DEFAULT_MAX_MESSAGE_SIZE);
+        _ ->
+            ?DEFAULT_MAX_MESSAGE_SIZE
+    end.
+
+%% @doc Validate that a message does not exceed the maximum allowed size.
+-spec validate_message_size(binary(), pos_integer()) -> ok | {error, size_exceeded}.
+validate_message_size(Message, MaxSize) when is_binary(Message), is_integer(MaxSize), MaxSize > 0 ->
+    case byte_size(Message) =< MaxSize of
+        true -> ok;
+        false -> {error, size_exceeded}
+    end;
+validate_message_size(_Message, _MaxSize) ->
+    ok.

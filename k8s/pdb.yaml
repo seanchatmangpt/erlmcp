@@ -1,0 +1,33 @@
+---
+# Pod Disruption Budget for erlmcp
+# Ensures minimum availability during cluster maintenance
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-pdb
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: erlmcp
+      component: server
+  unhealthyPodEvictionPolicy: IfHealthyBudget
+
+---
+# Pod Disruption Budget for safe rolling updates
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-pdb-update
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  maxUnavailable: "33%"
+  selector:
+    matchLabels:
+      app: erlmcp
+      component: server

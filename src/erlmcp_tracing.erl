@@ -207,7 +207,6 @@ get_tracer() ->
 %%====================================================================
 
 %% Start transport operation span
--spec start_transport_span(binary(), atom(), atom()) -> term().
 start_transport_span(Operation, TransportId, TransportType) ->
     start_span(Operation,
                #{?COMPONENT => <<"transport">>,
@@ -216,7 +215,6 @@ start_transport_span(Operation, TransportId, TransportType) ->
                  ?OPERATION => Operation}).
 
 %% Start server operation span
--spec start_server_span(binary(), atom()) -> term().
 start_server_span(Operation, ServerId) ->
     start_span(Operation,
                #{?COMPONENT => <<"server">>,

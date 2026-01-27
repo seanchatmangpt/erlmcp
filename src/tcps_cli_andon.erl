@@ -13,6 +13,7 @@
 %%% API
 %%%=============================================================================
 
+-spec run([string()]) -> no_return().
 run(["trigger" | Args]) ->
     trigger_andon(parse_args(Args));
 

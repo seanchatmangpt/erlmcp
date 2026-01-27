@@ -316,12 +316,10 @@ clear_baggage() ->
 %%====================================================================
 
 %% @doc Create span with automatic correlation ID injection
--spec create_span_with_correlation(binary(), map()) -> term().
 create_span_with_correlation(SpanName, Attributes) ->
     create_span_with_correlation(SpanName, Attributes, #{}).
 
 %% @doc Create span with correlation and options
--spec create_span_with_correlation(binary(), map(), map()) -> term().
 create_span_with_correlation(SpanName, Attributes, Options) ->
     CorrelationId = get_correlation_id(),
     AttrsWithCorr = maps:put(<<"correlation.id">>, CorrelationId, Attributes),
