@@ -42,11 +42,6 @@
 -define(MIN_FORM_TIMEOUT_MS, 1000).        %% 1 second minimum
 -define(MAX_FORM_TIMEOUT_MS, 300000).      %% 5 minutes maximum (from MCP spec)
 
--record(state, {
-    server_pid :: pid() | undefined,
-    handlers = #{} :: map()
-}).
-
 -record(elicitation, {
     id :: binary(),
     type :: form | url,
@@ -254,7 +249,11 @@ init([]) ->
 
     ets:new(?ELICITATION_TABLE, [named_table, set, public, {keypos, #elicitation.id}]),
 
-    {ok, #state{}}.
+    {ok, #mcp_server_state{
+        server_id = elicitation_server,
+        phase = initialized,
+        capabilities = #mcp_server_capabilities{}
+    }}.
 
 handle_call({create_form, ServerPid, Title, Schema, TimeoutMs}, _From, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"elicitation.create_form">>),
@@ -290,7 +289,7 @@ handle_call({create_form, ServerPid, Title, Schema, TimeoutMs}, _From, State) ->
                 ServerPid ! {elicitation_created, ElicitationId, Elicitation},
 
                 erlmcp_tracing:set_status(SpanCtx, ok),
-                {reply, {ok, ElicitationId}, State#state{server_pid = ServerPid}};
+                {reply, {ok, ElicitationId}, State};
             {error, Reason} ->
                 erlmcp_tracing:record_error_details(SpanCtx, form_timeout_validation_failed, Reason),
                 {reply, {error, Reason}, State}
@@ -337,7 +336,7 @@ handle_call({create_url, ServerPid, Title, Url, TimeoutMs}, _From, State) ->
                 ServerPid ! {elicitation_created, ElicitationId, Elicitation},
 
                 erlmcp_tracing:set_status(SpanCtx, ok),
-                {reply, {ok, ElicitationId}, State#state{server_pid = ServerPid}};
+                {reply, {ok, ElicitationId}, State};
             {error, Reason} ->
                 erlmcp_tracing:record_error_details(SpanCtx, form_timeout_validation_failed, Reason),
                 {reply, {error, Reason}, State}

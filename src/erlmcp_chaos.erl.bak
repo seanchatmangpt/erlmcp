@@ -29,7 +29,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2]).
 -export([terminate/2, code_change/3]).
 
--include_lib("opentelemetry/include/otel_tracer.hrl").
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 -record(state, {
     experiments = #{},      % Active experiments
@@ -66,46 +66,58 @@
 %%% API
 %%%===================================================================
 
+-spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     start_link([]).
 
+-spec start_link(list()) -> {ok, pid()} | {error, term()}.
 start_link(Config) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, Config, []).
 
 %% @doc Inject chaos of specified type with configuration
+-spec inject(atom(), map()) -> {ok, term()} | {error, term()}.
 inject(Type, Config) ->
     inject(Type, Config, #{duration => 5000}).
 
+-spec inject(atom(), map(), map()) -> {ok, term()} | {error, term()}.
 inject(Type, Config, Options) ->
     gen_server:call(?MODULE, {inject, Type, Config, Options}).
 
 %% @doc Schedule chaos experiments according to schedule
+-spec schedule_chaos(list()) -> {ok, term()} | {error, term()}.
 schedule_chaos(Schedule) ->
     schedule_chaos(Schedule, #{}).
 
+-spec schedule_chaos(list(), map()) -> {ok, term()} | {error, term()}.
 schedule_chaos(Schedule, Options) ->
     gen_server:call(?MODULE, {schedule_chaos, Schedule, Options}).
 
 %% @doc Run a complete chaos experiment
+-spec run_experiment(map()) -> {ok, term()} | {error, term()}.
 run_experiment(ExperimentConfig) ->
     run_experiment(ExperimentConfig, #{}).
 
+-spec run_experiment(map(), map()) -> {ok, term()} | {error, term()}.
 run_experiment(ExperimentConfig, Options) ->
     gen_server:call(?MODULE, {run_experiment, ExperimentConfig, Options}).
 
 %% @doc Stop specific chaos experiment
+-spec stop_chaos(binary()) -> ok | {error, term()}.
 stop_chaos(ExperimentId) ->
     gen_server:call(?MODULE, {stop_chaos, ExperimentId}).
 
 %% @doc List all active chaos experiments
+-spec list_active_experiments() -> list().
 list_active_experiments() ->
     gen_server:call(?MODULE, list_active_experiments).
 
 %% @doc Get results from completed experiment
+-spec get_experiment_results(binary()) -> {ok, term()} | {error, term()}.
 get_experiment_results(ExperimentId) ->
     gen_server:call(?MODULE, {get_results, ExperimentId}).
 
 %% @doc Clear all experiment results
+-spec clear_results() -> ok.
 clear_results() ->
     gen_server:call(?MODULE, clear_results).
 
@@ -114,6 +126,7 @@ clear_results() ->
 %%%===================================================================
 
 %% @doc Inject network delays at various layers
+-spec network_delay(map()) -> {ok, term()} | {error, term()}.
 network_delay(Config) ->
     #{
         delay_ms := DelayMs,
@@ -143,6 +156,7 @@ network_delay(Config) ->
     end.
 
 %% @doc Randomly drop messages with configurable rate
+-spec message_drop(map()) -> {ok, term()} | {error, term()}.
 message_drop(Config) ->
     #{
         drop_rate := DropRate,
@@ -171,6 +185,7 @@ message_drop(Config) ->
     end.
 
 %% @doc Simulate connection failures
+-spec connection_failure(map()) -> {ok, term()} | {error, term()}.
 connection_failure(Config) ->
     #{
         failure_type := FailureType,
@@ -199,6 +214,7 @@ connection_failure(Config) ->
     end.
 
 %% @doc Crash random processes with recovery testing
+-spec process_crash(map()) -> {ok, term()} | {error, term()}.
 process_crash(Config) ->
     #{
         crash_type := CrashType,
@@ -227,6 +243,7 @@ process_crash(Config) ->
     end.
 
 %% @doc Create memory pressure
+-spec memory_pressure(map()) -> {ok, term()} | {error, term()}.
 memory_pressure(Config) ->
     #{
         pressure_mb := PressureMB,

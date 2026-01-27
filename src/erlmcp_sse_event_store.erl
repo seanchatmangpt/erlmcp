@@ -62,12 +62,12 @@
 }).
 
 %% Server state
--record(state, {
+-record(sse_store_state, {
     cleanup_timer :: reference() | undefined,
     span_ctx :: term()
 }).
 
--type state() :: #state{}.
+-type state() :: #sse_store_state{}.
 -type event_id() :: binary().
 -type session_id() :: binary().
 
@@ -306,7 +306,7 @@ init([]) ->
     %% Schedule periodic cleanup
     {ok, Timer} = timer:send_interval(?CLEANUP_INTERVAL, cleanup_timer),
 
-    {ok, #state{
+    {ok, #sse_store_state{
         cleanup_timer = Timer,
         span_ctx = SpanCtx
     }}.
@@ -329,7 +329,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, #state{cleanup_timer = Timer}) ->
+terminate(_Reason, #sse_store_state{cleanup_timer = Timer}) ->
     timer:cancel(Timer),
     ok.
 

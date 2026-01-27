@@ -1,0 +1,79 @@
+# === Prometheus Configuration: erlmcp Cluster Monitoring ===
+# Scrapes metrics from all 4 erlmcp nodes and aggregates for analysis
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'erlmcp-cluster'
+    environment: 'docker'
+
+# Alerting rules (optional)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files:
+  - '/etc/prometheus/rules.yml'
+
+# Scrape configurations for erlmcp cluster nodes
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # erlmcp Node 1 (Coordinator)
+  - job_name: 'erlmcp-node1'
+    static_configs:
+      - targets: ['node1:9090']
+        labels:
+          node: 'node1'
+          role: 'coordinator'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # erlmcp Node 2 (Worker)
+  - job_name: 'erlmcp-node2'
+    static_configs:
+      - targets: ['node2:9090']
+        labels:
+          node: 'node2'
+          role: 'worker'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # erlmcp Node 3 (Worker)
+  - job_name: 'erlmcp-node3'
+    static_configs:
+      - targets: ['node3:9090']
+        labels:
+          node: 'node3'
+          role: 'worker'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # erlmcp Node 4 (Worker)
+  - job_name: 'erlmcp-node4'
+    static_configs:
+      - targets: ['node4:9090']
+        labels:
+          node: 'node4'
+          role: 'worker'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Cluster aggregate metrics
+  - job_name: 'erlmcp-cluster'
+    static_configs:
+      - targets: ['node1:9090', 'node2:9090', 'node3:9090', 'node4:9090']
+        labels:
+          cluster: 'erlmcp'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s

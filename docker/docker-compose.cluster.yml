@@ -1,0 +1,358 @@
+version: '3.8'
+
+# === Docker Compose Configuration: erlmcp 4-Node Distributed Cluster ===
+# High-performance cluster setup optimized for 100K concurrent connections
+#
+# Architecture:
+#   - node1: Primary coordinator & load balancer
+#   - node2-4: Worker nodes with scaling potential
+#   - All nodes connected via distributed Erlang
+#   - Shared network for inter-node communication
+#   - HAProxy for external load balancing
+#   - Prometheus for metrics collection
+#
+# Setup:
+#   docker-compose -f docker/docker-compose.cluster.yml up -d
+#
+# Scaling to 8 nodes:
+#   docker-compose -f docker/docker-compose.cluster.yml up -d --scale worker=7
+#
+# Monitoring:
+#   - Node 1 HTTP API: http://localhost:8080
+#   - HAProxy stats: http://localhost:8404/stats
+#   - Prometheus: http://localhost:9090
+#
+# Performance targets:
+#   - 100K concurrent connections across 4 nodes
+#   - 25K connections per node
+#   - ~5-6 GB total memory (4 nodes @ 1.5 GB each)
+#   - ~20-24 CPU cores (4 nodes @ 6 cores each)
+#   - ~5% latency overhead vs native
+
+services:
+  # ============================================================================
+  # Erlang Cluster Nodes (node1-4)
+  # ============================================================================
+
+  node1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cluster
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-01-27}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-0.7.0}
+    container_name: erlmcp-node1
+    hostname: node1.erlmcp.local
+    restart: unless-stopped
+    networks:
+      erlmcp-cluster:
+        ipv4_address: 172.26.0.11
+    ports:
+      - "8080:8080"      # HTTP API
+      - "9090:9090"      # Metrics
+      - "4369:4369"      # EPMD
+      - "9001:9001"      # Distributed Erlang
+    environment:
+      # Node Configuration
+      NODE_NAME: node1@node1.erlmcp.local
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      EPMD_PORT: 4369
+
+      # Clustering
+      CLUSTER_NODES: 'node2@node2.erlmcp.local,node3@node3.erlmcp.local,node4@node4.erlmcp.local'
+
+      # Memory & Resource Limits
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 32768
+      ERLANG_MAX_PROCESSES: 2000000
+      +hms: 1024
+      +hmbs: 512
+
+      # GC Tuning (100K connections target)
+      ERL_FULLSWEEP_AFTER: 0
+
+      # Logging
+      LAGER_LEVEL: ${LAGER_LEVEL:-info}
+
+    volumes:
+      - erlmcp-node1-logs:/var/log/erlmcp
+      - erlmcp-node1-data:/var/lib/erlmcp
+      - /tmp/erlmcp/node1:/tmp/erlmcp
+
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck-cluster"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+    # Resource limits optimized for 25K concurrent connections
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 2G
+        reservations:
+          cpus: '3'
+          memory: 1.5G
+
+  node2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cluster
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-01-27}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-0.7.0}
+    container_name: erlmcp-node2
+    hostname: node2.erlmcp.local
+    restart: unless-stopped
+    networks:
+      erlmcp-cluster:
+        ipv4_address: 172.26.0.12
+    ports:
+      - "8081:8080"
+      - "9091:9090"
+      - "4370:4369"
+      - "9002:9001"
+    environment:
+      NODE_NAME: node2@node2.erlmcp.local
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      EPMD_PORT: 4369
+      CLUSTER_NODES: 'node1@node1.erlmcp.local,node3@node3.erlmcp.local,node4@node4.erlmcp.local'
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 32768
+      ERLANG_MAX_PROCESSES: 2000000
+      ERL_FULLSWEEP_AFTER: 0
+      LAGER_LEVEL: ${LAGER_LEVEL:-info}
+    volumes:
+      - erlmcp-node2-logs:/var/log/erlmcp
+      - erlmcp-node2-data:/var/lib/erlmcp
+      - /tmp/erlmcp/node2:/tmp/erlmcp
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck-cluster"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    depends_on:
+      node1:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 2G
+        reservations:
+          cpus: '3'
+          memory: 1.5G
+
+  node3:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cluster
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-01-27}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-0.7.0}
+    container_name: erlmcp-node3
+    hostname: node3.erlmcp.local
+    restart: unless-stopped
+    networks:
+      erlmcp-cluster:
+        ipv4_address: 172.26.0.13
+    ports:
+      - "8082:8080"
+      - "9092:9090"
+      - "4371:4369"
+      - "9003:9001"
+    environment:
+      NODE_NAME: node3@node3.erlmcp.local
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      EPMD_PORT: 4369
+      CLUSTER_NODES: 'node1@node1.erlmcp.local,node2@node2.erlmcp.local,node4@node4.erlmcp.local'
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 32768
+      ERLANG_MAX_PROCESSES: 2000000
+      ERL_FULLSWEEP_AFTER: 0
+      LAGER_LEVEL: ${LAGER_LEVEL:-info}
+    volumes:
+      - erlmcp-node3-logs:/var/log/erlmcp
+      - erlmcp-node3-data:/var/lib/erlmcp
+      - /tmp/erlmcp/node3:/tmp/erlmcp
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck-cluster"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    depends_on:
+      node1:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 2G
+        reservations:
+          cpus: '3'
+          memory: 1.5G
+
+  node4:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cluster
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-01-27}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-0.7.0}
+    container_name: erlmcp-node4
+    hostname: node4.erlmcp.local
+    restart: unless-stopped
+    networks:
+      erlmcp-cluster:
+        ipv4_address: 172.26.0.14
+    ports:
+      - "8083:8080"
+      - "9093:9090"
+      - "4372:4369"
+      - "9004:9001"
+    environment:
+      NODE_NAME: node4@node4.erlmcp.local
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      EPMD_PORT: 4369
+      CLUSTER_NODES: 'node1@node1.erlmcp.local,node2@node2.erlmcp.local,node3@node3.erlmcp.local'
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 32768
+      ERLANG_MAX_PROCESSES: 2000000
+      ERL_FULLSWEEP_AFTER: 0
+      LAGER_LEVEL: ${LAGER_LEVEL:-info}
+    volumes:
+      - erlmcp-node4-logs:/var/log/erlmcp
+      - erlmcp-node4-data:/var/lib/erlmcp
+      - /tmp/erlmcp/node4:/tmp/erlmcp
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck-cluster"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    depends_on:
+      node1:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '6'
+          memory: 2G
+        reservations:
+          cpus: '3'
+          memory: 1.5G
+
+  # ============================================================================
+  # Monitoring & Observability
+  # ============================================================================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: erlmcp-prometheus
+    hostname: prometheus.erlmcp.local
+    restart: unless-stopped
+    networks:
+      erlmcp-cluster:
+        ipv4_address: 172.26.0.100
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.cluster.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=7d'
+    depends_on:
+      - node1
+      - node2
+      - node3
+      - node4
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+
+  # ============================================================================
+  # Network & Configuration
+  # ============================================================================
+
+networks:
+  erlmcp-cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.26.0.0/16
+
+# ============================================================================
+# Persistent Volumes
+# ============================================================================
+
+volumes:
+  # Node 1 storage
+  erlmcp-node1-logs:
+    driver: local
+  erlmcp-node1-data:
+    driver: local
+
+  # Node 2 storage
+  erlmcp-node2-logs:
+    driver: local
+  erlmcp-node2-data:
+    driver: local
+
+  # Node 3 storage
+  erlmcp-node3-logs:
+    driver: local
+  erlmcp-node3-data:
+    driver: local
+
+  # Node 4 storage
+  erlmcp-node4-logs:
+    driver: local
+  erlmcp-node4-data:
+    driver: local
+
+  # Monitoring
+  prometheus-data:
+    driver: local

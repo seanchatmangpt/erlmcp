@@ -30,7 +30,7 @@
 ]).
 
 %% Types
--type state() :: #state{}.
+-type state() :: #mcp_server_state{}.
 
 %%====================================================================
 %% Resource Management Handlers
@@ -40,23 +40,23 @@
 -spec handle_add_resource(binary(), term(), state()) -> {ok, state()}.
 handle_add_resource(Uri, Handler, State) ->
     Resource = #mcp_resource{uri = Uri, name = Uri},
-    NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
-    {ok, State#state{resources = NewResources}}.
+    NewResources = maps:put(Uri, {Resource, Handler}, State#mcp_server_state.resources),
+    {ok, State#mcp_server_state{resources = NewResources}}.
 
 %% @doc Handle add_resource_template call
 -spec handle_add_resource_template(binary(), binary(), term(), state()) -> {ok, state()}.
 handle_add_resource_template(UriTemplate, Name, Handler, State) ->
     Template = #mcp_resource_template{uri_template = UriTemplate, name = Name},
-    NewTemplates = maps:put(UriTemplate, {Template, Handler}, State#state.resource_templates),
-    {ok, State#state{resource_templates = NewTemplates}}.
+    NewTemplates = maps:put(UriTemplate, {Template, Handler}, State#mcp_server_state.resource_templates),
+    {ok, State#mcp_server_state{resource_templates = NewTemplates}}.
 
 %% @doc Handle delete_resource call
 -spec handle_delete_resource(binary(), state()) -> {ok | {error, not_found}, state()}.
 handle_delete_resource(Uri, State) ->
-    case maps:is_key(Uri, State#state.resources) of
+    case maps:is_key(Uri, State#mcp_server_state.resources) of
         true ->
-            NewResources = maps:remove(Uri, State#state.resources),
-            {ok, State#state{resources = NewResources}};
+            NewResources = maps:remove(Uri, State#mcp_server_state.resources),
+            {ok, State#mcp_server_state{resources = NewResources}};
         false ->
             {{error, not_found}, State}
     end.
@@ -69,23 +69,23 @@ handle_delete_resource(Uri, State) ->
 -spec handle_add_tool(binary(), term(), state()) -> {ok, state()}.
 handle_add_tool(Name, Handler, State) ->
     Tool = #mcp_tool{name = Name},
-    NewTools = maps:put(Name, {Tool, Handler, undefined}, State#state.tools),
-    {ok, State#state{tools = NewTools}}.
+    NewTools = maps:put(Name, {Tool, Handler, undefined}, State#mcp_server_state.tools),
+    {ok, State#mcp_server_state{tools = NewTools}}.
 
 %% @doc Handle add_tool_with_schema call
 -spec handle_add_tool_with_schema(binary(), term(), map(), state()) -> {ok, state()}.
 handle_add_tool_with_schema(Name, Handler, Schema, State) ->
     Tool = #mcp_tool{name = Name},
-    NewTools = maps:put(Name, {Tool, Handler, Schema}, State#state.tools),
-    {ok, State#state{tools = NewTools}}.
+    NewTools = maps:put(Name, {Tool, Handler, Schema}, State#mcp_server_state.tools),
+    {ok, State#mcp_server_state{tools = NewTools}}.
 
 %% @doc Handle delete_tool call
 -spec handle_delete_tool(binary(), state()) -> {ok | {error, not_found}, state()}.
 handle_delete_tool(Name, State) ->
-    case maps:is_key(Name, State#state.tools) of
+    case maps:is_key(Name, State#mcp_server_state.tools) of
         true ->
-            NewTools = maps:remove(Name, State#state.tools),
-            {ok, State#state{tools = NewTools}};
+            NewTools = maps:remove(Name, State#mcp_server_state.tools),
+            {ok, State#mcp_server_state{tools = NewTools}};
         false ->
             {{error, not_found}, State}
     end.
@@ -98,15 +98,15 @@ handle_delete_tool(Name, State) ->
 -spec handle_add_prompt(binary(), term(), state()) -> {ok, state()}.
 handle_add_prompt(Name, Handler, State) ->
     Prompt = #mcp_prompt{name = Name},
-    NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
-    {ok, State#state{prompts = NewPrompts}}.
+    NewPrompts = maps:put(Name, {Prompt, Handler}, State#mcp_server_state.prompts),
+    {ok, State#mcp_server_state{prompts = NewPrompts}}.
 
 %% @doc Handle add_prompt_with_args call
 -spec handle_add_prompt_with_args(binary(), term(), [#mcp_prompt_argument{}], state()) -> {ok, state()}.
 handle_add_prompt_with_args(Name, Handler, Arguments, State) ->
     Prompt = #mcp_prompt{name = Name, arguments = Arguments},
-    NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
-    {ok, State#state{prompts = NewPrompts}}.
+    NewPrompts = maps:put(Name, {Prompt, Handler}, State#mcp_server_state.prompts),
+    {ok, State#mcp_server_state{prompts = NewPrompts}}.
 
 %% @doc Handle add_prompt_with_args_and_schema call
 -spec handle_add_prompt_with_args_and_schema(
@@ -118,16 +118,16 @@ handle_add_prompt_with_args_and_schema(Name, Handler, Arguments, InputSchema, St
         arguments = Arguments,
         input_schema = InputSchema
     },
-    NewPrompts = maps:put(Name, {Prompt, Handler}, State#state.prompts),
-    {ok, State#state{prompts = NewPrompts}}.
+    NewPrompts = maps:put(Name, {Prompt, Handler}, State#mcp_server_state.prompts),
+    {ok, State#mcp_server_state{prompts = NewPrompts}}.
 
 %% @doc Handle delete_prompt call
 -spec handle_delete_prompt(binary(), state()) -> {ok | {error, not_found}, state()}.
 handle_delete_prompt(Name, State) ->
-    case maps:is_key(Name, State#state.prompts) of
+    case maps:is_key(Name, State#mcp_server_state.prompts) of
         true ->
-            NewPrompts = maps:remove(Name, State#state.prompts),
-            {ok, State#state{prompts = NewPrompts}};
+            NewPrompts = maps:remove(Name, State#mcp_server_state.prompts),
+            {ok, State#mcp_server_state{prompts = NewPrompts}};
         false ->
             {{error, not_found}, State}
     end.
@@ -139,18 +139,18 @@ handle_delete_prompt(Name, State) ->
 %% @doc Handle subscribe_resource call
 -spec handle_subscribe_resource(binary(), pid(), state()) -> {ok, state()}.
 handle_subscribe_resource(Uri, Subscriber, State) ->
-    Subs = State#state.subscriptions,
+    Subs = State#mcp_server_state.subscriptions,
     CurrentSet = maps:get(Uri, Subs, sets:new()),
     NewSet = sets:add_element(Subscriber, CurrentSet),
     NewSubs = maps:put(Uri, NewSet, Subs),
-    {ok, State#state{subscriptions = NewSubs}}.
+    {ok, State#mcp_server_state{subscriptions = NewSubs}}.
 
 %% @doc Handle unsubscribe_resource call
 -spec handle_unsubscribe_resource(binary(), state()) -> {ok, state()}.
 handle_unsubscribe_resource(Uri, State) ->
-    Subs = State#state.subscriptions,
+    Subs = State#mcp_server_state.subscriptions,
     NewSubs = maps:remove(Uri, Subs),
-    {ok, State#state{subscriptions = NewSubs}}.
+    {ok, State#mcp_server_state{subscriptions = NewSubs}}.
 
 %%====================================================================
 %% Progress and Notification Handlers
@@ -164,8 +164,8 @@ handle_report_progress(Token, Progress, Total, State) ->
         progress = Progress,
         total = Total
     },
-    NewTokens = maps:put(Token, ProgressToken, State#state.progress_tokens),
-    {ok, State#state{progress_tokens = NewTokens}}.
+    NewTokens = maps:put(Token, ProgressToken, State#mcp_server_state.progress_tokens),
+    {ok, State#mcp_server_state{progress_tokens = NewTokens}}.
 
 %% @doc Handle notify_resource_updated cast
 -spec handle_notify_resource_updated(binary(), map(), state()) -> {ok, state()}.

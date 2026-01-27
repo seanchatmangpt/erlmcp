@@ -33,10 +33,6 @@
 
 %% Types
 -type server() :: pid().
--type server_id() :: atom().
--type resource_handler() :: fun((binary()) -> binary() | #mcp_content{}).
--type tool_handler() :: fun((map()) -> binary() | #mcp_content{} | [#mcp_content{}]).
--type prompt_handler() :: fun((map()) -> binary() | [map()]).
 
 -export_type([server/0, server_id/0]).
 

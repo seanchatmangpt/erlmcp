@@ -42,13 +42,13 @@
 }.
 
 %% State record
--record(state, {
+-record(subscription_state, {
     subscriptions = #{} :: #{resource_uri() => subscription_data()},
     monitors = #{} :: #{pid() => [resource_uri()]},
     ets_table :: atom()
 }).
 
--type state() :: #state{}.
+-type state() :: #subscription_state{}.
 
 %%====================================================================
 %% API Functions
@@ -105,7 +105,7 @@ stop() ->
 init([]) ->
     process_flag(trap_exit, true),
     logger:info("Starting resource subscriptions manager"),
-    State = #state{},
+    State = #subscription_state{},
     {ok, State}.
 
 %% @private
@@ -128,7 +128,7 @@ handle_call({unsubscribe, ResourceUri, ClientPid}, _From, State) ->
     {reply, ok, NewState};
 
 handle_call({get_subscribers, ResourceUri}, _From, State) ->
-    Subs = maps:get(ResourceUri, State#state.subscriptions, undefined),
+    Subs = maps:get(ResourceUri, State#subscription_state.subscriptions, undefined),
     case Subs of
         undefined ->
             {reply, {ok, []}, State};
@@ -139,7 +139,7 @@ handle_call({get_subscribers, ResourceUri}, _From, State) ->
 handle_call(list_subscriptions, _From, State) ->
     Subs = maps:fold(fun(Uri, #{clients := Clients}, Acc) ->
         [{Uri, sets:to_list(Clients)} | Acc]
-    end, [], State#state.subscriptions),
+    end, [], State#subscription_state.subscriptions),
     {reply, {ok, Subs}, State};
 
 handle_call(_Request, _From, State) ->
@@ -149,7 +149,7 @@ handle_call(_Request, _From, State) ->
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
 handle_cast({notify_updated, ResourceUri, Metadata}, State) ->
-    case maps:get(ResourceUri, State#state.subscriptions, undefined) of
+    case maps:get(ResourceUri, State#subscription_state.subscriptions, undefined) of
         undefined ->
             logger:debug("No subscribers for updated resource ~p", [ResourceUri]);
         #{clients := Clients} ->
@@ -166,7 +166,7 @@ handle_cast({notify_updated, ResourceUri, Metadata}, State) ->
     {noreply, State};
 
 handle_cast({notify_deleted, ResourceUri}, State) ->
-    case maps:get(ResourceUri, State#state.subscriptions, undefined) of
+    case maps:get(ResourceUri, State#subscription_state.subscriptions, undefined) of
         undefined ->
             logger:debug("No subscribers for deleted resource ~p", [ResourceUri]);
         #{clients := Clients} ->
@@ -180,8 +180,8 @@ handle_cast({notify_deleted, ResourceUri}, State) ->
                 ok
             end, ok, Clients),
             %% Clean up subscriptions for this resource
-            NewSubscriptions = maps:remove(ResourceUri, State#state.subscriptions),
-            {noreply, State#state{subscriptions = NewSubscriptions}}
+            NewSubscriptions = maps:remove(ResourceUri, State#subscription_state.subscriptions),
+            {noreply, State#subscription_state{subscriptions = NewSubscriptions}}
     end;
 
 handle_cast(_Msg, State) ->
@@ -218,8 +218,8 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, state()} | {error, term()}.
 do_subscribe(ResourceUri, ClientPid, State) ->
     try
-        Subscriptions = State#state.subscriptions,
-        Monitors = State#state.monitors,
+        Subscriptions = State#subscription_state.subscriptions,
+        Monitors = State#subscription_state.monitors,
 
         %% Get or create subscription data for this resource
         SubData = maps:get(ResourceUri, Subscriptions, #{
@@ -260,7 +260,7 @@ do_subscribe(ResourceUri, ClientPid, State) ->
                 NewMonitors = maps:put(ClientPid, NewClientSubs, Monitors),
 
                 logger:debug("Added subscription for ~p to ~p", [ClientPid, ResourceUri]),
-                {ok, State#state{
+                {ok, State#subscription_state{
                     subscriptions = NewSubscriptions,
                     monitors = NewMonitors
                 }}
@@ -274,8 +274,8 @@ do_subscribe(ResourceUri, ClientPid, State) ->
 %% @private Unsubscribe a client from a resource
 -spec do_unsubscribe(resource_uri(), client_pid(), state()) -> state().
 do_unsubscribe(ResourceUri, ClientPid, State) ->
-    Subscriptions = State#state.subscriptions,
-    Monitors = State#state.monitors,
+    Subscriptions = State#subscription_state.subscriptions,
+    Monitors = State#subscription_state.monitors,
 
     case maps:get(ResourceUri, Subscriptions, undefined) of
         undefined ->
@@ -288,7 +288,7 @@ do_unsubscribe(ResourceUri, ClientPid, State) ->
                     NewSubscriptions = maps:remove(ResourceUri, Subscriptions),
                     NewMonitors = update_client_subscriptions(ClientPid, ResourceUri, Monitors),
                     logger:debug("Removed subscription for ~p from ~p (last subscriber)", [ClientPid, ResourceUri]),
-                    State#state{
+                    State#subscription_state{
                         subscriptions = NewSubscriptions,
                         monitors = NewMonitors
                     };
@@ -298,7 +298,7 @@ do_unsubscribe(ResourceUri, ClientPid, State) ->
                     NewSubscriptions = maps:put(ResourceUri, NewSubData, Subscriptions),
                     NewMonitors = update_client_subscriptions(ClientPid, ResourceUri, Monitors),
                     logger:debug("Removed subscription for ~p from ~p", [ClientPid, ResourceUri]),
-                    State#state{
+                    State#subscription_state{
                         subscriptions = NewSubscriptions,
                         monitors = NewMonitors
                     }
@@ -308,7 +308,7 @@ do_unsubscribe(ResourceUri, ClientPid, State) ->
 %% @private Cleanup all subscriptions for a specific client when it dies
 -spec cleanup_client_subscriptions(pid(), state()) -> state().
 cleanup_client_subscriptions(ClientPid, State) ->
-    Monitors = State#state.monitors,
+    Monitors = State#subscription_state.monitors,
     case maps:get(ClientPid, Monitors, undefined) of
         undefined ->
             State;
@@ -318,8 +318,8 @@ cleanup_client_subscriptions(ClientPid, State) ->
                 do_unsubscribe(Uri, ClientPid, Acc)
             end, State, ResourceUris),
             logger:debug("Cleaned up ~p resource subscriptions for dead client ~p", [length(ResourceUris), ClientPid]),
-            NewMonitors = maps:remove(ClientPid, NewState#state.monitors),
-            NewState#state{monitors = NewMonitors}
+            NewMonitors = maps:remove(ClientPid, NewState#subscription_state.monitors),
+            NewState#subscription_state{monitors = NewMonitors}
     end.
 
 %% @private Update the monitor map when client subscription changes
