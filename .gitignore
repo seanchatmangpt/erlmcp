@@ -1,69 +1,50 @@
 # Erlang/OTP
-.eunit
-deps
-*.o
 *.beam
 *.plt
-erl_crash.dump
-ebin/*.beam
-rel/example_project
-.concrete/DEV_MODE
-.rebar
-_build/
-rebar3.crashdump
-*~
-
-# Logs
-logs/
-*.log
-
-# Coverage
-cover/
-.cover/
-*.coverdata
-_build/test/cover/
-
-# Documentation
-doc/
-_doc/
-
-# Dialyzer
+ebin/
+.eunit/
+*.o
+*.dylib
+*.so
+priv/
+*.app.src
 .dialyzer_plt
-*.plt
 
-# IDE
-.idea/
-*.iml
+# Rebar
+_build/
+.rebar3/
+*.lock
+rebar.lock
+rebar.config.lock
+
+# Editor
 .vscode/
+.idea/
 *.swp
 *.swo
+*~
 .DS_Store
+*.iml
 
-# Dependencies
-_checkouts/
+# Environment
+.env
+.env.local
+.envrc.local
+direnv.log
 
-# Release artifacts
-_rel/
+# Build artifacts
+*.zip
+*.tar.gz
+dist/
+release/
 
-# Temporary files
-*.tmp
-*.temp
-.#*
+# Testing
+ct_logs/
+cover/
+.cover/
+erl_crash.dump
 
-# OS specific
-Thumbs.db
-.DS_Store
-
-# Project specific
-priv/ssl/*.pem
-priv/ssl/*.key
-config/prod.config
-config/dev.config
-
-# Crash dumps
-erl_crash.dump*
-core
-core.*
-
-# Lock files (keep rebar.lock)
-# rebar.lock
+# IDE
+.erlang.cookie
+erlang.mk
+Emakefile
