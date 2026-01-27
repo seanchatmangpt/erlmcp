@@ -88,9 +88,9 @@ track_tool_call(Token, ToolName, ClientPid) when is_binary(Token), is_binary(Too
     gen_server:call(?MODULE, {track_tool_call, Token, ToolName, ClientPid}).
 
 %% Send progress update for a tool call
--spec send_progress(progress_token(), progress_data(), pid(), binary()) -> ok | {error, term()}.
+-spec send_progress(progress_token(), progress_data(), pid() | undefined, binary() | undefined) -> ok | {error, term()}.
 send_progress(Token, ProgressData, TransportPid, TransportId)
-  when is_binary(Token), is_map(ProgressData), is_pid(TransportPid) ->
+  when is_binary(Token), is_map(ProgressData) ->
     gen_server:call(?MODULE, {send_progress, Token, ProgressData, TransportPid, TransportId}).
 
 %% Get current progress for a token
@@ -379,8 +379,8 @@ test_token_format() ->
     Parts = binary:split(Token, <<"-">>),
     ?assertEqual(2, length(Parts)),
     [TimestampPart, RandomPart] = Parts,
-    ?assert(try binary_to_integer(TimestampPart), true catch _ -> false end),
-    ?assert(try binary_to_integer(RandomPart), true catch _ -> false end).
+    ?assert(try binary_to_integer(TimestampPart) of _ -> true catch _ -> false end),
+    ?assert(try binary_to_integer(RandomPart) of _ -> true catch _ -> false end).
 
 test_track_tool_call() ->
     Token = generate_token(),

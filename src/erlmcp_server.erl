@@ -34,8 +34,12 @@
 -export_type([server/0, server_id/0]).
 
 %% State record - NO transport state, only server-specific state
+%% Includes phase tracking for MCP 2025-11-25 initialization state machine (Gap #4)
 -record(state, {
     server_id :: server_id(),
+    phase = ?MCP_PHASE_INITIALIZATION :: mcp_server_phase(),  % Track connection phase
+    init_timeout_ref :: reference() | undefined,              % Timeout timer ref
+    init_timeout_ms = ?MCP_DEFAULT_INIT_TIMEOUT_MS :: pos_integer(),  % Configurable timeout
     capabilities :: #mcp_server_capabilities{},
     client_capabilities :: #mcp_client_capabilities{} | undefined,
     protocol_version :: binary() | undefined,
@@ -299,6 +303,10 @@ handle_info({task_cancel, _Task}, State) ->
 
 handle_info(_Info, State) ->
     {noreply, State}.
+
+%%====================================================================
+%% Internal functions - List Change Notifications (Gap #6)
+%%====================================================================
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, #state{server_id = ServerId}) ->
@@ -660,36 +668,13 @@ send_progress_notification_safe(State, Token, Progress, Total) ->
 build_initialize_response(Capabilities) ->
     {ok, Version} = application:get_key(list_to_atom(binary_to_list(?APP_NAME)), vsn),
     #{
-        ?MCP_FIELD_PROTOCOL_VERSION => ?MCP_VERSION,
-        ?MCP_FIELD_CAPABILITIES => encode_server_capabilities(Capabilities),
+        ?MCP_FIELD_PROTOCOL_VERSION => <<"2025-11-25">>,
+        ?MCP_FIELD_CAPABILITIES => erlmcp_capabilities:capability_to_map(Capabilities),
         ?MCP_FIELD_SERVER_INFO => #{
             ?MCP_INFO_NAME => ?APP_NAME,
             ?MCP_INFO_VERSION => list_to_binary(Version)
         }
     }.
-
--spec encode_server_capabilities(#mcp_server_capabilities{}) -> map().
-encode_server_capabilities(#mcp_server_capabilities{} = Caps) ->
-    Base = #{},
-    Base1 = maybe_add_server_capability(Base, ?MCP_CAPABILITY_RESOURCES,
-                                        Caps#mcp_server_capabilities.resources,
-                                        #{?MCP_FEATURE_SUBSCRIBE => true,
-                                          ?MCP_FEATURE_LIST_CHANGED => true}),
-    Base2 = maybe_add_server_capability(Base1, ?MCP_CAPABILITY_TOOLS,
-                                        Caps#mcp_server_capabilities.tools, #{}),
-    Base3 = maybe_add_server_capability(Base2, ?MCP_CAPABILITY_PROMPTS,
-                                        Caps#mcp_server_capabilities.prompts,
-                                        #{?MCP_FEATURE_LIST_CHANGED => true}),
-    maybe_add_server_capability(Base3, ?MCP_CAPABILITY_LOGGING,
-                                Caps#mcp_server_capabilities.logging, #{}).
-
--spec maybe_add_server_capability(map(), binary(), #mcp_capability{} | undefined, map()) -> map().
-maybe_add_server_capability(Map, _Key, undefined, _Value) ->
-    Map;
-maybe_add_server_capability(Map, Key, #mcp_capability{enabled = true}, Value) ->
-    Map#{Key => Value};
-maybe_add_server_capability(Map, _Key, _, _Value) ->
-    Map.
 
 %%====================================================================
 %% Internal functions - Resource Handling (same as before but using safe functions)
@@ -782,6 +767,16 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                 erlmcp_tracing:record_error_details(SpanCtx, tool_not_found, Name),
                 send_error_safe(State, TransportId, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
             {_Tool, Handler, _Schema} ->
+                % Gap #10: Generate unique progress token for this tool call
+                ProgressToken = erlmcp_progress:generate_token(),
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"progress_token">> => ProgressToken
+                }),
+
+                % Track tool execution for progress reporting
+                ServerPid = self(),
+                _ = erlmcp_progress:track_tool_call(ProgressToken, Name, ServerPid),
+
                 HandlerSpanCtx = erlmcp_tracing:start_span(<<"tool.handler">>),
                 try
                     Result = Handler(Arguments),
@@ -795,12 +790,25 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                         <<"result.size">> => ContentSize
                     }),
                     erlmcp_tracing:set_status(HandlerSpanCtx, ok),
-                    send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENT => ContentList}),
+
+                    % Include progress token in response metadata
+                    Response = #{
+                        ?MCP_PARAM_CONTENT => ContentList,
+                        <<"_meta">> => #{
+                            ?MCP_PARAM_PROGRESS_TOKEN => ProgressToken
+                        }
+                    },
+                    send_response_safe(State, TransportId, Id, Response),
+
+                    % Clean up progress token after completion
+                    erlmcp_progress:cleanup_completed(ProgressToken),
                     erlmcp_tracing:set_status(SpanCtx, ok)
                 catch
                     Class:Reason:Stack ->
                         erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
                         logger:error("Tool handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
+                        % Cleanup even on error
+                        erlmcp_progress:cleanup_completed(ProgressToken),
                         send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
                 after
                     erlmcp_tracing:end_span(HandlerSpanCtx)
@@ -1021,4 +1029,22 @@ format_task_failure(Task) ->
     case maps:get(result, Task, undefined) of
         {Code, Msg} -> {Code, Msg};
         _ -> {?JSONRPC_INTERNAL_ERROR, <<"Task failed">>}
+    end.
+
+%%====================================================================
+%% Internal functions - List Change Notifications (Gaps #6-8)
+%%====================================================================
+
+-spec notify_list_changed(atom(), state()) -> ok.
+notify_list_changed(Feature, State) ->
+    case State#state.notifier_pid of
+        undefined -> ok;
+        _Pid ->
+            try
+                erlmcp_change_notifier:notify_list_changed(Feature)
+            catch
+                _Class:_Reason ->
+                    logger:warning("Failed to notify list changed for ~p", [Feature]),
+                    ok
+            end
     end.
