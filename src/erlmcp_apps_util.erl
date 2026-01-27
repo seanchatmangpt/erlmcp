@@ -179,5 +179,3 @@ has_valid_prefix(Permission) ->
     lists:any(fun(Prefix) ->
         binary:match(Permission, Prefix) =/= nomatch
     end, ?VALID_PERMISSION_PREFIXES).
-
-end.

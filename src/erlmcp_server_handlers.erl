@@ -160,7 +160,7 @@ handle_unsubscribe_resource(Uri, State) ->
 -spec handle_report_progress(binary() | integer(), float(), float(), state()) -> {ok, state()}.
 handle_report_progress(Token, Progress, Total, State) ->
     ProgressToken = #mcp_progress_notification{
-        token = Token,
+        progress_token = #mcp_progress_token{token = Token},
         progress = Progress,
         total = Total
     },
@@ -169,8 +169,8 @@ handle_report_progress(Token, Progress, Total, State) ->
 
 %% @doc Handle notify_resource_updated cast
 -spec handle_notify_resource_updated(binary(), map(), state()) -> {ok, state()}.
-handle_notify_resource_updated(Uri, _Metadata, State) ->
-    %% Metadata can be used for tracking update metadata
+handle_notify_resource_updated(_Uri, _Metadata, State) ->
+    %% Uri and metadata can be used for tracking update metadata
     {ok, State}.
 
 %% @doc Handle notify_resources_changed cast

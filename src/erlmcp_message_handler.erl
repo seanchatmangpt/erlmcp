@@ -46,7 +46,7 @@ process_message(TransportId, Data, State) ->
 
 %% @doc Handle initialize request
 -spec handle_initialize(map(), state()) -> {binary(), state()}.
-handle_initialize(Params, State) ->
+handle_initialize(_Params, State) ->
     %% Process initialize handshake
     {<<"initialize">>, State}.
 
@@ -60,21 +60,21 @@ handle_initialized(_Params, State) ->
 -spec handle_resources_list(map(), state()) -> {binary(), state()}.
 handle_resources_list(_Params, State) ->
     %% Return list of available resources
-    Resources = maps:values(State#state.resources),
+    _Resources = maps:values(State#state.resources),
     {<<"resources">>, State}.
 
 %% @doc Handle tools/list request
 -spec handle_tools_list(map(), state()) -> {binary(), state()}.
 handle_tools_list(_Params, State) ->
     %% Return list of available tools
-    Tools = maps:values(State#state.tools),
+    _Tools = maps:values(State#state.tools),
     {<<"tools">>, State}.
 
 %% @doc Handle prompts/list request
 -spec handle_prompts_list(map(), state()) -> {binary(), state()}.
 handle_prompts_list(_Params, State) ->
     %% Return list of available prompts
-    Prompts = maps:values(State#state.prompts),
+    _Prompts = maps:values(State#state.prompts),
     {<<"prompts">>, State}.
 
 %% @doc Handle tools/call request

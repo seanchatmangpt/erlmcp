@@ -44,7 +44,6 @@
 
 %% Type definitions (before records)
 -type sandbox_id() :: binary().
--type app_id() :: binary().
 -type sandbox_state() :: #{atom() => term()}.
 -type message() :: map().
 -type resource_quota() :: pos_integer().
