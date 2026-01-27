@@ -39,6 +39,7 @@
 -define(MCP_ERROR_TRANSPORT_ERROR, -32008).
 -define(MCP_ERROR_TIMEOUT, -32009).
 -define(MCP_ERROR_RATE_LIMITED, -32010).
+-define(MCP_ERROR_UNSUPPORTED_PROTOCOL_VERSION, -32003).  %% Gap #30
 
 %%% Convenience list of all valid error codes for validation
 -define(VALID_ERROR_CODES, [
@@ -74,6 +75,7 @@
 -define(MCP_MSG_MISSING_PROMPT_NAME, <<"Missing prompt name">>).
 -define(MCP_MSG_CAPABILITY_NOT_SUPPORTED, <<"Capability not supported">>).
 -define(MCP_MSG_NOT_INITIALIZED, <<"Server not initialized">>).
+-define(MCP_MSG_UNSUPPORTED_PROTOCOL_VERSION, <<"Unsupported protocol version">>).  %% Gap #30
 
 %%% Convenience macros for common error responses
 -define(ERROR_PARSE, {?JSONRPC_PARSE_ERROR, ?JSONRPC_MSG_PARSE_ERROR}).
@@ -159,6 +161,14 @@
 -define(MCP_CONTENT_TYPE_TEXT, <<"text">>).
 -define(MCP_CONTENT_TYPE_IMAGE, <<"image">>).
 -define(MCP_CONTENT_TYPE_RESOURCE, <<"resource">>).
+-define(MCP_CONTENT_TYPE_RESOURCE_LINK, <<"resource/link">>).
+
+%%% Resource Link Fields (Gap #33: Resource Link Content Type)
+-define(MCP_RESOURCE_LINK_FIELD_TYPE, <<"type">>).
+-define(MCP_RESOURCE_LINK_FIELD_URI, <<"uri">>).
+-define(MCP_RESOURCE_LINK_FIELD_NAME, <<"name">>).
+-define(MCP_RESOURCE_LINK_FIELD_MIME_TYPE, <<"mimeType">>).
+-define(MCP_RESOURCE_LINK_FIELD_SIZE, <<"size">>).
 
 %%% Message Roles (for prompts)
 -define(MCP_ROLE_USER, <<"user">>).
@@ -285,11 +295,20 @@
 }).
 
 %%% MCP Content Records
+%%% MCP Annotation Record (Gap #22: Annotations Support)
+%% Annotations are optional metadata about content blocks
+%% Example: {name = <<"audience">>, value = <<"user">>}
+-record(mcp_annotation, {
+    name :: binary(),
+    value :: binary() | number() | boolean() | map() | undefined
+}).
+
 -record(mcp_content, {
     type :: binary(),
     text :: binary() | undefined,
     data :: binary() | undefined,
-    mime_type :: binary() | undefined
+    mime_type :: binary() | undefined,
+    annotations = [] :: [#mcp_annotation{}]
 }).
 
 -record(mcp_resource, {
@@ -305,6 +324,15 @@
     name :: binary(),
     description :: binary() | undefined,
     mime_type :: binary() | undefined
+}).
+
+%%% Gap #33: Resource Link Record
+%%% Represents a link to an external resource within content blocks
+-record(mcp_resource_link, {
+    uri :: binary(),
+    name :: binary() | undefined,
+    mime_type :: binary() | undefined,
+    size :: integer() | undefined
 }).
 
 -record(mcp_tool, {
@@ -346,3 +374,12 @@
     json_rpc_id/0,
     json_rpc_params/0
 ]).
+
+-record(mcp_model_preferences, {
+    cost_priority :: float() | undefined,
+    speed_priority :: float() | undefined,
+    intelligence_priority :: float() | undefined,
+    temperature :: float() | undefined,
+    max_tokens :: integer() | undefined,
+    stop_sequences :: [binary()] | undefined
+}).

@@ -98,20 +98,6 @@ add_prompt_with_args(Server, Name, Handler, Arguments)
   when is_binary(Name), is_function(Handler, 1), is_list(Arguments) ->
     gen_server:call(Server, {add_prompt_with_args, Name, Handler, Arguments}).
 
-%% Delete operations (Gap #28: HTTP DELETE Handler)
-
--spec delete_resource(server(), binary()) -> ok | {error, not_found}.
-delete_resource(Server, Uri) when is_binary(Uri) ->
-    gen_server:call(Server, {delete_resource, Uri}).
-
--spec delete_tool(server(), binary()) -> ok | {error, not_found}.
-delete_tool(Server, Name) when is_binary(Name) ->
-    gen_server:call(Server, {delete_tool, Name}).
-
--spec delete_prompt(server(), binary()) -> ok | {error, not_found}.
-delete_prompt(Server, Name) when is_binary(Name) ->
-    gen_server:call(Server, {delete_prompt, Name}).
-
 -spec subscribe_resource(server(), binary(), pid()) -> ok.
 subscribe_resource(Server, Uri, Subscriber) when is_binary(Uri), is_pid(Subscriber) ->
     gen_server:call(Server, {subscribe_resource, Uri, Subscriber}).
@@ -236,38 +222,6 @@ handle_call({add_prompt_with_args, Name, Handler, Arguments}, _From, State) ->
     erlmcp_prompt_list_change_notifier:notify_prompt_added(
         State#state.server_id, Name, Prompt, State#state.notifier_pid),
     {reply, ok, State#state{prompts = NewPrompts}};
-
-%% Delete operations (Gap #28: HTTP DELETE Handler)
-
-handle_call({delete_resource, Uri}, _From, State) ->
-    case maps:is_key(Uri, State#state.resources) of
-        true ->
-            NewResources = maps:remove(Uri, State#state.resources),
-            notify_resources_changed(State),
-            {reply, ok, State#state{resources = NewResources}};
-        false ->
-            {reply, {error, not_found}, State}
-    end;
-
-handle_call({delete_tool, Name}, _From, State) ->
-    case maps:is_key(Name, State#state.tools) of
-        true ->
-            NewTools = maps:remove(Name, State#state.tools),
-            notify_list_changed(tools, State),
-            {reply, ok, State#state{tools = NewTools}};
-        false ->
-            {reply, {error, not_found}, State}
-    end;
-
-handle_call({delete_prompt, Name}, _From, State) ->
-    case maps:is_key(Name, State#state.prompts) of
-        true ->
-            NewPrompts = maps:remove(Name, State#state.prompts),
-            notify_list_changed(prompts, State),
-            {reply, ok, State#state{prompts = NewPrompts}};
-        false ->
-            {reply, {error, not_found}, State}
-    end;
 
 handle_call({subscribe_resource, Uri, Subscriber}, _From, State) ->
     NewSubscriptions = add_subscription(Uri, Subscriber, State#state.subscriptions),
@@ -959,49 +913,13 @@ encode_prompt_argument(#mcp_prompt_argument{} = Arg) ->
 maybe_add_field(Map, _Key, undefined) -> Map;
 maybe_add_field(Map, Key, Value) -> Map#{Key => Value}.
 
-%%====================================================================
-%% Annotation Helper Functions (Gap #22: Annotations Support)
-%%====================================================================
-
--spec encode_annotation(#mcp_annotation{}) -> map().
-encode_annotation(#mcp_annotation{name = Name, value = Value}) ->
-    #{Name => Value}.
-
--spec encode_annotations([#mcp_annotation{}]) -> map().
-encode_annotations([]) ->
-    #{};
-encode_annotations(Annotations) when is_list(Annotations) ->
-    lists:foldl(fun(Annotation, Acc) ->
-        maps:merge(Acc, encode_annotation(Annotation))
-    end, #{}, Annotations).
-
--spec maybe_add_annotations(map(), [#mcp_annotation{}]) -> map().
-maybe_add_annotations(Map, []) ->
-    Map;
-maybe_add_annotations(Map, Annotations) when is_list(Annotations), length(Annotations) > 0 ->
-    EncodedAnnotations = encode_annotations(Annotations),
-    Map#{?MCP_PARAM_ANNOTATIONS => EncodedAnnotations}.
-
 -spec encode_content_item(binary() | #mcp_content{}, #mcp_resource{}, binary()) -> map().
 encode_content_item(BinaryContent, Resource, Uri) when is_binary(BinaryContent) ->
     #{
         ?MCP_PARAM_URI => Uri,
         ?MCP_PARAM_MIME_TYPE => Resource#mcp_resource.mime_type,
         ?MCP_PARAM_TEXT => BinaryContent
-    };
-encode_content_item(#mcp_content{} = Content, _Resource, Uri) ->
-    Base = #{
-        ?MCP_PARAM_URI => Uri,
-        ?MCP_PARAM_TYPE => Content#mcp_content.type
-    },
-    %% Add text if present
-    Base1 = maybe_add_field(Base, ?MCP_PARAM_TEXT, Content#mcp_content.text),
-    %% Add data if present
-    Base2 = maybe_add_field(Base1, ?MCP_PARAM_DATA, Content#mcp_content.data),
-    %% Add mime type if present
-    Base3 = maybe_add_field(Base2, ?MCP_PARAM_MIME_TYPE, Content#mcp_content.mime_type),
-    %% Add annotations if present (Gap #22)
-    maybe_add_annotations(Base3, Content#mcp_content.annotations).
+    }.
 
 -spec normalize_tool_result(term()) -> [map()].
 normalize_tool_result(BinaryResult) when is_binary(BinaryResult) ->

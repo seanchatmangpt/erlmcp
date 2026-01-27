@@ -138,7 +138,7 @@ handle(Req, #{transport_id := TransportId} = State) ->
                     <<"POST">> ->
                         handle_post_request(Req, TransportId, State);
                     <<"DELETE">> ->
-                        handle_delete_session(Req, TransportId, State);
+                        erlmcp_http_delete_handler:handle_delete(Req, TransportId, State);
                     _ ->
                         ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
                         {ok, ReqReply, State}
@@ -445,42 +445,6 @@ get_allowed_origins() ->
             end
     end.
 
-%% @doc Handle DELETE request to terminate session
-%% @private
--spec handle_delete_session(term(), binary(), term()) -> {ok, term(), term()}.
-handle_delete_session(Req, _TransportId, State) ->
-    %% Extract session ID from header
-    SessionId = cowboy_req:header(<<"mcp-session-id">>, Req, undefined),
-
-    case SessionId of
-        undefined ->
-            %% No session ID provided
-            ReqReply = cowboy_req:reply(400, #{
-                <<"content-type">> => <<"application/json">>
-            }, jsx:encode(#{
-                <<"error">> => <<"Bad Request">>,
-                <<"message">> => <<"Missing MCP-Session-Id header">>
-            }), Req),
-            {ok, ReqReply, State};
-        _ ->
-            %% Validate and delete session
-            case erlmcp_session_manager:validate_session(SessionId) of
-                {ok, _SessionInfo} ->
-                    erlmcp_session_manager:delete_session(SessionId),
-                    ReqReply = cowboy_req:reply(204, #{}, Req),
-                    {ok, ReqReply, State};
-                {error, _Reason} ->
-                    %% Session not found or expired
-                    ReqReply = cowboy_req:reply(404, #{
-                        <<"content-type">> => <<"application/json">>
-                    }, jsx:encode(#{
-                        <<"error">> => <<"Not Found">>,
-                        <<"message">> => <<"Session not found or expired">>
-                    }), Req),
-                    {ok, ReqReply, State}
-            end
-    end.
-
 %% @doc Ensure value is binary
 %% @private
 -spec ensure_binary(term()) -> binary().
@@ -492,4 +456,46 @@ ensure_binary(A) when is_atom(A) ->
     atom_to_binary(A, utf8);
 ensure_binary(X) ->
     iolist_to_binary(io_lib:format("~p", [X])).
+
+%%====================================================================
+%% Retry Field Functions (Gap #29 - SSE Retry Field)
+%%====================================================================
+
+%% @doc Get retry timeout from configuration or return default
+%% Per MCP 2025-11-25 specification: default is 5000ms
+%% @private
+-spec get_retry_timeout() -> pos_integer().
+get_retry_timeout() ->
+    case application:get_env(erlmcp, sse) of
+        undefined ->
+            ?DEFAULT_RETRY_TIMEOUT;
+        {ok, SseConfig} ->
+            case proplists:get_value(retry_timeout, SseConfig) of
+                undefined ->
+                    ?DEFAULT_RETRY_TIMEOUT;
+                RetryMs when is_integer(RetryMs), RetryMs > 0 ->
+                    RetryMs;
+                _ ->
+                    ?DEFAULT_RETRY_TIMEOUT
+            end
+    end.
+
+%% @doc Format SSE retry field: "retry: N\n"
+%% Per SSE specification, retry field tells client to wait N milliseconds
+%% before attempting reconnection. (Gap #29)
+%% @private
+-spec format_retry_field(pos_integer()) -> binary().
+format_retry_field(RetryMs) when is_integer(RetryMs), RetryMs > 0 ->
+    RetryBin = integer_to_binary(RetryMs),
+    <<"retry: ", RetryBin/binary, "\n">>.
+
+%% @doc Format SSE close event with retry field (Gap #29)
+%% Sends close event with retry hint so client knows to reconnect
+%% Format: "event: close\ndata: {...}\nretry: N\n\n"
+%% @private
+-spec format_close_event_with_retry(pos_integer()) -> binary().
+format_close_event_with_retry(RetryMs) when is_integer(RetryMs), RetryMs > 0 ->
+    RetryBin = integer_to_binary(RetryMs),
+    <<"event: close\ndata: {\"status\":\"closed\"}\nretry: ",
+      RetryBin/binary, "\n\n">>.
 
