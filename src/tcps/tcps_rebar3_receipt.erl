@@ -20,6 +20,15 @@
 
 -export([init/1, do/1, format_error/1]).
 
+%% Test exports - internal functions exposed for testing
+-ifdef(TEST).
+-export([
+    generate_compilation_receipt/3,
+    generate_test_receipt/3,
+    store_receipt/1
+]).
+-endif.
+
 -define(PROVIDER, generate_receipt).
 -define(NAMESPACE, tcps).
 -define(DEPS, [compile]).

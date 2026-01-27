@@ -20,6 +20,14 @@
 
 -export([init/1, do/1, format_error/1]).
 
+%% Test exports - internal functions exposed for testing
+-ifdef(TEST).
+-export([
+    perform_shacl_validation/2,
+    generate_validation_receipt/2
+]).
+-endif.
+
 -define(PROVIDER, shacl_validate).
 -define(NAMESPACE, tcps).
 -define(DEPS, []).

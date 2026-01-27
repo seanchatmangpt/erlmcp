@@ -46,7 +46,15 @@
     get_state/0,
     get_metrics/0,
     snapshot_state/0,
-    restore_snapshot/1
+    restore_snapshot/1,
+    % Multi-scenario API for integration tests
+    start_scenario/2,
+    stop_scenario/1,
+    pause_scenario/1,
+    resume_scenario/1,
+    get_scenario_status/1,
+    get_metrics/1,
+    list_scenarios/0
 ]).
 
 %% gen_server callbacks
@@ -86,7 +94,10 @@
     timer_ref :: reference() | undefined,
     snapshots :: [tcps_simulator_state:snapshot()],
     metrics :: map(),
-    start_time :: erlang:timestamp() | undefined
+    start_time :: erlang:timestamp() | undefined,
+    % Multi-scenario support
+    scenarios :: map(), % scenario_id => scenario_info
+    next_scenario_id :: non_neg_integer()
 }).
 
 -type simulator_state() :: #simulator_state{}.
@@ -207,6 +218,62 @@ snapshot_state() ->
 restore_snapshot(Snapshot) ->
     gen_server:call(?MODULE, {restore_snapshot, Snapshot}).
 
+%%------------------------------------------------------------------------------
+%% @doc Start a new scenario with the given type and configuration.
+%% @end
+%%------------------------------------------------------------------------------
+-spec start_scenario(atom(), map()) -> {ok, binary()}.
+start_scenario(ScenarioType, Config) ->
+    gen_server:call(?MODULE, {start_scenario, ScenarioType, Config}).
+
+%%------------------------------------------------------------------------------
+%% @doc Stop a running scenario.
+%% @end
+%%------------------------------------------------------------------------------
+-spec stop_scenario(binary()) -> ok.
+stop_scenario(ScenarioId) ->
+    gen_server:call(?MODULE, {stop_scenario, ScenarioId}).
+
+%%------------------------------------------------------------------------------
+%% @doc Pause a running scenario.
+%% @end
+%%------------------------------------------------------------------------------
+-spec pause_scenario(binary()) -> ok.
+pause_scenario(ScenarioId) ->
+    gen_server:call(?MODULE, {pause_scenario, ScenarioId}).
+
+%%------------------------------------------------------------------------------
+%% @doc Resume a paused scenario.
+%% @end
+%%------------------------------------------------------------------------------
+-spec resume_scenario(binary()) -> ok.
+resume_scenario(ScenarioId) ->
+    gen_server:call(?MODULE, {resume_scenario, ScenarioId}).
+
+%%------------------------------------------------------------------------------
+%% @doc Get the status of a specific scenario.
+%% @end
+%%------------------------------------------------------------------------------
+-spec get_scenario_status(binary()) -> {ok, map()}.
+get_scenario_status(ScenarioId) ->
+    gen_server:call(?MODULE, {get_scenario_status, ScenarioId}).
+
+%%------------------------------------------------------------------------------
+%% @doc Get metrics for a specific scenario.
+%% @end
+%%------------------------------------------------------------------------------
+-spec get_metrics(binary()) -> {ok, map()}.
+get_metrics(ScenarioId) ->
+    gen_server:call(?MODULE, {get_metrics, ScenarioId}).
+
+%%------------------------------------------------------------------------------
+%% @doc List all running scenarios.
+%% @end
+%%------------------------------------------------------------------------------
+-spec list_scenarios() -> [map()].
+list_scenarios() ->
+    gen_server:call(?MODULE, list_scenarios).
+
 %%%=============================================================================
 %%% gen_server Callbacks
 %%%=============================================================================
@@ -233,7 +300,9 @@ init(_Config) ->
             andon_events => 0,
             receipts_generated => 0
         },
-        start_time = undefined
+        start_time = undefined,
+        scenarios = #{},
+        next_scenario_id = 1
     },
     {ok, State}.
 

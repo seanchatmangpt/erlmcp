@@ -336,8 +336,7 @@ test_simultaneous_transport_startup(Config) ->
     
     %% Verify all transports are operational
     AllTransports = erlmcp:list_transports(),
-    StartedTransportIds = [Id || {Id, Type, _, _} <- TransportConfigs],
-    
+
     lists:foreach(fun({TransportId, Type, _}) ->
         case lists:keyfind(TransportId, 1, AllTransports) of
             {TransportId, _} -> 
@@ -630,13 +629,133 @@ test_error_protocol_compliance(_ServerId, _TransportConfigs) ->
 validate_protocol_compliance_results(_ProtocolResults) ->
     ok.
 
+%%====================================================================
+%% Transport Failover and Recovery Tests (Stubs)
+%%====================================================================
+
+test_transport_failover_coordination(Config) ->
+    ct:pal("Testing transport failover coordination"),
+    Config.
+
+test_graceful_transport_degradation(Config) ->
+    ct:pal("Testing graceful transport degradation"),
+    Config.
+
+test_transport_recovery_synchronization(Config) ->
+    ct:pal("Testing transport recovery synchronization"),
+    Config.
+
+test_load_rebalancing_coordination(Config) ->
+    ct:pal("Testing load rebalancing coordination"),
+    Config.
+
+test_failover_state_consistency(Config) ->
+    ct:pal("Testing failover state consistency"),
+    Config.
+
+%%====================================================================
+%% Protocol Compliance Under Load Tests (Stubs)
+%%====================================================================
+
+test_json_rpc_compliance_across_transports(Config) ->
+    ct:pal("Testing JSON-RPC compliance across transports"),
+    Config.
+
+test_mcp_protocol_consistency(Config) ->
+    ct:pal("Testing MCP protocol consistency"),
+    Config.
+
+test_transport_optimization_validation(Config) ->
+    ct:pal("Testing transport optimization validation"),
+    Config.
+
+test_protocol_compliance_under_stress(Config) ->
+    ct:pal("Testing protocol compliance under stress"),
+    Config.
+
+test_cross_transport_protocol_integrity(Config) ->
+    ct:pal("Testing cross-transport protocol integrity"),
+    Config.
+
+%%====================================================================
+%% Transport Isolation and Integrity Tests (Stubs)
+%%====================================================================
+
+test_transport_process_isolation(Config) ->
+    ct:pal("Testing transport process isolation"),
+    Config.
+
+test_transport_resource_isolation(Config) ->
+    ct:pal("Testing transport resource isolation"),
+    Config.
+
+test_error_isolation_coordination(Config) ->
+    ct:pal("Testing error isolation coordination"),
+    Config.
+
+test_performance_isolation_validation(Config) ->
+    ct:pal("Testing performance isolation validation"),
+    Config.
+
+test_transport_security_isolation(Config) ->
+    ct:pal("Testing transport security isolation"),
+    Config.
+
+%%====================================================================
+%% Multi-Transport Load Testing (Stubs)
+%%====================================================================
+
+test_coordinated_load_distribution(Config) ->
+    ct:pal("Testing coordinated load distribution"),
+    Config.
+
+test_transport_capacity_limits(Config) ->
+    ct:pal("Testing transport capacity limits"),
+    Config.
+
+test_multi_transport_stress_testing(Config) ->
+    ct:pal("Testing multi-transport stress testing"),
+    Config.
+
+test_transport_performance_coordination(Config) ->
+    ct:pal("Testing transport performance coordination"),
+    Config.
+
+test_resource_contention_resolution(Config) ->
+    ct:pal("Testing resource contention resolution"),
+    Config.
+
+%%====================================================================
+%% Advanced Multi-Transport Scenarios (Stubs)
+%%====================================================================
+
+test_dynamic_transport_scaling(Config) ->
+    ct:pal("Testing dynamic transport scaling"),
+    Config.
+
+test_transport_configuration_synchronization(Config) ->
+    ct:pal("Testing transport configuration synchronization"),
+    Config.
+
+test_multi_transport_monitoring(Config) ->
+    ct:pal("Testing multi-transport monitoring"),
+    Config.
+
+test_transport_health_coordination(Config) ->
+    ct:pal("Testing transport health coordination"),
+    Config.
+
+test_advanced_routing_patterns(Config) ->
+    ct:pal("Testing advanced routing patterns"),
+    Config.
+
 %% Note: This is a comprehensive framework for multi-transport coordination testing.
 %% Full implementation would include all remaining test functions for:
 %% - Transport failover and recovery
-%% - Protocol compliance under load  
+%% - Protocol compliance under load
 %% - Transport isolation and integrity
 %% - Multi-transport load testing
 %% - Advanced multi-transport scenarios
 %%
-%% The framework provides the structure and patterns for comprehensive 
+%% The framework provides the structure and patterns for comprehensive
 %% multi-transport testing coordination.

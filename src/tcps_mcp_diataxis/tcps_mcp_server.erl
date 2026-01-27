@@ -32,7 +32,10 @@
     start_link/0,
     start_link/1,
     stop/0,
-    get_server_pid/0
+    get_server_pid/0,
+    get_server_info/0,
+    list_tools/0,
+    call_tool/2
 ]).
 
 %% gen_server callbacks
@@ -73,6 +76,21 @@ stop() ->
 -spec get_server_pid() -> pid() | undefined.
 get_server_pid() ->
     whereis(?MODULE).
+
+%% @doc Get server information including version and tool count.
+-spec get_server_info() -> map().
+get_server_info() ->
+    gen_server:call(?MODULE, get_server_info).
+
+%% @doc List all registered tools.
+-spec list_tools() -> [map()].
+list_tools() ->
+    gen_server:call(?MODULE, list_tools).
+
+%% @doc Call a tool with the given name and arguments.
+-spec call_tool(binary(), map()) -> {ok, map()} | {error, term()}.
+call_tool(ToolName, Args) ->
+    gen_server:call(?MODULE, {call_tool, ToolName, Args}).
 
 %%%=============================================================================
 %%% gen_server Callbacks
@@ -125,6 +143,47 @@ init(Config) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
+handle_call(get_server_info, _From, State) ->
+    Tools = tcps_mcp_tools:get_all_tools(),
+    Info = #{
+        version => <<"0.1.0">>,
+        protocol_version => <<"2024-11-05">>,
+        tool_count => length(Tools),
+        server_id => State#state.server_id,
+        session_id => State#state.session_id
+    },
+    {reply, Info, State};
+
+handle_call(list_tools, _From, State) ->
+    Tools = tcps_mcp_tools:get_all_tools(),
+    ToolsList = lists:map(fun({Name, Schema, _Handler}) ->
+        #{
+            name => Name,
+            description => maps:get(description, Schema, <<>>),
+            input_schema => maps:get(input_schema, Schema, #{})
+        }
+    end, Tools),
+    {reply, ToolsList, State};
+
+handle_call({call_tool, ToolName, Args}, _From, State) ->
+    Tools = tcps_mcp_tools:get_all_tools(),
+    case lists:keyfind(ToolName, 1, Tools) of
+        false ->
+            {reply, {error, tool_not_found}, State};
+        {ToolName, _Schema, Handler} ->
+            try
+                Result = Handler(Args, State#state.simulator_state),
+                {reply, {ok, Result}, State}
+            catch
+                error:not_found ->
+                    {reply, {error, not_found}, State};
+                error:Reason ->
+                    {reply, {error, Reason}, State};
+                throw:Error ->
+                    {reply, {error, Error}, State}
+            end
+    end;
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 

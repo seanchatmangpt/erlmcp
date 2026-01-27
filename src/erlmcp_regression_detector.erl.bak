@@ -24,7 +24,7 @@
 ]).
 
 -include_lib("kernel/include/logger.hrl").
--include_lib("opentelemetry_api/include/otel_tracer.hrl").
+-include_lib("opentelemetry/include/otel_tracer.hrl").
 
 -define(CONFIDENCE_LEVEL, 0.95).
 -define(ANOMALY_THRESHOLD, 2.5). % Standard deviations
