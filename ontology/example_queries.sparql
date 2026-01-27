@@ -1,0 +1,333 @@
+# TCPS Ontology - Example SPARQL Queries
+# Demonstrates querying the Toyota Code Production System ontology
+
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX tcps-core: <http://erlmcp.org/ontology/tcps/core#>
+PREFIX tcps-quality: <http://erlmcp.org/ontology/tcps/quality#>
+PREFIX tcps-flow: <http://erlmcp.org/ontology/tcps/flow#>
+
+###############################################################################
+# Query 1: Find all WorkOrders blocked by Andon events
+###############################################################################
+
+# SELECT ?workOrder ?andonId ?severity ?reason ?triggeredAt
+# WHERE {
+#     ?andon a tcps-core:AndonEvent ;
+#            tcps-core:andonId ?andonId ;
+#            tcps-core:severity ?severity ;
+#            tcps-core:reason ?reason ;
+#            tcps-core:triggeredAt ?triggeredAt ;
+#            tcps-core:isResolved false ;
+#            tcps-core:affectsWorkOrder ?workOrder .
+# }
+# ORDER BY DESC(?severity) ?triggeredAt
+
+###############################################################################
+# Query 2: Calculate WIP utilization across all stages
+###############################################################################
+
+# SELECT ?stage ?currentWIP ?maxWIP ?utilizationRate
+# WHERE {
+#     ?wipLimit a tcps-flow:WIPLimit ;
+#               tcps-flow:appliesTo ?stage ;
+#               tcps-flow:currentWIP ?currentWIP ;
+#               tcps-flow:maxWIP ?maxWIP ;
+#               tcps-flow:utilizationRate ?utilizationRate .
+#     ?stage tcps-core:stageName ?stageName .
+# }
+# ORDER BY DESC(?utilizationRate)
+
+###############################################################################
+# Query 3: Find Quality Gates with blocking status
+###############################################################################
+
+# SELECT ?gate ?gateName ?stage ?stageName ?isBlocking ?requiresApproval
+# WHERE {
+#     ?gate a tcps-quality:QualityGate ;
+#           tcps-quality:gateId ?gateId ;
+#           tcps-quality:gateName ?gateName ;
+#           tcps-quality:forStage ?stage ;
+#           tcps-quality:isBlocking ?isBlocking ;
+#           tcps-quality:requiresApproval ?requiresApproval .
+#     ?stage tcps-core:stageName ?stageName .
+#     FILTER(?isBlocking = true)
+# }
+# ORDER BY ?stageName
+
+###############################################################################
+# Query 4: List all Jidoka mechanisms by stage
+###############################################################################
+
+# SELECT ?jidoka ?jidokaName ?jidokaType ?stage ?stageName ?preventsPropagation
+# WHERE {
+#     ?jidoka a tcps-quality:Jidoka ;
+#             tcps-quality:jidokaId ?jidokaId ;
+#             tcps-quality:jidokaName ?jidokaName ;
+#             tcps-quality:jidokaType ?jidokaType ;
+#             tcps-quality:appliesToStage ?stage ;
+#             tcps-quality:preventsPropagation ?preventsPropagation .
+#     ?stage tcps-core:stageName ?stageName .
+# }
+# ORDER BY ?stageName ?jidokaType
+
+###############################################################################
+# Query 5: Find WorkOrders with low test coverage (quality metric)
+###############################################################################
+
+# SELECT ?workOrder ?metricValue ?targetValue ?stage
+# WHERE {
+#     ?metric a tcps-quality:QualityMetric ;
+#             tcps-quality:metricCategory "CODE_COVERAGE" ;
+#             tcps-quality:forWorkOrder ?workOrder ;
+#             tcps-quality:measuredValue ?metricValue ;
+#             tcps-quality:targetValue ?targetValue ;
+#             tcps-quality:atStage ?stage ;
+#             tcps-quality:meetsThreshold false .
+# }
+# ORDER BY ?metricValue
+
+###############################################################################
+# Query 6: Calculate Heijunka bucket allocation vs target
+###############################################################################
+
+# SELECT ?bucketName ?targetAllocation ?actualAllocation ?variance ?completedWorkOrders
+# WHERE {
+#     ?bucket a tcps-flow:HeijunkaBucket ;
+#             tcps-flow:bucketName ?bucketName ;
+#             tcps-flow:targetAllocation ?targetAllocation ;
+#             tcps-flow:actualAllocation ?actualAllocation ;
+#             tcps-flow:completedWorkOrders ?completedWorkOrders .
+#     BIND(?actualAllocation - ?targetAllocation AS ?variance)
+# }
+# ORDER BY DESC(ABS(?variance))
+
+###############################################################################
+# Query 7: Find SKUs with low inventory (below reorder point)
+###############################################################################
+
+# SELECT ?sku ?skuIdentifier ?inventoryLevel ?reorderPoint ?shortage
+# WHERE {
+#     ?sku a tcps-core:SKU ;
+#          tcps-core:skuIdentifier ?skuIdentifier ;
+#          tcps-core:inventoryLevel ?inventoryLevel ;
+#          tcps-core:reorderPoint ?reorderPoint .
+#     FILTER(?inventoryLevel < ?reorderPoint)
+#     BIND(?reorderPoint - ?inventoryLevel AS ?shortage)
+# }
+# ORDER BY DESC(?shortage)
+
+###############################################################################
+# Query 8: Track WorkOrder flow through stages with timestamps
+###############################################################################
+
+# SELECT ?workOrder ?stage ?completedAt ?metrics
+# WHERE {
+#     ?receipt a tcps-core:Receipt ;
+#              tcps-core:forWorkOrder ?workOrder ;
+#              tcps-core:atStage ?stage ;
+#              tcps-core:completedAt ?completedAt ;
+#              tcps-core:qualityStatus "PASSED" ;
+#              tcps-core:metrics ?metrics .
+#     ?stage tcps-core:stageName ?stageName .
+# }
+# ORDER BY ?workOrder ?completedAt
+
+###############################################################################
+# Query 9: Find Poka-Yoke mechanisms by effectiveness
+###############################################################################
+
+# SELECT ?pokaYoke ?pokaYokeName ?mechanism ?effectivenessScore ?stage
+# WHERE {
+#     ?pokaYoke a tcps-quality:PokaYoke ;
+#               tcps-quality:pokaYokeName ?pokaYokeName ;
+#               tcps-quality:mechanism ?mechanism ;
+#               tcps-quality:effectivenessScore ?effectivenessScore ;
+#               tcps-quality:enforcedAt ?stage .
+#     ?stage tcps-core:stageName ?stageName .
+# }
+# ORDER BY DESC(?effectivenessScore)
+
+###############################################################################
+# Query 10: Analyze pull signal response times
+###############################################################################
+
+# SELECT ?fromStage ?toStage ?avgResponseTime ?signalCount
+# WHERE {
+#     {
+#         SELECT ?fromStage ?toStage (AVG(?responseTime) AS ?avgResponseTime) (COUNT(?signal) AS ?signalCount)
+#         WHERE {
+#             ?signal a tcps-flow:PullSignal ;
+#                     tcps-flow:fromStage ?fromStage ;
+#                     tcps-flow:toStage ?toStage ;
+#                     tcps-flow:responseTime ?responseTime .
+#         }
+#         GROUP BY ?fromStage ?toStage
+#     }
+#     ?fromStage tcps-core:stageName ?fromStageName .
+#     ?toStage tcps-core:stageName ?toStageName .
+# }
+# ORDER BY DESC(?avgResponseTime)
+
+###############################################################################
+# Query 11: Find active Kanbans and their authorized WorkOrders
+###############################################################################
+
+# SELECT ?kanban ?kanbanId ?stage ?stageName ?workOrder ?activatedAt
+# WHERE {
+#     ?kanban a tcps-flow:Kanban ;
+#             tcps-flow:kanbanId ?kanbanId ;
+#             tcps-flow:controlsStage ?stage ;
+#             tcps-flow:kanbanStatus "ACTIVE" ;
+#             tcps-flow:authorizesWorkOrder ?workOrder ;
+#             tcps-flow:activatedAt ?activatedAt .
+#     ?stage tcps-core:stageName ?stageName .
+# }
+# ORDER BY ?stageName ?activatedAt
+
+###############################################################################
+# Query 12: Check if production meets takt time
+###############################################################################
+
+# SELECT ?sku ?skuIdentifier ?taktRate ?actualCycleTime ?meetsCustomerDemand
+# WHERE {
+#     ?taktTime a tcps-flow:TaktTime ;
+#               tcps-flow:forSKU ?sku ;
+#               tcps-flow:taktRate ?taktRate ;
+#               tcps-flow:actualCycleTime ?actualCycleTime ;
+#               tcps-flow:meetsCustomerDemand ?meetsCustomerDemand .
+#     ?sku tcps-core:skuIdentifier ?skuIdentifier .
+#     FILTER(?meetsCustomerDemand = false)
+# }
+# ORDER BY DESC(?actualCycleTime - ?taktRate)
+
+###############################################################################
+# Query 13: Find all unresolved Andon events with root cause analysis
+###############################################################################
+
+# SELECT ?andonId ?severity ?workOrder ?stage ?reason ?rootCause ?countermeasure ?triggeredAt
+# WHERE {
+#     ?andon a tcps-core:AndonEvent ;
+#            tcps-core:andonId ?andonId ;
+#            tcps-core:severity ?severity ;
+#            tcps-core:affectsWorkOrder ?workOrder ;
+#            tcps-core:affectsStage ?stage ;
+#            tcps-core:reason ?reason ;
+#            tcps-core:triggeredAt ?triggeredAt ;
+#            tcps-core:isResolved false .
+#     OPTIONAL { ?andon tcps-core:rootCause ?rootCause . }
+#     OPTIONAL { ?andon tcps-core:countermeasure ?countermeasure . }
+# }
+# ORDER BY ?severity ?triggeredAt
+
+###############################################################################
+# Query 14: Quality metrics summary by stage
+###############################################################################
+
+# SELECT ?stage ?stageName ?metricCategory (AVG(?measuredValue) AS ?avgValue) (COUNT(?metric) AS ?metricCount)
+# WHERE {
+#     ?metric a tcps-quality:QualityMetric ;
+#             tcps-quality:atStage ?stage ;
+#             tcps-quality:metricCategory ?metricCategory ;
+#             tcps-quality:measuredValue ?measuredValue .
+#     ?stage tcps-core:stageName ?stageName .
+# }
+# GROUP BY ?stage ?stageName ?metricCategory
+# ORDER BY ?stageName ?metricCategory
+
+###############################################################################
+# Query 15: Production stage chain (linked list traversal)
+###############################################################################
+
+# SELECT ?currentStage ?currentStageName ?nextStage ?nextStageName
+# WHERE {
+#     ?currentStage a tcps-core:ProductionStage ;
+#                   tcps-core:stageName ?currentStageName ;
+#                   tcps-core:nextStage ?nextStage .
+#     ?nextStage tcps-core:stageName ?nextStageName .
+# }
+# ORDER BY ?currentStageName
+
+###############################################################################
+# Query 16: Receipts with failed quality status
+###############################################################################
+
+# SELECT ?receipt ?workOrder ?stage ?completedAt ?qualityStatus ?metrics
+# WHERE {
+#     ?receipt a tcps-core:Receipt ;
+#              tcps-core:receiptId ?receiptId ;
+#              tcps-core:forWorkOrder ?workOrder ;
+#              tcps-core:atStage ?stage ;
+#              tcps-core:completedAt ?completedAt ;
+#              tcps-core:qualityStatus ?qualityStatus ;
+#              tcps-core:metrics ?metrics .
+#     FILTER(?qualityStatus != "PASSED")
+# }
+# ORDER BY ?completedAt
+
+###############################################################################
+# Query 17: WIP limit violations
+###############################################################################
+
+# SELECT ?stage ?stageName ?maxWIP ?currentWIP ?violationCount
+# WHERE {
+#     ?wipLimit a tcps-flow:WIPLimit ;
+#               tcps-flow:appliesTo ?stage ;
+#               tcps-flow:maxWIP ?maxWIP ;
+#               tcps-flow:currentWIP ?currentWIP ;
+#               tcps-flow:violationCount ?violationCount .
+#     ?stage tcps-core:stageName ?stageName .
+#     FILTER(?violationCount > 0)
+# }
+# ORDER BY DESC(?violationCount)
+
+###############################################################################
+# Query 18: High priority WorkOrders with upcoming due dates
+###############################################################################
+
+# SELECT ?workOrder ?workOrderId ?sku ?priority ?dueBy ?currentStage
+# WHERE {
+#     ?workOrder a tcps-core:WorkOrder ;
+#                tcps-core:workOrderId ?workOrderId ;
+#                tcps-core:produceSKU ?sku ;
+#                tcps-core:priority ?priority ;
+#                tcps-core:dueBy ?dueBy ;
+#                tcps-core:currentStage ?currentStage ;
+#                tcps-core:status "IN_PROGRESS" .
+#     FILTER(?priority = "HIGH")
+#     FILTER(?dueBy < NOW() + "P1D"^^xsd:duration) # Due within 1 day
+# }
+# ORDER BY ?dueBy
+
+###############################################################################
+# Query 19: Heijunka leveling compliance
+###############################################################################
+
+# SELECT ?heijunka ?planningPeriod ?totalCapacity
+#        (SUM(?bucket.allocatedWorkOrders) AS ?totalAllocated)
+# WHERE {
+#     ?heijunka a tcps-flow:Heijunka ;
+#               tcps-flow:heijunkaId ?heijunkaId ;
+#               tcps-flow:planningPeriod ?planningPeriod ;
+#               tcps-flow:totalCapacity ?totalCapacity ;
+#               tcps-flow:containsBucket ?bucket .
+#     ?bucket tcps-flow:allocatedWorkOrders ?allocatedWorkOrders .
+# }
+# GROUP BY ?heijunka ?planningPeriod ?totalCapacity
+
+###############################################################################
+# Query 20: Jidoka detection performance
+###############################################################################
+
+# SELECT ?jidoka ?jidokaName ?avgDetectionTime ?falsePositiveRate ?preventsPropagation
+# WHERE {
+#     ?jidoka a tcps-quality:Jidoka ;
+#             tcps-quality:jidokaName ?jidokaName ;
+#             tcps-quality:averageDetectionTime ?avgDetectionTime ;
+#             tcps-quality:falsePositiveRate ?falsePositiveRate ;
+#             tcps-quality:preventsPropagation ?preventsPropagation .
+#     FILTER(?preventsPropagation = true)
+# }
+# ORDER BY ?avgDetectionTime

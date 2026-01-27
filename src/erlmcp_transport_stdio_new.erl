@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 %% API exports
--export([start_link/2, send/2, close/1]).
+-export([start_link/2, send/2, close/1, get_info/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -33,6 +33,10 @@ send(Transport, Message) when is_pid(Transport) ->
 close(Transport) when is_pid(Transport) ->
     gen_server:stop(Transport).
 
+-spec get_info(pid()) -> {ok, map()} | {error, term()}.
+get_info(Transport) when is_pid(Transport) ->
+    gen_server:call(Transport, get_info).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -40,16 +44,19 @@ close(Transport) when is_pid(Transport) ->
 -spec init([atom() | map()]) -> {ok, state()}.
 init([TransportId, Config]) ->
     process_flag(trap_exit, true),
-    
+
     ServerId = maps:get(server_id, Config, undefined),
     TestMode = is_test_environment(),
-    
+
     State = #state{
         transport_id = TransportId,
         server_id = ServerId,
         test_mode = TestMode
     },
-    
+
+    % Register with registry if available (optional, for better integration)
+    register_with_registry_if_available(TransportId, self(), Config),
+
     % Only start the reader if we're not in test mode
     case TestMode of
         true ->
@@ -64,6 +71,19 @@ init([TransportId, Config]) ->
 -spec handle_call(term(), {pid(), term()}, state()) -> 
     {reply, term(), state()}.
 
+handle_call(get_info, _From, #state{transport_id = TransportId, server_id = ServerId, test_mode = TestMode} = State) ->
+    Info = #{
+        type => stdio,
+        status => case TestMode of
+            true -> test_mode;
+            false -> connected
+        end,
+        peer => standard_io,
+        transport_id => TransportId,
+        server_id => ServerId
+    },
+    {reply, {ok, Info}, State};
+
 handle_call(get_state, _From, State) ->
     {reply, {ok, State}, State};
 
@@ -72,18 +92,23 @@ handle_call({simulate_input, Line}, _From, #state{test_mode = true} = State) ->
     handle_message_from_stdin(Line, State),
     {reply, ok, State};
 
+handle_call({transport_call, Request}, _From, State) ->
+    % Handle transport-specific calls (extension point)
+    handle_transport_call_impl(Request, State);
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
-handle_cast({send, Message}, State) ->
+handle_cast({send, Message}, #state{transport_id = TransportId} = State) ->
     % Send message to stdout
     case send_to_stdout(Message) of
-        ok -> 
+        ok ->
             {noreply, State};
-        {error, Reason} -> 
-            logger:error("Failed to send to stdout: ~p", [Reason]),
+        {error, Reason} ->
+            logger:error("Transport ~p failed to send to stdout: ~p. Message: ~p",
+                       [TransportId, Reason, Message]),
             {noreply, State}
     end;
 
@@ -98,26 +123,28 @@ handle_info({line, Line}, State) ->
     {noreply, State};
 
 % Handle responses routed back from server via registry
-handle_info({mcp_response, _ServerId, Data}, State) ->
+handle_info({mcp_response, ServerId, Data}, #state{transport_id = TransportId} = State) ->
     case send_to_stdout(Data) of
-        ok -> 
+        ok ->
             {noreply, State};
-        {error, Reason} -> 
-            logger:error("Failed to send response to stdout: ~p", [Reason]),
+        {error, Reason} ->
+            logger:error("Transport ~p failed to send response from server ~p to stdout: ~p. Data: ~p",
+                       [TransportId, ServerId, Reason, Data]),
             {noreply, State}
     end;
 
-handle_info({'EXIT', Pid, Reason}, #state{reader = Pid} = State) ->
+handle_info({'EXIT', Pid, Reason}, #state{reader = Pid, transport_id = TransportId} = State) ->
     case Reason of
         normal ->
-            logger:info("Stdin reader finished normally"),
+            logger:info("Transport ~p: stdin reader finished normally", [TransportId]),
             {noreply, State#state{reader = undefined}};
         _ ->
-            logger:error("Stdin reader died: ~p", [Reason]),
+            logger:error("Transport ~p: stdin reader died with reason: ~p", [TransportId, Reason]),
             {stop, {reader_died, Reason}, State}
     end;
 
-handle_info(_Info, State) ->
+handle_info(Info, #state{transport_id = TransportId} = State) ->
+    logger:debug("Transport ~p received unexpected message: ~p", [TransportId, Info]),
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
@@ -141,10 +168,17 @@ code_change(_OldVsn, State, _Extra) ->
 handle_message_from_stdin(Line, #state{transport_id = TransportId, server_id = ServerId}) ->
     case ServerId of
         undefined ->
-            logger:warning("Transport ~p received message but no server bound", [TransportId]);
+            logger:warning("Transport ~p received message but no server bound. Message: ~p",
+                         [TransportId, Line]);
         _ ->
             % Route message to server via registry
-            erlmcp_registry:route_to_server(ServerId, TransportId, Line)
+            case erlmcp_registry:route_to_server(ServerId, TransportId, Line) of
+                ok ->
+                    ok;
+                {error, Reason} ->
+                    logger:error("Failed to route message from transport ~p to server ~p: ~p",
+                               [TransportId, ServerId, Reason])
+            end
     end,
     ok.
 
@@ -228,3 +262,32 @@ trim_end(Binary) ->
         _ ->
             Binary
     end.
+
+-spec register_with_registry_if_available(atom(), pid(), map()) -> ok.
+register_with_registry_if_available(TransportId, TransportPid, Config) ->
+    case whereis(erlmcp_registry) of
+        undefined ->
+            % Registry not running, skip registration (this is OK)
+            ok;
+        _ ->
+            % Registry available, register transport
+            TransportConfig = Config#{type => stdio},
+            case erlmcp_registry:register_transport(TransportId, TransportPid, TransportConfig) of
+                ok ->
+                    logger:debug("Transport ~p registered with registry", [TransportId]),
+                    ok;
+                {error, Reason} ->
+                    logger:warning("Transport ~p failed to register with registry: ~p",
+                                 [TransportId, Reason]),
+                    ok  % Continue anyway, registration is optional
+            end
+    end.
+
+-spec handle_transport_call_impl(term(), state()) ->
+    {reply, term(), state()} | {error, term()}.
+handle_transport_call_impl(get_reader_pid, #state{reader = Reader} = State) ->
+    {reply, {ok, Reader}, State};
+handle_transport_call_impl(get_test_mode, #state{test_mode = TestMode} = State) ->
+    {reply, {ok, TestMode}, State};
+handle_transport_call_impl(Request, State) ->
+    {reply, {error, {unsupported_request, Request}}, State}.

@@ -1,0 +1,154 @@
+#!/bin/bash
+#
+# TCPS Pre-Commit Hook - Local Quality Gate
+# Toyota Code Production System - Stop-the-Line Discipline
+#
+# Install: ln -s ../../ci/pre-commit .git/hooks/pre-commit
+#
+
+set -e  # Exit on any error (Jidoka)
+
+echo "========================================="
+echo "TCPS Pre-Commit Quality Gate"
+echo "========================================="
+
+ERRORS=0
+
+# ============================================================================
+# SHACL Validation
+# ============================================================================
+echo ""
+echo "🔍 [1/5] SHACL Validation..."
+
+if command -v python3 &> /dev/null; then
+    if [ -d "tests/shacl" ] && [ -f "tests/shacl/test_tcps_validation.py" ]; then
+        if python3 -m pytest tests/shacl/test_tcps_validation.py -q; then
+            echo "✅ SHACL validation passed"
+        else
+            echo "❌ ANDON: SHACL validation failed"
+            echo "   Fix ontology validation errors before committing"
+            ERRORS=$((ERRORS + 1))
+        fi
+    else
+        echo "⚠️  SHACL tests not found, skipping"
+    fi
+else
+    echo "⚠️  Python not found, skipping SHACL validation"
+fi
+
+# ============================================================================
+# Erlang Compilation
+# ============================================================================
+echo ""
+echo "🔨 [2/5] Compilation Check..."
+
+if command -v rebar3 &> /dev/null; then
+    if rebar3 compile 2>&1 | grep -q "ERROR"; then
+        echo "❌ ANDON: Compilation errors detected"
+        echo "   Fix compilation errors before committing"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo "✅ Compilation successful"
+    fi
+else
+    echo "⚠️  rebar3 not found, skipping compilation"
+fi
+
+# ============================================================================
+# Type Checking (Dialyzer)
+# ============================================================================
+echo ""
+echo "🔍 [3/5] Type Checking (Dialyzer)..."
+
+if command -v rebar3 &> /dev/null; then
+    # Only run dialyzer if PLT exists (takes too long otherwise)
+    if [ -f "_build/default/rebar3_*_plt" ] || [ -f "$HOME/.cache/rebar3/rebar3_*_plt" ]; then
+        if rebar3 dialyzer 2>&1 | grep -qE "Analysis failed|errors occurred"; then
+            echo "❌ ANDON: Type errors detected"
+            echo "   Fix type errors before committing"
+            ERRORS=$((ERRORS + 1))
+        else
+            echo "✅ Type checking passed"
+        fi
+    else
+        echo "⚠️  Dialyzer PLT not found, run 'rebar3 dialyzer' to build it"
+    fi
+else
+    echo "⚠️  rebar3 not found, skipping type checking"
+fi
+
+# ============================================================================
+# Unit Tests (Quick Smoke Test)
+# ============================================================================
+echo ""
+echo "🧪 [4/5] Unit Tests (Quick Check)..."
+
+if command -v rebar3 &> /dev/null; then
+    # Run a quick subset of tests (full tests run in CI)
+    if rebar3 as test eunit --verbose 2>&1 | grep -qE "FAILED|error"; then
+        echo "❌ ANDON: Tests failing"
+        echo "   Fix failing tests before committing"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo "✅ Tests passing"
+    fi
+else
+    echo "⚠️  rebar3 not found, skipping tests"
+fi
+
+# ============================================================================
+# Security Scan (Secrets Check)
+# ============================================================================
+echo ""
+echo "🔒 [5/5] Security Scan..."
+
+# Check for common secret patterns
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [ -n "$STAGED_FILES" ]; then
+    # Check for AWS keys
+    if echo "$STAGED_FILES" | xargs grep -HnE "AKIA[0-9A-Z]{16}" 2>/dev/null; then
+        echo "❌ ANDON: AWS access key detected"
+        ERRORS=$((ERRORS + 1))
+    fi
+
+    # Check for private keys
+    if echo "$STAGED_FILES" | xargs grep -lE "BEGIN (RSA |DSA |EC )?PRIVATE KEY" 2>/dev/null; then
+        echo "❌ ANDON: Private key detected"
+        ERRORS=$((ERRORS + 1))
+    fi
+
+    # Check for passwords in plain text
+    if echo "$STAGED_FILES" | xargs grep -HnE "(password|passwd|pwd)\s*=\s*['\"][^'\"]{8,}" 2>/dev/null; then
+        echo "⚠️  Possible hardcoded password detected"
+        echo "   Review before committing"
+    fi
+
+    if [ $ERRORS -eq 0 ]; then
+        echo "✅ No secrets detected"
+    fi
+else
+    echo "⚠️  No staged files to check"
+fi
+
+# ============================================================================
+# Summary
+# ============================================================================
+echo ""
+echo "========================================="
+
+if [ $ERRORS -gt 0 ]; then
+    echo "❌ COMMIT BLOCKED - ${ERRORS} quality gate(s) failed"
+    echo ""
+    echo "TCPS Quality Gates enforce stop-the-line discipline."
+    echo "Fix the errors above before committing."
+    echo ""
+    echo "To skip (emergency only):"
+    echo "  git commit --no-verify"
+    echo "========================================="
+    exit 1
+else
+    echo "✅ All quality gates passed"
+    echo "========================================="
+    exit 0
+fi

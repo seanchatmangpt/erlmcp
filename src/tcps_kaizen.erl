@@ -932,8 +932,8 @@ analyze_metric_trend(Metric, History) ->
     end,
 
     RateOfImprovement = case {WeeksSpanned, FirstVal} of
-        {0, _} -> 0.0;
-        {_, 0.0} -> 0.0;
+        {0, _} -> +0.0;
+        {_, +0.0} -> +0.0;
         {Weeks, Base} ->
             PercentChange = ((LastVal - Base) / Base) * 100.0,
             case BetterDirection of
@@ -1134,14 +1134,14 @@ calculate_metric_achievement(Metric, Current, Target) ->
             %% Otherwise, proportional
             if
                 Current =< Target -> 100.0;
-                Target =:= 0.0 -> 0.0;
+                Target =:= +0.0 -> +0.0;
                 true -> (Target / Current) * 100.0
             end;
         false ->
             %% Higher is better
             if
                 Current >= Target -> 100.0;
-                Target =:= 0.0 -> 0.0;
+                Target =:= +0.0 -> +0.0;
                 true -> (Current / Target) * 100.0
             end
     end,
@@ -1207,13 +1207,41 @@ get_test_name(_) ->
     <<"unknown">>.
 
 lookup_improvement(ImprovementId) ->
-    %% In production, look up from storage
-    %% For now, return error
-    {error, not_found}.
+    %% Look up improvement from ETS storage
+    case ets:whereis(kaizen_improvements) of
+        undefined ->
+            %% Table doesn't exist, create it
+            ets:new(kaizen_improvements, [named_table, public, set, {keypos, 1}]),
+            {error, not_found};
+        _ ->
+            %% Table exists, look up improvement
+            case ets:lookup(kaizen_improvements, ImprovementId) of
+                [{_, Improvement}] -> {ok, Improvement};
+                [] -> {error, not_found}
+            end
+    end.
 
 mark_improvement_applied(ImprovementId) ->
-    %% Mark in storage
-    ok.
+    %% Mark improvement as applied in ETS storage
+    case ets:whereis(kaizen_improvements) of
+        undefined ->
+            %% Table doesn't exist, create it
+            ets:new(kaizen_improvements, [named_table, public, set, {keypos, 1}]),
+            {error, not_found};
+        _ ->
+            %% Table exists, update improvement
+            case ets:lookup(kaizen_improvements, ImprovementId) of
+                [{_, Improvement}] ->
+                    Updated = Improvement#{
+                        applied => true,
+                        applied_at => calendar:universal_time()
+                    },
+                    true = ets:insert(kaizen_improvements, {ImprovementId, Updated}),
+                    {ok, Updated};
+                [] ->
+                    {error, not_found}
+            end
+    end.
 
 %%%=============================================================================
 %%% Internal Functions - Utilities
@@ -1289,7 +1317,7 @@ average(List) -> sum(List) / length(List).
 
 sum(List) -> lists:sum(List).
 
-percent_change(_Old, _New) when _Old =:= +0.0 -> +0.0;
+percent_change(Old, _New) when Old =:= +0.0 -> +0.0;
 percent_change(Old, New) ->
     ((New - Old) / Old) * 100.0.
 

@@ -4,7 +4,9 @@
         workspace-build workspace-test workspace-lint workspace-check workspace-clean workspace-release \
         check build \
         test-unit test-int test-perf test-quick test-verbose test-coverage \
-        test-runner test-analyze test-report test-debug
+        test-runner test-analyze test-report test-debug \
+        integration-tests integration-pipeline integration-andon integration-concurrent \
+        integration-quality integration-heijunka integration-persistence integration-performance
 
 SHELL := /bin/bash
 
@@ -80,6 +82,50 @@ test-int:
 	@echo "$(BLUE)Running integration tests...$(NC)"
 	rebar3 ct
 	@echo "$(GREEN)Integration tests complete!$(NC)"
+
+# ============================================================================
+# INTEGRATION TEST SUITES (TCPS)
+# ============================================================================
+
+integration-tests: integration-pipeline integration-andon integration-concurrent \
+                  integration-quality integration-heijunka integration-persistence \
+                  integration-performance
+	@echo "$(GREEN)✓ All TCPS integration tests passed!$(NC)"
+
+integration-pipeline:
+	@echo "$(BLUE)Running TCPS Pipeline Integration Tests...$(NC)"
+	rebar3 ct --suite=test/integration/tcps_pipeline_SUITE
+	@echo "$(GREEN)✓ Pipeline tests complete!$(NC)"
+
+integration-andon:
+	@echo "$(BLUE)Running TCPS Andon Integration Tests...$(NC)"
+	rebar3 ct --suite=test/integration/tcps_andon_integration_SUITE
+	@echo "$(GREEN)✓ Andon tests complete!$(NC)"
+
+integration-concurrent:
+	@echo "$(BLUE)Running TCPS Concurrent Operations Tests...$(NC)"
+	rebar3 ct --suite=test/integration/tcps_concurrent_SUITE
+	@echo "$(GREEN)✓ Concurrent tests complete!$(NC)"
+
+integration-quality:
+	@echo "$(BLUE)Running TCPS Quality Gates Tests...$(NC)"
+	rebar3 ct --suite=test/integration/tcps_quality_gates_SUITE
+	@echo "$(GREEN)✓ Quality gates tests complete!$(NC)"
+
+integration-heijunka:
+	@echo "$(BLUE)Running TCPS Heijunka Tests...$(NC)"
+	rebar3 ct --suite=test/integration/tcps_heijunka_SUITE
+	@echo "$(GREEN)✓ Heijunka tests complete!$(NC)"
+
+integration-persistence:
+	@echo "$(BLUE)Running TCPS Persistence Tests...$(NC)"
+	rebar3 ct --suite=test/integration/tcps_persistence_SUITE
+	@echo "$(GREEN)✓ Persistence tests complete!$(NC)"
+
+integration-performance:
+	@echo "$(BLUE)Running TCPS Performance Tests...$(NC)"
+	rebar3 ct --suite=test/integration/tcps_performance_SUITE
+	@echo "$(GREEN)✓ Performance tests complete!$(NC)"
 
 # Performance benchmarks (if enabled)
 test-perf:
@@ -317,6 +363,16 @@ help:
 	@echo "  make test-analyze     Analyze test results"
 	@echo "  make test-report      Show test report"
 	@echo "  make test-debug       Run with debug output"
+	@echo ""
+	@echo "$(GREEN)TCPS INTEGRATION TEST SUITES:$(NC)"
+	@echo "  make integration-tests        Run all TCPS integration tests"
+	@echo "  make integration-pipeline     Pipeline end-to-end tests"
+	@echo "  make integration-andon        Andon stop-the-line tests"
+	@echo "  make integration-concurrent   Concurrent operations tests"
+	@echo "  make integration-quality      Quality gates enforcement tests"
+	@echo "  make integration-heijunka     Production leveling tests"
+	@echo "  make integration-persistence  Data persistence tests"
+	@echo "  make integration-performance  Performance benchmarking tests"
 	@echo ""
 	@echo "$(GREEN)Code Quality:$(NC)"
 	@echo "  make lint             Run linting"

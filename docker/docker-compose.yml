@@ -1,0 +1,169 @@
+version: '3.8'
+
+services:
+  # Erlang MCP Server + TCPS
+  erlmcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.production
+    container_name: erlmcp-server
+    hostname: erlmcp
+    ports:
+      - "8080:8080"
+      - "9090:9090"  # Prometheus metrics
+    environment:
+      - ERLMCP_ENV=production
+      - ERLMCP_DB_HOST=postgres
+      - ERLMCP_DB_PORT=5432
+      - ERLMCP_DB_NAME=erlmcp
+      - ERLMCP_DB_USER=erlmcp
+      - ERLMCP_DB_PASSWORD=${ERLMCP_DB_PASSWORD:-changeme}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=erlmcp
+      - OTEL_RESOURCE_ATTRIBUTES=service.namespace=production,service.version=0.6.0
+    volumes:
+      - erlmcp-data:/var/lib/erlmcp
+      - erlmcp-logs:/var/log/erlmcp
+      - ./certs:/etc/erlmcp/certs:ro
+    networks:
+      - erlmcp-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["/opt/erlmcp/bin/erlmcp", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # TCPS Dashboard
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: erlmcp-dashboard
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - ERLMCP_API_URL=http://erlmcp:8080
+      - PORT=3000
+    networks:
+      - erlmcp-network
+    depends_on:
+      - erlmcp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: erlmcp-postgres
+    environment:
+      - POSTGRES_DB=erlmcp
+      - POSTGRES_USER=erlmcp
+      - POSTGRES_PASSWORD=${ERLMCP_DB_PASSWORD:-changeme}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - erlmcp-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: erlmcp-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Prometheus metrics
+      - "8889:8889"   # Prometheus exporter
+    networks:
+      - erlmcp-network
+    restart: unless-stopped
+
+  # Jaeger (Tracing UI)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: erlmcp-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # gRPC
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - erlmcp-network
+    restart: unless-stopped
+
+  # Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: erlmcp-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9091:9090"
+    networks:
+      - erlmcp-network
+    restart: unless-stopped
+
+  # Grafana (Visualization)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: erlmcp-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - erlmcp-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+networks:
+  erlmcp-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  erlmcp-data:
+    driver: local
+  erlmcp-logs:
+    driver: local
+  postgres-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

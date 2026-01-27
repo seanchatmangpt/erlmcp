@@ -1,0 +1,126 @@
+%% Development system configuration for ErlMCP
+%% Optimized for fast iteration, extensive logging, and easy debugging
+
+[
+    {erlmcp, [
+        %% Logging configuration - VERY VERBOSE for development
+        {log_level, debug},
+        {logger_level, debug},
+
+        %% Client defaults - permissive for testing
+        {client_defaults, #{
+            timeout => 10000,           % 10 second timeout for debugging
+            strict_mode => false,        % Allow lenient mode in dev
+            max_pending_requests => 500, % Higher limit for load testing
+            retry_attempts => 3,
+            retry_backoff_ms => 100
+        }},
+
+        %% Server defaults
+        {server_defaults, #{
+            max_subscriptions_per_resource => 5000,
+            max_progress_tokens => 50000,
+            enable_debug_endpoints => true
+        }},
+
+        %% Transport settings - all methods enabled
+        {transport_defaults, #{
+            tcp => #{
+                connect_timeout => 10000,
+                keepalive => true,
+                nodelay => true,
+                listen_backlog => 128
+            },
+            http => #{
+                connect_timeout => 10000,
+                request_timeout => 60000,    % Longer timeout in dev
+                max_connections => 500
+            },
+            stdio => #{
+                enabled => true
+            }
+        }},
+
+        %% Connection pooling
+        {connection_pooling, #{
+            enabled => true,
+            pool_size => 10,
+            max_overflow => 5,
+            pool_timeout => 5000
+        }},
+
+        %% Caching disabled in development
+        {cache_enabled, false},
+
+        %% Feature toggles
+        {features, #{
+            rate_limiting => false,
+            async_processing => false,
+            webhook_delivery => false,
+            experimental => true
+        }},
+
+        %% Development-specific options
+        {development, #{
+            enable_console_logging => true,
+            enable_file_logging => true,
+            enable_sql_logging => true,
+            enable_http_logging => true,
+            enable_profiling => true,
+            profile_dir => "profiles"
+        }}
+    ]},
+
+    {kernel, [
+        {logger_level, debug},
+        {logger, [
+            %% Console handler - ALL messages
+            {handler, default, logger_std_h, #{
+                config => #{
+                    type => standard_io,
+                    sync_mode_qlen => 10,      % Low queue, quick flushing
+                    drop_mode_qlen => 1000,
+                    flush_qlen => 2000
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", {mfa, ["N/A"]}, ":", line, " ", msg, "\n"],
+                    time_offset => "",
+                    time_designator => $T,
+                    single_line => false,
+                    max_size => 8192
+                }},
+                level => debug
+            }},
+
+            %% File handler - everything for analysis
+            {handler, file_dev, logger_std_h, #{
+                config => #{
+                    file => "logs/erlmcp-dev.log",
+                    max_no_bytes => 52428800,  %% 50 MB (generous for dev)
+                    max_no_files => 10,
+                    compress_on_rotate => false
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"]
+                }},
+                level => debug
+            }}
+        ]}
+    ]},
+
+    {sasl, [
+        {sasl_error_logger, false},
+        {errlog_type, all},
+        {error_logger_format_depth, 50}
+    ]},
+
+    %% Erlang runtime options
+    {erl_crash_dump, "erl_crash.dump"},
+
+    %% TCP settings
+    {inet, [
+        {tcp_listeners, [
+            #{port => 6000, opts => [binary, {packet, raw}, {reuseaddr, true}]}
+        ]}
+    ]}
+].

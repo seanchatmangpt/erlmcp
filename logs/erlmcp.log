@@ -1,0 +1,18 @@
+2026-01-26T17:34:54.768583-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: jsx. Started at: nonode@nohost.
+2026-01-26T17:34:54.771142-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: jesse. Started at: nonode@nohost.
+2026-01-26T17:34:54.771200-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: poolboy. Started at: nonode@nohost.
+2026-01-26T17:34:54.776320-08:00 [info] <0.541.0> : Starting MCP registry with gproc
+2026-01-26T17:34:54.776391-08:00 [info] <0.540.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_registry,pid=<0.541.0>.
+2026-01-26T17:34:54.777542-08:00 [info] <0.540.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_server_sup,pid=<0.542.0>.
+2026-01-26T17:34:54.778672-08:00 [info] <0.543.0> erlmcp_transport_sup:init/0:63 what: transport_supervisor_init
+2026-01-26T17:34:54.778739-08:00 [info] <0.540.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_transport_sup,pid=<0.543.0>.
+2026-01-26T17:34:54.778790-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: erlmcp. Started at: nonode@nohost.
+2026-01-26T21:51:00.120080-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: jsx. Started at: nonode@nohost.
+2026-01-26T21:51:00.120150-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: jesse. Started at: nonode@nohost.
+2026-01-26T21:51:00.120247-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: poolboy. Started at: nonode@nohost.
+2026-01-26T21:51:00.122120-08:00 [info] <0.555.0> : Starting MCP registry with gproc
+2026-01-26T21:51:00.122163-08:00 [info] <0.554.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_registry,pid=<0.555.0>.
+2026-01-26T21:51:00.122787-08:00 [info] <0.554.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_server_sup,pid=<0.556.0>.
+2026-01-26T21:51:00.123592-08:00 [info] <0.557.0> erlmcp_transport_sup:init/0:63 what: transport_supervisor_init
+2026-01-26T21:51:00.123629-08:00 [info] <0.554.0> supervisor:report_progress/3:2135 Supervisor: {local,erlmcp_sup}. Started: id=erlmcp_transport_sup,pid=<0.557.0>.
+2026-01-26T21:51:00.123694-08:00 [info] <0.45.0> application_controller:info_started/2:2113 Application: erlmcp. Started at: nonode@nohost.

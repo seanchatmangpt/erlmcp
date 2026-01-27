@@ -35,14 +35,9 @@
 
 -export_type([server_id/0, transport_id/0]).
 
-%% State record
+%% State record - significantly simplified with gproc
 -record(registry_state, {
-    servers = #{} :: #{server_id() => {pid(), server_config()}},
-    transports = #{} :: #{transport_id() => {pid(), transport_config()}},
-    server_transport_map = #{} :: #{transport_id() => server_id()},
-    capabilities = #{} :: #{server_id() => #mcp_server_capabilities{}},
-    monitors = #{} :: #{pid() => {server_id() | transport_id(), server | transport}},
-    monitor_refs = #{} :: #{pid() => reference()}  % Track monitor references
+    server_transport_map = #{} :: #{transport_id() => server_id()}
 }).
 
 -type state() :: #registry_state{}.
@@ -75,7 +70,9 @@ unregister_transport(TransportId) ->
 route_to_server(ServerId, TransportId, Message) ->
     gen_server:cast(?MODULE, {route_to_server, ServerId, TransportId, Message}).
 
--spec route_to_transport(transport_id(), server_id(), term()) -> ok | {error, term()}.
+-type transport_target() :: transport_id() | broadcast.
+
+-spec route_to_transport(transport_target(), server_id(), term()) -> ok | {error, term()}.
 route_to_transport(TransportId, ServerId, Message) ->
     gen_server:cast(?MODULE, {route_to_transport, TransportId, ServerId, Message}).
 
@@ -114,153 +111,143 @@ get_server_for_transport(TransportId) ->
 -spec init([]) -> {ok, state()}.
 init([]) ->
     process_flag(trap_exit, true),
-    logger:info("Starting MCP registry"),
+    logger:info("Starting MCP registry with gproc"),
     {ok, #registry_state{}}.
 
--spec handle_call(term(), {pid(), term()}, state()) -> 
+-spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
 
 handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
-    case maps:get(ServerId, State#registry_state.servers, undefined) of
+    % Use gproc to register the server
+    Key = {n, l, {mcp, server, ServerId}},
+    case gproc:where(Key) of
         undefined ->
-            MonitorRef = monitor(process, ServerPid),
-            Capabilities = maps:get(capabilities, Config, undefined),
-            
-            NewServers = maps:put(ServerId, {ServerPid, Config}, State#registry_state.servers),
-            NewCapabilities = case Capabilities of
-                undefined -> State#registry_state.capabilities;
-                _ -> maps:put(ServerId, Capabilities, State#registry_state.capabilities)
-            end,
-            NewMonitors = maps:put(ServerPid, {ServerId, server}, State#registry_state.monitors),
-            NewMonitorRefs = maps:put(ServerPid, MonitorRef, State#registry_state.monitor_refs),
-            
-            NewState = State#registry_state{
-                servers = NewServers,
-                capabilities = NewCapabilities,
-                monitors = NewMonitors,
-                monitor_refs = NewMonitorRefs
-            },
-            
-            logger:info("Registered server ~p with pid ~p", [ServerId, ServerPid]),
-            {reply, ok, NewState};
-        {ExistingPid, _} ->
+            % Register on behalf of the server process and monitor it
+            try
+                gproc:reg_other(Key, ServerPid, Config),
+                gproc:monitor(Key),
+                logger:info("Registered server ~p with pid ~p via gproc", [ServerId, ServerPid]),
+                {reply, ok, State}
+            catch
+                error:badarg ->
+                    % Already registered by another process
+                    logger:warning("Server ~p already registered", [ServerId]),
+                    {reply, {error, already_registered}, State}
+            end;
+        ExistingPid ->
             logger:warning("Server ~p already registered with pid ~p", [ServerId, ExistingPid]),
             {reply, {error, already_registered}, State}
     end;
 
 handle_call({register_transport, TransportId, TransportPid, Config}, _From, State) ->
-    case maps:get(TransportId, State#registry_state.transports, undefined) of
+    % Use gproc to register the transport
+    Key = {n, l, {mcp, transport, TransportId}},
+    case gproc:where(Key) of
         undefined ->
-            MonitorRef = monitor(process, TransportPid),
-            
-            NewTransports = maps:put(TransportId, {TransportPid, Config}, State#registry_state.transports),
-            NewMonitors = maps:put(TransportPid, {TransportId, transport}, State#registry_state.monitors),
-            NewMonitorRefs = maps:put(TransportPid, MonitorRef, State#registry_state.monitor_refs),
-            
-            NewState = State#registry_state{
-                transports = NewTransports,
-                monitors = NewMonitors,
-                monitor_refs = NewMonitorRefs
-            },
-            
-            % Auto-bind to server if specified in config
-            FinalState = case maps:get(server_id, Config, undefined) of
-                undefined -> NewState;
-                ServerId -> 
-                    NewMap = maps:put(TransportId, ServerId, NewState#registry_state.server_transport_map),
-                    NewState#registry_state{server_transport_map = NewMap}
-            end,
-            
-            logger:info("Registered transport ~p with pid ~p", [TransportId, TransportPid]),
-            {reply, ok, FinalState};
-        {ExistingPid, _} ->
+            try
+                gproc:reg_other(Key, TransportPid, Config),
+                gproc:monitor(Key),
+
+                % Auto-bind to server if specified in config
+                NewState = case maps:get(server_id, Config, undefined) of
+                    undefined ->
+                        State;
+                    ServerId ->
+                        NewMap = maps:put(TransportId, ServerId, State#registry_state.server_transport_map),
+                        State#registry_state{server_transport_map = NewMap}
+                end,
+
+                logger:info("Registered transport ~p with pid ~p via gproc", [TransportId, TransportPid]),
+                {reply, ok, NewState}
+            catch
+                error:badarg ->
+                    logger:warning("Transport ~p already registered", [TransportId]),
+                    {reply, {error, already_registered}, State}
+            end;
+        ExistingPid ->
             logger:warning("Transport ~p already registered with pid ~p", [TransportId, ExistingPid]),
             {reply, {error, already_registered}, State}
     end;
 
 handle_call({unregister_server, ServerId}, _From, State) ->
-    case maps:take(ServerId, State#registry_state.servers) of
-        {{ServerPid, _Config}, NewServers} ->
-            % Demonitor the process
-            case maps:get(ServerPid, State#registry_state.monitor_refs, undefined) of
-                undefined -> ok;
-                MonitorRef -> demonitor(MonitorRef, [flush])
+    Key = {n, l, {mcp, server, ServerId}},
+    case gproc:where(Key) of
+        undefined ->
+            {reply, ok, State};
+        Pid ->
+            % Unregister from gproc
+            try
+                gproc:unreg_other(Key, Pid)
+            catch
+                error:badarg -> ok  % Already unregistered
             end,
-            
-            % Remove from monitors
-            NewMonitors = maps:remove(ServerPid, State#registry_state.monitors),
-            NewMonitorRefs = maps:remove(ServerPid, State#registry_state.monitor_refs),
-            % Remove capabilities
-            NewCapabilities = maps:remove(ServerId, State#registry_state.capabilities),
+
             % Remove any transport bindings
-            NewTransportMap = maps:filter(fun(_, SId) -> SId =/= ServerId end, 
+            NewTransportMap = maps:filter(fun(_, SId) -> SId =/= ServerId end,
                                          State#registry_state.server_transport_map),
-            
-            NewState = State#registry_state{
-                servers = NewServers,
-                capabilities = NewCapabilities,
-                server_transport_map = NewTransportMap,
-                monitors = NewMonitors,
-                monitor_refs = NewMonitorRefs
-            },
-            
+
+            NewState = State#registry_state{server_transport_map = NewTransportMap},
             logger:info("Unregistered server ~p", [ServerId]),
-            {reply, ok, NewState};
-        error ->
-            {reply, ok, State}  % Already unregistered
+            {reply, ok, NewState}
     end;
 
 handle_call({unregister_transport, TransportId}, _From, State) ->
-    case maps:take(TransportId, State#registry_state.transports) of
-        {{TransportPid, _Config}, NewTransports} ->
-            % Demonitor the process
-            case maps:get(TransportPid, State#registry_state.monitor_refs, undefined) of
-                undefined -> ok;
-                MonitorRef -> demonitor(MonitorRef, [flush])
+    Key = {n, l, {mcp, transport, TransportId}},
+    case gproc:where(Key) of
+        undefined ->
+            {reply, ok, State};
+        Pid ->
+            % Unregister from gproc
+            try
+                gproc:unreg_other(Key, Pid)
+            catch
+                error:badarg -> ok  % Already unregistered
             end,
-            
-            % Remove from monitors
-            NewMonitors = maps:remove(TransportPid, State#registry_state.monitors),
-            NewMonitorRefs = maps:remove(TransportPid, State#registry_state.monitor_refs),
+
             % Remove binding
             NewTransportMap = maps:remove(TransportId, State#registry_state.server_transport_map),
-            
-            NewState = State#registry_state{
-                transports = NewTransports,
-                server_transport_map = NewTransportMap,
-                monitors = NewMonitors,
-                monitor_refs = NewMonitorRefs
-            },
-            
+            NewState = State#registry_state{server_transport_map = NewTransportMap},
             logger:info("Unregistered transport ~p", [TransportId]),
-            {reply, ok, NewState};
-        error ->
-            {reply, ok, State}  % Already unregistered
+            {reply, ok, NewState}
     end;
 
 handle_call({find_server, ServerId}, _From, State) ->
-    case maps:get(ServerId, State#registry_state.servers, undefined) of
-        undefined -> {reply, {error, not_found}, State};
-        ServerData -> {reply, {ok, ServerData}, State}
+    Key = {n, l, {mcp, server, ServerId}},
+    case gproc:where(Key) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        Pid ->
+            % Get the config from gproc's value
+            Config = gproc:get_value(Key, Pid),
+            {reply, {ok, {Pid, Config}}, State}
     end;
 
 handle_call({find_transport, TransportId}, _From, State) ->
-    case maps:get(TransportId, State#registry_state.transports, undefined) of
-        undefined -> {reply, {error, not_found}, State};
-        TransportData -> {reply, {ok, TransportData}, State}
+    Key = {n, l, {mcp, transport, TransportId}},
+    case gproc:where(Key) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        Pid ->
+            % Get the config from gproc's value
+            Config = gproc:get_value(Key, Pid),
+            {reply, {ok, {Pid, Config}}, State}
     end;
 
 handle_call(list_servers, _From, State) ->
-    {reply, maps:to_list(State#registry_state.servers), State};
+    % Query all registered servers from gproc
+    Servers = gproc:select([{{{n, l, {mcp, server, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]}]),
+    {reply, Servers, State};
 
 handle_call(list_transports, _From, State) ->
-    {reply, maps:to_list(State#registry_state.transports), State};
+    % Query all registered transports from gproc
+    Transports = gproc:select([{{{n, l, {mcp, transport, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]}]),
+    {reply, Transports, State};
 
 handle_call({bind_transport_to_server, TransportId, ServerId}, _From, State) ->
-    % Verify both exist
-    ServerExists = maps:is_key(ServerId, State#registry_state.servers),
-    TransportExists = maps:is_key(TransportId, State#registry_state.transports),
-    
+    % Verify both exist using gproc
+    ServerExists = gproc:where({n, l, {mcp, server, ServerId}}) =/= undefined,
+    TransportExists = gproc:where({n, l, {mcp, transport, TransportId}}) =/= undefined,
+
     case {ServerExists, TransportExists} of
         {true, true} ->
             NewMap = maps:put(TransportId, ServerId, State#registry_state.server_transport_map),
@@ -290,57 +277,63 @@ handle_call(_Request, _From, State) ->
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 
 handle_cast({route_to_server, ServerId, TransportId, Message}, State) ->
-    case get_server_pid(ServerId, State) of
-        {ok, ServerPid} ->
-            ServerPid ! {mcp_message, TransportId, Message},
-            {noreply, State};
-        {error, not_found} ->
+    case gproc:where({n, l, {mcp, server, ServerId}}) of
+        undefined ->
             logger:warning("Cannot route to server ~p: not found", [ServerId]),
+            {noreply, State};
+        ServerPid ->
+            ServerPid ! {mcp_message, TransportId, Message},
+            {noreply, State}
+    end;
+
+handle_cast({route_to_transport, broadcast, ServerId, Message}, State) ->
+    case transports_for_server(ServerId, State) of
+        [] ->
+            logger:warning("Cannot broadcast to transports for server ~p: none bound", [ServerId]),
+            {noreply, State};
+        TransportIds ->
+            lists:foreach(fun(TransportId) ->
+                send_to_transport(TransportId, ServerId, Message)
+            end, TransportIds),
             {noreply, State}
     end;
 
 handle_cast({route_to_transport, TransportId, ServerId, Message}, State) ->
-    case get_transport_pid(TransportId, State) of
-        {ok, TransportPid} ->
-            TransportPid ! {mcp_response, ServerId, Message},
-            {noreply, State};
-        {error, not_found} ->
-            logger:warning("Cannot route to transport ~p: not found", [TransportId]),
-            {noreply, State}
-    end;
+    send_to_transport(TransportId, ServerId, Message),
+    {noreply, State};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
--spec handle_info(term(), state()) -> 
+-spec handle_info(term(), state()) ->
     {noreply, state()}.
 
-handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
-    case maps:get(Pid, State#registry_state.monitors, undefined) of
-        {Id, server} ->
-            logger:warning("Server ~p (pid ~p) died: ~p", [Id, Pid, Reason]),
-            NewState = cleanup_server(Id, Pid, State),
-            {noreply, NewState};
-        {Id, transport} ->
-            logger:warning("Transport ~p (pid ~p) died: ~p", [Id, Pid, Reason]),
-            NewState = cleanup_transport(Id, Pid, State),
-            {noreply, NewState};
-        undefined ->
-            % Try to demonitor in case it's a stale reference
-            catch demonitor(MonitorRef, [flush]),
-            logger:warning("Unknown monitored process ~p died: ~p", [Pid, Reason]),
-            {noreply, State}
-    end;
+handle_info({gproc, unreg, _Ref, {n, l, {mcp, server, ServerId}}}, State) ->
+    % gproc notifies us when a server process dies
+    logger:warning("Server ~p unregistered (process died)", [ServerId]),
+
+    % Remove any transport bindings
+    NewTransportMap = maps:filter(fun(_, SId) -> SId =/= ServerId end,
+                                 State#registry_state.server_transport_map),
+
+    NewState = State#registry_state{server_transport_map = NewTransportMap},
+    {noreply, NewState};
+
+handle_info({gproc, unreg, _Ref, {n, l, {mcp, transport, TransportId}}}, State) ->
+    % gproc notifies us when a transport process dies
+    logger:warning("Transport ~p unregistered (process died)", [TransportId]),
+
+    % Remove binding
+    NewTransportMap = maps:remove(TransportId, State#registry_state.server_transport_map),
+    NewState = State#registry_state{server_transport_map = NewTransportMap},
+    {noreply, NewState};
 
 handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, State) ->
-    % Clean up all monitors
-    maps:foreach(fun(_Pid, MonitorRef) ->
-        catch demonitor(MonitorRef, [flush])
-    end, State#registry_state.monitor_refs),
+terminate(_Reason, _State) ->
+    % gproc handles cleanup automatically
     logger:info("MCP registry terminating"),
     ok.
 
@@ -349,64 +342,20 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%====================================================================
-%% Internal Functions
+%% Internal helper functions
 %%====================================================================
 
--spec get_server_pid(server_id(), state()) -> {ok, pid()} | {error, not_found}.
-get_server_pid(ServerId, State) ->
-    case maps:get(ServerId, State#registry_state.servers, undefined) of
-        undefined -> {error, not_found};
-        {ServerPid, _Config} -> {ok, ServerPid}
+-spec transports_for_server(server_id(), state()) -> [transport_id()].
+transports_for_server(ServerId, #registry_state{server_transport_map = Map}) ->
+    [TransportId || {TransportId, SId} <- maps:to_list(Map), SId =:= ServerId].
+
+-spec send_to_transport(transport_id(), server_id(), term()) -> ok.
+send_to_transport(TransportId, ServerId, Message) ->
+    case gproc:where({n, l, {mcp, transport, TransportId}}) of
+        undefined ->
+            logger:warning("Cannot route to transport ~p: not found", [TransportId]),
+            ok;
+        TransportPid ->
+            TransportPid ! {mcp_response, ServerId, Message},
+            ok
     end.
-
--spec get_transport_pid(transport_id(), state()) -> {ok, pid()} | {error, not_found}.
-get_transport_pid(TransportId, State) ->
-    case maps:get(TransportId, State#registry_state.transports, undefined) of
-        undefined -> {error, not_found};
-        {TransportPid, _Config} -> {ok, TransportPid}
-    end.
-
--spec cleanup_server(server_id(), pid(), state()) -> state().
-cleanup_server(ServerId, ServerPid, State) ->
-    % Demonitor if we have a reference
-    case maps:get(ServerPid, State#registry_state.monitor_refs, undefined) of
-        undefined -> ok;
-        MonitorRef -> catch demonitor(MonitorRef, [flush])
-    end,
-    
-    NewServers = maps:remove(ServerId, State#registry_state.servers),
-    NewCapabilities = maps:remove(ServerId, State#registry_state.capabilities),
-    NewMonitors = maps:remove(ServerPid, State#registry_state.monitors),
-    NewMonitorRefs = maps:remove(ServerPid, State#registry_state.monitor_refs),
-    
-    % Remove any transport bindings
-    NewTransportMap = maps:filter(fun(_, SId) -> SId =/= ServerId end,
-                                 State#registry_state.server_transport_map),
-    
-    State#registry_state{
-        servers = NewServers,
-        capabilities = NewCapabilities,
-        server_transport_map = NewTransportMap,
-        monitors = NewMonitors,
-        monitor_refs = NewMonitorRefs
-    }.
-
--spec cleanup_transport(transport_id(), pid(), state()) -> state().
-cleanup_transport(TransportId, TransportPid, State) ->
-    % Demonitor if we have a reference
-    case maps:get(TransportPid, State#registry_state.monitor_refs, undefined) of
-        undefined -> ok;
-        MonitorRef -> catch demonitor(MonitorRef, [flush])
-    end,
-    
-    NewTransports = maps:remove(TransportId, State#registry_state.transports),
-    NewTransportMap = maps:remove(TransportId, State#registry_state.server_transport_map),
-    NewMonitors = maps:remove(TransportPid, State#registry_state.monitors),
-    NewMonitorRefs = maps:remove(TransportPid, State#registry_state.monitor_refs),
-    
-    State#registry_state{
-        transports = NewTransports,
-        server_transport_map = NewTransportMap,
-        monitors = NewMonitors,
-        monitor_refs = NewMonitorRefs
-    }.

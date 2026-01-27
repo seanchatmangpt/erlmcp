@@ -1,0 +1,208 @@
+version: '3.8'
+
+# === TAIEA Docker Compose Configuration ===
+# Multi-service orchestration for TAIEA development and testing
+# Services: TAIEA (main), Postgres (optional), Redis (optional), Prometheus (monitoring)
+
+services:
+  # TAIEA: Main autonomic multi-agent application
+  taiea:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-01-26}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-1.0.0}
+    container_name: taiea
+    hostname: taiea
+    restart: unless-stopped
+    networks:
+      - taiea-network
+    ports:
+      - "${TAIEA_PORT:-8080}:8080"    # HTTP API
+      - "${EPMD_PORT:-4369}:4369"     # Erlang port mapper
+      - "${METRICS_PORT:-9100}:9100"  # Metrics/monitoring
+    environment:
+      # TAIEA Configuration
+      TAIEA_ENV: ${TAIEA_ENV:-production}
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-taiea_prod_cookie}
+      NODE_NAME: ${NODE_NAME:-taiea@taiea}
+
+      # Logging
+      LAGER_LEVEL: ${LAGER_LEVEL:-info}
+      LAGER_ERROR_LOGGER_HWND: true
+
+      # Performance tuning
+      ERL_MAX_PORTS: ${ERL_MAX_PORTS:-65536}
+      ERL_MAX_ETS_TABLES: ${ERL_MAX_ETS_TABLES:-20000}
+
+      # Memory allocation
+      ERL_FULLSWEEP_AFTER: ${ERL_FULLSWEEP_AFTER:-0}
+    volumes:
+      # Configuration
+      - ./config/sys.config:/opt/taiea/etc/sys.config:ro
+      - ./taiea/config/sys.config:/opt/taiea/etc/taiea.config:ro
+
+      # Logs and data persistence (optional)
+      - taiea-logs:/var/log/taiea
+      - taiea-data:/var/lib/taiea
+    healthcheck:
+      test: [CMD, "/opt/taiea/bin/taiea", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Development environment (optional)
+  taiea-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: taiea-dev
+    hostname: taiea-dev
+    networks:
+      - taiea-network
+    ports:
+      - "8081:8080"
+      - "4370:4369"
+      - "9101:9100"
+      - "9201:9200"
+    environment:
+      TAIEA_ENV: ${TAIEA_ENV:-development}
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-taiea_dev_cookie}
+      NODE_NAME: ${NODE_NAME:-taiea-dev@taiea-dev}
+      LAGER_LEVEL: debug
+    volumes:
+      # Mount workspace for live editing
+      - .:/workspace
+      - erlang-cache:/root/.cache
+    working_dir: /workspace
+    command: /bin/sh
+    stdin_open: true
+    tty: true
+    profiles:
+      - dev
+
+  # PostgreSQL (optional - uncomment to enable)
+  postgres:
+    image: postgres:16-alpine
+    container_name: taiea-postgres
+    hostname: postgres
+    restart: unless-stopped
+    networks:
+      - taiea-network
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-taiea}
+      POSTGRES_USER: ${DB_USER:-taiea}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-taiea_secure_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${DB_USER:-taiea}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - postgres
+
+  # Redis (optional - uncomment to enable)
+  redis:
+    image: redis:7-alpine
+    container_name: taiea-redis
+    hostname: redis
+    restart: unless-stopped
+    networks:
+      - taiea-network
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - redis
+
+  # Prometheus (monitoring - optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: taiea-prometheus
+    hostname: prometheus
+    restart: unless-stopped
+    networks:
+      - taiea-network
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    profiles:
+      - monitoring
+
+  # Grafana (visualization - optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: taiea-grafana
+    hostname: grafana
+    restart: unless-stopped
+    networks:
+      - taiea-network
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+networks:
+  taiea-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+volumes:
+  # TAIEA
+  taiea-logs:
+    driver: local
+  taiea-data:
+    driver: local
+  erlang-cache:
+    driver: local
+
+  # Database
+  postgres-data:
+    driver: local
+
+  # Cache
+  redis-data:
+    driver: local
+
+  # Monitoring
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

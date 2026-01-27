@@ -1,0 +1,178 @@
+{
+  "security_work_orders": [
+    {
+      "id": "wo-sec-001",
+      "title": "Fix CVE-2024-1234 SQL Injection Vulnerability",
+      "bucket": "security",
+      "priority": "critical",
+      "estimated_effort": 8,
+      "labels": ["security", "cve", "sql-injection"],
+      "source": "cve_advisory",
+      "metadata": {
+        "cve_id": "CVE-2024-1234",
+        "severity": "critical",
+        "cvss_score": 9.8,
+        "affected_versions": ["1.0.0", "1.1.0", "1.2.0"],
+        "reporter": "security-team"
+      }
+    },
+    {
+      "id": "wo-sec-002",
+      "title": "Upgrade OpenSSL to 3.0.12 (CVE-2024-5678)",
+      "bucket": "security",
+      "priority": "high",
+      "estimated_effort": 5,
+      "labels": ["security", "dependency-upgrade", "openssl"],
+      "source": "cve_advisory",
+      "metadata": {
+        "cve_id": "CVE-2024-5678",
+        "severity": "high",
+        "cvss_score": 7.5,
+        "affected_component": "openssl",
+        "target_version": "3.0.12"
+      }
+    },
+    {
+      "id": "wo-sec-003",
+      "title": "Implement rate limiting for API endpoints",
+      "bucket": "security",
+      "priority": "medium",
+      "estimated_effort": 13,
+      "labels": ["security", "api", "rate-limiting"],
+      "source": "security_audit",
+      "metadata": {
+        "audit_finding": "SEC-2024-015",
+        "endpoints_affected": 24,
+        "recommended_limits": "100 req/min per IP"
+      }
+    }
+  ],
+  "reliability_work_orders": [
+    {
+      "id": "wo-rel-001",
+      "title": "Fix memory leak in connection pool",
+      "bucket": "reliability",
+      "priority": "high",
+      "estimated_effort": 8,
+      "labels": ["reliability", "memory-leak", "bug"],
+      "source": "github_issue",
+      "metadata": {
+        "issue_number": 4567,
+        "repo": "erlmcp",
+        "reported_by": "user123",
+        "symptoms": "Memory usage grows unbounded under high load"
+      }
+    },
+    {
+      "id": "wo-rel-002",
+      "title": "Add circuit breaker to external API calls",
+      "bucket": "reliability",
+      "priority": "medium",
+      "estimated_effort": 5,
+      "labels": ["reliability", "resilience", "circuit-breaker"],
+      "source": "architecture_review",
+      "metadata": {
+        "failure_threshold": 5,
+        "timeout_ms": 5000,
+        "affected_services": ["github-api", "marketplace-api"]
+      }
+    }
+  ],
+  "cost_work_orders": [
+    {
+      "id": "wo-cost-001",
+      "title": "Optimize database query performance",
+      "bucket": "cost",
+      "priority": "medium",
+      "estimated_effort": 8,
+      "labels": ["cost", "performance", "database"],
+      "source": "performance_monitoring",
+      "metadata": {
+        "slow_queries": 15,
+        "avg_query_time_ms": 2500,
+        "target_time_ms": 500,
+        "cost_impact": "high"
+      }
+    },
+    {
+      "id": "wo-cost-002",
+      "title": "Implement caching layer for static resources",
+      "bucket": "cost",
+      "priority": "low",
+      "estimated_effort": 5,
+      "labels": ["cost", "caching", "optimization"],
+      "source": "cost_analysis",
+      "metadata": {
+        "potential_savings": "40% bandwidth reduction",
+        "cache_strategy": "CDN + Redis",
+        "estimated_cost_savings_monthly": 1200
+      }
+    }
+  ],
+  "compliance_work_orders": [
+    {
+      "id": "wo-comp-001",
+      "title": "Add audit logging for data access",
+      "bucket": "compliance",
+      "priority": "high",
+      "estimated_effort": 13,
+      "labels": ["compliance", "audit", "logging"],
+      "source": "compliance_audit",
+      "metadata": {
+        "regulation": "GDPR",
+        "requirement": "Article 30 - Records of processing",
+        "audit_id": "AUDIT-2024-Q1",
+        "deadline": "2024-06-30"
+      }
+    },
+    {
+      "id": "wo-comp-002",
+      "title": "Implement data retention policies",
+      "bucket": "compliance",
+      "priority": "medium",
+      "estimated_effort": 8,
+      "labels": ["compliance", "data-retention", "gdpr"],
+      "source": "compliance_audit",
+      "metadata": {
+        "regulation": "GDPR",
+        "requirement": "Article 5 - Storage limitation",
+        "retention_periods": {
+          "user_data": "2 years",
+          "logs": "1 year",
+          "backups": "30 days"
+        }
+      }
+    }
+  ],
+  "feature_work_orders": [
+    {
+      "id": "wo-feat-001",
+      "title": "Add GraphQL API endpoint",
+      "bucket": "reliability",
+      "priority": "medium",
+      "estimated_effort": 21,
+      "labels": ["feature", "api", "graphql"],
+      "source": "marketplace_feature",
+      "metadata": {
+        "feature_request_id": "FR-2024-042",
+        "upvotes": 156,
+        "customer_demand": "high",
+        "api_endpoints": 8
+      }
+    },
+    {
+      "id": "wo-feat-002",
+      "title": "Implement WebSocket support for real-time updates",
+      "bucket": "reliability",
+      "priority": "low",
+      "estimated_effort": 13,
+      "labels": ["feature", "websocket", "real-time"],
+      "source": "marketplace_feature",
+      "metadata": {
+        "feature_request_id": "FR-2024-089",
+        "upvotes": 89,
+        "use_cases": ["live dashboard", "chat", "notifications"]
+      }
+    }
+  ]
+}

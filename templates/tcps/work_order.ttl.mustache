@@ -1,0 +1,65 @@
+{{!
+  TCPS Work Order Template (RDF/Turtle Format)
+
+  This template creates new WorkOrder RDF instances for pull-based production.
+  Work orders are the pull signal that triggers SKU generation.
+
+  Context Variables (required):
+    - work_order_id: string - Unique work order ID (e.g., "wo-2026-001")
+    - demand_signal: string - Source of demand (e.g., "marketplace", "internal", "security")
+    - bucket: string - Heijunka bucket (e.g., "reliability", "security", "cost", "compliance")
+    - priority: string - Priority level ("critical", "high", "medium", "low")
+    - created_by: string - Creator identifier (e.g., "mcp-agent-orchestrator")
+    - created_at: string - ISO 8601 timestamp
+    - sku_id: string - Target SKU identifier
+    - target_completion: string - Target completion timestamp (optional)
+    - description: string - Human-readable description (optional)
+    - dependencies: array - List of work order IDs this depends on (optional)
+
+  Namespaces:
+    - tcps: http://erlmcp.dev/ontology/tcps#
+    - xsd: http://www.w3.org/2001/XMLSchema#
+    - dcterms: http://purl.org/dc/terms/
+
+  Usage:
+    Context = #{
+        work_order_id => <<"wo-2026-001">>,
+        demand_signal => <<"marketplace">>,
+        bucket => <<"reliability">>,
+        priority => <<"high">>,
+        created_by => <<"mcp-orchestrator">>,
+        created_at => <<"2026-01-26T17:30:00Z">>,
+        sku_id => <<"erlmcp-http-transport-v1.0.0">>,
+        target_completion => <<"2026-01-27T12:00:00Z">>,
+        description => <<"Implement HTTP transport for MCP">>,
+        dependencies => [<<"wo-2026-000">>]
+    }.
+}}
+@prefix tcps: <http://erlmcp.dev/ontology/tcps#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+tcps:{{work_order_id}} a tcps:WorkOrder ;
+    dcterms:identifier "{{work_order_id}}" ;
+    tcps:demandSignal "{{demand_signal}}" ;
+    tcps:heijunkaBucket "{{bucket}}" ;
+    tcps:priority "{{priority}}" ;
+    tcps:createdBy "{{created_by}}" ;
+    tcps:createdAt "{{created_at}}"^^xsd:dateTime ;
+    tcps:targetSKU tcps:{{sku_id}} ;
+    tcps:status "pending" ;
+{{#target_completion}}
+    tcps:targetCompletion "{{target_completion}}"^^xsd:dateTime ;
+{{/target_completion}}
+{{#description}}
+    rdfs:comment "{{description}}" ;
+{{/description}}
+{{#dependencies}}
+    tcps:dependsOn tcps:{{.}} ;
+{{/dependencies}}
+    tcps:wip_limit_compliant true .
+
+# Automatically generated on {{created_at}}
+# Template version: 1.0.0
+# Schema: https://erlmcp.dev/schemas/tcps/work-order-v1.ttl

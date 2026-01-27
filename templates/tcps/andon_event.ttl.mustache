@@ -1,0 +1,77 @@
+{{!
+  TCPS Andon Event Template (RDF/Turtle Format)
+
+  This template creates Andon "stop-the-line" event records when abnormalities are detected.
+  Andon events trigger 5 Whys root cause analysis and block releases until resolved.
+
+  Context Variables (required):
+    - andon_id: string - Unique Andon event ID (e.g., "andon-2026-001")
+    - failure_reason: string - Short description of failure
+    - affected_sku: string - SKU identifier that failed
+    - severity: string - Severity level ("critical", "major", "minor")
+    - timestamp: string - ISO 8601 timestamp when detected
+    - detected_by: string - Stage or tool that detected failure
+    - stage_name: string - Production stage where failure occurred
+    - work_order_id: string - Associated work order (optional)
+    - error_details: string - Detailed error message/stack trace
+    - five_whys: array - Array of why/answer pairs for root cause (optional)
+    - remediation_status: string - Status ("pending", "in_progress", "resolved")
+    - remediation_plan: string - Description of fix (optional)
+    - spec_delta_required: boolean - Whether ontology/spec changes needed
+    - test_delta_required: boolean - Whether test changes needed
+
+  5 Whys Structure:
+    five_whys = [
+        #{why => "Why did X fail?", answer => "Because Y"},
+        #{why => "Why did Y happen?", answer => "Because Z"},
+        ...
+    ]
+}}
+@prefix tcps: <http://erlmcp.dev/ontology/tcps#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+tcps:{{andon_id}} a tcps:AndonEvent ;
+    dcterms:identifier "{{andon_id}}" ;
+    tcps:failureReason "{{failure_reason}}" ;
+    tcps:affectedSKU tcps:{{affected_sku}} ;
+    tcps:severity "{{severity}}" ;
+    tcps:timestamp "{{timestamp}}"^^xsd:dateTime ;
+    tcps:detectedBy "{{detected_by}}" ;
+    tcps:productionStage "{{stage_name}}" ;
+{{#work_order_id}}
+    tcps:workOrder tcps:{{work_order_id}} ;
+{{/work_order_id}}
+    tcps:remediationStatus "{{remediation_status}}" ;
+    tcps:specDeltaRequired {{#spec_delta_required}}true{{/spec_delta_required}}{{^spec_delta_required}}false{{/spec_delta_required}} ;
+    tcps:testDeltaRequired {{#test_delta_required}}true{{/test_delta_required}}{{^test_delta_required}}false{{/test_delta_required}} ;
+    tcps:errorDetails """{{error_details}}""" ;
+{{#remediation_plan}}
+    tcps:remediationPlan """{{remediation_plan}}""" ;
+{{/remediation_plan}}
+    tcps:lineStatus "stopped" .
+
+{{#five_whys}}
+# 5 Whys Root Cause Analysis
+{{#five_whys}}
+tcps:{{andon_id}}_why{{-index}} a tcps:WhyAnalysis ;
+    tcps:questionNumber {{-index}} ;
+    tcps:question "{{why}}" ;
+    tcps:answer "{{answer}}" ;
+    tcps:parentAndon tcps:{{andon_id}} .
+
+{{/five_whys}}
+{{/five_whys}}
+
+# Quarantine Record
+tcps:{{andon_id}}_quarantine a tcps:Quarantine ;
+    tcps:quarantinedSKU tcps:{{affected_sku}} ;
+    tcps:quarantineReason tcps:{{andon_id}} ;
+    tcps:quarantineStart "{{timestamp}}"^^xsd:dateTime ;
+    tcps:releaseBlocked true .
+
+# Automatically generated on {{timestamp}}
+# Template version: 1.0.0
+# Schema: https://erlmcp.dev/schemas/tcps/andon-event-v1.ttl
+# CRITICAL: This event STOPS THE LINE. No releases until resolved.

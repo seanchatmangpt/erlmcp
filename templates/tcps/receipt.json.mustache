@@ -1,0 +1,59 @@
+{{!
+  TCPS Receipt Template (JSON Format)
+
+  This template generates deterministic Receipt JSON artifacts from TCPS ontology data.
+  Receipts serve as proof-of-work evidence for each production stage.
+
+  Context Variables (required):
+    - stage_name: string - Name of the production stage (e.g., "build", "test", "validate")
+    - timestamp: string - ISO 8601 timestamp (e.g., "2026-01-26T17:30:00Z")
+    - status: string - Status of the stage ("passed", "failed", "skipped")
+    - sku_id: string - SKU identifier (e.g., "erlmcp-transport-http-v1.0.0")
+    - evidence_data: object - Stage-specific evidence payload
+    - checksum: string - SHA256 checksum of artifacts (optional, defaults to empty)
+    - duration_ms: number - Duration in milliseconds (optional, defaults to 0)
+    - work_order_id: string - Work order reference (optional)
+    - environment: string - Build environment (optional, defaults to "production")
+
+  Usage (Erlang with bbmustache):
+    Context = #{
+        stage_name => <<"build">>,
+        timestamp => <<"2026-01-26T17:30:00Z">>,
+        status => <<"passed">>,
+        sku_id => <<"erlmcp-v1.0.0">>,
+        evidence_data => #{
+            compiler => <<"erlc 25.3">>,
+            warnings => 0,
+            modules => 42
+        },
+        checksum => <<"abc123...">>,
+        duration_ms => 1234,
+        work_order_id => <<"wo-2026-001">>,
+        environment => <<"production">>
+    },
+    {ok, Template} = file:read_file("templates/tcps/receipt.json.mustache"),
+    bbmustache:render(Template, Context).
+
+  Determinism Notes:
+    - Always sort object keys alphabetically
+    - Use consistent timestamp format (ISO 8601 UTC)
+    - Encode binary data as base64 or hex consistently
+    - Version this template alongside ontology schema
+}}
+{
+  "receipt_version": "1.0.0",
+  "stage_name": "{{stage_name}}",
+  "timestamp": "{{timestamp}}",
+  "status": "{{status}}",
+  "sku_id": "{{sku_id}}",
+  "work_order_id": "{{#work_order_id}}{{work_order_id}}{{/work_order_id}}{{^work_order_id}}null{{/work_order_id}}",
+  "environment": "{{#environment}}{{environment}}{{/environment}}{{^environment}}production{{/environment}}",
+  "duration_ms": {{#duration_ms}}{{duration_ms}}{{/duration_ms}}{{^duration_ms}}0{{/duration_ms}},
+  "checksum": "{{#checksum}}{{checksum}}{{/checksum}}{{^checksum}}{{/checksum}}",
+  "evidence": {{{evidence_data}}},
+  "metadata": {
+    "generated_by": "erlmcp_tcps_generator",
+    "template_version": "1.0.0",
+    "schema": "https://erlmcp.dev/schemas/tcps/receipt-v1.json"
+  }
+}

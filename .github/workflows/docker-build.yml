@@ -1,0 +1,305 @@
+name: Docker Build & Push
+
+# Trigger on commits, tags, and pull requests
+on:
+  push:
+    branches:
+      - main
+      - master
+      - 'release/**'
+      - 'docker/**'
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'docker-*'
+  pull_request:
+    branches:
+      - main
+      - master
+    paths:
+      - 'Dockerfile*'
+      - '.github/workflows/docker-build.yml'
+      - 'docker-compose.yml'
+      - 'taiea/**'
+      - 'src/**'
+      - 'rebar.config'
+      - '.dockerignore'
+
+env:
+  REGISTRY_GCR: gcr.io
+  REGISTRY_DOCKER: docker.io
+  IMAGE_NAME: taiea
+  # GitHub Container Registry
+  REGISTRY_GHCR: ghcr.io
+
+jobs:
+  # Metadata extraction and image preparation
+  prepare:
+    name: Prepare Build Metadata
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tags: ${{ steps.meta.outputs.tags }}
+      labels: ${{ steps.meta.outputs.labels }}
+      image-name: ${{ steps.image.outputs.name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate version
+        id: version
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "1.0.0-$(git rev-parse --short HEAD)")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
+      - name: Set image name
+        id: image
+        run: |
+          if [ "${{ secrets.GCP_PROJECT }}" != "" ]; then
+            NAME="${{ env.REGISTRY_GCR }}/${{ secrets.GCP_PROJECT }}/${{ env.IMAGE_NAME }}"
+          else
+            NAME="${{ env.REGISTRY_GHCR }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}"
+          fi
+          echo "name=${NAME}" >> $GITHUB_OUTPUT
+          echo "Image: ${NAME}"
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.description=TAIEA Erlang/OTP multi-agent autonomic system
+            org.opencontainers.image.vendor=TAI Autonomics
+
+  # Build and test Docker image
+  build:
+    name: Build & Test Docker Image
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write  # For OIDC token
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: latest
+          buildkitd-flags: --allow-insecure-entitlement security.insecure
+
+      - name: Build test image (amd64)
+        if: matrix.platform == 'linux/amd64'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          push: false
+          outputs: type=docker,dest=/tmp/image.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load test image
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          docker load --input /tmp/image.tar
+
+      - name: Test image structure
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
+          echo "Testing image: ${IMAGE}"
+
+          # Verify TAIEA binary exists
+          docker run --rm ${IMAGE} ls -la /opt/taiea/bin/taiea
+
+          # Check release directory
+          docker run --rm ${IMAGE} find /opt/taiea -type f -name "*.beam" | wc -l
+
+          # Verify non-root user
+          docker run --rm ${IMAGE} id | grep -q taiea
+
+          # Check health check is defined
+          docker inspect ${IMAGE} | grep -i health
+
+      - name: Scan image for vulnerabilities
+        if: matrix.platform == 'linux/amd64'
+        continue-on-error: true
+        run: |
+          # Install trivy
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/trivy.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+          # Scan for vulnerabilities
+          trivy image --exit-code 0 --severity HIGH,CRITICAL \
+            $(docker images --format "{{.Repository}}:{{.Tag}}" | head -1)
+
+  # Push to registries (only on main/tags)
+  push:
+    name: Push to Registry
+    needs: [prepare, build]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    strategy:
+      matrix:
+        registry:
+          - gcr
+          - ghcr
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      # GCR Authentication
+      - name: Authenticate to Google Cloud (GCR)
+        if: matrix.registry == 'gcr' && secrets.GCP_SA_KEY != ''
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Google Cloud SDK (GCR)
+        if: matrix.registry == 'gcr' && secrets.GCP_SA_KEY != ''
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        if: matrix.registry == 'gcr' && secrets.GCP_SA_KEY != ''
+        run: |
+          gcloud auth configure-docker gcr.io
+
+      # GitHub Container Registry Authentication
+      - name: Login to GitHub Container Registry
+        if: matrix.registry == 'ghcr'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY_GHCR }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Docker Hub Authentication (optional)
+      - name: Login to Docker Hub
+        if: matrix.registry == 'docker' && secrets.DOCKER_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Determine image name
+        id: image
+        run: |
+          if [ "${{ matrix.registry }}" = "gcr" ]; then
+            echo "registry=${{ env.REGISTRY_GCR }}" >> $GITHUB_OUTPUT
+            echo "name=${{ env.REGISTRY_GCR }}/${{ secrets.GCP_PROJECT }}/${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+          elif [ "${{ matrix.registry }}" = "ghcr" ]; then
+            echo "registry=${{ env.REGISTRY_GHCR }}" >> $GITHUB_OUTPUT
+            echo "name=${{ env.REGISTRY_GHCR }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+          else
+            echo "registry=${{ env.REGISTRY_DOCKER }}" >> $GITHUB_OUTPUT
+            echo "name=${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ needs.prepare.outputs.version }}
+            ${{ steps.image.outputs.name }}:latest
+          labels: ${{ needs.prepare.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+  # Post-build summary and notifications
+  summary:
+    name: Build Summary
+    needs: [prepare, build, push]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Build status
+        run: |
+          echo "## Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ needs.prepare.outputs.image-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "- Prepare: ${{ needs.prepare.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Build: ${{ needs.build.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Push: ${{ needs.push.result }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify on failure
+        if: failure() && github.event_name == 'push'
+        run: |
+          echo "Docker build failed for ${{ github.ref_name }}"
+          exit 1
+
+  # Development build (always runs, doesn't push)
+  build-dev:
+    name: Build Development Image
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build development image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          dockerfile: Dockerfile.dev
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            taiea-dev:pr-${{ github.event.pull_request.number }}
+            taiea-dev:latest

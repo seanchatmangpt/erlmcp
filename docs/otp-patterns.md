@@ -218,6 +218,187 @@ lookup(Name, Key) ->
     end.
 ```
 
+## Library Integration Patterns (v0.6.0)
+
+### 1. gproc Registry Pattern
+```erlang
+%% Register with gproc (automatic monitoring)
+register_server(ServerId, ServerPid, Config) ->
+    %% Name registration
+    gproc:add_local_name({mcp, server, ServerId}),
+    %% Store config as property
+    gproc:reg({p, l, {mcp_server_config, ServerId}}, Config).
+
+%% Lookup with gproc
+find_server(ServerId) ->
+    case gproc:lookup_local_name({mcp, server, ServerId}) of
+        undefined -> {error, not_found};
+        Pid -> {ok, Pid}
+    end.
+
+%% No manual monitoring needed - gproc handles it
+```
+
+**Benefits:**
+- Automatic cleanup on process death
+- No manual `monitor`/`demonitor` code
+- Distributed registry support
+- O(1) lookups via ETS
+
+### 2. gun HTTP Client Pattern
+```erlang
+%% Initialize connection
+init([TransportId, #{url := Url} = Config]) ->
+    {ok, {Scheme, _Auth, Host, Port, _Path, _Query}} = http_uri:parse(Url),
+
+    GunOpts = #{
+        protocols => [http2, http],
+        retry => maps:get(retry, Config, 5),
+        retry_timeout => maps:get(retry_timeout, Config, 1000)
+    },
+
+    {ok, GunPid} = gun:open(Host, Port, GunOpts),
+    MonitorRef = monitor(process, GunPid),
+
+    State = #state{
+        gun_pid = GunPid,
+        gun_monitor = MonitorRef,
+        transport_id = TransportId
+    },
+    {ok, State}.
+
+%% Send request
+handle_call({send, Data}, _From, #state{gun_pid = GunPid} = State) ->
+    StreamRef = gun:post(GunPid, "/mcp", Headers, Data),
+    %% Track pending request
+    NewState = store_pending(StreamRef, State),
+    {reply, ok, NewState}.
+
+%% Handle HTTP/2 response
+handle_info({gun_response, GunPid, StreamRef, fin, Status, Headers}, State) ->
+    %% Response complete (no body)
+    process_response(StreamRef, Status, Headers, <<>>, State);
+
+handle_info({gun_response, GunPid, StreamRef, nofin, Status, Headers}, State) ->
+    %% Response has body coming
+    {noreply, State#state{current_stream = StreamRef}};
+
+handle_info({gun_data, GunPid, StreamRef, IsFin, Data}, State) ->
+    %% Route to server via registry
+    erlmcp_registry:route_to_server(State#state.server_id,
+                                     State#state.transport_id,
+                                     Data),
+    {noreply, State}.
+```
+
+**Features:**
+- HTTP/2 multiplexing (multiple streams per connection)
+- Automatic protocol negotiation
+- Better connection reuse
+- Built-in retry logic
+
+### 3. ranch TCP Protocol Pattern
+```erlang
+-behaviour(ranch_protocol).
+
+%% Server mode - ranch handles accept
+start_link(Ref, Transport, Opts) ->
+    Pid = spawn_link(?MODULE, init, [Ref, Transport, Opts]),
+    {ok, Pid}.
+
+init(Ref, Transport, Opts) ->
+    {ok, Socket} = ranch:handshake(Ref),
+    ok = Transport:setopts(Socket, [{active, once}]),
+    loop(Socket, Transport, Opts).
+
+loop(Socket, Transport, Opts) ->
+    receive
+        {tcp, Socket, Data} ->
+            %% Process data
+            handle_data(Data, Opts),
+            ok = Transport:setopts(Socket, [{active, once}]),
+            loop(Socket, Transport, Opts);
+        {tcp_closed, Socket} ->
+            ok = Transport:close(Socket);
+        {tcp_error, Socket, Reason} ->
+            logger:error("TCP error: ~p", [Reason]),
+            ok = Transport:close(Socket)
+    end.
+
+%% Client mode - simple gen_tcp
+init_client(Host, Port, Opts) ->
+    ConnectOpts = [
+        binary,
+        {active, true},
+        {packet, 0},
+        {nodelay, true},
+        {keepalive, true}
+    ],
+    gen_tcp:connect(Host, Port, ConnectOpts, 5000).
+```
+
+**Benefits:**
+- ranch manages accept pool
+- Supervisor integration
+- Built-in connection limits
+- Used in production by EMQX, Cowboy
+
+### 4. poolboy Connection Pooling Pattern
+```erlang
+%% Start pool in supervisor
+init([]) ->
+    PoolArgs = [
+        {name, {local, http_pool}},
+        {worker_module, erlmcp_http_worker},
+        {size, 10},
+        {max_overflow, 5}
+    ],
+    PoolSpec = poolboy:child_spec(http_pool, PoolArgs, []),
+    {ok, {{one_for_one, 10, 10}, [PoolSpec]}}.
+
+%% Use pool for requests
+call_with_pool(Request) ->
+    poolboy:transaction(http_pool, fun(Worker) ->
+        erlmcp_http_worker:handle_request(Worker, Request)
+    end, 5000).
+
+%% Worker implementation
+-module(erlmcp_http_worker).
+-behaviour(gen_server).
+-behaviour(poolboy_worker).
+
+handle_request(Worker, Request) ->
+    gen_server:call(Worker, {request, Request}).
+```
+
+**Features:**
+- Limit concurrent connections
+- Queue management
+- Resource reuse
+- Backpressure handling
+
+### 5. Library-Aware Supervision Pattern
+```erlang
+%% Transport supervisor with library support
+start_child(TransportId, Type, Config) ->
+    Module = transport_module(Type),
+
+    ChildSpec = #{
+        id => TransportId,
+        start => {Module, start_link, [TransportId, Config]},
+        restart => permanent,        % Libraries handle recovery
+        shutdown => 5000,            % Time for cleanup
+        type => worker,
+        modules => [Module]
+    },
+
+    supervisor:start_child(?MODULE, ChildSpec).
+
+transport_module(stdio) -> erlmcp_transport_stdio_new;
+transport_module(tcp) -> erlmcp_transport_tcp;     % Uses ranch
+transport_module(http) -> erlmcp_transport_http.   % Uses gun
+```
+
 ## Testing Patterns
 
 ### 1. Mocking with Processes
@@ -228,7 +409,7 @@ mock_server(Responses) ->
 
 mock_loop([{Request, Response} | Rest]) ->
     receive
-        Request -> 
+        Request ->
             sender() ! Response,
             mock_loop(Rest)
     end.
@@ -246,6 +427,31 @@ prop_resource_handler() ->
         end).
 ```
 
+### 3. Testing with Libraries (v0.6.0)
+```erlang
+%% Mock gproc in tests
+setup_gproc_test() ->
+    application:ensure_all_started(gproc),
+    ok.
+
+%% Mock gun responses
+setup_gun_mock() ->
+    meck:new(gun, [passthrough]),
+    meck:expect(gun, open, fun(_, _, _) -> {ok, self()} end),
+    meck:expect(gun, post, fun(_, _, _, _) -> make_ref() end).
+
+%% Test ranch protocol
+test_ranch_handler() ->
+    {ok, _} = ranch:start_listener(test_tcp,
+                                   ranch_tcp,
+                                   #{port => 0},
+                                   erlmcp_transport_tcp,
+                                   [test_id, #{}]),
+    {ok, Port} = ranch:get_port(test_tcp),
+    {ok, Socket} = gen_tcp:connect("localhost", Port, [binary]),
+    ok.
+```
+
 ## Common Pitfalls
 
 1. **Don't block in init/1** - Do async initialization
@@ -253,3 +459,6 @@ prop_resource_handler() ->
 3. **Monitor critical processes** - Clean up when they die
 4. **Set proper timeouts** - Prevent hanging calls
 5. **Use supervisors** - Don't spawn unsupervised processes
+6. **Library cleanup** - Let libraries handle resource cleanup (gun, ranch)
+7. **Pool exhaustion** - Monitor poolboy queue sizes
+8. **gproc conflicts** - Use unique names across application

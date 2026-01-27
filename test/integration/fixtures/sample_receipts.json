@@ -1,0 +1,249 @@
+{
+  "shacl_receipts": [
+    {
+      "id": "receipt-shacl-001",
+      "work_order_id": "wo-sec-001",
+      "stage": "shacl",
+      "result": "valid",
+      "metadata": {
+        "rules_checked": 150,
+        "violations": 0,
+        "warnings": 0,
+        "shapes_validated": [
+          "WorkOrderShape",
+          "BucketConstraintShape",
+          "PriorityShape",
+          "MetadataShape"
+        ],
+        "validation_time_ms": 245
+      },
+      "timestamp": 1706297600000,
+      "signature": "sig-abc123def456"
+    },
+    {
+      "id": "receipt-shacl-002",
+      "work_order_id": "wo-rel-001",
+      "stage": "shacl",
+      "result": "invalid",
+      "metadata": {
+        "rules_checked": 150,
+        "violations": 2,
+        "warnings": 1,
+        "violation_details": [
+          {
+            "shape": "MetadataShape",
+            "property": "estimated_effort",
+            "message": "Value out of range (max: 21)"
+          },
+          {
+            "shape": "LabelShape",
+            "property": "labels",
+            "message": "Invalid label format: 'Bug-Fix' (use lowercase with hyphens)"
+          }
+        ],
+        "validation_time_ms": 312
+      },
+      "timestamp": 1706297605000,
+      "signature": "sig-xyz789ghi012"
+    }
+  ],
+  "compile_receipts": [
+    {
+      "id": "receipt-compile-001",
+      "work_order_id": "wo-sec-001",
+      "stage": "compile",
+      "result": "success",
+      "metadata": {
+        "result": "success",
+        "warnings": 0,
+        "errors": 0,
+        "modules_compiled": 15,
+        "compilation_time_ms": 3421,
+        "erlc_version": "25.2"
+      },
+      "timestamp": 1706297700000,
+      "signature": "sig-compile-001"
+    },
+    {
+      "id": "receipt-compile-002",
+      "work_order_id": "wo-rel-001",
+      "stage": "compile",
+      "result": "failure",
+      "metadata": {
+        "result": "failure",
+        "warnings": 3,
+        "errors": 1,
+        "error_details": [
+          {
+            "file": "src/connection_pool.erl",
+            "line": 142,
+            "message": "undefined function pool_manager:release/2"
+          }
+        ],
+        "warning_details": [
+          {
+            "file": "src/connection_pool.erl",
+            "line": 89,
+            "message": "variable 'Timeout' is unused"
+          }
+        ],
+        "compilation_time_ms": 1245
+      },
+      "timestamp": 1706297710000,
+      "signature": "sig-compile-002"
+    }
+  ],
+  "test_receipts": [
+    {
+      "id": "receipt-test-001",
+      "work_order_id": "wo-sec-001",
+      "stage": "test",
+      "result": "pass",
+      "metadata": {
+        "tests_run": 150,
+        "tests_passed": 150,
+        "failures": 0,
+        "coverage": 87.5,
+        "test_time_ms": 12450,
+        "test_suites": [
+          "security_test_SUITE",
+          "sql_injection_test_SUITE",
+          "auth_test_SUITE"
+        ]
+      },
+      "timestamp": 1706297800000,
+      "signature": "sig-test-001"
+    },
+    {
+      "id": "receipt-test-002",
+      "work_order_id": "wo-cost-001",
+      "stage": "test",
+      "result": "pass",
+      "metadata": {
+        "tests_run": 89,
+        "tests_passed": 89,
+        "failures": 0,
+        "coverage": 76.2,
+        "test_time_ms": 8920,
+        "test_suites": [
+          "query_optimizer_test_SUITE",
+          "database_performance_test_SUITE"
+        ],
+        "coverage_warning": "Coverage 76.2% below threshold 80.0%"
+      },
+      "timestamp": 1706297820000,
+      "signature": "sig-test-002"
+    }
+  ],
+  "security_receipts": [
+    {
+      "id": "receipt-security-001",
+      "work_order_id": "wo-sec-001",
+      "stage": "security",
+      "result": "pass",
+      "metadata": {
+        "vulnerabilities": 0,
+        "warnings": 0,
+        "scan_time_ms": 5430,
+        "scanners_used": [
+          "bandit",
+          "safety",
+          "dependency-check"
+        ],
+        "dependencies_scanned": 42
+      },
+      "timestamp": 1706297900000,
+      "signature": "sig-security-001"
+    },
+    {
+      "id": "receipt-security-002",
+      "work_order_id": "wo-rel-002",
+      "stage": "security",
+      "result": "fail",
+      "metadata": {
+        "vulnerabilities": 1,
+        "warnings": 2,
+        "scan_time_ms": 6210,
+        "vulnerability_details": [
+          {
+            "severity": "medium",
+            "cve_id": "CVE-2024-9999",
+            "dependency": "httpc-lib",
+            "version": "2.1.0",
+            "fixed_in": "2.1.5",
+            "description": "HTTP request smuggling vulnerability"
+          }
+        ],
+        "warning_details": [
+          {
+            "type": "deprecated_dependency",
+            "dependency": "old-logger",
+            "recommendation": "Upgrade to new-logger >= 3.0.0"
+          }
+        ]
+      },
+      "timestamp": 1706297920000,
+      "signature": "sig-security-002"
+    }
+  ],
+  "deterministic_build_receipts": [
+    {
+      "id": "receipt-deterministic-001",
+      "work_order_id": "wo-sec-001",
+      "stage": "deterministic",
+      "result": "pass",
+      "metadata": {
+        "build_hash_1": "sha256:a1b2c3d4e5f6...",
+        "build_hash_2": "sha256:a1b2c3d4e5f6...",
+        "hashes_match": true,
+        "reproducible": true,
+        "build_time_1_ms": 15234,
+        "build_time_2_ms": 15189,
+        "artifacts_compared": 24
+      },
+      "timestamp": 1706298000000,
+      "signature": "sig-deterministic-001"
+    },
+    {
+      "id": "receipt-deterministic-002",
+      "work_order_id": "wo-feat-001",
+      "stage": "deterministic",
+      "result": "fail",
+      "metadata": {
+        "build_hash_1": "sha256:a1b2c3d4e5f6...",
+        "build_hash_2": "sha256:x9y8z7w6v5u4...",
+        "hashes_match": false,
+        "reproducible": false,
+        "non_deterministic_sources": [
+          "src/graphql_handler.erl:142 - uses erlang:now()",
+          "src/timestamp_util.erl:89 - generates timestamp in module"
+        ],
+        "artifacts_compared": 31
+      },
+      "timestamp": 1706298010000,
+      "signature": "sig-deterministic-002"
+    }
+  ],
+  "quality_gate_receipts": [
+    {
+      "id": "receipt-quality-001",
+      "work_order_id": "wo-sec-001",
+      "stage": "quality_gates",
+      "result": "pass",
+      "metadata": {
+        "gates_checked": 5,
+        "gates_passed": 5,
+        "gates_failed": 0,
+        "gate_results": {
+          "test_pass_rate": {"threshold": 80.0, "actual": 100.0, "pass": true},
+          "code_coverage": {"threshold": 80.0, "actual": 87.5, "pass": true},
+          "compilation_warnings": {"threshold": 10, "actual": 0, "pass": true},
+          "security_vulnerabilities": {"threshold": 0, "actual": 0, "pass": true},
+          "deterministic_build": {"required": true, "verified": true, "pass": true}
+        }
+      },
+      "timestamp": 1706298100000,
+      "signature": "sig-quality-001"
+    }
+  ]
+}

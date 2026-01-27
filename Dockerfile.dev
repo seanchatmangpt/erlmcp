@@ -1,0 +1,64 @@
+# === DOCKERFILE.dev: Development Image ===
+# Full-featured Erlang development environment with debugging tools
+# Includes: rebar3, dialyzer, observer, recon, proper testing
+
+FROM erlang:26-alpine
+
+LABEL maintainer="TAI Autonomics <engineering@taiea.dev>"
+LABEL description="TAIEA Erlang/OTP development environment with full toolchain"
+
+# Development environment setup
+ENV ERLANG_COOKIE=taiea_dev_cookie
+ENV ERL_COMPILER_OPTIONS=deterministic
+ENV REBAR_NO_USER_CONFIG=true
+ENV TAIEA_ENV=development
+
+# Install development dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    git \
+    make \
+    g++ \
+    gcc \
+    openssh-client \
+    curl \
+    wget \
+    vim \
+    nano \
+    htop \
+    procps \
+    lsof \
+    netcat-openbsd \
+    postgresql-client \
+    && update-ca-certificates
+
+# Create application directory
+WORKDIR /workspace
+
+# Volume mount point for source code
+VOLUME ["/workspace"]
+
+# Expose development ports
+# 8080: TAIEA HTTP endpoint
+# 4369: Erlang port mapper daemon
+# 9100: Custom monitoring/metrics
+# 9200: Debug console
+EXPOSE 8080 4369 9100 9200
+
+# Create development user
+RUN addgroup -S dev && \
+    adduser -S -G dev -h /workspace dev && \
+    chown -R dev:dev /workspace
+
+USER dev
+
+# Install rebar3 plugins for development
+RUN rebar3 local install-deps && \
+    rebar3 plugin install rebar3_format rebar3_lint rebar3_hex || true
+
+# Development shell entry point
+CMD ["/bin/sh"]
+
+# Healthcare check for dev environment
+HEALTHCHECK --interval=60s --timeout=15s --start-period=30s --retries=3 \
+    CMD echo "Development container running" || exit 1
