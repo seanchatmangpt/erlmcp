@@ -15,6 +15,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_http_delete_handler_tests).
 
+-include("erlmcp.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
@@ -341,12 +342,13 @@ mock_req_no_header(Path) ->
 %% These functions mock the cowboy_req API
 -define(REQ_TAB, mock_req_tab).
 
--spec cowboy_req:path(term()) -> binary().
-cowboy_req:path(Req) when is_map(Req) ->
+%% Mock cowboy_req functions (for testing only)
+-spec mock_req_path(term()) -> binary().
+mock_req_path(Req) when is_map(Req) ->
     maps:get(<<"path">>, Req, <<"/">>).
 
--spec cowboy_req:header(binary(), term(), term()) -> term().
-cowboy_req:header(Header, Req, Default) when is_map(Req) ->
+-spec mock_req_header(binary(), term(), term()) -> term().
+mock_req_header(Header, Req, Default) when is_map(Req) ->
     case Header of
         <<"mcp-session-id">> ->
             maps:get(<<"mcp-session-id">>, Req, Default);
@@ -356,11 +358,11 @@ cowboy_req:header(Header, Req, Default) when is_map(Req) ->
             Default
     end.
 
--spec cowboy_req:reply(non_neg_integer(), map(), term()) -> term().
-cowboy_req:reply(StatusCode, _Headers, _Req) ->
+-spec mock_req_reply(non_neg_integer(), map(), term()) -> term().
+mock_req_reply(StatusCode, _Headers, _Req) ->
     {status_code, StatusCode}.
 
--spec cowboy_req:reply(non_neg_integer(), map(), binary(), term()) -> term().
-cowboy_req:reply(StatusCode, _Headers, _Body, _Req) ->
+-spec mock_req_reply_with_body(non_neg_integer(), map(), binary(), term()) -> term().
+mock_req_reply_with_body(StatusCode, _Headers, _Body, _Req) ->
     {status_code, StatusCode}.
 

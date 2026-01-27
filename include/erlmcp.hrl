@@ -1,3 +1,6 @@
+-ifndef(ERLMCP_HRL).
+-define(ERLMCP_HRL, 1).
+
 %%% MCP Protocol Version
 -define(APP_NAME, <<"erlmcp">>).
 -define(MCP_VERSION, <<"2025-06-18">>).
@@ -57,7 +60,9 @@
     -32007,  % Validation failed
     -32008,  % Transport error
     -32009,  % Timeout
-    -32010   % Rate limited
+    -32010,  % Rate limited
+    -32011,  % Tool description too long (Gap #40)
+    -32012   % Message too large (Gap #45)
 ]).
 
 %%% Error Messages (for consistency)
@@ -66,6 +71,21 @@
 -define(JSONRPC_MSG_METHOD_NOT_FOUND, <<"Method not found">>).
 -define(JSONRPC_MSG_INVALID_PARAMS, <<"Invalid params">>).
 -define(JSONRPC_MSG_INTERNAL_ERROR, <<"Internal error">>).
+
+%%% Model Preferences Validation Messages
+-define(MCP_MSG_INVALID_MODEL_PREFERENCES, <<"Invalid model preferences">>).
+-define(MCP_MSG_INVALID_TEMPERATURE, <<"Invalid temperature">>).
+-define(MCP_MSG_INVALID_MAX_TOKENS, <<"Invalid maxTokens">>).
+-define(MCP_MSG_INVALID_STOP_SEQUENCES, <<"Invalid stopSequences">>).
+
+%%% Model Preferences Parameter Names
+-define(MCP_PARAM_MODEL_PREFERENCES, <<"modelPreferences">>).
+-define(MCP_PARAM_COST_PRIORITY, <<"costPriority">>).
+-define(MCP_PARAM_SPEED_PRIORITY, <<"speedPriority">>).
+-define(MCP_PARAM_INTELLIGENCE_PRIORITY, <<"intelligencePriority">>).
+-define(MCP_PARAM_TEMPERATURE, <<"temperature">>).
+-define(MCP_PARAM_MAX_TOKENS, <<"maxTokens">>).
+-define(MCP_PARAM_STOP_SEQUENCES, <<"stopSequences">>).
 
 -define(MCP_MSG_RESOURCE_NOT_FOUND, <<"Resource not found">>).
 -define(MCP_MSG_TOOL_NOT_FOUND, <<"Tool not found">>).
@@ -134,8 +154,25 @@
 -define(MCP_METHOD_PROMPTS_LIST, <<"prompts/list">>).
 -define(MCP_METHOD_PROMPTS_GET, <<"prompts/get">>).
 
+%%% Logging Methods (Gap #21)
+-define(MCP_METHOD_LOGGING_SET_LEVEL, <<"logging/setLevel">>).
+
 %%% Sampling Methods (for AI model sampling)
 -define(MCP_METHOD_SAMPLING_CREATE_MESSAGE, <<"sampling/createMessage">>).
+
+%%% Sampling Strategies (Gap #39: Sampling Strategy Validation)
+-define(MCP_SAMPLING_STRATEGY_DETERMINISTIC, <<"deterministic">>).
+-define(MCP_SAMPLING_STRATEGY_UNIFORM, <<"uniform">>).
+
+%%% Valid sampling strategies list
+-define(MCP_VALID_SAMPLING_STRATEGIES, [
+    ?MCP_SAMPLING_STRATEGY_DETERMINISTIC,
+    ?MCP_SAMPLING_STRATEGY_UNIFORM
+]).
+
+%%% Sampling error messages
+-define(MCP_MSG_INVALID_SAMPLING_STRATEGY, <<"Invalid sampling strategy">>).
+-define(MCP_PARAM_STRATEGY, <<"strategy">>).
 
 %%% Notification Methods
 -define(MCP_METHOD_NOTIFICATIONS_PROGRESS, <<"notifications/progress">>).
@@ -160,6 +197,7 @@
 %%% Content Types
 -define(MCP_CONTENT_TYPE_TEXT, <<"text">>).
 -define(MCP_CONTENT_TYPE_IMAGE, <<"image">>).
+-define(MCP_CONTENT_TYPE_AUDIO, <<"audio">>).
 -define(MCP_CONTENT_TYPE_RESOURCE, <<"resource">>).
 -define(MCP_CONTENT_TYPE_RESOURCE_LINK, <<"resource/link">>).
 
@@ -179,6 +217,52 @@
 -define(MCP_MIME_TEXT_PLAIN, <<"text/plain">>).
 -define(MCP_MIME_APPLICATION_JSON, <<"application/json">>).
 -define(MCP_MIME_TEXT_MARKDOWN, <<"text/markdown">>).
+
+%%% Audio MIME Types (Gap #34: Audio Content Type Support)
+-define(MCP_MIME_AUDIO_WAV, <<"audio/wav">>).
+-define(MCP_MIME_AUDIO_MPEG, <<"audio/mpeg">>).
+-define(MCP_MIME_AUDIO_MP3, <<"audio/mp3">>).
+-define(MCP_MIME_AUDIO_AAC, <<"audio/aac">>).
+-define(MCP_MIME_AUDIO_FLAC, <<"audio/flac">>).
+-define(MCP_MIME_AUDIO_OGG, <<"audio/ogg">>).
+-define(MCP_MIME_AUDIO_WEBM, <<"audio/webm">>).
+-define(MCP_MIME_AUDIO_OPUS, <<"audio/opus">>).
+
+%%% Audio metadata field names (Gap #34: Audio metadata support)
+-define(MCP_PARAM_AUDIO_DURATION, <<"duration">>).
+-define(MCP_PARAM_AUDIO_SAMPLE_RATE, <<"sampleRate">>).
+-define(MCP_PARAM_AUDIO_CHANNELS, <<"channels">>).
+-define(MCP_PARAM_AUDIO_BITRATE, <<"bitrate">>).
+
+%%% Message Size Limits (Gap #45: Message Size Limits)
+%%% MCP 2025-11-25 Specification Compliance:
+%%% - Default message size limit: 16 MB (16777216 bytes)
+%%% - Configurable per transport via sys.config
+%%% - HTTP POST body limit separate from default
+%%% - Oversized messages return error response (JSON-RPC) or HTTP 413
+-define(MCP_DEFAULT_MESSAGE_SIZE_LIMIT, 16777216).  %% 16 MB
+-define(MCP_DEFAULT_HTTP_BODY_SIZE_LIMIT, 16777216).  %% 16 MB
+-define(MCP_DEFAULT_SSE_EVENT_SIZE_LIMIT, 16777216).  %% 16 MB
+-define(MCP_DEFAULT_WS_MESSAGE_SIZE_LIMIT, 16777216).  %% 16 MB
+-define(MCP_MIN_MESSAGE_SIZE_LIMIT, 1024).  %% 1 KB minimum
+-define(MCP_MAX_CONFIGURABLE_SIZE_LIMIT, 104857600).  %% 100 MB maximum
+-define(MCP_ERROR_MESSAGE_TOO_LARGE, -32012).
+-define(MCP_MSG_MESSAGE_TOO_LARGE, <<"Message size exceeds maximum allowed">>).
+
+%%% Tool Description Validation (Gap #40: Tool Description Length)
+%%% MCP Specification Requirements:
+%%% - Tool descriptions MUST have a maximum length
+%%% - Default maximum: 1000 characters per MCP spec
+%%% - Configurable via sys.config
+%%% - Validation enforced on tool registration
+-define(MCP_TOOL_DESCRIPTION_MAX_LENGTH_DEFAULT, 1000).
+-define(MCP_TOOL_DESCRIPTION_MIN_LENGTH, 0).
+-define(MCP_ERROR_TOOL_DESCRIPTION_TOO_LONG, -32011).
+-define(MCP_MSG_TOOL_DESCRIPTION_TOO_LONG, <<"Tool description exceeds maximum length">>).
+
+%%% Logging levels (Gap #21: Log Level Enforcement)
+-define(MCP_VALID_LOG_LEVELS, [debug, info, notice, warning, error, critical, alert, emergency]).
+-define(MCP_DEFAULT_LOG_LEVEL, info).
 
 %%% Server/Client Info Fields
 -define(MCP_INFO_NAME, <<"name">>).
@@ -218,6 +302,7 @@
 -define(MCP_PARAM_STATUS, <<"status">>).
 -define(MCP_PARAM_RESULT, <<"result">>).
 -define(MCP_PARAM_ERROR, <<"error">>).
+-define(MCP_PARAM_ANNOTATIONS, <<"annotations">>).
 
 %%% JSON-RPC Types
 -type json_rpc_id() :: null | binary() | integer().
@@ -303,12 +388,22 @@
     value :: binary() | number() | boolean() | map() | undefined
 }).
 
+%%% Gap #33: Resource Link Record (defined before mcp_content)
+%%% Represents a link to an external resource within content blocks
+-record(mcp_resource_link, {
+    uri :: binary(),
+    name :: binary() | undefined,
+    mime_type :: binary() | undefined,
+    size :: integer() | undefined
+}).
+
 -record(mcp_content, {
     type :: binary(),
     text :: binary() | undefined,
     data :: binary() | undefined,
     mime_type :: binary() | undefined,
-    annotations = [] :: [#mcp_annotation{}]
+    annotations = [] :: [#mcp_annotation{}],
+    resource_link = undefined :: #mcp_resource_link{} | undefined
 }).
 
 -record(mcp_resource, {
@@ -326,15 +421,6 @@
     mime_type :: binary() | undefined
 }).
 
-%%% Gap #33: Resource Link Record
-%%% Represents a link to an external resource within content blocks
--record(mcp_resource_link, {
-    uri :: binary(),
-    name :: binary() | undefined,
-    mime_type :: binary() | undefined,
-    size :: integer() | undefined
-}).
-
 -record(mcp_tool, {
     name :: binary(),
     description :: binary(),
@@ -350,7 +436,8 @@
 -record(mcp_prompt, {
     name :: binary(),
     description :: binary() | undefined,
-    arguments :: [#mcp_prompt_argument{}] | undefined
+    arguments :: [#mcp_prompt_argument{}] | undefined,
+    input_schema :: map() | undefined  % Gap #42: JSON Schema for argument validation
 }).
 
 -record(mcp_progress_token, {
@@ -383,3 +470,5 @@
     max_tokens :: integer() | undefined,
     stop_sequences :: [binary()] | undefined
 }).
+
+-endif.
