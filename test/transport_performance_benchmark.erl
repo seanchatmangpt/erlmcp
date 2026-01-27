@@ -331,14 +331,14 @@ test_resource_usage() ->
     
     % Run intensive workload for 20 seconds
     io:format("  Running intensive workload for 20 seconds...~n"),
-    WorkloadPid = spawn(fun() -> intensive_workload(20000) end),
-    
+    _WorkloadPid = spawn(fun() -> intensive_workload(20000) end),
+
     % Monitor resources every second
     ResourceMonitor = spawn(fun() -> resource_monitor(20) end),
-    
+
     % Wait for completion
     timer:sleep(21000),
-    
+
     % Collect final statistics
     FinalSchedulerStats = erlang:statistics(scheduler_wall_time),
     FinalStats = #{
@@ -346,7 +346,7 @@ test_resource_usage() ->
         processes => erlang:system_info(process_count),
         schedulers => erlang:system_info(schedulers_online)
     },
-    
+
     % Get resource monitor results
     ResourceMonitor ! {get_results, self()},
     ResourceData = receive
@@ -453,7 +453,7 @@ send_messages_loop(TransportType, MessageSize, EndTime, Count) ->
 send_single_message(TransportType, MessageSize) ->
     % Create test message
     TestData = list_to_binary(lists:duplicate(MessageSize, $A)),
-    Message = #{
+    _Message = #{
         <<"jsonrpc">> => <<"2.0">>,
         <<"id">> => rand:uniform(1000000),
         <<"method">> => <<"test/benchmark">>,
@@ -696,7 +696,7 @@ generate_performance_report(Results, Duration) ->
     ThroughputTests = maps:get(throughput_tests, StdioResults, []),
     case ThroughputTests of
         [] -> ok;
-        [FirstTest | _] ->
+        [_FirstTest | _] ->
             MaxThroughput = lists:max([maps:get(throughput_bytes_per_sec, T, 0) || T <- ThroughputTests]),
             io:format("STDIO Transport:~n"),
             io:format("  Peak throughput: ~.2f MB/s~n", [MaxThroughput / (1024*1024)]),
@@ -715,7 +715,7 @@ generate_performance_report(Results, Duration) ->
     HttpThroughputTests = maps:get(throughput_tests, HttpResults, []),
     case HttpThroughputTests of
         [] -> ok;
-        [FirstHttpTest | _] ->
+        [_FirstHttpTest | _] ->
             MaxHttpThroughput = lists:max([maps:get(throughput_bytes_per_sec, T, 0) || T <- HttpThroughputTests]),
             io:format("HTTP Transport:~n"),
             io:format("  Peak throughput: ~.2f KB/s~n", [MaxHttpThroughput / 1024])
@@ -758,8 +758,8 @@ generate_performance_report(Results, Duration) ->
     io:format("~n=== END REPORT ===~n").
 
 identify_bottlenecks(Results) ->
-    Bottlenecks = [],
-    
+    _Bottlenecks = [],
+
     % Check for memory leaks
     ResourceResults = maps:get(resource_usage, Results, #{}),
     case maps:get(memory_increase_mb, ResourceResults, 0) of

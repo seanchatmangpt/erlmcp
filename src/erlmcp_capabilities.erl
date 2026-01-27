@@ -1,200 +1,355 @@
-%%%===================================================================
-%% @doc MCP Capability Negotiation Module
-%%
-%% Handles capability extraction, validation, and negotiation during
-%% the MCP initialize request/response exchange.
-%%
-%% This module provides functions for:
-%% - Extracting client capabilities from initialize requests
-%% - Validating protocol versions
-%% - Checking negotiated capabilities
-%% - Blocking non-negotiated feature requests
-%%
+%%%-------------------------------------------------------------------
+%% @doc Capability Negotiation for MCP 2025-11-25
+%% Handles capability advertisement, extraction, validation, and enforcement.
 %% @end
-%%%===================================================================
-
+%%%-------------------------------------------------------------------
 -module(erlmcp_capabilities).
 
 -include("erlmcp.hrl").
 
 %% Public API
 -export([
+    build_server_capabilities/0,
+    build_server_capabilities/1,
     extract_client_capabilities/1,
     validate_protocol_version/1,
-    client_has_capability/2,
-    build_server_capabilities/1,
-    check_capability_for_request/2
+    validate_capability/2,
+    validate_feature/3,
+    capability_to_map/1,
+    client_capabilities_to_map/1,
+    server_capabilities_from_map/1,
+    client_capabilities_from_map/1,
+    supported_versions/0
 ]).
 
--type client_capabilities() :: #mcp_client_capabilities{}.
--type validation_result() :: ok | {error, binary()}.
-
--export_type([client_capabilities/0, validation_result/0]).
-
 %%====================================================================
-%% API Functions
+%% Public API - Capability Building
 %%====================================================================
 
-%% @doc Extract client capabilities from initialize request parameters.
-%% Parses the capabilities field from the initialize params and returns
-%% a mcp_client_capabilities record with all enabled capabilities marked.
-%%
-%% Returns a mcp_client_capabilities record with:
-%% - roots: enabled if client advertises roots capability
-%% - sampling: enabled if client advertises sampling capability
-%% - experimental: map of experimental capabilities
--spec extract_client_capabilities(map() | undefined) -> client_capabilities().
-extract_client_capabilities(Params) when is_map(Params) ->
-    CapMap = maps:get(?MCP_FIELD_CAPABILITIES, Params, #{}),
-    extract_capabilities_from_map(CapMap);
-extract_client_capabilities(_) ->
-    #mcp_client_capabilities{}.
-
-%% @doc Validate that client protocol version is compatible.
-%% Currently enforces exact version match, but can be extended
-%% to support compatible versions.
-%%
-%% Returns:
-%% - ok if version is compatible
-%% - {error, Reason} if version is incompatible
--spec validate_protocol_version(binary() | undefined) -> validation_result().
-validate_protocol_version(Version) when is_binary(Version) ->
-    case Version of
-        ?MCP_VERSION ->
-            ok;
-        _ ->
-            %% Check if version is in future (not yet supported)
-            case binary:compare(Version, ?MCP_VERSION) of
-                greater ->
-                    {error, <<"Protocol version not yet supported">>};
-                less ->
-                    %% Accept versions >= 2025-01-01
-                    case binary:compare(Version, <<"2025-01-01">>) of
-                        less ->
-                            {error, <<"Protocol version too old">>};
-                        _ ->
-                            ok
-                    end
-            end
-    end;
-validate_protocol_version(undefined) ->
-    ok;
-validate_protocol_version(_) ->
-    {error, <<"Invalid protocol version format">>}.
-
-%% @doc Check if client has negotiated a specific capability.
-%% Used to validate that client supports features before invoking them.
-%%
-%% Returns true if capability is enabled, false otherwise.
--spec client_has_capability(client_capabilities(), binary()) -> boolean().
-client_has_capability(#mcp_client_capabilities{roots = Roots}, ?MCP_CAPABILITY_ROOTS) ->
-    is_enabled(Roots);
-client_has_capability(#mcp_client_capabilities{sampling = Sampling}, ?MCP_CAPABILITY_SAMPLING) ->
-    is_enabled(Sampling);
-client_has_capability(#mcp_client_capabilities{experimental = Exp}, CapName) when is_map(Exp) ->
-    maps:is_key(CapName, Exp);
-client_has_capability(_, _) ->
-    false.
-
-%% @doc Build server capability map for initialize response.
-%% Encodes mcp_server_capabilities record into JSON-friendly map
-%% with feature flags.
--spec build_server_capabilities(#mcp_server_capabilities{}) -> map().
-build_server_capabilities(#mcp_server_capabilities{} = Caps) ->
-    Base = #{},
-    Base1 = add_capability(Base, ?MCP_CAPABILITY_RESOURCES,
-                          Caps#mcp_server_capabilities.resources,
-                          #{?MCP_FEATURE_SUBSCRIBE => true,
-                            ?MCP_FEATURE_LIST_CHANGED => true}),
-    Base2 = add_capability(Base1, ?MCP_CAPABILITY_TOOLS,
-                          Caps#mcp_server_capabilities.tools, #{}),
-    Base3 = add_capability(Base2, ?MCP_CAPABILITY_PROMPTS,
-                          Caps#mcp_server_capabilities.prompts,
-                          #{?MCP_FEATURE_LIST_CHANGED => true}),
-    add_capability(Base3, ?MCP_CAPABILITY_LOGGING,
-                   Caps#mcp_server_capabilities.logging, #{}).
-
-%% @doc Check if a request method is allowed given negotiated capabilities.
-%% Returns {ok, Method} if allowed, {error, Reason} if not permitted.
-%%
-%% This enforces that:
-%% - Resources methods require resources capability
-%% - Tools methods require tools capability
-%% - Prompts methods require prompts capability
-%% - Initialize can only be called once
--spec check_capability_for_request(binary(), #mcp_client_capabilities{} | undefined) ->
-    {ok, binary()} | {error, binary()}.
-check_capability_for_request(?MCP_METHOD_INITIALIZE, _) ->
-    %% Initialize is always allowed (first message)
-    {ok, ?MCP_METHOD_INITIALIZE};
-check_capability_for_request(Method, ClientCaps) when ?MCP_METHOD_RESOURCES_LIST =:= Method;
-                                                      ?MCP_METHOD_RESOURCES_READ =:= Method;
-                                                      ?MCP_METHOD_RESOURCES_SUBSCRIBE =:= Method;
-                                                      ?MCP_METHOD_RESOURCES_UNSUBSCRIBE =:= Method ->
-    case client_has_capability(ClientCaps, ?MCP_CAPABILITY_RESOURCES) of
-        true -> {ok, Method};
-        false -> {error, <<"Client does not support resources capability">>}
-    end;
-check_capability_for_request(Method, ClientCaps) when ?MCP_METHOD_TOOLS_LIST =:= Method;
-                                                      ?MCP_METHOD_TOOLS_CALL =:= Method ->
-    case client_has_capability(ClientCaps, ?MCP_CAPABILITY_TOOLS) of
-        true -> {ok, Method};
-        false -> {error, <<"Client does not support tools capability">>}
-    end;
-check_capability_for_request(Method, ClientCaps) when ?MCP_METHOD_PROMPTS_LIST =:= Method;
-                                                      ?MCP_METHOD_PROMPTS_GET =:= Method ->
-    case client_has_capability(ClientCaps, ?MCP_CAPABILITY_PROMPTS) of
-        true -> {ok, Method};
-        false -> {error, <<"Client does not support prompts capability">>}
-    end;
-check_capability_for_request(?MCP_METHOD_SAMPLING_CREATE_MESSAGE, ClientCaps) ->
-    case client_has_capability(ClientCaps, ?MCP_CAPABILITY_SAMPLING) of
-        true -> {ok, ?MCP_METHOD_SAMPLING_CREATE_MESSAGE};
-        false -> {error, <<"Client does not support sampling capability">>}
-    end;
-check_capability_for_request(Method, _) ->
-    %% Other methods (notifications, tasks) are allowed without specific capability
-    {ok, Method}.
-
-%%====================================================================
-%% Internal Functions
-%%====================================================================
-
-%% Extract capabilities from capabilities map
--spec extract_capabilities_from_map(map()) -> client_capabilities().
-extract_capabilities_from_map(CapMap) ->
-    Roots = case maps:is_key(?MCP_CAPABILITY_ROOTS, CapMap) of
-        true -> #mcp_capability{enabled = true};
-        false -> undefined
-    end,
-
-    Sampling = case maps:is_key(?MCP_CAPABILITY_SAMPLING, CapMap) of
-        true -> #mcp_capability{enabled = true};
-        false -> undefined
-    end,
-
-    Experimental = maps:get(experimental, CapMap, undefined),
-
-    #mcp_client_capabilities{
-        roots = Roots,
-        sampling = Sampling,
-        experimental = Experimental
+build_server_capabilities() ->
+    #mcp_server_capabilities{
+        resources = #mcp_resources_capability{
+            subscribe = true,
+            listChanged = true
+        },
+        tools = #mcp_tools_capability{
+            listChanged = true
+        },
+        prompts = #mcp_prompts_capability{
+            listChanged = true
+        },
+        logging = #mcp_logging_capability{},
+        sampling = #mcp_sampling_capability{},
+        roots = #mcp_roots_capability{},
+        experimental = undefined
     }.
 
-%% Check if a capability record is enabled
--spec is_enabled(#mcp_capability{} | undefined) -> boolean().
-is_enabled(undefined) ->
-    false;
-is_enabled(#mcp_capability{enabled = true}) ->
-    true;
-is_enabled(#mcp_capability{enabled = false}) ->
-    false.
+build_server_capabilities(Config) when is_map(Config) ->
+    Default = build_server_capabilities(),
+    case maps:get(resources, Config, undefined) of
+        undefined -> Default;
+        ResourcesCfg ->
+            Resources = case ResourcesCfg of
+                #{subscribe := Sub, listChanged := LC} ->
+                    #mcp_resources_capability{subscribe = Sub, listChanged = LC};
+                #{subscribe := Sub} ->
+                    #mcp_resources_capability{subscribe = Sub};
+                #{listChanged := LC} ->
+                    #mcp_resources_capability{listChanged = LC};
+                _ ->
+                    Default#mcp_server_capabilities.resources
+            end,
+            Default#mcp_server_capabilities{resources = Resources}
+    end.
 
-%% Add capability to map if enabled
--spec add_capability(map(), binary(), #mcp_capability{} | undefined, map()) -> map().
-add_capability(Map, _Key, undefined, _Features) ->
-    Map;
-add_capability(Map, Key, #mcp_capability{enabled = true}, Features) ->
-    Map#{Key => Features};
-add_capability(Map, _Key, #mcp_capability{enabled = false}, _Features) ->
-    Map.
+%%====================================================================
+%% Public API - Capability Extraction
+%%====================================================================
+
+extract_client_capabilities(undefined) ->
+    #mcp_client_capabilities{};
+extract_client_capabilities(Params) when is_map(Params) ->
+    case maps:get(?MCP_FIELD_CAPABILITIES, Params, #{}) of
+        CapMap when is_map(CapMap) ->
+            client_capabilities_from_map(CapMap);
+        _ ->
+            #mcp_client_capabilities{}
+    end.
+
+%%====================================================================
+%% Public API - Capability Validation
+%%====================================================================
+
+validate_protocol_version(Version) when is_binary(Version) ->
+    SupportedVersions = [<<"2025-11-25">>, <<"2024-11-05">>],
+    case lists:member(Version, SupportedVersions) of
+        true -> ok;
+        false -> {error, <<"Unsupported protocol version">>}
+    end.
+
+validate_capability(#mcp_server_capabilities{resources = Resources}, resources) ->
+    case Resources of
+        #mcp_resources_capability{} -> ok;
+        undefined -> {error, capability_not_supported}
+    end;
+validate_capability(#mcp_server_capabilities{tools = Tools}, tools) ->
+    case Tools of
+        #mcp_tools_capability{} -> ok;
+        undefined -> {error, capability_not_supported}
+    end;
+validate_capability(#mcp_server_capabilities{prompts = Prompts}, prompts) ->
+    case Prompts of
+        #mcp_prompts_capability{} -> ok;
+        undefined -> {error, capability_not_supported}
+    end;
+validate_capability(#mcp_server_capabilities{logging = Logging}, logging) ->
+    case Logging of
+        #mcp_logging_capability{} -> ok;
+        undefined -> {error, capability_not_supported}
+    end;
+validate_capability(#mcp_server_capabilities{sampling = Sampling}, sampling) ->
+    case Sampling of
+        #mcp_sampling_capability{} -> ok;
+        undefined -> {error, capability_not_supported}
+    end;
+validate_capability(#mcp_server_capabilities{roots = RootsC}, roots) ->
+    case RootsC of
+        #mcp_roots_capability{} -> ok;
+        undefined -> {error, capability_not_supported}
+    end;
+validate_capability(_, _) ->
+    {error, unknown_capability}.
+
+validate_feature(Caps, resources, subscribe) ->
+    case validate_capability(Caps, resources) of
+        ok ->
+            Resources = Caps#mcp_server_capabilities.resources,
+            case Resources#mcp_resources_capability.subscribe of
+                true -> ok;
+                false -> {error, feature_not_supported}
+            end;
+        Error -> Error
+    end;
+validate_feature(Caps, resources, listChanged) ->
+    case validate_capability(Caps, resources) of
+        ok ->
+            Resources = Caps#mcp_server_capabilities.resources,
+            case Resources#mcp_resources_capability.listChanged of
+                true -> ok;
+                false -> {error, feature_not_supported}
+            end;
+        Error -> Error
+    end;
+validate_feature(Caps, tools, listChanged) ->
+    case validate_capability(Caps, tools) of
+        ok ->
+            Tools = Caps#mcp_server_capabilities.tools,
+            case Tools#mcp_tools_capability.listChanged of
+                true -> ok;
+                false -> {error, feature_not_supported}
+            end;
+        Error -> Error
+    end;
+validate_feature(Caps, prompts, listChanged) ->
+    case validate_capability(Caps, prompts) of
+        ok ->
+            Prompts = Caps#mcp_server_capabilities.prompts,
+            case Prompts#mcp_prompts_capability.listChanged of
+                true -> ok;
+                false -> {error, feature_not_supported}
+            end;
+        Error -> Error
+    end;
+validate_feature(_, _, _) ->
+    {error, unknown_feature}.
+
+%%====================================================================
+%% Public API - Serialization
+%%====================================================================
+
+capability_to_map(#mcp_server_capabilities{} = Caps) ->
+    server_capabilities_to_map(Caps);
+capability_to_map(#mcp_resources_capability{} = Res) ->
+    #{
+        ?MCP_FEATURE_SUBSCRIBE => Res#mcp_resources_capability.subscribe,
+        ?MCP_FEATURE_LIST_CHANGED => Res#mcp_resources_capability.listChanged
+    };
+capability_to_map(#mcp_tools_capability{} = ToolsCap) ->
+    #{
+        ?MCP_FEATURE_LIST_CHANGED => ToolsCap#mcp_tools_capability.listChanged
+    };
+capability_to_map(#mcp_prompts_capability{} = PromptsCap) ->
+    #{
+        ?MCP_FEATURE_LIST_CHANGED => PromptsCap#mcp_prompts_capability.listChanged
+    };
+capability_to_map(#mcp_logging_capability{}) ->
+    #{};
+capability_to_map(#mcp_sampling_capability{} = SamplingCap) ->
+    case SamplingCap#mcp_sampling_capability.modelPreferences of
+        undefined -> #{};
+        Prefs -> #{<<"modelPreferences">> => Prefs}
+    end;
+capability_to_map(#mcp_roots_capability{}) ->
+    #{};
+capability_to_map(_) ->
+    #{}.
+
+server_capabilities_to_map(#mcp_server_capabilities{} = Caps) ->
+    M = #{},
+    M1 = case Caps#mcp_server_capabilities.resources of
+        #mcp_resources_capability{} = Res ->
+            M#{?MCP_CAPABILITY_RESOURCES => capability_to_map(Res)};
+        _ -> M
+    end,
+    M2 = case Caps#mcp_server_capabilities.tools of
+        #mcp_tools_capability{} = ToolsCap ->
+            M1#{?MCP_CAPABILITY_TOOLS => capability_to_map(ToolsCap)};
+        _ -> M1
+    end,
+    M3 = case Caps#mcp_server_capabilities.prompts of
+        #mcp_prompts_capability{} = PromptsCap ->
+            M2#{?MCP_CAPABILITY_PROMPTS => capability_to_map(PromptsCap)};
+        _ -> M2
+    end,
+    M4 = case Caps#mcp_server_capabilities.logging of
+        #mcp_logging_capability{} = LoggingCap ->
+            M3#{?MCP_CAPABILITY_LOGGING => capability_to_map(LoggingCap)};
+        _ -> M3
+    end,
+    M5 = case Caps#mcp_server_capabilities.sampling of
+        #mcp_sampling_capability{} = SamplingCap ->
+            M4#{<<"sampling">> => capability_to_map(SamplingCap)};
+        _ -> M4
+    end,
+    M6 = case Caps#mcp_server_capabilities.roots of
+        #mcp_roots_capability{} = RootsCap ->
+            M5#{?MCP_CAPABILITY_ROOTS => capability_to_map(RootsCap)};
+        _ -> M5
+    end,
+    case Caps#mcp_server_capabilities.experimental of
+        undefined -> M6;
+        Exp -> M6#{<<"experimental">> => Exp}
+    end.
+
+client_capabilities_to_map(#mcp_client_capabilities{} = Caps) ->
+    M = #{},
+    M1 = case Caps#mcp_client_capabilities.roots of
+        #mcp_capability{enabled = true} ->
+            M#{?MCP_CAPABILITY_ROOTS => #{}};
+        _ -> M
+    end,
+    M2 = case Caps#mcp_client_capabilities.sampling of
+        #mcp_capability{enabled = true} ->
+            M1#{<<"sampling">> => #{}};
+        _ -> M1
+    end,
+    case Caps#mcp_client_capabilities.experimental of
+        undefined -> M2;
+        Exp -> M2#{<<"experimental">> => Exp}
+    end.
+
+%%====================================================================
+%% Public API - Deserialization
+%%====================================================================
+
+server_capabilities_from_map(Map) when is_map(Map) ->
+    #mcp_server_capabilities{
+        resources = extract_resources_capability(Map),
+        tools = extract_tools_capability(Map),
+        prompts = extract_prompts_capability(Map),
+        logging = extract_logging_capability(Map),
+        sampling = extract_sampling_capability(Map),
+        roots = extract_roots_capability(Map),
+        experimental = maps:get(<<"experimental">>, Map, undefined)
+    }.
+
+client_capabilities_from_map(Map) when is_map(Map) ->
+    #mcp_client_capabilities{
+        roots = extract_client_root_capability(Map),
+        sampling = extract_client_sampling_capability(Map),
+        experimental = maps:get(<<"experimental">>, Map, undefined)
+    }.
+
+%%====================================================================
+%% Internal Functions - Capability Extraction
+%%====================================================================
+
+extract_resources_capability(Map) ->
+    case maps:get(?MCP_CAPABILITY_RESOURCES, Map, #{}) of
+        ResourcesMap when is_map(ResourcesMap) ->
+            #mcp_resources_capability{
+                subscribe = maps:get(?MCP_FEATURE_SUBSCRIBE, ResourcesMap, false),
+                listChanged = maps:get(?MCP_FEATURE_LIST_CHANGED, ResourcesMap, false)
+            };
+        _ ->
+            #mcp_resources_capability{}
+    end.
+
+extract_tools_capability(Map) ->
+    case maps:get(?MCP_CAPABILITY_TOOLS, Map, #{}) of
+        ToolsMap when is_map(ToolsMap) ->
+            #mcp_tools_capability{
+                listChanged = maps:get(?MCP_FEATURE_LIST_CHANGED, ToolsMap, false)
+            };
+        _ ->
+            #mcp_tools_capability{}
+    end.
+
+extract_prompts_capability(Map) ->
+    case maps:get(?MCP_CAPABILITY_PROMPTS, Map, #{}) of
+        PromptsMap when is_map(PromptsMap) ->
+            #mcp_prompts_capability{
+                listChanged = maps:get(?MCP_FEATURE_LIST_CHANGED, PromptsMap, false)
+            };
+        _ ->
+            #mcp_prompts_capability{}
+    end.
+
+extract_logging_capability(Map) ->
+    case maps:get(?MCP_CAPABILITY_LOGGING, Map, undefined) of
+        LoggingMap when is_map(LoggingMap) ->
+            #mcp_logging_capability{};
+        _ ->
+            #mcp_logging_capability{}
+    end.
+
+extract_sampling_capability(Map) ->
+    case maps:get(<<"sampling">>, Map, #{}) of
+        SamplingMap when is_map(SamplingMap) ->
+            #mcp_sampling_capability{
+                modelPreferences = maps:get(<<"modelPreferences">>, SamplingMap, undefined)
+            };
+        _ ->
+            #mcp_sampling_capability{}
+    end.
+
+extract_roots_capability(Map) ->
+    case maps:get(?MCP_CAPABILITY_ROOTS, Map, undefined) of
+        RootsMap when is_map(RootsMap) ->
+            #mcp_roots_capability{};
+        _ ->
+            #mcp_roots_capability{}
+    end.
+
+extract_client_root_capability(Map) ->
+    case maps:get(?MCP_CAPABILITY_ROOTS, Map, undefined) of
+        RootsMap when is_map(RootsMap) ->
+            #mcp_capability{enabled = true};
+        _ ->
+            #mcp_capability{enabled = false}
+    end.
+
+extract_client_sampling_capability(Map) ->
+    case maps:get(<<"sampling">>, Map, undefined) of
+        SamplingMap when is_map(SamplingMap) ->
+            #mcp_capability{enabled = true};
+        _ ->
+            #mcp_capability{enabled = false}
+    end.
+
+%%====================================================================
+%% Public API - Supported Versions
+%%====================================================================
+
+supported_versions() ->
+    [<<"2025-11-25">>, <<"2024-11-05">>].

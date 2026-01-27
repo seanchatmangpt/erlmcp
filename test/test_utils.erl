@@ -310,7 +310,7 @@ mock_transport(Type, Config) ->
 
 %% Capture test logs
 capture_logs(Fun) ->
-    LogHandler = error_logger:add_report_handler(test_log_handler, []),
+    _LogHandler = error_logger:add_report_handler(test_log_handler, []),
     try
         Fun()
     after

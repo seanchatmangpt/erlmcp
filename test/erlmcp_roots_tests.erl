@@ -64,7 +64,7 @@ test_add_root() ->
 
 test_remove_root() ->
     Config = #{
-        allowed_paths => [<<"/">>,],
+        allowed_paths => [<<"/">>],
         symlink_follow => false
     },
 
@@ -99,7 +99,7 @@ test_validate_path() ->
     Path = <<"/Users/sac/test.txt">>,
     Result = erlmcp_roots:validate_path(Path),
 
-    ?assert(Result =:= {ok, Path} orelse Result =:= {error, _}).
+    ?assert(Result =:= {ok, Path} orelse (is_tuple(Result) andalso element(1, Result) =:= error)).
 
 test_canonicalize_path() ->
     %% Test path canonicalization

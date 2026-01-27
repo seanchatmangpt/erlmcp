@@ -387,12 +387,227 @@ test_concurrent_sessions() ->
         {ok, SessionId} = erlmcp_session_manager:create_session(),
         Parent ! {session, SessionId}
     end) || _ <- lists:seq(1, 10)],
-    
+
     %% Collect all session IDs
     Sessions = [receive {session, S} -> S after 1000 -> undefined end || _ <- lists:seq(1, 10)],
-    
+
     %% Verify all are unique and valid
     ValidSessions = [S || S <- Sessions, S =/= undefined],
     ?assertEqual(10, length(ValidSessions)),
     ?assertEqual(10, length(lists:usort(ValidSessions))).
+
+%%====================================================================
+%% Origin Validator Module Tests (Gap #3 - DNS Rebinding Protection)
+%%====================================================================
+
+origin_validator_module_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+             %% Basic origin validation
+             ?_test(test_validator_exact_match()),
+             ?_test(test_validator_wildcard_port()),
+             ?_test(test_validator_ipv6_localhost()),
+             ?_test(test_validator_https_origins()),
+             ?_test(test_validator_missing_origin()),
+             ?_test(test_validator_invalid_origin()),
+             ?_test(test_validator_case_sensitivity()),
+             ?_test(test_validator_pattern_matching()),
+             ?_test(test_validator_default_origins()),
+             ?_test(test_validator_port_extraction()),
+             ?_test(test_validator_dns_rebinding_prevention()),
+             ?_test(test_validator_binary_string_handling()),
+             ?_test(test_validator_complex_patterns()),
+             ?_test(test_validator_ipv6_brackets()),
+             ?_test(test_validator_all_defaults_work())
+         ]
+     end}.
+
+test_validator_exact_match() ->
+    %% Test exact origin match
+    Result = erlmcp_origin_validator:validate_origin(
+        <<"http://localhost:8080">>,
+        [<<"http://localhost:8080">>]),
+    ?assertMatch({ok, _}, Result).
+
+test_validator_wildcard_port() ->
+    %% Test wildcard port matching
+    AllowedOrigins = [<<"http://localhost:*">>, <<"https://localhost:*">>],
+
+    R1 = erlmcp_origin_validator:validate_origin(<<"http://localhost:3000">>, AllowedOrigins),
+    R2 = erlmcp_origin_validator:validate_origin(<<"http://localhost:9000">>, AllowedOrigins),
+    R3 = erlmcp_origin_validator:validate_origin(<<"https://localhost:443">>, AllowedOrigins),
+
+    ?assertMatch({ok, _}, R1),
+    ?assertMatch({ok, _}, R2),
+    ?assertMatch({ok, _}, R3).
+
+test_validator_ipv6_localhost() ->
+    %% Test IPv6 localhost [::1]
+    AllowedOrigins = [<<"http://[::1]:*">>, <<"https://[::1]:*">>],
+
+    R1 = erlmcp_origin_validator:validate_origin(<<"http://[::1]:8080">>, AllowedOrigins),
+    R2 = erlmcp_origin_validator:validate_origin(<<"https://[::1]:8443">>, AllowedOrigins),
+
+    ?assertMatch({ok, _}, R1),
+    ?assertMatch({ok, _}, R2).
+
+test_validator_https_origins() ->
+    %% Test HTTPS origins
+    AllowedOrigins = [<<"https://127.0.0.1:*">>, <<"https://localhost:*">>],
+
+    R1 = erlmcp_origin_validator:validate_origin(<<"https://127.0.0.1:443">>, AllowedOrigins),
+    R2 = erlmcp_origin_validator:validate_origin(<<"https://localhost:8443">>, AllowedOrigins),
+
+    ?assertMatch({ok, _}, R1),
+    ?assertMatch({ok, _}, R2).
+
+test_validator_missing_origin() ->
+    %% Missing origin header should be treated as same-origin (ok)
+    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    Result = erlmcp_origin_validator:validate_origin(undefined, AllowedOrigins),
+    ?assertMatch({ok, _}, Result).
+
+test_validator_invalid_origin() ->
+    %% Invalid origin should be rejected
+    AllowedOrigins = [<<"http://localhost">>],
+    Result = erlmcp_origin_validator:validate_origin(<<"http://evil.com">>, AllowedOrigins),
+    ?assertMatch({error, forbidden}, Result).
+
+test_validator_case_sensitivity() ->
+    %% URL schemes are case-sensitive in matching
+    AllowedOrigins = [<<"http://localhost">>],
+    Result = erlmcp_origin_validator:validate_origin(<<"HTTP://localhost">>, AllowedOrigins),
+    ?assertMatch({error, forbidden}, Result).
+
+test_validator_pattern_matching() ->
+    %% Test multiple patterns
+    AllowedOrigins = [
+        <<"http://localhost">>,
+        <<"http://127.0.0.1:*">>,
+        <<"https://localhost:3000">>
+    ],
+
+    R1 = erlmcp_origin_validator:validate_origin(<<"http://localhost">>, AllowedOrigins),
+    R2 = erlmcp_origin_validator:validate_origin(<<"http://127.0.0.1:5000">>, AllowedOrigins),
+    R3 = erlmcp_origin_validator:validate_origin(<<"https://localhost:3000">>, AllowedOrigins),
+
+    ?assertMatch({ok, _}, R1),
+    ?assertMatch({ok, _}, R2),
+    ?assertMatch({ok, _}, R3).
+
+test_validator_default_origins() ->
+    %% Test default safe origins
+    DefaultOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    ?assert(length(DefaultOrigins) > 0),
+
+    %% Defaults should allow localhost and 127.0.0.1
+    R1 = erlmcp_origin_validator:validate_origin(<<"http://localhost:8080">>, DefaultOrigins),
+    R2 = erlmcp_origin_validator:validate_origin(<<"http://127.0.0.1:3000">>, DefaultOrigins),
+
+    ?assertMatch({ok, _}, R1),
+    ?assertMatch({ok, _}, R2).
+
+test_validator_port_extraction() ->
+    %% Test port extraction from origins
+    Patterns = [<<"http://localhost:*">>],
+
+    %% Should match any port
+    R1 = erlmcp_origin_validator:matches_origin_pattern(<<"http://localhost:80">>, <<"http://localhost:*">>),
+    R2 = erlmcp_origin_validator:matches_origin_pattern(<<"http://localhost:8080">>, <<"http://localhost:*">>),
+    R3 = erlmcp_origin_validator:matches_origin_pattern(<<"http://localhost:65535">>, <<"http://localhost:*">>),
+
+    ?assert(R1),
+    ?assert(R2),
+    ?assert(R3).
+
+test_validator_dns_rebinding_prevention() ->
+    %% Simulate DNS rebinding attack - attacker.com -> 127.0.0.1
+    SafeConfig = [<<"http://localhost:*">>, <<"http://127.0.0.1:*">>],
+
+    %% Attacker tries to send request as if from attacker.com
+    AttackerOrigin = <<"http://attacker.com:8080">>,
+    Result = erlmcp_origin_validator:validate_origin(AttackerOrigin, SafeConfig),
+
+    %% Should be rejected
+    ?assertMatch({error, forbidden}, Result).
+
+test_validator_binary_string_handling() ->
+    %% Test handling of both binary and string inputs
+    Pattern = <<"http://localhost">>,
+
+    %% Binary origin
+    R1 = erlmcp_origin_validator:validate_origin(<<"http://localhost">>, [Pattern]),
+
+    %% String origin
+    R2 = erlmcp_origin_validator:validate_origin("http://localhost", [Pattern]),
+
+    ?assertMatch({ok, _}, R1),
+    ?assertMatch({ok, _}, R2).
+
+test_validator_complex_patterns() ->
+    %% Test complex pattern combinations
+    AllowedOrigins = [
+        "http://localhost",
+        "http://localhost:*",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:*",
+        "https://localhost:*",
+        "https://127.0.0.1:*"
+    ],
+
+    %% All should match
+    TestCases = [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://127.0.0.1:8080",
+        "http://127.0.0.1:9000",
+        "https://localhost:443",
+        "https://127.0.0.1:8443"
+    ],
+
+    Results = [erlmcp_origin_validator:validate_origin(TC, AllowedOrigins) || TC <- TestCases],
+    ?assert(lists:all(fun(R) -> R =/= {error, forbidden} end, Results)).
+
+test_validator_ipv6_brackets() ->
+    %% Test IPv6 addresses with brackets and ports
+    AllowedOrigins = [
+        <<"http://[::1]:*">>,
+        <<"https://[::1]:*">>,
+        <<"http://[2001:db8::1]:*">>
+    ],
+
+    R1 = erlmcp_origin_validator:matches_origin_pattern(<<"http://[::1]:8080">>, <<"http://[::1]:*">>),
+    R2 = erlmcp_origin_validator:matches_origin_pattern(<<"https://[::1]:443">>, <<"https://[::1]:*">>),
+
+    ?assert(R1),
+    ?assert(R2).
+
+test_validator_all_defaults_work() ->
+    %% Verify all default origins work correctly
+    DefaultOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+
+    %% Test that defaults include expected patterns
+    HasHttp = lists:any(fun(O) ->
+        string:find(O, "http://") =/= nomatch
+    end, DefaultOrigins),
+
+    HasHttps = lists:any(fun(O) ->
+        string:find(O, "https://") =/= nomatch
+    end, DefaultOrigins),
+
+    HasLocalhost = lists:any(fun(O) ->
+        string:find(O, "localhost") =/= nomatch
+    end, DefaultOrigins),
+
+    Has127 = lists:any(fun(O) ->
+        string:find(O, "127.0.0.1") =/= nomatch
+    end, DefaultOrigins),
+
+    ?assert(HasHttp),
+    ?assert(HasHttps),
+    ?assert(HasLocalhost),
+    ?assert(Has127).
 

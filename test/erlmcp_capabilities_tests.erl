@@ -1,470 +1,373 @@
+%%%-------------------------------------------------------------------
+%% Unit tests for capability negotiation module
+%% Tests for erlmcp_capabilities.erl
+%%%-------------------------------------------------------------------
+
 -module(erlmcp_capabilities_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 -include("erlmcp.hrl").
 
 %%====================================================================
-%% Test Suite for MCP Capability Negotiation
-%%====================================================================
-%% Tests for initialize request/response capability exchange,
-%% protocol version validation, and feature blocking based on
-%% negotiated capabilities.
-
-%%====================================================================
-%% Setup/Teardown
+%% Test Fixtures
 %%====================================================================
 
 setup() ->
-    application:ensure_all_started(erlmcp),
     ok.
 
 cleanup(_) ->
-    application:stop(erlmcp),
     ok.
 
-setup_server() ->
-    Capabilities = #mcp_server_capabilities{
-        resources = #mcp_capability{enabled = true},
-        tools = #mcp_capability{enabled = true},
-        prompts = #mcp_capability{enabled = true},
-        logging = #mcp_capability{enabled = true}
-    },
-    {ok, Pid} = erlmcp_server:start_link(test_server_cap, Capabilities),
-    Pid.
-
-cleanup_server(Pid) ->
-    erlmcp_server:stop(Pid).
-
 %%====================================================================
-%% Test: Server Capabilities in Initialize Response
+%% Test: Capability Building
 %%====================================================================
 
-server_capabilities_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-             ?_test(test_initialize_response_includes_capabilities()),
-             ?_test(test_initialize_response_protocol_version()),
-             ?_test(test_server_info_in_response())
-         ]
-     end}.
+build_default_server_capabilities_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    ?assert(is_record(Caps, mcp_server_capabilities)),
+    ?assert(Caps#mcp_server_capabilities.resources#mcp_resources_capability.subscribe =:= true),
+    ?assert(Caps#mcp_server_capabilities.resources#mcp_resources_capability.listChanged =:= true),
+    ?assert(Caps#mcp_server_capabilities.tools#mcp_tools_capability.listChanged =:= true),
+    ?assert(Caps#mcp_server_capabilities.prompts#mcp_prompts_capability.listChanged =:= true).
 
-test_initialize_response_includes_capabilities() ->
-    Capabilities = #mcp_server_capabilities{
-        resources = #mcp_capability{enabled = true},
-        tools = #mcp_capability{enabled = true},
-        prompts = #mcp_capability{enabled = true}
+build_custom_capabilities_test() ->
+    Config = #{
+        resources => #{
+            subscribe => false,
+            listChanged => true
+        }
     },
-    {ok, Pid} = erlmcp_server:start_link(test_init_caps, Capabilities),
-
-    %% Simulate client initialization
-    Response = build_initialize_response(Capabilities),
-
-    %% Verify capabilities field exists
-    ?assert(maps:is_key(?MCP_FIELD_CAPABILITIES, Response)),
-
-    %% Verify individual capabilities
-    Caps = maps:get(?MCP_FIELD_CAPABILITIES, Response),
-    ?assert(maps:is_key(?MCP_CAPABILITY_RESOURCES, Caps)),
-    ?assert(maps:is_key(?MCP_CAPABILITY_TOOLS, Caps)),
-    ?assert(maps:is_key(?MCP_CAPABILITY_PROMPTS, Caps)),
-
-    %% Verify feature flags within resources
-    ResourceCaps = maps:get(?MCP_CAPABILITY_RESOURCES, Caps),
-    ?assert(maps:is_key(?MCP_FEATURE_SUBSCRIBE, ResourceCaps)),
-    ?assert(maps:is_key(?MCP_FEATURE_LIST_CHANGED, ResourceCaps)),
-
-    erlmcp_server:stop(Pid).
-
-test_initialize_response_protocol_version() ->
-    Capabilities = #mcp_server_capabilities{},
-    {ok, Pid} = erlmcp_server:start_link(test_init_proto, Capabilities),
-
-    Response = build_initialize_response(Capabilities),
-
-    %% Verify protocol version is present
-    ?assert(maps:is_key(?MCP_FIELD_PROTOCOL_VERSION, Response)),
-    ProtocolVersion = maps:get(?MCP_FIELD_PROTOCOL_VERSION, Response),
-    ?assert(is_binary(ProtocolVersion)),
-
-    erlmcp_server:stop(Pid).
-
-test_server_info_in_response() ->
-    Capabilities = #mcp_server_capabilities{},
-    {ok, Pid} = erlmcp_server:start_link(test_init_info, Capabilities),
-
-    Response = build_initialize_response(Capabilities),
-
-    %% Verify serverInfo field
-    ?assert(maps:is_key(?MCP_FIELD_SERVER_INFO, Response)),
-    ServerInfo = maps:get(?MCP_FIELD_SERVER_INFO, Response),
-
-    %% Verify name and version
-    ?assert(maps:is_key(?MCP_INFO_NAME, ServerInfo)),
-    ?assert(maps:is_key(?MCP_INFO_VERSION, ServerInfo)),
-
-    erlmcp_server:stop(Pid).
+    Caps = erlmcp_capabilities:build_server_capabilities(Config),
+    ?assert(Caps#mcp_server_capabilities.resources#mcp_resources_capability.subscribe =:= false),
+    ?assert(Caps#mcp_server_capabilities.resources#mcp_resources_capability.listChanged =:= true).
 
 %%====================================================================
 %% Test: Client Capability Extraction
 %%====================================================================
 
-client_capability_extraction_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-             ?_test(test_extract_client_capabilities()),
-             ?_test(test_extract_roots_capability()),
-             ?_test(test_extract_sampling_capability()),
-             ?_test(test_extract_empty_capabilities())
-         ]
-     end}.
+extract_client_capabilities_undefined_test() ->
+    Caps = erlmcp_capabilities:extract_client_capabilities(undefined),
+    ?assert(is_record(Caps, mcp_client_capabilities)),
+    ?assert(Caps#mcp_client_capabilities.roots#mcp_capability.enabled =:= false).
 
-test_extract_client_capabilities() ->
+extract_client_capabilities_with_roots_test() ->
     Params = #{
-        ?MCP_FIELD_CAPABILITIES => #{
-            ?MCP_CAPABILITY_ROOTS => #{},
-            ?MCP_CAPABILITY_SAMPLING => #{}
+        <<"capabilities">> => #{
+            <<"roots">> => #{}
         }
     },
+    Caps = erlmcp_capabilities:extract_client_capabilities(Params),
+    ?assert(Caps#mcp_client_capabilities.roots#mcp_capability.enabled =:= true).
 
-    ClientCaps = extract_client_capabilities(Params),
-
-    %% Should be a record
-    ?assert(is_record(ClientCaps, mcp_client_capabilities)),
-
-    %% Verify roots capability
-    ?assert(is_record(ClientCaps#mcp_client_capabilities.roots, mcp_capability)).
-
-test_extract_roots_capability() ->
+extract_client_capabilities_with_sampling_test() ->
     Params = #{
-        ?MCP_FIELD_CAPABILITIES => #{
-            ?MCP_CAPABILITY_ROOTS => #{}
+        <<"capabilities">> => #{
+            <<"sampling">> => #{}
         }
     },
+    Caps = erlmcp_capabilities:extract_client_capabilities(Params),
+    ?assert(Caps#mcp_client_capabilities.sampling#mcp_capability.enabled =:= true).
 
-    ClientCaps = extract_client_capabilities(Params),
-    Roots = ClientCaps#mcp_client_capabilities.roots,
-
-    %% Roots should be enabled
-    ?assert(Roots#mcp_capability.enabled =:= true).
-
-test_extract_sampling_capability() ->
+extract_client_capabilities_with_experimental_test() ->
     Params = #{
-        ?MCP_FIELD_CAPABILITIES => #{
-            ?MCP_CAPABILITY_SAMPLING => #{}
+        <<"capabilities">> => #{
+            <<"experimental">> => #{<<"myfeature">> => true}
         }
     },
-
-    ClientCaps = extract_client_capabilities(Params),
-    Sampling = ClientCaps#mcp_client_capabilities.sampling,
-
-    %% Sampling should be enabled
-    ?assert(Sampling#mcp_capability.enabled =:= true).
-
-test_extract_empty_capabilities() ->
-    Params = #{},
-
-    ClientCaps = extract_client_capabilities(Params),
-
-    %% Should return valid record with undefined fields
-    ?assert(is_record(ClientCaps, mcp_client_capabilities)),
-    ?assert(ClientCaps#mcp_client_capabilities.roots =:= undefined),
-    ?assert(ClientCaps#mcp_client_capabilities.sampling =:= undefined).
+    Caps = erlmcp_capabilities:extract_client_capabilities(Params),
+    ?assert(Caps#mcp_client_capabilities.experimental =:= #{<<"myfeature">> => true}).
 
 %%====================================================================
 %% Test: Protocol Version Validation
 %%====================================================================
 
-protocol_version_validation_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-             ?_test(test_validate_matching_protocol_version()),
-             ?_test(test_validate_default_protocol_version()),
-             ?_test(test_reject_incompatible_protocol_version()),
-             ?_test(test_validate_major_version_only())
-         ]
-     end}.
-
-test_validate_matching_protocol_version() ->
-    Version = ?MCP_VERSION,
-    Result = validate_protocol_version(Version),
+validate_protocol_version_2025_test() ->
+    Result = erlmcp_capabilities:validate_protocol_version(<<"2025-11-25">>),
     ?assertEqual(ok, Result).
 
-test_validate_default_protocol_version() ->
-    %% When client doesn't provide version, use default
-    Result = validate_protocol_version(?MCP_VERSION),
+validate_protocol_version_2024_test() ->
+    Result = erlmcp_capabilities:validate_protocol_version(<<"2024-11-05">>),
     ?assertEqual(ok, Result).
 
-test_reject_incompatible_protocol_version() ->
-    %% Version from the future (incompatible)
-    IncompatibleVersion = <<"2099-01-01">>,
-    Result = validate_protocol_version(IncompatibleVersion),
-    ?assertMatch({error, _}, Result).
+validate_protocol_version_invalid_test() ->
+    Result = erlmcp_capabilities:validate_protocol_version(<<"1.0.0">>),
+    ?assertEqual({error, <<"Unsupported protocol version">>}, Result).
 
-test_validate_major_version_only() ->
-    %% Server should validate YYYY-MM-DD format
-    ValidVersion = <<"2025-06-18">>,
-    Result = validate_protocol_version(ValidVersion),
+%%====================================================================
+%% Test: Capability Validation
+%%====================================================================
+
+validate_capability_resources_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_capability(Caps, resources),
     ?assertEqual(ok, Result).
 
-%%====================================================================
-%% Test: Feature Blocking Based on Capabilities
-%%====================================================================
+validate_capability_tools_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_capability(Caps, tools),
+    ?assertEqual(ok, Result).
 
-feature_blocking_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-             ?_test(test_block_resources_before_initialization()),
-             ?_test(test_block_tools_before_initialization()),
-             ?_test(test_block_prompts_before_initialization()),
-             ?_test(test_allow_resources_after_initialization())
-         ]
-     end}.
+validate_capability_prompts_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_capability(Caps, prompts),
+    ?assertEqual(ok, Result).
 
-test_block_resources_before_initialization() ->
-    %% This test is symbolic - full implementation would require
-    %% actual transport interaction. The helper functions below
-    %% demonstrate how blocking would be implemented.
-    Params = #{},
-    ClientCaps = extract_client_capabilities(Params),
-    ?assert(is_record(ClientCaps, mcp_client_capabilities)).
+validate_capability_logging_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_capability(Caps, logging),
+    ?assertEqual(ok, Result).
 
-test_block_tools_before_initialization() ->
-    %% Verify server state prevents tool calls before initialization
-    Params = #{},
-    ClientCaps = extract_client_capabilities(Params),
-    ?assert(is_record(ClientCaps, mcp_client_capabilities)).
+validate_capability_sampling_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_capability(Caps, sampling),
+    ?assertEqual(ok, Result).
 
-test_block_prompts_before_initialization() ->
-    %% Verify server state prevents prompt calls before initialization
-    Params = #{},
-    ClientCaps = extract_client_capabilities(Params),
-    ?assert(is_record(ClientCaps, mcp_client_capabilities)).
+validate_capability_roots_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_capability(Caps, roots),
+    ?assertEqual(ok, Result).
 
-test_allow_resources_after_initialization() ->
-    %% After initialization with client capabilities stored,
-    %% resources should be accessible if capability was negotiated
-    Params = #{
-        ?MCP_FIELD_CAPABILITIES => #{}
-    },
-    ClientCaps = extract_client_capabilities(Params),
-    ?assert(is_record(ClientCaps, mcp_client_capabilities)).
+validate_capability_unknown_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_capability(Caps, unknown_cap),
+    ?assertEqual({error, unknown_capability}, Result).
 
 %%====================================================================
-%% Test: Capability-Based Access Control
+%% Test: Feature Validation
 %%====================================================================
 
-capability_access_control_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-             ?_test(test_check_client_roots_capability()),
-             ?_test(test_check_client_sampling_capability()),
-             ?_test(test_check_experimental_capability())
-         ]
-     end}.
+validate_feature_resources_subscribe_enabled_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_feature(Caps, resources, subscribe),
+    ?assertEqual(ok, Result).
 
-test_check_client_roots_capability() ->
-    Params = #{
-        ?MCP_FIELD_CAPABILITIES => #{
-            ?MCP_CAPABILITY_ROOTS => #{}
+validate_feature_resources_subscribe_disabled_test() ->
+    Config = #{
+        resources => #{
+            subscribe => false,
+            listChanged => true
         }
     },
-    ClientCaps = extract_client_capabilities(Params),
+    Caps = erlmcp_capabilities:build_server_capabilities(Config),
+    Result = erlmcp_capabilities:validate_feature(Caps, resources, subscribe),
+    ?assertEqual({error, feature_not_supported}, Result).
 
-    %% Check if roots capability is enabled
-    HasRoots = client_has_capability(ClientCaps, ?MCP_CAPABILITY_ROOTS),
-    ?assert(HasRoots).
+validate_feature_resources_listChanged_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_feature(Caps, resources, listChanged),
+    ?assertEqual(ok, Result).
 
-test_check_client_sampling_capability() ->
-    Params = #{
-        ?MCP_FIELD_CAPABILITIES => #{
-            ?MCP_CAPABILITY_SAMPLING => #{}
+validate_feature_tools_listChanged_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_feature(Caps, tools, listChanged),
+    ?assertEqual(ok, Result).
+
+validate_feature_prompts_listChanged_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_feature(Caps, prompts, listChanged),
+    ?assertEqual(ok, Result).
+
+validate_feature_unknown_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Result = erlmcp_capabilities:validate_feature(Caps, unknown, unknown),
+    ?assertEqual({error, unknown_feature}, Result).
+
+%%====================================================================
+%% Test: Serialization to Map
+%%====================================================================
+
+capability_to_map_resources_test() ->
+    Resources = #mcp_resources_capability{subscribe = true, listChanged = false},
+    Map = erlmcp_capabilities:capability_to_map(Resources),
+    ?assertEqual(true, maps:get(<<"subscribe">>, Map)),
+    ?assertEqual(false, maps:get(<<"listChanged">>, Map)).
+
+capability_to_map_tools_test() ->
+    Tools = #mcp_tools_capability{listChanged = true},
+    Map = erlmcp_capabilities:capability_to_map(Tools),
+    ?assertEqual(true, maps:get(<<"listChanged">>, Map)).
+
+capability_to_map_prompts_test() ->
+    Prompts = #mcp_prompts_capability{listChanged = false},
+    Map = erlmcp_capabilities:capability_to_map(Prompts),
+    ?assertEqual(false, maps:get(<<"listChanged">>, Map)).
+
+capability_to_map_logging_test() ->
+    Logging = #mcp_logging_capability{},
+    Map = erlmcp_capabilities:capability_to_map(Logging),
+    ?assertEqual(#{}, Map).
+
+capability_to_map_roots_test() ->
+    Roots = #mcp_roots_capability{},
+    Map = erlmcp_capabilities:capability_to_map(Roots),
+    ?assertEqual(#{}, Map).
+
+server_capabilities_to_map_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    Map = erlmcp_capabilities:capability_to_map(Caps),
+    ?assert(maps:is_key(<<"resources">>, Map)),
+    ?assert(maps:is_key(<<"tools">>, Map)),
+    ?assert(maps:is_key(<<"prompts">>, Map)),
+    ?assert(maps:is_key(<<"logging">>, Map)).
+
+server_capabilities_to_map_with_experimental_test() ->
+    DefaultCaps = erlmcp_capabilities:build_server_capabilities(),
+    Caps = DefaultCaps#mcp_server_capabilities{experimental = #{<<"my_feature">> => true}},
+    Map = erlmcp_capabilities:capability_to_map(Caps),
+    ?assertEqual(#{<<"my_feature">> => true}, maps:get(<<"experimental">>, Map)).
+
+client_capabilities_to_map_test() ->
+    ClientCaps = #mcp_client_capabilities{
+        roots = #mcp_capability{enabled = true},
+        sampling = #mcp_capability{enabled = false},
+        experimental = undefined
+    },
+    Map = erlmcp_capabilities:client_capabilities_to_map(ClientCaps),
+    ?assert(maps:is_key(<<"roots">>, Map)),
+    ?assertNot(maps:is_key(<<"sampling">>, Map)).
+
+%%====================================================================
+%% Test: Deserialization from Map
+%%====================================================================
+
+server_capabilities_from_map_test() ->
+    Map = #{
+        <<"resources">> => #{
+            <<"subscribe">> => true,
+            <<"listChanged">> => false
+        },
+        <<"tools">> => #{
+            <<"listChanged">> => true
         }
     },
-    ClientCaps = extract_client_capabilities(Params),
+    Caps = erlmcp_capabilities:server_capabilities_from_map(Map),
+    ?assertEqual(true, Caps#mcp_server_capabilities.resources#mcp_resources_capability.subscribe),
+    ?assertEqual(false, Caps#mcp_server_capabilities.resources#mcp_resources_capability.listChanged),
+    ?assertEqual(true, Caps#mcp_server_capabilities.tools#mcp_tools_capability.listChanged).
 
-    %% Check if sampling capability is enabled
-    HasSampling = client_has_capability(ClientCaps, ?MCP_CAPABILITY_SAMPLING),
-    ?assert(HasSampling).
+server_capabilities_from_map_defaults_test() ->
+    Map = #{},
+    Caps = erlmcp_capabilities:server_capabilities_from_map(Map),
+    ?assertEqual(false, Caps#mcp_server_capabilities.resources#mcp_resources_capability.subscribe),
+    ?assertEqual(false, Caps#mcp_server_capabilities.resources#mcp_resources_capability.listChanged).
 
-test_check_experimental_capability() ->
-    Params = #{
-        ?MCP_FIELD_CAPABILITIES => #{
-            experimental => #{<<"custom_feature">> => true}
+server_capabilities_from_map_with_experimental_test() ->
+    Map = #{
+        <<"experimental">> => #{<<"feature">> => <<"value">>}
+    },
+    Caps = erlmcp_capabilities:server_capabilities_from_map(Map),
+    ?assertEqual(#{<<"feature">> => <<"value">>}, Caps#mcp_server_capabilities.experimental).
+
+client_capabilities_from_map_test() ->
+    Map = #{
+        <<"roots">> => #{},
+        <<"sampling">> => #{}
+    },
+    Caps = erlmcp_capabilities:client_capabilities_from_map(Map),
+    ?assertEqual(true, Caps#mcp_client_capabilities.roots#mcp_capability.enabled),
+    ?assertEqual(true, Caps#mcp_client_capabilities.sampling#mcp_capability.enabled).
+
+client_capabilities_from_map_empty_test() ->
+    Map = #{},
+    Caps = erlmcp_capabilities:client_capabilities_from_map(Map),
+    ?assertEqual(false, Caps#mcp_client_capabilities.roots#mcp_capability.enabled),
+    ?assertEqual(false, Caps#mcp_client_capabilities.sampling#mcp_capability.enabled).
+
+%%====================================================================
+%% Test: Round Trip Serialization
+%%====================================================================
+
+roundtrip_server_capabilities_test() ->
+    Original = erlmcp_capabilities:build_server_capabilities(),
+    Map = erlmcp_capabilities:capability_to_map(Original),
+    Restored = erlmcp_capabilities:server_capabilities_from_map(Map),
+    
+    ?assertEqual(
+        Original#mcp_server_capabilities.resources#mcp_resources_capability.subscribe,
+        Restored#mcp_server_capabilities.resources#mcp_resources_capability.subscribe
+    ),
+    ?assertEqual(
+        Original#mcp_server_capabilities.resources#mcp_resources_capability.listChanged,
+        Restored#mcp_server_capabilities.resources#mcp_resources_capability.listChanged
+    ),
+    ?assertEqual(
+        Original#mcp_server_capabilities.tools#mcp_tools_capability.listChanged,
+        Restored#mcp_server_capabilities.tools#mcp_tools_capability.listChanged
+    ).
+
+%%====================================================================
+%% Test: Supported Versions
+%%====================================================================
+
+supported_versions_test() ->
+    Versions = erlmcp_capabilities:supported_versions(),
+    ?assert(lists:member(<<"2025-11-25">>, Versions)),
+    ?assert(lists:member(<<"2024-11-05">>, Versions)).
+
+%%====================================================================
+%% Test Integration: Initialize Response with Capabilities
+%%====================================================================
+
+initialize_response_has_capabilities_test() ->
+    Caps = erlmcp_capabilities:build_server_capabilities(),
+    CapMap = erlmcp_capabilities:capability_to_map(Caps),
+    
+    Response = #{
+        <<"protocolVersion">> => <<"2025-11-25">>,
+        <<"capabilities">> => CapMap,
+        <<"serverInfo">> => #{
+            <<"name">> => <<"erlmcp">>,
+            <<"version">> => <<"0.6.0">>
         }
     },
-    ClientCaps = extract_client_capabilities(Params),
-
-    %% Check experimental capabilities
-    Experimental = ClientCaps#mcp_client_capabilities.experimental,
-    ?assert(maps:is_key(<<"custom_feature">>, Experimental)).
+    
+    ?assert(maps:is_key(<<"capabilities">>, Response)),
+    ?assert(maps:is_key(<<"resources">>, maps:get(<<"capabilities">>, Response))).
 
 %%====================================================================
-%% Test: Task Capability Negotiation
+%% Test: Edge Cases
 %%====================================================================
 
-task_capability_negotiation_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-             ?_test(test_include_task_capability_in_server_response()),
-             ?_test(test_task_capability_features()),
-             ?_test(test_task_create_allowed_with_capability())
-         ]
-     end}.
+validate_capability_with_empty_record_test() ->
+    %% Empty record still has default-initialized capabilities
+    Caps = #mcp_server_capabilities{},
+    Result = erlmcp_capabilities:validate_capability(Caps, resources),
+    %% Should succeed because resources has default value of #mcp_resources_capability{}
+    ?assertEqual(ok, Result).
 
-test_include_task_capability_in_server_response() ->
-    Capabilities = #mcp_server_capabilities{
-        tools = #mcp_capability{enabled = true}
+capability_map_roundtrip_preserves_all_features_test() ->
+    Resources = #mcp_resources_capability{subscribe = true, listChanged = true},
+    Tools = #mcp_tools_capability{listChanged = true},
+    Prompts = #mcp_prompts_capability{listChanged = false},
+    Sampling = #mcp_sampling_capability{modelPreferences = #{<<"cost">> => 0.5}},
+    
+    OriginalCaps = #mcp_server_capabilities{
+        resources = Resources,
+        tools = Tools,
+        prompts = Prompts,
+        sampling = Sampling
     },
-    {ok, Pid} = erlmcp_server:start_link(test_task_cap, Capabilities),
-
-    Response = build_initialize_response(Capabilities),
-    Caps = maps:get(?MCP_FIELD_CAPABILITIES, Response),
-
-    %% Tasks capability should be present (derived from tools)
-    %% Implementation may include tasks in capabilities
-    ?assert(is_map(Caps)),
-
-    erlmcp_server:stop(Pid).
-
-test_task_capability_features() ->
-    Capabilities = #mcp_server_capabilities{},
-    {ok, Pid} = erlmcp_server:start_link(test_task_feat, Capabilities),
-
-    Response = build_initialize_response(Capabilities),
-
-    %% Verify response structure is valid
-    ?assert(maps:is_key(?MCP_FIELD_PROTOCOL_VERSION, Response)),
-    ?assert(maps:is_key(?MCP_FIELD_CAPABILITIES, Response)),
-
-    erlmcp_server:stop(Pid).
-
-test_task_create_allowed_with_capability() ->
-    Capabilities = #mcp_server_capabilities{
-        tools = #mcp_capability{enabled = true}
-    },
-    {ok, Pid} = erlmcp_server:start_link(test_task_create, Capabilities),
-
-    %% Add a tool that can be called as a task
-    ok = erlmcp_server:add_tool(Pid, <<"test_tool">>, fun(_Args) -> <<"result">> end),
-
-    erlmcp_server:stop(Pid).
+    
+    Map = erlmcp_capabilities:capability_to_map(OriginalCaps),
+    RestoredCaps = erlmcp_capabilities:server_capabilities_from_map(Map),
+    
+    ?assertEqual(true, RestoredCaps#mcp_server_capabilities.resources#mcp_resources_capability.subscribe),
+    ?assertEqual(true, RestoredCaps#mcp_server_capabilities.resources#mcp_resources_capability.listChanged),
+    ?assertEqual(true, RestoredCaps#mcp_server_capabilities.tools#mcp_tools_capability.listChanged),
+    ?assertEqual(false, RestoredCaps#mcp_server_capabilities.prompts#mcp_prompts_capability.listChanged).
 
 %%====================================================================
-%% Helper Functions - Internal API
+%% Integration Test Suite
 %%====================================================================
 
-%% Build initialize response (mimics server behavior)
-build_initialize_response(Capabilities) ->
-    {ok, Version} = application:get_key(erlmcp, vsn),
-    #{
-        ?MCP_FIELD_PROTOCOL_VERSION => ?MCP_VERSION,
-        ?MCP_FIELD_CAPABILITIES => encode_server_capabilities(Capabilities),
-        ?MCP_FIELD_SERVER_INFO => #{
-            ?MCP_INFO_NAME => <<"erlmcp">>,
-            ?MCP_INFO_VERSION => list_to_binary(Version)
-        }
-    }.
-
-%% Encode server capabilities
-encode_server_capabilities(#mcp_server_capabilities{} = Caps) ->
-    Base = #{},
-    Base1 = maybe_add_server_capability(Base, ?MCP_CAPABILITY_RESOURCES,
-                                        Caps#mcp_server_capabilities.resources,
-                                        #{?MCP_FEATURE_SUBSCRIBE => true,
-                                          ?MCP_FEATURE_LIST_CHANGED => true}),
-    Base2 = maybe_add_server_capability(Base1, ?MCP_CAPABILITY_TOOLS,
-                                        Caps#mcp_server_capabilities.tools, #{}),
-    Base3 = maybe_add_server_capability(Base2, ?MCP_CAPABILITY_PROMPTS,
-                                        Caps#mcp_server_capabilities.prompts,
-                                        #{?MCP_FEATURE_LIST_CHANGED => true}),
-    maybe_add_server_capability(Base3, ?MCP_CAPABILITY_LOGGING,
-                                Caps#mcp_server_capabilities.logging, #{}).
-
-%% Add capability if enabled
-maybe_add_server_capability(Map, _Key, undefined, _Value) ->
-    Map;
-maybe_add_server_capability(Map, Key, #mcp_capability{enabled = true}, Value) ->
-    Map#{Key => Value};
-maybe_add_server_capability(Map, _Key, _, _Value) ->
-    Map.
-
-%% Extract client capabilities from initialize request params
-extract_client_capabilities(Params) when is_map(Params) ->
-    CapMap = maps:get(?MCP_FIELD_CAPABILITIES, Params, #{}),
-
-    Roots = case maps:is_key(?MCP_CAPABILITY_ROOTS, CapMap) of
-        true -> #mcp_capability{enabled = true};
-        false -> undefined
-    end,
-
-    Sampling = case maps:is_key(?MCP_CAPABILITY_SAMPLING, CapMap) of
-        true -> #mcp_capability{enabled = true};
-        false -> undefined
-    end,
-
-    Experimental = maps:get(experimental, CapMap, undefined),
-
-    #mcp_client_capabilities{
-        roots = Roots,
-        sampling = Sampling,
-        experimental = Experimental
-    };
-extract_client_capabilities(_) ->
-    #mcp_client_capabilities{}.
-
-%% Validate protocol version
-validate_protocol_version(Version) when is_binary(Version) ->
-    %% MCP protocol uses YYYY-MM-DD format
-    %% Current version is ?MCP_VERSION
-    case Version of
-        ?MCP_VERSION -> ok;
-        _ ->
-            %% For now, accept matching versions
-            %% Production could implement compatibility matrix
-            case Version > ?MCP_VERSION of
-                true ->
-                    {error, <<"Protocol version not yet supported">>};
-                false ->
-                    %% Allow older compatible versions
-                    case Version < <<"2025-01-01">> of
-                        true ->
-                            {error, <<"Protocol version too old">>};
-                        false ->
-                            ok
-                    end
-            end
-    end;
-validate_protocol_version(_) ->
-    {error, <<"Invalid protocol version format">>}.
-
-%% Check if client has specific capability
-client_has_capability(#mcp_client_capabilities{roots = Roots}, ?MCP_CAPABILITY_ROOTS) ->
-    Roots =/= undefined andalso Roots#mcp_capability.enabled;
-client_has_capability(#mcp_client_capabilities{sampling = Sampling}, ?MCP_CAPABILITY_SAMPLING) ->
-    Sampling =/= undefined andalso Sampling#mcp_capability.enabled;
-client_has_capability(#mcp_client_capabilities{experimental = Exp}, CapName) ->
-    Exp =/= undefined andalso maps:is_key(CapName, Exp);
-client_has_capability(_, _) ->
-    false.
-
-%%====================================================================
-%% End of Test Suite
-%%====================================================================
+integration_test_() ->
+    {setup, fun setup/0, fun cleanup/1, [
+        {"build_default_server_capabilities", fun build_default_server_capabilities_test/0},
+        {"extract_client_capabilities_undefined", fun extract_client_capabilities_undefined_test/0},
+        {"validate_protocol_version_2025", fun validate_protocol_version_2025_test/0},
+        {"validate_capability_resources", fun validate_capability_resources_test/0},
+        {"validate_feature_resources_subscribe_enabled", fun validate_feature_resources_subscribe_enabled_test/0},
+        {"server_capabilities_to_map", fun server_capabilities_to_map_test/0},
+        {"roundtrip_server_capabilities", fun roundtrip_server_capabilities_test/0},
+        {"supported_versions", fun supported_versions_test/0}
+    ]}.

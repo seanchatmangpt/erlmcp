@@ -647,7 +647,7 @@ test_system_state_consistency(Config) ->
     ],
     
     %% Execute consistency tests
-    ConsistencyResults = lists:map(fun({ScenarioName, TestFun}) ->
+    _ConsistencyResults = lists:map(fun({ScenarioName, TestFun}) ->
         ct:pal("Testing state consistency scenario: ~p", [ScenarioName]),
         Result = TestFun(StateSystem),
         validate_state_consistency_result(ScenarioName, Result),

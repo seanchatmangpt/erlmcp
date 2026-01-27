@@ -59,9 +59,6 @@ task_lifecycle(_SetupInfo) ->
     ?assertEqual(completed, maps:get(status, FinalTask)),
     ok.
 
-
--task_cancel(_SetupInfo) -> ok.
-
 task_cancel(_SetupInfo) ->
     {ok, Task} = erlmcp_task_manager:create_tool_task(test_server, transport_b, <<"req-2">>, <<"echo">>, #{}),
     TaskId = maps:get(id, Task),

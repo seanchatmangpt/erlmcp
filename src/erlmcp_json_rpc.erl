@@ -11,7 +11,18 @@
     encode_notification/2,
     decode_message/1,
     create_error/3,
-    create_error_with_data/4
+    create_error_with_data/4,
+    validate_error_code/1,
+    error_method_not_found/2,
+    error_invalid_params/2,
+    error_resource_not_found/2,
+    error_tool_not_found/2,
+    error_prompt_not_found/2,
+    error_capability_not_supported/2,
+    error_not_initialized/1,
+    error_validation_failed/2,
+    error_internal/1,
+    error_parse/1
 ]).
 
 %% Types
@@ -47,7 +58,14 @@ encode_error_response(Id, Code, Message) when is_integer(Code), is_binary(Messag
 
 -spec encode_error_response(json_rpc_id(), integer(), binary(), term()) -> binary().
 encode_error_response(Id, Code, Message, Data) when is_integer(Code), is_binary(Message) ->
-    Error = build_error_object(Code, Message, Data),
+    %% Validate error code - use internal error if invalid
+    FinalCode = case validate_error_code(Code) of
+        true -> Code;
+        false ->
+            logger:warning("Invalid error code ~p, using internal error", [Code]),
+            ?JSONRPC_INTERNAL_ERROR
+    end,
+    Error = build_error_object(FinalCode, Message, Data),
     Response = #json_rpc_response{
         id = Id,
         error = Error
@@ -92,6 +110,83 @@ create_error_with_data(Code, Message, DataKey, DataValue)
         message = Message,
         data = #{atom_to_binary(DataKey, utf8) => DataValue}
     }.
+
+%%====================================================================
+%% Error Code Validation
+%%====================================================================
+
+-spec validate_error_code(integer()) -> boolean().
+validate_error_code(Code) when is_integer(Code) ->
+    lists:member(Code, ?VALID_ERROR_CODES).
+
+%%====================================================================
+%% Error Helper Functions - Common MCP Error Types
+%%====================================================================
+
+%% Method not found error
+-spec error_method_not_found(json_rpc_id(), binary()) -> binary().
+error_method_not_found(Id, Method) when is_binary(Method) ->
+    Data = #{<<"method">> => Method},
+    encode_error_response(Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND, Data).
+
+%% Invalid parameters error
+-spec error_invalid_params(json_rpc_id(), binary() | string() | list()) -> binary().
+error_invalid_params(Id, Details) when is_list(Details) ->
+    error_invalid_params(Id, erlang:list_to_binary(Details));
+error_invalid_params(Id, Details) when is_atom(Details) ->
+    error_invalid_params(Id, atom_to_binary(Details, utf8));
+error_invalid_params(Id, Details) when is_binary(Details) ->
+    Data = #{<<"details">> => Details},
+    encode_error_response(Id, ?JSONRPC_INVALID_PARAMS, ?JSONRPC_MSG_INVALID_PARAMS, Data).
+
+%% Resource not found error
+-spec error_resource_not_found(json_rpc_id(), binary()) -> binary().
+error_resource_not_found(Id, Uri) when is_binary(Uri) ->
+    Data = #{<<"uri">> => Uri},
+    encode_error_response(Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND, Data).
+
+%% Tool not found error
+-spec error_tool_not_found(json_rpc_id(), binary()) -> binary().
+error_tool_not_found(Id, ToolName) when is_binary(ToolName) ->
+    Data = #{<<"tool">> => ToolName},
+    encode_error_response(Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND, Data).
+
+%% Prompt not found error
+-spec error_prompt_not_found(json_rpc_id(), binary()) -> binary().
+error_prompt_not_found(Id, PromptName) when is_binary(PromptName) ->
+    Data = #{<<"prompt">> => PromptName},
+    encode_error_response(Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND, Data).
+
+%% Capability not supported error
+-spec error_capability_not_supported(json_rpc_id(), binary()) -> binary().
+error_capability_not_supported(Id, Capability) when is_binary(Capability) ->
+    Data = #{<<"capability">> => Capability},
+    encode_error_response(Id, ?MCP_ERROR_CAPABILITY_NOT_SUPPORTED, ?MCP_MSG_CAPABILITY_NOT_SUPPORTED, Data).
+
+%% Not initialized error
+-spec error_not_initialized(json_rpc_id()) -> binary().
+error_not_initialized(Id) ->
+    encode_error_response(Id, ?MCP_ERROR_NOT_INITIALIZED, ?MCP_MSG_NOT_INITIALIZED, undefined).
+
+%% Validation failed error
+-spec error_validation_failed(json_rpc_id(), binary() | string() | list()) -> binary().
+error_validation_failed(Id, Details) when is_list(Details) ->
+    error_validation_failed(Id, erlang:list_to_binary(Details));
+error_validation_failed(Id, Details) when is_atom(Details) ->
+    error_validation_failed(Id, atom_to_binary(Details, utf8));
+error_validation_failed(Id, Details) when is_binary(Details) ->
+    Data = #{<<"details">> => Details},
+    encode_error_response(Id, ?MCP_ERROR_VALIDATION_FAILED, <<"Validation failed">>, Data).
+
+%% Internal error
+-spec error_internal(json_rpc_id()) -> binary().
+error_internal(Id) ->
+    encode_error_response(Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR, undefined).
+
+%% Parse error
+-spec error_parse(json_rpc_id()) -> binary().
+error_parse(Id) ->
+    encode_error_response(Id, ?JSONRPC_PARSE_ERROR, ?JSONRPC_MSG_PARSE_ERROR, undefined).
 
 %%====================================================================
 %% Internal Functions
@@ -148,16 +243,34 @@ build_error_object(Code, Message, undefined) ->
         ?JSONRPC_ERROR_FIELD_CODE => Code,
         ?JSONRPC_ERROR_FIELD_MESSAGE => Message
     };
-build_error_object(Code, Message, Data) ->
-    Error = #{
+build_error_object(Code, Message, null) ->
+    %% Explicit null, don't include data field
+    #{
         ?JSONRPC_ERROR_FIELD_CODE => Code,
         ?JSONRPC_ERROR_FIELD_MESSAGE => Message
-    },
-    case Data of
-        null -> Error;
-        DataMap when is_map(DataMap) -> Error#{?JSONRPC_ERROR_FIELD_DATA => DataMap};
-        _ -> Error#{?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => Data}}
-    end.
+    };
+build_error_object(Code, Message, Data) when is_map(Data) ->
+    %% Valid map data, include it
+    #{
+        ?JSONRPC_ERROR_FIELD_CODE => Code,
+        ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
+        ?JSONRPC_ERROR_FIELD_DATA => Data
+    };
+build_error_object(Code, Message, Data) when is_binary(Data) ->
+    %% Binary data, wrap in details field
+    #{
+        ?JSONRPC_ERROR_FIELD_CODE => Code,
+        ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
+        ?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => Data}
+    };
+build_error_object(Code, Message, Data) ->
+    %% Other data types - convert to binary and wrap in details
+    DataBin = erlang:term_to_binary(Data),
+    #{
+        ?JSONRPC_ERROR_FIELD_CODE => Code,
+        ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
+        ?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => DataBin}
+    }.
 
 -spec parse_json_rpc(map()) -> decode_result().
 parse_json_rpc(Data) ->
