@@ -471,4 +471,52 @@
     stop_sequences :: [binary()] | undefined
 }).
 
+%% MCP App Record (for MCP Apps feature)
+-type app_id() :: binary().
+-type app_name() :: binary().
+-type app_version() :: binary().
+-type app_status() :: initialized | running | stopped | error.
+-type permission() :: atom().
+-type app_state() :: map().
+
+-record(mcp_app, {
+    id :: app_id(),
+    name :: app_name(),
+    version :: app_version(),
+    description :: binary(),
+    status = initialized :: app_status(),
+    uri :: binary() | undefined,
+    manifest :: map() | undefined,
+    permissions = sets:new() :: sets:set(permission()),
+    state = #{} :: app_state(),
+    created_at :: integer(),
+    activated_at :: integer() | undefined,
+    resources = [] :: [binary()],
+    error :: binary() | undefined
+}).
+
+%% MCP Server Types and State Record
+-type server_id() :: atom().
+-type resource_handler() :: fun((binary()) -> binary() | #mcp_content{}).
+-type tool_handler() :: fun((map()) -> binary() | #mcp_content{} | [#mcp_content{}]).
+-type prompt_handler() :: fun((map()) -> binary() | [map()]).
+
+-record(state, {
+    server_id :: server_id(),
+    phase = initialization :: mcp_server_phase(),
+    init_timeout_ref :: reference() | undefined,
+    init_timeout_ms = 5000 :: pos_integer(),
+    capabilities :: #mcp_server_capabilities{},
+    client_capabilities :: #mcp_client_capabilities{} | undefined,
+    protocol_version :: binary() | undefined,
+    resources = #{} :: #{binary() => {#mcp_resource{}, resource_handler()}},
+    resource_templates = #{} :: #{binary() => {#mcp_resource_template{}, resource_handler()}},
+    tools = #{} :: #{binary() => {#mcp_tool{}, tool_handler(), map() | undefined}},
+    prompts = #{} :: #{binary() => {#mcp_prompt{}, prompt_handler()}},
+    subscriptions = #{} :: #{binary() => sets:set(pid())},
+    progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
+    notifier_pid :: pid() | undefined,
+    initialized = false :: boolean()
+}).
+
 -endif.

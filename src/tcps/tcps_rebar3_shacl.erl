@@ -143,7 +143,7 @@ format_error(Reason) ->
 %%%=============================================================================
 
 %% @private Validate a single file against SHACL shapes
-validate_file(DataFile, ShapesFile, State) ->
+validate_file(DataFile, ShapesFile, _State) ->
     rebar_api:debug("Validating: ~s", [DataFile]),
 
     %% In production, this would use a SHACL validation library

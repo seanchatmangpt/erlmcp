@@ -19,7 +19,6 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
--type server_id() :: atom() | binary().
 -type transport_id() :: atom() | binary().
 -type server_config() :: #{
     capabilities => #mcp_server_capabilities{},
