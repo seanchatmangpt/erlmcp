@@ -1,0 +1,224 @@
+src/erlmcp_backpressure.erl:224:37: Warning: variable 'Bucket' is unused
+%  224|                 #{message_bucket := Bucket, backpressure_active := true} ->
+%     |                                     ^
+
+src/erlmcp_client.erl:44:2: record state already defined
+%   44| -record(state, {
+%     |  ^
+
+src/erlmcp_client.erl:201:17: field transport undefined in record state
+%  201|                 transport = Transport,
+%     |                 ^
+
+src/erlmcp_client.erl:202:17: field transport_state undefined in record state
+%  202|                 transport_state = TransportState,
+%     |                 ^
+
+src/erlmcp_client.erl:203:17: field strict_mode undefined in record state
+%  203|                 strict_mode = maps:get(strict_mode, Options, false),
+%     |                 ^
+
+src/erlmcp_client.erl:204:17: field timeout undefined in record state
+%  204|                 timeout = maps:get(timeout, Options, 5000),
+%     |                 ^
+
+src/erlmcp_client.erl:357:52: field batch_requests undefined in record state
+%  357|     NewBatches = maps:put(BatchId, [], State#state.batch_requests),
+%     |                                                    ^
+
+src/erlmcp_client.erl:358:29: field batch_requests undefined in record state
+%  358|     {reply, ok, State#state{batch_requests = NewBatches}};
+%     |                             ^
+
+src/erlmcp_client.erl:361:41: field batch_requests undefined in record state
+%  361|     case maps:find(BatchId, State#state.batch_requests) of
+%     |                                         ^
+
+src/erlmcp_client.erl:363:37: field request_id undefined in record state
+%  363|             RequestId = State#state.request_id,
+%     |                                     ^
+
+src/erlmcp_client.erl:367:17: field request_id undefined in record state
+%  367|                 request_id = RequestId + 1,
+%     |                 ^
+
+src/erlmcp_client.erl:368:17: field batch_requests undefined in record state
+%  368|                 batch_requests = maps:put(BatchId, NewRequests, State#state.batch_requests)
+%     |                 ^
+
+src/erlmcp_client.erl:376:41: field batch_requests undefined in record state
+%  376|     case maps:take(BatchId, State#state.batch_requests) of
+%     |                                         ^
+
+src/erlmcp_client.erl:378:36: field batch_requests undefined in record state
+%  378|             NewState = State#state{batch_requests = NewBatches},
+%     |                                    ^
+
+src/erlmcp_client.erl:386:51: field batch_requests undefined in record state
+%  386|     NewBatches = maps:remove(BatchId, State#state.batch_requests),
+%     |                                                   ^
+
+src/erlmcp_client.erl:387:29: field batch_requests undefined in record state
+%  387|     {reply, ok, State#state{batch_requests = NewBatches}};
+%     |                             ^
+
+src/erlmcp_client.erl:390:57: field notification_handlers undefined in record state
+%  390|     NewHandlers = maps:put(Method, Handler, State#state.notification_handlers),
+%     |                                                         ^
+
+src/erlmcp_client.erl:391:29: field notification_handlers undefined in record state
+%  391|     {reply, ok, State#state{notification_handlers = NewHandlers}};
+%     |                             ^
+
+src/erlmcp_client.erl:394:51: field notification_handlers undefined in record state
+%  394|     NewHandlers = maps:remove(Method, State#state.notification_handlers),
+%     |                                                   ^
+
+src/erlmcp_client.erl:395:29: field notification_handlers undefined in record state
+%  395|     {reply, ok, State#state{notification_handlers = NewHandlers}};
+%     |                             ^
+
+src/erlmcp_client.erl:398:29: field sampling_handler undefined in record state
+%  398|     {reply, ok, State#state{sampling_handler = Handler}};
+%     |                             ^
+
+src/erlmcp_client.erl:401:29: field sampling_handler undefined in record state
+%  401|     {reply, ok, State#state{sampling_handler = undefined}};
+%     |                             ^
+
+src/erlmcp_client.erl:404:29: field strict_mode undefined in record state
+%  404|     {reply, ok, State#state{strict_mode = Enabled}};
+%     |                             ^
+
+src/erlmcp_client.erl:427:68: field transport_state undefined in record state
+%  427| handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.transport_state ->
+%     |                                                                    ^
+
+src/erlmcp_client.erl:460:24: field transport undefined in record state
+%  460| close_transport(#state{transport = Transport, transport_state = TransportState}) ->
+%     |                        ^
+
+src/erlmcp_client.erl:460:47: field transport_state undefined in record state
+%  460| close_transport(#state{transport = Transport, transport_state = TransportState}) ->
+%     |                                               ^
+
+src/erlmcp_client.erl:461:11: variable 'Transport' is unbound
+%  461|     catch Transport:close(TransportState),
+%     |           ^
+
+src/erlmcp_client.erl:461:27: variable 'TransportState' is unbound
+%  461|     catch Transport:close(TransportState),
+%     |                           ^
+
+src/erlmcp_client.erl:467:29: field request_id undefined in record state
+%  467|     RequestId = State#state.request_id,
+%     |                             ^
+
+src/erlmcp_client.erl:472:17: field request_id undefined in record state
+%  472|                 request_id = RequestId + 1,
+%     |                 ^
+
+src/erlmcp_client.erl:473:17: field pending_requests undefined in record state
+%  473|                 pending_requests = maps:put(RequestId, RequestInfo, State#state.pending_requests)
+%     |                 ^
+
+src/erlmcp_client.erl:483:21: field transport undefined in record state
+%  483| send_message(#state{transport = Transport, transport_state = TransportState}, Message) ->
+%     |                     ^
+
+src/erlmcp_client.erl:483:44: field transport_state undefined in record state
+%  483| send_message(#state{transport = Transport, transport_state = TransportState}, Message) ->
+%     |                                            ^
+
+src/erlmcp_client.erl:484:5: variable 'Transport' is unbound
+%  484|     Transport:send(TransportState, Message).
+%     |     ^
+
+src/erlmcp_client.erl:484:20: variable 'TransportState' is unbound
+%  484|     Transport:send(TransportState, Message).
+%     |                    ^
+
+src/erlmcp_client.erl:527:28: field strict_mode undefined in record state
+%  527| validate_capability(#state{strict_mode = false}, _) ->
+%     |                            ^
+
+src/erlmcp_client.erl:557:36: field pending_requests undefined in record state
+%  557|     case maps:take(Id, State#state.pending_requests) of
+%     |                                    ^
+
+src/erlmcp_client.erl:565:25: field pending_requests undefined in record state
+%  565|                         pending_requests = NewPending,
+%     |                         ^
+
+src/erlmcp_client.erl:574:25: field pending_requests undefined in record state
+%  574|                         pending_requests = NewPending,
+%     |                         ^
+
+src/erlmcp_client.erl:581:35: field pending_requests undefined in record state
+%  581|             {noreply, State#state{pending_requests = NewPending}};
+%     |                                   ^
+
+src/erlmcp_client.erl:617:31: field sampling_handler undefined in record state
+%  617|     spawn_handler(State#state.sampling_handler, Method, Params),
+%     |                               ^
+
+src/erlmcp_client.erl:641:39: field notification_handlers undefined in record state
+%  641|     case maps:get(Method, State#state.notification_handlers, undefined) of
+%     |                                       ^
+
+src/erlmcp_client.erl:41:2: Warning: type client_phase() is unused
+%   41| -type client_phase() :: pre_initialization | initializing | initialized | error | closed.
+%     |  ^
+
+src/erlmcp_client.erl:196:22: Warning: variable 'Options' is unused
+%  196| init([TransportOpts, Options]) ->
+%     |                      ^
+
+src/erlmcp_client.erl:199:14: Warning: variable 'Transport' is unused
+%  199|         {ok, Transport, TransportState} ->
+%     |              ^
+
+src/erlmcp_client.erl:199:25: Warning: variable 'TransportState' is unused
+%  199|         {ok, Transport, TransportState} ->
+%     |                         ^
+
+src/erlmcp_client.erl:357:5: Warning: variable 'NewBatches' is unused
+%  357|     NewBatches = maps:put(BatchId, [], State#state.batch_requests),
+%     |     ^
+
+src/erlmcp_client.erl:365:13: Warning: variable 'NewRequests' is unused
+%  365|             NewRequests = [Request | Requests],
+%     |             ^
+
+src/erlmcp_client.erl:377:20: Warning: variable 'NewBatches' is unused
+%  377|         {Requests, NewBatches} ->
+%     |                    ^
+
+src/erlmcp_client.erl:386:5: Warning: variable 'NewBatches' is unused
+%  386|     NewBatches = maps:remove(BatchId, State#state.batch_requests),
+%     |     ^
+
+src/erlmcp_client.erl:390:5: Warning: variable 'NewHandlers' is unused
+%  390|     NewHandlers = maps:put(Method, Handler, State#state.notification_handlers),
+%     |     ^
+
+src/erlmcp_client.erl:394:5: Warning: variable 'NewHandlers' is unused
+%  394|     NewHandlers = maps:remove(Method, State#state.notification_handlers),
+%     |     ^
+
+src/erlmcp_client.erl:397:36: Warning: variable 'Handler' is unused
+%  397| handle_call({set_sampling_handler, Handler}, _From, State) ->
+%     |                                    ^
+
+src/erlmcp_client.erl:403:31: Warning: variable 'Enabled' is unused
+%  403| handle_call({set_strict_mode, Enabled}, _From, State) ->
+%     |                               ^
+
+src/erlmcp_client.erl:558:30: Warning: variable 'NewPending' is unused
+%  558|         {{initialize, From}, NewPending} ->
+%     |                              ^
+
+src/erlmcp_client.erl:579:32: Warning: variable 'NewPending' is unused
+%  579|         {{_RequestType, From}, NewPending} ->
+%     |                                ^
+
