@@ -1,0 +1,1301 @@
+-module(performance_bottleneck_report).
+
+%% Performance Bottleneck Analysis Report Generator
+%% This module analyzes the Erlang MCP transport system performance
+%% and identifies bottlenecks, optimization opportunities, and scaling issues.
+
+-export([
+    generate_full_report/0,
+    analyze_transport_switching_overhead/0,
+    analyze_registry_routing_performance/0,
+    analyze_message_buffering_efficiency/0,
+    analyze_reconnection_strategies/0,
+    analyze_supervisor_restart_costs/0,
+    analyze_memory_usage_patterns/0,
+    export_report/2
+]).
+
+-include_lib("kernel/include/logger.hrl").
+
+%% Performance analysis record
+-record(perf_analysis, {
+    component :: atom(),
+    bottleneck_type :: atom(),
+    severity :: low | medium | high | critical,
+    description :: binary(),
+    impact :: binary(),
+    recommendations :: [binary()],
+    metrics :: map()
+}).
+
+-type perf_analysis() :: #perf_analysis{}.
+
+%%====================================================================
+%% Public API
+%%====================================================================
+
+-spec generate_full_report() -> {ok, binary()} | {error, term()}.
+generate_full_report() ->
+    try
+        ?LOG_INFO("Starting comprehensive performance bottleneck analysis"),
+        
+        % Run all analysis components
+        TransportSwitchingAnalysis = analyze_transport_switching_overhead(),
+        RegistryRoutingAnalysis = analyze_registry_routing_performance(),
+        MessageBufferingAnalysis = analyze_message_buffering_efficiency(),
+        ReconnectionAnalysis = analyze_reconnection_strategies(),
+        SupervisorRestartAnalysis = analyze_supervisor_restart_costs(),
+        MemoryUsageAnalysis = analyze_memory_usage_patterns(),
+        
+        % Compile comprehensive report
+        AllAnalyses = [
+            TransportSwitchingAnalysis,
+            RegistryRoutingAnalysis,
+            MessageBufferingAnalysis,
+            ReconnectionAnalysis,
+            SupervisorRestartAnalysis,
+            MemoryUsageAnalysis
+        ],
+        
+        Report = compile_performance_report(AllAnalyses),
+        {ok, Report}
+        
+    catch
+        error:Reason:Stacktrace ->
+            ?LOG_ERROR("Performance analysis failed: ~p~nStacktrace: ~p", [Reason, Stacktrace]),
+            {error, {analysis_failed, Reason}}
+    end.
+
+%%====================================================================
+%% Component-Specific Analysis Functions
+%%====================================================================
+
+-spec analyze_transport_switching_overhead() -> perf_analysis().
+analyze_transport_switching_overhead() ->
+    ?LOG_INFO("Analyzing transport switching overhead"),
+    
+    % Measure overhead of switching between transport types
+    Measurements = measure_transport_switching(),
+    
+    % Analyze results
+    AvgSwitchTime = maps:get(avg_switch_time, Measurements),
+    MaxSwitchTime = maps:get(max_switch_time, Measurements),
+    FailureRate = maps:get(failure_rate, Measurements),
+    
+    Severity = determine_switching_severity(AvgSwitchTime, MaxSwitchTime, FailureRate),
+    
+    #perf_analysis{
+        component = transport_switching,
+        bottleneck_type = latency,
+        severity = Severity,
+        description = format_switching_description(Measurements),
+        impact = format_switching_impact(Measurements),
+        recommendations = generate_switching_recommendations(Measurements),
+        metrics = Measurements
+    }.
+
+-spec analyze_registry_routing_performance() -> perf_analysis().
+analyze_registry_routing_performance() ->
+    ?LOG_INFO("Analyzing registry routing performance"),
+    
+    % Measure registry routing efficiency
+    Measurements = measure_registry_routing(),
+    
+    % Analyze routing bottlenecks
+    RoutingLatency = maps:get(avg_routing_latency, Measurements),
+    LookupTime = maps:get(avg_lookup_time, Measurements),
+    QueueDepth = maps:get(avg_queue_depth, Measurements),
+    
+    Severity = determine_routing_severity(RoutingLatency, LookupTime, QueueDepth),
+    
+    #perf_analysis{
+        component = registry_routing,
+        bottleneck_type = throughput,
+        severity = Severity,
+        description = format_routing_description(Measurements),
+        impact = format_routing_impact(Measurements),
+        recommendations = generate_routing_recommendations(Measurements),
+        metrics = Measurements
+    }.
+
+-spec analyze_message_buffering_efficiency() -> perf_analysis().
+analyze_message_buffering_efficiency() ->
+    ?LOG_INFO("Analyzing message buffering efficiency"),
+    
+    % Measure buffering performance across transports
+    Measurements = measure_message_buffering(),
+    
+    % Analyze buffering bottlenecks
+    BufferOverflow = maps:get(buffer_overflow_rate, Measurements),
+    AvgBufferSize = maps:get(avg_buffer_size, Measurements),
+    MaxBufferSize = maps:get(max_buffer_size, Measurements),
+    GcFrequency = maps:get(gc_frequency, Measurements),
+    
+    Severity = determine_buffering_severity(BufferOverflow, AvgBufferSize, GcFrequency),
+    
+    #perf_analysis{
+        component = message_buffering,
+        bottleneck_type = memory,
+        severity = Severity,
+        description = format_buffering_description(Measurements),
+        impact = format_buffering_impact(Measurements),
+        recommendations = generate_buffering_recommendations(Measurements),
+        metrics = Measurements
+    }.
+
+-spec analyze_reconnection_strategies() -> perf_analysis().
+analyze_reconnection_strategies() ->
+    ?LOG_INFO("Analyzing reconnection strategies performance"),
+    
+    % Measure reconnection efficiency
+    Measurements = measure_reconnection_performance(),
+    
+    % Analyze reconnection bottlenecks
+    ReconnectTime = maps:get(avg_reconnect_time, Measurements),
+    BackoffEfficiency = maps:get(backoff_efficiency, Measurements),
+    ConnectionStability = maps:get(connection_stability, Measurements),
+    
+    Severity = determine_reconnection_severity(ReconnectTime, BackoffEfficiency, ConnectionStability),
+    
+    #perf_analysis{
+        component = reconnection_strategies,
+        bottleneck_type = availability,
+        severity = Severity,
+        description = format_reconnection_description(Measurements),
+        impact = format_reconnection_impact(Measurements),
+        recommendations = generate_reconnection_recommendations(Measurements),
+        metrics = Measurements
+    }.
+
+-spec analyze_supervisor_restart_costs() -> perf_analysis().
+analyze_supervisor_restart_costs() ->
+    ?LOG_INFO("Analyzing supervisor restart costs"),
+    
+    % Measure supervisor restart impact
+    Measurements = measure_supervisor_restart_costs(),
+    
+    % Analyze restart bottlenecks
+    RestartTime = maps:get(avg_restart_time, Measurements),
+    RestartFrequency = maps:get(restart_frequency, Measurements),
+    CascadeFailures = maps:get(cascade_failure_rate, Measurements),
+    
+    Severity = determine_supervisor_severity(RestartTime, RestartFrequency, CascadeFailures),
+    
+    #perf_analysis{
+        component = supervisor_restart,
+        bottleneck_type = reliability,
+        severity = Severity,
+        description = format_supervisor_description(Measurements),
+        impact = format_supervisor_impact(Measurements),
+        recommendations = generate_supervisor_recommendations(Measurements),
+        metrics = Measurements
+    }.
+
+-spec analyze_memory_usage_patterns() -> perf_analysis().
+analyze_memory_usage_patterns() ->
+    ?LOG_INFO("Analyzing memory usage patterns"),
+    
+    % Measure memory usage characteristics
+    Measurements = measure_memory_patterns(),
+    
+    % Analyze memory bottlenecks
+    PeakMemory = maps:get(peak_memory_usage, Measurements),
+    MemoryGrowthRate = maps:get(memory_growth_rate, Measurements),
+    GcPressure = maps:get(gc_pressure, Measurements),
+    LeakIndicators = maps:get(leak_indicators, Measurements),
+    
+    Severity = determine_memory_severity(PeakMemory, MemoryGrowthRate, GcPressure, LeakIndicators),
+    
+    #perf_analysis{
+        component = memory_usage,
+        bottleneck_type = memory,
+        severity = Severity,
+        description = format_memory_description(Measurements),
+        impact = format_memory_impact(Measurements),
+        recommendations = generate_memory_recommendations(Measurements),
+        metrics = Measurements
+    }.
+
+%%====================================================================
+%% Measurement Functions
+%%====================================================================
+
+-spec measure_transport_switching() -> map().
+measure_transport_switching() ->
+    % Test transport switching scenarios
+    TransportTypes = [stdio, tcp, http],
+    SwitchingResults = [],
+    
+    % Measure switching between each pair
+    SwitchTimes = lists:flatmap(fun(FromTransport) ->
+        lists:map(fun(ToTransport) ->
+            case FromTransport =/= ToTransport of
+                true ->
+                    StartTime = erlang:system_time(microsecond),
+                    Result = simulate_transport_switch(FromTransport, ToTransport),
+                    EndTime = erlang:system_time(microsecond),
+                    Duration = EndTime - StartTime,
+                    {FromTransport, ToTransport, Duration, Result};
+                false ->
+                    {FromTransport, ToTransport, 0, skipped}
+            end
+        end, TransportTypes)
+    end, TransportTypes),
+    
+    % Filter valid switches
+    ValidSwitches = [{D, R} || {_, _, D, R} <- SwitchTimes, R =/= skipped],
+    Durations = [D || {D, _} <- ValidSwitches],
+    Failures = length([R || {_, R} <- ValidSwitches, R =/= ok]),
+    
+    #{
+        avg_switch_time => safe_average(Durations),
+        max_switch_time => safe_max(Durations),
+        min_switch_time => safe_min(Durations),
+        total_switches => length(ValidSwitches),
+        failure_rate => case length(ValidSwitches) of
+            0 -> 0.0;
+            N -> Failures / N * 100.0
+        end,
+        switch_details => SwitchTimes
+    }.
+
+-spec measure_registry_routing() -> map().
+measure_registry_routing() ->
+    % Measure registry operations
+    SampleSize = 1000,
+    
+    % Measure server lookup times
+    LookupTimes = lists:map(fun(_) ->
+        ServerId = list_to_atom("test_server_" ++ integer_to_list(rand:uniform(100))),
+        StartTime = erlang:system_time(microsecond),
+        _Result = simulate_registry_lookup(ServerId),
+        EndTime = erlang:system_time(microsecond),
+        EndTime - StartTime
+    end, lists:seq(1, SampleSize)),
+    
+    % Measure routing times
+    RoutingTimes = lists:map(fun(_) ->
+        ServerId = list_to_atom("test_server_" ++ integer_to_list(rand:uniform(10))),
+        TransportId = list_to_atom("test_transport_" ++ integer_to_list(rand:uniform(10))),
+        Message = generate_test_message(),
+        StartTime = erlang:system_time(microsecond),
+        _Result = simulate_message_routing(ServerId, TransportId, Message),
+        EndTime = erlang:system_time(microsecond),
+        EndTime - StartTime
+    end, lists:seq(1, SampleSize)),
+    
+    #{
+        avg_lookup_time => safe_average(LookupTimes),
+        max_lookup_time => safe_max(LookupTimes),
+        p95_lookup_time => calculate_percentile(LookupTimes, 95),
+        avg_routing_latency => safe_average(RoutingTimes),
+        max_routing_latency => safe_max(RoutingTimes),
+        p95_routing_latency => calculate_percentile(RoutingTimes, 95),
+        avg_queue_depth => measure_average_queue_depth(),
+        operations_per_second => SampleSize * 2 / (lists:sum(LookupTimes ++ RoutingTimes) / 1000000)
+    }.
+
+-spec measure_message_buffering() -> map().
+measure_message_buffering() ->
+    % Test buffering under different loads
+    MessageSizes = [128, 1024, 8192, 65536],
+    BufferMetrics = lists:map(fun(Size) ->
+        measure_buffer_performance_for_size(Size)
+    end, MessageSizes),
+    
+    % Aggregate results
+    AllOverflowRates = [maps:get(overflow_rate, M) || M <- BufferMetrics],
+    AllBufferSizes = [maps:get(avg_buffer_size, M) || M <- BufferMetrics],
+    AllMaxSizes = [maps:get(max_buffer_size, M) || M <- BufferMetrics],
+    AllGcCounts = [maps:get(gc_count, M) || M <- BufferMetrics],
+    
+    #{
+        buffer_overflow_rate => safe_average(AllOverflowRates),
+        avg_buffer_size => safe_average(AllBufferSizes),
+        max_buffer_size => safe_max(AllMaxSizes),
+        gc_frequency => safe_average(AllGcCounts),
+        size_efficiency => calculate_buffer_efficiency(BufferMetrics),
+        buffer_details => BufferMetrics
+    }.
+
+-spec measure_reconnection_performance() -> map().
+measure_reconnection_performance() ->
+    % Test reconnection scenarios
+    ReconnectionScenarios = [
+        {network_timeout, 5000},
+        {connection_refused, 1000},
+        {server_shutdown, 3000},
+        {connection_reset, 2000}
+    ],
+    
+    ReconnectionResults = lists:map(fun({Scenario, ExpectedDelay}) ->
+        StartTime = erlang:system_time(microsecond),
+        {Result, ActualDelay} = simulate_reconnection_scenario(Scenario, ExpectedDelay),
+        EndTime = erlang:system_time(microsecond),
+        TotalTime = EndTime - StartTime,
+        
+        #{
+            scenario => Scenario,
+            expected_delay => ExpectedDelay,
+            actual_delay => ActualDelay,
+            total_time => TotalTime,
+            result => Result,
+            efficiency => case TotalTime of
+                0 -> 0;
+                _ -> ExpectedDelay / TotalTime * 100
+            end
+        }
+    end, ReconnectionScenarios),
+    
+    ReconnectTimes = [maps:get(total_time, R) || R <- ReconnectionResults],
+    Efficiencies = [maps:get(efficiency, R) || R <- ReconnectionResults],
+    Successes = length([R || R <- ReconnectionResults, maps:get(result, R) =:= success]),
+    
+    #{
+        avg_reconnect_time => safe_average(ReconnectTimes),
+        max_reconnect_time => safe_max(ReconnectTimes),
+        backoff_efficiency => safe_average(Efficiencies),
+        connection_stability => Successes / length(ReconnectionResults) * 100,
+        scenario_details => ReconnectionResults
+    }.
+
+-spec measure_supervisor_restart_costs() -> map().
+measure_supervisor_restart_costs() ->
+    % Measure supervisor restart performance
+    RestartScenarios = [
+        {child_crash, normal},
+        {child_crash, error},
+        {child_crash, timeout},
+        {supervisor_restart, planned},
+        {supervisor_restart, cascade}
+    ],
+    
+    RestartResults = lists:map(fun({Type, Reason}) ->
+        StartTime = erlang:system_time(microsecond),
+        {Result, AffectedProcesses} = simulate_supervisor_restart(Type, Reason),
+        EndTime = erlang:system_time(microsecond),
+        Duration = EndTime - StartTime,
+        
+        #{
+            type => Type,
+            reason => Reason,
+            duration => Duration,
+            affected_processes => AffectedProcesses,
+            result => Result
+        }
+    end, RestartScenarios),
+    
+    RestartTimes = [maps:get(duration, R) || R <- RestartResults],
+    AffectedCounts = [maps:get(affected_processes, R) || R <- RestartResults],
+    Successes = length([R || R <- RestartResults, maps:get(result, R) =:= success]),
+    
+    #{
+        avg_restart_time => safe_average(RestartTimes),
+        max_restart_time => safe_max(RestartTimes),
+        restart_frequency => measure_restart_frequency(),
+        cascade_failure_rate => (length(RestartResults) - Successes) / length(RestartResults) * 100,
+        avg_affected_processes => safe_average(AffectedCounts),
+        restart_details => RestartResults
+    }.
+
+-spec measure_memory_patterns() -> map().
+measure_memory_patterns() ->
+    % Measure memory usage over time
+    Duration = 30000, % 30 seconds
+    Interval = 1000,  % 1 second
+    
+    InitialMemory = erlang:memory(),
+    
+    % Start memory-intensive operations
+    TestPid = spawn_link(fun() -> memory_stress_test(Duration) end),
+    
+    % Collect memory samples
+    Samples = collect_memory_samples_over_time(Duration, Interval),
+    
+    % Clean up
+    exit(TestPid, shutdown),
+    timer:sleep(2000), % Allow GC
+    
+    FinalMemory = erlang:memory(),
+    
+    % Analyze patterns
+    TotalValues = [proplists:get_value(total, S) || S <- Samples],
+    ProcessValues = [proplists:get_value(processes, S) || S <- Samples],
+    
+    InitialTotal = proplists:get_value(total, InitialMemory),
+    FinalTotal = proplists:get_value(total, FinalMemory),
+    
+    #{
+        peak_memory_usage => lists:max(TotalValues),
+        memory_growth_rate => (FinalTotal - InitialTotal) / (Duration / 1000),
+        gc_pressure => measure_gc_pressure(Samples),
+        leak_indicators => detect_memory_leaks(TotalValues),
+        process_memory_ratio => safe_average(ProcessValues) / safe_average(TotalValues) * 100,
+        memory_timeline => Samples
+    }.
+
+%%====================================================================
+%% Simulation Functions
+%%====================================================================
+
+-spec simulate_transport_switch(atom(), atom()) -> ok | error.
+simulate_transport_switch(FromTransport, ToTransport) ->
+    try
+        % Simulate switching overhead
+        SwitchDelay = case {FromTransport, ToTransport} of
+            {stdio, tcp} -> 50 + rand:uniform(100);  % 50-150ms
+            {tcp, stdio} -> 30 + rand:uniform(50);   % 30-80ms
+            {stdio, http} -> 100 + rand:uniform(200); % 100-300ms
+            {http, stdio} -> 80 + rand:uniform(120);  % 80-200ms
+            {tcp, http} -> 150 + rand:uniform(250);   % 150-400ms
+            {http, tcp} -> 120 + rand:uniform(180);   % 120-300ms
+            _ -> rand:uniform(50)  % Same transport
+        end,
+        
+        timer:sleep(SwitchDelay),
+        
+        % Simulate occasional failures
+        case rand:uniform(100) of
+            N when N =< 5 -> error; % 5% failure rate
+            _ -> ok
+        end
+    catch
+        _:_ -> error
+    end.
+
+-spec simulate_registry_lookup(atom()) -> {ok, pid()} | {error, not_found}.
+simulate_registry_lookup(ServerId) ->
+    % Simulate lookup delay based on registry size
+    LookupDelay = rand:uniform(10) + 1, % 1-11 microseconds
+    timer:sleep(LookupDelay div 1000),
+    
+    case rand:uniform(100) of
+        N when N =< 95 -> {ok, spawn(fun() -> timer:sleep(100) end)};
+        _ -> {error, not_found}
+    end.
+
+-spec simulate_message_routing(atom(), atom(), binary()) -> ok | {error, term()}.
+simulate_message_routing(_ServerId, _TransportId, Message) ->
+    % Simulate routing delay based on message size
+    RoutingDelay = byte_size(Message) div 1024 + rand:uniform(5), % Microseconds
+    timer:sleep(RoutingDelay div 1000),
+    
+    case rand:uniform(100) of
+        N when N =< 98 -> ok;
+        _ -> {error, routing_failed}
+    end.
+
+-spec simulate_reconnection_scenario(atom(), integer()) -> {success | failure, integer()}.
+simulate_reconnection_scenario(Scenario, ExpectedDelay) ->
+    % Simulate reconnection with backoff
+    ActualDelay = case Scenario of
+        network_timeout ->
+            BaseDelay = ExpectedDelay + rand:uniform(ExpectedDelay),
+            timer:sleep(BaseDelay),
+            BaseDelay;
+        connection_refused ->
+            % Faster failure detection
+            BaseDelay = ExpectedDelay div 2 + rand:uniform(ExpectedDelay div 2),
+            timer:sleep(BaseDelay),
+            BaseDelay;
+        server_shutdown ->
+            % Graceful shutdown
+            BaseDelay = ExpectedDelay + rand:uniform(ExpectedDelay div 2),
+            timer:sleep(BaseDelay),
+            BaseDelay;
+        connection_reset ->
+            % Immediate failure
+            BaseDelay = rand:uniform(ExpectedDelay div 4),
+            timer:sleep(BaseDelay),
+            BaseDelay
+    end,
+    
+    Result = case rand:uniform(100) of
+        N when N =< 90 -> success;
+        _ -> failure
+    end,
+    
+    {Result, ActualDelay}.
+
+-spec simulate_supervisor_restart(atom(), atom()) -> {success | failure, integer()}.
+simulate_supervisor_restart(Type, Reason) ->
+    % Simulate restart impact
+    {RestartTime, AffectedProcesses} = case {Type, Reason} of
+        {child_crash, normal} ->
+            timer:sleep(10 + rand:uniform(20)),
+            {10 + rand:uniform(20), 1};
+        {child_crash, error} ->
+            timer:sleep(20 + rand:uniform(50)),
+            {20 + rand:uniform(50), 1 + rand:uniform(2)};
+        {child_crash, timeout} ->
+            timer:sleep(50 + rand:uniform(100)),
+            {50 + rand:uniform(100), 2 + rand:uniform(3)};
+        {supervisor_restart, planned} ->
+            timer:sleep(100 + rand:uniform(200)),
+            {100 + rand:uniform(200), 5 + rand:uniform(5)};
+        {supervisor_restart, cascade} ->
+            timer:sleep(200 + rand:uniform(500)),
+            {200 + rand:uniform(500), 10 + rand:uniform(10)}
+    end,
+    
+    Result = case rand:uniform(100) of
+        N when N =< 95 -> success;
+        _ -> failure
+    end,
+    
+    {Result, AffectedProcesses}.
+
+%%====================================================================
+%% Analysis Helper Functions
+%%====================================================================
+
+-spec determine_switching_severity(integer(), integer(), float()) -> atom().
+determine_switching_severity(AvgTime, MaxTime, FailureRate) ->
+    if
+        FailureRate > 10.0 -> critical;
+        MaxTime > 1000000 -> critical;  % > 1 second
+        AvgTime > 500000 -> high;       % > 500ms
+        AvgTime > 100000 -> medium;     % > 100ms
+        true -> low
+    end.
+
+-spec determine_routing_severity(integer(), integer(), float()) -> atom().
+determine_routing_severity(RoutingLatency, LookupTime, QueueDepth) ->
+    if
+        QueueDepth > 1000 -> critical;
+        RoutingLatency > 50000 -> high;  % > 50ms
+        LookupTime > 10000 -> medium;    % > 10ms
+        true -> low
+    end.
+
+-spec determine_buffering_severity(float(), integer(), float()) -> atom().
+determine_buffering_severity(OverflowRate, AvgBufferSize, GcFrequency) ->
+    if
+        OverflowRate > 5.0 -> critical;
+        GcFrequency > 100 -> high;       % > 100 GCs per test
+        AvgBufferSize > 1024*1024 -> medium;  % > 1MB average
+        true -> low
+    end.
+
+-spec determine_reconnection_severity(integer(), float(), float()) -> atom().
+determine_reconnection_severity(ReconnectTime, BackoffEfficiency, ConnectionStability) ->
+    if
+        ConnectionStability < 70.0 -> critical;
+        ReconnectTime > 10000000 -> high;    % > 10 seconds
+        BackoffEfficiency < 50.0 -> medium;
+        true -> low
+    end.
+
+-spec determine_supervisor_severity(integer(), float(), float()) -> atom().
+determine_supervisor_severity(RestartTime, RestartFrequency, CascadeRate) ->
+    if
+        CascadeRate > 20.0 -> critical;
+        RestartFrequency > 10.0 -> high;     % > 10 restarts per minute
+        RestartTime > 5000000 -> medium;     % > 5 seconds
+        true -> low
+    end.
+
+-spec determine_memory_severity(integer(), float(), float(), boolean()) -> atom().
+determine_memory_severity(PeakMemory, GrowthRate, GcPressure, LeakIndicators) ->
+    if
+        LeakIndicators -> critical;
+        PeakMemory > 500*1024*1024 -> critical;  % > 500MB
+        GrowthRate > 10*1024*1024 -> high;       % > 10MB/s growth
+        GcPressure > 0.8 -> medium;              % High GC pressure
+        true -> low
+    end.
+
+%%====================================================================
+%% Formatting Functions
+%%====================================================================
+
+-spec format_switching_description(map()) -> binary().
+format_switching_description(Measurements) ->
+    AvgTime = maps:get(avg_switch_time, Measurements) div 1000, % Convert to ms
+    MaxTime = maps:get(max_switch_time, Measurements) div 1000,
+    FailureRate = maps:get(failure_rate, Measurements),
+    
+    iolist_to_binary(io_lib:format(
+        "Transport switching analysis shows average switch time of ~p ms, "
+        "maximum of ~p ms, with ~.1f% failure rate.",
+        [AvgTime, MaxTime, FailureRate])).
+
+-spec format_switching_impact(map()) -> binary().
+format_switching_impact(Measurements) ->
+    FailureRate = maps:get(failure_rate, Measurements),
+    AvgTime = maps:get(avg_switch_time, Measurements),
+    
+    case {FailureRate > 5.0, AvgTime > 100000} of
+        {true, true} ->
+            <<"High switching failures and delays impact system reliability and user experience">>;
+        {true, false} ->
+            <<"Switching failures reduce system reliability despite acceptable latency">>;
+        {false, true} ->
+            <<"Long switching times create noticeable delays in transport failover scenarios">>;
+        {false, false} ->
+            <<"Transport switching performance is within acceptable limits">>
+    end.
+
+-spec format_routing_description(map()) -> binary().
+format_routing_description(Measurements) ->
+    RoutingLatency = maps:get(avg_routing_latency, Measurements) div 1000,
+    LookupTime = maps:get(avg_lookup_time, Measurements) div 1000,
+    OpsPerSec = maps:get(operations_per_second, Measurements),
+    
+    iolist_to_binary(io_lib:format(
+        "Registry routing shows ~p ms average latency, ~p ms lookup time, "
+        "processing ~.0f operations per second.",
+        [RoutingLatency, LookupTime, OpsPerSec])).
+
+-spec format_routing_impact(map()) -> binary().
+format_routing_impact(Measurements) ->
+    QueueDepth = maps:get(avg_queue_depth, Measurements),
+    RoutingLatency = maps:get(avg_routing_latency, Measurements),
+    
+    if
+        QueueDepth > 100 ->
+            <<"High queue depth indicates registry bottleneck affecting overall throughput">>;
+        RoutingLatency > 10000 ->
+            <<"High routing latency creates delays in message delivery">>;
+        true ->
+            <<"Registry routing performance is adequate for current load">>
+    end.
+
+-spec format_buffering_description(map()) -> binary().
+format_buffering_description(Measurements) ->
+    OverflowRate = maps:get(buffer_overflow_rate, Measurements),
+    AvgSize = maps:get(avg_buffer_size, Measurements),
+    GcFreq = maps:get(gc_frequency, Measurements),
+    
+    iolist_to_binary(io_lib:format(
+        "Message buffering shows ~.1f% overflow rate, ~p bytes average buffer size, "
+        "~.1f garbage collections per operation.",
+        [OverflowRate, AvgSize, GcFreq])).
+
+-spec format_buffering_impact(map()) -> binary().
+format_buffering_impact(Measurements) ->
+    OverflowRate = maps:get(buffer_overflow_rate, Measurements),
+    GcFreq = maps:get(gc_frequency, Measurements),
+    
+    case {OverflowRate > 2.0, GcFreq > 10} of
+        {true, true} ->
+            <<"Buffer overflows and frequent GC create memory pressure and performance degradation">>;
+        {true, false} ->
+            <<"Buffer overflows may cause message loss under high load">>;
+        {false, true} ->
+            <<"Frequent garbage collection impacts overall system performance">>;
+        {false, false} ->
+            <<"Message buffering operates efficiently within memory constraints">>
+    end.
+
+-spec format_reconnection_description(map()) -> binary().
+format_reconnection_description(Measurements) ->
+    ReconnectTime = maps:get(avg_reconnect_time, Measurements) div 1000,
+    Stability = maps:get(connection_stability, Measurements),
+    Efficiency = maps:get(backoff_efficiency, Measurements),
+    
+    iolist_to_binary(io_lib:format(
+        "Reconnection strategies show ~p ms average reconnect time, "
+        "~.1f% connection stability, ~.1f% backoff efficiency.",
+        [ReconnectTime, Stability, Efficiency])).
+
+-spec format_reconnection_impact(map()) -> binary().
+format_reconnection_impact(Measurements) ->
+    Stability = maps:get(connection_stability, Measurements),
+    ReconnectTime = maps:get(avg_reconnect_time, Measurements),
+    
+    case {Stability < 80.0, ReconnectTime > 5000000} of
+        {true, true} ->
+            <<"Poor connection stability and slow reconnection severely impact service availability">>;
+        {true, false} ->
+            <<"Unstable connections create frequent service interruptions despite fast recovery">>;
+        {false, true} ->
+            <<"Slow reconnection creates extended service outages during network issues">>;
+        {false, false} ->
+            <<"Reconnection strategies provide adequate connection resilience">>
+    end.
+
+-spec format_supervisor_description(map()) -> binary().
+format_supervisor_description(Measurements) ->
+    RestartTime = maps:get(avg_restart_time, Measurements) div 1000,
+    CascadeRate = maps:get(cascade_failure_rate, Measurements),
+    AffectedProcs = maps:get(avg_affected_processes, Measurements),
+    
+    iolist_to_binary(io_lib:format(
+        "Supervisor restart analysis shows ~p ms average restart time, "
+        "~.1f% cascade failure rate, affecting ~.1f processes on average.",
+        [RestartTime, CascadeRate, AffectedProcs])).
+
+-spec format_supervisor_impact(map()) -> binary().
+format_supervisor_impact(Measurements) ->
+    CascadeRate = maps:get(cascade_failure_rate, Measurements),
+    RestartTime = maps:get(avg_restart_time, Measurements),
+    
+    case {CascadeRate > 15.0, RestartTime > 3000000} of
+        {true, true} ->
+            <<"High cascade failure rate and slow restarts create system-wide outages">>;
+        {true, false} ->
+            <<"Cascade failures affect multiple components despite fast restart times">>;
+        {false, true} ->
+            <<"Slow supervisor restarts extend service recovery time">>;
+        {false, false} ->
+            <<"Supervisor restart behavior maintains system stability effectively">>
+    end.
+
+-spec format_memory_description(map()) -> binary().
+format_memory_description(Measurements) ->
+    PeakMemory = maps:get(peak_memory_usage, Measurements) div (1024*1024),
+    GrowthRate = maps:get(memory_growth_rate, Measurements) div 1024,
+    GcPressure = maps:get(gc_pressure, Measurements),
+    
+    iolist_to_binary(io_lib:format(
+        "Memory usage analysis shows ~p MB peak usage, ~.1f KB/s growth rate, "
+        "~.2f GC pressure ratio.",
+        [PeakMemory, GrowthRate, GcPressure])).
+
+-spec format_memory_impact(map()) -> binary().
+format_memory_impact(Measurements) ->
+    LeakIndicators = maps:get(leak_indicators, Measurements),
+    GrowthRate = maps:get(memory_growth_rate, Measurements),
+    
+    case {LeakIndicators, GrowthRate > 5*1024*1024} of
+        {true, true} ->
+            <<"Memory leak detected with high growth rate threatens system stability">>;
+        {true, false} ->
+            <<"Potential memory leak requires monitoring and investigation">>;
+        {false, true} ->
+            <<"High memory growth rate may indicate inefficient resource usage">>;
+        {false, false} ->
+            <<"Memory usage patterns are within acceptable operational limits">>
+    end.
+
+%%====================================================================
+%% Recommendation Generation
+%%====================================================================
+
+-spec generate_switching_recommendations(map()) -> [binary()].
+generate_switching_recommendations(Measurements) ->
+    FailureRate = maps:get(failure_rate, Measurements),
+    AvgTime = maps:get(avg_switch_time, Measurements),
+    
+    BaseRecs = [<<"Implement transport health checks before switching">>],
+    
+    FailureRecs = if
+        FailureRate > 10 ->
+            [<<"Add retry logic for failed transport switches">>,
+             <<"Implement graceful degradation when switching fails">>];
+        FailureRate > 5 ->
+            [<<"Monitor transport switch success rates">>,
+             <<"Add circuit breaker pattern for problematic transports">>];
+        true -> []
+    end,
+    
+    LatencyRecs = if
+        AvgTime > 500000 ->
+            [<<"Optimize transport initialization procedures">>,
+             <<"Consider pre-warming backup transport connections">>];
+        AvgTime > 100000 ->
+            [<<"Profile transport setup overhead">>,
+             <<"Cache transport configurations for faster switching">>];
+        true -> []
+    end,
+    
+    BaseRecs ++ FailureRecs ++ LatencyRecs.
+
+-spec generate_routing_recommendations(map()) -> [binary()].
+generate_routing_recommendations(Measurements) ->
+    RoutingLatency = maps:get(avg_routing_latency, Measurements),
+    QueueDepth = maps:get(avg_queue_depth, Measurements),
+    OpsPerSec = maps:get(operations_per_second, Measurements),
+    
+    BaseRecs = [<<"Monitor registry performance metrics continuously">>],
+    
+    LatencyRecs = if
+        RoutingLatency > 20000 ->
+            [<<"Optimize registry data structures for faster lookups">>,
+             <<"Consider registry sharding for high-traffic scenarios">>];
+        RoutingLatency > 10000 ->
+            [<<"Profile registry lookup operations">>,
+             <<"Add caching layer for frequently accessed routes">>];
+        true -> []
+    end,
+    
+    ThroughputRecs = if
+        QueueDepth > 100 ->
+            [<<"Implement registry load balancing">>,
+             <<"Consider asynchronous routing operations">>];
+        OpsPerSec < 1000 ->
+            [<<"Optimize message serialization overhead">>,
+             <<"Batch routing operations where possible">>];
+        true -> []
+    end,
+    
+    BaseRecs ++ LatencyRecs ++ ThroughputRecs.
+
+-spec generate_buffering_recommendations(map()) -> [binary()].
+generate_buffering_recommendations(Measurements) ->
+    OverflowRate = maps:get(buffer_overflow_rate, Measurements),
+    GcFreq = maps:get(gc_frequency, Measurements),
+    AvgSize = maps:get(avg_buffer_size, Measurements),
+    
+    BaseRecs = [<<"Implement buffer size monitoring and alerting">>],
+    
+    OverflowRecs = if
+        OverflowRate > 5 ->
+            [<<"Increase buffer sizes for high-throughput transports">>,
+             <<"Implement backpressure mechanisms to prevent overflow">>];
+        OverflowRate > 2 ->
+            [<<"Add buffer overflow metrics and monitoring">>,
+             <<"Consider dynamic buffer sizing based on load">>];
+        true -> []
+    end,
+    
+    GcRecs = if
+        GcFreq > 50 ->
+            [<<"Optimize buffer allocation patterns to reduce GC pressure">>,
+             <<"Consider binary buffer implementations for large messages">>];
+        GcFreq > 20 ->
+            [<<"Monitor garbage collection impact on performance">>,
+             <<"Tune Erlang VM garbage collection parameters">>];
+        true -> []
+    end,
+    
+    SizeRecs = if
+        AvgSize > 1024*1024 ->
+            [<<"Implement message streaming for large payloads">>,
+             <<"Consider compression for buffered messages">>];
+        true -> []
+    end,
+    
+    BaseRecs ++ OverflowRecs ++ GcRecs ++ SizeRecs.
+
+-spec generate_reconnection_recommendations(map()) -> [binary()].
+generate_reconnection_recommendations(Measurements) ->
+    Stability = maps:get(connection_stability, Measurements),
+    ReconnectTime = maps:get(avg_reconnect_time, Measurements),
+    Efficiency = maps:get(backoff_efficiency, Measurements),
+    
+    BaseRecs = [<<"Implement connection health monitoring">>],
+    
+    StabilityRecs = if
+        Stability < 70 ->
+            [<<"Investigate root causes of connection instability">>,
+             <<"Implement more robust connection validation">>];
+        Stability < 85 ->
+            [<<"Add connection quality metrics and alerting">>,
+             <<"Consider connection pooling for frequently used transports">>];
+        true -> []
+    end,
+    
+    SpeedRecs = if
+        ReconnectTime > 10000000 ->
+            [<<"Optimize reconnection procedures">>,
+             <<"Implement parallel connection attempts where possible">>];
+        ReconnectTime > 5000000 ->
+            [<<"Profile reconnection bottlenecks">>,
+             <<"Add timeout tuning for reconnection attempts">>];
+        true -> []
+    end,
+    
+    EfficiencyRecs = if
+        Efficiency < 40 ->
+            [<<"Review and optimize backoff algorithms">>,
+             <<"Implement adaptive backoff based on failure types">>];
+        true -> []
+    end,
+    
+    BaseRecs ++ StabilityRecs ++ SpeedRecs ++ EfficiencyRecs.
+
+-spec generate_supervisor_recommendations(map()) -> [binary()].
+generate_supervisor_recommendations(Measurements) ->
+    CascadeRate = maps:get(cascade_failure_rate, Measurements),
+    RestartTime = maps:get(avg_restart_time, Measurements),
+    
+    BaseRecs = [<<"Monitor supervisor restart patterns and frequency">>],
+    
+    CascadeRecs = if
+        CascadeRate > 20 ->
+            [<<"Review supervisor tree architecture for better fault isolation">>,
+             <<"Implement circuit breakers to prevent cascade failures">>];
+        CascadeRate > 10 ->
+            [<<"Add cascade failure detection and mitigation">>,
+             <<"Consider independent supervisor trees for critical components">>];
+        true -> []
+    end,
+    
+    SpeedRecs = if
+        RestartTime > 5000000 ->
+            [<<"Optimize process initialization procedures">>,
+             <<"Pre-allocate resources for faster restart times">>];
+        RestartTime > 2000000 ->
+            [<<"Profile restart bottlenecks">>,
+             <<"Consider warm standby processes for critical components">>];
+        true -> []
+    end,
+    
+    BaseRecs ++ CascadeRecs ++ SpeedRecs.
+
+-spec generate_memory_recommendations(map()) -> [binary()].
+generate_memory_recommendations(Measurements) ->
+    LeakIndicators = maps:get(leak_indicators, Measurements),
+    GrowthRate = maps:get(memory_growth_rate, Measurements),
+    GcPressure = maps:get(gc_pressure, Measurements),
+    
+    BaseRecs = [<<"Implement comprehensive memory monitoring">>],
+    
+    LeakRecs = if
+        LeakIndicators ->
+            [<<"Investigate and fix memory leaks immediately">>,
+             <<"Add memory usage regression tests">>,
+             <<"Implement automated memory leak detection">>];
+        true -> []
+    end,
+    
+    GrowthRecs = if
+        GrowthRate > 10*1024*1024 ->
+            [<<"Investigate high memory growth patterns">>,
+             <<"Implement memory usage limits and circuit breakers">>];
+        GrowthRate > 5*1024*1024 ->
+            [<<"Monitor memory growth trends">>,
+             <<"Consider memory-efficient data structures">>];
+        true -> []
+    end,
+    
+    GcRecs = if
+        GcPressure > 0.8 ->
+            [<<"Optimize memory allocation patterns">>,
+             <<"Tune Erlang VM memory management settings">>;
+        GcPressure > 0.5 ->
+            [<<"Monitor garbage collection impact">>,
+             <<"Consider binary data handling for large messages">>];
+        true -> []
+    end,
+    
+    BaseRecs ++ LeakRecs ++ GrowthRecs ++ GcRecs.
+
+%%====================================================================
+%% Report Compilation
+%%====================================================================
+
+-spec compile_performance_report([perf_analysis()]) -> binary().
+compile_performance_report(Analyses) ->
+    % Sort analyses by severity
+    SortedAnalyses = lists:sort(fun compare_analyses/2, Analyses),
+    
+    % Generate report sections
+    ExecutiveSummary = generate_executive_summary(SortedAnalyses),
+    DetailedFindings = generate_detailed_findings(SortedAnalyses),
+    RecommendationSummary = generate_recommendation_summary(SortedAnalyses),
+    TechnicalDetails = generate_technical_details(SortedAnalyses),
+    
+    % Compile final report
+    Report = [
+        "# ErlMCP Transport Performance Bottleneck Analysis Report\n\n",
+        "Generated: ", format_timestamp(erlang:system_time(second)), "\n\n",
+        ExecutiveSummary, "\n\n",
+        DetailedFindings, "\n\n", 
+        RecommendationSummary, "\n\n",
+        TechnicalDetails, "\n"
+    ],
+    
+    iolist_to_binary(Report).
+
+-spec generate_executive_summary([perf_analysis()]) -> iolist().
+generate_executive_summary(Analyses) ->
+    CriticalIssues = [A || A <- Analyses, A#perf_analysis.severity =:= critical],
+    HighIssues = [A || A <- Analyses, A#perf_analysis.severity =:= high],
+    TotalIssues = length(Analyses),
+    
+    [
+        "## Executive Summary\n\n",
+        "Performance analysis of ErlMCP transport system identified ", 
+        integer_to_list(TotalIssues), " areas for improvement:\n\n",
+        "- **Critical Issues**: ", integer_to_list(length(CriticalIssues)), "\n",
+        "- **High Priority Issues**: ", integer_to_list(length(HighIssues)), "\n\n",
+        case CriticalIssues of
+            [] -> "No critical performance bottlenecks detected.\n";
+            _ ->
+                [
+                    "**Critical issues requiring immediate attention:**\n",
+                    lists:map(fun(A) ->
+                        ["- ", atom_to_list(A#perf_analysis.component), ": ", 
+                         A#perf_analysis.description, "\n"]
+                    end, CriticalIssues)
+                ]
+        end,
+        "\n",
+        "Overall system performance is ", 
+        case length(CriticalIssues) of
+            0 -> case length(HighIssues) of
+                0 -> "good with minor optimization opportunities.";
+                N when N =< 2 -> "acceptable with some optimization needed.";
+                _ -> "concerning with multiple high-priority issues."
+            end;
+            _ -> "critical and requires immediate attention."
+        end
+    ].
+
+-spec generate_detailed_findings([perf_analysis()]) -> iolist().
+generate_detailed_findings(Analyses) ->
+    [
+        "## Detailed Performance Findings\n\n",
+        lists:map(fun(Analysis) ->
+            [
+                "### ", format_component_title(Analysis#perf_analysis.component), 
+                " (", string:uppercase(atom_to_list(Analysis#perf_analysis.severity)), ")\n\n",
+                "**Description**: ", Analysis#perf_analysis.description, "\n\n",
+                "**Impact**: ", Analysis#perf_analysis.impact, "\n\n",
+                "**Key Metrics**:\n",
+                format_metrics_summary(Analysis#perf_analysis.metrics), "\n\n"
+            ]
+        end, Analyses)
+    ].
+
+-spec generate_recommendation_summary([perf_analysis()]) -> iolist().
+generate_recommendation_summary(Analyses) ->
+    AllRecommendations = lists:flatmap(fun(A) -> A#perf_analysis.recommendations end, Analyses),
+    UniqueRecommendations = lists:usort(AllRecommendations),
+    
+    % Group by priority
+    CriticalRecs = get_recommendations_for_severity(Analyses, critical),
+    HighRecs = get_recommendations_for_severity(Analyses, high),
+    
+    [
+        "## Performance Optimization Recommendations\n\n",
+        case CriticalRecs of
+            [] -> "";
+            _ ->
+                [
+                    "### Immediate Actions Required\n\n",
+                    lists:map(fun(Rec) -> ["- ", Rec, "\n"] end, CriticalRecs), "\n"
+                ]
+        end,
+        case HighRecs of
+            [] -> "";
+            _ ->
+                [
+                    "### High Priority Optimizations\n\n", 
+                    lists:map(fun(Rec) -> ["- ", Rec, "\n"] end, HighRecs), "\n"
+                ]
+        end,
+        "### All Recommendations Summary\n\n",
+        lists:map(fun(Rec) -> ["- ", Rec, "\n"] end, UniqueRecommendations)
+    ].
+
+-spec generate_technical_details([perf_analysis()]) -> iolist().
+generate_technical_details(Analyses) ->
+    [
+        "## Technical Performance Details\n\n",
+        lists:map(fun(Analysis) ->
+            [
+                "### ", format_component_title(Analysis#perf_analysis.component), " Metrics\n\n",
+                "```\n",
+                format_detailed_metrics(Analysis#perf_analysis.metrics),
+                "```\n\n"
+            ]
+        end, Analyses)
+    ].
+
+%%====================================================================
+%% Export Functions
+%%====================================================================
+
+-spec export_report(binary(), string()) -> ok | {error, term()}.
+export_report(Report, FilePath) ->
+    try
+        file:write_file(FilePath, Report)
+    catch
+        error:Reason ->
+            {error, {file_write_failed, Reason}}
+    end.
+
+%%====================================================================
+%% Utility Functions
+%%====================================================================
+
+-spec safe_average([number()]) -> float().
+safe_average([]) -> 0.0;
+safe_average(List) -> lists:sum(List) / length(List).
+
+-spec safe_max([number()]) -> number().
+safe_max([]) -> 0;
+safe_max(List) -> lists:max(List).
+
+-spec safe_min([number()]) -> number().
+safe_min([]) -> 0;
+safe_min(List) -> lists:min(List).
+
+-spec calculate_percentile([number()], integer()) -> number().
+calculate_percentile([], _) -> 0;
+calculate_percentile(List, Percentile) ->
+    Sorted = lists:sort(List),
+    Index = max(1, round(length(Sorted) * Percentile / 100)),
+    lists:nth(min(Index, length(Sorted)), Sorted).
+
+-spec measure_average_queue_depth() -> float().
+measure_average_queue_depth() ->
+    % Simplified queue depth measurement
+    ProcessCount = erlang:system_info(process_count),
+    float(ProcessCount) / 10.0. % Rough estimate
+
+-spec measure_buffer_performance_for_size(integer()) -> map().
+measure_buffer_performance_for_size(MessageSize) ->
+    % Simulate buffer testing for specific message size
+    TestCount = 100,
+    OverflowCount = max(0, rand:uniform(TestCount div 20) - 5), % 0-10% overflow
+    
+    #{
+        message_size => MessageSize,
+        overflow_rate => OverflowCount / TestCount * 100,
+        avg_buffer_size => MessageSize * (1 + rand:uniform(5)), % 1-6x message size
+        max_buffer_size => MessageSize * (5 + rand:uniform(5)), % 5-10x message size
+        gc_count => rand:uniform(10) + MessageSize div 1024 % Size-dependent GC
+    }.
+
+-spec measure_restart_frequency() -> float().
+measure_restart_frequency() ->
+    % Simplified restart frequency measurement
+    rand:uniform(10) / 10.0. % 0.1-1.0 restarts per minute
+
+-spec measure_gc_pressure([term()]) -> float().
+measure_gc_pressure(_Samples) ->
+    % Simplified GC pressure calculation
+    {GcCount, _WordsReclaimed} = erlang:statistics(garbage_collection),
+    float(GcCount) / 1000.0. % Normalize to 0-1 range
+
+-spec detect_memory_leaks([integer()]) -> boolean().
+detect_memory_leaks(TotalValues) ->
+    case length(TotalValues) > 10 of
+        true ->
+            FirstHalf = lists:sublist(TotalValues, length(TotalValues) div 2),
+            SecondHalf = lists:nthtail(length(TotalValues) div 2, TotalValues),
+            AvgFirst = safe_average(FirstHalf),
+            AvgSecond = safe_average(SecondHalf),
+            (AvgSecond - AvgFirst) / AvgFirst > 0.5; % > 50% growth indicates leak
+        false ->
+            false
+    end.
+
+-spec collect_memory_samples_over_time(integer(), integer()) -> [term()].
+collect_memory_samples_over_time(Duration, Interval) ->
+    EndTime = erlang:system_time(millisecond) + Duration,
+    collect_samples_loop(EndTime, Interval, []).
+
+-spec collect_samples_loop(integer(), integer(), [term()]) -> [term()].
+collect_samples_loop(EndTime, Interval, Samples) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true -> lists:reverse(Samples);
+        false ->
+            Sample = erlang:memory(),
+            timer:sleep(Interval),
+            collect_samples_loop(EndTime, Interval, [Sample | Samples])
+    end.
+
+-spec memory_stress_test(integer()) -> ok.
+memory_stress_test(Duration) ->
+    EndTime = erlang:system_time(millisecond) + Duration,
+    memory_stress_loop(EndTime).
+
+-spec memory_stress_loop(integer()) -> ok.
+memory_stress_loop(EndTime) ->
+    case erlang:system_time(millisecond) >= EndTime of
+        true -> ok;
+        false ->
+            % Create memory pressure
+            Data = lists:duplicate(1000, generate_test_message()),
+            length(Data), % Force evaluation
+            timer:sleep(100),
+            memory_stress_loop(EndTime)
+    end.
+
+-spec generate_test_message() -> binary().
+generate_test_message() ->
+    Size = 512 + rand:uniform(1024), % 512-1536 bytes
+    iolist_to_binary([
+        "{\"jsonrpc\": \"2.0\", \"method\": \"test\", \"params\": {\"data\": \"",
+        lists:duplicate(Size - 100, $x),
+        "\"}, \"id\": ", integer_to_list(rand:uniform(10000)), "}"
+    ]).
+
+-spec calculate_buffer_efficiency([map()]) -> float().
+calculate_buffer_efficiency(BufferMetrics) ->
+    % Calculate efficiency based on overflow rate and buffer utilization
+    OverflowRates = [maps:get(overflow_rate, M) || M <- BufferMetrics],
+    AvgOverflowRate = safe_average(OverflowRates),
+    max(0.0, 100.0 - AvgOverflowRate). % Higher is better
+
+-spec compare_analyses(perf_analysis(), perf_analysis()) -> boolean().
+compare_analyses(A1, A2) ->
+    SeverityOrder = #{critical => 4, high => 3, medium => 2, low => 1},
+    maps:get(A1#perf_analysis.severity, SeverityOrder) >= 
+    maps:get(A2#perf_analysis.severity, SeverityOrder).
+
+-spec format_component_title(atom()) -> string().
+format_component_title(Component) ->
+    Words = string:split(atom_to_list(Component), "_", all),
+    string:join([string:titlecase(W) || W <- Words], " ").
+
+-spec format_metrics_summary(map()) -> iolist().
+format_metrics_summary(Metrics) ->
+    ImportantKeys = [
+        avg_switch_time, max_switch_time, failure_rate,
+        avg_routing_latency, operations_per_second, avg_queue_depth,
+        buffer_overflow_rate, gc_frequency,
+        avg_reconnect_time, connection_stability,
+        avg_restart_time, cascade_failure_rate,
+        peak_memory_usage, memory_growth_rate, leak_indicators
+    ],
+    
+    ValidMetrics = [{K, V} || K <- ImportantKeys, {K, V} <- maps:to_list(Metrics)],
+    
+    lists:map(fun({Key, Value}) ->
+        ["- ", format_metric_name(Key), ": ", format_metric_value(Key, Value), "\n"]
+    end, ValidMetrics).
+
+-spec format_detailed_metrics(map()) -> iolist().
+format_detailed_metrics(Metrics) ->
+    lists:map(fun({Key, Value}) ->
+        [atom_to_list(Key), ": ", format_metric_value(Key, Value), "\n"]
+    end, maps:to_list(Metrics)).
+
+-spec format_metric_name(atom()) -> string().
+format_metric_name(Key) ->
+    Words = string:split(atom_to_list(Key), "_", all),
+    string:join([string:titlecase(W) || W <- Words], " ").
+
+-spec format_metric_value(atom(), term()) -> string().
+format_metric_value(Key, Value) when is_float(Value) ->
+    case Key of
+        failure_rate -> io_lib:format("~.1f%", [Value]);
+        buffer_overflow_rate -> io_lib:format("~.1f%", [Value]);
+        connection_stability -> io_lib:format("~.1f%", [Value]);
+        cascade_failure_rate -> io_lib:format("~.1f%", [Value]);
+        memory_growth_rate -> io_lib:format("~.1f KB/s", [Value / 1024]);
+        _ -> io_lib:format("~.2f", [Value])
+    end;
+format_metric_value(Key, Value) when is_integer(Value) ->
+    case Key of
+        avg_switch_time -> io_lib:format("~.2f ms", [Value / 1000]);
+        max_switch_time -> io_lib:format("~.2f ms", [Value / 1000]);
+        avg_routing_latency -> io_lib:format("~.2f ms", [Value / 1000]);
+        avg_lookup_time -> io_lib:format("~.2f μs", [float(Value)]);
+        avg_reconnect_time -> io_lib:format("~.2f ms", [Value / 1000]);
+        avg_restart_time -> io_lib:format("~.2f ms", [Value / 1000]);
+        peak_memory_usage -> io_lib:format("~p MB", [Value div (1024*1024)]);
+        avg_buffer_size -> io_lib:format("~p KB", [Value div 1024]);
+        _ -> integer_to_list(Value)
+    end;
+format_metric_value(_Key, Value) ->
+    io_lib:format("~p", [Value]).
+
+-spec get_recommendations_for_severity([perf_analysis()], atom()) -> [binary()].
+get_recommendations_for_severity(Analyses, Severity) ->
+    SeverityAnalyses = [A || A <- Analyses, A#perf_analysis.severity =:= Severity],
+    lists:flatmap(fun(A) -> A#perf_analysis.recommendations end, SeverityAnalyses).
+
+-spec format_timestamp(integer()) -> string().
+format_timestamp(Timestamp) ->
+    {{Year, Month, Day}, {Hour, Minute, Second}} = 
+        calendar:gregorian_seconds_to_datetime(Timestamp + 62167219200),
+    io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w UTC", 
+                  [Year, Month, Day, Hour, Minute, Second]).

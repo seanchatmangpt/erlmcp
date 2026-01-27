@@ -1,0 +1,22 @@
+{
+    "sourceFile": "test/erlmcp_transport_sup_quick_SUITE.erl",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1756189288895,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1756189552610,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -4,12 +4,11 @@\n -include_lib(\"eunit/include/eunit.hrl\").\n \n -export([all/0, init_per_suite/1, end_per_suite/1]).\n -export([start_stop_stdio/1, restart_stdio/1]).\n- -export([start_stop_stdio/1, restart_stdio/1]).\n- \n- %% internal helpers\n- -export([wait_for_status/2]).\n+-export([start_stop_stdio/1, restart_stdio/1]).\n+%% internal helpers\n+-export([wait_for_status/2]).\n \n all() ->\n   [start_stop_stdio, restart_stdio].\n \n@@ -49,7 +48,10 @@\n wait_for_status(_TransportId, _Expected, 0) ->\n   ct:fail(\"timeout waiting for expected status\");\n wait_for_status(TransportId, Expected, N) when N > 0 ->\n   case erlmcp_transport_sup:get_child_status(TransportId) of\n-    {ok, Expected} -> ok;\n-    _ -> timer:sleep(50), wait_for_status(TransportId, Expected, N - 1)\n+    {ok, Expected} ->\n+      ok;\n+    _ ->\n+      timer:sleep(50),\n+      wait_for_status(TransportId, Expected, N - 1)\n   end.\n"
+                }
+            ],
+            "date": 1756189288895,
+            "name": "Commit-0",
+            "content": "-module(erlmcp_transport_sup_quick_SUITE).\n\n-include_lib(\"common_test/include/ct.hrl\").\n-include_lib(\"eunit/include/eunit.hrl\").\n\n-export([all/0, init_per_suite/1, end_per_suite/1]).\n-export([start_stop_stdio/1, restart_stdio/1]).\n\nall() -> [start_stop_stdio, restart_stdio].\n\ninit_per_suite(Config) ->\n    case whereis(erlmcp_transport_sup) of\n        undefined -> {ok, _} = erlmcp_transport_sup:start_link();\n        _ -> ok\n    end,\n    Config.\n\nend_per_suite(_Config) -> ok.\n\nstart_stop_stdio(_Config) ->\n    TId = stdio_sup_qw,\n    {ok, Pid} = erlmcp_transport_sup:start_child(TId, stdio, #{test_mode => true}),\n    ?assert(is_pid(Pid)),\n    {ok, running} = erlmcp_transport_sup:get_child_status(TId),\n    ok = erlmcp_transport_sup:stop_child(TId),\n    {ok, stopped} = erlmcp_transport_sup:get_child_status(TId).\n\nrestart_stdio(_Config) ->\n    TId = stdio_sup_restart_qw,\n    {ok, _} = erlmcp_transport_sup:start_child(TId, stdio, #{test_mode => true}),\n    {ok, NewPid} = erlmcp_transport_sup:restart_transport(TId),\n    ?assert(is_pid(NewPid)),\n    ok = erlmcp_transport_sup:stop_child(TId).\n"
+        }
+    ]
+}

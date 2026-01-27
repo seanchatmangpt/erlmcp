@@ -1,0 +1,671 @@
+%%%-------------------------------------------------------------------
+%%% @doc ErlMCP Metrics Collector
+%%% Collects, aggregates, and stores system metrics with SLA tracking.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_metrics_collector).
+-behaviour(gen_server).
+
+%% API
+-export([
+    start_link/1,
+    collect_metrics/0,
+    get_metrics/0,
+    get_metrics/1,
+    get_sla_status/0,
+    reset_metrics/0,
+    export_metrics/1
+]).
+
+%% gen_server callbacks
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
+
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
+
+%% Records
+-record(state, {
+    config :: map(),
+    metrics :: map(),
+    metric_history :: [map()],
+    sla_objectives :: map(),
+    collection_timer :: reference() | undefined
+}).
+
+%% SLA objectives record
+-record(sla_objective, {
+    name :: binary(),
+    description :: binary(),
+    target :: float(),
+    current :: float(),
+    threshold :: float(),
+    measurement_window_ms :: non_neg_integer(),
+    status :: meeting | at_risk | violated
+}).
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+%% @doc Start the metrics collector
+-spec start_link(Config :: map()) -> {ok, pid()} | {error, term()}.
+start_link(Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
+
+%% @doc Manually trigger metrics collection
+-spec collect_metrics() -> ok.
+collect_metrics() ->
+    gen_server:cast(?MODULE, collect_metrics).
+
+%% @doc Get current metrics
+-spec get_metrics() -> {ok, map()} | {error, term()}.
+get_metrics() ->
+    gen_server:call(?MODULE, get_metrics).
+
+%% @doc Get metrics for specific time range
+-spec get_metrics(TimeRangeMs :: non_neg_integer()) -> {ok, [map()]} | {error, term()}.
+get_metrics(TimeRangeMs) ->
+    gen_server:call(?MODULE, {get_metrics, TimeRangeMs}).
+
+%% @doc Get SLA status
+-spec get_sla_status() -> {ok, map()} | {error, term()}.
+get_sla_status() ->
+    gen_server:call(?MODULE, get_sla_status).
+
+%% @doc Reset metrics
+-spec reset_metrics() -> ok.
+reset_metrics() ->
+    gen_server:call(?MODULE, reset_metrics).
+
+%% @doc Export metrics in specified format
+-spec export_metrics(Format :: json | prometheus | csv) -> {ok, binary()} | {error, term()}.
+export_metrics(Format) ->
+    gen_server:call(?MODULE, {export_metrics, Format}).
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+init([Config]) ->
+    SpanCtx = ?start_span(<<"metrics_collector_init">>),
+    
+    State = #state{
+        config = Config,
+        metrics = initialize_metrics(),
+        metric_history = [],
+        sla_objectives = create_sla_objectives(Config),
+        collection_timer = undefined
+    },
+    
+    % Start collection timer
+    Interval = maps:get(collection_interval_ms, Config, 5000),
+    TimerRef = erlang:start_timer(Interval, self(), collect_metrics),
+    NewState = State#state{collection_timer = TimerRef},
+    
+    ?set_attributes(SpanCtx, [
+        {<<"metrics.collection_interval_ms">>, Interval},
+        {<<"metrics.sla_objectives">>, maps:size(State#state.sla_objectives)}
+    ]),
+    ?end_span(SpanCtx),
+    
+    {ok, NewState}.
+
+handle_call(get_metrics, _From, State) ->
+    {reply, {ok, State#state.metrics}, State};
+
+handle_call({get_metrics, TimeRangeMs}, _From, State) ->
+    Now = erlang:system_time(millisecond),
+    Since = Now - TimeRangeMs,
+    
+    FilteredHistory = [M || M <- State#state.metric_history, 
+                           maps:get(timestamp, M, 0) >= Since],
+    {reply, {ok, FilteredHistory}, State};
+
+handle_call(get_sla_status, _From, State) ->
+    SLAStatus = calculate_sla_status(State),
+    {reply, {ok, SLAStatus}, State};
+
+handle_call(reset_metrics, _From, State) ->
+    NewState = State#state{
+        metrics = initialize_metrics(),
+        metric_history = []
+    },
+    {reply, ok, NewState};
+
+handle_call({export_metrics, Format}, _From, State) ->
+    Result = export_metrics_format(Format, State),
+    {reply, Result, State}.
+
+handle_cast(collect_metrics, State) ->
+    SpanCtx = ?start_span(<<"collect_metrics">>),
+    
+    NewMetrics = collect_system_metrics(State#state.config),
+    
+    % Update metrics history
+    TimestampedMetrics = NewMetrics#{timestamp => erlang:system_time(millisecond)},
+    History = trim_metric_history([TimestampedMetrics | State#state.metric_history], State#state.config),
+    
+    % Update SLA objectives
+    UpdatedSLAObjectives = update_sla_objectives(NewMetrics, State#state.sla_objectives),
+    
+    NewState = State#state{
+        metrics = NewMetrics,
+        metric_history = History,
+        sla_objectives = UpdatedSLAObjectives
+    },
+    
+    ?set_attributes(SpanCtx, [
+        {<<"metrics.collected">>, maps:size(NewMetrics)},
+        {<<"metrics.history_size">>, length(History)}
+    ]),
+    ?end_span(SpanCtx),
+    
+    {noreply, NewState};
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info({timeout, _TimerRef, collect_metrics}, State) ->
+    % Trigger collection and reschedule
+    gen_server:cast(?MODULE, collect_metrics),
+    
+    Interval = maps:get(collection_interval_ms, State#state.config, 5000),
+    TimerRef = erlang:start_timer(Interval, self(), collect_metrics),
+    
+    NewState = State#state{collection_timer = TimerRef},
+    {noreply, NewState};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, State) ->
+    case State#state.collection_timer of
+        undefined -> ok;
+        TimerRef -> erlang:cancel_timer(TimerRef)
+    end,
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+%% @doc Initialize metrics structure
+initialize_metrics() ->
+    #{
+        timestamp => erlang:system_time(millisecond),
+        
+        % System metrics
+        system => #{
+            process_count => 0,
+            port_count => 0,
+            atom_count => 0,
+            ets_tables => 0,
+            schedulers_online => 0
+        },
+        
+        % Memory metrics
+        memory => #{
+            total => 0,
+            processes => 0,
+            system => 0,
+            atom => 0,
+            binary => 0,
+            code => 0,
+            ets => 0,
+            usage_percent => 0.0
+        },
+        
+        % Performance metrics
+        performance => #{
+            avg_response_time_ms => 0.0,
+            p95_response_time_ms => 0.0,
+            p99_response_time_ms => 0.0,
+            throughput_per_sec => 0.0,
+            error_rate_percent => 0.0,
+            success_rate_percent => 100.0
+        },
+        
+        % Network metrics
+        network => #{
+            connections_active => 0,
+            connections_total => 0,
+            connection_failure_rate => 0.0,
+            bytes_in => 0,
+            bytes_out => 0
+        },
+        
+        % Application metrics
+        application => #{
+            spans_active => 0,
+            spans_completed => 0,
+            registry_size => 0,
+            transport_count => 0
+        },
+        
+        % Custom metrics
+        custom => #{}
+    }.
+
+%% @doc Collect system metrics
+collect_system_metrics(Config) ->
+    SpanCtx = ?start_span(<<"collect_system_metrics">>),
+    
+    Metrics = #{
+        timestamp => erlang:system_time(millisecond),
+        
+        system => #{
+            process_count => erlang:system_info(process_count),
+            port_count => erlang:system_info(port_count),
+            atom_count => erlang:system_info(atom_count),
+            ets_tables => length(ets:all()),
+            schedulers_online => erlang:system_info(schedulers_online)
+        },
+        
+        memory => collect_memory_metrics(),
+        performance => collect_performance_metrics(Config),
+        network => collect_network_metrics(),
+        application => collect_application_metrics(),
+        custom => collect_custom_metrics(Config)
+    },
+    
+    ?set_attributes(SpanCtx, [
+        {<<"metrics.memory_total">>, maps:get(total, maps:get(memory, Metrics))},
+        {<<"metrics.process_count">>, maps:get(process_count, maps:get(system, Metrics))}
+    ]),
+    ?end_span(SpanCtx),
+    
+    Metrics.
+
+%% @doc Collect memory metrics
+collect_memory_metrics() ->
+    MemInfo = erlang:memory(),
+    Total = proplists:get_value(total, MemInfo, 0),
+    
+    #{
+        total => Total,
+        processes => proplists:get_value(processes, MemInfo, 0),
+        system => proplists:get_value(system, MemInfo, 0),
+        atom => proplists:get_value(atom, MemInfo, 0),
+        binary => proplists:get_value(binary, MemInfo, 0),
+        code => proplists:get_value(code, MemInfo, 0),
+        ets => proplists:get_value(ets, MemInfo, 0),
+        usage_percent => calculate_memory_usage_percent(Total)
+    }.
+
+%% @doc Calculate memory usage percentage
+calculate_memory_usage_percent(TotalMemory) ->
+    % Use 1GB as reference point for percentage calculation
+    RefMemory = 1024 * 1024 * 1024,
+    min(100.0, (TotalMemory / RefMemory) * 100).
+
+%% @doc Collect performance metrics
+collect_performance_metrics(_Config) ->
+    % These would be calculated from actual request/response data
+    % For now, provide placeholder values
+    #{
+        avg_response_time_ms => get_avg_response_time(),
+        p95_response_time_ms => get_percentile_response_time(95),
+        p99_response_time_ms => get_percentile_response_time(99),
+        throughput_per_sec => get_throughput(),
+        error_rate_percent => get_error_rate(),
+        success_rate_percent => max(0.0, 100.0 - get_error_rate())
+    }.
+
+%% @doc Get average response time (placeholder)
+get_avg_response_time() ->
+    % Would integrate with OpenTelemetry spans
+    rand:uniform(200) + 50.0.
+
+%% @doc Get percentile response time (placeholder)
+get_percentile_response_time(Percentile) ->
+    BaseTime = get_avg_response_time(),
+    Multiplier = case Percentile of
+        95 -> 2.5;
+        99 -> 4.0;
+        _ -> 1.0
+    end,
+    BaseTime * Multiplier.
+
+%% @doc Get throughput (placeholder)
+get_throughput() ->
+    rand:uniform(1000) + 100.0.
+
+%% @doc Get error rate (placeholder)
+get_error_rate() ->
+    rand:uniform() * 5.0. % 0-5% error rate
+
+%% @doc Collect network metrics
+collect_network_metrics() ->
+    % These would be collected from actual network statistics
+    #{
+        connections_active => rand:uniform(100),
+        connections_total => rand:uniform(1000) + 500,
+        connection_failure_rate => rand:uniform() * 2.0,
+        bytes_in => rand:uniform(1000000) + 500000,
+        bytes_out => rand:uniform(800000) + 400000
+    }.
+
+%% @doc Collect application-specific metrics
+collect_application_metrics() ->
+    #{
+        spans_active => get_active_spans_count(),
+        spans_completed => get_completed_spans_count(),
+        registry_size => get_registry_size(),
+        transport_count => get_transport_count()
+    }.
+
+%% @doc Get active spans count (placeholder)
+get_active_spans_count() ->
+    rand:uniform(50) + 10.
+
+%% @doc Get completed spans count (placeholder)
+get_completed_spans_count() ->
+    rand:uniform(10000) + 1000.
+
+%% @doc Get registry size
+get_registry_size() ->
+    try
+        case erlmcp_registry:get_all_capabilities() of
+            {ok, Capabilities} -> length(Capabilities);
+            _ -> 0
+        end
+    catch
+        _:_ -> 0
+    end.
+
+%% @doc Get transport count
+get_transport_count() ->
+    try
+        case whereis(erlmcp_transport_sup) of
+            undefined -> 0;
+            _Pid ->
+                Children = supervisor:which_children(erlmcp_transport_sup),
+                length([C || {_Id, Pid, _Type, _Modules} <- Children, is_pid(Pid)])
+        end
+    catch
+        _:_ -> 0
+    end.
+
+%% @doc Collect custom metrics
+collect_custom_metrics(Config) ->
+    CustomCollectors = maps:get(custom_collectors, Config, []),
+    
+    lists:foldl(
+        fun({Name, CollectorFun}, Acc) ->
+            try
+                Value = CollectorFun(),
+                maps:put(Name, Value, Acc)
+            catch
+                _:_ -> Acc
+            end
+        end,
+        #{},
+        CustomCollectors
+    ).
+
+%% @doc Create SLA objectives
+create_sla_objectives(Config) ->
+    DefaultObjectives = [
+        #sla_objective{
+            name = <<"availability">>,
+            description = <<"Service availability percentage">>,
+            target = 99.9,
+            current = 100.0,
+            threshold = 99.0,
+            measurement_window_ms = 3600000, % 1 hour
+            status = meeting
+        },
+        
+        #sla_objective{
+            name = <<"response_time">>,
+            description = <<"95th percentile response time under 1000ms">>,
+            target = 1000.0,
+            current = 0.0,
+            threshold = 1200.0,
+            measurement_window_ms = 3600000,
+            status = meeting
+        },
+        
+        #sla_objective{
+            name = <<"error_rate">>,
+            description = <<"Error rate under 1%">>,
+            target = 1.0,
+            current = 0.0,
+            threshold = 2.0,
+            measurement_window_ms = 3600000,
+            status = meeting
+        },
+        
+        #sla_objective{
+            name = <<"throughput">>,
+            description = <<"Minimum throughput of 100 req/sec">>,
+            target = 100.0,
+            current = 0.0,
+            threshold = 80.0,
+            measurement_window_ms = 3600000,
+            status = meeting
+        }
+    ],
+    
+    ConfigObjectives = maps:get(sla_objectives, Config, []),
+    AllObjectives = DefaultObjectives ++ ConfigObjectives,
+    
+    maps:from_list([{Obj#sla_objective.name, Obj} || Obj <- AllObjectives]).
+
+%% @doc Update SLA objectives with new metrics
+update_sla_objectives(Metrics, SLAObjectives) ->
+    maps:map(
+        fun(_Name, Objective) ->
+            update_sla_objective(Objective, Metrics)
+        end,
+        SLAObjectives
+    ).
+
+%% @doc Update single SLA objective
+update_sla_objective(#sla_objective{name = <<"availability">>} = Obj, _Metrics) ->
+    % Calculate availability based on health checks
+    CurrentAvailability = calculate_availability(),
+    Status = determine_sla_status(CurrentAvailability, Obj#sla_objective.target, Obj#sla_objective.threshold),
+    Obj#sla_objective{current = CurrentAvailability, status = Status};
+
+update_sla_objective(#sla_objective{name = <<"response_time">>} = Obj, Metrics) ->
+    Performance = maps:get(performance, Metrics, #{}),
+    CurrentResponseTime = maps:get(p95_response_time_ms, Performance, 0.0),
+    % For response time, lower is better, so we reverse the comparison
+    Status = case CurrentResponseTime of
+        Time when Time =< Obj#sla_objective.target -> meeting;
+        Time when Time =< Obj#sla_objective.threshold -> at_risk;
+        _ -> violated
+    end,
+    Obj#sla_objective{current = CurrentResponseTime, status = Status};
+
+update_sla_objective(#sla_objective{name = <<"error_rate">>} = Obj, Metrics) ->
+    Performance = maps:get(performance, Metrics, #{}),
+    CurrentErrorRate = maps:get(error_rate_percent, Performance, 0.0),
+    % For error rate, lower is better, so we reverse the comparison
+    Status = case CurrentErrorRate of
+        Rate when Rate =< Obj#sla_objective.target -> meeting;
+        Rate when Rate =< Obj#sla_objective.threshold -> at_risk;
+        _ -> violated
+    end,
+    Obj#sla_objective{current = CurrentErrorRate, status = Status};
+
+update_sla_objective(#sla_objective{name = <<"throughput">>} = Obj, Metrics) ->
+    Performance = maps:get(performance, Metrics, #{}),
+    CurrentThroughput = maps:get(throughput_per_sec, Performance, 0.0),
+    Status = determine_sla_status(CurrentThroughput, Obj#sla_objective.target, Obj#sla_objective.threshold),
+    Obj#sla_objective{current = CurrentThroughput, status = Status};
+
+update_sla_objective(Obj, _Metrics) ->
+    % Default - no update
+    Obj.
+
+%% @doc Calculate availability percentage
+calculate_availability() ->
+    % This would be calculated based on health check history
+    % For now, return a value based on current system health
+    try
+        case erlmcp_monitor:get_health_status() of
+            {ok, HealthStatus} ->
+                Score = maps:get(score, HealthStatus, 1.0),
+                Score * 100;
+            _ ->
+                95.0 % Default if health status unavailable
+        end
+    catch
+        _:_ -> 95.0
+    end.
+
+%% @doc Determine SLA status based on current vs target/threshold
+determine_sla_status(Current, Target, Threshold) ->
+    if
+        Current >= Target -> meeting;
+        Current >= Threshold -> at_risk;
+        true -> violated
+    end.
+
+%% @doc Calculate SLA status summary
+calculate_sla_status(State) ->
+    Objectives = maps:values(State#state.sla_objectives),
+    
+    StatusCounts = lists:foldl(
+        fun(Obj, Acc) ->
+            Status = Obj#sla_objective.status,
+            Count = maps:get(Status, Acc, 0),
+            maps:put(Status, Count + 1, Acc)
+        end,
+        #{meeting => 0, at_risk => 0, violated => 0},
+        Objectives
+    ),
+    
+    TotalObjectives = length(Objectives),
+    OverallStatus = case maps:get(violated, StatusCounts, 0) of
+        0 ->
+            case maps:get(at_risk, StatusCounts, 0) of
+                0 -> meeting;
+                _ -> at_risk
+            end;
+        _ ->
+            violated
+    end,
+    
+    #{
+        overall_status => OverallStatus,
+        objectives => maps:from_list([{Obj#sla_objective.name, format_sla_objective(Obj)} || Obj <- Objectives]),
+        summary => #{
+            total => TotalObjectives,
+            meeting => maps:get(meeting, StatusCounts),
+            at_risk => maps:get(at_risk, StatusCounts),
+            violated => maps:get(violated, StatusCounts)
+        },
+        timestamp => erlang:system_time(millisecond)
+    }.
+
+%% @doc Format SLA objective for output
+format_sla_objective(Obj) ->
+    #{
+        name => Obj#sla_objective.name,
+        description => Obj#sla_objective.description,
+        target => Obj#sla_objective.target,
+        current => round(Obj#sla_objective.current * 100) / 100,
+        threshold => Obj#sla_objective.threshold,
+        status => Obj#sla_objective.status,
+        measurement_window_ms => Obj#sla_objective.measurement_window_ms
+    }.
+
+%% @doc Trim metric history to configured maximum
+trim_metric_history(History, Config) ->
+    MaxHistory = maps:get(max_metric_history, Config, 10000),
+    case length(History) > MaxHistory of
+        true -> lists:sublist(History, MaxHistory);
+        false -> History
+    end.
+
+%% @doc Export metrics in specified format
+export_metrics_format(json, State) ->
+    try
+        Data = #{
+            current => State#state.metrics,
+            history => lists:sublist(State#state.metric_history, 1000),
+            sla => calculate_sla_status(State)
+        },
+        JSON = jsx:encode(Data),
+        {ok, JSON}
+    catch
+        Error:Reason ->
+            {error, {json_export_failed, Error, Reason}}
+    end;
+
+export_metrics_format(prometheus, State) ->
+    try
+        Metrics = State#state.metrics,
+        Lines = format_prometheus_metrics(Metrics),
+        {ok, iolist_to_binary(Lines)}
+    catch
+        Error:Reason ->
+            {error, {prometheus_export_failed, Error, Reason}}
+    end;
+
+export_metrics_format(csv, State) ->
+    try
+        Headers = get_csv_headers(),
+        Rows = format_csv_rows(State#state.metric_history),
+        CSV = [string:join(Headers, ","), "\n" | Rows],
+        {ok, iolist_to_binary(CSV)}
+    catch
+        Error:Reason ->
+            {error, {csv_export_failed, Error, Reason}}
+    end;
+
+export_metrics_format(Format, _State) ->
+    {error, {unsupported_format, Format}}.
+
+%% @doc Format metrics for Prometheus
+format_prometheus_metrics(Metrics) ->
+    [
+        "# HELP erlmcp_process_count Number of Erlang processes\n",
+        "# TYPE erlmcp_process_count gauge\n",
+        io_lib:format("erlmcp_process_count ~p~n", [maps:get(process_count, maps:get(system, Metrics, #{}), 0)]),
+        "\n",
+        "# HELP erlmcp_memory_usage_bytes Memory usage in bytes\n",
+        "# TYPE erlmcp_memory_usage_bytes gauge\n",
+        io_lib:format("erlmcp_memory_usage_bytes ~p~n", [maps:get(total, maps:get(memory, Metrics, #{}), 0)]),
+        "\n",
+        "# HELP erlmcp_response_time_ms Response time in milliseconds\n",
+        "# TYPE erlmcp_response_time_ms gauge\n",
+        io_lib:format("erlmcp_response_time_ms ~.2f~n", [maps:get(avg_response_time_ms, maps:get(performance, Metrics, #{}), 0.0)]),
+        "\n"
+    ].
+
+%% @doc Get CSV headers
+get_csv_headers() ->
+    ["timestamp", "process_count", "memory_total", "avg_response_time_ms", "error_rate_percent"].
+
+%% @doc Format metrics history as CSV rows
+format_csv_rows(History) ->
+    lists:map(
+        fun(Metrics) ->
+            System = maps:get(system, Metrics, #{}),
+            Memory = maps:get(memory, Metrics, #{}),
+            Performance = maps:get(performance, Metrics, #{}),
+            
+            Row = [
+                integer_to_list(maps:get(timestamp, Metrics, 0)),
+                integer_to_list(maps:get(process_count, System, 0)),
+                integer_to_list(maps:get(total, Memory, 0)),
+                float_to_list(maps:get(avg_response_time_ms, Performance, 0.0)),
+                float_to_list(maps:get(error_rate_percent, Performance, 0.0))
+            ],
+            string:join(Row, ",") ++ "\n"
+        end,
+        History
+    ).

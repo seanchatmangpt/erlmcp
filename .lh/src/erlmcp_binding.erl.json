@@ -1,0 +1,22 @@
+{
+    "sourceFile": "src/erlmcp_binding.erl",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1756190395710,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1756190592733,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -4,23 +4,23 @@\n          list_transport_bindings/0, validate_transport_binding/2, get_enhanced_transport_status/1,\n          audit_transport_bindings/0]).\n \n bind_transport_to_server(TransportId, ServerId) ->\n-    erlmcp:bind_transport_to_server(TransportId, ServerId).\n+  erlmcp:bind_transport_to_server(TransportId, ServerId).\n \n unbind_transport(TransportId) ->\n-    erlmcp:unbind_transport(TransportId).\n+  erlmcp:unbind_transport(TransportId).\n \n get_transport_binding_info(TransportId) ->\n-    erlmcp:get_transport_binding_info(TransportId).\n+  erlmcp:get_transport_binding_info(TransportId).\n \n list_transport_bindings() ->\n-    erlmcp:list_transport_bindings().\n+  erlmcp:list_transport_bindings().\n \n validate_transport_binding(TransportId, ServerId) ->\n-    erlmcp:validate_transport_binding(TransportId, ServerId).\n+  erlmcp:validate_transport_binding(TransportId, ServerId).\n \n get_enhanced_transport_status(TransportId) ->\n-    erlmcp:get_enhanced_transport_status(TransportId).\n+  erlmcp:get_enhanced_transport_status(TransportId).\n \n audit_transport_bindings() ->\n-    erlmcp:audit_transport_bindings().\n+  erlmcp:audit_transport_bindings().\n"
+                }
+            ],
+            "date": 1756190395710,
+            "name": "Commit-0",
+            "content": "-module(erlmcp_binding).\n\n-export([bind_transport_to_server/2, unbind_transport/1, get_transport_binding_info/1,\n         list_transport_bindings/0, validate_transport_binding/2, get_enhanced_transport_status/1,\n         audit_transport_bindings/0]).\n\nbind_transport_to_server(TransportId, ServerId) ->\n    erlmcp:bind_transport_to_server(TransportId, ServerId).\n\nunbind_transport(TransportId) ->\n    erlmcp:unbind_transport(TransportId).\n\nget_transport_binding_info(TransportId) ->\n    erlmcp:get_transport_binding_info(TransportId).\n\nlist_transport_bindings() ->\n    erlmcp:list_transport_bindings().\n\nvalidate_transport_binding(TransportId, ServerId) ->\n    erlmcp:validate_transport_binding(TransportId, ServerId).\n\nget_enhanced_transport_status(TransportId) ->\n    erlmcp:get_enhanced_transport_status(TransportId).\n\naudit_transport_bindings() ->\n    erlmcp:audit_transport_bindings().\n"
+        }
+    ]
+}

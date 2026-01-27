@@ -1,0 +1,293 @@
+{
+  "default_config": {
+    "duration": 30000,
+    "rate": 50,
+    "message_size": "medium",
+    "protocol": "http",
+    "connection_type": "pooled",
+    "max_connections": 20,
+    "trace_every_request": true,
+    "target_host": "localhost",
+    "target_port": 8080
+  },
+  
+  "scenarios": {
+    "quick_test": {
+      "description": "Quick validation test",
+      "pattern": "constant",
+      "rate": 10,
+      "duration": 10000,
+      "message_size": "small",
+      "protocol": "http",
+      "trace_every_request": true
+    },
+    
+    "api_benchmark": {
+      "description": "Standard API performance benchmark",
+      "pattern": "constant",
+      "rate": 100,
+      "duration": 60000,
+      "message_size": "medium",
+      "protocol": "http",
+      "workload": "balanced",
+      "connection_type": "pooled",
+      "max_connections": 25,
+      "trace_every_request": false
+    },
+    
+    "stress_test": {
+      "description": "High-load stress testing",
+      "pattern": "ramp_up",
+      "rate": 500,
+      "duration": 120000,
+      "message_size": "small",
+      "protocol": "http",
+      "workload": "read_heavy",
+      "connection_type": "pooled",
+      "max_connections": 100,
+      "trace_every_request": false
+    },
+    
+    "burst_simulation": {
+      "description": "Traffic burst simulation",
+      "pattern": "burst",
+      "rate": 50,
+      "duration": 180000,
+      "message_size": "medium",
+      "protocol": "http",
+      "workload": "balanced",
+      "connection_type": "pooled",
+      "max_connections": 30,
+      "trace_every_request": false
+    },
+    
+    "websocket_streaming": {
+      "description": "WebSocket real-time streaming test",
+      "pattern": "constant",
+      "rate": 75,
+      "duration": 90000,
+      "message_size": "medium",
+      "protocol": "websocket",
+      "workload": "stream",
+      "connection_type": "long_lived",
+      "trace_every_request": true
+    },
+    
+    "mobile_app_pattern": {
+      "description": "Mobile app usage pattern simulation",
+      "pattern": "random_walk",
+      "rate": 30,
+      "duration": 120000,
+      "message_size": "small",
+      "protocol": "http",
+      "workload": "read_heavy",
+      "connection_type": "short_lived",
+      "trace_every_request": true
+    },
+    
+    "iot_telemetry": {
+      "description": "IoT device telemetry simulation",
+      "pattern": "poisson",
+      "rate": 200,
+      "duration": 180000,
+      "message_size": "small",
+      "protocol": "tcp",
+      "workload": "write_heavy",
+      "connection_type": "short_lived",
+      "trace_every_request": false
+    },
+    
+    "mcp_validation": {
+      "description": "MCP protocol validation test",
+      "pattern": "ramp_up",
+      "rate": 40,
+      "duration": 60000,
+      "message_size": "medium",
+      "protocol": "mcp",
+      "workload": "balanced",
+      "connection_type": "pooled",
+      "max_connections": 15,
+      "target_port": 3000,
+      "trace_every_request": true
+    },
+    
+    "peak_hours_simulation": {
+      "description": "Peak traffic hours simulation",
+      "pattern": "sine_wave",
+      "rate": 120,
+      "duration": 300000,
+      "message_size": "mixed",
+      "protocol": "http",
+      "workload": "balanced",
+      "connection_type": "pooled",
+      "max_connections": 40,
+      "trace_every_request": false
+    },
+    
+    "large_payload_test": {
+      "description": "Large payload handling test",
+      "pattern": "constant",
+      "rate": 5,
+      "duration": 60000,
+      "message_size": "large",
+      "protocol": "http",
+      "workload": "write_heavy",
+      "connection_type": "long_lived",
+      "trace_every_request": false
+    }
+  },
+  
+  "test_suites": {
+    "smoke": {
+      "description": "Quick smoke test suite",
+      "scenarios": ["quick_test"],
+      "parallel": false,
+      "timeout": 30
+    },
+    
+    "performance": {
+      "description": "Performance benchmark suite",
+      "scenarios": ["api_benchmark", "websocket_streaming", "mcp_validation"],
+      "parallel": false,
+      "timeout": 300
+    },
+    
+    "stress": {
+      "description": "Stress testing suite", 
+      "scenarios": ["stress_test", "burst_simulation", "peak_hours_simulation"],
+      "parallel": false,
+      "timeout": 600
+    },
+    
+    "patterns": {
+      "description": "Traffic pattern validation suite",
+      "scenarios": ["mobile_app_pattern", "iot_telemetry", "large_payload_test"],
+      "parallel": true,
+      "timeout": 400
+    },
+    
+    "comprehensive": {
+      "description": "Full comprehensive test suite",
+      "scenarios": [
+        "api_benchmark",
+        "stress_test", 
+        "websocket_streaming",
+        "mobile_app_pattern",
+        "mcp_validation",
+        "iot_telemetry"
+      ],
+      "parallel": false,
+      "timeout": 1200
+    }
+  },
+  
+  "limits_testing": {
+    "rates": [10, 50, 100, 200, 500, 1000, 2000],
+    "duration": 15000,
+    "message_size": "small",
+    "protocol": "http",
+    "trace_enabled": false,
+    "success_threshold": 0.95,
+    "latency_threshold_ms": 1000
+  },
+  
+  "protocol_comparison": {
+    "protocols": ["http", "websocket", "tcp", "mcp"],
+    "rate": 100,
+    "duration": 30000,
+    "message_size": "medium",
+    "trace_enabled": true,
+    "ports": {
+      "http": 8080,
+      "websocket": 8080,
+      "tcp": 8080,
+      "mcp": 3000
+    }
+  },
+  
+  "mcp_stress_config": {
+    "host": "localhost",
+    "port": 3000,
+    "phases": [
+      {"name": "warmup", "rate": 10, "duration": 10000},
+      {"name": "baseline", "rate": 30, "duration": 30000},
+      {"name": "moderate", "rate": 60, "duration": 45000},
+      {"name": "high", "rate": 120, "duration": 30000},
+      {"name": "stress", "rate": 250, "duration": 30000},
+      {"name": "recovery", "rate": 30, "duration": 15000}
+    ],
+    "message_size": "mixed",
+    "workload": "balanced"
+  },
+  
+  "capacity_planning": {
+    "scenarios": [
+      {
+        "name": "current_load",
+        "expected_users": 1000,
+        "peak_multiplier": 2,
+        "avg_requests_per_user": 8,
+        "test_duration": 60000
+      },
+      {
+        "name": "growth_target", 
+        "expected_users": 5000,
+        "peak_multiplier": 3,
+        "avg_requests_per_user": 12,
+        "test_duration": 90000
+      },
+      {
+        "name": "scale_target",
+        "expected_users": 25000,
+        "peak_multiplier": 4,
+        "avg_requests_per_user": 15,
+        "test_duration": 120000
+      }
+    ],
+    "sla_requirements": {
+      "success_rate": 0.999,
+      "p95_latency_ms": 200,
+      "p99_latency_ms": 500
+    }
+  },
+  
+  "reporting": {
+    "output_formats": ["html", "json", "text"],
+    "include_raw_data": true,
+    "generate_charts": true,
+    "metrics_retention_hours": 168,
+    "alert_thresholds": {
+      "success_rate": 0.95,
+      "p99_latency_ms": 2000,
+      "error_rate": 0.05
+    }
+  },
+  
+  "advanced_settings": {
+    "erlang_vm_args": "+P 1048576 +Q 65536 +A 64",
+    "memory_limit_mb": 4096,
+    "max_concurrent_generators": 50,
+    "connection_timeout_ms": 30000,
+    "request_timeout_ms": 60000,
+    "metrics_sampling_interval_ms": 1000,
+    "gc_settings": {
+      "fullsweep_after": 0,
+      "min_heap_size": 233,
+      "min_bin_vheap_size": 46422
+    }
+  },
+  
+  "monitoring_integration": {
+    "prometheus_enabled": false,
+    "prometheus_port": 9090,
+    "statsd_enabled": false,
+    "statsd_host": "localhost",
+    "statsd_port": 8125,
+    "custom_metrics": [
+      "request_duration_seconds",
+      "requests_total",
+      "errors_total",
+      "active_connections"
+    ]
+  }
+}

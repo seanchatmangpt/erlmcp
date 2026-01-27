@@ -1,0 +1,285 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Test suite for the refactored erlmcp_transport_tcp module
+%%% 
+%%% Tests the major refactor from Step 3 of Phase 3, ensuring:
+%%% - Standard gen_server pattern compliance
+%%% - Registry integration 
+%%% - Reconnection logic
+%%% - Error handling and recovery
+%%% - Connection management
+%%% - Buffer handling
+%%% 
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_tcp_refactored_SUITE).
+
+-compile(export_all).
+-compile(nowarn_export_all).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("../include/erlmcp.hrl").
+
+%%====================================================================
+%% CT Callbacks
+%%====================================================================
+
+all() ->
+    [
+        test_basic_startup,
+        test_test_mode_operation,
+        test_configuration_validation,
+        test_transport_behavior_compliance,
+        test_gen_server_callbacks,
+        test_connection_management,
+        test_statistics_tracking,
+        test_error_handling
+    ].
+
+init_per_suite(Config) ->
+    application:ensure_all_started(sasl),
+    Config.
+
+end_per_suite(_Config) ->
+    ok.
+
+init_per_testcase(_TestCase, Config) ->
+    Config.
+
+end_per_testcase(_TestCase, _Config) ->
+    ok.
+
+%%====================================================================
+%% Test Cases
+%%====================================================================
+
+%% @doc Test basic startup and shutdown functionality
+test_basic_startup(_Config) ->
+    TransportId = test_basic_startup_transport,
+    Config = #{
+        host => "localhost",
+        port => 8889,
+        test_mode => true
+    },
+    
+    %% Test successful startup
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    ?assert(is_process_alive(Pid)),
+    
+    %% Test process is registered as gen_server
+    ?assert(erlmcp_transport_tcp:get_info(Pid) =/= undefined),
+    
+    %% Test graceful shutdown
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%% @doc Test operation in test mode (no actual network)
+test_test_mode_operation(_Config) ->
+    TransportId = test_mode_transport,
+    Config = #{
+        host => "localhost",
+        port => 8890,
+        test_mode => true
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    
+    %% Test send operation in test mode
+    ?assertEqual(ok, erlmcp_transport_tcp:send(Pid, <<"test message">>)),
+    
+    %% Test get_info returns proper structure
+    Info = erlmcp_transport_tcp:get_info(Pid),
+    ?assertEqual(TransportId, maps:get(transport_id, Info)),
+    ?assertEqual(tcp, maps:get(type, Info)),
+    ?assert(maps:is_key(statistics, Info)),
+    
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%% @doc Test configuration validation
+test_configuration_validation(_Config) ->
+    TransportId = test_validation_transport,
+    
+    %% Test missing required fields
+    try
+        {ok, _Pid1} = erlmcp_transport_tcp:start_link(TransportId, #{}),
+        ct:fail("Should have failed with missing required fields")
+    catch
+        exit:{stop, {invalid_config, _}} -> ok
+    end,
+    
+    %% Test invalid port
+    try
+        {ok, _Pid2} = erlmcp_transport_tcp:start_link(TransportId, #{
+            host => "localhost",
+            port => 99999  % Invalid port
+        }),
+        ct:fail("Should have failed with invalid port")
+    catch
+        exit:{stop, {invalid_config, _}} -> ok
+    end,
+    
+    %% Test valid configuration with optional fields
+    Config = #{
+        host => "localhost",
+        port => 8891,
+        test_mode => true,
+        server_id => test_server,
+        keepalive => true,
+        nodelay => true,
+        buffer_size => 32768,
+        max_reconnect_attempts => 5
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    ?assert(is_process_alive(Pid)),
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%% @doc Test compliance with transport behavior specification
+test_transport_behavior_compliance(_Config) ->
+    TransportId = test_behavior_transport,
+    Config = #{
+        host => "localhost",
+        port => 8892,
+        test_mode => true
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    
+    %% Test behavior callback functions exist and work
+    ?assert(erlang:function_exported(erlmcp_transport_tcp, init, 1)),
+    ?assert(erlang:function_exported(erlmcp_transport_tcp, send, 2)),
+    ?assert(erlang:function_exported(erlmcp_transport_tcp, close, 1)),
+    ?assert(erlang:function_exported(erlmcp_transport_tcp, get_info, 1)),
+    
+    %% Test API functions work with both PID and state
+    Info1 = erlmcp_transport_tcp:get_info(Pid),
+    ?assertEqual(TransportId, maps:get(transport_id, Info1)),
+    
+    %% Test send with PID
+    ?assertEqual(ok, erlmcp_transport_tcp:send(Pid, <<"test1">>)),
+    
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%% @doc Test gen_server callbacks
+test_gen_server_callbacks(_Config) ->
+    TransportId = test_genserver_transport,
+    Config = #{
+        host => "localhost",
+        port => 8893,
+        test_mode => true
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    
+    %% Test gen_server:call works
+    {ok, State} = gen_server:call(Pid, get_state),
+    ?assert(is_tuple(State)),
+    
+    %% Test custom call
+    ?assertEqual(ok, gen_server:call(Pid, reconnect)),
+    
+    %% Test unknown call returns error
+    ?assertEqual({error, unknown_request}, gen_server:call(Pid, unknown_call)),
+    
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%% @doc Test connection management logic
+test_connection_management(_Config) ->
+    TransportId = test_connection_transport,
+    Config = #{
+        host => "localhost", 
+        port => 8894,
+        test_mode => true,
+        max_reconnect_attempts => 3
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    
+    %% In test mode, should show as disconnected initially
+    Info = erlmcp_transport_tcp:get_info(Pid),
+    Connection = maps:get(connection, Info, #{}),
+    ?assertEqual("localhost", maps:get(host, Connection)),
+    ?assertEqual(8894, maps:get(port, Connection)),
+    ?assertEqual(0, maps:get(reconnect_attempts, Connection)),
+    
+    %% Test reconnect command
+    ?assertEqual(ok, gen_server:call(Pid, reconnect)),
+    
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%% @doc Test statistics tracking
+test_statistics_tracking(_Config) ->
+    TransportId = test_stats_transport,
+    Config = #{
+        host => "localhost",
+        port => 8895,
+        test_mode => true
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    
+    %% Initial statistics should be zero
+    Info1 = erlmcp_transport_tcp:get_info(Pid),
+    Stats1 = maps:get(statistics, Info1),
+    ?assertEqual(0, maps:get(messages_sent, Stats1)),
+    ?assertEqual(0, maps:get(errors, Stats1)),
+    
+    %% Send a message (should increment counter)
+    ?assertEqual(ok, erlmcp_transport_tcp:send(Pid, <<"test msg">>)),
+    
+    %% Check statistics updated
+    Info2 = erlmcp_transport_tcp:get_info(Pid),
+    Stats2 = maps:get(statistics, Info2),
+    ?assertEqual(1, maps:get(messages_sent, Stats2)),
+    
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%% @doc Test error handling scenarios
+test_error_handling(_Config) ->
+    TransportId = test_error_transport,
+    Config = #{
+        host => "localhost",
+        port => 8896,
+        test_mode => true
+    },
+    
+    {ok, Pid} = erlmcp_transport_tcp:start_link(TransportId, Config),
+    
+    %% Test sending to a process works in test mode
+    ?assertEqual(ok, erlmcp_transport_tcp:send(Pid, <<"test">>)),
+    
+    %% Test error handling in statistics
+    Info = erlmcp_transport_tcp:get_info(Pid),
+    ?assert(maps:is_key(statistics, Info)),
+    Stats = maps:get(statistics, Info),
+    ?assert(maps:is_key(errors, Stats)),
+    
+    ok = erlmcp_transport_tcp:close(Pid),
+    ok.
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+%% Wait for a process to terminate
+wait_for_termination(Pid) ->
+    wait_for_termination(Pid, 5000).
+
+wait_for_termination(Pid, Timeout) ->
+    case is_process_alive(Pid) of
+        false -> ok;
+        true ->
+            case Timeout =< 0 of
+                true -> {error, timeout};
+                false ->
+                    timer:sleep(100),
+                    wait_for_termination(Pid, Timeout - 100)
+            end
+    end.
