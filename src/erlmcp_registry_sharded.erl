@@ -32,23 +32,20 @@
 %% Default configuration
 -define(DEFAULT_PARTITION_COUNT, 16).
 
-%% Type definitions
+%% Type definitions (partition_id for local use only)
 -type partition_id() :: 0..15.
--type server_id() :: binary().
--type transport_id() :: atom() | binary().
+-type sharded_state() :: #shard_state{}.
 
--record(state, {
+-record(shard_state, {
     partition_count :: pos_integer(),
     partition_tables :: [atom()],
-    server_transport_map = #{} :: #{transport_id() => server_id()},
-    latency_history :: #{partition_id() => [non_neg_integer()]},
-    write_count :: #{partition_id() => non_neg_integer()},
-    contention_alarms = #{} :: #{partition_id() => boolean()},
+    server_transport_map = #{} :: map(),
+    latency_history :: map(),
+    write_count :: map(),
+    contention_alarms = #{} :: map(),
     admission_control_enabled = false :: boolean(),
     stats_timer_ref :: reference() | undefined
 }).
-
--type state() :: #state{}.
 
 %% API Functions
 -spec start_link() -> {ok, pid()} | {error, term()}.
@@ -112,7 +109,7 @@ get_contention_status() ->
     gen_server:call(?MODULE, get_contention_status).
 
 %% gen_server callbacks
--spec init([pos_integer()]) -> {ok, state()}.
+-spec init([pos_integer()]) -> {ok, sharded_state()}.
 init([PartitionCount]) ->
     process_flag(trap_exit, true),
     logger:info("Starting sharded MCP registry with ~p partitions", [PartitionCount]),
@@ -126,7 +123,7 @@ init([PartitionCount]) ->
 
     logger:info("Sharded registry initialized with ~p partitions: ~p", [PartitionCount, Tables]),
 
-    {ok, #state{
+    {ok, #shard_state{
         partition_count = PartitionCount,
         partition_tables = Tables,
         latency_history = LatencyHistory,
@@ -135,8 +132,8 @@ init([PartitionCount]) ->
     }}.
 
 handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
-    PartitionId = partition_for_server(ServerId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_server(ServerId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
     case ets:lookup(Table, {server, ServerId}) of
         [{_, _, _}] ->
@@ -160,8 +157,8 @@ handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
     end;
 
 handle_call({register_transport, TransportId, TransportPid, Config}, _From, State) ->
-    PartitionId = partition_for_transport(TransportId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_transport(TransportId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
     case ets:lookup(Table, {transport, TransportId}) of
         [{_, _, _}] ->
@@ -179,8 +176,8 @@ handle_call({register_transport, TransportId, TransportPid, Config}, _From, Stat
                 NewState2 = case maps:get(server_id, Config, undefined) of
                     undefined -> NewState;
                     ServerId ->
-                        NewMap = maps:put(TransportId, ServerId, State#state.server_transport_map),
-                        NewState#state{server_transport_map = NewMap}
+                        NewMap = maps:put(TransportId, ServerId, State#shard_state.server_transport_map),
+                        NewState#shard_state{server_transport_map = NewMap}
                 end,
 
                 logger:info("Registered transport ~p with pid ~p (~p ms)", [TransportId, TransportPid, ElapsedMs]),
@@ -193,8 +190,8 @@ handle_call({register_transport, TransportId, TransportPid, Config}, _From, Stat
     end;
 
 handle_call({unregister_server, ServerId}, _From, State) ->
-    PartitionId = partition_for_server(ServerId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_server(ServerId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
     Start = erlang:system_time(microsecond),
     ets:delete(Table, {server, ServerId}),
@@ -209,15 +206,15 @@ handle_call({unregister_server, ServerId}, _From, State) ->
     end,
 
     NewTransportMap = maps:filter(fun(_, SId) -> SId =/= ServerId end,
-                                 State#state.server_transport_map),
+                                 State#shard_state.server_transport_map),
 
-    NewState2 = NewState#state{server_transport_map = NewTransportMap},
+    NewState2 = NewState#shard_state{server_transport_map = NewTransportMap},
     logger:info("Unregistered server ~p", [ServerId]),
     {reply, ok, NewState2};
 
 handle_call({unregister_transport, TransportId}, _From, State) ->
-    PartitionId = partition_for_transport(TransportId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_transport(TransportId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
     Start = erlang:system_time(microsecond),
     ets:delete(Table, {transport, TransportId}),
@@ -231,26 +228,36 @@ handle_call({unregister_transport, TransportId}, _From, State) ->
         error:badarg -> ok
     end,
 
-    NewTransportMap = maps:remove(TransportId, State#state.server_transport_map),
-    NewState2 = NewState#state{server_transport_map = NewTransportMap},
+    NewTransportMap = maps:remove(TransportId, State#shard_state.server_transport_map),
+    NewState2 = NewState#shard_state{server_transport_map = NewTransportMap},
     logger:info("Unregistered transport ~p", [TransportId]),
     {reply, ok, NewState2};
 
 handle_call({find_server, ServerId}, _From, State) ->
-    PartitionId = partition_for_server(ServerId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_server(ServerId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
+    Start = erlang:monotonic_time(microsecond),
     Result = case ets:lookup(Table, {server, ServerId}) of
         [{_, ServerPid, Config}] ->
             {ok, {ServerPid, Config}};
         [] ->
             {error, not_found}
     end,
-    {reply, Result, State};
+    ElapsedUs = erlang:monotonic_time(microsecond) - Start,
+    ElapsedMs = max(1, ElapsedUs div 1000),
+
+    %% Record read latency if significant
+    NewState = case ElapsedMs > 0 of
+        true -> record_read_latency(State, PartitionId, ElapsedMs);
+        false -> State
+    end,
+
+    {reply, Result, NewState};
 
 handle_call({find_transport, TransportId}, _From, State) ->
-    PartitionId = partition_for_transport(TransportId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_transport(TransportId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
     Result = case ets:lookup(Table, {transport, TransportId}) of
         [{_, TransportPid, Config}] ->
@@ -261,26 +268,26 @@ handle_call({find_transport, TransportId}, _From, State) ->
     {reply, Result, State};
 
 handle_call(list_servers, _From, State) ->
-    Servers = scan_all_partitions(State#state.partition_tables, server),
+    Servers = scan_all_partitions(State#shard_state.partition_tables, server),
     {reply, Servers, State};
 
 handle_call(list_transports, _From, State) ->
-    Transports = scan_all_partitions(State#state.partition_tables, transport),
+    Transports = scan_all_partitions(State#shard_state.partition_tables, transport),
     {reply, Transports, State};
 
 handle_call({bind_transport_to_server, TransportId, ServerId}, _From, State) ->
-    ServerPartitionId = partition_for_server(ServerId, State#state.partition_count),
-    ServerTable = lists:nth(ServerPartitionId + 1, State#state.partition_tables),
+    ServerPartitionId = partition_for_server(ServerId, State#shard_state.partition_count),
+    ServerTable = lists:nth(ServerPartitionId + 1, State#shard_state.partition_tables),
     ServerExists = ets:member(ServerTable, {server, ServerId}),
 
-    TransportPartitionId = partition_for_transport(TransportId, State#state.partition_count),
-    TransportTable = lists:nth(TransportPartitionId + 1, State#state.partition_tables),
+    TransportPartitionId = partition_for_transport(TransportId, State#shard_state.partition_count),
+    TransportTable = lists:nth(TransportPartitionId + 1, State#shard_state.partition_tables),
     TransportExists = ets:member(TransportTable, {transport, TransportId}),
 
     case {ServerExists, TransportExists} of
         {true, true} ->
-            NewMap = maps:put(TransportId, ServerId, State#state.server_transport_map),
-            NewState = State#state{server_transport_map = NewMap},
+            NewMap = maps:put(TransportId, ServerId, State#shard_state.server_transport_map),
+            NewState = State#shard_state{server_transport_map = NewMap},
             logger:info("Bound transport ~p to server ~p", [TransportId, ServerId]),
             {reply, ok, NewState};
         {false, _} ->
@@ -290,12 +297,12 @@ handle_call({bind_transport_to_server, TransportId, ServerId}, _From, State) ->
     end;
 
 handle_call({unbind_transport, TransportId}, _From, State) ->
-    NewMap = maps:remove(TransportId, State#state.server_transport_map),
-    NewState = State#state{server_transport_map = NewMap},
+    NewMap = maps:remove(TransportId, State#shard_state.server_transport_map),
+    NewState = State#shard_state{server_transport_map = NewMap},
     {reply, ok, NewState};
 
 handle_call({get_server_for_transport, TransportId}, _From, State) ->
-    case maps:get(TransportId, State#state.server_transport_map, undefined) of
+    case maps:get(TransportId, State#shard_state.server_transport_map, undefined) of
         undefined -> {reply, {error, not_found}, State};
         ServerId -> {reply, {ok, ServerId}, State}
     end;
@@ -303,11 +310,11 @@ handle_call({get_server_for_transport, TransportId}, _From, State) ->
 handle_call(get_partition_stats, _From, State) ->
     Stats = maps:map(fun(PartId, _) ->
         build_partition_stats(State, PartId)
-    end, State#state.latency_history),
+    end, State#shard_state.latency_history),
     {reply, Stats, State};
 
 handle_call({get_partition_stats, PartitionId}, _From, State) ->
-    case maps:get(PartitionId, State#state.latency_history, undefined) of
+    case maps:get(PartitionId, State#shard_state.latency_history, undefined) of
         undefined ->
             {reply, {error, not_found}, State};
         _ ->
@@ -316,10 +323,10 @@ handle_call({get_partition_stats, PartitionId}, _From, State) ->
     end;
 
 handle_call(reset_stats, _From, State) ->
-    PartitionCount = State#state.partition_count,
+    PartitionCount = State#shard_state.partition_count,
     NewLatencyHistory = maps:from_list([{I, []} || I <- lists:seq(0, PartitionCount - 1)]),
     NewWriteCount = maps:from_list([{I, 0} || I <- lists:seq(0, PartitionCount - 1)]),
-    NewState = State#state{
+    NewState = State#shard_state{
         latency_history = NewLatencyHistory,
         write_count = NewWriteCount,
         contention_alarms = #{}
@@ -329,8 +336,8 @@ handle_call(reset_stats, _From, State) ->
 
 handle_call(get_contention_status, _From, State) ->
     Status = #{
-        admission_control => State#state.admission_control_enabled,
-        active_alarms => maps:keys(maps:filter(fun(_, V) -> V end, State#state.contention_alarms))
+        admission_control => State#shard_state.admission_control_enabled,
+        active_alarms => maps:keys(maps:filter(fun(_, V) -> V end, State#shard_state.contention_alarms))
     },
     {reply, Status, State};
 
@@ -338,8 +345,8 @@ handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast({route_to_server, ServerId, TransportId, Message}, State) ->
-    PartitionId = partition_for_server(ServerId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_server(ServerId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
     case ets:lookup(Table, {server, ServerId}) of
         [{_, ServerPid, _}] ->
@@ -376,7 +383,7 @@ handle_info({stats_tick}, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(Reason, #state{stats_timer_ref = TimerRef}) ->
+terminate(Reason, #shard_state{stats_timer_ref = TimerRef}) ->
     case TimerRef of
         undefined -> ok;
         Ref -> catch timer:cancel(Ref)
@@ -404,18 +411,23 @@ partition_for_transport(TransportId, PartitionCount) ->
     erlang:phash2(TransportId) rem PartitionCount.
 
 record_write_latency(State, PartitionId, LatencyMs) ->
-    LatencyHistory = State#state.latency_history,
+    LatencyHistory = State#shard_state.latency_history,
     History = maps:get(PartitionId, LatencyHistory, []),
     NewHistory = lists:sublist([LatencyMs | History], 10),
-    WriteCount = State#state.write_count,
+    WriteCount = State#shard_state.write_count,
     NewWriteCount = maps:update_with(PartitionId, fun(C) -> C + 1 end, 1, WriteCount),
-    State#state{
+    State#shard_state{
         latency_history = maps:put(PartitionId, NewHistory, LatencyHistory),
         write_count = NewWriteCount
     }.
 
+record_read_latency(State, PartitionId, LatencyMs) ->
+    %% For reads, we track minimal stats (only for anomalies)
+    %% Keep same structure but separate tracking could be added
+    State.
+
 check_contention(State) ->
-    PartitionCount = State#state.partition_count,
+    PartitionCount = State#shard_state.partition_count,
     Alarms = maps:from_list([
         {PartitionId, check_partition_contention(State, PartitionId)}
         || PartitionId <- lists:seq(0, PartitionCount - 1)
@@ -425,14 +437,14 @@ check_contention(State) ->
     AdmissionControlThreshold = PartitionCount div 2,
     AdmissionControlActive = ActiveAlarmCount > AdmissionControlThreshold,
 
-    State#state{
+    State#shard_state{
         contention_alarms = Alarms,
         admission_control_enabled = AdmissionControlActive
     }.
 
 check_partition_contention(State, PartitionId) ->
-    LatencyHistory = maps:get(PartitionId, State#state.latency_history, []),
-    WriteCount = maps:get(PartitionId, State#state.write_count, 0),
+    LatencyHistory = maps:get(PartitionId, State#shard_state.latency_history, []),
+    WriteCount = maps:get(PartitionId, State#shard_state.write_count, 0),
 
     case {length(LatencyHistory), WriteCount} of
         {0, _} -> false;
@@ -443,9 +455,9 @@ check_partition_contention(State, PartitionId) ->
     end.
 
 build_partition_stats(State, PartitionId) ->
-    LatencyHistory = maps:get(PartitionId, State#state.latency_history, []),
-    WriteCount = maps:get(PartitionId, State#state.write_count, 0),
-    IsAlarmed = maps:get(PartitionId, State#state.contention_alarms, false),
+    LatencyHistory = maps:get(PartitionId, State#shard_state.latency_history, []),
+    WriteCount = maps:get(PartitionId, State#shard_state.write_count, 0),
+    IsAlarmed = maps:get(PartitionId, State#shard_state.contention_alarms, false),
 
     case LatencyHistory of
         [] ->
@@ -478,12 +490,12 @@ scan_all_partitions(Tables, EntryType) ->
         || Table <- Tables
     ]).
 
-transports_for_server(ServerId, #state{server_transport_map = Map}) ->
+transports_for_server(ServerId, #shard_state{server_transport_map = Map}) ->
     [TransportId || {TransportId, SId} <- maps:to_list(Map), SId =:= ServerId].
 
 send_to_transport(TransportId, ServerId, Message, State) ->
-    PartitionId = partition_for_transport(TransportId, State#state.partition_count),
-    Table = lists:nth(PartitionId + 1, State#state.partition_tables),
+    PartitionId = partition_for_transport(TransportId, State#shard_state.partition_count),
+    Table = lists:nth(PartitionId + 1, State#shard_state.partition_tables),
 
     case ets:lookup(Table, {transport, TransportId}) of
         [{_, TransportPid, _}] ->

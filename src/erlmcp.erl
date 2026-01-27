@@ -2,11 +2,7 @@
 
 -include("erlmcp.hrl").
 
-%% Type definitions (also in header)
--type server_id() :: atom().
--type transport_id() :: atom().
--type transport_type() :: stdio | tcp | http.
-
+%% Type definitions are in erlmcp.hrl
 -export_type([server_id/0, transport_id/0, transport_type/0]).
 
 %% Application management API

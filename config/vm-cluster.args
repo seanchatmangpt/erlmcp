@@ -1,0 +1,73 @@
+%% ===================================================================
+%% VM ARGUMENTS FOR ERLMCP CLUSTER MODE
+%% ===================================================================
+%% Optimized for 100K concurrent connections across 4 nodes
+%% Usage: erl -args @config/vm-cluster.args
+%% ===================================================================
+
+%% Network settings
+-kernel inet_default_listen_backlog 2048
+-kernel inet_dist_listen_min 9000
+-kernel inet_dist_listen_max 9010
+
+%% Process limit: 262,144 (262K) total processes per node
+%% ~65K for client/server processes, rest for internal and GC
+-env ERL_MAX_PORTS 65536
+
+%% Memory settings for high concurrency
+%% Heap settings tuned for 25K concurrent connections per node
+-env ERL_MAX_ETS_TABLES 100000
+
+%% Garbage Collection tuning
+%% Fullsweep cutoff: run full GC when memory increases by 30% in young generation
+-env ERL_FULLSWEEP_AFTER 1000
+
+%% Disable crash dumps to save disk space under load
+-env ERL_CRASH_DUMP /dev/null
+
+%% Enable async I/O for socket operations
+-env ERL_ASYNC_IO_THREADS 64
+
+%% Lock counter optimization
+-env ERL_LOCK_COUNTER_ENABLED false
+
+%% Scheduler threads: auto-detect (each core = 1 thread)
+%% For 4-node cluster on quad-core machine: 4 threads per node
++S 4
+
+%% CPU binding: bind schedulers to cores for NUMA awareness
++B db
+
+%% Disable hybrid heap (use legacy heap for stability)
++h legacy
+
+%% Memory overhead configuration
++MBsbct 32
+
+%% Multi-threaded runtime
++A 256
+
+%% Kernel polling enabled (efficient I/O multiplexing)
++K true
+
+%% Eager check I/O: reduce latency
++eoi true
+
+%% Run time metrics collection
++M metrics true
+
+%% SMP (Symmetric Multi-Processing): enabled
++smp auto
+
+%% NUMA enabled
++smnuma auto
+
+%% VM profiling disabled (use perf for production profiling)
++no_prof
+
+%% Distributed Erlang
+-proto_dist inet_tcp
+-setcookie erlmcp_cluster
+
+%% Set node name dynamically via shell variable
+%% erl -sname erlmcp1 -args @config/vm-cluster.args

@@ -67,15 +67,6 @@
 %% Type for sandbox record (defined after record)
 -type sandbox() :: #sandbox{}.
 
-%% Internal state record
--record(state, {
-    sandboxes = #{} :: #{sandbox_id() => sandbox()},     % All sandboxes
-    app_sandboxes = #{} :: #{app_id() => sandbox_id()},  % App to sandbox map
-    message_handlers = #{} :: map()              % Message handlers
-}).
-
--type internal_state() :: #state{}.
-
 %% Export types
 -export_type([sandbox_id/0, sandbox_state/0, message/0, resource_quota/0, sandbox/0, app_id/0]).
 

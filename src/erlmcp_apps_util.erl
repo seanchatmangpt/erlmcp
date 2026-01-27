@@ -72,10 +72,11 @@ validate_app_name(Name) when is_binary(Name), byte_size(Name) > 0 ->
     if
         byte_size(Name) > ?MAX_APP_NAME_LENGTH ->
             {error, <<"App name too long">>};
-        not valid_name_chars(Name) ->
-            {error, <<"App name contains invalid characters">>};
         true ->
-            ok
+            case valid_name_chars(Name) of
+                true -> ok;
+                false -> {error, <<"App name contains invalid characters">>}
+            end
     end;
 validate_app_name(_) ->
     {error, <<"App name must be a non-empty binary">>}.

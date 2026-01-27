@@ -188,6 +188,26 @@ init([]) ->
             modules => [erlmcp_icon_cache]
         },
 
+        % Session Replicator - distributed session state management across cluster
+        #{
+            id => erlmcp_session_replicator,
+            start => {erlmcp_session_replicator, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_session_replicator]
+        },
+
+        % Session Failover Manager - handles node failures and automatic recovery
+        #{
+            id => erlmcp_session_failover,
+            start => {erlmcp_session_failover, start_link, [node()]},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_session_failover]
+        },
+
         % Registry - central message router with recovery registration
         #{
             id => erlmcp_registry,

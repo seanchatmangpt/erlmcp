@@ -73,8 +73,7 @@
 
 -type state() :: #router_state{}.
 
-%% Server ID type from registry
--type server_id() :: erlmcp_registry:server_id().
+%% Transport ID type from registry
 -type transport_id() :: erlmcp_registry:transport_id().
 
 %%====================================================================

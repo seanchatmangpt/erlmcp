@@ -501,7 +501,7 @@
 -type tool_handler() :: fun((map()) -> binary() | #mcp_content{} | [#mcp_content{}]).
 -type prompt_handler() :: fun((map()) -> binary() | [map()]).
 
--record(state, {
+-record(mcp_server_state, {
     server_id :: server_id(),
     phase = initialization :: mcp_server_phase(),
     init_timeout_ref :: reference() | undefined,

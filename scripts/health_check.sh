@@ -1,14 +1,14 @@
 #!/bin/bash
-# Health check script for erlmcp deployments
-# Usage: ./scripts/health_check.sh [environment] [endpoint]
+# Health check script for erlmcp load balancer & cluster
+# Usage: ./scripts/health_check.sh [--continuous INTERVAL] [--json]
 
-set -euo pipefail
+set -e
 
 # === CONFIGURATION ===
-ENVIRONMENT="${1:-production}"
-ENDPOINT="${2:-http://localhost:8080}"
-MAX_RETRIES="${MAX_RETRIES:-30}"
-RETRY_DELAY="${RETRY_DELAY:-2}"
+INTERVAL="${1:-}"
+JSON_MODE="${2:-}"
+NODES=("erlmcp1:9001:8080" "erlmcp2:9002:8081" "erlmcp3:9003:8082" "erlmcp4:9004:8083")
+CONTINUOUS=0
 
 # === COLORS ===
 GREEN='\033[0;32m'
@@ -23,45 +23,110 @@ log_success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $*"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
-# === HEALTH CHECK ===
-check_health() {
-    local url="${ENDPOINT}/health"
-    local retry=1
+# Parse arguments
+if [ "$INTERVAL" == "--continuous" ]; then
+    CONTINUOUS=1
+    INTERVAL="${2:-5}"
+fi
 
-    log_info "Checking health at: $url"
+# === NODE HEALTH CHECKS ===
+check_tcp_port() {
+    local host=$1
+    local port=$2
+    timeout 3 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null && return 0 || return 1
+}
 
-    while [[ $retry -le $MAX_RETRIES ]]; do
-        if response=$(curl -sf "$url" 2>/dev/null); then
-            log_success "Health check passed!"
-            echo "$response" | jq '.' 2>/dev/null || echo "$response"
-            return 0
+check_http_health() {
+    local url=$1
+    local timeout=5
+    curl -s -f --max-time $timeout "$url" > /dev/null 2>&1 && return 0 || return 1
+}
+
+get_connection_count() {
+    local port=$1
+    if command -v ss &> /dev/null; then
+        ss -tun src :$port 2>/dev/null | grep -c ESTAB || echo "0"
+    elif command -v netstat &> /dev/null; then
+        netstat -tun 2>/dev/null | grep ":$port " | grep -c ESTABLISHED || echo "0"
+    else
+        echo "0"
+    fi
+}
+
+# === MONITORING FUNCTIONS ===
+print_header() {
+    echo ""
+    echo -e "${BLUE}=== erlmcp Load Balancer & Cluster Health ===${NC}"
+    echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo ""
+}
+
+check_load_balancer() {
+    echo -e "${BLUE}Load Balancer:${NC}"
+
+    if pgrep -x haproxy > /dev/null; then
+        echo -e "  HAProxy:  ${GREEN}RUNNING${NC} (PID: $(pgrep -x haproxy))"
+        if [ -S /var/run/haproxy.sock ]; then
+            echo -e "  Stats:    ${GREEN}AVAILABLE${NC} at http://127.0.0.1:8404/stats"
         fi
+    elif pgrep -x nginx > /dev/null; then
+        echo -e "  Nginx:    ${GREEN}RUNNING${NC} (PID: $(pgrep -x nginx))"
+        if check_tcp_port localhost 8888; then
+            echo -e "  Health:   ${GREEN}AVAILABLE${NC} at http://127.0.0.1:8888/health"
+        fi
+    else
+        echo -e "  Status:   ${RED}NOT RUNNING${NC}"
+    fi
+    echo ""
+}
 
-        log_warning "Attempt $retry/$MAX_RETRIES failed, retrying in ${RETRY_DELAY}s..."
-        sleep "$RETRY_DELAY"
-        ((retry++))
+check_nodes() {
+    echo -e "${BLUE}Cluster Nodes:${NC}"
+
+    local total_conn=0
+    local healthy_nodes=0
+
+    for node_info in "${NODES[@]}"; do
+        IFS=':' read -r name tcp_port http_port <<< "$node_info"
+
+        if check_tcp_port localhost $tcp_port; then
+            local conn=$(get_connection_count $tcp_port)
+            echo -e "  $name: ${GREEN}UP${NC} ($conn connections)"
+            total_conn=$((total_conn + conn))
+            healthy_nodes=$((healthy_nodes + 1))
+        else
+            echo -e "  $name: ${RED}DOWN${NC}"
+        fi
     done
 
-    log_error "Health check failed after $MAX_RETRIES attempts"
-    return 1
+    echo -e "\n  Total: $healthy_nodes/4 healthy | $total_conn/100000 connections ($(( total_conn * 100 / 100000 ))%)"
+    echo ""
 }
 
 # === MAIN ===
 main() {
-    log_info "=== erlmcp Health Check ==="
-    log_info "Environment: $ENVIRONMENT"
-    log_info "Endpoint: $ENDPOINT"
-    log_info "=========================="
-
-    if ! command -v curl &> /dev/null; then
-        log_error "curl not found. Please install curl"
-        exit 1
+    if [ ! -t 0 ]; then
+        # Not a terminal, suppress colors
+        GREEN=''
+        RED=''
+        YELLOW=''
+        BLUE=''
+        NC=''
     fi
 
-    if check_health; then
-        exit 0
+    if [ $CONTINUOUS -eq 1 ]; then
+        while true; do
+            clear
+            print_header
+            check_load_balancer
+            check_nodes
+            echo "Refreshing in ${INTERVAL}s... (Press Ctrl+C to stop)"
+            sleep "$INTERVAL"
+        done
     else
-        exit 1
+        print_header
+        check_load_balancer
+        check_nodes
     fi
 }
 

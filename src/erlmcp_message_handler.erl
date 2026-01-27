@@ -20,7 +20,7 @@
 ]).
 
 %% Types
--type state() :: #state{}.
+-type state() :: #mcp_server_state{}.
 
 %%====================================================================
 %% Main Message Processing (Hot Path)
@@ -54,27 +54,27 @@ handle_initialize(_Params, State) ->
 -spec handle_initialized(map(), state()) -> {ok, state()}.
 handle_initialized(_Params, State) ->
     %% Complete initialization phase
-    {ok, State#state{initialized = true}}.
+    {ok, State#mcp_server_state{initialized = true}}.
 
 %% @doc Handle resources/list request
 -spec handle_resources_list(map(), state()) -> {binary(), state()}.
 handle_resources_list(_Params, State) ->
     %% Return list of available resources
-    _Resources = maps:values(State#state.resources),
+    _Resources = maps:values(State#mcp_server_state.resources),
     {<<"resources">>, State}.
 
 %% @doc Handle tools/list request
 -spec handle_tools_list(map(), state()) -> {binary(), state()}.
 handle_tools_list(_Params, State) ->
     %% Return list of available tools
-    _Tools = maps:values(State#state.tools),
+    _Tools = maps:values(State#mcp_server_state.tools),
     {<<"tools">>, State}.
 
 %% @doc Handle prompts/list request
 -spec handle_prompts_list(map(), state()) -> {binary(), state()}.
 handle_prompts_list(_Params, State) ->
     %% Return list of available prompts
-    _Prompts = maps:values(State#state.prompts),
+    _Prompts = maps:values(State#mcp_server_state.prompts),
     {<<"prompts">>, State}.
 
 %% @doc Handle tools/call request
@@ -105,13 +105,13 @@ handle_read_resource(_Params, State) ->
 handle_request(<<"initialize">>, _Params, Id, _TransportId, State) ->
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"result">> => <<"ok">>}), State};
 handle_request(<<"resources/list">>, _Params, Id, _TransportId, State) ->
-    Resources = maps:keys(State#state.resources),
+    Resources = maps:keys(State#mcp_server_state.resources),
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"resources">> => Resources}), State};
 handle_request(<<"tools/list">>, _Params, Id, _TransportId, State) ->
-    Tools = maps:keys(State#state.tools),
+    Tools = maps:keys(State#mcp_server_state.tools),
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"tools">> => Tools}), State};
 handle_request(<<"prompts/list">>, _Params, Id, _TransportId, State) ->
-    Prompts = maps:keys(State#state.prompts),
+    Prompts = maps:keys(State#mcp_server_state.prompts),
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"prompts">> => Prompts}), State};
 handle_request(Method, _Params, Id, _TransportId, State) ->
     Error = erlmcp_json_rpc:error_method_not_found(Id, Method),
@@ -121,6 +121,6 @@ handle_request(Method, _Params, Id, _TransportId, State) ->
 -spec handle_notification(binary(), map() | undefined, binary(), state()) ->
     {ok, state()} | {error, term()}.
 handle_notification(<<"initialized">>, _Params, _TransportId, State) ->
-    {ok, State#state{initialized = true}};
+    {ok, State#mcp_server_state{initialized = true}};
 handle_notification(_Method, _Params, _TransportId, State) ->
     {ok, State}.

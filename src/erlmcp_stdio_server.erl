@@ -15,11 +15,6 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
-%% Types
--type tool_handler() :: fun((map()) -> binary() | iolist()).
--type resource_handler() :: fun((binary()) -> binary() | iolist()).
--type prompt_handler() :: fun((map()) -> binary() | iolist() | [map()]).
-
 -record(state, {
     tools = #{} :: #{binary() => {binary(), tool_handler(), map() | undefined}},
     resources = #{} :: #{binary() => {binary(), resource_handler()} | {binary(), resource_handler(), binary()}},

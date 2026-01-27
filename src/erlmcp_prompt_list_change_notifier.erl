@@ -13,7 +13,6 @@
 ]).
 
 %% Types
--type server_id() :: atom().
 -type prompt_name() :: binary().
 -type operation() :: added | removed | updated.
 
