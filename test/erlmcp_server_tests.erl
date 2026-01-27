@@ -45,8 +45,8 @@ test_stop() ->
 test_server_with_capabilities() ->
     ServerId = test_server_caps,
     Capabilities = #mcp_server_capabilities{
-        resources = #mcp_capability{enabled = true, list_changed = true},
-        tools = #mcp_capability{enabled = true, list_changed = false},
+        resources = #mcp_capability{enabled = true},
+        tools = #mcp_capability{enabled = true},
         prompts = #mcp_capability{enabled = true}
     },
     {ok, Pid} = erlmcp_server:start_link(ServerId, Capabilities),
@@ -310,7 +310,7 @@ cleanup_server(Server) ->
 
 default_capabilities() ->
     #mcp_server_capabilities{
-        resources = #mcp_capability{enabled = true, list_changed = true},
+        resources = #mcp_capability{enabled = true},
         tools = #mcp_capability{enabled = true},
         prompts = #mcp_capability{enabled = true}
     }.

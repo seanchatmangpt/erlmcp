@@ -47,6 +47,7 @@
 }).
 
 -type state() :: #state{}.
+-type task_status() :: queued | running | completed | failed | cancelled | cancel_requested.
 
 %%====================================================================
 %% API Functions
@@ -126,6 +127,8 @@ init([ServerId, Capabilities]) ->
             <<"server_id">> => ServerId
         }),
         
+        ok = erlmcp_task_manager:register_server(ServerId, self()),
+
         State = #state{
             server_id = ServerId,
             capabilities = Capabilities
@@ -266,11 +269,24 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
+handle_info({task_execute, Task}, State) ->
+    handle_task_execution(Task, State),
+    {noreply, State};
+
+handle_info({task_status_update, Task}, State) ->
+    send_task_notification(State, Task),
+    {noreply, State};
+
+handle_info({task_cancel, _Task}, State) ->
+    %% Future hook for cooperative cancellation
+    {noreply, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, #state{server_id = ServerId}) ->
+    catch erlmcp_task_manager:unregister_server(ServerId),
     logger:info("MCP server ~p (refactored) terminating", [ServerId]),
     ok.
 
@@ -377,6 +393,77 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
+handle_request(Id, ?MCP_METHOD_TASKS_CREATE, Params, TransportId, State) ->
+    ToolName = maps:get(?MCP_PARAM_NAME, Params, undefined),
+    Arguments = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
+    case ToolName of
+        undefined ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
+        _ ->
+            case erlmcp_task_manager:create_tool_task(State#state.server_id, TransportId, Id, ToolName, Arguments) of
+                {ok, Task} ->
+                    send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_TASK => encode_task_summary(Task)});
+                {error, Reason} ->
+                    send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, format_task_error(Reason))
+            end
+    end,
+    {noreply, State};
+
+handle_request(Id, ?MCP_METHOD_TASKS_LIST, _Params, TransportId, State) ->
+    Tasks = erlmcp_task_manager:list_tasks(State#state.server_id),
+    Payload = lists:map(fun encode_task_summary/1, Tasks),
+    send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_TASKS => Payload}),
+    {noreply, State};
+
+handle_request(Id, ?MCP_METHOD_TASKS_GET, Params, TransportId, State) ->
+    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+        undefined ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId">>);
+        TaskId ->
+            case erlmcp_task_manager:get_task(TaskId) of
+                {ok, Task} ->
+                    send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_TASK => encode_task_details(Task)});
+                {error, _} ->
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, <<"Task not found">>)
+            end
+    end,
+    {noreply, State};
+
+handle_request(Id, ?MCP_METHOD_TASKS_RESULT, Params, TransportId, State) ->
+    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+        undefined ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId">>);
+        TaskId ->
+            case erlmcp_task_manager:get_task(TaskId) of
+                {ok, Task} ->
+                    case maps:get(status, Task) of
+                        completed ->
+                            Result = maps:get(result, Task, #{}),
+                            send_response_via_registry(State, TransportId, Id, Result);
+                        failed ->
+                            {Code, Msg} = format_task_failure(Task),
+                            send_error_via_registry(State, TransportId, Id, Code, Msg);
+                        _ ->
+                            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Task not completed">>)
+                    end;
+                {error, _} ->
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, <<"Task not found">>)
+            end
+    end,
+    {noreply, State};
+
+handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, Params, TransportId, State) ->
+    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+        undefined ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId">>);
+        TaskId ->
+            case erlmcp_task_manager:cancel_task(TaskId) of
+                ok -> send_response_via_registry(State, TransportId, Id, #{});
+                {error, _} -> send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, <<"Task not found">>)
+            end
+    end,
+    {noreply, State};
+
 handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, _Params, TransportId, State) ->
     Templates = list_all_templates(State),
     send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_RESOURCE_TEMPLATES => Templates}),
@@ -445,6 +532,13 @@ send_notification_via_registry(#state{server_id = ServerId}, Method, Params) ->
     % Send to all transports bound to this server - registry will handle routing
     erlmcp_registry:route_to_transport(broadcast, ServerId, Json).
 
+-spec send_notification_to_transport(state(), atom() | undefined, binary(), map()) -> ok.
+send_notification_to_transport(State, undefined, Method, Params) ->
+    send_notification_via_registry(State, Method, Params);
+send_notification_to_transport(#state{server_id = ServerId}, TransportId, Method, Params) ->
+    Json = erlmcp_json_rpc:encode_notification(Method, Params),
+    erlmcp_registry:route_to_transport(TransportId, ServerId, Json).
+
 -spec send_progress_notification_via_registry(state(), binary() | integer(), float(), float()) -> ok.
 send_progress_notification_via_registry(State, Token, Progress, Total) ->
     Params = #{
@@ -483,6 +577,16 @@ send_notification_safe(State, Method, Params) ->
     catch
         Class:Reason:Stack ->
             logger:warning("Failed to send notification ~p: ~p:~p~n~p", [Method, Class, Reason, Stack])
+    end,
+    ok.
+
+-spec send_notification_to_transport_safe(state(), atom() | undefined, binary(), map()) -> ok.
+send_notification_to_transport_safe(State, TransportId, Method, Params) ->
+    try send_notification_to_transport(State, TransportId, Method, Params)
+    catch
+        Class:Reason:Stack ->
+            logger:warning("Failed to send notification ~p to transport ~p: ~p:~p~n~p", 
+                          [Method, TransportId, Class, Reason, Stack])
     end,
     ok.
 
@@ -783,4 +887,86 @@ notify_subscribers(Uri, Metadata, State) ->
                 ok
             end, ok, Subscribers),
             send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_UPDATED, Params)
+    end.
+
+%%====================================================================
+%% Internal functions - Tasks
+%%====================================================================
+
+-spec handle_task_execution(map(), state()) -> ok.
+handle_task_execution(#{id := TaskId, type := tool_call, tool := ToolName, arguments := Arguments}, State) ->
+    case execute_tool_for_task(ToolName, Arguments, State) of
+        {ok, Content} -> erlmcp_task_manager:complete_task(TaskId, #{?MCP_PARAM_CONTENT => Content});
+        {error, Error} -> erlmcp_task_manager:fail_task(TaskId, Error)
+    end,
+    ok;
+handle_task_execution(_Task, _State) ->
+    ok.
+
+-spec execute_tool_for_task(binary(), map(), state()) -> {ok, [map()]} | {error, {integer(), binary()}}.
+execute_tool_for_task(Name, Arguments, State) ->
+    case maps:get(Name, State#state.tools, undefined) of
+        undefined -> {error, {?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND}};
+        {_Tool, Handler, _Schema} ->
+            try
+                Result = Handler(Arguments),
+                {ok, normalize_tool_result(Result)}
+            catch
+                Class:Reason:Stack ->
+                    logger:error("Tool handler crashed (task): ~p:~p~n~p", [Class, Reason, Stack]),
+                    {error, {?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR}}
+            end
+    end.
+
+-spec encode_task_summary(map()) -> map().
+encode_task_summary(Task) ->
+    Base = #{
+        ?MCP_PARAM_TASK_ID => maps:get(id, Task),
+        ?MCP_PARAM_STATUS => encode_task_status(maps:get(status, Task)),
+        ?MCP_PARAM_TYPE => atom_to_binary(maps:get(type, Task), utf8)
+    },
+    Base1 = maybe_add_field(Base, ?MCP_PARAM_NAME, maps:get(tool, Task, undefined)),
+    maybe_add_field(Base1, <<"createdAt">>, maps:get(created_at, Task, undefined)).
+
+-spec encode_task_details(map()) -> map().
+encode_task_details(Task) ->
+    Summary = encode_task_summary(Task),
+    case {maps:get(status, Task), maps:get(result, Task, undefined)} of
+        {completed, Result} when is_map(Result) ->
+            Summary#{?MCP_PARAM_RESULT => Result};
+        {failed, {Code, Msg}} ->
+            Summary#{?MCP_PARAM_ERROR => #{
+                ?JSONRPC_ERROR_FIELD_CODE => Code,
+                ?JSONRPC_ERROR_FIELD_MESSAGE => Msg
+            }};
+        _ -> Summary
+    end.
+
+-spec encode_task_status(task_status()) -> binary().
+encode_task_status(queued) -> <<"queued">>;
+encode_task_status(running) -> <<"running">>;
+encode_task_status(completed) -> <<"completed">>;
+encode_task_status(failed) -> <<"failed">>;
+encode_task_status(cancelled) -> <<"cancelled">>;
+encode_task_status(cancel_requested) -> <<"cancel_requested">>;
+encode_task_status(_) -> <<"unknown">>.
+
+-spec send_task_notification(state(), map()) -> ok.
+send_task_notification(State, Task) ->
+    TransportId = maps:get(transport_id, Task, undefined),
+    send_notification_to_transport_safe(State, TransportId,
+        ?MCP_METHOD_NOTIFICATIONS_TASKS_STATUS,
+        #{?MCP_PARAM_TASK => encode_task_summary(Task)}).
+
+-spec format_task_error(term()) -> binary().
+format_task_error(invalid_task_payload) -> <<"Invalid task payload">>;
+format_task_error(Reason) when is_binary(Reason) -> Reason;
+format_task_error(Reason) when is_atom(Reason) -> list_to_binary(atom_to_list(Reason));
+format_task_error(Reason) -> iolist_to_binary(io_lib:format("~p", [Reason])).
+
+-spec format_task_failure(map()) -> {integer(), binary()}.
+format_task_failure(Task) ->
+    case maps:get(result, Task, undefined) of
+        {Code, Msg} -> {Code, Msg};
+        _ -> {?JSONRPC_INTERNAL_ERROR, <<"Task failed">>}
     end.

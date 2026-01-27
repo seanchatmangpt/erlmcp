@@ -85,6 +85,13 @@
 -define(MCP_METHOD_TOOLS_LIST, <<"tools/list">>).
 -define(MCP_METHOD_TOOLS_CALL, <<"tools/call">>).
 
+%% Task Methods (NEW)
+-define(MCP_METHOD_TASKS_CREATE, <<"tasks/create">>).
+-define(MCP_METHOD_TASKS_LIST, <<"tasks/list">>).
+-define(MCP_METHOD_TASKS_GET, <<"tasks/get">>).
+-define(MCP_METHOD_TASKS_RESULT, <<"tasks/result">>).
+-define(MCP_METHOD_TASKS_CANCEL, <<"tasks/cancel">>).
+
 %%% Prompt Methods
 -define(MCP_METHOD_PROMPTS_LIST, <<"prompts/list">>).
 -define(MCP_METHOD_PROMPTS_GET, <<"prompts/get">>).
@@ -98,6 +105,7 @@
 -define(MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED, <<"resources/list_changed">>).
 -define(MCP_METHOD_NOTIFICATIONS_PROMPTS_LIST_CHANGED, <<"prompts/list_changed">>).
 -define(MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED, <<"tools/list_changed">>).
+-define(MCP_METHOD_NOTIFICATIONS_TASKS_STATUS, <<"notifications/tasks/status">>).
 
 %%% Capability Names - used in capability negotiation
 -define(MCP_CAPABILITY_RESOURCES, <<"resources">>).
@@ -158,6 +166,12 @@
 -define(MCP_PARAM_PROGRESS_TOKEN, <<"progressToken">>).
 -define(MCP_PARAM_PROGRESS, <<"progress">>).
 -define(MCP_PARAM_TOTAL, <<"total">>).
+-define(MCP_PARAM_TASK_ID, <<"taskId">>).
+-define(MCP_PARAM_TASK, <<"task">>).
+-define(MCP_PARAM_TASKS, <<"tasks">>).
+-define(MCP_PARAM_STATUS, <<"status">>).
+-define(MCP_PARAM_RESULT, <<"result">>).
+-define(MCP_PARAM_ERROR, <<"error">>).
 
 %%% JSON-RPC Types
 -type json_rpc_id() :: null | binary() | integer().

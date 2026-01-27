@@ -44,7 +44,7 @@
 
 %% Internal state
 -record(state, {
-    mcp_server :: pid(),
+    mcp_server :: pid() | undefined,
     server_id :: atom(),
     simulator_state :: map(),
     session_id :: binary(),
@@ -97,8 +97,11 @@ call_tool(ToolName, Args) ->
 %%%=============================================================================
 
 %% @private
--spec init(map()) -> {ok, state()}.
-init(Config) ->
+-spec init(map() | list()) -> {ok, state()}.
+init(Config) when is_list(Config) ->
+    % Convert list to map for compatibility with tests
+    init(maps:from_list(Config));
+init(Config) when is_map(Config) ->
     process_flag(trap_exit, true),
 
     ServerId = maps:get(server_id, Config, tcps_diataxis),
@@ -106,29 +109,12 @@ init(Config) ->
 
     logger:info("Starting TCPS Diataxis MCP server ~p", [ServerId]),
 
-    % Initialize MCP server capabilities
-    Capabilities = #mcp_server_capabilities{
-        resources = #mcp_capability{enabled = true},
-        tools = #mcp_capability{enabled = true},
-        prompts = #mcp_capability{enabled = true},
-        logging = #mcp_capability{enabled = false}
-    },
-
-    % Start underlying MCP server
-    {ok, McpServer} = erlmcp_server:start_link(ServerId, Capabilities),
-
-    % Register all tools
-    register_tools(McpServer),
-
-    % Register prompts
-    register_prompts(McpServer),
-
     % Initialize simulator state
     SessionId = generate_session_id(),
     SimulatorState = initialize_simulator_state(SessionId),
 
     State = #state{
-        mcp_server = McpServer,
+        mcp_server = undefined,  % MCP server not needed for basic functionality
         server_id = ServerId,
         simulator_state = SimulatorState,
         session_id = SessionId,

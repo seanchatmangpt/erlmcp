@@ -45,6 +45,16 @@ erlmcp is a Model Context Protocol (MCP) implementation for Erlang/OTP that prov
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### C4 Diagram Set
+
+For richer architecture views based directly on the runtime modules, see the Mermaid diagrams under `docs/c4/`:
+
+- `docs/c4/context.md` (Level 1) – external actors (Marketplace demand, TAIEA governance, MCP clients, auditing systems) interacting with the erlmcp + TCPS factory.
+- `docs/c4/container.md` (Level 2) – container relationships between the erlmcp OTP application (supervisors, registry, transports), the TCPS pipeline modules, and TAIEA recovery/health components.
+- `docs/c4/components-transports.md` (Level 3) – transport subsystem components (`erlmcp_transport_sup`, stdio/TCP/HTTP transports, gproc registry, ranch/gun integrations, health/recovery hooks).
+
+Render these diagrams with any Mermaid-compatible viewer to keep the C4 set synchronized with source code.
+
 ## Component Breakdown
 
 ### 1. Protocol Layer (erlmcp_json_rpc)

@@ -1,6 +1,6 @@
 -module(erlmcp_sup_tests).
 -include_lib("eunit/include/eunit.hrl").
--include("erlmcp.hrl").
+-include_lib("erlmcp/include/erlmcp.hrl").
 
 %%%===================================================================
 %%% Test Suite for erlmcp_sup

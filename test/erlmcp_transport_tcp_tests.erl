@@ -670,8 +670,9 @@ ranch_protocol_handler_test_() ->
          Port = ServerState#state.port,
          RanchRef = ServerState#state.ranch_ref,
 
-         %% Verify ranch protocol is registered
-         ?assertEqual({ok, listening}, ranch:get_status(RanchRef)),
+         %% Verify ranch protocol is registered (ranch 2.x returns 'running' atom)
+         Status = ranch:get_status(RanchRef),
+         ?assert(Status =:= running orelse Status =:= {ok, listening}),
 
          %% Connect a raw TCP client
          {ok, Socket} = gen_tcp:connect("localhost", Port,

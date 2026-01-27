@@ -458,6 +458,114 @@ handle_call({restore_snapshot, Snapshot}, _From, State = #simulator_state{sim_st
     },
     {reply, ok, NewState};
 
+%% Multi-scenario API handlers
+handle_call({start_scenario, ScenarioType, Config}, _From, State) ->
+    ScenarioId = generate_scenario_id(State#simulator_state.next_scenario_id),
+
+    % Extract configuration parameters
+    WorkOrders = maps:get(work_orders, Config, 10),
+    PassRate = maps:get(quality_gate_pass_rate, Config, 0.95),
+    IterationDelay = maps:get(iteration_delay_ms, Config, 100),
+    AndonRate = maps:get(andon_trigger_rate, Config, 0.0),
+    SlowOpRate = maps:get(slow_operation_rate, Config, 0.0),
+    WipLimit = maps:get(wip_limit, Config, 0),
+
+    % Create scenario info
+    ScenarioInfo = #{
+        id => ScenarioId,
+        type => ScenarioType,
+        status => running,
+        config => Config,
+        start_time => erlang:system_time(millisecond),
+        metrics => #{
+            work_orders_created => 0,
+            work_orders_completed => 0,
+            quality_gates_passed => 0,
+            quality_gates_failed => 0,
+            andon_alerts => 0,
+            total_duration_ms => 0,
+            throughput_per_second => 0.0
+        }
+    },
+
+    % Start scenario execution in background
+    Self = self(),
+    spawn_link(fun() ->
+        run_scenario(Self, ScenarioId, ScenarioType, WorkOrders, PassRate,
+                    IterationDelay, AndonRate, SlowOpRate, WipLimit)
+    end),
+
+    NewScenarios = maps:put(ScenarioId, ScenarioInfo, State#simulator_state.scenarios),
+    NewState = State#simulator_state{
+        scenarios = NewScenarios,
+        next_scenario_id = State#simulator_state.next_scenario_id + 1
+    },
+    {reply, {ok, ScenarioId}, NewState};
+
+handle_call({stop_scenario, ScenarioId}, _From, State) ->
+    case maps:get(ScenarioId, State#simulator_state.scenarios, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        ScenarioInfo ->
+            UpdatedInfo = ScenarioInfo#{status => stopped},
+            NewScenarios = maps:put(ScenarioId, UpdatedInfo, State#simulator_state.scenarios),
+            {reply, ok, State#simulator_state{scenarios = NewScenarios}}
+    end;
+
+handle_call({pause_scenario, ScenarioId}, _From, State) ->
+    case maps:get(ScenarioId, State#simulator_state.scenarios, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        ScenarioInfo ->
+            UpdatedInfo = ScenarioInfo#{status => paused},
+            NewScenarios = maps:put(ScenarioId, UpdatedInfo, State#simulator_state.scenarios),
+            {reply, ok, State#simulator_state{scenarios = NewScenarios}}
+    end;
+
+handle_call({resume_scenario, ScenarioId}, _From, State) ->
+    case maps:get(ScenarioId, State#simulator_state.scenarios, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        ScenarioInfo ->
+            UpdatedInfo = ScenarioInfo#{status => running},
+            NewScenarios = maps:put(ScenarioId, UpdatedInfo, State#simulator_state.scenarios),
+            {reply, ok, State#simulator_state{scenarios = NewScenarios}}
+    end;
+
+handle_call({get_scenario_status, ScenarioId}, _From, State) ->
+    case maps:get(ScenarioId, State#simulator_state.scenarios, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        ScenarioInfo ->
+            Status = #{
+                id => ScenarioId,
+                status => maps:get(status, ScenarioInfo),
+                type => maps:get(type, ScenarioInfo),
+                start_time => maps:get(start_time, ScenarioInfo)
+            },
+            {reply, {ok, Status}, State}
+    end;
+
+handle_call({get_metrics, ScenarioId}, _From, State) ->
+    case maps:get(ScenarioId, State#simulator_state.scenarios, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        ScenarioInfo ->
+            Metrics = maps:get(metrics, ScenarioInfo),
+            {reply, {ok, Metrics}, State}
+    end;
+
+handle_call(list_scenarios, _From, State) ->
+    Scenarios = [
+        #{
+            id => Id,
+            type => maps:get(type, Info),
+            status => maps:get(status, Info)
+        }
+        || {Id, Info} <- maps:to_list(State#simulator_state.scenarios)
+    ],
+    {reply, Scenarios, State};
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -466,6 +574,29 @@ handle_call(_Request, _From, State) ->
 %% @private
 %% @end
 %%------------------------------------------------------------------------------
+handle_cast({update_scenario_metrics, ScenarioId, NewMetrics}, State) ->
+    case maps:get(ScenarioId, State#simulator_state.scenarios, undefined) of
+        undefined ->
+            {noreply, State};
+        ScenarioInfo ->
+            UpdatedInfo = ScenarioInfo#{metrics => NewMetrics},
+            NewScenarios = maps:put(ScenarioId, UpdatedInfo, State#simulator_state.scenarios),
+            {noreply, State#simulator_state{scenarios = NewScenarios}}
+    end;
+
+handle_cast({complete_scenario, ScenarioId, FinalMetrics}, State) ->
+    case maps:get(ScenarioId, State#simulator_state.scenarios, undefined) of
+        undefined ->
+            {noreply, State};
+        ScenarioInfo ->
+            UpdatedInfo = ScenarioInfo#{
+                status => completed,
+                metrics => FinalMetrics
+            },
+            NewScenarios = maps:put(ScenarioId, UpdatedInfo, State#simulator_state.scenarios),
+            {noreply, State#simulator_state{scenarios = NewScenarios}}
+    end;
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -920,3 +1051,79 @@ generate_id() ->
 generate_hash() ->
     Rand = rand:uniform(16#FFFFFFFFFFFFFFFF),
     list_to_binary(io_lib:format("~64.16.0b", [Rand])).
+
+%%%=============================================================================
+%%% Multi-Scenario Support Functions
+%%%=============================================================================
+
+generate_scenario_id(Counter) ->
+    list_to_binary(io_lib:format("scenario_~p_~p", [Counter, erlang:system_time(millisecond)])).
+
+run_scenario(ServerPid, ScenarioId, _ScenarioType, WorkOrders, PassRate, IterationDelay,
+             AndonRate, _SlowOpRate, _WipLimit) ->
+    StartTime = erlang:system_time(millisecond),
+
+    % Simulate work orders processing
+    Results = lists:foldl(fun(N, Acc) ->
+        timer:sleep(IterationDelay),
+
+        % Check if scenario is still running
+        case gen_server:call(ServerPid, {get_scenario_status, ScenarioId}) of
+            {ok, #{status := running}} ->
+                % Simulate quality gate check
+                Passed = rand:uniform() =< PassRate,
+
+                % Simulate andon event
+                AndonTriggered = rand:uniform() =< AndonRate,
+
+                #{
+                    work_orders_created := Created,
+                    work_orders_completed := Completed,
+                    quality_gates_passed := QGPassed,
+                    quality_gates_failed := QGFailed,
+                    andon_alerts := Andons
+                } = Acc,
+
+                NewAcc = Acc#{
+                    work_orders_created => Created + 1,
+                    work_orders_completed => if Passed -> Completed + 1; true -> Completed end,
+                    quality_gates_passed => if Passed -> QGPassed + 1; true -> QGPassed end,
+                    quality_gates_failed => if not Passed -> QGFailed + 1; true -> QGFailed end,
+                    andon_alerts => if AndonTriggered -> Andons + 1; true -> Andons end
+                },
+
+                % Update metrics in server
+                gen_server:cast(ServerPid, {update_scenario_metrics, ScenarioId, NewAcc}),
+
+                NewAcc;
+            _ ->
+                % Scenario stopped or paused, exit early
+                Acc
+        end
+    end, #{
+        work_orders_created => 0,
+        work_orders_completed => 0,
+        quality_gates_passed => 0,
+        quality_gates_failed => 0,
+        andon_alerts => 0
+    }, lists:seq(1, WorkOrders)),
+
+    EndTime = erlang:system_time(millisecond),
+    Duration = EndTime - StartTime,
+
+    % Calculate throughput
+    Throughput = case Duration of
+        0 -> 0.0;
+        _ ->
+            Completed = maps:get(work_orders_completed, Results),
+            (Completed / (Duration / 1000.0))
+    end,
+
+    % Final metrics update
+    FinalMetrics = Results#{
+        total_duration_ms => Duration,
+        throughput_per_second => Throughput
+    },
+
+    gen_server:cast(ServerPid, {complete_scenario, ScenarioId, FinalMetrics}),
+    ok.

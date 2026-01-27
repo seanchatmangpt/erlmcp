@@ -527,10 +527,10 @@ mcp_tool_with_governor(Config) ->
     ToolHandler = fun(#{<<"input">> := Input} = Args) ->
         %% Tool should trigger governor processing
         RequestId = maps:get(<<"request_id">>, Args, uuid:uuid4()),
-        _Result = taiea_governor:process_request(Governor, #{
+        _Result = safe_taiea_call(Governor, process_request, [#{
             <<"request_id">> => RequestId,
             <<"tenant_id">> => maps:get(<<"tenant_id">>, Args, <<"default">>)
-        }),
+        }]),
 
         #mcp_content{
             type = <<"text">>,
@@ -563,7 +563,7 @@ mcp_tool_gate_failure_handling(Config) ->
     %% Register tool that can fail gates
     ToolName = <<"gate_test_tool">>,
     ToolHandler = fun(Args) ->
-        case taiea_governor:process_request(Governor, Args) of
+        case safe_taiea_call(Governor, process_request, [Args]) of
             {ok, _} ->
                 #mcp_content{
                     type = <<"text">>,
@@ -651,7 +651,7 @@ receipt_generation(Config) ->
     },
 
     %% Generate receipt
-    Result = taiea_governor:generate_receipt(Governor, Request),
+    Result = safe_taiea_call(Governor, generate_receipt, [Request]),
     ct:pal("Receipt generation result: ~p", [Result]),
 
     ?assertMatch({ok, #{<<"receipt_id">> := _}}, Result),
@@ -669,7 +669,7 @@ receipt_chain_verification(Config) ->
         <<"action">> => <<"parent_action">>
     },
 
-    {ok, ParentReceipt} = taiea_governor:generate_receipt(Governor, ParentReq),
+    {ok, ParentReceipt} = safe_taiea_call(Governor, generate_receipt, [ParentReq]),
     ParentReceiptId = maps:get(<<"receipt_id">>, ParentReceipt),
 
     %% Create child request with parent receipt
@@ -681,7 +681,7 @@ receipt_chain_verification(Config) ->
     },
 
     %% Verify chain
-    Result = taiea_governor:verify_receipt_chain(Governor, ChildReq),
+    Result = safe_taiea_call(Governor, verify_receipt_chain, [ChildReq]),
     ct:pal("Chain verification result: ~p", [Result]),
 
     ?assertMatch({ok, _}, Result),
@@ -698,11 +698,11 @@ receipt_immutability(Config) ->
         <<"request_id">> => uuid:uuid4()
     },
 
-    {ok, Receipt1} = taiea_governor:generate_receipt(Governor, Request),
+    {ok, Receipt1} = safe_taiea_call(Governor, generate_receipt, [Request]),
     ReceiptId = maps:get(<<"receipt_id">>, Receipt1),
 
     %% Try to modify receipt (should fail or return same)
-    Receipt2 = taiea_governor:get_receipt(Governor, ReceiptId),
+    Receipt2 = safe_taiea_call(Governor, get_receipt, [ReceiptId]),
 
     %% Receipts should be identical
     ct:pal("Receipt 1: ~p", [Receipt1]),
@@ -728,7 +728,7 @@ receipt_audit_trail(Config) ->
     %% Generate receipts for each
     Receipts = [
         begin
-            {ok, R} = taiea_governor:generate_receipt(Governor, Req),
+            {ok, R} = safe_taiea_call(Governor, generate_receipt, [Req]),
             R
         end
         || Req <- Requests
@@ -737,7 +737,7 @@ receipt_audit_trail(Config) ->
     ct:pal("Generated ~w receipts", [length(Receipts)]),
 
     %% Get audit trail
-    Result = taiea_governor:get_audit_trail(Governor, <<"test_tenant">>),
+    Result = safe_taiea_call(Governor, get_audit_trail, [<<"test_tenant">>]),
     ct:pal("Audit trail result: ~p", [Result]),
 
     ?assertMatch({ok, _}, Result),
@@ -772,7 +772,7 @@ error_missing_fields(Config) ->
         %% Missing tenant_id and request_id
     },
 
-    Result = taiea_governor:validate_request(Governor, BadRequest),
+    Result = safe_taiea_call(Governor, validate_request, [BadRequest]),
     ct:pal("Missing fields result: ~p", [Result]),
 
     ?assertMatch({error, _}, Result),
@@ -789,7 +789,7 @@ error_gate_failure(Config) ->
         <<"request_id">> => uuid:uuid4()
     },
 
-    Result = taiea_governor:process_request(Governor, BadRequest),
+    Result = safe_taiea_call(Governor, process_request, [BadRequest]),
     ct:pal("Gate failure result: ~p", [Result]),
 
     %% Should handle failure gracefully
@@ -855,11 +855,11 @@ concurrent_requests_same_tenant(Config) ->
     ParentPid = self(),
     Pids = [spawn(fun() ->
         RequestId = uuid:uuid4(),
-        Result = taiea_governor:process_request(Governor, #{
+        Result = safe_taiea_call(Governor, process_request, [#{
             <<"tenant_id">> => TenantId,
             <<"request_id">> => RequestId,
             <<"request_num">> => N
-        }),
+        }]),
         ParentPid ! {done, Result}
     end) || N <- lists:seq(1, NumRequests)],
 
@@ -884,11 +884,11 @@ concurrent_requests_multiple_tenants(Config) ->
     ParentPid = self(),
     Pids = [spawn(fun() ->
         TenantId = <<"tenant_", (integer_to_binary(T))/binary>>,
-        Result = taiea_governor:process_request(Governor, #{
+        Result = safe_taiea_call(Governor, process_request, [#{
             <<"tenant_id">> => TenantId,
             <<"request_id">> => uuid:uuid4(),
             <<"request_num">> => R
-        }),
+        }]),
         ParentPid ! {done, Result}
     end) || T <- lists:seq(1, NumTenants), R <- lists:seq(1, RequestsPerTenant)],
 
@@ -924,11 +924,11 @@ request_isolation(Config) ->
     },
 
     %% Process both
-    _ResultA = taiea_governor:process_request(Governor, ReqA),
-    _ResultB = taiea_governor:process_request(Governor, ReqB),
+    _ResultA = safe_taiea_call(Governor, process_request, [ReqA]),
+    _ResultB = safe_taiea_call(Governor, process_request, [ReqB]),
 
     %% Verify isolation
-    IsolationResult = taiea_governor:verify_isolation(Governor, TenantA, TenantB),
+    IsolationResult = safe_taiea_call(Governor, verify_isolation, [TenantA, TenantB]),
     ct:pal("Isolation verification: ~p", [IsolationResult]),
 
     ?assertMatch({ok, true}, IsolationResult),
@@ -941,10 +941,10 @@ resource_cleanup(Config) ->
 
     %% Create many requests
     _Results = [
-        taiea_governor:process_request(Governor, #{
+        safe_taiea_call(Governor, process_request, [#{
             <<"tenant_id">> => <<"cleanup_tenant">>,
             <<"request_id">> => uuid:uuid4()
-        })
+        }])
         || _ <- lists:seq(1, 100)
     ],
 
@@ -953,7 +953,7 @@ resource_cleanup(Config) ->
     ct:pal("Memory before cleanup: ~w bytes", [MemBefore]),
 
     %% Trigger cleanup
-    CleanupResult = taiea_governor:cleanup_old_requests(Governor),
+    CleanupResult = safe_taiea_call(Governor, cleanup_old_requests, []),
     ct:pal("Cleanup result: ~p", [CleanupResult]),
 
     %% Get memory after cleanup
@@ -973,7 +973,7 @@ governor_state_after_success(Config) ->
     Governor = proplists:get_value(governor, Config),
 
     %% Get initial state
-    InitialState = taiea_governor:get_state(Governor),
+    InitialState = safe_taiea_call(Governor, get_state, []),
     ct:pal("Initial state: ~p", [InitialState]),
 
     %% Process successful request
@@ -983,14 +983,14 @@ governor_state_after_success(Config) ->
         <<"action">> => <<"success_test">>
     },
 
-    {ok, _Result} = taiea_governor:process_request(Governor, Request),
+    {ok, _Result} = safe_taiea_call(Governor, process_request, [Request]),
 
     %% Get final state
-    FinalState = taiea_governor:get_state(Governor),
+    FinalState = safe_taiea_call(Governor, get_state, []),
     ct:pal("Final state: ~p", [FinalState]),
 
     %% Verify state is consistent
-    Validation = taiea_governor:validate_state(Governor),
+    Validation = safe_taiea_call(Governor, validate_state, []),
     ?assertMatch({ok, _}, Validation),
 
     ct:comment("governor_state_after_success: PASS").
@@ -1006,14 +1006,14 @@ governor_state_after_failure(Config) ->
         <<"request_id">> => uuid:uuid4()
     },
 
-    _Result = taiea_governor:process_request(Governor, BadRequest),
+    _Result = safe_taiea_call(Governor, process_request, [BadRequest]),
 
     %% Get state after failure
-    State = taiea_governor:get_state(Governor),
+    State = safe_taiea_call(Governor, get_state, []),
     ct:pal("State after failure: ~p", [State]),
 
     %% State should still be consistent
-    Validation = taiea_governor:validate_state(Governor),
+    Validation = safe_taiea_call(Governor, validate_state, []),
     ?assertMatch({ok, _}, Validation),
 
     ct:comment("governor_state_after_failure: PASS").
@@ -1027,27 +1027,27 @@ receipt_chain_consistency(Config) ->
     TenantId = <<"chain_consistency_test">>,
     ChainLength = 5,
 
-    {ok, FirstReceipt} = taiea_governor:generate_receipt(Governor, #{
+    {ok, FirstReceipt} = safe_taiea_call(Governor, generate_receipt, [#{
         <<"tenant_id">> => TenantId,
         <<"request_id">> => uuid:uuid4(),
         <<"action">> => <<"chain_start">>
-    }),
+    }]),
 
     FirstReceiptId = maps:get(<<"receipt_id">>, FirstReceipt),
 
     %% Build chain
     _ChainReceipts = lists:foldl(fun(N, PrevReceiptId) ->
-        {ok, Receipt} = taiea_governor:generate_receipt(Governor, #{
+        {ok, Receipt} = safe_taiea_call(Governor, generate_receipt, [#{
             <<"tenant_id">> => TenantId,
             <<"request_id">> => uuid:uuid4(),
             <<"parent_receipt">> => PrevReceiptId,
             <<"action">> => <<"chain_item_", (integer_to_binary(N))/binary>>
-        }),
+        }]),
         maps:get(<<"receipt_id">>, Receipt)
     end, FirstReceiptId, lists:seq(2, ChainLength)),
 
     %% Verify chain consistency
-    ConsistencyResult = taiea_governor:verify_receipt_chain_consistency(Governor, TenantId),
+    ConsistencyResult = safe_taiea_call(Governor, verify_receipt_chain_consistency, [TenantId]),
     ct:pal("Chain consistency: ~p", [ConsistencyResult]),
 
     ?assertMatch({ok, _}, ConsistencyResult),
@@ -1066,10 +1066,10 @@ firestore_sync_validation(Config) ->
     },
 
     %% Generate receipt
-    {ok, Receipt} = taiea_governor:generate_receipt(Governor, Request),
+    {ok, Receipt} = safe_taiea_call(Governor, generate_receipt, [Request]),
 
     %% Validate receipt would be synced correctly
-    SyncResult = taiea_governor:validate_firestore_sync(Governor, Receipt),
+    SyncResult = safe_taiea_call(Governor, validate_firestore_sync, [Receipt]),
     ct:pal("Firestore sync validation: ~p", [SyncResult]),
 
     %% For Phase 1, should validate structure

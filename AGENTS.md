@@ -17,3 +17,16 @@ Commits follow Conventional Commit verbs with optional scopes (`feat(workspace):
 
 ## Security & Configuration Notes
 Never commit secrets—leverage placeholder configs under `config/`. When touching transports, validate TLS or capability toggles inside `docs/` so downstream MCP agents inherit the change. Update `docs/architecture.md` whenever supervision topology or restart policy shifts, because client agents depend on those guarantees for resilience planning.
+
+## TCPS Expectations for Agents
+
+Stop being lazy. Every agent is expected to:
+
+1. Read the outstanding work orders (`ontology/work_orders.ttl`) before touching code.
+2. Follow the TCPS daily loop (docs/TCPS-howto.md) and emit receipts for every stage.
+3. Keep C4 diagrams (docs/c4/*.md) in sync when changing architecture.
+4. Update `docs/ARCHITECTURE_OVERVIEW.md` and other Diataxis docs when introducing or modifying subsystems.
+5. Never skip tests; if the pipeline is red, raise an Andon receipt and fix root causes instead of papering over failures.
+6. Use the TCPS checklist (docs/TCPS-checklist.md) and certification ledger (docs/TCPS-certification.md) when shipping subsystems.
+
+If you’re ignoring these rules, you’re not helping—you’re adding debt. EOF

@@ -5,7 +5,6 @@
 
 -export([all/0, init_per_suite/1, end_per_suite/1]).
 -export([start_stop_stdio/1, restart_stdio/1]).
--export([start_stop_stdio/1, restart_stdio/1]).
 %% internal helpers
 -export([wait_for_status/2]).
 
