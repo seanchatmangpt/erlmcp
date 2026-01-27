@@ -102,7 +102,7 @@ handle_read_resource(_Params, State) ->
 %% @doc Route request by method name
 -spec handle_request(binary(), map() | undefined, json_rpc_id(), binary(), state()) ->
     {reply, binary(), state()} | {error, term()}.
-handle_request(<<"initialize">>, Params, Id, _TransportId, State) ->
+handle_request(<<"initialize">>, _Params, Id, _TransportId, State) ->
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"result">> => <<"ok">>}), State};
 handle_request(<<"resources/list">>, _Params, Id, _TransportId, State) ->
     Resources = maps:keys(State#state.resources),
