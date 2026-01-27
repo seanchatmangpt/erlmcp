@@ -138,6 +138,16 @@ init([]) ->
             modules => [erlmcp_recovery_manager]
         },
 
+        % Task manager - MCP tasks API / async job queue
+        #{
+            id => erlmcp_task_manager,
+            start => {erlmcp_task_manager, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_task_manager]
+        },
+
         % Registry - central message router with recovery registration
         #{
             id => erlmcp_registry,
