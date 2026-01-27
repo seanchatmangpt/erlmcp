@@ -64,7 +64,7 @@ generate_report(Args) ->
     end,
 
     % Generate report
-    Report = tcps_kaizen:generate_weekly_report(EndDate),
+    Report = tcps_kaizen:generate_weekly_report({StartDate, EndDate}),
 
     % Output
     Format = tcps_cli_config:get(output_format, table),

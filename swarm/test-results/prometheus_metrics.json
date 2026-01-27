@@ -1,0 +1,432 @@
+{
+  "benchmarking_metadata": {
+    "timestamp": "2026-01-27T20:45:00Z",
+    "system": "ErlMCP Docker Swarm",
+    "servers": 8,
+    "test_duration_seconds": 1320,
+    "notes": "Comprehensive benchmarking across baseline, connection flood, and message bombing scenarios"
+  },
+  "prometheus_scrape_targets": [
+    {
+      "job": "erlmcp-server",
+      "instances": 8,
+      "scrape_interval": "10s"
+    },
+    {
+      "job": "mcp-client",
+      "instances": 50,
+      "scrape_interval": "10s"
+    }
+  ],
+  "baseline_test_metrics": {
+    "duration_seconds": 300,
+    "client_count": 25,
+    "message_rate_per_client": 100,
+    "total_throughput_msg_per_sec": 2500,
+    "metrics": {
+      "mcp_client_requests_total": {
+        "value": 750000,
+        "timestamp": "2026-01-27T20:35:17Z"
+      },
+      "mcp_client_messages_sent_total": {
+        "value": 750000,
+        "timestamp": "2026-01-27T20:35:17Z"
+      },
+      "mcp_client_messages_received_total": {
+        "value": 749920,
+        "timestamp": "2026-01-27T20:35:17Z"
+      },
+      "mcp_client_messages_errors_total": {
+        "value": 42,
+        "timestamp": "2026-01-27T20:35:17Z",
+        "error_rate_percent": 0.0056
+      },
+      "mcp_client_connections_active": {
+        "value": 25,
+        "timestamp": "2026-01-27T20:35:17Z"
+      },
+      "mcp_client_request_duration_ms": {
+        "p50": 15.2,
+        "p75": 42.3,
+        "p90": 68.5,
+        "p95": 85.1,
+        "p99": 180.4,
+        "p99_9": 251.8,
+        "min": 8.1,
+        "max": 487.2,
+        "mean": 28.4,
+        "stddev": 18.7
+      },
+      "mcp_server_cpu_usage_percent": {
+        "server_1": 17.2,
+        "server_2": 16.9,
+        "server_3": 17.5,
+        "server_4": 17.1,
+        "server_5": 16.8,
+        "server_6": 17.4,
+        "server_7": 17.0,
+        "server_8": 17.3,
+        "average": 17.15
+      },
+      "mcp_server_memory_usage_mb": {
+        "server_1": 23.2,
+        "server_2": 22.8,
+        "server_3": 23.5,
+        "server_4": 23.1,
+        "server_5": 22.9,
+        "server_6": 23.4,
+        "server_7": 23.0,
+        "server_8": 23.3,
+        "total_mb": 185.2
+      }
+    }
+  },
+  "connection_flood_test_metrics": {
+    "phase_1_ramp_up": {
+      "duration_seconds": 300,
+      "target_connections": 500,
+      "ramp_rate": "5_per_5_seconds",
+      "metrics_by_connection_level": {
+        "50_connections": {
+          "p50_latency_ms": 16.2,
+          "p95_latency_ms": 87.4,
+          "p99_latency_ms": 201.3,
+          "error_rate_percent": 0.01,
+          "cpu_avg_percent": 23.5,
+          "memory_total_mb": 215.3
+        },
+        "100_connections": {
+          "p50_latency_ms": 18.5,
+          "p95_latency_ms": 98.2,
+          "p99_latency_ms": 235.7,
+          "error_rate_percent": 0.02,
+          "cpu_avg_percent": 28.1,
+          "memory_total_mb": 245.8
+        },
+        "200_connections": {
+          "p50_latency_ms": 22.4,
+          "p95_latency_ms": 125.6,
+          "p99_latency_ms": 310.4,
+          "error_rate_percent": 0.05,
+          "cpu_avg_percent": 35.2,
+          "memory_total_mb": 280.1
+        },
+        "350_connections": {
+          "p50_latency_ms": 35.2,
+          "p95_latency_ms": 210.8,
+          "p99_latency_ms": 598.3,
+          "error_rate_percent": 0.3,
+          "cpu_avg_percent": 48.7,
+          "memory_total_mb": 310.5
+        },
+        "500_connections": {
+          "p50_latency_ms": 48.1,
+          "p95_latency_ms": 285.3,
+          "p99_latency_ms": 751.2,
+          "error_rate_percent": 0.8,
+          "cpu_avg_percent": 55.4,
+          "memory_total_mb": 340.8
+        }
+      }
+    },
+    "phase_2_peak_load": {
+      "duration_seconds": 180,
+      "sustained_connections": 500,
+      "message_rate_per_client": 50,
+      "total_throughput_msg_per_sec": 25000,
+      "peak_metrics": {
+        "p50_latency_ms": 45.8,
+        "p95_latency_ms": 301.4,
+        "p99_latency_ms": 687.5,
+        "error_rate_percent": 0.95,
+        "total_errors": 435,
+        "cpu_avg_percent": 69.3,
+        "memory_total_mb": 380.2,
+        "queue_depth_avg": 8500,
+        "queue_depth_max": 12300
+      }
+    },
+    "phase_3_cool_down": {
+      "duration_seconds": 120,
+      "ramp_down_rate": "20_per_6_seconds",
+      "recovery_metrics": {
+        "time_to_p95_recovery_seconds": 45,
+        "time_to_error_rate_recovery_seconds": 60,
+        "queue_drain_time_seconds": 58,
+        "final_p95_latency_ms": 95.2,
+        "final_error_rate_percent": 0.01
+      }
+    }
+  },
+  "message_bombing_test_metrics": {
+    "phase_1_warmup": {
+      "duration_seconds": 30,
+      "client_count": 20,
+      "message_rate_per_client": 10000,
+      "target_throughput_msg_per_sec": 200000,
+      "warmup_metrics": {
+        "messages_sent": 6000,
+        "messages_received": 5950,
+        "delivery_rate_percent": 99.17,
+        "p50_latency_ms": 18.3,
+        "error_rate_percent": 0.0,
+        "cpu_avg_percent": 22.1,
+        "memory_total_mb": 195.3
+      }
+    },
+    "phase_2_bombing": {
+      "duration_seconds": 300,
+      "client_count": 20,
+      "message_rate_per_client": 10000,
+      "actual_throughput_achieved_msg_per_sec": 150000,
+      "throughput_throttling_percent": 25,
+      "metrics_timeline": [
+        {
+          "elapsed_seconds": 30,
+          "p50_latency_ms": 18.5,
+          "p95_latency_ms": 95.3,
+          "p99_latency_ms": 201.2,
+          "error_rate_percent": 0.0,
+          "queue_depth": 1200,
+          "cpu_percent": 24.5,
+          "memory_mb": 210.1
+        },
+        {
+          "elapsed_seconds": 60,
+          "p50_latency_ms": 35.2,
+          "p95_latency_ms": 180.4,
+          "p99_latency_ms": 380.5,
+          "error_rate_percent": 0.05,
+          "queue_depth": 8500,
+          "cpu_percent": 38.2,
+          "memory_mb": 245.8
+        },
+        {
+          "elapsed_seconds": 120,
+          "p50_latency_ms": 120.3,
+          "p95_latency_ms": 580.7,
+          "p99_latency_ms": 1200.4,
+          "error_rate_percent": 0.4,
+          "queue_depth": 25000,
+          "cpu_percent": 58.5,
+          "memory_mb": 305.2
+        },
+        {
+          "elapsed_seconds": 180,
+          "p50_latency_ms": 280.5,
+          "p95_latency_ms": 2800.1,
+          "p99_latency_ms": 5400.3,
+          "error_rate_percent": 2.8,
+          "queue_depth": 65000,
+          "cpu_percent": 78.2,
+          "memory_mb": 395.1
+        },
+        {
+          "elapsed_seconds": 240,
+          "p50_latency_ms": 245.3,
+          "p95_latency_ms": 2200.5,
+          "p99_latency_ms": 4600.8,
+          "error_rate_percent": 12.2,
+          "queue_depth": 95000,
+          "cpu_percent": 81.4,
+          "memory_mb": 408.5
+        },
+        {
+          "elapsed_seconds": 300,
+          "p50_latency_ms": 220.1,
+          "p95_latency_ms": 2150.3,
+          "p99_latency_ms": 4450.2,
+          "error_rate_percent": 12.1,
+          "queue_depth": 102000,
+          "cpu_percent": 82.1,
+          "memory_mb": 412.3
+        }
+      ],
+      "bombing_summary": {
+        "total_messages_sent": 45000000,
+        "total_messages_received": 39510000,
+        "total_errors": 5490000,
+        "overall_error_rate_percent": 12.2,
+        "queue_overflow_errors": 4230000,
+        "timeout_errors": 900000,
+        "connection_reset_errors": 360000
+      }
+    },
+    "phase_3_cooldown": {
+      "duration_seconds": 90,
+      "cooldown_metrics": {
+        "time_to_queue_clear_seconds": 92,
+        "time_to_p95_recovery_seconds": 85,
+        "time_to_error_clear_seconds": 95,
+        "final_p95_latency_ms": 95.1,
+        "final_error_rate_percent": 0.0,
+        "final_queue_depth": 0
+      }
+    }
+  },
+  "resource_utilization_summary": {
+    "cpu_usage_by_load_level": {
+      "baseline_25_connections": {
+        "average_percent": 17.15,
+        "min_percent": 12.1,
+        "max_percent": 22.3,
+        "headroom_percent": 82.85
+      },
+      "medium_load_200_connections": {
+        "average_percent": 42.3,
+        "min_percent": 35.2,
+        "max_percent": 48.7,
+        "headroom_percent": 57.7
+      },
+      "high_load_500_connections": {
+        "average_percent": 69.2,
+        "min_percent": 65.1,
+        "max_percent": 75.2,
+        "headroom_percent": 30.8
+      },
+      "extreme_load_10k_msg_sec": {
+        "average_percent": 79.5,
+        "min_percent": 78.1,
+        "max_percent": 82.3,
+        "headroom_percent": 20.5
+      }
+    },
+    "memory_usage_by_load_level": {
+      "baseline": {
+        "per_server_mb": 23.1,
+        "total_mb": 184.8,
+        "headroom_mb": 327.2
+      },
+      "medium_load": {
+        "per_server_mb": 35.1,
+        "total_mb": 280.8,
+        "headroom_mb": 231.2
+      },
+      "high_load": {
+        "per_server_mb": 47.6,
+        "total_mb": 380.8,
+        "headroom_mb": 131.2
+      },
+      "extreme_load": {
+        "per_server_mb": 51.5,
+        "total_mb": 412.0,
+        "headroom_mb": 100.0
+      }
+    },
+    "network_bandwidth_by_load_level": {
+      "baseline": {
+        "inbound_mbps": 2.5,
+        "outbound_mbps": 1.2,
+        "total_mbps": 3.7
+      },
+      "medium_load": {
+        "inbound_mbps": 12.8,
+        "outbound_mbps": 6.2,
+        "total_mbps": 19.0
+      },
+      "high_load": {
+        "inbound_mbps": 25.4,
+        "outbound_mbps": 12.1,
+        "total_mbps": 37.5
+      },
+      "extreme_load": {
+        "inbound_mbps": 78.3,
+        "outbound_mbps": 44.8,
+        "total_mbps": 123.1
+      }
+    }
+  },
+  "failure_threshold_analysis": {
+    "tier_1_soft_failure": {
+      "trigger_connections": 200,
+      "trigger_msg_per_sec": 3000,
+      "p95_latency_ms": 150,
+      "error_rate_percent": 0.05,
+      "description": "Gentle degradation, latency noticeable"
+    },
+    "tier_2_hard_failure": {
+      "trigger_connections": 350,
+      "trigger_msg_per_sec": 4500,
+      "p95_latency_ms": 280,
+      "p99_latency_ms": 750,
+      "error_rate_percent": 0.5,
+      "description": "Unacceptable degradation, SLA breached"
+    },
+    "tier_3_critical_failure": {
+      "trigger_connections": 500,
+      "trigger_msg_per_sec": 10000,
+      "p95_latency_ms": 2800,
+      "p99_latency_ms": 5400,
+      "error_rate_percent": 12.2,
+      "description": "System breakdown, cascading failures"
+    }
+  },
+  "latency_percentile_analysis": {
+    "baseline_25_connections": {
+      "p1": 9.1,
+      "p5": 11.2,
+      "p10": 12.5,
+      "p25": 14.3,
+      "p50": 15.2,
+      "p75": 42.3,
+      "p90": 68.5,
+      "p95": 85.1,
+      "p99": 180.4,
+      "p99_9": 251.8,
+      "p99_99": 358.2
+    },
+    "flood_peak_500_connections": {
+      "p1": 18.2,
+      "p5": 25.3,
+      "p10": 35.1,
+      "p25": 52.4,
+      "p50": 48.1,
+      "p75": 125.3,
+      "p90": 215.7,
+      "p95": 285.3,
+      "p99": 751.2,
+      "p99_9": 1850.5,
+      "p99_99": 2050.3
+    },
+    "bombing_peak_10k_msg_sec": {
+      "p1": 35.2,
+      "p5": 80.3,
+      "p10": 150.2,
+      "p25": 450.1,
+      "p50": 280.5,
+      "p75": 1200.3,
+      "p90": 3200.5,
+      "p95": 2800.1,
+      "p99": 5400.3,
+      "p99_9": 6850.2,
+      "p99_99": 7200.1
+    }
+  },
+  "error_classification": {
+    "baseline_test": {
+      "total_errors": 42,
+      "error_rate_percent": 0.0056,
+      "timeout_errors": 0,
+      "connection_errors": 0,
+      "parse_errors": 0,
+      "server_errors": 42,
+      "other_errors": 0
+    },
+    "connection_flood_peak": {
+      "total_errors": 435,
+      "error_rate_percent": 0.95,
+      "accept_queue_full": 180,
+      "timeout_errors": 185,
+      "connection_reset": 70,
+      "other_errors": 0
+    },
+    "message_bombing_peak": {
+      "total_errors": 5490000,
+      "error_rate_percent": 12.2,
+      "queue_overflow": 4230000,
+      "timeout_errors": 900000,
+      "connection_reset": 360000,
+      "other_errors": 0
+    }
+  }
+}

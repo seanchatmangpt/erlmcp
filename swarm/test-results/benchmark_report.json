@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-01-27T20:51:45.465955Z",
+  "scenarios": {
+    "baseline": {
+      "path": "/Users/sac/erlmcp/swarm/test-results/baseline",
+      "files": [
+        {
+          "name": "metrics.json",
+          "size": 0,
+          "path": "/Users/sac/erlmcp/swarm/test-results/baseline/metrics.json"
+        }
+      ]
+    },
+    "connection_flood": {
+      "path": "/Users/sac/erlmcp/swarm/test-results/connection_flood",
+      "files": [
+        {
+          "name": "connections.jsonl",
+          "size": 0,
+          "path": "/Users/sac/erlmcp/swarm/test-results/connection_flood/connections.jsonl"
+        },
+        {
+          "name": "cooldown_connections.jsonl",
+          "size": 0,
+          "path": "/Users/sac/erlmcp/swarm/test-results/connection_flood/cooldown_connections.jsonl"
+        },
+        {
+          "name": "error_rate.jsonl",
+          "size": 0,
+          "path": "/Users/sac/erlmcp/swarm/test-results/connection_flood/error_rate.jsonl"
+        },
+        {
+          "name": "peak_connections.jsonl",
+          "size": 0,
+          "path": "/Users/sac/erlmcp/swarm/test-results/connection_flood/peak_connections.jsonl"
+        },
+        {
+          "name": "peak_latency_p95.jsonl",
+          "size": 0,
+          "path": "/Users/sac/erlmcp/swarm/test-results/connection_flood/peak_latency_p95.jsonl"
+        }
+      ]
+    },
+    "message_bombing": {
+      "path": "/Users/sac/erlmcp/swarm/test-results/message_bombing",
+      "files": []
+    }
+  },
+  "summary": {
+    "total_scenarios": 3,
+    "passed": 0,
+    "failed": 0,
+    "warnings": 0
+  }
+}
