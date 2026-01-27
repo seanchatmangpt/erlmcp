@@ -1,126 +1,207 @@
-.PHONY: all compile clean test dialyzer xref format lint docs console release docker check
+.PHONY: all compile test ct eunit lint dialyze clean distclean release help \
+        setup direnv asdf deps deps-tree quality info coverage taiea-compile taiea-test \
+        release-dev release-prod tar show-release \
+        workspace-build workspace-test workspace-lint workspace-check workspace-clean workspace-release \
+        check build
 
-REBAR := rebar3
-APP_NAME := erlmcp
-APP_VERSION := $(shell grep vsn src/$(APP_NAME).app.src | cut -d'"' -f2)
+SHELL := /bin/bash
 
-all: compile
+# Colors for output
+BLUE := \033[0;34m
+GREEN := \033[0;32m
+RED := \033[0;31m
+NC := \033[0m # No Color
+
+# Default target
+all: compile test lint
+
+# ============================================================================
+# BUILD TARGETS
+# ============================================================================
 
 compile:
-	@$(REBAR) compile
+	@echo "$(BLUE)Compiling workspace...$(NC)"
+	rebar3 compile
 
-clean:
-	@$(REBAR) cleanplus
-	@rm -rf _build logs erl_crash.dump
+# ============================================================================
+# TEST TARGETS
+# ============================================================================
 
-test:
-	@mkdir -p logs
-	@$(REBAR) do eunit, ct, proper -c
-	@$(REBAR) cover
+test: eunit ct
+	@echo "$(GREEN)All tests passed!$(NC)"
 
-dialyzer:
-	@$(REBAR) dialyzer
+eunit:
+	@echo "$(BLUE)Running EUnit tests...$(NC)"
+	rebar3 eunit
 
-xref:
-	@$(REBAR) xref
+ct:
+	@echo "$(BLUE)Running Common Test suite...$(NC)"
+	rebar3 ct
 
-format:
-	@$(REBAR) format
+ct-verbose:
+	@echo "$(BLUE)Running Common Test (verbose)...$(NC)"
+	rebar3 ct -v
+
+coverage:
+	@echo "$(BLUE)Generating coverage report...$(NC)"
+	rebar3 cover
+	@echo "$(GREEN)Coverage report: _build/test/cover/index.html$(NC)"
+
+# ============================================================================
+# QUALITY TARGETS
+# ============================================================================
 
 lint:
-	@$(MAKE) xref dialyzer
+	@echo "$(BLUE)Running linting...$(NC)"
+	rebar3 lint
 
-console:
-	@$(REBAR) shell
+dialyze:
+	@echo "$(BLUE)Running Dialyzer (type checker)...$(NC)"
+	rebar3 dialyze
 
-release:
-	@$(REBAR) as prod release
+quality: lint dialyze
+	@echo "$(GREEN)Quality checks passed!$(NC)"
 
-check: clean compile xref dialyzer test
-	@echo "All checks passed!"
+# ============================================================================
+# DOCUMENTATION
+# ============================================================================
 
-# Development helpers
-dev-console:
-	@ERL_FLAGS="-config config/sys.config -args_file config/vm.args" $(REBAR) as dev shell
+docs:
+	@echo "$(BLUE)Generating documentation...$(NC)"
+	rebar3 edoc
+	@echo "$(GREEN)Documentation: doc/$(NC)"
 
-observer:
-	@erl -name debug@127.0.0.1 -setcookie erlmcp_secret_cookie -run observer
+# ============================================================================
+# PROJECT-SPECIFIC TARGETS
+# ============================================================================
 
-# Testing helpers
-test-client:
-	@$(REBAR) shell --eval "simple_client:run()."
+taiea-test:
+	@echo "$(BLUE)Testing TAIEA project...$(NC)"
+	rebar3 -p taiea eunit
+	rebar3 -p taiea ct
 
-test-server:
-	@$(REBAR) shell --eval "simple_server:start()."
+taiea-compile:
+	@echo "$(BLUE)Compiling TAIEA...$(NC)"
+	rebar3 -p taiea compile
 
-test-advanced-client:
-	@$(REBAR) shell --eval "simple_client:run_advanced()."
+# ============================================================================
+# RELEASE TARGETS
+# ============================================================================
 
-# Coverage report
-coverage-report:
-	@$(REBAR) cover
-	@echo "Coverage report generated in _build/test/cover/index.html"
+release-dev:
+	@echo "$(BLUE)Building development release...$(NC)"
+	rebar3 release
 
-# Performance profiling
-profile:
-	@$(REBAR) as dev shell --eval "recon_trace:calls({erlmcp_client, '_', '_'}, 100)."
+release-prod:
+	@echo "$(BLUE)Building production release...$(NC)"
+	rebar3 as prod release
 
-# Docker support
-docker-build:
-	docker build -t $(APP_NAME):$(APP_VERSION) .
+tar:
+	@echo "$(BLUE)Creating release tarball...$(NC)"
+	rebar3 as prod tar
 
-docker-run:
-	docker run -it --rm $(APP_NAME):$(APP_VERSION)
+show-release:
+	@echo "$(GREEN)Release artifacts:$(NC)"
+	@ls -lh _build/prod/rel/erlmcp/ 2>/dev/null || echo "No prod release found"
+	@ls -lh _build/prod/*.tar.gz 2>/dev/null || echo "No tarball found"
 
-# Installation
-install: compile
-	@echo "Installing $(APP_NAME)..."
-	@$(REBAR) do compile, escriptize
+# ============================================================================
+# DEPENDENCY MANAGEMENT
+# ============================================================================
 
-# Create logs directory
-init:
-	@mkdir -p logs priv/ssl config
-	@echo "Project initialized"
+deps:
+	@echo "$(BLUE)Fetching dependencies...$(NC)"
+	rebar3 get-deps
 
-# Run specific test suites
-test-unit:
-	@$(REBAR) eunit
+deps-tree:
+	@echo "$(BLUE)Dependency tree:$(NC)"
+	rebar3 tree
 
-test-integration:
-	@$(REBAR) ct
+# ============================================================================
+# ENVIRONMENT & SETUP
+# ============================================================================
 
-test-property:
-	@$(REBAR) proper -c
+direnv:
+	@echo "$(BLUE)Loading direnv...$(NC)"
+	direnv allow
 
-test-local:
-	@rm -rf _build/testlocal+test
-	@$(REBAR) as testlocal eunit -v
+asdf:
+	@echo "$(BLUE)Installing Erlang/Elixir via asdf...$(NC)"
+	asdf install
+	@echo "$(GREEN)Done! Use: direnv allow$(NC)"
 
-# Static analysis
-analyze: xref dialyzer lint
-	@echo "Static analysis complete"
+setup: deps asdf direnv
+	@echo "$(GREEN)Workspace setup complete!$(NC)"
 
-# Clean everything including deps
+# ============================================================================
+# CLEANUP TARGETS
+# ============================================================================
+
+clean:
+	@echo "$(BLUE)Cleaning build artifacts...$(NC)"
+	rebar3 clean
+
 distclean: clean
-	@rm -rf _build
-	@echo "Deep clean complete"
+	@echo "$(BLUE)Removing all generated files...$(NC)"
+	rm -rf _build/ doc/ ct_logs/ cover/ .rebar3/
+	@echo "$(GREEN)Workspace clean!$(NC)"
 
-publish:
-	@echo "Publishing $(APP_NAME) v$(APP_VERSION)..."
-	@$(REBAR) hex publish package
+# ============================================================================
+# HELP & INFO
+# ============================================================================
 
-# Help
+info:
+	@echo "$(BLUE)Workspace Information:$(NC)"
+	@echo "  Location: /Users/sac/erlmcp"
+	@echo "  Erlang: $$(erl -noshell -eval 'erlang:display(erlang:system_info(otp_release))' -s init stop 2>/dev/null || echo 'unknown')"
+	@echo "  Projects: taiea, vendor/erlmcp"
+	@echo ""
+	@echo "$(BLUE)Commands:$(NC)"
+	@make help | grep -E '^\s+(make [a-z-]+|rebar3)'
+
 help:
-	@echo "$(APP_NAME) v$(APP_VERSION) - Available targets:"
-	@echo "  make compile       - Compile the project"
-	@echo "  make test         - Run all tests"
-	@echo "  make dialyzer     - Run Dialyzer"
-	@echo "  make xref         - Run xref analysis"
-	@echo "  make format       - Format code"
-	@echo "  make lint         - Run linter"
-	@echo "  make console      - Start Erlang shell with app loaded"
-	@echo "  make release      - Build production release"
-	@echo "  make check        - Run all checks (xref, dialyzer, tests)"
-	@echo "  make coverage-report - Generate coverage report"
-	@echo "  make publish	   - Publish to Hex"
-	@echo "  make help         - Show this help message"
+	@echo "$(BLUE)erlmcp Workspace - Build Targets$(NC)"
+	@echo ""
+	@echo "$(GREEN)Primary Targets:$(NC)"
+	@echo "  make all              Compile + test + lint (default)"
+	@echo "  make compile          Compile workspace"
+	@echo "  make test             Run all tests (eunit + ct)"
+	@echo "  make quality          Lint + Dialyzer"
+	@echo ""
+	@echo "$(GREEN)Testing:$(NC)"
+	@echo "  make eunit            Run EUnit tests"
+	@echo "  make ct               Run Common Test suite"
+	@echo "  make ct-verbose       Run CT with verbose output"
+	@echo "  make coverage         Generate coverage report"
+	@echo ""
+	@echo "$(GREEN)Code Quality:$(NC)"
+	@echo "  make lint             Run linting"
+	@echo "  make dialyze          Run Dialyzer (type checker)"
+	@echo ""
+	@echo "$(GREEN)Documentation:$(NC)"
+	@echo "  make docs             Generate edoc documentation"
+	@echo ""
+	@echo "$(GREEN)Release:$(NC)"
+	@echo "  make release-dev      Development release"
+	@echo "  make release-prod     Production release"
+	@echo "  make tar              Create tarball"
+	@echo "  make show-release     Show release artifacts"
+	@echo ""
+	@echo "$(GREEN)Project Targets:$(NC)"
+	@echo "  make taiea-compile    Compile TAIEA only"
+	@echo "  make taiea-test       Test TAIEA only"
+	@echo ""
+	@echo "$(GREEN)Setup:$(NC)"
+	@echo "  make setup            Complete workspace setup"
+	@echo "  make direnv           Load direnv"
+	@echo "  make asdf             Install Erlang/Elixir"
+	@echo "  make deps             Fetch dependencies"
+	@echo "  make deps-tree        Show dependency tree"
+	@echo ""
+	@echo "$(GREEN)Cleanup:$(NC)"
+	@echo "  make clean            Remove build artifacts"
+	@echo "  make distclean        Remove all generated files"
+	@echo ""
+	@echo "$(GREEN)Info:$(NC)"
+	@echo "  make info             Show workspace information"
+	@echo "  make help             This message"
