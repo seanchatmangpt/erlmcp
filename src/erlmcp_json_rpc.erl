@@ -7,9 +7,11 @@
     encode_request/3,
     encode_response/2,
     encode_error_response/3,
+    encode_error_response/4,
     encode_notification/2,
     decode_message/1,
-    create_error/3
+    create_error/3,
+    create_error_with_data/4
 ]).
 
 %% Types
@@ -41,10 +43,11 @@ encode_response(Id, Result) ->
 
 -spec encode_error_response(json_rpc_id(), integer(), binary()) -> binary().
 encode_error_response(Id, Code, Message) when is_integer(Code), is_binary(Message) ->
-    Error = #{
-        ?JSONRPC_ERROR_FIELD_CODE => Code,
-        ?JSONRPC_ERROR_FIELD_MESSAGE => Message
-    },
+    encode_error_response(Id, Code, Message, undefined).
+
+-spec encode_error_response(json_rpc_id(), integer(), binary(), term()) -> binary().
+encode_error_response(Id, Code, Message, Data) when is_integer(Code), is_binary(Message) ->
+    Error = build_error_object(Code, Message, Data),
     Response = #json_rpc_response{
         id = Id,
         error = Error
@@ -79,6 +82,15 @@ create_error(Code, Message, Data) when is_integer(Code), is_binary(Message) ->
         code = Code,
         message = Message,
         data = Data
+    }.
+
+-spec create_error_with_data(integer(), binary(), atom(), term()) -> #mcp_error{}.
+create_error_with_data(Code, Message, DataKey, DataValue)
+  when is_integer(Code), is_binary(Message), is_atom(DataKey) ->
+    #mcp_error{
+        code = Code,
+        message = Message,
+        data = #{atom_to_binary(DataKey, utf8) => DataValue}
     }.
 
 %%====================================================================
@@ -129,6 +141,23 @@ add_result_or_error(Map, _Result, Error) when is_map(Error) ->
     Map#{?JSONRPC_FIELD_ERROR => Error};
 add_result_or_error(Map, Result, undefined) ->
     Map#{?JSONRPC_FIELD_RESULT => Result}.
+
+-spec build_error_object(integer(), binary(), term() | undefined) -> map().
+build_error_object(Code, Message, undefined) ->
+    #{
+        ?JSONRPC_ERROR_FIELD_CODE => Code,
+        ?JSONRPC_ERROR_FIELD_MESSAGE => Message
+    };
+build_error_object(Code, Message, Data) ->
+    Error = #{
+        ?JSONRPC_ERROR_FIELD_CODE => Code,
+        ?JSONRPC_ERROR_FIELD_MESSAGE => Message
+    },
+    case Data of
+        null -> Error;
+        DataMap when is_map(DataMap) -> Error#{?JSONRPC_ERROR_FIELD_DATA => DataMap};
+        _ -> Error#{?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => Data}}
+    end.
 
 -spec parse_json_rpc(map()) -> decode_result().
 parse_json_rpc(Data) ->
