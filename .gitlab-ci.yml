@@ -1,0 +1,408 @@
+# TCPS Production Pipeline for GitLab CI
+# Toyota Code Production System - Lean Six Sigma Quality
+
+variables:
+  ERLANG_VERSION: "27.1"
+  REBAR3_VERSION: "3.23.0"
+  TCPS_QUALITY_GATE_COVERAGE: "80"
+  TCPS_QUALITY_GATE_PASS_RATE: "80"
+  DOCKER_DRIVER: overlay2
+
+stages:
+  - pull-signal
+  - validate
+  - build
+  - test
+  - verify
+  - release
+  - publish
+  - kaizen
+
+# ============================================================================
+# Docker Image for Erlang builds
+# ============================================================================
+.erlang-base:
+  image: erlang:${ERLANG_VERSION}
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq wget git
+    - wget https://s3.amazonaws.com/rebar3/rebar3
+    - chmod +x rebar3
+    - mv rebar3 /usr/local/bin/
+  cache:
+    key: "${CI_COMMIT_REF_SLUG}-erlang"
+    paths:
+      - _build/
+      - .rebar3/
+
+# ============================================================================
+# STAGE 1: Pull Signal - Create Work Order
+# ============================================================================
+pull-signal:
+  stage: pull-signal
+  image: python:3.12
+  script:
+    - |
+      echo "📋 Creating TCPS Work Order"
+      WORK_ORDER_ID="WO-$(date +%Y%m%d-%H%M%S)-${CI_COMMIT_SHORT_SHA}"
+      TAKT_TIME_START=$(date -u +%s)
+
+      # Store in GitLab CI variables for downstream jobs
+      echo "WORK_ORDER_ID=${WORK_ORDER_ID}" >> build.env
+      echo "TAKT_TIME_START=${TAKT_TIME_START}" >> build.env
+
+      # Create RDF work order
+      cat > work_order.ttl <<EOF
+      @prefix tcps: <http://purl.org/tcps#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+      <urn:tcps:work-order:${WORK_ORDER_ID}> a tcps:WorkOrder ;
+          tcps:orderID "${WORK_ORDER_ID}" ;
+          tcps:priority "normal" ;
+          tcps:createdAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"^^xsd:dateTime ;
+          tcps:assignedTo <urn:tcps:worker:gitlab-ci> ;
+          tcps:produces <urn:tcps:sku:erlmcp:${CI_COMMIT_SHORT_SHA}> ;
+          tcps:status "in_progress" .
+      EOF
+
+      cat work_order.ttl
+  artifacts:
+    paths:
+      - work_order.ttl
+    reports:
+      dotenv: build.env
+    expire_in: 30 days
+
+# ============================================================================
+# STAGE 2: SHACL Validation - Jidoka Quality Gate
+# ============================================================================
+shacl-validate:
+  stage: validate
+  image: python:3.12
+  dependencies:
+    - pull-signal
+  script:
+    - |
+      echo "🔍 Running SHACL Validation (Jidoka)"
+      pip install rdflib pyshacl pytest
+
+      cd tests/shacl
+      if python -m pytest test_tcps_validation.py -v --tb=short; then
+        echo "✅ SHACL validation passed"
+        SHACL_PASSED="true"
+      else
+        echo "❌ SHACL validation FAILED"
+        SHACL_PASSED="false"
+
+        # Trigger Andon
+        cat > ../../andon_shacl.ttl <<EOF
+      @prefix tcps: <http://purl.org/tcps#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+      <urn:tcps:andon:$(date +%s)> a tcps:AndonEvent ;
+          tcps:severity "critical" ;
+          tcps:type "shacl_violation" ;
+          tcps:triggeredAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"^^xsd:dateTime ;
+          tcps:description "SHACL validation failed" ;
+          tcps:affectsWorkOrder <urn:tcps:work-order:${WORK_ORDER_ID}> .
+      EOF
+
+        exit 1
+      fi
+
+      # Generate receipt
+      cd ../..
+      cat > shacl_receipt.json <<EOF
+      {
+        "stage": "shacl_validation",
+        "work_order": "${WORK_ORDER_ID}",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "passed": ${SHACL_PASSED},
+        "operator": "gitlab-ci"
+      }
+      EOF
+  artifacts:
+    paths:
+      - shacl_receipt.json
+      - andon_shacl.ttl
+    when: always
+    expire_in: 30 days
+
+# ============================================================================
+# STAGE 3: Compile
+# ============================================================================
+compile:
+  extends: .erlang-base
+  stage: build
+  dependencies:
+    - pull-signal
+  script:
+    - |
+      echo "🔨 Compiling erlmcp"
+
+      if rebar3 compile; then
+        echo "✅ Compilation successful"
+        COMPILE_PASSED="true"
+      else
+        echo "❌ Compilation FAILED"
+        COMPILE_PASSED="false"
+
+        # Trigger Andon
+        cat > andon_compile.ttl <<EOF
+      @prefix tcps: <http://purl.org/tcps#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+      <urn:tcps:andon:$(date +%s)> a tcps:AndonEvent ;
+          tcps:severity "critical" ;
+          tcps:type "compilation_error" ;
+          tcps:triggeredAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"^^xsd:dateTime ;
+          tcps:description "Compilation failed" ;
+          tcps:affectsWorkOrder <urn:tcps:work-order:${WORK_ORDER_ID}> .
+      EOF
+
+        exit 1
+      fi
+
+      # Dialyzer
+      if rebar3 dialyzer; then
+        echo "✅ Dialyzer passed"
+        DIALYZER_PASSED="true"
+      else
+        echo "⚠️ Dialyzer warnings"
+        DIALYZER_PASSED="false"
+      fi
+
+      # Generate receipt
+      cat > compile_receipt.json <<EOF
+      {
+        "stage": "compile",
+        "work_order": "${WORK_ORDER_ID}",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "compile_passed": ${COMPILE_PASSED},
+        "dialyzer_passed": ${DIALYZER_PASSED}
+      }
+      EOF
+  artifacts:
+    paths:
+      - _build/
+      - compile_receipt.json
+      - andon_compile.ttl
+    when: always
+    expire_in: 30 days
+
+# ============================================================================
+# STAGE 4: Test - Quality Gate
+# ============================================================================
+test:
+  extends: .erlang-base
+  stage: test
+  dependencies:
+    - pull-signal
+    - compile
+  script:
+    - |
+      echo "🧪 Running tests with quality gates"
+
+      if rebar3 as test eunit --verbose; then
+        echo "✅ Tests passed"
+        TESTS_PASSED="true"
+      else
+        echo "❌ Tests FAILED"
+        TESTS_PASSED="false"
+
+        # Trigger Andon
+        cat > andon_test.ttl <<EOF
+      @prefix tcps: <http://purl.org/tcps#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+      <urn:tcps:andon:$(date +%s)> a tcps:AndonEvent ;
+          tcps:severity "critical" ;
+          tcps:type "test_failure" ;
+          tcps:triggeredAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"^^xsd:dateTime ;
+          tcps:description "Tests failed" ;
+          tcps:affectsWorkOrder <urn:tcps:work-order:${WORK_ORDER_ID}> .
+      EOF
+
+        exit 1
+      fi
+
+      # Coverage
+      rebar3 cover --verbose
+      COVERAGE=$(rebar3 cover | grep -oP 'Total: \K[0-9]+' || echo "0")
+
+      echo "📊 Coverage: ${COVERAGE}%"
+
+      if [ "$COVERAGE" -lt "${TCPS_QUALITY_GATE_COVERAGE}" ]; then
+        echo "❌ Quality gate FAILED: Coverage ${COVERAGE}% < ${TCPS_QUALITY_GATE_COVERAGE}%"
+        QUALITY_GATE_PASSED="false"
+        exit 1
+      else
+        echo "✅ Quality gate PASSED"
+        QUALITY_GATE_PASSED="true"
+      fi
+
+      # Generate receipt
+      cat > test_receipt.json <<EOF
+      {
+        "stage": "test",
+        "work_order": "${WORK_ORDER_ID}",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "tests_passed": ${TESTS_PASSED},
+        "coverage_percent": ${COVERAGE},
+        "quality_gate_passed": ${QUALITY_GATE_PASSED}
+      }
+      EOF
+  coverage: '/Total: (\d+)%/'
+  artifacts:
+    paths:
+      - test_receipt.json
+      - _build/test/cover/
+      - andon_test.ttl
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: _build/test/cover/cobertura.xml
+    expire_in: 30 days
+
+# ============================================================================
+# STAGE 5: Deterministic Build Verification
+# ============================================================================
+deterministic-build:
+  extends: .erlang-base
+  stage: verify
+  dependencies:
+    - pull-signal
+  script:
+    - |
+      echo "🔍 Verifying deterministic build"
+
+      # Build 1
+      rebar3 clean
+      rebar3 as prod compile
+      find _build/prod -name "*.beam" -type f -exec sha256sum {} \; | sort > build1.sha256
+
+      # Build 2
+      rebar3 clean
+      rebar3 as prod compile
+      find _build/prod -name "*.beam" -type f -exec sha256sum {} \; | sort > build2.sha256
+
+      # Compare
+      if diff build1.sha256 build2.sha256; then
+        echo "✅ Build is deterministic"
+        DETERMINISTIC="true"
+      else
+        echo "❌ Build is NOT deterministic"
+        diff build1.sha256 build2.sha256 || true
+        DETERMINISTIC="false"
+
+        # Trigger Andon
+        cat > andon_deterministic.ttl <<EOF
+      @prefix tcps: <http://purl.org/tcps#> .
+      @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+      <urn:tcps:andon:$(date +%s)> a tcps:AndonEvent ;
+          tcps:severity "high" ;
+          tcps:type "non_deterministic_build" ;
+          tcps:triggeredAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)"^^xsd:dateTime ;
+          tcps:description "Build is not deterministic" ;
+          tcps:affectsWorkOrder <urn:tcps:work-order:${WORK_ORDER_ID}> .
+      EOF
+
+        exit 1
+      fi
+  artifacts:
+    paths:
+      - build1.sha256
+      - build2.sha256
+      - andon_deterministic.ttl
+    when: always
+    expire_in: 30 days
+
+# ============================================================================
+# STAGE 6: Release
+# ============================================================================
+release:
+  extends: .erlang-base
+  stage: release
+  dependencies:
+    - pull-signal
+    - deterministic-build
+  only:
+    - main
+    - /^release\/.*$/
+  script:
+    - |
+      echo "📦 Creating production release"
+
+      rebar3 as prod tar
+
+      RELEASE_TAR=$(find _build/prod/rel -name "*.tar.gz" | head -1)
+      RELEASE_SHA256=$(sha256sum "$RELEASE_TAR" | cut -d' ' -f1)
+
+      echo "✅ Release: ${RELEASE_TAR}"
+      echo "SHA256: ${RELEASE_SHA256}"
+
+      cat > release_receipt.json <<EOF
+      {
+        "stage": "release",
+        "work_order": "${WORK_ORDER_ID}",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+        "release_file": "${RELEASE_TAR}",
+        "sha256": "${RELEASE_SHA256}"
+      }
+      EOF
+  artifacts:
+    paths:
+      - _build/prod/rel/*.tar.gz
+      - release_receipt.json
+    expire_in: 90 days
+
+# ============================================================================
+# STAGE 7: Kaizen - Continuous Improvement
+# ============================================================================
+kaizen:
+  stage: kaizen
+  image: python:3.12
+  dependencies:
+    - pull-signal
+    - shacl-validate
+    - compile
+    - test
+  when: always
+  script:
+    - |
+      echo "📊 Generating Kaizen Report"
+
+      TAKT_TIME_END=$(date -u +%s)
+      TAKT_TIME_DURATION=$((TAKT_TIME_END - TAKT_TIME_START))
+
+      cat > kaizen_report.md <<EOF
+      # TCPS Kaizen Report
+
+      **Work Order**: ${WORK_ORDER_ID}
+      **Pipeline**: ${CI_PIPELINE_ID}
+      **Commit**: ${CI_COMMIT_SHA}
+      **Branch**: ${CI_COMMIT_REF_NAME}
+
+      ## Metrics
+
+      - **Takt Time**: ${TAKT_TIME_DURATION} seconds
+      - **Pipeline Status**: ${CI_PIPELINE_STATUS}
+
+      ## Receipts
+
+      $(find . -name "*_receipt.json" -exec cat {} \; 2>/dev/null || echo "No receipts found")
+
+      ## Continuous Improvement
+
+      - Review Andon events for root causes
+      - Optimize slow pipeline stages
+      - Update quality thresholds
+      EOF
+
+      cat kaizen_report.md
+  artifacts:
+    paths:
+      - kaizen_report.md
+    expire_in: 90 days

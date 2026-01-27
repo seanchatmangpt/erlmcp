@@ -105,38 +105,211 @@ erlmcp_sup
 }
 ```
 
+## Library Integration (v0.6.0)
+
+### Production-Grade Libraries
+
+erlmcp v0.6.0 replaces ~770 LOC of custom code with battle-tested Erlang libraries:
+
+| Component | Library | Version | Purpose |
+|-----------|---------|---------|---------|
+| **Registry** | gproc | 0.9.0 | Process registration and discovery |
+| **HTTP Client** | gun | 2.0.1 | HTTP/1.1 and HTTP/2 transport |
+| **TCP Handler** | ranch | 2.1.0 | TCP connection pooling and supervision |
+| **Connection Pool** | poolboy | 1.5.2 | Worker pool management |
+
+#### Why These Libraries?
+
+**gproc (Registry)**
+- Distributed process registry with automatic cleanup
+- Built-in monitoring eliminates manual process tracking
+- Used across Erlang ecosystem for production workloads
+- Reduces registry code from 411 LOC → 120 LOC
+
+**gun (HTTP Transport)**
+- Modern HTTP/1.1 and HTTP/2 support
+- Better connection reuse and keepalive
+- Production-grade error handling
+- Reduces HTTP transport from 461 LOC → 180 LOC
+
+**ranch (TCP Transport)**
+- Battle-tested by EMQX and Cowboy
+- Built-in connection pooling and supervisor integration
+- Excellent socket lifecycle management
+- Reduces TCP transport from 349 LOC → 150 LOC
+
+**poolboy (Connection Pooling)**
+- Efficient worker pool management
+- Queue management under load
+- Better resource utilization
+- New feature in v0.6.0
+
+### Registry Architecture with gproc
+
+```erlang
+%% Server registration
+gproc:add_local_name({mcp, server, ServerId}),
+gproc:reg({p, l, {mcp_server_config, ServerId}}, Config).
+
+%% Transport registration
+gproc:add_local_name({mcp, transport, TransportId}),
+gproc:reg({p, l, {mcp_transport_config, TransportId}}, Config).
+
+%% Lookup (automatic monitoring)
+case gproc:lookup_local_name({mcp, server, ServerId}) of
+    undefined -> {error, not_found};
+    Pid -> {ok, Pid}
+end.
+```
+
+**Benefits:**
+- Automatic process monitoring and cleanup
+- No manual `monitor`/`demonitor` code
+- Distributed registry support (if needed)
+- Proven reliability
+
+### HTTP Transport with gun
+
+```erlang
+%% Initialize gun connection
+{ok, GunPid} = gun:open(Host, Port, #{
+    protocols => [http2, http],
+    retry => 5,
+    retry_timeout => 1000
+}),
+
+%% Send request
+StreamRef = gun:request(GunPid, <<"POST">>, Path, Headers, Body),
+
+%% Handle responses
+handle_info({gun_response, GunPid, StreamRef, IsFin, Status, Headers}, State) ->
+    %% Process response
+    {noreply, State};
+handle_info({gun_data, GunPid, StreamRef, IsFin, Data}, State) ->
+    %% Route to server via registry
+    erlmcp_registry:route_to_server(ServerId, TransportId, Data),
+    {noreply, State}.
+```
+
+**Features:**
+- ✅ HTTP/1.1 and HTTP/2 support (automatic)
+- ✅ Connection reuse and keepalive
+- ✅ TLS/SSL support
+- ✅ Timeout handling
+- ✅ Better error recovery
+
+### TCP Transport with ranch
+
+```erlang
+%% Server mode - accept connections
+ranch:start_listener(
+    TransportId,
+    ranch_tcp,
+    #{port => Port, num_acceptors => 10},
+    erlmcp_transport_tcp,
+    [TransportId, Config]
+).
+
+%% Client mode - connect outbound
+{ok, Socket} = gen_tcp:connect(Host, Port, [
+    binary,
+    {active, true},
+    {packet, 0}
+]).
+```
+
+**Features:**
+- ✅ Built-in connection pooling
+- ✅ Supervisor integration (ranch handles restarts)
+- ✅ TCP_NODELAY and keepalive built-in
+- ✅ Backpressure handling
+- ✅ Graceful shutdown
+
+### Connection Pooling with poolboy
+
+```erlang
+%% Start connection pool
+poolboy:start_link([
+    {name, {local, http_pool}},
+    {worker_module, erlmcp_http_worker},
+    {size, 10},
+    {max_overflow, 5}
+]).
+
+%% Use pooled connection
+poolboy:transaction(http_pool, fun(Worker) ->
+    erlmcp_http_worker:request(Worker, Url, Method)
+end).
+```
+
+**Benefits:**
+- Better performance under load
+- Resource limiting
+- Queue management
+- Connection reuse
+
 ## Extension Points
 
 ### Custom Transports
-Implement the transport behavior:
+Implement the enhanced transport behavior:
 ```erlang
--callback init(Opts :: map()) -> {ok, State} | {error, Reason}.
--callback send(State, Data :: binary()) -> ok | {error, Reason}.
+-callback init(TransportId :: atom(), Config :: map()) ->
+    {ok, State} | {error, Reason}.
+-callback send(State, Data :: iodata()) ->
+    ok | {error, Reason}.
 -callback close(State) -> ok.
+
+%% Optional callbacks
+-callback get_info(State) ->
+    #{type => atom(), status => atom(), peer => term()}.
+-callback handle_transport_call(Request :: term(), State :: term()) ->
+    {reply, Reply :: term(), NewState :: term()} | {error, Reason}.
+
+-optional_callbacks([get_info/1, handle_transport_call/2]).
 ```
 
 ### Resource Handlers
 ```erlang
--type resource_handler() :: fun((Uri :: binary()) -> 
+-type resource_handler() :: fun((Uri :: binary()) ->
     binary() | #mcp_content{}).
 ```
 
 ### Tool Handlers
 ```erlang
--type tool_handler() :: fun((Args :: map()) -> 
+-type tool_handler() :: fun((Args :: map()) ->
     binary() | #mcp_content{} | [#mcp_content{}]).
 ```
 
 ## Performance Considerations
 
-1. **Process Pooling** - Use poolboy for connection pooling
-2. **ETS for Caching** - Cache frequently accessed resources
-3. **Binary Handling** - Use binary strings for efficiency
-4. **Lazy Evaluation** - Handlers are called only when needed
+1. **Process Pooling** - poolboy manages connection pools
+2. **Registry Performance** - gproc optimized for lookups
+3. **HTTP/2** - gun provides HTTP/2 multiplexing
+4. **ETS for Caching** - Cache frequently accessed resources
+5. **Binary Handling** - Use binary strings for efficiency
+6. **Lazy Evaluation** - Handlers are called only when needed
+
+### Performance Characteristics
+
+**Registry Lookups (gproc)**
+- Local lookups: O(1) via ETS
+- Distributed lookups: O(1) with gproc_dist
+- Automatic cleanup on process death
+
+**HTTP Transport (gun)**
+- HTTP/2 multiplexing: Multiple streams per connection
+- Connection reuse: Reduces handshake overhead
+- Keepalive: Maintains persistent connections
+
+**TCP Transport (ranch)**
+- Connection pooling: Reuses established connections
+- Backpressure: Handles overload gracefully
+- Supervisor integration: Fast recovery
 
 ## Security Model
 
-- Transport-level security (TLS for TCP/HTTP)
+- Transport-level security (TLS for TCP/HTTP via gun and ranch)
 - Input validation via JSON Schema
 - Capability-based access control
 - No direct code execution
+- Library-provided security features (TLS, certificate validation)

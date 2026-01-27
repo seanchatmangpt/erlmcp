@@ -1,0 +1,151 @@
+%% Staging system configuration for ErlMCP
+%% Balanced approach: moderate logging, production-like behavior, testing capabilities
+
+[
+    {erlmcp, [
+        %% Logging configuration - INFO level for normal operation
+        {log_level, info},
+        {logger_level, info},
+
+        %% Client defaults - production-like but with test flexibility
+        {client_defaults, #{
+            timeout => 5000,
+            strict_mode => true,
+            max_pending_requests => 250,
+            retry_attempts => 3,
+            retry_backoff_ms => 500
+        }},
+
+        %% Server defaults
+        {server_defaults, #{
+            max_subscriptions_per_resource => 2000,
+            max_progress_tokens => 20000,
+            enable_debug_endpoints => true  % Still enabled for testing
+        }},
+
+        %% Transport settings
+        {transport_defaults, #{
+            tcp => #{
+                connect_timeout => 5000,
+                keepalive => true,
+                nodelay => true,
+                listen_backlog => 256
+            },
+            http => #{
+                connect_timeout => 5000,
+                request_timeout => 30000,
+                max_connections => 200
+            },
+            stdio => #{
+                enabled => true
+            }
+        }},
+
+        %% Connection pooling
+        {connection_pooling, #{
+            enabled => true,
+            pool_size => 20,
+            max_overflow => 10,
+            pool_timeout => 10000
+        }},
+
+        %% Caching enabled in staging
+        {cache_enabled, true},
+        {cache_ttl_seconds, 1800},
+        {cache_max_size, 10000},
+
+        %% Feature toggles - most enabled for testing
+        {features, #{
+            rate_limiting => true,
+            rate_limit_per_second => 500,
+            async_processing => true,
+            webhook_delivery => true,
+            experimental => true
+        }},
+
+        %% Staging-specific options
+        {staging, #{
+            enable_console_logging => true,
+            enable_file_logging => true,
+            enable_sql_logging => false,
+            enable_http_logging => false,
+            enable_profiling => true,
+            profile_dir => "/var/logs/profiles",
+            enable_smoke_tests => true,
+            enable_integration_tests => true
+        }}
+    ]},
+
+    {kernel, [
+        {logger_level, info},
+        {logger, [
+            %% Console handler - INFO and above
+            {handler, default, logger_std_h, #{
+                config => #{
+                    type => standard_io,
+                    sync_mode_qlen => 100,
+                    drop_mode_qlen => 1000,
+                    flush_qlen => 2000
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", {mfa, ["N/A"]}, ":", line, " ", msg, "\n"],
+                    time_offset => "",
+                    time_designator => $T,
+                    single_line => false,
+                    max_size => 4096
+                }},
+                filters => [
+                    {progress_reports, {fun logger_filters:progress/2, stop}},
+                    {sasl_reports, {fun logger_filters:domain/2, {stop, sub, [otp, sasl]}}}
+                ],
+                level => info
+            }},
+
+            %% File handler - DEBUG for analysis
+            {handler, file_staging, logger_std_h, #{
+                config => #{
+                    file => "/var/logs/erlmcp-staging.log",
+                    max_no_bytes => 104857600,  %% 100 MB
+                    max_no_files => 10,
+                    compress_on_rotate => true
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"]
+                }},
+                level => debug
+            }},
+
+            %% Separate handler for error logs
+            {handler, file_errors, logger_std_h, #{
+                config => #{
+                    file => "/var/logs/erlmcp-errors.log",
+                    max_no_bytes => 52428800,  %% 50 MB
+                    max_no_files => 5,
+                    compress_on_rotate => true
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"]
+                }},
+                level => error
+            }}
+        ]}
+    ]},
+
+    {sasl, [
+        {sasl_error_logger, false},
+        {errlog_type, error},
+        {error_logger_format_depth, 20}
+    ]},
+
+    %% Metrics collection (Prometheus)
+    {prometheus, [
+        {collectors, [prometheus_counter, prometheus_gauge, prometheus_histogram]}
+    ]},
+
+    %% TCP settings
+    {inet, [
+        {tcp_listeners, [
+            #{port => 6000, opts => [binary, {packet, raw}, {reuseaddr, true}]}
+        ]}
+    ]}
+].

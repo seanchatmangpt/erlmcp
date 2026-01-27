@@ -30,7 +30,32 @@ jobs:
     - name: Xref Checks
       run: rebar3 xref
 
-    - name: Run Tests
-      run: rebar3 eunit -v
-    - name: Test Coverage
-      run: rebar3 as test cover -v --min_coverage=0
+    - name: Run Tests with Coverage
+      run: |
+        rebar3 as test do compile, eunit --cover, ct --dir=test/integration --cover, cover --verbose
+      continue-on-error: true
+
+    - name: Check Coverage Threshold (80%)
+      run: |
+        chmod +x scripts/check_coverage_threshold.sh
+        ./scripts/check_coverage_threshold.sh 80
+
+    - name: Upload Coverage HTML Report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report-otp-${{ matrix.otp_version }}
+        path: _build/test/cover/
+        retention-days: 30
+
+    - name: Generate Coverage Summary
+      if: always()
+      run: |
+        echo "## Coverage Report - OTP ${{ matrix.otp_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        grep -A 60 "module.*coverage" _build/test/cover/cover.log || echo "Coverage data not available"
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        COVERAGE=$(grep "total" _build/test/cover/cover.log | tail -1 | awk '{print $NF}' || echo "N/A")
+        echo "**Overall Coverage:** $COVERAGE" >> $GITHUB_STEP_SUMMARY

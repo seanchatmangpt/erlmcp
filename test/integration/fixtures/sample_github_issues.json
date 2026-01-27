@@ -1,0 +1,92 @@
+{
+  "github_issues": [
+    {
+      "number": 4567,
+      "repo": "acme-corp/erlmcp",
+      "title": "Memory leak in connection pool under high load",
+      "body": "## Description\n\nUnder high load conditions (>1000 concurrent connections), the connection pool exhibits a memory leak. Memory usage grows unbounded over time, eventually leading to OOM crashes.\n\n## Steps to Reproduce\n\n1. Start the application with default connection pool configuration\n2. Generate 1000+ concurrent connections\n3. Monitor memory usage over 1 hour\n4. Observe steadily increasing memory consumption\n\n## Expected Behavior\n\nMemory usage should stabilize at a reasonable level and not grow unbounded.\n\n## Actual Behavior\n\nMemory grows from 200MB to 2GB+ over 1 hour, eventually causing OOM crash.\n\n## Environment\n\n- OS: Ubuntu 22.04\n- Erlang/OTP: 26.2\n- Application version: 1.2.0\n\n## Logs\n\n```\n[error] Connection pool worker crashed: {badmatch, undefined}\n[warning] Memory usage: 1.8GB (threshold: 2GB)\n[error] Out of memory, terminating\n```\n\n## Analysis\n\nInitial profiling suggests connections are not being properly released back to the pool after use.",
+      "state": "open",
+      "labels": ["bug", "reliability", "memory-leak", "priority-high"],
+      "assignees": ["dev-team-lead"],
+      "created_at": "2024-01-10T14:30:00Z",
+      "updated_at": "2024-01-15T09:45:00Z",
+      "comments": 8,
+      "author": "user123",
+      "milestone": "v1.3.0"
+    },
+    {
+      "number": 5432,
+      "repo": "acme-corp/erlmcp",
+      "title": "Add GraphQL API endpoint for query flexibility",
+      "body": "## Feature Request\n\n### Problem\n\nThe current REST API requires multiple round trips to fetch related data. Clients need a more flexible query interface to reduce network overhead and improve performance.\n\n### Proposed Solution\n\nImplement a GraphQL API endpoint that allows clients to:\n- Query exactly the data they need\n- Fetch related data in a single request\n- Introspect the API schema\n- Subscribe to real-time updates\n\n### Benefits\n\n- Reduced network overhead (fewer round trips)\n- Better developer experience\n- Improved mobile app performance\n- Flexible data fetching\n\n### Implementation Notes\n\n- Use Absinthe library for GraphQL support\n- Implement schema for all existing REST endpoints\n- Add DataLoader for efficient batch loading\n- Include subscription support via Phoenix Channels\n\n### Alternatives Considered\n\n- Expanding REST API with more endpoints (rejected: too many endpoints)\n- Using OData (rejected: limited Erlang support)\n\n### Acceptance Criteria\n\n- [ ] GraphQL endpoint at `/api/graphql`\n- [ ] Schema covers all REST endpoints\n- [ ] Query performance matches REST API\n- [ ] Documentation and examples provided\n- [ ] Tests with 80%+ coverage\n\n### Upvotes\n\n156 users have upvoted this feature request.",
+      "state": "open",
+      "labels": ["enhancement", "feature-request", "api", "priority-medium"],
+      "assignees": [],
+      "created_at": "2024-01-20T11:00:00Z",
+      "updated_at": "2024-01-26T16:20:00Z",
+      "comments": 24,
+      "author": "power-user-42",
+      "milestone": "v2.0.0"
+    },
+    {
+      "number": 6789,
+      "repo": "acme-corp/erlmcp",
+      "title": "Security: Implement rate limiting for API endpoints",
+      "body": "## Security Enhancement\n\n### Risk\n\nAPI endpoints are currently unprotected against rate limiting attacks. Attackers could:\n- Overwhelm the system with requests (DoS)\n- Perform brute force attacks on authentication\n- Scrape data at unrestricted rates\n\n### Proposed Solution\n\nImplement rate limiting with the following configuration:\n\n- **Global rate limit**: 1000 requests/minute per IP\n- **Authentication endpoints**: 10 attempts/minute per IP\n- **Data export endpoints**: 100 requests/hour per user\n- **WebSocket connections**: 50 concurrent per user\n\n### Implementation Strategy\n\n1. Use Token Bucket algorithm for rate limiting\n2. Store rate limit counters in Redis\n3. Return HTTP 429 with Retry-After header\n4. Implement sliding window for smoother limiting\n5. Add rate limit headers to all responses\n\n### Configuration\n\n```erlang\n{rate_limiting, [\n    {global_limit, 1000},\n    {global_window_seconds, 60},\n    {auth_limit, 10},\n    {auth_window_seconds, 60},\n    {backend, redis}\n]}\n```\n\n### Security Audit Finding\n\n**Finding**: SEC-2024-015  \n**Severity**: Medium  \n**Impact**: System vulnerable to DoS and brute force attacks  \n**Recommendation**: Implement rate limiting within 30 days",
+      "state": "open",
+      "labels": ["security", "enhancement", "api", "priority-high"],
+      "assignees": ["security-team"],
+      "created_at": "2024-01-22T10:15:00Z",
+      "updated_at": "2024-01-25T14:30:00Z",
+      "comments": 12,
+      "author": "security-auditor",
+      "milestone": "v1.3.0"
+    },
+    {
+      "number": 7890,
+      "repo": "acme-corp/erlmcp",
+      "title": "Bug: Race condition in distributed lock manager",
+      "body": "## Bug Report\n\n### Description\n\nThe distributed lock manager has a race condition that can lead to multiple processes acquiring the same lock simultaneously.\n\n### Impact\n\n- Data corruption in concurrent writes\n- Duplicate job processing\n- Inconsistent system state\n\n### Root Cause\n\nThe lock acquisition logic has a time-of-check to time-of-use (TOCTOU) race condition:\n\n```erlang\ncase check_lock_available(LockId) of\n    true ->\n        timer:sleep(1),  % Race window!\n        acquire_lock(LockId);\n    false ->\n        {error, locked}\nend\n```\n\n### Reproduction\n\n```erlang\n% Spawn 10 processes trying to acquire the same lock\nSpawn 10 processes:\n    Process = spawn(fun() -> lock_manager:acquire(test_lock) end)\n\n% Result: Multiple processes report successful acquisition\n```\n\n### Proposed Fix\n\nUse atomic compare-and-swap operation:\n\n```erlang\ncase ets:insert_new(locks, {LockId, self(), timestamp()}) of\n    true -> {ok, LockId};\n    false -> {error, locked}\nend\n```\n\n### Environment\n\n- Erlang/OTP: 26.2\n- Distributed system: 3 nodes\n- Lock backend: ETS + pg",
+      "state": "open",
+      "labels": ["bug", "reliability", "distributed-systems", "priority-critical"],
+      "assignees": ["distributed-team"],
+      "created_at": "2024-01-24T15:45:00Z",
+      "updated_at": "2024-01-26T11:00:00Z",
+      "comments": 6,
+      "author": "reliability-engineer",
+      "milestone": "v1.2.1"
+    },
+    {
+      "number": 8901,
+      "repo": "acme-corp/erlmcp",
+      "title": "Feature: WebSocket support for real-time updates",
+      "body": "## Feature Request\n\n### Use Cases\n\n1. **Live Dashboard**: Real-time metrics and status updates\n2. **Chat Application**: Bidirectional messaging\n3. **Notifications**: Push notifications to connected clients\n4. **Collaborative Editing**: Real-time document collaboration\n\n### Proposed API\n\n```javascript\nconst ws = new WebSocket('ws://api.example.com/ws');\n\nws.onopen = () => {\n    ws.send(JSON.stringify({\n        type: 'subscribe',\n        channel: 'work_orders',\n        filters: {bucket: 'security'}\n    }));\n};\n\nws.onmessage = (event) => {\n    const update = JSON.parse(event.data);\n    console.log('Update:', update);\n};\n```\n\n### Implementation Plan\n\n1. Add Cowboy WebSocket handler\n2. Implement pub/sub with gproc\n3. Add authentication via JWT tokens\n4. Support channel subscriptions\n5. Implement heartbeat/keepalive\n6. Add connection limits and rate limiting\n\n### Performance Requirements\n\n- Support 10,000+ concurrent connections per node\n- Message latency < 100ms\n- Automatic reconnection on disconnect\n- Graceful degradation under load\n\n### Upvotes\n\n89 users have requested this feature.",
+      "state": "open",
+      "labels": ["enhancement", "feature-request", "websocket", "real-time", "priority-low"],
+      "assignees": [],
+      "created_at": "2024-01-25T09:30:00Z",
+      "updated_at": "2024-01-26T13:15:00Z",
+      "comments": 15,
+      "author": "feature-requester",
+      "milestone": "v2.1.0"
+    }
+  ],
+  "summary": {
+    "total_issues": 5,
+    "by_state": {
+      "open": 5,
+      "closed": 0
+    },
+    "by_label": {
+      "bug": 2,
+      "enhancement": 3,
+      "feature-request": 3,
+      "security": 1,
+      "reliability": 2,
+      "priority-critical": 1,
+      "priority-high": 2,
+      "priority-medium": 1,
+      "priority-low": 1
+    }
+  }
+}

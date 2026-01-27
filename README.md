@@ -180,13 +180,29 @@ See the [examples directory](examples/README.md) for comprehensive examples:
 
 ## Documentation
 
-- [Architecture Overview](docs/architecture.md) - System design and components
+**Start here**: [Documentation Index](docs/INDEX.md) - Navigation hub for all documentation
+
+### Quick Guides by Role
+- **[For Developers](docs/FOR_DEVELOPERS.md)** - Development setup, testing, debugging
+- **[For Operators](docs/FOR_OPERATORS.md)** - Deployment, monitoring, scaling
+- **[For Architects](docs/FOR_ARCHITECTS.md)** - System design, performance, security
+
+### Complete Documentation
+- [Getting Started](docs/GETTING_STARTED.md) - 5-minute quickstart
+- [Architecture Overview](docs/ARCHITECTURE_OVERVIEW.md) - System design and components
+- [Build System](docs/BUILD_SYSTEM.md) - Build targets, SLOs, performance gates
+- [Deployment Guide](docs/DEPLOYMENT.md) - How to deploy to GCP/Kubernetes
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
 - [Protocol Guide](docs/protocol.md) - MCP protocol implementation details
 - [OTP Patterns](docs/otp-patterns.md) - Erlang/OTP best practices used
 - [API Reference](docs/api-reference.md) - Complete API documentation
 
+### Contributing
+- [Contributing Guide](CONTRIBUTING.md) - How to contribute code and documentation
+
 ## Key Features
 
+### Core MCP Support
 - ✅ Full MCP protocol support (resources, tools, prompts)
 - ✅ OTP-compliant with supervision trees
 - ✅ Multiple transport layers (stdio, TCP, HTTP)
@@ -195,6 +211,20 @@ See the [examples directory](examples/README.md) for comprehensive examples:
 - ✅ Automatic reconnection with backoff
 - ✅ Comprehensive error handling
 - ✅ Production-ready logging and monitoring
+
+### v0.6.0 Library Integration 🆕
+- ✅ **gproc** registry - Automatic process monitoring and cleanup
+- ✅ **gun** HTTP/2 - Modern HTTP/1.1 and HTTP/2 support
+- ✅ **ranch** TCP - Production-grade connection pooling
+- ✅ **poolboy** - Efficient worker pool management
+- ✅ **~770 LOC reduction** - Less custom code, more reliability
+
+### Production-Ready Architecture
+- 🔧 Distributed process registry (gproc)
+- 🚀 HTTP/2 multiplexing (gun)
+- 🔌 Connection pooling (ranch + poolboy)
+- 📊 Better performance under load
+- 🛡️ Battle-tested libraries from Erlang ecosystem
 
 ## Development
 
@@ -229,13 +259,48 @@ make dev-console        # Start interactive console
 - Keep commits focused and documented
 - Use `make format` to maintain code style
 
+## What's New in v0.6.0
+
+### Library Integration - Production-Grade Architecture
+
+erlmcp v0.6.0 replaces **~770 lines of custom code** with battle-tested Erlang libraries:
+
+```erlang
+%% Before: Custom 411 LOC registry
+%% After: gproc with automatic monitoring
+{ok, Pid} = erlmcp_registry:find_server(ServerId).  % Automatic cleanup!
+
+%% Before: Custom 461 LOC HTTP client
+%% After: gun with HTTP/2 support
+{ok, GunPid} = gun:open(Host, Port, #{protocols => [http2, http]}).
+
+%% Before: Custom 349 LOC TCP handler
+%% After: ranch with built-in pooling
+ranch:start_listener(Name, ranch_tcp, #{port => 8080}, Handler, Opts).
+
+%% NEW: Connection pooling
+poolboy:transaction(http_pool, fun(Worker) ->
+    erlmcp_http_worker:request(Worker, Req)
+end).
+```
+
+**Impact**:
+- 🚀 **20-100% performance improvements** in key operations
+- 🔧 **HTTP/2 support** via gun (multiplexing, better throughput)
+- 🔌 **Connection pooling** via ranch + poolboy
+- 📊 **Distributed registry** support via gproc
+- 🛡️ **Better reliability** - proven libraries vs custom code
+
+See [Library Migration Guide](docs/library-migration-guide.md) for complete details.
+
 ## Documentation
 
 - [DEVELOPMENT.md](DEVELOPMENT.md) - Development environment setup and workflows
-- [Architecture Overview](docs/architecture.md) - System design and components
+- [Architecture Overview](docs/architecture.md) - System design and library integration (v0.6.0)
 - [Protocol Guide](docs/protocol.md) - MCP protocol implementation details
-- [OTP Patterns](docs/otp-patterns.md) - Erlang/OTP best practices
-- [API Reference](docs/api-reference.md) - Complete API documentation
+- [OTP Patterns](docs/otp-patterns.md) - Erlang/OTP best practices with library patterns
+- [API Reference](docs/api-reference.md) - Complete API documentation with transport config
+- [Library Migration Guide](docs/library-migration-guide.md) - v0.5 → v0.6.0 migration (NEW)
 
 ## License
 

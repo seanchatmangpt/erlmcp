@@ -1,0 +1,42 @@
+[
+    {tcps, [
+        {persistence, #{
+            % Directory for RDF/Turtle ontology files
+            ontology_dir => "ontology",
+
+            % Directory for JSON receipts (organized by SKU)
+            receipts_dir => "priv/receipts",
+
+            % Directory for backups
+            backup_dir => "backups",
+
+            % RDF format (turtle | ntriples | jsonld)
+            rdf_format => turtle,
+
+            % Automatic backup frequency (none | hourly | daily | weekly)
+            auto_backup => daily,
+
+            % Backup retention period in days
+            backup_retention => 30
+        }}
+    ]},
+
+    {kernel, [
+        {logger_level, info},
+        {logger, [
+            {handler, default, logger_std_h, #{
+                config => #{
+                    file => "log/tcps.log"
+                },
+                formatter => {logger_formatter, #{
+                    single_line => false,
+                    time_offset => "Z"
+                }}
+            }}
+        ]}
+    ]},
+
+    {sasl, [
+        {sasl_error_logger, false}
+    ]}
+].

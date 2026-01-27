@@ -1,64 +1,91 @@
 -module(erlmcp_transport_tcp).
 -behaviour(gen_server).
+-behaviour(ranch_protocol).
 
-%% Transport API
--export([send/2, close/1]).
+%% Note: We implement erlmcp_transport behavior but use different naming
+%% to avoid conflicts with gen_server callbacks
 
-%% API
--export([start_link/1, connect/2]).
+%% Transport API (erlmcp_transport-like interface)
+-export([send/2, close/1, transport_init/1]).
+
+%% Public API
+-export([start_link/1, start_server/1, start_client/1, connect/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+%% ranch_protocol callback
+-export([start_link/3]).
+
 %% Types
--type tcp_opts() :: #{
-    host := inet:hostname() | inet:ip_address(),
-    port := inet:port_number(),
-    owner := pid(),
+-type mode() :: client | server.
+-type transport_opts() :: #{
+    mode := mode(),
+    host => inet:hostname() | inet:ip_address(),
+    port => inet:port_number(),
+    owner => pid(),
+    server_id => atom(),
+    transport_id => atom(),
     connect_timeout => timeout(),
     keepalive => boolean(),
     nodelay => boolean(),
-    buffer_size => pos_integer()
+    buffer_size => pos_integer(),
+    num_acceptors => pos_integer(),
+    max_connections => pos_integer() | infinity,
+    max_reconnect_attempts => pos_integer() | infinity
 }.
 
--type state() :: #{
-    socket := gen_tcp:socket() | undefined,
-    owner := pid(),
-    host := inet:hostname() | inet:ip_address(),
-    port := inet:port_number(),
-    options := [gen_tcp:connect_option()],
-    buffer := binary(),
-    connected := boolean(),
-    reconnect_timer := reference() | undefined,
-    reconnect_attempts := non_neg_integer(),
-    max_reconnect_attempts := pos_integer() | infinity
-}.
+-record(state, {
+    mode :: mode(),
+    transport_id :: atom() | undefined,
+    server_id :: atom() | undefined,
+    socket :: gen_tcp:socket() | undefined,
+    ranch_ref :: ranch:ref() | undefined,
+    owner :: pid() | undefined,
+    host :: inet:hostname() | inet:ip_address() | undefined,
+    port :: inet:port_number() | undefined,
+    options :: [gen_tcp:connect_option()],
+    buffer = <<>> :: binary(),
+    connected = false :: boolean(),
+    reconnect_timer :: reference() | undefined,
+    reconnect_attempts = 0 :: non_neg_integer(),
+    max_reconnect_attempts = infinity :: pos_integer() | infinity
+}).
 
--export_type([tcp_opts/0]).
+-type state() :: #state{}.
+
+-export_type([transport_opts/0, mode/0]).
 
 %% Default values
 -define(DEFAULT_CONNECT_TIMEOUT, 5000).
 -define(DEFAULT_BUFFER_SIZE, 65536).
+-define(DEFAULT_NUM_ACCEPTORS, 10).
+-define(DEFAULT_MAX_CONNECTIONS, 1024).
 -define(INITIAL_RECONNECT_DELAY, 1000).
 -define(MAX_RECONNECT_DELAY, 60000).
 -define(DEFAULT_MAX_RECONNECT_ATTEMPTS, infinity).
 
 %%====================================================================
-%% API Functions
+%% Transport API (erlmcp_transport-like interface)
 %%====================================================================
 
--spec start_link(tcp_opts()) -> {ok, pid()} | {error, term()}.
-start_link(Opts) when is_map(Opts) ->
-    gen_server:start_link(?MODULE, Opts, []).
+%% @doc Initialize transport state (used when started via external transport interface)
+%% This is separate from gen_server init/1 to avoid callback conflicts
+-spec transport_init(transport_opts()) -> {ok, state()} | {error, term()}.
+transport_init(Opts) when is_map(Opts) ->
+    Mode = maps:get(mode, Opts, client),
+    case Mode of
+        server ->
+            init_server(Opts);
+        client ->
+            init_client(Opts)
+    end.
 
--spec connect(pid(), tcp_opts()) -> ok | {error, term()}.
-connect(Pid, Opts) when is_pid(Pid), is_map(Opts) ->
-    gen_server:call(Pid, {connect, Opts}).
-
--spec send(pid() | state(), iodata()) -> ok | {error, term()}.
-send(Pid, Data) when is_pid(Pid) ->
-    gen_server:call(Pid, {send, Data});
-send(#{socket := Socket} = _State, Data) when Socket =/= undefined ->
+%% @doc Send data through the transport
+-spec send(state(), iodata()) -> ok | {error, term()}.
+send(#state{socket = undefined}, _Data) ->
+    {error, not_connected};
+send(#state{socket = Socket, connected = true}, Data) ->
     case gen_tcp:send(Socket, [Data, "\n"]) of
         ok -> ok;
         {error, Reason} -> {error, {tcp_send_failed, Reason}}
@@ -66,85 +93,123 @@ send(#{socket := Socket} = _State, Data) when Socket =/= undefined ->
 send(_State, _Data) ->
     {error, not_connected}.
 
--spec close(pid() | state()) -> ok.
-close(Pid) when is_pid(Pid) ->
-    gen_server:stop(Pid);
-close(#{socket := Socket}) when Socket =/= undefined ->
-    gen_tcp:close(Socket);
-close(_) ->
+%% @doc Close the transport
+-spec close(state()) -> ok.
+close(#state{mode = server, ranch_ref = RanchRef}) when RanchRef =/= undefined ->
+    ranch:stop_listener(RanchRef),
+    ok;
+close(#state{socket = Socket}) when Socket =/= undefined ->
+    gen_tcp:close(Socket),
+    ok;
+close(_State) ->
     ok.
 
 %%====================================================================
-%% gen_server callbacks
+%% Public API
 %%====================================================================
 
--spec init(tcp_opts()) -> {ok, state()}.
-init(Opts) ->
+%% @doc Start transport process with options
+-spec start_link(transport_opts()) -> {ok, pid()} | {error, term()}.
+start_link(Opts) when is_map(Opts) ->
+    gen_server:start_link(?MODULE, Opts, []).
+
+%% @doc Start a TCP server using ranch
+-spec start_server(transport_opts()) -> {ok, pid()} | {error, term()}.
+start_server(Opts) when is_map(Opts) ->
+    start_link(Opts#{mode => server}).
+
+%% @doc Start a TCP client
+-spec start_client(transport_opts()) -> {ok, pid()} | {error, term()}.
+start_client(Opts) when is_map(Opts) ->
+    start_link(Opts#{mode => client}).
+
+%% @doc Connect to a remote server (client mode only)
+-spec connect(pid(), transport_opts()) -> ok | {error, term()}.
+connect(Pid, Opts) when is_pid(Pid), is_map(Opts) ->
+    gen_server:call(Pid, {connect, Opts}).
+
+%%====================================================================
+%% ranch_protocol Callback
+%%====================================================================
+
+%% @doc Start a ranch protocol handler for an accepted connection
+-spec start_link(ranch:ref(), module(), map()) -> {ok, pid()}.
+start_link(RanchRef, _Transport, ProtocolOpts) ->
+    {ok, Pid} = gen_server:start_link(?MODULE, #{
+        mode => server,
+        ranch_ref => RanchRef,
+        protocol_opts => ProtocolOpts
+    }, []),
+    {ok, Pid}.
+
+%%====================================================================
+%% gen_server Callbacks
+%%====================================================================
+
+%% @doc Initialize gen_server
+init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
+    %% This is a ranch protocol handler for an accepted connection
     process_flag(trap_exit, true),
 
-    Host = maps:get(host, Opts),
-    Port = maps:get(port, Opts),
-    Owner = maps:get(owner, Opts),
+    Owner = maps:get(owner, ProtocolOpts, self()),
+    ServerId = maps:get(server_id, ProtocolOpts, undefined),
+    TransportId = maps:get(transport_id, ProtocolOpts, undefined),
 
-    %% Monitor the owner process
-    monitor(process, Owner),
+    %% Get the socket from ranch
+    {ok, Socket} = ranch:handshake(RanchRef),
 
-    State = #{
-        socket => undefined,
-        owner => Owner,
-        host => Host,
-        port => Port,
-        options => build_socket_options(Opts),
-        buffer => <<>>,
-        connected => false,
-        reconnect_timer => undefined,
-        reconnect_attempts => 0,
-        max_reconnect_attempts => maps:get(max_reconnect_attempts, Opts,
-                                          ?DEFAULT_MAX_RECONNECT_ATTEMPTS)
-    },
+    %% Set socket to active mode for message reception
+    ok = inet:setopts(Socket, [{active, true}]),
 
-    %% Attempt initial connection
-    self() ! connect,
+    %% Notify owner of connection
+    Owner ! {transport_connected, self()},
 
-    {ok, State}.
+    {ok, #state{
+        mode = server,
+        transport_id = TransportId,
+        server_id = ServerId,
+        socket = Socket,
+        ranch_ref = RanchRef,
+        owner = Owner,
+        connected = true,
+        options = []
+    }};
 
--spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} | {noreply, state()}.
+init(#{mode := Mode} = Opts) ->
+    case Mode of
+        server -> init_server_listener(Opts);
+        client -> init_client_process(Opts)
+    end.
 
-handle_call({connect, NewOpts}, _From, State) ->
-    %% Update connection parameters
-    NewState = State#{
-        host := maps:get(host, NewOpts, maps:get(host, State)),
-        port := maps:get(port, NewOpts, maps:get(port, State)),
-        options := build_socket_options(NewOpts)
-    },
+%% @doc Handle synchronous calls
+handle_call({send, Data}, _From, State) ->
+    Result = send(State, Data),
+    case Result of
+        ok ->
+            {reply, ok, State};
+        {error, _} = Error ->
+            %% Connection might be lost, handle in async if needed
+            {reply, Error, State}
+    end;
+
+handle_call({connect, NewOpts}, _From, #state{mode = client} = State) ->
+    %% Update connection parameters and reconnect
+    NewState = update_client_opts(State, NewOpts),
 
     %% Disconnect if currently connected
-    FinalState = case maps:get(socket, NewState) of
+    FinalState = case State#state.socket of
         undefined -> NewState;
         Socket ->
             gen_tcp:close(Socket),
-            NewState#{socket := undefined, connected := false}
+            NewState#state{socket = undefined, connected = false}
     end,
 
     %% Trigger reconnection
     self() ! connect,
-
     {reply, ok, FinalState};
 
-handle_call({send, Data}, _From, #{connected := true, socket := Socket} = State) ->
-    case gen_tcp:send(Socket, [Data, "\n"]) of
-        ok ->
-            {reply, ok, State};
-        {error, Reason} = Error ->
-            logger:error("TCP send failed: ~p", [Reason]),
-            %% Connection lost, trigger reconnection
-            self() ! {tcp_error, Socket, Reason},
-            {reply, Error, State}
-    end;
-
-handle_call({send, _Data}, _From, State) ->
-    {reply, {error, not_connected}, State};
+handle_call({connect, _NewOpts}, _From, State) ->
+    {reply, {error, {invalid_mode, State#state.mode}}, State};
 
 handle_call(get_state, _From, State) ->
     {reply, {ok, State}, State};
@@ -152,17 +217,15 @@ handle_call(get_state, _From, State) ->
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
--spec handle_cast(term(), state()) -> {noreply, state()}.
+%% @doc Handle asynchronous casts
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
--spec handle_info(term(), state()) ->
-    {noreply, state()} | {stop, term(), state()}.
-
-handle_info(connect, State) ->
+%% @doc Handle info messages
+handle_info(connect, #state{mode = client} = State) ->
     {noreply, attempt_connection(State)};
 
-handle_info({tcp, Socket, Data}, #{socket := Socket, buffer := Buffer} = State) ->
+handle_info({tcp, Socket, Data}, #state{socket = Socket, buffer = Buffer} = State) ->
     %% Accumulate data in buffer
     NewBuffer = <<Buffer/binary, Data/binary>>,
 
@@ -170,56 +233,176 @@ handle_info({tcp, Socket, Data}, #{socket := Socket, buffer := Buffer} = State) 
     {Messages, RemainingBuffer} = extract_messages(NewBuffer),
 
     %% Send messages to owner
+    Owner = State#state.owner,
     lists:foreach(fun(Msg) ->
-        maps:get(owner, State) ! {transport_message, Msg}
+        Owner ! {transport_message, Msg}
     end, Messages),
 
-    {noreply, State#{buffer := RemainingBuffer}};
+    {noreply, State#state{buffer = RemainingBuffer}};
 
-handle_info({tcp_closed, Socket}, #{socket := Socket} = State) ->
-    logger:info("TCP connection closed"),
+handle_info({tcp_closed, Socket}, #state{socket = Socket, mode = server} = State) ->
+    %% Server connection closed - stop the handler process
+    logger:info("Server connection closed"),
+    {stop, normal, State};
+
+handle_info({tcp_closed, Socket}, #state{socket = Socket, mode = client} = State) ->
+    %% Client connection closed - attempt reconnection
+    logger:info("Client connection closed"),
     {noreply, handle_disconnect(State, normal)};
 
-handle_info({tcp_error, Socket, Reason}, #{socket := Socket} = State) ->
-    logger:error("TCP error: ~p", [Reason]),
+handle_info({tcp_error, Socket, Reason}, #state{socket = Socket, mode = server} = State) ->
+    %% Server connection error - stop the handler process
+    logger:error("Server connection error: ~p", [Reason]),
+    {stop, {tcp_error, Reason}, State};
+
+handle_info({tcp_error, Socket, Reason}, #state{socket = Socket, mode = client} = State) ->
+    %% Client connection error - attempt reconnection
+    logger:error("Client connection error: ~p", [Reason]),
     {noreply, handle_disconnect(State, Reason)};
 
-handle_info(reconnect, State) ->
-    {noreply, attempt_connection(State#{reconnect_timer := undefined})};
+handle_info(reconnect, #state{mode = client} = State) ->
+    {noreply, attempt_connection(State#state{reconnect_timer = undefined})};
 
 handle_info({'DOWN', _MonitorRef, process, Owner, Reason},
-            #{owner := Owner} = State) ->
+            #state{owner = Owner} = State) ->
     logger:info("Owner process ~p died: ~p", [Owner, Reason]),
     {stop, {owner_died, Reason}, State};
 
-handle_info({'EXIT', Socket, Reason}, #{socket := Socket} = State) ->
+handle_info({'EXIT', Socket, Reason}, #state{socket = Socket} = State) ->
     logger:warning("Socket process died: ~p", [Reason]),
-    {noreply, handle_disconnect(State, Reason)};
+    case State#state.mode of
+        server ->
+            {stop, {socket_died, Reason}, State};
+        client ->
+            {noreply, handle_disconnect(State, Reason)}
+    end;
 
 handle_info(_Info, State) ->
     {noreply, State}.
 
--spec terminate(term(), state()) -> ok.
+%% @doc Cleanup on termination
 terminate(_Reason, State) ->
     %% Cancel reconnect timer if active
     cancel_reconnect_timer(State),
 
     %% Close socket if connected
-    case maps:get(socket, State, undefined) of
+    case State#state.socket of
         undefined -> ok;
         Socket -> gen_tcp:close(Socket)
     end,
+
+    %% Note: ranch listener cleanup is handled separately via close/1
     ok.
 
--spec code_change(term(), state(), term()) -> {ok, state()}.
+%% @doc Handle code upgrades
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%====================================================================
-%% Internal functions
+%% Internal Functions - Initialization
 %%====================================================================
 
--spec build_socket_options(tcp_opts()) -> [gen_tcp:connect_option()].
+%% @doc Initialize server listener using ranch
+init_server_listener(Opts) ->
+    process_flag(trap_exit, true),
+
+    Port = maps:get(port, Opts, 0),
+    ServerId = maps:get(server_id, Opts, undefined),
+    TransportId = maps:get(transport_id, Opts, undefined),
+    Owner = maps:get(owner, Opts, self()),
+    NumAcceptors = maps:get(num_acceptors, Opts, ?DEFAULT_NUM_ACCEPTORS),
+    MaxConnections = maps:get(max_connections, Opts, ?DEFAULT_MAX_CONNECTIONS),
+
+    %% Create unique ranch reference
+    RanchRef = make_ranch_ref(TransportId, ServerId),
+
+    %% Build socket options for ranch
+    SocketOpts = build_ranch_socket_options(Opts, Port),
+
+    %% Transport options for ranch
+    TransportOpts = #{
+        socket_opts => SocketOpts,
+        num_acceptors => NumAcceptors,
+        max_connections => MaxConnections
+    },
+
+    %% Protocol options passed to each connection handler
+    ProtocolOpts = #{
+        owner => Owner,
+        server_id => ServerId,
+        transport_id => TransportId
+    },
+
+    %% Start ranch listener
+    case ranch:start_listener(RanchRef, ranch_tcp, TransportOpts,
+                               ?MODULE, ProtocolOpts) of
+        {ok, _ListenerPid} ->
+            logger:info("TCP server started on port ~p with ranch ref ~p",
+                       [Port, RanchRef]),
+
+            %% Get the actual port if 0 was specified
+            ActualPort = case Port of
+                0 -> ranch:get_port(RanchRef);
+                _ -> Port
+            end,
+
+            {ok, #state{
+                mode = server,
+                transport_id = TransportId,
+                server_id = ServerId,
+                ranch_ref = RanchRef,
+                owner = Owner,
+                port = ActualPort,
+                connected = true
+            }};
+        {error, Reason} ->
+            {stop, {ranch_start_failed, Reason}}
+    end.
+
+%% @doc Initialize client process
+init_client_process(Opts) ->
+    process_flag(trap_exit, true),
+
+    Host = maps:get(host, Opts),
+    Port = maps:get(port, Opts),
+    Owner = maps:get(owner, Opts, self()),
+    ServerId = maps:get(server_id, Opts, undefined),
+    TransportId = maps:get(transport_id, Opts, undefined),
+    MaxReconnect = maps:get(max_reconnect_attempts, Opts,
+                           ?DEFAULT_MAX_RECONNECT_ATTEMPTS),
+
+    %% Monitor the owner process
+    monitor(process, Owner),
+
+    State = #state{
+        mode = client,
+        transport_id = TransportId,
+        server_id = ServerId,
+        owner = Owner,
+        host = Host,
+        port = Port,
+        options = build_socket_options(Opts),
+        max_reconnect_attempts = MaxReconnect
+    },
+
+    %% Attempt initial connection
+    self() ! connect,
+
+    {ok, State}.
+
+%% @doc Initialize server mode (called from erlmcp_transport:init/1)
+init_server(Opts) ->
+    init_server_listener(Opts).
+
+%% @doc Initialize client mode (called from erlmcp_transport:init/1)
+init_client(Opts) ->
+    init_client_process(Opts).
+
+%%====================================================================
+%% Internal Functions - Socket Options
+%%====================================================================
+
+%% @doc Build socket options for client connections
 build_socket_options(Opts) ->
     BaseOpts = [
         binary,
@@ -250,15 +433,47 @@ build_socket_options(Opts) ->
         | OptionalOpts
     ].
 
--spec attempt_connection(state()) -> state().
-attempt_connection(#{reconnect_attempts := Attempts,
-                     max_reconnect_attempts := MaxAttempts} = State)
+%% @doc Build socket options for ranch listener
+build_ranch_socket_options(Opts, Port) ->
+    BaseOpts = [
+        binary,
+        {active, false},  % Ranch manages this
+        {packet, line},
+        {reuseaddr, true},
+        {port, Port}
+    ],
+
+    BufferSize = maps:get(buffer_size, Opts, ?DEFAULT_BUFFER_SIZE),
+
+    OptionalOpts = lists:foldl(fun({Key, OptKey}, Acc) ->
+        case maps:get(Key, Opts, undefined) of
+            undefined -> Acc;
+            Value -> [{OptKey, Value} | Acc]
+        end
+    end, BaseOpts, [
+        {keepalive, keepalive},
+        {nodelay, nodelay}
+    ]),
+
+    [
+        {recbuf, BufferSize},
+        {sndbuf, BufferSize}
+        | OptionalOpts
+    ].
+
+%%====================================================================
+%% Internal Functions - Connection Management
+%%====================================================================
+
+%% @doc Attempt to establish a client connection
+attempt_connection(#state{reconnect_attempts = Attempts,
+                          max_reconnect_attempts = MaxAttempts} = State)
   when is_integer(MaxAttempts), Attempts >= MaxAttempts ->
     logger:error("Maximum reconnection attempts (~p) reached", [MaxAttempts]),
-    State#{connected := false};
+    State#state{connected = false};
 
-attempt_connection(#{host := Host, port := Port, options := Options} = State) ->
-    ConnectTimeout = maps:get(connect_timeout, State, ?DEFAULT_CONNECT_TIMEOUT),
+attempt_connection(#state{host = Host, port = Port, options = Options} = State) ->
+    ConnectTimeout = ?DEFAULT_CONNECT_TIMEOUT,
 
     logger:info("Attempting TCP connection to ~s:~p", [Host, Port]),
 
@@ -266,43 +481,44 @@ attempt_connection(#{host := Host, port := Port, options := Options} = State) ->
         {ok, Socket} ->
             logger:info("TCP connection established"),
             %% Notify owner of successful connection
-            maps:get(owner, State) ! {transport_connected, self()},
+            State#state.owner ! {transport_connected, self()},
 
-            State#{
-                socket := Socket,
-                connected := true,
-                reconnect_attempts := 0,
-                buffer := <<>>
+            State#state{
+                socket = Socket,
+                connected = true,
+                reconnect_attempts = 0,
+                buffer = <<>>
             };
         {error, Reason} ->
             logger:error("TCP connection failed: ~p", [Reason]),
             schedule_reconnect(State)
     end.
 
--spec handle_disconnect(state(), term()) -> state().
-handle_disconnect(#{socket := undefined} = State, _Reason) ->
+%% @doc Handle disconnection
+handle_disconnect(#state{socket = undefined} = State, _Reason) ->
     State;
-handle_disconnect(#{socket := Socket} = State, Reason) ->
+handle_disconnect(#state{socket = Socket, owner = Owner} = State, Reason) ->
     %% Close the socket
     catch gen_tcp:close(Socket),
 
     %% Notify owner
-    maps:get(owner, State) ! {transport_disconnected, self(), Reason},
+    Owner ! {transport_disconnected, self(), Reason},
 
     %% Schedule reconnection
-    NewState = State#{
-        socket := undefined,
-        connected := false,
-        buffer := <<>>
+    NewState = State#state{
+        socket = undefined,
+        connected = false,
+        buffer = <<>>
     },
 
     schedule_reconnect(NewState).
 
--spec schedule_reconnect(state()) -> state().
-schedule_reconnect(#{reconnect_timer := Timer} = State) when Timer =/= undefined ->
+%% @doc Schedule a reconnection attempt
+schedule_reconnect(#state{reconnect_timer = Timer} = State)
+  when Timer =/= undefined ->
     %% Already scheduled
     State;
-schedule_reconnect(#{reconnect_attempts := Attempts} = State) ->
+schedule_reconnect(#state{reconnect_attempts = Attempts} = State) ->
     %% Calculate backoff delay
     Delay = calculate_backoff(Attempts),
 
@@ -311,33 +527,35 @@ schedule_reconnect(#{reconnect_attempts := Attempts} = State) ->
 
     Timer = erlang:send_after(Delay, self(), reconnect),
 
-    State#{
-        reconnect_timer := Timer,
-        reconnect_attempts := Attempts + 1
+    State#state{
+        reconnect_timer = Timer,
+        reconnect_attempts = Attempts + 1
     }.
 
--spec calculate_backoff(non_neg_integer()) -> pos_integer().
+%% @doc Calculate exponential backoff with jitter
 calculate_backoff(Attempts) ->
-    %% Exponential backoff with jitter
     BaseDelay = min(?INITIAL_RECONNECT_DELAY * (1 bsl Attempts),
                     ?MAX_RECONNECT_DELAY),
     Jitter = rand:uniform(BaseDelay div 4),
     BaseDelay + Jitter.
 
--spec cancel_reconnect_timer(state()) -> ok.
-cancel_reconnect_timer(#{reconnect_timer := undefined}) ->
+%% @doc Cancel reconnection timer
+cancel_reconnect_timer(#state{reconnect_timer = undefined}) ->
     ok;
-cancel_reconnect_timer(#{reconnect_timer := Timer}) ->
+cancel_reconnect_timer(#state{reconnect_timer = Timer}) ->
     case erlang:cancel_timer(Timer) of
-        false -> ok;           %% Timer already fired
-        _ -> ok         %% Timer cancelled, TimeLeft is remaining milliseconds
+        false -> ok;  % Timer already fired
+        _ -> ok       % Timer cancelled
     end.
 
--spec extract_messages(binary()) -> {[binary()], binary()}.
+%%====================================================================
+%% Internal Functions - Message Processing
+%%====================================================================
+
+%% @doc Extract complete messages from buffer
 extract_messages(Buffer) ->
     extract_messages(Buffer, []).
 
--spec extract_messages(binary(), [binary()]) -> {[binary()], binary()}.
 extract_messages(Buffer, Acc) ->
     case binary:split(Buffer, <<"\n">>) of
         [_] ->
@@ -347,3 +565,26 @@ extract_messages(Buffer, Acc) ->
             %% Found a complete message
             extract_messages(Rest, [Message | Acc])
     end.
+
+%%====================================================================
+%% Internal Functions - Utilities
+%%====================================================================
+
+%% @doc Create a unique ranch reference
+make_ranch_ref(undefined, undefined) ->
+    list_to_atom("erlmcp_tcp_" ++ integer_to_list(erlang:unique_integer([positive])));
+make_ranch_ref(TransportId, undefined) ->
+    list_to_atom(atom_to_list(TransportId) ++ "_ranch");
+make_ranch_ref(undefined, ServerId) ->
+    list_to_atom(atom_to_list(ServerId) ++ "_ranch");
+make_ranch_ref(TransportId, ServerId) ->
+    list_to_atom(atom_to_list(TransportId) ++ "_" ++
+                 atom_to_list(ServerId) ++ "_ranch").
+
+%% @doc Update client options during reconnection
+update_client_opts(State, NewOpts) ->
+    State#state{
+        host = maps:get(host, NewOpts, State#state.host),
+        port = maps:get(port, NewOpts, State#state.port),
+        options = build_socket_options(NewOpts)
+    }.

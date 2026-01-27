@@ -1,0 +1,242 @@
+{
+  "andon_events": [
+    {
+      "id": "andon-001",
+      "type": "test_failure",
+      "work_order_id": "wo-sec-001",
+      "severity": "high",
+      "status": "triggered",
+      "details": {
+        "stage": "test",
+        "failed_tests": [
+          "security_test_SUITE:test_sql_injection_prevention",
+          "security_test_SUITE:test_input_validation"
+        ],
+        "failure_count": 2,
+        "test_suite": "security_test_SUITE",
+        "error_messages": [
+          "Expected SQL injection to be blocked, but query executed",
+          "Input validation allowed malicious payload"
+        ]
+      },
+      "triggered_at": 1706297800000,
+      "triggered_by": "tcps_pipeline",
+      "resolution": null,
+      "resolved_at": null,
+      "root_cause_analysis": null
+    },
+    {
+      "id": "andon-002",
+      "type": "compilation_error",
+      "work_order_id": "wo-rel-001",
+      "severity": "critical",
+      "status": "triggered",
+      "details": {
+        "stage": "compile",
+        "errors": [
+          {
+            "file": "src/connection_pool.erl",
+            "line": 142,
+            "message": "undefined function pool_manager:release/2"
+          }
+        ],
+        "warnings": [
+          {
+            "file": "src/connection_pool.erl",
+            "line": 89,
+            "message": "variable 'Timeout' is unused"
+          }
+        ],
+        "compilation_failed": true
+      },
+      "triggered_at": 1706297710000,
+      "triggered_by": "tcps_pipeline",
+      "resolution": null,
+      "resolved_at": null,
+      "root_cause_analysis": null
+    },
+    {
+      "id": "andon-003",
+      "type": "low_coverage",
+      "work_order_id": "wo-cost-001",
+      "severity": "medium",
+      "status": "triggered",
+      "details": {
+        "stage": "test",
+        "actual_coverage": 76.2,
+        "required_coverage": 80.0,
+        "coverage_gap": 3.8,
+        "uncovered_modules": [
+          "query_optimizer.erl (65% covered)",
+          "cache_manager.erl (70% covered)"
+        ],
+        "recommendation": "Add tests for uncovered code paths"
+      },
+      "triggered_at": 1706297820000,
+      "triggered_by": "tcps_quality_gates",
+      "resolution": null,
+      "resolved_at": null,
+      "root_cause_analysis": null
+    },
+    {
+      "id": "andon-004",
+      "type": "security_vulnerability",
+      "work_order_id": "wo-rel-002",
+      "severity": "high",
+      "status": "resolved",
+      "details": {
+        "stage": "security_scan",
+        "vulnerability": {
+          "severity": "medium",
+          "cve_id": "CVE-2024-9999",
+          "dependency": "httpc-lib",
+          "version": "2.1.0",
+          "fixed_in": "2.1.5",
+          "description": "HTTP request smuggling vulnerability"
+        },
+        "scan_tool": "dependency-check"
+      },
+      "triggered_at": 1706297920000,
+      "triggered_by": "tcps_security",
+      "resolution": {
+        "action": "dependency_upgrade",
+        "description": "Upgraded httpc-lib from 2.1.0 to 2.1.5",
+        "resolved_by": "security-team",
+        "verification": "Re-scan passed with 0 vulnerabilities"
+      },
+      "resolved_at": 1706299200000,
+      "root_cause_analysis": {
+        "why_1": "Why did the vulnerability exist? - Outdated dependency version",
+        "why_2": "Why was it outdated? - Dependency update not automated",
+        "why_3": "Why no automation? - Dependency management process not defined",
+        "why_4": "Why no process? - Team focused on features over security maintenance",
+        "why_5": "Why that focus? - No security champion role or security SLAs defined",
+        "root_cause": "Lack of security champion role and dependency management SLAs",
+        "corrective_action": "Implement automated dependency scanning and assign security champion",
+        "preventive_action": "Define security SLAs and regular dependency review schedule"
+      }
+    },
+    {
+      "id": "andon-005",
+      "type": "non_deterministic_build",
+      "work_order_id": "wo-feat-001",
+      "severity": "high",
+      "status": "triggered",
+      "details": {
+        "stage": "deterministic_build",
+        "build_hash_1": "sha256:a1b2c3d4e5f6...",
+        "build_hash_2": "sha256:x9y8z7w6v5u4...",
+        "hashes_match": false,
+        "non_deterministic_sources": [
+          {
+            "file": "src/graphql_handler.erl",
+            "line": 142,
+            "issue": "uses erlang:now() - generates different timestamps on each build"
+          },
+          {
+            "file": "src/timestamp_util.erl",
+            "line": 89,
+            "issue": "generates timestamp in module attribute at compile time"
+          }
+        ],
+        "recommendation": "Replace erlang:now() with compile-time constants or remove timestamps"
+      },
+      "triggered_at": 1706298010000,
+      "triggered_by": "tcps_deterministic",
+      "resolution": null,
+      "resolved_at": null,
+      "root_cause_analysis": null
+    },
+    {
+      "id": "andon-006",
+      "type": "wip_limit_exceeded",
+      "work_order_id": null,
+      "severity": "medium",
+      "status": "resolved",
+      "details": {
+        "bucket": "security",
+        "current_wip": 6,
+        "wip_limit": 5,
+        "blocked_work_orders": [
+          "wo-sec-004",
+          "wo-sec-005"
+        ],
+        "in_progress_work_orders": [
+          "wo-sec-001",
+          "wo-sec-002",
+          "wo-sec-003",
+          "wo-sec-006",
+          "wo-sec-007",
+          "wo-sec-008"
+        ]
+      },
+      "triggered_at": 1706298200000,
+      "triggered_by": "tcps_heijunka",
+      "resolution": {
+        "action": "wip_reduced",
+        "description": "Completed wo-sec-006 and wo-sec-007, WIP reduced to 4",
+        "resolved_by": "heijunka_scheduler"
+      },
+      "resolved_at": 1706300000000,
+      "root_cause_analysis": null
+    },
+    {
+      "id": "andon-007",
+      "type": "shacl_violation",
+      "work_order_id": "wo-comp-002",
+      "severity": "high",
+      "status": "triggered",
+      "details": {
+        "stage": "shacl_validation",
+        "violations": [
+          {
+            "shape": "MetadataShape",
+            "property": "retention_periods",
+            "message": "Missing required retention period for 'audit_logs'",
+            "severity": "violation"
+          },
+          {
+            "shape": "ComplianceWorkOrderShape",
+            "property": "regulation_reference",
+            "message": "regulation_reference must include article and section",
+            "severity": "violation"
+          }
+        ],
+        "warnings": [
+          {
+            "shape": "LabelShape",
+            "property": "labels",
+            "message": "Recommended label 'data-retention' is missing"
+          }
+        ]
+      },
+      "triggered_at": 1706298300000,
+      "triggered_by": "tcps_shacl_validator",
+      "resolution": null,
+      "resolved_at": null,
+      "root_cause_analysis": null
+    }
+  ],
+  "andon_metrics": {
+    "total_andons": 7,
+    "triggered": 5,
+    "resolved": 2,
+    "resolution_rate": 28.57,
+    "avg_resolution_time_ms": 1380000,
+    "by_type": {
+      "test_failure": 1,
+      "compilation_error": 1,
+      "low_coverage": 1,
+      "security_vulnerability": 1,
+      "non_deterministic_build": 1,
+      "wip_limit_exceeded": 1,
+      "shacl_violation": 1
+    },
+    "by_severity": {
+      "critical": 1,
+      "high": 4,
+      "medium": 2,
+      "low": 0
+    }
+  }
+}

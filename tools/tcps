@@ -1,0 +1,397 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -smp enable -pa _build/default/lib/*/ebin -pa ebin
+
+%%%-----------------------------------------------------------------------------
+%%% @doc TCPS CLI - Toyota Code Production System Command Line Interface
+%%%
+%%% Main entry point for all TCPS daily operations commands.
+%%%
+%%% Usage:
+%%%   tcps <command> [options]
+%%%
+%%% Commands:
+%%%   work-order    Manage work orders
+%%%   andon         Manage Andon stop-the-line events
+%%%   receipt       Manage and verify receipts
+%%%   quality       Quality gates and metrics
+%%%   kanban        Kanban WIP and scheduling
+%%%   kaizen        Continuous improvement
+%%%   root-cause    5 Whys root cause analysis
+%%%   tpm           Total Productive Maintenance
+%%%   example       Run example workflows
+%%%   help          Show help information
+%%%   version       Show version
+%%%
+%%% @end
+%%%-----------------------------------------------------------------------------
+
+main([]) ->
+    print_usage(),
+    halt(0);
+
+main(["help"]) ->
+    print_usage(),
+    halt(0);
+
+main(["help", Command]) ->
+    print_command_help(Command),
+    halt(0);
+
+main(["version"]) ->
+    io:format("TCPS CLI v1.0.0~n"),
+    io:format("Toyota Code Production System~n"),
+    halt(0);
+
+main(["work-order" | Args]) ->
+    tcps_cli_work_order:run(Args);
+
+main(["andon" | Args]) ->
+    tcps_cli_andon:run(Args);
+
+main(["receipt" | Args]) ->
+    tcps_cli_receipt:run(Args);
+
+main(["quality" | Args]) ->
+    tcps_cli_quality:run(Args);
+
+main(["kanban" | Args]) ->
+    tcps_cli_kanban:run(Args);
+
+main(["kaizen" | Args]) ->
+    tcps_cli_kaizen:run(Args);
+
+main(["root-cause" | Args]) ->
+    tcps_cli_root_cause:run(Args);
+
+main(["tpm" | Args]) ->
+    tcps_cli_tpm:run(Args);
+
+main(["example" | Args]) ->
+    tcps_cli_examples:run(Args);
+
+main([Unknown | _]) ->
+    io:format(standard_error, "Error: Unknown command '~s'~n~n", [Unknown]),
+    print_usage(),
+    halt(1).
+
+%%% Internal functions
+
+print_usage() ->
+    io:format("~s", [
+"TCPS CLI - Toyota Code Production System
+
+Usage: tcps <command> [options]
+
+Commands:
+  work-order    Manage work orders
+  andon         Manage Andon stop-the-line events
+  receipt       Manage and verify receipts
+  quality       Quality gates and metrics
+  kanban        Kanban WIP and scheduling
+  kaizen        Continuous improvement
+  root-cause    5 Whys root cause analysis
+  tpm           Total Productive Maintenance
+  example       Run example workflows
+  help          Show help information
+  version       Show version
+
+Global Options:
+  --format FORMAT    Output format: json, table (default), markdown
+  --color            Enable colored output (default if TTY)
+  --no-color         Disable colored output
+  --config FILE      Use custom config file
+  --verbose, -v      Verbose output
+  --quiet, -q        Minimal output
+
+Examples:
+  tcps work-order create --bucket security --priority 10
+  tcps andon trigger --type test_failure --sku sku_123
+  tcps receipt verify compilation sku_456
+  tcps quality gates sku_789
+  tcps kanban status
+  tcps kaizen report --weekly
+  tcps root-cause start andon_001
+  tcps tpm health
+
+Run 'tcps help <command>' for more information on a command.
+
+Configuration:
+  Config file: ~/.tcps/config or TCPS_CONFIG environment variable
+
+  Example config:
+    {ontology_path, \"/path/to/ontology\"}.
+    {receipts_path, \"/path/to/receipts\"}.
+    {shacl_shapes, \"/path/to/shapes\"}.
+    {output_format, table}.
+    {color_output, true}.
+"]).
+
+print_command_help("work-order") ->
+    io:format("~s", [
+"Work Order Management
+
+Usage: tcps work-order <subcommand> [options]
+
+Subcommands:
+  create       Create a new work order
+  list         List work orders
+  show         Show work order details
+  complete     Mark work order as complete
+  delete       Delete a work order
+
+Options for 'create':
+  --bucket BUCKET      Bucket: reliability, security, cost, compliance (required)
+  --priority NUM       Priority (0-100, default: 50)
+  --title TITLE        Work order title (required)
+  --description DESC   Description
+
+Options for 'list':
+  --status STATUS      Filter by status: pending, in_progress, completed
+  --bucket BUCKET      Filter by bucket
+  --limit NUM          Limit results (default: 50)
+
+Examples:
+  tcps work-order create --bucket security --priority 10 --title \"Fix CVE-2024-1234\"
+  tcps work-order list --status pending
+  tcps work-order show wo_123456
+  tcps work-order complete wo_123456
+"]);
+
+print_command_help("andon") ->
+    io:format("~s", [
+"Andon Stop-the-Line Management
+
+Usage: tcps andon <subcommand> [options]
+
+Subcommands:
+  trigger      Trigger an Andon event (stop the line)
+  list         List Andon events
+  show         Show Andon event details
+  resolve      Resolve an Andon event
+  status       Check if SKU is blocked
+
+Options for 'trigger':
+  --type TYPE          Failure type: test_failure, shacl_violation,
+                       compilation_failure, non_determinism, missing_receipt
+  --sku SKU_ID         SKU identifier (required)
+  --stage STAGE        Stage: compilation, testing, validation, execution
+  --message MSG        Failure message
+
+Options for 'list':
+  --open               Show only open events (default)
+  --all                Show all events
+  --sku SKU_ID         Filter by SKU
+
+Options for 'resolve':
+  --root-cause TEXT    Root cause (required)
+  --fix TEXT           Fix applied (required)
+  --prevention TEXT    Prevention measures (required)
+
+Examples:
+  tcps andon trigger --type test_failure --sku sku_123 --message \"Test failed\"
+  tcps andon list --open
+  tcps andon show ANDON-123
+  tcps andon resolve ANDON-123 --root-cause \"Race condition\" \\
+    --fix \"Added mutex\" --prevention \"Added concurrency test\"
+  tcps andon status sku_123
+"]);
+
+print_command_help("receipt") ->
+    io:format("~s", [
+"Receipt Management and Verification
+
+Usage: tcps receipt <subcommand> [options]
+
+Subcommands:
+  verify       Verify receipt for a stage
+  chain        Show complete receipt chain for SKU
+  list         List receipts
+  show         Show receipt details
+  validate     Validate receipt against SHACL
+
+Options for 'verify':
+  STAGE                Stage to verify (required)
+  SKU_ID               SKU identifier (required)
+
+Options for 'chain':
+  SKU_ID               SKU identifier (required)
+  --format FORMAT      Output format: table, json, markdown, graph
+
+Examples:
+  tcps receipt verify compilation sku_123
+  tcps receipt chain sku_123
+  tcps receipt chain sku_123 --format graph
+  tcps receipt list --recent 10
+  tcps receipt validate RCPT-456
+"]);
+
+print_command_help("quality") ->
+    io:format("~s", [
+"Quality Gates and Metrics
+
+Usage: tcps quality <subcommand> [options]
+
+Subcommands:
+  gates        Check all quality gates for SKU
+  metrics      Show quality metrics
+  dashboard    Interactive quality dashboard
+  report       Generate quality report
+
+Options for 'gates':
+  SKU_ID               SKU identifier (required)
+  --verbose            Show detailed gate status
+
+Options for 'metrics':
+  --period PERIOD      Period: daily, weekly (default), monthly
+  --bucket BUCKET      Filter by bucket
+  --compare            Compare with previous period
+
+Examples:
+  tcps quality gates sku_123
+  tcps quality metrics --period weekly
+  tcps quality metrics --period monthly --compare
+  tcps quality dashboard
+"]);
+
+print_command_help("kanban") ->
+    io:format("~s", [
+"Kanban WIP and Heijunka Scheduling
+
+Usage: tcps kanban <subcommand> [options]
+
+Subcommands:
+  status       Show current WIP status
+  schedule     Show Heijunka leveled schedule
+  set-limit    Set WIP limit for bucket
+  pull         Process a pull signal
+
+Options for 'status':
+  --bucket BUCKET      Show specific bucket
+
+Options for 'set-limit':
+  BUCKET               Bucket name (required)
+  LIMIT                WIP limit (required)
+
+Examples:
+  tcps kanban status
+  tcps kanban status --bucket security
+  tcps kanban schedule
+  tcps kanban set-limit security 10
+"]);
+
+print_command_help("kaizen") ->
+    io:format("~s", [
+"Kaizen Continuous Improvement
+
+Usage: tcps kaizen <subcommand> [options]
+
+Subcommands:
+  report       Generate Kaizen report
+  proposals    Show improvement proposals
+  apply        Apply an improvement
+  waste        Show waste analysis
+  trends       Show trend analysis
+
+Options for 'report':
+  --weekly             Weekly report (default)
+  --monthly            Monthly report
+  --output FILE        Save to file
+
+Options for 'proposals':
+  --top NUM            Show top N proposals (default: 10)
+  --roi-threshold N    Minimum ROI threshold
+
+Examples:
+  tcps kaizen report --weekly
+  tcps kaizen proposals --top 5
+  tcps kaizen apply improvement_123
+  tcps kaizen waste
+  tcps kaizen trends
+"]);
+
+print_command_help("root-cause") ->
+    io:format("~s", [
+"5 Whys Root Cause Analysis
+
+Usage: tcps root-cause <subcommand> [options]
+
+Subcommands:
+  start        Start new 5 Whys analysis
+  add-why      Add a why answer
+  finalize     Finalize analysis
+  show         Show analysis details
+  list         List all analyses
+
+Options for 'start':
+  ANDON_ID             Andon event ID (required)
+  --problem TEXT       Problem statement (optional, uses Andon if not provided)
+
+Options for 'add-why':
+  ANALYSIS_ID          Analysis ID (required)
+  WHY_NUMBER           Why number (1-5) (required)
+  TEXT                 Answer text (required)
+
+Options for 'finalize':
+  ANALYSIS_ID          Analysis ID (required)
+  --root-cause TEXT    Root cause (required)
+  --prevention TEXT    Prevention action (required)
+
+Examples:
+  tcps root-cause start ANDON-123
+  tcps root-cause add-why analysis_456 1 \"Test failed\"
+  tcps root-cause add-why analysis_456 2 \"No error handling\"
+  tcps root-cause finalize analysis_456 \\
+    --root-cause \"Missing validation\" \\
+    --prevention \"Add SHACL constraint\"
+"]);
+
+print_command_help("tpm") ->
+    io:format("~s", [
+"Total Productive Maintenance
+
+Usage: tcps tpm <subcommand> [options]
+
+Subcommands:
+  maintenance  Run daily maintenance tasks
+  dashboard    Show TPM dashboard
+  health       System health check
+  metrics      Show TPM metrics
+
+Options for 'maintenance':
+  --daily              Daily maintenance (default)
+  --weekly             Weekly maintenance
+  --force              Force maintenance even if recently run
+
+Examples:
+  tcps tpm maintenance --daily
+  tcps tpm dashboard
+  tcps tpm health
+  tcps tpm metrics
+"]);
+
+print_command_help("example") ->
+    io:format("~s", [
+"Example Workflows
+
+Usage: tcps example <workflow> [options]
+
+Workflows:
+  security-patch       Walk through security patch workflow
+  new-feature          Walk through feature development workflow
+  andon-resolve        Walk through Andon resolution workflow
+  full-cycle           Complete development cycle
+
+Options:
+  --interactive        Interactive mode with prompts
+  --dry-run            Show commands without executing
+
+Examples:
+  tcps example security-patch
+  tcps example new-feature --interactive
+  tcps example andon-resolve --dry-run
+"]);
+
+print_command_help(Unknown) ->
+    io:format(standard_error, "No help available for '~s'~n", [Unknown]),
+    halt(1).

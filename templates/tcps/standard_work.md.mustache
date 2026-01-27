@@ -1,0 +1,144 @@
+{{!
+  TCPS Standard Work Procedure Template (Markdown Format)
+
+  This template generates standard work documentation for production stages.
+  Standard work defines inputs, outputs, steps, SLO budgets, and failure modes.
+
+  Context Variables (required):
+    - stage_name: string - Name of production stage
+    - stage_id: string - Unique stage identifier
+    - description: string - Purpose of this stage
+    - inputs: array - List of input artifacts/data with descriptions
+    - outputs: array - List of output artifacts/data with descriptions
+    - steps: array - Ordered list of steps with actions and validations
+    - slo_time_budget_ms: number - Maximum time budget in milliseconds
+    - slo_success_rate: number - Minimum success rate (0.0-1.0)
+    - receipts: array - List of receipt types generated
+    - failure_modes: array - Known failure modes with causes and mitigations
+    - tools: array - Tools/commands used in this stage
+    - dependencies: array - Other stages this depends on
+    - owner: string - Team/person responsible
+    - last_updated: string - Last update timestamp
+    - version: string - Procedure version
+}}
+# Standard Work: {{stage_name}}
+
+**Stage ID**: `{{stage_id}}`
+**Version**: {{version}}
+**Owner**: {{owner}}
+**Last Updated**: {{last_updated}}
+
+## Purpose
+
+{{description}}
+
+## Service Level Objectives (SLO)
+
+- **Time Budget**: {{slo_time_budget_ms}}ms ({{slo_time_budget_seconds}}s)
+- **Success Rate**: {{slo_success_rate_percent}}% minimum
+- **Andon Trigger**: Any failure stops the line immediately
+
+## Inputs
+
+{{#inputs}}
+### {{name}}
+
+**Type**: `{{type}}`
+**Source**: {{source}}
+{{#description}}**Description**: {{description}}{{/description}}
+{{#validation}}**Validation**: {{validation}}{{/validation}}
+
+{{/inputs}}
+
+## Outputs
+
+{{#outputs}}
+### {{name}}
+
+**Type**: `{{type}}`
+**Destination**: {{destination}}
+{{#description}}**Description**: {{description}}{{/description}}
+{{#format}}**Format**: {{format}}{{/format}}
+
+{{/outputs}}
+
+## Procedure Steps
+
+{{#steps}}
+### Step {{step_number}}: {{step_name}}
+
+**Action**: {{action}}
+
+{{#validation}}
+**Validation**: {{validation}}
+{{/validation}}
+
+{{#expected_time_ms}}
+**Expected Time**: {{expected_time_ms}}ms
+{{/expected_time_ms}}
+
+{{#failure_action}}
+**On Failure**: {{failure_action}}
+{{/failure_action}}
+
+{{/steps}}
+
+## Receipts Generated
+
+This stage produces the following receipt types:
+
+{{#receipts}}
+- **{{receipt_type}}**: {{description}}
+  - Location: `{{path}}`
+  - Schema: {{schema_url}}
+{{/receipts}}
+
+## Tools & Commands
+
+{{#tools}}
+- **{{name}}**: `{{command}}`
+  {{#description}}- {{description}}{{/description}}
+{{/tools}}
+
+## Failure Modes & Mitigations
+
+{{#failure_modes}}
+### {{failure_mode}}
+
+**Severity**: {{severity}}
+**Root Cause**: {{root_cause}}
+**Detection**: {{detection_method}}
+**Mitigation**: {{mitigation}}
+{{#prevention}}**Prevention**: {{prevention}}{{/prevention}}
+
+{{/failure_modes}}
+
+## Dependencies
+
+This stage depends on:
+
+{{#dependencies}}
+- **{{stage_name}}** (`{{stage_id}}`): {{dependency_type}}
+{{/dependencies}}
+
+## Quality Gates
+
+Before proceeding to the next stage, verify:
+
+{{#quality_gates}}
+- [ ] {{gate_description}}
+{{/quality_gates}}
+
+## Kaizen Opportunities
+
+Continuous improvement focus areas:
+
+{{#kaizen_opportunities}}
+- {{opportunity}}
+{{/kaizen_opportunities}}
+
+---
+
+*This standard work document was generated from TCPS ontology on {{last_updated}}.*
+*Template version: 1.0.0*
+*If you cannot follow this standard work exactly, raise an Andon event.*

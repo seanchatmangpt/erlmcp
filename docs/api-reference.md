@@ -223,18 +223,227 @@ erlmcp_server:add_prompt_with_args(Server, <<"code_template">>,
 }
 ```
 
+## Transport Configuration (v0.6.0)
+
+### STDIO Transport
+
+```erlang
+Config = #{
+    type => stdio,
+    server_id => my_server  % Optional
+}.
+
+{ok, Transport} = erlmcp_transport_stdio_new:start_link(transport_id, Config).
+```
+
+### TCP Transport (with ranch)
+
+```erlang
+%% Server mode - accept connections
+ServerConfig = #{
+    type => tcp,
+    mode => server,
+    port => 8080,
+    server_id => my_server,
+    num_acceptors => 10,       % ranch acceptor pool
+    max_connections => 1000,   % ranch connection limit
+    keepalive => true,
+    nodelay => true
+}.
+
+%% Client mode - outbound connection
+ClientConfig = #{
+    type => tcp,
+    mode => client,
+    host => "localhost",
+    port => 8080,
+    server_id => my_server,
+    connect_timeout => 5000,
+    keepalive => true,
+    max_reconnect_attempts => 5
+}.
+
+{ok, Transport} = erlmcp_transport_tcp:start_link(transport_id, Config).
+```
+
+### HTTP Transport (with gun)
+
+```erlang
+Config = #{
+    type => http,
+    url => "https://api.example.com/mcp",
+    method => <<"POST">>,
+    headers => [
+        {<<"content-type">>, <<"application/json">>},
+        {<<"authorization">>, <<"Bearer token123">>}
+    ],
+    server_id => my_server,
+    timeout => 30000,
+    protocols => [http2, http],  % gun protocols
+    retry => 5,                  % gun retry count
+    retry_timeout => 1000        % gun retry delay
+}.
+
+{ok, Transport} = erlmcp_transport_http:start_link(transport_id, Config).
+```
+
+### Connection Pooling (with poolboy)
+
+```erlang
+%% Start connection pool
+PoolConfig = #{
+    pool_size => 10,
+    max_overflow => 5
+},
+
+{ok, PoolPid} = erlmcp:setup_connection_pool(http, PoolConfig).
+
+%% Use pooled connection
+Result = poolboy:transaction(http_pool, fun(Worker) ->
+    erlmcp_http_worker:request(Worker, Request)
+end).
+```
+
+## Registry API (v0.6.0 - gproc-based)
+
+```erlang
+%% Register server (automatic monitoring via gproc)
+-spec register_server(ServerId, ServerPid, Config) -> ok.
+ServerId :: atom() | binary()
+ServerPid :: pid()
+Config :: map()
+
+%% Register transport
+-spec register_transport(TransportId, TransportPid, Config) -> ok.
+
+%% Find registered server
+-spec find_server(ServerId) -> {ok, pid()} | {error, not_found}.
+
+%% Find registered transport
+-spec find_transport(TransportId) -> {ok, pid()} | {error, not_found}.
+
+%% List all servers
+-spec list_servers() -> [{ServerId, ServerPid}].
+
+%% List all transports
+-spec list_transports() -> [{TransportId, TransportPid}].
+
+%% Bind transport to server
+-spec bind_transport_to_server(TransportId, ServerId) -> ok.
+
+%% Get server for transport
+-spec get_server_for_transport(TransportId) ->
+    {ok, ServerId} | {error, not_found}.
+```
+
+**Note**: Registry now uses gproc for automatic process monitoring and cleanup. No manual monitoring needed.
+
+## Transport Behavior API (v0.6.0)
+
+### Required Callbacks
+
+```erlang
+%% Initialize transport
+-callback init(TransportId :: atom(), Config :: map()) ->
+    {ok, State :: term()} | {error, Reason :: term()}.
+
+%% Send data
+-callback send(State :: term(), Data :: iodata()) ->
+    ok | {error, Reason :: term()}.
+
+%% Close transport
+-callback close(State :: term()) -> ok.
+```
+
+### Optional Callbacks
+
+```erlang
+%% Get transport information
+-callback get_info(State :: term()) ->
+    #{type => atom(), status => atom(), peer => term()}.
+
+%% Handle custom calls
+-callback handle_transport_call(Request :: term(), State :: term()) ->
+    {reply, Reply :: term(), NewState :: term()} |
+    {error, Reason :: term()}.
+
+-optional_callbacks([get_info/1, handle_transport_call/2]).
+```
+
+### Standard Transport Messages
+
+All transports send these standardized messages:
+
+```erlang
+%% Incoming data
+{transport_data, Data :: binary()}
+
+%% Connection established
+{transport_connected, Info :: map()}
+
+%% Connection lost
+{transport_disconnected, Reason :: term()}
+
+%% Transport error
+{transport_error, Type :: atom(), Reason :: term()}
+```
+
+## Configuration Validation API (v0.6.0)
+
+```erlang
+%% Validate transport configuration
+-spec validate_transport_config(Config :: map()) ->
+    ok | {error, {missing_field, Field}} | {error, {invalid_value, Field, Value}}.
+
+%% TCP config validation
+validate_transport_config(#{type := tcp, mode := server} = Config) ->
+    RequiredFields = [type, mode, port],
+    validate_fields(Config, RequiredFields).
+
+%% HTTP config validation
+validate_transport_config(#{type := http} = Config) ->
+    RequiredFields = [type, url],
+    validate_fields(Config, RequiredFields).
+
+%% STDIO config validation
+validate_transport_config(#{type := stdio} = Config) ->
+    RequiredFields = [type],
+    validate_fields(Config, RequiredFields).
+```
+
 ## Error Handling
 
 Common error returns:
 
 ```erlang
+%% Protocol errors
 {error, not_initialized}
-{error, capability_not_supported} 
-{error, {tcp_error, Reason}}
+{error, capability_not_supported}
 {error, {invalid_response, Data}}
 {error, {error_response, #{<<"code">> => Code, <<"message">> => Message}}}
+
+%% Transport errors (v0.6.0)
+{error, {tcp_error, Reason}}
+{error, {http_error, Status, Body}}
+{error, {gun_error, Reason}}           % gun-specific
+{error, {ranch_error, Reason}}         % ranch-specific
+
+%% Registry errors (v0.6.0)
+{error, not_found}
+{error, already_registered}
+{error, {gproc_error, Reason}}
+
+%% Configuration errors (v0.6.0)
+{error, {missing_field, Field}}
+{error, {invalid_value, Field, Value}}
+{error, {unsupported_transport, Type}}
 ```
 
 ## Examples
 
-See the [examples directory](../examples/) for complete working examples.
+See the [examples directory](../examples/) for complete working examples including:
+- STDIO transport usage
+- TCP server and client modes (with ranch)
+- HTTP transport (with gun)
+- Connection pooling (with poolboy)
+- Registry integration (with gproc)

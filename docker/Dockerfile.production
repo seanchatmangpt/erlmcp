@@ -1,0 +1,69 @@
+FROM erlang:26-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    make \
+    gcc \
+    musl-dev \
+    openssl-dev
+
+# Set working directory
+WORKDIR /build
+
+# Copy source code
+COPY . .
+
+# Build release
+RUN rebar3 as prod release
+
+# Extract release version
+RUN mkdir -p /opt && \
+    cp -r _build/prod/rel/erlmcp /opt/erlmcp
+
+# =============================================================================
+# Runtime Stage
+# =============================================================================
+
+FROM alpine:3.18
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    openssl \
+    ncurses-libs \
+    libstdc++ \
+    ca-certificates \
+    bash \
+    curl
+
+# Create erlmcp user and group
+RUN addgroup -g 1000 erlmcp && \
+    adduser -D -u 1000 -G erlmcp erlmcp
+
+# Create necessary directories
+RUN mkdir -p /opt/erlmcp /var/log/erlmcp /var/lib/erlmcp && \
+    chown -R erlmcp:erlmcp /opt/erlmcp /var/log/erlmcp /var/lib/erlmcp
+
+# Copy release from builder
+COPY --from=builder --chown=erlmcp:erlmcp /opt/erlmcp /opt/erlmcp
+
+# Set working directory
+WORKDIR /opt/erlmcp
+
+# Switch to erlmcp user
+USER erlmcp
+
+# Expose ports
+EXPOSE 8080 4369 9100-9200
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD /opt/erlmcp/bin/erlmcp ping || exit 1
+
+# Set environment variables
+ENV ERLMCP_ENV=production \
+    PATH=/opt/erlmcp/bin:$PATH \
+    ERL_CRASH_DUMP=/var/log/erlmcp/erl_crash.dump
+
+# Start application
+CMD ["/opt/erlmcp/bin/erlmcp", "foreground"]

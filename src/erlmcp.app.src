@@ -14,7 +14,8 @@
       ssl,
       inets,
       jsx,
-      jesse
+      jesse,
+      poolboy
   ]},
   {mod, {erlmcp_app, []}},
   {env, [

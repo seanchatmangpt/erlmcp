@@ -1,0 +1,177 @@
+%% Production system configuration for ErlMCP
+%% Hardened, optimized, monitoring-focused, minimal debug output
+
+[
+    {erlmcp, [
+        %% Logging configuration - WARN level only for production
+        {log_level, warn},
+        {logger_level, warn},
+
+        %% Client defaults - strict, production-grade
+        {client_defaults, #{
+            timeout => 5000,
+            strict_mode => true,
+            max_pending_requests => 100,
+            retry_attempts => 2,
+            retry_backoff_ms => 1000,
+            circuit_breaker_enabled => true
+        }},
+
+        %% Server defaults - optimized for production
+        {server_defaults, #{
+            max_subscriptions_per_resource => 1000,
+            max_progress_tokens => 10000,
+            enable_debug_endpoints => false  % NEVER enable in production
+        }},
+
+        %% Transport settings - production hardened
+        {transport_defaults, #{
+            tcp => #{
+                connect_timeout => 5000,
+                keepalive => true,
+                nodelay => true,
+                listen_backlog => 512,
+                send_timeout => 30000
+            },
+            http => #{
+                connect_timeout => 5000,
+                request_timeout => 30000,
+                max_connections => 400,
+                connection_keepalive => true,
+                http2_enabled => true
+            },
+            stdio => #{
+                enabled => false  % Disabled in production
+            }
+        }},
+
+        %% Connection pooling - conservative, well-tuned
+        {connection_pooling, #{
+            enabled => true,
+            pool_size => 50,
+            max_overflow => 20,
+            pool_timeout => 30000,
+            idle_timeout_ms => 600000  %% 10 minutes
+        }},
+
+        %% Caching enabled with longer TTL
+        {cache_enabled, true},
+        {cache_ttl_seconds, 3600},
+        {cache_max_size, 100000},
+        {cache_compression, true},
+
+        %% Feature toggles - experimental disabled
+        {features, #{
+            rate_limiting => true,
+            rate_limit_per_second => 1000,
+            async_processing => true,
+            webhook_delivery => true,
+            experimental => false  %% NO experimental features
+        }},
+
+        %% Production-specific options
+        {production, #{
+            enable_console_logging => false,
+            enable_file_logging => true,
+            enable_sql_logging => false,
+            enable_http_logging => false,
+            enable_profiling => false,
+            enable_performance_monitoring => true,
+            enable_security_audit_log => true,
+            audit_log_dir => "/var/audit/erlmcp",
+            enable_backup_validation => true
+        }}
+    ]},
+
+    {kernel, [
+        {logger_level, warn},
+        {logger, [
+            %% Console handler - WARN and ERROR only
+            {handler, default, logger_std_h, #{
+                config => #{
+                    type => standard_io,
+                    sync_mode_qlen => 500,    % Higher queue in prod
+                    drop_mode_qlen => 5000,
+                    flush_qlen => 10000
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", msg, "\n"],
+                    time_offset => "",
+                    time_designator => $T,
+                    single_line => true,      % Compact format
+                    max_size => 2048
+                }},
+                filters => [
+                    {progress_reports, {fun logger_filters:progress/2, stop}},
+                    {sasl_reports, {fun logger_filters:domain/2, {stop, sub, [otp, sasl]}}}
+                ],
+                level => warn
+            }},
+
+            %% File handler - errors and warnings only
+            {handler, file_prod, logger_std_h, #{
+                config => #{
+                    file => "/var/logs/erlmcp.log",
+                    max_no_bytes => 104857600,  %% 100 MB
+                    max_no_files => 30,         %% Keep 30 files = ~3 GB
+                    compress_on_rotate => true
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"]
+                }},
+                level => warning
+            }},
+
+            %% Separate critical errors file
+            {handler, file_critical, logger_std_h, #{
+                config => #{
+                    file => "/var/logs/erlmcp-critical.log",
+                    max_no_bytes => 52428800,  %% 50 MB
+                    max_no_files => 10,
+                    compress_on_rotate => true
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"]
+                }},
+                level => error
+            }}
+        ]}
+    ]},
+
+    {sasl, [
+        {sasl_error_logger, false},
+        {errlog_type, error},
+        {error_logger_format_depth, 20}
+    ]},
+
+    %% Metrics collection (Prometheus)
+    {prometheus, [
+        {collectors, [
+            prometheus_counter,
+            prometheus_gauge,
+            prometheus_histogram,
+            prometheus_process_collector
+        ]},
+        {push_gateway_enabled, true},
+        {push_gateway_url, "http://prometheus-pushgateway.taiea-prod.svc.cluster.local:9091"}
+    ]},
+
+    %% Erlang VM tuning for production
+    {erl_crash_dump, "/var/logs/erl_crash.dump"},
+
+    %% TCP settings - production optimized
+    {inet, [
+        {tcp_listeners, [
+            #{port => 6000, opts => [
+                binary,
+                {packet, raw},
+                {reuseaddr, true},
+                {recbuf, 16384},      %% 16KB receive buffer
+                {sndbuf, 16384},      %% 16KB send buffer
+                {nodelay, true},
+                {keepalive, true},
+                {backlog, 512}
+            ]}
+        ]}
+    ]}
+].

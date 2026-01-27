@@ -1,0 +1,80 @@
+# TCPS Production Pipeline - Docker Container
+# Toyota Code Production System CI/CD Environment
+
+FROM erlang:27.1
+
+LABEL maintainer="TCPS Team" \
+      description="TCPS Production Pipeline Container" \
+      version="1.0.0"
+
+# ============================================================================
+# Install System Dependencies
+# ============================================================================
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    wget \
+    git \
+    build-essential \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ============================================================================
+# Install Rebar3
+# ============================================================================
+RUN wget https://s3.amazonaws.com/rebar3/rebar3 && \
+    chmod +x rebar3 && \
+    mv rebar3 /usr/local/bin/
+
+# ============================================================================
+# Install TCPS Python Dependencies
+# ============================================================================
+RUN pip3 install --no-cache-dir \
+    rdflib==7.0.0 \
+    pyshacl==0.25.0 \
+    pytest==8.0.0 \
+    pytest-cov==4.1.0
+
+# ============================================================================
+# Set up Working Directory
+# ============================================================================
+WORKDIR /workspace
+
+# ============================================================================
+# Copy TCPS System
+# ============================================================================
+COPY . /workspace
+
+# ============================================================================
+# Pre-compile Dependencies (for faster CI runs)
+# ============================================================================
+RUN rebar3 get-deps && \
+    rebar3 compile
+
+# ============================================================================
+# Default Command - Run Full TCPS Pipeline
+# ============================================================================
+CMD ["./ci/run-tcps-pipeline.sh"]
+
+# ============================================================================
+# Health Check
+# ============================================================================
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD rebar3 version || exit 1
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+ENV TCPS_QUALITY_GATE_COVERAGE=80 \
+    TCPS_QUALITY_GATE_PASS_RATE=80 \
+    TCPS_ENABLE_ANDON=true \
+    TCPS_ENABLE_RECEIPTS=true
+
+# ============================================================================
+# Metadata
+# ============================================================================
+LABEL org.opencontainers.image.title="TCPS Pipeline" \
+      org.opencontainers.image.description="Toyota Code Production System CI/CD" \
+      org.opencontainers.image.vendor="erlmcp" \
+      org.opencontainers.image.version="1.0.0"
