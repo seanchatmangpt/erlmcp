@@ -1,0 +1,22 @@
+{
+    "sourceFile": "src/erlmcp_setup.erl",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1756190395710,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1756190592733,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -3,17 +3,17 @@\n -export([start_stdio_setup/2, start_tcp_setup/3, start_http_setup/3,\n          start_transport_enhanced/3, start_transport_with_retry/4]).\n \n start_stdio_setup(ServerId, Config) ->\n-    erlmcp:start_stdio_setup(ServerId, Config).\n+  erlmcp:start_stdio_setup(ServerId, Config).\n \n start_tcp_setup(ServerId, ServerConfig, TcpConfig) ->\n-    erlmcp:start_tcp_setup(ServerId, ServerConfig, TcpConfig).\n+  erlmcp:start_tcp_setup(ServerId, ServerConfig, TcpConfig).\n \n start_http_setup(ServerId, ServerConfig, HttpConfig) ->\n-    erlmcp:start_http_setup(ServerId, ServerConfig, HttpConfig).\n+  erlmcp:start_http_setup(ServerId, ServerConfig, HttpConfig).\n \n start_transport_enhanced(TransportId, Type, Config) ->\n-    erlmcp:start_transport_enhanced(TransportId, Type, Config).\n+  erlmcp:start_transport_enhanced(TransportId, Type, Config).\n \n start_transport_with_retry(TransportId, Type, Config, MaxRetries) ->\n-    erlmcp:start_transport_with_retry(TransportId, Type, Config, MaxRetries).\n+  erlmcp:start_transport_with_retry(TransportId, Type, Config, MaxRetries).\n"
+                }
+            ],
+            "date": 1756190395710,
+            "name": "Commit-0",
+            "content": "-module(erlmcp_setup).\n\n-export([start_stdio_setup/2, start_tcp_setup/3, start_http_setup/3,\n         start_transport_enhanced/3, start_transport_with_retry/4]).\n\nstart_stdio_setup(ServerId, Config) ->\n    erlmcp:start_stdio_setup(ServerId, Config).\n\nstart_tcp_setup(ServerId, ServerConfig, TcpConfig) ->\n    erlmcp:start_tcp_setup(ServerId, ServerConfig, TcpConfig).\n\nstart_http_setup(ServerId, ServerConfig, HttpConfig) ->\n    erlmcp:start_http_setup(ServerId, ServerConfig, HttpConfig).\n\nstart_transport_enhanced(TransportId, Type, Config) ->\n    erlmcp:start_transport_enhanced(TransportId, Type, Config).\n\nstart_transport_with_retry(TransportId, Type, Config, MaxRetries) ->\n    erlmcp:start_transport_with_retry(TransportId, Type, Config, MaxRetries).\n"
+        }
+    ]
+}

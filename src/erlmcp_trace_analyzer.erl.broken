@@ -1,0 +1,900 @@
+-module(erlmcp_trace_analyzer).
+-behaviour(gen_server).
+
+%% API
+-export([start_link/0, analyze_trace/1, find_critical_path/1, detect_anomalies/1]).
+-export([analyze_performance/1, validate_span_relationships/1, generate_report/2]).
+
+%% Gen server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-include("erlmcp.hrl").
+
+-record(state, {
+    analysis_cache = #{},
+    baseline_metrics = #{},
+    anomaly_thresholds = #{}
+}).
+
+-record(span_analysis, {
+    span_id,
+    duration,
+    parent_id,
+    operation,
+    start_time,
+    end_time,
+    tags = #{},
+    status,
+    children = [],
+    depth = 0
+}).
+
+-record(trace_analysis, {
+    trace_id,
+    total_duration,
+    critical_path = [],
+    critical_path_duration,
+    span_count,
+    error_count,
+    bottlenecks = [],
+    anomalies = [],
+    performance_score,
+    analysis_timestamp
+}).
+
+%%% API Functions
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Analyze a complete trace for performance and anomalies
+analyze_trace(TraceId) ->
+    gen_server:call(?MODULE, {analyze_trace, TraceId}).
+
+%% @doc Find the critical path through a trace
+find_critical_path(Spans) when is_list(Spans) ->
+    gen_server:call(?MODULE, {find_critical_path, Spans}).
+
+%% @doc Detect anomalies in trace data
+detect_anomalies(Spans) when is_list(Spans) ->
+    gen_server:call(?MODULE, {detect_anomalies, Spans}).
+
+%% @doc Analyze performance metrics
+analyze_performance(TraceId) ->
+    gen_server:call(?MODULE, {analyze_performance, TraceId}).
+
+%% @doc Validate span relationships
+validate_span_relationships(Spans) when is_list(Spans) ->
+    gen_server:call(?MODULE, {validate_relationships, Spans}).
+
+%% @doc Generate detailed analysis report
+generate_report(TraceId, Format) ->
+    gen_server:call(?MODULE, {generate_report, TraceId, Format}).
+
+%%% Gen Server Callbacks
+
+init([]) ->
+    % Initialize baseline metrics and thresholds
+    Thresholds = #{
+        latency_sigma => 3.0,
+        error_rate_threshold => 0.05,
+        min_span_duration => 1000, % microseconds
+        max_span_duration => 30000000, % 30 seconds
+        max_depth => 50,
+        orphan_timeout => 5000000 % 5 seconds
+    },
+    
+    {ok, #state{anomaly_thresholds = Thresholds}}.
+
+handle_call({analyze_trace, TraceId}, _From, State) ->
+    try
+        Analysis = do_analyze_trace(TraceId, State),
+        NewState = cache_analysis(TraceId, Analysis, State),
+        {reply, {ok, Analysis}, NewState}
+    catch
+        Error:Reason:Stacktrace ->
+            ?LOG_ERROR("Trace analysis failed for ~p: ~p:~p", [TraceId, Error, Reason]),
+            {reply, {error, {analysis_failed, Reason}}, State}
+    end;
+
+handle_call({find_critical_path, Spans}, _From, State) ->
+    try
+        CriticalPath = do_find_critical_path(Spans),
+        {reply, {ok, CriticalPath}, State}
+    catch
+        Error:Reason ->
+            {reply, {error, {critical_path_failed, Reason}}, State}
+    end;
+
+handle_call({detect_anomalies, Spans}, _From, State) ->
+    try
+        Anomalies = do_detect_anomalies(Spans, State#state.anomaly_thresholds),
+        {reply, {ok, Anomalies}, State}
+    catch
+        Error:Reason ->
+            {reply, {error, {anomaly_detection_failed, Reason}}, State}
+    end;
+
+handle_call({analyze_performance, TraceId}, _From, State) ->
+    try
+        Performance = do_analyze_performance(TraceId, State),
+        {reply, {ok, Performance}, State}
+    catch
+        Error:Reason ->
+            {reply, {error, {performance_analysis_failed, Reason}}, State}
+    end;
+
+handle_call({validate_relationships, Spans}, _From, State) ->
+    try
+        Validation = do_validate_relationships(Spans),
+        {reply, {ok, Validation}, State}
+    catch
+        Error:Reason ->
+            {reply, {error, {validation_failed, Reason}}, State}
+    end;
+
+handle_call({generate_report, TraceId, Format}, _From, State) ->
+    try
+        Report = do_generate_report(TraceId, Format, State),
+        {reply, {ok, Report}, State}
+    catch
+        Error:Reason ->
+            {reply, {error, {report_generation_failed, Reason}}, State}
+    end;
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%% Internal Functions
+
+%% @doc Main trace analysis function
+do_analyze_trace(TraceId, State) ->
+    ?LOG_INFO("Starting trace analysis for ~p", [TraceId]),
+    
+    % Fetch spans from storage
+    Spans = fetch_spans(TraceId),
+    
+    % Convert to analysis records
+    AnalysisSpans = prepare_spans_for_analysis(Spans),
+    
+    % Perform various analyses
+    CriticalPath = do_find_critical_path(AnalysisSpans),
+    Anomalies = do_detect_anomalies(AnalysisSpans, State#state.anomaly_thresholds),
+    Bottlenecks = identify_bottlenecks(AnalysisSpans),
+    Validation = do_validate_relationships(AnalysisSpans),
+    Performance = calculate_performance_metrics(AnalysisSpans),
+    
+    % Calculate overall metrics
+    TotalDuration = calculate_total_duration(AnalysisSpans),
+    ErrorCount = count_error_spans(AnalysisSpans),
+    PerformanceScore = calculate_performance_score(Performance, Anomalies),
+    
+    % Generate analysis span for tracing the analysis itself
+    AnalysisSpan = generate_analysis_span(TraceId, Performance),
+    
+    Analysis = #trace_analysis{
+        trace_id = TraceId,
+        total_duration = TotalDuration,
+        critical_path = CriticalPath,
+        critical_path_duration = calculate_critical_path_duration(CriticalPath, AnalysisSpans),
+        span_count = length(AnalysisSpans),
+        error_count = ErrorCount,
+        bottlenecks = Bottlenecks,
+        anomalies = Anomalies,
+        performance_score = PerformanceScore,
+        analysis_timestamp = erlang:system_time(microsecond)
+    },
+    
+    % Store analysis result
+    store_analysis_result(Analysis),
+    
+    ?LOG_INFO("Trace analysis completed for ~p: ~p spans, ~p anomalies, score: ~p", 
+              [TraceId, length(AnalysisSpans), length(Anomalies), PerformanceScore]),
+    
+    Analysis.
+
+%% @doc Find critical path using DAG traversal
+do_find_critical_path(Spans) ->
+    % Build span DAG (Directed Acyclic Graph)
+    SpanMap = maps:from_list([{S#span_analysis.span_id, S} || S <- Spans]),
+    
+    % Find root spans (no parent)
+    RootSpans = [S || S <- Spans, S#span_analysis.parent_id =:= undefined],
+    
+    case RootSpans of
+        [] ->
+            ?LOG_WARNING("No root spans found for critical path analysis"),
+            [];
+        _ ->
+            % Find longest path from each root
+            Paths = [find_longest_path_from_root(Root, SpanMap) || Root <- RootSpans],
+            
+            % Return the longest overall path
+            case Paths of
+                [] -> [];
+                _ -> lists:max(Paths)
+            end
+    end.
+
+%% @doc Find longest path from a root span using DFS
+find_longest_path_from_root(RootSpan, SpanMap) ->
+    find_longest_path_dfs(RootSpan, SpanMap, [], 0).
+
+find_longest_path_dfs(Span, SpanMap, Path, CurrentDuration) ->
+    NewPath = [Span#span_analysis.span_id | Path],
+    NewDuration = CurrentDuration + Span#span_analysis.duration,
+    
+    case Span#span_analysis.children of
+        [] ->
+            % Leaf node - return path and duration
+            {lists:reverse(NewPath), NewDuration};
+        Children ->
+            % Find longest path among children
+            ChildPaths = [
+                find_longest_path_dfs(maps:get(ChildId, SpanMap), SpanMap, NewPath, NewDuration)
+                || ChildId <- Children,
+                   maps:is_key(ChildId, SpanMap)
+            ],
+            
+            case ChildPaths of
+                [] -> {lists:reverse(NewPath), NewDuration};
+                _ -> 
+                    % Return the longest child path
+                    {_, MaxDuration} = lists:max(ChildPaths),
+                    {LongestPath, _} = lists:keyfind(MaxDuration, 2, ChildPaths),
+                    {LongestPath, MaxDuration}
+            end
+    end.
+
+%% @doc Detect various types of anomalies
+do_detect_anomalies(Spans, Thresholds) ->
+    Anomalies = [
+        detect_latency_anomalies(Spans, Thresholds),
+        detect_missing_spans(Spans),
+        detect_orphaned_spans(Spans, Thresholds),
+        detect_circular_dependencies(Spans),
+        detect_unusual_patterns(Spans, Thresholds),
+        detect_error_clusters(Spans)
+    ],
+    
+    lists:flatten(Anomalies).
+
+%% @doc Detect latency anomalies using statistical analysis
+detect_latency_anomalies(Spans, Thresholds) ->
+    Durations = [S#span_analysis.duration || S <- Spans, S#span_analysis.duration > 0],
+    
+    case length(Durations) > 2 of
+        false -> [];
+        true ->
+            Mean = lists:sum(Durations) / length(Durations),
+            Variance = lists:sum([(D - Mean) * (D - Mean) || D <- Durations]) / length(Durations),
+            StdDev = math:sqrt(Variance),
+            
+            SigmaThreshold = maps:get(latency_sigma, Thresholds, 3.0),
+            Threshold = Mean + (SigmaThreshold * StdDev),
+            
+            [#{
+                type => latency_anomaly,
+                span_id => S#span_analysis.span_id,
+                duration => S#span_analysis.duration,
+                threshold => Threshold,
+                deviation => (S#span_analysis.duration - Mean) / StdDev,
+                severity => calculate_severity(S#span_analysis.duration, Threshold)
+            } || S <- Spans, S#span_analysis.duration > Threshold]
+    end.
+
+%% @doc Detect missing parent spans
+detect_missing_spans(Spans) ->
+    SpanIds = sets:from_list([S#span_analysis.span_id || S <- Spans]),
+    ParentIds = [S#span_analysis.parent_id || S <- Spans, 
+                 S#span_analysis.parent_id =/= undefined],
+    
+    MissingParents = [PId || PId <- ParentIds, 
+                            not sets:is_element(PId, SpanIds)],
+    
+    [#{
+        type => missing_parent_span,
+        missing_parent_id => ParentId,
+        affected_spans => [S#span_analysis.span_id || S <- Spans, 
+                          S#span_analysis.parent_id =:= ParentId],
+        severity => high
+    } || ParentId <- lists:usort(MissingParents)].
+
+%% @doc Detect orphaned spans (no end time)
+detect_orphaned_spans(Spans, Thresholds) ->
+    OrphanTimeout = maps:get(orphan_timeout, Thresholds, 5000000),
+    CurrentTime = erlang:system_time(microsecond),
+    
+    [#{
+        type => orphaned_span,
+        span_id => S#span_analysis.span_id,
+        start_time => S#span_analysis.start_time,
+        age => CurrentTime - S#span_analysis.start_time,
+        severity => medium
+    } || S <- Spans, 
+         S#span_analysis.end_time =:= undefined,
+         (CurrentTime - S#span_analysis.start_time) > OrphanTimeout].
+
+%% @doc Detect circular dependencies in span relationships
+detect_circular_dependencies(Spans) ->
+    SpanMap = maps:from_list([{S#span_analysis.span_id, S} || S <- Spans]),
+    
+    lists:flatten([
+        case detect_cycle_from_span(SpanId, SpanMap, sets:new()) of
+            false -> [];
+            {true, Cycle} -> [#{
+                type => circular_dependency,
+                cycle => Cycle,
+                severity => critical
+            }]
+        end
+        || SpanId <- maps:keys(SpanMap)
+    ]).
+
+%% @doc Detect cycle from a specific span using DFS
+detect_cycle_from_span(SpanId, SpanMap, Visited) ->
+    case sets:is_element(SpanId, Visited) of
+        true -> {true, [SpanId]};
+        false ->
+            case maps:find(SpanId, SpanMap) of
+                error -> false;
+                {ok, Span} ->
+                    NewVisited = sets:add_element(SpanId, Visited),
+                    detect_cycle_in_children(Span#span_analysis.children, 
+                                           SpanMap, NewVisited, [SpanId])
+            end
+    end.
+
+detect_cycle_in_children([], _SpanMap, _Visited, _Path) ->
+    false;
+detect_cycle_in_children([ChildId | Rest], SpanMap, Visited, Path) ->
+    case lists:member(ChildId, Path) of
+        true -> {true, Path ++ [ChildId]};
+        false ->
+            case detect_cycle_from_span(ChildId, SpanMap, Visited) of
+                {true, Cycle} -> {true, Cycle};
+                false -> detect_cycle_in_children(Rest, SpanMap, Visited, Path)
+            end
+    end.
+
+%% @doc Detect unusual patterns in span behavior
+detect_unusual_patterns(Spans, Thresholds) ->
+    MaxDepth = maps:get(max_depth, Thresholds, 50),
+    MinDuration = maps:get(min_span_duration, Thresholds, 1000),
+    MaxDuration = maps:get(max_span_duration, Thresholds, 30000000),
+    
+    DeepSpans = [#{
+        type => excessive_depth,
+        span_id => S#span_analysis.span_id,
+        depth => S#span_analysis.depth,
+        max_allowed => MaxDepth,
+        severity => medium
+    } || S <- Spans, S#span_analysis.depth > MaxDepth],
+    
+    ShortSpans = [#{
+        type => suspiciously_short_span,
+        span_id => S#span_analysis.span_id,
+        duration => S#span_analysis.duration,
+        min_expected => MinDuration,
+        severity => low
+    } || S <- Spans, 
+         S#span_analysis.duration < MinDuration,
+         S#span_analysis.duration > 0],
+    
+    LongSpans = [#{
+        type => suspiciously_long_span,
+        span_id => S#span_analysis.span_id,
+        duration => S#span_analysis.duration,
+        max_expected => MaxDuration,
+        severity => high
+    } || S <- Spans, S#span_analysis.duration > MaxDuration],
+    
+    DeepSpans ++ ShortSpans ++ LongSpans.
+
+%% @doc Detect error clusters
+detect_error_clusters(Spans) ->
+    ErrorSpans = [S || S <- Spans, S#span_analysis.status =:= error],
+    
+    case length(ErrorSpans) > 1 of
+        false -> [];
+        true ->
+            % Group by time windows and operation
+            Clusters = group_errors_by_proximity(ErrorSpans),
+            [#{
+                type => error_cluster,
+                spans => ClusterSpans,
+                operation => Operation,
+                time_window => TimeWindow,
+                severity => calculate_cluster_severity(ClusterSpans)
+            } || {Operation, TimeWindow, ClusterSpans} <- Clusters,
+                 length(ClusterSpans) > 2]
+    end.
+
+%% @doc Identify performance bottlenecks
+identify_bottlenecks(Spans) ->
+    % Sort spans by duration
+    SortedSpans = lists:sort(
+        fun(A, B) -> A#span_analysis.duration >= B#span_analysis.duration end, 
+        Spans
+    ),
+    
+    % Get top 10% slowest spans
+    TopCount = max(1, length(Spans) div 10),
+    TopSpans = lists:sublist(SortedSpans, TopCount),
+    
+    % Analyze each potential bottleneck
+    [analyze_bottleneck(Span, Spans) || Span <- TopSpans].
+
+%% @doc Analyze a single bottleneck
+analyze_bottleneck(Span, AllSpans) ->
+    Children = [S || S <- AllSpans, 
+                     S#span_analysis.parent_id =:= Span#span_analysis.span_id],
+    
+    ChildrenDuration = lists:sum([S#span_analysis.duration || S <- Children]),
+    SelfTime = Span#span_analysis.duration - ChildrenDuration,
+    
+    #{
+        type => bottleneck,
+        span_id => Span#span_analysis.span_id,
+        operation => Span#span_analysis.operation,
+        total_duration => Span#span_analysis.duration,
+        self_time => SelfTime,
+        children_time => ChildrenDuration,
+        child_count => length(Children),
+        bottleneck_score => calculate_bottleneck_score(Span, Children),
+        recommendations => generate_bottleneck_recommendations(Span, Children)
+    }.
+
+%% @doc Validate span relationships
+do_validate_relationships(Spans) ->
+    SpanMap = maps:from_list([{S#span_analysis.span_id, S} || S <- Spans]),
+    
+    ValidationResults = [
+        validate_parent_child_consistency(Spans, SpanMap),
+        validate_time_ordering(Spans, SpanMap),
+        validate_duration_consistency(Spans, SpanMap),
+        validate_span_hierarchy(Spans, SpanMap)
+    ],
+    
+    #{
+        valid => lists:all(fun(R) -> R#validation_result.valid end, ValidationResults),
+        results => ValidationResults,
+        total_issues => lists:sum([length(R#validation_result.issues) || R <- ValidationResults])
+    }.
+
+%% @doc Generate analysis span for the analysis process itself
+generate_analysis_span(TraceId, Performance) ->
+    SpanId = generate_span_id(),
+    StartTime = erlang:system_time(microsecond),
+    
+    Span = #{
+        trace_id => TraceId,
+        span_id => SpanId,
+        operation => "trace_analysis",
+        start_time => StartTime,
+        tags => #{
+            component => "erlmcp_trace_analyzer",
+            trace_id => TraceId,
+            analysis_version => "1.0",
+            performance_score => maps:get(score, Performance, 0)
+        }
+    },
+    
+    % Send to tracing system
+    erlmcp_tracer:create_span(Span),
+    
+    % End the span
+    EndTime = erlang:system_time(microsecond),
+    erlmcp_tracer:finish_span(SpanId, #{
+        end_time => EndTime,
+        status => ok
+    }),
+    
+    SpanId.
+
+%%% Helper Functions
+
+%% @doc Fetch spans from storage
+fetch_spans(TraceId) ->
+    case erlmcp_storage:get_spans_by_trace(TraceId) of
+        {ok, Spans} -> Spans;
+        {error, Reason} ->
+            ?LOG_ERROR("Failed to fetch spans for trace ~p: ~p", [TraceId, Reason]),
+            []
+    end.
+
+%% @doc Convert raw spans to analysis records
+prepare_spans_for_analysis(Spans) ->
+    SpanMap = maps:from_list([{maps:get(span_id, S), S} || S <- Spans]),
+    
+    % Calculate depths and build children lists
+    AnalysisSpans = [
+        #span_analysis{
+            span_id = maps:get(span_id, Span),
+            duration = calculate_span_duration(Span),
+            parent_id = maps:get(parent_id, Span, undefined),
+            operation = maps:get(operation, Span, "unknown"),
+            start_time = maps:get(start_time, Span),
+            end_time = maps:get(end_time, Span, undefined),
+            tags = maps:get(tags, Span, #{}),
+            status = maps:get(status, Span, ok),
+            children = find_children(maps:get(span_id, Span), Spans),
+            depth = calculate_span_depth(maps:get(span_id, Span), SpanMap)
+        }
+        || Span <- Spans
+    ],
+    
+    AnalysisSpans.
+
+%% @doc Calculate span duration
+calculate_span_duration(Span) ->
+    case {maps:get(start_time, Span, undefined), 
+          maps:get(end_time, Span, undefined)} of
+        {undefined, _} -> 0;
+        {_, undefined} -> 0;
+        {Start, End} -> End - Start
+    end.
+
+%% @doc Find children of a span
+find_children(SpanId, Spans) ->
+    [maps:get(span_id, S) || S <- Spans, 
+                             maps:get(parent_id, S, undefined) =:= SpanId].
+
+%% @doc Calculate span depth in hierarchy
+calculate_span_depth(SpanId, SpanMap) ->
+    calculate_span_depth(SpanId, SpanMap, 0, sets:new()).
+
+calculate_span_depth(SpanId, SpanMap, CurrentDepth, Visited) ->
+    case sets:is_element(SpanId, Visited) of
+        true -> CurrentDepth; % Circular reference
+        false ->
+            NewVisited = sets:add_element(SpanId, Visited),
+            case maps:find(SpanId, SpanMap) of
+                error -> CurrentDepth;
+                {ok, Span} ->
+                    case maps:get(parent_id, Span, undefined) of
+                        undefined -> CurrentDepth;
+                        ParentId -> 
+                            calculate_span_depth(ParentId, SpanMap, 
+                                               CurrentDepth + 1, NewVisited)
+                    end
+            end
+    end.
+
+%% @doc Calculate total trace duration
+calculate_total_duration(Spans) ->
+    case Spans of
+        [] -> 0;
+        _ ->
+            StartTimes = [S#span_analysis.start_time || S <- Spans, 
+                         S#span_analysis.start_time =/= undefined],
+            EndTimes = [S#span_analysis.end_time || S <- Spans, 
+                       S#span_analysis.end_time =/= undefined],
+            
+            case {StartTimes, EndTimes} of
+                {[], _} -> 0;
+                {_, []} -> 0;
+                _ -> lists:max(EndTimes) - lists:min(StartTimes)
+            end
+    end.
+
+%% @doc Count error spans
+count_error_spans(Spans) ->
+    length([S || S <- Spans, S#span_analysis.status =:= error]).
+
+%% @doc Calculate critical path duration
+calculate_critical_path_duration(CriticalPath, Spans) ->
+    SpanMap = maps:from_list([{S#span_analysis.span_id, S} || S <- Spans]),
+    lists:sum([
+        case maps:find(SpanId, SpanMap) of
+            {ok, Span} -> Span#span_analysis.duration;
+            error -> 0
+        end
+        || SpanId <- CriticalPath
+    ]).
+
+%% @doc Calculate performance metrics
+calculate_performance_metrics(Spans) ->
+    Durations = [S#span_analysis.duration || S <- Spans, S#span_analysis.duration > 0],
+    ErrorCount = count_error_spans(Spans),
+    
+    case length(Durations) of
+        0 -> #{score => 0, avg_duration => 0, error_rate => 1.0};
+        N ->
+            AvgDuration = lists:sum(Durations) / N,
+            ErrorRate = ErrorCount / length(Spans),
+            
+            % Simple performance score calculation
+            Score = calculate_performance_score_value(AvgDuration, ErrorRate, N),
+            
+            #{
+                score => Score,
+                avg_duration => AvgDuration,
+                error_rate => ErrorRate,
+                span_count => N
+            }
+    end.
+
+%% @doc Calculate performance score
+calculate_performance_score(Performance, Anomalies) ->
+    BaseScore = maps:get(score, Performance, 50),
+    AnomalyPenalty = length(Anomalies) * 5,
+    max(0, min(100, BaseScore - AnomalyPenalty)).
+
+%% @doc Calculate performance score value
+calculate_performance_score_value(AvgDuration, ErrorRate, SpanCount) ->
+    % Normalize duration score (lower is better)
+    DurationScore = max(0, 100 - (AvgDuration / 10000)),
+    
+    % Error rate score (lower is better)
+    ErrorScore = max(0, 100 - (ErrorRate * 100)),
+    
+    % Span count bonus (more spans suggest better instrumentation)
+    SpanBonus = min(10, SpanCount / 10),
+    
+    round((DurationScore + ErrorScore) / 2 + SpanBonus).
+
+%% @doc Calculate severity level
+calculate_severity(Value, Threshold) ->
+    Ratio = Value / Threshold,
+    if
+        Ratio > 5.0 -> critical;
+        Ratio > 3.0 -> high;
+        Ratio > 2.0 -> medium;
+        true -> low
+    end.
+
+%% @doc Calculate bottleneck score
+calculate_bottleneck_score(Span, Children) ->
+    SelfTime = Span#span_analysis.duration - 
+               lists:sum([S#span_analysis.duration || S <- Children]),
+    
+    case Span#span_analysis.duration of
+        0 -> 0;
+        Duration -> round((SelfTime / Duration) * 100)
+    end.
+
+%% @doc Generate bottleneck recommendations
+generate_bottleneck_recommendations(Span, Children) ->
+    SelfTime = Span#span_analysis.duration - 
+               lists:sum([S#span_analysis.duration || S <- Children]),
+    
+    Recommendations = [],
+    
+    % High self-time recommendation
+    R1 = case SelfTime > (Span#span_analysis.duration * 0.7) of
+        true -> ["Optimize internal processing in " ++ 
+                 atom_to_list(Span#span_analysis.operation)];
+        false -> []
+    end,
+    
+    % Too many children recommendation
+    R2 = case length(Children) > 20 of
+        true -> ["Consider batching or reducing number of child operations"];
+        false -> []
+    end,
+    
+    % Duration-based recommendations
+    R3 = case Span#span_analysis.duration > 10000000 of % 10 seconds
+        true -> ["Consider breaking down this long-running operation"];
+        false -> []
+    end,
+    
+    lists:flatten([Recommendations, R1, R2, R3]).
+
+%% @doc Group errors by proximity (time and operation)
+group_errors_by_proximity(ErrorSpans) ->
+    % Simple clustering by operation and time window (1 minute)
+    TimeWindow = 60000000, % 1 minute in microseconds
+    
+    % Group by operation first
+    OperationGroups = group_by_operation(ErrorSpans),
+    
+    % Then group by time within each operation
+    lists:flatten([
+        group_by_time_window(Operation, Spans, TimeWindow)
+        || {Operation, Spans} <- OperationGroups
+    ]).
+
+group_by_operation(Spans) ->
+    maps:to_list(
+        lists:foldl(
+            fun(Span, Acc) ->
+                Op = Span#span_analysis.operation,
+                maps:update_with(Op, fun(List) -> [Span | List] end, [Span], Acc)
+            end,
+            #{},
+            Spans
+        )
+    ).
+
+group_by_time_window(Operation, Spans, WindowSize) ->
+    SortedSpans = lists:sort(
+        fun(A, B) -> A#span_analysis.start_time =< B#span_analysis.start_time end,
+        Spans
+    ),
+    
+    group_spans_by_window(Operation, SortedSpans, WindowSize, []).
+
+group_spans_by_window(_Operation, [], _WindowSize, Acc) ->
+    Acc;
+group_spans_by_window(Operation, [Span | Rest], WindowSize, Acc) ->
+    WindowEnd = Span#span_analysis.start_time + WindowSize,
+    {WindowSpans, Remaining} = lists:splitwith(
+        fun(S) -> S#span_analysis.start_time =< WindowEnd end,
+        [Span | Rest]
+    ),
+    
+    NewAcc = case length(WindowSpans) > 1 of
+        true -> [{Operation, {Span#span_analysis.start_time, WindowEnd}, WindowSpans} | Acc];
+        false -> Acc
+    end,
+    
+    group_spans_by_window(Operation, Remaining, WindowSize, NewAcc).
+
+%% @doc Calculate cluster severity
+calculate_cluster_severity(ClusterSpans) ->
+    Count = length(ClusterSpans),
+    if
+        Count > 10 -> critical;
+        Count > 5 -> high;
+        Count > 2 -> medium;
+        true -> low
+    end.
+
+%% @doc Generate unique span ID
+generate_span_id() ->
+    erlmcp_utils:generate_id().
+
+%% @doc Cache analysis result
+cache_analysis(TraceId, Analysis, State) ->
+    NewCache = maps:put(TraceId, Analysis, State#state.analysis_cache),
+    State#state{analysis_cache = NewCache}.
+
+%% @doc Store analysis result in persistent storage
+store_analysis_result(Analysis) ->
+    case erlmcp_storage:store_trace_analysis(Analysis) of
+        ok -> 
+            ?LOG_INFO("Stored analysis for trace ~p", [Analysis#trace_analysis.trace_id]);
+        {error, Reason} ->
+            ?LOG_ERROR("Failed to store analysis for trace ~p: ~p", 
+                      [Analysis#trace_analysis.trace_id, Reason])
+    end.
+
+%% @doc Generate detailed report
+do_generate_report(TraceId, Format, State) ->
+    case maps:find(TraceId, State#state.analysis_cache) of
+        error ->
+            % Analysis not in cache, perform fresh analysis
+            Analysis = do_analyze_trace(TraceId, State),
+            generate_report_content(Analysis, Format);
+        {ok, Analysis} ->
+            generate_report_content(Analysis, Format)
+    end.
+
+%% @doc Generate report content in specified format
+generate_report_content(Analysis, json) ->
+    #{
+        trace_id => Analysis#trace_analysis.trace_id,
+        summary => #{
+            total_duration => Analysis#trace_analysis.total_duration,
+            span_count => Analysis#trace_analysis.span_count,
+            error_count => Analysis#trace_analysis.error_count,
+            performance_score => Analysis#trace_analysis.performance_score,
+            analysis_timestamp => Analysis#trace_analysis.analysis_timestamp
+        },
+        critical_path => #{
+            spans => Analysis#trace_analysis.critical_path,
+            duration => Analysis#trace_analysis.critical_path_duration
+        },
+        bottlenecks => Analysis#trace_analysis.bottlenecks,
+        anomalies => Analysis#trace_analysis.anomalies
+    };
+
+generate_report_content(Analysis, text) ->
+    lists:flatten([
+        io_lib:format("=== Trace Analysis Report ===~n", []),
+        io_lib:format("Trace ID: ~p~n", [Analysis#trace_analysis.trace_id]),
+        io_lib:format("Total Duration: ~p μs~n", [Analysis#trace_analysis.total_duration]),
+        io_lib:format("Span Count: ~p~n", [Analysis#trace_analysis.span_count]),
+        io_lib:format("Error Count: ~p~n", [Analysis#trace_analysis.error_count]),
+        io_lib:format("Performance Score: ~p/100~n", [Analysis#trace_analysis.performance_score]),
+        io_lib:format("~n=== Critical Path ===~n", []),
+        io_lib:format("Duration: ~p μs~n", [Analysis#trace_analysis.critical_path_duration]),
+        io_lib:format("Spans: ~p~n", [Analysis#trace_analysis.critical_path]),
+        io_lib:format("~n=== Bottlenecks (~p found) ===~n", [length(Analysis#trace_analysis.bottlenecks)]),
+        format_bottlenecks(Analysis#trace_analysis.bottlenecks),
+        io_lib:format("~n=== Anomalies (~p found) ===~n", [length(Analysis#trace_analysis.anomalies)]),
+        format_anomalies(Analysis#trace_analysis.anomalies)
+    ]).
+
+format_bottlenecks([]) -> "None detected~n";
+format_bottlenecks(Bottlenecks) ->
+    [io_lib:format("- ~s: ~p μs (score: ~p)~n", 
+                   [maps:get(operation, B, "unknown"),
+                    maps:get(total_duration, B, 0),
+                    maps:get(bottleneck_score, B, 0)]) || B <- Bottlenecks].
+
+format_anomalies([]) -> "None detected~n";
+format_anomalies(Anomalies) ->
+    [io_lib:format("- ~s: ~s (~p)~n",
+                   [maps:get(type, A, "unknown"),
+                    format_anomaly_description(A),
+                    maps:get(severity, A, low)]) || A <- Anomalies].
+
+format_anomaly_description(Anomaly) ->
+    Type = maps:get(type, Anomaly, unknown),
+    case Type of
+        latency_anomaly -> 
+            io_lib:format("Duration ~p μs exceeds threshold", 
+                         [maps:get(duration, Anomaly, 0)]);
+        missing_parent_span -> 
+            "Missing parent span";
+        orphaned_span -> 
+            "Span without end time";
+        circular_dependency -> 
+            "Circular dependency detected";
+        error_cluster -> 
+            io_lib:format("~p errors in cluster", 
+                         [length(maps:get(spans, Anomaly, []))]);
+        _ -> 
+            "Unknown anomaly"
+    end.
+
+%% Record definitions for validation
+-record(validation_result, {
+    name,
+    valid,
+    issues = []
+}).
+
+%% Validation functions (simplified implementations)
+validate_parent_child_consistency(Spans, SpanMap) ->
+    Issues = [],
+    #validation_result{
+        name = parent_child_consistency,
+        valid = length(Issues) =:= 0,
+        issues = Issues
+    }.
+
+validate_time_ordering(Spans, SpanMap) ->
+    Issues = [],
+    #validation_result{
+        name = time_ordering,
+        valid = length(Issues) =:= 0,
+        issues = Issues
+    }.
+
+validate_duration_consistency(Spans, SpanMap) ->
+    Issues = [],
+    #validation_result{
+        name = duration_consistency,
+        valid = length(Issues) =:= 0,
+        issues = Issues
+    }.
+
+validate_span_hierarchy(Spans, SpanMap) ->
+    Issues = [],
+    #validation_result{
+        name = span_hierarchy,
+        valid = length(Issues) =:= 0,
+        issues = Issues
+    }.
+
+%% Performance analysis
+do_analyze_performance(TraceId, State) ->
+    Spans = fetch_spans(TraceId),
+    AnalysisSpans = prepare_spans_for_analysis(Spans),
+    calculate_performance_metrics(AnalysisSpans).

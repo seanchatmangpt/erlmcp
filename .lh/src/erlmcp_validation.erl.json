@@ -1,0 +1,22 @@
+{
+    "sourceFile": "src/erlmcp_validation.erl",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1756190395710,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1756190592732,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -3,14 +3,14 @@\n -export([validate_transport_config/1, validate_transport_config/2, get_config_schema/1,\n          initialize/0]).\n \n validate_transport_config(Config) ->\n-    erlmcp:validate_transport_config(Config).\n+  erlmcp:validate_transport_config(Config).\n \n validate_transport_config(Type, Config) ->\n-    erlmcp:validate_transport_config(Type, Config).\n+  erlmcp:validate_transport_config(Type, Config).\n \n get_config_schema(Type) ->\n-    erlmcp:get_config_schema(Type).\n+  erlmcp:get_config_schema(Type).\n \n initialize() ->\n-    erlmcp:initialize_config_validation().\n+  erlmcp:initialize_config_validation().\n"
+                }
+            ],
+            "date": 1756190395710,
+            "name": "Commit-0",
+            "content": "-module(erlmcp_validation).\n\n-export([validate_transport_config/1, validate_transport_config/2, get_config_schema/1,\n         initialize/0]).\n\nvalidate_transport_config(Config) ->\n    erlmcp:validate_transport_config(Config).\n\nvalidate_transport_config(Type, Config) ->\n    erlmcp:validate_transport_config(Type, Config).\n\nget_config_schema(Type) ->\n    erlmcp:get_config_schema(Type).\n\ninitialize() ->\n    erlmcp:initialize_config_validation().\n"
+        }
+    ]
+}
