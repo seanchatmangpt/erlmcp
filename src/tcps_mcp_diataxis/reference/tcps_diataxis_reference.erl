@@ -416,7 +416,7 @@ extract_exported_functions(Module, AbstractCode) ->
     [extract_function_info(Module, Name, Arity, AbstractCode)
      || {Name, Arity} <- Exports].
 
-parse_function(Function) ->
+parse_function(_Function) ->
     %% Simplified function parsing for compatibility
     #{name => unknown, arity => 0, signature => <<"unknown">>,
       parameters => [], return_type => <<"term()">>,
