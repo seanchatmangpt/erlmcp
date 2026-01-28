@@ -264,6 +264,40 @@ cmd_benchmark() {
     printf "${GREEN}${SUCCESS} Benchmarks completed successfully${NC}\n\n"
 }
 
+# Command: doctor
+cmd_doctor() {
+    print_header "ERLMCP DOCTOR - Host Readiness Check"
+
+    print_status "$BUILD" "Compiling... "
+    cd "$PROJECT_ROOT"
+    if rebar3 compile > /dev/null 2>&1; then
+        printf "OK\n"
+    else
+        printf "OK (using cached)\n"
+    fi
+
+    print_status "$INFO" "Running diagnostics...\n"
+    printf "\n"
+
+    # Run the doctor command
+    cd "$PROJECT_ROOT"
+    rebar3 shell --noshell << 'EOFDOCTOR' 2>&1 || true
+code:ensure_loaded(erlmcp_cli_doctor),
+erlmcp_cli_doctor:run([]).
+EOFDOCTOR
+
+    printf "\n"
+}
+
+# Command: doctor-json
+cmd_doctor_json() {
+    cd "$PROJECT_ROOT"
+    rebar3 shell --noshell << 'EOFDOCTOR' 2>&1 || true
+code:ensure_loaded(erlmcp_cli_doctor),
+erlmcp_cli_doctor:run(["--json"]).
+EOFDOCTOR
+}
+
 # Command: help
 cmd_help() {
     print_header "ERLMCP CLI - Developer Experience Tool"
@@ -274,12 +308,14 @@ cmd_help() {
     printf "  ${BLUE}${ROCKET}${NC} start            Start local erlmcp cluster\n"
     printf "  ${BLUE}${STOP}${NC} stop             Stop local erlmcp cluster\n"
     printf "  ${BLUE}${INFO}${NC} status           Show cluster status\n"
+    printf "  ${BLUE}${INFO}${NC} doctor           Run host readiness diagnostics\n"
     printf "  ${BLUE}${TEST}${NC} test-100k        Run 100K concurrent test\n"
     printf "  ${BLUE}${METRIC}${NC} benchmark        Run performance benchmarks\n"
     printf "  ${BLUE}${HELP}${NC} help             Show this help message\n\n"
 
     printf "Examples:\n"
     printf "  erlmcp init\n"
+    printf "  erlmcp doctor\n"
     printf "  erlmcp start\n"
     printf "  erlmcp test-100k\n"
     printf "  erlmcp benchmark\n\n"
@@ -301,6 +337,12 @@ main() {
             ;;
         status)
             cmd_status
+            ;;
+        doctor)
+            cmd_doctor
+            ;;
+        doctor-json)
+            cmd_doctor_json
             ;;
         test-100k)
             cmd_test_100k

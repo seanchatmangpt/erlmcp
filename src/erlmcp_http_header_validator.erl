@@ -29,7 +29,11 @@
     validate_session_id/1,
     validate_authorization/1,
     extract_headers_map/1,
-    format_error_response/3
+    format_error_response/3,
+    validate_header_names/1,
+    validate_header_values/1,
+    check_content_length_consistency/1,
+    check_header_injection/1
 ]).
 
 %% Type definitions
@@ -99,6 +103,7 @@
 
 %% @doc Validate all request headers
 %% Validates protocol version, content-type, accept, and session-id headers
+%% Plus security checks for injection and malformed headers
 %% @param Headers HTTP headers as list or map
 %% @param Method HTTP method (get, post, put, etc.)
 %% @return {ok, ValidatedHeaders} | {error, ValidationError}
@@ -107,40 +112,64 @@ validate_request_headers(Headers, Method) when is_list(Headers); is_map(Headers)
     %% Convert headers to normalized map
     HeadersMap = extract_headers_map(Headers),
 
-    %% Validate protocol version (always required)
-    case validate_protocol_version(HeadersMap) of
+    %% SECURITY: Validate header names for RFC compliance and injection
+    case validate_header_names(Headers) of
         {error, Error} ->
             {error, Error};
-        {ok, Version} ->
-            %% Validate content-type for methods with body
-            case validate_content_type_for_method(HeadersMap, Method) of
+        ok ->
+            %% SECURITY: Validate header values for malicious content
+            case validate_header_values(Headers) of
                 {error, Error} ->
                     {error, Error};
-                {ok, ContentType} ->
-                    %% Validate accept header
-                    case validate_accept(HeadersMap) of
+                ok ->
+                    %% SECURITY: Check for header injection patterns
+                    case check_header_injection(Headers) of
                         {error, Error} ->
                             {error, Error};
-                        {ok, AcceptFormat} ->
-                            %% Validate session ID (if present)
-                            case validate_session_id(HeadersMap) of
+                        ok ->
+                            %% SECURITY: Check Content-Length consistency
+                            case check_content_length_consistency(Headers) of
                                 {error, Error} ->
                                     {error, Error};
-                                {ok, SessionId} ->
-                                    %% Validate authorization (optional)
-                                    case validate_authorization(HeadersMap) of
+                                ok ->
+                                    %% Validate protocol version (always required)
+                                    case validate_protocol_version(HeadersMap) of
                                         {error, Error} ->
                                             {error, Error};
-                                        {ok, Auth} ->
-                                            {ok, #{
-                                                protocol_version => Version,
-                                                content_type => ContentType,
-                                                accept_format => AcceptFormat,
-                                                session_id => SessionId,
-                                                authorization => Auth,
-                                                user_agent => extract_user_agent(HeadersMap),
-                                                original_headers => HeadersMap
-                                            }}
+                                        {ok, Version} ->
+                                            %% Validate content-type for methods with body
+                                            case validate_content_type_for_method(HeadersMap, Method) of
+                                                {error, Error} ->
+                                                    {error, Error};
+                                                {ok, ContentType} ->
+                                                    %% Validate accept header
+                                                    case validate_accept(HeadersMap) of
+                                                        {error, Error} ->
+                                                            {error, Error};
+                                                        {ok, AcceptFormat} ->
+                                                            %% Validate session ID (if present)
+                                                            case validate_session_id(HeadersMap) of
+                                                                {error, Error} ->
+                                                                    {error, Error};
+                                                                {ok, SessionId} ->
+                                                                    %% Validate authorization (optional)
+                                                                    case validate_authorization(HeadersMap) of
+                                                                        {error, Error} ->
+                                                                            {error, Error};
+                                                                        {ok, Auth} ->
+                                                                            {ok, #{
+                                                                                protocol_version => Version,
+                                                                                content_type => ContentType,
+                                                                                accept_format => AcceptFormat,
+                                                                                session_id => SessionId,
+                                                                                authorization => Auth,
+                                                                                user_agent => extract_user_agent(HeadersMap),
+                                                                                original_headers => HeadersMap
+                                                                            }}
+                                                                    end
+                                                            end
+                                                    end
+                                            end
                                     end
                             end
                     end
@@ -332,7 +361,7 @@ validate_content_type_value(ContentType) when is_binary(ContentType) ->
     %% Extract media type (before semicolon)
     MediaType = case binary:split(ContentType, <<";">>) of
         [MT | _] -> string:trim(MT);
-        [MT] -> string:trim(MT)
+        [MT] -> MT
     end,
 
     case lists:member(MediaType, ?VALID_CONTENT_TYPES) of
@@ -380,18 +409,18 @@ validate_version_value(Version) ->
 validate_accept_value(AcceptValue) when is_binary(AcceptValue) ->
     %% Parse comma-separated accept header
     Parts = binary:split(AcceptValue, <<",">>, [global]),
-    check_accept_types(Parts);
+    check_accept_types_list(Parts);
 validate_accept_value(AcceptValue) when is_list(AcceptValue) ->
     validate_accept_value(erlang:list_to_binary(AcceptValue));
 validate_accept_value(_) ->
     {error, {?HTTP_STATUS_BAD_REQUEST, <<"Invalid Accept header format">>, undefined}}.
 
 %% @doc Check if any accept type is supported
--spec check_accept_types([binary()]) -> {ok, atom()} | {error, validation_error()}.
-check_accept_types([]) ->
+-spec check_accept_types_list([binary()]) -> {ok, atom()} | {error, validation_error()}.
+check_accept_types_list([]) ->
     Data = #{<<"error_type">> => <<"no_acceptable_types">>},
     {error, {?HTTP_STATUS_NOT_ACCEPTABLE, <<"No acceptable content types">>, Data}};
-check_accept_types([Type | Rest]) ->
+check_accept_types_list([Type | Rest]) ->
     %% Trim and extract media type (before semicolon for quality factor)
     TypeTrimmed = string:trim(binary_to_list(Type)),
     MediaType = case string:split(TypeTrimmed, ";") of
@@ -409,7 +438,7 @@ check_accept_types([Type | Rest]) ->
         "application/*" ->
             {ok, json};
         _ ->
-            check_accept_types(Rest)
+            check_accept_types_list(Rest)
     end.
 
 %% @doc Validate session ID format
@@ -503,3 +532,243 @@ error_code_for_status(?HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE) ->
     -32600;  % Invalid Request
 error_code_for_status(_) ->
     -32603.  % Internal error
+
+%%====================================================================
+%% Security Validation Functions (v1.3.0)
+%%====================================================================
+
+%% @doc Validate header names per RFC 7230 (token format)
+%% RFC 7230: field-name = token
+%% token = 1*tchar where tchar = ! # $ % & ' * + - . ^ _ ` | ~
+%% and alphanumerics
+-spec validate_header_names(headers()) -> ok | {error, validation_error()}.
+validate_header_names(Headers) when is_list(Headers) ->
+    case lists:any(fun({Name, _Value}) ->
+        not is_valid_header_name(Name)
+    end, Headers) of
+        false -> ok;
+        true ->
+            {error, {?HTTP_STATUS_BAD_REQUEST,
+                <<"Invalid header name (RFC 7230 violation)">>, undefined}}
+    end;
+validate_header_names(Headers) when is_map(Headers) ->
+    case lists:any(fun(Name) ->
+        not is_valid_header_name(Name)
+    end, maps:keys(Headers)) of
+        false -> ok;
+        true ->
+            {error, {?HTTP_STATUS_BAD_REQUEST,
+                <<"Invalid header name (RFC 7230 violation)">>, undefined}}
+    end;
+validate_header_names(_) ->
+    {error, {?HTTP_STATUS_BAD_REQUEST, <<"Invalid headers format">>, undefined}}.
+
+%% @doc Validate header values for suspicious content
+%% Rejects: null bytes, CRLF injection, command injection patterns
+-spec validate_header_values(headers()) -> ok | {error, validation_error()}.
+validate_header_values(Headers) when is_list(Headers) ->
+    HeaderValues = [Value || {_Name, Value} <- Headers],
+    validate_header_values_list(HeaderValues);
+validate_header_values(Headers) when is_map(Headers) ->
+    HeaderValues = maps:values(Headers),
+    validate_header_values_list(HeaderValues);
+validate_header_values(_) ->
+    {error, {?HTTP_STATUS_BAD_REQUEST, <<"Invalid headers format">>, undefined}}.
+
+%% @doc Check Content-Length and Transfer-Encoding consistency
+%% Per RFC 7230: must not both be present with conflicting values
+-spec check_content_length_consistency(headers()) -> ok | {error, validation_error()}.
+check_content_length_consistency(Headers) ->
+    HeadersMap = extract_headers_map(Headers),
+    HeadersLower = maps:fold(fun(K, V, Acc) ->
+        maps:put(string:lowercase(ensure_binary(K)), V, Acc)
+    end, #{}, HeadersMap),
+
+    HasContentLength = maps:is_key(<<"content-length">>, HeadersLower),
+    HasTransferEncoding = maps:is_key(<<"transfer-encoding">>, HeadersLower),
+
+    case {HasContentLength, HasTransferEncoding} of
+        {true, true} ->
+            %% RFC 7230: Request smuggling prevention
+            Data = #{<<"error_type">> => <<"conflicting_lengths">>},
+            {error, {?HTTP_STATUS_BAD_REQUEST,
+                <<"Both Content-Length and Transfer-Encoding present">>, Data}};
+        {true, false} ->
+            %% Validate Content-Length format
+            ContentLength = maps:get(<<"content-length">>, HeadersLower),
+            case validate_content_length_value(ContentLength) of
+                ok -> ok;
+                {error, _} = Err -> Err
+            end;
+        _ -> ok
+    end.
+
+%% @doc Check for header injection patterns (CRLF injection, etc.)
+-spec check_header_injection(headers()) -> ok | {error, validation_error()}.
+check_header_injection(Headers) when is_list(Headers); is_map(Headers) ->
+    case contains_crlf_injection(Headers) of
+        true ->
+            {error, {?HTTP_STATUS_BAD_REQUEST,
+                <<"Header injection detected (CRLF)">>, undefined}};
+        false ->
+            case contains_null_in_headers(Headers) of
+                true ->
+                    {error, {?HTTP_STATUS_BAD_REQUEST,
+                        <<"Null byte in headers">>, undefined}};
+                false -> ok
+            end
+    end;
+check_header_injection(_) ->
+    {error, {?HTTP_STATUS_BAD_REQUEST, <<"Invalid headers format">>, undefined}}.
+
+%%====================================================================
+%% Internal Security Functions
+%%====================================================================
+
+%% @doc Check if header name is valid per RFC 7230
+-spec is_valid_header_name(term()) -> boolean().
+is_valid_header_name(Name) when is_binary(Name) ->
+    case byte_size(Name) of
+        0 -> false;
+        _ -> is_valid_header_token(Name)
+    end;
+is_valid_header_name(Name) when is_list(Name) ->
+    is_valid_header_name(erlang:list_to_binary(Name));
+is_valid_header_name(_) ->
+    false.
+
+%% @doc Check if value is valid header token
+-spec is_valid_header_token(binary()) -> boolean().
+is_valid_header_token(<<>>) ->
+    false;
+is_valid_header_token(<<Byte, Rest/binary>>) ->
+    case is_valid_token_char(Byte) of
+        true -> is_valid_header_token(Rest);
+        false -> false
+    end.
+
+%% @doc Check if byte is valid token character per RFC 7230
+%% tchar = ! # $ % & ' * + - . ^ _ ` | ~ DIGIT ALPHA
+%% Reject: " ( ) , / : ; < = > ? @ [ \ ] { }
+-spec is_valid_token_char(byte()) -> boolean().
+is_valid_token_char(C) ->
+    (C >= 33 andalso C =< 126 andalso
+     C =/= 34 andalso  % "
+     C =/= 40 andalso  % (
+     C =/= 41 andalso  % )
+     C =/= 44 andalso  % ,
+     C =/= 47 andalso  % /
+     C =/= 58 andalso  % :
+     C =/= 59 andalso  % ;
+     C =/= 60 andalso  % <
+     C =/= 61 andalso  % =
+     C =/= 62 andalso  % >
+     C =/= 63 andalso  % ?
+     C =/= 64 andalso  % @
+     C =/= 91 andalso  % [
+     C =/= 92 andalso  % \
+     C =/= 93 andalso  % ]
+     C =/= 123 andalso % {
+     C =/= 125).       % }
+
+%% @doc Validate Content-Length value
+-spec validate_content_length_value(term()) -> ok | {error, validation_error()}.
+validate_content_length_value(ContentLength) when is_binary(ContentLength) ->
+    try erlang:binary_to_integer(ContentLength) of
+        N when N >= 0 -> ok;
+        _ ->
+            {error, {?HTTP_STATUS_BAD_REQUEST,
+                <<"Invalid Content-Length (negative)">>, undefined}}
+    catch
+        error:_ ->
+            {error, {?HTTP_STATUS_BAD_REQUEST,
+                <<"Invalid Content-Length format">>, undefined}}
+    end;
+validate_content_length_value(ContentLength) when is_list(ContentLength) ->
+    validate_content_length_value(erlang:list_to_binary(ContentLength));
+validate_content_length_value(_) ->
+    {error, {?HTTP_STATUS_BAD_REQUEST,
+        <<"Invalid Content-Length type">>, undefined}}.
+
+%% @doc Validate header values list
+-spec validate_header_values_list([term()]) -> ok | {error, validation_error()}.
+validate_header_values_list([]) ->
+    ok;
+validate_header_values_list([Value | Rest]) ->
+    case contains_null_byte(Value) of
+        true ->
+            {error, {?HTTP_STATUS_BAD_REQUEST, <<"Null byte in header value">>, undefined}};
+        false ->
+            case contains_control_chars(Value) of
+                true ->
+                    {error, {?HTTP_STATUS_BAD_REQUEST,
+                        <<"Control character in header value">>, undefined}};
+                false -> validate_header_values_list(Rest)
+            end
+    end.
+
+%% @doc Check for CRLF injection in headers
+-spec contains_crlf_injection(headers()) -> boolean().
+contains_crlf_injection(Headers) when is_list(Headers) ->
+    lists:any(fun({Name, Value}) ->
+        contains_crlf_pattern(Name) orelse contains_crlf_pattern(Value)
+    end, Headers);
+contains_crlf_injection(Headers) when is_map(Headers) ->
+    maps:fold(fun(K, V, Acc) ->
+        Acc orelse contains_crlf_pattern(K) orelse contains_crlf_pattern(V)
+    end, false, Headers);
+contains_crlf_injection(_) ->
+    false.
+
+%% @doc Check for CRLF pattern in value
+-spec contains_crlf_pattern(term()) -> boolean().
+contains_crlf_pattern(Value) when is_binary(Value) ->
+    (binary:match(Value, <<"\r\n">>) =/= nomatch) orelse
+    (binary:match(Value, <<"\n\r">>) =/= nomatch) orelse
+    (binary:match(Value, <<"\r">>) =/= nomatch) orelse
+    (binary:match(Value, <<"\n">>) =/= nomatch);
+contains_crlf_pattern(Value) when is_list(Value) ->
+    contains_crlf_pattern(erlang:list_to_binary(Value));
+contains_crlf_pattern(_) ->
+    false.
+
+%% @doc Check for null bytes in headers
+-spec contains_null_in_headers(headers()) -> boolean().
+contains_null_in_headers(Headers) when is_list(Headers) ->
+    lists:any(fun({Name, Value}) ->
+        contains_null_byte(Name) orelse contains_null_byte(Value)
+    end, Headers);
+contains_null_in_headers(Headers) when is_map(Headers) ->
+    maps:fold(fun(K, V, Acc) ->
+        Acc orelse contains_null_byte(K) orelse contains_null_byte(V)
+    end, false, Headers);
+contains_null_in_headers(_) ->
+    false.
+
+%% @doc Check for null byte in value
+-spec contains_null_byte(term()) -> boolean().
+contains_null_byte(Value) when is_binary(Value) ->
+    binary:match(Value, <<0>>) =/= nomatch;
+contains_null_byte(Value) when is_list(Value) ->
+    contains_null_byte(erlang:list_to_binary(Value));
+contains_null_byte(_) ->
+    false.
+
+%% @doc Check for control characters
+-spec contains_control_chars(term()) -> boolean().
+contains_control_chars(Value) when is_binary(Value) ->
+    contains_control_chars_binary(Value);
+contains_control_chars(Value) when is_list(Value) ->
+    contains_control_chars(erlang:list_to_binary(Value));
+contains_control_chars(_) ->
+    false.
+
+%% @doc Check binary for control characters (0-31, 127)
+-spec contains_control_chars_binary(binary()) -> boolean().
+contains_control_chars_binary(<<>>) ->
+    false;
+contains_control_chars_binary(<<Byte, Rest/binary>>) ->
+    case (Byte >= 0 andalso Byte =< 31) orelse Byte =:= 127 of
+        true -> true;
+        false -> contains_control_chars_binary(Rest)
+    end.

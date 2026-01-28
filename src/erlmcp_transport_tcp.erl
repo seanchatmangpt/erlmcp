@@ -82,11 +82,14 @@ transport_init(Opts) when is_map(Opts) ->
     end.
 
 %% @doc Send data through the transport
+%% Optimized for zero-copy using iolist-based writes
 -spec send(state(), iodata()) -> ok | {error, term()}.
 send(#state{socket = undefined}, _Data) ->
     {error, not_connected};
 send(#state{socket = Socket, connected = true}, Data) ->
-    case gen_tcp:send(Socket, [Data, "\n"]) of
+    %% Use iolist format [Data, Newline] to avoid binary rebuilding
+    %% gen_tcp:send/2 efficiently handles iolist encoding
+    case gen_tcp:send(Socket, [Data, <<"\n">>]) of
         ok -> ok;
         {error, Reason} -> {error, {tcp_send_failed, Reason}}
     end;
@@ -553,17 +556,25 @@ cancel_reconnect_timer(#state{reconnect_timer = Timer}) ->
 %%====================================================================
 
 %% @doc Extract complete messages from buffer
+%% Optimized using binary:split/3 with global flag to reduce allocations
 extract_messages(Buffer) ->
-    extract_messages(Buffer, []).
+    extract_messages_optimized(Buffer, []).
 
-extract_messages(Buffer, Acc) ->
-    case binary:split(Buffer, <<"\n">>) of
-        [_] ->
-            %% No complete message
+extract_messages_optimized(Buffer, Acc) ->
+    case binary:split(Buffer, <<"\n">>, [global]) of
+        [_SinglePart] ->
+            %% No complete message, return what we have
             {lists:reverse(Acc), Buffer};
-        [Message, Rest] ->
-            %% Found a complete message
-            extract_messages(Rest, [Message | Acc])
+        Parts when is_list(Parts) ->
+            %% Split returned multiple parts
+            case lists:reverse(Parts) of
+                [LastPart | RestParts] ->
+                    %% Last part is incomplete (no newline after it)
+                    CompleteParts = lists:reverse(RestParts),
+                    %% If any parts are empty (consecutive newlines), filter them
+                    ValidMessages = [M || M <- CompleteParts, M =/= <<>>],
+                    {lists:reverse(Acc) ++ ValidMessages, LastPart}
+            end
     end.
 
 %%====================================================================

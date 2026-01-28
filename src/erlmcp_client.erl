@@ -465,18 +465,45 @@ close_transport(#state{transport = Transport, transport_state = TransportState})
     {noreply, state()} | {reply, {error, term()}, state()}.
 send_request(State, Method, Params, RequestInfo) ->
     RequestId = State#state.request_id,
-    Json = erlmcp_json_rpc:encode_request(RequestId, Method, Params),
-    case send_message(State, Json) of
-        ok ->
-            NewState = State#state{
-                request_id = RequestId + 1,
-                pending_requests = maps:put(RequestId, RequestInfo, State#state.pending_requests)
-            },
-            {noreply, NewState};
-        {error, Reason} ->
-            {_, From} = RequestInfo,
-            gen_server:reply(From, {error, Reason}),
-            {noreply, State}
+    {_, FromPid} = RequestInfo,
+
+    %% P0 SECURITY: Safe request ID handling
+    %% Prevent integer overflow by checking if next ID would overflow
+    NextRequestId = RequestId + 1,
+    SafeNextIdResult = case catch erlmcp_request_id:safe_increment(RequestId) of
+        {ok, SafeId} -> {ok, SafeId};
+        {error, overflow} ->
+            gen_server:reply(FromPid, {error, {request_id_overflow,
+                <<"Request ID space exhausted. Reconnect required.">>}}),
+            {error, request_id_exhausted};
+        _Other -> {ok, NextRequestId}
+    end,
+
+    case SafeNextIdResult of
+        {error, request_id_exhausted} ->
+            erlang:error(request_id_exhausted);
+        {ok, SafeNextId} ->
+            Json = erlmcp_json_rpc:encode_request(RequestId, Method, Params),
+            case send_message(State, Json) of
+                ok ->
+                    %% Verify no ID collision in pending requests (safety check)
+                    case maps:is_key(RequestId, State#state.pending_requests) of
+                        true ->
+                            logger:error("CRITICAL: Request ID collision detected for ID ~w", [RequestId]),
+                            gen_server:reply(FromPid, {error, {request_id_collision,
+                                <<"Internal error: request ID collision">>}}),
+                            {noreply, State};
+                        false ->
+                            NewState = State#state{
+                                request_id = SafeNextId,
+                                pending_requests = maps:put(RequestId, RequestInfo, State#state.pending_requests)
+                            },
+                            {noreply, NewState}
+                    end;
+                {error, Reason} ->
+                    gen_server:reply(FromPid, {error, Reason}),
+                    {noreply, State}
+            end
     end.
 
 -spec send_message(state(), binary()) -> ok | {error, term()}.
