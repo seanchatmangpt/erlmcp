@@ -1,0 +1,34 @@
+{
+  "name": "team",
+  "tier": "team",
+  "description": "Designed for small teams and startups",
+  "envelope": {
+    "requests_per_second": 100,
+    "concurrent_connections": 50,
+    "queue_depth": 1000,
+    "message_size_bytes": 1048576
+  },
+  "sla": {
+    "latency_p99_ms": 200,
+    "failover_seconds": 30,
+    "uptime_percent": 99.5,
+    "incident_response_hours": 24
+  },
+  "refusal": {
+    "at_capacity": "HTTP 429 Too Many Requests with Retry-After header",
+    "rate_limit_exceeded": "JSON-RPC error code -32000 (server error) with rate_limit details",
+    "message_too_large": "HTTP 413 Payload Too Large",
+    "invalid_protocol": "HTTP 400 Bad Request with protocol version details"
+  },
+  "evidence": {
+    "sbom_included": true,
+    "provenance_included": true,
+    "chaos_matrix_included": true,
+    "benchmark_results_included": true
+  },
+  "pricing": {
+    "model": "flat_per_deployment",
+    "base_cost_usd": 299,
+    "deployment_unit": "per month"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "tier": "enterprise",
+  "name": "Enterprise Tier - Production Applications",
+  "description": "Production-grade tier for enterprise applications with high availability and performance requirements",
+  "pricing": {
+    "model": "flat-per-deployment",
+    "description": "No metering, no surprise overages",
+    "cost": "Enterprise license pricing"
+  },
+  "envelope": {
+    "throughput_req_s": 1500,
+    "concurrent_connections": 512,
+    "queue_depth_messages": 8192,
+    "p99_latency_ms": 100,
+    "failover_sla_seconds": 10,
+    "connection_timeout_seconds": 120
+  },
+  "limits": {
+    "max_message_size_bytes": 10485760,
+    "max_payload_size_mb": 100,
+    "max_concurrent_requests_per_conn": 128,
+    "memory_limit_mb": 4096,
+    "cpu_time_limit_seconds": 600,
+    "backpressure_threshold_bytes": 67108864
+  },
+  "features": {
+    "client": true,
+    "server": true,
+    "stdio_transport": true,
+    "tcp_transport": true,
+    "http_transport": true,
+    "websocket_transport": true,
+    "sse_transport": true,
+    "rate_limiting": true,
+    "connection_pooling": true,
+    "circuit_breaker": true,
+    "otel_observability": "comprehensive",
+    "audit_logging": true,
+    "fips_140_2": false,
+    "high_availability": true,
+    "multi_region_support": false,
+    "load_balancing": true,
+    "health_checks": true
+  },
+  "refusal_behavior": {
+    "throughput_exceeded": {
+      "http_status": 429,
+      "error_code": "rate_limit_exceeded",
+      "message": "Request rate exceeds tier limit (1500 req/s)",
+      "retry_after_seconds": 30
+    },
+    "queue_depth_exceeded": {
+      "http_status": 503,
+      "error_code": "service_unavailable",
+      "message": "System overloaded, queue depth exceeded",
+      "retry_after_seconds": 10
+    },
+    "connection_limit_exceeded": {
+      "error_code": "connection_limit",
+      "message": "Maximum 512 concurrent connections exceeded",
+      "close_code": 1008
+    },
+    "message_size_exceeded": {
+      "http_status": 413,
+      "error_code": "payload_too_large",
+      "message": "Message exceeds 10MB limit"
+    },
+    "audit_log_error": {
+      "http_status": 500,
+      "error_code": "audit_log_failure",
+      "message": "Failed to write audit log - operation rejected"
+    }
+  },
+  "evidence": {
+    "sbom": "plans/enterprise-sbom.json",
+    "provenance": "plans/enterprise-provenance.json",
+    "chaos_report": "docs/plans/enterprise-chaos-report.md",
+    "benchmark_report": "docs/plans/enterprise-benchmark-report.md",
+    "audit_schema": "plans/enterprise-audit-schema.json"
+  },
+  "compliance": {
+    "mcp_version": "2025-11-25",
+    "features_implemented": 48,
+    "security_level": "enhanced",
+    "audit_trail": true,
+    "sla_monitoring": true
+  },
+  "sla": {
+    "availability_percentage": 99.95,
+    "throughput_guarantee_req_s": 1500,
+    "failover_time_seconds": 10,
+    "recovery_sla_minutes": 15
+  }
+}
