@@ -1,0 +1,388 @@
+version: '3.8'
+
+# === Docker Compose Configuration: erlmcp 4-Node Cluster on Colima ===
+# Optimized for 100K concurrent connections on local Colima environment
+#
+# Architecture:
+#   - node1: Primary coordinator (TCP listener on 0.0.0.0:9100)
+#   - node2-4: Worker nodes with identical configuration
+#   - All nodes in same bridge network for inter-node communication
+#   - Prometheus for real-time metrics during load test
+#   - Shared /tmp/erlmcp for test coordination
+#
+# Colima VM Requirements:
+#   - 12 CPU cores minimum
+#   - 16GB RAM (4GB per node + 2GB overhead)
+#   - 50GB disk space
+#
+# Setup:
+#   colima start --cpu 12 --memory 16 --disk 100
+#   docker-compose -f docker-compose.colima.yml up -d
+#   # Wait for healthy status
+#   sleep 30
+#   # Run load test
+#   ./scripts/stress-test-colima.sh
+#
+# Monitoring:
+#   - Metrics: http://localhost:9090 (Prometheus)
+#   - Logs: docker logs erlmcp-node{1,2,3,4}
+#   - Resource usage: docker stats --no-stream
+
+services:
+  # ============================================================================
+  # Erlang Cluster Nodes - Optimized for Colima
+  # ============================================================================
+
+  node1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: "2026-01-27"
+        VCS_REF: "main"
+        VERSION: "0.7.0"
+
+    container_name: erlmcp-node1
+    hostname: node1
+    restart: unless-stopped
+
+    networks:
+      erlmcp:
+        ipv4_address: 172.27.0.11
+
+    ports:
+      # Primary node exports all services
+      - "9100:9100"    # Client listener (main entry point for 100K connections)
+      - "8080:8080"    # HTTP API
+      - "9090:9090"    # Metrics (Prometheus scrape)
+      - "4369:4369"    # EPMD (Erlang Port Mapper)
+      - "9001:9001"    # Distributed Erlang
+
+    environment:
+      # Node Configuration
+      NODE_NAME: node1
+      ERLANG_COOKIE: erlmcp_colima_secret_100k
+
+      # Erlang VM Tuning for 25K concurrent connections per node
+      # =========================================================
+      # Process/Port Limits
+      ERL_MAX_PORTS: 65536              # 64K file descriptors per node
+      ERL_MAX_ETS_TABLES: 32768          # ETS table limit
+      ERLANG_MAX_PROCESSES: 2000000      # Process limit
+
+      # Memory Management (4GB container, ~3GB for beams)
+      +hms: 1024                         # Min heap size (1GB)
+      +hmbs: 512                         # Max heap size block size
+
+      # Garbage Collection (aggressive, 100K connections needs fast GC)
+      ERL_FULLSWEEP_AFTER: 0             # Full GC after every 0 minor GCs (fast collection)
+      ERLANG_GC_AGGRESSIVE: 1            # Aggressive GC mode
+
+      # Network Configuration
+      # =====================
+      # Socket buffer tuning for 25K connections
+      # Each connection uses ~10KB in Erlang receive buffer
+      # Total needed: 25K * 10KB = 250MB per node
+      ERLANG_INET_DIST_LISTEN_MIN: 9001
+      ERLANG_INET_DIST_LISTEN_MAX: 9100
+
+      # Connection Management (per-node limits)
+      # 25K connections * 4 nodes = 100K total cluster
+      ERLANG_CONNECTIONS_PER_NODE: 25000
+
+      # Logging (essential for debugging load test)
+      LAGER_LEVEL: info                  # info|debug (debug during testing)
+      LAGER_HANDLERS_FILE: "/var/log/erlmcp/erlmcp.log"
+
+      # OpenTelemetry (for performance monitoring during stress test)
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://prometheus:9090/metrics"
+
+    volumes:
+      # Logs - important for diagnostics
+      - erlmcp-node1-logs:/var/log/erlmcp:rw
+
+      # Data persistence (ETS, etc.)
+      - erlmcp-node1-data:/var/lib/erlmcp:rw
+
+      # Shared coordination directory for load test
+      - /tmp/erlmcp:/tmp/erlmcp:rw
+
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "erl"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+    # Resource limits tuned for Colima (4GB container on 16GB VM)
+    deploy:
+      resources:
+        limits:
+          cpus: '3'          # 3 CPU cores per node (4 nodes * 3 = 12 total)
+          memory: 4G         # 4GB per node (4 nodes * 4GB = 16GB total)
+        reservations:
+          cpus: '2.5'        # Reserve minimum 2.5 cores
+          memory: 3G         # Reserve minimum 3GB
+
+  node2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: erlmcp-node2
+    hostname: node2
+    restart: unless-stopped
+    networks:
+      erlmcp:
+        ipv4_address: 172.27.0.12
+    ports:
+      - "9101:9100"
+      - "8081:8080"
+      - "9091:9090"
+      - "4370:4369"
+      - "9002:9001"
+    environment:
+      NODE_NAME: node2
+      ERLANG_COOKIE: erlmcp_colima_secret_100k
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 32768
+      ERLANG_MAX_PROCESSES: 2000000
+      +hms: 1024
+      +hmbs: 512
+      ERL_FULLSWEEP_AFTER: 0
+      ERLANG_GC_AGGRESSIVE: 1
+      ERLANG_INET_DIST_LISTEN_MIN: 9001
+      ERLANG_INET_DIST_LISTEN_MAX: 9100
+      ERLANG_CONNECTIONS_PER_NODE: 25000
+      LAGER_LEVEL: info
+      OTEL_ENABLED: "true"
+    volumes:
+      - erlmcp-node2-logs:/var/log/erlmcp:rw
+      - erlmcp-node2-data:/var/lib/erlmcp:rw
+      - /tmp/erlmcp:/tmp/erlmcp:rw
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "erl"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      node1:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '3'
+          memory: 4G
+        reservations:
+          cpus: '2.5'
+          memory: 3G
+
+  node3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: erlmcp-node3
+    hostname: node3
+    restart: unless-stopped
+    networks:
+      erlmcp:
+        ipv4_address: 172.27.0.13
+    ports:
+      - "9102:9100"
+      - "8082:8080"
+      - "9092:9090"
+      - "4371:4369"
+      - "9003:9001"
+    environment:
+      NODE_NAME: node3
+      ERLANG_COOKIE: erlmcp_colima_secret_100k
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 32768
+      ERLANG_MAX_PROCESSES: 2000000
+      +hms: 1024
+      +hmbs: 512
+      ERL_FULLSWEEP_AFTER: 0
+      ERLANG_GC_AGGRESSIVE: 1
+      ERLANG_INET_DIST_LISTEN_MIN: 9001
+      ERLANG_INET_DIST_LISTEN_MAX: 9100
+      ERLANG_CONNECTIONS_PER_NODE: 25000
+      LAGER_LEVEL: info
+      OTEL_ENABLED: "true"
+    volumes:
+      - erlmcp-node3-logs:/var/log/erlmcp:rw
+      - erlmcp-node3-data:/var/lib/erlmcp:rw
+      - /tmp/erlmcp:/tmp/erlmcp:rw
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "erl"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      node1:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '3'
+          memory: 4G
+        reservations:
+          cpus: '2.5'
+          memory: 3G
+
+  node4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: erlmcp-node4
+    hostname: node4
+    restart: unless-stopped
+    networks:
+      erlmcp:
+        ipv4_address: 172.27.0.14
+    ports:
+      - "9103:9100"
+      - "8083:8080"
+      - "9093:9090"
+      - "4372:4369"
+      - "9004:9001"
+    environment:
+      NODE_NAME: node4
+      ERLANG_COOKIE: erlmcp_colima_secret_100k
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 32768
+      ERLANG_MAX_PROCESSES: 2000000
+      +hms: 1024
+      +hmbs: 512
+      ERL_FULLSWEEP_AFTER: 0
+      ERLANG_GC_AGGRESSIVE: 1
+      ERLANG_INET_DIST_LISTEN_MIN: 9001
+      ERLANG_INET_DIST_LISTEN_MAX: 9100
+      ERLANG_CONNECTIONS_PER_NODE: 25000
+      LAGER_LEVEL: info
+      OTEL_ENABLED: "true"
+    volumes:
+      - erlmcp-node4-logs:/var/log/erlmcp:rw
+      - erlmcp-node4-data:/var/lib/erlmcp:rw
+      - /tmp/erlmcp:/tmp/erlmcp:rw
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "erl"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+    depends_on:
+      node1:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '3'
+          memory: 4G
+        reservations:
+          cpus: '2.5'
+          memory: 3G
+
+  # ============================================================================
+  # Monitoring - Prometheus for Metrics Collection
+  # ============================================================================
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: erlmcp-prometheus
+    hostname: prometheus
+    restart: unless-stopped
+    networks:
+      erlmcp:
+        ipv4_address: 172.27.0.100
+    ports:
+      - "9090:9090"    # Prometheus web UI
+    volumes:
+      - ./prometheus-colima.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--query.timeout=5m'
+    depends_on:
+      - node1
+      - node2
+      - node3
+      - node4
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+
+# ============================================================================
+# Networks
+# ============================================================================
+
+networks:
+  erlmcp:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.27.0.0/16
+          gateway: 172.27.0.1
+
+# ============================================================================
+# Volumes
+# ============================================================================
+
+volumes:
+  # Node logs
+  erlmcp-node1-logs:
+    driver: local
+  erlmcp-node2-logs:
+    driver: local
+  erlmcp-node3-logs:
+    driver: local
+  erlmcp-node4-logs:
+    driver: local
+
+  # Node data (ETS, etc.)
+  erlmcp-node1-data:
+    driver: local
+  erlmcp-node2-data:
+    driver: local
+  erlmcp-node3-data:
+    driver: local
+  erlmcp-node4-data:
+    driver: local
+
+  # Monitoring data
+  prometheus-data:
+    driver: local
