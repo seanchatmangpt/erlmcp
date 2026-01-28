@@ -9,7 +9,7 @@ manufacturing_stage: "Stages 3-5: Generate/Extract/Render"
 consolidates: [sparc/integrate, sparc/integration, sparc/mcp]
 ---
 
-# Command: /tcps kanban
+# Command: /tcps-kanban
 
 ## Purpose
 **Japanese**: 看板 (Kanban - Signboard)
@@ -20,7 +20,7 @@ Manage work-in-progress limits (max 3 active builds, max 2 in testing). Prevents
 
 ## Usage
 ```bash
-/tcps kanban [status|limits|board]
+/tcps-kanban [status|limits|board]
 ```
 
 ## WIP Limits
@@ -35,7 +35,7 @@ Manage work-in-progress limits (max 3 active builds, max 2 in testing). Prevents
 
 ### Check Kanban Status
 ```bash
-/tcps kanban status
+/tcps-kanban status
 ```
 
 Output:
@@ -53,7 +53,7 @@ Output:
 
 ### Show WIP Limits
 ```bash
-/tcps kanban limits
+/tcps-kanban limits
 ```
 
 Output:
@@ -67,8 +67,8 @@ Can accept 1 more work order.
 ```
 
 ## See Also
-- Previous: `/tcps heijunka` - Production leveling
-- Next: `/tcps build` - Standard work
+- Previous: `/tcps-heijunka` - Production leveling
+- Next: `/tcps-build` - Standard work
 - Docs: `docs/tcps/TCPS.md` - Pillar 4: Kanban
 
 ---

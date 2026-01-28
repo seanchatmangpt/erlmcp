@@ -75,7 +75,9 @@ This guide clarifies when to use each system and how they interact.
 
 **Archived commands**: All 61 archived commands preserved in `.claude/commands-archive/`
 
-### New Command Structure (30 Total)
+### New Command Structure - TCPS Manufacturing System (30 Total)
+
+**MAJOR UPDATE (v2.0.0)**: Commands now use Toyota Code Production System (TCPS) with authentic Japanese manufacturing terminology.
 
 ```
 .claude/commands/
@@ -83,39 +85,82 @@ This guide clarifies when to use each system and how they interact.
 │   ├── claude-flow-help.md
 │   ├── claude-flow-memory.md
 │   ├── claude-flow-swarm.md
-│   └── sparc.md
-├── sparc/ (8)
-│   ├── spec.md (was: spec-pseudocode)
-│   ├── architect.md
-│   ├── code.md
-│   ├── test.md (was: tdd)
-│   ├── review.md (was: security-review)
-│   ├── docs.md (was: docs-writer)
-│   ├── deploy.md (merged: devops + post-deployment-monitoring)
-│   └── integrate.md (merged: integration + mcp)
-├── swarm/ (6)
-│   ├── init.md (merged: swarm-init, hive-mind-init, coordination/swarm-init)
-│   ├── spawn.md (merged: swarm-spawn, hive-mind-spawn, coordination/agent-spawn)
-│   ├── status.md (merged: swarm-status, hive-mind-status, swarm-monitor)
-│   ├── orchestrate.md (merged: coordination/task-orchestrate, hive-mind)
-│   ├── memory.md (merged: hive-mind-memory)
-│   └── consensus.md (merged: hive-mind-consensus)
-├── github/ (3)
-│   ├── pr.md (merged: pr-enhance, code-review)
-│   ├── issue.md (was: issue-triage)
-│   └── repo.md (merged: repo-analyze, github-swarm)
-├── perf/ (4)
-│   ├── analyze.md (merged: analysis/*)
-│   ├── monitor.md (merged: monitoring/*)
-│   ├── optimize.md (merged: optimization/*)
-│   └── train.md (merged: training/*)
-└── utility/ (5)
-    ├── hooks-list.md (merged: hooks/*)
-    ├── agent-list.md (merged: agents/*)
-    ├── memory-search.md (merged: memory/*)
-    ├── workflow-execute.md (merged: workflows/*)
-    └── automate.md (merged: automation/*)
+│   └── sparc.md (delegates to TCPS commands)
+├── tcps/ (8) - Manufacturing Line Operations
+│   ├── pull.md - Just-In-Time (JIT) - Pull work orders from demand signals
+│   ├── heijunka.md - 平準化 (Heijunka) - Production leveling
+│   ├── kanban.md - 看板 (Kanban) - WIP limits and visual flow
+│   ├── build.md - 標準作業 (Standard Work) - Execute build & compile
+│   ├── jidoka.md - 自働化 (Jidoka) - Built-in quality with stop-the-line
+│   ├── andon.md - 行灯 (Andon) - Visible stop-the-line signaling
+│   ├── kaizen.md - 改善 (Kaizen) - Continuous improvement
+│   └── receipt.md - レシート (Receipt) - Release evidence bundle
+├── poka-yoke/ (4) - Quality Gates
+│   ├── validate.md - ポカヨケ - Error-proof validation
+│   ├── monitor.md - ポカヨケ - SLA monitoring
+│   ├── test.md - ポカヨケ - Conformance testing
+│   └── 5-whys.md - なぜなぜ分析 - Root cause analysis
+├── work-order/ (6) - Work Order Management
+│   ├── create.md - 作業指示 - Create from demand signal
+│   ├── assign.md - 作業指示 - Assign to agent
+│   ├── status.md - 作業指示 - Show WIP & Kanban board
+│   ├── schedule.md - 作業指示 - Heijunka scheduling
+│   ├── receipt.md - レシート - Generate evidence bundle
+│   └── verify.md - 検証 - Verify acceptance criteria
+├── sku/ (3) - Product/Release Management
+│   ├── list.md - SKU - List manufactured products
+│   ├── build.md - SKU - Build & compile product
+│   └── certify.md - 認証 - Certify with evidence bundle
+└── standard-work/ (5) - Documentation & Templates
+    ├── show.md - 標準作業 - Display documentation
+    ├── verify.md - 標準作業 - Verify completeness
+    ├── receipt-search.md - レシート - Search evidence chain
+    ├── template-render.md - 型 - Render production templates
+    └── demand-signal.md - 需要信号 - Detect marketplace signals
 ```
+
+### TCPS Manufacturing Flow
+
+The command structure follows Toyota's 8-stage factory production line:
+
+```
+1. /tcps-pull          → Detect demand signal, create work order (JIT)
+2. /tcps-heijunka      → Level production schedule (40/30/20/10 work mix)
+3. /tcps-kanban        → Check WIP limits (Design: 3, Code: 5, Test: 7)
+4. /tcps-build         → Execute standard work (compile, test)
+5. /tcps-jidoka        → Built-in quality checks (stop on failure)
+6. /tcps-andon         → (if failure) Stop-the-line signaling
+7. /5-whys-analyze     → Root cause analysis
+8. /tcps-kaizen        → Document improvement
+9. /tcps-receipt       → Generate evidence bundle (SHA-256 chain)
+10. /sku-certify       → Certify SKU for release
+```
+
+### Old Commands → TCPS Commands Migration
+
+| Old Command Pattern | New TCPS Command | Japanese Term |
+|---------------------|------------------|---------------|
+| `/sparc spec` | `/tcps-pull` | Just-In-Time (JIT) |
+| `/sparc architect` | `/tcps-heijunka` | 平準化 (Heijunka) |
+| `/sparc integrate` | `/tcps-kanban` | 看板 (Kanban) |
+| `/sparc code` | `/tcps-build` | 標準作業 (Standard Work) |
+| `/sparc test` | `/tcps-jidoka` | 自働化 (Jidoka) |
+| `/sparc review` | `/tcps-andon` | 行灯 (Andon) |
+| `/sparc docs` | `/tcps-kaizen` | 改善 (Kaizen) |
+| `/sparc deploy` | `/tcps-receipt` | レシート (Receipt) |
+| `/perf analyze` | `/poka-yoke-validate` | ポカヨケ (Error-proofing) |
+| `/perf monitor` | `/poka-yoke-monitor` | ポカヨケ (SLA monitoring) |
+| `/perf optimize` | `/poka-yoke-test` | ポカヨケ (Conformance) |
+| `/perf train` | `/5-whys-analyze` | なぜなぜ分析 (Root cause) |
+| `/swarm init` | `/work-order-create` | 作業指示 (Work order) |
+| `/swarm spawn` | `/work-order-assign` | 作業指示 (Assignment) |
+| `/swarm status` | `/work-order-status` | 作業指示 (Status) |
+| `/swarm orchestrate` | `/work-order-schedule` | 作業指示 (Scheduling) |
+| `/github repo` | `/sku-list` | SKU (Product list) |
+| `/github pr` | `/sku-build` | SKU (Build) |
+| `/github issue` | `/sku-certify` | 認証 (Certification) |
+
+**Complete migration guide**: See [COMMAND_INDEX.md](COMMAND_INDEX.md)
 
 ## Detailed Breakdown
 
@@ -158,12 +203,29 @@ This guide clarifies when to use each system and how they interact.
 - **High-level**: Abstract over agent coordination details
 - **Stateless**: Each invocation is independent
 
-**Common Commands for erlmcp**:
-- `/sparc` - SPARC methodology workflows
-- `/swarm-init` - Initialize swarm coordination
-- `/memory-persist` - Save session context
-- `/github-swarm` - GitHub automation workflows
-- `/agent-spawn` - Spawn specific agent
+**Common TCPS Commands for erlmcp**:
+- `/tcps-pull` - Pull work orders from demand signals (replaces `/sparc spec`)
+- `/tcps-build` - Execute standard work build (replaces `/sparc code`)
+- `/tcps-jidoka` - Built-in quality checks (replaces `/sparc test`)
+- `/work-order-create` - Create work order (replaces `/swarm init`)
+- `/work-order-assign` - Assign to agent (replaces `/swarm spawn`)
+- `/sku-build` - Build product/release (replaces `/github pr`)
+- `/poka-yoke-validate` - Error-proof validation (replaces `/perf analyze`)
+
+**Manufacturing Flow Example**:
+```bash
+# Toyota production line workflow
+/tcps-pull marketplace-install-42        # Stage 1: Pull demand signal
+/tcps-heijunka weekly                    # Stage 2: Level schedule
+/tcps-kanban check                       # Stage 3-5: Check WIP limits
+/tcps-build WO-123                       # Stage 6-7: Build
+/tcps-jidoka WO-123                      # Stage 7: Quality checks
+# (if failure) /tcps-andon trigger WO-123
+# /5-whys-analyze "test failure reason"
+# /tcps-kaizen process "improvement"
+/tcps-receipt WO-123                     # Stage 8: Evidence bundle
+/sku-certify team v1.4.0                 # Certification
+```
 
 ### 2. Agents (`.claude/agents/`)
 
