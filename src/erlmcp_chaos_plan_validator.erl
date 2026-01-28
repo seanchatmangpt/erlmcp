@@ -427,7 +427,7 @@ verify_sla_during_chaos(Plan, ChaosResult) ->
 %% @private Determine overall chaos test status
 %% @end
 %%%-------------------------------------------------------------------
--spec determine_chaos_status([map()]) -> <<"pass">> | <<"fail">>.
+-spec determine_chaos_status([map()]) -> pass | fail.
 
 determine_chaos_status(Results) ->
     PassCount = lists:sum([1 || R <- Results, maps:get(<<"status">>, R) =:= <<"pass">>]),

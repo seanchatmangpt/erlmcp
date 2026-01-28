@@ -1,8 +1,21 @@
 # ErlMCP Pricing Plans & Tier Documentation System
 
+![Metrology Compliance](https://img.shields.io/badge/Metrology-v1.5.0-brightgreen)
+![Validation](https://img.shields.io/badge/Validation-0%20violations-success)
+
 ## Overview
 
 This document describes the comprehensive pricing plans documentation system for erlmcp, which provides three service tiers with deterministic refusal behavior, documented SLAs, and machine-readable specifications.
+
+> **⚠️ Metrology v1.5.0 Update (2026-01-27)**
+> All plan files have been updated to v1.5.0 canonical metrology standards:
+> - ✅ Ambiguous metrics eliminated (`req/s` → `msg_per_s`, `MiB/conn` → component-specific)
+> - ✅ All performance claims reference validated workload definitions
+> - ✅ Memory breakdowns include heap, state, base overhead, and total RSS
+> - ✅ Every metric specifies transport, scope, and measurement context
+>
+> **See**: `docs/metrology/METRICS_GLOSSARY.md` for canonical definitions
+> **Migration Guide**: `docs/metrology/V1.5.0_MIGRATION_GUIDE.md`
 
 The system includes:
 
@@ -15,36 +28,42 @@ The system includes:
 
 ## Service Tiers
 
-### Team Tier (450 req/s)
+### Team Tier
 
 **Ideal for:** Startups, proof-of-concepts, development environments, hobby projects
 
-- **Throughput:** 450 req/s
-- **Concurrent Connections:** 128
-- **P99 Latency:** 250ms
+- **Throughput:** 900 msg/s (450 req/s + 450 resp/s) - TCP sustained
+- **Concurrent Connections:** 25,000 (TCP)
+- **P99 Latency:** 150ms (client-to-client)
+- **Memory:** 1,536 MiB total RSS @ 25K connections
+- **Workload:** `tcp_sustained_25k_1kib`
 - **Features:** Basic transport, rate limiting, circuit breaker
 - **Pricing:** Free for open-source, custom for commercial
 - **Documentation:** `/docs/plans/team-tier.md`
 
-### Enterprise Tier (1500 req/s)
+### Enterprise Tier
 
 **Ideal for:** Production applications, web services, SaaS, microservices
 
-- **Throughput:** 1500 req/s
-- **Concurrent Connections:** 512
-- **P99 Latency:** 100ms
+- **Throughput:** 3,000 msg/s (1500 req/s + 1500 resp/s) - TCP sustained
+- **Concurrent Connections:** 100,000 (TCP)
+- **P99 Latency:** 100ms (client-to-client)
+- **Memory:** 6,144 MiB total RSS @ 100K connections
+- **Workload:** `tcp_sustained_100k_1kib`
 - **Features:** All transports, connection pooling, audit logging, HA
 - **SLA:** 99.95% availability
 - **Pricing:** Enterprise license pricing
 - **Documentation:** `/docs/plans/enterprise-tier.md`
 
-### Government Tier (900 req/s)
+### Government Tier
 
 **Ideal for:** Government agencies, regulated environments, healthcare, finance
 
-- **Throughput:** 900 req/s
-- **Concurrent Connections:** 256
-- **P99 Latency:** 150ms
+- **Throughput:** 1,800 msg/s (900 req/s + 900 resp/s) - TCP sustained, FIPS-140-2
+- **Concurrent Connections:** 50,000 (TCP, encrypted)
+- **P99 Latency:** 80ms (client-to-client, includes encryption overhead)
+- **Memory:** 3,584 MiB total RSS @ 50K connections (includes FIPS module)
+- **Workload:** `tcp_sustained_50k_1kib_gov`
 - **Features:** FIPS-140-2 encryption, immutable audit logs, compliance reporting
 - **SLA:** 99.99% availability
 - **Audit Retention:** 7 years

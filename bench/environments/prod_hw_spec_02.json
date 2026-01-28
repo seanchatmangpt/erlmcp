@@ -1,0 +1,15 @@
+{
+  "environment": "prod_hw_spec_02",
+  "description": "Production tier 2 - High-performance production hardware",
+  "cpu": "32 vCPU (AMD EPYC 7003 series)",
+  "ram_gb": 128,
+  "network": "25 Gbps",
+  "disk": "NVMe SSD RAID0 (1 TB)",
+  "os": "Ubuntu 22.04 LTS",
+  "erlang_otp": "26.2",
+  "kernel_tuning": {
+    "net.core.somaxconn": 131072,
+    "net.ipv4.tcp_max_syn_backlog": 16384,
+    "fs.file-max": 2097152
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "workload_id": "ha_failover_test",
+  "description": "High availability failover test - 3-node cluster with simulated node failure",
+  "transport": "tcp",
+  "pattern": "ha_failover",
+  "duration_s": 60,
+  "topology": "3_node_cluster",
+  "connections_per_node": 10000,
+  "total_connections": 30000,
+  "failure_simulation": "kill_primary_node",
+  "detection_mechanism": "net_kernel_monitor",
+  "environment": "prod_hw_spec_01",
+  "expected_performance": {
+    "failover_detection_s": 2,
+    "connection_migration_s": 8,
+    "total_failover_time_s": 10,
+    "data_loss": "zero",
+    "connection_drop_rate_pct": 0
+  }
+}

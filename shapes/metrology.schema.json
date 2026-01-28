@@ -1,0 +1,295 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "erlmcp v1.5.0 Metrology Standard Schema",
+  "description": "Canonical schema for performance measurement, benchmark specifications, and evidence bundles. Enforces metrology discipline to prevent the 7 stop-the-line conditions.",
+  "version": "1.5.0",
+  "type": "object",
+  "required": ["schema_version", "artifact_type", "workload_id", "measurements"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.5.0",
+      "description": "Schema version (MUST be 1.5.0 for this standard)"
+    },
+    "artifact_type": {
+      "type": "string",
+      "enum": ["plan", "evidence", "baseline", "comparison"],
+      "description": "Type of metrology artifact: plan (test spec), evidence (results), baseline (reference), comparison (regression analysis)"
+    },
+    "workload_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "minLength": 3,
+      "maxLength": 64,
+      "description": "Unique identifier for workload (e.g., throughput_baseline, latency_p99_1k_conns)"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["timestamp", "environment", "erlang_version"],
+      "additionalProperties": true,
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp (YYYY-MM-DDTHH:MM:SSZ)"
+        },
+        "environment": {
+          "type": "string",
+          "enum": ["ci", "local", "staging", "production"],
+          "description": "Execution environment"
+        },
+        "erlang_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$",
+          "description": "Erlang/OTP version (e.g., 25.3, 26.0)"
+        },
+        "hardware": {
+          "type": "object",
+          "properties": {
+            "cpu_cores": {"type": "integer", "minimum": 1},
+            "memory_gb": {"type": "integer", "minimum": 1},
+            "architecture": {"type": "string", "enum": ["x86_64", "aarch64", "arm64"]}
+          }
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1024,
+          "description": "Human-readable description of workload or test"
+        }
+      }
+    },
+    "measurements": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/measurement"
+      },
+      "description": "Array of standardized measurements"
+    },
+    "quality_gates": {
+      "type": "object",
+      "description": "Quality gate thresholds for automated validation",
+      "properties": {
+        "throughput_min_req_s": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum acceptable throughput in requests/second"
+        },
+        "latency_p99_max_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Maximum acceptable p99 latency in milliseconds"
+        },
+        "memory_max_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum memory usage in megabytes"
+        },
+        "error_rate_max_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Maximum error rate percentage"
+        },
+        "regression_tolerance_percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 5,
+          "description": "Allowed performance regression percentage vs baseline"
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "WARN", "SKIP"],
+      "description": "Overall test status after quality gate validation"
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "severity", "message"],
+        "properties": {
+          "rule": {
+            "type": "string",
+            "enum": [
+              "missing_unit",
+              "ambiguous_metric",
+              "undefined_scope",
+              "unanchored_duration",
+              "mixed_context",
+              "unlabeled_memory",
+              "zero_sample_size"
+            ],
+            "description": "Violated metrology rule (maps to 7 stop-the-line conditions)"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["ERROR", "WARNING"],
+            "description": "ERROR blocks CI, WARNING is advisory"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable violation description"
+          },
+          "measurement_index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index of violating measurement in measurements array"
+          }
+        }
+      },
+      "description": "List of schema or metrology violations detected"
+    }
+  },
+  "definitions": {
+    "measurement": {
+      "type": "object",
+      "required": ["metric_name", "value", "unit", "scope", "transport"],
+      "additionalProperties": false,
+      "properties": {
+        "metric_name": {
+          "type": "string",
+          "enum": [
+            "throughput",
+            "latency_p50",
+            "latency_p95",
+            "latency_p99",
+            "latency_p99_9",
+            "memory_heap",
+            "memory_process",
+            "memory_ets",
+            "memory_total",
+            "cpu_utilization",
+            "gc_pause_avg",
+            "gc_pause_max",
+            "gc_count",
+            "connection_count",
+            "message_queue_len",
+            "error_rate",
+            "success_rate",
+            "bandwidth",
+            "payload_size"
+          ],
+          "description": "Canonical metric name from registry"
+        },
+        "value": {
+          "type": "number",
+          "description": "Measured value (numeric only, units specified separately)"
+        },
+        "unit": {
+          "$ref": "#/definitions/unit",
+          "description": "Measurement unit (REQUIRED, no naked numbers)"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["per_process", "per_connection", "per_node", "per_cluster"],
+          "description": "Measurement scope (REQUIRED, no ambiguity)"
+        },
+        "transport": {
+          "type": "string",
+          "enum": ["stdio", "tcp", "http", "websocket", "sse", "all"],
+          "description": "Transport type under test (REQUIRED context)"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0.001,
+          "description": "Measurement duration (REQUIRED for rates/throughput)"
+        },
+        "sample_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of samples (REQUIRED for statistical metrics)"
+        },
+        "percentile": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percentile value for latency metrics (e.g., 99.0 for p99)"
+        },
+        "workload_details": {
+          "type": "object",
+          "properties": {
+            "concurrent_connections": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of concurrent client connections"
+            },
+            "message_size_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Message payload size in bytes (wire format, pre-TLS)"
+            },
+            "request_pattern": {
+              "type": "string",
+              "enum": ["constant", "burst", "ramp", "sawtooth", "random"],
+              "description": "Request arrival pattern"
+            },
+            "json_rpc_operations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "initialize",
+                  "tools/list",
+                  "tools/call",
+                  "resources/list",
+                  "resources/read",
+                  "prompts/list",
+                  "prompts/get",
+                  "ping"
+                ]
+              },
+              "description": "JSON-RPC operations in workload mix"
+            }
+          }
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Optional clarifications (e.g., 'Includes TLS overhead', 'Warmup excluded')"
+        }
+      }
+    },
+    "unit": {
+      "type": "object",
+      "required": ["dimension", "symbol"],
+      "additionalProperties": false,
+      "properties": {
+        "dimension": {
+          "type": "string",
+          "enum": ["time", "rate", "bytes", "bandwidth", "percentage", "count", "dimensionless"],
+          "description": "Physical dimension category"
+        },
+        "symbol": {
+          "type": "string",
+          "enum": [
+            "ns",
+            "µs",
+            "ms",
+            "s",
+            "msg/s",
+            "req/s",
+            "ops/s",
+            "B",
+            "KiB",
+            "MiB",
+            "GiB",
+            "Mbps",
+            "MiB/s",
+            "%",
+            "count",
+            "ratio"
+          ],
+          "description": "Standard unit symbol (IEEE/SI preferred)"
+        },
+        "scale_factor": {
+          "type": "number",
+          "description": "Multiplier to convert to base unit (e.g., 1e-3 for ms to s)"
+        }
+      }
+    }
+  }
+}

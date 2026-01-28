@@ -1,0 +1,921 @@
+[2026-01-27 18:02:26] =========================================
+[2026-01-27 18:02:26] erlmcp Deterministic Build Wrapper v1.5.0
+[2026-01-27 18:02:26] =========================================
+[2026-01-27 18:02:26] Build ID: v1.5.0-3a57163-1769565745
+[2026-01-27 18:02:26] Rebar3: rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1
+[2026-01-27 18:02:26] Erlang/OTP: 27
+[2026-01-27 18:02:26] Targets: clean
+[2026-01-27 18:02:26] Environment: TERM=dumb NO_COLOR=1 REBAR_COLOR=none
+[2026-01-27 18:02:26] =========================================
+Cleaning out erlmcp...
+[2026-01-27 18:02:27] =========================================
+[2026-01-27 18:02:27] Build Complete
+[2026-01-27 18:02:27] =========================================
+[2026-01-27 18:02:27] Exit Code: 0
+[2026-01-27 18:02:27] Duration: 2s
+[2026-01-27 18:02:27] Metrology Validated: true
+[2026-01-27 18:02:27] Receipt: /Users/sac/erlmcp/tools/build/receipts/v1.5.0-3a57163-1769565745.json
+[2026-01-27 18:02:27] Log: /Users/sac/erlmcp/tools/build/build.log
+[2026-01-27 18:02:27] =========================================
+[2026-01-27 18:02:40] =========================================
+[2026-01-27 18:02:40] erlmcp Deterministic Build Wrapper v1.5.0
+[2026-01-27 18:02:40] =========================================
+[2026-01-27 18:02:40] Build ID: v1.5.0-3a57163-1769565759
+[2026-01-27 18:02:40] Rebar3: rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1
+[2026-01-27 18:02:40] Erlang/OTP: 27
+[2026-01-27 18:02:40] Targets: compile
+[2026-01-27 18:02:40] Environment: TERM=dumb NO_COLOR=1 REBAR_COLOR=none
+[2026-01-27 18:02:40] =========================================
+Verifying dependencies...
+Upgrading fs v0.9.2
+Analyzing applications...
+Compiling fs
+Compiling cowboy
+Analyzing applications...
+Compiling erlmcp
+     ┌─ src/erlmcp_session_manager.erl:
+     │
+ 214 │      MatchSpec = [{{?SESSION_TABLE, '_', '$1', '_'}, [{'<', '$1', CurrentTime}], [true]}],
+     │                  ╰── Warning: a term is constructed, but never used
+
+
+    ┌─ src/erlmcp_metrics_http_worker.erl:
+    │
+ 77 │      ConfigFile = erlang:atom_to_list(erlang:node()) ++ ".conf",
+    │                                                      ╰── Warning: the result of evaluating operator '++'/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+     ┌─ src/erlmcp_config.erl:
+     │
+ 534 │  validate_config_type(Key, Value, ok) ->
+     │  ╰── Warning: this clause cannot match because a previous clause at line 531 always matches
+
+
+     ┌─ src/erlmcp_origin_validator.erl:
+     │
+ 175 │                  [H] -> H
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 174 always matches
+
+     ┌─ src/erlmcp_origin_validator.erl:
+     │
+ 186 │                  {Host, _Port} ->
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 179 always matches
+
+
+    ┌─ src/erlmcp_hot_reload.erl:
+    │
+ 94 │          last_reload = erlang:now(),
+    │                        ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 261 │                  drain_start = erlang:now()
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 275 │              DrainTime = timer:now_diff(erlang:now(), State#state.drain_start) / 1000,
+     │                                         ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 292 │          StartTime -> round(timer:now_diff(erlang:now(), StartTime) / 1000)
+     │                                            ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 354 │              DrainTime = timer:now_diff(erlang:now(), State#state.drain_start) / 1000,
+     │                                         ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 385 │      StartTime = erlang:now(),
+     │                  ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 397 │                  last_reload = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 401 │              ElapsedMs = round(timer:now_diff(erlang:now(), StartTime) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 459 │      StartTime = erlang:now(),
+     │                  ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 480 │                  last_reload = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 483 │              ElapsedMs = round(timer:now_diff(erlang:now(), StartTime) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 345 │                  {_, Error} -> Error
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 344 always matches
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 407 │          Max -> throw({error, {range_error, Field, Value, -infinity, Max}})
+     │                                                           ╰── Warning: evaluation of operator '-'/1 will fail with a 'badarith' exception
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 424 │          MaxLen -> throw({error, {length_error, Field, Length, -infinity, MaxLen}})
+     │                                                                ╰── Warning: evaluation of operator '-'/1 will fail with a 'badarith' exception
+
+
+     ┌─ src/erlmcp_metrology_validator.erl:
+     │
+ 605 │          {<<"ms">>, 0.0} ->
+     │                     ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 117 │                  started_at => erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 138 │                  drain_start = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 170 │                  drain_start = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 249 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 297 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 309 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+
+   ┌─ src/erlmcp_transport_sse.erl:
+   │
+ 6 │  -behaviour(erlmcp_transport).
+   │   ╰── Warning: undefined callback function init/1 (behaviour 'erlmcp_transport')
+
+
+     ┌─ src/erlmcp_pricing_receipt.erl:
+     │
+ 427 │  export_receipt(_, _, _) ->
+     │  ╰── Warning: this clause for export_receipt/3 cannot match because a previous clause at line 419 always matches
+
+
+     ┌─ src/erlmcp_queue_benchmark.erl:
+     │
+ 295 │      NumProducers = maps:get(num_producers, Result),
+     │                     ╰── Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+    ┌─ src/erlmcp_report_generator.erl:
+    │
+ 17 │              {<<"report.format">>, atom_to_binary(Format)},
+    │                                    ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 260 │              {<<"html.template">>, atom_to_binary(Template)},
+     │                                    ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 402 │          [{atom_to_binary(K), format_option_value(V)} | Acc]
+     │            ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 405 │  format_option_value(V) when is_atom(V) -> atom_to_binary(V);
+     │                                            ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+
+     ┌─ src/tcps_heijunka.erl:
+     │
+ 313 │                  0.0 -> 0.0;
+     │                  ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+     ┌─ src/tcps_heijunka.erl:
+     │
+ 341 │          0.0 -> 1.0;
+     │          ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+
+Task failed: {{badmatch,[]},
+              [{rebar_compiler_format,colorize,2,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler_format.erl"},
+                    {line,74}]},
+               {rebar_compiler_format,format,5,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler_format.erl"},
+                    {line,25}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^1/1-1-',4,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,279}]},
+               {rebar_base_compiler,error_tuple,5,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,160}]},
+               {rebar_compiler,compile_worker,2,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler.erl"},
+                    {line,337}]},
+               {rebar_parallel,worker,3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_parallel.erl"},
+                    {line,260}]}]}
+[2026-01-27 18:02:48] =========================================
+[2026-01-27 18:02:48] Build Complete
+[2026-01-27 18:02:48] =========================================
+[2026-01-27 18:02:48] Exit Code: 1
+[2026-01-27 18:02:48] Duration: 9s
+[2026-01-27 18:02:48] Metrology Validated: false
+[2026-01-27 18:02:48] Receipt: /Users/sac/erlmcp/tools/build/receipts/v1.5.0-3a57163-1769565759.json
+[2026-01-27 18:02:48] Log: /Users/sac/erlmcp/tools/build/build.log
+[2026-01-27 18:02:48] =========================================
+[2026-01-27 18:02:48] ERROR: Build failed with exit code 1
+[2026-01-27 18:02:48] ERROR: See /Users/sac/erlmcp/tools/build/build.log for details
+[2026-01-27 18:02:54] =========================================
+[2026-01-27 18:02:54] erlmcp Deterministic Build Wrapper v1.5.0
+[2026-01-27 18:02:54] =========================================
+[2026-01-27 18:02:54] Build ID: v1.5.0-3a57163-1769565773
+[2026-01-27 18:02:54] Rebar3: rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1
+[2026-01-27 18:02:54] Erlang/OTP: 27
+[2026-01-27 18:02:54] Targets: compile
+[2026-01-27 18:02:54] Environment: TERM=dumb NO_COLOR=1 REBAR_COLOR=none
+[2026-01-27 18:02:54] =========================================
+Verifying dependencies...
+Upgrading fs v0.9.2
+Analyzing applications...
+Compiling fs
+Compiling cowboy
+Analyzing applications...
+Compiling erlmcp
+    ┌─ src/erlmcp_regression_detector.erl:
+    │
+ 52 │  -record(detector_config, {
+    │   ╰── Warning: record detector_config is unused
+
+
+    ┌─ src/erlmcp_connection_pool_sup.erl:
+    │
+ 36 │      Hash = erlang:hash(ConnectionId, ?NUM_POOLS),
+    │             ╰── Warning: erlang:hash/2 is removed; use erlang:phash2/2 instead
+
+
+Task failed: {{badmatch,[]},
+              [{rebar_compiler_format,colorize,2,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler_format.erl"},
+                    {line,74}]},
+               {rebar_compiler_format,format,5,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler_format.erl"},
+                    {line,25}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^1/1-1-',4,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,279}]},
+               {rebar_base_compiler,error_tuple,5,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,160}]},
+               {rebar_compiler,compile_worker,2,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler.erl"},
+                    {line,337}]},
+               {rebar_parallel,worker,3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_parallel.erl"},
+                    {line,260}]}]}
+[2026-01-27 18:02:57] =========================================
+[2026-01-27 18:02:57] Build Complete
+[2026-01-27 18:02:57] =========================================
+[2026-01-27 18:02:57] Exit Code: 1
+[2026-01-27 18:02:57] Duration: 3s
+[2026-01-27 18:02:57] Metrology Validated: false
+[2026-01-27 18:02:57] Receipt: /Users/sac/erlmcp/tools/build/receipts/v1.5.0-3a57163-1769565773.json
+[2026-01-27 18:02:57] Log: /Users/sac/erlmcp/tools/build/build.log
+[2026-01-27 18:02:57] =========================================
+[2026-01-27 18:02:57] ERROR: Build failed with exit code 1
+[2026-01-27 18:02:57] ERROR: See /Users/sac/erlmcp/tools/build/build.log for details
+[2026-01-27 18:03:47] =========================================
+[2026-01-27 18:03:47] erlmcp Deterministic Build Wrapper v1.5.1
+[2026-01-27 18:03:47] =========================================
+[2026-01-27 18:03:47] Build ID: v1.5.1-3a57163-1769565827
+[2026-01-27 18:03:47] Rebar3: rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1
+[2026-01-27 18:03:47] Erlang/OTP: 27
+[2026-01-27 18:03:47] Targets: clean
+[2026-01-27 18:03:47] Environment: TERM=dumb NO_COLOR=1 REBAR_COLOR=none
+[2026-01-27 18:03:47] Colorizer Bypass: AGGRESSIVE MODE (all color vars disabled)
+[2026-01-27 18:03:47] =========================================
+Cleaning out erlmcp...
+[2026-01-27 18:03:48] =========================================
+[2026-01-27 18:03:48] Build Complete
+[2026-01-27 18:03:48] =========================================
+[2026-01-27 18:03:48] Exit Code: 0
+[2026-01-27 18:03:48] Duration: 1s
+[2026-01-27 18:03:48] Metrology Validated: true
+[2026-01-27 18:03:48] Colorizer Crash: false
+[2026-01-27 18:03:48] Receipt: /Users/sac/erlmcp/tools/build/receipts/v1.5.1-3a57163-1769565827.json
+[2026-01-27 18:03:48] Log: /Users/sac/erlmcp/tools/build/build.log
+[2026-01-27 18:03:48] =========================================
+[2026-01-27 18:03:50] =========================================
+[2026-01-27 18:03:50] erlmcp Deterministic Build Wrapper v1.5.1
+[2026-01-27 18:03:50] =========================================
+[2026-01-27 18:03:50] Build ID: v1.5.1-3a57163-1769565829
+[2026-01-27 18:03:50] Rebar3: rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1
+[2026-01-27 18:03:50] Erlang/OTP: 27
+[2026-01-27 18:03:50] Targets: compile
+[2026-01-27 18:03:50] Environment: TERM=dumb NO_COLOR=1 REBAR_COLOR=none
+[2026-01-27 18:03:50] Colorizer Bypass: AGGRESSIVE MODE (all color vars disabled)
+[2026-01-27 18:03:50] =========================================
+Verifying dependencies...
+Upgrading fs v0.9.2
+Analyzing applications...
+Compiling fs
+Compiling cowboy
+Analyzing applications...
+Compiling erlmcp
+     ┌─ src/erlmcp_session_manager.erl:
+     │
+ 214 │      MatchSpec = [{{?SESSION_TABLE, '_', '$1', '_'}, [{'<', '$1', CurrentTime}], [true]}],
+     │                  ╰── Warning: a term is constructed, but never used
+
+
+    ┌─ src/erlmcp_metrics_http_worker.erl:
+    │
+ 77 │      ConfigFile = erlang:atom_to_list(erlang:node()) ++ ".conf",
+    │                                                      ╰── Warning: the result of evaluating operator '++'/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+     ┌─ src/erlmcp_config.erl:
+     │
+ 534 │  validate_config_type(Key, Value, ok) ->
+     │  ╰── Warning: this clause cannot match because a previous clause at line 531 always matches
+
+
+     ┌─ src/erlmcp_origin_validator.erl:
+     │
+ 175 │                  [H] -> H
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 174 always matches
+
+     ┌─ src/erlmcp_origin_validator.erl:
+     │
+ 186 │                  {Host, _Port} ->
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 179 always matches
+
+
+    ┌─ src/erlmcp_hot_reload.erl:
+    │
+ 94 │          last_reload = erlang:now(),
+    │                        ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 261 │                  drain_start = erlang:now()
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 275 │              DrainTime = timer:now_diff(erlang:now(), State#state.drain_start) / 1000,
+     │                                         ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 292 │          StartTime -> round(timer:now_diff(erlang:now(), StartTime) / 1000)
+     │                                            ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 354 │              DrainTime = timer:now_diff(erlang:now(), State#state.drain_start) / 1000,
+     │                                         ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 385 │      StartTime = erlang:now(),
+     │                  ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 397 │                  last_reload = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 401 │              ElapsedMs = round(timer:now_diff(erlang:now(), StartTime) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 459 │      StartTime = erlang:now(),
+     │                  ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 480 │                  last_reload = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 483 │              ElapsedMs = round(timer:now_diff(erlang:now(), StartTime) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 345 │                  {_, Error} -> Error
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 344 always matches
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 407 │          Max -> throw({error, {range_error, Field, Value, -infinity, Max}})
+     │                                                           ╰── Warning: evaluation of operator '-'/1 will fail with a 'badarith' exception
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 424 │          MaxLen -> throw({error, {length_error, Field, Length, -infinity, MaxLen}})
+     │                                                                ╰── Warning: evaluation of operator '-'/1 will fail with a 'badarith' exception
+
+
+     ┌─ src/erlmcp_metrology_validator.erl:
+     │
+ 605 │          {<<"ms">>, 0.0} ->
+     │                     ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 117 │                  started_at => erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 138 │                  drain_start = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 170 │                  drain_start = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 249 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 297 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 309 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+
+    ┌─ src/erlmcp_report_generator.erl:
+    │
+ 17 │              {<<"report.format">>, atom_to_binary(Format)},
+    │                                    ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 260 │              {<<"html.template">>, atom_to_binary(Template)},
+     │                                    ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 402 │          [{atom_to_binary(K), format_option_value(V)} | Acc]
+     │            ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 405 │  format_option_value(V) when is_atom(V) -> atom_to_binary(V);
+     │                                            ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+
+   ┌─ src/erlmcp_transport_sse.erl:
+   │
+ 6 │  -behaviour(erlmcp_transport).
+   │   ╰── Warning: undefined callback function init/1 (behaviour 'erlmcp_transport')
+
+
+     ┌─ src/erlmcp_queue_benchmark.erl:
+     │
+ 295 │      NumProducers = maps:get(num_producers, Result),
+     │                     ╰── Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+     ┌─ src/erlmcp_pricing_receipt.erl:
+     │
+ 427 │  export_receipt(_, _, _) ->
+     │  ╰── Warning: this clause for export_receipt/3 cannot match because a previous clause at line 419 always matches
+
+
+     ┌─ src/tcps_heijunka.erl:
+     │
+ 313 │                  0.0 -> 0.0;
+     │                  ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+     ┌─ src/tcps_heijunka.erl:
+     │
+ 341 │          0.0 -> 1.0;
+     │          ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+
+     ┌─ src/erlmcp_profile_manager.erl:
+     │
+ 130 │                  _ ->
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 127 always matches
+
+
+                   [{file,
+                    {line,74}]},
+                   [{file,
+                    {line,25}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^1/1-1-',4,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,279}]},
+               {rebar_base_compiler,error_tuple,5,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,160}]},
+               {rebar_compiler,compile_worker,2,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler.erl"},
+                    {line,337}]},
+               {rebar_parallel,worker,3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_parallel.erl"},
+                    {line,260}]}]}
+=ERROR REPORT==== 27-Jan-2026::18:03:52.462754 ===
+Error in process <0.2846.0> with exit value:
+{{badmatch,[]},
+                          {line,74}]},
+                          {line,25}]},
+  {rebar_base_compiler,'-format_errors/4-lc$^1/1-1-',4,
+                       [{file,"/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                        {line,278}]},
+  {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                       [{file,"/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                        {line,278}]},
+  {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                       [{file,"/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                        {line,279}]},
+  {rebar_base_compiler,error_tuple,5,
+                       [{file,"/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                        {line,160}]},
+  {rebar_compiler,compile_worker,2,
+                  [{file,"/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler.erl"},
+                   {line,337}]},
+  {rebar_parallel,worker,3,
+                  [{file,"/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_parallel.erl"},
+                   {line,260}]}]}
+
+[2026-01-27 18:03:52] =========================================
+[2026-01-27 18:03:52] Build Complete
+[2026-01-27 18:03:52] =========================================
+[2026-01-27 18:03:52] Exit Code: 1
+[2026-01-27 18:03:52] Duration: 3s
+[2026-01-27 18:03:52] Metrology Validated: false
+[2026-01-27 18:03:52] Colorizer Crash: false
+[2026-01-27 18:03:52] Receipt: /Users/sac/erlmcp/tools/build/receipts/v1.5.1-3a57163-1769565829.json
+[2026-01-27 18:03:52] Log: /Users/sac/erlmcp/tools/build/build.log
+[2026-01-27 18:03:52] =========================================
+[2026-01-27 18:03:52] ERROR: Build failed with exit code 1
+[2026-01-27 18:03:52] ERROR: See /Users/sac/erlmcp/tools/build/build.log for details
+[2026-01-27 18:04:38] =========================================
+[2026-01-27 18:04:38] erlmcp Deterministic Build Wrapper v1.5.2
+[2026-01-27 18:04:38] =========================================
+[2026-01-27 18:04:38] Build ID: v1.5.2-3a57163-1769565877
+[2026-01-27 18:04:38] Rebar3: rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1
+[2026-01-27 18:04:38] Erlang/OTP: 27
+[2026-01-27 18:04:38] Targets: clean
+[2026-01-27 18:04:38] Environment: TERM=dumb NO_COLOR=1 REBAR_COLOR=none
+[2026-01-27 18:04:38] Colorizer Bypass: AGGRESSIVE MODE (all color vars disabled)
+[2026-01-27 18:04:38] =========================================
+Cleaning out erlmcp...
+[2026-01-27 18:04:39] =========================================
+[2026-01-27 18:04:39] Build Complete
+[2026-01-27 18:04:39] =========================================
+[2026-01-27 18:04:39] Exit Code: 0
+[2026-01-27 18:04:39] Duration: 2s
+[2026-01-27 18:04:39] Metrology Validated: true
+[2026-01-27 18:04:39] Colorizer Crash: false
+[2026-01-27 18:04:39] Receipt: /Users/sac/erlmcp/tools/build/receipts/v1.5.2-3a57163-1769565877.json
+[2026-01-27 18:04:39] Log: /Users/sac/erlmcp/tools/build/build.log
+[2026-01-27 18:04:39] =========================================
+[2026-01-27 18:04:40] =========================================
+[2026-01-27 18:04:40] erlmcp Deterministic Build Wrapper v1.5.2
+[2026-01-27 18:04:40] =========================================
+[2026-01-27 18:04:40] Build ID: v1.5.2-3a57163-1769565879
+[2026-01-27 18:04:40] Rebar3: rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1
+[2026-01-27 18:04:40] Erlang/OTP: 27
+[2026-01-27 18:04:40] Targets: compile
+[2026-01-27 18:04:40] Environment: TERM=dumb NO_COLOR=1 REBAR_COLOR=none
+[2026-01-27 18:04:40] Colorizer Bypass: AGGRESSIVE MODE (all color vars disabled)
+[2026-01-27 18:04:40] =========================================
+Verifying dependencies...
+Upgrading fs v0.9.2
+Analyzing applications...
+Compiling fs
+Compiling cowboy
+Analyzing applications...
+Compiling erlmcp
+     ┌─ src/erlmcp_session_manager.erl:
+     │
+ 214 │      MatchSpec = [{{?SESSION_TABLE, '_', '$1', '_'}, [{'<', '$1', CurrentTime}], [true]}],
+     │                  ╰── Warning: a term is constructed, but never used
+
+
+    ┌─ src/erlmcp_metrics_http_worker.erl:
+    │
+ 77 │      ConfigFile = erlang:atom_to_list(erlang:node()) ++ ".conf",
+    │                                                      ╰── Warning: the result of evaluating operator '++'/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+     ┌─ src/erlmcp_config.erl:
+     │
+ 534 │  validate_config_type(Key, Value, ok) ->
+     │  ╰── Warning: this clause cannot match because a previous clause at line 531 always matches
+
+
+     ┌─ src/erlmcp_origin_validator.erl:
+     │
+ 175 │                  [H] -> H
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 174 always matches
+
+     ┌─ src/erlmcp_origin_validator.erl:
+     │
+ 186 │                  {Host, _Port} ->
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 179 always matches
+
+
+    ┌─ src/erlmcp_hot_reload.erl:
+    │
+ 94 │          last_reload = erlang:now(),
+    │                        ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 261 │                  drain_start = erlang:now()
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 275 │              DrainTime = timer:now_diff(erlang:now(), State#state.drain_start) / 1000,
+     │                                         ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 292 │          StartTime -> round(timer:now_diff(erlang:now(), StartTime) / 1000)
+     │                                            ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 354 │              DrainTime = timer:now_diff(erlang:now(), State#state.drain_start) / 1000,
+     │                                         ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 385 │      StartTime = erlang:now(),
+     │                  ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 397 │                  last_reload = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 401 │              ElapsedMs = round(timer:now_diff(erlang:now(), StartTime) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 459 │      StartTime = erlang:now(),
+     │                  ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 480 │                  last_reload = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_hot_reload.erl:
+     │
+ 483 │              ElapsedMs = round(timer:now_diff(erlang:now(), StartTime) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 345 │                  {_, Error} -> Error
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 344 always matches
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 407 │          Max -> throw({error, {range_error, Field, Value, -infinity, Max}})
+     │                                                           ╰── Warning: evaluation of operator '-'/1 will fail with a 'badarith' exception
+
+     ┌─ src/erlmcp_config_schema.erl:
+     │
+ 424 │          MaxLen -> throw({error, {length_error, Field, Length, -infinity, MaxLen}})
+     │                                                                ╰── Warning: evaluation of operator '-'/1 will fail with a 'badarith' exception
+
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 117 │                  started_at => erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 138 │                  drain_start = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 170 │                  drain_start = erlang:now(),
+     │                                ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 249 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 297 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+     ┌─ src/erlmcp_graceful_drain.erl:
+     │
+ 309 │              ElapsedMs = round(timer:now_diff(erlang:now(), State#state.drain_start) / 1000),
+     │                                               ╰── Warning: erlang:now/0 is deprecated; see the "Time and Time Correction in Erlang" chapter of the ERTS User's Guide for more information
+
+
+   ┌─ src/erlmcp_transport_sse.erl:
+   │
+ 6 │  -behaviour(erlmcp_transport).
+   │   ╰── Warning: undefined callback function init/1 (behaviour 'erlmcp_transport')
+
+
+    ┌─ src/erlmcp_report_generator.erl:
+    │
+ 17 │              {<<"report.format">>, atom_to_binary(Format)},
+    │                                    ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 260 │              {<<"html.template">>, atom_to_binary(Template)},
+     │                                    ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 402 │          [{atom_to_binary(K), format_option_value(V)} | Acc]
+     │            ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+     ┌─ src/erlmcp_report_generator.erl:
+     │
+ 405 │  format_option_value(V) when is_atom(V) -> atom_to_binary(V);
+     │                                            ╰── Warning: ambiguous call of overridden auto-imported BIF atom_to_binary/1 --
+use erlang:atom_to_binary/1 or "-compile({no_auto_import,[atom_to_binary/1]})." to resolve name clash
+
+
+     ┌─ src/erlmcp_queue_benchmark.erl:
+     │
+ 295 │      NumProducers = maps:get(num_producers, Result),
+     │                     ╰── Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+     ┌─ src/erlmcp_pricing_receipt.erl:
+     │
+ 427 │  export_receipt(_, _, _) ->
+     │  ╰── Warning: this clause for export_receipt/3 cannot match because a previous clause at line 419 always matches
+
+
+     ┌─ src/tcps_heijunka.erl:
+     │
+ 313 │                  0.0 -> 0.0;
+     │                  ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+     ┌─ src/tcps_heijunka.erl:
+     │
+ 341 │          0.0 -> 1.0;
+     │          ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+
+     ┌─ src/erlmcp_profile_manager.erl:
+     │
+ 130 │                  _ ->
+     │                  ╰── Warning: this clause cannot match because a previous clause at line 127 always matches
+
+
+                   [{file,
+                    {line,74}]},
+                   [{file,
+                    {line,25}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^1/1-1-',4,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,278}]},
+               {rebar_base_compiler,'-format_errors/4-lc$^0/1-0-',3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,279}]},
+               {rebar_base_compiler,error_tuple,5,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                    {line,160}]},
+               {rebar_compiler,compile_worker,2,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler.erl"},
+                    {line,337}]},
+               {rebar_parallel,worker,3,
+                   [{file,
+                        "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_parallel.erl"},
+                    {line,260}]}]}
+[2026-01-27 18:04:42] =========================================
+[2026-01-27 18:04:42] Build Complete
+[2026-01-27 18:04:42] =========================================
+[2026-01-27 18:04:42] Exit Code: 1
+[2026-01-27 18:04:42] Duration: 3s
+[2026-01-27 18:04:42] Metrology Validated: false
+[2026-01-27 18:04:42] Colorizer Crash: false
+[2026-01-27 18:04:42] Receipt: /Users/sac/erlmcp/tools/build/receipts/v1.5.2-3a57163-1769565879.json
+[2026-01-27 18:04:42] Log: /Users/sac/erlmcp/tools/build/build.log
+[2026-01-27 18:04:42] =========================================
+[2026-01-27 18:04:42] ERROR: Build failed with exit code 1
+[2026-01-27 18:04:42] ERROR: See /Users/sac/erlmcp/tools/build/build.log for details

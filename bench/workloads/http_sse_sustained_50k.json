@@ -1,0 +1,21 @@
+{
+  "workload_id": "http_sse_sustained_50k",
+  "description": "HTTP Server-Sent Events - 50K concurrent connections, sustained streaming",
+  "transport": "http_sse",
+  "pattern": "sustained",
+  "duration_s": 30,
+  "connections": 50000,
+  "message_size_bytes": 512,
+  "request_rate_per_conn": 10,
+  "total_expected_throughput_msg_per_s": 1000,
+  "environment": "prod_hw_spec_01",
+  "expected_performance": {
+    "throughput_msg_per_s": 1000,
+    "p50_latency_ms": 12,
+    "p95_latency_ms": 60,
+    "p99_latency_ms": 180,
+    "per_connection_heap_mib": 0.058,
+    "per_connection_state_mib": 0.018,
+    "per_node_total_rss_mib": 4096
+  }
+}

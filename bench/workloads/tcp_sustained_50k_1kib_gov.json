@@ -1,0 +1,25 @@
+{
+  "workload_id": "tcp_sustained_50k_1kib_gov",
+  "description": "Government tier baseline - 50K concurrent TCP connections with 1 KiB messages, sustained load, FIPS-140-2 encryption",
+  "transport": "tcp",
+  "pattern": "sustained",
+  "duration_s": 30,
+  "connections": 50000,
+  "message_size_bytes": 1024,
+  "request_rate_per_conn": 18,
+  "total_expected_throughput_msg_per_s": 1800,
+  "encryption": "FIPS-140-2 (AES-256-GCM)",
+  "audit_logging": true,
+  "environment": "gov_fips_hardware",
+  "expected_performance": {
+    "throughput_msg_per_s": 1800,
+    "p50_latency_ms": 5,
+    "p95_latency_ms": 28,
+    "p99_latency_ms": 80,
+    "per_connection_heap_mib": 0.052,
+    "per_connection_state_mib": 0.015,
+    "per_node_total_rss_mib": 3584,
+    "encryption_overhead_pct": 15,
+    "audit_overhead_pct": 8
+  }
+}

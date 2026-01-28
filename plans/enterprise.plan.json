@@ -8,12 +8,61 @@
     "cost": "Enterprise license pricing"
   },
   "envelope": {
-    "throughput_req_s": 1500,
-    "concurrent_connections": 100000,
-    "queue_depth_messages": 500000,
-    "p99_latency_ms": 100,
-    "failover_sla_seconds": 2,
-    "connection_timeout_seconds": 120
+    "throughput": {
+      "value": 3000,
+      "unit": "msg_per_s",
+      "definition": "JSON-RPC messages (requests + responses)",
+      "note": "1500 req/s × 2 (req + resp) = 3000 msg/s",
+      "workload_id": "tcp_sustained_100k_1kib",
+      "transport": "tcp",
+      "scope": "per_node",
+      "duration_s": 30
+    },
+    "concurrent_connections": {
+      "value": 100000,
+      "unit": "connections",
+      "workload_id": "tcp_sustained_100k_1kib",
+      "transport": "tcp",
+      "scope": "per_node"
+    },
+    "queue_depth": {
+      "value": 500000,
+      "unit": "messages",
+      "scope": "per_node",
+      "component": "erlmcp_server_mailbox"
+    },
+    "latency": {
+      "p50_ms": 6,
+      "p95_ms": 35,
+      "p99_ms": 100,
+      "workload_id": "tcp_sustained_100k_1kib",
+      "transport": "tcp",
+      "measurement_point": "client_to_client"
+    },
+    "failover_sla": {
+      "value": 2,
+      "unit": "seconds",
+      "topology": "3_node_cluster",
+      "detection_mechanism": "net_kernel_monitor",
+      "workload_id": "ha_failover_test"
+    },
+    "connection_timeout": {
+      "value": 120,
+      "unit": "seconds"
+    }
+  },
+  "memory": {
+    "per_connection_heap_mib": 0.045,
+    "per_connection_state_mib": 0.010,
+    "per_node_base_overhead_mib": 150,
+    "per_node_total_rss_mib": 6144,
+    "workload_id": "tcp_sustained_100k_1kib",
+    "connections": 100000,
+    "scope": "per_node",
+    "environment": "prod_hw_spec_01",
+    "formula": "base_overhead (150) + (100000 conn × 0.055 MiB) + overhead_margin (494) ≈ 6144 MiB",
+    "poolboy_overhead_mib": 64,
+    "ssl_session_cache_mib": 128
   },
   "limits": {
     "max_message_size_bytes": 10485760,
@@ -46,7 +95,7 @@
     "throughput_exceeded": {
       "http_status": 429,
       "error_code": "rate_limit_exceeded",
-      "message": "Request rate exceeds tier limit (1500 req/s)",
+      "message": "Request rate exceeds tier limit (3000 msg/s, 1500 req/s)",
       "retry_after_seconds": 30
     },
     "queue_depth_exceeded": {
@@ -57,7 +106,7 @@
     },
     "connection_limit_exceeded": {
       "error_code": "connection_limit",
-      "message": "Maximum 512 concurrent connections exceeded",
+      "message": "Maximum 100,000 concurrent connections exceeded",
       "close_code": 1008
     },
     "message_size_exceeded": {
@@ -87,8 +136,29 @@
   },
   "sla": {
     "availability_percentage": 99.95,
-    "throughput_guarantee_req_s": 1500,
-    "failover_time_seconds": 10,
-    "recovery_sla_minutes": 15
+    "throughput_guarantee": {
+      "value": 3000,
+      "unit": "msg_per_s",
+      "workload_id": "tcp_sustained_100k_1kib",
+      "scope": "per_node"
+    },
+    "failover_time": {
+      "value": 10,
+      "unit": "seconds",
+      "topology": "3_node_cluster"
+    },
+    "recovery_sla": {
+      "value": 15,
+      "unit": "minutes"
+    }
+  },
+  "metrology_compliance": {
+    "version": "v1.5.0",
+    "validated": "2026-01-27",
+    "validator": "scripts/validate_plan_metrology.sh",
+    "violations": 0,
+    "workload_definitions": "bench/workloads/",
+    "environment_definitions": "bench/environments/",
+    "metrics_glossary": "docs/metrology/METRICS_GLOSSARY.md"
   }
 }

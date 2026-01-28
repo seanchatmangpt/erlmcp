@@ -1,0 +1,21 @@
+{
+  "workload_id": "stdio_sequential_1k",
+  "description": "Standard I/O transport - 1K sequential messages, typical CLI usage",
+  "transport": "stdio",
+  "pattern": "sequential",
+  "duration_s": 10,
+  "connections": 1,
+  "message_size_bytes": 256,
+  "total_messages": 1000,
+  "total_expected_throughput_msg_per_s": 200,
+  "environment": "dev_laptop",
+  "expected_performance": {
+    "throughput_msg_per_s": 200,
+    "p50_latency_ms": 2,
+    "p95_latency_ms": 8,
+    "p99_latency_ms": 15,
+    "per_connection_heap_mib": 0.032,
+    "per_connection_state_mib": 0.008,
+    "per_node_total_rss_mib": 256
+  }
+}

@@ -1,0 +1,175 @@
+#!/usr/bin/env escript
+%%! -pa _build/default/lib/*/ebin -pa _build/default/lib/jsx/ebin
+
+%%%-------------------------------------------------------------------
+%%% @doc validate_metrology - CLI wrapper for metrology validation
+%%%
+%%% Usage:
+%%%   ./scripts/validate_metrology <file.json>
+%%%   ./scripts/validate_metrology <file.json> --plan=team
+%%%   ./scripts/validate_metrology --all-evidence <version>
+%%%
+%%% Exit Codes:
+%%%   0 - All validations passed
+%%%   1 - Validation violations found
+%%%   2 - Usage error or file not found
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+
+main([]) ->
+    usage(),
+    halt(2);
+
+main(["--help"]) ->
+    usage(),
+    halt(0);
+
+main(["-h"]) ->
+    usage(),
+    halt(0);
+
+main(["--all-evidence", Version]) ->
+    %% Validate all evidence artifacts for a version
+    validate_all_evidence(Version);
+
+main([FilePath | Args]) ->
+    %% Parse optional plan argument
+    Plan = parse_plan_arg(Args),
+
+    %% Ensure erlmcp app started for dependencies
+    ensure_app_started(),
+
+    %% Validate file
+    case erlmcp_metrology_validator:validate_file(FilePath) of
+        ok ->
+            io:format("✓ Validation passed: ~s~n", [FilePath]),
+            case Plan of
+                undefined -> ok;
+                _ -> io:format("  Plan context: ~s~n", [Plan])
+            end,
+            halt(0);
+
+        {error, Violations} ->
+            io:format("✗ Validation failed: ~s~n", [FilePath]),
+            io:format("~n"),
+            print_violations(Violations),
+            io:format("~n"),
+            io:format("Total violations: ~p~n", [length(Violations)]),
+            halt(1)
+    end.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+usage() ->
+    io:format("~nMetrology Validation Tool~n"),
+    io:format("~nValidates performance metrics against metrology standards~n"),
+    io:format("~nUsage:~n"),
+    io:format("  validate_metrology <file.json>~n"),
+    io:format("  validate_metrology <file.json> --plan=team~n"),
+    io:format("  validate_metrology --all-evidence <version>~n"),
+    io:format("~nOptions:~n"),
+    io:format("  --plan=<team|enterprise|gov>  Validate against plan requirements~n"),
+    io:format("  --all-evidence <version>      Validate all artifacts for version~n"),
+    io:format("  --help, -h                    Show this help~n"),
+    io:format("~nExamples:~n"),
+    io:format("  validate_metrology bench/report.json~n"),
+    io:format("  validate_metrology dist/evidence/v1.3.0/team/bench_report.json --plan=team~n"),
+    io:format("  validate_metrology --all-evidence v1.3.0~n"),
+    io:format("~nExit Codes:~n"),
+    io:format("  0 - All validations passed~n"),
+    io:format("  1 - Validation violations found~n"),
+    io:format("  2 - Usage error or file not found~n"),
+    io:format("~n").
+
+parse_plan_arg([]) ->
+    undefined;
+parse_plan_arg(["--plan=" ++ Plan | _]) ->
+    list_to_binary(Plan);
+parse_plan_arg([_ | Rest]) ->
+    parse_plan_arg(Rest).
+
+ensure_app_started() ->
+    %% Start minimal dependencies
+    application:ensure_all_started(jsx),
+    ok.
+
+print_violations(Violations) ->
+    lists:foreach(
+        fun(Violation) ->
+            Formatted = erlmcp_metrology_validator:format_violation(Violation),
+            io:format("  • ~s~n", [Formatted])
+        end,
+        Violations
+    ).
+
+validate_all_evidence(Version) ->
+    ensure_app_started(),
+
+    Plans = [team, enterprise, gov],
+    AllResults = lists:map(
+        fun(Plan) ->
+            validate_plan_evidence(Version, Plan)
+        end,
+        Plans
+    ),
+
+    %% Count failures
+    Failures = lists:sum([F || {F, _} <- AllResults]),
+    Total = lists:sum([T || {_, T} <- AllResults]),
+
+    io:format("~n=== Evidence Validation Summary ===~n"),
+    io:format("Total artifacts: ~p~n", [Total]),
+    io:format("Failed: ~p~n", [Failures]),
+    io:format("Passed: ~p~n", [Total - Failures]),
+
+    case Failures of
+        0 ->
+            io:format("~n✓ All evidence artifacts passed validation~n"),
+            halt(0);
+        _ ->
+            io:format("~n✗ Evidence validation failed~n"),
+            halt(1)
+    end.
+
+validate_plan_evidence(Version, Plan) ->
+    io:format("~nValidating ~s plan evidence for ~s...~n", [Plan, Version]),
+
+    PlanStr = atom_to_list(Plan),
+    BasePath = "dist/evidence/" ++ Version ++ "/" ++ PlanStr,
+
+    Artifacts = [
+        "bench_report.json",
+        "chaos_report.json",
+        "conformance_report.json"
+    ],
+
+    Results = lists:map(
+        fun(Artifact) ->
+            FilePath = BasePath ++ "/" ++ Artifact,
+            case filelib:is_file(FilePath) of
+                true ->
+                    case erlmcp_metrology_validator:validate_file(FilePath) of
+                        ok ->
+                            io:format("  ✓ ~s~n", [Artifact]),
+                            {ok, Artifact};
+                        {error, Violations} ->
+                            io:format("  ✗ ~s (~p violations)~n",
+                                     [Artifact, length(Violations)]),
+                            {error, Artifact, Violations}
+                    end;
+                false ->
+                    io:format("  ⚠ ~s (missing)~n", [Artifact]),
+                    {missing, Artifact}
+            end
+        end,
+        Artifacts
+    ),
+
+    %% Count failures and total
+    Failures = length([R || {error, _, _} <- Results]),
+    Total = length(Artifacts),
+
+    {Failures, Total}.
