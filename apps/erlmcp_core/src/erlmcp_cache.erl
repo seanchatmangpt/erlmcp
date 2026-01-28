@@ -607,7 +607,8 @@ put_in_l2(Key, Value, State) ->
 put_entry_in_l2(_Entry, #state{l2_enabled = false} = State) ->
     State;
 put_entry_in_l2(Entry, State) ->
-    mnesia:dirty_write(Entry),
+    %% Write record with explicit table name (table != record type name)
+    mnesia:dirty_write(erlmcp_cache_l2, Entry),
     State.
 
 -spec delete_from_l2(cache_key(), state()) -> state().
