@@ -55,12 +55,8 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--record(debugger_state, {
-    attached_processes = #{} :: #{pid() => map()},
-    traces = #{} :: #{reference() => map()},
-    breakpoints = #{} :: #{{module(), atom()} => [fun()]},
-    call_graphs = #{} :: #{reference() => [tuple()]}
-}).
+%% Note: This module uses internal state management without a record
+%% State is maintained via ETS tables and process dictionaries
 
 -type trace_pattern() :: {module(), atom(), arity() | '_'}.
 -type breakpoint_condition() :: fun((Args :: [term()]) -> boolean()).

@@ -4,7 +4,7 @@
 **Application:** erlmcp_transports
 **Modules:** 11
 
-Production-grade transport implementations for the Model Context Protocol. Provides STDIO, TCP (ranch), HTTP/2 (gun), WebSocket, and GraphQL transports with connection pooling, automatic reconnection, auto-discovery, and health monitoring.
+Production-grade transport implementations for the Model Context Protocol. Provides STDIO, TCP (ranch), HTTP/2 (gun), WebSocket, and SSE transports with connection pooling, automatic reconnection, auto-discovery, and health monitoring.
 
 ## Overview
 
@@ -14,13 +14,12 @@ erlmcp_transports implements the transport layer with:
 - **HTTP** - HTTP/1.1 and HTTP/2 client via gun
 - **WebSocket** - WebSocket transport for browser clients
 - **SSE** - Server-Sent Events for streaming
-- **GraphQL** - GraphQL API Gateway with queries, mutations, and subscriptions
 - **Behavior Interface** - Extensible transport behavior for custom implementations
 - **Connection Pooling** - poolboy integration for HTTP/TCP connection reuse
 - **Auto-Discovery** - DNS-SD, Consul, Kubernetes, Environment variable discovery
 - **Health Monitoring** - Automatic failover and health tracking
 
-## Transport Modules (14 total)
+## Transport Modules (11 total)
 
 ### Transport Implementations
 - **erlmcp_transport_stdio.erl** - Standard I/O (pipes) for CLI tools
@@ -29,11 +28,6 @@ erlmcp_transports implements the transport layer with:
 - **erlmcp_transport_ws.erl** - WebSocket transport for browser integration
 - **erlmcp_transport_sse.erl** - Server-Sent Events transport
 - **erlmcp_transport_http_server.erl** - HTTP server implementation
-- **erlmcp_transport_graphql.erl** - GraphQL API Gateway transport
-
-### GraphQL Components (NEW)
-- **erlmcp_graphql_schema.erl** - GraphQL schema generation from MCP definitions
-- **erlmcp_graphql_resolver.erl** - Query, mutation, and subscription resolvers
 
 ### Transport Infrastructure
 - **erlmcp_transport_behavior.erl** - Transport behavior definition and API
@@ -423,28 +417,19 @@ v2.0.0 moves transports into separate app. Update your code:
 
 Transport modules remain in same namespace - no code changes beyond config format.
 
-## GraphQL API Gateway (NEW in v2.0.0)
 
-The GraphQL transport provides a modern GraphQL interface alongside the JSON-RPC protocol. This allows clients to use GraphQL queries, mutations, and subscriptions to interact with MCP servers.
 
 ### Features
 
-- **Schema Generation** - Automatic GraphQL schema from MCP definitions
 - **Query Support** - List and read tools, resources, and prompts
-- **Mutation Support** - Execute tools via GraphQL mutations
 - **Subscription Support** - Real-time resource updates via WebSocket
-- **HTTP Endpoints** - POST /graphql (queries/mutations), GET /graphql (introspection)
-- **WebSocket** - /graphql/ws for subscriptions
 - **Query Batching** - Multiple operations in single request
 - **DataLoader** - N+1 query prevention
 - **Query Complexity Limits** - Prevent expensive queries
 - **Persisted Queries** - Performance optimization
 
-### GraphQL Schema
 
-The GraphQL schema is automatically generated from MCP server definitions:
 
-```graphql
 type Tool {
   name: String!
   description: String
@@ -504,16 +489,12 @@ scalar JSON
 
 ### Usage Examples
 
-#### Starting GraphQL Transport
 
 ```erlang
-%% Start GraphQL transport on port 4000
 Config = #{
-    transport_id => graphql_transport,
     server_id => my_mcp_server,
     server_pid => ServerPid,
     port => 4000,
-    path => <<"/graphql">>,
     enable_introspection => true,
     enable_subscriptions => true,
     max_query_depth => 10,
@@ -522,13 +503,10 @@ Config = #{
     cors_enabled => true
 },
 
-{ok, TransportPid} = erlmcp_transport_graphql:start_link(graphql_transport, Config).
 ```
 
-#### GraphQL Queries
 
 **List all tools:**
-```graphql
 query {
   tools {
     name
@@ -539,7 +517,6 @@ query {
 ```
 
 **Get specific tool:**
-```graphql
 query {
   tool(name: "echo") {
     name
@@ -550,7 +527,6 @@ query {
 ```
 
 **List resources:**
-```graphql
 query {
   resources {
     uri
@@ -561,7 +537,6 @@ query {
 ```
 
 **Read resource:**
-```graphql
 query {
   resource(uri: "file:///path/to/file.txt") {
     uri
@@ -571,12 +546,9 @@ query {
 }
 ```
 
-#### GraphQL Mutations
 
 **Call a tool:**
-```graphql
 mutation {
-  callTool(name: "echo", arguments: {message: "Hello, GraphQL!"}) {
     content {
       type
       text
@@ -587,7 +559,6 @@ mutation {
 ```
 
 **Call tool with complex arguments:**
-```graphql
 mutation {
   callTool(
     name: "calculate",
@@ -601,10 +572,8 @@ mutation {
 }
 ```
 
-#### GraphQL Subscriptions
 
 **Subscribe to resource updates:**
-```graphql
 subscription {
   resourceUpdated(uri: "file:///watched/file.txt") {
     uri
@@ -615,7 +584,6 @@ subscription {
 ```
 
 **Subscribe to all resources:**
-```graphql
 subscription {
   resourceUpdated {
     uri
@@ -626,9 +594,7 @@ subscription {
 
 ### HTTP API
 
-**POST /graphql** - Execute queries and mutations
 ```bash
-curl -X POST http://localhost:4000/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "{ tools { name description } }",
@@ -636,14 +602,10 @@ curl -X POST http://localhost:4000/graphql \
   }'
 ```
 
-**GET /graphql** - Introspection and GraphiQL
 ```bash
-# Browser: http://localhost:4000/graphql/ui
 ```
 
-**WebSocket /graphql/ws** - Subscriptions
 ```javascript
-const ws = new WebSocket('ws://localhost:4000/graphql/ws');
 
 ws.send(JSON.stringify({
   type: 'start',
@@ -659,9 +621,7 @@ ws.send(JSON.stringify({
 ```erlang
 %% In sys.config
 {erlmcp_transports, [
-    {graphql, #{
         port => 4000,
-        path => <<"/graphql">>,
         enable_introspection => true,
         enable_subscriptions => true,
         max_query_depth => 10,
@@ -677,14 +637,10 @@ ws.send(JSON.stringify({
 ### Testing
 
 ```bash
-# Run GraphQL tests
-rebar3 eunit --module=erlmcp_graphql_tests
 
 # Test schema generation
-rebar3 eunit --module=erlmcp_graphql_schema_tests
 
 # Test resolvers
-rebar3 eunit --module=erlmcp_graphql_resolver_tests
 ```
 
 ### Performance
@@ -705,5 +661,4 @@ rebar3 eunit --module=erlmcp_graphql_resolver_tests
 - [erlmcp_core](../erlmcp_core/README.md) - Core MCP protocol
 - [erlmcp_observability](../erlmcp_observability/README.md) - Metrics for transports
 - [Transport Configuration Guide](../../docs/transport_configuration.md) - Detailed config examples
-- [GraphQL Official Docs](https://graphql.org/) - GraphQL specification
 - [Architecture](../../docs/architecture.md) - System design

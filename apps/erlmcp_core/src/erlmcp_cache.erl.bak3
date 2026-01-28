@@ -553,6 +553,7 @@ ensure_mnesia_started() ->
 ensure_cache_table() ->
     case mnesia:create_table(erlmcp_cache_l2, [
         {type, set},
+        {record_name, cache_entry},
         {attributes, record_info(fields, cache_entry)},
         {disc_copies, [node()]},
         {index, [tags, dependencies]}
@@ -607,7 +608,7 @@ put_in_l2(Key, Value, State) ->
 put_entry_in_l2(_Entry, #state{l2_enabled = false} = State) ->
     State;
 put_entry_in_l2(Entry, State) ->
-    mnesia:dirty_write(Entry),
+    mnesia:dirty_write(erlmcp_cache_l2, Entry),
     State.
 
 -spec delete_from_l2(cache_key(), state()) -> state().
@@ -665,7 +666,7 @@ close_external_cache(_Module, _Conn) ->
 -spec get_from_l3(cache_key(), state()) -> {ok, cache_value(), state()} | {error, not_found}.
 get_from_l3(_Key, #state{l3_enabled = false} = _State) ->
     {error, not_found};
-get_from_l3(_Key, _State) ->
+get_from_l3(_Key, State) ->
     %% Placeholder: would call L3Module:get(L3Conn, Key)
     {error, not_found}.
 
