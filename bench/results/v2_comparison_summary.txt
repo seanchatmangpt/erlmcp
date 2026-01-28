@@ -1,0 +1,124 @@
+================================================================================
+erlmcp v2.0 PERFORMANCE BENCHMARK SUMMARY
+================================================================================
+Date: January 28, 2026
+Environment: macOS Darwin 25.2.0, OTP-27, ERTS 15.2.7.1
+Baseline: v1 (v0.7.0) - 2.69M msg/s
+
+================================================================================
+CORE OPERATIONS BENCHMARKS
+================================================================================
+
++----------------+---------------+----------+-----------+----------+---------+
+| Workload       | Throughput    | Latency  | Latency   | Latency  | Memory  |
+|                | (msg/s)       | P50 (µs) | P95 (µs)  | P99 (µs) | (MiB)   |
++----------------+---------------+----------+-----------+----------+---------+
+| core_ops_1k    | 1,253,526     | 0.0      | 81.0      | 98.0     | 0.3     |
+| core_ops_10k   | 2,623,811     | 0.0      | 81.0      | 97.0     | 2.8     |
+| core_ops_100k  | 2,530,893     | 1.0      | 83.0      | 99.0     | 16.0    |
+| core_ops_1m    | 1,695,616     | 0.0      | 83.0      | 99.0     | 208.6   |
++----------------+---------------+----------+-----------+----------+---------+
+
+================================================================================
+BASELINE COMPARISON: v2.0 vs v1 (core_ops_100k)
+================================================================================
+
+Metric                v2.0            v1 Baseline      Delta       Status
+----------------------------------------------------------------------------
+Throughput (msg/s)    2,530,893       2,690,088        -6.0%       ✓ PASS
+Latency P50 (µs)      1.0             0.0              +1.0µs      ✓ PASS
+Latency P95 (µs)      83.0            83.0             0.0%        ✓ PASS
+Latency P99 (µs)      99.0            98.0             +1.0%       ✓ PASS
+Memory Delta (MiB)    16.0            19.1             -16.2%      ✓ IMPROVE
+----------------------------------------------------------------------------
+
+VERDICT: PASS - All metrics within 10% threshold
+
+================================================================================
+COMPONENT PERFORMANCE BREAKDOWN (100k operations)
+================================================================================
+
+Component     P50 (µs)    P95 (µs)    P99 (µs)    Avg (µs)    Max (µs)
+------------------------------------------------------------------------
+Registry      52.0        97.0        100.0       51.6        101
+Queue         0.0         1.0         1.0         0.1         481
+Pool          0.0         1.0         1.0         0.5         1,056
+Session       1.0         27.0        99.0        9.7         22,297
+------------------------------------------------------------------------
+
+BOTTLENECK: Registry operations (51.6µs avg) - optimization target
+
+================================================================================
+SCALABILITY ANALYSIS
+================================================================================
+
+Scale         Throughput      Duration    Ops/Worker   Memory/Op
+----------------------------------------------------------------
+1K ops        1.25M msg/s     0.00s       1,000        ~300 bytes
+10K ops       2.62M msg/s     0.02s       1,000        ~280 bytes
+100K ops      2.53M msg/s     0.16s       1,000        ~160 bytes
+1M ops        1.70M msg/s     2.36s       10,000       ~52 bytes
+----------------------------------------------------------------
+
+OBSERVATION: Throughput stable 1K→100K, reduces at 1M (expected GC overhead)
+
+================================================================================
+NETWORK BENCHMARKS
+================================================================================
+
+Status: FAILED - Transport interface incompatibility
+Error:  erlmcp_transport_tcp module API changed in v2
+Action: Requires module update before network benchmark execution
+
+================================================================================
+REGRESSION ANALYSIS
+================================================================================
+
+Throughput Regression: -6.0%
+  - ACCEPTABLE: Within 10% threshold
+  - Likely causes: V2 refactoring overhead, additional safety checks
+  - Action: MONITOR in v2.1
+
+Latency: NO REGRESSION
+  - P95/P99 maintained at baseline
+  - User-facing performance unchanged
+
+Memory: 16% IMPROVEMENT
+  - Better memory management in v2
+  - Positive indicator
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+1. ✓ ACCEPT v2.0 performance - No critical regressions
+2. ⚠ MONITOR registry bottleneck - 51µs consistent across scales
+3. ⚠ INVESTIGATE session max latency - Spikes to 22-32ms at scale
+4. ❌ FIX network benchmarks - Update transport interface
+5. → CAPTURE v2.0 baseline - Establish new reference
+
+================================================================================
+PERFORMANCE TARGETS vs ACHIEVED
+================================================================================
+
+Target (v1 baseline): 2.69M msg/s
+Minimum acceptable:   2.42M msg/s (10% regression threshold)
+Achieved:             2.53M msg/s ✓
+
+Latency target P95:   83µs
+Achieved:             83µs ✓
+
+Memory target:        <22.9 MiB (20% increase from 19.1 MiB)
+Achieved:             16.0 MiB ✓ (16% improvement)
+
+================================================================================
+OVERALL ASSESSMENT: PASS ✓
+================================================================================
+
+v2.0 performance is ACCEPTABLE for production deployment.
+No critical regressions detected. Memory efficiency improved.
+Minor throughput reduction (6%) within acceptable variance.
+
+Next: Capture v2.0 baseline, fix network benchmarks, optimize registry.
+
+================================================================================

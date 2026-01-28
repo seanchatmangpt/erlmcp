@@ -51,14 +51,8 @@ init([]) ->
             modules => [erlmcp_registry]
         },
 
-        #{
-            id => erlmcp_registry_health_check,
-            start => {erlmcp_registry_health_check, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_registry_health_check]
-        },
+        %% NOTE: erlmcp_registry_health_check removed - module was never implemented
+        %% TODO: Implement health check module or remove from architecture
 
         %% ================================================================
         %% INFRASTRUCTURE: Hot reload, sessions, tasks, resources

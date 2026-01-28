@@ -414,7 +414,7 @@ do_validate_api_key(ApiKey, State) ->
     end.
 
 %% @private Validate OAuth2 access token.
-do_validate_oauth2_token(Token, State) ->
+do_validate_oauth2_token(_Token, State) ->
     % TODO: Implement OAuth2 token introspection
     % For now, return placeholder
     Config = State#state.oauth2_config,
