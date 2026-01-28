@@ -662,5 +662,4 @@ dashboard_html() ->
         </script>
     </body>
     </html>
-    ">>
-end().
+    ">>.

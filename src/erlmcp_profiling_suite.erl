@@ -28,15 +28,6 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--record(profiling_session, {
-    start_time :: integer(),
-    stop_time :: integer() | undefined,
-    cpu_report :: map(),
-    memory_report :: map(),
-    latency_report :: map(),
-    bottleneck_report :: map()
-}).
-
 %%====================================================================
 %% API Functions
 %%====================================================================

@@ -2,8 +2,8 @@
 
 -include("erlmcp.hrl").
 
-%% Type definitions are in erlmcp.hrl
--export_type([server_id/0, transport_id/0, transport_type/0]).
+%% Re-export types from erlmcp_transport_behavior
+-export_type([server_id/0]).
 
 %% Application management API
 -export([

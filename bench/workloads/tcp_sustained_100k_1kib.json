@@ -1,0 +1,21 @@
+{
+  "workload_id": "tcp_sustained_100k_1kib",
+  "description": "Enterprise tier baseline - 100K concurrent TCP connections with 1 KiB messages, sustained load",
+  "transport": "tcp",
+  "pattern": "sustained",
+  "duration_s": 30,
+  "connections": 100000,
+  "message_size_bytes": 1024,
+  "request_rate_per_conn": 15,
+  "total_expected_throughput_msg_per_s": 3000,
+  "environment": "prod_hw_spec_01",
+  "expected_performance": {
+    "throughput_msg_per_s": 3000,
+    "p50_latency_ms": 6,
+    "p95_latency_ms": 35,
+    "p99_latency_ms": 100,
+    "per_connection_heap_mib": 0.045,
+    "per_connection_state_mib": 0.010,
+    "per_node_total_rss_mib": 6144
+  }
+}

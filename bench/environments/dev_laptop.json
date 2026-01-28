@@ -1,0 +1,11 @@
+{
+  "environment": "dev_laptop",
+  "description": "Development machine - Typical developer laptop",
+  "cpu": "8 vCPU (Apple M2 or Intel i7)",
+  "ram_gb": 16,
+  "network": "1 Gbps WiFi",
+  "disk": "SSD (256 GB)",
+  "os": "macOS 14 or Ubuntu 22.04",
+  "erlang_otp": "26.2",
+  "note": "For local development and testing only"
+}

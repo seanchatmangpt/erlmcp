@@ -1,0 +1,23 @@
+{
+  "build_id": "v1.5.0-3a57163-1769565759",
+  "timestamp": "2026-01-28T02:02:48Z",
+  "git_sha": "3a57163b79e24aaceeb2465b3c25b953b7d0a637",
+  "git_branch": "main",
+  "rebar3_version": "rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1",
+  "erlang_version": "27",
+  "targets": "compile",
+  "exit_code": 1,
+  "duration_s": 9,
+  "metrology_validated": false,
+  "environment": {
+    "term": "dumb",
+    "no_color": "1",
+    "rebar_color": "none"
+  },
+  "host": {
+    "hostname": "Seans-MacBook-Pro.local",
+    "os": "Darwin",
+    "os_version": "25.2.0",
+    "arch": "arm64"
+  }
+}

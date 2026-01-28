@@ -1,0 +1,170 @@
+# Deterministic Build Integration for erlmcp
+# This Makefile fragment demonstrates how to use the deterministic build wrapper
+# to neutralize rebar3 colorizer crashes.
+#
+# Usage:
+#   1. Include this file in your main Makefile:
+#      include Makefile.deterministic
+#
+#   2. Or use the wrapper directly:
+#      REBAR3 = tools/build/build.sh rebar3
+#
+# Benefits:
+#   - Eliminates rebar3 colorizer crashes (TERM=dumb, NO_COLOR=1)
+#   - Preserves exit codes correctly (handles pipe failures)
+#   - Generates build receipts for metrology
+#   - Logs all output for debugging
+
+# ============================================================================
+# DETERMINISTIC BUILD WRAPPER
+# ============================================================================
+
+BUILD_WRAPPER := tools/build/build.sh
+REBAR3_WRAPPED := $(BUILD_WRAPPER) rebar3
+
+# Override REBAR3 to use wrapper
+REBAR3 := $(REBAR3_WRAPPED)
+
+# ============================================================================
+# WRAPPER-AWARE TARGETS
+# ============================================================================
+
+.PHONY: deterministic-compile deterministic-test deterministic-check \
+        test-wrapper verify-wrapper clean-receipts show-receipts
+
+# Compile using deterministic wrapper
+deterministic-compile:
+	@echo "$(BLUE)Compiling with deterministic wrapper...$(NC)"
+	$(REBAR3) compile
+
+# Test using deterministic wrapper
+deterministic-test:
+	@echo "$(BLUE)Testing with deterministic wrapper...$(NC)"
+	$(REBAR3) do eunit, ct
+
+# Full check with deterministic wrapper
+deterministic-check:
+	@echo "$(BLUE)Running full check with deterministic wrapper...$(NC)"
+	$(REBAR3) compile
+	$(REBAR3) xref
+	$(REBAR3) dialyzer
+	$(REBAR3) do eunit, ct
+
+# Test the wrapper itself
+test-wrapper:
+	@echo "$(BLUE)Testing build wrapper...$(NC)"
+	@tools/build/test_wrapper.sh
+
+# Verify wrapper is working
+verify-wrapper:
+	@echo "$(BLUE)Verifying build wrapper configuration...$(NC)"
+	@echo "  Wrapper: $(BUILD_WRAPPER)"
+	@echo "  Rebar3: $(REBAR3)"
+	@if [ -x "$(BUILD_WRAPPER)" ]; then \
+		echo "  Status: ✓ Wrapper executable"; \
+	else \
+		echo "  Status: ✗ Wrapper not executable"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "Environment variables set by wrapper:"
+	@echo "  TERM=dumb"
+	@echo "  NO_COLOR=1"
+	@echo "  REBAR_COLOR=none"
+
+# Show build receipts
+show-receipts:
+	@echo "$(BLUE)Build Receipts:$(NC)"
+	@if [ -d "tools/build/receipts" ]; then \
+		ls -lth tools/build/receipts/*.json 2>/dev/null | head -10 || echo "  No receipts found"; \
+		echo ""; \
+		echo "Latest receipt:"; \
+		LATEST=$$(ls -t tools/build/receipts/*.json 2>/dev/null | head -1); \
+		if [ -f "$$LATEST" ]; then \
+			cat "$$LATEST" | python3 -m json.tool 2>/dev/null || cat "$$LATEST"; \
+		fi; \
+	else \
+		echo "  No receipts directory found"; \
+	fi
+
+# Clean build receipts
+clean-receipts:
+	@echo "$(BLUE)Cleaning build receipts...$(NC)"
+	@rm -rf tools/build/receipts/*.json
+	@rm -f tools/build/build.log
+	@echo "$(GREEN)✓ Receipts cleaned$(NC)"
+
+# ============================================================================
+# CI INTEGRATION
+# ============================================================================
+
+.PHONY: ci-compile ci-test ci-check ci-gate
+
+# CI compile (requires receipt validation)
+ci-compile:
+	@echo "$(BLUE)CI: Compiling with deterministic build...$(NC)"
+	@$(REBAR3) compile
+	@echo ""
+	@echo "$(BLUE)CI: Validating build receipt...$(NC)"
+	@LATEST=$$(ls -t tools/build/receipts/*.json 2>/dev/null | head -1); \
+	if [ -f "$$LATEST" ]; then \
+		EXIT_CODE=$$(cat "$$LATEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['exit_code'])" 2>/dev/null); \
+		VALIDATED=$$(cat "$$LATEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['metrology_validated'])" 2>/dev/null); \
+		if [ "$$EXIT_CODE" = "0" ] && [ "$$VALIDATED" = "True" ]; then \
+			echo "$(GREEN)✓ CI Gate PASSED: Build successful and validated$(NC)"; \
+		else \
+			echo "$(RED)✗ CI Gate FAILED: exit_code=$$EXIT_CODE validated=$$VALIDATED$(NC)"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "$(RED)✗ CI Gate FAILED: No build receipt found$(NC)"; \
+		exit 1; \
+	fi
+
+# CI test (requires receipt validation)
+ci-test: ci-compile
+	@echo "$(BLUE)CI: Running tests with deterministic build...$(NC)"
+	@$(REBAR3) do eunit, ct
+	@echo ""
+	@echo "$(BLUE)CI: Validating test receipt...$(NC)"
+	@LATEST=$$(ls -t tools/build/receipts/*.json 2>/dev/null | head -1); \
+	if [ -f "$$LATEST" ]; then \
+		EXIT_CODE=$$(cat "$$LATEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['exit_code'])" 2>/dev/null); \
+		if [ "$$EXIT_CODE" = "0" ]; then \
+			echo "$(GREEN)✓ CI Gate PASSED: Tests successful$(NC)"; \
+		else \
+			echo "$(RED)✗ CI Gate FAILED: Tests failed with exit_code=$$EXIT_CODE$(NC)"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "$(RED)✗ CI Gate FAILED: No test receipt found$(NC)"; \
+		exit 1; \
+	fi
+
+# CI full check (compile + xref + dialyzer + tests)
+ci-check: ci-compile
+	@echo "$(BLUE)CI: Running quality checks...$(NC)"
+	@$(REBAR3) xref
+	@$(REBAR3) dialyzer
+	@$(REBAR3) do eunit, ct
+	@echo "$(GREEN)✓ CI Full Check PASSED$(NC)"
+
+# CI quality gate (validates all build receipts)
+ci-gate:
+	@echo "$(BLUE)CI: Validating quality gates...$(NC)"
+	@FAILED=0; \
+	for receipt in tools/build/receipts/*.json; do \
+		if [ -f "$$receipt" ]; then \
+			EXIT_CODE=$$(cat "$$receipt" | python3 -c "import sys, json; print(json.load(sys.stdin)['exit_code'])" 2>/dev/null); \
+			if [ "$$EXIT_CODE" != "0" ]; then \
+				echo "$(RED)✗ Failed receipt: $$receipt (exit_code=$$EXIT_CODE)$(NC)"; \
+				FAILED=$$((FAILED+1)); \
+			fi; \
+		fi; \
+	done; \
+	if [ $$FAILED -eq 0 ]; then \
+		echo "$(GREEN)✓ All quality gates passed$(NC)"; \
+	else \
+		echo "$(RED)✗ $$FAILED quality gate(s) failed$(NC)"; \
+		exit 1; \
+	fi

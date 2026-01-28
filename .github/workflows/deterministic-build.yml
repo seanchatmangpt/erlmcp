@@ -1,0 +1,169 @@
+name: Deterministic Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  TERM: dumb
+  NO_COLOR: 1
+  REBAR_COLOR: none
+
+jobs:
+  build:
+    name: Build and Test (Deterministic)
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        otp: ['25', '26', '27']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: '3.24.0'
+
+      - name: Verify deterministic build wrapper
+        run: |
+          echo "Checking build wrapper..."
+          ls -lh tools/build/build.sh
+          chmod +x tools/build/build.sh
+          chmod +x tools/build/test_wrapper.sh
+          echo "Wrapper verified ✓"
+
+      - name: Compile with deterministic wrapper
+        run: |
+          echo "Compiling with deterministic build wrapper..."
+          tools/build/build.sh rebar3 compile
+
+      - name: Validate build receipt
+        run: |
+          echo "Validating build receipt..."
+          LATEST=$(ls -t tools/build/receipts/*.json 2>/dev/null | head -1)
+          if [ -f "$LATEST" ]; then
+            echo "Found receipt: $LATEST"
+            cat "$LATEST"
+
+            # Extract exit code and validation status
+            EXIT_CODE=$(cat "$LATEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['exit_code'])")
+            VALIDATED=$(cat "$LATEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['metrology_validated'])")
+
+            echo "Exit code: $EXIT_CODE"
+            echo "Metrology validated: $VALIDATED"
+
+            # Fail if build didn't succeed or wasn't validated
+            if [ "$EXIT_CODE" != "0" ]; then
+              echo "❌ Build failed with exit code $EXIT_CODE"
+              exit 1
+            fi
+
+            if [ "$VALIDATED" != "True" ]; then
+              echo "❌ Build not validated"
+              exit 1
+            fi
+
+            echo "✅ Build receipt validated successfully"
+          else
+            echo "❌ No build receipt found"
+            exit 1
+          fi
+
+      - name: Run tests with deterministic wrapper
+        run: |
+          echo "Running tests with deterministic build wrapper..."
+          tools/build/build.sh rebar3 do eunit, ct
+
+      - name: Validate test receipt
+        run: |
+          echo "Validating test receipt..."
+          LATEST=$(ls -t tools/build/receipts/*.json 2>/dev/null | head -1)
+          if [ -f "$LATEST" ]; then
+            EXIT_CODE=$(cat "$LATEST" | python3 -c "import sys, json; print(json.load(sys.stdin)['exit_code'])")
+
+            if [ "$EXIT_CODE" != "0" ]; then
+              echo "❌ Tests failed with exit code $EXIT_CODE"
+              exit 1
+            fi
+
+            echo "✅ Test receipt validated successfully"
+          else
+            echo "❌ No test receipt found"
+            exit 1
+          fi
+
+      - name: Run quality checks
+        run: |
+          echo "Running xref..."
+          tools/build/build.sh rebar3 xref
+
+          echo "Running dialyzer..."
+          tools/build/build.sh rebar3 dialyzer
+
+      - name: Test wrapper itself
+        run: |
+          echo "Testing build wrapper functionality..."
+          tools/build/test_wrapper.sh
+
+      - name: Upload build receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-receipts-otp-${{ matrix.otp }}
+          path: tools/build/receipts/*.json
+          retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-otp-${{ matrix.otp }}
+          path: tools/build/build.log
+          retention-days: 30
+
+  quality-gate:
+    name: Quality Gate Validation
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build receipts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-receipts-*
+          path: tools/build/receipts/
+
+      - name: Validate quality gates
+        run: |
+          echo "Validating quality gates across all OTP versions..."
+
+          FAILED=0
+          for receipt in tools/build/receipts/**/*.json; do
+            if [ -f "$receipt" ]; then
+              echo "Checking $receipt..."
+              EXIT_CODE=$(cat "$receipt" | python3 -c "import sys, json; print(json.load(sys.stdin)['exit_code'])")
+
+              if [ "$EXIT_CODE" != "0" ]; then
+                echo "❌ Failed receipt: $receipt (exit_code=$EXIT_CODE)"
+                FAILED=$((FAILED+1))
+              else
+                echo "✅ Passed: $receipt"
+              fi
+            fi
+          done
+
+          if [ $FAILED -eq 0 ]; then
+            echo "✅ All quality gates passed"
+          else
+            echo "❌ $FAILED quality gate(s) failed"
+            exit 1
+          fi

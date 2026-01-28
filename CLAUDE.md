@@ -414,9 +414,47 @@ erlmcp v0.6.0 replaces ~770 LOC of custom code with production-grade libraries:
 - **Erlang Requirement**: OTP 25+
 - **Node.js** (in `.tool-versions`): 22.13.0
 
+## Erlang/OTP-Specific Agents (v1.0.0)
+
+erlmcp has 10 focused agents following Anthropic 2026 best practices (consolidated from 57).
+
+### Quick Agent Selection
+
+**I need to...**
+- Implement gen_server/supervisor → **erlang-otp-developer**
+- Add transport (stdio/tcp/http) → **erlang-transport-builder**
+- Write tests (Chicago School TDD) → **erlang-test-engineer**
+- Understand codebase → **erlang-researcher** (haiku, context preservation)
+- Design architecture → **erlang-architect**
+- Benchmark/optimize → **erlang-performance**
+- Create PR/release → **erlang-github-ops**
+- Run SPARC workflow → **sparc-orchestrator**
+- Plan implementation → **plan-designer** (Research → Plan → Execute)
+- Review before merge → **code-reviewer**
+
+### Agent Quality Gates (Mandatory)
+
+ALL agents must pass pre-completion verification:
+```bash
+✅ Tests: rebar3 do eunit, ct, proper -c (0 failures)
+✅ Quality: rebar3 compile && rebar3 dialyzer && rebar3 xref (clean)
+✅ Format: rebar3 format --verify
+✅ Coverage: ≥80% minimum (85%+ for core modules)
+✅ Benchmarks: (if applicable) performance documented
+```
+
+Post-task hook in `settings.json` enforces quality gates automatically.
+
+### Related Documentation
+- `.claude/AGENT_INDEX.md` - Master agent directory
+- `.claude/ERLANG_OTP_AGENT_GUIDE.md` - Erlang-specific workflows
+- `.claude/SYSTEM_GUIDE.md` - Commands vs Agents vs Roo rules
+- `.claude/agents/` - 10 core agent files
+
 ## Getting Help
 
 - **Architecture questions** → Read `docs/architecture.md` and related design documents
 - **API usage** → Check `docs/api-reference.md` and example code in `examples/`
 - **Test examples** → Review test suite in `test/` for pattern implementations
 - **OTP patterns** → Consult `docs/otp-patterns.md` for Erlang best practices
+- **Agent usage** → Read `.claude/AGENT_INDEX.md` for agent quick reference

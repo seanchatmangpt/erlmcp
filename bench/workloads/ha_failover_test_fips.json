@@ -1,0 +1,22 @@
+{
+  "workload_id": "ha_failover_test_fips",
+  "description": "High availability failover test with FIPS-140-2 encryption - 3-node cluster",
+  "transport": "tcp",
+  "pattern": "ha_failover",
+  "duration_s": 60,
+  "topology": "3_node_cluster_fips",
+  "connections_per_node": 5000,
+  "total_connections": 15000,
+  "failure_simulation": "kill_primary_node",
+  "detection_mechanism": "net_kernel_monitor",
+  "encryption": "FIPS-140-2 (AES-256-GCM)",
+  "environment": "gov_fips_hardware",
+  "expected_performance": {
+    "failover_detection_s": 1,
+    "connection_migration_s": 14,
+    "total_failover_time_s": 15,
+    "data_loss": "zero",
+    "connection_drop_rate_pct": 0,
+    "encryption_key_rotation_during_failover": true
+  }
+}

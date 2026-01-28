@@ -1,0 +1,17 @@
+{
+  "environment": "gov_fips_hardware",
+  "description": "Government FIPS-140-2 certified hardware",
+  "cpu": "16 vCPU (Intel Xeon - FIPS certified)",
+  "ram_gb": 64,
+  "network": "10 Gbps",
+  "disk": "Hardware-encrypted NVMe SSD (500 GB)",
+  "os": "RHEL 8.8 (FIPS mode enabled)",
+  "erlang_otp": "26.2 (FIPS build)",
+  "fips_140_2": true,
+  "encryption_module": "OpenSSL FIPS 140-2 module",
+  "kernel_tuning": {
+    "net.core.somaxconn": 65535,
+    "net.ipv4.tcp_max_syn_backlog": 8192,
+    "fs.file-max": 1048576
+  }
+}
