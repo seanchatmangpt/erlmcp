@@ -1,0 +1,63 @@
+# erlmcp Helm Chart - Staging Profile
+# Override defaults for staging environment
+
+replicaCount: 2
+
+image:
+  tag: "0.7.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 75
+
+env:
+  ERLMCP_ENV: "staging"
+  ERLANG_COOKIE: "erlmcp_staging_secret"
+
+service:
+  type: LoadBalancer
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 50
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - erlmcp
+          topologyKey: kubernetes.io/hostname
+
+livenessProbe:
+  initialDelaySeconds: 20
+  periodSeconds: 15
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 2
+
+monitoring:
+  interval: 30s
+
+gcp:
+  logging:
+    level: "info"
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

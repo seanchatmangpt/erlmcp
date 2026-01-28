@@ -325,8 +325,10 @@ handle_call({subscribe_resource, Uri, Subscriber}, _From, State) ->
     NewSubscriptions = add_subscription(Uri, Subscriber, State#state.subscriptions),
     {reply, ok, State#state{subscriptions = NewSubscriptions}};
 
-handle_call({unsubscribe_resource, Uri}, _From, State) ->
-    NewSubscriptions = remove_subscription(Uri, State#state.subscriptions),
+handle_call({unsubscribe_resource, Uri}, From, State) ->
+    % Remove the caller's subscription
+    CallerPid = element(1, From),
+    NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
     {reply, ok, State#state{subscriptions = NewSubscriptions}};
 
 handle_call(_Request, _From, State) ->
@@ -430,13 +432,20 @@ code_change(_OldVsn, State, _Extra) ->
 -spec handle_request(json_rpc_id(), binary(), json_rpc_params(), atom(), state()) ->
     {noreply, state()}.
 
+%% STRICT INITIALIZATION ENFORCEMENT (P0 Security)
+%% All non-initialize requests rejected before initialization completes
+%% This enforces the MCP 2025-11-25 initialization state machine (Gap #4)
+
+%% Initialize request - only allowed in initialization phase
 handle_request(Id, ?MCP_METHOD_INITIALIZE, Params, TransportId, #state{server_id = ServerId, initialized = false} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_initialize">>, ServerId),
     try
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"request_id">> => Id,
             <<"transport_id">> => TransportId,
-            <<"method">> => ?MCP_METHOD_INITIALIZE
+            <<"method">> => ?MCP_METHOD_INITIALIZE,
+            <<"phase">> => <<"initialization">>,
+            <<"phase_enforcement">> => <<"strict">>
         }),
 
         %% Extract and validate client capabilities
@@ -456,7 +465,8 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, Params, TransportId, #state{server_id
                 NewState = State#state{
                     initialized = true,
                     client_capabilities = ClientCapabilities,
-                    protocol_version = ProtocolVersion
+                    protocol_version = ProtocolVersion,
+                    phase = ?MCP_PHASE_INITIALIZED
                 },
                 {noreply, NewState};
             {error, ErrorMsg} ->
@@ -472,18 +482,32 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, Params, TransportId, #state{server_id
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-%% Reject initialize if already initialized
+%% P0 SECURITY: Reject double initialization strictly
+%% MCP spec: "Initialize must be called only once per connection"
 handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, #state{initialized = true} = State) ->
+    erlmcp_tracing:log("PROTOCOL_VIOLATION: Double initialize attempt on already initialized connection", [
+        {request_id, Id},
+        {violation_type, double_initialize},
+        {severity, critical}
+    ]),
     send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_NOT_INITIALIZED,
         <<"Server already initialized. Initialize must be called only once.">>),
     {noreply, State};
 
-%% Reject resources/list before initialization
-handle_request(Id, ?MCP_METHOD_RESOURCES_LIST, _Params, TransportId, #state{initialized = false} = State) ->
+%% P0 SECURITY: Reject ALL non-initialize RPC requests before initialization
+%% This is critical for protocol safety - prevents any operation until handshake completes
+handle_request(Id, Method, _Params, TransportId, #state{initialized = false} = State) ->
+    erlmcp_tracing:log("PROTOCOL_VIOLATION: RPC before initialization", [
+        {request_id, Id},
+        {method, Method},
+        {violation_type, pre_init_rpc},
+        {severity, critical}
+    ]),
     send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_NOT_INITIALIZED,
-        <<"Cannot list resources before server initialization">>),
+        <<"Cannot execute operation before server initialization. Call initialize first.">>),
     {noreply, State};
 
+%% Resources/list (and all other operations) now protected by pre-init check above
 handle_request(Id, ?MCP_METHOD_RESOURCES_LIST, _Params, TransportId, State) ->
     Resources = list_all_resources(State),
     send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_RESOURCES => Resources}),
@@ -651,7 +675,8 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, TransportId, State
         undefined ->
             send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
-            NewSubscriptions = remove_subscription(Uri, State#state.subscriptions),
+            % Remove only this transport's subscription for the URI
+            NewSubscriptions = remove_subscription(Uri, self(), State#state.subscriptions),
             send_response_via_registry(State, TransportId, Id, #{}),
             {noreply, State#state{subscriptions = NewSubscriptions}}
     end;
@@ -1322,9 +1347,20 @@ add_subscription(Uri, Subscriber, Subscriptions) ->
     NewSubscribers = sets:add_element(Subscriber, Subscribers),
     maps:put(Uri, NewSubscribers, Subscriptions).
 
--spec remove_subscription(binary(), map()) -> map().
-remove_subscription(Uri, Subscriptions) ->
-    maps:remove(Uri, Subscriptions).
+-spec remove_subscription(binary(), pid(), map()) -> map().
+remove_subscription(Uri, Subscriber, Subscriptions) ->
+    case maps:get(Uri, Subscriptions, undefined) of
+        undefined ->
+            Subscriptions;
+        Subscribers ->
+            NewSubscribers = sets:del_element(Subscriber, Subscribers),
+            case sets:size(NewSubscribers) of
+                0 ->
+                    maps:remove(Uri, Subscriptions);
+                _ ->
+                    maps:put(Uri, NewSubscribers, Subscriptions)
+            end
+    end.
 
 -spec notify_subscribers(binary(), map(), state()) -> ok.
 notify_subscribers(Uri, Metadata, State) ->

@@ -1,12 +1,18 @@
-%% @doc Monitoring Supervisor - Isolated Failure Domain for Observability
-
 -module(erlmcp_monitoring_sup).
 -behaviour(supervisor).
 
 -export([start_link/0]).
 -export([init/1]).
 
--include("erlmcp.hrl").
+%%====================================================================
+%% v1.3.0: Monitoring/Observability Subsystem Supervisor
+%%
+%% Supervises all monitoring, health checks, metrics, and dashboards.
+%% This is TIER 5 - independent subsystem that can fail without affecting core.
+%%
+%% Strategy: one_for_one - monitoring failures do not propagate
+%% Impact: Lost observability but no protocol layer impact
+%% ====================================================================
 
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
@@ -15,37 +21,50 @@ start_link() ->
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     SupFlags = #{
-        strategy => rest_for_one,
-        intensity => 10,
+        strategy => one_for_one,  % Each monitoring component fails independently
+        intensity => 5,
         period => 60
     },
 
     ChildSpecs = [
+        %% Health monitor - system health monitoring
         #{
-            id => erlmcp_metrics,
-            start => {erlmcp_metrics, start_link, []},
+            id => erlmcp_health_monitor,
+            start => {erlmcp_health_monitor, start_link, []},
             restart => permanent,
             shutdown => 5000,
             type => worker,
-            modules => [erlmcp_metrics]
+            modules => [erlmcp_health_monitor]
         },
 
+        %% Recovery manager - failure recovery coordination
         #{
-            id => erlmcp_monitor_dashboard,
-            start => {erlmcp_monitor_dashboard, start_link, []},
+            id => erlmcp_recovery_manager,
+            start => {erlmcp_recovery_manager, start_link, []},
             restart => permanent,
             shutdown => 5000,
             type => worker,
-            modules => [erlmcp_monitor_dashboard]
+            modules => [erlmcp_recovery_manager]
         },
 
+        %% Metrics server - collects and aggregates system metrics
         #{
-            id => erlmcp_simple_monitor,
-            start => {erlmcp_simple_monitor, start_link, []},
+            id => erlmcp_metrics_server,
+            start => {erlmcp_metrics_server, start_link, []},
             restart => permanent,
             shutdown => 5000,
             type => worker,
-            modules => [erlmcp_simple_monitor]
+            modules => [erlmcp_metrics_server]
+        },
+
+        %% Metrics HTTP supervisor - HTTP server for dashboard
+        #{
+            id => erlmcp_metrics_http_sup,
+            start => {erlmcp_metrics_http_sup, start_link, [8088]},
+            restart => transient,
+            shutdown => 5000,
+            type => supervisor,
+            modules => [erlmcp_metrics_http_sup]
         }
     ],
 

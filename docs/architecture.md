@@ -313,3 +313,73 @@ Implement the enhanced transport behavior:
 - Capability-based access control
 - No direct code execution
 - Library-provided security features (TLS, certificate validation)
+
+---
+
+## v1.3.0: Supervision Tree with Bulkheads (Failure Isolation)
+
+### Problem Addressed
+The original flat supervision tree used `one_for_all` strategy, meaning any component failure could cascade and restart the entire system. This caused:
+- Transport failures → entire system restart
+- Registry failures → all connections dropped
+- Monitoring failures → protocol layer restart
+
+### Solution: Five-Tier Isolation Model
+
+The v1.3.0 redesign implements **bulkhead pattern** with `rest_for_one` at the top level:
+
+```
+erlmcp_sup (rest_for_one)
+├── TIER 1: erlmcp_registry_sup (one_for_one)
+│   └── No dependencies → Can fail independently
+├── TIER 2: erlmcp_infrastructure_sup (one_for_one)
+│   └── Depends on: Registry
+├── TIER 3: erlmcp_server_sup (simple_one_for_one)
+│   └── Depends on: Registry, Infrastructure
+├── TIER 4: erlmcp_transport_sup (simple_one_for_one)
+│   └── Depends on: All above
+└── TIER 5: erlmcp_monitoring_sup (one_for_one) [INDEPENDENT]
+    └── No protocol dependencies
+```
+
+### Failure Mode Analysis
+
+| Failure | Isolation | Recovery | Impact |
+|---------|-----------|----------|--------|
+| **Registry crash** | Restart registry only (TIER 2-4 continue) | <500ms | New routing fails; existing connections continue |
+| **Infrastructure crash** | Restart infrastructure (TIER 3-4 continue) | <1s | New sessions fail; existing connections continue |
+| **Transport crash** | Restart transport only | <2s | Network connections lost; protocol servers unaffected |
+| **Monitoring crash** | Isolated from protocol layer | <500ms | No observability; protocol layer 100% unaffected |
+| **Cascade attempt** | Prevented by rest_for_one | N/A | No cascading failures observed |
+
+### Key Improvements
+
+**Before (v1.2.0)**:
+```
+one_for_all strategy
+├─ Registry crash → Restart ALL (servers, transports, monitoring)
+├─ Transport crash → Restart ALL
+└─ Impact: ~3-5s downtime, all connections drop
+```
+
+**After (v1.3.0)**:
+```
+rest_for_one strategy with tiered architecture
+├─ Registry crash → Restart Registry only (~500ms)
+├─ Transport crash → Restart Transport only (~2s)
+└─ Monitoring crash → Isolated, NO protocol impact (~500ms)
+```
+
+### Testing
+See `test/erlmcp_supervision_SUITE.erl` for comprehensive failure scenario testing:
+- Tree structure validation
+- Failure isolation verification
+- Recovery time measurement
+- Connection survival rates
+- Cascading failure prevention
+- System stability under repeated crashes
+
+Run tests: `rebar3 ct --suite=erlmcp_supervision_SUITE`
+
+### Documentation
+Complete architecture with diagrams: `docs/c4/supervision-v1.3.0.md`

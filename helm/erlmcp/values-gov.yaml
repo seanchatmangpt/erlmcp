@@ -1,0 +1,148 @@
+# erlmcp Helm Chart - Government/Compliance Profile
+# Enhanced security and compliance for government deployments
+
+replicaCount: 3
+
+image:
+  tag: "0.7.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 75
+
+env:
+  ERLMCP_ENV: "production"
+  ERLANG_COOKIE: "erlmcp_gov_secret_change_me"
+
+service:
+  type: LoadBalancer
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"ports": {"8080":"erlmcp-backendconfig"}}'
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+    add: []
+
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchExpressions:
+            - key: app
+              operator: In
+              values:
+                - erlmcp
+        topologyKey: kubernetes.io/hostname
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        preference:
+          matchExpressions:
+            - key: cloud.google.com/gke-nodepool
+              operator: In
+              values:
+                - "gov-pool"
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+    scheme: HTTPS
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+    scheme: HTTPS
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+networkPolicy:
+  enabled: true
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: erlmcp
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: erlmcp
+      ports:
+        - protocol: TCP
+          port: 8080
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
+monitoring:
+  enabled: true
+  interval: 15s
+
+gcp:
+  project: "taiea-v1"
+  region: "us-central1"
+  logging:
+    enabled: true
+    level: "info"
+  monitoring:
+    enabled: true
+  auditLogging:
+    enabled: true
+
+# FedRAMP/CJIS compliance
+compliance:
+  fips: true
+  encryption:
+    inTransit: true
+    atRest: true
+  auditTrail: true
+  dataClassification: "confidential"

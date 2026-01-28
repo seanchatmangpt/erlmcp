@@ -1,0 +1,168 @@
+# erlmcp Helm Chart - Default Values
+# Used as base configuration; profile-specific values override
+
+replicaCount: 3
+
+image:
+  registry: us-central1-docker.pkg.dev
+  repository: taiea-v1/erlmcp-repo/erlmcp
+  tag: "0.7.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: gcr-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: "erlmcp"
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9090"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: LoadBalancer
+  ports:
+    http:
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    metrics:
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - erlmcp
+          topologyKey: kubernetes.io/hostname
+
+tolerations: []
+
+# Environment configuration
+env:
+  ERLMCP_ENV: "production"
+  ERLANG_COOKIE: "erlmcp_prod_secret"
+  LANG: "C.UTF-8"
+  LC_ALL: "C.UTF-8"
+
+# Secrets (should be overridden at deployment)
+secrets: {}
+
+# Storage configuration
+persistence:
+  enabled: false
+  storageClassName: "standard"
+  accessMode: ReadWriteOnce
+  size: 1Gi
+  mountPath: /var/lib/erlmcp
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+# Monitoring
+monitoring:
+  enabled: true
+  interval: 30s
+  path: /metrics
+
+# GCP-specific settings
+gcp:
+  project: "taiea-v1"
+  region: "us-central1"
+  artifactRegistry:
+    enabled: true
+    repository: "erlmcp-repo"
+  logging:
+    enabled: true
+    level: "info"
+  monitoring:
+    enabled: true
+
+# Ingress configuration
+ingress:
+  enabled: false
+  annotations: {}
+  hosts:
+    - host: erlmcp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Network policies
+networkPolicy:
+  enabled: false
+  policyTypes:
+    - Ingress
+    - Egress
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 2
+
+# Rollout strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0

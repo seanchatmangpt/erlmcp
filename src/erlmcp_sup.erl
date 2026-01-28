@@ -110,135 +110,62 @@ stop_stdio_server() ->
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
+    %% v1.3.0: Bulkhead Supervision Tree Design
+    %%
+    %% Strategy: Use rest_for_one at top level with isolated subsystems
+    %% - Registry subsystem (core infrastructure)
+    %% - Protocol servers subsystem (client/server implementations)
+    %% - Transports subsystem (I/O layer)
+    %% - Monitoring subsystem (observability - can fail without affecting core)
+    %%
+    %% Each subsystem uses one_for_one or rest_for_one internally to prevent cascades
+
     SupFlags = #{
-        strategy => one_for_all,  % If critical components fail, restart everything
-        intensity => 5,           % Enhanced: Increased restart intensity for recovery
+        strategy => rest_for_one,  % If dependency fails, restart dependents only
+        intensity => 5,
         period => 60
     },
 
-    % Core infrastructure components with recovery integration
+    % Ordered child specs - dependencies must start before dependents
     ChildSpecs = [
-        % Hot reload system - zero-downtime upgrades (start first)
+        %% ================================================================
+        %% TIER 1: REGISTRY SUBSYSTEM (No dependencies)
+        %% Failure: Restarts registry shard in isolation
+        %% Impact: New messages fail to route until recovery
+        %% Recovery: Registry reconnects automatically via gproc
+        %% ================================================================
         #{
-            id => erlmcp_hot_reload,
-            start => {erlmcp_hot_reload, start_link, []},
+            id => erlmcp_registry_sup,
+            start => {erlmcp_registry_sup, start_link, []},
             restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_hot_reload]
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_registry_sup]
         },
 
-        % Graceful drain coordinator - connection draining for upgrades
+        %% ================================================================
+        %% TIER 2: INFRASTRUCTURE (Depends on Registry)
+        %% Infrastructure components (sessions, tasks, resources)
+        %% Failure: Restarts infrastructure subsystem
+        %% Impact: New sessions/tasks fail; existing connections continue
+        %% Recovery: Automatic via supervisor
+        %% ================================================================
         #{
-            id => erlmcp_graceful_drain,
-            start => {erlmcp_graceful_drain, start_link, []},
+            id => erlmcp_infrastructure_sup,
+            start => {erlmcp_infrastructure_sup, start_link, []},
             restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_graceful_drain]
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_infrastructure_sup]
         },
 
-        % Health monitor - system health monitoring
-        #{
-            id => erlmcp_health_monitor,
-            start => {erlmcp_health_monitor, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_health_monitor]
-        },
-
-        % Recovery manager - failure recovery coordination
-        #{
-            id => erlmcp_recovery_manager,
-            start => {erlmcp_recovery_manager, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_recovery_manager]
-        },
-
-        % Session manager - HTTP session management and tracking
-        #{
-            id => erlmcp_session_manager,
-            start => {erlmcp_session_manager, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_session_manager]
-        },
-
-        % Task manager - MCP tasks API / async job queue
-        #{
-            id => erlmcp_task_manager,
-            start => {erlmcp_task_manager, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_task_manager]
-        },
-
-        % Resource subscriptions manager - handles resource update subscriptions
-        #{
-            id => erlmcp_resource_subscriptions,
-            start => {erlmcp_resource_subscriptions, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_resource_subscriptions]
-        },
-
-        % SSE Event Store - maintains recent events for stream resumability
-        #{
-            id => erlmcp_sse_event_store,
-            start => {erlmcp_sse_event_store, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_sse_event_store]
-        },
-
-        % Icon Cache - caches icon metadata with TTL enforcement (Gap #37)
-        #{
-            id => erlmcp_icon_cache,
-            start => {erlmcp_icon_cache, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_icon_cache]
-        },
-
-        % Session Replicator - distributed session state management across cluster
-        #{
-            id => erlmcp_session_replicator,
-            start => {erlmcp_session_replicator, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_session_replicator]
-        },
-
-        % Session Failover Manager - handles node failures and automatic recovery
-        #{
-            id => erlmcp_session_failover,
-            start => {erlmcp_session_failover, start_link, [node()]},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_session_failover]
-        },
-
-        % Registry - central message router with recovery registration
-        #{
-            id => erlmcp_registry,
-            start => {erlmcp_registry, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_registry]
-        },
-
-        % Server supervisor - manages server instances
+        %% ================================================================
+        %% TIER 3: PROTOCOL SERVERS SUBSYSTEM (Depends on Registry + Infrastructure)
+        %% Manages MCP client and server instances
+        %% Failure: Restarts all servers (graceful reconnect via transport)
+        %% Impact: In-flight requests are lost; clients reconnect
+        %% Recovery: Automatic via supervisor
+        %% ================================================================
         #{
             id => erlmcp_server_sup,
             start => {erlmcp_server_sup, start_link, []},
@@ -248,7 +175,13 @@ init([]) ->
             modules => [erlmcp_server_sup]
         },
 
-        % Transport supervisor - manages transport instances
+        %% ================================================================
+        %% TIER 4: TRANSPORTS SUBSYSTEM (Depends on Registry + Servers)
+        %% Manages stdio, TCP, HTTP, WebSocket transports
+        %% Failure: Restarts transport layer (clients reconnect automatically)
+        %% Impact: Network connections are lost temporarily
+        %% Recovery: Automatic; clients retry connections
+        %% ================================================================
         #{
             id => erlmcp_transport_sup,
             start => {erlmcp_transport_sup, start_link, []},
@@ -258,24 +191,20 @@ init([]) ->
             modules => [erlmcp_transport_sup]
         },
 
-        % Metrics server - collects and aggregates system metrics
+        %% ================================================================
+        %% TIER 5: OBSERVABILITY SUBSYSTEM (Optional - independent)
+        %% Monitoring, health checks, metrics, dashboards
+        %% Failure: Does NOT affect protocol layer (isolated)
+        %% Impact: Monitoring data may be incomplete
+        %% Recovery: Automatic via supervisor
+        %% ================================================================
         #{
-            id => erlmcp_metrics_server,
-            start => {erlmcp_metrics_server, start_link, []},
+            id => erlmcp_monitoring_sup,
+            start => {erlmcp_monitoring_sup, start_link, []},
             restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_metrics_server]
-        },
-
-        % Metrics HTTP supervisor - HTTP server for dashboard
-        #{
-            id => erlmcp_metrics_http_sup,
-            start => {erlmcp_metrics_http_sup, start_link, [8088]},
-            restart => transient,
-            shutdown => 5000,
+            shutdown => infinity,
             type => supervisor,
-            modules => [erlmcp_metrics_http_sup]
+            modules => [erlmcp_monitoring_sup]
         }
     ],
 

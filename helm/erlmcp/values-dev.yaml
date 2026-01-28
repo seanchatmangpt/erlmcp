@@ -1,0 +1,46 @@
+# erlmcp Helm Chart - Development Profile
+# Override defaults for development environment
+
+replicaCount: 1
+
+image:
+  tag: "0.7.0"
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+
+env:
+  ERLMCP_ENV: "development"
+  ERLANG_COOKIE: "erlmcp_dev_cookie"
+
+service:
+  type: NodePort
+
+affinity:
+  podAntiAffinity: null
+
+livenessProbe:
+  initialDelaySeconds: 10
+  periodSeconds: 20
+  failureThreshold: 5
+
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+monitoring:
+  interval: 60s
+
+gcp:
+  logging:
+    level: "debug"

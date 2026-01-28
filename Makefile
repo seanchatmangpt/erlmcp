@@ -1,9 +1,9 @@
 .PHONY: all compile test ct eunit lint dialyze clean distclean release help \
         setup direnv asdf deps deps-tree quality info coverage taiea-compile taiea-test \
-        release-dev release-prod tar show-release \
+        release-dev release-prod tar show-release evidence \
         workspace-build workspace-test workspace-lint workspace-check workspace-clean workspace-release \
         check build \
-        test-unit test-int test-perf test-quick test-verbose test-coverage \
+        test-unit test-int test-perf test-quick test-verbose test-coverage test-doc \
         test-runner test-analyze test-report test-debug \
         integration-tests integration-pipeline integration-andon integration-concurrent \
         integration-quality integration-heijunka integration-persistence integration-performance \
@@ -211,6 +211,13 @@ test-debug:
 	rebar3 ct -v
 	@echo "$(GREEN)Debug tests complete!$(NC)"
 
+# Documentation tests (executable markdown)
+test-doc:
+	@echo "$(BLUE)Running doc-test suite...$(NC)"
+	@echo "Scanning for runnable code blocks in markdown files..."
+	rebar3 ct --suite=test/erlmcp_doc_tests_SUITE
+	@echo "$(GREEN)Doc tests complete!$(NC)"
+
 # Standard CT and EUnit targets (backward compatible)
 eunit:
 	@echo "$(BLUE)Running EUnit tests...$(NC)"
@@ -285,6 +292,32 @@ show-release:
 	@echo "$(GREEN)Release artifacts:$(NC)"
 	@ls -lh _build/prod/rel/erlmcp/ 2>/dev/null || echo "No prod release found"
 	@ls -lh _build/prod/*.tar.gz 2>/dev/null || echo "No tarball found"
+
+evidence: evidence-sbom evidence-provenance evidence-vulnerabilities evidence-vex
+	@echo ""
+	@echo "$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(GREEN)✓ Supply Chain Evidence Generated Successfully$(NC)"
+	@echo "$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(BLUE)Evidence artifacts:$(NC)"
+	@ls -lh dist/evidence/v1.4.0/ | grep -E "\.sbom\.|\.spdx\.|\.provenance\.|\.vulnerabilities\.|\.vex\." | awk '{print "  " $$9 " (" $$5 ")"}'
+	@echo ""
+
+evidence-sbom:
+	@echo "$(BLUE)Generating SBOM artifacts...$(NC)"
+	@bash scripts/release/generate_sbom.sh 1.4.0
+
+evidence-provenance:
+	@echo "$(BLUE)Generating provenance artifact...$(NC)"
+	@bash scripts/release/generate_provenance.sh 1.4.0
+
+evidence-vulnerabilities:
+	@echo "$(BLUE)Scanning for vulnerabilities...$(NC)"
+	@bash scripts/release/scan_vulnerabilities.sh 1.4.0
+
+evidence-vex:
+	@echo "$(BLUE)Generating VEX policy...$(NC)"
+	@bash scripts/release/generate_vex.sh 1.4.0
 
 # ============================================================================
 # DEPENDENCY MANAGEMENT
@@ -619,6 +652,7 @@ help:
 	@echo "  make test-analyze     Analyze test results"
 	@echo "  make test-report      Show test report"
 	@echo "  make test-debug       Run with debug output"
+	@echo "  make test-doc         Execute markdown doc tests (CI-executable docs)"
 	@echo ""
 	@echo "$(GREEN)100K CONCURRENT SCALE TESTING:$(NC)"
 	@echo "  make test-100k        Complete 100K test suite (all tests)"
