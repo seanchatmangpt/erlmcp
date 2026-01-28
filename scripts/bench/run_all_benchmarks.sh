@@ -57,9 +57,16 @@ RESULTS_DIR="bench/results/${TIMESTAMP}"
 BASELINE_DIR="${BASELINE_DIR:-bench/results/baseline}"
 SUMMARY_FILE="${RESULTS_DIR}/summary.json"
 SUMMARY_TXT="${RESULTS_DIR}/summary.txt"
+INDEX_FILE="${RESULTS_DIR}/index.json"
 LOG_FILE="${RESULTS_DIR}/execution.log"
 METROLOGY_STRICT="${METROLOGY_STRICT:-true}"
 REGRESSION_THRESHOLD="${REGRESSION_THRESHOLD:-10}"
+
+# Capture execution metadata for evidence index
+RUN_ID="run_${TIMESTAMP}"
+GIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
+START_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+COMMAND="${0} ${*}"
 
 # Benchmark categories and their workloads
 declare -A BENCHMARK_WORKLOADS
@@ -80,9 +87,10 @@ BENCHMARK_WORKLOADS[network_full]="tcp_burst_100 tcp_sustained_25k tcp_sustained
 BENCHMARK_WORKLOADS[stress]="sustained_30s high_conn_100k"
 BENCHMARK_WORKLOADS[stress_full]="sustained_30s sustained_300s high_conn_100k memory_pressure"
 
-# Chaos (failure scenarios)
-BENCHMARK_WORKLOADS[chaos]="memory_exhaustion process_kill network_partition"
-BENCHMARK_WORKLOADS[chaos_full]="memory_exhaustion process_kill network_partition message_flood clock_drift"
+# Chaos (failure scenarios) - 80/20 set: 7 scenarios covering 6 critical defect classes
+# See docs/bench/chaos-80-20.md for rationale and failure class mapping
+BENCHMARK_WORKLOADS[chaos]="message_flood slow_consumer memory_exhaustion process_crash supervisor_cascade invalid_payload network_partition"
+BENCHMARK_WORKLOADS[chaos_full]="message_flood slow_consumer memory_exhaustion process_crash supervisor_cascade invalid_payload network_partition connection_leak disk_full cpu_saturation large_payload"
 
 # Banner
 print_banner() {
@@ -519,6 +527,54 @@ check_regressions() {
     " 2>&1 | tee -a "$LOG_FILE"
 }
 
+# Write evidence index.json contract
+write_evidence_index() {
+    local end_timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    local otp_version=$(erl -noshell -eval "io:format('~s', [erlang:system_info(otp_release)]), halt()." 2>/dev/null || echo "unknown")
+    local os_name=$(uname -s)
+    local hostname=$(hostname)
+    local duration_s=$(($(date +%s) - $(date -d "${START_TIMESTAMP}" +%s) 2>/dev/null || echo 0))
+
+    log_info "Writing evidence index: $INDEX_FILE"
+
+    # Build workload_ids array from result files
+    local workload_ids=$(
+        find "$RESULTS_DIR" -maxdepth 1 -name "*.json" ! -name "index.json" ! -name "summary.json" | \
+        xargs -I {} basename {} .json | \
+        sort | \
+        sed 's|^|    "|' | sed 's|$|",|' | sed '$ s/,$//'
+    )
+
+    # Build result_files array
+    local result_files=$(
+        find "$RESULTS_DIR" -maxdepth 1 -name "*.json" ! -name "index.json" | \
+        sort | \
+        sed 's|^|    "|' | sed 's|$|",|' | sed '$ s/,$//'
+    )
+
+    cat > "$INDEX_FILE" <<EOF
+{
+  "run_id": "$RUN_ID",
+  "git_sha": "$GIT_SHA",
+  "otp_version": "$otp_version",
+  "os": "$os_name",
+  "hostname": "$hostname",
+  "command": "$COMMAND",
+  "start_timestamp": "$START_TIMESTAMP",
+  "end_timestamp": "$end_timestamp",
+  "duration_s": $duration_s,
+  "workload_ids": [
+$workload_ids
+  ],
+  "result_files": [
+$result_files
+  ]
+}
+EOF
+
+    log_success "Evidence index written to: $INDEX_FILE"
+}
+
 # Main execution
 main() {
     local start_time=$(date +%s)
@@ -570,6 +626,9 @@ main() {
     # Generate summary
     generate_summary
 
+    # Write evidence index
+    write_evidence_index
+
     # Check regressions
     check_regressions
 
@@ -583,6 +642,7 @@ main() {
     echo ""
     echo -e "${CYAN}Total Duration:${NC}    ${total_duration}s"
     echo -e "${CYAN}Results Dir:${NC}       $RESULTS_DIR"
+    echo -e "${CYAN}Evidence Index:${NC}    $INDEX_FILE"
     echo -e "${CYAN}Summary:${NC}           $SUMMARY_FILE"
     echo -e "${CYAN}Log:${NC}               $LOG_FILE"
     echo ""

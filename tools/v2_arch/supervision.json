@@ -1,0 +1,399 @@
+{
+  "supervisors": [
+    {
+      "module": "erlmcp_sup",
+      "tier": 0,
+      "strategy": "rest_for_one",
+      "intensity": 5,
+      "period": 60,
+      "description": "Root supervisor. Bulkhead isolation of 5 subsystems. Strategy: rest_for_one (if dependency fails, restart dependents).",
+      "children": [
+        {
+          "id": "erlmcp_registry_sup",
+          "module": "erlmcp_registry_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "tier": 1,
+          "description": "TIER 1: Registry subsystem. No dependencies. Core infrastructure."
+        },
+        {
+          "id": "erlmcp_infrastructure_sup",
+          "module": "erlmcp_infrastructure_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "tier": 2,
+          "description": "TIER 2: Infrastructure subsystem (sessions, tasks, resources). Depends on registry."
+        },
+        {
+          "id": "erlmcp_server_sup",
+          "module": "erlmcp_server_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "tier": 3,
+          "description": "TIER 3: Protocol servers. Manages dynamic MCP client/server instances. Depends on registry + infrastructure."
+        },
+        {
+          "id": "erlmcp_transport_sup",
+          "module": "erlmcp_transport_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "tier": 4,
+          "description": "TIER 4: Transports (stdio, TCP, HTTP, WebSocket). Depends on registry + servers."
+        },
+        {
+          "id": "erlmcp_monitoring_sup",
+          "module": "erlmcp_monitoring_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "tier": 5,
+          "description": "TIER 5: Observability (monitoring, health, metrics). Independent - can fail without affecting core."
+        }
+      ]
+    },
+    {
+      "module": "erlmcp_registry_sup",
+      "tier": 1,
+      "strategy": "one_for_one",
+      "intensity": 5,
+      "period": 60,
+      "description": "TIER 1: Registry subsystem. Each component fails independently.",
+      "parent": "erlmcp_sup",
+      "children": [
+        {
+          "id": "erlmcp_registry",
+          "module": "erlmcp_registry",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Central message router using gproc."
+        },
+        {
+          "id": "erlmcp_registry_health_check",
+          "module": "erlmcp_registry_health_check",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Registry health monitoring and probes."
+        }
+      ]
+    },
+    {
+      "module": "erlmcp_infrastructure_sup",
+      "tier": 2,
+      "strategy": "one_for_one",
+      "intensity": 5,
+      "period": 60,
+      "description": "TIER 2: Infrastructure subsystem. Session management, task queues, resource subscriptions.",
+      "parent": "erlmcp_sup",
+      "children": [
+        {
+          "id": "erlmcp_hot_reload",
+          "module": "erlmcp_hot_reload",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Zero-downtime code reload system."
+        },
+        {
+          "id": "erlmcp_graceful_drain",
+          "module": "erlmcp_graceful_drain",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Connection draining coordinator for upgrades."
+        },
+        {
+          "id": "erlmcp_session_manager",
+          "module": "erlmcp_session_manager",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "HTTP session management and tracking."
+        },
+        {
+          "id": "erlmcp_task_manager",
+          "module": "erlmcp_task_manager",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "MCP tasks API / async job queue."
+        },
+        {
+          "id": "erlmcp_resource_subscriptions",
+          "module": "erlmcp_resource_subscriptions",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Resource subscriptions manager."
+        },
+        {
+          "id": "erlmcp_sse_event_store",
+          "module": "erlmcp_sse_event_store",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "SSE event store for stream resumability."
+        },
+        {
+          "id": "erlmcp_icon_cache",
+          "module": "erlmcp_icon_cache",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Icon cache with TTL enforcement."
+        },
+        {
+          "id": "erlmcp_session_replicator",
+          "module": "erlmcp_session_replicator",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Distributed session state management."
+        },
+        {
+          "id": "erlmcp_session_failover",
+          "module": "erlmcp_session_failover",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Session failover manager."
+        }
+      ]
+    },
+    {
+      "module": "erlmcp_server_sup",
+      "tier": 3,
+      "strategy": "simple_one_for_one",
+      "intensity": 5,
+      "period": 60,
+      "description": "TIER 3: Dynamic MCP server instances. simple_one_for_one allows unlimited server spawning.",
+      "parent": "erlmcp_sup",
+      "children": [
+        {
+          "id": "erlmcp_server_new",
+          "module": "erlmcp_server_new",
+          "type": "worker",
+          "restart": "temporary",
+          "shutdown": 5000,
+          "template": true,
+          "description": "Template child spec for dynamic server instances."
+        }
+      ]
+    },
+    {
+      "module": "erlmcp_transport_sup",
+      "tier": 4,
+      "strategy": "one_for_one",
+      "intensity": 5,
+      "period": 60,
+      "description": "TIER 4: Transport layer (stdio, TCP, HTTP, WebSocket). Dynamically added transports.",
+      "parent": "erlmcp_sup",
+      "children": []
+    },
+    {
+      "module": "erlmcp_monitoring_sup",
+      "tier": 5,
+      "strategy": "one_for_one",
+      "intensity": 5,
+      "period": 60,
+      "description": "TIER 5: Observability (independent failure domain).",
+      "parent": "erlmcp_sup",
+      "children": [
+        {
+          "id": "erlmcp_health_monitor",
+          "module": "erlmcp_health_monitor",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "System health monitoring."
+        },
+        {
+          "id": "erlmcp_recovery_manager",
+          "module": "erlmcp_recovery_manager",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Failure recovery coordination."
+        },
+        {
+          "id": "erlmcp_metrics_server",
+          "module": "erlmcp_metrics_server",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Metrics collection and aggregation."
+        },
+        {
+          "id": "erlmcp_metrics_http_sup",
+          "module": "erlmcp_metrics_http_sup",
+          "type": "supervisor",
+          "restart": "transient",
+          "shutdown": 5000,
+          "description": "HTTP server for metrics dashboard (port 8088)."
+        }
+      ]
+    },
+    {
+      "module": "erlmcp_metrics_http_sup",
+      "tier": "5.1",
+      "strategy": "one_for_one",
+      "intensity": 10,
+      "period": 60,
+      "description": "Metrics HTTP supervisor (nested under monitoring).",
+      "parent": "erlmcp_monitoring_sup",
+      "children": [
+        {
+          "id": "erlmcp_metrics_http_worker",
+          "module": "erlmcp_metrics_http_worker",
+          "type": "worker",
+          "restart": "permanent",
+          "shutdown": 5000,
+          "description": "Metrics HTTP server worker (port 8088)."
+        }
+      ]
+    },
+    {
+      "module": "erlmcp_connection_pool_sup",
+      "tier": "3.5",
+      "strategy": "rest_for_one",
+      "intensity": 5,
+      "period": 60,
+      "description": "Connection pool supervisor (10 independent pools). Can be used with erlmcp_server_sup for sharded pooling.",
+      "children": [
+        {
+          "id": "pool_0",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 0 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_1",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 1 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_2",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 2 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_3",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 3 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_4",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 4 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_5",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 5 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_6",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 6 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_7",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 7 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_8",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 8 supervisor (~1,500 connections)."
+        },
+        {
+          "id": "pool_9",
+          "module": "erlmcp_server_pool_sup",
+          "type": "supervisor",
+          "restart": "permanent",
+          "shutdown": "infinity",
+          "description": "Pool 9 supervisor (~1,500 connections)."
+        }
+      ]
+    },
+    {
+      "module": "erlmcp_server_pool_sup",
+      "tier": "3.6",
+      "strategy": "simple_one_for_one",
+      "intensity": 10,
+      "period": 60,
+      "description": "Individual server pool supervisor (one of 10). Manages ~1,500 dynamic server connections.",
+      "parent": "erlmcp_connection_pool_sup",
+      "children": [
+        {
+          "id": "erlmcp_server",
+          "module": "erlmcp_server",
+          "type": "worker",
+          "restart": "temporary",
+          "shutdown": 5000,
+          "template": true,
+          "description": "Template child spec for server instances in pool."
+        }
+      ]
+    }
+  ],
+  "hierarchy": {
+    "root": "erlmcp_sup",
+    "tiers": {
+      "0": ["erlmcp_sup"],
+      "1": ["erlmcp_registry_sup"],
+      "2": ["erlmcp_infrastructure_sup"],
+      "3": ["erlmcp_server_sup"],
+      "3.5": ["erlmcp_connection_pool_sup"],
+      "3.6": ["erlmcp_server_pool_sup"],
+      "4": ["erlmcp_transport_sup"],
+      "5": ["erlmcp_monitoring_sup"],
+      "5.1": ["erlmcp_metrics_http_sup"]
+    }
+  },
+  "stats": {
+    "total_supervisors": 9,
+    "total_workers": 15,
+    "total_children": 24,
+    "strategies": {
+      "rest_for_one": 2,
+      "one_for_one": 5,
+      "simple_one_for_one": 2
+    },
+    "max_concurrent_servers": 15000,
+    "notes": "erlmcp_connection_pool_sup provides 10 independent pools, each with simple_one_for_one. erlmcp_server_sup is simple_one_for_one for unlimited dynamic instances."
+  },
+  "timestamp": "2026-01-27",
+  "source": "Manual extraction from src/*_sup.erl"
+}

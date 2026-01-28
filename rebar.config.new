@@ -1,0 +1,243 @@
+%% ============================================================================
+%% ERLMCP UMBRELLA - Root Configuration
+%% ============================================================================
+%% Erlang/OTP MCP SDK - Umbrella project with 4 applications:
+%%   - erlmcp_core: JSON-RPC, Registry, Client/Server
+%%   - erlmcp_transports: STDIO, TCP, HTTP, WebSocket
+%%   - erlmcp_observability: Metrics, Traces, Receipts (OpenTelemetry)
+%%   - tcps_erlmcp: Toyota Code Production System (optional)
+%% ============================================================================
+
+%% Compiler options (strict for quality)
+{erl_opts, [
+    debug_info,
+    warnings_as_errors,
+    {i, "include"},
+    {platform_define, "^2[1-9]|^[3-9]", 'POST_OTP_21'}
+]}.
+
+%% Umbrella project structure
+{project_app_dirs, ["apps/*"]}.
+
+%% Source directories (for backwards compatibility with legacy src/)
+{src_dirs, ["src"]}.
+{test_dirs, ["test"]}.
+{include_dirs, ["include"]}.
+
+%% Exclude integration tests from eunit (use CT for integration)
+{eunit_opts, [
+    {exclude_dir, "test/integration"},
+    {exclude_dir, "test/tcps_mcp_diataxis"},
+    verbose
+]}.
+
+%% Top-level dependencies (inherited by all apps)
+{deps, [
+    {jsx, "3.1.0"},
+    {jesse, "1.8.1"},
+    {gproc, "0.9.0"},
+    {gun, "2.0.1"},
+    {ranch, "2.1.0"},
+    {poolboy, "1.5.2"},
+    {bbmustache, "1.12.2"},
+    {cowboy, "2.10.0"},
+    {opentelemetry_api, "1.5.0"},
+    {opentelemetry, "1.7.0"},
+    {opentelemetry_exporter, "1.10.0"},
+    {jobs, "0.10.0"},
+    {fs, "0.9.2"}
+]}.
+
+%% Shell configuration
+{shell, [
+    {config, "config/sys.config"},
+    {apps, [erlmcp_core, erlmcp_transports, erlmcp_observability, tcps_erlmcp]}
+]}.
+
+%% ============================================================================
+%% PROFILES
+%% ============================================================================
+
+{profiles, [
+    %% Production profile
+    {prod, [
+        {erl_opts, [
+            no_debug_info,
+            warnings_as_errors,
+            {d, 'PROD'}
+        ]},
+        {relx, [
+            {dev_mode, false},
+            {include_erts, true},
+            {include_src, false}
+        ]}
+    ]},
+
+    %% Test profile
+    {test, [
+        {deps, [
+            {proper, "1.4.0"},
+            {meck, "0.9.2"},
+            {coveralls, "2.2.0"}
+        ]},
+        {erl_opts, [
+            debug_info,
+            export_all,
+            nowarn_missing_spec,
+            nowarn_export_all
+        ]},
+        {cover_enabled, true},
+        {cover_export_enabled, true},
+        {coveralls_coverdata, "_build/test/cover/*.coverdata"},
+        {coveralls_service_name, "github"},
+        {coveralls_parallel, true}
+    ]},
+
+    %% Development profile
+    {dev, [
+        {deps, [
+            {recon, "2.5.3"},
+            {observer_cli, "1.7.4"}
+        ]},
+        {plugins, [
+            {rebar3_lint, "3.0.1"}
+        ]}
+    ]}
+]}.
+
+%% ============================================================================
+%% DIALYZER - Type checking
+%% ============================================================================
+
+{dialyzer, [
+    {warnings, [
+        unmatched_returns,
+        error_handling,
+        unknown,
+        no_improper_lists,
+        no_fun_app,
+        no_match,
+        no_opaque,
+        no_fail_call,
+        no_contracts,
+        no_behaviours,
+        no_undefined_callbacks
+    ]},
+    {plt_apps, top_level_deps},
+    {plt_extra_apps, [kernel, stdlib, ssl, inets, crypto, public_key]},
+    {plt_location, local},
+    {base_plt_apps, [kernel, stdlib, erts, ssl, inets, crypto, public_key]},
+    {base_plt_location, global}
+]}.
+
+%% ============================================================================
+%% XREF - Cross-reference analysis
+%% ============================================================================
+
+{xref_checks, [
+    undefined_function_calls,
+    undefined_functions,
+    locals_not_used,
+    deprecated_function_calls,
+    deprecated_functions
+]}.
+
+{xref_ignores, [
+    %% OpenTelemetry API functions (external library)
+    {otel_tracer, start_span, 1},
+    {otel_tracer, get_tracer, 1},
+    {otel_span, record_exception, 4},
+    {otel, with_span, 3},
+    {otel, add_event, 2},
+
+    %% Stdlib extensions available in Erlang/OTP 25+
+    {maps, any, 2},
+    {file, canonicalize_path, 1},
+
+    %% Gun/Ranch/Cowboy (external libraries)
+    {gun, open, 2},
+    {gun, await, 2},
+    {ranch, start_listener, 6},
+    {poolboy, checkout, 1},
+    {cowboy_req, stream_body, 2}
+]}.
+
+%% ============================================================================
+%% COVERAGE
+%% ============================================================================
+
+{cover_enabled, true}.
+{cover_export_enabled, true}.
+{cover_opts, [verbose]}.
+
+%% ============================================================================
+%% ALIASES
+%% ============================================================================
+
+{alias, [
+    {check, [compile, xref, dialyzer, eunit, cover]},
+    {test, [eunit, {proper, "-c"}, cover]},
+    {cleanplus, [clean, {cover, "-r"}]}
+]}.
+
+%% ============================================================================
+%% RELEASE CONFIGURATION - erlmcp v2.0.0
+%% ============================================================================
+
+{relx, [
+    {release, {erlmcp, "2.0.0"},
+     [erlmcp_core,
+      erlmcp_transports,
+      erlmcp_observability,
+      tcps_erlmcp,  % Optional - can be excluded
+      gproc,
+      gun,
+      ranch,
+      poolboy,
+      jsx,
+      jesse,
+      bbmustache,
+      cowboy,
+      opentelemetry_api,
+      opentelemetry,
+      opentelemetry_exporter,
+      jobs,
+      fs,
+      sasl]},
+
+    {sys_config, "./config/sys.config"},
+    {vm_args, "./vm.args"},
+
+    {dev_mode, true},
+    {include_erts, false},
+    {include_src, false},
+
+    {extended_start_script, true},
+
+    {overlay, [
+        {mkdir, "log"},
+        {mkdir, "data"},
+        {mkdir, "etc"},
+        {copy, "priv/dashboard", "priv/dashboard"},
+        {copy, "ontology", "priv/ontology"},
+        {copy, "shapes", "priv/shapes"}
+    ]}
+]}.
+
+%% ============================================================================
+%% PLUGINS
+%% ============================================================================
+
+{plugins, [
+    rebar3_hex,
+    {rebar3_proper, "0.12.1"},
+    {coveralls, "2.2.0"}
+]}.
+
+%% ============================================================================
+%% PROJECT PLUGINS
+%% ============================================================================
+
+{project_plugins, [
+    rebar3_auto
+]}.

@@ -1,0 +1,88 @@
+-module(transport_registration_simple_test).
+-include_lib("eunit/include/eunit.hrl").
+
+%%====================================================================
+%% Simple Registration Test
+%%====================================================================
+
+stdio_registration_test() ->
+    %% Ensure gproc and registry are started
+    application:ensure_all_started(gproc),
+    {ok, _RegPid} = erlmcp_registry:start_link(),
+
+    %% Test basic stdio registration
+    TransportId = test_stdio,
+    Owner = self(),
+
+    %% Start transport WITHOUT transport_id - should not register
+    {ok, Pid1} = erlmcp_transport_stdio:start_link(Owner),
+    ?assertEqual(undefined, erlmcp_registry:whereis({transport, TransportId})),
+    erlmcp_transport_stdio:close(Pid1),
+
+    %% Start transport WITH transport_id - should register
+    {ok, Pid2} = erlmcp_transport_stdio:start_link(Owner, #{transport_id => TransportId}),
+    timer:sleep(100),  % Give it time to register
+    ?assertEqual(Pid2, erlmcp_registry:whereis({transport, TransportId})),
+
+    %% Close transport - should unregister
+    erlmcp_transport_stdio:close(Pid2),
+    timer:sleep(100),  % Give it time to unregister
+    ?assertEqual(undefined, erlmcp_registry:whereis({transport, TransportId})),
+
+    ok.
+
+tcp_registration_test() ->
+    %% Ensure gproc and registry are started
+    application:ensure_all_started(gproc),
+
+    %% Test TCP client registration
+    TransportId = test_tcp,
+    Owner = self(),
+
+    %% Start TCP client (it will fail to connect but should still register)
+    {ok, TcpPid} = erlmcp_transport_tcp:start_client(#{
+        host => "localhost",
+        port => 19999,
+        owner => Owner,
+        transport_id => TransportId,
+        max_reconnect_attempts => 0
+    }),
+
+    timer:sleep(200),  % Give it time to register
+    ?assertEqual(TcpPid, erlmcp_registry:whereis({transport, TransportId})),
+
+    %% Stop transport
+    gen_server:stop(TcpPid),
+    timer:sleep(100),
+    ?assertEqual(undefined, erlmcp_registry:whereis({transport, TransportId})),
+
+    ok.
+
+http_registration_test() ->
+    %% Ensure gproc and registry are started
+    application:ensure_all_started(gproc),
+
+    %% Test HTTP registration
+    TransportId = test_http,
+    Owner = self(),
+
+    %% Start HTTP transport (will fail to connect but should register)
+    case erlmcp_transport_http:start_link(#{
+        url => "http://localhost:19998/mcp",
+        owner => Owner,
+        transport_id => TransportId,
+        connect_timeout => 100,
+        max_retries => 0
+    }) of
+        {ok, HttpPid} ->
+            timer:sleep(200),
+            ?assertEqual(HttpPid, erlmcp_registry:whereis({transport, TransportId})),
+            gen_server:stop(HttpPid),
+            timer:sleep(100),
+            ?assertEqual(undefined, erlmcp_registry:whereis({transport, TransportId}));
+        {error, _Reason} ->
+            %% HTTP might fail to start, that's ok for this test
+            ?assertEqual(undefined, erlmcp_registry:whereis({transport, TransportId}))
+    end,
+
+    ok.

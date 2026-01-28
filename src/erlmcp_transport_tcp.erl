@@ -158,6 +158,16 @@ init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
     ServerId = maps:get(server_id, ProtocolOpts, undefined),
     TransportId = maps:get(transport_id, ProtocolOpts, undefined),
 
+    %% Register with registry if transport_id is provided
+    case TransportId of
+        undefined -> ok;
+        _ ->
+            ok = erlmcp_registry:register_transport(TransportId, self(), #{
+                type => tcp,
+                config => #{mode => maps:get(mode, undefined, client)}
+            })
+    end,
+
     %% Get the socket from ranch
     {ok, Socket} = ranch:handshake(RanchRef),
 
@@ -285,6 +295,13 @@ handle_info(_Info, State) ->
 
 %% @doc Cleanup on termination
 terminate(_Reason, State) ->
+    %% Unregister from registry if registered
+    case State#state.transport_id of
+        undefined -> ok;
+        TransportId ->
+            erlmcp_registry:unregister_transport(TransportId)
+    end,
+
     %% Cancel reconnect timer if active
     cancel_reconnect_timer(State),
 
@@ -315,6 +332,16 @@ init_server_listener(Opts) ->
     Owner = maps:get(owner, Opts, self()),
     NumAcceptors = maps:get(num_acceptors, Opts, ?DEFAULT_NUM_ACCEPTORS),
     MaxConnections = maps:get(max_connections, Opts, ?DEFAULT_MAX_CONNECTIONS),
+
+    %% Register with registry if transport_id is provided
+    case TransportId of
+        undefined -> ok;
+        _ ->
+            ok = erlmcp_registry:register_transport(TransportId, self(), #{
+                type => tcp,
+                config => #{mode => maps:get(mode, undefined, client)}
+            })
+    end,
 
     %% Create unique ranch reference
     RanchRef = make_ranch_ref(TransportId, ServerId),
@@ -373,6 +400,16 @@ init_client_process(Opts) ->
     TransportId = maps:get(transport_id, Opts, undefined),
     MaxReconnect = maps:get(max_reconnect_attempts, Opts,
                            ?DEFAULT_MAX_RECONNECT_ATTEMPTS),
+
+    %% Register with registry if transport_id is provided
+    case TransportId of
+        undefined -> ok;
+        _ ->
+            ok = erlmcp_registry:register_transport(TransportId, self(), #{
+                type => tcp,
+                config => #{mode => maps:get(mode, undefined, client)}
+            })
+    end,
 
     %% Monitor the owner process
     monitor(process, Owner),

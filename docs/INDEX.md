@@ -43,6 +43,7 @@ Start here if you're designing systems, making technology decisions, or planning
 ### Development & Testing
 - [BUILD_SYSTEM.md](BUILD_SYSTEM.md) - Build targets, performance gates, SLOs
 - [CONTRIBUTING.md](../CONTRIBUTING.md) - Code style, PR process, testing requirements
+- **[Benchmark Documentation](bench/INDEX.md)** - Performance testing guide (5 modules, v1.5.0)
 
 ### Operations & Deployment
 - [DEPLOYMENT.md](DEPLOYMENT.md) - How to deploy to GCP, release procedures

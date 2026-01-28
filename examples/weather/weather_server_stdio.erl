@@ -5,12 +5,19 @@ start() ->
     main([]).
 
 main(_Args) ->
-    %% Start the erlmcp application first
-    case application:ensure_all_started(erlmcp) of
-        {ok, _Started} ->
-            logger:info("Successfully started erlmcp application~n");
+    %% Start the erlmcp applications first (v2.0 umbrella structure)
+    case application:ensure_all_started(erlmcp_core) of
+        {ok, _StartedCore} ->
+            logger:info("Successfully started erlmcp_core application~n");
         {error, Reason} ->
-            logger:error("Failed to start erlmcp application: ~p~n", [Reason]),
+            logger:error("Failed to start erlmcp_core application: ~p~n", [Reason]),
+            halt(1)
+    end,
+    case application:ensure_all_started(erlmcp_transports) of
+        {ok, _StartedTransports} ->
+            logger:info("Successfully started erlmcp_transports application~n");
+        {error, TransportReason} ->
+            logger:error("Failed to start erlmcp_transports application: ~p~n", [TransportReason]),
             halt(1)
     end,
 
