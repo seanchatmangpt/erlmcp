@@ -14,10 +14,10 @@
 new_cache_test() ->
     %% Setup: Create server capabilities
     Capabilities = #mcp_server_capabilities{
-        resources => #{},
-        tools => #{},
-        prompts => undefined,
-        sampling => undefined
+        resources = #mcp_resources_capability{},
+        tools = #mcp_tools_capability{},
+        prompts = undefined,
+        sampling = undefined
     },
 
     %% Exercise: Create capability cache
@@ -35,10 +35,10 @@ new_cache_test() ->
 new_cache_with_all_capabilities_test() ->
     %% Setup: Capabilities with all features enabled
     Capabilities = #mcp_server_capabilities{
-        resources => #{list => true},
-        tools => #{list => true},
-        prompts => #{list => true},
-        sampling => #{enabled => true}
+        resources = #mcp_resources_capability{subscribe = true, listChanged = true},
+        tools = #mcp_tools_capability{listChanged = true},
+        prompts = #mcp_prompts_capability{listChanged = true},
+        sampling = #mcp_sampling_capability{modelPreferences = #{}}
     },
 
     %% Exercise: Create cache
@@ -53,10 +53,10 @@ new_cache_with_all_capabilities_test() ->
 new_cache_with_no_capabilities_test() ->
     %% Setup: Empty capabilities
     Capabilities = #mcp_server_capabilities{
-        resources => undefined,
-        tools => undefined,
-        prompts => undefined,
-        sampling => undefined
+        resources = undefined,
+        tools = undefined,
+        prompts = undefined,
+        sampling = undefined
     },
 
     %% Exercise: Create cache
@@ -75,10 +75,10 @@ new_cache_with_no_capabilities_test() ->
 check_capability_resource_test() ->
     %% Setup: Cache with resource support
     Capabilities = #mcp_server_capabilities{
-        resources => #{list => true},
-        tools => undefined,
-        prompts => undefined,
-        sampling => undefined
+        resources = #mcp_resources_capability{subscribe = true},
+        tools = undefined,
+        prompts = undefined,
+        sampling = undefined
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
@@ -96,10 +96,10 @@ check_capability_resource_test() ->
 check_capability_tool_test() ->
     %% Setup: Cache with tool support
     Capabilities = #mcp_server_capabilities{
-        resources => undefined,
-        tools => #{list => true},
-        prompts => undefined,
-        sampling => undefined
+        resources = undefined,
+        tools = #mcp_tools_capability{listChanged = true},
+        prompts = undefined,
+        sampling = undefined
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
@@ -125,10 +125,10 @@ check_capability_unknown_test() ->
 check_capabilities_any_test() ->
     %% Setup: Cache with resource and tool support
     Capabilities = #mcp_server_capabilities{
-        resources => #{list => true},
-        tools => #{list => true},
-        prompts => undefined,
-        sampling => undefined
+        resources = #mcp_resources_capability{subscribe = true},
+        tools = #mcp_tools_capability{listChanged = true},
+        prompts = undefined,
+        sampling = undefined
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
@@ -147,10 +147,10 @@ check_capabilities_any_test() ->
 check_capabilities_all_test() ->
     %% Setup: Cache with resource and tool support
     Capabilities = #mcp_server_capabilities{
-        resources => #{list => true},
-        tools => #{list => true},
-        prompts => undefined,
-        sampling => undefined
+        resources = #mcp_resources_capability{subscribe = true},
+        tools = #mcp_tools_capability{listChanged = true},
+        prompts = undefined,
+        sampling = undefined
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
@@ -186,7 +186,7 @@ check_capabilities_empty_list_test() ->
 has_resource_support_test() ->
     %% Setup: Cache with resources
     Capabilities = #mcp_server_capabilities{
-        resources => #{list => true}
+        resources = #mcp_resources_capability{subscribe = true}
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
@@ -194,7 +194,7 @@ has_resource_support_test() ->
     ?assertEqual(true, erlmcp_capability_cache:has_resource_support(Cache)),
 
     %% Setup: Cache without resources
-    CapabilitiesNo = #mcp_server_capabilities{resources => undefined},
+    CapabilitiesNo = #mcp_server_capabilities{resources = undefined},
     CacheNo = erlmcp_capability_cache:new(CapabilitiesNo),
 
     %% Exercise: Fast inline check
@@ -202,7 +202,7 @@ has_resource_support_test() ->
 
 has_tool_support_test() ->
     %% Setup: Cache with tools
-    Capabilities = #mcp_server_capabilities{tools => #{list => true}},
+    Capabilities = #mcp_server_capabilities{tools = #mcp_tools_capability{listChanged = true}},
     Cache = erlmcp_capability_cache:new(Capabilities),
 
     %% Verify: Tool support detected
@@ -210,7 +210,7 @@ has_tool_support_test() ->
 
 has_prompt_support_test() ->
     %% Setup: Cache with prompts
-    Capabilities = #mcp_server_capabilities{prompts => #{list => true}},
+    Capabilities = #mcp_server_capabilities{prompts = #mcp_prompts_capability{listChanged = true}},
     Cache = erlmcp_capability_cache:new(Capabilities),
 
     %% Verify: Prompt support detected
@@ -218,7 +218,7 @@ has_prompt_support_test() ->
 
 has_sampling_support_test() ->
     %% Setup: Cache with sampling
-    Capabilities = #mcp_server_capabilities{sampling => #{enabled => true}},
+    Capabilities = #mcp_server_capabilities{sampling = #mcp_sampling_capability{modelPreferences = #{}}},
     Cache = erlmcp_capability_cache:new(Capabilities),
 
     %% Verify: Sampling support detected
@@ -238,8 +238,8 @@ update_client_capabilities_test() ->
 
     %% Exercise: Update with client capabilities
     ClientCaps = #mcp_client_capabilities{
-        roots => #{list => true},
-        sampling => #{enabled => true}
+        roots = #mcp_capability{enabled = true},
+        sampling = #mcp_capability{enabled = true}
     },
     UpdatedCache = erlmcp_capability_cache:update_client_capabilities(Cache, ClientCaps),
 
@@ -249,8 +249,8 @@ update_client_capabilities_test() ->
 get_capabilities_test() ->
     %% Setup: Create cache with capabilities
     Capabilities = #mcp_server_capabilities{
-        resources => #{list => true},
-        tools => #{list => true}
+        resources = #mcp_resources_capability{subscribe = true},
+        tools = #mcp_tools_capability{listChanged = true}
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
@@ -265,16 +265,16 @@ get_capabilities_test() ->
 %%====================================================================
 
 cache_with_empty_maps_test() ->
-    %% Setup: Capabilities with empty maps (not undefined)
+    %% Setup: Capabilities with empty records (not undefined)
     Capabilities = #mcp_server_capabilities{
-        resources => #{},
-        tools => #{},
-        prompts => #{},
-        sampling => #{}
+        resources = #mcp_resources_capability{},
+        tools = #mcp_tools_capability{},
+        prompts = #mcp_prompts_capability{},
+        sampling = #mcp_sampling_capability{}
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
-    %% Verify: Empty maps are considered "supported" (non-undefined)
+    %% Verify: Empty records are considered "supported" (non-undefined)
     ?assertEqual(true, maps:get(resource_support, Cache)),
     ?assertEqual(true, maps:get(tool_support, Cache)),
     ?assertEqual(true, maps:get(prompt_support, Cache)),
@@ -283,13 +283,13 @@ cache_with_empty_maps_test() ->
 multiple_cache_instances_test() ->
     %% Exercise: Create multiple independent caches (stateless operation)
     Cache1 = erlmcp_capability_cache:new(#mcp_server_capabilities{
-        resources => #{list => true}
+        resources = #mcp_resources_capability{subscribe = true}
     }),
     Cache2 = erlmcp_capability_cache:new(#mcp_server_capabilities{
-        tools => #{list => true}
+        tools = #mcp_tools_capability{listChanged = true}
     }),
     Cache3 = erlmcp_capability_cache:new(#mcp_server_capabilities{
-        prompts => #{list => true}
+        prompts = #mcp_prompts_capability{listChanged = true}
     }),
 
     %% Verify: Each cache independent (no shared state)
@@ -304,8 +304,8 @@ multiple_cache_instances_test() ->
 check_capability_performance_test() ->
     %% Setup: Create cache
     Capabilities = #mcp_server_capabilities{
-        resources => #{list => true},
-        tools => #{list => true}
+        resources = #mcp_resources_capability{subscribe = true},
+        tools = #mcp_tools_capability{listChanged = true}
     },
     Cache = erlmcp_capability_cache:new(Capabilities),
 
@@ -327,7 +327,7 @@ check_capability_performance_test() ->
 
 check_capabilities_short_circuit_test() ->
     %% Setup: Cache with resource support
-    Capabilities = #mcp_server_capabilities{resources => #{list => true}},
+    Capabilities = #mcp_server_capabilities{resources = #mcp_resources_capability{subscribe = true}},
     Cache = erlmcp_capability_cache:new(Capabilities),
 
     %% Exercise: Check with 'any' mode (should short-circuit after first match)
