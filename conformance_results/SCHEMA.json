@@ -1,0 +1,134 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "erlmcp Plan Conformance Test Result",
+  "description": "JSON schema for individual test result from plan conformance validation suite",
+  "type": "object",
+  "required": [
+    "plan",
+    "test",
+    "status",
+    "measured_value",
+    "required_value",
+    "unit",
+    "tolerance_pct",
+    "actual_vs_required_ratio",
+    "runs",
+    "run_variance_pct",
+    "timestamp"
+  ],
+  "properties": {
+    "plan": {
+      "type": "string",
+      "enum": ["team", "enterprise", "gov"],
+      "description": "Service plan tier being validated"
+    },
+    "test": {
+      "type": "string",
+      "description": "Name of the conformance test that was executed",
+      "examples": [
+        "test_team_throughput_450_req_sec",
+        "test_enterprise_p99_latency_under_100ms",
+        "test_gov_fips_compliance"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pass", "fail"],
+      "description": "Overall test result status"
+    },
+    "measured_value": {
+      "type": "number",
+      "description": "Average measured value across all runs"
+    },
+    "required_value": {
+      "type": "number",
+      "description": "Threshold value from plan envelope definition"
+    },
+    "unit": {
+      "type": "string",
+      "description": "Unit of measurement for the metric",
+      "examples": [
+        "req/s",
+        "ms",
+        "MB",
+        "messages",
+        "status"
+      ]
+    },
+    "tolerance_pct": {
+      "type": "number",
+      "description": "Acceptable variance percentage from required value",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "actual_vs_required_ratio": {
+      "type": "number",
+      "description": "Ratio of measured value to required value. >1.0 means exceeds requirement.",
+      "minimum": 0
+    },
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 1,
+      "description": "Array of measured values from each test run (typically 3 runs)",
+      "examples": [
+        [482.5, 487.1, 486.0]
+      ]
+    },
+    "run_variance_pct": {
+      "type": "number",
+      "description": "Variance across runs as percentage (should be <2% for determinism)",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix millisecond timestamp when test was executed",
+      "examples": [1706000000000]
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "plan": "team",
+      "test": "test_team_throughput_450_req_sec",
+      "status": "pass",
+      "measured_value": 485.2,
+      "required_value": 450,
+      "unit": "req/s",
+      "tolerance_pct": 5.0,
+      "actual_vs_required_ratio": 1.078,
+      "runs": [482.5, 487.1, 486.0],
+      "run_variance_pct": 0.45,
+      "timestamp": 1706000000000
+    },
+    {
+      "plan": "enterprise",
+      "test": "test_enterprise_p99_latency_under_100ms",
+      "status": "pass",
+      "measured_value": 92.5,
+      "required_value": 100,
+      "unit": "ms",
+      "tolerance_pct": 5.0,
+      "actual_vs_required_ratio": 0.925,
+      "runs": [93.2, 92.1, 92.2],
+      "run_variance_pct": 0.58,
+      "timestamp": 1706000100000
+    },
+    {
+      "plan": "gov",
+      "test": "test_gov_audit_logging_enabled",
+      "status": "pass",
+      "measured_value": 5.0,
+      "required_value": 5,
+      "unit": "audit entries",
+      "tolerance_pct": 0.0,
+      "actual_vs_required_ratio": 1.0,
+      "runs": [5.0, 5.0, 5.0],
+      "run_variance_pct": 0.0,
+      "timestamp": 1706000300000
+    }
+  ]
+}

@@ -1,0 +1,470 @@
+{
+  "from_plan": "enterprise",
+  "to_plan": "gov",
+  "description": "Upgrade from Enterprise tier to Government tier - enables FIPS-140-2 compliance, enhanced encryption, and comprehensive audit trails",
+  "estimated_downtime_ms": 800,
+  "envelope_expansion": {
+    "old_envelope": {
+      "throughput_req_s": 1500,
+      "concurrent_connections": 512,
+      "queue_depth_messages": 8192,
+      "p99_latency_ms": 100,
+      "failover_sla_seconds": 10,
+      "connection_timeout_seconds": 120
+    },
+    "new_envelope": {
+      "throughput_req_s": 900,
+      "concurrent_connections": 256,
+      "queue_depth_messages": 4096,
+      "p99_latency_ms": 150,
+      "failover_sla_seconds": 15,
+      "connection_timeout_seconds": 90
+    }
+  },
+  "config_changes": [
+    {
+      "setting": "features.fips_140_2",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable FIPS-140-2 compliance enforcement for cryptographic operations",
+      "requires_restart": true
+    },
+    {
+      "setting": "features.encrypted_transport",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable mandatory encryption for all transport layers",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.tls_1_3_only",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enforce TLS 1.3 as minimum protocol (disable TLS 1.2 and older)",
+      "requires_restart": true
+    },
+    {
+      "setting": "features.key_rotation",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable automatic key rotation for cryptographic material",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.compliance_reporting",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable automatic compliance reporting and audit trail generation",
+      "requires_restart": false
+    },
+    {
+      "setting": "audit.log_all_operations",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable logging of all operations for compliance audit",
+      "requires_restart": false
+    },
+    {
+      "setting": "audit.log_authentication",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable logging of all authentication events",
+      "requires_restart": false
+    },
+    {
+      "setting": "audit.log_encryption_events",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable logging of encryption/decryption events",
+      "requires_restart": false
+    },
+    {
+      "setting": "audit.log_access_violations",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable logging of access control violations",
+      "requires_restart": false
+    },
+    {
+      "setting": "audit.log_system_events",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable logging of system-level events",
+      "requires_restart": false
+    },
+    {
+      "setting": "audit.retention_policy",
+      "old_value": "30_days",
+      "new_value": "7_years",
+      "description": "Increase audit log retention from 30 days to 7 years per FIPS requirements",
+      "requires_restart": false
+    },
+    {
+      "setting": "audit.immutable_logs",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable immutable audit logs (write-once, read-many storage)",
+      "requires_restart": true
+    },
+    {
+      "setting": "audit.log_signing",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable digital signing of audit log entries for tamper detection",
+      "requires_restart": false
+    },
+    {
+      "setting": "compliance.encryption_standard",
+      "old_value": null,
+      "new_value": "AES-256-GCM",
+      "description": "Set encryption standard to FIPS-approved AES-256-GCM",
+      "requires_restart": false
+    },
+    {
+      "setting": "compliance.key_derivation",
+      "old_value": null,
+      "new_value": "PBKDF2-SHA256",
+      "description": "Set key derivation to FIPS-approved PBKDF2-SHA256",
+      "requires_restart": false
+    },
+    {
+      "setting": "limits.max_message_size_bytes",
+      "old_value": 10485760,
+      "new_value": 5242880,
+      "description": "Reduce max message size from 10MB to 5MB for encryption overhead and compliance",
+      "requires_restart": false
+    },
+    {
+      "setting": "limits.max_payload_size_mb",
+      "old_value": 100,
+      "new_value": 50,
+      "description": "Reduce max payload size from 100MB to 50MB for compliance",
+      "requires_restart": false
+    },
+    {
+      "setting": "limits.memory_limit_mb",
+      "old_value": 4096,
+      "new_value": 2048,
+      "description": "Reduce memory for FIPS-140-2 compliance (more secure with less memory)",
+      "requires_restart": true
+    },
+    {
+      "setting": "sla.audit_retention_days",
+      "old_value": null,
+      "new_value": 2555,
+      "description": "Set audit retention to 7 years (2555 days) as per FIPS requirements",
+      "requires_restart": false
+    }
+  ],
+  "migration_steps": {
+    "pre_upgrade_checks": [
+      {
+        "step_id": "check_current_plan_valid",
+        "description": "Verify current Enterprise plan certification is valid",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:verify_certification_valid(enterprise)",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "verify_fips_library_available",
+        "description": "Verify FIPS-140-2 certified cryptography library is available",
+        "action_type": "check",
+        "command": "erlmcp_fips_crypto:verify_fips_library()",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "check_cluster_headroom_gov",
+        "description": "Verify cluster has sufficient resources for Government envelope (256 concurrent connections, 900 req/s)",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:check_infrastructure_headroom(gov)",
+        "timeout_seconds": 15,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "check_clean_state",
+        "description": "Verify no pending refusals in receipt chain",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:verify_clean_receipt_state()",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "check_sla_compliance",
+        "description": "Verify current system meets Enterprise SLAs",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:verify_sla_compliance(enterprise)",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "verify_encryption_capability",
+        "description": "Verify TLS 1.3 and AES-256-GCM are supported",
+        "action_type": "check",
+        "command": "erlmcp_fips_crypto:verify_encryption_capability()",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "snapshot_state",
+        "description": "Create snapshot of current system state for rollback",
+        "action_type": "verify",
+        "command": "erlmcp_pricing_upgrade:snapshot_system_state(enterprise)",
+        "timeout_seconds": 30,
+        "on_failure": "fail",
+        "rollback_step": "restore_snapshot_from_enterprise"
+      },
+      {
+        "step_id": "backup_audit_config",
+        "description": "Backup current audit configuration for rollback",
+        "action_type": "verify",
+        "command": "erlmcp_audit_log:backup_config()",
+        "timeout_seconds": 15,
+        "on_failure": "warn"
+      }
+    ],
+    "upgrade_phase": [
+      {
+        "step_id": "drain_new_connections",
+        "description": "Signal to stop accepting new connections (graceful degradation)",
+        "action_type": "drain_connections",
+        "command": "erlmcp_server:set_connection_drain_mode(true)",
+        "timeout_seconds": 10,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "flush_pending_requests",
+        "description": "Flush all pending requests from queue",
+        "action_type": "flush_queues",
+        "command": "erlmcp_pricing_upgrade:flush_pending_requests(enterprise)",
+        "timeout_seconds": 60,
+        "on_failure": "fail",
+        "rollback_step": "restore_queue_from_snapshot"
+      },
+      {
+        "step_id": "initialize_fips_module",
+        "description": "Initialize FIPS-140-2 cryptographic module",
+        "action_type": "enable_feature",
+        "command": "erlmcp_fips_crypto:initialize()",
+        "timeout_seconds": 30,
+        "on_failure": "fail",
+        "rollback_step": "erlmcp_fips_crypto:cleanup()"
+      },
+      {
+        "step_id": "enable_encryption_enforcement",
+        "description": "Enable mandatory encryption for all transports",
+        "action_type": "enable_feature",
+        "command": "erlmcp_encryption:enable_mandatory_encryption()",
+        "timeout_seconds": 10,
+        "on_failure": "fail",
+        "rollback_step": "erlmcp_encryption:disable_mandatory_encryption()"
+      },
+      {
+        "step_id": "enforce_tls_1_3",
+        "description": "Enforce TLS 1.3 as minimum protocol version",
+        "action_type": "enable_feature",
+        "command": "erlmcp_tls_config:enforce_tls_1_3_only()",
+        "timeout_seconds": 10,
+        "on_failure": "fail",
+        "rollback_step": "erlmcp_tls_config:allow_tls_1_2_and_up()"
+      },
+      {
+        "step_id": "enable_key_rotation",
+        "description": "Enable automatic key rotation for cryptographic material",
+        "action_type": "enable_feature",
+        "command": "erlmcp_key_rotation:enable()",
+        "timeout_seconds": 10,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_key_rotation:disable()"
+      },
+      {
+        "step_id": "initialize_audit_logging",
+        "description": "Initialize comprehensive audit logging for Government tier",
+        "action_type": "enable_feature",
+        "command": "erlmcp_audit_log:initialize_gov_tier()",
+        "timeout_seconds": 15,
+        "on_failure": "fail",
+        "rollback_step": "erlmcp_audit_log:restore_from_backup()"
+      },
+      {
+        "step_id": "enable_log_signing",
+        "description": "Enable digital signing of audit logs",
+        "action_type": "enable_feature",
+        "command": "erlmcp_audit_log:enable_signing()",
+        "timeout_seconds": 10,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_audit_log:disable_signing()"
+      },
+      {
+        "step_id": "enable_immutable_storage",
+        "description": "Enable immutable audit log storage",
+        "action_type": "enable_feature",
+        "command": "erlmcp_audit_log:enable_immutable_storage()",
+        "timeout_seconds": 15,
+        "on_failure": "fail",
+        "rollback_step": "erlmcp_audit_log:disable_immutable_storage()"
+      },
+      {
+        "step_id": "configure_retention_policy",
+        "description": "Configure 7-year audit retention policy",
+        "action_type": "update_config",
+        "command": "erlmcp_audit_log:set_retention_policy(years_7)",
+        "timeout_seconds": 5,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "enable_compliance_reporting",
+        "description": "Enable automated compliance reporting",
+        "action_type": "enable_feature",
+        "command": "erlmcp_compliance_reporter:enable()",
+        "timeout_seconds": 10,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_compliance_reporter:disable()"
+      },
+      {
+        "step_id": "update_envelope_limits",
+        "description": "Update envelope limits for Government tier (900 req/s, 256 connections)",
+        "action_type": "update_config",
+        "command": "erlmcp_pricing_upgrade:update_gov_limits()",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "rotate_all_keys",
+        "description": "Force immediate key rotation for all cryptographic material",
+        "action_type": "verify",
+        "command": "erlmcp_key_rotation:rotate_all_keys_immediately()",
+        "timeout_seconds": 30,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "log_upgrade_event",
+        "description": "Log upgrade event to receipt chain with compliance marker",
+        "action_type": "verify",
+        "command": "erlmcp_pricing_upgrade:log_upgrade_event(enterprise, gov, #{reason => compliance})",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "record_upgrade_timestamp",
+        "description": "Record upgrade completion timestamp in immutable log",
+        "action_type": "verify",
+        "command": "erlmcp_pricing_upgrade:record_upgrade_timestamp(gov)",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      }
+    ],
+    "post_upgrade_verification": [
+      {
+        "step_id": "verify_gov_envelope",
+        "description": "Verify system envelope meets Government minimums (900 req/s, 256 connections)",
+        "action_type": "verify_envelope",
+        "command": "erlmcp_pricing_upgrade:verify_upgrade(gov)",
+        "timeout_seconds": 60,
+        "on_failure": "fail",
+        "rollback_step": "rollback_to_enterprise"
+      },
+      {
+        "step_id": "verify_fips_compliance",
+        "description": "Verify all cryptographic operations use FIPS-approved algorithms",
+        "action_type": "test",
+        "command": "erlmcp_fips_crypto:verify_compliance()",
+        "timeout_seconds": 30,
+        "on_failure": "fail",
+        "rollback_step": "rollback_to_enterprise"
+      },
+      {
+        "step_id": "verify_tls_1_3_enforcement",
+        "description": "Verify TLS 1.3 is enforced (no fallback to older versions)",
+        "action_type": "test",
+        "command": "erlmcp_tls_config:verify_tls_1_3_enforcement()",
+        "timeout_seconds": 15,
+        "on_failure": "fail",
+        "rollback_step": "rollback_to_enterprise"
+      },
+      {
+        "step_id": "test_audit_logging",
+        "description": "Test audit logging for all operation types",
+        "action_type": "test",
+        "command": "erlmcp_test_helpers:test_gov_audit_logging()",
+        "timeout_seconds": 30,
+        "on_failure": "fail",
+        "rollback_step": "rollback_to_enterprise"
+      },
+      {
+        "step_id": "test_log_signing",
+        "description": "Test audit log signing and verification",
+        "action_type": "test",
+        "command": "erlmcp_audit_log:test_signing_verification()",
+        "timeout_seconds": 15,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "verify_immutable_storage",
+        "description": "Verify immutable storage prevents log tampering",
+        "action_type": "test",
+        "command": "erlmcp_audit_log:verify_immutability()",
+        "timeout_seconds": 15,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "verify_encryption_overhead",
+        "description": "Measure encryption overhead (should be <5% for AES-256-GCM)",
+        "action_type": "test",
+        "command": "erlmcp_test_helpers:measure_encryption_overhead(5)",
+        "timeout_seconds": 60,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "verify_throughput_ceiling",
+        "description": "Verify throughput meets Government envelope minimum (900 req/s)",
+        "action_type": "test",
+        "command": "erlmcp_test_helpers:verify_throughput_ceiling(900)",
+        "timeout_seconds": 120,
+        "on_failure": "fail",
+        "rollback_step": "rollback_to_enterprise"
+      },
+      {
+        "step_id": "allow_new_connections",
+        "description": "Allow new connections to be accepted",
+        "action_type": "enable_feature",
+        "command": "erlmcp_server:set_connection_drain_mode(false)",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "update_plan_metadata",
+        "description": "Update deployment metadata to reflect Government plan",
+        "action_type": "update_config",
+        "command": "erlmcp_pricing_upgrade:update_plan_metadata(gov)",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "generate_compliance_report",
+        "description": "Generate initial compliance report for audit trail",
+        "action_type": "verify",
+        "command": "erlmcp_compliance_reporter:generate_initial_report()",
+        "timeout_seconds": 30,
+        "on_failure": "warn"
+      }
+    ]
+  },
+  "cooldown_period_seconds": 7200,
+  "rollback_compatible": true,
+  "safety_gates": [
+    "certification_valid",
+    "infrastructure_headroom",
+    "clean_receipt_state",
+    "post_upgrade_verification",
+    "sla_compliance",
+    "resource_availability"
+  ],
+  "evidence_requirements": {
+    "throughput_test": true,
+    "latency_test": true,
+    "connection_test": true,
+    "feature_test": true
+  }
+}

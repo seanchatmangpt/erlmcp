@@ -28,7 +28,6 @@
     format_refusal_table/1
 ]).
 
-
 -type tier() :: team | enterprise | gov.
 -type plan_spec() :: map().
 
@@ -103,7 +102,7 @@ generate_markdown(Tier, Spec) ->
     ].
 
 -spec generate_header(tier(), plan_spec()) -> iodata().
-generate_header(Tier, Spec) ->
+generate_header(_Tier, Spec) ->
     Name = maps:get(<<"name">>, Spec),
     Description = maps:get(<<"description">>, Spec),
     [
@@ -141,33 +140,32 @@ generate_use_cases_section(Tier) ->
     Cases = case Tier of
         team ->
             [
-                "- **Hobby Projects**: Erlang learning projects with MCP integration",
-                "- **Proof-of-Concepts**: Quick prototypes for new ideas",
-                "- **Development**: Local development environments",
-                "- **Testing**: Integration testing with modest load",
-                "- **Open Source**: Community projects and research"
+                "- Hobby Projects: Erlang learning projects with MCP integration\n",
+                "- Proof-of-Concepts: Quick prototypes for new ideas\n",
+                "- Development: Local development environments\n",
+                "- Testing: Integration testing with modest load\n",
+                "- Open Source: Community projects and research\n"
             ];
         enterprise ->
             [
-                "- **Web Applications**: High-traffic web services",
-                "- **Microservices**: Distributed system coordination",
-                "- **IoT Platforms**: Real-time IoT device communication",
-                "- **Gaming**: Multiplayer game backends",
-                "- **SaaS**: Multi-tenant applications"
+                "- Web Applications: High-traffic web services\n",
+                "- Microservices: Distributed system coordination\n",
+                "- IoT Platforms: Real-time IoT device communication\n",
+                "- Gaming: Multiplayer game backends\n",
+                "- SaaS: Multi-tenant applications\n"
             ];
         gov ->
             [
-                "- **Federal Agencies**: FIPS-140-2 compliant systems",
-                "- **Regulated Finance**: Compliance-sensitive financial systems",
-                "- **Healthcare**: HIPAA-compliant medical data systems",
-                "- **Defense Contractors**: Secure government communication",
-                "- **Audit-Required Industries**: Systems requiring immutable logs"
+                "- Federal Agencies: FIPS-140-2 compliant systems\n",
+                "- Regulated Finance: Compliance-sensitive financial systems\n",
+                "- Healthcare: HIPAA-compliant medical data systems\n",
+                "- Defense Contractors: Secure government communication\n",
+                "- Audit-Required Industries: Systems requiring immutable logs\n"
             ]
     end,
     [
         "## Typical Use Cases\n\n",
-        string:join(Cases, "\n"),
-        "\n"
+        Cases
     ].
 
 -spec generate_refusal_section(plan_spec()) -> iodata().
@@ -181,15 +179,13 @@ generate_refusal_section(Spec) ->
         "```erlang\n",
         "handle_refusal(Response) ->\n",
         "    case Response of\n",
-        "        {429, Code} when Code =:= 'rate_limit_exceeded' ->\n",
+        "        {429, rate_limit_exceeded} ->\n",
         "            RetryAfter = get_retry_after(Response),\n",
         "            timer:sleep(RetryAfter * 1000),\n",
         "            retry_request();\n",
-        "        {503, Code} when Code =:= 'service_unavailable' ->\n",
-        "            % Wait and retry with exponential backoff\n",
+        "        {503, service_unavailable} ->\n",
         "            backoff_retry(3);\n",
-        "        {413, <<"payload_too_large">>} ->\n",
-        "            % Split large payload into chunks\n",
+        "        {413, payload_too_large} ->\n",
         "            split_and_retry();\n",
         "        Error ->\n",
         "            handle_error(Error)\n",
@@ -229,17 +225,17 @@ generate_features_section(Spec) ->
     ].
 
 -spec generate_evidence_section(tier(), plan_spec()) -> iodata().
-generate_evidence_section(Tier, Spec) ->
+generate_evidence_section(_Tier, Spec) ->
     Evidence = maps:get(<<"evidence">>, Spec),
     [
         "## Evidence Bundle\n\n",
         "Your tier includes comprehensive validation evidence:\n\n",
-        evidence_links(Evidence, Tier),
+        evidence_links(Evidence),
         "\n"
     ].
 
--spec evidence_links(map(), tier()) -> iodata().
-evidence_links(Evidence, Tier) ->
+-spec evidence_links(map()) -> iodata().
+evidence_links(Evidence) ->
     Links = [
         case maps:get(<<"sbom">>, Evidence, undefined) of
             undefined -> [];
@@ -285,6 +281,7 @@ generate_pricing_section(Spec) ->
 
 -spec generate_cli_examples_section(tier(), plan_spec()) -> iodata().
 generate_cli_examples_section(Tier, Spec) ->
+    TierStr = atom_to_list(Tier),
     [
         "## CLI Commands for This Tier\n\n",
         "Check your current tier and explore tier-specific operations:\n\n",
@@ -294,62 +291,62 @@ generate_cli_examples_section(Tier, Spec) ->
         "```\n\n",
         "**Output:**\n",
         "```\n",
-        "Current Plan: ", atom_to_list(Tier), "\n",
+        "Current Plan: ", TierStr, "\n",
         "Throughput:   ", format_throughput(Spec), " req/s\n",
         "Connections:  ", format_connections(Spec), " concurrent\n",
         "Latency SLA:  ", format_latency(Spec), " ms (p99)\n",
         "```\n\n",
         "### Display Tier Specification\n\n",
         "```bash\n",
-        "erlmcp plan show ", atom_to_list(Tier), "\n",
+        "erlmcp plan show ", TierStr, "\n",
         "```\n\n",
         "### Run Tier-Specific Benchmark\n\n",
         "```bash\n",
-        "erlmcp bench run --suite throughput --plan ", atom_to_list(Tier), "\n",
+        "erlmcp bench run --suite throughput --plan ", TierStr, "\n",
         "```\n\n",
         "### Export Audit Trail\n\n",
         "```bash\n",
-        "erlmcp receipt export ", atom_to_list(Tier), " json | jq .\n",
+        "erlmcp receipt export ", TierStr, " json | jq .\n",
         "```\n\n",
         "### Upgrade to Another Tier\n\n",
         "```bash\n",
-        "erlmcp upgrade plan ", atom_to_list(Tier), " enterprise\n",
+        "erlmcp upgrade plan ", TierStr, " enterprise\n",
         "```\n"
     ].
 
 -spec generate_runnable_examples_section(tier(), plan_spec()) -> iodata().
 generate_runnable_examples_section(Tier, Spec) ->
+    TierStr = atom_to_list(Tier),
     Envelope = maps:get(<<"envelope">>, Spec),
     Throughput = maps:get(<<"throughput_req_s">>, Envelope),
+    ThroughputStr = integer_to_list(Throughput),
     [
         "## Runnable Examples\n\n",
         "These examples can be executed immediately and demonstrate tier behavior:\n\n",
         "### Example 1: Check Plan Status\n\n",
         "```erlang\n",
         "erl> erlmcp_plan:current_plan().\n",
-        "{ok, #{tier => ", atom_to_list(Tier), ", throughput => ",
-            integer_to_list(Throughput), "}}\n",
+        "{ok, #{tier => ", TierStr, ", throughput => ", ThroughputStr, "}}\n",
         "```\n\n",
         "### Example 2: Display Full Tier Envelope\n\n",
         "```erlang\n",
-        "erl> erlmcp_plan:show(", atom_to_list(Tier), ").\n",
-        "#{envelope => #{throughput_req_s => ", integer_to_list(Throughput),
-            ", ...}}\n",
+        "erl> erlmcp_plan:show(", TierStr, ").\n",
+        "#{envelope => #{throughput_req_s => ", ThroughputStr, ", ...}}\n",
         "```\n\n",
         "### Example 3: Run Tier Benchmark\n\n",
         "```bash\n",
         "$ rebar3 do compile, eunit\n",
-        "$ erlmcp bench run --suite throughput --plan ", atom_to_list(Tier),
-            " --target ", integer_to_list(Throughput), " --duration 30s\n",
+        "$ erlmcp bench run --suite throughput --plan ", TierStr,
+            " --target ", ThroughputStr, " --duration 30s\n",
         "```\n\n",
         "### Example 4: Test Refusal Behavior\n\n",
         "```erlang\n",
         "erl> erlmcp_plan:test_refusal(throughput_exceeded).\n",
-        "{429, <<"rate_limit_exceeded">>, <<"Request rate exceeds tier limit">>}\n",
+        "{429, rate_limit_exceeded, rate_limit_exceeded_message}\n",
         "```\n\n",
         "### Example 5: Export Audit Trail\n\n",
         "```bash\n",
-        "$ erlmcp receipt export ", atom_to_list(Tier), " json | jq '.events | length'\n",
+        "$ erlmcp receipt export ", TierStr, " json | jq '.events | length'\n",
         "```\n"
     ].
 
@@ -409,8 +406,8 @@ format_features_table(Features) ->
 format_feature_row(Feature, Features) ->
     Value = maps:get(Feature, Features, false),
     Status = case Value of
-        true -> "✓";
-        false -> "✗";
+        true -> "Yes";
+        false -> "No";
         _ -> erlang:atom_to_list(Value)
     end,
     ["| ", binary_to_list(Feature), " | ", Status, " |\n"].
@@ -425,7 +422,7 @@ format_refusal_table(Refusal) ->
         [format_refusal_row(Key, Refusal) || Key <- Keys]
     ].
 
--spec format_refusal_row(atom() | binary(), map()) -> iodata().
+-spec format_refusal_row(binary(), map()) -> iodata().
 format_refusal_row(Key, Refusal) ->
     Behavior = maps:get(Key, Refusal),
     Status = maps:get(<<"http_status">>, Behavior, "N/A"),
@@ -436,11 +433,9 @@ format_refusal_row(Key, Refusal) ->
         " | ", format_value(Code), " | ", format_value(Message), " |\n"
     ].
 
--spec format_scenario_name(atom() | binary()) -> string().
+-spec format_scenario_name(binary()) -> string().
 format_scenario_name(Name) when is_binary(Name) ->
-    string:replace(binary_to_list(Name), "_", " ");
-format_scenario_name(Name) when is_atom(Name) ->
-    string:replace(atom_to_list(Name), "_", " ").
+    string:replace(binary_to_list(Name), "_", " ").
 
 -spec format_value(term()) -> string().
 format_value(V) when is_binary(V) ->

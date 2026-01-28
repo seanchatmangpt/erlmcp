@@ -1,0 +1,361 @@
+{
+  "from_plan": "team",
+  "to_plan": "enterprise",
+  "description": "Upgrade from Team tier to Enterprise tier - enables production-grade features and increased envelope",
+  "estimated_downtime_ms": 500,
+  "envelope_expansion": {
+    "old_envelope": {
+      "throughput_req_s": 450,
+      "concurrent_connections": 128,
+      "queue_depth_messages": 2048,
+      "p99_latency_ms": 250,
+      "failover_sla_seconds": 30,
+      "connection_timeout_seconds": 60
+    },
+    "new_envelope": {
+      "throughput_req_s": 1500,
+      "concurrent_connections": 512,
+      "queue_depth_messages": 8192,
+      "p99_latency_ms": 100,
+      "failover_sla_seconds": 10,
+      "connection_timeout_seconds": 120
+    }
+  },
+  "config_changes": [
+    {
+      "setting": "features.websocket_transport",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable WebSocket transport for real-time bidirectional communication",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.sse_transport",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable Server-Sent Events transport",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.connection_pooling",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable connection pooling for improved resource management",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.otel_observability",
+      "old_value": "basic",
+      "new_value": "comprehensive",
+      "description": "Upgrade observability from basic to comprehensive OTEL tracing",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.audit_logging",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable audit logging for compliance and debugging",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.high_availability",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable high availability features and multi-instance support",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.load_balancing",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable load balancing across instances",
+      "requires_restart": false
+    },
+    {
+      "setting": "features.health_checks",
+      "old_value": false,
+      "new_value": true,
+      "description": "Enable health checks for monitoring",
+      "requires_restart": false
+    },
+    {
+      "setting": "limits.max_message_size_bytes",
+      "old_value": 1048576,
+      "new_value": 10485760,
+      "description": "Increase max message size from 1MB to 10MB",
+      "requires_restart": false
+    },
+    {
+      "setting": "limits.max_payload_size_mb",
+      "old_value": 10,
+      "new_value": 100,
+      "description": "Increase max payload size from 10MB to 100MB",
+      "requires_restart": false
+    },
+    {
+      "setting": "limits.max_concurrent_requests_per_conn",
+      "old_value": 32,
+      "new_value": 128,
+      "description": "Increase max concurrent requests per connection",
+      "requires_restart": false
+    },
+    {
+      "setting": "limits.memory_limit_mb",
+      "old_value": 512,
+      "new_value": 4096,
+      "description": "Increase memory allocation from 512MB to 4GB",
+      "requires_restart": true
+    },
+    {
+      "setting": "limits.backpressure_threshold_bytes",
+      "old_value": 8388608,
+      "new_value": 67108864,
+      "description": "Increase backpressure threshold from 8MB to 64MB",
+      "requires_restart": false
+    }
+  ],
+  "migration_steps": {
+    "pre_upgrade_checks": [
+      {
+        "step_id": "check_current_plan_valid",
+        "description": "Verify current Team plan certification is valid",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:verify_certification_valid(team)",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "check_cluster_headroom",
+        "description": "Verify cluster has sufficient resources for Enterprise envelope (512 concurrent connections, 1500 req/s)",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:check_infrastructure_headroom(enterprise)",
+        "timeout_seconds": 15,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "check_clean_state",
+        "description": "Verify no pending refusals in receipt chain",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:verify_clean_receipt_state()",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "check_sla_compliance",
+        "description": "Verify current system meets Team SLAs",
+        "action_type": "check",
+        "command": "erlmcp_pricing_upgrade:verify_sla_compliance(team)",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "snapshot_state",
+        "description": "Create snapshot of current system state for rollback",
+        "action_type": "verify",
+        "command": "erlmcp_pricing_upgrade:snapshot_system_state(team)",
+        "timeout_seconds": 30,
+        "on_failure": "fail",
+        "rollback_step": "restore_snapshot_from_team"
+      }
+    ],
+    "upgrade_phase": [
+      {
+        "step_id": "drain_new_connections",
+        "description": "Signal to stop accepting new connections (graceful degradation)",
+        "action_type": "drain_connections",
+        "command": "erlmcp_server:set_connection_drain_mode(true)",
+        "timeout_seconds": 10,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "flush_pending_requests",
+        "description": "Flush all pending requests from queue",
+        "action_type": "flush_queues",
+        "command": "erlmcp_pricing_upgrade:flush_pending_requests(team)",
+        "timeout_seconds": 60,
+        "on_failure": "fail",
+        "rollback_step": "restore_queue_from_snapshot"
+      },
+      {
+        "step_id": "enable_websocket",
+        "description": "Enable WebSocket transport",
+        "action_type": "enable_feature",
+        "command": "erlmcp_transport_ws:enable()",
+        "timeout_seconds": 5,
+        "on_failure": "warn",
+        "rollback_step": "disable_websocket"
+      },
+      {
+        "step_id": "enable_sse",
+        "description": "Enable Server-Sent Events transport",
+        "action_type": "enable_feature",
+        "command": "erlmcp_transport_sse:enable()",
+        "timeout_seconds": 5,
+        "on_failure": "warn",
+        "rollback_step": "disable_sse"
+      },
+      {
+        "step_id": "enable_connection_pooling",
+        "description": "Enable connection pooling module",
+        "action_type": "enable_feature",
+        "command": "erlmcp_connection_pool:start()",
+        "timeout_seconds": 10,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_connection_pool:stop()"
+      },
+      {
+        "step_id": "upgrade_observability",
+        "description": "Upgrade OTEL observability to comprehensive level",
+        "action_type": "update_config",
+        "command": "erlmcp_otel_config:set_level(comprehensive)",
+        "timeout_seconds": 10,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_otel_config:set_level(basic)"
+      },
+      {
+        "step_id": "enable_audit_logging",
+        "description": "Enable audit logging for Enterprise features",
+        "action_type": "enable_feature",
+        "command": "erlmcp_audit_log:enable()",
+        "timeout_seconds": 5,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_audit_log:disable()"
+      },
+      {
+        "step_id": "enable_high_availability",
+        "description": "Enable high availability mode",
+        "action_type": "enable_feature",
+        "command": "erlmcp_ha_manager:enable()",
+        "timeout_seconds": 15,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_ha_manager:disable()"
+      },
+      {
+        "step_id": "enable_load_balancing",
+        "description": "Enable load balancing",
+        "action_type": "enable_feature",
+        "command": "erlmcp_load_balancer:enable()",
+        "timeout_seconds": 10,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_load_balancer:disable()"
+      },
+      {
+        "step_id": "enable_health_checks",
+        "description": "Enable health checks",
+        "action_type": "enable_feature",
+        "command": "erlmcp_health_check:enable()",
+        "timeout_seconds": 5,
+        "on_failure": "warn",
+        "rollback_step": "erlmcp_health_check:disable()"
+      },
+      {
+        "step_id": "update_memory_limits",
+        "description": "Update memory limit to 4GB (requires restart)",
+        "action_type": "update_config",
+        "command": "erlmcp_config:set(memory_limit_mb, 4096)",
+        "timeout_seconds": 5,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "update_connection_limits",
+        "description": "Update connection and message limits",
+        "action_type": "update_config",
+        "command": "erlmcp_pricing_upgrade:update_enterprise_limits()",
+        "timeout_seconds": 10,
+        "on_failure": "fail"
+      },
+      {
+        "step_id": "log_upgrade_event",
+        "description": "Log upgrade event to receipt chain",
+        "action_type": "verify",
+        "command": "erlmcp_pricing_upgrade:log_upgrade_event(team, enterprise, #{reason => migration})",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "record_upgrade_timestamp",
+        "description": "Record upgrade completion timestamp",
+        "action_type": "verify",
+        "command": "erlmcp_pricing_upgrade:record_upgrade_timestamp(enterprise)",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      }
+    ],
+    "post_upgrade_verification": [
+      {
+        "step_id": "verify_enterprise_envelope",
+        "description": "Verify system envelope meets Enterprise minimums (1500 req/s, 512 connections)",
+        "action_type": "verify_envelope",
+        "command": "erlmcp_pricing_upgrade:verify_upgrade(enterprise)",
+        "timeout_seconds": 60,
+        "on_failure": "fail",
+        "rollback_step": "rollback_to_team"
+      },
+      {
+        "step_id": "test_websocket_feature",
+        "description": "Test WebSocket transport is functional",
+        "action_type": "test",
+        "command": "erlmcp_test_helpers:test_websocket_connectivity()",
+        "timeout_seconds": 10,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "test_connection_pooling",
+        "description": "Test connection pooling works correctly",
+        "action_type": "test",
+        "command": "erlmcp_test_helpers:test_connection_pool_reuse()",
+        "timeout_seconds": 10,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "test_audit_logging",
+        "description": "Test audit logging is recording events",
+        "action_type": "test",
+        "command": "erlmcp_test_helpers:test_audit_log_recording()",
+        "timeout_seconds": 10,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "verify_throughput_ceiling",
+        "description": "Verify throughput reaches at least 1500 req/s under load",
+        "action_type": "test",
+        "command": "erlmcp_test_helpers:verify_throughput_ceiling(1500)",
+        "timeout_seconds": 120,
+        "on_failure": "fail",
+        "rollback_step": "rollback_to_team"
+      },
+      {
+        "step_id": "allow_new_connections",
+        "description": "Allow new connections to be accepted",
+        "action_type": "enable_feature",
+        "command": "erlmcp_server:set_connection_drain_mode(false)",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      },
+      {
+        "step_id": "update_plan_metadata",
+        "description": "Update deployment metadata to reflect Enterprise plan",
+        "action_type": "update_config",
+        "command": "erlmcp_pricing_upgrade:update_plan_metadata(enterprise)",
+        "timeout_seconds": 5,
+        "on_failure": "warn"
+      }
+    ]
+  },
+  "cooldown_period_seconds": 3600,
+  "rollback_compatible": true,
+  "safety_gates": [
+    "certification_valid",
+    "infrastructure_headroom",
+    "clean_receipt_state",
+    "post_upgrade_verification",
+    "sla_compliance",
+    "resource_availability"
+  ],
+  "evidence_requirements": {
+    "throughput_test": true,
+    "latency_test": true,
+    "connection_test": true,
+    "feature_test": true
+  }
+}

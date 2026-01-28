@@ -1,0 +1,325 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Pricing Portal Schema",
+  "description": "Complete schema for erlmcp pricing portal with plan listings, comparison, and evidence bundles",
+  "type": "object",
+  "required": [
+    "version",
+    "generated_at",
+    "erlmcp_version",
+    "plans",
+    "comparison_matrix",
+    "evidence_bundles"
+  ],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Portal version (semver)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "generated_at": {
+      "type": "string",
+      "description": "ISO 8601 timestamp when portal was generated",
+      "format": "date-time"
+    },
+    "erlmcp_version": {
+      "type": "string",
+      "description": "erlmcp version this portal was built for"
+    },
+    "plans": {
+      "type": "array",
+      "description": "Array of 3 pricing tiers: Team, Enterprise, Gov",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/definitions/plan"
+      }
+    },
+    "comparison_matrix": {
+      "type": "object",
+      "description": "Comparison matrix across all tiers",
+      "required": [
+        "throughput",
+        "concurrent_connections",
+        "latency",
+        "failover",
+        "pricing",
+        "audit_logging",
+        "fips_140_2",
+        "high_availability"
+      ],
+      "properties": {
+        "throughput": {
+          "type": "object",
+          "description": "Throughput comparison",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "integer"}
+        },
+        "concurrent_connections": {
+          "type": "object",
+          "description": "Concurrent connections comparison",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "integer"}
+        },
+        "latency": {
+          "type": "object",
+          "description": "P99 latency comparison (ms)",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "integer"}
+        },
+        "failover": {
+          "type": "object",
+          "description": "Failover SLA comparison (seconds)",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "integer"}
+        },
+        "pricing": {
+          "type": "object",
+          "description": "Pricing model (all flat-per-deployment)",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "string"}
+        },
+        "audit_logging": {
+          "type": "object",
+          "description": "Audit logging availability",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "boolean"}
+        },
+        "fips_140_2": {
+          "type": "object",
+          "description": "FIPS 140-2 compliance",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "boolean"}
+        },
+        "high_availability": {
+          "type": "object",
+          "description": "High availability support",
+          "required": ["team", "enterprise", "gov"],
+          "additionalProperties": {"type": "boolean"}
+        }
+      }
+    },
+    "evidence_bundles": {
+      "type": "array",
+      "description": "Directory of evidence bundles for each plan",
+      "items": {
+        "$ref": "#/definitions/evidence_bundle"
+      }
+    }
+  },
+  "definitions": {
+    "plan": {
+      "type": "object",
+      "description": "Single pricing tier plan",
+      "required": [
+        "id",
+        "name",
+        "tier",
+        "description",
+        "envelope",
+        "sla",
+        "pricing",
+        "evidence_links",
+        "comparison_indicators"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": ["team", "enterprise", "gov"],
+          "description": "Plan identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name"
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["team", "enterprise", "gov"],
+          "description": "Tier level"
+        },
+        "description": {
+          "type": "string",
+          "description": "Plan description"
+        },
+        "envelope": {
+          "type": "object",
+          "description": "Performance envelope",
+          "required": [
+            "throughput_req_s",
+            "concurrent_connections",
+            "queue_depth_messages",
+            "p99_latency_ms",
+            "failover_sla_seconds"
+          ],
+          "properties": {
+            "throughput_req_s": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Requests per second"
+            },
+            "concurrent_connections": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum concurrent connections"
+            },
+            "queue_depth_messages": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum queue depth"
+            },
+            "p99_latency_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "P99 latency in milliseconds"
+            },
+            "failover_sla_seconds": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Failover time SLA in seconds"
+            }
+          }
+        },
+        "sla": {
+          "type": "object",
+          "description": "Service Level Agreement",
+          "required": [
+            "model",
+            "availability_percentage",
+            "throughput_guarantee_req_s",
+            "failover_time_seconds",
+            "recovery_sla_minutes"
+          ],
+          "properties": {
+            "model": {
+              "type": "string",
+              "enum": ["flat-per-deployment"],
+              "description": "Pricing model (always flat)"
+            },
+            "availability_percentage": {
+              "type": "number",
+              "minimum": 99,
+              "maximum": 100,
+              "description": "Availability percentage (e.g., 99.95)"
+            },
+            "throughput_guarantee_req_s": {
+              "type": "integer",
+              "description": "Guaranteed throughput"
+            },
+            "failover_time_seconds": {
+              "type": "integer",
+              "description": "Failover SLA"
+            },
+            "recovery_sla_minutes": {
+              "type": "integer",
+              "description": "Recovery time SLA"
+            }
+          }
+        },
+        "pricing": {
+          "type": "object",
+          "description": "Pricing information",
+          "required": ["model", "description"],
+          "properties": {
+            "model": {
+              "type": "string",
+              "enum": ["flat-per-deployment"],
+              "description": "Flat per-deployment pricing"
+            },
+            "description": {
+              "type": "string",
+              "description": "Pricing description"
+            }
+          }
+        },
+        "evidence_links": {
+          "type": "object",
+          "description": "Links to evidence and documentation",
+          "required": ["sbom", "provenance", "chaos_report", "benchmark_report"],
+          "properties": {
+            "sbom": {
+              "type": "string",
+              "description": "SBOM file path"
+            },
+            "provenance": {
+              "type": "string",
+              "description": "Provenance file path"
+            },
+            "chaos_report": {
+              "type": "string",
+              "description": "Chaos engineering report"
+            },
+            "benchmark_report": {
+              "type": "string",
+              "description": "Benchmark report"
+            },
+            "audit_schema": {
+              "type": "string",
+              "description": "Audit schema (Enterprise/Gov only)"
+            },
+            "fips_certification": {
+              "type": "string",
+              "description": "FIPS 140-2 certification (Gov only)"
+            },
+            "compliance_report": {
+              "type": "string",
+              "description": "Compliance report (Gov only)"
+            }
+          }
+        },
+        "comparison_indicators": {
+          "type": "object",
+          "description": "Indicators for comparison matrix",
+          "properties": {
+            "features_count": {
+              "type": "integer",
+              "description": "Number of features implemented"
+            },
+            "security_level": {
+              "type": "string",
+              "enum": ["standard", "enhanced", "maximum"]
+            },
+            "support_tier": {
+              "type": "string",
+              "enum": ["community", "premium", "dedicated"]
+            }
+          }
+        }
+      }
+    },
+    "evidence_bundle": {
+      "type": "object",
+      "description": "Evidence bundle directory entry",
+      "required": ["plan", "version", "files"],
+      "properties": {
+        "plan": {
+          "type": "string",
+          "enum": ["team", "enterprise", "gov"]
+        },
+        "version": {
+          "type": "string",
+          "description": "erlmcp version"
+        },
+        "files": {
+          "type": "array",
+          "description": "Evidence files",
+          "items": {
+            "type": "object",
+            "required": ["name", "path", "type"],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["sbom", "provenance", "chaos_report", "benchmark_report", "audit_schema", "fips_cert", "compliance_report"]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

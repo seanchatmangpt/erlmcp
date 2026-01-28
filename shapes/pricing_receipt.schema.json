@@ -1,0 +1,202 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ERLMCP Pricing Receipt Schema",
+  "description": "Auditable receipt for plan enforcement tracking with immutable audit trail",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_id",
+    "plan_id",
+    "version",
+    "timestamp",
+    "envelope_claim",
+    "audit_fields",
+    "current_hash"
+  ],
+  "properties": {
+    "receipt_id": {
+      "type": "string",
+      "description": "Unique receipt identifier (UUID)",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$"
+    },
+    "plan_id": {
+      "type": "string",
+      "description": "Plan identifier (free, starter, pro)",
+      "enum": ["free", "starter", "pro"],
+      "immutable": true
+    },
+    "version": {
+      "type": "string",
+      "description": "Plan version for enforcement (e.g., '1.0', '1.1', '2.0')",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "immutable": true
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "Receipt creation timestamp (ISO 8601 UTC)",
+      "format": "date-time",
+      "immutable": true
+    },
+    "envelope_claim": {
+      "type": "object",
+      "description": "Plan envelope bounds claimed at receipt creation",
+      "additionalProperties": false,
+      "immutable": true,
+      "required": [
+        "throughput_req_s",
+        "concurrent",
+        "queue_depth",
+        "latency_p99_ms",
+        "failover_s"
+      ],
+      "properties": {
+        "throughput_req_s": {
+          "type": "number",
+          "description": "Throughput envelope in requests per second",
+          "minimum": 0,
+          "multipleOf": 0.01
+        },
+        "concurrent": {
+          "type": "integer",
+          "description": "Maximum concurrent requests allowed",
+          "minimum": 1
+        },
+        "queue_depth": {
+          "type": "integer",
+          "description": "Maximum queue depth before refusal",
+          "minimum": 1
+        },
+        "latency_p99_ms": {
+          "type": "number",
+          "description": "P99 latency bound in milliseconds",
+          "minimum": 0,
+          "multipleOf": 0.1
+        },
+        "failover_s": {
+          "type": "number",
+          "description": "Failover detection time in seconds",
+          "minimum": 0.1,
+          "multipleOf": 0.1
+        }
+      }
+    },
+    "refusal_trigger": {
+      "type": "object",
+      "description": "Optional refusal event (added via add_refusal)",
+      "additionalProperties": false,
+      "required": ["code", "reason", "attempted_action", "timestamp"],
+      "properties": {
+        "code": {
+          "type": "integer",
+          "description": "Refusal code (1001-1089)",
+          "minimum": 1001,
+          "maximum": 1089
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable reason for refusal",
+          "enum": [
+            "queue_overflow",
+            "rate_limit_exceeded",
+            "circuit_breaker_open",
+            "concurrent_limit",
+            "throughput_limit",
+            "latency_p99_violated",
+            "failover_timeout",
+            "plan_expired",
+            "unknown"
+          ]
+        },
+        "attempted_action": {
+          "type": "string",
+          "description": "Action that triggered refusal (e.g., 'call_tool', 'subscribe_resource')"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "Refusal event timestamp (ISO 8601 UTC)",
+          "format": "date-time"
+        },
+        "metric_value": {
+          "type": "number",
+          "description": "Actual metric value that triggered refusal"
+        }
+      }
+    },
+    "hash_chain": {
+      "type": "object",
+      "description": "Immutable hash chain for audit trail integrity",
+      "additionalProperties": false,
+      "immutable": true,
+      "properties": {
+        "previous_receipt_hash": {
+          "type": ["string", "null"],
+          "description": "SHA-256 hash of previous receipt (null for first receipt)",
+          "pattern": "^[a-f0-9]{64}$|^null$"
+        },
+        "current_hash": {
+          "type": "string",
+          "description": "SHA-256 hash of this receipt (computed over all immutable fields)",
+          "pattern": "^[a-f0-9]{64}$",
+          "immutable": true
+        }
+      }
+    },
+    "audit_fields": {
+      "type": "object",
+      "description": "Non-functional audit metadata",
+      "additionalProperties": false,
+      "immutable": true,
+      "required": ["machine_id", "erlang_version", "otp_version"],
+      "properties": {
+        "requestor_id": {
+          "type": ["string", "null"],
+          "description": "Optional requestor ID (can be null)"
+        },
+        "machine_id": {
+          "type": "string",
+          "description": "Machine/node identifier"
+        },
+        "erlang_version": {
+          "type": "string",
+          "description": "Erlang/OTP version string"
+        },
+        "otp_version": {
+          "type": "string",
+          "description": "OTP version number"
+        },
+        "hostname": {
+          "type": ["string", "null"],
+          "description": "Hostname where receipt was created"
+        }
+      }
+    },
+    "conformance_events": {
+      "type": "array",
+      "description": "Historical conformance check results",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pass", "fail", "warning"]
+          },
+          "metrics": {
+            "type": "object",
+            "properties": {
+              "throughput_actual": {"type": "number"},
+              "concurrent_actual": {"type": "integer"},
+              "queue_depth_actual": {"type": "integer"},
+              "latency_p99_actual": {"type": "number"},
+              "failover_actual": {"type": "number"}
+            }
+          }
+        }
+      }
+    }
+  }
+}
