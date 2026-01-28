@@ -11,6 +11,7 @@ SHELL := /bin/bash
 
 # Colors for output
 BLUE := \033[0;34m
+CYAN := \033[0;36m
 GREEN := \033[0;32m
 YELLOW := \033[0;33m
 RED := \033[0;31m
@@ -236,20 +237,37 @@ validate-compile:
 
 validate-test:
 	@echo "$(BLUE)🧪 Quality Gate: Tests$(NC)"
-	@echo "  Target: 0 test failures"
+	@echo "  Target: 0 test failures (EUnit + CT)"
 	@echo "  Action: Running EUnit + CT..."
 	@echo ""
-	@if rebar3 eunit 2>&1 | tee /tmp/erlmcp_test.log; then \
-		echo ""; \
-		echo "$(GREEN)✅ Tests passed - 0 failures$(NC)"; \
+	@EUNIT_PASS=1; \
+	CT_PASS=1; \
+	echo "  Running EUnit..."; \
+	if ! rebar3 eunit 2>&1 | tee /tmp/erlmcp_eunit.log; then \
+		EUNIT_PASS=0; \
+	fi; \
+	echo ""; \
+	echo "  Running Common Test..."; \
+	if ! rebar3 ct 2>&1 | tee /tmp/erlmcp_ct.log; then \
+		CT_PASS=0; \
+	fi; \
+	echo ""; \
+	if [ $$EUNIT_PASS -eq 1 ] && [ $$CT_PASS -eq 1 ]; then \
+		echo "$(GREEN)✅ Tests passed - 0 failures (EUnit + CT)$(NC)"; \
 		echo ""; \
 	else \
-		echo ""; \
 		echo "$(RED)❌ TESTS FAILED$(NC)"; \
 		echo "$(RED)Gate: BLOCKED$(NC)"; \
+		if [ $$EUNIT_PASS -eq 0 ]; then \
+			echo "$(RED)  - EUnit failures detected$(NC)"; \
+			grep -A 5 "Failed:" /tmp/erlmcp_eunit.log || true; \
+		fi; \
+		if [ $$CT_PASS -eq 0 ]; then \
+			echo "$(RED)  - Common Test failures detected$(NC)"; \
+			grep -A 5 "FAILED" /tmp/erlmcp_ct.log || true; \
+		fi; \
 		echo "$(RED)Action: Fix failing tests before proceeding$(NC)"; \
 		echo ""; \
-		grep -A 5 "Failed:" /tmp/erlmcp_test.log || cat /tmp/erlmcp_test.log; \
 		exit 1; \
 	fi
 
@@ -277,9 +295,12 @@ validate-coverage:
 		fi; \
 	else \
 		echo ""; \
-		echo "$(YELLOW)⚠ Coverage report failed to generate$(NC)"; \
-		echo "$(YELLOW)Skipping coverage check (assuming pass)$(NC)"; \
+		echo "$(RED)❌ COVERAGE TOOL FAILED$(NC)"; \
+		echo "$(RED)Gate: BLOCKED$(NC)"; \
+		echo "$(RED)Refusal Code: MISSING_TOOL_COVERAGE$(NC)"; \
+		echo "$(RED)Remediation: Install rebar3 cover plugin or fix rebar3 installation$(NC)"; \
 		echo ""; \
+		exit 1; \
 	fi
 
 validate-quality:
@@ -336,9 +357,13 @@ validate-bench:
 			exit 1; \
 		fi; \
 	else \
-		echo "$(YELLOW)⚠ Benchmark regression script not found$(NC)"; \
-		echo "$(YELLOW)Skipping benchmark validation (assuming pass)$(NC)"; \
 		echo ""; \
+		echo "$(RED)❌ BENCHMARK SCRIPT MISSING$(NC)"; \
+		echo "$(RED)Gate: BLOCKED$(NC)"; \
+		echo "$(RED)Refusal Code: MISSING_TOOL_BENCHMARK$(NC)"; \
+		echo "$(RED)Remediation: Create scripts/bench/check_regression.sh or disable gate in validate target$(NC)"; \
+		echo ""; \
+		exit 1; \
 	fi
 
 # ============================================================================
@@ -405,22 +430,32 @@ release-validate: validate jidoka
 	@echo "$(BOLD)$(BLUE)════════════════════════════════════════════════════════════$(NC)"
 	@echo ""
 	@if [ -f tools/tcps/generate-quality-receipt.sh ]; then \
-		./tools/tcps/generate-quality-receipt.sh; \
+		if ./tools/tcps/generate-quality-receipt.sh; then \
+			echo ""; \
+			echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"; \
+			echo "$(BOLD)$(GREEN)🎉 RELEASE READY - 認証 (CERTIFIED)$(NC)"; \
+			echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"; \
+			echo ""; \
+			echo "$(GREEN)✓ All quality gates passed$(NC)"; \
+			echo "$(GREEN)✓ Jidoka validation complete$(NC)"; \
+			echo "$(GREEN)✓ Quality receipt generated$(NC)"; \
+			echo "$(GREEN)✓ Ready for production deployment$(NC)"; \
+			echo ""; \
+		else \
+			echo ""; \
+			echo "$(RED)❌ RELEASE BLOCKED - CERTIFICATION FAILED$(NC)"; \
+			echo "$(RED)Refusal Code: QUALITY_RECEIPT_BLOCKED$(NC)"; \
+			echo "$(RED)Remediation: Fix blockers listed in receipt, re-run release-validate$(NC)"; \
+			echo ""; \
+			exit 1; \
+		fi; \
 	else \
-		echo "$(YELLOW)⚠ TCPS receipt script not found (expected: tools/tcps/generate-quality-receipt.sh)$(NC)"; \
-		echo "$(YELLOW)Manual receipt generation required$(NC)"; \
+		echo "$(RED)❌ RECEIPT GENERATOR MISSING$(NC)"; \
+		echo "$(RED)Refusal Code: MISSING_TOOL_RECEIPT$(NC)"; \
+		echo "$(RED)Remediation: Create tools/tcps/generate-quality-receipt.sh$(NC)"; \
 		echo ""; \
+		exit 1; \
 	fi
-	@echo ""
-	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
-	@echo "$(BOLD)$(GREEN)🎉 RELEASE READY - 認証 (CERTIFIED)$(NC)"
-	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
-	@echo ""
-	@echo "$(GREEN)✓ All quality gates passed$(NC)"
-	@echo "$(GREEN)✓ Jidoka validation complete$(NC)"
-	@echo "$(GREEN)✓ Quality receipt generated$(NC)"
-	@echo "$(GREEN)✓ Ready for production deployment$(NC)"
-	@echo ""
 
 # ============================================================================
 # QUALITY GATES (MANDATORY BEFORE "DONE")
