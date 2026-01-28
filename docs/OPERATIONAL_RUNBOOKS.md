@@ -864,4 +864,3 @@ curl http://erlmcp:8080/ready
 **Last Updated:** January 27, 2026
 **Review Cycle:** Quarterly (every 3 months)
 **Next Review:** April 27, 2026
-

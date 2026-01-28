@@ -198,7 +198,7 @@ The system automatically detects various security indicators in responses:
 
 #### Database Errors
 - Oracle: `ORA-\d+` patterns
-- MySQL: `Warning: mysql_` patterns  
+- MySQL: `Warning: mysql_` patterns
 - PostgreSQL: `Warning: pg_` patterns
 - SQL Server: `Microsoft SQL Server` patterns
 
@@ -219,7 +219,7 @@ The system automatically detects various security indicators in responses:
 Vulnerabilities are classified using a multi-factor approach:
 
 1. **Attack Vector Analysis**: Type of attack that succeeded
-2. **Response Pattern Analysis**: Security indicators in responses  
+2. **Response Pattern Analysis**: Security indicators in responses
 3. **Severity Assessment**: CVSS-based scoring
 4. **Exploit Confirmation**: Validation of successful exploitation
 5. **Business Impact**: Assessment of potential business consequences

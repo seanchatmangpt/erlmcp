@@ -751,4 +751,3 @@ Before deploying to production:
 - [Prometheus Monitoring](https://prometheus.io/)
 - [Docker Best Practices](https://docs.docker.com/develop/dev-best-practices/)
 - [Container Security](https://kubernetes.io/docs/concepts/security/)
-

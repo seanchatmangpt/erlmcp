@@ -20,7 +20,7 @@ A lightweight tracing implementation using only Erlang's logger, without OpenTel
 TraceId = erlmcp_simple_trace:start_trace(<<"trace_name">>).
 TraceId = erlmcp_simple_trace:start_trace(<<"trace_name">>, #{metadata => value}).
 
-%% Add spans to trace  
+%% Add spans to trace
 SpanId = erlmcp_simple_trace:add_span(<<"operation">>, #{attributes}).
 
 %% End trace (automatically calculates durations)
@@ -46,7 +46,7 @@ Result = erlmcp_simple_trace:trace_transport_operation(
     end
 ).
 
-%% Trace server operations  
+%% Trace server operations
 Result = erlmcp_simple_trace:trace_server_operation(
     <<"handle_request">>,
     server_id,

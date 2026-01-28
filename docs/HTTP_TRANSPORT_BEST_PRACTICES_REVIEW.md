@@ -1232,4 +1232,3 @@ wrk -c 1000 -d 60s --script websocket.lua ws://localhost:8080/mcp/ws
 **Document Version:** 1.0
 **Last Updated:** 2026-01-27
 **Next Review:** 2026-04-27 (quarterly)
-

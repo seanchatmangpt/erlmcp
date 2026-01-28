@@ -66,10 +66,10 @@ This agent orchestrates the complete SPARC (Specification, Pseudocode, Architect
 ```
 Specification → Quality Gate 1 → Pseudocode
      ↓
-Pseudocode → Quality Gate 2 → Architecture  
+Pseudocode → Quality Gate 2 → Architecture
      ↓
 Architecture → Quality Gate 3 → Refinement
-     ↓ 
+     ↓
 Refinement → Quality Gate 4 → Completion
      ↓
 Completion → Final Review → Deployment

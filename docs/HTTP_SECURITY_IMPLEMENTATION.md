@@ -61,7 +61,7 @@ The origin validation system provides flexible CORS-like security:
 
 ```erlang
 %% Exact match
-"http://localhost" 
+"http://localhost"
 
 %% Port wildcard match
 "http://localhost:*"  %% Matches any port on localhost
@@ -166,11 +166,11 @@ The middleware enforces:
 
 ```erlang
 %% Validate origin header against whitelist
-validate_origin(Origin :: binary() | string(), Config :: list()) 
+validate_origin(Origin :: binary() | string(), Config :: list())
   -> {ok, Origin} | {error, invalid_origin}
 
 %% Validate session exists and is not expired
-validate_session(SessionId :: binary() | string()) 
+validate_session(SessionId :: binary() | string())
   -> {ok, SessionInfo :: map()} | {error, session_expired}
 
 %% Check if HTTPS requirement is enabled
@@ -190,14 +190,14 @@ start_link() -> {ok, pid()} | {error, term()}
 create_session() -> {ok, SessionId :: binary()} | {error, term()}
 
 %% Validate session ID (fast ETS lookup)
-validate_session(SessionId :: binary() | string()) 
+validate_session(SessionId :: binary() | string())
   -> {ok, SessionInfo :: map()} | {error, expired | not_found}
 
 %% Delete a session (async operation)
 delete_session(SessionId :: binary() | string()) -> ok
 
 %% Get detailed session information
-get_session_info(SessionId :: binary()) 
+get_session_info(SessionId :: binary())
   -> {ok, SessionInfo :: map()} | {error, not_found}
 ```
 
@@ -205,14 +205,14 @@ get_session_info(SessionId :: binary())
 
 ```erlang
 %% Validate incoming HTTP request
-validate_request(Request :: map(), Config :: list()) 
+validate_request(Request :: map(), Config :: list())
   -> {ok, {SessionId, Request}} | {error, StatusCode, Message}
 
 %% Extract session ID from request headers
 extract_session_header(Request :: map()) -> binary() | undefined
 
 %% Add session ID to response headers
-inject_session_header(Response :: map(), SessionId :: binary()) 
+inject_session_header(Response :: map(), SessionId :: binary())
   -> Response :: map()
 ```
 
@@ -294,7 +294,7 @@ SecurityConfig = application:get_env(erlmcp, http_security, []),
 
 %% 3. Validate origin on incoming request
 {ok, Origin} = erlmcp_http_security:validate_origin(
-    "http://localhost:3000", 
+    "http://localhost:3000",
     SecurityConfig
 ),
 
@@ -412,4 +412,3 @@ The HTTP security implementation provides production-grade origin validation and
 - ✅ Automatic cleanup
 - ✅ OTP best practices
 - ✅ Complete API documentation
-

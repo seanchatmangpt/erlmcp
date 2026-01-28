@@ -308,6 +308,6 @@ For issues or questions regarding SSE stream resumability:
 
 ---
 
-**Last Updated:** 2026-01-27  
-**Status:** ✅ Production Ready  
+**Last Updated:** 2026-01-27
+**Status:** ✅ Production Ready
 **Maintainer:** erlmcp team

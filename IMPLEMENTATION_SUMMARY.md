@@ -1,8 +1,8 @@
 # HTTP Security - Origin Validation & Session Management
 ## Implementation Summary
 
-**Completion Date**: 2026-01-27  
-**Status**: PRODUCTION READY  
+**Completion Date**: 2026-01-27
+**Status**: PRODUCTION READY
 **Test Results**: 28/28 tests passing (100%)
 
 ---
@@ -190,7 +190,7 @@ case erlmcp_session_manager:validate_session(SessionId) of
 end.
 
 % Get detailed session info
-{ok, #{expires_at := ExpiresAt, created_at := CreatedAt}} 
+{ok, #{expires_at := ExpiresAt, created_at := CreatedAt}}
     = erlmcp_session_manager:get_session_info(SessionId).
 
 % Delete session on logout
@@ -417,4 +417,3 @@ The HTTP Security implementation provides enterprise-grade origin validation and
 - ✅ Complete API documentation
 - ✅ Proper error handling
 - ✅ OTP supervision integration
-

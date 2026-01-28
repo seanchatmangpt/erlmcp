@@ -4,8 +4,8 @@
 
 This directory contains a comprehensive Jidoka (自働化 - "automation with quality detection") analysis of the erlmcp production system. Jidoka is the Toyota Production System principle of automatically detecting quality problems and stopping (pulling the Andon cord) rather than continuing with defects.
 
-**Analysis Completed**: 2026-01-27  
-**Duration**: 2.5 hours  
+**Analysis Completed**: 2026-01-27
+**Duration**: 2.5 hours
 **Status**: ✅ Production Ready
 
 ---
@@ -13,7 +13,7 @@ This directory contains a comprehensive Jidoka (自働化 - "automation with qua
 ## Documents (3 files, 1545 lines)
 
 ### 1. `JIDOKA_AUTOMATIC_DETECTION_GAPS.md` (617 lines)
-**Comprehensive Technical Analysis** 
+**Comprehensive Technical Analysis**
 
 The primary document for detailed review of error detection gaps.
 
@@ -28,7 +28,7 @@ The primary document for detailed review of error detection gaps.
 - Testing Requirements
 - Deployment Checklist
 
-**Key Finding**: 
+**Key Finding**:
 - Errors ARE detected (good instrumentation)
 - Errors are mostly LOGGED (weak response)
 - Only Circuit Breaker truly stops processing (99% of gaps)
@@ -62,7 +62,7 @@ Practical guide with working Erlang code for each gap.
 - Deployment Steps
 - Success Metrics
 
-**Code Quality**: 
+**Code Quality**:
 - Production-ready Erlang code
 - Type specs included
 - Comprehensive error handling
@@ -247,7 +247,7 @@ GRAND TOTAL: 112+ hours (~3 developers, ~4 weeks)
 Error Detected → Logged → Continue Processing
                  ↓
           (99% of cases, PROBLEM!)
-          
+
 Only Circuit Breaker & Health Monitor actually STOP
 ```
 
@@ -264,7 +264,7 @@ end.
 % AFTER (recommended):
 case detect_error() of
     ok -> continue();
-    error -> 
+    error ->
         logger:error("Error!"),
         perform_andon_action(error),  % NEW: automatic action
         maybe_degrade(error)           % NEW: graceful degradation
@@ -289,28 +289,28 @@ end.
 
 ## Questions & Answers
 
-**Q: How long will Phase 1 take?**  
+**Q: How long will Phase 1 take?**
 A: 28 hours with 2-3 developers working in parallel. About 1 week for code + review + testing.
 
-**Q: What's the risk of these changes?**  
+**Q: What's the risk of these changes?**
 A: Low. Changes are additive (new detection/response), not replacing existing logic. Staged rollout recommended.
 
-**Q: Can we do Phase 1 and Phase 2 in parallel?**  
+**Q: Can we do Phase 1 and Phase 2 in parallel?**
 A: Partially. Phase 1 takes ~1 week, Phase 2 takes ~1 week. They can overlap with 4 developers.
 
-**Q: What's the expected MTTR improvement?**  
+**Q: What's the expected MTTR improvement?**
 A: 50% reduction (30 min → 15 min) from:
 - Faster failure detection (Gap #11)
 - Automatic failure isolation (Gap #1, #4, #12)
 - Reduced cascade impact (Gaps #1, #4, #12)
 
-**Q: How much code needs to change?**  
+**Q: How much code needs to change?**
 A: ~3,000 lines of new code across 5-7 new modules + modifications to 3-4 existing modules.
 
-**Q: Will this impact performance?**  
+**Q: Will this impact performance?**
 A: Minimal. New modules run in separate processes. Additional overhead <1% for detection + response.
 
-**Q: What monitoring is needed?**  
+**Q: What monitoring is needed?**
 A: Track these SLIs:
 - Incidents by type (cascade vs isolated)
 - MTTR per incident type

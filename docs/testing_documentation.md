@@ -79,21 +79,21 @@ server_start_test_() ->
 resource_handler_test() ->
     put(test_mode, true),
     {ok, Server} = erlmcp_server:start_link({stdio, []}, #{}),
-    
+
     % Add a test resource
     Handler = fun(<<"test://", Path/binary>>) ->
         <<"Content for ", Path/binary>>
     end,
     ok = erlmcp_server:add_resource(Server, <<"test://example">>, Handler),
-    
+
     % Test resource listing
     {ok, Resources} = gen_server:call(Server, list_resources),
     ?assertEqual(1, length(Resources)),
-    
+
     % Test resource reading
     {ok, Content} = gen_server:call(Server, {read_resource, <<"test://example">>}),
     ?assertEqual(<<"Content for example">>, Content),
-    
+
     ok = erlmcp_server:stop(Server).
 ```
 
@@ -103,7 +103,7 @@ resource_handler_test() ->
 tool_handler_test() ->
     put(test_mode, true),
     {ok, Server} = erlmcp_server:start_link({stdio, []}, #{}),
-    
+
     % Add a test tool with schema
     Schema = #{
         <<"type">> => <<"object">>,
@@ -116,17 +116,17 @@ tool_handler_test() ->
         <<"Processed: ", Input/binary>>
     end,
     ok = erlmcp_server:add_tool_with_schema(Server, <<"process">>, Handler, Schema),
-    
+
     % Test valid arguments
     Args = #{<<"input">> => <<"test data">>},
     {ok, Result} = gen_server:call(Server, {call_tool, <<"process">>, Args}),
     ?assertEqual(<<"Processed: test data">>, Result),
-    
+
     % Test invalid arguments (missing required field)
     InvalidArgs = #{},
-    ?assertMatch({error, {validation_failed, _}}, 
+    ?assertMatch({error, {validation_failed, _}},
                  gen_server:call(Server, {call_tool, <<"process">>, InvalidArgs})),
-    
+
     ok = erlmcp_server:stop(Server).
 ```
 
@@ -137,18 +137,18 @@ tool_handler_test() ->
 ```erlang
 client_test() ->
     put(test_mode, true),
-    
+
     % Start a mock server first
     {ok, MockServer} = start_mock_server(),
-    
+
     % Start client
     {ok, Client} = erlmcp_client:start_link({stdio, []}),
-    
+
     % Test initialization
     ClientInfo = #{name => <<"Test Client">>, version => <<"1.0.0">>},
     {ok, ServerInfo} = erlmcp_client:initialize(Client, ClientInfo),
     ?assertMatch(#{name := _}, ServerInfo),
-    
+
     % Clean up
     ok = erlmcp_client:stop(Client),
     ok = stop_mock_server(MockServer).
@@ -160,17 +160,17 @@ client_test() ->
 client_message_simulation_test() ->
     put(test_mode, true),
     {ok, Client} = erlmcp_client:start_link({stdio, []}),
-    
+
     % Get transport PID for message simulation
     {ok, Transport} = gen_server:call(Client, get_transport),
-    
+
     % Simulate server response
     ResponseMessage = erlmcp_json_rpc:encode_response(
-        1, 
+        1,
         #{<<"resources">> => [#{<<"uri">> => <<"test://resource">>}]}
     ),
     ok = gen_server:call(Transport, {simulate_input, ResponseMessage}),
-    
+
     % Verify message was processed
     receive
         {mcp_response, _Id, Response} ->
@@ -178,7 +178,7 @@ client_message_simulation_test() ->
     after 1000 ->
         ?assert(false)  % Timeout
     end,
-    
+
     ok = erlmcp_client:stop(Client).
 ```
 
@@ -189,17 +189,17 @@ client_message_simulation_test() ->
 ```erlang
 stdio_transport_test() ->
     put(test_mode, true),
-    
+
     % Start STDIO transport in test mode
     {ok, Transport} = erlmcp_transport_stdio:start_link(self()),
-    
+
     % Test sending
     TestMessage = <<"test message">>,
     ok = erlmcp_transport_stdio:send(Transport, TestMessage),
-    
+
     % Test input simulation
     ok = gen_server:call(Transport, {simulate_input, <<"simulated input">>}),
-    
+
     % Verify we received the simulated input
     receive
         {transport_message, <<"simulated input">>} ->
@@ -207,7 +207,7 @@ stdio_transport_test() ->
     after 1000 ->
         ?assert(false)
     end,
-    
+
     % Clean up
     ok = erlmcp_transport_stdio:close(Transport).
 ```
@@ -218,7 +218,7 @@ stdio_transport_test() ->
 tcp_transport_test() ->
     % Start a mock TCP server
     {ok, MockServer} = start_mock_tcp_server(9999),
-    
+
     % Configure TCP transport
     TcpOpts = #{
         host => "localhost",
@@ -226,10 +226,10 @@ tcp_transport_test() ->
         owner => self(),
         connect_timeout => 1000
     },
-    
+
     % Start transport
     {ok, Transport} = erlmcp_transport_tcp:start_link(TcpOpts),
-    
+
     % Wait for connection
     receive
         {transport_connected, Transport} ->
@@ -237,13 +237,13 @@ tcp_transport_test() ->
     after 2000 ->
         ?assert(false)  % Connection timeout
     end,
-    
+
     % Test sending
     ok = erlmcp_transport_tcp:send(Transport, <<"test data\n">>),
-    
+
     % Verify data was received by mock server
     ?assertEqual(<<"test data">>, get_last_received_data(MockServer)),
-    
+
     % Clean up
     ok = erlmcp_transport_tcp:close(Transport),
     ok = stop_mock_tcp_server(MockServer).
@@ -255,28 +255,28 @@ tcp_transport_test() ->
 http_transport_test() ->
     % Start a mock HTTP server using meck or similar
     meck:new(httpc, [unstick, passthrough]),
-    meck:expect(httpc, request, 
+    meck:expect(httpc, request,
         fun(post, {_Url, _Headers, "application/json", Body}, _HttpOptions, _Options) ->
             {ok, {{"HTTP/1.1", 200, "OK"}, [], Body}}
         end),
-    
+
     % Configure HTTP transport
     HttpOpts = #{
         url => "http://localhost:8080/mcp",
         owner => self(),
         method => post
     },
-    
+
     % Start transport
     {ok, Transport} = erlmcp_transport_http:start_link(HttpOpts),
-    
+
     % Test sending
     TestData = <<"test request">>,
     ok = gen_server:call(Transport, {send, TestData}),
-    
+
     % Verify HTTP request was made
     ?assert(meck:called(httpc, request, ['_', '_', '_', '_'])),
-    
+
     % Clean up
     meck:unload(httpc),
     gen_server:stop(Transport).
@@ -289,7 +289,7 @@ http_transport_test() ->
 ```erlang
 e2e_server_test() ->
     put(test_mode, true),
-    
+
     % Start server with full configuration
     ServerCapabilities = #{
         resources => #{enabled => true},
@@ -297,22 +297,22 @@ e2e_server_test() ->
         prompts => #{enabled => true}
     },
     {ok, Server} = erlmcp_server:start_link({stdio, []}, ServerCapabilities),
-    
+
     % Add test components
-    ok = erlmcp_server:add_resource(Server, <<"config://test">>, 
+    ok = erlmcp_server:add_resource(Server, <<"config://test">>,
         fun(_) -> <<"test config data">> end),
-    
+
     ok = erlmcp_server:add_tool(Server, <<"echo">>,
         fun(Args) -> Args end),
-    
+
     ok = erlmcp_server:add_prompt(Server, <<"greeting">>,
         fun(#{<<"name">> := Name}) ->
             [#{role => <<"user">>, content => #{type => <<"text">>, text => <<"Hello ", Name/binary>>}}]
         end),
-    
+
     % Simulate complete MCP session
     {ok, Transport} = gen_server:call(Server, get_transport),
-    
+
     % 1. Initialize
     InitRequest = erlmcp_json_rpc:encode_request(1, <<"initialize">>, #{
         <<"clientInfo">> => #{<<"name">> => <<"Test Client">>, <<"version">> => <<"1.0.0">>},
@@ -320,24 +320,24 @@ e2e_server_test() ->
         <<"capabilities">> => #{}
     }),
     ok = gen_server:call(Transport, {simulate_input, InitRequest}),
-    
+
     % 2. List resources
     ListResourcesRequest = erlmcp_json_rpc:encode_request(2, <<"resources/list">>, #{}),
     ok = gen_server:call(Transport, {simulate_input, ListResourcesRequest}),
-    
+
     % 3. Call tool
     CallToolRequest = erlmcp_json_rpc:encode_request(3, <<"tools/call">>, #{
         <<"name">> => <<"echo">>,
         <<"arguments">> => #{<<"message">> => <<"test">>}
     }),
     ok = gen_server:call(Transport, {simulate_input, CallToolRequest}),
-    
+
     % Collect all responses
     Responses = collect_responses(3, []),
-    
+
     % Verify responses
     ?assertEqual(3, length(Responses)),
-    
+
     % Clean up
     ok = erlmcp_server:stop(Server).
 
@@ -357,29 +357,29 @@ collect_responses(N, Acc) ->
 ```erlang
 client_server_integration_test() ->
     put(test_mode, true),
-    
+
     % Start server
     {ok, Server} = erlmcp_server:start_link({stdio, []}, #{}),
     ok = erlmcp_server:add_resource(Server, <<"test://data">>,
         fun(_) -> <<"integration test data">> end),
-    
+
     % Start client
     {ok, Client} = erlmcp_client:start_link({stdio, []}),
-    
+
     % Set up bidirectional communication
     link_transports(Server, Client),
-    
+
     % Initialize client
     ClientInfo = #{name => <<"Integration Test Client">>, version => <<"1.0.0">>},
     {ok, _ServerInfo} = erlmcp_client:initialize(Client, ClientInfo),
-    
+
     % Test resource operations
     {ok, Resources} = erlmcp_client:list_resources(Client),
     ?assert(length(Resources) > 0),
-    
+
     {ok, Content} = erlmcp_client:read_resource(Client, <<"test://data">>),
     ?assertEqual(<<"integration test data">>, Content),
-    
+
     % Clean up
     ok = erlmcp_client:stop(Client),
     ok = erlmcp_server:stop(Server).
@@ -452,7 +452,7 @@ server_mock_loop(Responses) ->
             NewResponses = Responses#{Method => Response},
             server_mock_loop(NewResponses);
         {request, Method, _Params, From} ->
-            Response = maps:get(Method, Responses, 
+            Response = maps:get(Method, Responses,
                 {error, {method_not_found, Method}}),
             From ! {response, Response},
             server_mock_loop(Responses);
@@ -469,23 +469,23 @@ server_mock_loop(Responses) ->
 load_test() ->
     NumClients = 100,
     NumRequests = 1000,
-    
+
     % Start server
     {ok, Server} = erlmcp_server:start_link({tcp, #{port => 9999}}, #{}),
     ok = erlmcp_server:add_tool(Server, <<"echo">>,
         fun(Args) -> Args end),
-    
+
     % Start multiple clients
     Clients = start_multiple_clients(NumClients),
-    
+
     % Measure performance
     StartTime = erlang:monotonic_time(millisecond),
-    
+
     % Send concurrent requests
     Pids = lists:map(fun(Client) ->
         spawn(fun() -> send_requests(Client, NumRequests) end)
     end, Clients),
-    
+
     % Wait for completion
     lists:foreach(fun(Pid) ->
         receive
@@ -494,17 +494,17 @@ load_test() ->
             ?assert(false)  % Timeout
         end
     end, Pids),
-    
+
     EndTime = erlang:monotonic_time(millisecond),
-    
+
     % Calculate metrics
     TotalRequests = NumClients * NumRequests,
     Duration = EndTime - StartTime,
     RequestsPerSecond = (TotalRequests * 1000) / Duration,
-    
+
     io:format("Load test completed: ~p requests in ~p ms (~.2f req/sec)~n",
               [TotalRequests, Duration, RequestsPerSecond]),
-    
+
     % Clean up
     lists:foreach(fun(Client) ->
         ok = erlmcp_client:stop(Client)
@@ -517,7 +517,7 @@ load_test() ->
 ```erlang
 memory_leak_test() ->
     InitialMemory = erlang:memory(total),
-    
+
     % Run many iterations
     lists:foreach(fun(_) ->
         {ok, Server} = erlmcp_server:start_link({stdio, []}, #{}),
@@ -525,16 +525,16 @@ memory_leak_test() ->
             fun(_) -> <<"data">> end),
         ok = erlmcp_server:stop(Server)
     end, lists:seq(1, 1000)),
-    
+
     % Force garbage collection
     erlang:garbage_collect(),
     timer:sleep(100),
-    
+
     FinalMemory = erlang:memory(total),
     MemoryIncrease = FinalMemory - InitialMemory,
-    
+
     io:format("Memory increase: ~p bytes~n", [MemoryIncrease]),
-    
+
     % Assert reasonable memory increase (less than 1MB)
     ?assert(MemoryIncrease < 1024 * 1024).
 ```
@@ -544,7 +544,7 @@ memory_leak_test() ->
 ### Test Organization
 
 1. **Separate Unit and Integration Tests**
-   - Unit tests in `test/unit/` directory  
+   - Unit tests in `test/unit/` directory
    - Integration tests in `test/integration/`
    - End-to-end tests in `test/e2e/`
 
@@ -580,7 +580,7 @@ sample_resources() ->
 
 sample_tools() ->
     [
-        #{name => <<"echo">>, description => <<"Echo tool">>, 
+        #{name => <<"echo">>, description => <<"Echo tool">>,
           input_schema => #{type => <<"object">>}},
         #{name => <<"add">>, description => <<"Add numbers">>,
           input_schema => #{

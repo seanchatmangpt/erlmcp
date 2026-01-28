@@ -503,4 +503,3 @@ A **complete, production-ready configuration system** for erlmcp:
 - ✅ 1600+ LOC of clean, tested code
 
 **Configuration has never been easier.**
-

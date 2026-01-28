@@ -117,7 +117,7 @@ Config = #{
 The transport maintains comprehensive statistics:
 
 - `messages_sent` / `messages_received` - Message counters
-- `bytes_sent` / `bytes_received` - Byte counters  
+- `bytes_sent` / `bytes_received` - Byte counters
 - `errors` - Error counter
 - `connection_time` - Last successful connection timestamp
 - `reconnect_count` - Number of reconnection attempts

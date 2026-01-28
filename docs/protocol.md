@@ -101,8 +101,8 @@ The Model Context Protocol (MCP) enables structured communication between AI ass
 
 ### Static Resources
 ```erlang
-erlmcp_server:add_resource(Server, <<"doc://readme">>, 
-    fun(_Uri) -> 
+erlmcp_server:add_resource(Server, <<"doc://readme">>,
+    fun(_Uri) ->
         {ok, Content} = file:read_file("README.md"),
         Content
     end).
@@ -110,7 +110,7 @@ erlmcp_server:add_resource(Server, <<"doc://readme">>,
 
 ### Dynamic Resources (Templates)
 ```erlang
-erlmcp_server:add_resource_template(Server, 
+erlmcp_server:add_resource_template(Server,
     <<"user://{username}/profile">>,
     <<"User Profile">>,
     fun(Uri) ->

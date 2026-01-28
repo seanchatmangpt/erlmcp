@@ -487,4 +487,3 @@ For high availability, use Redis/Memcached backend.
 - **CVSS v3.1 Specification:** https://www.first.org/cvss/v3.1/specification-document
 - **CWE/CVSS Mappings:** https://cwe.mitre.org/
 - **OWASP Top 10 2021:** https://owasp.org/Top10/
-

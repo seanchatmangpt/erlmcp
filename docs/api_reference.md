@@ -51,12 +51,12 @@ Main server module for creating MCP servers.
 ```erlang
 -type server_capabilities() :: #{
     resources => mcp_capability(),
-    tools => mcp_capability(), 
+    tools => mcp_capability(),
     prompts => mcp_capability(),
     logging => mcp_capability()
 }.
 
--type transport_config() :: 
+-type transport_config() ::
     {stdio, transport_opts()} |
     {tcp, transport_opts()} |
     {http, transport_opts()}.
@@ -513,7 +513,7 @@ Unregister a process.
 - `{method_not_found, Method}` - Unknown method
 - `{invalid_params, Reason}` - Invalid parameters
 
-#### MCP-Specific Errors  
+#### MCP-Specific Errors
 - `{resource_not_found, Uri}` - Resource doesn't exist
 - `{tool_not_found, Name}` - Tool doesn't exist
 - `{prompt_not_found, Name}` - Prompt doesn't exist
@@ -543,14 +543,14 @@ start() ->
         tools => #{enabled => true},
         prompts => #{enabled => true}
     },
-    
+
     % Start server with STDIO transport
     {ok, Server} = erlmcp_server:start_link({stdio, []}, Capabilities),
-    
+
     % Add a simple resource
-    ok = erlmcp_server:add_resource(Server, <<"config://app">>, 
+    ok = erlmcp_server:add_resource(Server, <<"config://app">>,
         fun(_) -> <<"app_config: production">> end),
-    
+
     % Add a tool with schema validation
     EchoSchema = #{
         <<"type">> => <<"object">>,
@@ -560,10 +560,10 @@ start() ->
         <<"required">> => [<<"message">>]
     },
     ok = erlmcp_server:add_tool_with_schema(Server, <<"echo">>,
-        fun(#{<<"message">> := Msg}) -> 
-            <<"Echo: ", Msg/binary>> 
+        fun(#{<<"message">> := Msg}) ->
+            <<"Echo: ", Msg/binary>>
         end, EchoSchema),
-    
+
     % Add a prompt template
     ok = erlmcp_server:add_prompt(Server, <<"greeting">>,
         fun(#{<<"name">> := Name}) ->
@@ -575,7 +575,7 @@ start() ->
                 }
             }]
         end),
-    
+
     {ok, Server}.
 ```
 
@@ -591,13 +591,13 @@ demo() ->
         name => <<"Demo Client">>,
         version => <<"1.0.0">>
     },
-    
+
     % Client capabilities
     Capabilities = #{
         roots => #{enabled => false},
         sampling => #{enabled => false}
     },
-    
+
     % Start client with TCP transport
     TcpOpts = #{
         host => "localhost",
@@ -605,15 +605,15 @@ demo() ->
         owner => self()
     },
     {ok, Client} = erlmcp_client:start_link({tcp, TcpOpts}),
-    
+
     % Initialize connection
     {ok, ServerInfo} = erlmcp_client:initialize(Client, ClientInfo, Capabilities),
     io:format("Connected to server: ~p~n", [ServerInfo]),
-    
+
     % List and read resources
     {ok, #{resources := Resources}} = erlmcp_client:list_resources(Client),
     io:format("Available resources: ~p~n", [Resources]),
-    
+
     case Resources of
         [#{uri := Uri} | _] ->
             {ok, Content} = erlmcp_client:read_resource(Client, Uri),
@@ -621,11 +621,11 @@ demo() ->
         [] ->
             io:format("No resources available~n")
     end,
-    
+
     % List and call tools
     {ok, #{tools := Tools}} = erlmcp_client:list_tools(Client),
     io:format("Available tools: ~p~n", [Tools]),
-    
+
     case Tools of
         [#{name := ToolName} | _] ->
             Args = #{<<"message">> => <<"Hello from client!">>},
@@ -634,7 +634,7 @@ demo() ->
         [] ->
             io:format("No tools available~n")
     end,
-    
+
     % Clean up
     ok = erlmcp_client:stop(Client).
 ```

@@ -209,4 +209,3 @@ The CLI is ready for:
 3. Distribution with erlmcp releases
 4. Extension with additional commands (e.g., profiling, debugging)
 5. Integration with monitoring systems
-

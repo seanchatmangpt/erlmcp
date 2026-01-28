@@ -264,13 +264,13 @@ ok = erlmcp_memory_accounting:validate_decomposition(Decomp),
 Compact = erlmcp_memory_accounting:format_compact(Decomp),
 
 io:format("Memory Breakdown:~n"),
-io:format("  Per-connection heap:   ~.3f MiB~n", 
+io:format("  Per-connection heap:   ~.3f MiB~n",
           [maps:get(per_connection_heap_mib, Compact)]),
-io:format("  Per-connection state:  ~.3f MiB~n", 
+io:format("  Per-connection state:  ~.3f MiB~n",
           [maps:get(per_connection_state_mib, Compact)]),
-io:format("  Per-node overhead:     ~.3f MiB~n", 
+io:format("  Per-node overhead:     ~.3f MiB~n",
           [maps:get(per_node_base_overhead_mib, Compact)]),
-io:format("  Node total RSS:        ~.3f MiB~n", 
+io:format("  Node total RSS:        ~.3f MiB~n",
           [maps:get(per_node_total_rss_mib, Compact)]).
 ```
 

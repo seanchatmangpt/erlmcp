@@ -7,7 +7,7 @@
 ```erlang
 -spec erlmcp_client:start_link(TransportOpts, Options) -> {ok, pid()} | {error, term()}.
 
-TransportOpts :: {stdio, []} | 
+TransportOpts :: {stdio, []} |
                  {tcp, #{host => string(), port => integer()}} |
                  {http, #{url => string()}}
 
@@ -31,7 +31,7 @@ Options :: #{
 -spec subscribe_to_resource(Client, Uri) -> ok | {error, term()}.
 -spec unsubscribe_from_resource(Client, Uri) -> ok | {error, term()}.
 
-%% Tool operations  
+%% Tool operations
 -spec list_tools(Client) -> {ok, #{tools => [Tool]}} | {error, term()}.
 -spec call_tool(Client, Name, Arguments) -> {ok, #{content => [Content]}} | {error, term()}.
 
@@ -67,7 +67,7 @@ Handler :: fun((Method :: binary(), Params :: map()) -> any()) |
 
 Capabilities :: #mcp_server_capabilities{
     resources :: #mcp_capability{} | undefined,
-    tools :: #mcp_capability{} | undefined, 
+    tools :: #mcp_capability{} | undefined,
     prompts :: #mcp_capability{} | undefined,
     logging :: #mcp_capability{} | undefined
 }
@@ -183,7 +183,7 @@ erlmcp_server:add_prompt_with_args(Server, <<"code_template">>,
 ```erlang
 #mcp_resource{
     uri :: binary(),
-    name :: binary(), 
+    name :: binary(),
     description :: binary() | undefined,
     mime_type :: binary() | undefined,
     metadata :: map() | undefined

@@ -100,7 +100,7 @@ A comprehensive integration testing framework has been created with 14 test scen
 
 ### By Feature
 - ✓ **Initialization** (HIGH) - 2 tests
-- ✓ **Resources** (HIGH) - 3 tests  
+- ✓ **Resources** (HIGH) - 3 tests
 - ✓ **Tools** (HIGH) - 4 tests
 - ✓ **Error Handling** (MEDIUM) - 3 tests
 - ✓ **Concurrency** (HIGH) - 2 tests
@@ -290,7 +290,7 @@ erlmcp/
 ## Future Enhancements (Phase 2+)
 
 - [ ] Prompts API testing
-- [ ] Sampling API testing  
+- [ ] Sampling API testing
 - [ ] Tasks API testing
 - [ ] HTTP/WebSocket transport tests
 - [ ] Load testing (100+ clients)

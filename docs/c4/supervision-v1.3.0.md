@@ -44,31 +44,31 @@ erlmcp_sup (rest_for_one)
 ```mermaid
 graph TD
     APP[erlmcp Application]
-    
+
     APP -->|start_link| MAIN["erlmcp_sup<br/>(rest_for_one)<br/>Intensity: 5/60s"]
-    
+
     MAIN -->|child 1| REG["TIER 1: erlmcp_registry_sup<br/>(one_for_one)<br/>No dependencies"]
     MAIN -->|child 2| INFRA["TIER 2: erlmcp_infrastructure_sup<br/>(one_for_one)<br/>Depends: Registry"]
     MAIN -->|child 3| SRVR["TIER 3: erlmcp_server_sup<br/>(simple_one_for_one)<br/>Depends: Registry, Infra"]
     MAIN -->|child 4| TRANS["TIER 4: erlmcp_transport_sup<br/>(simple_one_for_one)<br/>Depends: All above"]
     MAIN -->|child 5| MON["TIER 5: erlmcp_monitoring_sup<br/>(one_for_one)<br/>INDEPENDENT"]
-    
+
     REG -->|manages| REG_CHILDREN["• erlmcp_registry<br/>• erlmcp_registry_health_check"]
-    
+
     INFRA -->|manages| INFRA_CHILDREN["• erlmcp_hot_reload<br/>• erlmcp_graceful_drain<br/>• erlmcp_session_manager<br/>• erlmcp_task_manager<br/>• erlmcp_resource_subscriptions<br/>• erlmcp_sse_event_store<br/>• erlmcp_icon_cache<br/>• erlmcp_session_replicator<br/>• erlmcp_session_failover"]
-    
+
     SRVR -->|spawns| SRVR_CHILDREN["erlmcp_server instances<br/>(dynamic, temporary)"]
-    
+
     TRANS -->|spawns| TRANS_CHILDREN["Transport instances:<br/>• stdio<br/>• TCP<br/>• HTTP<br/>• WebSocket"]
-    
+
     MON -->|manages| MON_CHILDREN["• erlmcp_health_monitor<br/>• erlmcp_recovery_manager<br/>• erlmcp_metrics_server<br/>• erlmcp_metrics_http_sup"]
-    
+
     style REG fill:#90EE90
     style INFRA fill:#87CEEB
     style SRVR fill:#FFB6C1
     style TRANS fill:#DDA0DD
     style MON fill:#FFD700
-    
+
     style MAIN fill:#F0F0F0,stroke:#333,stroke-width:3px
 ```
 
@@ -99,7 +99,7 @@ graph TD
 Registry crash detected at T+0ms
   Servers active: 5
   Transports active: 2
-  
+
 T+100ms: Registry restarted
 T+120ms: gproc re-registrations complete
 T+150ms: Routing restored
@@ -137,7 +137,7 @@ Survivor metrics:
 Infrastructure crash detected at T+0ms
   Sessions before: 42
   Tasks in queue: 128
-  
+
 T+500ms: Infrastructure restarted
 T+520ms: Session manager reconnected
 T+540ms: Task queue reinitalized
@@ -175,7 +175,7 @@ Transport subsystem crash at T+0ms
   TCP connections: 847
   HTTP streams: 123
   WebSocket conns: 45
-  
+
 T+1000ms: Transport supervisor restarted
 T+1050ms: TCP acceptor restarted
 T+1100ms: HTTP server restarted
@@ -217,12 +217,12 @@ Monitoring crash at T+0ms
   Health checks: UNAVAILABLE
   Metrics: NOT COLLECTING
   Dashboard: OFFLINE
-  
+
 Protocol layer: UNAFFECTED
   ✓ 5 servers processing
   ✓ 2 transports active
   ✓ 847 connections healthy
-  
+
 T+300ms: Monitoring subsystem restarted
 T+350ms: Health checks resumed
 T+380ms: Metrics collection resumed

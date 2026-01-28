@@ -54,4 +54,3 @@ tools/
 - Checklist: `docs/TCPS-checklist.md`
 - Certification ledger: `docs/TCPS-certification.md`
 - Explanation: `docs/TCPS-explanation.md`
-

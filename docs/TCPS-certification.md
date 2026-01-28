@@ -45,4 +45,3 @@ Record certification runs using the table below (one per subsystem & SKU):
 2. Update CI pipelines so each stage emits receipts and links to work orders.
 3. For each subsystem, run through the TCPS daily loop and capture proof artifacts.
 4. Maintain this file as the authoritative certification ledger.
-

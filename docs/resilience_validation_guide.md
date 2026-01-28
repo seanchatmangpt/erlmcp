@@ -47,21 +47,21 @@ The ErlMCP System Resilience Validation framework provides comprehensive testing
 ```erlang
 test_resilience(Scenario) ->
     SpanCtx = otel_tracer:start_span(<<"resilience_test">>),
-    
+
     % Inject failure
     inject_failure(Scenario),
-    
+
     % Measure recovery
     RecoveryStart = erlang:monotonic_time(),
     wait_for_recovery(),
     RecoveryTime = erlang:monotonic_time() - RecoveryStart,
-    
+
     otel_span:set_attributes(SpanCtx, [
         {<<"recovery.time_ms">>, RecoveryTime div 1000000},
         {<<"recovery.data_loss">>, measure_data_loss()},
         {<<"recovery.success">>, true}
     ]),
-    
+
     otel_span:end_span(SpanCtx).
 ```
 
@@ -82,7 +82,7 @@ test_resilience(Scenario) ->
 # Run quick essential tests
 ./scripts/run_resilience_validation.escript quick
 
-# Run chaos engineering experiments only  
+# Run chaos engineering experiments only
 ./scripts/run_resilience_validation.escript chaos
 
 # Run specific test
@@ -98,11 +98,11 @@ test_resilience(Scenario) ->
 ct:run_test([{suite, erlmcp_resilience_SUITE}]).
 
 % Run specific test group
-ct:run_test([{suite, erlmcp_resilience_SUITE}, 
+ct:run_test([{suite, erlmcp_resilience_SUITE},
              {group, failure_recovery_tests}]).
 
 % Run individual test
-ct:run_test([{suite, erlmcp_resilience_SUITE}, 
+ct:run_test([{suite, erlmcp_resilience_SUITE},
              {testcase, test_automatic_reconnection}]).
 ```
 
@@ -112,40 +112,40 @@ ct:run_test([{suite, erlmcp_resilience_SUITE},
 ```erlang
 test_automatic_reconnection(Config) ->
     SpanCtx = proplists:get_value(span_ctx, Config),
-    
+
     ct:pal("Testing automatic reconnection mechanisms"),
-    
+
     ReconnSpan = otel_tracer:start_span(<<"automatic_reconnection">>, SpanCtx),
-    
+
     try
         %% Setup connection monitoring
         ConnectionPid = start_connection_monitor(),
-        
+
         %% Inject network failure
         FailureStart = erlang:monotonic_time(),
         inject_network_failure(temporary_disconnect),
-        
+
         otel_span:add_event(ReconnSpan, <<"network_failure_injected">>),
-        
+
         %% Wait for automatic reconnection
         {ok, RecoveryTime} = wait_for_recovery(connection, ?RECOVERY_TIMEOUT),
-        
+
         %% Validate reconnection success
         ?assert(is_connection_healthy(ConnectionPid)),
-        
+
         %% Measure recovery metrics
         Metrics = measure_recovery_metrics(FailureStart, connection),
-        
+
         otel_span:set_attributes(ReconnSpan, [
             {<<"recovery.time_ms">>, RecoveryTime},
             {<<"recovery.attempts">>, maps:get(attempts, Metrics)},
             {<<"recovery.success_rate">>, maps:get(success_rate, Metrics)},
             {<<"connection.stable">>, true}
         ]),
-        
-        ct:pal("Automatic reconnection validated: ~p ms recovery time", 
+
+        ct:pal("Automatic reconnection validated: ~p ms recovery time",
                [RecoveryTime]),
-        
+
         ok
     catch
         Class:Reason:Stacktrace ->
@@ -229,10 +229,10 @@ resilience_test_session
 
 ### Resilience Scoring
 ```
-Overall Score = (Availability × 0.25) + 
-                (Reliability × 0.25) + 
-                (Recoverability × 0.20) + 
-                (Robustness × 0.15) + 
+Overall Score = (Availability × 0.25) +
+                (Reliability × 0.25) +
+                (Recoverability × 0.20) +
+                (Robustness × 0.15) +
                 (Adaptability × 0.15)
 ```
 
@@ -255,7 +255,7 @@ The system generates comprehensive HTML reports including:
 ### Report Contents
 - **Executive Dashboard**: High-level resilience metrics
 - **Detailed Results**: Per-test execution details
-- **Trace Links**: Direct links to OpenTelemetry traces  
+- **Trace Links**: Direct links to OpenTelemetry traces
 - **Trend Analysis**: Comparison with previous runs
 - **Action Items**: Specific recommendations for improvement
 
@@ -307,7 +307,7 @@ ChaosConfig = #{
 
 ### Testing Best Practices
 1. **Start Small**: Begin with isolated component testing
-2. **Gradual Escalation**: Increase failure complexity progressively  
+2. **Gradual Escalation**: Increase failure complexity progressively
 3. **Monitor Continuously**: Watch system health throughout testing
 4. **Document Everything**: Maintain detailed test logs and traces
 5. **Plan Recovery**: Always have rollback procedures ready

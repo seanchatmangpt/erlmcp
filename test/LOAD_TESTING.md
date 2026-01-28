@@ -7,7 +7,7 @@ A comprehensive load generation and performance testing framework for ErlMCP tha
 ### 🚀 Traffic Patterns
 - **Constant Rate**: Steady N req/sec load
 - **Burst Patterns**: Spike to 10x base rate
-- **Gradual Ramp-up**: 0 to max rate progression  
+- **Gradual Ramp-up**: 0 to max rate progression
 - **Sine Wave**: Periodic load variation
 - **Random Walk**: Unpredictable load changes
 - **Poisson Distribution**: Realistic arrival patterns
@@ -27,7 +27,7 @@ A comprehensive load generation and performance testing framework for ErlMCP tha
 
 ### 💼 Workload Scenarios
 - **Read-heavy**: 90% read operations
-- **Write-heavy**: 90% write operations  
+- **Write-heavy**: 90% write operations
 - **Balanced**: 50/50 read/write mix
 - **Batch Operations**: Bulk processing
 - **Stream Processing**: Real-time data flows
@@ -95,7 +95,7 @@ Config = #{
 ### Unit Tests (`unit`)
 Core functionality validation:
 - Pattern generation algorithms
-- Message size handling  
+- Message size handling
 - Connection management
 - Protocol handlers
 - Metrics collection
@@ -106,7 +106,7 @@ Core functionality validation:
 ./test/run_load_tests.sh unit
 ```
 
-### Scenario Tests (`scenarios`)  
+### Scenario Tests (`scenarios`)
 Predefined realistic workloads:
 - API baseline performance
 - Mobile app patterns
@@ -179,7 +179,7 @@ Deployment sizing guidance:
     duration => 60000         % milliseconds
 }
 
-%% Burst pattern - traffic spikes  
+%% Burst pattern - traffic spikes
 #{
     pattern => burst,
     rate => 50,               % base rate
@@ -221,7 +221,7 @@ Deployment sizing guidance:
 %% Message sizes
 #{
     message_size => small,    % < 1KB
-    message_size => medium,   % 1KB - 1MB  
+    message_size => medium,   % 1KB - 1MB
     message_size => large,    % 1MB - 100MB
     message_size => mixed     % realistic distribution
 }
@@ -262,7 +262,7 @@ Standard API performance validation
 - Small messages, balanced workload
 - Full tracing enabled
 
-### Burst Traffic  
+### Burst Traffic
 Traffic spike simulation
 - 30 req/sec base, 300 req/sec peaks
 - 60 second duration
@@ -277,7 +277,7 @@ Mobile app usage simulation
 - Short-lived connections
 
 ### Peak Hours
-Peak usage time simulation  
+Peak usage time simulation
 - Sine wave pattern
 - 80 req/sec base rate
 - 180 second duration
@@ -293,7 +293,7 @@ Real-time streaming test
 ### MCP Protocol Test
 MCP server validation
 - Ramp-up to 50 req/sec
-- 45 second duration  
+- 45 second duration
 - Medium messages
 - Connection pooling
 
@@ -312,7 +312,7 @@ MCP server validation
     success_rate => 0.99,
     throughput_rps => 49.5,
     avg_latency_us => 125000,      % 125ms
-    p50_latency_us => 100000,      % 100ms  
+    p50_latency_us => 100000,      % 100ms
     p95_latency_us => 250000,      % 250ms
     p99_latency_us => 500000       % 500ms
 }
@@ -323,7 +323,7 @@ MCP server validation
 The framework provides comprehensive system analysis:
 
 - **Performance Limits**: Maximum stable throughput
-- **Bottleneck Detection**: Resource constraints  
+- **Bottleneck Detection**: Resource constraints
 - **Degradation Patterns**: Performance decline analysis
 - **Error Classification**: Failure mode identification
 - **Recovery Characteristics**: System resilience
@@ -352,15 +352,15 @@ otel_span:set_attributes(SpanCtx, [
 send_custom_request(Connection, Operation, Message, RequestId) ->
     % Implement custom protocol logic
     StartTime = erlang:system_time(microsecond),
-    
+
     % Send request using custom protocol
     Result = my_protocol:send_request(Connection, Message),
-    
+
     EndTime = erlang:system_time(microsecond),
     Latency = EndTime - StartTime,
-    
+
     case Result of
-        {ok, Response} -> 
+        {ok, Response} ->
             {ok, #{response => Response, latency => Latency}};
         {error, Reason} ->
             {error, Reason}
@@ -375,11 +375,11 @@ generate_custom_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
     % Custom pattern logic
     Rate = calculate_custom_rate(),
     IntervalMs = 1000 / Rate,
-    
+
     % Generate requests according to custom pattern
     NewMetrics = send_request(GeneratorId, Config, SpanCtx, ConnMgr, Metrics),
     timer:sleep(round(IntervalMs)),
-    
+
     % Continue pattern...
     generate_custom_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, NewMetrics).
 ```
@@ -394,13 +394,13 @@ generate_custom_load(GeneratorId, Config, SpanCtx, Parent, ConnMgr, Metrics) ->
 monitor_loop(GeneratorId) ->
     timer:sleep(5000),
     {ok, Metrics} = erlmcp_load_generator:get_metrics(GeneratorId),
-    
+
     CurrentThroughput = maps:get(throughput_rps, Metrics),
     SuccessRate = maps:get(success_rate, Metrics),
-    
-    io:format("Current: ~.1f req/sec, ~.1f% success~n", 
+
+    io:format("Current: ~.1f req/sec, ~.1f% success~n",
               [CurrentThroughput, SuccessRate * 100]),
-    
+
     monitor_loop(GeneratorId).
 ```
 
@@ -452,14 +452,14 @@ Config = #{
    - Use smaller message sizes
    - Reduce test duration
 
-2. **Connection Failures**  
+2. **Connection Failures**
    - Increase connection pool size
    - Use connection pooling instead of short-lived
    - Check target system limits
 
 3. **Low Throughput**
    - Verify target system capacity
-   - Check network bandwidth  
+   - Check network bandwidth
    - Use multiple generators
 
 4. **High Error Rates**
@@ -487,7 +487,7 @@ export ERLANG_LOG_LEVEL=debug
 ```
 test/load_test_results/
 ├── scenario_results.json      # Individual scenario results
-├── scenario_summary.txt       # Scenario test summary  
+├── scenario_summary.txt       # Scenario test summary
 ├── limits_test.json          # System limits data
 ├── limits_report.txt         # Limits analysis
 ├── protocol_comparison.json  # Protocol benchmark data
@@ -502,7 +502,7 @@ test/load_test_results/
 
 The framework generates a comprehensive HTML report with:
 - Test configuration summary
-- Performance metrics visualization  
+- Performance metrics visualization
 - Protocol comparison charts
 - System limits analysis
 - Capacity recommendations
@@ -527,7 +527,7 @@ jq '.throughput_rps' scenario_results.json | monitoring_system_push
 4. **Baseline First**: Establish baseline performance before optimization
 5. **Monitor Resources**: Track system resource usage during tests
 
-### Production Testing  
+### Production Testing
 
 1. **Staging Environment**: Test in production-like environment
 2. **Gradual Rollout**: Slowly increase production load testing
@@ -538,7 +538,7 @@ jq '.throughput_rps' scenario_results.json | monitoring_system_push
 ### Result Analysis
 
 1. **Trend Analysis**: Look for patterns over time
-2. **Correlation**: Connect performance to system changes  
+2. **Correlation**: Connect performance to system changes
 3. **Percentile Focus**: P95/P99 latencies often more important than averages
 4. **Error Classification**: Understand failure modes
 5. **Capacity Planning**: Plan for 2-3x expected peak load
@@ -548,7 +548,7 @@ jq '.throughput_rps' scenario_results.json | monitoring_system_push
 To extend the load testing framework:
 
 1. Add new traffic patterns in `generate_*_load` functions
-2. Implement protocol handlers in `send_*_request` functions  
+2. Implement protocol handlers in `send_*_request` functions
 3. Create scenario templates in `get_scenario_config`
 4. Add metrics in `calculate_metrics` function
 5. Extend test runner with new test suites

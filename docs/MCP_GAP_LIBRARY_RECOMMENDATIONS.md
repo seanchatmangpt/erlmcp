@@ -92,4 +92,3 @@ This report identifies Erlang/OTP libraries that can accelerate implementation o
 1. Adopt the libraries above per gap, starting with security (OAuth + Resource Indicators) to meet MCP MUST requirements.
 2. For each addition, tie changes back to `docs/MCP_PROTOCOL_COVERAGE_ANALYSIS.md` and update receipts (`docs/TCPS-checklist.md`).
 3. Extend automated tests to cover new features, referencing relevant libraries (e.g., Cowboy WebSocket integration tests).
-

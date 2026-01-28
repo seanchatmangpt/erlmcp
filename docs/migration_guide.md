@@ -225,10 +225,10 @@ test_server() ->
     % Use test mode to avoid stdin conflicts
     put(test_mode, true),
     {ok, Server} = erlmcp_server:start_link({stdio, []}, #{}),
-    
+
     % Simulate transport messages
     Server ! {transport_message, test_message()},
-    
+
     % Verify responses
     receive
         {transport_response, Response} ->
@@ -260,7 +260,7 @@ test_server() ->
 % Old format
 handle_info({stdin_line, Line}, State) -> ...
 
-% New format  
+% New format
 handle_info({transport_message, Line}, State) -> ...
 ```
 
@@ -341,7 +341,7 @@ After migration, verify the following:
 
 ### Optimization Tips
 1. **Buffer Sizes**: Tune transport buffer sizes for your message patterns
-2. **Connection Pooling**: Use TCP connection pooling for high-throughput scenarios  
+2. **Connection Pooling**: Use TCP connection pooling for high-throughput scenarios
 3. **Retry Logic**: Configure appropriate retry settings for unreliable networks
 4. **Timeouts**: Set realistic timeout values based on your use case
 

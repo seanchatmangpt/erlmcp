@@ -466,4 +466,3 @@ erlmcp_performance_benchmark:run_100k_test().
 ---
 
 **Each implementation ticket should reference this document for code locations and quick fixes.**
-

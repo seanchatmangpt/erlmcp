@@ -10,7 +10,7 @@ This directory contains specialized swarm coordination agents designed to work w
 - **Strengths**: Clear command structure, efficient resource allocation
 - **Best For**: Large-scale development, multi-team coordination
 
-### 2. Mesh Coordinator (`mesh-coordinator.md`) 
+### 2. Mesh Coordinator (`mesh-coordinator.md`)
 **Architecture**: Peer-to-peer distributed network
 - **Use Cases**: Fault-tolerant distributed processing
 - **Strengths**: High resilience, no single point of failure
@@ -39,14 +39,14 @@ This directory contains specialized swarm coordination agents designed to work w
 
 ```
 Hierarchical: ⭐⭐⭐⭐⭐ Coordination Efficiency
-              ⭐⭐⭐⭐   Fault Tolerance  
+              ⭐⭐⭐⭐   Fault Tolerance
               ⭐⭐⭐⭐⭐ Scalability
 
 Mesh:         ⭐⭐⭐     Coordination Efficiency
               ⭐⭐⭐⭐⭐ Fault Tolerance
               ⭐⭐⭐     Scalability
 
-Adaptive:     ⭐⭐⭐⭐⭐ Coordination Efficiency  
+Adaptive:     ⭐⭐⭐⭐⭐ Coordination Efficiency
               ⭐⭐⭐⭐⭐ Fault Tolerance
               ⭐⭐⭐⭐⭐ Scalability
 ```
@@ -57,7 +57,7 @@ All swarm coordinators leverage the following MCP tools:
 
 ### Core Coordination Tools
 - `mcp__claude-flow__swarm_init` - Initialize swarm topology
-- `mcp__claude-flow__agent_spawn` - Create specialized worker agents  
+- `mcp__claude-flow__agent_spawn` - Create specialized worker agents
 - `mcp__claude-flow__task_orchestrate` - Coordinate complex workflows
 - `mcp__claude-flow__swarm_monitor` - Real-time performance monitoring
 
@@ -81,7 +81,7 @@ claude-flow agent spawn hierarchical-coordinator "Build authentication microserv
 # 4. Generate comprehensive reports
 ```
 
-### Mesh Coordination  
+### Mesh Coordination
 ```bash
 # Initialize mesh network for distributed processing
 claude-flow agent spawn mesh-coordinator "Process user analytics data"
@@ -109,7 +109,7 @@ claude-flow agent spawn adaptive-coordinator "Optimize system performance"
 
 ### When to Use Hierarchical
 - ✅ Well-defined project structure
-- ✅ Clear resource hierarchy 
+- ✅ Clear resource hierarchy
 - ✅ Need for centralized decision making
 - ✅ Large team coordination required
 - ❌ High fault tolerance critical
@@ -145,7 +145,7 @@ Each coordinator provides comprehensive metrics:
 ### Monitoring Dashboards
 Real-time visibility into:
 - Swarm topology and agent status
-- Task queues and execution pipelines  
+- Task queues and execution pipelines
 - Performance metrics and trends
 - Error rates and failure patterns
 - Resource utilization and capacity

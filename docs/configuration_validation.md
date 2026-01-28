@@ -161,37 +161,37 @@ The validation system provides detailed, helpful error messages:
 ### Missing Required Fields
 
 ```erlang
-{error, {validation_error, missing_required_field, type, 
+{error, {validation_error, missing_required_field, type,
          \"Configuration must specify transport type. Valid types: stdio, tcp, http\"}}
 
-{error, {validation_error, missing_required_field, host, 
+{error, {validation_error, missing_required_field, host,
          \"Required field missing for TCP transport configuration for network communication. Required fields: [type,host,port]\"}}
 ```
 
 ### Unknown Fields
 
 ```erlang
-{error, {validation_error, unknown_field, bad_field, 
+{error, {validation_error, unknown_field, bad_field,
          \"Unknown field for STDIO transport configuration for direct process communication. Allowed fields: [type,server_id,test_mode,buffer_size]\"}}
 ```
 
 ### Invalid Field Values
 
 ```erlang
-{error, {validation_error, invalid_field_value, port, 
+{error, {validation_error, invalid_field_value, port,
          \"must be integer between 1 and 65535\"}}
 
-{error, {validation_error, invalid_field_value, ssl_cert, 
+{error, {validation_error, invalid_field_value, ssl_cert,
          \"SSL certificate file does not exist\"}}
 
-{error, {validation_error, invalid_field_value, cors, 
+{error, {validation_error, invalid_field_value, cors,
          \"must be boolean or list of origin URLs\"}}
 ```
 
 ### Transport Type Errors
 
 ```erlang
-{error, {validation_error, unknown_transport_type, invalid_type, 
+{error, {validation_error, unknown_transport_type, invalid_type,
          \"Unknown transport type. Supported types: stdio, tcp, http\"}}
 ```
 
@@ -258,7 +258,7 @@ build_config_form(TransportType) ->
     RequiredFields = maps:get(required_fields, Schema),
     OptionalFields = maps:get(optional_fields, Schema),
     Description = maps:get(description, Schema),
-    
+
     {ok, #{
         description => Description,
         required => RequiredFields,
@@ -321,7 +321,7 @@ rebar3 ct --suite test/erlmcp_config_validation_SUITE --group http_config
 
 The validation system integrates with:
 - Transport startup (`start_transport/3`)
-- Configuration updates (`update_transport_config/2`)  
+- Configuration updates (`update_transport_config/2`)
 - Setup helpers (`start_tcp_setup/3`, `start_http_setup/3`)
 - Registry operations (validates before registration)
 

@@ -462,4 +462,3 @@ For issues with Docker deployment:
 2. Run diagnostics: `./docker/docker-benchmark.sh --metrics`
 3. Review Docker Compose config: `docker-compose config`
 4. Check network: `docker network inspect erlmcp-cluster`
-

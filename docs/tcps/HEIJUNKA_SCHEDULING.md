@@ -28,7 +28,7 @@
 **Without Heijunka** (Batching):
 ```
 Week 1: FEATURE FEATURE FEATURE FEATURE FEATURE
-Week 2: FEATURE FEATURE FEATURE FEATURE FEATURE  
+Week 2: FEATURE FEATURE FEATURE FEATURE FEATURE
 Week 3: BUG BUG BUG BUG BUG BUG BUG BUG
 Week 4: SECURITY SECURITY SECURITY SECURITY
         ↑ Security debt accumulates for 3 weeks, then CRISIS
@@ -92,7 +92,7 @@ Week 4: FEAT COMP SEC DEBT REL FEAT SEC
 
 **Daily Allocation**: 2 slots
 
-**SLO**: 
+**SLO**:
 - Critical CVE: < 24 hours
 - High CVE: < 72 hours
 

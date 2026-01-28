@@ -12,7 +12,7 @@ This directory contains production-ready deployment documentation for erlmcp on 
    - Covers all 6 deployment steps
    - Troubleshooting guide included
 
-2. **Use Automated Scripts**: 
+2. **Use Automated Scripts**:
    ```bash
    ./tools/gcp/push_image.sh       # Push to Artifact Registry
    ./tools/gcp/upload_sbom.sh      # Generate SBOM

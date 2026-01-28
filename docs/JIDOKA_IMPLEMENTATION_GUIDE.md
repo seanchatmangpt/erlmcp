@@ -639,4 +639,3 @@ test_cache_fallback() ->
 | Memory leak detection | Within 5 minutes of 5%+ growth | Test + production metrics |
 | Backpressure propagation | <100ms from Layer 4 to Layer 1 | Latency tests |
 | MTTR improvement | <50% reduction | Compare logs before/after |
-

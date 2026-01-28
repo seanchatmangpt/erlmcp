@@ -21,7 +21,7 @@ This guide provides comprehensive recommendations for optimizing the performance
 ```bash
 # Memory and Process Limits
 +P 1048576                    # Max processes (1M)
-+Q 65536                     # Max ports  
++Q 65536                     # Max ports
 +A 30                        # Async thread pool size
 +K true                      # Enable kernel polling
 
@@ -53,28 +53,28 @@ This guide provides comprehensive recommendations for optimizing the performance
    %% Network buffer sizes
    {inet_default_connect_options, [{sndbuf, 131072}, {recbuf, 131072}]},
    {inet_default_listen_options, [{backlog, 4096}, {sndbuf, 131072}, {recbuf, 131072}]},
-   
+
    %% Distribution buffer size
    {dist_buf_busy_limit, 16777216}  % 16MB
  ]},
- 
+
  {erlmcp, [
    %% Registry optimization
    {registry_type, optimized},
    {enable_route_cache, true},
    {cache_ttl_ms, 30000},
    {max_cache_entries, 10000},
-   
+
    %% Transport optimization
    {transport_buffer_size, 131072},  % 128KB
    {max_message_size, 1048576},      % 1MB
    {connection_pool_size, 20},
-   
+
    %% Performance monitoring
    {enable_metrics, true},
    {metrics_interval, 5000}
  ]},
- 
+
  {logger, [
    %% Reduce logging overhead in production
    {handler, default, logger_std_h, #{
@@ -174,7 +174,7 @@ TcpConfig = #{
     type => tcp,
     host => "0.0.0.0",
     port => 8080,
-    
+
     % Socket options for performance
     socket_opts => [
         binary,
@@ -187,15 +187,15 @@ TcpConfig = #{
         {recbuf, 131072},       % 128KB receive buffer
         {backlog, 4096}         % Connection backlog
     ],
-    
+
     % Connection pooling
     connection_pool_size => 20,
     max_connections => 10000,
-    
+
     % Timeouts
     connect_timeout => 5000,
     send_timeout => 30000,
-    
+
     % Keep-alive settings
     keepalive_interval => 30000,
     keepalive_probes => 3,
@@ -210,23 +210,23 @@ HttpConfig = #{
     type => http,
     url => "http://localhost:8000/mcp",
     method => post,
-    
+
     % Connection management
     connection_timeout => 5000,
     max_connections => 100,
     max_pipeline_size => 10,
-    
+
     % HTTP/2 optimization
     http_version => 'HTTP/2',
     enable_compression => true,
-    
+
     % Headers
     headers => #{
         <<"Connection">> => <<"keep-alive">>,
         <<"Keep-Alive">> => <<"timeout=30, max=1000">>,
         <<"Content-Type">> => <<"application/json">>
     },
-    
+
     % Timeouts
     timeout => 30000,
     idle_timeout => 300000      % 5 minutes
@@ -241,7 +241,7 @@ HttpConfig = #{
 process_message_batch(Messages) ->
     BatchSize = 100,
     BatchTimeout = 10,  % 10ms
-    
+
     Batches = batch_messages(Messages, BatchSize),
     lists:foreach(fun process_batch/1, Batches).
 
@@ -281,14 +281,14 @@ start_worker_pool() ->
         worker_count => erlang:system_info(schedulers) * 2,
         max_overflow => 10,
         strategy => fifo,
-        
+
         % Worker configuration
         worker_args => #{
             hibernate_after => 5000,
             max_message_queue_len => 10000
         }
     },
-    
+
     {ok, _} = poolboy:start_link(PoolConfig, []).
 ```
 
@@ -396,14 +396,14 @@ return_connection(HostPort, Socket) ->
 ```erlang
 % HTTP client with keep-alive and pipelining
 http_request_optimized(Url, Data) ->
-    httpc:request(post, 
-        {Url, 
+    httpc:request(post,
+        {Url,
          [{"Connection", "keep-alive"},
-          {"Content-Type", "application/json"}], 
-         "application/json", 
-         Data}, 
+          {"Content-Type", "application/json"}],
+         "application/json",
+         Data},
         [{timeout, 30000},
-         {connect_timeout, 5000}], 
+         {connect_timeout, 5000}],
         [{sync, true}]).
 ```
 
@@ -423,7 +423,7 @@ start_metrics_collection() ->
         {system, memory_usage},
         {system, cpu_usage}
     ],
-    
+
     lists:foreach(fun({Module, Metric}) ->
         erlmcp_metrics:enable(Module, Metric)
     end, Metrics).
@@ -453,10 +453,10 @@ get_value(Counter) ->
 profile_hot_path() ->
     fprof:start(),
     fprof:trace(start),
-    
+
     % Run hot code
     hot_code_path(),
-    
+
     fprof:trace(stop),
     fprof:profile(),
     fprof:analyse([{dest, "profile_results.txt"}]).
@@ -477,7 +477,7 @@ memory_monitor_loop() ->
             Memory = erlang:memory(),
             case maps:get(total, Memory) > 1024 * 1024 * 1024 of  % 1GB
                 true ->
-                    logger:warning("High memory usage: ~p MB", 
+                    logger:warning("High memory usage: ~p MB",
                                   [maps:get(total, Memory) div (1024*1024)]);
                 false ->
                     ok
@@ -507,11 +507,11 @@ rebar3 escriptize
 ```erlang
 % Stress test with concurrent clients
 run_load_test(ClientCount, Duration) ->
-    Clients = [spawn_link(fun() -> client_loop(Duration) end) 
+    Clients = [spawn_link(fun() -> client_loop(Duration) end)
               || _ <- lists:seq(1, ClientCount)],
-    
+
     timer:sleep(Duration),
-    
+
     lists:foreach(fun(Pid) -> exit(Pid, normal) end, Clients).
 ```
 
@@ -528,10 +528,10 @@ create_baseline() ->
 check_regressions() ->
     {ok, BaselineResults} = erlmcp_benchmark:load_baseline("production_baseline"),
     CurrentResults = erlmcp_benchmark:run_ci_benchmarks(),
-    
+
     Regressions = erlmcp_benchmark:detect_performance_regression(
         BaselineResults, CurrentResults),
-    
+
     case Regressions of
         [] -> {ok, no_regressions};
         _ -> {warning, Regressions}
@@ -552,17 +552,17 @@ check_regressions() ->
    {enable_route_cache, true},
    {cache_ttl_ms, 60000},
    {max_cache_entries, 100000},
-   
+
    % Monitoring
    {enable_metrics, true},
    {metrics_backend, prometheus},
    {health_check_interval, 30000},
-   
+
    % Logging
    {log_level, warning},
    {enable_performance_logs, true}
  ]},
- 
+
  {kernel, [
    {logger_level, warning}
  ]}
@@ -577,7 +577,7 @@ update_performance_config() ->
         cache_ttl_ms => 120000,  % Increase cache TTL
         max_cache_entries => 200000
     },
-    
+
     erlmcp_registry_optimized:update_config(NewConfig).
 ```
 
@@ -591,7 +591,7 @@ setup_prometheus_metrics() ->
         {name, erlmcp_messages_total},
         {help, "Total number of MCP messages processed"}
     ]),
-    
+
     prometheus_histogram:declare([
         {name, erlmcp_message_duration_seconds},
         {buckets, [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]},
@@ -609,7 +609,7 @@ health_check() ->
         check_memory_usage(),
         check_process_count()
     ],
-    
+
     case lists:all(fun(Check) -> Check =:= ok end, Checks) of
         true -> {ok, healthy};
         false -> {error, unhealthy}
@@ -659,16 +659,16 @@ get_system_info() ->
 % Analyze performance bottlenecks
 analyze_performance() ->
     % CPU usage by process
-    ProcessInfo = [{Pid, process_info(Pid, [memory, message_queue_len, reductions])} 
+    ProcessInfo = [{Pid, process_info(Pid, [memory, message_queue_len, reductions])}
                   || Pid <- processes()],
-    
+
     % Sort by memory usage
     SortedByMemory = lists:sort(fun({_, InfoA}, {_, InfoB}) ->
         {memory, MemA} = lists:keyfind(memory, 1, InfoA),
         {memory, MemB} = lists:keyfind(memory, 1, InfoB),
         MemA > MemB
     end, ProcessInfo),
-    
+
     lists:sublist(SortedByMemory, 10).  % Top 10 memory consumers
 ```
 

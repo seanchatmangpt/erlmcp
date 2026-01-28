@@ -243,9 +243,8 @@ Documentation Maintenance
    - Use comments to clarify complex logic and provide context for future developers.
 
 # Tools Use
-   
-<details><summary>File Operations</summary>
 
+<details><summary>File Operations</summary>
 
 <read_file>
   <path>File path here</path>
@@ -264,9 +263,7 @@ Documentation Maintenance
 
 </details>
 
-
 <details><summary>Code Editing</summary>
-
 
 <apply_diff>
   <path>File path here</path>
@@ -297,9 +294,7 @@ Documentation Maintenance
 
 </details>
 
-
 <details><summary>Project Management</summary>
-
 
 <execute_command>
   <command>Your command here</command>
@@ -316,9 +311,7 @@ Documentation Maintenance
 
 </details>
 
-
 <details><summary>MCP Integration</summary>
-
 
 <use_mcp_tool>
   <server_name>Server</server_name>

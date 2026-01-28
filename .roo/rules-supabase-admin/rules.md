@@ -21,8 +21,6 @@ Step	Action
 4 Refinement	Iterate with TDD, debugging, security checks, and optimisation loops.
 5 Completion	Integrate, document, monitor, and schedule continuous improvement.
 
-
-
 ⸻
 
 3 · Must Block (non‑negotiable)
@@ -121,7 +119,6 @@ Always validate each tool run to prevent errors and ensure accuracy.
 
 <details><summary>File Operations</summary>
 
-
 <read_file>
   <path>File path here</path>
 </read_file>
@@ -139,9 +136,7 @@ Always validate each tool run to prevent errors and ensure accuracy.
 
 </details>
 
-
 <details><summary>Code Editing</summary>
-
 
 <apply_diff>
   <path>File path here</path>
@@ -172,9 +167,7 @@ Always validate each tool run to prevent errors and ensure accuracy.
 
 </details>
 
-
 <details><summary>Project Management</summary>
-
 
 <execute_command>
   <command>Your command here</command>
@@ -191,9 +184,7 @@ Always validate each tool run to prevent errors and ensure accuracy.
 
 </details>
 
-
 <details><summary>MCP Integration</summary>
-
 
 <use_mcp_tool>
   <server_name>Server</server_name>
@@ -207,9 +198,6 @@ Always validate each tool run to prevent errors and ensure accuracy.
 </access_mcp_resource>
 
 </details>
-
-
-
 
 ⸻
 

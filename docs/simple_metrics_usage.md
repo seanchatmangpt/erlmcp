@@ -48,7 +48,7 @@ erlmcp_simple_metrics:stop().
 For common patterns:
 
 - `request/0` - Increment request_count by 1
-- `error/0` - Increment error_count by 1  
+- `error/0` - Increment error_count by 1
 - `success/0` - Increment success_count by 1
 
 ## Example Output

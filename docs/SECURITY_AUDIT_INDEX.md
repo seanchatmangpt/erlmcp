@@ -480,4 +480,3 @@ rebar3 ct --dir test --suites erlmcp_security_audit_100k erlmcp_penetration_100k
 
 **Last Updated:** 2026-01-27
 **Version:** 1.0 (Initial Security Audit)
-

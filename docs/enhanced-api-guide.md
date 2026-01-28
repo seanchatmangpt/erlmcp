@@ -146,7 +146,7 @@ case erlmcp:get_transport_binding_info(my_transport) of
             status := Status,
             config := Config
         } = Info,
-        logger:info("Transport ~p bound to server ~p, status: ~p", 
+        logger:info("Transport ~p bound to server ~p, status: ~p",
                    [TransportId, ServerId, Status]);
     {error, transport_not_found} ->
         logger:warning("Transport not found");
@@ -211,10 +211,10 @@ case erlmcp:audit_transport_bindings() of
             issues := Issues,
             audit_time := Timestamp
         } = Audit,
-        
-        logger:info("Binding audit: ~p total, ~p healthy, ~p issues", 
+
+        logger:info("Binding audit: ~p total, ~p healthy, ~p issues",
                    [Total, Healthy, length(Issues)]),
-        
+
         % Log issues
         lists:foreach(fun({TransportId, IssueList}) ->
             logger:warning("Transport ~p has issues: ~p", [TransportId, IssueList])
@@ -334,7 +334,7 @@ schedule_binding_audit() ->
                 Issues = maps:get(issues, Audit, []),
                 case Issues of
                     [] -> ok; % All healthy
-                    _ -> 
+                    _ ->
                         logger:warning("Transport binding issues detected: ~p", [Issues])
                 end;
             {error, Reason} ->
@@ -349,7 +349,7 @@ schedule_binding_audit() ->
 robust_transport_setup(ServerId, Type, Config) ->
     case start_transport_with_retry(ServerId, Type, Config, 3) of
         {ok, Result} -> {ok, Result};
-        {error, FinalError} -> 
+        {error, FinalError} ->
             logger:error("Transport setup failed after retries: ~p", [FinalError]),
             {error, FinalError}
     end.
@@ -363,9 +363,9 @@ start_transport_with_retry(ServerId, Type, Config, Retries) ->
         stdio -> erlmcp:start_stdio_setup(ServerId, Config)
     end of
         {ok, Result} -> {ok, Result};
-        {error, #{error_type := validation_failed}} = Error -> 
+        {error, #{error_type := validation_failed}} = Error ->
             Error; % Don't retry validation errors
-        {error, _} -> 
+        {error, _} ->
             timer:sleep(1000), % Wait 1 second between retries
             start_transport_with_retry(ServerId, Type, Config, Retries - 1)
     end.

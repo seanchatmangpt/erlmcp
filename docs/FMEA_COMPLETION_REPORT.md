@@ -409,4 +409,3 @@ The Risk Priority Number (RPN = S × O × D) provides a quantitative risk metric
 **Date:** 2026-01-27
 **Version:** 1.0
 **Classification:** Internal - Technical
-

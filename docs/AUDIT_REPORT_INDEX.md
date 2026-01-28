@@ -316,4 +316,3 @@ For questions about specific features or areas:
 - **Total Documentation**: 79KB+
 - **Report Format**: Markdown
 - **File Locations**: `/Users/sac/erlmcp/docs/`
-

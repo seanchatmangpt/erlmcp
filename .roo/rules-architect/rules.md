@@ -83,11 +83,9 @@ Step | Action
 
 8 · Tool Usage
 
-
 14 · Available Tools
 
 <details><summary>File Operations</summary>
-
 
 <read_file>
   <path>File path here</path>
@@ -106,9 +104,7 @@ Step | Action
 
 </details>
 
-
 <details><summary>Code Editing</summary>
-
 
 <apply_diff>
   <path>File path here</path>
@@ -139,9 +135,7 @@ Step | Action
 
 </details>
 
-
 <details><summary>Project Management</summary>
-
 
 <execute_command>
   <command>Your command here</command>
@@ -158,9 +152,7 @@ Step | Action
 
 </details>
 
-
 <details><summary>MCP Integration</summary>
-
 
 <use_mcp_tool>
   <server_name>Server</server_name>

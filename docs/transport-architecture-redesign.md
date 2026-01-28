@@ -12,7 +12,7 @@ This document outlines the design for returning to and improving the `erlmcp_ser
 erlmcp_server (full-featured, transport-agnostic)
     ↓ uses
 erlmcp_transport_stdio
-erlmcp_transport_tcp  
+erlmcp_transport_tcp
 erlmcp_transport_http
 
 VS
@@ -31,7 +31,7 @@ erlmcp_stdio (wrapper around erlmcp_stdio_server)
 ## Benefits of erlmcp_server + Transports
 
 ### 1. Clean Separation of Concerns
-- **Protocol Logic**: All MCP protocol handling in `erlmcp_server` 
+- **Protocol Logic**: All MCP protocol handling in `erlmcp_server`
 - **Transport Logic**: Each transport handles its own communication method
 - **No Duplication**: Single implementation of MCP protocol
 
@@ -110,7 +110,7 @@ Better transport error reporting and recovery:
 ```erlang
 %% Transport can report different types of issues
 {transport_error, connection_lost, Reason}
-{transport_error, send_failed, Reason}  
+{transport_error, send_failed, Reason}
 {transport_error, protocol_error, Reason}
 
 %% Server can decide how to handle each type
@@ -128,7 +128,7 @@ Allow transports to expose their unique capabilities:
 http_transport:set_headers(State, Headers)
 http_transport:get_response_code(State)
 
-%% TCP transport might support  
+%% TCP transport might support
 tcp_transport:get_peer_info(State)
 tcp_transport:set_keepalive(State, Enabled)
 
@@ -142,19 +142,19 @@ stdio_transport:redirect_stderr(State, Enabled)
 
 ```erlang
 %% Enhanced erlmcp_transport.erl
--callback init(pid(), transport_opts()) -> 
+-callback init(pid(), transport_opts()) ->
     {ok, State} | {error, Reason}.
 
--callback send(State, iodata()) -> 
+-callback send(State, iodata()) ->
     ok | {error, Reason}.
 
 -callback close(State) -> ok.
 
--callback get_info(State) -> 
+-callback get_info(State) ->
     #{type => atom(), status => atom(), peer => term()}.
 
 %% Optional advanced features
--callback handle_call(Request, State) -> 
+-callback handle_call(Request, State) ->
     {reply, Reply, State} | {error, Reason}.
 
 -optional_callbacks([handle_call/2]).
@@ -183,7 +183,7 @@ monitor_transport(Transport, State) ->
 ```erlang
 %% All transports send consistent messages to server
 {transport_message, Data}           %% Incoming data
-{transport_connected, Info}         %% Connection established  
+{transport_connected, Info}         %% Connection established
 {transport_disconnected, Reason}    %% Connection lost
 {transport_error, Type, Reason}     %% Transport-specific error
 ```
@@ -204,7 +204,7 @@ validate_transport_opts({http, Opts}) ->
 
 ### Immediate Benefits
 1. **Eliminate Code Duplication** - Remove `erlmcp_stdio_server`
-2. **Consistent API** - Same interface for all transports  
+2. **Consistent API** - Same interface for all transports
 3. **Better Testing** - Single protocol implementation to test
 4. **Cleaner Architecture** - Clear separation of concerns
 
@@ -222,14 +222,14 @@ validate_transport_opts({http, Opts}) ->
 - [ ] Implement consistent message format
 - [ ] Add transport info/status reporting
 
-### Phase 2: Improve erlmcp_server Integration  
+### Phase 2: Improve erlmcp_server Integration
 - [ ] Enhanced transport lifecycle management
 - [ ] Better error handling and recovery
 - [ ] Consistent monitoring across transports
 - [ ] Configuration validation
 
 ### Phase 3: Update Existing Transports
-- [ ] Refactor `erlmcp_transport_stdio` 
+- [ ] Refactor `erlmcp_transport_stdio`
 - [ ] Enhance `erlmcp_transport_tcp`
 - [ ] Improve `erlmcp_transport_http`
 - [ ] Ensure consistent behavior across all transports

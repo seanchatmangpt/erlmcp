@@ -607,4 +607,3 @@ erlmcp/test/
 - **MCP Specification**: 2025-11-25
 - **Erlang/OTP**: 25+
 - **Matrix Date**: January 2026
-

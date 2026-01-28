@@ -1119,4 +1119,3 @@ The erlmcp CI/CD pipeline is production-grade and well-structured. The recommend
 - Safer deployments with canary validation
 - Automatic performance regression detection
 - 100% audit trail for compliance
-

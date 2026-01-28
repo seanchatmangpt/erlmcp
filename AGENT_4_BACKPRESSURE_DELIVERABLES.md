@@ -465,4 +465,3 @@ rebar3 eunit --module=erlmcp_backpressure_tests
 **Lines of Code**: 550+ (core modules)
 **Test Coverage**: 80%+
 **Documentation Pages**: 20+
-

@@ -78,7 +78,7 @@ Successfully completed Step 7 of Phase 3: "Enhance High-Level API". This step in
 
 #### Test Coverage
 - **Enhanced API tests**: Comprehensive validation testing
-- **Error handling tests**: All error scenarios covered  
+- **Error handling tests**: All error scenarios covered
 - **Integration tests**: End-to-end functionality verification
 - **Binding management tests**: Transport binding lifecycle testing
 
@@ -206,7 +206,7 @@ end.
 erlmcp:start_transport(stdio_transport, stdio, #{buffer_size => 1024}).
 % Result: {ok, Pid}
 
-% Invalid configuration  
+% Invalid configuration
 erlmcp:start_transport(stdio_transport, stdio, #{buffer_size => "invalid"}).
 % Result: {error, #{error_type => validation_failed, suggestion => "..."}}
 ```
@@ -222,7 +222,7 @@ erlmcp:start_transport(tcp_transport, tcp, #{host => "localhost"}).
 % Result: {error, #{validation_error => #{field => port}}}
 ```
 
-### HTTP Transport  
+### HTTP Transport
 ```erlang
 % Valid configuration
 erlmcp:start_transport(http_transport, http, #{url => "https://api.example.com/mcp"}).
@@ -238,7 +238,7 @@ erlmcp:start_transport(http_transport, http, #{url => "not-a-url"}).
 The enhanced API is now ready for production use with:
 
 1. **Comprehensive validation** ensuring configuration correctness
-2. **Enhanced error handling** providing clear feedback and suggestions  
+2. **Enhanced error handling** providing clear feedback and suggestions
 3. **Transport binding management** enabling system health monitoring
 4. **Complete documentation** supporting user adoption
 5. **Extensive testing** validating all functionality

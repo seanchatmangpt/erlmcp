@@ -57,8 +57,8 @@ handle_call({add_resource, Uri, Handler}, _From, State) ->
 
 %% Async notifications
 handle_cast({notify_subscribers, Event}, State) ->
-    spawn(fun() -> 
-        notify_all(State#state.subscribers, Event) 
+    spawn(fun() ->
+        notify_all(State#state.subscribers, Event)
     end),
     {noreply, State}.
 ```
@@ -72,7 +72,7 @@ handle_cast({notify_subscribers, Event}, State) ->
 
 %% State callback
 disconnected({call, From}, connect, Data) ->
-    {next_state, connecting, Data, 
+    {next_state, connecting, Data,
      [{reply, From, ok}, {state_timeout, 5000, connect}]}.
 
 connecting(state_timeout, connect, Data) ->

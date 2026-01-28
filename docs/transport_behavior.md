@@ -12,8 +12,8 @@ The transport behavior defines the following callbacks:
 
 #### `init/1`
 ```erlang
--callback init(Opts :: transport_opts()) -> 
-    {ok, State :: transport_state()} | 
+-callback init(Opts :: transport_opts()) ->
+    {ok, State :: transport_state()} |
     {error, Reason :: term()}.
 ```
 
@@ -28,8 +28,8 @@ The transport behavior defines the following callbacks:
 
 #### `send/2`
 ```erlang
--callback send(State :: transport_state(), Data :: iodata()) -> 
-    ok | 
+-callback send(State :: transport_state(), Data :: iodata()) ->
+    ok |
     {error, Reason :: term()}.
 ```
 
@@ -135,7 +135,7 @@ Transport-specific options passed to `init/1`. Structure varies by transport typ
 Common error reasons returned by transport implementations:
 
 - `not_connected`: Transport is not ready to send data
-- `connection_lost`: Connection was unexpectedly terminated  
+- `connection_lost`: Connection was unexpectedly terminated
 - `timeout`: Operation timed out
 - `invalid_data`: Data format is not supported by transport
 - `transport_error`: Generic transport-level error

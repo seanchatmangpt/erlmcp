@@ -228,7 +228,7 @@ Result = erlmcp_otel:with_span(
         %% Baggage is automatically inherited
         UserId = erlmcp_otel:get_baggage(<<"user.id">>),
         RequestId = erlmcp_otel:get_baggage(<<"request.id">>),
-        
+
         %% Perform resource operation
         read_resource(Uri, Type, UserId, RequestId)
     end
@@ -308,7 +308,7 @@ ok = erlmcp_transport_stdio:send(Transport, JsonMessage).
 %% Check OpenTelemetry health
 case erlmcp_otel:get_tracer_provider() of
     undefined -> {error, not_initialized};
-    Provider -> 
+    Provider ->
         ExportRate = get_export_rate(Provider),
         MemoryUsage = get_memory_usage(Provider),
         case {ExportRate > 0, MemoryUsage < 104857600} of
@@ -326,7 +326,7 @@ end.
 - Subscription management tracing
 - Resource update notifications
 
-### Client Integration  
+### Client Integration
 - Request/response correlation
 - Timeout and retry tracing
 - Connection pool monitoring

@@ -11,7 +11,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 - **Critical Issues**: High failure rates (>5%) during transport switching under load
 - **Impact**: Service interruptions during failover scenarios
 
-### 2. Registry Routing Performance  
+### 2. Registry Routing Performance
 **Key Findings**: Registry operations show acceptable latency (<10ms) but can degrade under high load
 - **Bottlenecks**: Queue depth increases significantly with concurrent operations (>100 at 50+ connections)
 - **Throughput**: Current registry handles ~1000-5000 ops/sec depending on operation complexity
@@ -19,7 +19,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 ### 3. Message Buffering Efficiency
 **Key Findings**: Buffer overflow rates vary by transport type
 - **STDIO**: <1% overflow, minimal GC pressure
-- **TCP**: 2-5% overflow under sustained load, moderate GC pressure  
+- **TCP**: 2-5% overflow under sustained load, moderate GC pressure
 - **HTTP**: Higher buffer usage due to request/response patterns
 
 ### 4. Reconnection Strategies Impact
@@ -32,7 +32,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 ### 5. Supervisor Restart Costs
 **Key Findings**: Restart times are generally acceptable but cascade failures are concerning
 - **Child process restart**: 10-50ms average
-- **Supervisor restart**: 100-700ms average  
+- **Supervisor restart**: 100-700ms average
 - **Cascade failure rate**: 5-15% (within acceptable limits)
 - **Process impact**: 1-10 processes affected per restart
 
@@ -49,7 +49,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 | Transport | Throughput (KB/s) | Latency P95 (ms) | Memory Peak (MB) |
 |-----------|-------------------|-------------------|-------------------|
 | STDIO     | 1000-5000        | 1-5              | 20-50            |
-| TCP       | 500-2000         | 5-25             | 50-100           |  
+| TCP       | 500-2000         | 5-25             | 50-100           |
 | HTTP      | 100-500          | 50-200           | 100-200          |
 
 ### Scaling Characteristics
@@ -65,7 +65,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 3. **TCP Reconnection Delays**: 10+ second reconnection times in worst case
 4. **HTTP Request Overhead**: High per-request overhead affecting throughput
 
-### Medium Priority Issues  
+### Medium Priority Issues
 1. **Buffer Overflow**: 2-5% overflow rate for TCP transport under load
 2. **Memory Growth**: Some workloads show 5-10MB/s growth (needs monitoring)
 3. **GC Frequency**: Frequent GC with large message processing
@@ -75,14 +75,14 @@ This document summarizes the comprehensive performance analysis conducted for th
 
 ### Immediate Actions
 1. **Implement circuit breaker pattern** for transport switching failures
-2. **Add registry load balancing** to handle high queue depths  
+2. **Add registry load balancing** to handle high queue depths
 3. **Optimize TCP reconnection logic** with parallel connection attempts
 4. **Implement HTTP connection pooling** to reduce per-request overhead
 
 ### Short-term Improvements
 1. **Add comprehensive performance monitoring** with metrics and alerting
 2. **Implement backpressure mechanisms** to prevent buffer overflow
-3. **Optimize message serialization** to reduce CPU and memory overhead  
+3. **Optimize message serialization** to reduce CPU and memory overhead
 4. **Add dynamic buffer sizing** based on current load patterns
 
 ### Long-term Enhancements
@@ -108,7 +108,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 
 ### Performance Tests Implemented
 1. **Transport throughput tests** - Measure sustained data transfer rates
-2. **Latency tests** - Measure end-to-end message delivery times  
+2. **Latency tests** - Measure end-to-end message delivery times
 3. **Concurrent operation tests** - Validate performance under concurrent load
 4. **Stress tests** - Determine breaking points and failure modes
 5. **Resource monitoring tests** - Track memory, CPU, and process usage
@@ -126,7 +126,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 
 ### Transport Characteristics
 - **STDIO**: Highest throughput, lowest latency, minimal resource usage (ideal for local communication)
-- **TCP**: Good balance of performance and reliability (suitable for network communication) 
+- **TCP**: Good balance of performance and reliability (suitable for network communication)
 - **HTTP**: Lower throughput but standard protocol support (best for integration scenarios)
 
 ### Scaling Behavior
@@ -136,7 +136,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 
 ### Fault Tolerance
 - **Good isolation** between transport types (failures don't cascade)
-- **Acceptable recovery times** for most failure scenarios  
+- **Acceptable recovery times** for most failure scenarios
 - **Robust supervisor architecture** prevents system-wide failures
 
 ## Usage Guidelines
@@ -146,7 +146,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 # Start performance analyzer
 {ok, _} = erlmcp_performance_analysis:start_link().
 
-# Run comprehensive benchmarks  
+# Run comprehensive benchmarks
 {ok, Report} = erlmcp_performance_analysis:generate_full_report().
 
 # Run specific transport tests
@@ -161,7 +161,7 @@ This document summarizes the comprehensive performance analysis conducted for th
 # Monitor resources during operation
 {ok, Monitor} = erlmcp_performance_analysis:monitor_resources(60000, 1000).
 
-# Run stress tests  
+# Run stress tests
 {ok, Results} = erlmcp_performance_analysis:run_stress_test(tcp, 30000, 10).
 
 # Analyze bottlenecks

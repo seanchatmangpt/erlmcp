@@ -2,11 +2,11 @@
 
 ## Document Overview
 
-**SPARC Phase**: Specification  
-**Project**: erlmcp OTP Supervision Architecture  
-**Target Phases**: Phase 1-3 (Core Infrastructure, Server Refactoring, Transport Standardization)  
-**Version**: 1.0  
-**Date**: 2025-08-26  
+**SPARC Phase**: Specification
+**Project**: erlmcp OTP Supervision Architecture
+**Target Phases**: Phase 1-3 (Core Infrastructure, Server Refactoring, Transport Standardization)
+**Version**: 1.0
+**Date**: 2025-08-26
 
 ## Executive Summary
 
@@ -251,16 +251,16 @@ test_complete_request_response_cycle() ->
     {ok, _} = erlmcp_registry:start_link(),
     {ok, ServerPid} = erlmcp_server:start_link(test_server, Capabilities),
     {ok, TransportPid} = erlmcp_transport_stdio_new:start_link(test_transport, Config),
-    
+
     % Register components
     ok = erlmcp_registry:register_server(test_server, ServerPid, ServerConfig),
     ok = erlmcp_registry:register_transport(test_transport, TransportPid, TransportConfig),
     ok = erlmcp_registry:bind_transport_to_server(test_transport, test_server),
-    
+
     % Send message through transport
     TestMessage = <<"{\\"jsonrpc\\": \\"2.0\\", \\"method\\": \\"ping\\", \\"id\\": 1}">>,
     ok = erlmcp_transport_stdio_new:send(TransportPid, TestMessage),
-    
+
     % Verify message routing and response
     receive
         {mcp_response, test_server, Response} ->
@@ -277,14 +277,14 @@ test_complete_request_response_cycle() ->
 test_registry_failure_recovery() ->
     % Start complete supervision tree
     {ok, SupPid} = erlmcp_sup:start_link(),
-    
+
     % Register components
     setup_test_components(),
-    
+
     % Kill registry process
     RegistryPid = whereis(erlmcp_registry),
     exit(RegistryPid, kill),
-    
+
     % Verify complete system restart
     timer:sleep(100),
     ?assert(is_process_alive(whereis(erlmcp_registry))),
@@ -297,15 +297,15 @@ test_registry_failure_recovery() ->
 ```erlang
 test_runtime_component_addition() ->
     setup_base_system(),
-    
+
     % Add new server at runtime
     {ok, NewServerPid} = erlmcp:start_server(new_server, NewConfig),
     ?assert(is_pid(NewServerPid)),
-    
+
     % Add new transport at runtime
     {ok, NewTransportPid} = erlmcp:start_transport(new_transport, tcp, TcpConfig),
     ?assert(is_pid(NewTransportPid)),
-    
+
     % Verify binding works
     ok = erlmcp:bind_transport_to_server(new_transport, new_server),
     {ok, new_server} = erlmcp_registry:get_server_for_transport(new_transport).
@@ -363,16 +363,16 @@ prop_registry_state_consistency() ->
 ```erlang
 test_transport_failure_isolation() ->
     setup_multi_transport_system(),
-    
+
     % Kill one transport
     Transport1Pid = get_transport_pid(transport1),
     exit(Transport1Pid, kill),
-    
+
     % Verify other transports unaffected
     timer:sleep(50),
     ?assert(is_process_alive(get_transport_pid(transport2))),
     ?assert(is_process_alive(get_transport_pid(transport3))),
-    
+
     % Verify server still operational
     ?assert(test_server_functionality(test_server)).
 ```
@@ -383,16 +383,16 @@ test_transport_failure_isolation() ->
 ```erlang
 test_complete_cleanup_on_death() ->
     setup_tracked_system(),
-    
+
     InitialState = capture_registry_state(),
-    
+
     % Create and kill server
     {ok, ServerPid} = erlmcp:start_server(temp_server, Config),
     exit(ServerPid, kill),
     timer:sleep(100),
-    
+
     FinalState = capture_registry_state(),
-    
+
     % Verify no leaked references
     ?assertEqual(InitialState.servers, FinalState.servers),
     ?assertEqual(InitialState.monitors, FinalState.monitors),
@@ -407,19 +407,19 @@ test_complete_cleanup_on_death() ->
 
 ```erlang
 %% @doc Register a server process with capabilities
--spec register_server(server_id(), pid(), server_config()) -> 
+-spec register_server(server_id(), pid(), server_config()) ->
     ok | {error, already_registered | invalid_config}.
 
 %% @doc Register a transport process with configuration
--spec register_transport(transport_id(), pid(), transport_config()) -> 
+-spec register_transport(transport_id(), pid(), transport_config()) ->
     ok | {error, already_registered | invalid_config}.
 
 %% @doc Route message to server via transport identifier
--spec route_to_server(server_id(), transport_id(), mcp_message()) -> 
+-spec route_to_server(server_id(), transport_id(), mcp_message()) ->
     ok | {error, server_not_found}.
 
-%% @doc Route response to transport via server identifier  
--spec route_to_transport(transport_id(), server_id(), mcp_response()) -> 
+%% @doc Route response to transport via server identifier
+-spec route_to_transport(transport_id(), server_id(), mcp_response()) ->
     ok | {error, transport_not_found}.
 ```
 
@@ -427,15 +427,15 @@ test_complete_cleanup_on_death() ->
 
 ```erlang
 %% @doc Find registered server by identifier
--spec find_server(server_id()) -> 
+-spec find_server(server_id()) ->
     {ok, {pid(), server_config()}} | {error, not_found}.
 
 %% @doc List all registered servers
--spec list_servers() -> 
+-spec list_servers() ->
     [{server_id(), {pid(), server_config()}}].
 
 %% @doc Bind transport to server for message routing
--spec bind_transport_to_server(transport_id(), server_id()) -> 
+-spec bind_transport_to_server(transport_id(), server_id()) ->
     ok | {error, server_not_found | transport_not_found}.
 ```
 
@@ -445,20 +445,20 @@ test_complete_cleanup_on_death() ->
 
 ```erlang
 %% @doc Start server with capabilities, no transport management
--spec start_link(server_id(), mcp_server_capabilities()) -> 
+-spec start_link(server_id(), mcp_server_capabilities()) ->
     {ok, pid()} | {error, term()}.
 
 %% @doc Add resource handler to server
--spec add_resource(pid(), binary(), resource_handler()) -> 
+-spec add_resource(pid(), binary(), resource_handler()) ->
     ok | {error, term()}.
 
 %% @doc Add tool handler with optional schema
--spec add_tool(pid(), binary(), tool_handler()) -> 
+-spec add_tool(pid(), binary(), tool_handler()) ->
     ok | {error, term()}.
 
 %% @doc Handle incoming MCP message (via registry)
--spec handle_mcp_message(mcp_message(), server_state()) -> 
-    {reply, mcp_response(), server_state()} | 
+-spec handle_mcp_message(mcp_message(), server_state()) ->
+    {reply, mcp_response(), server_state()} |
     {noreply, server_state()}.
 ```
 
@@ -482,13 +482,13 @@ erlmcp_registry:route_to_transport(TransportId, ServerId, Response) where
 #### 3.3.1 Transport Behavior Callbacks
 
 ```erlang
--callback send(transport_state(), iodata()) -> 
+-callback send(transport_state(), iodata()) ->
     ok | {error, term()}.
 
--callback close(transport_state()) -> 
+-callback close(transport_state()) ->
     ok.
 
--callback get_info(transport_state()) -> 
+-callback get_info(transport_state()) ->
     #{type => atom(), status => atom(), peer => term()}.
 
 -optional_callbacks([handle_transport_call/2]).
@@ -504,7 +504,7 @@ erlmcp_registry:route_to_transport(TransportId, ServerId, Response) where
     config := transport_specific_config()
 }.
 
--type transport_specific_config() :: 
+-type transport_specific_config() ::
     stdio_config() | tcp_config() | http_config().
 ```
 
@@ -628,8 +628,8 @@ erlmcp_registry:route_to_transport(TransportId, ServerId, Response) where
 
 ### 5.1 Phase 1: Core Infrastructure (v0.4.0)
 
-**Duration**: 2-3 weeks  
-**Dependencies**: None  
+**Duration**: 2-3 weeks
+**Dependencies**: None
 
 #### 5.1.1 Deliverables
 
@@ -661,8 +661,8 @@ erlmcp_registry:route_to_transport(TransportId, ServerId, Response) where
 
 ### 5.2 Phase 2: Server Refactoring (v0.5.0)
 
-**Duration**: 2-3 weeks  
-**Dependencies**: Phase 1 complete  
+**Duration**: 2-3 weeks
+**Dependencies**: Phase 1 complete
 
 #### 5.2.1 Deliverables
 
@@ -694,8 +694,8 @@ erlmcp_registry:route_to_transport(TransportId, ServerId, Response) where
 
 ### 5.3 Phase 3: Transport Standardization (v0.6.0)
 
-**Duration**: 3-4 weeks  
-**Dependencies**: Phase 2 complete  
+**Duration**: 3-4 weeks
+**Dependencies**: Phase 2 complete
 
 #### 5.3.1 Deliverables
 
@@ -707,7 +707,7 @@ erlmcp_registry:route_to_transport(TransportId, ServerId, Response) where
 
 2. **Supervised Transport Implementation**
    - STDIO transport as gen_server
-   - TCP transport implementation  
+   - TCP transport implementation
    - HTTP transport implementation
    - Transport supervisor integration
 
@@ -747,7 +747,7 @@ make memory-test
 
 1. **System Integration Validation**
    - End-to-end request processing
-   - Multi-transport concurrent operation  
+   - Multi-transport concurrent operation
    - Failure recovery scenarios
    - Configuration management
 
@@ -763,7 +763,7 @@ make memory-test
 %% Performance validation test
 validate_performance_requirements() ->
     {ok, Metrics} = run_performance_test_suite(),
-    
+
     ?assert(Metrics#performance_metrics.routing_latency =< 1), % 1ms
     ?assert(Metrics#performance_metrics.throughput >= 10000), % 10k msg/s
     ?assert(Metrics#performance_metrics.startup_time =< 100), % 100ms
@@ -776,10 +776,10 @@ validate_performance_requirements() ->
 
 #### 6.1.1 Performance Degradation Risk
 
-**Risk**: Registry-mediated routing introduces latency  
-**Probability**: Medium  
-**Impact**: High  
-**Mitigation**: 
+**Risk**: Registry-mediated routing introduces latency
+**Probability**: Medium
+**Impact**: High
+**Mitigation**:
 - Benchmark every change against baseline
 - Implement message batching if needed
 - Use ETS tables for hot path lookups
@@ -787,9 +787,9 @@ validate_performance_requirements() ->
 
 #### 6.1.2 Memory Leak Risk
 
-**Risk**: Process monitoring creates reference leaks  
-**Probability**: Low  
-**Impact**: High  
+**Risk**: Process monitoring creates reference leaks
+**Probability**: Low
+**Impact**: High
 **Mitigation**:
 - Comprehensive monitor cleanup testing
 - Automated memory leak detection in CI
@@ -800,9 +800,9 @@ validate_performance_requirements() ->
 
 #### 6.2.1 Backward Compatibility Risk
 
-**Risk**: API changes break existing applications  
-**Probability**: Medium  
-**Impact**: High  
+**Risk**: API changes break existing applications
+**Probability**: Medium
+**Impact**: High
 **Mitigation**:
 - Maintain backward compatibility layer
 - Deprecation warnings before removal
@@ -811,9 +811,9 @@ validate_performance_requirements() ->
 
 #### 6.2.2 Example Application Risk
 
-**Risk**: Examples become outdated during refactoring  
-**Probability**: High  
-**Impact**: Medium  
+**Risk**: Examples become outdated during refactoring
+**Probability**: High
+**Impact**: Medium
 **Mitigation**:
 - Update examples in parallel with implementation
 - Automated example testing in CI
@@ -830,7 +830,7 @@ Implementation of this specification will transform erlmcp from an ad hoc proces
 
 ---
 
-**Document Status**: Complete  
-**Next Phase**: Pseudocode Development  
-**Review Status**: Ready for Technical Review  
-**Approval Status**: Pending Architecture Team Approval  
+**Document Status**: Complete
+**Next Phase**: Pseudocode Development
+**Review Status**: Ready for Technical Review
+**Approval Status**: Pending Architecture Team Approval

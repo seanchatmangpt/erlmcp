@@ -1169,4 +1169,3 @@ Proper error codes for different error types.
 **Specification Version**: MCP 2025-11-25
 **Implementation**: erlmcp v0.7.0
 **Status**: ✅ PRODUCTION READY
-

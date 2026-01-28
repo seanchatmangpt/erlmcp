@@ -48,7 +48,7 @@ TransportConfig = {stdio, #{
 % Starting an MCP server with STDIO transport
 {ok, Server} = erlmcp_server:start_link({stdio, []}, ServerCapabilities).
 
-% Starting an MCP client with STDIO transport  
+% Starting an MCP client with STDIO transport
 {ok, Client} = erlmcp_client:start_link({stdio, []}, ClientOptions).
 ```
 
@@ -75,18 +75,18 @@ TransportConfig = {tcp, #{
     host => {192, 168, 1, 100},  % IP address or hostname
     port => 8080,
     owner => self(),
-    
+
     % Connection options
     connect_timeout => 5000,
     keepalive => true,
     nodelay => true,
     buffer_size => 65536,
-    
+
     % Retry configuration
     max_reconnect_attempts => 10,
     initial_backoff => 1000,
     max_backoff => 60000,
-    
+
     % SSL/TLS options (for secure connections)
     ssl_options => [
         {verify, verify_peer},
@@ -125,7 +125,7 @@ TcpOpts = #{
 
 % Secure TCP connection with SSL
 SecureTcpOpts = #{
-    host => "secure-mcp.example.com", 
+    host => "secure-mcp.example.com",
     port => 443,
     owner => self(),
     ssl_options => [
@@ -157,7 +157,7 @@ TransportConfig = {http, #{
 TransportConfig = {http, #{
     url => "https://api.example.com/mcp/v1",
     owner => self(),
-    
+
     % HTTP method and headers
     method => post,  % or get
     headers => [
@@ -165,18 +165,18 @@ TransportConfig = {http, #{
         {"User-Agent", "MyApp/1.0"},
         {"X-API-Version", "2025-06-18"}
     ],
-    
+
     % Timeouts
     timeout => 30000,
     connect_timeout => 5000,
-    
+
     % Retry configuration
     max_retries => 3,
     retry_delay => 1000,
-    
+
     % Connection pooling
     pool_size => 5,
-    
+
     % SSL options for HTTPS
     ssl_options => [
         {verify, verify_peer},
@@ -186,7 +186,7 @@ TransportConfig = {http, #{
             "ECDHE-RSA-AES256-GCM-SHA384"
         ]}
     ],
-    
+
     % HTTP client options
     http_options => [
         {autoredirect, true},
@@ -293,7 +293,7 @@ ServerOpts = #{
 % Load configuration from application environment
 get_transport_config() ->
     case application:get_env(my_app, mcp_transport) of
-        {ok, {stdio, Opts}} -> 
+        {ok, {stdio, Opts}} ->
             {stdio, Opts};
         {ok, {tcp, #{host := Host, port := Port} = Opts}} ->
             {tcp, Opts#{owner => self()}};
@@ -355,7 +355,7 @@ try_transports([]) ->
     {error, no_transport_available};
 try_transports([Config | Rest]) ->
     case start_transport(Config) of
-        {ok, Transport} -> 
+        {ok, Transport} ->
             {ok, Transport};
         {error, Reason} ->
             logger:warning("Transport ~p failed: ~p", [Config, Reason]),

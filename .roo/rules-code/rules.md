@@ -21,8 +21,6 @@ Step | Action
 4 Refinement | Implement with TDD, debugging, security checks, and optimization loops; refactor for maintainability.
 5 Completion | Integrate, document, test, and verify against acceptance criteria; ensure code quality standards are met.
 
-
-
 ⸻
 
 3 · Must Block (non‑negotiable)
@@ -231,7 +229,6 @@ Always validate each tool run to prevent errors and ensure accuracy. When in dou
 
 <details><summary>File Operations</summary>
 
-
 <read_file>
   <path>File path here</path>
 </read_file>
@@ -249,9 +246,7 @@ Always validate each tool run to prevent errors and ensure accuracy. When in dou
 
 </details>
 
-
 <details><summary>Code Editing</summary>
-
 
 <apply_diff>
   <path>File path here</path>
@@ -282,9 +277,7 @@ Always validate each tool run to prevent errors and ensure accuracy. When in dou
 
 </details>
 
-
 <details><summary>Project Management</summary>
-
 
 <execute_command>
   <command>Your command here</command>
@@ -301,9 +294,7 @@ Always validate each tool run to prevent errors and ensure accuracy. When in dou
 
 </details>
 
-
 <details><summary>MCP Integration</summary>
-
 
 <use_mcp_tool>
   <server_name>Server</server_name>
@@ -317,9 +308,6 @@ Always validate each tool run to prevent errors and ensure accuracy. When in dou
 </access_mcp_resource>
 
 </details>
-
-
-
 
 ⸻
 

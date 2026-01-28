@@ -16,7 +16,7 @@ erlmcp_sup (application supervisor - one_for_all)
     │   └── [erlmcp_server instances...] ✅
     └── erlmcp_transport_sup (one_for_one) ✅
         ├── erlmcp_transport_stdio_new (gen_server) ⚠️ (needs standardization)
-        ├── erlmcp_transport_tcp (gen_server) ⚠️ (needs refactoring)  
+        ├── erlmcp_transport_tcp (gen_server) ⚠️ (needs refactoring)
         └── erlmcp_transport_http (gen_server) ⚠️ (needs refactoring)
 ```
 
@@ -54,26 +54,26 @@ All transports must implement this behavior:
 -module(erlmcp_transport).
 
 %% Core transport behavior
--callback init(TransportId :: atom(), Config :: map()) -> 
+-callback init(TransportId :: atom(), Config :: map()) ->
     {ok, State :: term()} | {error, Reason :: term()}.
 
--callback send(State :: term(), Data :: iodata()) -> 
+-callback send(State :: term(), Data :: iodata()) ->
     ok | {error, Reason :: term()}.
 
 -callback close(State :: term()) -> ok.
 
 %% Optional callbacks for advanced features
--callback get_info(State :: term()) -> 
+-callback get_info(State :: term()) ->
     #{type => atom(), status => atom(), peer => term()}.
 
--callback handle_transport_call(Request :: term(), State :: term()) -> 
-    {reply, Reply :: term(), NewState :: term()} | 
+-callback handle_transport_call(Request :: term(), State :: term()) ->
+    {reply, Reply :: term(), NewState :: term()} |
     {error, Reason :: term()}.
 
 -optional_callbacks([get_info/1, handle_transport_call/2]).
 
 %% Standard message format all transports send to registry
--type transport_message() :: 
+-type transport_message() ::
     {transport_data, Data :: binary()} |
     {transport_connected, Info :: map()} |
     {transport_disconnected, Reason :: term()} |
@@ -103,7 +103,7 @@ All transports must follow this pattern:
 init([TransportId, Config]) ->
     process_flag(trap_exit, true),
     ServerId = maps:get(server_id, Config, undefined),
-    
+
     case transport_init(Config) of
         {ok, TransportState} ->
             State = #state{
@@ -112,11 +112,11 @@ init([TransportId, Config]) ->
                 config = Config,
                 connection = TransportState
             },
-            
+
             %% Register with registry
             TransportConfig = Config#{type => ?TRANSPORT_TYPE},
             case erlmcp_registry:register_transport(TransportId, self(), TransportConfig) of
-                ok -> 
+                ok ->
                     logger:info("Transport ~p started and registered", [TransportId]),
                     {ok, State};
                 {error, Reason} ->
@@ -131,7 +131,7 @@ init([TransportId, Config]) ->
 handle_info({mcp_response, _ServerId, Data}, State) ->
     case send_data(Data, State) of
         {ok, NewState} -> {noreply, NewState};
-        {error, Reason} -> 
+        {error, Reason} ->
             notify_error(transport_send_failed, Reason, State),
             {noreply, State}
     end;
@@ -140,7 +140,7 @@ handle_info({mcp_response, _ServerId, Data}, State) ->
 handle_info({transport_data_received, Data}, State) ->
     case State#state.server_id of
         undefined ->
-            logger:warning("Transport ~p received data but no server bound", 
+            logger:warning("Transport ~p received data but no server bound",
                           [State#state.transport_id]);
         ServerId ->
             erlmcp_registry:route_to_server(ServerId, State#state.transport_id, Data)
@@ -162,7 +162,7 @@ erlmcp_registry:route_to_server(ServerId, TransportId, IncomingData)
 %% Message routing FROM server (via handle_info)
 Transport receives: {mcp_response, ServerId, OutgoingData}
 
-%% Binding management  
+%% Binding management
 erlmcp_registry:bind_transport_to_server(TransportId, ServerId)
 ```
 
@@ -186,7 +186,7 @@ erlmcp_registry:bind_transport_to_server(TransportId, ServerId)
     test_mode => false  %% Optional stdio-specific
 }
 
-%% TCP transport  
+%% TCP transport
 #{
     type => tcp,
     server_id => my_server,
@@ -235,7 +235,7 @@ erlmcp_registry:bind_transport_to_server(TransportId, ServerId)
 
 **Expected behavior:**
 - Already registry-integrated ✅
-- Already gen_server architecture ✅  
+- Already gen_server architecture ✅
 - Already manages stdin reader process ✅
 - Needs: Standard behavior interface conformance
 
@@ -319,7 +319,7 @@ erlmcp_registry:bind_transport_to_server(TransportId, ServerId)
 ```erlang
 start_child(TransportId, Type, Config) ->
     Module = transport_module(Type),
-    
+
     ChildSpec = #{
         id => TransportId,
         start => {Module, start_link, [TransportId, Config]},
@@ -328,14 +328,14 @@ start_child(TransportId, Type, Config) ->
         type => worker,
         modules => [Module]
     },
-    
+
     case supervisor:start_child(?MODULE, ChildSpec) of
         {ok, TransportPid} ->
-            logger:info("Started transport ~p (~p) with pid ~p", 
+            logger:info("Started transport ~p (~p) with pid ~p",
                        [TransportId, Type, TransportPid]),
             {ok, TransportPid};
         {error, _} = Error ->
-            logger:error("Failed to start transport ~p (~p): ~p", 
+            logger:error("Failed to start transport ~p (~p): ~p",
                         [TransportId, Type, Error]),
             Error
     end.
@@ -388,7 +388,7 @@ validate_transport_config(#{type := http} = Config) ->
 **Key API Enhancements:**
 ```erlang
 %% Enhanced transport creation with validation
--spec start_transport(transport_id(), transport_type(), map()) -> 
+-spec start_transport(transport_id(), transport_type(), map()) ->
     {ok, pid()} | {error, term()}.
 start_transport(TransportId, Type, Config) ->
     case validate_transport_config(Config#{type => Type}) of
@@ -433,7 +433,7 @@ start_http_setup(ServerId, ServerConfig, HttpConfig) -> ...
 - [ ] No code duplication between transport implementations
 - [ ] Consistent error handling and recovery across transports
 
-### Functional Success  
+### Functional Success
 - [ ] All existing transport functionality preserved
 - [ ] Transport failures don't affect other transports
 - [ ] Transport failures don't bring down servers
@@ -459,7 +459,7 @@ start_http_setup(ServerId, ServerConfig, HttpConfig) -> ...
 ### What NOT to do in Phase 3
 - **Do NOT remove legacy components yet** - that's Phase 5
   - Keep `erlmcp_stdio_server` - just ensure it still works
-  - Keep `erlmcp_stdio` - just ensure it still works  
+  - Keep `erlmcp_stdio` - just ensure it still works
   - Keep `erlmcp_transport_stdio` - just ensure it still works
 - **Do NOT rename modules yet** - that's Phase 6
   - Keep `erlmcp_transport_stdio_new` name for now

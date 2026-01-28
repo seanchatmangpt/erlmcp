@@ -500,4 +500,3 @@ filtered_tool(Arguments) ->
 - MCP Specification: https://modelcontextprotocol.io/
 - JSON Schema: https://json-schema.org/
 - Erlang/OTP Pattern: https://www.erlang.org/doc/
-

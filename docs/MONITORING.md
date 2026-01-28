@@ -112,7 +112,7 @@ The monitoring system performs comprehensive health checks every 5 seconds:
 ### Health Scoring
 Each component receives a health score (0.0-1.0), and an overall health score is calculated using weighted averages:
 - Transports: 25%
-- Registry: 15% 
+- Registry: 15%
 - Memory: 20%
 - Connections: 20%
 - Processes: 10%
@@ -164,7 +164,7 @@ CustomRule = #alert_rule{
 
 ### Default SLA Objectives
 - **High Availability**: 99.95% uptime
-- **Low Latency**: P95 response time < 500ms  
+- **Low Latency**: P95 response time < 500ms
 - **Reliability**: Error rate < 0.1%
 - **Throughput**: Minimum 100 requests/second
 
@@ -271,7 +271,7 @@ sms => #{
 %% Start monitoring
 erlmcp_monitor_sup:start_monitoring(Config).
 
-%% Stop monitoring  
+%% Stop monitoring
 erlmcp_monitor_sup:stop_monitoring().
 
 %% Get health status
@@ -312,7 +312,7 @@ erlmcp_monitor_dashboard:start_dashboard().
 
 See `config/monitor.config` for complete configuration options including:
 - Check intervals and timeouts
-- Alert rules and thresholds  
+- Alert rules and thresholds
 - Notification channels
 - SLA objectives
 - Dashboard settings
@@ -349,7 +349,7 @@ end.
 
 The monitoring system is designed for minimal performance impact:
 - Health checks: ~1ms per check
-- Metrics collection: ~2ms per collection  
+- Metrics collection: ~2ms per collection
 - Memory overhead: ~50MB for full monitoring
 - CPU usage: <1% of system resources
 
@@ -392,7 +392,7 @@ rebar3 eunit --module=erlmcp_monitor_test
 
 The test suite covers:
 - Monitor startup and configuration
-- Health check functionality  
+- Health check functionality
 - Metrics collection
 - Alert rule management
 - Dashboard operations

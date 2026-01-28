@@ -61,7 +61,7 @@ end
 ## Available Capabilities
 
 ### Resources
-- `subscribe` - Clients can subscribe to resource updates  
+- `subscribe` - Clients can subscribe to resource updates
 - `listChanged` - Server sends notifications when resource list changes
 
 ### Tools
@@ -103,10 +103,10 @@ extract_client_capabilities(Params :: map() | undefined) -> #mcp_client_capabili
 validate_protocol_version(Version :: binary()) -> ok | {error, binary()}
 
 %% Validate capability exists
-validate_capability(Caps :: #mcp_server_capabilities{}, 
+validate_capability(Caps :: #mcp_server_capabilities{},
                    Capability :: atom()) -> ok | {error, atom()}
 
-%% Validate feature within capability  
+%% Validate feature within capability
 validate_feature(Caps :: #mcp_server_capabilities{},
                 Capability :: atom(),
                 Feature :: atom()) -> ok | {error, atom()}
@@ -116,9 +116,9 @@ validate_feature(Caps :: #mcp_server_capabilities{},
 
 ```erlang
 %% Serialize capabilities to JSON map
-capability_to_map(#mcp_server_capabilities{} | 
-                  #mcp_resources_capability{} | 
-                  #mcp_tools_capability{} | 
+capability_to_map(#mcp_server_capabilities{} |
+                  #mcp_resources_capability{} |
+                  #mcp_tools_capability{} |
                   ...) -> map()
 
 %% Serialize client capabilities to JSON
@@ -140,7 +140,7 @@ client_capabilities_from_map(map()) -> #mcp_client_capabilities{}
 erlmcp_capabilities:validate_capability(Caps, invalid_cap)
 -> {error, unknown_capability}
 
-%% Unsupported protocol version  
+%% Unsupported protocol version
 erlmcp_capabilities:validate_protocol_version(<<"1.0.0">>)
 -> {error, <<"Unsupported protocol version">>}
 
@@ -172,12 +172,12 @@ start_server() ->
 ```erlang
 use_resources(Client) ->
     {ok, InitResponse} = erlmcp_client:initialize(Client, #mcp_client_capabilities{}),
-    
+
     %% Parse server capabilities
     ServerCaps = erlmcp_capabilities:server_capabilities_from_map(
         maps:get(<<"capabilities">>, InitResponse)
     ),
-    
+
     %% Only list resources if capability is advertised
     case erlmcp_capabilities:validate_capability(ServerCaps, resources) of
         ok ->
@@ -193,11 +193,11 @@ use_resources(Client) ->
 ```erlang
 maybe_subscribe_to_resource(Client, Uri) ->
     {ok, InitResponse} = erlmcp_client:initialize(Client, #mcp_client_capabilities{}),
-    
+
     ServerCaps = erlmcp_capabilities:server_capabilities_from_map(
         maps:get(<<"capabilities">>, InitResponse)
     ),
-    
+
     case erlmcp_capabilities:validate_feature(ServerCaps, resources, subscribe) of
         ok ->
             erlmcp_client:subscribe_to_resource(Client, Uri),
@@ -216,20 +216,20 @@ maybe_subscribe_to_resource(Client, Uri) ->
 test_capability_negotiation() ->
     %% Build capabilities
     Caps = erlmcp_capabilities:build_server_capabilities(),
-    
+
     %% Verify they serialize correctly
     Map = erlmcp_capabilities:capability_to_map(Caps),
     RestoredCaps = erlmcp_capabilities:server_capabilities_from_map(Map),
-    
+
     %% Validate each capability
     ok = erlmcp_capabilities:validate_capability(RestoredCaps, resources),
     ok = erlmcp_capabilities:validate_capability(RestoredCaps, tools),
     ok = erlmcp_capabilities:validate_capability(RestoredCaps, prompts),
-    
+
     %% Validate features
     ok = erlmcp_capabilities:validate_feature(RestoredCaps, resources, subscribe),
     ok = erlmcp_capabilities:validate_feature(RestoredCaps, tools, listChanged),
-    
+
     io:format("All capability tests passed~n").
 ```
 

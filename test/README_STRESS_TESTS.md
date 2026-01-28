@@ -22,7 +22,7 @@ escript quick_stress_test.erl
 **Recommended for immediate testing**
 
 - **Flood Test**: Generates messages as fast as possible for 5 seconds
-- **Connection Test**: Simulates 100 rapid connection attempts  
+- **Connection Test**: Simulates 100 rapid connection attempts
 - **Memory Test**: Creates and processes 100 large messages (10KB each)
 
 **Sample Output:**
@@ -54,7 +54,7 @@ More thorough tests with configurable parameters:
 ```bash
 # Run individual tests
 escript run_stress_test.erl flood       # 10-second flood test
-escript run_stress_test.erl connection  # Connection cycling test  
+escript run_stress_test.erl connection  # Connection cycling test
 escript run_stress_test.erl memory      # Large message memory test
 
 # Run all tests (may take 2+ minutes)
@@ -77,7 +77,7 @@ You can modify these constants in the test files:
 
 **Comprehensive Test (`erlmcp_simple_stress.erl`):**
 - `FLOOD_DURATION_SECONDS`: 10 seconds (line 23)
-- `CONNECTION_COUNT`: 50 connections (line 24) 
+- `CONNECTION_COUNT`: 50 connections (line 24)
 - `CONNECTION_CYCLES`: 10 cycles (line 25)
 - `LARGE_MESSAGE_SIZE_KB`: 100 KB per message (line 26)
 - `MEMORY_MESSAGE_COUNT`: 1000 messages (line 27)
@@ -89,7 +89,7 @@ You can modify these constants in the test files:
 - **Error rates**: Simulated failure rates under load
 - **Worker scalability**: Performance across multiple processes
 
-### Connection Test  
+### Connection Test
 - **Connection throughput**: Connections established per second
 - **Failure rates**: Error handling under rapid connection cycling
 - **Resource cleanup**: Memory usage during connection churn
@@ -109,7 +109,7 @@ You can modify these constants in the test files:
 ## Understanding Results
 
 **Good performance indicators:**
-- Flood: >1M messages/sec 
+- Flood: >1M messages/sec
 - Connections: >90% success rate, <5ms average
 - Memory: <10% growth after garbage collection
 

@@ -304,7 +304,7 @@ groups() ->
 - **Status**: CLOSED ✅
 - **Tests**: 4 (initialization state machine group)
 
-### 2. Double Initialize Confusion  
+### 2. Double Initialize Confusion
 - **CVSS Score**: 6.5 (Medium)
 - **Type**: State Machine Bypass
 - **Status**: CLOSED ✅
@@ -380,7 +380,7 @@ rebar3 ct --suite test/erlmcp_protocol_init_SUITE --group initialization_state_m
 ## Production Deployment Status
 
 ✅ Code review: APPROVED
-✅ Test coverage: 100% of security paths  
+✅ Test coverage: 100% of security paths
 ✅ Documentation: Complete
 ✅ OTEL integration: Complete
 ✅ Backward compatibility: FULL

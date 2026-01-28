@@ -240,7 +240,7 @@ Analyses = [erlmcp_trace_analyzer:analyze_trace(TId) || TId <- TraceIds].
 ```erlang
 monitor_trace_performance(TraceId) ->
     {ok, Analysis} = erlmcp_trace_analyzer:analyze_trace(TraceId),
-    
+
     % Extract key metrics for dashboard
     Metrics = #{
         performance_score => Analysis#trace_analysis.performance_score,
@@ -249,7 +249,7 @@ monitor_trace_performance(TraceId) ->
         anomaly_count => length(Analysis#trace_analysis.anomalies),
         bottleneck_count => length(Analysis#trace_analysis.bottlenecks)
     },
-    
+
     % Send to monitoring system
     send_to_dashboard(Metrics).
 ```
@@ -259,19 +259,19 @@ monitor_trace_performance(TraceId) ->
 ```erlang
 check_trace_health(TraceId) ->
     {ok, Analysis} = erlmcp_trace_analyzer:analyze_trace(TraceId),
-    
+
     % Check for critical issues
     CriticalAnomalies = [A || A <- Analysis#trace_analysis.anomalies,
                              maps:get(severity, A) =:= critical],
-    
+
     case {Analysis#trace_analysis.performance_score, CriticalAnomalies} of
-        {Score, []} when Score > 80 -> 
+        {Score, []} when Score > 80 ->
             ok; % Healthy trace
-        {Score, []} when Score > 50 -> 
+        {Score, []} when Score > 50 ->
             {warning, low_performance};
-        {_, CriticalAnomalies} when length(CriticalAnomalies) > 0 -> 
+        {_, CriticalAnomalies} when length(CriticalAnomalies) > 0 ->
             {alert, critical_anomalies};
-        _ -> 
+        _ ->
             {alert, poor_performance}
     end.
 ```
@@ -282,18 +282,18 @@ check_trace_health(TraceId) ->
 detect_performance_regression(CurrentTraceId, BaselineTraceId) ->
     {ok, Current} = erlmcp_trace_analyzer:analyze_trace(CurrentTraceId),
     {ok, Baseline} = erlmcp_trace_analyzer:analyze_trace(BaselineTraceId),
-    
+
     CurrentScore = Current#trace_analysis.performance_score,
     BaselineScore = Baseline#trace_analysis.performance_score,
-    
+
     ScoreRegression = BaselineScore - CurrentScore,
-    
+
     case ScoreRegression of
-        Regression when Regression > 20 -> 
+        Regression when Regression > 20 ->
             {regression_detected, critical, ScoreRegression};
-        Regression when Regression > 10 -> 
+        Regression when Regression > 10 ->
             {regression_detected, moderate, ScoreRegression};
-        _ -> 
+        _ ->
             no_regression
     end.
 ```
@@ -323,7 +323,7 @@ schedule_trace_analysis() ->
     % Analyze traces older than 5 minutes
     Cutoff = erlang:system_time(microsecond) - 300000000,
     CompletedTraces = erlmcp_storage:get_completed_traces_before(Cutoff),
-    
+
     [erlmcp_trace_analyzer:analyze_trace(TId) || TId <- CompletedTraces].
 ```
 
@@ -354,18 +354,18 @@ Extend the analyzer for domain-specific analysis:
 ```erlang
 analyze_database_performance(TraceId) ->
     {ok, Analysis} = erlmcp_trace_analyzer:analyze_trace(TraceId),
-    
+
     % Filter for database-related bottlenecks
     DbBottlenecks = [B || B <- Analysis#trace_analysis.bottlenecks,
                          is_database_operation(maps:get(operation, B))],
-    
+
     % Custom database performance metrics
     calculate_db_metrics(DbBottlenecks).
 
 is_database_operation(Operation) ->
     DbKeywords = ["SELECT", "INSERT", "UPDATE", "DELETE", "QUERY"],
-    lists:any(fun(Keyword) -> 
-        string:find(Operation, Keyword) =/= nomatch 
+    lists:any(fun(Keyword) ->
+        string:find(Operation, Keyword) =/= nomatch
     end, DbKeywords).
 ```
 

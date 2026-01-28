@@ -946,4 +946,3 @@ This manifest documents **400+ files** across **67 directories** in the erlmcp w
 **Last Updated**: 2026-01-26
 **Manifest Version**: 1.0
 **Status**: COMPLETE
-

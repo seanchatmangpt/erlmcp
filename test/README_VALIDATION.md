@@ -6,7 +6,7 @@ This comprehensive validation test suite ensures that the ErlMCP system is produ
 
 - **Integration Tests** - End-to-end system functionality validation
 - **Load Tests** - High concurrency and throughput testing
-- **Performance Tests** - Response time and resource usage benchmarks  
+- **Performance Tests** - Response time and resource usage benchmarks
 - **Memory Tests** - Memory leak detection and stability validation
 - **Health Tests** - System monitoring and recovery validation
 
@@ -84,7 +84,7 @@ Comprehensive test orchestration and reporting:
 % Run all tests
 erl -pa ebin -s validation_runner run_all_tests
 
-% Run performance validation only  
+% Run performance validation only
 erl -pa ebin -s validation_runner run_performance_validation
 
 % Run with custom options
@@ -101,7 +101,7 @@ User-friendly wrapper for running validation tests:
 
 # Individual test types
 ./test/run_validation.sh --integration
-./test/run_validation.sh --load  
+./test/run_validation.sh --load
 ./test/run_validation.sh --performance
 ./test/run_validation.sh --memory
 ./test/run_validation.sh --health
@@ -125,7 +125,7 @@ The validation suite enforces these production readiness criteria:
 - ✅ System recovers gracefully from failures
 - ✅ MCP protocol compliance is maintained
 
-### Performance Requirements  
+### Performance Requirements
 - ✅ Handle 1000+ concurrent connections
 - ✅ Process 1000+ messages per second
 - ✅ Response times P95 < 100ms
@@ -155,7 +155,7 @@ Key configuration constants used across the test suites:
 -define(MESSAGE_BURST_SIZE, 100).       % Messages in burst tests
 -define(CONCURRENT_CLIENTS, 50).        % Concurrent test clients
 
-% Load test configuration  
+% Load test configuration
 -define(MAX_CONCURRENT_CONNECTIONS, 1000).    % Maximum connections
 -define(HIGH_THROUGHPUT_TARGET, 1000).        % Target msg/sec
 -define(LOAD_TEST_DURATION, 300000).          % 5 minute load tests
@@ -217,7 +217,7 @@ chmod +x ./test/run_validation.sh
 If performance tests fail, check:
 
 1. **System Resources** - Ensure adequate CPU, memory, and file descriptors
-2. **Network Configuration** - Check localhost connectivity and port availability  
+2. **Network Configuration** - Check localhost connectivity and port availability
 3. **Erlang VM Settings** - Verify appropriate VM flags for performance
 4. **Concurrent Limits** - Check system limits for processes and connections
 
@@ -235,17 +235,17 @@ Example new test case:
 ```erlang
 test_new_feature_validation(Config) ->
     ct:pal("Testing new feature validation"),
-    
+
     % Test setup
     ServerId = new_feature_test_server,
     {ok, _ServerPid} = erlmcp:start_server(ServerId, #{}),
-    
+
     % Test execution
     Result = test_new_feature(ServerId),
-    
+
     % Validation
     ?assertEqual(expected_result, Result),
-    
+
     % Cleanup
     ok = erlmcp:stop_server(ServerId),
     Config.

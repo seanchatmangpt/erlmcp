@@ -406,4 +406,3 @@ The erlmcp team has built a solid, well-engineered implementation. The issues id
 ---
 
 *For questions about this audit, refer to the appropriate document based on your role and time available.*
-

@@ -97,7 +97,7 @@ Two comprehensive test suites created:
 
 ### 1. erlmcp_gap30_protocol_version_tests.erl (15 test cases)
 - Supported version validation
-- Unsupported version error handling  
+- Unsupported version error handling
 - Error code verification (-32003)
 - Error message verification
 - Error data structure validation

@@ -249,7 +249,7 @@ The ErlMCP system now has **enterprise-grade observability and testing infrastru
 4. **Advanced analytics** - Regression detection, anomaly detection, bottleneck analysis
 5. **Professional reporting** - Interactive dashboards and multi-format exports
 
-**We have achieved the mission: We ONLY trust spans, traces, and test results!** 
+**We have achieved the mission: We ONLY trust spans, traces, and test results!**
 
 Every aspect of the system is now measurable, traceable, and validated through comprehensive testing. The infrastructure provides complete confidence in system behavior, performance, and resilience.
 

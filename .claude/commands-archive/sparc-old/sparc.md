@@ -45,7 +45,6 @@ use new_task for each new task as a sub-task.
 
 ## Available Tools
 
-
 ## Usage
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)

@@ -459,4 +459,3 @@ For questions about:
 ✅ Timeline provided
 ✅ Team assignments suggested
 ⏳ Awaiting approval to proceed
-

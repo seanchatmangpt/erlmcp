@@ -3,8 +3,8 @@
 ## Overview
 Successfully implemented capability negotiation for MCP 2025-11-25 compliance. The server now advertises capabilities in initialize responses, and clients can validate server capabilities before using features.
 
-**Status**: ✅ COMPLETE  
-**Completion Date**: 2026-01-27  
+**Status**: ✅ COMPLETE
+**Completion Date**: 2026-01-27
 **Lines of Code**: 726 lines (Module + Tests)
 
 ---
@@ -32,7 +32,7 @@ New module handling all capability negotiation logic.
 - Proper feature flag handling (subscribe, listChanged)
 - Round-trip serialization/deserialization
 
-### 2. **Updated erlmcp.hrl** 
+### 2. **Updated erlmcp.hrl**
 Enhanced capability record definitions:
 
 ```erlang
@@ -318,7 +318,7 @@ This implementation establishes the foundation for:
 ## Acceptance Criteria - ALL MET ✅
 
 - [x] erlmcp.hrl has complete capability records
-- [x] Server advertises capabilities in initialize response  
+- [x] Server advertises capabilities in initialize response
 - [x] Client can extract and validate capabilities
 - [x] 25+ tests with 90%+ coverage on capability code
 - [x] Error handling for capability mismatch
@@ -328,5 +328,5 @@ This implementation establishes the foundation for:
 
 ---
 
-**Implementation Status**: PRODUCTION READY  
+**Implementation Status**: PRODUCTION READY
 **Quality Level**: EXCELLENT (40+ comprehensive tests, full type coverage, excellent error handling)

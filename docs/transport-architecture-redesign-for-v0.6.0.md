@@ -15,7 +15,7 @@ erlmcp_sup (application supervisor - one_for_all)
     │   └── [erlmcp_server instances...] ✅
     └── erlmcp_transport_sup (one_for_one) ✅
         ├── erlmcp_transport_stdio_new (gen_server) ⚠️ (needs standardization)
-        ├── erlmcp_transport_tcp (gen_server) ⚠️ (needs refactoring)  
+        ├── erlmcp_transport_tcp (gen_server) ⚠️ (needs refactoring)
         └── erlmcp_transport_http (gen_server) ⚠️ (needs refactoring)
 ```
 
@@ -54,26 +54,26 @@ Building on the OTP supervision foundation from Phase 2, Phase 3 aims to:
 -module(erlmcp_transport).
 
 %% Core transport behavior
--callback init(TransportId :: atom(), Config :: map()) -> 
+-callback init(TransportId :: atom(), Config :: map()) ->
     {ok, State :: term()} | {error, Reason :: term()}.
 
--callback send(State :: term(), Data :: iodata()) -> 
+-callback send(State :: term(), Data :: iodata()) ->
     ok | {error, Reason :: term()}.
 
 -callback close(State :: term()) -> ok.
 
 %% Optional callbacks for advanced features
--callback get_info(State :: term()) -> 
+-callback get_info(State :: term()) ->
     #{type => atom(), status => atom(), peer => term()}.
 
--callback handle_transport_call(Request :: term(), State :: term()) -> 
-    {reply, Reply :: term(), NewState :: term()} | 
+-callback handle_transport_call(Request :: term(), State :: term()) ->
+    {reply, Reply :: term(), NewState :: term()} |
     {error, Reason :: term()}.
 
 -optional_callbacks([get_info/1, handle_transport_call/2]).
 
 %% Standard message format all transports send to registry
--type transport_message() :: 
+-type transport_message() ::
     {transport_data, Data :: binary()} |
     {transport_connected, Info :: map()} |
     {transport_disconnected, Reason :: term()} |
@@ -103,7 +103,7 @@ All transports follow this pattern:
 init([TransportId, Config]) ->
     process_flag(trap_exit, true),
     ServerId = maps:get(server_id, Config, undefined),
-    
+
     case transport_init(Config) of
         {ok, TransportState} ->
             State = #state{
@@ -112,11 +112,11 @@ init([TransportId, Config]) ->
                 config = Config,
                 connection = TransportState
             },
-            
+
             %% Register with registry
             TransportConfig = Config#{type => ?TRANSPORT_TYPE},
             case erlmcp_registry:register_transport(TransportId, self(), TransportConfig) of
-                ok -> 
+                ok ->
                     logger:info("Transport ~p started and registered", [TransportId]),
                     {ok, State};
                 {error, Reason} ->
@@ -131,7 +131,7 @@ init([TransportId, Config]) ->
 handle_info({mcp_response, _ServerId, Data}, State) ->
     case send_data(Data, State) of
         {ok, NewState} -> {noreply, NewState};
-        {error, Reason} -> 
+        {error, Reason} ->
             notify_error(transport_send_failed, Reason, State),
             {noreply, State}
     end;
@@ -141,7 +141,7 @@ handle_info({transport_data_received, Data}, State) ->
     %% Route to server via registry
     case State#state.server_id of
         undefined ->
-            logger:warning("Transport ~p received data but no server bound", 
+            logger:warning("Transport ~p received data but no server bound",
                           [State#state.transport_id]);
         ServerId ->
             erlmcp_registry:route_to_server(ServerId, State#state.transport_id, Data)
@@ -169,7 +169,7 @@ erlmcp_registry:route_to_server(ServerId, TransportId, IncomingData)
 %% Message routing FROM server (via handle_info)
 Transport receives: {mcp_response, ServerId, OutgoingData}
 
-%% Binding management  
+%% Binding management
 erlmcp_registry:bind_transport_to_server(TransportId, ServerId)
 ```
 
@@ -181,7 +181,7 @@ erlmcp_registry:bind_transport_to_server(TransportId, ServerId)
 
 **Key Features**:
 - Registry-integrated ✅
-- Gen_server architecture ✅  
+- Gen_server architecture ✅
 - Stdin reader process management ✅
 - Needs: Standard behavior interface conformance
 
@@ -193,7 +193,7 @@ erlmcp_registry:bind_transport_to_server(TransportId, ServerId)
 %% Standardize init/2 callback
 init(TransportId, Config) ->
     % Current implementation already close to standard
-    
+
 %% Add get_info/1 callback
 get_info(State) ->
     #{
@@ -232,11 +232,11 @@ get_info(State) ->
 %% Standard init with registry integration
 init([TransportId, Config]) ->
     process_flag(trap_exit, true),
-    
+
     Host = maps:get(host, Config),
     Port = maps:get(port, Config),
     ServerId = maps:get(server_id, Config, undefined),
-    
+
     State = #state{
         transport_id = TransportId,
         server_id = ServerId,
@@ -244,11 +244,11 @@ init([TransportId, Config]) ->
         host = Host,
         port = Port
     },
-    
+
     %% Register with registry first
     TransportConfig = Config#{type => tcp},
     ok = erlmcp_registry:register_transport(TransportId, self(), TransportConfig),
-    
+
     %% Then attempt connection
     self() ! connect,
     {ok, State}.
@@ -284,7 +284,7 @@ init([TransportId, Config]) ->
 init([TransportId, Config]) ->
     Url = maps:get(url, Config),
     Headers = maps:get(headers, Config, []),
-    
+
     State = #state{
         transport_id = TransportId,
         server_id = maps:get(server_id, Config),
@@ -294,11 +294,11 @@ init([TransportId, Config]) ->
         http_options = build_http_options(Config),
         request_options = build_request_options(Config)
     },
-    
+
     %% Register with registry
     TransportConfig = Config#{type => http},
     ok = erlmcp_registry:register_transport(TransportId, self(), TransportConfig),
-    
+
     {ok, State}.
 ```
 
@@ -313,7 +313,7 @@ init([TransportId, Config]) ->
 
 start_child(TransportId, Type, Config) ->
     Module = transport_module(Type),
-    
+
     ChildSpec = #{
         id => TransportId,
         start => {Module, start_link, [TransportId, Config]},
@@ -322,14 +322,14 @@ start_child(TransportId, Type, Config) ->
         type => worker,
         modules => [Module]
     },
-    
+
     case supervisor:start_child(?MODULE, ChildSpec) of
         {ok, TransportPid} ->
-            logger:info("Started transport ~p (~p) with pid ~p", 
+            logger:info("Started transport ~p (~p) with pid ~p",
                        [TransportId, Type, TransportPid]),
             {ok, TransportPid};
         {error, _} = Error ->
-            logger:error("Failed to start transport ~p (~p): ~p", 
+            logger:error("Failed to start transport ~p (~p): ~p",
                         [TransportId, Type, Error]),
             Error
     end.
@@ -350,7 +350,7 @@ transport_module(http) -> erlmcp_transport_http.
 handle_info({'DOWN', _MonitorRef, process, Pid, Reason}, State) ->
     case maps:get(Pid, State#registry_state.monitors, undefined) of
         {TransportId, transport} ->
-            logger:warning("Transport ~p (pid ~p) died: ~p", 
+            logger:warning("Transport ~p (pid ~p) died: ~p",
                           [TransportId, Pid, Reason]),
             NewState = cleanup_transport(TransportId, Pid, State),
             {noreply, NewState};
@@ -378,7 +378,7 @@ handle_info({'DOWN', _MonitorRef, process, Pid, Reason}, State) ->
     test_mode => false  %% Optional stdio-specific
 }
 
-%% TCP transport  
+%% TCP transport
 #{
     type => tcp,
     server_id => my_server,
@@ -434,7 +434,7 @@ validate_transport_config(#{type := http} = Config) ->
 {ok, Pid} = erlmcp_stdio_server:start_link(Options),
 erlmcp_stdio_server:add_tool(Pid, Name, Handler).
 
-%% New approach  
+%% New approach
 {ok, ServerPid} = erlmcp:start_server(my_server, ServerConfig),
 {ok, TransportPid} = erlmcp:start_transport(my_transport, stdio, TransportConfig),
 ok = erlmcp:bind_transport_to_server(my_transport, my_server),
@@ -488,7 +488,7 @@ ok = erlmcp:add_tool(my_server, Name, Handler).
 ]).
 
 %% Enhanced transport creation with validation
--spec start_transport(transport_id(), transport_type(), map()) -> 
+-spec start_transport(transport_id(), transport_type(), map()) ->
     {ok, pid()} | {error, term()}.
 start_transport(TransportId, Type, Config) ->
     %% Validate configuration first
@@ -570,7 +570,7 @@ start_http_setup(ServerId, ServerConfig, HttpConfig) ->
 
 ### Step 1: Standardize Transport Behavior ✅ (Partially Done)
 - [x] Create enhanced `erlmcp_transport.erl` behavior interface
-- [x] Define standard message formats  
+- [x] Define standard message formats
 - [x] Document transport gen_server patterns
 - [ ] Add transport validation functions
 
@@ -586,7 +586,7 @@ start_http_setup(ServerId, ServerConfig, HttpConfig) ->
 - [ ] Add reconnection logic with supervisor integration
 - [ ] Add comprehensive error handling and recovery
 
-### Step 4: Refactor erlmcp_transport_http  
+### Step 4: Refactor erlmcp_transport_http
 - [ ] Simplify architecture for MCP use cases
 - [ ] Implement registry integration
 - [ ] Add proper error handling and timeouts
@@ -606,7 +606,7 @@ start_http_setup(ServerId, ServerConfig, HttpConfig) ->
 
 ### Step 7: Remove Legacy Components
 - [ ] Remove `erlmcp_stdio_server.erl`
-- [ ] Remove `erlmcp_stdio.erl` 
+- [ ] Remove `erlmcp_stdio.erl`
 - [ ] Remove `erlmcp_transport_stdio.erl` (old version)
 - [ ] Update all references and dependencies
 
@@ -625,7 +625,7 @@ start_http_setup(ServerId, ServerConfig, HttpConfig) ->
 - [ ] No code duplication between transport implementations
 - [ ] Consistent error handling and recovery across transports
 
-### Reliability Success  
+### Reliability Success
 - [ ] Transport failures don't affect other transports
 - [ ] Transport failures don't bring down servers
 - [ ] Automatic recovery from transport failures
@@ -680,16 +680,16 @@ The standardized architecture makes new transports straightforward:
 %% Standard pattern, transport-specific implementation
 init([TransportId, Config]) ->
     %% WebSocket-specific initialization
-    %% Registry registration  
+    %% Registry registration
     %% Standard state setup
-    
+
 %% Follows all standard patterns established in Phase 3
 ```
 
 ### Advanced Features
 - Transport multiplexing (multiple connections per transport)
 - Transport load balancing
-- Transport-specific metrics and monitoring  
+- Transport-specific metrics and monitoring
 - Custom transport authentication and security
 
 ## Conclusion
@@ -698,7 +698,7 @@ Phase 3 completes the OTP supervision architecture by standardizing the transpor
 
 The result is a clean, extensible transport architecture that:
 - Integrates seamlessly with OTP supervision
-- Provides consistent APIs across all transport types  
+- Provides consistent APIs across all transport types
 - Enables easy addition of new transport types
 - Maintains excellent performance and reliability
 - Sets the foundation for long-term project growth

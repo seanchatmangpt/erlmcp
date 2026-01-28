@@ -614,4 +614,3 @@ test_cascading_backpressure() ->
 - 50% reduction in MTTR (Mean Time To Recovery)
 - 99.99% availability (5.26 minutes downtime/year)
 - Automatic recovery for 85% of faults
-

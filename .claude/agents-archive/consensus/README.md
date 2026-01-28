@@ -110,7 +110,7 @@ await this.mcpTools.task_orchestrate({
 Agents coordinate with the broader swarm infrastructure:
 
 - **Node Discovery**: Integration with swarm node discovery mechanisms
-- **Health Monitoring**: Consensus participation in distributed health checks  
+- **Health Monitoring**: Consensus participation in distributed health checks
 - **Load Balancing**: Dynamic load distribution across consensus participants
 - **Fault Recovery**: Coordinated recovery from node and network failures
 
@@ -140,7 +140,7 @@ const securityManager = new SecurityManager();
 await securityManager.generateDistributedKeys(participants, threshold);
 
 const secureConsensus = new SecureConsensusWrapper(
-  byzantineConsensus, 
+  byzantineConsensus,
   securityManager
 );
 ```

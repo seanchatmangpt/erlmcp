@@ -198,7 +198,7 @@ reset/0                         % Reset to closed
 ```erlang
 handle_message(ClientId, Message, State) ->
     TimeNowMs = erlang:system_time(millisecond),
-    
+
     case erlmcp_backpressure:check_rate_limit(ClientId, TimeNowMs) of
         {error, rate_limited, RetryAfterMs} ->
             send_error(ClientId, {rate_limited, RetryAfterMs});
@@ -211,9 +211,9 @@ handle_message(ClientId, Message, State) ->
 
 ```erlang
 process_message(HandlerName, Message) ->
-    QueueStats = #{current_depth => get_queue_depth(), 
+    QueueStats = #{current_depth => get_queue_depth(),
                    max_capacity => get_queue_capacity()},
-    
+
     case erlmcp_backpressure:check_handler_queue(HandlerName, QueueStats) of
         {error, backpressure_signal, _} ->
             {error, backpressure, HandlerName};
@@ -341,4 +341,3 @@ Saturate handler queue to >80% capacity and verify:
 **Document Version**: 1.0
 **Date**: 2026-01-27
 **Status**: Production Ready
-

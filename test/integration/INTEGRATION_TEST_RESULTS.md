@@ -78,7 +78,6 @@
 - **Root Cause:** See detailed logs in `_build/test/logs/` for analysis
 - **Recommended Action:** Review test implementation and mock service setup
 
-
 ## CI/CD Integration
 
 Test execution script: `scripts/run_integration_tests.sh`
@@ -103,4 +102,3 @@ Detailed HTML reports available in:
 
 View the latest CT run:
 - `_build/test/logs/ct_run.*/index.html`
-

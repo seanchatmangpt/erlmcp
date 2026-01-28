@@ -613,4 +613,3 @@ The erlmcp Erlang/OTP implementation has successfully achieved **production-read
 **Report Compiled**: January 27, 2026
 **Reviewer**: MCP Compliance Auditor (Agent 3)
 **Signature**: Compliance Verified ✅
-

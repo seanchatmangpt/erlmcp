@@ -31,7 +31,7 @@ flowchart TB
     - stdio (erlmcp_transport_stdio_new)
     - tcp (erlmcp_transport_tcp)
     - http (erlmcp_transport_http)
-    ]] 
+    ]]
 
     serverSup --> servers[[Server instances]]
     clientSup --> clients[[Client instances]]

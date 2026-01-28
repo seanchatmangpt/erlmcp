@@ -340,7 +340,7 @@ transport_tcp_4kb_results.csv   (Graph-ready data)
 
 **SCOPE:** TCP transport ceiling optimization (4KB payloads, 95K msg/sec target)
 
-**DELIVERY:** 
+**DELIVERY:**
 - ✓ Production-ready code (1,432 LOC, 398+325+709)
 - ✓ Reproducible benchmark (325 LOC, 90-second execution)
 - ✓ Comprehensive tests (709 LOC, 22 test cases)

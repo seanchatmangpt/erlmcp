@@ -411,4 +411,3 @@ The single deferred item (App Sandboxing) is optional and non-blocking, suitable
 **Signed**: MCP Specification Compliance Auditor
 **Date**: January 27, 2026
 **Version**: MCP 2025-11-25 Compliance Audit v1.0
-
