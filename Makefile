@@ -240,7 +240,8 @@ validate-test:
 	@echo "  Target: 0 test failures (EUnit + CT)"
 	@echo "  Action: Running EUnit + CT..."
 	@echo ""
-	@EUNIT_PASS=1; \
+	@set -o pipefail; \
+	EUNIT_PASS=1; \
 	CT_PASS=1; \
 	echo "  Running EUnit..."; \
 	if ! rebar3 eunit 2>&1 | tee /tmp/erlmcp_eunit.log; then \
@@ -277,7 +278,7 @@ validate-coverage:
 	@echo "  Action: Generating coverage report..."
 	@echo ""
 	@if rebar3 cover 2>&1 | tee /tmp/erlmcp_coverage.log; then \
-		COVERAGE=$$(grep -oP '\d+%' /tmp/erlmcp_coverage.log | head -1 | sed 's/%//'); \
+		COVERAGE=$$(grep -o '[0-9]\+%' /tmp/erlmcp_coverage.log | head -1 | sed 's/%//'); \
 		if [ -z "$$COVERAGE" ]; then COVERAGE=0; fi; \
 		echo ""; \
 		echo "  Measured coverage: $$COVERAGE%"; \

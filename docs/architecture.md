@@ -1283,6 +1283,184 @@ Implement the enhanced transport behavior:
 
 ---
 
+## Summary: v2.0.0 Architecture Highlights
+
+### What's New in v2.0.0
+
+**1. Umbrella Application Structure**
+- Migrated from monolithic app to 4 independent OTP applications
+- Clear separation of concerns: core, transports, observability, quality
+- Optional TCPS feature - can be excluded for minimal deployments
+- Focused dependencies per app - only declare what you need
+
+**2. Enhanced Supervision Architecture**
+- `one_for_one` strategy throughout - no cascading failures
+- Bulkhead pattern - failures isolated within app boundaries
+- Observability failures never affect core MCP protocol
+- Transport independence - TCP crash doesn't affect HTTP
+
+**3. Production-Grade Libraries**
+- **gproc** - Distributed registry with automatic process monitoring
+- **gun** - HTTP/2 support with multiplexing and connection reuse
+- **ranch** - Production TCP pooling and supervision
+- **poolboy** - Efficient worker pool management
+- ~770 LOC reduction - less custom code, more reliability
+
+**4. Advanced Features**
+- Multi-level caching (L1: ETS, L2: Mnesia, L3: External)
+- OpenTelemetry integration with automatic span injection
+- SHA-256 receipt chains for immutable audit trails
+- Real-time dashboard with WebSocket broadcasting
+- Chaos engineering framework for resilience testing
+- 6 transport types: STDIO, TCP, HTTP/2, WebSocket, SSE, GraphQL
+
+**5. Quality Enforcement (TCPS)**
+- 8 sequential quality gates with stop-the-line authority
+- SHACL ontology validation for RDF/Turtle
+- Kanban WIP limits and Heijunka production leveling
+- Jidoka built-in quality with Andon events
+- SKU release management with evidence bundles
+
+### Component Count
+
+| Layer | Components | Modules |
+|-------|------------|---------|
+| **Core Protocol** | Client, Server, Registry, JSON-RPC, Sessions, Tasks | 14 |
+| **Transports** | STDIO, TCP, HTTP/2, WS, SSE, GraphQL + Behavior | 8 |
+| **Observability** | Metrics, OTEL, Receipts, Health, Recovery, Chaos | 9 |
+| **Quality System** | SHACL, Gates, Kanban, SKU, Dashboard, Metrics | 63 |
+| **TOTAL** | **94 modules across 4 apps** | **94** |
+
+### Performance Characteristics
+
+| Metric | Target | Achieved (v1.5.0 benchmarks) |
+|--------|--------|------------------------------|
+| Registry Throughput | >500K msg/s | 553K msg/s |
+| Queue Operations | >900K ops/s | 971K ops/s |
+| Pool Management | >100K ops/s | 149K ops/s |
+| Session Handling | >200K ops/s | 242K ops/s |
+| Network I/O | >40K msg/s | 43K msg/s (4KB packets) |
+| Sustained Load | >300K msg/s | 372K msg/s (60M ops/30s) |
+| Concurrent Connections | >40K | 40-50K per node |
+
+### Production Deployment Options
+
+**Minimal Deployment (Core + Transports + Observability):**
+```bash
+# Release config (rebar.config)
+{relx, [
+    {release, {erlmcp, "2.0.0"},
+     [erlmcp_core,
+      erlmcp_transports,
+      erlmcp_observability]}
+]}.
+
+# Build
+rebar3 as prod release
+
+# Result: ~50MB release, 31 modules
+```
+
+**Full Deployment (with TCPS Quality System):**
+```bash
+# Release config
+{relx, [
+    {release, {erlmcp, "2.0.0"},
+     [erlmcp_core,
+      erlmcp_transports,
+      erlmcp_observability,
+      tcps_erlmcp]}
+]}.
+
+# Build
+rebar3 as prod release
+
+# Result: ~65MB release, 94 modules
+```
+
+### Migration from v1.x to v2.0
+
+**Breaking Changes:**
+- Application structure changed from single app to umbrella
+- Module locations changed: `src/` → `apps/*/src/`
+- Application dependencies now per-app (not umbrella-level)
+- TCPS is now optional (separate app)
+
+**Migration Steps:**
+1. Update `rebar.config` dependencies to reference umbrella
+2. Change application start from `erlmcp` to `[erlmcp_core, erlmcp_transports, erlmcp_observability]`
+3. If using TCPS, add `tcps_erlmcp` to applications list
+4. Update supervision tree references (no functional changes)
+5. Run `rebar3 compile` to verify
+
+**Compatibility:**
+- ✅ API unchanged - `erlmcp_client`, `erlmcp_server` work as before
+- ✅ Transport interface unchanged - custom transports still compatible
+- ✅ Configuration format unchanged - same `sys.config` structure
+- ✅ Protocol unchanged - MCP 1.0 compliance maintained
+
+### Testing Strategy
+
+**Per-App Testing:**
+```bash
+# Test core only
+rebar3 eunit --app erlmcp_core
+
+# Test transports only
+rebar3 eunit --app erlmcp_transports
+
+# Test observability only
+rebar3 eunit --app erlmcp_observability
+
+# Test TCPS only
+rebar3 eunit --app tcps_erlmcp
+```
+
+**Integration Testing:**
+```bash
+# Test all apps together
+rebar3 eunit
+
+# Common Test (cross-app integration)
+rebar3 ct
+
+# Property-based testing
+rebar3 proper
+```
+
+**Quality Gates:**
+```bash
+# Full validation
+make check
+
+# Quality gates (if TCPS enabled)
+rebar3 tcps check-all-gates --sku=$(git rev-parse --short HEAD)
+```
+
+### Future Roadmap
+
+**v2.1.0 (Planned):**
+- [ ] Distributed clustering with gproc_dist
+- [ ] HTTP/3 transport (QUIC)
+- [ ] GraphQL subscriptions over WebSocket
+- [ ] Advanced caching strategies (LRU, TTL)
+- [ ] Circuit breaker patterns for external calls
+
+**v2.2.0 (Planned):**
+- [ ] Kubernetes operator for deployment
+- [ ] Prometheus exporter for metrics
+- [ ] Jaeger/Zipkin distributed tracing
+- [ ] gRPC transport support
+- [ ] Multi-region replication
+
+**Long-Term:**
+- [ ] WASM plugin support for custom handlers
+- [ ] GraphQL federation
+- [ ] Service mesh integration
+- [ ] AI/ML model serving via MCP
+
+---
+
 ## v1.3.0: Supervision Tree with Bulkheads (Failure Isolation)
 
 ### Problem Addressed

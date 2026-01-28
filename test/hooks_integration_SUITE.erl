@@ -429,7 +429,12 @@ hook_environment_variables_test(Config) ->
 
 ensure_dir(Dir) ->
     case filelib:ensure_dir(filename:join(Dir, "dummy")) of
-        ok -> file:make_dir(Dir);
+        ok ->
+            case file:make_dir(Dir) of
+                ok -> ok;
+                {error, eexist} -> ok;
+                Error -> Error
+            end;
         {error, eexist} -> ok;
         Error -> Error
     end.
