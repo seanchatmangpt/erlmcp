@@ -422,3 +422,120 @@ See `CONTRIBUTING.md` for development guidelines.
 ## License
 
 See `LICENSE` file.
+
+---
+
+# Automated Validation Tools
+
+## Overview
+
+Comprehensive **BLOCKING** validation scripts that enforce Lean Six Sigma quality standards with zero-defect tolerance. All scripts exit with code 1 on failure.
+
+## Core Validation Scripts
+
+### Test Runner (`test-runner.sh`)
+**BLOCKING test execution with pass rate enforcement**
+
+- Runs EUnit + Common Test suites
+- Calculates pass rate (target: ≥90%)
+- Generates JSON results
+- **EXITS 1** if pass rate < 90%
+
+```bash
+./tools/test-runner.sh
+# Or: make test-strict
+```
+
+**Outputs:**
+- `_build/test/results/test_results.json`
+- `_build/test/results/eunit_output.txt`
+- `_build/test/results/ct_output.txt`
+
+---
+
+### Benchmark Runner (`benchmark-runner.sh`)
+**Performance regression detection**
+
+- Runs 10 benchmark workloads
+- Compares to baselines in `bench/baselines/`
+- Detects regressions >10%
+- **EXITS 1** if regression detected
+
+```bash
+./tools/benchmark-runner.sh
+# Or: make benchmark-strict
+```
+
+**Outputs:**
+- `_build/test/benchmarks/benchmark_results.json`
+- `_build/test/benchmarks/regression_report.txt`
+- `bench/baselines/*.baseline`
+
+---
+
+### Coverage Checker (`coverage-checker.sh`)
+**Per-module coverage enforcement**
+
+- Runs tests with coverage
+- Checks EVERY module ≥80%
+- **EXITS 1** if any module below threshold
+
+```bash
+./tools/coverage-checker.sh
+# Or: make coverage-strict
+```
+
+**Outputs:**
+- `_build/test/coverage/coverage_report.txt`
+- `_build/test/cover/index.html`
+
+---
+
+### Quality Checker (`quality-checker.sh`)
+**Master validation script**
+
+Runs ALL checks:
+1. Compilation
+2. Unit Tests
+3. Coverage
+4. Dialyzer
+5. Xref
+
+**EXITS 1 if ANY fail**
+
+```bash
+./tools/quality-checker.sh
+# Or: make quality-strict
+```
+
+**Output:**
+- `_build/test/quality/quality_report.txt`
+
+---
+
+## Makefile Integration
+
+```bash
+make test-strict           # Tests: ≥90% pass rate
+make benchmark-strict      # Benchmarks: <10% regression
+make coverage-strict       # Coverage: ≥80% per module
+make quality-strict        # ALL checks MUST pass
+```
+
+---
+
+## Quality Thresholds
+
+| Check | Threshold | Exit on Failure |
+|-------|-----------|-----------------|
+| Tests | ≥90% pass | YES ❌ |
+| Coverage | ≥80% per module | YES ❌ |
+| Benchmarks | <10% regression | YES ❌ |
+| Dialyzer | 0 warnings | YES ❌ |
+| Xref | 0 undefined | YES ❌ |
+
+---
+
+## Full Documentation
+
+See `docs/testing/AUTOMATED_VALIDATION.md` for comprehensive guide.

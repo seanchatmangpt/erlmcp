@@ -11,12 +11,13 @@ permissions:
   id-token: write
 
 jobs:
-  validate:
-    name: Validate Release
+  pre-release-validation:
+    name: Pre-Release Validation Gate
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.extract.outputs.version }}
       is-prerelease: ${{ steps.extract.outputs.is-prerelease }}
+      validation-passed: ${{ steps.validate.outputs.passed }}
 
     steps:
       - name: Checkout code
@@ -37,9 +38,111 @@ jobs:
             echo "is-prerelease=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '26'
+          rebar3-version: '3.25'
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-otp26-${{ hashFiles('rebar.lock', 'apps/*/rebar.config') }}
+          restore-keys: |
+            ${{ runner.os }}-otp26-
+
+      - name: Run Release Blocker Check
+        id: blocker-check
+        run: |
+          chmod +x ./tools/release/release-blocker-check.sh
+
+          echo "::group::Release Blocker Check"
+          if ./tools/release/release-blocker-check.sh; then
+            echo "✓ No release blockers found"
+            echo "blockers=false" >> $GITHUB_OUTPUT
+          else
+            echo "✗ Release blockers detected"
+            echo "blockers=true" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Run Pre-Release Validator
+        id: validate
+        run: |
+          chmod +x ./tools/release/pre-release-validator.sh
+
+          echo "::group::Pre-Release Validation"
+          if ./tools/release/pre-release-validator.sh ${{ steps.extract.outputs.version }}; then
+            echo "✓ Pre-release validation passed"
+            echo "passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "✗ Pre-release validation failed"
+            echo "passed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Generate Release Gate Dashboard
+        if: always()
+        run: |
+          chmod +x ./tools/release/release-gate-dashboard.sh
+
+          echo "::group::Release Gate Dashboard"
+          ./tools/release/release-gate-dashboard.sh ${{ steps.extract.outputs.version }} || true
+          echo "::endgroup::"
+
+      - name: Generate Release Readiness Report
+        if: always()
+        run: |
+          chmod +x ./tools/release/release-readiness-report.sh
+
+          echo "::group::Release Readiness Report"
+          ./tools/release/release-readiness-report.sh ${{ steps.extract.outputs.version }} || true
+          echo "::endgroup::"
+
+      - name: Upload Validation Reports
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-validation-reports
+          path: |
+            /tmp/pre-release-validation-*.txt
+            /tmp/release-readiness-*.md
+          retention-days: 30
+
+      - name: Block Release on Validation Failure
+        if: steps.validate.outputs.passed != 'true' || steps.blocker-check.outputs.blockers == 'true'
+        run: |
+          echo "::error::Release validation failed - release blocked"
+          echo ""
+          echo "Fix all validation failures and blockers, then:"
+          echo "1. Address all RED items in validation report"
+          echo "2. Re-run: ./tools/release/pre-release-validator.sh ${{ steps.extract.outputs.version }}"
+          echo "3. Re-run: ./tools/release/release-blocker-check.sh"
+          echo "4. Push new tag when ready"
+          exit 1
+
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    needs: pre-release-validation
+    outputs:
+      version: ${{ needs.pre-release-validation.outputs.version }}
+      is-prerelease: ${{ needs.pre-release-validation.outputs.is-prerelease }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Verify tag matches version files
         run: |
-          VERSION=${{ steps.extract.outputs.version }}
+          VERSION=${{ needs.pre-release-validation.outputs.version }}
           echo "Verifying version $VERSION in source files..."
 
           # Check root rebar.config relx version
@@ -61,10 +164,30 @@ jobs:
             fi
           done
 
+  manual-approval:
+    name: Manual Release Approval
+    runs-on: ubuntu-latest
+    needs: [pre-release-validation, validate]
+    environment:
+      name: production-release
+      url: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.pre-release-validation.outputs.version }}
+
+    steps:
+      - name: Display Release Summary
+        run: |
+          echo "::notice::Release v${{ needs.pre-release-validation.outputs.version }} ready for approval"
+          echo ""
+          echo "Pre-release validation: ✓ PASSED"
+          echo "Blocker check: ✓ PASSED"
+          echo "Version: ${{ needs.pre-release-validation.outputs.version }}"
+          echo "Is prerelease: ${{ needs.pre-release-validation.outputs.is-prerelease }}"
+          echo ""
+          echo "Awaiting manual approval to proceed with release..."
+
   test:
     name: Test Suite (OTP ${{ matrix.otp-version }})
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [validate, manual-approval]
     strategy:
       matrix:
         otp-version: ['25', '26', '27']
@@ -134,7 +257,7 @@ jobs:
   build-artifacts:
     name: Build Release Artifacts
     runs-on: ubuntu-latest
-    needs: [validate, test]
+    needs: [validate, test, manual-approval]
 
     steps:
       - name: Checkout code
@@ -197,7 +320,7 @@ jobs:
   docker-build:
     name: Build Docker Image
     runs-on: ubuntu-latest
-    needs: [validate, test]
+    needs: [validate, test, manual-approval]
 
     steps:
       - name: Checkout code
@@ -240,7 +363,7 @@ jobs:
   publish-hex:
     name: Publish to Hex Package Manager
     runs-on: ubuntu-latest
-    needs: [validate, test]
+    needs: [validate, test, manual-approval]
     if: ${{ needs.validate.outputs.is-prerelease == 'false' }}
 
     steps:
@@ -274,7 +397,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [validate, build-artifacts, docker-build]
+    needs: [validate, build-artifacts, docker-build, manual-approval]
 
     steps:
       - name: Checkout code
@@ -348,7 +471,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full details."
   benchmark-release:
     name: Benchmark Release Build
     runs-on: ubuntu-latest
-    needs: [validate, build-artifacts]
+    needs: [validate, build-artifacts, manual-approval]
 
     steps:
       - name: Checkout code
@@ -390,7 +513,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full details."
   summary:
     name: Release Summary
     runs-on: ubuntu-latest
-    needs: [validate, test, build-artifacts, docker-build, github-release]
+    needs: [validate, test, build-artifacts, docker-build, github-release, manual-approval]
     if: always()
 
     steps:
@@ -406,6 +529,8 @@ See [CHANGELOG.md](CHANGELOG.md) for full details."
           Type: Umbrella Release (4 applications)
 
           Build Status:
+          ✓ Pre-Release Validation: PASSED
+          ✓ Manual Approval: APPROVED
           ✓ Validation: ${{ needs.validate.result }}
           ✓ Tests (OTP 25/26/27): ${{ needs.test.result }}
           ✓ Artifacts: ${{ needs.build-artifacts.result }}

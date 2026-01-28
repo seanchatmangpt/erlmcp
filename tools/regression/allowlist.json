@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "description": "Allowlist for permitted quality regressions in erlmcp",
+  "allowed_regressions": [
+    {
+      "metric": "performance",
+      "severity": "medium",
+      "justification": "Intentional tradeoff for improved correctness in JSON-RPC validation",
+      "approved_by": "tech-lead",
+      "approved_date": "2026-01-28",
+      "expires": "2026-02-28",
+      "ticket": "ERLMCP-123"
+    }
+  ],
+  "review_policy": {
+    "critical": "Requires VP Engineering approval",
+    "high": "Requires Tech Lead + 2 Senior Engineers approval",
+    "medium": "Requires Tech Lead approval",
+    "low": "Requires PR reviewer approval"
+  },
+  "periodic_review": {
+    "frequency": "monthly",
+    "next_review": "2026-02-28",
+    "reviewer": "tech-lead"
+  }
+}

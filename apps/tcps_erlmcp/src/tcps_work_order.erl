@@ -1016,54 +1016,69 @@ do_progress_work_order(WorkOrderId, Stage, State) ->
 do_complete_work_order(WorkOrderId, SkuId, State) ->
     case maps:find(WorkOrderId, State#state.work_orders) of
         {ok, WorkOrder} ->
-            Bucket = maps:get(bucket, WorkOrder),
-
-            %% Update work order
-            UpdatedWorkOrder = WorkOrder#{
-                status => completed,
-                completed_at => erlang:timestamp(),
-                sku_id => SkuId,
-                current_stage => published
-            },
-
-            WorkOrders = maps:put(WorkOrderId, UpdatedWorkOrder, State#state.work_orders),
-            ets:insert(?ETS_TABLE, {WorkOrderId, UpdatedWorkOrder}),
-
-            %% Remove from active
-            Active = State#state.active,
-            BucketActive = maps:get(Bucket, Active, []),
-            NewActive = maps:put(Bucket, lists:delete(WorkOrderId, BucketActive), Active),
-
-            %% Generate completion receipt
-            generate_completion_receipt(UpdatedWorkOrder, State),
-
-            %% Free Kanban WIP slot
-            notify_kanban_complete(Bucket, WorkOrderId),
-
-            %% Resolve dependencies (unblock dependent work orders)
-            do_resolve_dependency(WorkOrderId, State#state{
-                work_orders = WorkOrders,
-                active = NewActive
-            }),
-
-            %% Update Kaizen metrics
-            notify_kaizen_completion(UpdatedWorkOrder),
-
-            %% Save to ontology
-            do_save_to_ontology(WorkOrderId, State#state{
-                work_orders = WorkOrders,
-                active = NewActive
-            }),
-
-            NewState = State#state{
-                work_orders = WorkOrders,
-                active = NewActive
-            },
-
-            {ok, NewState};
+            % CRITICAL: Check quality receipts before allowing completion
+            case verify_quality_receipts_present(SkuId) of
+                {ok, all_passed} ->
+                    complete_work_order_with_receipts(WorkOrderId, SkuId, WorkOrder, State);
+                {error, {missing_receipts, Missing}} ->
+                    io:format("ERROR: Cannot complete work order - missing quality receipts: ~p~n",
+                             [Missing]),
+                    {{error, {quality_receipts_missing, Missing}}, State};
+                {error, {gates_failed, Failed}} ->
+                    io:format("ERROR: Cannot complete work order - quality gates failed: ~p~n",
+                             [Failed]),
+                    {{error, {quality_gates_failed, Failed}}, State}
+            end;
         error ->
             {{error, not_found}, State}
     end.
+
+complete_work_order_with_receipts(WorkOrderId, SkuId, WorkOrder, State) ->
+    Bucket = maps:get(bucket, WorkOrder),
+
+    %% Update work order
+    UpdatedWorkOrder = WorkOrder#{
+        status => completed,
+        completed_at => erlang:timestamp(),
+        sku_id => SkuId,
+        current_stage => published
+    },
+
+    WorkOrders = maps:put(WorkOrderId, UpdatedWorkOrder, State#state.work_orders),
+    ets:insert(?ETS_TABLE, {WorkOrderId, UpdatedWorkOrder}),
+
+    %% Remove from active
+    Active = State#state.active,
+    BucketActive = maps:get(Bucket, Active, []),
+    NewActive = maps:put(Bucket, lists:delete(WorkOrderId, BucketActive), Active),
+
+    %% Generate completion receipt
+    generate_completion_receipt(UpdatedWorkOrder, State),
+
+    %% Free Kanban WIP slot
+    notify_kanban_complete(Bucket, WorkOrderId),
+
+    %% Resolve dependencies (unblock dependent work orders)
+    do_resolve_dependency(WorkOrderId, State#state{
+        work_orders = WorkOrders,
+        active = NewActive
+    }),
+
+    %% Update Kaizen metrics
+    notify_kaizen_completion(UpdatedWorkOrder),
+
+    %% Save to ontology
+    do_save_to_ontology(WorkOrderId, State#state{
+        work_orders = WorkOrders,
+        active = NewActive
+    }),
+
+    NewState = State#state{
+        work_orders = WorkOrders,
+        active = NewActive
+    },
+
+    {ok, NewState}.
 
 do_cancel_work_order(WorkOrderId, Reason, State) ->
     case maps:find(WorkOrderId, State#state.work_orders) of
@@ -2096,6 +2111,20 @@ atom_to_binary(Atom) when is_atom(Atom) ->
     erlang:atom_to_binary(Atom);
 atom_to_binary(Binary) when is_binary(Binary) ->
     Binary.
+
+%%%=============================================================================
+%%% Internal Functions - Quality Receipt Verification
+%%%=============================================================================
+
+verify_quality_receipts_present(SkuId) ->
+    % Check if quality receipt verifier is available
+    case erlang:function_exported(tcps_quality_receipt_verifier, verify_all_gates_passed, 1) of
+        true ->
+            tcps_quality_receipt_verifier:verify_all_gates_passed(SkuId);
+        false ->
+            % Fallback: check via tcps_receipt
+            tcps_receipt:verify_quality_gates(SkuId)
+    end.
 
 %%%=============================================================================
 %%% Internal Functions - List Operations

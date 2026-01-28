@@ -1,0 +1,435 @@
+AUTO-FIX SYSTEM SUMMARY
+=======================
+Generated: 2026-01-28
+Version: 1.0.0
+Philosophy: Jidoka (自働化) - Automation with Human Intelligence
+
+OVERVIEW
+--------
+The Auto-Fix System is an automated quality enforcement framework that:
+1. Monitors quality gates (compilation, dialyzer, xref, tests, coverage)
+2. Automatically dispatches specialized fix agents for failures
+3. Tracks fix attempts and escalates to human intervention when needed
+4. Generates comprehensive reports and suggestions
+5. Implements Toyota's Jidoka principle - built-in quality with stop-the-line authority
+
+SYSTEM STATISTICS
+-----------------
+Total Lines of Code: 3,278
+Number of Components: 10
+  - 8 Executable Scripts (agents + orchestration)
+  - 2 Documentation Files (quick ref + comprehensive guide)
+
+File Sizes:
+  - orchestrator.sh: 12K (main coordinator)
+  - gate-failure-dispatcher.sh: 8.8K (quality gate monitor)
+  - type-fix-agent.sh: 8.3K (dialyzer fixes)
+  - test-fix-agent.sh: 7.7K (test fixes)
+  - syntax-fix-agent.sh: 7.2K (compilation fixes)
+  - test-coverage-agent.sh: 6.4K (coverage analysis)
+  - README.md: 5.8K (quick reference)
+  - example-usage.sh: 5.7K (usage examples)
+  - xref-fix-agent.sh: 5.2K (xref fixes)
+  - performance-agent.sh: 4.2K (performance analysis)
+  - AUTO_FIX_SYSTEM.md: 17K (comprehensive documentation)
+
+COMPONENTS
+----------
+
+1. ORCHESTRATOR (orchestrator.sh)
+   - Coordinates multiple fix agents through iterative cycles
+   - Runs all 5 quality gates in sequence
+   - Default: 5 iterations max
+   - Generates escalation reports on failure
+   - Provides interactive mode for manual control
+   - Validates fixes with clean builds
+
+2. GATE FAILURE DISPATCHER (gate-failure-dispatcher.sh)
+   - Monitors individual quality gates
+   - Tracks attempt counts per gate (max 3 attempts)
+   - Dispatches appropriate fix agent based on failure type
+   - Maintains state in logs/auto-fix/dispatcher-state.json
+   - Triggers Andon alerts (行灯) on escalation
+   - Provides status reporting
+
+3. SYNTAX FIX AGENT (syntax-fix-agent.sh)
+   - Fixes compilation errors automatically
+   - Capabilities:
+     ✅ Unused variables (prefix with _)
+     ✅ Missing exports
+     ✅ Common typos
+     ✅ Missing punctuation
+   - Limitations:
+     ❌ Complex syntax errors
+     ❌ Logic errors
+     ❌ Ambiguous syntax
+
+4. TYPE FIX AGENT (type-fix-agent.sh)
+   - Fixes Dialyzer type warnings
+   - Capabilities:
+     ✅ Add missing -spec declarations
+     ✅ Generate basic type specs
+     ✅ Update invalid specs
+   - Limitations:
+     ❌ Complex type relationships
+     ❌ Infer precise types
+     ❌ Fundamental type mismatches
+
+5. TEST FIX AGENT (test-fix-agent.sh)
+   - Fixes test failures
+   - Capabilities:
+     ✅ Update simple assertions
+     ✅ Add setup/teardown fixtures
+     ✅ Fix mock cleanup (meck:unload)
+     ✅ Detect common patterns
+   - Patterns:
+     - PATTERN_ASSERTION_MISMATCH
+     - PATTERN_SETUP_TEARDOWN
+     - PATTERN_UNDEFINED_FUNCTION
+     - PATTERN_TIMEOUT
+     - PATTERN_BADMATCH
+   - Limitations:
+     ❌ Logic errors in tests
+     ❌ Determine correct expectations
+     ❌ Fix race conditions
+
+6. COVERAGE AGENT (test-coverage-agent.sh)
+   - Analyzes coverage gaps
+   - Generates test templates for uncovered modules
+   - Creates basic test structure with placeholders
+   - Identifies low-coverage modules
+   - Limitations:
+     ❌ Cannot write meaningful test logic
+     ❌ Manual implementation required
+
+7. PERFORMANCE AGENT (performance-agent.sh)
+   - Detects performance regressions
+   - Suggests common optimizations
+   - Documents anti-patterns
+   - Provides profiling guidance
+   - Limitations:
+     ❌ Cannot auto-optimize code
+     ❌ Manual optimization required
+
+8. XREF FIX AGENT (xref-fix-agent.sh)
+   - Fixes cross-reference issues
+   - Capabilities:
+     ✅ Remove unused exports
+     ✅ Detect undefined functions
+   - Limitations:
+     ❌ Cannot resolve circular dependencies
+     ❌ Cannot add missing dependencies
+
+QUALITY GATES (EXECUTION ORDER)
+-------------------------------
+1. Compilation (TERM=dumb rebar3 compile)
+   - Must pass before proceeding to other gates
+   - Agent: syntax-fix-agent.sh
+
+2. Dialyzer (rebar3 dialyzer)
+   - Type checking and spec validation
+   - Agent: type-fix-agent.sh
+
+3. XRef (rebar3 xref)
+   - Cross-reference analysis
+   - Agent: xref-fix-agent.sh
+
+4. Tests (rebar3 eunit)
+   - EUnit test suite execution
+   - Agent: test-fix-agent.sh
+
+5. Coverage (rebar3 cover --verbose)
+   - Test coverage analysis (80% minimum)
+   - Agent: test-coverage-agent.sh
+
+WORKFLOW
+--------
+┌─────────────────┐
+│  Quality Gate   │
+│     Fails       │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐      ┌──────────────────┐
+│  Check Attempt  │─Yes─>│  Escalate to     │
+│  Count > 3?     │      │  Human           │
+└────────┬────────┘      └──────────────────┘
+         │ No
+         ▼
+┌─────────────────┐
+│  Dispatch Fix   │
+│     Agent       │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Apply Fix     │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Re-run Gate    │
+└────────┬────────┘
+         │
+    ┌────┴────┐
+    │         │
+  Pass      Fail
+    │         │
+    ▼         ▼
+┌────────┐ ┌────────┐
+│Success │ │ Retry  │
+└────────┘ └────────┘
+
+CONFIGURATION
+-------------
+Max Attempts per Gate: 3 (gate-failure-dispatcher.sh)
+Max Iterations: 5 (orchestrator.sh)
+Log Directory: logs/auto-fix/
+
+STATE MANAGEMENT
+----------------
+State File: logs/auto-fix/dispatcher-state.json
+Tracks:
+  - total_failures: Total gate failures
+  - total_fixes: Successful auto-fixes
+  - total_escalations: Escalations to human
+  - active_attempts: Current attempt count per gate
+
+Reset: ./tools/auto-fix/gate-failure-dispatcher.sh reset
+
+LOGS AND REPORTS
+----------------
+Activity Logs:
+  - dispatcher.log: Gate monitoring activity
+  - orchestrator.log: Orchestration cycles
+  - syntax-fix.log: Syntax fix attempts
+  - type-fix.log: Type fix attempts
+  - test-fix.log: Test fix attempts
+  - coverage-fix.log: Coverage analysis
+  - performance-fix.log: Performance analysis
+  - xref-fix.log: XRef fix attempts
+
+Reports:
+  - escalation-*.txt: Escalation reports with next steps
+  - *-suggestions-*.txt: Manual fix suggestions
+  - *-errors-*.txt: Temporary error captures
+
+USAGE PATTERNS
+--------------
+
+1. DEVELOPMENT WORKFLOW
+   vim src/my_module.erl
+   ./tools/auto-fix/orchestrator.sh orchestrate
+   # If successful: continue
+   # If escalated: review logs/auto-fix/escalation-*.txt
+
+2. CI/CD INTEGRATION
+   ./tools/auto-fix/orchestrator.sh orchestrate 3 || exit 1
+
+3. PRE-COMMIT HOOK
+   ./tools/auto-fix/gate-failure-dispatcher.sh run-all || exit 1
+
+4. INTERACTIVE DEBUGGING
+   ./tools/auto-fix/orchestrator.sh interactive
+
+CAPABILITIES MATRIX
+-------------------
+                      Auto-Fix    Suggest    Manual
+Unused variables      ✅          ✅         ✅
+Missing exports       ✅          ✅         ✅
+Basic type specs      ✅          ✅         ✅
+Simple assertions     ✅          ✅         ✅
+Setup/teardown        ✅          ✅         ✅
+Mock cleanup          ✅          ✅         ✅
+Unused exports        ✅          ✅         ✅
+Test templates        ✅          ✅         ✅
+Complex types         ❌          ✅         ✅
+Logic errors          ❌          ✅         ✅
+Performance           ❌          ✅         ✅
+Architecture          ❌          ❌         ✅
+
+ESCALATION SYSTEM
+-----------------
+After max attempts (3 per gate, 5 iterations total):
+1. Generate comprehensive escalation report
+2. Trigger Andon alert (行灯) - "Stop the Line"
+3. Provide detailed error analysis
+4. Suggest manual fix procedures
+5. Document next steps
+6. Preserve all context for human review
+
+Andon Alert Format:
+╔════════════════════════════════════════════╗
+║     ANDON ALERT (行灯) - LINE STOPPED      ║
+╔════════════════════════════════════════════╗
+Failed after N iterations
+Report: logs/auto-fix/escalation-*.txt
+╚════════════════════════════════════════════╝
+
+BEST PRACTICES
+--------------
+✅ Run locally before using in CI
+✅ Review all auto-applied fixes
+✅ Use reasonable iteration limits (5 is good)
+✅ Monitor which gates escalate most often
+✅ Keep escalation reports for learning
+✅ Reset state after resolving issues
+✅ Don't over-rely on auto-fix
+
+❌ Don't auto-fix without review
+❌ Don't ignore escalations
+❌ Don't set too many iterations
+❌ Don't use for complex refactoring
+❌ Don't bypass manual review
+❌ Don't commit without validation
+
+LIMITATIONS
+-----------
+Auto-Fix CAN:
+✅ Fix simple, repetitive issues
+✅ Catch common mistakes
+✅ Save time on boilerplate fixes
+✅ Enforce quality gates
+✅ Provide helpful suggestions
+✅ Generate templates
+
+Auto-Fix CANNOT:
+❌ Fix logic errors
+❌ Infer business requirements
+❌ Resolve complex type relationships
+❌ Fix race conditions
+❌ Optimize performance automatically
+❌ Write meaningful tests
+❌ Fix architectural problems
+❌ Replace human judgment
+
+JIDOKA PRINCIPLES IMPLEMENTED
+------------------------------
+1. Built-in Quality:
+   - Quality checks integrated into development workflow
+   - Automatic detection and correction
+
+2. Stop-the-Line Authority:
+   - System can halt automated fixes
+   - Andon alerts trigger human intervention
+
+3. Immediate Problem Detection:
+   - Real-time quality gate monitoring
+   - Instant feedback on failures
+
+4. Clear Escalation Path:
+   - Structured escalation process
+   - Comprehensive reporting
+   - Actionable next steps
+
+5. Continuous Improvement:
+   - Learn from escalation patterns
+   - Improve fix agents over time
+   - Document successful patterns
+
+INTEGRATION POINTS
+------------------
+1. Development:
+   - Command line during coding
+   - Watch mode with entr/watchexec
+
+2. Version Control:
+   - Pre-commit hooks
+   - Pre-push hooks
+
+3. CI/CD:
+   - GitHub Actions
+   - GitLab CI
+   - Jenkins
+   - Any CI system
+
+4. Editors/IDEs:
+   - Via external tool integration
+   - Background process
+
+5. Make/Build Systems:
+   - Makefile integration
+   - Rebar3 hooks
+
+QUICK COMMAND REFERENCE
+------------------------
+# Run full orchestration
+./tools/auto-fix/orchestrator.sh orchestrate
+
+# Run all gates once
+./tools/auto-fix/gate-failure-dispatcher.sh run-all
+
+# Interactive mode
+./tools/auto-fix/orchestrator.sh interactive
+
+# Check status
+./tools/auto-fix/gate-failure-dispatcher.sh status
+
+# Validate fixes
+./tools/auto-fix/orchestrator.sh validate
+
+# Reset state
+./tools/auto-fix/gate-failure-dispatcher.sh reset
+
+# View examples
+./tools/auto-fix/example-usage.sh
+
+# View help
+./tools/auto-fix/orchestrator.sh help
+./tools/auto-fix/gate-failure-dispatcher.sh help
+
+TROUBLESHOOTING
+---------------
+Issue: Auto-fix keeps failing
+Solution: Review logs, fix manually, reset state
+
+Issue: State file corruption
+Solution: rm logs/auto-fix/dispatcher-state.json
+
+Issue: Agent not found
+Solution: chmod +x tools/auto-fix/*.sh
+
+Issue: No escalation report
+Solution: Check log directory permissions, disk space
+
+Issue: Too many iterations
+Solution: Reduce MAX_ITERATIONS or fix manually
+
+DOCUMENTATION
+-------------
+Quick Reference: tools/auto-fix/README.md
+Full Documentation: docs/auto-fix/AUTO_FIX_SYSTEM.md
+Examples: tools/auto-fix/example-usage.sh
+This Summary: tools/auto-fix/SYSTEM_SUMMARY.txt
+
+SUPPORT
+-------
+For issues or questions:
+1. Check logs in logs/auto-fix/
+2. Review escalation reports
+3. Consult documentation
+4. Open issue in erlmcp repository
+
+VERSION HISTORY
+---------------
+v1.0.0 (2026-01-28)
+  - Initial release
+  - 8 fix agents
+  - 5 quality gates
+  - Jidoka-based architecture
+  - Comprehensive documentation
+
+ROADMAP
+-------
+Future enhancements:
+  - Machine learning for fix suggestions
+  - Parallel fix execution
+  - Fix confidence scoring
+  - Integration with version control
+  - Auto-commit fixes
+  - More specialized agents
+  - Performance auto-optimization
+  - Architectural refactoring support
+
+---
+END OF SUMMARY

@@ -41,8 +41,23 @@ jobs:
           ${{ runner.os }}-rebar3-otp${{ matrix.otp_version }}-
           ${{ runner.os }}-rebar3-
 
+    # ========================================================================
+    # BLOCKING GATE 1: COMPILATION - MUST PASS
+    # ========================================================================
     - name: Compile umbrella project
-      run: rebar3 compile
+      id: compile
+      run: |
+        echo "::group::Compilation"
+        TERM=dumb rebar3 compile
+        COMPILE_EXIT=$?
+        echo "::endgroup::"
+
+        if [ $COMPILE_EXIT -ne 0 ]; then
+          echo "::error::Compilation FAILED - This BLOCKS the merge"
+          echo "compile_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "compile_status=success" >> $GITHUB_OUTPUT
 
     - name: Verify umbrella apps compiled
       run: |
@@ -56,36 +71,107 @@ jobs:
           fi
         done
 
+    # ========================================================================
+    # BLOCKING GATE 2: XREF - MUST PASS (no undefined functions)
+    # ========================================================================
     - name: Run xref checks
-      run: rebar3 xref
+      id: xref
+      run: |
+        echo "::group::Xref Cross-Reference Analysis"
+        rebar3 xref
+        XREF_EXIT=$?
+        echo "::endgroup::"
 
+        if [ $XREF_EXIT -ne 0 ]; then
+          echo "::error::Xref FAILED - This BLOCKS the merge"
+          echo "xref_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "xref_status=success" >> $GITHUB_OUTPUT
+
+    # ========================================================================
+    # BLOCKING GATE 3: DIALYZER - MUST PASS (type checking)
+    # ========================================================================
     - name: Run dialyzer (type checking)
-      run: rebar3 dialyzer
+      id: dialyzer
+      run: |
+        echo "::group::Dialyzer Type Checking"
+        rebar3 dialyzer
+        DIALYZER_EXIT=$?
+        echo "::endgroup::"
+
+        # Allow OTP 28 to continue with warnings (experimental version)
+        if [ $DIALYZER_EXIT -ne 0 ] && [ ${{ matrix.otp_version }} -ne 28 ]; then
+          echo "::error::Dialyzer FAILED - This BLOCKS the merge"
+          echo "dialyzer_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "dialyzer_status=success" >> $GITHUB_OUTPUT
       continue-on-error: ${{ matrix.otp_version == 28 }}
 
+    # ========================================================================
+    # BLOCKING GATE 4: TESTS - MUST PASS (≥90% pass rate)
+    # ========================================================================
     - name: Run EUnit tests with coverage
+      id: eunit
       run: |
+        echo "::group::EUnit Tests"
         rebar3 as test do compile, eunit --cover
-      continue-on-error: true
+        EUNIT_EXIT=$?
+        echo "::endgroup::"
+
+        if [ $EUNIT_EXIT -ne 0 ]; then
+          echo "::error::EUnit tests FAILED - This BLOCKS the merge"
+          echo "eunit_status=failed" >> $GITHUB_OUTPUT
+          # Don't exit yet, let coverage gate handle it
+        else
+          echo "eunit_status=success" >> $GITHUB_OUTPUT
+        fi
 
     - name: Run Common Test integration tests
+      id: ct
       run: |
+        echo "::group::Common Test Integration"
         rebar3 ct --dir=test/integration --cover
-      continue-on-error: true
+        CT_EXIT=$?
+        echo "::endgroup::"
 
+        if [ $CT_EXIT -ne 0 ]; then
+          echo "::warning::Common Test had failures or no suites"
+          echo "ct_status=warning" >> $GITHUB_OUTPUT
+        else
+          echo "ct_status=success" >> $GITHUB_OUTPUT
+        fi
+
+    # ========================================================================
+    # BLOCKING GATE 5: COVERAGE - MUST BE ≥80%
+    # ========================================================================
     - name: Generate coverage report
       run: |
         rebar3 cover --verbose
 
-    - name: Check coverage threshold (80%)
+    - name: Check coverage threshold (80%) - BLOCKING
+      id: coverage
       run: |
+        echo "::group::Coverage Threshold Check"
+
         if [ -f scripts/check_coverage_threshold.sh ]; then
           chmod +x scripts/check_coverage_threshold.sh
           ./scripts/check_coverage_threshold.sh 80
+          COVERAGE_EXIT=$?
+          echo "::endgroup::"
+
+          if [ $COVERAGE_EXIT -ne 0 ]; then
+            echo "::error::Coverage below 80% threshold - This BLOCKS the merge"
+            echo "coverage_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "coverage_status=success" >> $GITHUB_OUTPUT
         else
-          echo "⚠ Coverage threshold script not found, skipping check"
+          echo "::warning::Coverage threshold script not found"
+          echo "::endgroup::"
+          echo "coverage_status=skipped" >> $GITHUB_OUTPUT
         fi
-      continue-on-error: true
 
     - name: Upload coverage HTML report
       if: always()
@@ -111,9 +197,14 @@ jobs:
         fi
         echo '```' >> $GITHUB_STEP_SUMMARY
 
+    # ========================================================================
+    # BLOCKING GATE 6: BENCHMARK (performance regression check)
+    # ========================================================================
     - name: Quick benchmark smoke test
+      id: benchmark
       if: matrix.otp_version == 26
       run: |
+        echo "::group::Benchmark Smoke Test"
         echo "Running quick benchmark smoke test (core_ops_1k)..."
         rebar3 shell --eval "
           application:ensure_all_started(erlmcp_core),
@@ -122,8 +213,52 @@ jobs:
           io:format(\"Benchmark result: ~p~n\", [Result]),
           init:stop().
         " --name ci_test@localhost --setcookie ci_cookie
+        BENCH_EXIT=$?
+        echo "::endgroup::"
+
+        if [ $BENCH_EXIT -ne 0 ]; then
+          echo "::warning::Benchmark smoke test failed (non-blocking)"
+          echo "benchmark_status=warning" >> $GITHUB_OUTPUT
+        else
+          echo "benchmark_status=success" >> $GITHUB_OUTPUT
+        fi
       timeout-minutes: 5
       continue-on-error: true
+
+    # ========================================================================
+    # FINAL GATE STATUS - Fail entire job if any blocking gate failed
+    # ========================================================================
+    - name: Quality Gates Summary
+      if: always()
+      run: |
+        echo "## Quality Gates Summary - OTP ${{ matrix.otp_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Gate | Status | Blocking |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Compilation | ${{ steps.compile.outputs.compile_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Xref | ${{ steps.xref.outputs.xref_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Dialyzer | ${{ steps.dialyzer.outputs.dialyzer_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| EUnit Tests | ${{ steps.eunit.outputs.eunit_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Coverage ≥80% | ${{ steps.coverage.outputs.coverage_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Benchmark | ${{ steps.benchmark.outputs.benchmark_status || 'not run' }} | ⚠️ NO |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Check if any blocking gate failed
+        COMPILE="${{ steps.compile.outputs.compile_status }}"
+        XREF="${{ steps.xref.outputs.xref_status }}"
+        DIALYZER="${{ steps.dialyzer.outputs.dialyzer_status }}"
+        EUNIT="${{ steps.eunit.outputs.eunit_status }}"
+        COVERAGE="${{ steps.coverage.outputs.coverage_status }}"
+
+        if [ "$COMPILE" != "success" ] || [ "$XREF" != "success" ] || \
+           [ "$DIALYZER" != "success" ] || [ "$EUNIT" != "success" ] || \
+           [ "$COVERAGE" != "success" ]; then
+          echo "::error::One or more BLOCKING quality gates FAILED"
+          echo "❌ **MERGE BLOCKED** - Fix issues and re-push" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
+        echo "✅ **All blocking quality gates PASSED** - Ready to merge" >> $GITHUB_STEP_SUMMARY
 
   docs-lint:
     name: Documentation Linter
@@ -238,15 +373,15 @@ jobs:
         3. Verify all tests passed
         EOF
 
-    - name: Check if all gates passed
+    - name: Check if all gates passed - BLOCKING
       run: |
         if [ "${{ needs.test.result }}" = "success" ] && \
            [ "${{ needs.docs-lint.result }}" = "success" ] && \
            [ "${{ needs.umbrella-structure-check.result }}" = "success" ]; then
-          echo "✓ All quality gates PASSED"
+          echo "✓ All quality gates PASSED - MERGE ALLOWED"
           exit 0
         else
-          echo "❌ Some quality gates FAILED"
+          echo "❌ Some quality gates FAILED - MERGE BLOCKED"
           echo "  Test: ${{ needs.test.result }}"
           echo "  Docs Lint: ${{ needs.docs-lint.result }}"
           echo "  Umbrella Check: ${{ needs.umbrella-structure-check.result }}"

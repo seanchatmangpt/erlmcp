@@ -1,0 +1,215 @@
+TCPS Quality System Quick Start
+================================
+
+Toyota Code Production System (TCPS) for erlmcp
+Zero-defect manufacturing principles applied to software
+
+## Daily Workflow
+
+1. Write code + tests
+   vim apps/erlmcp_core/src/my_module.erl
+   vim apps/erlmcp_core/test/my_module_tests.erl
+
+2. Run Poka-Yoke (mistake-proofing)
+   make poka-yoke
+   └─ 8 checks: no .broken files, no secrets, proper structure, etc.
+
+3. Run Jidoka (quality gates)
+   make jidoka
+   └─ 8 gates: compile, type check, performance, security, tests, etc.
+
+4. Check Andon (line status)
+   make andon
+   └─ Shows any active issues
+
+5. Commit (only if green)
+   git add .
+   git commit -m "Feature: ..."
+
+## Commands
+
+### Quality Gates
+make jidoka              Run 8 quality gates (自働化)
+make poka-yoke           Run 8 error-proofing checks (ポカヨケ)
+make tcps-quality-gates  Run complete system (poka-yoke + jidoka)
+
+### Andon System (行灯 - Stop The Line)
+make andon               Show current status
+make andon-clear         Clear after fixing issues
+make andon-watch         Real-time monitoring (5s refresh)
+
+## 8 Jidoka Quality Gates
+
+Gate 1: Schema Validation (Compile)
+  ✓ All code compiles
+  ✓ No syntax errors
+
+Gate 2: Authorization (Type Checking)
+  ✓ Dialyzer passes
+  ✓ Type specifications correct
+
+Gate 3: Rate Limiting (Performance)
+  ✓ No lists:append/2 in loops
+  ✓ No length/1 in guards
+
+Gate 4: Resource Availability (Dependencies)
+  ✓ All dependencies present
+  ✓ rebar.lock exists
+
+Gate 5: Performance Envelope (Benchmarks)
+  ✓ No obvious performance issues
+  ⊘ Benchmarks optional (JIDOKA_RUN_BENCHMARKS=1)
+
+Gate 6: Security Scan (No Secrets)
+  ✓ No hardcoded passwords/keys
+  ✓ No TODO SECURITY markers
+
+Gate 7: Compliance (Coverage)
+  ✓ All tests pass (0 failures)
+  ✓ Coverage ≥80% (future)
+
+Gate 8: Receipt Generation (Evidence)
+  ✓ SHA-256 hash chain
+  ✓ Immutable audit trail
+
+## 8 Poka-Yoke Checks
+
+1. No .broken files
+2. No TODO/FIXME in staged code
+3. No hardcoded secrets
+4. No unused variables/functions (xref)
+5. Proper module structure (module name matches filename)
+6. Test file exists for each module
+7. No debug output (io:format → logger)
+8. Proper supervision (no orphan spawns)
+
+## Andon Symbols
+
+🟢 Green  - All systems operational
+🟡 Yellow - Warning, attention needed
+🔴 Red    - Line stopped, immediate action required
+
+## When Gates Fail
+
+1. DON'T bypass the gate
+2. DON'T disable the check
+3. DO fix the root cause
+4. DO run 5 Whys if recurring
+5. DO clear Andon after fixing
+
+Example:
+  make jidoka
+  └─ Gate 7 fails (test failure)
+
+  Fix the test:
+  vim apps/erlmcp_core/test/my_module_tests.erl
+
+  Re-run:
+  make jidoka
+  └─ All gates pass ✓
+
+  Clear Andon:
+  make andon-clear
+
+## Receipt Chain
+
+Every successful jidoka run generates a receipt:
+  .tcps/receipts/jidoka_success_<work_order>_<timestamp>.txt
+
+Contains:
+  - Work order ID
+  - Timestamp (UTC)
+  - All 8 gate results
+  - SHA-256 hash
+  - Previous receipt hash (blockchain-style)
+
+View receipts:
+  ls -lt .tcps/receipts/
+
+## Pre-Commit Hook
+
+Create .git/hooks/pre-commit:
+
+  #!/bin/bash
+  set -e
+  make poka-yoke
+  make jidoka
+  echo "✓ Quality gates passed"
+
+Make executable:
+  chmod +x .git/hooks/pre-commit
+
+## CI/CD Integration
+
+Add to GitHub Actions:
+
+  - name: TCPS Poka-Yoke
+    run: make poka-yoke
+
+  - name: TCPS Jidoka Quality Gates
+    run: make jidoka
+    env:
+      JIDOKA_RUN_BENCHMARKS: 0
+
+  - name: Check Andon Status
+    if: failure()
+    run: make andon
+
+## Troubleshooting
+
+Q: Gate fails but I need to commit urgently?
+A: NO. Fix the root cause. Quality cannot be bypassed.
+
+Q: Poka-yoke shows warnings (not errors)?
+A: Warnings are non-blocking but should be addressed.
+
+Q: Andon shows old failures?
+A: Clear after confirming fixes: make andon-clear
+
+Q: How to skip benchmarks?
+A: Default behavior (benchmarks skipped in jidoka).
+   Set JIDOKA_RUN_BENCHMARKS=1 to enable.
+
+## Philosophy
+
+Jidoka (自働化) - Automation with human touch
+  Build quality INTO the process, not inspect it IN afterward.
+
+Poka-Yoke (ポカヨケ) - Mistake-proofing
+  Design out the possibility of errors.
+
+Andon (行灯) - Visual management
+  Make problems visible immediately.
+  Anyone can stop the line.
+
+## Files
+
+tools/tcps/jidoka_quality_gate.sh  - 8 quality gates
+tools/tcps/andon_cord.sh           - Andon system
+tools/tcps/poka_yoke_validator.sh  - Error-proofing
+.tcps/receipts/                    - Receipt chain
+.tcps/andon_log.txt                - Andon events
+
+docs/tcps/JIDOKA_AUTOMATION.md     - Full documentation
+
+## Best Practices
+
+✓ Run poka-yoke before every commit
+✓ Run jidoka after significant changes
+✓ Check andon status regularly
+✓ Never bypass quality gates
+✓ Fix root causes, not symptoms
+✓ Use Andon early and often
+✓ Maintain receipt chain integrity
+
+## Zero Defects
+
+Goal: Zero defects at each stage
+Method: Stop-the-line authority
+Evidence: Immutable receipt chain
+
+Remember: Fast defects are still defects.
+Quality must be built in, not inspected in.
+
+---
+erlmcp v2.0.0 | TCPS v1.0.0 | 自働化 (Jidoka) | 2026-01-28

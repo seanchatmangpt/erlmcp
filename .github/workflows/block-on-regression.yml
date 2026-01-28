@@ -1,0 +1,279 @@
+name: Performance Regression Blocker
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+    types: [opened, synchronize, reopened]
+
+jobs:
+  benchmark-regression-check:
+    name: Benchmark Regression Analysis (Blocking)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+    - name: Checkout PR branch
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        fetch-depth: 0
+
+    - name: Setup Erlang/OTP
+      uses: erlef/setup-beam@v1
+      with:
+        otp-version: 26
+        rebar3-version: '3.25'
+
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/rebar3
+          _build
+        key: benchmark-${{ runner.os }}-${{ hashFiles('rebar.lock') }}
+        restore-keys: |
+          benchmark-${{ runner.os }}-
+
+    - name: Compile PR branch
+      run: |
+        echo "::group::Compile PR branch"
+        TERM=dumb rebar3 compile
+        echo "::endgroup::"
+
+    # ========================================================================
+    # Run benchmarks on PR branch
+    # ========================================================================
+    - name: Run benchmarks on PR branch
+      id: pr_benchmark
+      run: |
+        echo "::group::PR Branch Benchmarks"
+        echo "Running core_ops_100k benchmark on PR branch..."
+
+        # Create benchmark runner script
+        cat > run_bench.escript << 'EOF'
+#!/usr/bin/env escript
+main([]) ->
+    code:add_pathsa(filelib:wildcard("_build/default/lib/*/ebin")),
+    code:add_pathsa(filelib:wildcard("apps/*/ebin")),
+
+    application:ensure_all_started(erlmcp_core),
+    application:ensure_all_started(erlmcp_transports),
+
+    Result = erlmcp_bench_core_ops:run(<<"core_ops_100k">>),
+
+    case Result of
+        {ok, #{results := Results}} ->
+            lists:foreach(fun(#{throughput_msg_per_s := Throughput}) ->
+                io:format("THROUGHPUT: ~p~n", [Throughput])
+            end, Results);
+        _ ->
+            io:format("Benchmark failed: ~p~n", [Result]),
+            halt(1)
+    end,
+
+    halt(0).
+EOF
+
+        chmod +x run_bench.escript
+        ./run_bench.escript > pr_bench.log 2>&1
+        PR_EXIT=$?
+
+        if [ $PR_EXIT -ne 0 ]; then
+          echo "::error::PR benchmark execution failed"
+          cat pr_bench.log
+          exit 1
+        fi
+
+        # Extract throughput
+        PR_THROUGHPUT=$(grep "THROUGHPUT:" pr_bench.log | head -1 | awk '{print $2}')
+        echo "PR throughput: $PR_THROUGHPUT msg/s"
+        echo "pr_throughput=$PR_THROUGHPUT" >> $GITHUB_OUTPUT
+
+        echo "::endgroup::"
+
+    # ========================================================================
+    # Checkout and run benchmarks on base branch (main)
+    # ========================================================================
+    - name: Checkout base branch (main)
+      run: |
+        git fetch origin ${{ github.event.pull_request.base.ref }}
+        git checkout origin/${{ github.event.pull_request.base.ref }}
+
+    - name: Compile base branch
+      run: |
+        echo "::group::Compile base branch"
+        TERM=dumb rebar3 clean
+        TERM=dumb rebar3 compile
+        echo "::endgroup::"
+
+    - name: Run benchmarks on base branch
+      id: base_benchmark
+      run: |
+        echo "::group::Base Branch Benchmarks"
+        echo "Running core_ops_100k benchmark on base branch..."
+
+        # Reuse the same script
+        cat > run_bench.escript << 'EOF'
+#!/usr/bin/env escript
+main([]) ->
+    code:add_pathsa(filelib:wildcard("_build/default/lib/*/ebin")),
+    code:add_pathsa(filelib:wildcard("apps/*/ebin")),
+
+    application:ensure_all_started(erlmcp_core),
+    application:ensure_all_started(erlmcp_transports),
+
+    Result = erlmcp_bench_core_ops:run(<<"core_ops_100k">>),
+
+    case Result of
+        {ok, #{results := Results}} ->
+            lists:foreach(fun(#{throughput_msg_per_s := Throughput}) ->
+                io:format("THROUGHPUT: ~p~n", [Throughput])
+            end, Results);
+        _ ->
+            io:format("Benchmark failed: ~p~n", [Result]),
+            halt(1)
+    end,
+
+    halt(0).
+EOF
+
+        chmod +x run_bench.escript
+        ./run_bench.escript > base_bench.log 2>&1
+        BASE_EXIT=$?
+
+        if [ $BASE_EXIT -ne 0 ]; then
+          echo "::warning::Base benchmark execution failed - skipping regression check"
+          echo "base_throughput=0" >> $GITHUB_OUTPUT
+          cat base_bench.log
+          exit 0  # Don't block on base benchmark failure
+        fi
+
+        # Extract throughput
+        BASE_THROUGHPUT=$(grep "THROUGHPUT:" base_bench.log | head -1 | awk '{print $2}')
+        echo "Base throughput: $BASE_THROUGHPUT msg/s"
+        echo "base_throughput=$BASE_THROUGHPUT" >> $GITHUB_OUTPUT
+
+        echo "::endgroup::"
+
+    # ========================================================================
+    # Compare performance and BLOCK if regression >10%
+    # ========================================================================
+    - name: Compare performance and check regression
+      id: regression_check
+      run: |
+        PR_THROUGHPUT="${{ steps.pr_benchmark.outputs.pr_throughput }}"
+        BASE_THROUGHPUT="${{ steps.base_benchmark.outputs.base_throughput }}"
+
+        if [ "$BASE_THROUGHPUT" = "0" ] || [ -z "$BASE_THROUGHPUT" ]; then
+          echo "::warning::Base benchmark unavailable - skipping regression check"
+          echo "regression_status=skipped" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Calculate percentage change
+        CHANGE=$(echo "scale=2; (($PR_THROUGHPUT - $BASE_THROUGHPUT) / $BASE_THROUGHPUT) * 100" | bc)
+        CHANGE_ABS=$(echo "$CHANGE" | sed 's/-//')
+
+        echo "Performance change: ${CHANGE}%"
+
+        # Generate summary
+        echo "## 📊 Performance Regression Check" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Metric | Base (main) | PR | Change |" >> $GITHUB_STEP_SUMMARY
+        echo "|--------|-------------|-----|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Throughput | $BASE_THROUGHPUT msg/s | $PR_THROUGHPUT msg/s | ${CHANGE}% |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Check for >10% regression
+        IS_REGRESSION=$(echo "$CHANGE < -10" | bc)
+
+        if [ $IS_REGRESSION -eq 1 ]; then
+          echo "::error::Performance regression detected: ${CHANGE}% (threshold: -10%)"
+          echo "regression_status=blocked" >> $GITHUB_OUTPUT
+          echo "regression_percent=$CHANGE" >> $GITHUB_OUTPUT
+
+          echo "### ❌ REGRESSION DETECTED - MERGE BLOCKED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Performance degraded by ${CHANGE_ABS}%**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Threshold:** -10% maximum regression" >> $GITHUB_STEP_SUMMARY
+          echo "**Action Required:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Investigate performance impact" >> $GITHUB_STEP_SUMMARY
+          echo "- Optimize code to reduce regression" >> $GITHUB_STEP_SUMMARY
+          echo "- Or document why regression is acceptable" >> $GITHUB_STEP_SUMMARY
+
+          exit 1
+        elif [ $(echo "$CHANGE > 10" | bc) -eq 1 ]; then
+          echo "regression_status=improvement" >> $GITHUB_OUTPUT
+          echo "regression_percent=$CHANGE" >> $GITHUB_OUTPUT
+
+          echo "### ✅ PERFORMANCE IMPROVEMENT: +${CHANGE}%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Great work! This PR improves performance." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "regression_status=acceptable" >> $GITHUB_OUTPUT
+          echo "regression_percent=$CHANGE" >> $GITHUB_OUTPUT
+
+          echo "### ✅ PERFORMANCE ACCEPTABLE: ${CHANGE}%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Performance change is within acceptable range (±10%)." >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Comment on PR with results
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const status = '${{ steps.regression_check.outputs.regression_status }}';
+          const change = '${{ steps.regression_check.outputs.regression_percent }}';
+          const prThroughput = '${{ steps.pr_benchmark.outputs.pr_throughput }}';
+          const baseThroughput = '${{ steps.base_benchmark.outputs.base_throughput }}';
+
+          let emoji = '✅';
+          let title = 'Performance Check Passed';
+          let message = `Performance is within acceptable range (${change}%).`;
+
+          if (status === 'blocked') {
+            emoji = '❌';
+            title = 'Performance Regression Detected - MERGE BLOCKED';
+            message = `**This PR introduces a performance regression of ${change}%.**\n\n` +
+                     `**Threshold:** -10% maximum allowed\n` +
+                     `**Action Required:**\n` +
+                     `- Investigate the performance impact\n` +
+                     `- Optimize code to reduce regression\n` +
+                     `- Or document why this regression is acceptable`;
+          } else if (status === 'improvement') {
+            emoji = '🚀';
+            title = 'Performance Improvement!';
+            message = `Great work! This PR improves performance by ${change}%.`;
+          } else if (status === 'skipped') {
+            emoji = '⚠️';
+            title = 'Performance Check Skipped';
+            message = 'Base benchmark unavailable - regression check skipped.';
+          }
+
+          const body = `## ${emoji} ${title}\n\n` +
+                      `### Benchmark Results\n\n` +
+                      `| Metric | Base (main) | This PR | Change |\n` +
+                      `|--------|-------------|---------|--------|\n` +
+                      `| Throughput | ${baseThroughput} msg/s | ${prThroughput} msg/s | ${change}% |\n\n` +
+                      `${message}\n\n` +
+                      `---\n` +
+                      `*Benchmark: core_ops_100k on OTP 26*`;
+
+          await github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: body
+          });
+
+    - name: Upload benchmark logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-regression-logs
+        path: |
+          pr_bench.log
+          base_bench.log
+        retention-days: 30

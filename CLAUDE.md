@@ -73,6 +73,38 @@ erlmcp_bench_integration:run(<<"mcp_tool_sequence">>).  # MCP e2e
 
 **Targets:** 0 errors, 100% test pass, ≥80% coverage, <10% perf regression.
 
+## Automatic Validation Rules (Machine-Enforceable)
+
+**These rules are AUTOMATICALLY enforced by hooks and CI/CD:**
+
+- [ ] **Compilation:** MUST have 0 errors (blocking)
+- [ ] **Tests:** MUST have 100% pass rate (0 failures)
+- [ ] **Coverage:** MUST have ≥80% code coverage
+- [ ] **Dialyzer:** SHOULD have 0 type warnings (reported)
+- [ ] **Xref:** SHOULD have 0 cross-reference issues (reported)
+- [ ] **Benchmarks:** MUST have <10% performance regression (if perf code changed)
+
+**Enforcement Points:**
+- ✅ Pre-commit hooks: Validate before git commit (`.git/hooks/pre-commit`)
+- ✅ Post-task hooks: Validate after agent task completion (`.claude/hooks/post-task-validate.sh`)
+- ✅ CI/CD workflows: Validate in GitHub Actions
+- ✅ Manual validation: Run `./tools/claude-md-enforcer.sh`
+
+**Hook Installation:**
+```bash
+# Install/sync all hooks
+./tools/claude-md-sync.sh
+
+# Manual validation anytime
+./tools/claude-md-enforcer.sh
+```
+
+**Quality Gate Philosophy:**
+> "Quality is not an act, it is a habit." - Aristotle
+>
+> These gates ensure consistent quality by making violations impossible to commit.
+> All rules are derived from CLAUDE.md and synchronized automatically.
+
 ## Development Patterns
 **TDD:** Write tests first (test/*.erl). Chicago School (no mocks, real processes).
 **OTP:** Follow gen_server/supervisor behaviors. Don't block init/1. Monitor critical processes. Use supervisors (never unsupervised spawn).

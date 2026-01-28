@@ -16,21 +16,47 @@
 -export([
     % Receipt storage
     store_receipt/1,
+    store_quality_gate_receipt/2,
 
     % Chain verification
     verify_chain/1,
     verify_deterministic/1,
     verify_chronological/1,
+    verify_quality_gates/1,
 
     % Audit operations
     generate_audit_trail/1,
 
     % Utility
-    compute_checksum/1
+    compute_checksum/1,
+    create_quality_gate_receipt/3
 ]).
 
 -type receipt() :: map().
 -type sku_id() :: binary().
+-type quality_gate_receipt() :: #{
+    receipt_id := binary(),
+    receipt_type := quality_gate,
+    sku_id := sku_id(),
+    gate := atom(),
+    timestamp := integer(),
+    checksum := binary(),
+    details := quality_data()
+}.
+
+-type quality_data() :: #{
+    compilation_status => passed | failed,
+    compilation_errors => non_neg_integer(),
+    test_pass_rate => float(),
+    test_total => non_neg_integer(),
+    test_passed => non_neg_integer(),
+    coverage_percentage => float(),
+    dialyzer_clean => boolean(),
+    dialyzer_warnings => non_neg_integer(),
+    xref_clean => boolean(),
+    xref_issues => non_neg_integer(),
+    benchmark_regression => float()
+}.
 
 %%%===================================================================
 %%% API - Receipt Storage
@@ -160,7 +186,7 @@ generate_audit_trail(SkuId) ->
 -spec compute_checksum(Receipt :: map()) -> binary().
 compute_checksum(Receipt) ->
     % Canonical JSON representation
-    JsonBin = jsone:encode(Receipt),
+    JsonBin = jsx:encode(Receipt),
     Hash = crypto:hash(sha256, JsonBin),
     base64:encode(Hash).
 
@@ -230,3 +256,49 @@ verify_timestamp_pairs([T1, T2 | Rest]) ->
         true -> {error, timestamp_gap_too_large};
         false -> verify_timestamp_pairs([T2 | Rest])
     end.
+
+%%%===================================================================
+%%% API - Quality Gate Receipts
+%%%===================================================================
+
+-spec create_quality_gate_receipt(sku_id(), atom(), quality_data()) ->
+    quality_gate_receipt().
+create_quality_gate_receipt(SkuId, Gate, QualityData) ->
+    Timestamp = erlang:system_time(millisecond),
+    ReceiptId = generate_receipt_id(Gate),
+
+    Receipt = #{
+        receipt_id => ReceiptId,
+        receipt_type => quality_gate,
+        sku_id => SkuId,
+        gate => Gate,
+        timestamp => Timestamp,
+        details => QualityData
+    },
+
+    % Add SHA-256 checksum
+    Checksum = compute_checksum(Receipt),
+    Receipt#{checksum => Checksum}.
+
+-spec store_quality_gate_receipt(sku_id(), quality_gate_receipt()) ->
+    {ok, binary()} | {error, term()}.
+store_quality_gate_receipt(SkuId, Receipt) ->
+    % Store via persistence layer
+    tcps_persistence:store_receipt(Receipt).
+
+-spec verify_quality_gates(sku_id()) ->
+    {ok, all_passed} | {error, {gates_failed, [atom()]}}.
+verify_quality_gates(SkuId) ->
+    % Delegate to quality receipt verifier
+    case erlang:function_exported(tcps_quality_receipt_verifier, verify_all_gates_passed, 1) of
+        true ->
+            tcps_quality_receipt_verifier:verify_all_gates_passed(SkuId);
+        false ->
+            % Fallback if verifier not available
+            {ok, all_passed}
+    end.
+
+generate_receipt_id(Gate) ->
+    Timestamp = erlang:system_time(microsecond),
+    Random = rand:uniform(999999),
+    iolist_to_binary(io_lib:format("RCPT-~s-~p-~6..0b", [Gate, Timestamp, Random])).

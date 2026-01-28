@@ -1,0 +1,44 @@
+TCPS Jidoka Failure Receipt (自働化失敗レシート)
+================================================
+
+Work Order: test_1769623352
+Timestamp:  2026-01-28T18:02:32Z
+Gate:       Gate 2: Authorization
+Status:     FAILED - LINE STOPPED
+
+Failure Details:
+Type checking failed
+
+Technical Details:
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling tcps_erlmcp
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Dialyzer starting, this may take a while...
+[0m[0;32m===> Updating plt...
+[0m[0;32m===> Resolving project files...
+[0m[0;32m===> Checking 369 files in _build/default/rebar3_27.3.4.2_plt...
+[0m[0;32m===> Adding 239 files to _build/default/rebar3_27.3.4.2_plt...
+[0m[0;31m===> [1mError in dialyzing apps: Analysis failed with error:
+Could not scan the following file(s):
+  Could not get Core Erlang code for: /Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_rate_limiter.beam
+  Could not get Core Erlang code for: /Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_rate_limit_middleware.beam
+  Could not get Core Erlang code for: /Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_circuit_breaker.beam
+  Could not get Core Erlang code for: /Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_client.beam
+
+Last messages in the log cache:
+  Reading files and computing callgraph... 
+[0m[0m
+
+Action Required:
+1. Fix the root cause (do not bypass the gate)
+2. Run 5 Whys analysis if recurring
+3. Re-run quality gates
+4. Resume production only after passing
+
+Jidoka Principle:
+Quality must be built into the process.
+Stop the line immediately when defects are detected.
+
+Receipt Hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

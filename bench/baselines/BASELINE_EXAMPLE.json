@@ -1,0 +1,37 @@
+{
+  "version": "0.7.0",
+  "timestamp": 1769567361,
+  "date": "2026-01-28T14:22:41Z",
+  "environment": {
+    "os": "darwin",
+    "os_version": "25.2.0",
+    "arch": "x86_64",
+    "hostname": "build-server",
+    "otp_version": "27",
+    "erts_version": "15.2.7.1",
+    "cores": 8
+  },
+  "benchmarks": {
+    "core_ops_100k": {
+      "throughput_msg_per_s": 2690088.37,
+      "latency_p50_us": 0.0,
+      "latency_p95_us": 83.0,
+      "latency_p99_us": 98.0,
+      "memory_delta_mib": 19.1
+    },
+    "tcp_quick_1k": {
+      "throughput_msg_per_s": 372000,
+      "latency_p50_us": 12.0,
+      "latency_p95_us": 245.0,
+      "latency_p99_us": 512.0,
+      "memory_delta_mib": 48.5
+    },
+    "stress_30s_100k_ops": {
+      "throughput_msg_per_s": 242000,
+      "latency_p50_us": 8.0,
+      "latency_p95_us": 156.0,
+      "latency_p99_us": 312.0,
+      "memory_delta_mib": 75.2
+    }
+  }
+}

@@ -1,0 +1,3 @@
+# This directory stores performance baselines
+# Format: YYYY-MM-DD_vX.Y.Z.json
+# See bench/baselines/README.md for details
