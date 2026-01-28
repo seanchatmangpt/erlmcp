@@ -4,6 +4,9 @@ set -euo pipefail
 # TCPS Quality Receipt Generator (レシート)
 # Generates cryptographic proof of quality gate passage
 
+# Use working jq (bypass asdf shim if needed)
+JQ_BIN=$(/usr/local/bin/jq --version >/dev/null 2>&1 && echo "/usr/local/bin/jq" || echo "/opt/homebrew/bin/jq")
+
 RECEIPT_DIR="receipts/quality"
 mkdir -p "$RECEIPT_DIR"
 
@@ -38,49 +41,49 @@ DURATION[benchmark]=0
 
 # Gate 1: Compilation
 echo -n "  Checking compilation... "
-START=$(date +%s%3N)
+START=$(python3 -c "import time; print(int(time.time() * 1000))")
 if TERM=dumb rebar3 compile >/dev/null 2>&1; then
     GATES[compile]="pass"
 else
     GATES[compile]="fail"
 fi
-END=$(date +%s%3N)
+END=$(python3 -c "import time; print(int(time.time() * 1000))")
 DURATION[compile]=$((END - START))
 echo "${GATES[compile]}"
 
 # Gate 2: EUnit
 echo -n "  Checking EUnit tests... "
-START=$(date +%s%3N)
+START=$(python3 -c "import time; print(int(time.time() * 1000))")
 if rebar3 eunit >/dev/null 2>&1; then
     GATES[eunit]="pass"
 else
     GATES[eunit]="fail"
 fi
-END=$(date +%s%3N)
+END=$(python3 -c "import time; print(int(time.time() * 1000))")
 DURATION[eunit]=$((END - START))
 echo "${GATES[eunit]}"
 
 # Gate 3: Common Test
 echo -n "  Checking Common Test... "
-START=$(date +%s%3N)
+START=$(python3 -c "import time; print(int(time.time() * 1000))")
 if rebar3 ct >/dev/null 2>&1; then
     GATES[ct]="pass"
 else
     GATES[ct]="fail"
 fi
-END=$(date +%s%3N)
+END=$(python3 -c "import time; print(int(time.time() * 1000))")
 DURATION[ct]=$((END - START))
 echo "${GATES[ct]}"
 
 # Gate 4: Coverage
 echo -n "  Checking coverage... "
-START=$(date +%s%3N)
+START=$(python3 -c "import time; print(int(time.time() * 1000))")
 if rebar3 cover >/dev/null 2>&1; then
     GATES[coverage]="pass"
 else
     GATES[coverage]="fail"
 fi
-END=$(date +%s%3N)
+END=$(python3 -c "import time; print(int(time.time() * 1000))")
 DURATION[coverage]=$((END - START))
 echo "${GATES[coverage]}"
 
@@ -153,7 +156,7 @@ RECEIPT_HASH=$(echo "$RECEIPT_CONTENT" | sha256sum | awk '{print $1}')
 
 # Update receipt with hash
 TMP_FILE=$(mktemp)
-jq --arg hash "$RECEIPT_HASH" '.receipt_hash = $hash' "$RECEIPT_FILE" > "$TMP_FILE"
+$JQ_BIN --arg hash "$RECEIPT_HASH" '.receipt_hash = $hash' "$RECEIPT_FILE" > "$TMP_FILE"
 mv "$TMP_FILE" "$RECEIPT_FILE"
 
 # Check certification status
@@ -172,9 +175,9 @@ else
 fi
 
 # Update certification
-BLOCKERS_JSON=$(printf '%s\n' "${BLOCKERS[@]}" | jq -R . | jq -s .)
+BLOCKERS_JSON=$(printf '%s\n' "${BLOCKERS[@]}" | $JQ_BIN -R . | $JQ_BIN -s .)
 TMP_FILE=$(mktemp)
-jq --argjson certified "$CERTIFIED" \
+$JQ_BIN --argjson certified "$CERTIFIED" \
    --argjson count "$BLOCKER_COUNT" \
    --argjson blockers "$BLOCKERS_JSON" \
    '.certification.certified = $certified | .certification.blocker_count = $count | .certification.blockers = $blockers' \
