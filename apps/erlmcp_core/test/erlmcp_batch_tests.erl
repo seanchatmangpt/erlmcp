@@ -202,20 +202,29 @@ adaptive_batching_test_() ->
 
 test_adaptive_adjustment() ->
     {ok, Batcher} = erlmcp_batch:start_link(fun echo_executor/1, #{
-        strategy => {adaptive, #{min => 2, max => 10}}
+        strategy => {adaptive, #{min => 2, max => 10}},
+        parallel_workers => 1  % Sequential for predictable behavior
     }),
 
-    % Start with small batches to build up
+    % Send requests in batches to trigger adaptive behavior
+    % Adaptive starts at min=2, so every 2 requests should trigger a batch
     _ = [begin
         {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{i => I}),
-        receive {batch_result, Ref, _} -> ok after 1000 -> timeout end
+        % Don't wait for result immediately to allow batching
+        Ref
     end || I <- lists:seq(1, 50)],
+
+    % Wait for a bit to let batches complete
+    timer:sleep(500),
+
+    % Now collect all results
+    % (not needed for test, but ensures cleanup)
 
     % Check stats
     Stats = erlmcp_batch:get_stats(Batcher),
     TotalBatches = maps:get(total_batches, Stats),
 
-    % Should have created multiple batches
+    % Should have created multiple batches (50 requests / ~2-10 per batch)
     ?assert(TotalBatches > 5),
 
     erlmcp_batch:stop(Batcher).
@@ -225,20 +234,24 @@ test_adaptive_failure_response() ->
     Executor = failing_executor(5),
 
     {ok, Batcher} = erlmcp_batch:start_link(Executor, #{
-        strategy => {adaptive, #{min => 5, max => 20}}
+        strategy => {adaptive, #{min => 5, max => 20}},
+        parallel_workers => 1  % Sequential for predictable failure pattern
     }),
 
-    % Send many requests
+    % Send many requests (don't wait for each individually)
     _ = [begin
         {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{i => I}),
-        receive {batch_result, Ref, _} -> ok after 1000 -> timeout end
+        Ref
     end || I <- lists:seq(1, 100)],
+
+    % Wait for batches to complete
+    timer:sleep(1000),
 
     % Check stats
     Stats = erlmcp_batch:get_stats(Batcher),
     TotalFailures = maps:get(total_failures, Stats),
 
-    % Should have some failures
+    % Should have some failures (20% of 100 = 20)
     ?assert(TotalFailures > 0),
     ?assert(TotalFailures < 100),
 
@@ -262,7 +275,8 @@ test_partial_failures() ->
     Executor = failing_executor(3),
 
     {ok, Batcher} = erlmcp_batch:start_link(Executor, #{
-        strategy => {size, 9}
+        strategy => {size, 9},
+        parallel_workers => 1  % Sequential execution for predictable failure pattern
     }),
 
     Refs = [begin
@@ -323,14 +337,18 @@ statistics_test_() ->
 
 test_statistics() ->
     {ok, Batcher} = erlmcp_batch:start_link(fun echo_executor/1, #{
-        strategy => {size, 5}
+        strategy => {size, 5},
+        parallel_workers => 1  % Sequential for predictable stats
     }),
 
-    % Send 15 requests (3 batches)
-    _ = [begin
+    % Send 15 requests (3 batches of 5 each)
+    Refs = [begin
         {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{i => I}),
-        receive {batch_result, Ref, _} -> ok after 1000 -> timeout end
+        Ref
     end || I <- lists:seq(1, 15)],
+
+    % Wait for all results
+    _ = [receive {batch_result, Ref, _} -> ok after 5000 -> timeout end || Ref <- Refs],
 
     Stats = erlmcp_batch:get_stats(Batcher),
 
@@ -343,18 +361,31 @@ test_statistics() ->
 
 test_avg_batch_size() ->
     {ok, Batcher} = erlmcp_batch:start_link(fun echo_executor/1, #{
-        strategy => {size, 100}  % Large size, will use manual flush
+        strategy => {size, 100},  % Large size, will use manual flush
+        parallel_workers => 1     % Sequential for predictable stats
     }),
 
     % Batch 1: 5 requests
-    _ = [erlmcp_batch:add_request(Batcher, <<"test">>, #{}) || _ <- lists:seq(1, 5)],
+    Refs1 = [begin
+        {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{}),
+        Ref
+    end || _ <- lists:seq(1, 5)],
     erlmcp_batch:flush(Batcher),
+
+    % Wait for all batch 1 results
+    _ = [receive {batch_result, Ref, _} -> ok after 5000 -> timeout end || Ref <- Refs1],
 
     % Batch 2: 10 requests
-    _ = [erlmcp_batch:add_request(Batcher, <<"test">>, #{}) || _ <- lists:seq(1, 10)],
+    Refs2 = [begin
+        {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{}),
+        Ref
+    end || _ <- lists:seq(1, 10)],
     erlmcp_batch:flush(Batcher),
 
-    timer:sleep(100),  % Let batches complete
+    % Wait for all batch 2 results
+    _ = [receive {batch_result, Ref, _} -> ok after 5000 -> timeout end || Ref <- Refs2],
+
+    timer:sleep(100),  % Let stats update
 
     Stats = erlmcp_batch:get_stats(Batcher),
 

@@ -144,7 +144,7 @@ flush(Batcher) ->
     gen_server:call(Batcher, flush).
 
 %% @doc Get batching statistics
--spec get_stats(pid()) -> batch_stats().
+-spec get_stats(pid()) -> map().
 get_stats(Batcher) ->
     gen_server:call(Batcher, get_stats).
 
@@ -205,7 +205,16 @@ handle_call(flush, _From, State) ->
     {reply, ok, NewState};
 
 handle_call(get_stats, _From, State) ->
-    {reply, State#state.stats, State};
+    Stats = State#state.stats,
+    StatsMap = #{
+        total_requests => Stats#batch_stats.total_requests,
+        total_batches => Stats#batch_stats.total_batches,
+        total_failures => Stats#batch_stats.total_failures,
+        avg_batch_size => Stats#batch_stats.avg_batch_size,
+        avg_latency_us => Stats#batch_stats.avg_latency_us,
+        last_batch_time => Stats#batch_stats.last_batch_time
+    },
+    {reply, StatsMap, State};
 
 handle_call({update_strategy, NewStrategy}, _From, State) ->
     % Cancel existing timer
