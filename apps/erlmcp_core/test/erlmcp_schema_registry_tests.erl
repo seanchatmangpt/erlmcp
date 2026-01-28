@@ -41,7 +41,7 @@ setup() ->
     {ok, Pid} = erlmcp_schema_registry:start_link(),
     Pid.
 
-cleanup(Pid) ->
+cleanup(_Pid) ->
     erlmcp_schema_registry:stop(),
     ok.
 
@@ -233,7 +233,7 @@ test_concurrent_operations() ->
     NumProcesses = 100,
     Self = self(),
 
-    Processes = lists:map(fun(N) ->
+    _Processes = lists:map(fun(N) ->
         spawn(fun() ->
             ValidData = #{<<"value">> => N},
             Result = erlmcp_schema_registry:validate(

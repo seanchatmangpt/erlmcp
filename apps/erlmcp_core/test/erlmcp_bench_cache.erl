@@ -229,7 +229,7 @@ benchmark_cache_hits(TotalOps, NumWorkers) ->
 
     %% Run parallel cache get operations
     OpsPerWorker = TotalOps div NumWorkers,
-    Latencies = run_parallel_workers(NumWorkers, fun(WorkerId) ->
+    Latencies = run_parallel_workers(NumWorkers, fun(_WorkerId) ->
         lists:map(fun(_) ->
             KeyNum = rand:uniform(NumKeys),
             Key = iolist_to_binary(io_lib:format("key_~p", [KeyNum])),

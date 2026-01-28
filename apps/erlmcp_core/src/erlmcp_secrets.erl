@@ -312,7 +312,7 @@ vault_get(Key, Config) ->
     end.
 
 %% @private Set secret in Vault.
-vault_set(Key, Value, Config) ->
+vault_set(Key, _Value, Config) ->
     case maps:get(enabled, Config, false) of
         true ->
             VaultUrl = maps:get(url, Config, <<"http://localhost:8200">>),
@@ -324,7 +324,7 @@ vault_set(Key, Value, Config) ->
     end.
 
 %% @private Delete secret from Vault.
-vault_delete(Key, Config) ->
+vault_delete(_Key, Config) ->
     case maps:get(enabled, Config, false) of
         true ->
             {error, not_implemented};
@@ -358,7 +358,7 @@ aws_secrets_get(Key, Config) ->
     end.
 
 %% @private Set secret in AWS.
-aws_secrets_set(Key, Value, Config) ->
+aws_secrets_set(_Key, _Value, Config) ->
     case maps:get(enabled, Config, false) of
         true ->
             {error, not_implemented};
@@ -367,7 +367,7 @@ aws_secrets_set(Key, Value, Config) ->
     end.
 
 %% @private Delete secret from AWS.
-aws_secrets_delete(Key, Config) ->
+aws_secrets_delete(_Key, Config) ->
     case maps:get(enabled, Config, false) of
         true ->
             {error, not_implemented};

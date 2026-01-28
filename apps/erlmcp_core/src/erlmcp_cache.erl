@@ -526,6 +526,25 @@ evict_lru_l1(State) ->
 %% Internal functions - L2 Cache (Mnesia)
 %%====================================================================
 
+%% Helper to convert Mnesia tuple to cache_entry record
+-spec mnesia_rec_to_cache_entry(tuple()) -> #cache_entry{}.
+mnesia_rec_to_cache_entry({erlmcp_cache_l2, Key, Value, Level, InsertedAt,
+                           ExpiresAt, AccessCount, LastAccessed, ETag,
+                           Tags, Dependencies, Strategy}) ->
+    #cache_entry{
+        key = Key,
+        value = Value,
+        level = Level,
+        inserted_at = InsertedAt,
+        expires_at = ExpiresAt,
+        access_count = AccessCount,
+        last_accessed = LastAccessed,
+        etag = ETag,
+        tags = Tags,
+        dependencies = Dependencies,
+        strategy = Strategy
+    }.
+
 -spec ensure_mnesia_started() -> boolean().
 ensure_mnesia_started() ->
     case mnesia:system_info(is_running) of
@@ -551,27 +570,41 @@ ensure_mnesia_started() ->
 
 -spec ensure_cache_table() -> ok.
 ensure_cache_table() ->
-    case mnesia:create_table(erlmcp_cache_l2, [
-        {type, set},
-        {attributes, record_info(fields, cache_entry)},
-        {disc_copies, [node()]},
-        {index, [#cache_entry.tags, #cache_entry.dependencies]}
-    ]) of
-        {atomic, ok} -> ok;
-        {aborted, {already_exists, _}} -> ok;
-        {aborted, Reason} ->
-            ?LOG_ERROR("Failed to create Mnesia cache table: ~p", [Reason]),
-            ok
+    %% Check if table already exists
+    case lists:member(erlmcp_cache_l2, mnesia:system_info(tables)) of
+        true ->
+            ?LOG_DEBUG("Mnesia cache table already exists"),
+            ok;
+        false ->
+            %% Create table
+            case mnesia:create_table(erlmcp_cache_l2, [
+                {type, set},
+                {attributes, record_info(fields, cache_entry)},
+                {disc_copies, [node()]},
+                {index, [tags, dependencies]}
+            ]) of
+                {atomic, ok} ->
+                    ?LOG_INFO("Created Mnesia cache table: erlmcp_cache_l2"),
+                    ok;
+                {aborted, {already_exists, _}} ->
+                    ok;
+                {aborted, Reason} ->
+                    ?LOG_ERROR("Failed to create Mnesia cache table: ~p", [Reason]),
+                    ok
+            end
     end.
 
 -spec get_from_l2(cache_key(), state()) -> {ok, cache_value(), state()} | {error, not_found}.
-get_from_l2(_Key, #state{l2_enabled = false} = State) ->
+get_from_l2(_Key, #state{l2_enabled = false} = _State) ->
     {error, not_found};
 get_from_l2(Key, State) ->
     case mnesia:dirty_read(erlmcp_cache_l2, Key) of
         [] ->
             {error, not_found};
-        [Entry] ->
+        [MnesiaRec] ->
+            %% Transform Mnesia tuple back to our record
+            %% Mnesia returns: {erlmcp_cache_l2, Key, Value, Level, ...}
+            Entry = mnesia_rec_to_cache_entry(MnesiaRec),
             Now = erlang:monotonic_time(microsecond),
             case is_expired(Entry, Now) of
                 true ->
@@ -607,7 +640,22 @@ put_in_l2(Key, Value, State) ->
 put_entry_in_l2(_Entry, #state{l2_enabled = false} = State) ->
     State;
 put_entry_in_l2(Entry, State) ->
-    mnesia:dirty_write(erlmcp_cache_l2, Entry),
+    %% Transform record to tuple for Mnesia (table name as first element)
+    %% Mnesia expects: {erlmcp_cache_l2, Key, Value, Level, ...}
+    %% But we have: #cache_entry{key=Key, value=Value, ...}
+    MnesiaRec = {erlmcp_cache_l2,
+                 Entry#cache_entry.key,
+                 Entry#cache_entry.value,
+                 Entry#cache_entry.level,
+                 Entry#cache_entry.inserted_at,
+                 Entry#cache_entry.expires_at,
+                 Entry#cache_entry.access_count,
+                 Entry#cache_entry.last_accessed,
+                 Entry#cache_entry.etag,
+                 Entry#cache_entry.tags,
+                 Entry#cache_entry.dependencies,
+                 Entry#cache_entry.strategy},
+    mnesia:dirty_write(MnesiaRec),
     State.
 
 -spec delete_from_l2(cache_key(), state()) -> state().
@@ -663,9 +711,9 @@ close_external_cache(_Module, _Conn) ->
     ok.
 
 -spec get_from_l3(cache_key(), state()) -> {ok, cache_value(), state()} | {error, not_found}.
-get_from_l3(_Key, #state{l3_enabled = false} = State) ->
+get_from_l3(_Key, #state{l3_enabled = false} = _State) ->
     {error, not_found};
-get_from_l3(_Key, State) ->
+get_from_l3(_Key, _State) ->
     %% Placeholder: would call L3Module:get(L3Conn, Key)
     {error, not_found}.
 

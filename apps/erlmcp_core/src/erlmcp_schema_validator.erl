@@ -1,12 +1,14 @@
 -module(erlmcp_schema_validator).
 -behaviour(gen_server).
--behaviour(poolboy_worker).
 
 %% API exports
 -export([
     start_link/1,
     validate/3,
-    validate_async/3
+    validate_async/3,
+    validate_regex/2,
+    validate_range/3,
+    validate_dependencies/2
 ]).
 
 %% gen_server callbacks
