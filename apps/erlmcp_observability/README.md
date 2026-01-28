@@ -47,6 +47,8 @@ erlmcp_observability provides comprehensive monitoring:
 
 ### OpenTelemetry Tracing
 
+#### Basic Configuration
+
 ```erlang
 %% Configure OTEL exporter
 application:set_env(erlmcp_observability, otel_defaults, #{
@@ -55,31 +57,123 @@ application:set_env(erlmcp_observability, otel_defaults, #{
         endpoint => "http://localhost:4318",  % Jaeger OTLP endpoint
         protocol => http_protobuf
     }},
-    sampling_rate => 0.1  % Sample 10% of traces
+    sampling => trace_id_ratio,  % Sampling strategy
+    sampling_rate => 0.1,  % Sample 10% of traces
+    tail_sampling_latency_threshold_us => 100000,  % 100ms for tail sampling
+    tail_sampling_error_rate => 0.01  % Sample 1% of errors
 }),
 
 %% Start observability
 application:ensure_all_started(erlmcp_observability),
+```
 
-%% Automatic tracing (via erlmcp_otel)
-{ok, Client} = erlmcp_client:call_tool(Client, <<"greet">>, Args),
-%% → Creates span "erlmcp.tool.call" with attributes:
-%%   - tool.name = "greet"
-%%   - tool.args = <JSON>
-%%   - latency_us = <duration>
+#### Automatic RPC Span Injection
 
-%% Manual span creation
-erlmcp_tracer:with_span(<<"custom_operation">>, fun() ->
-    %% Your code here
-    erlmcp_tracer:add_event(<<"checkpoint_reached">>, #{step => 1}),
+```erlang
+%% Client-side automatic tracing
+Method = <<"tools/call">>,
+RequestId = <<"req-001">>,
+Params = #{<<"tool_name">> => <<"calculator">>},
+
+%% Inject RPC span with automatic attributes
+SpanCtx = erlmcp_otel:inject_rpc_span(Method, RequestId, Params),
+%% → Creates span "mcp.rpc.tools/call" with attributes:
+%%   - rpc.method = "tools/call"
+%%   - rpc.request_id = "req-001"
+%%   - rpc.system = "jsonrpc"
+%%   - span.kind = "client"
+```
+
+#### Middleware for Automatic Transport Tracing
+
+```erlang
+%% Wrap transport operations
+Result = erlmcp_otel_middleware:trace_transport(
+    tcp,
+    <<"send">>,
+    fun() -> Transport:send(Socket, Data) end,
+    #{socket => Socket, data_size => byte_size(Data)}
+),
+%% → Creates span "mcp.transport.tcp.send" with automatic events:
+%%   - transport.operation_started
+%%   - transport.operation_completed
+
+%% Wrap handler execution (server-side)
+Response = erlmcp_otel_middleware:trace_handler(
+    <<"tools/call">>,
+    RequestId,
+    fun() -> handle_tool_call(ToolName, Args) end
+),
+%% → Creates span "mcp.handler.tools/call" with events:
+%%   - server.request_received
+%%   - server.processing_started
+%%   - server.processing_completed
+%%   - server.response_sent
+```
+
+#### Baggage Propagation
+
+```erlang
+%% Set baggage for correlation (automatically propagates to child spans)
+ok = erlmcp_otel:propagate_baggage(user_id, <<"user-123">>),
+ok = erlmcp_otel:propagate_baggage(tenant, <<"tenant-abc">>),
+ok = erlmcp_otel:propagate_baggage(request_id, RequestId),
+
+%% Retrieve baggage in any span
+UserId = erlmcp_otel:get_baggage(<<"user_id">>),
+AllBaggage = erlmcp_otel:get_all_baggage(),
+```
+
+#### Cross-Process Trace Propagation
+
+```erlang
+%% Parent process
+ParentSpan = erlmcp_otel:start_span(<<"parent.operation">>, #{}),
+TraceCtx = erlmcp_otel:create_trace_ctx(ParentSpan),
+
+%% Spawn child process with trace context
+spawn(fun() ->
+    %% Restore context in child
+    ChildCtx = erlmcp_otel:restore_trace_ctx(TraceCtx),
+    ChildSpan = erlmcp_otel:start_span(<<"child.operation">>, #{}, ChildCtx),
+
+    %% Child span inherits parent's trace ID and baggage
+    %% Work here...
+
+    erlmcp_otel:end_span(ChildSpan)
+end),
+```
+
+#### Span Linking (for cross-service correlation)
+
+```erlang
+%% Link two related spans
+Span1 = erlmcp_otel:start_span(<<"operation.1">>, #{}),
+Span2 = erlmcp_otel:start_span(<<"operation.2">>, #{}),
+
+%% Link Span2 to Span1 for correlation
+ok = erlmcp_otel:link_span(Span2, Span1),
+```
+
+#### Manual Span Creation
+
+```erlang
+%% Manual span with automatic error handling
+erlmcp_otel:with_span(<<"custom_operation">>, #{
+    <<"custom.attribute">> => <<"value">>
+}, fun() ->
+    %% Add events during execution
+    SpanCtx = erlmcp_otel:get_current_context(),
+    erlmcp_otel:add_event(SpanCtx, <<"checkpoint_reached">>, #{step => 1}),
+
     {ok, result}
 end).
 ```
 
 **OTEL Exporters:**
 - **Jaeger:** `http://localhost:4318` (OTLP HTTP)
-- **Honeycomb:** `https://api.honeycomb.io` (requires API key)
 - **Datadog:** `http://localhost:4318` (Datadog Agent OTLP)
+- **Honeycomb:** `https://api.honeycomb.io` (requires API key)
 
 ### Metrics Collection
 
@@ -226,19 +320,40 @@ rebar3 dialyzer --app erlmcp_observability
 
 ## Performance Impact
 
-**Benchmarked overhead (v1.5.0):**
+**Benchmarked overhead (v2.0.0):**
 
 | Feature | Overhead | Notes |
 |---------|----------|-------|
 | **OTEL Tracing (sampled)** | 12 μs/span | Negligible at 1% sampling |
 | **OTEL Tracing (100%)** | 89 μs/span | Reduces throughput ~8% |
+| **RPC Span Injection** | 15 μs/call | Automatic with middleware |
+| **Baggage Propagation** | 2 μs/item | Per baggage item set |
+| **Trace Context Serialization** | 8 μs/context | Cross-process propagation |
+| **Middleware Transport Wrap** | 18 μs/operation | Includes event creation |
 | **Metrics (counter)** | 0.4 μs/op | ETS-based, lock-free |
 | **Receipt Chains** | 230 μs/append | File I/O bottleneck |
 
+**Sampling Strategy Overhead:**
+- **Head-based (trace_id_ratio)**: 3 μs/decision (deterministic)
+- **Tail-based**: 45 μs/decision (evaluates latency + errors)
+- **Parent-based**: 1 μs/decision (checks parent flags)
+
 **Recommendations:**
-- Use sampling (1-10%) in production for OTEL
+- Use `trace_id_ratio` or `parent_based` sampling (1-10%) in production
+- Enable `tail_based` for critical paths (auto-samples high latency/errors)
+- Use middleware for automatic tracing (minimal overhead)
 - Async receipt chain appends (non-blocking)
 - Prometheus scrape interval: 60s minimum
+
+**Production Configuration Example:**
+```erlang
+{otel_defaults, #{
+    sampling => parent_based,  % Respect upstream sampling decisions
+    sampling_rate => 0.05,  % 5% base sampling rate
+    tail_sampling_latency_threshold_us => 100000,  % 100ms
+    tail_sampling_error_rate => 0.01  % Always sample 1% of errors
+}}.
+```
 
 ## Integration Guide
 
@@ -256,11 +371,76 @@ Configure erlmcp:
 
 ```erlang
 {otel_defaults, #{
-    endpoint => "http://localhost:4318"
+    service_name => <<"erlmcp-server">>,
+    exporter => {jaeger, #{
+        endpoint => "http://localhost:4318/v1/traces",
+        protocol => http_protobuf,
+        batch_timeout => 5000,
+        max_queue_size => 2048,
+        headers => []
+    }},
+    sampling => parent_based,
+    sampling_rate => 0.1
 }}.
 ```
 
 View traces at `http://localhost:16686`.
+
+### With Datadog
+
+```bash
+# Run Datadog Agent with OTLP
+docker run -d --name datadog-agent \
+  -e DD_API_KEY=<YOUR_DD_API_KEY> \
+  -e DD_SITE=datadoghq.com \
+  -e DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT=0.0.0.0:4318 \
+  -p 4318:4318 \
+  datadog/agent:latest
+```
+
+Configure erlmcp:
+
+```erlang
+{otel_defaults, #{
+    service_name => <<"erlmcp-server">>,
+    exporter => {datadog, #{
+        endpoint => "http://localhost:4318/v1/traces",
+        api_key => <<"YOUR_DD_API_KEY">>,  % Optional for agent
+        env => <<"production">>,
+        service => <<"erlmcp">>,
+        version => <<"2.0.0">>,
+        tags => #{
+            <<"team">> => <<"platform">>,
+            <<"region">> => <<"us-west-2">>
+        }
+    }}
+}}.
+```
+
+View traces in Datadog APM.
+
+### With Honeycomb
+
+Configure erlmcp:
+
+```erlang
+{otel_defaults, #{
+    service_name => <<"erlmcp-server">>,
+    exporter => {honeycomb, #{
+        endpoint => "https://api.honeycomb.io",
+        api_key => <<"YOUR_HONEYCOMB_API_KEY">>,
+        dataset => <<"erlmcp-traces">>,
+        sample_rate => 10,  % Sample 1 in 10 traces
+        batch_timeout => 5000,
+        environment => <<"production">>
+    }},
+    sampling => tail_based,
+    tail_sampling_latency_threshold_us => 100000,  % 100ms
+    tail_sampling_error_rate => 0.01  % Sample 1% of errors
+}}.
+```
+
+View traces in Honeycomb UI.
 
 ### With Prometheus
 

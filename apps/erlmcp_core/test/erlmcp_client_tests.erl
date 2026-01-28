@@ -85,11 +85,11 @@ initialization_test_() ->
      end}.
 
 test_initialize(Client) ->
-    ClientInfo = #{
-        name => <<"test_client">>,
-        version => <<"1.0.0">>
+    ClientCapabilities = #mcp_client_capabilities{
+        roots = #mcp_capability{enabled = false},
+        sampling = #mcp_capability{enabled = false}
     },
-    Result = erlmcp_client:initialize(Client, ClientInfo),
+    Result = erlmcp_client:initialize(Client, ClientCapabilities),
     case Result of
         {ok, _ServerInfo} ->
             ?assert(true);
@@ -99,15 +99,11 @@ test_initialize(Client) ->
     end.
 
 test_initialize_with_capabilities(Client) ->
-    ClientInfo = #{
-        name => <<"test_client_caps">>,
-        version => <<"1.0.0">>
-    },
     ClientCapabilities = #mcp_client_capabilities{
         roots = #mcp_capability{enabled = true},
         sampling = #mcp_capability{enabled = true}
     },
-    Result = erlmcp_client:initialize(Client, ClientInfo, ClientCapabilities),
+    Result = erlmcp_client:initialize(Client, ClientCapabilities, #{}),
     case Result of
         {ok, _ServerInfo} ->
             ?assert(true);
@@ -370,6 +366,48 @@ test_set_strict_mode(Client) ->
     ?assertMatch(ok, Result),
     Result2 = erlmcp_client:set_strict_mode(Client, false),
     ?assertMatch(ok, Result2).
+
+%%====================================================================
+%% Capability Encoding Tests
+%%====================================================================
+
+capability_encoding_test_() ->
+    [
+        ?_test(test_encode_tuple_format()),
+        ?_test(test_encode_map_format()),
+        ?_test(test_encode_plain_map()),
+        ?_test(test_encode_record_format())
+    ].
+
+test_encode_tuple_format() ->
+    % Test tuple format {Name, Version}
+    Input = {<<"test_client">>, <<"1.0.0">>},
+    Result = erlmcp_client:encode_capabilities(Input),
+    ?assertMatch(#{name := <<"test_client">>, version := <<"1.0.0">>}, Result).
+
+test_encode_map_format() ->
+    % Test map format with name/version
+    Input = #{name => <<"client">>, version => <<"2.0.0">>},
+    Result = erlmcp_client:encode_capabilities(Input),
+    ?assertMatch(#{name := <<"client">>, version := <<"2.0.0">>}, Result).
+
+test_encode_plain_map() ->
+    % Test plain map pass-through
+    Input = #{custom_field => <<"value">>, other => 123},
+    Result = erlmcp_client:encode_capabilities(Input),
+    ?assertEqual(Input, Result).
+
+test_encode_record_format() ->
+    % Test MCP client capabilities record
+    Input = #mcp_client_capabilities{
+        roots = #mcp_capability{enabled = true},
+        sampling = #mcp_capability{enabled = true},
+        experimental = #{feature1 => true}
+    },
+    Result = erlmcp_client:encode_capabilities(Input),
+    ?assert(is_map(Result)),
+    ?assertMatch(#{<<"roots">> := #{}, <<"sampling">> := #{}}, Result),
+    ?assertMatch(#{feature1 := true}, Result).
 
 %%====================================================================
 %% Setup and Cleanup

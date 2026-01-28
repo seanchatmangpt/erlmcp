@@ -19,6 +19,11 @@
     stop/1
 ]).
 
+%% Test exports
+-ifdef(TEST).
+-export([encode_capabilities/1]).
+-endif.
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -527,7 +532,18 @@ build_prompt_params(Name, Arguments) when map_size(Arguments) =:= 0 ->
 build_prompt_params(Name, Arguments) ->
     #{<<"name">> => Name, <<"arguments">> => Arguments}.
 
--spec encode_capabilities(#mcp_client_capabilities{}) -> map().
+-spec encode_capabilities(#mcp_client_capabilities{} | {binary(), binary()} | map()) -> map().
+%% Handle tuple format {Name, Version}
+encode_capabilities({Name, Version}) when is_binary(Name), is_binary(Version) ->
+    #{name => Name, version => Version};
+%% Handle map with name/version keys
+encode_capabilities(#{name := Name, version := Version} = Caps)
+  when is_binary(Name), is_binary(Version) ->
+    Caps;
+%% Handle plain map (pass through)
+encode_capabilities(Caps) when is_map(Caps), not is_record(Caps, mcp_client_capabilities) ->
+    Caps;
+%% Handle MCP client capabilities record
 encode_capabilities(#mcp_client_capabilities{} = Caps) ->
     Base = #{},
     Base1 = maybe_add_capability(Base, <<"roots">>, Caps#mcp_client_capabilities.roots),

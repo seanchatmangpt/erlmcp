@@ -25,7 +25,8 @@
       opentelemetry_api,
       opentelemetry,
       jobs,
-      fs
+      fs,
+      mnesia
   ]},
   {mod, {erlmcp_app, []}},
   {env, [
@@ -49,6 +50,13 @@
               request_timeout => 30000,
               max_connections => 100
           }
+      }},
+      {cache_defaults, #{
+          max_l1_size => 10000,
+          max_l2_size => 100000,
+          default_ttl_seconds => 300,
+          cleanup_interval_ms => 60000,
+          allowed_resource_dirs => [<<"/">>]
       }}
   ]},
   {modules, []},
