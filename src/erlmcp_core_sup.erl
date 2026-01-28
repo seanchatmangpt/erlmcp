@@ -114,6 +114,18 @@ init([]) ->
             modules => [erlmcp_icon_cache]
         },
 
+        %% ================================================================
+        %% CACHE: Multi-level intelligent caching (L1: ETS, L2: Mnesia, L3: External)
+        %% ================================================================
+        #{
+            id => erlmcp_cache,
+            start => {erlmcp_cache, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_cache]
+        },
+
         #{
             id => erlmcp_session_replicator,
             start => {erlmcp_session_replicator, start_link, []},

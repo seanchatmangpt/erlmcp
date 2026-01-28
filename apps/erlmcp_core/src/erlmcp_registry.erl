@@ -6,11 +6,11 @@
 %% API exports
 -export([
     start_link/0,
-    register_server/3, register_transport/3,
-    unregister_server/1, unregister_transport/1,
+    register_server/3, register_server/4, register_transport/3, register_transport/4,
+    unregister_server/1, unregister_server/2, unregister_transport/1, unregister_transport/2,
     route_to_server/3, route_to_transport/3,
-    find_server/1, find_transport/1,
-    list_servers/0, list_transports/0,
+    find_server/1, find_server/2, find_transport/1, find_transport/2,
+    list_servers/0, list_servers/1, list_transports/0, list_transports/1,
     bind_transport_to_server/2, unbind_transport/1,
     get_server_for_transport/1
 ]).
@@ -51,19 +51,45 @@ start_link() ->
 
 -spec register_server(server_id(), pid(), server_config()) -> ok | {error, term()}.
 register_server(ServerId, ServerPid, Config) when is_pid(ServerPid) ->
-    gen_server:call(?MODULE, {register_server, ServerId, ServerPid, Config}).
+    register_server(local, ServerId, ServerPid, Config).
+
+-spec register_server(local | global, server_id(), pid(), server_config()) -> ok | {error, term()}.
+register_server(local, ServerId, ServerPid, Config) when is_pid(ServerPid) ->
+    gen_server:call(?MODULE, {register_server, ServerId, ServerPid, Config});
+register_server(global, ServerId, ServerPid, Config) when is_pid(ServerPid) ->
+    ConfigWithPid = Config#{pid => ServerPid},
+    erlmcp_registry_dist:register_global(server, ServerId, ServerPid, ConfigWithPid).
 
 -spec register_transport(transport_id(), pid(), transport_config()) -> ok | {error, term()}.
 register_transport(TransportId, TransportPid, Config) when is_pid(TransportPid) ->
-    gen_server:call(?MODULE, {register_transport, TransportId, TransportPid, Config}).
+    register_transport(local, TransportId, TransportPid, Config).
+
+-spec register_transport(local | global, transport_id(), pid(), transport_config()) -> ok | {error, term()}.
+register_transport(local, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
+    gen_server:call(?MODULE, {register_transport, TransportId, TransportPid, Config});
+register_transport(global, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
+    ConfigWithPid = Config#{pid => TransportPid},
+    erlmcp_registry_dist:register_global(transport, TransportId, TransportPid, ConfigWithPid).
 
 -spec unregister_server(server_id()) -> ok.
 unregister_server(ServerId) ->
-    gen_server:call(?MODULE, {unregister_server, ServerId}).
+    unregister_server(local, ServerId).
+
+-spec unregister_server(local | global, server_id()) -> ok.
+unregister_server(local, ServerId) ->
+    gen_server:call(?MODULE, {unregister_server, ServerId});
+unregister_server(global, ServerId) ->
+    erlmcp_registry_dist:unregister_global({server, ServerId}).
 
 -spec unregister_transport(transport_id()) -> ok.
 unregister_transport(TransportId) ->
-    gen_server:call(?MODULE, {unregister_transport, TransportId}).
+    unregister_transport(local, TransportId).
+
+-spec unregister_transport(local | global, transport_id()) -> ok.
+unregister_transport(local, TransportId) ->
+    gen_server:call(?MODULE, {unregister_transport, TransportId});
+unregister_transport(global, TransportId) ->
+    erlmcp_registry_dist:unregister_global({transport, TransportId}).
 
 -spec route_to_server(server_id(), transport_id(), term()) -> ok | {error, term()}.
 route_to_server(ServerId, TransportId, Message) ->
@@ -77,19 +103,43 @@ route_to_transport(TransportId, ServerId, Message) ->
 
 -spec find_server(server_id()) -> {ok, {pid(), server_config()}} | {error, not_found}.
 find_server(ServerId) ->
-    gen_server:call(?MODULE, {find_server, ServerId}).
+    find_server(local, ServerId).
+
+-spec find_server(local | global, server_id()) -> {ok, {pid(), server_config()}} | {ok, {node(), pid(), server_config()}} | {error, not_found}.
+find_server(local, ServerId) ->
+    gen_server:call(?MODULE, {find_server, ServerId});
+find_server(global, ServerId) ->
+    erlmcp_registry_dist:whereis_global({server, ServerId}).
 
 -spec find_transport(transport_id()) -> {ok, {pid(), transport_config()}} | {error, not_found}.
 find_transport(TransportId) ->
-    gen_server:call(?MODULE, {find_transport, TransportId}).
+    find_transport(local, TransportId).
+
+-spec find_transport(local | global, transport_id()) -> {ok, {pid(), transport_config()}} | {ok, {node(), pid(), transport_config()}} | {error, not_found}.
+find_transport(local, TransportId) ->
+    gen_server:call(?MODULE, {find_transport, TransportId});
+find_transport(global, TransportId) ->
+    erlmcp_registry_dist:whereis_global({transport, TransportId}).
 
 -spec list_servers() -> [{server_id(), {pid(), server_config()}}].
 list_servers() ->
-    gen_server:call(?MODULE, list_servers).
+    list_servers(local).
+
+-spec list_servers(local | global) -> [{server_id(), {pid(), server_config()}}] | [{server_id(), {node(), pid(), server_config()}}].
+list_servers(local) ->
+    gen_server:call(?MODULE, list_servers);
+list_servers(global) ->
+    erlmcp_registry_dist:list_global_servers().
 
 -spec list_transports() -> [{transport_id(), {pid(), transport_config()}}].
 list_transports() ->
-    gen_server:call(?MODULE, list_transports).
+    list_transports(local).
+
+-spec list_transports(local | global) -> [{transport_id(), {pid(), transport_config()}}] | [{transport_id(), {node(), pid(), transport_config()}}].
+list_transports(local) ->
+    gen_server:call(?MODULE, list_transports);
+list_transports(global) ->
+    erlmcp_registry_dist:list_global_transports().
 
 -spec bind_transport_to_server(transport_id(), server_id()) -> ok | {error, term()}.
 bind_transport_to_server(TransportId, ServerId) ->

@@ -762,12 +762,13 @@ validate_stage_field(Receipt) ->
             {error, invalid_stage}
     end.
 
-is_atom_stage(Stage) when is_binary(Stage) ->
-    try binary_to_existing_atom(Stage, utf8) of
-        _ -> true
-    catch
-        _:_ -> false
-    end.
+%% Commented out: function is unused
+%% is_atom_stage(Stage) when is_binary(Stage) ->
+%%     try binary_to_existing_atom(Stage, utf8) of
+%%         _ -> true
+%%     catch
+%%         _:_ -> false
+%%     end.
 
 validate_status_field(Receipt) ->
     ValidStatuses = [

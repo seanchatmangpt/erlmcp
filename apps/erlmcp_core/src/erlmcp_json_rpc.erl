@@ -373,5 +373,6 @@ build_error_object(Code, Message, Data) ->
 
 %% Parsing functions moved to erlmcp_message_parser.erl for hot path optimization
 %% Import directly from erlmcp_message_parser module
-parse_json_rpc(Data) ->
-    erlmcp_message_parser:parse_json_rpc(Data).
+%% Commented out: function is unused, import directly from erlmcp_message_parser
+%% parse_json_rpc(Data) ->
+%%     erlmcp_message_parser:parse_json_rpc(Data).

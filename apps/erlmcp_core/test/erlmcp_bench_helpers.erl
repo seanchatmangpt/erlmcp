@@ -11,6 +11,7 @@
 %%% @end
 %%%====================================================================
 -module(erlmcp_bench_helpers).
+-compile([{nowarn_unused_function, [{format_metric, 2}]}]).
 
 -export([
     format_result_json/2,

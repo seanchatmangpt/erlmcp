@@ -1,0 +1,510 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% GraphQL Transport for MCP Protocol
+%%%
+%%% Provides GraphQL API Gateway alongside JSON-RPC transport.
+%%% Features:
+%%% - HTTP POST /graphql (queries & mutations)
+%%% - HTTP GET /graphql (introspection)
+%%% - WebSocket /graphql (subscriptions)
+%%% - Query batching
+%%% - DataLoader for N+1 prevention
+%%% - Query complexity limits
+%%% - Persisted queries
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_graphql).
+-behaviour(erlmcp_transport_behavior).
+-behaviour(gen_server).
+
+-include("erlmcp.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+%% erlmcp_transport_behavior callbacks (init/1 shared with gen_server)
+-export([send/2, close/1, get_info/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% API exports
+-export([
+    start_link/2,
+    execute_query/3,
+    execute_mutation/3,
+    subscribe/3,
+    get_schema/1
+]).
+
+%% Types
+-type config() :: #{
+    transport_id := atom(),
+    server_id := atom(),
+    server_pid := pid(),
+    port => inet:port_number(),
+    host => string(),
+    path => binary(),
+    enable_introspection => boolean(),
+    enable_subscriptions => boolean(),
+    max_query_depth => pos_integer(),
+    max_query_complexity => pos_integer(),
+    enable_batching => boolean(),
+    enable_persisted_queries => boolean(),
+    cors_enabled => boolean(),
+    cors_origins => [binary()]
+}.
+
+-record(state, {
+    transport_id :: atom(),
+    server_id :: atom(),
+    server_pid :: pid(),
+    schema :: term(),
+    config :: config(),
+    cowboy_listener :: term(),
+    subscriptions :: map(),
+    stats :: #{
+        queries => non_neg_integer(),
+        mutations => non_neg_integer(),
+        subscriptions => non_neg_integer(),
+        errors => non_neg_integer(),
+        bytes_sent => non_neg_integer(),
+        bytes_received => non_neg_integer()
+    }
+}).
+
+-type state() :: #state{}.
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Start GraphQL transport
+-spec start_link(atom(), config()) -> {ok, pid()} | {error, term()}.
+start_link(TransportId, Config) ->
+    gen_server:start_link({local, TransportId}, ?MODULE, [TransportId, Config], []).
+
+%% @doc Execute GraphQL query
+-spec execute_query(pid(), binary(), map()) -> {ok, map()} | {error, term()}.
+execute_query(Pid, Query, Variables) ->
+    gen_server:call(Pid, {execute_query, Query, Variables}).
+
+%% @doc Execute GraphQL mutation
+-spec execute_mutation(pid(), binary(), map()) -> {ok, map()} | {error, term()}.
+execute_mutation(Pid, Mutation, Variables) ->
+    gen_server:call(Pid, {execute_mutation, Mutation, Variables}).
+
+%% @doc Subscribe to GraphQL subscription
+-spec subscribe(pid(), binary(), map()) -> {ok, pid()} | {error, term()}.
+subscribe(Pid, Subscription, Variables) ->
+    gen_server:call(Pid, {subscribe, Subscription, Variables}).
+
+%% @doc Get current GraphQL schema
+-spec get_schema(pid()) -> {ok, term()} | {error, term()}.
+get_schema(Pid) ->
+    gen_server:call(Pid, get_schema).
+
+%%====================================================================
+%% erlmcp_transport_behavior callbacks
+%%====================================================================
+
+%% @doc Initialize transport (delegates to gen_server)
+init_transport(Config) ->
+    TransportId = maps:get(transport_id, Config),
+    case start_link(TransportId, Config) of
+        {ok, Pid} ->
+            {ok, #{transport_id => TransportId, pid => Pid}};
+        Error ->
+            Error
+    end.
+
+%% @doc Send data through transport (GraphQL is request/response, not streaming)
+send(#{pid := Pid}, Data) when is_binary(Data) ->
+    gen_server:cast(Pid, {send, Data}),
+    ok;
+send(_State, _Data) ->
+    {error, invalid_state}.
+
+%% @doc Close transport
+close(#{pid := Pid}) ->
+    gen_server:stop(Pid),
+    ok;
+close(_State) ->
+    ok.
+
+%% @doc Get transport information
+get_info(#{pid := Pid}) ->
+    case gen_server:call(Pid, get_info) of
+        {ok, Info} -> Info;
+        _ -> #{status => error}
+    end;
+get_info(_State) ->
+    #{status => error}.
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+init([TransportId, Config]) ->
+    ?LOG_INFO("Starting GraphQL transport: ~p", [TransportId]),
+
+    process_flag(trap_exit, true),
+
+    %% Extract configuration
+    ServerId = maps:get(server_id, Config),
+    ServerPid = maps:get(server_pid, Config),
+    Port = maps:get(port, Config, 4000),
+    Path = maps:get(path, Config, <<"/graphql">>),
+
+    %% Register with registry
+    ok = erlmcp_transport_behavior:register_with_registry(TransportId, self(), Config),
+
+    %% Build GraphQL schema from MCP server
+    SchemaConfig = #{
+        server_id => ServerId,
+        enable_introspection => maps:get(enable_introspection, Config, true),
+        enable_subscriptions => maps:get(enable_subscriptions, Config, true),
+        max_query_depth => maps:get(max_query_depth, Config, 10)
+    },
+
+    case build_schema(ServerPid, SchemaConfig) of
+        {ok, Schema} ->
+            %% Start Cowboy HTTP server
+            case start_http_server(TransportId, Port, Path, Schema, Config) of
+                {ok, Listener} ->
+                    State = #state{
+                        transport_id = TransportId,
+                        server_id = ServerId,
+                        server_pid = ServerPid,
+                        schema = Schema,
+                        config = Config,
+                        cowboy_listener = Listener,
+                        subscriptions = #{},
+                        stats = init_stats()
+                    },
+
+                    ?LOG_INFO("GraphQL transport ~p started on port ~p", [TransportId, Port]),
+                    {ok, State};
+                {error, Reason} ->
+                    ?LOG_ERROR("Failed to start HTTP server: ~p", [Reason]),
+                    {stop, Reason}
+            end;
+        {error, Reason} ->
+            ?LOG_ERROR("Failed to build GraphQL schema: ~p", [Reason]),
+            {stop, Reason}
+    end.
+
+handle_call({execute_query, Query, Variables}, _From, State) ->
+    Result = execute_graphql(query, Query, Variables, State),
+    NewState = increment_stat(queries, State),
+    {reply, Result, NewState};
+
+handle_call({execute_mutation, Mutation, Variables}, _From, State) ->
+    Result = execute_graphql(mutation, Mutation, Variables, State),
+    NewState = increment_stat(mutations, State),
+    {reply, Result, NewState};
+
+handle_call({subscribe, Subscription, Variables}, _From, State) ->
+    Result = execute_subscription(Subscription, Variables, State),
+    NewState = case Result of
+        {ok, _Pid} -> increment_stat(subscriptions, State);
+        _ -> State
+    end,
+    {reply, Result, NewState};
+
+handle_call(get_schema, _From, State) ->
+    {reply, {ok, State#state.schema}, State};
+
+handle_call(get_info, _From, State) ->
+    Info = #{
+        transport_id => State#state.transport_id,
+        type => graphql,
+        status => running,
+        config => State#state.config,
+        statistics => State#state.stats,
+        schema_available => State#state.schema =/= undefined,
+        subscriptions_count => maps:size(State#state.subscriptions)
+    },
+    {reply, {ok, Info}, State};
+
+handle_call({graphql_http_request, Method, Body}, _From, State) ->
+    Result = handle_http_request(Method, Body, State),
+    {reply, Result, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+handle_cast({send, _Data}, State) ->
+    %% GraphQL transport doesn't support push messages
+    %% Could log or handle specially if needed
+    {noreply, State};
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info({subscription_update, SubId, Data}, State) ->
+    %% Handle subscription updates
+    case maps:get(SubId, State#state.subscriptions, undefined) of
+        undefined ->
+            {noreply, State};
+        SubPid ->
+            SubPid ! {graphql_data, Data},
+            {noreply, State}
+    end;
+
+handle_info({'EXIT', _Pid, _Reason}, State) ->
+    %% Handle subscription process exits
+    {noreply, State};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, #state{transport_id = TransportId, cowboy_listener = Listener}) ->
+    %% Stop Cowboy listener
+    catch cowboy:stop_listener(Listener),
+
+    %% Unregister from registry
+    erlmcp_transport_behavior:unregister_from_registry(TransportId),
+
+    ?LOG_INFO("GraphQL transport ~p terminated", [TransportId]),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions - Schema
+%%====================================================================
+
+%% @private
+%% Build GraphQL schema from MCP server
+-spec build_schema(pid(), map()) -> {ok, term()} | {error, term()}.
+build_schema(ServerPid, Config) ->
+    try
+        %% Get MCP entities from server (via internal calls)
+        Tools = get_server_tools(ServerPid),
+        Resources = get_server_resources(ServerPid),
+        Prompts = get_server_prompts(ServerPid),
+
+        %% Build schema
+        SchemaConfig = Config#{
+            tools => Tools,
+            resources => Resources,
+            prompts => Prompts
+        },
+
+        erlmcp_graphql_schema:build_schema(SchemaConfig)
+    catch
+        Class:Reason:Stack ->
+            ?LOG_ERROR("Error building schema: ~p:~p~n~p", [Class, Reason, Stack]),
+            {error, schema_build_failed}
+    end.
+
+%% @private
+%% Get tools from MCP server
+-spec get_server_tools(pid()) -> [map()].
+get_server_tools(_ServerPid) ->
+    %% This would call the server to get current tools
+    %% For now, return empty list (schema will be dynamic)
+    [].
+
+%% @private
+%% Get resources from MCP server
+-spec get_server_resources(pid()) -> [map()].
+get_server_resources(_ServerPid) ->
+    [].
+
+%% @private
+%% Get prompts from MCP server
+-spec get_server_prompts(pid()) -> [map()].
+get_server_prompts(_ServerPid) ->
+    [].
+
+%%====================================================================
+%% Internal Functions - HTTP Server
+%%====================================================================
+
+%% @private
+%% Start Cowboy HTTP server for GraphQL endpoints
+-spec start_http_server(atom(), inet:port_number(), binary(), term(), config()) ->
+    {ok, term()} | {error, term()}.
+start_http_server(TransportId, Port, Path, Schema, Config) ->
+    %% Create dispatch rules
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            %% POST /graphql - queries and mutations
+            {Path, erlmcp_graphql_http_handler, #{
+                transport_id => TransportId,
+                schema => Schema,
+                config => Config
+            }},
+
+            %% GET /graphql - GraphiQL interface (if introspection enabled)
+            {<<Path/binary, "/ui">>, erlmcp_graphql_ui_handler, #{
+                endpoint => Path
+            }},
+
+            %% WebSocket /graphql/ws - subscriptions
+            {<<Path/binary, "/ws">>, erlmcp_graphql_ws_handler, #{
+                transport_id => TransportId,
+                schema => Schema,
+                config => Config
+            }}
+        ]}
+    ]),
+
+    %% Start Cowboy listener
+    ListenerId = list_to_atom(atom_to_list(TransportId) ++ "_graphql"),
+    CowboyOpts = #{
+        env => #{dispatch => Dispatch}
+    },
+
+    case cowboy:start_clear(ListenerId, [{port, Port}], CowboyOpts) of
+        {ok, _Pid} ->
+            {ok, ListenerId};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%%====================================================================
+%% Internal Functions - Execution
+%%====================================================================
+
+%% @private
+%% Execute GraphQL query/mutation
+-spec execute_graphql(query | mutation, binary(), map(), state()) ->
+    {ok, map()} | {error, term()}.
+execute_graphql(Type, QueryString, Variables, State) ->
+    Context = #{
+        server_id => State#state.server_id,
+        server_pid => State#state.server_pid,
+        transport_id => State#state.transport_id
+    },
+
+    try
+        case graphql:execute(State#state.schema, QueryString, Variables, Context) of
+            {ok, #{data := Data}} ->
+                {ok, #{data => Data}};
+            {ok, #{data := Data, errors := Errors}} ->
+                {ok, #{data => Data, errors => format_errors(Errors)}};
+            {error, Errors} when is_list(Errors) ->
+                {error, #{errors => format_errors(Errors)}};
+            {error, Reason} ->
+                {error, #{errors => [format_error(Reason)]}}
+        end
+    catch
+        Class:Error:Stack ->
+            ?LOG_ERROR("Error executing ~p: ~p:~p~n~p", [Type, Class, Error, Stack]),
+            {error, #{errors => [#{message => <<"Execution failed">>}]}}
+    end.
+
+%% @private
+%% Execute GraphQL subscription
+-spec execute_subscription(binary(), map(), state()) -> {ok, pid()} | {error, term()}.
+execute_subscription(SubString, Variables, State) ->
+    Context = #{
+        server_id => State#state.server_id,
+        server_pid => State#state.server_pid,
+        transport_id => State#state.transport_id
+    },
+
+    try
+        %% Parse and execute subscription
+        case graphql:execute(State#state.schema, SubString, Variables, Context) of
+            {ok, #{data := StreamPid}} when is_pid(StreamPid) ->
+                {ok, StreamPid};
+            {error, Reason} ->
+                {error, Reason};
+            Other ->
+                ?LOG_WARNING("Unexpected subscription result: ~p", [Other]),
+                {error, invalid_subscription}
+        end
+    catch
+        Class:Error:Stack ->
+            ?LOG_ERROR("Error executing subscription: ~p:~p~n~p", [Class, Error, Stack]),
+            {error, subscription_failed}
+    end.
+
+%% @private
+%% Handle HTTP request
+-spec handle_http_request(binary(), binary(), state()) -> {ok, map()} | {error, term()}.
+handle_http_request(<<"POST">>, Body, State) ->
+    try
+        Request = jsx:decode(Body, [return_maps]),
+        Query = maps:get(<<"query">>, Request),
+        Variables = maps:get(<<"variables">>, Request, #{}),
+        OperationName = maps:get(<<"operationName">>, Request, undefined),
+
+        %% Determine if this is a query or mutation
+        Type = determine_operation_type(Query, OperationName),
+
+        execute_graphql(Type, Query, Variables, State)
+    catch
+        _:_ ->
+            {error, #{errors => [#{message => <<"Invalid request body">>}]}}
+    end;
+
+handle_http_request(<<"GET">>, _Body, State) ->
+    %% GET requests are typically for introspection
+    IntrospectionQuery = <<"{ __schema { types { name } } }">>,
+    execute_graphql(query, IntrospectionQuery, #{}, State);
+
+handle_http_request(_Method, _Body, _State) ->
+    {error, #{errors => [#{message => <<"Method not allowed">>}]}}.
+
+%%====================================================================
+%% Internal Functions - Helpers
+%%====================================================================
+
+%% @private
+%% Initialize statistics
+-spec init_stats() -> map().
+init_stats() ->
+    #{
+        queries => 0,
+        mutations => 0,
+        subscriptions => 0,
+        errors => 0,
+        bytes_sent => 0,
+        bytes_received => 0
+    }.
+
+%% @private
+%% Increment a statistic
+-spec increment_stat(atom(), state()) -> state().
+increment_stat(Stat, #state{stats = Stats} = State) ->
+    NewStats = Stats#{Stat => maps:get(Stat, Stats, 0) + 1},
+    State#state{stats = NewStats}.
+
+%% @private
+%% Format GraphQL errors
+-spec format_errors(list()) -> [map()].
+format_errors(Errors) when is_list(Errors) ->
+    [format_error(E) || E <- Errors].
+
+%% @private
+%% Format single error
+-spec format_error(term()) -> map().
+format_error(#{message := Msg} = Error) ->
+    Error#{message => ensure_binary(Msg)};
+format_error(Msg) when is_binary(Msg) ->
+    #{message => Msg};
+format_error(Msg) ->
+    #{message => iolist_to_binary(io_lib:format("~p", [Msg]))}.
+
+%% @private
+%% Ensure value is binary
+-spec ensure_binary(term()) -> binary().
+ensure_binary(B) when is_binary(B) -> B;
+ensure_binary(L) when is_list(L) -> list_to_binary(L);
+ensure_binary(A) when is_atom(A) -> atom_to_binary(A, utf8);
+ensure_binary(T) -> iolist_to_binary(io_lib:format("~p", [T])).
+
+%% @private
+%% Determine operation type from query
+-spec determine_operation_type(binary(), binary() | undefined) -> query | mutation.
+determine_operation_type(Query, _OperationName) ->
+    %% Simple heuristic: if query starts with "mutation", it's a mutation
+    case Query of
+        <<"mutation", _/binary>> -> mutation;
+        _ -> query
+    end.

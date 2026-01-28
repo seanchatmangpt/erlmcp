@@ -32,7 +32,13 @@
     buffer_size => pos_integer(),
     num_acceptors => pos_integer(),
     max_connections => pos_integer() | infinity,
-    max_reconnect_attempts => pos_integer() | infinity
+    max_reconnect_attempts => pos_integer() | infinity,
+    % Pool configuration
+    use_pool => boolean(),
+    pool_name => atom(),
+    pool_min_size => pos_integer(),
+    pool_max_size => pos_integer(),
+    pool_strategy => round_robin | least_loaded | random
 }.
 
 -record(state, {
@@ -64,6 +70,11 @@
 -define(INITIAL_RECONNECT_DELAY, 1000).
 -define(MAX_RECONNECT_DELAY, 60000).
 -define(DEFAULT_MAX_RECONNECT_ATTEMPTS, infinity).
+
+%% Pool defaults
+-define(DEFAULT_POOL_MIN_SIZE, 10).
+-define(DEFAULT_POOL_MAX_SIZE, 1000).
+-define(DEFAULT_POOL_STRATEGY, round_robin).
 
 %%====================================================================
 %% Transport API (erlmcp_transport-like interface)

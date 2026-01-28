@@ -28,6 +28,18 @@ init([]) ->
 
     ChildSpecs = [
         %% ================================================================
+        %% CLUSTER: Distributed registry and cluster management
+        %% ================================================================
+        #{
+            id => erlmcp_cluster_sup,
+            start => {erlmcp_cluster_sup, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => supervisor,
+            modules => [erlmcp_cluster_sup]
+        },
+
+        %% ================================================================
         %% REGISTRY: Message routing using gproc
         %% ================================================================
         #{
@@ -49,24 +61,15 @@ init([]) ->
         },
 
         %% ================================================================
-        %% INFRASTRUCTURE: Sessions, tasks, resources
+        %% INFRASTRUCTURE: Hot reload, sessions, tasks, resources
         %% ================================================================
         #{
-            id => erlmcp_hot_reload,
-            start => {erlmcp_hot_reload, start_link, []},
+            id => erlmcp_reload_sup,
+            start => {erlmcp_reload_sup, start_link, []},
             restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_hot_reload]
-        },
-
-        #{
-            id => erlmcp_graceful_drain,
-            start => {erlmcp_graceful_drain, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_graceful_drain]
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_reload_sup]
         },
 
         #{
@@ -112,6 +115,18 @@ init([]) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_icon_cache]
+        },
+
+        %% ================================================================
+        %% CACHE: Multi-level intelligent caching (L1: ETS, L2: Mnesia, L3: External)
+        %% ================================================================
+        #{
+            id => erlmcp_cache,
+            start => {erlmcp_cache, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_cache]
         },
 
         #{

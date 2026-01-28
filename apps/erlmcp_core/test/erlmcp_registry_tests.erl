@@ -278,7 +278,7 @@ test_message_routing_to_transport(#{registry := Registry} = State) ->
     maps:put(test_pids, [Collector, MockServer, MockTransport | maps:get(test_pids, State, [])], State),
     [Test].
 
-test_process_monitoring(#{registry := Registry} = State) ->
+test_process_monitoring(#{registry := Registry} = _State) ->
     MockServer = spawn_link(fun() ->
         receive die -> exit(normal) after 5000 -> ok end
     end),

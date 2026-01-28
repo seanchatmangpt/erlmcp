@@ -9,6 +9,7 @@
 %%% - Metrics server crash: restart independently
 %%% - Health monitor crash: restart independently
 %%% - Recovery manager crash: restart independently
+%%% - Chaos framework crash: restart independently
 %%% - Receipt chain is ETS-based (survives restarts)
 %%%
 %%% @end
@@ -74,6 +75,26 @@ init(_Opts) ->
             modules => [erlmcp_metrics_server]
         },
 
+        %% Metrics Aggregator - Time-series aggregation and percentiles
+        #{
+            id => erlmcp_metrics_aggregator,
+            start => {erlmcp_metrics_aggregator, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_metrics_aggregator]
+        },
+
+        %% Dashboard Server - Real-time metrics dashboard (Cowboy + WebSocket)
+        #{
+            id => erlmcp_dashboard_server,
+            start => {erlmcp_dashboard_server, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_dashboard_server]
+        },
+
         %% Health Monitor - Component health tracking
         #{
             id => erlmcp_health_monitor,
@@ -92,11 +113,22 @@ init(_Opts) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_recovery_manager]
+        },
+
+        %% Chaos Engineering Framework - Resilience testing
+        #{
+            id => erlmcp_chaos,
+            start => {erlmcp_chaos, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_chaos]
         }
 
         %% Note: Receipt chain (erlmcp_receipt_chain) is ETS-based with no process
         %% Note: OTEL (erlmcp_otel) is a library module with no supervision
         %% Note: Evidence path (erlmcp_evidence_path) is a library module
+        %% Note: Chaos primitives are library modules (no supervision needed)
     ],
 
     {ok, {SupFlags, Children}}.

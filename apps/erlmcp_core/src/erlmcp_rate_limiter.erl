@@ -50,6 +50,7 @@
     start_link/0,
     stop/0,
     check_message_rate/2,
+    check_message_rate/3,
     check_connection_rate/2,
     check_tool_call_rate/2,
     check_subscription_rate/2,
@@ -58,7 +59,10 @@
     reset_client/1,
     get_stats/0,
     is_rate_limited/1,
-    is_ddos_attack/1
+    is_ddos_attack/1,
+    set_client_priority/2,
+    get_distributed_limit/2,
+    increment_distributed_limit/2
 ]).
 
 %% gen_server callbacks
@@ -69,7 +73,11 @@
     create_token_bucket/1,
     refill_bucket/2,
     consume_token/2,
-    bucket_tokens/1
+    bucket_tokens/1,
+    create_sliding_window/1,
+    check_sliding_window/3,
+    create_leaky_bucket/1,
+    check_leaky_bucket/2
 ]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -80,9 +88,17 @@
                               {error, rate_limited, pos_integer()}.
 -type global_rate_result() :: {ok, non_neg_integer()} |
                                {error, global_rate_limited, pos_integer()}.
+-type strategy() :: token_bucket | sliding_window | leaky_bucket.
+-type priority() :: low | normal | high.
 
 %% Token bucket state: {tokens, last_refill_time_ms}
 -type token_bucket() :: {float(), integer()}.
+
+%% Sliding window state: {requests, window_start_ms, window_size_ms}
+-type sliding_window() :: {[integer()], integer(), integer()}.
+
+%% Leaky bucket state: {queue_size, last_leak_ms, leak_rate}
+-type leaky_bucket() :: {non_neg_integer(), integer(), float()}.
 
 %% Client tracking state: #{
 %%     message_bucket => token_bucket(),
@@ -91,16 +107,22 @@
 %%     subscription_bucket => token_bucket(),
 %%     violations => non_neg_integer(),
 %%     violation_window_start => integer(),
-%%     blocked_until => integer() | undefined
+%%     blocked_until => integer() | undefined,
+%%     priority => priority(),
+%%     strategy => strategy()
 %% }
 -type client_state() :: #{
     message_bucket => token_bucket(),
     connection_bucket => token_bucket(),
     tool_call_bucket => token_bucket(),
     subscription_bucket => token_bucket(),
+    sliding_window => sliding_window(),
+    leaky_bucket => leaky_bucket(),
     violations => non_neg_integer(),
     violation_window_start => integer(),
-    blocked_until => integer() | undefined
+    blocked_until => integer() | undefined,
+    priority => priority(),
+    strategy => strategy()
 }.
 
 %% Server state
@@ -135,9 +157,14 @@ stop() ->
 %% @returns {ok, TokensRemaining} or {error, rate_limited, RetryAfterMs}
 -spec check_message_rate(client_id(), integer()) -> rate_limit_result().
 check_message_rate(ClientId, TimeNowMs) ->
+    check_message_rate(ClientId, TimeNowMs, normal).
+
+%% @doc Check message rate with priority
+-spec check_message_rate(client_id(), integer(), priority()) -> rate_limit_result().
+check_message_rate(ClientId, TimeNowMs, Priority) ->
     case is_rate_limiting_enabled() of
         false -> {ok, 999};
-        true -> gen_server:call(?MODULE, {check_message_rate, ClientId, TimeNowMs})
+        true -> gen_server:call(?MODULE, {check_message_rate, ClientId, TimeNowMs, Priority})
     end.
 
 %% @doc Check if client connection rate limit is exceeded
@@ -217,6 +244,30 @@ is_rate_limited(ClientId) ->
 is_ddos_attack(ClientId) ->
     gen_server:call(?MODULE, {is_ddos_attack, ClientId}).
 
+%% @doc Set client priority (high priority bypasses some limits)
+%% @param ClientId - Unique identifier for the client
+%% @param Priority - low | normal | high
+%% @returns ok
+-spec set_client_priority(client_id(), priority()) -> ok.
+set_client_priority(ClientId, Priority) ->
+    gen_server:call(?MODULE, {set_client_priority, ClientId, Priority}).
+
+%% @doc Get distributed limit counter using gproc
+%% @param Scope - Scope of the limit (e.g., <<"global_messages">>)
+%% @param Node - Node to query (optional, defaults to local)
+%% @returns {ok, Count} | {error, not_found}
+-spec get_distributed_limit(binary(), node()) -> {ok, non_neg_integer()} | {error, term()}.
+get_distributed_limit(Scope, Node) ->
+    gen_server:call(?MODULE, {get_distributed_limit, Scope, Node}).
+
+%% @doc Increment distributed limit counter (cluster-wide)
+%% @param Scope - Scope of the limit
+%% @param Increment - Amount to increment
+%% @returns {ok, NewValue}
+-spec increment_distributed_limit(binary(), non_neg_integer()) -> {ok, non_neg_integer()}.
+increment_distributed_limit(Scope, Increment) ->
+    gen_server:call(?MODULE, {increment_distributed_limit, Scope, Increment}).
+
 %%====================================================================
 %% gen_server Callbacks
 %%====================================================================
@@ -253,22 +304,27 @@ init([]) ->
 
 handle_call({check_message_rate, ClientId, TimeNowMs}, _From, State) ->
     MaxRate = maps:get(max_messages_per_sec, State#state.config, 100),
-    Result = check_rate(ClientId, message_bucket, MaxRate, TimeNowMs, State),
+    Result = check_rate(ClientId, message_bucket, MaxRate, TimeNowMs, normal, State),
+    {reply, Result, State};
+
+handle_call({check_message_rate, ClientId, TimeNowMs, Priority}, _From, State) ->
+    MaxRate = maps:get(max_messages_per_sec, State#state.config, 100),
+    Result = check_rate(ClientId, message_bucket, MaxRate, TimeNowMs, Priority, State),
     {reply, Result, State};
 
 handle_call({check_connection_rate, ClientId, TimeNowMs}, _From, State) ->
     MaxRate = maps:get(max_connections_per_sec, State#state.config, 10),
-    Result = check_rate(ClientId, connection_bucket, MaxRate, TimeNowMs, State),
+    Result = check_rate(ClientId, connection_bucket, MaxRate, TimeNowMs, normal, State),
     {reply, Result, State};
 
 handle_call({check_tool_call_rate, ClientId, TimeNowMs}, _From, State) ->
     MaxRate = maps:get(max_tool_calls_per_sec, State#state.config, 50),
-    Result = check_rate(ClientId, tool_call_bucket, MaxRate, TimeNowMs, State),
+    Result = check_rate(ClientId, tool_call_bucket, MaxRate, TimeNowMs, normal, State),
     {reply, Result, State};
 
 handle_call({check_subscription_rate, ClientId, TimeNowMs}, _From, State) ->
     MaxRate = maps:get(max_subscriptions_per_sec, State#state.config, 20),
-    Result = check_rate(ClientId, subscription_bucket, MaxRate, TimeNowMs, State),
+    Result = check_rate(ClientId, subscription_bucket, MaxRate, TimeNowMs, normal, State),
     {reply, Result, State};
 
 handle_call({check_global_rate, TimeNowMs}, _From, State) ->
@@ -332,6 +388,44 @@ handle_call({is_ddos_attack, ClientId}, _From, State) ->
             {reply, Count >= Threshold, State};
         [] ->
             {reply, false, State}
+    end;
+
+handle_call({set_client_priority, ClientId, Priority}, _From, State) ->
+    case ets:lookup(State#state.clients, ClientId) of
+        [{_, ClientState}] ->
+            NewClientState = ClientState#{priority => Priority},
+            ets:insert(State#state.clients, {ClientId, NewClientState}),
+            {reply, ok, State};
+        [] ->
+            NewClientState = create_client_state(),
+            ets:insert(State#state.clients, {ClientId, NewClientState#{priority => Priority}}),
+            {reply, ok, State}
+    end;
+
+handle_call({get_distributed_limit, Scope, _Node}, _From, State) ->
+    try
+        Key = {c, l, {rate_limit, Scope}},
+        case gproc:lookup_value(Key) of
+            Value when is_integer(Value) ->
+                {reply, {ok, Value}, State};
+            _ ->
+                {reply, {error, not_found}, State}
+        end
+    catch
+        error:badarg ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({increment_distributed_limit, Scope, Increment}, _From, State) ->
+    try
+        Key = {c, l, {rate_limit, Scope}},
+        NewValue = gproc:update_counter(Key, Increment),
+        {reply, {ok, NewValue}, State}
+    catch
+        error:badarg ->
+            % Counter doesn't exist, create it
+            gproc:reg({c, l, {rate_limit, Scope}}, Increment),
+            {reply, {ok, Increment}, State}
     end;
 
 handle_call(_Request, _From, State) ->
@@ -426,30 +520,49 @@ is_rate_limiting_enabled() ->
             true
     end.
 
-%% @private Check rate limit for a specific bucket type
--spec check_rate(client_id(), atom(), float(), integer(), #state{}) ->
+%% @private Check rate limit for a specific bucket type with priority
+-spec check_rate(client_id(), atom(), float(), integer(), priority(), #state{}) ->
     rate_limit_result().
-check_rate(ClientId, BucketType, MaxRate, TimeNowMs, State) ->
-    % Check if client is DDoS-blocked
-    ClientStateResult = ets:lookup(State#state.clients, ClientId),
-    case ClientStateResult of
-        [{_, ClientState}] ->
-            % Check if blocked
-            case ClientState of
-                #{blocked_until := Until} when is_integer(Until), Until > TimeNowMs ->
-                    % Client is blocked due to DDoS protection
-                    RetryAfterMs = Until - TimeNowMs,
-                    logger:warning("Client ~p is rate limited until ~p (DoS protection)",
-                                 [ClientId, Until]),
-                    {error, rate_limited, RetryAfterMs};
-                _ ->
-                    % Not blocked, check rate limit
-                    check_rate_internal(ClientId, BucketType, MaxRate, TimeNowMs, ClientState, State)
+check_rate(ClientId, BucketType, MaxRate, TimeNowMs, Priority, State) ->
+    % High priority clients bypass rate limits (but not DDoS blocks)
+    case Priority of
+        high ->
+            % Check only DDoS blocking, not rate limits
+            ClientStateResult = ets:lookup(State#state.clients, ClientId),
+            case ClientStateResult of
+                [{_, ClientState}] ->
+                    case ClientState of
+                        #{blocked_until := Until} when is_integer(Until), Until > TimeNowMs ->
+                            RetryAfterMs = Until - TimeNowMs,
+                            {error, rate_limited, RetryAfterMs};
+                        _ ->
+                            {ok, 999}  % High priority bypasses limits
+                    end;
+                [] ->
+                    {ok, 999}
             end;
-        [] ->
-            % New client, create state
-            NewClientState = create_client_state(),
-            check_rate_internal(ClientId, BucketType, MaxRate, TimeNowMs, NewClientState, State)
+        _ ->
+            % Normal and low priority clients follow rate limits
+            ClientStateResult = ets:lookup(State#state.clients, ClientId),
+            case ClientStateResult of
+                [{_, ClientState}] ->
+                    % Check if blocked
+                    case ClientState of
+                        #{blocked_until := Until} when is_integer(Until), Until > TimeNowMs ->
+                            % Client is blocked due to DDoS protection
+                            RetryAfterMs = Until - TimeNowMs,
+                            logger:warning("Client ~p is rate limited until ~p (DoS protection)",
+                                         [ClientId, Until]),
+                            {error, rate_limited, RetryAfterMs};
+                        _ ->
+                            % Not blocked, check rate limit
+                            check_rate_internal(ClientId, BucketType, MaxRate, TimeNowMs, ClientState, State)
+                    end;
+                [] ->
+                    % New client, create state
+                    NewClientState = create_client_state(),
+                    check_rate_internal(ClientId, BucketType, MaxRate, TimeNowMs, NewClientState, State)
+            end
     end.
 
 %% @private Internal rate check after DDoS blocking check
@@ -545,9 +658,13 @@ create_client_state() ->
         connection_bucket => create_token_bucket(10),
         tool_call_bucket => create_token_bucket(50),
         subscription_bucket => create_token_bucket(20),
+        sliding_window => create_sliding_window(60000),  % 1 minute window
+        leaky_bucket => create_leaky_bucket(100),
         violations => 0,
         violation_window_start => erlang:system_time(millisecond),
-        blocked_until => undefined
+        blocked_until => undefined,
+        priority => normal,
+        strategy => token_bucket
     }.
 
 %% @doc Create a token bucket with specified capacity
@@ -598,4 +715,77 @@ consume_token(Bucket, Capacity) ->
 -spec bucket_tokens(token_bucket()) -> float().
 bucket_tokens({Tokens, _LastRefillMs}) ->
     Tokens.
+
+%%====================================================================
+%% Sliding Window Algorithm Implementation
+%%====================================================================
+
+%% @doc Create a sliding window with specified window size
+%% @param WindowSizeMs - Window size in milliseconds
+%% @returns Sliding window state
+-spec create_sliding_window(integer()) -> sliding_window().
+create_sliding_window(WindowSizeMs) ->
+    TimeNowMs = erlang:system_time(millisecond),
+    {[], TimeNowMs, WindowSizeMs}.
+
+%% @doc Check sliding window rate limit
+%% @param Window - Current window state
+%% @param MaxRequests - Maximum requests in window
+%% @param TimeNowMs - Current time in milliseconds
+%% @returns {ok, NewWindow, RequestsRemaining} | {error, exceeded}
+-spec check_sliding_window(sliding_window(), integer(), integer()) ->
+    {ok, sliding_window(), non_neg_integer()} | {error, exceeded}.
+check_sliding_window({Requests, WindowStart, WindowSize}, MaxRequests, TimeNowMs) ->
+    % Remove requests outside the window
+    WindowStartTime = TimeNowMs - WindowSize,
+    ValidRequests = [T || T <- Requests, T >= WindowStartTime],
+
+    RequestCount = length(ValidRequests),
+    if
+        RequestCount < MaxRequests ->
+            % Add this request to window
+            NewRequests = [TimeNowMs | ValidRequests],
+            NewWindow = {NewRequests, WindowStart, WindowSize},
+            Remaining = MaxRequests - RequestCount - 1,
+            {ok, NewWindow, Remaining};
+        true ->
+            {error, exceeded}
+    end.
+
+%%====================================================================
+%% Leaky Bucket Algorithm Implementation
+%%====================================================================
+
+%% @doc Create a leaky bucket with specified capacity
+%% @param Capacity - Maximum queue size
+%% @returns Leaky bucket state
+-spec create_leaky_bucket(non_neg_integer()) -> leaky_bucket().
+create_leaky_bucket(Capacity) ->
+    TimeNowMs = erlang:system_time(millisecond),
+    {0, TimeNowMs, float(Capacity) / 1000.0}.  % Leak rate: capacity per second
+
+%% @doc Check leaky bucket (requests leak out at constant rate)
+%% @param Bucket - Current bucket state
+%% @param Capacity - Maximum queue size
+%% @returns {ok, NewBucket, SpaceRemaining} | {error, exceeded}
+-spec check_leaky_bucket(leaky_bucket(), non_neg_integer()) ->
+    {ok, leaky_bucket(), non_neg_integer()} | {error, exceeded}.
+check_leaky_bucket({QueueSize, LastLeakMs, LeakRate}, Capacity) ->
+    TimeNowMs = erlang:system_time(millisecond),
+    ElapsedMs = TimeNowMs - LastLeakMs,
+
+    % Calculate how much leaked out
+    Leaked = trunc((LeakRate * ElapsedMs) / 1000.0),
+    CurrentSize = max(0, QueueSize - Leaked),
+
+    if
+        CurrentSize < Capacity ->
+            % Add this request
+            NewSize = CurrentSize + 1,
+            NewBucket = {NewSize, TimeNowMs, LeakRate},
+            Remaining = Capacity - NewSize,
+            {ok, NewBucket, Remaining};
+        true ->
+            {error, exceeded}
+    end.
 

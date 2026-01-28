@@ -153,7 +153,7 @@ stop() ->
 %%====================================================================
 
 -spec init([map()] | []) -> {ok, #state{}}.
-init(Options) ->
+init(_Options) ->
     ?LOG_INFO("SLA Monitor starting", []),
     State = #state{},
     {ok, State}.

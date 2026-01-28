@@ -5,6 +5,14 @@
 %% TODO: Add opentelemetry_api dependency when telemetry is enabled
 %% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
+%% Suppress warnings for utility functions that may be called externally
+-compile([{nowarn_unused_function, [
+    {create_audio_content, 3},
+    {create_audio_content_with_metadata, 4},
+    {get_tool_description_max_length, 0},
+    {validate_tool_description, 1}
+]}]).
+
 %% API exports
 -export([
     start_link/2,
@@ -1033,7 +1041,7 @@ handle_prompt_execution(
     Prompt,
     Handler,
     State,
-    SpanCtx
+    _SpanCtx
 ) ->
     HandlerSpanCtx = erlmcp_tracing:start_span(<<"prompt.handler">>),
     try

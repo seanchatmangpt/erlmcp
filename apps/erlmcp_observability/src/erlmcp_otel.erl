@@ -73,6 +73,19 @@
     restore_context/1
 ]).
 
+%% Enhanced Tracing API
+-export([
+    inject_rpc_span/3,
+    inject_rpc_span/4,
+    link_span/2,
+    create_trace_ctx/1,
+    restore_trace_ctx/1,
+    propagate_baggage/2,
+    get_all_baggage/0,
+    sample_decision/2,
+    tail_sample_decision/1
+]).
+
 %% Configuration and management
 -export([
     configure_exporter/2,
@@ -97,9 +110,11 @@
 -type otel_config() :: #{
     service_name => binary(),
     service_version => binary(),
-    exporters => [jaeger | zipkin | prometheus | otlp | console],
-    sampling => always_on | always_off | trace_id_ratio | parent_based,
+    exporters => [jaeger | zipkin | prometheus | otlp | console | datadog | honeycomb],
+    sampling => always_on | always_off | trace_id_ratio | parent_based | head_based | tail_based,
     sampling_rate => float(),
+    tail_sampling_latency_threshold_us => pos_integer(),  % For tail-based sampling
+    tail_sampling_error_rate => float(),  % Error rate threshold for tail sampling
     resource_attributes => #{binary() => term()},
     batch_timeout => pos_integer(),
     max_queue_size => pos_integer(),
@@ -119,6 +134,14 @@
     status => ok | error | timeout,
     otel_span => term()  % OpenTelemetry span reference
 }.
+
+%% New trace context record for cross-process propagation
+-record(trace_ctx, {
+    trace_id :: binary(),
+    span_id :: binary(),
+    parent_span_id :: binary() | undefined,
+    baggage :: #{atom() => term()}
+}).
 
 -type otel_event() :: #{
     name => binary(),
@@ -461,15 +484,21 @@ shutdown() ->
 %% Get resource attributes with defaults
 -spec get_resource_attributes(otel_config()) -> #{binary() => term()}.
 get_resource_attributes(Config) ->
+    %% Get hostname safely
+    Hostname = case inet:gethostname() of
+        {ok, Name} -> list_to_binary(Name);
+        _ -> <<"unknown">>
+    end,
+
     DefaultAttrs = #{
         <<"service.name">> => maps:get(service_name, Config, <<"erlmcp">>),
         <<"service.version">> => maps:get(service_version, Config, <<"0.5.0">>),
         <<"service.language">> => <<"erlang">>,
         <<"service.runtime">> => list_to_binary(erlang:system_info(otp_release)),
-        <<"host.name">> => list_to_binary(inet:gethostname()),
+        <<"host.name">> => Hostname,
         <<"process.pid">> => list_to_binary(os:getpid())
     },
-    
+
     CustomAttrs = maps:get(resource_attributes, Config, #{}),
     maps:merge(DefaultAttrs, CustomAttrs).
 
@@ -751,3 +780,226 @@ flush_spans() ->
 shutdown_tracer_provider() ->
     % Implementation depends on OpenTelemetry library
     ok.
+
+%% =============================================================================
+%% Enhanced Tracing Functions
+%% =============================================================================
+
+%% @doc Automatically inject span for RPC calls
+%% This creates a span for client requests with proper attributes
+-spec inject_rpc_span(binary(), binary(), map()) -> span_context().
+inject_rpc_span(Method, RequestId, Params) ->
+    inject_rpc_span(Method, RequestId, Params, undefined).
+
+%% @doc Inject RPC span with explicit parent context
+-spec inject_rpc_span(binary(), binary(), map(), span_context() | undefined) -> span_context().
+inject_rpc_span(Method, RequestId, Params, ParentCtx) ->
+    SpanName = <<"mcp.rpc.", Method/binary>>,
+    Attributes = #{
+        <<"rpc.method">> => Method,
+        <<"rpc.request_id">> => RequestId,
+        <<"rpc.service">> => <<"erlmcp">>,
+        <<"rpc.system">> => <<"jsonrpc">>,
+        <<"span.kind">> => <<"client">>
+    },
+
+    %% Add parameter attributes (sanitized)
+    ParamAttrs = case Params of
+        Map when is_map(Map), map_size(Map) > 0 ->
+            sanitize_params(Map);
+        _ -> #{}
+    end,
+
+    AllAttributes = maps:merge(Attributes, ParamAttrs),
+
+    SpanCtx = start_span(SpanName, AllAttributes, ParentCtx),
+
+    %% Add RPC-specific events
+    ok = add_event(SpanCtx, <<"client.request_sent">>, #{
+        <<"request_id">> => RequestId,
+        <<"timestamp">> => erlang:system_time(nanosecond)
+    }),
+
+    SpanCtx.
+
+%% @doc Link current span to another span (for cross-process correlation)
+-spec link_span(span_context(), span_context()) -> ok.
+link_span(CurrentSpanCtx, LinkedSpanCtx) ->
+    #{trace_id := LinkedTraceId, span_id := LinkedSpanId} = LinkedSpanCtx,
+
+    %% Add link attributes
+    case add_attributes(CurrentSpanCtx, #{
+        <<"link.trace_id">> => LinkedTraceId,
+        <<"link.span_id">> => LinkedSpanId
+    }) of
+        ok ->
+            %% Update current context to reflect changes
+            UpdatedAttrs = maps:get(attributes, CurrentSpanCtx, #{}),
+            NewAttrs = maps:merge(UpdatedAttrs, #{
+                <<"link.trace_id">> => LinkedTraceId,
+                <<"link.span_id">> => LinkedSpanId
+            }),
+            UpdatedCtx = CurrentSpanCtx#{attributes => NewAttrs},
+            set_current_context(UpdatedCtx),
+
+            %% Add span linked event
+            add_event(UpdatedCtx, <<"span.linked">>, #{
+                <<"linked_trace_id">> => LinkedTraceId,
+                <<"linked_span_id">> => LinkedSpanId
+            });
+        Error -> Error
+    end.
+
+%% @doc Create trace context record for cross-process propagation
+-spec create_trace_ctx(span_context()) -> #trace_ctx{}.
+create_trace_ctx(#{trace_id := TraceId, span_id := SpanId, parent_span_id := ParentSpanId, baggage := Baggage}) ->
+    %% Convert binary baggage keys to atoms for record
+    AtomBaggage = maps:fold(fun(K, V, Acc) ->
+        case is_binary(K) of
+            true -> Acc#{binary_to_atom(K, utf8) => V};
+            false -> Acc#{K => V}
+        end
+    end, #{}, Baggage),
+
+    #trace_ctx{
+        trace_id = TraceId,
+        span_id = SpanId,
+        parent_span_id = ParentSpanId,
+        baggage = AtomBaggage
+    };
+create_trace_ctx(_) ->
+    #trace_ctx{
+        trace_id = make_trace_id(),
+        span_id = make_span_id(),
+        parent_span_id = undefined,
+        baggage = #{}
+    }.
+
+%% @doc Restore span context from trace context record
+-spec restore_trace_ctx(#trace_ctx{}) -> span_context().
+restore_trace_ctx(#trace_ctx{trace_id = TraceId, span_id = SpanId, parent_span_id = ParentSpanId, baggage = Baggage}) ->
+    %% Convert atom baggage keys back to binaries
+    BinaryBaggage = maps:fold(fun(K, V, Acc) ->
+        case is_atom(K) of
+            true -> Acc#{atom_to_binary(K, utf8) => V};
+            false -> Acc#{K => V}
+        end
+    end, #{}, Baggage),
+
+    #{
+        trace_id => TraceId,
+        span_id => SpanId,
+        parent_span_id => ParentSpanId,
+        trace_flags => 1,
+        trace_state => <<>>,
+        baggage => BinaryBaggage,
+        start_time => erlang:system_time(nanosecond),
+        attributes => #{},
+        events => [],
+        status => ok,
+        otel_span => undefined
+    }.
+
+%% @doc Propagate baggage to child processes
+-spec propagate_baggage(atom() | binary(), term()) -> ok.
+propagate_baggage(Key, Value) when is_atom(Key) ->
+    propagate_baggage(atom_to_binary(Key, utf8), Value);
+propagate_baggage(Key, Value) when is_binary(Key) ->
+    %% Convert value to binary if necessary
+    BinaryValue = case Value of
+        V when is_binary(V) -> V;
+        V when is_atom(V) -> atom_to_binary(V, utf8);
+        V when is_integer(V) -> integer_to_binary(V);
+        V when is_list(V) -> list_to_binary(V);
+        V -> list_to_binary(io_lib:format("~p", [V]))
+    end,
+    set_baggage(Key, BinaryValue).
+
+%% @doc Get all baggage from current context
+-spec get_all_baggage() -> #{binary() => binary()}.
+get_all_baggage() ->
+    case get_current_context() of
+        #{baggage := Baggage} -> Baggage;
+        _ -> #{}
+    end.
+
+%% @doc Make sampling decision based on strategy (head-based)
+-spec sample_decision(always_on | always_off | trace_id_ratio | parent_based, float()) -> boolean().
+sample_decision(always_on, _Rate) ->
+    true;
+sample_decision(always_off, _Rate) ->
+    false;
+sample_decision(trace_id_ratio, Rate) ->
+    %% Use trace ID for consistent sampling
+    case get_current_context() of
+        #{trace_id := TraceId} ->
+            sample_by_trace_id(TraceId, Rate);
+        _ ->
+            %% Fallback to random sampling
+            rand:uniform() < Rate
+    end;
+sample_decision(parent_based, Rate) ->
+    %% Check parent sampling decision
+    case get_current_context() of
+        #{trace_flags := Flags} when Flags band 1 =:= 1 ->
+            true;  % Parent was sampled
+        _ ->
+            %% No parent, use trace_id_ratio
+            sample_decision(trace_id_ratio, Rate)
+    end.
+
+%% @doc Tail-based sampling decision (after span completion)
+%% Returns true if span should be sampled based on latency and error
+-spec tail_sample_decision(span_context()) -> boolean().
+tail_sample_decision(#{start_time := StartTime, status := Status, attributes := Attributes}) ->
+    EndTime = erlang:system_time(nanosecond),
+    Duration = EndTime - StartTime,
+    DurationUs = Duration div 1000,
+
+    %% Get thresholds from config
+    Config = erlang:get(erlmcp_otel_config),
+    LatencyThreshold = maps:get(tail_sampling_latency_threshold_us, Config, 100000),  % 100ms default
+    ErrorRate = maps:get(tail_sampling_error_rate, Config, 0.01),  % 1% default
+
+    %% Sample if high latency OR error
+    IsHighLatency = DurationUs > LatencyThreshold,
+    IsError = Status =:= error orelse maps:get(<<"error">>, Attributes, false) =:= true,
+    IsRareError = IsError andalso (rand:uniform() < ErrorRate),
+
+    IsHighLatency orelse IsRareError;
+tail_sample_decision(_) ->
+    false.
+
+%% =============================================================================
+%% Private Helper Functions for Enhanced Tracing
+%% =============================================================================
+
+%% @private
+%% Sanitize RPC parameters for span attributes (remove sensitive data)
+-spec sanitize_params(map()) -> #{binary() => term()}.
+sanitize_params(Params) when is_map(Params) ->
+    SensitiveKeys = [<<"password">>, <<"token">>, <<"secret">>, <<"api_key">>, <<"auth">>],
+    maps:fold(fun(K, V, Acc) ->
+        case lists:member(K, SensitiveKeys) of
+            true -> Acc#{K => <<"[REDACTED]">>};
+            false when is_binary(V); is_number(V); is_boolean(V) ->
+                Acc#{K => V};
+            false ->
+                %% Convert complex types to string representation
+                Acc#{K => list_to_binary(io_lib:format("~p", [V]))}
+        end
+    end, #{}, Params);
+sanitize_params(_) ->
+    #{}.
+
+%% @private
+%% Sample based on trace ID (deterministic)
+-spec sample_by_trace_id(binary(), float()) -> boolean().
+sample_by_trace_id(TraceId, Rate) when is_binary(TraceId), Rate >= 0.0, Rate =< 1.0 ->
+    %% Use last 8 bytes of trace ID for sampling decision
+    Size = byte_size(TraceId) - 8,
+    <<_:Size/binary, Sample:64/integer>> = TraceId,
+    Threshold = trunc(Rate * 18446744073709551616),  % 2^64
+    Sample < Threshold;
+sample_by_trace_id(_, _) ->
+    false.
