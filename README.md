@@ -125,16 +125,64 @@ erlmcp_server:add_tool_with_schema(Server, <<"greet">>,
 
 ## v2.0.0 Architecture
 
+erlmcp v2.0.0 is an **umbrella application** with 4 independent OTP applications. This architecture provides:
+
+✅ **Separation of Concerns** - Clear application boundaries
+✅ **Optional Features** - Exclude TCPS for minimal deployments
+✅ **Independent Testing** - Test apps in isolation or together
+✅ **Fault Isolation** - Failures contained within app boundaries
+✅ **Parallel Development** - Teams work on different apps simultaneously
+
 ### 4 Independent OTP Applications
 
 | App | Modules | Purpose | Dependencies |
 |-----|---------|---------|--------------|
 | **erlmcp_core** | 14 | Core MCP protocol, JSON-RPC, registry, client/server | jsx, jesse, gproc |
-| **erlmcp_transports** | 8 | STDIO, TCP, HTTP/2, WebSocket transports | gun, ranch, poolboy, erlmcp_core |
-| **erlmcp_observability** | 9 | Metrics, OpenTelemetry, deterministic receipts | opentelemetry_*, erlmcp_core |
-| **tcps_erlmcp** | 63 | Toyota Code Production System (optional add-on) | bbmustache, cowboy, jobs, fs, erlmcp_core |
+| **erlmcp_transports** | 8 | STDIO, TCP, HTTP/2, WebSocket, SSE, GraphQL | gun, ranch, poolboy, **erlmcp_core** |
+| **erlmcp_observability** | 9 | Metrics, OpenTelemetry, receipts, health monitoring | opentelemetry_*, **erlmcp_core** |
+| **tcps_erlmcp** | 63 | Toyota Code Production System (OPTIONAL) | bbmustache, cowboy, jobs, fs, **erlmcp_core**, **erlmcp_observability** |
 
 **Total:** 94 modules organized into focused applications
+
+### Supervision Architecture
+
+```
+erlmcp_sup (one_for_one)
+├── erlmcp_core_sup (one_for_one)
+│   ├── Registry & Routing (gproc-based)
+│   ├── Session & Task Management
+│   ├── Cache (L1/L2/L3)
+│   └── Cluster & Failover
+├── erlmcp_server_sup (simple_one_for_one)
+│   └── [Dynamic MCP server instances]
+└── erlmcp_observability_sup (one_for_one)
+    ├── Metrics & Aggregation
+    ├── OpenTelemetry Integration
+    ├── Health Monitor
+    └── Chaos Engineering
+
+erlmcp_transport_sup (one_for_one)
+└── [Dynamic transport instances]
+    ├── STDIO (temporary restart)
+    ├── TCP (transient, ranch pools)
+    ├── HTTP/2 (transient, gun)
+    ├── WebSocket (transient)
+    ├── SSE (transient)
+    └── GraphQL (transient)
+
+tcps_erlmcp_sup (one_for_one) [OPTIONAL]
+├── Work Order Management
+├── Kanban (WIP limits)
+├── Quality Gates (8 gates)
+├── SKU Release Management
+└── Dashboard & Metrics
+```
+
+**Key Design Principles:**
+- **Bulkhead Pattern** - Failures isolated within app boundaries
+- **No Cascading Restarts** - `one_for_one` strategy prevents domino effects
+- **Observability Isolation** - Monitoring failures don't affect protocol
+- **Transport Independence** - Each transport type fails independently
 
 ### Build Targets by Category
 
@@ -382,13 +430,16 @@ rebar3 tcps quality-metrics
 
 ## Documentation
 
+### Core Documentation
+- **[Architecture Overview](docs/architecture.md)** - v2.0.0 umbrella design, supervision trees, inter-app communication
 - [DEVELOPMENT.md](DEVELOPMENT.md) - Development environment setup and workflows
-- [Architecture Overview](docs/architecture.md) - System design and library integration (v0.6.0)
 - [Protocol Guide](docs/protocol.md) - MCP protocol implementation details
 - [OTP Patterns](docs/otp-patterns.md) - Erlang/OTP best practices with library patterns
 - [API Reference](docs/api-reference.md) - Complete API documentation with transport config
-- [Library Migration Guide](docs/library-migration-guide.md) - v0.5 → v0.6.0 migration (NEW)
-- **[Quality Gates Documentation](docs/quality-enforcement/INDEX.md) - Zero-defect delivery system (NEW)**
+
+### Migration & Quality
+- [Library Migration Guide](docs/library-migration-guide.md) - v0.5 → v0.6.0 migration
+- **[Quality Gates Documentation](docs/quality-enforcement/INDEX.md)** - Zero-defect delivery system (TCPS)
 
 ## License
 

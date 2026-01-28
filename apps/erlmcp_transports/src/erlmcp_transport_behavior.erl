@@ -87,7 +87,14 @@
     format_transport_error/3,
     validate_transport_config/1,
     default_get_info/3,
-    default_handle_transport_call/2
+    default_handle_transport_call/2,
+    % Message validation and creation
+    validate_message/1,
+    validate_transport_opts/2,
+    create_message/3,
+    create_notification/2,
+    create_response/2,
+    create_error_response/4
 ]).
 
 %% =============================================================================
@@ -442,11 +449,162 @@ default_get_info(State, Type, Config) ->
 %% @param Request The request term
 %% @param State Current state
 %% @returns Error response
--spec default_handle_transport_call(term(), term()) -> 
+-spec default_handle_transport_call(term(), term()) ->
     {error, term()}.
 default_handle_transport_call(_Request, _State) ->
     {error, unknown_request}.
 
+%% =============================================================================
+%% Message Validation and Creation Functions
+%% =============================================================================
+
+%% @doc Validate JSON-RPC 2.0 message format
+%%
+%% Validates that a message conforms to JSON-RPC 2.0 specification.
+%% A valid message must have:
+%% - jsonrpc field with value "2.0"
+%% - Either method (request/notification), result (success response), or error (error response)
+%% - id field for requests and responses (optional for notifications)
+%%
+%% @param Message Message map to validate
+%% @returns ok | {error, Reason}
+-spec validate_message(map()) -> ok | {error, term()}.
+validate_message(Message) when is_map(Message) ->
+    case maps:get(<<"jsonrpc">>, Message, undefined) of
+        <<"2.0">> ->
+            % Check if message has valid content (method, result, or error)
+            HasMethod = maps:is_key(<<"method">>, Message),
+            HasResult = maps:is_key(<<"result">>, Message),
+            HasError = maps:is_key(<<"error">>, Message),
+
+            case {HasMethod, HasResult, HasError} of
+                {true, false, false} ->
+                    % Request or notification
+                    ok;
+                {false, true, false} ->
+                    % Success response - must have id
+                    case maps:is_key(<<"id">>, Message) of
+                        true -> ok;
+                        false -> {error, {invalid_message, missing_id_in_response}}
+                    end;
+                {false, false, true} ->
+                    % Error response - validate error structure
+                    validate_error_object(maps:get(<<"error">>, Message));
+                _ ->
+                    {error, {invalid_message, invalid_content_fields}}
+            end;
+        undefined ->
+            {error, {invalid_message, missing_jsonrpc_field}};
+        _ ->
+            {error, {invalid_message, wrong_jsonrpc_version}}
+    end;
+validate_message(_) ->
+    {error, {invalid_message, not_a_map}}.
+
+%% @doc Validate transport options for a specific transport type
+%%
+%% Each transport type has different required fields:
+%% - stdio: owner
+%% - tcp: host, port, owner
+%% - http: url, owner
+%% - websocket: url, owner
+%%
+%% @param TransportType Type of transport
+%% @param Opts Options map to validate
+%% @returns ok | {error, Reason}
+-spec validate_transport_opts(atom(), map()) -> ok | {error, term()}.
+validate_transport_opts(stdio, Opts) when is_map(Opts) ->
+    case maps:get(owner, Opts, undefined) of
+        Pid when is_pid(Pid) -> ok;
+        undefined -> {error, {invalid_opts, missing_owner}};
+        _ -> {error, {invalid_opts, invalid_owner_type}}
+    end;
+validate_transport_opts(tcp, Opts) when is_map(Opts) ->
+    case validate_tcp_opts(Opts) of
+        ok -> ok;
+        Error -> Error
+    end;
+validate_transport_opts(http, Opts) when is_map(Opts) ->
+    case validate_http_opts(Opts) of
+        ok -> ok;
+        Error -> Error
+    end;
+validate_transport_opts(websocket, Opts) when is_map(Opts) ->
+    case validate_websocket_opts(Opts) of
+        ok -> ok;
+        Error -> Error
+    end;
+validate_transport_opts(_, _) ->
+    {error, {invalid_opts, unknown_transport_type}}.
+
+%% @doc Create a JSON-RPC 2.0 request message
+%%
+%% @param Method Method name
+%% @param Params Parameters map
+%% @param Id Request ID
+%% @returns Message map
+-spec create_message(binary(), map(), term()) -> map().
+create_message(Method, Params, Id) ->
+    #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"method">> => Method,
+        <<"params">> => Params,
+        <<"id">> => Id
+    }.
+
+%% @doc Create a JSON-RPC 2.0 notification (no id field)
+%%
+%% @param Method Method name
+%% @param Params Parameters map
+%% @returns Message map
+-spec create_notification(binary(), map()) -> map().
+create_notification(Method, Params) ->
+    #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"method">> => Method,
+        <<"params">> => Params
+    }.
+
+%% @doc Create a JSON-RPC 2.0 success response
+%%
+%% @param Id Request ID
+%% @param Result Result data
+%% @returns Response map
+-spec create_response(term(), term()) -> map().
+create_response(Id, Result) ->
+    #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => Id,
+        <<"result">> => Result
+    }.
+
+%% @doc Create a JSON-RPC 2.0 error response
+%%
+%% @param Id Request ID
+%% @param Code Error code
+%% @param Message Error message
+%% @param Data Optional error data (use undefined to omit)
+%% @returns Error response map
+-spec create_error_response(term(), integer(), binary(), term()) -> map().
+create_error_response(Id, Code, Message, undefined) ->
+    #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => Id,
+        <<"error">> => #{
+            <<"code">> => Code,
+            <<"message">> => Message
+        }
+    };
+create_error_response(Id, Code, Message, Data) ->
+    #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => Id,
+        <<"error">> => #{
+            <<"code">> => Code,
+            <<"message">> => Message,
+            <<"data">> => Data
+        }
+    }.
 
 %% =============================================================================
 %% Private Functions
@@ -498,3 +656,162 @@ extract_transport_id(#{transport_id := Id}) when is_atom(Id) ->
     Id;
 extract_transport_id(_) ->
     unknown_transport.
+
+%% @private
+%% Validate error object structure
+-spec validate_error_object(map()) -> ok | {error, term()}.
+validate_error_object(ErrorObj) when is_map(ErrorObj) ->
+    case {maps:get(<<"code">>, ErrorObj, undefined),
+          maps:get(<<"message">>, ErrorObj, undefined)} of
+        {Code, Message} when is_integer(Code), is_binary(Message) ->
+            ok;
+        {undefined, _} ->
+            {error, {invalid_error, missing_code}};
+        {_, undefined} ->
+            {error, {invalid_error, missing_message}};
+        {Code, _} when not is_integer(Code) ->
+            {error, {invalid_error, code_not_integer}};
+        {_, Message} when not is_binary(Message) ->
+            {error, {invalid_error, message_not_binary}}
+    end;
+validate_error_object(_) ->
+    {error, {invalid_error, not_a_map}}.
+
+%% @private
+%% Validate TCP transport options
+-spec validate_tcp_opts(map()) -> ok | {error, term()}.
+validate_tcp_opts(Opts) ->
+    % Check owner
+    OwnerResult = case maps:get(owner, Opts, undefined) of
+        Pid when is_pid(Pid) -> ok;
+        undefined -> {error, {invalid_opts, missing_owner}};
+        _ -> {error, {invalid_opts, invalid_owner_type}}
+    end,
+
+    case OwnerResult of
+        ok ->
+            % Check host
+            HostResult = case maps:get(host, Opts, undefined) of
+                undefined ->
+                    {error, {invalid_opts, missing_host}};
+                Host when is_list(Host) ->
+                    % String host is valid
+                    ok;
+                {A, B, C, D} when is_integer(A), is_integer(B), is_integer(C), is_integer(D),
+                                  A >= 0, A =< 255, B >= 0, B =< 255,
+                                  C >= 0, C =< 255, D >= 0, D =< 255 ->
+                    % Valid IP tuple
+                    ok;
+                _ ->
+                    {error, {invalid_opts, invalid_host}}
+            end,
+
+            case HostResult of
+                ok ->
+                    % Check port
+                    case maps:get(port, Opts, undefined) of
+                        undefined ->
+                            {error, {invalid_opts, missing_port}};
+                        Port when is_integer(Port), Port > 0, Port =< 65535 ->
+                            ok;
+                        _ ->
+                            {error, {invalid_opts, invalid_port}}
+                    end;
+                Error -> Error
+            end;
+        Error -> Error
+    end.
+
+%% @private
+%% Validate HTTP transport options
+-spec validate_http_opts(map()) -> ok | {error, term()}.
+validate_http_opts(Opts) ->
+    % Check owner
+    OwnerResult = case maps:get(owner, Opts, undefined) of
+        Pid when is_pid(Pid) -> ok;
+        undefined -> {error, {invalid_opts, missing_owner}};
+        _ -> {error, {invalid_opts, invalid_owner_type}}
+    end,
+
+    case OwnerResult of
+        ok ->
+            % Check URL
+            case maps:get(url, Opts, undefined) of
+                undefined ->
+                    {error, {invalid_opts, missing_url}};
+                Url when is_binary(Url) ->
+                    validate_http_url(binary_to_list(Url));
+                Url when is_list(Url) ->
+                    validate_http_url(Url);
+                _ ->
+                    {error, {invalid_opts, invalid_url_type}}
+            end;
+        Error -> Error
+    end.
+
+%% @private
+%% Validate WebSocket transport options
+-spec validate_websocket_opts(map()) -> ok | {error, term()}.
+validate_websocket_opts(Opts) ->
+    % Check owner
+    OwnerResult = case maps:get(owner, Opts, undefined) of
+        Pid when is_pid(Pid) -> ok;
+        undefined -> {error, {invalid_opts, missing_owner}};
+        _ -> {error, {invalid_opts, invalid_owner_type}}
+    end,
+
+    case OwnerResult of
+        ok ->
+            % Check URL
+            case maps:get(url, Opts, undefined) of
+                undefined ->
+                    {error, {invalid_opts, missing_url}};
+                Url when is_binary(Url) ->
+                    validate_ws_url(binary_to_list(Url));
+                Url when is_list(Url) ->
+                    validate_ws_url(Url);
+                _ ->
+                    {error, {invalid_opts, invalid_url_type}}
+            end;
+        Error -> Error
+    end.
+
+%% @private
+%% Validate HTTP URL format
+-spec validate_http_url(string()) -> ok | {error, term()}.
+validate_http_url(Url) ->
+    case string:prefix(Url, "http://") of
+        nomatch ->
+            case string:prefix(Url, "https://") of
+                nomatch ->
+                    {error, {invalid_opts, invalid_url_scheme}};
+                _ ->
+                    validate_url_not_empty(Url)
+            end;
+        _ ->
+            validate_url_not_empty(Url)
+    end.
+
+%% @private
+%% Validate WebSocket URL format
+-spec validate_ws_url(string()) -> ok | {error, term()}.
+validate_ws_url(Url) ->
+    case string:prefix(Url, "ws://") of
+        nomatch ->
+            case string:prefix(Url, "wss://") of
+                nomatch ->
+                    {error, {invalid_opts, invalid_url_scheme}};
+                _ ->
+                    validate_url_not_empty(Url)
+            end;
+        _ ->
+            validate_url_not_empty(Url)
+    end.
+
+%% @private
+%% Validate URL is not empty
+-spec validate_url_not_empty(string()) -> ok | {error, term()}.
+validate_url_not_empty("") ->
+    {error, {invalid_opts, empty_url}};
+validate_url_not_empty(_) ->
+    ok.

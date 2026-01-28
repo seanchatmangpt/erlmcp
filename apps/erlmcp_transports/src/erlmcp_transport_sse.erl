@@ -3,9 +3,10 @@
 -include("erlmcp.hrl").
 -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
--behaviour(erlmcp_transport).
+%% Note: This module does NOT implement erlmcp_transport_behavior
+%% It is a Cowboy SSE handler with its own init/2 interface
 
-%% Transport behavior
+%% SSE-specific exports (NOT erlmcp_transport_behavior callbacks)
 -export([
     init/2,
     send/2,

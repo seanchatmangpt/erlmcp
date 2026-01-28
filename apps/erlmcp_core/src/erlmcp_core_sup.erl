@@ -51,14 +51,8 @@ init([]) ->
             modules => [erlmcp_registry]
         },
 
-        #{
-            id => erlmcp_registry_health_check,
-            start => {erlmcp_registry_health_check, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_registry_health_check]
-        },
+        %% NOTE: erlmcp_registry_health_check removed - module was never implemented
+        %% TODO: Implement health check module or remove from architecture
 
         %% ================================================================
         %% INFRASTRUCTURE: Hot reload, sessions, tasks, resources
@@ -81,13 +75,15 @@ init([]) ->
             modules => [erlmcp_session_manager]
         },
 
+        %% NOTE: erlmcp_task_manager removed - module was never implemented
+        %% Replaced by erlmcp_hooks for Claude Code integration
         #{
-            id => erlmcp_task_manager,
-            start => {erlmcp_task_manager, start_link, []},
+            id => erlmcp_hooks,
+            start => {erlmcp_hooks, start_link, []},
             restart => permanent,
             shutdown => 5000,
             type => worker,
-            modules => [erlmcp_task_manager]
+            modules => [erlmcp_hooks]
         },
 
         #{

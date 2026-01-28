@@ -53,7 +53,7 @@ setup() ->
 
     Pid.
 
-cleanup(Pid) ->
+cleanup(_Pid) ->
     erlmcp_auth:stop(),
     ok.
 
