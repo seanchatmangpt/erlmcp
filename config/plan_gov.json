@@ -1,0 +1,34 @@
+{
+  "name": "gov",
+  "tier": "gov",
+  "description": "Designed for government agencies and security-critical deployments",
+  "envelope": {
+    "requests_per_second": 50000,
+    "concurrent_connections": 25000,
+    "queue_depth": 250000,
+    "message_size_bytes": 52428800
+  },
+  "sla": {
+    "latency_p99_ms": 10,
+    "failover_seconds": 1,
+    "uptime_percent": 99.999,
+    "incident_response_hours": 1
+  },
+  "refusal": {
+    "at_capacity": "HTTP 429 Too Many Requests with adaptive rate limiting and circuit breaker",
+    "rate_limit_exceeded": "JSON-RPC error code -32002 (server busy) with priority queue position",
+    "message_too_large": "HTTP 413 Payload Too Large with stream chunking recommendation",
+    "invalid_protocol": "HTTP 400 Bad Request with comprehensive protocol state machine dump"
+  },
+  "evidence": {
+    "sbom_included": true,
+    "provenance_included": true,
+    "chaos_matrix_included": true,
+    "benchmark_results_included": true
+  },
+  "pricing": {
+    "model": "flat_per_deployment",
+    "base_cost_usd": 14999,
+    "deployment_unit": "per month"
+  }
+}

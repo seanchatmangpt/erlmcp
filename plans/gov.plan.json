@@ -1,0 +1,123 @@
+{
+  "tier": "gov",
+  "name": "Government Tier - FIPS-140-2, Audit Logging",
+  "description": "Government-grade tier with FIPS-140-2 encryption, comprehensive audit logging, and compliance features",
+  "pricing": {
+    "model": "flat-per-deployment",
+    "description": "No metering, no surprise overages",
+    "cost": "Government license pricing"
+  },
+  "envelope": {
+    "throughput_req_s": 900,
+    "concurrent_connections": 256,
+    "queue_depth_messages": 4096,
+    "p99_latency_ms": 150,
+    "failover_sla_seconds": 15,
+    "connection_timeout_seconds": 90
+  },
+  "limits": {
+    "max_message_size_bytes": 5242880,
+    "max_payload_size_mb": 50,
+    "max_concurrent_requests_per_conn": 64,
+    "memory_limit_mb": 2048,
+    "cpu_time_limit_seconds": 450,
+    "backpressure_threshold_bytes": 33554432
+  },
+  "features": {
+    "client": true,
+    "server": true,
+    "stdio_transport": true,
+    "tcp_transport": true,
+    "http_transport": true,
+    "websocket_transport": true,
+    "sse_transport": true,
+    "rate_limiting": true,
+    "connection_pooling": true,
+    "circuit_breaker": true,
+    "otel_observability": "comprehensive",
+    "audit_logging": true,
+    "fips_140_2": true,
+    "high_availability": true,
+    "multi_region_support": false,
+    "encrypted_transport": true,
+    "tls_1_3_only": true,
+    "key_rotation": true,
+    "compliance_reporting": true
+  },
+  "refusal_behavior": {
+    "throughput_exceeded": {
+      "http_status": 429,
+      "error_code": "rate_limit_exceeded",
+      "message": "Request rate exceeds tier limit (900 req/s)",
+      "retry_after_seconds": 45,
+      "audit_log": true
+    },
+    "queue_depth_exceeded": {
+      "http_status": 503,
+      "error_code": "service_unavailable",
+      "message": "System overloaded, queue depth exceeded",
+      "retry_after_seconds": 15,
+      "audit_log": true
+    },
+    "connection_limit_exceeded": {
+      "error_code": "connection_limit",
+      "message": "Maximum 256 concurrent connections exceeded",
+      "close_code": 1008,
+      "audit_log": true
+    },
+    "message_size_exceeded": {
+      "http_status": 413,
+      "error_code": "payload_too_large",
+      "message": "Message exceeds 5MB limit",
+      "audit_log": true
+    },
+    "fips_compliance_violation": {
+      "http_status": 403,
+      "error_code": "fips_violation",
+      "message": "Operation violates FIPS-140-2 compliance requirements",
+      "audit_log": true
+    },
+    "encryption_failure": {
+      "http_status": 500,
+      "error_code": "encryption_error",
+      "message": "Encryption failure - operation rejected",
+      "audit_log": true
+    }
+  },
+  "evidence": {
+    "sbom": "plans/gov-sbom.json",
+    "provenance": "plans/gov-provenance.json",
+    "chaos_report": "docs/plans/gov-chaos-report.md",
+    "benchmark_report": "docs/plans/gov-benchmark-report.md",
+    "audit_schema": "plans/gov-audit-schema.json",
+    "fips_certification": "plans/gov-fips-140-2-cert.txt",
+    "compliance_report": "docs/plans/gov-compliance-report.md"
+  },
+  "compliance": {
+    "mcp_version": "2025-11-25",
+    "features_implemented": 52,
+    "security_level": "maximum",
+    "audit_trail": true,
+    "fips_140_2": true,
+    "encryption_standard": "AES-256-GCM",
+    "key_derivation": "PBKDF2-SHA256",
+    "sla_monitoring": true
+  },
+  "sla": {
+    "availability_percentage": 99.99,
+    "throughput_guarantee_req_s": 900,
+    "failover_time_seconds": 15,
+    "recovery_sla_minutes": 10,
+    "audit_retention_days": 2555
+  },
+  "audit": {
+    "log_all_operations": true,
+    "log_authentication": true,
+    "log_encryption_events": true,
+    "log_access_violations": true,
+    "log_system_events": true,
+    "retention_policy": "7_years",
+    "immutable_logs": true,
+    "log_signing": true
+  }
+}

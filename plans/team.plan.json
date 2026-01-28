@@ -1,0 +1,83 @@
+{
+  "tier": "team",
+  "name": "Team Tier - Startups, POCs, Low-Scale",
+  "description": "Perfect for startups, proof-of-concepts, hobby projects, and low-scale deployments",
+  "pricing": {
+    "model": "flat-per-deployment",
+    "description": "No metering, no surprise overages",
+    "cost": "Free for open-source, custom pricing for commercial"
+  },
+  "envelope": {
+    "throughput_req_s": 450,
+    "concurrent_connections": 128,
+    "queue_depth_messages": 2048,
+    "p99_latency_ms": 250,
+    "failover_sla_seconds": 30,
+    "connection_timeout_seconds": 60
+  },
+  "limits": {
+    "max_message_size_bytes": 1048576,
+    "max_payload_size_mb": 10,
+    "max_concurrent_requests_per_conn": 32,
+    "memory_limit_mb": 512,
+    "cpu_time_limit_seconds": 300,
+    "backpressure_threshold_bytes": 8388608
+  },
+  "features": {
+    "client": true,
+    "server": true,
+    "stdio_transport": true,
+    "tcp_transport": true,
+    "http_transport": true,
+    "websocket_transport": false,
+    "sse_transport": false,
+    "rate_limiting": true,
+    "connection_pooling": false,
+    "circuit_breaker": true,
+    "otel_observability": "basic",
+    "audit_logging": false,
+    "fips_140_2": false,
+    "high_availability": false
+  },
+  "refusal_behavior": {
+    "throughput_exceeded": {
+      "http_status": 429,
+      "error_code": "rate_limit_exceeded",
+      "message": "Request rate exceeds tier limit (450 req/s)",
+      "retry_after_seconds": 60
+    },
+    "queue_depth_exceeded": {
+      "http_status": 503,
+      "error_code": "service_unavailable",
+      "message": "System overloaded, queue depth exceeded",
+      "retry_after_seconds": 30
+    },
+    "connection_limit_exceeded": {
+      "error_code": "connection_limit",
+      "message": "Maximum 128 concurrent connections exceeded",
+      "close_code": 1008
+    },
+    "message_size_exceeded": {
+      "http_status": 413,
+      "error_code": "payload_too_large",
+      "message": "Message exceeds 1MB limit"
+    },
+    "unsupported_feature": {
+      "http_status": 501,
+      "error_code": "feature_not_available",
+      "message": "This feature is not available in Team tier"
+    }
+  },
+  "evidence": {
+    "sbom": "plans/team-sbom.json",
+    "provenance": "plans/team-provenance.json",
+    "chaos_report": "docs/plans/team-chaos-report.md",
+    "benchmark_report": "docs/plans/team-benchmark-report.md"
+  },
+  "compliance": {
+    "mcp_version": "2025-11-25",
+    "features_implemented": 45,
+    "security_level": "standard",
+    "audit_trail": false
+  }
+}
