@@ -24,16 +24,28 @@ The stdio (Standard Input/Output) MCP server is a lightweight implementation of 
 
 **stdio is the recommended transport for local MCP servers** because it's simpler, more secure, and performs better for local integrations.
 
-## Building the Server
+## Building the Server (v2.0 Umbrella Structure)
 
-First, compile the erlmcp project:
+erlmcp v2.0 uses an umbrella project structure with separate applications. First, compile the erlmcp project:
 
 ```bash
 # Clone and build the project
 git clone <repository-url>
 cd erlmcp
 rebar3 compile
+
+# Then compile the simple example
+cd examples/simple
+rebar3 compile
 ```
+
+The v2.0 structure separates concerns into apps:
+- `erlmcp_core` - Core protocol, client/server, JSON-RPC
+- `erlmcp_transports` - STDIO, TCP, HTTP transports
+- `erlmcp_observability` - Metrics, traces, receipts
+- `tcps_erlmcp` - Toyota Code Production System (optional)
+
+See `../v2_migration_guide.md` for details.
 
 ## Configuring Claude Desktop
 
@@ -56,20 +68,28 @@ Create or edit the `claud_desktop_config.json` file with the following content:
         "command": "erl",
         "args": [
             "-pa",
-            "<ABS PATH>/erlsci/erlmcp/_build/simple/lib/erlmcp/ebin",
+            "<ABS PATH>/erlmcp/_build/default/lib/*/ebin",
             "-pa",
-            "<ABS PATH>/erlsci/erlmcp/_build/simple/lib/jsx/ebin",
+            "<ABS PATH>/erlmcp/apps/erlmcp_core/ebin",
             "-pa",
-            "<ABS PATH>/erlsci/erlmcp/_build/simple/lib/jesse/ebin",
+            "<ABS PATH>/erlmcp/apps/erlmcp_transports/ebin",
+            "-pa",
+            "<ABS PATH>/erlmcp/examples/simple",
             "-eval",
             "code:load_file(simple_server_stdio), simple_server_stdio:start()",
             "-noshell"
         ],
-        "cwd": "'$(pwd)'"
+        "cwd": "<ABS PATH>/erlmcp"
     }
   }
 }
 ```
+
+**Note**: v2.0 uses umbrella apps structure. The `-pa` flags now reference:
+1. All compiled dependencies in `_build/default/lib/*/ebin`
+2. Core app: `apps/erlmcp_core/ebin`
+3. Transports app: `apps/erlmcp_transports/ebin`
+4. Example directory: `examples/simple`
 
 ### 3. Restart Claude Desktop
 

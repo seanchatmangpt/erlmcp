@@ -1,0 +1,7 @@
+=== OTP APPLICATIONS - ENTRYPOINTS ===
+
+Application: erlmcp
+  Entry Module:      erlmcp_app/2
+  Entry Supervisor:  erlmcp_sup
+  Dependencies:      bbmustache, cowboy, crypto, fs, gproc, gun, inets, jesse, jobs, jsx, kernel, opentelemetry, opentelemetry_api, poolboy, public_key, ranch, ssl, stdlib
+

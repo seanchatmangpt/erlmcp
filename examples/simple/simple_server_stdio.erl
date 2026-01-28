@@ -5,6 +5,10 @@ start() ->
     main([]).
 
 main(_Args) ->
+    %% Start the erlmcp applications first (v2.0 umbrella structure)
+    application:ensure_all_started(erlmcp_core),
+    application:ensure_all_started(erlmcp_transports),
+
     %% Enable debug logging
     logger:remove_handler(default),
     logger:add_handler(stderr_handler, logger_std_h, #{

@@ -1,0 +1,199 @@
+================================================================================
+DOCUMENTATION LINTER - QUICK START GUIDE
+================================================================================
+
+LOCATION: /Users/sac/erlmcp/tools/docs_lint.sh
+
+BASIC USAGE:
+============
+
+1. Run all checks:
+   $ cd /Users/sac/erlmcp
+   $ ./tools/docs_lint.sh
+
+2. Run with verbose output:
+   $ ./tools/docs_lint.sh --verbose
+
+3. Run specific checks:
+   $ ./tools/docs_lint.sh --check-legacy       # Only legacy file references
+   $ ./tools/docs_lint.sh --check-terms        # Only ambiguous metric terms
+   $ ./tools/docs_lint.sh --check-workloads    # Only workload IDs
+   $ ./tools/docs_lint.sh --check-hardcoded    # Only hardcoded numbers
+
+4. Get help:
+   $ ./tools/docs_lint.sh --help
+
+
+WHAT THE LINTER CHECKS:
+=======================
+
+CHECK 1: Legacy File References
+  Forbids: benchmark_100k, benchmark_100k_registry, benchmark_100k_SUITE,
+           throughput_SUITE, latency_SUITE, transport_real, bench_stdio,
+           bench_tcp, bench_http
+
+  Fix: Replace with consolidated modules:
+       - erlmcp_bench_core_ops
+       - erlmcp_bench_network_real
+       - erlmcp_bench_stress
+       - erlmcp_bench_chaos
+       - erlmcp_bench_integration
+
+
+CHECK 2: Ambiguous Metric Terms
+  Forbids: "req/s" (must be jsonrpc_req_per_s or http_req_per_s)
+           "connections" (must be sockets_open, tcp_connections, etc.)
+
+  Fix: Use specific metric names with proper qualification
+
+
+CHECK 3: Hardcoded Performance Numbers
+  Warns: Any hardcoded performance metric without source attribution
+
+  Fix: Add link to benchmark documentation:
+       [2.69M ops/sec](./docs/bench/BENCH_INDEX.md) under workload `core_ops_100k`
+
+
+CHECK 4: Workload ID Validation
+  Validates: All referenced workload_id are defined in benchmark modules
+
+  Fix: Use valid workload IDs from docs/bench/WORKLOADS.md
+       Valid: core_ops_1k, core_ops_10k, core_ops_100k, core_ops_1m,
+              network_tcp_100_100k, ... network_http_5k_5k,
+              stress_30s_100k_ops, stress_5min_100k_ops, stress_24h_100k_ops,
+              chaos_memory_exhaustion, chaos_process_crash, ... (11 total),
+              integration_basic_initialize, ... integration_complete_flow
+
+
+EXIT CODES:
+===========
+0 = All checks passed (no violations)
+1 = Violations found (see detailed output)
+
+
+INTERPRETING OUTPUT:
+====================
+
+Color codes:
+  RED (✗ FAIL)      = Critical violation (must fix)
+  GREEN (✓ PASS)    = Check passed
+  YELLOW (⚠ WARN)   = Warning (review recommended)
+  BLUE (ℹ INFO)     = Informational
+
+Output example:
+  [Check 1: Legacy File References]
+  ✗ FAIL: Found legacy reference to 'benchmark_100k' in docs
+  ✓ PASS: No legacy file references found
+
+
+FIXING VIOLATIONS:
+==================
+
+Legacy references:
+  grep -r "throughput_SUITE" docs/
+  sed -i 's/throughput_SUITE/erlmcp_bench_network_real/g' docs/*.md
+
+Ambiguous terms:
+  grep -r "req/s" docs/  # Check context
+  sed -i 's/ req\/s/ jsonrpc_req_per_s/g' docs/*.md
+
+Hardcoded numbers:
+  Add source: [2.69M ops/sec](./docs/bench/BENCH_INDEX.md)
+
+Invalid workload IDs:
+  Check docs/bench/WORKLOADS.md for valid IDs
+  Update reference or add workload to benchmark module
+
+
+CI/CD INTEGRATION:
+==================
+
+The linter runs automatically on:
+  - Every push to main, release/**, task/**, feature/**, epic/**
+  - Every pull request to those branches
+
+If violations are found:
+  - The docs-lint job fails
+  - GitHub posts a comment on the PR
+  - Developer must fix and re-push
+  - Linter runs again automatically
+
+
+DOCUMENTATION:
+==============
+
+Full documentation:
+  /Users/sac/erlmcp/docs/bench/DOCS_LINTER_README.md
+
+Valid workload IDs:
+  /Users/sac/erlmcp/docs/bench/WORKLOADS.md
+
+Delivery report:
+  /Users/sac/erlmcp/DOCS_LINTER_DELIVERY.md
+
+
+EXAMPLES:
+=========
+
+Example 1 - Check legacy references only:
+  $ ./tools/docs_lint.sh --check-legacy
+
+Example 2 - Fix ambiguous metric term:
+  BEFORE: "System handles 450 req/s"
+  AFTER:  "System handles 450 jsonrpc_req_per_s"
+
+Example 3 - Valid workload reference:
+  GOOD: "Measured under `core_ops_100k` workload"
+  BAD:  "Measured under `my_custom_workload`"
+
+Example 4 - Add source attribution:
+  BEFORE: "The system achieves 2.69M operations per second."
+  AFTER:  "The system achieves [2.69M operations per second](./BENCH_INDEX.md)
+           under the `core_ops_100k` workload."
+
+
+TROUBLESHOOTING:
+================
+
+Q: "Unknown option" error
+A: Make sure script is executable and path is correct
+   $ chmod +x /Users/sac/erlmcp/tools/docs_lint.sh
+
+Q: Legacy references still found after fix
+A: Sed command may not work on macOS. Use:
+   $ sed -i '' 's/old/new/g' file.md
+
+Q: Workload ID not recognized
+A: Check docs/bench/WORKLOADS.md for exact ID format
+   Valid IDs: core_ops_1k, not core_ops_001k
+
+Q: "connections" check has false positives
+A: Some contexts are OK (numbers before "connections", config keys, etc.)
+   Check DOCS_LINTER_README.md for details
+
+
+CUSTOMIZATION:
+==============
+
+To add new forbidden file:
+  Edit tools/docs_lint.sh
+  Add to LEGACY_FILES array
+
+To add new workload ID:
+  Define in bench/erlmcp_bench_*.erl
+  Update VALID_WORKLOADS in tools/docs_lint.sh
+  Document in docs/bench/WORKLOADS.md
+
+To add new ambiguous term:
+  Edit tools/docs_lint.sh
+  Add to AMBIGUOUS_TERMS array
+  Update check_ambiguous_terms() function
+
+
+================================================================================
+READY TO USE - NO CONFIGURATION REQUIRED
+================================================================================
+
+Just run: /Users/sac/erlmcp/tools/docs_lint.sh
+
+For help: /Users/sac/erlmcp/tools/docs_lint.sh --help

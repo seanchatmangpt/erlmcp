@@ -161,6 +161,13 @@ close(_) ->
 init(Req, [TransportId, Config], _Opts) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.cowboy_init">>),
 
+    %% Register with registry for this WebSocket connection
+    ok = erlmcp_registry:register_transport(TransportId, self(), #{
+        type => websocket,
+        session_id => generate_session_id(),
+        config => Config
+    }),
+
     MaxMessageSize = maps:get(max_message_size, Config, ?DEFAULT_MAX_MESSAGE_SIZE),
     StrictDelimiterCheck = maps:get(strict_delimiter_check, Config, true),
     ValidateUtf8 = maps:get(validate_utf8, Config, true),
@@ -291,6 +298,9 @@ websocket_info(resume_reading, State) ->
     {ok, NewState};
 
 websocket_info(close, State) ->
+    %% Unregister from registry
+    erlmcp_registry:unregister_transport(State#state.transport_id),
+
     %% Cancel backpressure timer if active
     case State#state.backpressure_timer of
         undefined -> ok;

@@ -30,7 +30,8 @@
     host :: string(),
     port :: pos_integer(),
     path :: string(),
-    scheme :: http | https
+    scheme :: http | https,
+    transport_id :: atom() | binary() | undefined  % Transport ID for gproc registration
 }).
 
 -type state() :: #state{}.
@@ -73,6 +74,17 @@ init(Opts) when is_map(Opts) ->
 
     %% Ensure required applications are started
     ensure_apps_started(),
+
+    %% Register with registry if transport_id is provided
+    TransportId = maps:get(transport_id, Opts, undefined),
+    case TransportId of
+        undefined -> ok;
+        _ ->
+            ok = erlmcp_registry:register_transport(TransportId, self(), #{
+                type => http,
+                config => Opts
+            })
+    end,
 
     %% Monitor owner
     Owner = maps:get(owner, Opts),
@@ -217,10 +229,19 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, #state{gun_pid = undefined}) ->
-    ok;
-terminate(_Reason, #state{gun_pid = GunPid}) ->
-    gun:close(GunPid),
+terminate(_Reason, #state{gun_pid = GunPid, transport_id = TransportId}) ->
+    %% Unregister from registry if registered
+    case TransportId of
+        undefined -> ok;
+        _ ->
+            erlmcp_registry:unregister_transport(TransportId)
+    end,
+
+    %% Close gun connection
+    case GunPid of
+        undefined -> ok;
+        _ -> gun:close(GunPid)
+    end,
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
@@ -275,7 +296,8 @@ build_initial_state(Opts) ->
         host = Host,
         port = Port,
         path = Path,
-        scheme = Scheme
+        scheme = Scheme,
+        transport_id = maps:get(transport_id, Opts, undefined)
     }.
 
 -spec normalize_url(binary() | string()) -> string().

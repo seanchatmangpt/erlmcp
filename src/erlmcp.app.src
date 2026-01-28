@@ -4,7 +4,8 @@
   {registered, [
       erlmcp_sup,
       erlmcp_client_sup,
-      erlmcp_server_sup
+      erlmcp_server_sup,
+      erlmcp_registry
   ]},
   {applications, [
       kernel,

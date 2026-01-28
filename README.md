@@ -18,38 +18,74 @@ MCP enables seamless communication between AI assistants and local services thro
     {erlmcp, {git, "https://github.com/banyan-platform/erlmcp.git", {branch, "main"}}}
 ]}.
 
-# Fetch and compile
+# Fetch and compile (umbrella builds all apps)
 rebar3 get-deps
 rebar3 compile
 ```
 
 ## Quick Start
 
-### Building the Workspace
+### Building the Umbrella
 
-The erlmcp workspace contains two coordinated systems: **erlmcp** (core MCP implementation) and **taiea** (autonomic governance and receipts).
+erlmcp v2.0.0 is an **umbrella application** with 4 independent OTP applications:
 
 ```bash
-# Setup environment (one-time)
-make setup
+# Build all apps from root
+rebar3 compile
 
-# Build the entire workspace
-make workspace-build
+# Run all tests
+rebar3 eunit
+rebar3 ct
 
-# Run all tests across workspace
-make workspace-test
-
-# Full validation (build + lint + test)
-make workspace-check
-
-# Build production releases for both systems
-make workspace-release
-
-# Clean all build artifacts
-make workspace-clean
+# Full validation
+make check
 ```
 
 **Quick reference:** `make help` shows all available targets.
+
+### Umbrella Structure
+
+```
+erlmcp/                           # Umbrella root
+├── rebar.config                  # Umbrella configuration
+├── apps/
+│   ├── erlmcp_core/              # Core MCP protocol (14 modules)
+│   │   ├── src/
+│   │   │   ├── erlmcp_client.erl       # MCP client gen_server
+│   │   │   ├── erlmcp_server.erl       # MCP server gen_server
+│   │   │   ├── erlmcp_registry.erl     # gproc-based routing
+│   │   │   ├── erlmcp_json_rpc.erl     # JSON-RPC 2.0
+│   │   │   └── ...                     # Protocol core
+│   │   └── test/                       # Core tests
+│   │
+│   ├── erlmcp_transports/        # Transport layer (8 modules)
+│   │   ├── src/
+│   │   │   ├── erlmcp_transport_stdio.erl   # Standard I/O
+│   │   │   ├── erlmcp_transport_tcp.erl     # TCP (ranch)
+│   │   │   ├── erlmcp_transport_http.erl    # HTTP/2 (gun)
+│   │   │   ├── erlmcp_transport_ws.erl      # WebSocket
+│   │   │   └── ...                          # Transport behaviors
+│   │   └── test/                            # Transport tests
+│   │
+│   ├── erlmcp_observability/     # Metrics & traces (9 modules)
+│   │   ├── src/
+│   │   │   ├── erlmcp_metrics.erl          # Performance metrics
+│   │   │   ├── erlmcp_otel.erl             # OpenTelemetry integration
+│   │   │   ├── erlmcp_receipt_chain.erl    # Deterministic receipts
+│   │   │   └── ...                         # Observability
+│   │   └── test/                           # Observability tests
+│   │
+│   └── tcps_erlmcp/              # TCPS quality system (63 modules)
+│       ├── src/
+│       │   ├── tcps_shacl_validator.erl    # SHACL ontology validation
+│       │   ├── tcps_quality_gates.erl      # Quality enforcement
+│       │   ├── tcps_receipt_chain.erl      # SHA-256 hash chain
+│       │   └── ...                         # TCPS manufacturing
+│       └── test/                           # TCPS tests
+│
+├── examples/                     # Example applications
+└── docs/                         # Complete documentation
+```
 
 ### Creating an MCP Server
 
@@ -87,42 +123,24 @@ erlmcp_server:add_tool_with_schema(Server, <<"greet">>,
                                         #{<<"name">> => <<"World">>}).
 ```
 
-## Build System Overview
+## v2.0.0 Architecture
 
-### Workspace Structure
+### 4 Independent OTP Applications
 
-```
-erlmcp/                    # Root workspace (MCP core)
-├── Makefile              # Workspace-level build orchestration
-├── rebar.config          # Root rebar configuration
-├── src/                  # erlmcp source code
-├── test/                 # erlmcp tests
-├── examples/             # Example applications
-└── taiea/                # TAIEA umbrella application (separate)
-    ├── rebar.config      # TAIEA-specific configuration
-    ├── apps/
-    │   ├── taiea_core/    # Core autonomic logic
-    │   ├── taiea_mcp/     # MCP integration
-    │   ├── taiea_governor/ # Governance engine
-    │   └── taiea_receipts/ # Deterministic receipts
-    └── rel/              # Release configuration
-```
+| App | Modules | Purpose | Dependencies |
+|-----|---------|---------|--------------|
+| **erlmcp_core** | 14 | Core MCP protocol, JSON-RPC, registry, client/server | jsx, jesse, gproc |
+| **erlmcp_transports** | 8 | STDIO, TCP, HTTP/2, WebSocket transports | gun, ranch, poolboy, erlmcp_core |
+| **erlmcp_observability** | 9 | Metrics, OpenTelemetry, deterministic receipts | opentelemetry_*, erlmcp_core |
+| **tcps_erlmcp** | 63 | Toyota Code Production System (optional add-on) | bbmustache, cowboy, jobs, fs, erlmcp_core |
+
+**Total:** 94 modules organized into focused applications
 
 ### Build Targets by Category
 
-**Workspace Targets** (orchestrate both erlmcp + taiea):
+**Umbrella Targets** (build all 4 apps):
 ```bash
-make workspace-build      # Compile entire workspace
-make workspace-test       # Run all tests
-make workspace-lint       # Static analysis (xref, dialyzer)
-make workspace-check      # Full validation
-make workspace-clean      # Clean all artifacts
-make workspace-release    # Build production releases
-```
-
-**Erlmcp Application Targets**:
-```bash
-make build                # Compile erlmcp
+make build                # Compile all apps (core, transports, observability, tcps)
 make test                 # Run all tests (unit + integration + property)
 make test-unit            # Unit tests only
 make test-integration     # Common Test (CT) integration tests
@@ -132,12 +150,18 @@ make check                # Full validation (compile, lint, test)
 make release              # Build production release
 ```
 
+**Per-App Targets** (optional):
+```bash
+rebar3 compile --app erlmcp_core           # Compile core only
+rebar3 eunit --app erlmcp_transports       # Test transports only
+rebar3 dialyzer --app erlmcp_observability # Analyze observability only
+```
+
 **Analysis & Development**:
 ```bash
 make xref                 # Cross-reference analysis
 make dialyzer             # Type analysis
 make coverage-report      # Generate coverage metrics
-make format               # Auto-format code
 make console              # Start interactive Erlang shell
 make dev-console          # Start dev shell with sys.config
 make observer             # Launch Observer GUI for debugging
@@ -151,15 +175,15 @@ make profile              # Performance profiling
 make setup                 # Downloads dependencies, creates directories
 
 # 2. Development cycle
-make build                 # Compile changes
-make test                  # Verify tests pass
+make build                 # Compile all 4 apps
+make test                  # Verify all tests pass
 make lint                  # Check code quality
 
 # 3. Quick validation
 make check                 # Run full validation (combines above)
 
 # 4. Production release
-make workspace-release     # Build releases for erlmcp + taiea
+make release               # Build release with all/selected apps
 ```
 
 ### SLO and Performance Targets

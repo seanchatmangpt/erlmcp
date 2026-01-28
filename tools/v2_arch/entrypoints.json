@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-01-28T03:12:38Z",
+  "applications": [
+    {
+      "name": "erlmcp",
+      "mod": { "module": "erlmcp_app", "args": "[]", "file": "/Users/sac/erlmcp/src/erlmcp_app.erl" },
+      "entry_supervisor": "erlmcp_sup",
+      "dependencies": ["bbmustache", "cowboy", "crypto", "fs", "gproc", "gun", "inets", "jesse", "jobs", "jsx", "kernel", "opentelemetry", "opentelemetry_api", "poolboy", "public_key", "ranch", "ssl", "stdlib"]
+    }
+
+  ]
+}

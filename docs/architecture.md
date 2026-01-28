@@ -2,46 +2,150 @@
 
 ## Overview
 
-The erlmcp SDK is built on Erlang/OTP principles, providing a robust and fault-tolerant implementation of the Model Context Protocol.
+erlmcp v2.0.0 is an **umbrella application** with 4 independent OTP applications organized by concern. This modular architecture enables fine-grained dependency management, focused testing, and optional feature inclusion.
 
-## System Components
+## v2.0.0 Umbrella Structure
 
 ```
-┌─────────────────┐     ┌─────────────────┐
-│   MCP Client    │     │   MCP Server    │
-├─────────────────┤     ├─────────────────┤
-│ erlmcp_client   │────▶│ erlmcp_server   │
-│ (gen_server)    │     │ (gen_server)    │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐
-│ Transport Layer │     │ Transport Layer │
-├─────────────────┤     ├─────────────────┤
-│ - stdio         │     │ - stdio         │
-│ - TCP           │     │ - TCP           │
-│ - HTTP          │     │ - HTTP          │
-└─────────────────┘     └─────────────────┘
+erlmcp (umbrella root)
+├── apps/
+│   ├── erlmcp_core/              [14 modules] REQUIRED
+│   │   └── Core MCP protocol, JSON-RPC, registry
+│   ├── erlmcp_transports/        [8 modules]  REQUIRED
+│   │   └── STDIO, TCP, HTTP/2, WebSocket
+│   ├── erlmcp_observability/     [9 modules]  REQUIRED
+│   │   └── Metrics, OTEL, receipts
+│   └── tcps_erlmcp/              [63 modules] OPTIONAL
+│       └── Quality gates, SHACL, Jidoka
+└── Total: 94 modules across 4 apps
 ```
 
-## Core Modules
+### Application Boundaries
 
-### Protocol Layer
-- **erlmcp_json_rpc** - JSON-RPC 2.0 message encoding/decoding
+| App | Purpose | Dependencies |
+|-----|---------|--------------|
+| **erlmcp_core** | MCP protocol primitives | jsx, jesse, gproc |
+| **erlmcp_transports** | Network layer | gun, ranch, poolboy, **erlmcp_core** |
+| **erlmcp_observability** | Metrics & traces | opentelemetry_*, **erlmcp_core** |
+| **tcps_erlmcp** | Quality system (optional) | bbmustache, cowboy, jobs, fs, **erlmcp_core**, **erlmcp_observability** |
+
+## System Components (v2.0.0)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     erlmcp Umbrella                          │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────────┐         ┌─────────────────┐            │
+│  │  MCP Client     │         │  MCP Server     │            │
+│  │  (erlmcp_core)  │ ◄────► │  (erlmcp_core)  │            │
+│  │  gen_server     │         │  gen_server     │            │
+│  └────────┬────────┘         └────────┬────────┘            │
+│           │                           │                     │
+│           ▼                           ▼                     │
+│  ┌──────────────────────────────────────────────┐           │
+│  │   erlmcp_registry (gproc-based routing)      │           │
+│  │   (erlmcp_core)                              │           │
+│  └──────────────────────────────────────────────┘           │
+│           │                           │                     │
+│           ▼                           ▼                     │
+│  ┌─────────────────────────────────────────────────┐        │
+│  │     Transport Layer (erlmcp_transports)         │        │
+│  ├─────────────────────────────────────────────────┤        │
+│  │ STDIO │ TCP (ranch) │ HTTP/2 (gun) │ WebSocket │        │
+│  └─────────────────────────────────────────────────┘        │
+│           │                           │                     │
+│           ▼                           ▼                     │
+│  ┌─────────────────────────────────────────────────┐        │
+│  │   Observability (erlmcp_observability)          │        │
+│  ├─────────────────────────────────────────────────┤        │
+│  │ OTEL Traces │ Metrics │ Receipt Chains          │        │
+│  └─────────────────────────────────────────────────┘        │
+│           │                           │                     │
+│           ▼                           ▼                     │
+│  ┌─────────────────────────────────────────────────┐        │
+│  │   TCPS Quality System (tcps_erlmcp) [OPTIONAL]  │        │
+│  ├─────────────────────────────────────────────────┤        │
+│  │ SHACL │ Quality Gates │ Jidoka │ Kanban         │        │
+│  └─────────────────────────────────────────────────┘        │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## App Modules by Layer
+
+### erlmcp_core (14 modules)
+
+**Protocol Layer:**
+- **erlmcp_json_rpc.erl** - JSON-RPC 2.0 message encoding/decoding
 - **erlmcp.hrl** - Protocol type definitions and records
+- **erlmcp_capabilities.erl** - Capability negotiation
+- **erlmcp_types.erl** - MCP type definitions
 
-### Client Components
-- **erlmcp_client** - Main client gen_server
-- **erlmcp_client_sup** - Client supervisor for managing multiple connections
+**Client Components:**
+- **erlmcp_client.erl** - Main client gen_server with request correlation
+- **erlmcp_client_sup.erl** - Client supervisor (simple_one_for_one)
 
-### Server Components
-- **erlmcp_server** - Main server gen_server
-- **erlmcp_server_sup** - Server supervisor
+**Server Components:**
+- **erlmcp_server.erl** - Main server gen_server with resource/tool/prompt management
+- **erlmcp_server_sup.erl** - Server supervisor (simple_one_for_one)
 
-### Transport Modules
-- **erlmcp_transport_stdio** - Standard I/O transport
-- **erlmcp_transport_tcp** - TCP socket transport
-- **erlmcp_transport_http** - HTTP transport
+**Registry & Routing:**
+- **erlmcp_registry.erl** - gproc-based process registration and discovery
+- **erlmcp_router.erl** - Message routing between clients/servers/transports
+
+**Application:**
+- **erlmcp_app.erl** - OTP application behavior
+- **erlmcp_sup.erl** - Top-level supervisor (rest_for_one)
+- **erlmcp_schema.erl** - JSON Schema validation (jesse)
+- **erlmcp_utils.erl** - Common utilities
+
+### erlmcp_transports (8 modules)
+
+**Transport Implementations:**
+- **erlmcp_transport_stdio.erl** - Standard I/O transport (pipes)
+- **erlmcp_transport_tcp.erl** - TCP socket transport (ranch acceptor pool)
+- **erlmcp_transport_http.erl** - HTTP transport (gun client with HTTP/2)
+- **erlmcp_transport_ws.erl** - WebSocket transport (gun)
+
+**Infrastructure:**
+- **erlmcp_transport.erl** - Transport behavior definition
+- **erlmcp_transport_sup.erl** - Transport supervisor
+
+**Application:**
+- **erlmcp_transports_app.erl** - OTP application callback
+- **erlmcp_transports_sup.erl** - Top-level supervisor
+
+### erlmcp_observability (9 modules)
+
+**Metrics:**
+- **erlmcp_metrics.erl** - Metrics collection and export
+- **erlmcp_routing_metrics.erl** - Registry routing metrics
+
+**OpenTelemetry:**
+- **erlmcp_otel.erl** - OpenTelemetry integration
+- **erlmcp_tracer.erl** - Span creation and context propagation
+
+**Receipt Chains:**
+- **erlmcp_receipt_chain.erl** - SHA-256 deterministic hash chains
+- **erlmcp_receipt_storage.erl** - Receipt persistence
+- **erlmcp_receipt_validator.erl** - Chain verification
+
+**Application:**
+- **erlmcp_observability_app.erl** - OTP application callback
+- **erlmcp_observability_sup.erl** - Observability supervisor
+
+### tcps_erlmcp (63 modules)
+
+See [apps/tcps_erlmcp/README.md](../apps/tcps_erlmcp/README.md) for complete module list. Key components:
+
+- **SHACL Validation** (3 modules) - Ontology-based validation
+- **Quality Gates** (4 modules) - Automated quality enforcement
+- **Work Orders** (3 modules) - Kanban, Heijunka, WIP limits
+- **Receipt Chains** (2 modules) - SHA-256 hash chains
+- **Dashboard** (2 modules) - Web UI for quality visualization
+- **Application** (2 modules) - OTP app and supervisor
+- **+ 47 additional modules** - Complete manufacturing system
 
 ## Design Principles
 
@@ -51,13 +155,45 @@ Each connection runs in its own process, ensuring:
 - Independent state management
 - Concurrent operation
 
-### 2. Supervision Trees
+### 2. Supervision Trees (3-Tier Architecture)
+
+**Tier 1: Umbrella Level**
+
 ```
-erlmcp_sup
-├── erlmcp_client_sup
-│   └── erlmcp_client (dynamic)
-└── erlmcp_server_sup
-    └── erlmcp_server (dynamic)
+erlmcp (umbrella)
+├── erlmcp_core
+│   └── erlmcp_sup (rest_for_one)
+├── erlmcp_transports
+│   └── erlmcp_transports_sup (one_for_one)
+├── erlmcp_observability
+│   └── erlmcp_observability_sup (one_for_one)
+└── tcps_erlmcp [OPTIONAL]
+    └── tcps_erlmcp_sup (one_for_one)
+```
+
+**Tier 2: erlmcp_core Supervision (rest_for_one strategy)**
+
+```
+erlmcp_sup (rest_for_one)
+├── TIER 1: erlmcp_registry_sup (one_for_one)
+│   └── erlmcp_registry (gproc-based)
+├── TIER 2: erlmcp_infrastructure_sup (one_for_one)
+│   └── erlmcp_router
+├── TIER 3: erlmcp_server_sup (simple_one_for_one)
+│   └── erlmcp_server (dynamic)
+└── TIER 4: erlmcp_client_sup (simple_one_for_one)
+    └── erlmcp_client (dynamic)
+```
+
+**Tier 3: Transport Supervision (per-transport)**
+
+```
+erlmcp_transports_sup (one_for_one)
+└── erlmcp_transport_sup (simple_one_for_one)
+    ├── erlmcp_transport_stdio (dynamic)
+    ├── erlmcp_transport_tcp (dynamic, ranch pools)
+    ├── erlmcp_transport_http (dynamic, gun connections)
+    └── erlmcp_transport_ws (dynamic)
 ```
 
 ### 3. Message Flow

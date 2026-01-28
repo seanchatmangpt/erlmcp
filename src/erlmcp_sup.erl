@@ -110,61 +110,48 @@ stop_stdio_server() ->
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    %% v1.3.0: Bulkhead Supervision Tree Design
+    %% v1.4.0: Simplified 3-Tier Supervision Tree
     %%
-    %% Strategy: Use rest_for_one at top level with isolated subsystems
-    %% - Registry subsystem (core infrastructure)
-    %% - Protocol servers subsystem (client/server implementations)
-    %% - Transports subsystem (I/O layer)
-    %% - Monitoring subsystem (observability - can fail without affecting core)
+    %% Strategy: one_for_one - no cascading failures between subsystems
+    %% - TIER 1: Core (registry + infrastructure consolidated)
+    %% - TIER 2: Protocol (servers with simple_one_for_one)
+    %% - TIER 3: Observability (isolated - failures don't affect core)
     %%
-    %% Each subsystem uses one_for_one or rest_for_one internally to prevent cascades
+    %% Changes from v1.3.0:
+    %% - Merged erlmcp_registry_sup + erlmcp_infrastructure_sup → erlmcp_core_sup
+    %% - Removed erlmcp_transport_sup (moved to erlmcp_transports app)
+    %% - Renamed erlmcp_monitoring_sup → erlmcp_observability_sup
+    %% - Changed strategy: rest_for_one → one_for_one (no cascades)
 
     SupFlags = #{
-        strategy => rest_for_one,  % If dependency fails, restart dependents only
+        strategy => one_for_one,  % Each subsystem fails independently
         intensity => 5,
         period => 60
     },
 
-    % Ordered child specs - dependencies must start before dependents
     ChildSpecs = [
         %% ================================================================
-        %% TIER 1: REGISTRY SUBSYSTEM (No dependencies)
-        %% Failure: Restarts registry shard in isolation
-        %% Impact: New messages fail to route until recovery
-        %% Recovery: Registry reconnects automatically via gproc
+        %% TIER 1: CORE (Registry + Infrastructure)
+        %% Foundation layer with no external dependencies
+        %% Failure: Individual components restart in isolation
+        %% Impact: New registrations/sessions may fail during recovery
+        %% Recovery: Automatic via one_for_one strategy
         %% ================================================================
         #{
-            id => erlmcp_registry_sup,
-            start => {erlmcp_registry_sup, start_link, []},
+            id => erlmcp_core_sup,
+            start => {erlmcp_core_sup, start_link, []},
             restart => permanent,
             shutdown => infinity,
             type => supervisor,
-            modules => [erlmcp_registry_sup]
+            modules => [erlmcp_core_sup]
         },
 
         %% ================================================================
-        %% TIER 2: INFRASTRUCTURE (Depends on Registry)
-        %% Infrastructure components (sessions, tasks, resources)
-        %% Failure: Restarts infrastructure subsystem
-        %% Impact: New sessions/tasks fail; existing connections continue
-        %% Recovery: Automatic via supervisor
-        %% ================================================================
-        #{
-            id => erlmcp_infrastructure_sup,
-            start => {erlmcp_infrastructure_sup, start_link, []},
-            restart => permanent,
-            shutdown => infinity,
-            type => supervisor,
-            modules => [erlmcp_infrastructure_sup]
-        },
-
-        %% ================================================================
-        %% TIER 3: PROTOCOL SERVERS SUBSYSTEM (Depends on Registry + Infrastructure)
-        %% Manages MCP client and server instances
-        %% Failure: Restarts all servers (graceful reconnect via transport)
-        %% Impact: In-flight requests are lost; clients reconnect
-        %% Recovery: Automatic via supervisor
+        %% TIER 2: PROTOCOL SERVERS (simple_one_for_one)
+        %% Dynamic MCP server instances
+        %% Failure: Individual server failures don't affect others
+        %% Impact: In-flight requests to failed server are lost
+        %% Recovery: Clients can reconnect to new server instance
         %% ================================================================
         #{
             id => erlmcp_server_sup,
@@ -176,35 +163,19 @@ init([]) ->
         },
 
         %% ================================================================
-        %% TIER 4: TRANSPORTS SUBSYSTEM (Depends on Registry + Servers)
-        %% Manages stdio, TCP, HTTP, WebSocket transports
-        %% Failure: Restarts transport layer (clients reconnect automatically)
-        %% Impact: Network connections are lost temporarily
-        %% Recovery: Automatic; clients retry connections
-        %% ================================================================
-        #{
-            id => erlmcp_transport_sup,
-            start => {erlmcp_transport_sup, start_link, []},
-            restart => permanent,
-            shutdown => infinity,
-            type => supervisor,
-            modules => [erlmcp_transport_sup]
-        },
-
-        %% ================================================================
-        %% TIER 5: OBSERVABILITY SUBSYSTEM (Optional - independent)
+        %% TIER 3: OBSERVABILITY (Isolated)
         %% Monitoring, health checks, metrics, dashboards
-        %% Failure: Does NOT affect protocol layer (isolated)
-        %% Impact: Monitoring data may be incomplete
-        %% Recovery: Automatic via supervisor
+        %% Failure: Does NOT affect core or protocol layers
+        %% Impact: Monitoring data may be incomplete during recovery
+        %% Recovery: Automatic via one_for_one strategy
         %% ================================================================
         #{
-            id => erlmcp_monitoring_sup,
-            start => {erlmcp_monitoring_sup, start_link, []},
+            id => erlmcp_observability_sup,
+            start => {erlmcp_observability_sup, start_link, []},
             restart => permanent,
             shutdown => infinity,
             type => supervisor,
-            modules => [erlmcp_monitoring_sup]
+            modules => [erlmcp_observability_sup]
         }
     ],
 

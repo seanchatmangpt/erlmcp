@@ -1,0 +1,106 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% erlmcp_observability_sup - Observability Subsystem Supervisor
+%%%
+%%% Manages observability infrastructure in isolated supervision tree.
+%%% Failures in observability do not affect core MCP protocol operation.
+%%%
+%%% Supervision Strategy: one_for_one
+%%% - Metrics server crash: restart independently
+%%% - Health monitor crash: restart independently
+%%% - Recovery manager crash: restart independently
+%%% - Receipt chain is ETS-based (survives restarts)
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_observability_sup).
+-behaviour(supervisor).
+
+%% API
+-export([start_link/0, start_link/1]).
+
+%% Supervisor callbacks
+-export([init/1]).
+
+-define(SERVER, ?MODULE).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Start the observability supervisor
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    start_link([]).
+
+%% @doc Start the observability supervisor with options
+-spec start_link(list()) -> {ok, pid()} | {error, term()}.
+start_link(Opts) ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, Opts).
+
+%%====================================================================
+%% Supervisor Callbacks
+%%====================================================================
+
+%% @doc Initialize the supervisor with observability workers
+%% Strategy: one_for_one - isolated failures, no cascading restarts
+-spec init(list()) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
+init(_Opts) ->
+    SupFlags = #{
+        strategy => one_for_one,
+        intensity => 10,      % Max 10 restarts
+        period => 60          % Within 60 seconds
+    },
+
+    %% Child specifications
+    Children = [
+        %% Metrics Server - Core metrics collection
+        #{
+            id => erlmcp_metrics,
+            start => {erlmcp_metrics, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_metrics]
+        },
+
+        %% Metrics HTTP Server - HTTP metrics endpoint
+        #{
+            id => erlmcp_metrics_server,
+            start => {erlmcp_metrics_server, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_metrics_server]
+        },
+
+        %% Health Monitor - Component health tracking
+        #{
+            id => erlmcp_health_monitor,
+            start => {erlmcp_health_monitor, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_health_monitor]
+        },
+
+        %% Recovery Manager - Automatic recovery and circuit breakers
+        #{
+            id => erlmcp_recovery_manager,
+            start => {erlmcp_recovery_manager, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_recovery_manager]
+        }
+
+        %% Note: Receipt chain (erlmcp_receipt_chain) is ETS-based with no process
+        %% Note: OTEL (erlmcp_otel) is a library module with no supervision
+        %% Note: Evidence path (erlmcp_evidence_path) is a library module
+    ],
+
+    {ok, {SupFlags, Children}}.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================

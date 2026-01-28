@@ -1,0 +1,98 @@
+%% ============================================================================
+%% erlmcp v2.0.0 - Umbrella Project Configuration
+%% ============================================================================
+%% Multi-application workspace with shared dependencies and quality gates
+%% ============================================================================
+
+{erl_opts, [
+    debug_info,
+    {i, "apps"},
+    {platform_define, "^2[5-9]|^[3-9]", 'POST_OTP_25'}
+]}.
+
+{deps, []}.  % Dependencies managed per-app
+
+{project_plugins, [
+    rebar3_hex,
+    {rebar3_proper, "0.12.1"},
+    {coveralls, "2.2.0"}
+]}.
+
+%% Umbrella configuration
+{project_app_dirs, ["apps/*"]}.
+{cover_enabled, true}.
+{cover_export_enabled, true}.
+
+%% Global profiles (inherited by all apps)
+{profiles, [
+    {test, [
+        {deps, [
+            {proper, "1.4.0"},
+            {meck, "0.9.2"},
+            {coveralls, "2.2.0"}
+        ]},
+        {erl_opts, [debug_info, export_all, nowarn_export_all]},
+        {cover_enabled, true}
+    ]},
+    {prod, [
+        {erl_opts, [no_debug_info, {d, 'PROD'}]},
+        {relx, [
+            {dev_mode, false},
+            {include_erts, true},
+            {include_src, false}
+        ]}
+    ]},
+    {dev, [
+        {deps, [
+            {recon, "2.5.3"},
+            {observer_cli, "1.7.4"}
+        ]}
+    ]}
+]}.
+
+%% Cross-application quality checks
+{dialyzer, [
+    {warnings, [
+        unmatched_returns,
+        error_handling,
+        unknown
+    ]},
+    {plt_apps, all_deps},
+    {plt_location, local}
+]}.
+
+{xref_checks, [
+    undefined_function_calls,
+    undefined_functions,
+    locals_not_used,
+    deprecated_function_calls
+]}.
+
+%% Aliases for multi-app workflows
+{alias, [
+    {check, [compile, xref, dialyzer]},
+    {test, [eunit, {proper, "-c"}, cover]},
+    {all_test, [
+        {eunit, "--dir=apps/erlmcp_core"},
+        {eunit, "--dir=apps/erlmcp_transports"},
+        {eunit, "--dir=apps/erlmcp_observability"},
+        {eunit, "--dir=apps/tcps_erlmcp"}
+    ]}
+]}.
+
+%% Release configuration (v2.0.0)
+{relx, [
+    {release, {erlmcp, "2.0.0"},
+     [erlmcp_core,
+      erlmcp_transports,
+      erlmcp_observability,
+      tcps_erlmcp,
+      sasl]},
+
+    {sys_config, "./config/sys.config"},
+    {vm_args, "./vm.args"},
+
+    {dev_mode, false},
+    {include_erts, true},
+    {extended_start_script, true}
+]}.
