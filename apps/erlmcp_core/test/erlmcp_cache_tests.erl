@@ -51,22 +51,25 @@ cache_test_() ->
 %%====================================================================
 
 setup() ->
-    %% Initialize Mnesia schema (only once per test VM)
-    case mnesia:create_schema([node()]) of
-        ok -> ok;
-        {error, {_, {already_exists, _}}} -> ok;
-        {error, _} -> ok
-    end,
-
-    %% Start Mnesia if not running
+    %% Stop Mnesia if running to ensure clean state
     case mnesia:system_info(is_running) of
-        yes -> ok;
-        no ->
-            ok = application:start(mnesia),
-            ok
+        yes -> application:stop(mnesia);
+        _ -> ok
     end,
 
-    %% Start cache with test configuration
+    %% Delete old schema to start fresh
+    mnesia:delete_schema([node()]),
+
+    %% Create schema
+    ok = mnesia:create_schema([node()]),
+
+    %% Start Mnesia
+    ok = application:start(mnesia),
+
+    %% Wait for Mnesia to be fully running
+    ok = mnesia:wait_for_tables([schema], 5000),
+
+    %% Start cache with test configuration (this will create the cache table)
     Config = #{
         max_l1_size => 100,
         max_l2_size => 1000,
@@ -74,6 +77,10 @@ setup() ->
         cleanup_interval_ms => 1000
     },
     {ok, Pid} = erlmcp_cache:start_link(Config),
+
+    %% Wait for cache table to be created
+    timer:sleep(100),
+
     Pid.
 
 cleanup(Pid) ->
