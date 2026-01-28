@@ -1,0 +1,97 @@
+{
+  "version": "2.0.0",
+  "timestamp": 1769631041,
+  "date": "2026-01-28T12:10:41Z",
+  "git_sha": "unknown",
+  "environment": {
+    "os": "darwin",
+    "os_version": "25.2.0",
+    "arch": "x86_64",
+    "hostname": "Seans-MacBook-Pro",
+    "otp_version": "OTP-27",
+    "erts_version": "15.2.7.1",
+    "cores": 8
+  },
+  "benchmarks": {
+    "core_ops_1k": {
+      "throughput_msg_per_s": 1396648.04,
+      "latency_p50_us": 0.0,
+      "latency_p95_us": 82.0,
+      "latency_p99_us": 98.0,
+      "memory_delta_mib": 0.2,
+      "duration_s": 0.0,
+      "operations": 4000,
+      "cpu_percent_avg": 59.0,
+      "components": {
+        "registry": {"latency_p50_us": 49.0, "latency_p95_us": 96.0, "latency_p99_us": 100.0, "latency_avg_us": 50.4},
+        "queue": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 0.1},
+        "pool": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 1.4},
+        "session": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 2.0, "latency_avg_us": 0.3}
+      }
+    },
+    "core_ops_10k": {
+      "throughput_msg_per_s": 2826655.36,
+      "latency_p50_us": 0.0,
+      "latency_p95_us": 81.0,
+      "latency_p99_us": 97.0,
+      "memory_delta_mib": 2.0,
+      "duration_s": 0.01,
+      "operations": 40000,
+      "cpu_percent_avg": 57.0,
+      "components": {
+        "registry": {"latency_p50_us": 52.0, "latency_p95_us": 96.0, "latency_p99_us": 100.0, "latency_avg_us": 51.7},
+        "queue": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 0.1},
+        "pool": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 0.4},
+        "session": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 3.0, "latency_avg_us": 0.7}
+      }
+    },
+    "core_ops_100k": {
+      "throughput_msg_per_s": 2748290.91,
+      "latency_p50_us": 0.0,
+      "latency_p95_us": 83.0,
+      "latency_p99_us": 98.0,
+      "memory_delta_mib": 21.9,
+      "duration_s": 0.15,
+      "operations": 400000,
+      "cpu_percent_avg": 48.0,
+      "components": {
+        "registry": {"latency_p50_us": 52.0, "latency_p95_us": 96.0, "latency_p99_us": 101.0, "latency_avg_us": 51.5, "latency_max_us": 101.0},
+        "queue": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 0.1, "latency_max_us": 467.0},
+        "pool": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 0.4, "latency_max_us": 1435.0},
+        "session": {"latency_p50_us": 1.0, "latency_p95_us": 15.0, "latency_p99_us": 86.0, "latency_avg_us": 7.5, "latency_max_us": 17654.0}
+      }
+    },
+    "core_ops_1m": {
+      "throughput_msg_per_s": 1808534.93,
+      "latency_p50_us": 0.0,
+      "latency_p95_us": 84.0,
+      "latency_p99_us": 99.0,
+      "memory_delta_mib": 284.6,
+      "duration_s": 2.21,
+      "operations": 4000000,
+      "cpu_percent_avg": 51.0,
+      "components": {
+        "registry": {"latency_p50_us": 52.0, "latency_p95_us": 97.0, "latency_p99_us": 100.0, "latency_avg_us": 51.5, "latency_max_us": 101.0},
+        "queue": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 0.1, "latency_max_us": 6467.0},
+        "pool": {"latency_p50_us": 0.0, "latency_p95_us": 1.0, "latency_p99_us": 1.0, "latency_avg_us": 0.8, "latency_max_us": 7774.0},
+        "session": {"latency_p50_us": 1.0, "latency_p95_us": 27.0, "latency_p99_us": 124.0, "latency_avg_us": 5.6, "latency_max_us": 18709.0}
+      }
+    }
+  },
+  "notes": [
+    "v2.0 baseline established on 2026-01-28",
+    "Core operations benchmarks only (network/stress/chaos/integration pending)",
+    "Registry: ~51.5µs average latency (bottleneck identified)",
+    "Queue: <1µs average (fastest component)",
+    "Pool: <1µs average (very fast)",
+    "Session: 0.3-7.5µs average (scales with load)",
+    "Memory: Linear scaling ~71 bytes/op at 1M scale",
+    "CPU: 48-59% average utilization",
+    "Performance regression vs v1: -6% throughput (within 10% threshold)"
+  ],
+  "regression_thresholds": {
+    "throughput": -10,
+    "latency_p95": 10,
+    "memory": 20
+  }
+}
