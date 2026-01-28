@@ -1,22 +1,31 @@
-# Registry v1.3.0 Benchmarking Guide
+# erlmcp Benchmarking Suite
 
 ## Overview
 
-This directory contains comprehensive benchmarking and correctness validation suites for the erlmcp registry at 100K concurrent connections.
+This directory contains comprehensive benchmarking suites for erlmcp performance, correctness, and chaos engineering validation.
 
-**Files**:
-- `erlmcp_registry_contention.erl` - Performance contention measurement (550+ lines)
-- `run_registry_benchmarks.sh` - Complete benchmark runner script
-- `BENCHMARK_RESULTS_TEMPLATE.csv` - Expected result format
+**Benchmark Modules**:
+- `erlmcp_registry_contention.erl` - Registry performance at 100K connections (550+ lines)
+- `erlmcp_bench_chaos.erl` - Chaos/adversarial testing with bounded refusal (800+ lines)
+- `erlmcp_transport_tcp_4kb.erl` - TCP transport benchmarks
 
-**Test Suite**:
-- `../test/erlmcp_registry_correctness_SUITE.erl` - Correctness validation (600+ lines)
+**Runner Scripts**:
+- `run_registry_benchmarks.sh` - Registry performance suite
+- `run_chaos_benchmarks.sh` - Chaos engineering suite
+
+**Test Suites**:
+- `../test/erlmcp_registry_correctness_SUITE.erl` - Registry correctness (600+ lines)
+- `../test/erlmcp_bench_chaos_SUITE.erl` - Chaos scenario validation (400+ lines)
+
+**Documentation**:
+- `CHAOS_BENCHMARK.md` - Complete chaos testing guide
+- `BENCHMARKS.md` - General benchmarking overview
 
 ---
 
 ## Quick Start
 
-### Run Complete Benchmark Suite (10-15 minutes)
+### 1. Run Complete Performance Suite (10-15 minutes)
 
 ```bash
 cd /Users/sac/erlmcp
@@ -28,6 +37,21 @@ This will:
 2. Run contention benchmarks at 4 scales (10K, 25K, 50K, 100K)
 3. Run 10 correctness tests
 4. Generate results in `bench/results/`
+
+### 2. Run Chaos/Adversarial Testing (2-3 minutes)
+
+```bash
+cd /Users/sac/erlmcp
+bash bench/run_chaos_benchmarks.sh
+```
+
+This will:
+1. Run 11 chaos scenarios (process crashes, resource exhaustion, edge cases)
+2. Validate bounded refusal codes
+3. Verify recovery within SLA
+4. Generate chaos report with metrology compliance
+
+**See**: `CHAOS_BENCHMARK.md` for detailed chaos testing documentation
 
 ### Run Only Contention Benchmarks
 

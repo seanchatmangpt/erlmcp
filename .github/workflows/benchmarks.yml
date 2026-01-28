@@ -1,0 +1,228 @@
+name: Benchmark Suite
+
+on:
+  # Run on PR merge to main
+  push:
+    branches:
+      - main
+  # Run on release tags
+  push:
+    tags:
+      - 'v*'
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Benchmark mode (quick, standard, full, ci)'
+        required: false
+        default: 'ci'
+        type: choice
+        options:
+          - quick
+          - standard
+          - full
+          - ci
+      upload_artifacts:
+        description: 'Upload benchmark results as artifacts'
+        required: false
+        default: true
+        type: boolean
+  # Run on pull requests (quick mode only)
+  pull_request:
+    branches:
+      - main
+
+env:
+  OTP_VERSION: '27.0'
+  REBAR3_VERSION: '3.23.0'
+
+jobs:
+  benchmark:
+    name: Run Benchmark Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for baseline comparison
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            ~/.cache/rebar3
+          key: ${{ runner.os }}-erlang-${{ env.OTP_VERSION }}-${{ hashFiles('rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-erlang-${{ env.OTP_VERSION }}-
+
+      - name: Fetch baseline from previous run
+        id: baseline
+        continue-on-error: true
+        run: |
+          # Try to download baseline from previous successful run
+          mkdir -p bench/results/baseline
+
+          # Check if artifacts from previous run exist
+          ARTIFACT_URL="${{ github.api_url }}/repos/${{ github.repository }}/actions/artifacts"
+          echo "Looking for baseline artifact..."
+
+          # Download latest baseline (if available)
+          # Note: This requires GITHUB_TOKEN with appropriate permissions
+          # In production, you'd use a more sophisticated approach
+
+          echo "baseline_found=false" >> $GITHUB_OUTPUT
+
+      - name: Determine benchmark mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            MODE="quick"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ github.event.inputs.mode }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            MODE="standard"
+          else
+            MODE="ci"
+          fi
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
+          echo "Running in mode: $MODE"
+
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/bench/run_all_benchmarks.sh
+          chmod +x scripts/bench/set_baseline.sh
+          chmod +x scripts/bench/compare_to_baseline.sh
+
+      - name: Run benchmark suite
+        id: benchmark
+        env:
+          BENCHMARK_MODE: ${{ steps.mode.outputs.mode }}
+          METROLOGY_STRICT: 'true'
+          REGRESSION_THRESHOLD: '10'
+        run: |
+          ./scripts/bench/run_all_benchmarks.sh
+          echo "results_dir=$(ls -dt bench/results/*/ | head -1)" >> $GITHUB_OUTPUT
+
+      - name: Upload benchmark results
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.run_number }}
+          path: |
+            bench/results/
+            !bench/results/baseline/
+          retention-days: 90
+
+      - name: Compare to baseline
+        if: steps.baseline.outputs.baseline_found == 'true'
+        continue-on-error: true
+        run: |
+          ./scripts/bench/compare_to_baseline.sh "${{ steps.benchmark.outputs.results_dir }}"
+
+      - name: Generate PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const resultsDir = '${{ steps.benchmark.outputs.results_dir }}';
+
+            // Read summary
+            let summary = '';
+            try {
+              const summaryPath = `${resultsDir}/summary.txt`;
+              summary = fs.readFileSync(summaryPath, 'utf8');
+            } catch (err) {
+              summary = 'Summary not available';
+            }
+
+            // Read regression report if exists
+            let regressionReport = '';
+            try {
+              const regressionPath = `${resultsDir}/regression_report.txt`;
+              regressionReport = fs.readFileSync(regressionPath, 'utf8');
+            } catch (err) {
+              regressionReport = 'No regression analysis available';
+            }
+
+            // Format comment
+            const comment = `
+            ## Benchmark Results
+
+            <details>
+            <summary>📊 Benchmark Summary</summary>
+
+            \`\`\`
+            ${summary}
+            \`\`\`
+            </details>
+
+            <details>
+            <summary>📈 Regression Analysis</summary>
+
+            \`\`\`
+            ${regressionReport}
+            \`\`\`
+            </details>
+
+            **Artifacts**: Detailed results are available in the workflow artifacts.
+
+            <sub>🤖 Generated by erlmcp benchmark suite</sub>
+            `;
+
+            // Post comment
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Set new baseline (main branch only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          ./scripts/bench/set_baseline.sh "${{ steps.benchmark.outputs.results_dir }}"
+
+      - name: Upload baseline for future runs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline
+          path: bench/results/baseline/
+          retention-days: 365  # Keep baseline for 1 year
+
+      - name: Fail on regressions (main branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          if [ -f "${{ steps.benchmark.outputs.results_dir }}/regression_report.txt" ]; then
+            if grep -q "regression(s) detected" "${{ steps.benchmark.outputs.results_dir }}/regression_report.txt"; then
+              echo "::error::Performance regressions detected on main branch"
+              exit 1
+            fi
+          fi
+
+  notify:
+    name: Notify Results
+    needs: benchmark
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Notify on failure
+        if: needs.benchmark.result == 'failure'
+        run: |
+          echo "::warning::Benchmark suite failed. Check logs for details."
+
+      - name: Notify on success
+        if: needs.benchmark.result == 'success'
+        run: |
+          echo "✓ Benchmark suite passed successfully"

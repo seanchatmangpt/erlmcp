@@ -1030,3 +1030,129 @@ help:
 	@echo "  make help             This message"
 	@echo ""
 	@echo "$(BLUE)For detailed test strategy, see TEST_STRATEGY.md$(NC)"
+
+# ============================================================================
+# AUTOMATED BENCHMARK SUITE (v1.3.0)
+# ============================================================================
+
+# Run automated benchmark suite with metrology validation
+benchmark-auto: compile
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BLUE)RUNNING: Automated Benchmark Suite (CI Mode)$(NC)"
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@./scripts/bench/run_all_benchmarks.sh ci
+	@echo "$(GREEN)✓ Automated benchmark suite complete$(NC)"
+
+# Quick benchmark run for development
+benchmark-quick-auto: compile
+	@echo "$(BLUE)Running quick benchmark suite...$(NC)"
+	@./scripts/bench/quick_bench.sh
+
+# Standard benchmark run (30 minutes)
+benchmark-standard: compile
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BLUE)RUNNING: Standard Benchmark Suite (30 minutes)$(NC)"
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@./scripts/bench/run_all_benchmarks.sh standard
+
+# Full benchmark run (2 hours)
+benchmark-full-auto: compile
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BLUE)RUNNING: Full Benchmark Suite (2 hours)$(NC)"
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@./scripts/bench/run_all_benchmarks.sh full
+
+# Set baseline for regression detection
+benchmark-set-baseline:
+	@echo "$(BLUE)Setting benchmark baseline...$(NC)"
+	@if [ -z "$(RESULTS_DIR)" ]; then \
+		echo "$(RED)Error: RESULTS_DIR not specified$(NC)"; \
+		echo "Usage: make benchmark-set-baseline RESULTS_DIR=bench/results/YYYYMMDD_HHMMSS"; \
+		exit 1; \
+	fi
+	@./scripts/bench/set_baseline.sh "$(RESULTS_DIR)"
+
+# Compare to baseline
+benchmark-compare:
+	@echo "$(BLUE)Comparing to baseline...$(NC)"
+	@if [ -z "$(RESULTS_DIR)" ]; then \
+		echo "$(RED)Error: RESULTS_DIR not specified$(NC)"; \
+		echo "Usage: make benchmark-compare RESULTS_DIR=bench/results/YYYYMMDD_HHMMSS"; \
+		exit 1; \
+	fi
+	@./scripts/bench/compare_to_baseline.sh "$(RESULTS_DIR)"
+
+# Show latest benchmark results
+benchmark-show-latest:
+	@echo "$(BLUE)Latest benchmark results:$(NC)"
+	@LATEST=$$(ls -dt bench/results/*/ 2>/dev/null | head -1); \
+	if [ -n "$$LATEST" ]; then \
+		echo "  Directory: $$LATEST"; \
+		echo ""; \
+		if [ -f "$$LATEST/summary.txt" ]; then \
+			cat "$$LATEST/summary.txt"; \
+		else \
+			echo "  No summary.txt found"; \
+		fi; \
+	else \
+		echo "  No benchmark results found"; \
+	fi
+
+# Validate metrology on specific result file
+benchmark-validate:
+	@echo "$(BLUE)Validating metrology...$(NC)"
+	@if [ -z "$(FILE)" ]; then \
+		echo "$(RED)Error: FILE not specified$(NC)"; \
+		echo "Usage: make benchmark-validate FILE=bench/results/YYYYMMDD_HHMMSS/result.json"; \
+		exit 1; \
+	fi
+	@erl -pa _build/default/lib/*/ebin -noshell -eval " \
+		case erlmcp_metrology_validator:validate_file(\"$(FILE)\") of \
+			ok -> \
+				io:format(\"$(GREEN)✓ Metrology validation passed$(NC)~n\"), \
+				halt(0); \
+			{error, Violations} -> \
+				io:format(\"$(RED)✗ Metrology violations detected (~p):$(NC)~n\", [length(Violations)]), \
+				lists:foreach(fun(V) -> \
+					Formatted = erlmcp_metrology_validator:format_violation(V), \
+					io:format(\"  - ~s~n\", [Formatted]) \
+				end, Violations), \
+				halt(1) \
+		end. \
+	"
+
+# Clean benchmark results (keep baseline)
+benchmark-clean:
+	@echo "$(BLUE)Cleaning benchmark results (keeping baseline)...$(NC)"
+	@find bench/results -mindepth 1 -maxdepth 1 -type d ! -name baseline -exec rm -rf {} + 2>/dev/null || true
+	@echo "$(GREEN)✓ Benchmark results cleaned$(NC)"
+
+# Help for benchmark targets
+benchmark-help:
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BLUE)ERLMCP Benchmark Automation Targets$(NC)"
+	@echo "$(BLUE)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(GREEN)Execution:$(NC)"
+	@echo "  make benchmark-auto           Run automated suite (CI mode, ~5 min)"
+	@echo "  make benchmark-quick-auto     Quick development test (~2 min)"
+	@echo "  make benchmark-standard       Standard suite (3 workloads, ~30 min)"
+	@echo "  make benchmark-full-auto      Full suite (all workloads, ~2 hours)"
+	@echo ""
+	@echo "$(GREEN)Baseline Management:$(NC)"
+	@echo "  make benchmark-set-baseline RESULTS_DIR=...   Set regression baseline"
+	@echo "  make benchmark-compare RESULTS_DIR=...        Compare to baseline"
+	@echo ""
+	@echo "$(GREEN)Validation:$(NC)"
+	@echo "  make benchmark-validate FILE=...              Validate metrology on file"
+	@echo "  make benchmark-show-latest                    Show latest results"
+	@echo ""
+	@echo "$(GREEN)Cleanup:$(NC)"
+	@echo "  make benchmark-clean                          Clean results (keep baseline)"
+	@echo ""
+	@echo "$(BLUE)For detailed documentation, see scripts/bench/README.md$(NC)"
+	@echo ""
+

@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+###===================================================================
+### test_automation.sh - Verify Benchmark Automation Installation
+###===================================================================
+###
+### Verifies that all benchmark automation components are installed
+### correctly and working.
+###
+### Usage:
+###   ./scripts/bench/test_automation.sh
+###
+###===================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Benchmark Automation Verification${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+
+TESTS_PASSED=0
+TESTS_FAILED=0
+
+# Test function
+test_component() {
+    local test_name="$1"
+    local test_cmd="$2"
+
+    echo -n "Testing: $test_name... "
+
+    if eval "$test_cmd" > /dev/null 2>&1; then
+        echo -e "${GREEN}✓${NC}"
+        ((TESTS_PASSED++))
+        return 0
+    else
+        echo -e "${RED}✗${NC}"
+        ((TESTS_FAILED++))
+        return 1
+    fi
+}
+
+# Check scripts exist
+echo -e "${YELLOW}Checking script files...${NC}"
+test_component "run_all_benchmarks.sh exists" "[ -f scripts/bench/run_all_benchmarks.sh ]"
+test_component "set_baseline.sh exists" "[ -f scripts/bench/set_baseline.sh ]"
+test_component "compare_to_baseline.sh exists" "[ -f scripts/bench/compare_to_baseline.sh ]"
+test_component "quick_bench.sh exists" "[ -f scripts/bench/quick_bench.sh ]"
+
+# Check scripts are executable
+echo ""
+echo -e "${YELLOW}Checking script permissions...${NC}"
+test_component "run_all_benchmarks.sh executable" "[ -x scripts/bench/run_all_benchmarks.sh ]"
+test_component "set_baseline.sh executable" "[ -x scripts/bench/set_baseline.sh ]"
+test_component "compare_to_baseline.sh executable" "[ -x scripts/bench/compare_to_baseline.sh ]"
+test_component "quick_bench.sh executable" "[ -x scripts/bench/quick_bench.sh ]"
+
+# Check bash syntax
+echo ""
+echo -e "${YELLOW}Checking bash syntax...${NC}"
+test_component "run_all_benchmarks.sh syntax" "bash -n scripts/bench/run_all_benchmarks.sh"
+test_component "set_baseline.sh syntax" "bash -n scripts/bench/set_baseline.sh"
+test_component "compare_to_baseline.sh syntax" "bash -n scripts/bench/compare_to_baseline.sh"
+test_component "quick_bench.sh syntax" "bash -n scripts/bench/quick_bench.sh"
+
+# Check Erlang modules exist
+echo ""
+echo -e "${YELLOW}Checking Erlang modules...${NC}"
+test_component "erlmcp_bench_helpers.erl exists" "[ -f bench/erlmcp_bench_helpers.erl ]"
+test_component "erlmcp_bench_helpers_tests.erl exists" "[ -f bench/erlmcp_bench_helpers_tests.erl ]"
+test_component "erlmcp_metrology_validator.erl exists" "[ -f src/erlmcp_metrology_validator.erl ]"
+
+# Check documentation
+echo ""
+echo -e "${YELLOW}Checking documentation...${NC}"
+test_component "scripts/bench/README.md exists" "[ -f scripts/bench/README.md ]"
+test_component "BENCHMARK_AUTOMATION.md exists" "[ -f BENCHMARK_AUTOMATION.md ]"
+
+# Check GitHub Actions workflow
+echo ""
+echo -e "${YELLOW}Checking CI/CD integration...${NC}"
+test_component ".github/workflows/benchmarks.yml exists" "[ -f .github/workflows/benchmarks.yml ]"
+
+# Check Makefile targets
+echo ""
+echo -e "${YELLOW}Checking Makefile integration...${NC}"
+test_component "benchmark-auto target exists" "grep -q 'benchmark-auto:' Makefile"
+test_component "benchmark-help target exists" "grep -q 'benchmark-help:' Makefile"
+test_component "benchmark-set-baseline target exists" "grep -q 'benchmark-set-baseline:' Makefile"
+test_component "benchmark-compare target exists" "grep -q 'benchmark-compare:' Makefile"
+
+# Check directories
+echo ""
+echo -e "${YELLOW}Checking directory structure...${NC}"
+test_component "bench/ directory exists" "[ -d bench ]"
+test_component "bench/results/ directory exists or can be created" "mkdir -p bench/results"
+test_component "scripts/bench/ directory exists" "[ -d scripts/bench ]"
+
+# Summary
+echo ""
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}  Verification Summary${NC}"
+echo -e "${BLUE}========================================${NC}"
+echo ""
+echo -e "Tests passed: ${GREEN}$TESTS_PASSED${NC}"
+echo -e "Tests failed: ${RED}$TESTS_FAILED${NC}"
+echo ""
+
+if [ $TESTS_FAILED -eq 0 ]; then
+    echo -e "${GREEN}✓ All verification tests passed${NC}"
+    echo ""
+    echo "Ready to use:"
+    echo "  make benchmark-auto           # Run automated benchmark suite"
+    echo "  make benchmark-quick-auto     # Quick development test"
+    echo "  make benchmark-help           # Show all targets"
+    echo ""
+    exit 0
+else
+    echo -e "${RED}✗ Some verification tests failed${NC}"
+    echo ""
+    echo "Please review errors above and fix before using."
+    exit 1
+fi

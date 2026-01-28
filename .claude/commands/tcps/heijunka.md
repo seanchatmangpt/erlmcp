@@ -9,7 +9,7 @@ manufacturing_stage: "Stage 2: Plan"
 consolidates: [sparc/architect, sparc/architecture]
 ---
 
-# Command: /tcps heijunka
+# Command: /tcps-heijunka
 
 ## Purpose
 **Japanese**: 平準化 (Heijunka - Production Leveling)
@@ -20,7 +20,7 @@ Level production load across work types (reliability/security/cost/features) to 
 
 ## Usage
 ```bash
-/tcps heijunka [balance|schedule]
+/tcps-heijunka [balance|schedule]
 ```
 
 ## Agent Invocation
@@ -41,7 +41,7 @@ Loads: `.roo/rules-architect/` rules
 
 ### Balance Work Orders
 ```bash
-/tcps heijunka balance
+/tcps-heijunka balance
 ```
 
 Analyzes pending work orders and creates leveled schedule:
@@ -53,7 +53,7 @@ Week 3: 2 reliability + 2 security + 1 cost + 0 feature
 
 ### Create Production Schedule
 ```bash
-/tcps heijunka schedule next-batch
+/tcps-heijunka schedule next-batch
 ```
 
 Generates `receipts/plan/schedule-20260127.json` with balanced work order sequence.
@@ -79,8 +79,8 @@ Generates `receipts/plan/schedule-20260127.json` with balanced work order sequen
 ```
 
 ## See Also
-- Previous: `/tcps pull` - Just-In-Time work orders
-- Next: `/tcps kanban` - WIP management
+- Previous: `/tcps-pull` - Just-In-Time work orders
+- Next: `/tcps-kanban` - WIP management
 - Docs: `docs/tcps/TCPS.md` - Pillar 5: Heijunka
 
 ---

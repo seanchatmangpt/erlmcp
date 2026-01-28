@@ -9,7 +9,7 @@ manufacturing_stage: "Stage 1: Pull"
 consolidates: [sparc/spec, sparc/spec-pseudocode]
 ---
 
-# Command: /tcps pull
+# Command: /tcps-pull
 
 ## Purpose
 **Japanese**: Just-In-Time (JIT)
@@ -20,7 +20,7 @@ Create work orders from actual demand signals (marketplace installs, GitHub issu
 
 ## Usage
 ```bash
-/tcps pull [sku-name]
+/tcps-pull [sku-name]
 ```
 
 ## Agent Invocation
@@ -43,7 +43,7 @@ Emit Receipt (receipts/pull/wo-*.json)
 
 ### Pull from Marketplace Demand
 ```bash
-/tcps pull erlmcp-http2-transport
+/tcps-pull erlmcp-http2-transport
 ```
 
 **What happens**:
@@ -61,7 +61,7 @@ Emit Receipt (receipts/pull/wo-*.json)
 
 ### Pull from Security Advisory
 ```bash
-/tcps pull security-patch-tls
+/tcps-pull security-patch-tls
 ```
 
 **What happens**:
@@ -128,12 +128,12 @@ Every pull creates a work order with:
 2. Heijunka → Kanban (WIP management)
 3. Kanban → Build (standard work)
 
-**Next command**: `/tcps heijunka` - Schedule work orders
+**Next command**: `/tcps-heijunka` - Schedule work orders
 
 ## See Also
-- Next stage: `/tcps heijunka` - Production leveling
-- Related: `/work-order create` - Manual work order creation
-- Related: `/demand signal` - Detect demand signals
+- Next stage: `/tcps-heijunka` - Production leveling
+- Related: `/work-order-create` - Manual work order creation
+- Related: `/demand-signal` - Detect demand signals
 - Docs: `docs/tcps/TCPS.md` - Pillar 1: Just-In-Time
 
 ---

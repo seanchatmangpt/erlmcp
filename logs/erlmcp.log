@@ -71,3 +71,5 @@
 2026-01-27T10:17:38.183860-08:00 [notice] <0.45.0> application_controller:info_exited/3:2125 Application: jobs. Exited: stopped. Type: temporary.
 2026-01-27T10:17:38.214570-08:00 [info] <0.1057.0> tls_certificate_check_shared_state:handle_shared_state_initialization/2:273 Loading 159 CA(s) from otp store
 2026-01-27T10:17:38.214638-08:00 [info] <0.1056.0> supervisor:report_progress/3:2135 Supervisor: {local,tls_certificate_check_sup}. Started: id=tls_certificate_check_shared_state,pid=<0.1057.0>.
+2026-01-27T18:31:09.947992-08:00 [notice] <0.63.0> : SIGTERM received - shutting down
+2026-01-27T18:31:09.948802-08:00 [info] <0.541.0> : MCP registry terminating
