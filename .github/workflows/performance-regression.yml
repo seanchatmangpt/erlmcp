@@ -1,0 +1,170 @@
+name: Performance Regression Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'bench/**'
+      - 'rebar.config'
+      - 'rebar.lock'
+  push:
+    branches: [main]
+    paths:
+      - 'bench/baselines/**'
+
+jobs:
+  performance:
+    name: Performance Regression Detection
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for baseline access
+      
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3.23'
+      
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            ~/.cache/rebar3
+          key: ${{ runner.os }}-rebar3-${{ hashFiles('rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rebar3-
+      
+      - name: Compile
+        run: |
+          TERM=dumb rebar3 compile
+          TERM=dumb rebar3 as test compile
+      
+      - name: Fetch latest baseline from main
+        run: |
+          git fetch origin main:main || true
+          ls -lh bench/baselines/ || echo "No baselines yet"
+      
+      - name: Run performance comparison
+        id: perf_check
+        run: |
+          chmod +x tools/baseline-compare.sh
+          ./tools/baseline-compare.sh
+        continue-on-error: true
+      
+      - name: Upload comparison report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-comparison-report
+          path: bench/baselines/comparison_*.html
+          retention-days: 30
+      
+      - name: Extract regression summary
+        if: always()
+        id: summary
+        run: |
+          if [ ${{ steps.perf_check.outcome }} == 'success' ]; then
+            echo "status=✓ PASS: No regressions detected" >> $GITHUB_OUTPUT
+            echo "regressions=0" >> $GITHUB_OUTPUT
+          else
+            # Count regressions from output
+            REGRESSIONS=$(grep -c "REGRESSION" bench/baselines/comparison_*.html || echo "1")
+            echo "status=❌ FAIL: Performance regression(s) detected" >> $GITHUB_OUTPUT
+            echo "regressions=$REGRESSIONS" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const status = '${{ steps.summary.outputs.status }}';
+            const regressions = '${{ steps.summary.outputs.regressions }}';
+            
+            let body = `## Performance Regression Check\n\n${status}\n\n`;
+            
+            if (regressions > 0) {
+              body += `### ⚠️ ${regressions} Regression(s) Detected\n\n`;
+              body += `This PR introduces performance regressions. Please review the comparison report in the workflow artifacts.\n\n`;
+              body += `**What to do:**\n`;
+              body += `1. Download the comparison report from workflow artifacts\n`;
+              body += `2. Review the specific regressions\n`;
+              body += `3. Either fix the regression or justify the tradeoff\n\n`;
+              body += `**To accept regression** (rare):\n`;
+              body += `\`\`\`bash\n`;
+              body += `./tools/baseline-update.sh --reason "Your justification here"\n`;
+              body += `\`\`\`\n`;
+            } else {
+              body += `✓ All performance metrics within acceptable thresholds.\n`;
+            }
+            
+            body += `\n---\n*Thresholds: -10% throughput, +10% latency, +20% memory*`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+      
+      - name: Fail on regression
+        if: steps.perf_check.outcome == 'failure'
+        run: |
+          echo "Performance regression detected - blocking merge"
+          echo "See comparison report in artifacts for details"
+          exit 1
+
+  capture-baseline:
+    name: Capture New Baseline
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 20
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          rebar3-version: '3.23'
+      
+      - name: Check if baseline update needed
+        id: check
+        run: |
+          # Check if bench/ files changed in this push
+          if git diff-tree --no-commit-id --name-only -r ${{ github.sha }} | grep -q '^bench/'; then
+            echo "baseline_needed=true" >> $GITHUB_OUTPUT
+          else
+            echo "baseline_needed=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Compile
+        if: steps.check.outputs.baseline_needed == 'true'
+        run: TERM=dumb rebar3 compile
+      
+      - name: Capture baseline
+        if: steps.check.outputs.baseline_needed == 'true'
+        run: |
+          chmod +x tools/baseline-capture.sh
+          ./tools/baseline-capture.sh --no-commit
+      
+      - name: Commit baseline
+        if: steps.check.outputs.baseline_needed == 'true'
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add bench/baselines/*.json
+          git commit -m "chore: update performance baseline [skip ci]" || echo "No changes to commit"
+          git push origin main

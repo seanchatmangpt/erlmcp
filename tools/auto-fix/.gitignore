@@ -1,0 +1,10 @@
+# Auto-Fix System gitignore
+
+# State files (local development state)
+logs/auto-fix/dispatcher-state.json
+
+# Temporary error files
+logs/auto-fix/*-errors-*.txt
+
+# But keep logs directory structure
+!logs/auto-fix/.gitkeep

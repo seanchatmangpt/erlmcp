@@ -1,0 +1,131 @@
+name: Quality Metrics Tracking
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run daily at 00:00 UTC
+    - cron: '0 0 * * *'
+
+jobs:
+  capture-metrics:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Full history for trends
+    
+    - name: Set up Erlang/OTP
+      uses: erlef/setup-beam@v1
+      with:
+        otp-version: '25'
+        rebar3-version: '3.22'
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          _build
+          deps
+        key: ${{ runner.os }}-erlang-${{ hashFiles('rebar.config') }}
+    
+    - name: Install dependencies
+      run: rebar3 get-deps
+    
+    - name: Capture quality snapshot
+      run: |
+        mkdir -p metrics/snapshots
+        chmod +x tools/metrics/quality-snapshot.sh
+        ./tools/metrics/quality-snapshot.sh metrics/snapshots/ci-${{ github.sha }}.json
+    
+    - name: Upload snapshot artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: quality-snapshot
+        path: metrics/snapshots/*.json
+        retention-days: 90
+    
+    - name: Analyze trends (if not first run)
+      if: github.event_name == 'push'
+      run: |
+        chmod +x tools/metrics/quality-trend.sh
+        ./tools/metrics/quality-trend.sh --days 30 --html metrics/quality-trend.html || true
+    
+    - name: Upload trend report
+      if: github.event_name == 'push'
+      uses: actions/upload-artifact@v3
+      with:
+        name: quality-trend-report
+        path: metrics/quality-trend.html
+        retention-days: 30
+    
+    - name: Check for regressions
+      id: regression_check
+      run: |
+        chmod +x tools/metrics/quality-trend.sh
+        if ./tools/metrics/quality-trend.sh --days 7 | grep "DEGRADING (alert threshold exceeded)"; then
+          echo "regression=true" >> $GITHUB_OUTPUT
+          echo "::warning::Quality regression detected!"
+        else
+          echo "regression=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Comment PR with metrics
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const snapshot = JSON.parse(fs.readFileSync('metrics/snapshots/ci-${{ github.sha }}.json', 'utf8'));
+          
+          const qualityScore = snapshot.quality_score.overall;
+          const testPassRate = snapshot.tests.pass_rate;
+          const coverage = snapshot.coverage.percentage;
+          const compileWarnings = snapshot.compilation.warnings;
+          const dialyzerWarnings = snapshot.dialyzer.warnings;
+          
+          const emoji = qualityScore >= 80 ? '✅' : qualityScore >= 60 ? '⚠️' : '❌';
+          
+          const comment = `## ${emoji} Quality Metrics Report
+          
+          **Overall Quality Score: ${qualityScore}/100**
+          
+          | Metric | Value | Status |
+          |--------|-------|--------|
+          | Test Pass Rate | ${testPassRate}% | ${testPassRate >= 95 ? '✅' : '⚠️'} |
+          | Code Coverage | ${coverage}% | ${coverage >= 80 ? '✅' : '⚠️'} |
+          | Compile Warnings | ${compileWarnings} | ${compileWarnings === 0 ? '✅' : '⚠️'} |
+          | Dialyzer Warnings | ${dialyzerWarnings} | ${dialyzerWarnings === 0 ? '✅' : '⚠️'} |
+          
+          **Code Metrics:**
+          - Source LOC: ${snapshot.code_metrics.loc_source}
+          - Test LOC: ${snapshot.code_metrics.loc_tests}
+          - Test/Code Ratio: ${snapshot.code_metrics.test_to_code_ratio}
+          
+          ${qualityScore < 80 ? '⚠️ **Quality improvements recommended before merge**' : ''}
+          `;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+    
+    - name: Fail on regression
+      if: steps.regression_check.outputs.regression == 'true' && github.event_name == 'pull_request'
+      run: |
+        echo "::error::Quality regression detected. Please fix before merging."
+        exit 1
+    
+    - name: Commit metrics to history (main branch only)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git add metrics/snapshots/*.json || true
+        git commit -m "chore: update quality metrics snapshot [skip ci]" || true
+        git push || true

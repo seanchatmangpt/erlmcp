@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-01-28T12:00:00Z",
+  "date": "2026-01-28",
+  "git": {
+    "hash": "abc123def456",
+    "branch": "main",
+    "tag": "v0.6.0"
+  },
+  "compilation": {
+    "success": true,
+    "warnings": 0
+  },
+  "tests": {
+    "success": true,
+    "total": 150,
+    "passed": 150,
+    "failed": 0,
+    "pass_rate": 100.0
+  },
+  "coverage": {
+    "percentage": 85
+  },
+  "dialyzer": {
+    "success": true,
+    "warnings": 0
+  },
+  "code_metrics": {
+    "loc_source": 5000,
+    "loc_tests": 3000,
+    "loc_total": 8000,
+    "modules": 25,
+    "test_modules": 20,
+    "functions": 300,
+    "avg_functions_per_module": 12.0,
+    "avg_loc_per_module": 200.0,
+    "test_to_code_ratio": 0.6
+  },
+  "quality_score": {
+    "overall": 87.5
+  }
+}
