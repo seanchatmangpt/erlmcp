@@ -118,7 +118,27 @@ init([]) ->
 
     % Core infrastructure components with recovery integration
     ChildSpecs = [
-        % Health monitor - system health monitoring (start first)
+        % Hot reload system - zero-downtime upgrades (start first)
+        #{
+            id => erlmcp_hot_reload,
+            start => {erlmcp_hot_reload, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_hot_reload]
+        },
+
+        % Graceful drain coordinator - connection draining for upgrades
+        #{
+            id => erlmcp_graceful_drain,
+            start => {erlmcp_graceful_drain, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_graceful_drain]
+        },
+
+        % Health monitor - system health monitoring
         #{
             id => erlmcp_health_monitor,
             start => {erlmcp_health_monitor, start_link, []},
@@ -128,7 +148,7 @@ init([]) ->
             modules => [erlmcp_health_monitor]
         },
 
-        % Recovery manager - failure recovery coordination (start second)
+        % Recovery manager - failure recovery coordination
         #{
             id => erlmcp_recovery_manager,
             start => {erlmcp_recovery_manager, start_link, []},
@@ -236,6 +256,26 @@ init([]) ->
             shutdown => infinity,
             type => supervisor,
             modules => [erlmcp_transport_sup]
+        },
+
+        % Metrics server - collects and aggregates system metrics
+        #{
+            id => erlmcp_metrics_server,
+            start => {erlmcp_metrics_server, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_metrics_server]
+        },
+
+        % Metrics HTTP supervisor - HTTP server for dashboard
+        #{
+            id => erlmcp_metrics_http_sup,
+            start => {erlmcp_metrics_http_sup, start_link, [8088]},
+            restart => transient,
+            shutdown => 5000,
+            type => supervisor,
+            modules => [erlmcp_metrics_http_sup]
         }
     ],
 

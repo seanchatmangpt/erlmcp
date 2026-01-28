@@ -1,0 +1,77 @@
+# Prometheus Configuration for erlmcp Colima Cluster
+# Optimized for 100K concurrent connection load testing
+
+global:
+  scrape_interval: 10s                 # Scrape metrics every 10s
+  scrape_timeout: 5s                   # Individual scrape timeout
+  evaluation_interval: 10s              # Evaluate alerting rules every 10s
+  external_labels:
+    cluster: erlmcp-colima
+    environment: test
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Rule files (none for now, focus on metrics collection)
+rule_files: []
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # erlmcp node1 - Primary coordinator
+  - job_name: 'erlmcp-node1'
+    static_configs:
+      - targets: ['node1:9090']
+        labels:
+          instance: 'node1'
+          role: 'coordinator'
+    scrape_interval: 5s                # Higher frequency for load test
+    scrape_timeout: 3s
+    metrics_path: '/metrics'
+
+  # erlmcp node2 - Worker
+  - job_name: 'erlmcp-node2'
+    static_configs:
+      - targets: ['node2:9090']
+        labels:
+          instance: 'node2'
+          role: 'worker'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    metrics_path: '/metrics'
+
+  # erlmcp node3 - Worker
+  - job_name: 'erlmcp-node3'
+    static_configs:
+      - targets: ['node3:9090']
+        labels:
+          instance: 'node3'
+          role: 'worker'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    metrics_path: '/metrics'
+
+  # erlmcp node4 - Worker
+  - job_name: 'erlmcp-node4'
+    static_configs:
+      - targets: ['node4:9090']
+        labels:
+          instance: 'node4'
+          role: 'worker'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    metrics_path: '/metrics'
+
+# Service discovery (optional, for dynamic discovery)
+# Uncomment if running with Consul or other service discovery
+#
+# consul_sd_configs:
+#   - server: 'localhost:8500'
+#     datacenter: 'dc1'

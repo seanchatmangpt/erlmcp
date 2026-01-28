@@ -1,0 +1,40 @@
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /build
+
+# Install dependencies
+RUN apk add --no-cache git make curl
+
+# Copy stress test source
+COPY stress-test/stress_100k.go .
+
+# Build the stress test tool
+RUN go build -o stress_100k stress_100k.go && \
+    chmod +x stress_100k
+
+# Runtime stage
+FROM alpine:3.20
+
+RUN apk add --no-cache \
+    curl \
+    bash \
+    ca-certificates \
+    jq \
+    procps \
+    netcat-openbsd
+
+WORKDIR /opt/stress-test
+
+# Copy compiled stress test
+COPY --from=builder /build/stress_100k .
+
+# Create results directory
+RUN mkdir -p /results
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8080/health 2>/dev/null || exit 0
+
+# Default command
+ENTRYPOINT ["/opt/stress-test/stress_100k"]
+CMD ["-url", "http://erlmcp-server:8080", "-connections", "100000", "-duration", "5", "-batch", "5000"]
