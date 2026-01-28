@@ -9,10 +9,10 @@
   },
   "envelope": {
     "throughput_req_s": 900,
-    "concurrent_connections": 256,
-    "queue_depth_messages": 4096,
-    "p99_latency_ms": 150,
-    "failover_sla_seconds": 15,
+    "concurrent_connections": 50000,
+    "queue_depth_messages": 300000,
+    "p99_latency_ms": 80,
+    "failover_sla_seconds": 1,
     "connection_timeout_seconds": 90
   },
   "limits": {

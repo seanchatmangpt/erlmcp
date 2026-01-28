@@ -1,0 +1,24 @@
+# Generated test results - not committed to repository
+*.json
+!SCHEMA.json
+!README.md
+
+# Baseline results (track these separately if needed)
+/baseline/
+
+# Temporary result files
+*_temp.json
+*_working.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~

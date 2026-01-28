@@ -1,0 +1,343 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MCP Pricing Upgrade Paths Schema",
+  "description": "Defines valid pricing tier upgrade and downgrade paths with envelope expansions and configuration changes",
+  "type": "object",
+  "required": ["$schema", "upgrade_paths", "downgrade_policy"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "pricing_upgrade_paths.schema.json"
+    },
+    "version": {
+      "type": "string",
+      "default": "1.0.0",
+      "description": "Schema version"
+    },
+    "description": {
+      "type": "string",
+      "const": "Pricing tier upgrade path definitions for MCP erlmcp"
+    },
+    "upgrade_paths": {
+      "type": "array",
+      "description": "Valid upgrade transitions between pricing tiers",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/upgrade_path"
+      }
+    },
+    "downgrade_policy": {
+      "type": "object",
+      "description": "Policy for downgrades - forbidden by default",
+      "required": ["default_allowed", "forbidden_transitions"],
+      "properties": {
+        "default_allowed": {
+          "type": "boolean",
+          "const": false,
+          "description": "Downgrades are forbidden by default"
+        },
+        "forbidden_transitions": {
+          "type": "array",
+          "description": "Explicit list of forbidden downgrade paths",
+          "items": {
+            "type": "object",
+            "required": ["from_plan", "to_plan", "reason"],
+            "properties": {
+              "from_plan": {
+                "type": "string",
+                "enum": ["gov", "enterprise", "team"]
+              },
+              "to_plan": {
+                "type": "string",
+                "enum": ["gov", "enterprise", "team"]
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why downgrade is forbidden"
+              },
+              "exception_required": {
+                "type": "string",
+                "description": "Special approval needed for exception"
+              }
+            }
+          }
+        }
+      }
+    },
+    "envelope_bounds": {
+      "type": "object",
+      "description": "Global envelope limits for all tiers",
+      "properties": {
+        "min_throughput_req_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_throughput_req_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "min_concurrent_connections": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_concurrent_connections": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  "definitions": {
+    "upgrade_path": {
+      "type": "object",
+      "title": "Upgrade Path",
+      "description": "Specification of a single upgrade transition between tiers",
+      "required": [
+        "from_plan",
+        "to_plan",
+        "envelope_expansion",
+        "config_changes",
+        "migration_steps",
+        "cooldown_period_seconds"
+      ],
+      "properties": {
+        "from_plan": {
+          "type": "string",
+          "enum": ["team", "enterprise", "gov"],
+          "description": "Source pricing tier"
+        },
+        "to_plan": {
+          "type": "string",
+          "enum": ["team", "enterprise", "gov"],
+          "description": "Target pricing tier"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of upgrade"
+        },
+        "estimated_downtime_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Estimated service downtime during upgrade"
+        },
+        "envelope_expansion": {
+          "$ref": "#/definitions/envelope_expansion"
+        },
+        "config_changes": {
+          "type": "array",
+          "description": "Configuration changes applied during upgrade",
+          "items": {
+            "$ref": "#/definitions/config_change"
+          }
+        },
+        "migration_steps": {
+          "type": "object",
+          "required": ["pre_upgrade_checks", "upgrade_phase", "post_upgrade_verification"],
+          "properties": {
+            "pre_upgrade_checks": {
+              "type": "array",
+              "description": "Checks that must pass before upgrade",
+              "items": {
+                "$ref": "#/definitions/migration_step"
+              }
+            },
+            "upgrade_phase": {
+              "type": "array",
+              "description": "Steps executed during upgrade",
+              "items": {
+                "$ref": "#/definitions/migration_step"
+              }
+            },
+            "post_upgrade_verification": {
+              "type": "array",
+              "description": "Verification steps after upgrade completes",
+              "items": {
+                "$ref": "#/definitions/migration_step"
+              }
+            }
+          }
+        },
+        "cooldown_period_seconds": {
+          "type": "integer",
+          "minimum": 300,
+          "description": "Minimum time (in seconds) before next upgrade can be initiated"
+        },
+        "rollback_compatible": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether rollback to previous plan is supported"
+        },
+        "safety_gates": {
+          "type": "array",
+          "description": "Safety gates that must pass before upgrade",
+          "items": {
+            "type": "string",
+            "enum": [
+              "certification_valid",
+              "infrastructure_headroom",
+              "clean_receipt_state",
+              "post_upgrade_verification",
+              "sla_compliance",
+              "resource_availability"
+            ]
+          }
+        },
+        "evidence_requirements": {
+          "type": "object",
+          "description": "Evidence/documentation needed to prove upgrade success",
+          "properties": {
+            "throughput_test": {
+              "type": "boolean",
+              "description": "Verify minimum throughput in target envelope"
+            },
+            "latency_test": {
+              "type": "boolean",
+              "description": "Verify p99 latency meets target"
+            },
+            "connection_test": {
+              "type": "boolean",
+              "description": "Verify concurrent connection support"
+            },
+            "feature_test": {
+              "type": "boolean",
+              "description": "Verify new features work correctly"
+            }
+          }
+        }
+      }
+    },
+    "envelope_expansion": {
+      "type": "object",
+      "title": "Envelope Expansion",
+      "description": "Definition of envelope changes during upgrade",
+      "required": ["old_envelope", "new_envelope"],
+      "properties": {
+        "old_envelope": {
+          "$ref": "#/definitions/envelope"
+        },
+        "new_envelope": {
+          "$ref": "#/definitions/envelope"
+        }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "title": "Envelope",
+      "description": "Service envelope specification",
+      "required": [
+        "throughput_req_s",
+        "concurrent_connections",
+        "queue_depth_messages",
+        "p99_latency_ms"
+      ],
+      "properties": {
+        "throughput_req_s": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum requests per second"
+        },
+        "concurrent_connections": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum concurrent connections"
+        },
+        "queue_depth_messages": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum messages in queue"
+        },
+        "p99_latency_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "99th percentile latency in milliseconds"
+        },
+        "failover_sla_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Failover time SLA"
+        },
+        "connection_timeout_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Connection timeout"
+        }
+      }
+    },
+    "config_change": {
+      "type": "object",
+      "title": "Configuration Change",
+      "description": "Single configuration change applied during upgrade",
+      "required": ["setting", "old_value", "new_value"],
+      "properties": {
+        "setting": {
+          "type": "string",
+          "description": "Configuration setting to change (dot notation)"
+        },
+        "old_value": {},
+        "new_value": {},
+        "description": {
+          "type": "string",
+          "description": "Why this change is needed"
+        },
+        "requires_restart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether setting change requires process restart"
+        }
+      }
+    },
+    "migration_step": {
+      "type": "object",
+      "title": "Migration Step",
+      "description": "Single step in upgrade migration",
+      "required": ["step_id", "description", "action_type"],
+      "properties": {
+        "step_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$",
+          "description": "Unique identifier for step"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description"
+        },
+        "action_type": {
+          "type": "string",
+          "enum": [
+            "check",
+            "verify",
+            "enable_feature",
+            "disable_feature",
+            "update_config",
+            "migrate_data",
+            "test",
+            "drain_connections",
+            "flush_queues",
+            "verify_envelope"
+          ],
+          "description": "Type of action to perform"
+        },
+        "command": {
+          "type": "string",
+          "description": "Command or function to execute"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 30,
+          "description": "Timeout for this step"
+        },
+        "on_failure": {
+          "type": "string",
+          "enum": ["fail", "warn", "skip"],
+          "default": "fail",
+          "description": "Behavior if step fails"
+        },
+        "rollback_step": {
+          "type": "string",
+          "description": "Step to execute for rollback"
+        }
+      }
+    }
+  }
+}

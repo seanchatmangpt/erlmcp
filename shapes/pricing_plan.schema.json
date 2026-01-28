@@ -1,0 +1,429 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TCPS Pricing Plan Schema",
+  "description": "Machine-readable specification for TCPS (Traffic Control and Pricing System) pricing plans with envelope definitions, refusal behaviors, and evidence requirements",
+  "type": "object",
+  "required": [
+    "tier",
+    "name",
+    "description",
+    "pricing",
+    "envelope",
+    "limits",
+    "features",
+    "refusal_behavior",
+    "evidence",
+    "compliance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "tier": {
+      "type": "string",
+      "enum": ["team", "enterprise", "gov"],
+      "description": "Pricing tier identifier"
+    },
+    "name": {
+      "type": "string",
+      "description": "Human-readable tier name",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of tier capabilities and use cases",
+      "minLength": 10,
+      "maxLength": 1024
+    },
+    "pricing": {
+      "type": "object",
+      "required": ["model", "description", "cost"],
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "enum": ["flat-per-deployment", "per-request", "per-connection", "hybrid"],
+          "description": "Pricing model type"
+        },
+        "description": {
+          "type": "string",
+          "description": "Pricing model explanation"
+        },
+        "cost": {
+          "type": "string",
+          "description": "Cost description or tier pricing"
+        }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "required": [
+        "throughput_req_s",
+        "concurrent_connections",
+        "queue_depth_messages",
+        "p99_latency_ms",
+        "failover_sla_seconds",
+        "connection_timeout_seconds"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "throughput_req_s": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum sustainable throughput in requests per second"
+        },
+        "concurrent_connections": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum concurrent connections allowed"
+        },
+        "queue_depth_messages": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum message queue depth before backpressure"
+        },
+        "p99_latency_ms": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Target p99 latency in milliseconds"
+        },
+        "failover_sla_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum failover time in seconds"
+        },
+        "connection_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Connection timeout in seconds"
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "max_message_size_bytes",
+        "max_payload_size_mb",
+        "max_concurrent_requests_per_conn",
+        "memory_limit_mb",
+        "cpu_time_limit_seconds",
+        "backpressure_threshold_bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "max_message_size_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "description": "Maximum individual message size in bytes"
+        },
+        "max_payload_size_mb": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum payload size in megabytes"
+        },
+        "max_concurrent_requests_per_conn": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum concurrent requests per connection"
+        },
+        "memory_limit_mb": {
+          "type": "integer",
+          "minimum": 128,
+          "description": "Memory limit per instance in megabytes"
+        },
+        "cpu_time_limit_seconds": {
+          "type": "integer",
+          "minimum": 10,
+          "description": "CPU time limit per operation in seconds"
+        },
+        "backpressure_threshold_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "description": "Buffer threshold for applying backpressure in bytes"
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "required": [
+        "client",
+        "server",
+        "stdio_transport",
+        "tcp_transport",
+        "http_transport",
+        "rate_limiting",
+        "circuit_breaker",
+        "otel_observability",
+        "audit_logging",
+        "fips_140_2",
+        "high_availability"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "client": {
+          "type": "boolean",
+          "description": "Client implementation support"
+        },
+        "server": {
+          "type": "boolean",
+          "description": "Server implementation support"
+        },
+        "stdio_transport": {
+          "type": "boolean",
+          "description": "Standard I/O transport support"
+        },
+        "tcp_transport": {
+          "type": "boolean",
+          "description": "TCP transport support"
+        },
+        "http_transport": {
+          "type": "boolean",
+          "description": "HTTP transport support"
+        },
+        "websocket_transport": {
+          "type": "boolean",
+          "description": "WebSocket transport support"
+        },
+        "sse_transport": {
+          "type": "boolean",
+          "description": "Server-Sent Events transport support"
+        },
+        "rate_limiting": {
+          "type": "boolean",
+          "description": "Rate limiting capability"
+        },
+        "connection_pooling": {
+          "type": "boolean",
+          "description": "Connection pooling support"
+        },
+        "circuit_breaker": {
+          "type": "boolean",
+          "description": "Circuit breaker pattern support"
+        },
+        "otel_observability": {
+          "type": "string",
+          "enum": ["none", "basic", "comprehensive"],
+          "description": "OpenTelemetry observability level"
+        },
+        "audit_logging": {
+          "type": "boolean",
+          "description": "Audit logging capability"
+        },
+        "fips_140_2": {
+          "type": "boolean",
+          "description": "FIPS 140-2 compliance support"
+        },
+        "high_availability": {
+          "type": "boolean",
+          "description": "High availability features"
+        }
+      }
+    },
+    "refusal_behavior": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Deterministic refusal responses for limit exceedances",
+      "properties": {
+        "throughput_exceeded": {
+          "$ref": "#/definitions/refusal_response"
+        },
+        "queue_depth_exceeded": {
+          "$ref": "#/definitions/refusal_response"
+        },
+        "connection_limit_exceeded": {
+          "$ref": "#/definitions/refusal_response"
+        },
+        "message_size_exceeded": {
+          "$ref": "#/definitions/refusal_response"
+        },
+        "unsupported_feature": {
+          "$ref": "#/definitions/refusal_response"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["sbom", "provenance", "chaos_report", "benchmark_report"],
+      "additionalProperties": true,
+      "properties": {
+        "sbom": {
+          "type": "string",
+          "description": "Path to Software Bill of Materials artifact"
+        },
+        "provenance": {
+          "type": "string",
+          "description": "Path to provenance/supply chain artifact"
+        },
+        "chaos_report": {
+          "type": "string",
+          "description": "Path to chaos engineering test report"
+        },
+        "benchmark_report": {
+          "type": "string",
+          "description": "Path to performance benchmark report"
+        },
+        "audit_schema": {
+          "type": "string",
+          "description": "Path to audit schema definition"
+        },
+        "fips_certification": {
+          "type": "string",
+          "description": "Path to FIPS 140-2 certification document"
+        },
+        "compliance_report": {
+          "type": "string",
+          "description": "Path to compliance audit report"
+        }
+      }
+    },
+    "compliance": {
+      "type": "object",
+      "required": ["mcp_version", "features_implemented", "security_level"],
+      "additionalProperties": true,
+      "properties": {
+        "mcp_version": {
+          "type": "string",
+          "description": "MCP protocol version supported (YYYY-MM-DD format)"
+        },
+        "features_implemented": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of implemented MCP features"
+        },
+        "security_level": {
+          "type": "string",
+          "enum": ["standard", "enhanced", "maximum"],
+          "description": "Security implementation level"
+        },
+        "audit_trail": {
+          "type": "boolean",
+          "description": "Whether full audit trail is maintained"
+        },
+        "fips_140_2": {
+          "type": "boolean",
+          "description": "FIPS 140-2 compliance certification status"
+        },
+        "encryption_standard": {
+          "type": "string",
+          "description": "Encryption algorithm (e.g., AES-256-GCM)"
+        },
+        "key_derivation": {
+          "type": "string",
+          "description": "Key derivation function (e.g., PBKDF2-SHA256)"
+        },
+        "sla_monitoring": {
+          "type": "boolean",
+          "description": "Whether SLA compliance is monitored"
+        }
+      }
+    },
+    "sla": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Service Level Agreement specifications",
+      "properties": {
+        "availability_percentage": {
+          "type": "number",
+          "minimum": 99,
+          "maximum": 100,
+          "description": "Target availability percentage (99.95, 99.99, etc.)"
+        },
+        "throughput_guarantee_req_s": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Guaranteed throughput in requests per second"
+        },
+        "failover_time_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum failover time in seconds"
+        },
+        "recovery_sla_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Service recovery SLA in minutes"
+        },
+        "audit_retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Audit log retention period in days"
+        }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Audit logging configuration (gov tier specific)",
+      "properties": {
+        "log_all_operations": {
+          "type": "boolean",
+          "description": "Log all operations"
+        },
+        "log_authentication": {
+          "type": "boolean",
+          "description": "Log authentication events"
+        },
+        "log_encryption_events": {
+          "type": "boolean",
+          "description": "Log encryption-related events"
+        },
+        "log_access_violations": {
+          "type": "boolean",
+          "description": "Log access control violations"
+        },
+        "log_system_events": {
+          "type": "boolean",
+          "description": "Log system-level events"
+        },
+        "retention_policy": {
+          "type": "string",
+          "enum": ["7_years", "10_years", "permanent"],
+          "description": "Audit log retention policy"
+        },
+        "immutable_logs": {
+          "type": "boolean",
+          "description": "Whether logs are immutable"
+        },
+        "log_signing": {
+          "type": "boolean",
+          "description": "Whether logs are cryptographically signed"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "refusal_response": {
+      "type": "object",
+      "required": ["error_code", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "http_status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599,
+          "description": "HTTP status code for refusal"
+        },
+        "error_code": {
+          "type": "string",
+          "description": "Machine-readable error code"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable error message"
+        },
+        "retry_after_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Suggested retry delay in seconds"
+        },
+        "close_code": {
+          "type": "integer",
+          "description": "WebSocket close code if applicable"
+        },
+        "audit_log": {
+          "type": "boolean",
+          "description": "Whether this refusal should be audit logged"
+        }
+      }
+    }
+  }
+}

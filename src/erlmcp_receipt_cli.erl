@@ -20,7 +20,14 @@
     show/1,
     verify/1,
     export/2,
-    export/3
+    export/3,
+
+    % Pricing receipt commands
+    pricing_create_receipt/2,
+    pricing_add_refusal/4,
+    pricing_verify_receipt/1,
+    pricing_export_receipts/3,
+    pricing_verify_conformance/2
 ]).
 
 -export([
@@ -461,3 +468,37 @@ get_receipts_dir() ->
         Dir ->
             Dir
     end.
+
+%%%===================================================================
+%%% Pricing Receipt Commands
+%%%===================================================================
+
+%% @doc Create new pricing receipt for plan+version.
+%% @end
+-spec pricing_create_receipt(atom(), binary()) -> {ok, map()} | {error, term()}.
+pricing_create_receipt(PlanId, Version) ->
+    erlmcp_pricing_receipt:create_receipt(PlanId, Version).
+
+%% @doc Add refusal event to receipt with hash chain.
+%% @end
+-spec pricing_add_refusal(binary(), integer(), atom(), binary()) -> {ok, map()} | {error, term()}.
+pricing_add_refusal(ReceiptId, Code, Reason, AttemptedAction) ->
+    erlmcp_pricing_receipt:add_refusal(ReceiptId, Code, Reason, AttemptedAction).
+
+%% @doc Verify receipt integrity.
+%% @end
+-spec pricing_verify_receipt(binary()) -> {ok, verified} | {error, term()}.
+pricing_verify_receipt(ReceiptId) ->
+    erlmcp_pricing_receipt:verify_receipt(ReceiptId).
+
+%% @doc Export receipts for plan+version in format.
+%% @end
+-spec pricing_export_receipts(atom(), binary(), atom()) -> {ok, iodata()} | {error, term()}.
+pricing_export_receipts(PlanId, Version, Format) ->
+    erlmcp_pricing_receipt:export_receipts(PlanId, Version, Format).
+
+%% @doc Verify conformance of actual metrics against envelope bounds.
+%% @end
+-spec pricing_verify_conformance(binary(), map()) -> {ok, map()} | {error, term()}.
+pricing_verify_conformance(ReceiptId, Metrics) ->
+    erlmcp_pricing_receipt:verify_conformance(ReceiptId, Metrics).
