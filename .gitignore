@@ -47,4 +47,5 @@ erl_crash.dump
 # IDE
 .erlang.cookie
 erlang.mk
-Emakefile
+Emakefile# Mnesia runtime data (test artifacts)
+Mnesia.*/
