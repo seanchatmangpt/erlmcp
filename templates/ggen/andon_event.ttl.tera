@@ -1,0 +1,63 @@
+{#
+  TCPS Andon Event Template (RDF/Turtle Format)
+
+  Creates Andon "stop-the-line" event records with 5 Whys analysis.
+  Andon events signal quality issues that block production.
+
+  Context Variables (required):
+    - andon_id: string - Unique Andon event ID
+    - failure_reason: string - Short description of failure
+    - affected_sku: string - SKU identifier that failed
+    - severity: string - Severity level (critical/major/minor)
+    - timestamp: string - ISO 8601 timestamp
+    - detected_by: string - Stage/tool that detected failure
+    - stage_name: string - Production stage where failure occurred
+    - error_details: string - Detailed error message
+    - remediation_status: string - Status (pending/in_progress/resolved)
+
+  Context Variables (optional):
+    - work_order_id: string - Associated work order
+    - five_whys: array - Array of {why, answer} objects
+    - remediation_plan: string - Description of fix
+    - spec_delta_required: boolean
+    - test_delta_required: boolean
+#}
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix tcps: <http://erlmcp.org/ontology/tcps#> .
+@prefix tcps-core: <http://erlmcp.org/ontology/tcps/core#> .
+@prefix tcps-quality: <http://erlmcp.org/ontology/tcps/quality#> .
+
+<http://erlmcp.org/andon/{{ andon_id }}>
+    a tcps-quality:AndonEvent ;
+    tcps-quality:andonId "{{ andon_id }}" ;
+    tcps-quality:failureReason "{{ failure_reason }}" ;
+    tcps-quality:affectedSKU "{{ affected_sku }}" ;
+    tcps-quality:severity "{{ severity }}" ;
+    tcps-quality:timestamp "{{ timestamp }}"^^xsd:dateTime ;
+    tcps-quality:detectedBy "{{ detected_by }}" ;
+    tcps-quality:stageName "{{ stage_name }}" ;
+    tcps-quality:errorDetails "{{ error_details }}" ;
+    tcps-quality:remediationStatus "{{ remediation_status }}" ;
+    {% if work_order_id -%}
+    tcps-quality:workOrderId "{{ work_order_id }}" ;
+    {% endif -%}
+    {% if remediation_plan -%}
+    tcps-quality:remediationPlan "{{ remediation_plan }}" ;
+    {% endif -%}
+    {% if spec_delta_required -%}
+    tcps-quality:specDeltaRequired {{ spec_delta_required }} ;
+    {% endif -%}
+    {% if test_delta_required -%}
+    tcps-quality:testDeltaRequired {{ test_delta_required }} ;
+    {% endif -%}
+    {% if five_whys -%}
+    {% for why in five_whys -%}
+    tcps-quality:fiveWhy [
+        tcps-quality:question "{{ why.why }}" ;
+        tcps-quality:answer "{{ why.answer }}"
+    ] ;
+    {% endfor -%}
+    {% endif -%}
+    .

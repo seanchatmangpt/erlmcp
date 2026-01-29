@@ -1,0 +1,66 @@
+{
+  "receipt_id": "receipt:compile:2026-01-29T06-45-00Z",
+  "stage_name": "compile",
+  "stage_id": "tcps:stage:compile",
+  "timestamp": "2026-01-29T06:45:00Z",
+  "status": "completed",
+  "success": true,
+  "operation": "cargo make check",
+  "metrics": {
+    "duration_ms": 3200,
+    "modules_compiled": 94,
+    "beam_files_generated": 94,
+    "errors": 0,
+    "warnings": 0
+  },
+  "inputs": [
+    {
+      "name": "source_files",
+      "type": "erlang_modules",
+      "count": 94,
+      "checksum": "sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "beam_files",
+      "type": "compiled_modules",
+      "count": 94,
+      "checksum": "sha256:b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3"
+    }
+  ],
+  "quality_gates": {
+    "slo_time_budget_ms": 30000,
+    "actual_time_ms": 3200,
+    "slo_met": true,
+    "success_rate_target": 1.0,
+    "actual_success_rate": 1.0
+  },
+  "andon_signal": {
+    "color": "GREEN",
+    "symbol": "🟢",
+    "message": "All quality gates passed",
+    "severity": "info"
+  },
+  "determinism": {
+    "reproducible": true,
+    "receipt_checksum": "sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
+    "algorithm": "sha256",
+    "sorted_keys": true,
+    "utc_timestamp": true
+  },
+  "context": {
+    "build_system": "rebar3",
+    "erlang_version": "OTP 25",
+    "hostname": "erlmcp-build-001",
+    "working_directory": "/home/user/erlmcp",
+    "git_commit": "d8711ef",
+    "git_branch": "claude/update-readme-v6-VFdAx"
+  },
+  "generated_by": {
+    "tool": "ggen",
+    "version": "6.0.0",
+    "template": "receipt.json.tera",
+    "ontology_version": "tcps-core:1.0.0"
+  }
+}

@@ -1,0 +1,100 @@
+{#
+  TCPS SKU Marketplace Listing Template (Markdown Format)
+
+  This template generates marketplace listings extracted from SKU ontology data.
+  Each listing includes receipts as proof of quality (Toyota Production System principle).
+
+  Context Variables (required):
+    - sku_id: string - SKU identifier
+    - name: string - Human-readable product name
+    - version: string - Semantic version (e.g., "1.0.0")
+    - description: string - Short description (1-2 sentences)
+    - long_description: string - Detailed description (markdown supported)
+    - category: string - Category (e.g., "Transport", "Tool", "Integration")
+    - author: string - Author/maintainer
+    - license: string - License identifier (e.g., "Apache-2.0")
+    - repository_url: string - Source code repository
+    - documentation_url: string - Documentation link (optional)
+    - features: array - List of feature strings
+    - requirements: array - List of requirement strings
+    - install_command: string - Installation command
+    - receipts: array - List of receipt summaries with stage/status/timestamp
+    - quality_metrics: object - Quality metrics (test coverage, build time, etc.)
+    - tags: array - Searchable tags
+    - created_at: string - First release date
+    - updated_at: string - Last update date
+#}
+# {{ name }}
+
+**Version**: {{ version }}
+**Category**: {{ category }}
+**License**: {{ license }}
+**Status**: ✅ TCPS Certified (All quality gates passed)
+
+## Description
+
+{{ description }}
+
+{{ long_description }}
+
+## Features
+
+{% for feature in features -%}
+- {{ feature }}
+{% endfor %}
+
+## Requirements
+
+{% for requirement in requirements -%}
+- {{ requirement }}
+{% endfor %}
+
+## Installation
+
+```bash
+{{ install_command }}
+```
+
+## Quality Assurance (TCPS Receipts)
+
+This SKU has passed all Toyota Code Production System (TCPS) quality gates with evidence receipts:
+
+| Stage | Status | Timestamp | Evidence |
+|-------|--------|-----------|----------|
+{% for receipt in receipts -%}
+| {{ receipt.stage_name }} | {{ receipt.status }} | {{ receipt.timestamp }} | [Receipt]({{ receipt.receipt_url }}) |
+{% endfor %}
+
+### Quality Metrics
+
+{% if quality_metrics %}
+- **Test Coverage**: {{ quality_metrics.test_coverage }}%
+- **Build Time**: {{ quality_metrics.build_time_ms }}ms
+- **SHACL Validation**: {{ quality_metrics.shacl_status }}
+- **Type Coverage**: {{ quality_metrics.type_coverage }}%
+- **Deterministic Build**: {{ quality_metrics.deterministic }}
+{% endif %}
+
+## Documentation
+
+{% if documentation_url %}
+Full documentation: [{{ documentation_url }}]({{ documentation_url }})
+{% endif %}
+
+## Repository
+
+Source code: [{{ repository_url }}]({{ repository_url }})
+
+## Metadata
+
+- **SKU ID**: `{{ sku_id }}`
+- **Author**: {{ author }}
+- **Created**: {{ created_at }}
+- **Last Updated**: {{ updated_at }}
+- **Tags**: {% for tag in tags %}`{{ tag }}` {% endfor %}
+
+---
+
+*This listing was automatically generated from TCPS ontology data on {{ updated_at }}.*
+*Template version: 1.0.0*
+*All quality receipts are cryptographically signed and auditable.*

@@ -1,0 +1,48 @@
+{#
+  TCPS Work Order Template (RDF/Turtle Format)
+
+  Creates WorkOrder RDF instances for pull-based production.
+  Work orders represent demand signals that trigger production.
+
+  Context Variables (required):
+    - work_order_id: string - Unique work order ID
+    - demand_signal: string - Source of demand
+    - bucket: string - Heijunka bucket (reliability/security/cost/compliance)
+    - priority: string - Priority level
+    - created_by: string - Creator identifier
+    - created_at: string - ISO 8601 timestamp
+    - sku_id: string - Target SKU identifier
+
+  Context Variables (optional):
+    - target_completion: string - Target completion timestamp
+    - description: string - Human-readable description
+    - dependencies: array - List of work order IDs this depends on
+#}
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix tcps: <http://erlmcp.org/ontology/tcps#> .
+@prefix tcps-core: <http://erlmcp.org/ontology/tcps/core#> .
+
+<http://erlmcp.org/work-orders/{{ work_order_id }}>
+    a tcps-core:WorkOrder ;
+    tcps-core:workOrderId "{{ work_order_id }}" ;
+    tcps-core:demandSignal "{{ demand_signal }}" ;
+    tcps-core:heijunkaBucket "{{ bucket }}" ;
+    tcps-core:priority "{{ priority }}" ;
+    tcps-core:targetSKU "{{ sku_id }}" ;
+    tcps-core:createdBy "{{ created_by }}" ;
+    tcps-core:createdAt "{{ created_at }}"^^xsd:dateTime ;
+    tcps-core:status "PENDING" ;
+    {% if description -%}
+    rdfs:comment "{{ description }}" ;
+    {% endif -%}
+    {% if target_completion -%}
+    tcps-core:targetCompletion "{{ target_completion }}"^^xsd:dateTime ;
+    {% endif -%}
+    {% if dependencies -%}
+    {% for dep_id in dependencies -%}
+    tcps-core:dependsOn <http://erlmcp.org/work-orders/{{ dep_id }}> ;
+    {% endfor -%}
+    {% endif -%}
+    .
