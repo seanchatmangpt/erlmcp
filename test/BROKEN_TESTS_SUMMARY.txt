@@ -1,0 +1,170 @@
+================================================================================
+BROKEN TESTS SUMMARY - erlmcp Common Test Suites
+Generated: 2026-01-29
+Status: CRITICAL - All tests blocked by compilation errors
+================================================================================
+
+TEST SUITES IDENTIFIED: 15 Common Test suites
+TEST EXECUTION STATUS: BLOCKED (compilation errors)
+
+================================================================================
+CRITICAL COMPILATION ERRORS (6 files broken)
+================================================================================
+
+1. apps/erlmcp_core/test/erlmcp_cancellation_tests.erl
+   Status: BROKEN - Multiple syntax errors
+   Errors:
+   - Line 496: spawn(fun() -> receive after 5000 end end) - missing comma
+   - Line 521: spawn(fun() -> receive after 100 end end) - missing comma
+   - Lines 36-538: 13 undefined test functions
+   - Lines 538-549: Module attributes after function definitions
+
+2. apps/erlmcp_core/test/erlmcp_logging_tests.erl
+   Status: BROKEN - Macro conflicts
+   Errors:
+   - Line 358: Illegal character ∈ (math symbol)
+   - Line 358: Undefined macro LOG_LEVELS
+   - Line 365: Undefined macro FORALL/3 (missing Proper include)
+   - Line 55: Macro LET redefinition conflict
+
+3. apps/erlmcp_transports/test/erlmcp_transport_compliance_tests.erl
+   Status: BROKEN - Missing includes
+   Errors:
+   - Lines 827, 850, 865: Undefined macro FORALL/3
+   - Lines 495, 546, 549: Undefined record #state
+
+4. test/mcp_compliance/transport_compliance_tests.erl
+   Status: BROKEN - Syntax error
+   Errors:
+   - Line 146: InvalidJson <<"{invalid json}">> - syntax error
+
+5. test/mcp_compliance/tools_compliance_tests.erl
+   Status: BROKEN - Unbound variable
+   Errors:
+   - Line 336: Variable '_meta' is unbound
+
+6. test/skipped/erlmcp_vm_limits_tests.erl
+   Status: BROKEN - Invalid function calls
+   Errors:
+   - Lines 48, 96, 112: Macro debugFmt argument mismatch
+   - Lines 59-61: Undefined functions (port_count, process_count, ets_count)
+
+================================================================================
+DEPENDENCY ISSUES (2 packages fail to build)
+================================================================================
+
+1. ctx v0.6.0
+   Error: Source does not contain recognizable project
+   Impact: Blocks chatterbox, grpcbox compilation
+
+2. jobs v0.10.0
+   Error: Failed to read .app.src file
+   Impact: Blocks OTP dependencies
+
+================================================================================
+TEST SUITES (Unable to Execute)
+================================================================================
+
+PRIMARY SUITES (test/):
+  ☐ mcp_compliance_SUITE.erl          - 100+ MCP spec compliance tests
+  ☐ mcp_json_rpc_SUITE.erl            - JSON-RPC protocol tests
+  ☐ mcp_resources_SUITE.erl           - Resource capability tests
+  ☐ mcp_client_server_SUITE.erl       - Client-server interaction tests
+  ☐ mcp_tools_SUITE.erl               - Tools capability tests
+  ☐ mcp_prompts_capability_SUITE.erl  - Prompts capability tests
+  ☐ erlmcp_server_capabilities_SUITE.erl - Server capabilities tests
+  ☐ erlmcp_capability_test_SUITE.erl  - Capability negotiation tests
+  ☐ hooks_integration_SUITE.erl       - Build hooks integration tests
+  ☐ regression_detection_SUITE.erl    - Regression detection tests
+  ☐ quality_gates_SUITE.erl           - Quality gate validation tests
+  ☐ auto_fix_SUITE.erl                - Auto-fix mechanism tests
+
+ADDITIONAL SUITES (apps/erlmcp_core/test/):
+  ☐ erlmcp_integration_SUITE.erl      - Integration tests
+  ☐ erlmcp_registry_dist_SUITE.erl    - Distributed registry tests
+
+CHAOS ENGINEERING (test/chaos/):
+  ☐ erlmcp_timeout_storm_SUITE.erl    - Timeout chaos tests
+  ☐ erlmcp_transport_abuse_SUITE.erl  - Transport abuse tests
+
+================================================================================
+REDUNDANCY PATTERNS IDENTIFIED
+================================================================================
+
+1. CAPABILITY TESTING DUPLICATION
+   - mcp_tools_SUITE.erl
+   - erlmcp_tools_capability_tests.erl
+   - mcp_compliance_SUITE.erl (tools section)
+   → Consolidate into single suite
+
+2. JSON-RPC TESTING DUPLICATION
+   - mcp_json_rpc_SUITE.erl
+   - erlmcp_jsonrpc_compliance_tests.erl
+   - mcp_compliance_SUITE.erl (JSON-RPC section)
+   - json_rpc_demo_test.erl
+   → Consolidate into mcp_json_rpc_SUITE.erl
+
+3. SERVER CAPABILITIES DUPLICATION
+   - erlmcp_server_capabilities_SUITE.erl
+   - erlmcp_capability_test_SUITE.erl
+   → Merge into single suite
+
+4. RESOURCE TESTING DUPLICATION
+   - mcp_resources_SUITE.erl
+   - erlmcp_resources_capability_tests.erl
+   → Use CT for integration, EUnit for unit
+
+================================================================================
+IMMEDIATE FIXES REQUIRED
+================================================================================
+
+PRIORITY 1 - CRITICAL (Fix to enable any tests):
+  [ ] Fix syntax in erlmcp_cancellation_tests.erl
+  [ ] Fix macros in erlmcp_logging_tests.erl
+  [ ] Add includes to erlmcp_transport_compliance_tests.erl
+  [ ] Fix test/mcp_compliance/ directory errors
+  [ ] Remove or fix test/skipped/erlmcp_vm_limits_tests.erl
+
+PRIORITY 2 - HIGH (Fix for full test suite):
+  [ ] Resolve ctx v0.6.0 dependency issue
+  [ ] Resolve jobs v0.10.0 dependency issue
+  [ ] Update rebar.config with working versions
+
+PRIORITY 3 - MEDIUM (Improve organization):
+  [ ] Move broken tests to test/broken/
+  [ ] Consolidate duplicate test suites
+  [ ] Organize by type (unit, integration, chaos)
+  [ ] Add test documentation
+
+================================================================================
+FIX COMMANDS
+================================================================================
+
+1. Fix syntax errors:
+   # Edit apps/erlmcp_core/test/erlmcp_cancellation_tests.erl
+   # Line 496: receive after 5000 -> ok end
+   # Line 521: receive after 100 -> ok end
+
+2. Fix macro issues:
+   # Add to apps/erlmcp_core/test/erlmcp_logging_tests.erl:
+   -include_lib("proper/include/proper.hrl").
+
+3. Fix missing includes:
+   # Add to apps/erlmcp_transports/test/erlmcp_transport_compliance_tests.erl:
+   -include_lib("proper/include/proper.hrl").
+
+4. Remove broken directories:
+   mv test/mcp_compliance test/mcp_compliance.broken
+   mv test/skipped test/skipped.broken
+
+5. Clean and rebuild:
+   rebar3 clean
+   rebar3 compile
+   rebar3 ct --suite=test/mcp_compliance_SUITE
+
+================================================================================
+ESTIMATED FIX TIME: 2-4 hours
+POST-FIX EXPECTATION: 100+ tests executing successfully
+================================================================================
+
+For detailed analysis, see: test/CT_TEST_REPORT.md

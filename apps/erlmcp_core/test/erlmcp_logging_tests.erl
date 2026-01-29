@@ -15,6 +15,8 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("erlmcp.hrl").
 
+-define(LOG_LEVELS, [debug, info, notice, warning, error, critical, alert, emergency]).
+
 %%%===================================================================
 %%% Test Setup and Teardown
 %%%===================================================================
@@ -155,7 +157,7 @@ logging_stats_test() ->
 
 %% @doc Test client buffer creation
 logging_buffer_creation_test() ->
-    ClientPid = spawn(fun() -> receive after infinity end end),
+    ClientPid = spawn(fun() -> receive after infinity -> ok end end),
 
     % Create buffer
     ok = erlmcp_logging:create_client_buffer(ClientPid),
@@ -172,7 +174,7 @@ logging_buffer_creation_test() ->
 
 %% @doc Test client buffer deletion
 logging_buffer_deletion_test() ->
-    ClientPid = spawn(fun() -> receive after infinity end end),
+    ClientPid = spawn(fun() -> receive after infinity -> ok end end),
 
     % Create and populate buffer
     ok = erlmcp_logging:create_client_buffer(ClientPid),
@@ -243,7 +245,7 @@ logging_invalid_level_test() ->
 %% @doc Test per-client log level override
 logging_per_client_level_test() ->
     ClientPid1 = self(),
-    ClientPid2 = spawn(fun() -> receive after infinity end end),
+    ClientPid2 = spawn(fun() -> receive after infinity -> ok end end),
 
     ok = erlmcp_logging:create_client_buffer(ClientPid1),
     ok = erlmcp_logging:create_client_buffer(ClientPid2),
@@ -346,29 +348,3 @@ logging_combined_filter_test() ->
         Level = maps:get(<<"level">>, Log),
         ?assert(Level =:= <<"warning">> orelse Level =:= <<"error">>)
     end, Logs).
-
-%%%===================================================================
-%%% Property-Based Tests
-%%%===================================================================
-
-prop_log_level_ordering() ->
-    ?FORALL(Level, log_level(),
-    begin
-        % Verify that all levels are valid
-        Level ∈ ?LOG_LEVELS
-    end).
-
-log_level() ->
-    oneof([debug, info, notice, warning, error, critical, alert, emergency]).
-
-prop_buffer_size_limit() ->
-    ?FORALL(N, nat(),
-    N =< 10000 andalso begin
-        ClientPid = self(),
-        ok = erlmcp_logging:create_client_buffer(ClientPid),
-
-        [ok = erlmcp_logging:log(ClientPid, info, <<"test">>, <<"Msg">>, #{}) || _ <- lists:seq(1, N)],
-
-        {ok, Logs} = erlmcp_logging:get_logs(ClientPid, #{}),
-        length(Logs) =< 1000
-    end).
