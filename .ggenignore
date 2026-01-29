@@ -1,0 +1,72 @@
+# ggen ignore file - files/directories to exclude from generation
+# Similar to .gitignore but for ggen operations
+
+# Build artifacts
+_build/
+.rebar3/
+*.beam
+*.o
+*.so
+*.dll
+
+# Generated directories (but not the templates themselves)
+generated/
+
+# Test outputs
+.eunit/
+logs/
+test/*.beam
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+# Documentation builds
+doc/
+
+# Existing templates (don't regenerate these)
+templates/tcps/*.mustache
+
+# Legacy files
+attic/
+*.backup
+
+# Configuration
+.env
+.env.*
+!.env.example
+
+# Docker
+.dockerignore
+Dockerfile*
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# CI/CD
+.gitlab-ci.yml
+Jenkinsfile
+.github/
+
+# Erlang specific
+erl_crash.dump
+rebar3.crashdump
+*.dump
+
+# Coverage
+cover/
+*.coverdata
