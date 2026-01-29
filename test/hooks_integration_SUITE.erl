@@ -39,24 +39,27 @@ suite() ->
 
 init_per_suite(Config) ->
     %% Start application
-    application:ensure_all_started(tcps_erlmcp),
+    case tcps_test_helper:start_tcps_apps() of
+        {ok, _Apps} ->
+            %% Create test git repo
+            TestRepoDir = "/tmp/hooks_integration_test_repo",
+            tcps_test_helper:cleanup_test_dir(TestRepoDir),
+            ok = tcps_test_helper:ensure_test_dir(TestRepoDir),
 
-    %% Create test git repo
-    TestRepoDir = "/tmp/hooks_integration_test_repo",
-    os:cmd("rm -rf " ++ TestRepoDir),
-    ok = ensure_dir(TestRepoDir),
+            %% Initialize git repo (real git)
+            os:cmd("cd " ++ TestRepoDir ++ " && git init"),
+            os:cmd("cd " ++ TestRepoDir ++ " && git config user.name 'Test User'"),
+            os:cmd("cd " ++ TestRepoDir ++ " && git config user.email 'test@test.com'"),
 
-    %% Initialize git repo (real git)
-    os:cmd("cd " ++ TestRepoDir ++ " && git init"),
-    os:cmd("cd " ++ TestRepoDir ++ " && git config user.name 'Test User'"),
-    os:cmd("cd " ++ TestRepoDir ++ " && git config user.email 'test@test.com'"),
-
-    [{test_repo_dir, TestRepoDir} | Config].
+            [{test_repo_dir, TestRepoDir} | Config];
+        {error, Reason} ->
+            ct:fail("Failed to start TCPS applications: ~p", [Reason])
+    end.
 
 end_per_suite(Config) ->
     TestRepoDir = ?config(test_repo_dir, Config),
-    os:cmd("rm -rf " ++ TestRepoDir),
-    application:stop(tcps_erlmcp),
+    tcps_test_helper:cleanup_test_dir(TestRepoDir),
+    tcps_test_helper:stop_tcps_apps(),
     ok.
 
 init_per_testcase(TestCase, Config) ->
@@ -212,7 +215,7 @@ session_end_hook_generates_report_test(Config) ->
 
     %% Verify report file created
     ReportDir = filename:join(TestRepoDir, "reports"),
-    ok = ensure_dir(ReportDir),
+    ok = tcps_test_helper:ensure_test_dir(ReportDir),
     ReportFile = filename:join(ReportDir, binary_to_list(SessionId) ++ "_report.json"),
 
     %% Write report for verification
@@ -426,18 +429,6 @@ hook_environment_variables_test(Config) ->
 %%%===================================================================
 %%% Helper Functions
 %%%===================================================================
-
-ensure_dir(Dir) ->
-    case filelib:ensure_dir(filename:join(Dir, "dummy")) of
-        ok ->
-            case file:make_dir(Dir) of
-                ok -> ok;
-                {error, eexist} -> ok;
-                Error -> Error
-            end;
-        {error, eexist} -> ok;
-        Error -> Error
-    end.
 
 %% Simulate post-task hook execution
 run_post_task_hook(HookConfig, WorkOrder) ->

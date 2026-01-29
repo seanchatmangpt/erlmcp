@@ -1,0 +1,225 @@
+===============================================================================
+ERLMCP BENCHMARK GAP ANALYSIS - QUICK REFERENCE
+===============================================================================
+
+Date: 2026-01-28
+Status: 60% COVERAGE (5/9 modules working)
+
+===============================================================================
+CRITICAL GAPS (BLOCK v2.1 RELEASE)
+===============================================================================
+
+1. CACHE BENCHMARK - MISSING
+   - Module: erlmcp_cache.erl EXISTS
+   - Benchmark: erlmcp_bench_cache.erl NEEDED
+   - Impact: Cannot measure 10-100x cache hit improvement
+   - Effort: 4 hours
+   - Workloads: 7 (L1/L2 hits, TTL, LRU, tag invalidation, cluster coherence)
+
+2. OTEL OVERHEAD BENCHMARK - MISSING
+   - Module: erlmcp_otel.erl EXISTS
+   - Benchmark: erlmcp_bench_otel.erl NEEDED
+   - Impact: Cannot verify < 5% overhead target
+   - Effort: 3 hours
+   - Workloads: 5 (overhead comparison, span creation, attributes, export)
+
+3. BATCH BENCHMARK - BROKEN
+   - Module: erlmcp_bench_batch.erl EXISTS
+   - Issue: References erlmcp_batch:start_link/2 (wrong API)
+   - Impact: Cannot measure 2-5x batching improvement
+   - Effort: 2 hours
+   - Fix: Integrate with actual executor
+
+4. POOL BENCHMARK - BROKEN
+   - Module: erlmcp_bench_pool.erl EXISTS
+   - Issue: References erlmcp_pool_manager API mismatch
+   - Impact: Cannot measure 2x pooling improvement
+   - Effort: 2 hours
+   - Fix: Integrate with actual pool manager
+
+Total Week 1 Effort: 11 hours
+
+===============================================================================
+BASELINE GAPS (v2.0 INCOMPLETE)
+===============================================================================
+
+Baseline Established:
+  ✅ Core Ops (100K): 2.75M msg/s, p99=98μs, mem=21.9 MiB
+
+Baseline Missing:
+  ❌ TCP Transport (25K connections): NO DATA
+  ❌ HTTP Transport (SSE 50K streams): NO DATA
+  ❌ Stress (5 min sustained): NO DATA
+  ❌ Chaos (failure recovery): NO DATA
+  ❌ Integration (MCP e2e): NO DATA
+
+Impact: Cannot detect regressions in 80% of system
+
+===============================================================================
+BENCHMARK INVENTORY
+===============================================================================
+
+✅ WORKING (3/9):
+   - erlmcp_bench_core_ops      | 4 workloads | v2.0 baseline ✓
+   - erlmcp_bench_helpers        | Test support
+   - erlmcp_bench_helpers_tests  | Unit tests
+
+⚠️ BROKEN (2/9):
+   - erlmcp_bench_batch          | API mismatch | FIX: 2 hours
+   - erlmcp_bench_pool           | API mismatch | FIX: 2 hours
+
+📋 PENDING (2/9):
+   - erlmcp_bench_network_real   | 7 workloads | READY | RUN: 1 hour
+   - erlmcp_bench_stress         | 4 workloads | READY | RUN: 2 hours
+
+❌ MISSING (2/9):
+   - erlmcp_bench_cache          | 7 workloads | CREATE: 4 hours
+   - erlmcp_bench_otel           | 5 workloads | CREATE: 3 hours
+
+===============================================================================
+PERFORMANCE TARGETS (v2.1)
+===============================================================================
+
+Cache (L1):
+  Target: < 1μs p99 hit latency
+  Expected: 10-100x improvement vs uncached
+  Status: ❌ NO BENCHMARK
+
+Batch (size=10):
+  Target: 2-5x throughput improvement
+  Expected: 2.75M → 8-11M msg/s
+  Status: ⚠️ BROKEN (can't measure)
+
+Pool (100 conn):
+  Target: 10x throughput vs 10 conn
+  Expected: 2.75M → 5.5M msg/s
+  Status: ⚠️ BROKEN (can't measure)
+
+OTEL Overhead:
+  Target: < 5% overhead
+  Expected: < 50μs additional latency
+  Status: ❌ NO BENCHMARK
+
+Combined (Cache+Batch+Pool):
+  Theoretical: 2.75M × 3 × 3 × 2 = 49.5M msg/s
+  Realistic: 2.75M × 2 × 2.5 × 1.5 = 20.6M msg/s
+  Status: ❌ CANNOT MEASURE (missing benchmarks)
+
+===============================================================================
+REGRESSION DETECTION
+===============================================================================
+
+Current Coverage: 20% (core ops only)
+Required Coverage: 100% (all components)
+
+Regression Thresholds:
+  - Throughput:   -10% = FAIL
+  - Latency P95:  +10% = FAIL
+  - Latency P99:  +10% = FAIL
+  - Memory Delta: +20% = WARN
+
+Missing Baselines:
+  - TCP/HTTP transport
+  - Stress testing
+  - v2.1 features (cache, batch, pool, otel)
+
+Impact: Cannot detect 80% of potential regressions
+
+===============================================================================
+IMPLEMENTATION TIMELINE
+===============================================================================
+
+Week 1 (Critical - Block v2.1):
+  [x] Analysis complete           (DONE)
+  [ ] Create erlmcp_bench_cache   (4 hours)
+  [ ] Create erlmcp_bench_otel    (3 hours)
+  [ ] Fix erlmcp_bench_batch      (2 hours)
+  [ ] Fix erlmcp_bench_pool       (2 hours)
+  [ ] Write unit tests            (2 hours)
+  [ ] Run all benchmarks          (2 hours)
+  [ ] Generate v2.1 baseline      (1 hour)
+  Total: 16 hours (2 days)
+
+Week 2 (High Priority - Complete v2.0 Baseline):
+  [ ] Run network_real benchmarks (1 hour)
+  [ ] Run stress benchmarks       (2 hours)
+  [ ] Run chaos benchmarks        (1 hour)
+  [ ] Run integration benchmarks  (1 hour)
+  [ ] Generate baseline reports   (2 hours)
+  Total: 7 hours (1 day)
+
+Week 3 (Automation):
+  [ ] Regression detection script (2 hours)
+  [ ] CI/CD integration           (3 hours)
+  [ ] Baseline update workflow    (1 hour)
+  [ ] Performance dashboard       (4 hours)
+  Total: 10 hours (1.5 days)
+
+===============================================================================
+SUCCESS CRITERIA
+===============================================================================
+
+MVP (Week 1 Target):
+  - 4/4 v2.1 feature benchmarks working
+  - 20/25 workloads complete (80%)
+  - v2.1 baseline established
+  - Ready for release
+
+Complete (Week 3 Target):
+  - 9/9 benchmark modules working
+  - 30+ workloads passing
+  - 100% regression coverage
+  - CI/CD automated
+  - Performance dashboard deployed
+
+===============================================================================
+RISK ASSESSMENT
+===============================================================================
+
+HIGH RISK:
+  ⚠️ Batch executor missing    → Mock executor for benchmarks
+  ⚠️ Pool manager API changed  → Verify and update API
+  ⚠️ Cache regression possible → Thorough testing required
+
+MEDIUM RISK:
+  ⚠️ OTEL overhead > 5%        → Optimize span creation
+  ⚠️ Network baseline variance → Multiple runs, averaging
+
+LOW RISK:
+  ✓ Metrology violations       → Automated validation
+  ✓ CI/CD integration issues   → Test locally first
+
+===============================================================================
+IMMEDIATE ACTIONS REQUIRED
+===============================================================================
+
+1. CREATE erlmcp_bench_cache.erl (Priority: P0, Effort: 4h)
+   - Implement 7 workloads (L1/L2 hits, TTL, LRU, tags, cluster)
+   - Measure hit latency < 1μs p99
+   - Verify 10-100x improvement
+
+2. CREATE erlmcp_bench_otel.erl (Priority: P0, Effort: 3h)
+   - Implement 5 workloads (overhead, span, attributes, export)
+   - Measure overhead < 5%
+   - Verify < 50μs additional latency
+
+3. FIX erlmcp_bench_batch.erl (Priority: P0, Effort: 2h)
+   - Check actual erlmcp_batch API
+   - Integrate with real executor
+   - Verify 2-5x throughput improvement
+
+4. FIX erlmcp_bench_pool.erl (Priority: P0, Effort: 2h)
+   - Check actual erlmcp_pool_manager API
+   - Integrate with transport layer
+   - Verify 2x throughput improvement
+
+===============================================================================
+CONTACT & DOCUMENTATION
+===============================================================================
+
+Full Plan: docs/benchmarks/BENCHMARK_COMPLETION_PLAN.md
+Agent: erlang-performance
+Date: 2026-01-28
+Status: ANALYSIS COMPLETE, IMPLEMENTATION PENDING
+
+===============================================================================
