@@ -42,17 +42,21 @@ suite() ->
 
 init_per_suite(Config) ->
     %% Start real application (Chicago School: real system)
-    application:ensure_all_started(tcps_erlmcp),
+    case tcps_test_helper:start_tcps_apps() of
+        {ok, _Apps} ->
+            %% Create test work order directory
+            TestDir = "/tmp/quality_gates_suite_test",
+            ok = tcps_test_helper:ensure_test_dir(TestDir),
 
-    %% Create test work order directory
-    TestDir = "/tmp/quality_gates_suite_test",
-    ok = ensure_dir(TestDir),
+            [{test_dir, TestDir} | Config];
+        {error, Reason} ->
+            ct:fail("Failed to start TCPS applications: ~p", [Reason])
+    end.
 
-    [{test_dir, TestDir} | Config].
-
-end_per_suite(_Config) ->
-    application:stop(tcps_erlmcp),
-    os:cmd("rm -rf /tmp/quality_gates_suite_test"),
+end_per_suite(Config) ->
+    TestDir = ?config(test_dir, Config),
+    tcps_test_helper:cleanup_test_dir(TestDir),
+    tcps_test_helper:stop_tcps_apps(),
     ok.
 
 init_per_testcase(TestCase, Config) ->
@@ -62,7 +66,7 @@ init_per_testcase(TestCase, Config) ->
     TestDir = ?config(test_dir, Config),
     WorkOrderId = list_to_binary("WO-" ++ atom_to_list(TestCase)),
     WorkOrderDir = filename:join(TestDir, binary_to_list(WorkOrderId)),
-    ok = ensure_dir(WorkOrderDir),
+    ok = tcps_test_helper:ensure_test_dir(WorkOrderDir),
 
     [{work_order_id, WorkOrderId}, {work_order_dir, WorkOrderDir} | Config].
 
@@ -476,14 +480,4 @@ gate_recovery_after_fix_test(Config) ->
 %%% Helper Functions
 %%%===================================================================
 
-ensure_dir(Dir) ->
-    case filelib:ensure_dir(filename:join(Dir, "dummy")) of
-        ok ->
-            case file:make_dir(Dir) of
-                ok -> ok;
-                {error, eexist} -> ok;
-                Error -> Error
-            end;
-        {error, eexist} -> ok;
-        Error -> Error
-    end.
+%% Helper functions moved to tcps_test_helper module

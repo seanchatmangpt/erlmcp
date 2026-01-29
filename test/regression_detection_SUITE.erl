@@ -40,18 +40,21 @@ suite() ->
 
 init_per_suite(Config) ->
     %% Start application
-    application:ensure_all_started(tcps_erlmcp),
+    case tcps_test_helper:start_tcps_apps() of
+        {ok, _Apps} ->
+            %% Create test data directory for baselines
+            BaselineDir = "/tmp/regression_detection_baselines",
+            ok = tcps_test_helper:ensure_test_dir(BaselineDir),
 
-    %% Create test data directory for baselines
-    BaselineDir = "/tmp/regression_detection_baselines",
-    ok = ensure_dir(BaselineDir),
-
-    [{baseline_dir, BaselineDir} | Config].
+            [{baseline_dir, BaselineDir} | Config];
+        {error, Reason} ->
+            ct:fail("Failed to start TCPS applications: ~p", [Reason])
+    end.
 
 end_per_suite(Config) ->
     BaselineDir = ?config(baseline_dir, Config),
-    os:cmd("rm -rf " ++ BaselineDir),
-    application:stop(tcps_erlmcp),
+    tcps_test_helper:cleanup_test_dir(BaselineDir),
+    tcps_test_helper:stop_tcps_apps(),
     ok.
 
 init_per_testcase(TestCase, Config) ->
@@ -437,18 +440,6 @@ regression_recovery_tracking_test(Config) ->
 %%%===================================================================
 %%% Helper Functions
 %%%===================================================================
-
-ensure_dir(Dir) ->
-    case filelib:ensure_dir(filename:join(Dir, "dummy")) of
-        ok ->
-            case file:make_dir(Dir) of
-                ok -> ok;
-                {error, eexist} -> ok;
-                Error -> Error
-            end;
-        {error, eexist} -> ok;
-        Error -> Error
-    end.
 
 %% Detect regression between baseline and current
 detect_regression(BaselineMetrics, CurrentMetrics) ->

@@ -1,0 +1,51 @@
+{
+  "receipt_version": "1.0",
+  "git_sha": "378630d7b33b0aa88d51b841f4f53154cfcd3083",
+  "timestamp": "2026-01-29T00:34:59Z",
+  "environment": {
+    "otp_version": "27",
+    "rebar3_version": "rebar 3.24.0 on Erlang/OTP 27 Erts 15.2.7.1",
+    "os": "Darwin",
+    "arch": "arm64"
+  },
+  "deps_lock_hash": "a5e44da003b47d8ce06e9621e8f178215e145aa455606bbe54df518c11a2870b",
+  "gates": {
+    "compile": {
+      "status": "pass",
+      "duration_ms": 1576
+    },
+    "eunit": {
+      "status": "fail",
+      "duration_ms": 9083
+    },
+    "ct": {
+      "status": "fail",
+      "duration_ms": 3099
+    },
+    "coverage": {
+      "status": "pass",
+      "duration_ms": 7834
+    },
+    "dialyzer": {
+      "status": "skip",
+      "duration_ms": 0
+    },
+    "xref": {
+      "status": "skip",
+      "duration_ms": 0
+    },
+    "benchmark": {
+      "status": "skip",
+      "duration_ms": 0
+    }
+  },
+  "certification": {
+    "certified": false,
+    "blocker_count": 2,
+    "blockers": [
+      "eunit",
+      "ct"
+    ]
+  },
+  "receipt_hash": "8241de2a84f518aa9cab50b06415e2407fd08e81dd414afc9e47d7f54bad11a6"
+}

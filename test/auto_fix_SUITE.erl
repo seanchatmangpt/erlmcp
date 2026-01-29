@@ -38,18 +38,21 @@ suite() ->
 
 init_per_suite(Config) ->
     %% Start application
-    application:ensure_all_started(tcps_erlmcp),
+    case tcps_test_helper:start_tcps_apps() of
+        {ok, _Apps} ->
+            %% Create test workspace
+            WorkspaceDir = "/tmp/auto_fix_suite_workspace",
+            ok = tcps_test_helper:ensure_test_dir(WorkspaceDir),
 
-    %% Create test workspace
-    WorkspaceDir = "/tmp/auto_fix_suite_workspace",
-    ok = ensure_dir(WorkspaceDir),
-
-    [{workspace_dir, WorkspaceDir} | Config].
+            [{workspace_dir, WorkspaceDir} | Config];
+        {error, Reason} ->
+            ct:fail("Failed to start TCPS applications: ~p", [Reason])
+    end.
 
 end_per_suite(Config) ->
     WorkspaceDir = ?config(workspace_dir, Config),
-    os:cmd("rm -rf " ++ WorkspaceDir),
-    application:stop(tcps_erlmcp),
+    tcps_test_helper:cleanup_test_dir(WorkspaceDir),
+    tcps_test_helper:stop_tcps_apps(),
     ok.
 
 init_per_testcase(TestCase, Config) ->
@@ -385,18 +388,6 @@ fix_rollback_on_validation_failure_test(Config) ->
 %%%===================================================================
 %%% Helper Functions
 %%%===================================================================
-
-ensure_dir(Dir) ->
-    case filelib:ensure_dir(filename:join(Dir, "dummy")) of
-        ok ->
-            case file:make_dir(Dir) of
-                ok -> ok;
-                {error, eexist} -> ok;
-                Error -> Error
-            end;
-        {error, eexist} -> ok;
-        Error -> Error
-    end.
 
 %% Route failure to appropriate fix agent
 route_to_fix_agent(Failure) ->

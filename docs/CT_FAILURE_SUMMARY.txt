@@ -1,0 +1,106 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                  ERLMCP CT TEST FAILURE ANALYSIS SUMMARY                  ║
+║                           2026-01-28                                       ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+TOTAL FAILURES: ~44 test cases (NOT 278!)
+ROOT CAUSES: 5 distinct issues (most are cascading failures)
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ CRITICAL BLOCKERS (Fix First - 87% of failures)                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+🔴 P0: Missing erlmcp.app
+   ├─ Affects: 20 tests (erlmcp_integration_SUITE - ALL SKIPPED)
+   ├─ Effort: 🟢 EASY (5-10 min)
+   ├─ Root Cause: Umbrella project has erlmcp_core/transports/observability
+   │              but integration suite tries to start "erlmcp" app
+   └─ Fix: Edit apps/erlmcp_core/test/erlmcp_integration_SUITE.erl:148
+           Replace: application:start(erlmcp)
+           With: Start [erlmcp_core, erlmcp_transports, erlmcp_observability]
+
+🔴 P0: Ranch Supervisor Not Started (noproc)
+   ├─ Affects: 15 tests (5 observability + 10 quality_gates)
+   ├─ Effort: 🟡 MEDIUM (40-60 min)
+   ├─ Root Cause: ranch/cowboy apps not started before dashboard server
+   │              erlmcp_hooks gen_server not started
+   └─ Fix: Add ranch, cowboy to init_per_suite in:
+           - apps/erlmcp_observability/test/erlmcp_observability_SUITE.erl
+           - test/quality_gates_SUITE.erl
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ HIGH PRIORITY (16% of failures)                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+🟡 P1: Distributed Node Timeout
+   ├─ Affects: 7 tests (erlmcp_registry_dist_SUITE multi_node group)
+   ├─ Effort: 🟡 MEDIUM (30-60 min)
+   ├─ Root Cause: ct_slave:start fails with boot_timeout
+   │              Using long hostname: 'slave1@Seans-MacBook-Pro'
+   └─ Fix: Use short names (slave1@127.0.0.1) + increase timeout to 120s
+           OR skip in CI if not critical
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ MEDIUM/LOW PRIORITY (5% of failures)                                     │
+└───────────────────────────────────────────────────────────────────────────┘
+
+🟢 P2: Transport Validation Logic (1 test)
+   ├─ Affects: erlmcp_transport_behavior_SUITE.stdio_opts_validation
+   ├─ Effort: 🟢 EASY (5 min)
+   └─ Fix: Test expects {error, _} but validation returns ok
+
+🟢 P3: Hook Integration Test (1 test)
+   ├─ Affects: hooks_integration_SUITE.pre_commit_hook_blocks_bad_code_test
+   ├─ Effort: 🟢 EASY (10 min)
+   └─ Fix: Hook setup or mock issue
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ EXECUTION PLAN (Recommended Order)                                       │
+└───────────────────────────────────────────────────────────────────────────┘
+
+Phase 1: Critical Blockers (70 min) → 80% pass rate ⭐⭐⭐⭐⭐
+  ├─ Fix P0: Missing erlmcp.app (10 min) → +20 tests
+  ├─ Fix P0: Ranch supervisor (60 min) → +15 tests
+  └─ Result: 35/44 tests passing
+
+Phase 2: High Priority (60 min) → 95% pass rate ⭐⭐⭐⭐
+  ├─ Fix P1: Distributed nodes (30-60 min) → +7 tests
+  └─ Result: 42/44 tests passing
+
+Phase 3: Cleanup (25 min) → 100% pass rate ⭐⭐⭐
+  ├─ Fix P2: Transport validation (5 min) → +1 test
+  ├─ Fix P3: Hook integration (10 min) → +1 test
+  └─ Result: 44/44 tests passing
+
+TOTAL TIME: 90-155 minutes (1.5-2.5 hours)
+BEST ROI: Phase 1 (70 min fixes 80% of failures)
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ VALIDATION COMMANDS                                                       │
+└───────────────────────────────────────────────────────────────────────────┘
+
+After each fix:
+  $ TERM=dumb rebar3 compile          # Verify compilation
+  $ rebar3 ct --suite=<suite>         # Test specific suite
+  $ rebar3 ct                          # Full CT suite
+  $ rebar3 eunit                       # Check for regressions
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ FILES TO EDIT (Quick Reference)                                          │
+└───────────────────────────────────────────────────────────────────────────┘
+
+P0 (1): apps/erlmcp_core/test/erlmcp_integration_SUITE.erl:148
+P0 (2): apps/erlmcp_observability/test/erlmcp_observability_SUITE.erl
+        test/quality_gates_SUITE.erl
+P1:     apps/erlmcp_core/test/erlmcp_registry_dist_SUITE.erl
+P2:     apps/erlmcp_transports/test/erlmcp_transport_behavior_SUITE.erl:328
+P3:     test/hooks_integration_SUITE.erl
+
+┌───────────────────────────────────────────────────────────────────────────┐
+│ DETAILED DOCUMENTATION                                                    │
+└───────────────────────────────────────────────────────────────────────────┘
+
+Full Analysis: docs/CT_TEST_FAILURE_ANALYSIS.md
+Fix Matrix:    docs/CT_FIX_PRIORITY_MATRIX.md
+This Summary:  Display with: cat /tmp/ct_summary.txt
+
