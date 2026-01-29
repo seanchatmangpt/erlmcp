@@ -48,3 +48,8 @@ erl_crash.dump
 .erlang.cookie
 erlang.mk
 Emakefile
+
+# Rust/Cargo
+native/*/target/
+native/*/Cargo.lock
+*.rlib
