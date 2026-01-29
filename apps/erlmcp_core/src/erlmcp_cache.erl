@@ -147,15 +147,15 @@ put(Key, Value, Strategy, Opts) ->
 delete(Key) ->
     gen_server:call(?MODULE, {delete, Key}, 5000).
 
-%% @doc Invalidate all cache entries with given tag
--spec invalidate_by_tag(binary()) -> ok.
+%% @doc Invalidate all cache entries with given tag (synchronous)
+-spec invalidate_by_tag(binary()) -> {ok, non_neg_integer()}.
 invalidate_by_tag(Tag) ->
-    gen_server:cast(?MODULE, {invalidate_by_tag, Tag}).
+    gen_server:call(?MODULE, {invalidate_by_tag, Tag}, 5000).
 
-%% @doc Invalidate all cache entries that depend on given key
--spec invalidate_by_dependency(cache_key()) -> ok.
+%% @doc Invalidate all cache entries that depend on given key (synchronous)
+-spec invalidate_by_dependency(cache_key()) -> {ok, non_neg_integer()}.
 invalidate_by_dependency(DepKey) ->
-    gen_server:cast(?MODULE, {invalidate_by_dependency, DepKey}).
+    gen_server:call(?MODULE, {invalidate_by_dependency, DepKey}, 5000).
 
 %% @doc Clear entire cache (all levels)
 -spec clear() -> ok.
@@ -320,6 +320,48 @@ handle_call({delete, Key}, _From, State) ->
     NewState3 = delete_from_l3(Key, NewState2),
     {reply, ok, update_stats(NewState3, delete)};
 
+%% Invalidate by tag (synchronous)
+handle_call({invalidate_by_tag, Tag}, _From, State) ->
+    %% Find all entries with this tag using ets:foldl for simplicity
+    KeysToDelete = ets:foldl(fun({Key, #cache_entry{tags = Tags}}, Acc) ->
+        case lists:member(Tag, Tags) of
+            true -> [Key | Acc];
+            false -> Acc
+        end
+    end, [], State#state.l1_table),
+
+    %% Delete from all levels using atomic operations
+    NewState = lists:foldl(fun(Key, S) ->
+        S1 = delete_from_l1(Key, S),
+        S2 = delete_from_l2(Key, S1),
+        delete_from_l3(Key, S2)
+    end, State, KeysToDelete),
+
+    Count = length(KeysToDelete),
+    ?LOG_INFO("Invalidated ~p cache entries with tag: ~p", [Count, Tag]),
+    {reply, {ok, Count}, NewState};
+
+%% Invalidate by dependency (synchronous)
+handle_call({invalidate_by_dependency, DepKey}, _From, State) ->
+    %% Find all entries that depend on DepKey using ets:foldl for simplicity
+    KeysToDelete = ets:foldl(fun({Key, #cache_entry{dependencies = Deps}}, Acc) ->
+        case lists:member(DepKey, Deps) of
+            true -> [Key | Acc];
+            false -> Acc
+        end
+    end, [], State#state.l1_table),
+
+    %% Delete from all levels using atomic operations
+    NewState = lists:foldl(fun(Key, S) ->
+        S1 = delete_from_l1(Key, S),
+        S2 = delete_from_l2(Key, S1),
+        delete_from_l3(Key, S2)
+    end, State, KeysToDelete),
+
+    Count = length(KeysToDelete),
+    ?LOG_INFO("Invalidated ~p cache entries depending on: ~p", [Count, DepKey]),
+    {reply, {ok, Count}, NewState};
+
 %% Clear entire cache
 handle_call(clear, _From, State) ->
     ets:delete_all_objects(State#state.l1_table),
@@ -355,38 +397,6 @@ handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
-
-%% Invalidate by tag
-handle_cast({invalidate_by_tag, Tag}, State) ->
-    %% Find all entries with this tag
-    Pattern = #cache_entry{tags = '$1', key = '$2', _ = '_'},
-    Guards = [{'orelse', [{'==', Tag, {hd, '$1'}}, {'/=', '$1', []}]}],
-    KeysToDelete = ets:select(State#state.l1_table, [{Pattern, Guards, ['$2']}]),
-
-    NewState = lists:foldl(fun(Key, S) ->
-        S1 = delete_from_l1(Key, S),
-        S2 = delete_from_l2(Key, S1),
-        delete_from_l3(Key, S2)
-    end, State, KeysToDelete),
-
-    ?LOG_INFO("Invalidated ~p cache entries with tag: ~p", [length(KeysToDelete), Tag]),
-    {noreply, NewState};
-
-%% Invalidate by dependency
-handle_cast({invalidate_by_dependency, DepKey}, State) ->
-    %% Find all entries that depend on DepKey
-    Pattern = #cache_entry{dependencies = '$1', key = '$2', _ = '_'},
-    Guards = [{'orelse', [{'==', DepKey, {hd, '$1'}}, {'/=', '$1', []}]}],
-    KeysToDelete = ets:select(State#state.l1_table, [{Pattern, Guards, ['$2']}]),
-
-    NewState = lists:foldl(fun(Key, S) ->
-        S1 = delete_from_l1(Key, S),
-        S2 = delete_from_l2(Key, S1),
-        delete_from_l3(Key, S2)
-    end, State, KeysToDelete),
-
-    ?LOG_INFO("Invalidated ~p cache entries depending on: ~p", [length(KeysToDelete), DepKey]),
-    {noreply, NewState};
 
 %% Probabilistic cache warming
 handle_cast({warm_cache, Key, ValueFun}, State) ->
@@ -458,6 +468,7 @@ get_from_l1(Key, State) ->
                     {error, not_found};
                 false ->
                     %% Update access time and count
+                    %% gen_server serializes access, so this is safe from race conditions
                     UpdatedEntry = Entry#cache_entry{
                         access_count = Entry#cache_entry.access_count + 1,
                         last_accessed = Now

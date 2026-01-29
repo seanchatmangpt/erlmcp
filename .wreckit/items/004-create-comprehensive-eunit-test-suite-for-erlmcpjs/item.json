@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "004-create-comprehensive-eunit-test-suite-for-erlmcpjs",
+  "title": "Create comprehensive EUnit test suite for erlmcp_json_rpc.erl",
+  "section": "coverage",
+  "state": "researched",
+  "overview": "JSON-RPC codec has 0% test coverage - protocol implementation is completely untested\n\n**Motivation:** Processes EVERY message in and out of the system. A bug here breaks the entire MCP protocol. JSON-RPC 2.0 spec compliance is critical.\n\n**Success criteria:**\n- ≥80% code coverage achieved\n- ≥40 tests created\n- All encode/decode functions tested\n- JSON-RPC 2.0 spec compliance verified\n- Error handling paths tested\n- All tests pass: rebar3 eunit --module=erlmcp_json_rpc_tests\n\n**Technical constraints:**\n- JSON encoding tests - valid JSON output, correct field ordering\n- JSON decoding tests - valid JSON input, error handling\n- Schema validation tests - JSON-RPC 2.0 spec compliance\n- Edge case tests - Unicode, special characters, large payloads\n- Error path tests - invalid JSON, missing fields, wrong types\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL PRODUCTION WORK",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.351Z",
+  "updated_at": "2026-01-29T16:36:21.603Z",
+  "problem_statement": "JSON-RPC codec has 0% test coverage - protocol implementation is completely untested",
+  "motivation": "Processes EVERY message in and out of the system. A bug here breaks the entire MCP protocol. JSON-RPC 2.0 spec compliance is critical.",
+  "success_criteria": [
+    "≥80% code coverage achieved",
+    "≥40 tests created",
+    "All encode/decode functions tested",
+    "JSON-RPC 2.0 spec compliance verified",
+    "Error handling paths tested",
+    "All tests pass: rebar3 eunit --module=erlmcp_json_rpc_tests"
+  ],
+  "technical_constraints": [
+    "JSON encoding tests - valid JSON output, correct field ordering",
+    "JSON decoding tests - valid JSON input, error handling",
+    "Schema validation tests - JSON-RPC 2.0 spec compliance",
+    "Edge case tests - Unicode, special characters, large payloads",
+    "Error path tests - invalid JSON, missing fields, wrong types"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL PRODUCTION WORK"
+}

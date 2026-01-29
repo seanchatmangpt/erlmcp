@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "033-websocket-transport-test-coverage",
+  "title": "WebSocket Transport Test Coverage",
+  "section": "transports",
+  "state": "idea",
+  "overview": "WebSocket transport has ZERO coverage despite being critical for browser-based MCP clients requiring real-time bidirectional messaging.\n\n**Motivation:** WebSocket transport enables real-time bidirectional messaging, essential for browser-based MCP clients.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl\n- WebSocket protocol tested\n- Coverage: ≥80%\n- All tests pass\n\n**Technical constraints:**\n- WebSocket Protocol - Real WebSocket connections\n- Frame Testing - Text/binary frames\n- Bidirectional Messaging - Simultaneous send/receive\n- Error Handling - Connection drop, invalid frames\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION DEPLOYMENT",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.826Z",
+  "updated_at": "2026-01-29T05:55:58.428Z",
+  "problem_statement": "WebSocket transport has ZERO coverage despite being critical for browser-based MCP clients requiring real-time bidirectional messaging.",
+  "motivation": "WebSocket transport enables real-time bidirectional messaging, essential for browser-based MCP clients.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl",
+    "WebSocket protocol tested",
+    "Coverage: ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "WebSocket Protocol - Real WebSocket connections",
+    "Frame Testing - Text/binary frames",
+    "Bidirectional Messaging - Simultaneous send/receive",
+    "Error Handling - Connection drop, invalid frames"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION DEPLOYMENT"
+}

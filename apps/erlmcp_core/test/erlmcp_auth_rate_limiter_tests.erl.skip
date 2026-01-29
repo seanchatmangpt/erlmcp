@@ -1,0 +1,285 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp_auth_rate_limiter_tests - Tests for Authentication Rate Limiter
+%%%
+%%% Tests rate limiting, blocking, and exponential backoff features.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_auth_rate_limiter_tests).
+
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("erlmcp_auth.hrl").
+
+%%====================================================================
+%% Test Fixtures
+%%====================================================================
+
+rate_limiter_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     [
+         {"Rate limit enforcement", fun test_rate_limit_enforcement/0},
+         {"Exponential backoff", fun test_exponential_backoff/0},
+         {"IP blocking", fun test_ip_blocking/0},
+         {"Client statistics", fun test_client_statistics/0},
+         {"Success resets backoff", fun test_success_resets_backoff/0},
+         {"Cleanup expired entries", fun test_cleanup_expired/0},
+         {"Concurrent requests", fun test_concurrent_requests/0}
+     ]}.
+
+setup() ->
+    application:ensure_all_started(crypto),
+    application:ensure_all_started(jsx),
+
+    % Start rate limiter with test config
+    Config = #{
+        max_attempts_per_second => 5,  % Lower for testing
+        window_ms => 1000,
+        max_failures => 3,  % Fewer failures for testing
+        block_duration_ms => 5000,  % 5 seconds for testing
+        backoff_levels => [0, 100, 200, 400, 800, 1600],
+        cleanup_interval_ms => 60000
+    },
+
+    {ok, Pid} = erlmcp_auth_rate_limiter:start_link(Config),
+    Pid.
+
+cleanup(_Pid) ->
+    erlmcp_auth_rate_limiter:stop(),
+    ok.
+
+%%====================================================================
+%% Tests
+%%====================================================================
+
+test_rate_limit_enforcement() ->
+    ClientId = <<"test_client_rate">>,
+
+    % First 5 requests should succeed
+    ?assertEqual(ok, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+    ?assertEqual(ok, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+    ?assertEqual(ok, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+    ?assertEqual(ok, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+    ?assertEqual(ok, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+
+    % 6th request should be rate limited
+    ?assertEqual({error, rate_limited}, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+
+    % Wait for window to expire
+    timer:sleep(1100),
+
+    % Should be allowed again
+    ?assertEqual(ok, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+
+    ok.
+
+test_exponential_backoff() ->
+    ClientId = <<"test_client_backoff">>,
+
+    % Record failures to trigger backoff
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+
+    % Should be blocked now (3 failures)
+    ?assertEqual(true, erlmcp_auth_rate_limiter:is_blocked(ClientId)),
+
+    % Check that we get blocked error
+    ?assertMatch({error, blocked, _}, erlmcp_auth_rate_limiter:check_rate_limit(ClientId)),
+
+    % Get stats to verify backoff level
+    {ok, Stats} = erlmcp_auth_rate_limiter:get_client_stats(ClientId),
+    ?assert(Stats#client_stats.current_backoff_level > 0),
+
+    ok.
+
+test_ip_blocking() ->
+    ClientId = <<"test_client_ip">>,
+    IpAddress = {192, 168, 1, 100},
+
+    % Record failures to trigger IP block
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId, IpAddress),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId, IpAddress),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId, IpAddress),
+
+    % IP should be blocked
+    ?assertMatch({error, blocked, {ip_blocked, _}},
+                 erlmcp_auth_rate_limiter:check_rate_limit(<<"other_client">>, IpAddress)),
+
+    % Reset for cleanup
+    ok = erlmcp_auth_rate_limiter:reset_client(ClientId),
+
+    ok.
+
+test_client_statistics() ->
+    ClientId = <<"test_client_stats">>,
+
+    % Record some failures
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+
+    % Check stats
+    {ok, Stats} = erlmcp_auth_rate_limiter:get_client_stats(ClientId),
+    ?assertEqual(<<"test_client_stats">>, Stats#client_stats.client_id),
+    ?assertEqual(2, Stats#client_stats.total_attempts),
+    ?assertEqual(0, Stats#client_stats.successful_auths),
+    ?assertEqual(2, Stats#client_stats.failed_auths),
+
+    % Record success
+    ok = erlmcp_auth_rate_limiter:record_success(ClientId),
+
+    % Check updated stats
+    {ok, Stats2} = erlmcp_auth_rate_limiter:get_client_stats(ClientId),
+    ?assertEqual(3, Stats2#client_stats.total_attempts),
+    ?assertEqual(1, Stats2#client_stats.successful_auths),
+    ?assertEqual(0, Stats2#client_stats.current_backoff_level),
+
+    ok.
+
+test_success_resets_backoff() ->
+    ClientId = <<"test_client_reset">>,
+
+    % Record failures to trigger backoff
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+
+    % Should be blocked
+    ?assertEqual(true, erlmcp_auth_rate_limiter:is_blocked(ClientId)),
+
+    % Record success (simulating successful auth)
+    ok = erlmcp_auth_rate_limiter:record_success(ClientId),
+
+    % Should no longer be blocked
+    ?assertEqual(false, erlmcp_auth_rate_limiter:is_blocked(ClientId)),
+
+    % Backoff level should be reset
+    {ok, Stats} = erlmcp_auth_rate_limiter:get_client_stats(ClientId),
+    ?assertEqual(0, Stats#client_stats.current_backoff_level),
+
+    ok.
+
+test_cleanup_expired() ->
+    ClientId = <<"test_client_cleanup">>,
+
+    % Record failures
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+    ok = erlmcp_auth_rate_limiter:record_failure(ClientId),
+
+    % Verify it's in the system
+    {ok, _Stats} = erlmcp_auth_rate_limiter:get_client_stats(ClientId),
+
+    % Reset client
+    ok = erlmcp_auth_rate_limiter:reset_client(ClientId),
+
+    % Should be gone
+    ?assertEqual({error, not_found}, erlmcp_auth_rate_limiter:get_client_stats(ClientId)),
+
+    ok.
+
+test_concurrent_requests() ->
+    ClientId = <<"test_client_concurrent">>,
+
+    % Spawn multiple concurrent requests
+    _Pids = [spawn_monitor(fun() ->
+        erlmcp_auth_rate_limiter:check_rate_limit(ClientId)
+    end) || _ <- lists:seq(1, 10)],
+
+    % Wait for all to complete
+    timer:sleep(100),
+
+    % Some should have succeeded, some should have been rate limited
+    % This tests thread safety of the rate limiter
+    {ok, Stats} = erlmcp_auth_rate_limiter:get_client_stats(ClientId),
+    ?assert(Stats#client_stats.total_attempts >= 10),
+
+    ok.
+
+%%====================================================================
+%% Integration Tests with Auth Module
+%%====================================================================
+
+auth_integration_test_() ->
+    {setup,
+     fun setup_auth_integration/0,
+     fun cleanup_auth_integration/1,
+     [
+         {"Auth with rate limiting", fun test_auth_with_rate_limiting/0},
+         {"Auth failure tracking", fun test_auth_failure_tracking/0},
+         {"Auth success tracking", fun test_auth_success_tracking/0}
+     ]}.
+
+setup_auth_integration() ->
+    application:ensure_all_started(crypto),
+    application:ensure_all_started(jsx),
+
+    % Start rate limiter
+    Config = #{
+        max_attempts_per_second => 5,
+        window_ms => 1000,
+        max_failures => 3,
+        block_duration_ms => 5000,
+        backoff_levels => [0, 100, 200, 400, 800, 1600],
+        cleanup_interval_ms => 60000
+    },
+    {ok, RateLimiterPid} = erlmcp_auth_rate_limiter:start_link(Config),
+
+    % Start auth server with rate limiting enabled
+    AuthConfig = #{
+        api_keys => #{
+            <<"test_key_123">> => <<"user_alice">>
+        },
+        rate_limiter_enabled => true
+    },
+    {ok, AuthPid} = erlmcp_auth:start_link(AuthConfig),
+
+    {RateLimiterPid, AuthPid}.
+
+cleanup_auth_integration({_RateLimiterPid, _AuthPid}) ->
+    erlmcp_auth:stop(),
+    erlmcp_auth_rate_limiter:stop(),
+    ok.
+
+test_auth_with_rate_limiting() ->
+    % Test successful auth
+    {ok, _SessionId} = erlmcp_auth:authenticate(api_key, #{
+        api_key => <<"test_key_123">>
+    }),
+
+    % Test rate limiting by making multiple rapid requests
+    % This would be rate limited if we exceeded the limit
+    ok.
+
+test_auth_failure_tracking() ->
+    % Multiple failed auth attempts should trigger rate limiting
+    {error, invalid_api_key} = erlmcp_auth:authenticate(api_key, #{
+        api_key => <<"invalid_key">>
+    }),
+
+    {error, invalid_api_key} = erlmcp_auth:authenticate(api_key, #{
+        api_key => <<"invalid_key">>
+    }),
+
+    {error, invalid_api_key} = erlmcp_auth:authenticate(api_key, #{
+        api_key => <<"invalid_key">>
+    }),
+
+    % After 3 failures, should be blocked
+    {error, blocked, _} = erlmcp_auth:authenticate(api_key, #{
+        api_key => <<"invalid_key">>
+    }),
+
+    ok.
+
+test_auth_success_tracking() ->
+    % Successful auth should reset backoff
+    {ok, _SessionId} = erlmcp_auth:authenticate(api_key, #{
+        api_key => <<"test_key_123">>
+    }),
+
+    % Get rate limiter stats
+    {ok, Stats} = erlmcp_auth_rate_limiter:get_client_stats(<<"test_key_123">>),
+    ?assert(Stats#client_stats.successful_auths > 0),
+    ?assertEqual(0, Stats#client_stats.current_backoff_level),
+
+    ok.

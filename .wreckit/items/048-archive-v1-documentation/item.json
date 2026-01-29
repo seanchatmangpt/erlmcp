@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "048-archive-v1-documentation",
+  "title": "Archive v1 Documentation",
+  "section": "docs",
+  "state": "idea",
+  "overview": "Root directory has 171 markdown files when it should have 5. 90-95 v1 docs need archiving to clean up repository.\n\n**Motivation:** Too many documentation files in root makes repository confusing. Old v1 docs should be archived.\n\n**Success criteria:**\n- Archive directories created\n- 90-95 files moved to archive\n- Root directory has ≤5 markdown files\n- README, CHANGELOG, CONTRIBUTING, DEVELOPMENT, CLAUDE remain in root\n\n**Technical constraints:**\n- Create docs/archive/v1-agent-deliverables/\n- Create docs/archive/v1-phase-deliverables/\n- Create docs/archive/v1-version-releases/\n- Remove duplicate files\n- Remove transient docs (scratch pads, etc.)\n\n**Signals:** priority: low, urgency: P3 - NICE TO HAVE",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach\nInsufficient citations: found 0, required at least 5 file:line references",
+  "created_at": "2026-01-29T04:07:02.831Z",
+  "updated_at": "2026-01-29T06:42:52.181Z",
+  "problem_statement": "Root directory has 171 markdown files when it should have 5. 90-95 v1 docs need archiving to clean up repository.",
+  "motivation": "Too many documentation files in root makes repository confusing. Old v1 docs should be archived.",
+  "success_criteria": [
+    "Archive directories created",
+    "90-95 files moved to archive",
+    "Root directory has ≤5 markdown files",
+    "README, CHANGELOG, CONTRIBUTING, DEVELOPMENT, CLAUDE remain in root"
+  ],
+  "technical_constraints": [
+    "Create docs/archive/v1-agent-deliverables/",
+    "Create docs/archive/v1-phase-deliverables/",
+    "Create docs/archive/v1-version-releases/",
+    "Remove duplicate files",
+    "Remove transient docs (scratch pads, etc.)"
+  ],
+  "priority_hint": "low",
+  "urgency_hint": "P3 - NICE TO HAVE"
+}

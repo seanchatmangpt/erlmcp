@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "016-fix-erlmcpregistrydistsuite-distributed-node-initi",
+  "title": "Fix erlmcp_registry_dist_SUITE distributed node initialization failure",
+  "section": "ct-fixes",
+  "state": "researched",
+  "overview": "Registry distributed suite failing - distributed nodes cannot initialize\n\n**Motivation:** Cannot test distributed registry functionality if nodes can't communicate. Critical for multi-node deployments.\n\n**Success criteria:**\n- Root cause identified and documented\n- Distributed node setup fixed\n- single_node test passes\n- multi_node group init passes\n- rebar3 ct --suite=erlmcp_registry_dist_SUITE executes\n\n**Technical constraints:**\n- Must check distributed node setup in init_per_suite/1\n- Must verify epmd is running: epmd -names\n- Must check node names and cookies\n- Must add node startup health checks\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS INTEGRATION TESTING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.355Z",
+  "updated_at": "2026-01-29T17:23:08.529Z",
+  "problem_statement": "Registry distributed suite failing - distributed nodes cannot initialize",
+  "motivation": "Cannot test distributed registry functionality if nodes can't communicate. Critical for multi-node deployments.",
+  "success_criteria": [
+    "Root cause identified and documented",
+    "Distributed node setup fixed",
+    "single_node test passes",
+    "multi_node group init passes",
+    "rebar3 ct --suite=erlmcp_registry_dist_SUITE executes"
+  ],
+  "technical_constraints": [
+    "Must check distributed node setup in init_per_suite/1",
+    "Must verify epmd is running: epmd -names",
+    "Must check node names and cookies",
+    "Must add node startup health checks"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS INTEGRATION TESTING"
+}

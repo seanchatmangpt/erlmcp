@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "021-remove-27-unused-local-functions-dead-code",
+  "title": "Remove 27+ unused local functions (dead code)",
+  "section": "quality-gates",
+  "state": "researched",
+  "overview": "27+ unused local functions cluttering the codebase\n\n**Motivation:** Dead code confuses maintainers, increases cognitive load, and may contain bugs. Removing it improves code quality.\n\n**Success criteria:**\n- All 27+ unused functions audited\n- Truly unused functions removed\n- Public API functions documented\n- Test-only functions moved to test files\n- rebar3 xref shows 0 unused function warnings\n- Lines of code removed ≥500 (estimated)\n\n**Technical constraints:**\n- Run rebar3 xref to get list\n- For each unused function: check if truly unused, public API, or testing stub\n- Remove truly unused functions\n- Document public API functions\n- Move test-only functions to test files\n\n**Signals:** priority: medium, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.358Z",
+  "updated_at": "2026-01-29T17:40:10.247Z",
+  "problem_statement": "27+ unused local functions cluttering the codebase",
+  "motivation": "Dead code confuses maintainers, increases cognitive load, and may contain bugs. Removing it improves code quality.",
+  "success_criteria": [
+    "All 27+ unused functions audited",
+    "Truly unused functions removed",
+    "Public API functions documented",
+    "Test-only functions moved to test files",
+    "rebar3 xref shows 0 unused function warnings",
+    "Lines of code removed ≥500 (estimated)"
+  ],
+  "technical_constraints": [
+    "Run rebar3 xref to get list",
+    "For each unused function: check if truly unused, public API, or testing stub",
+    "Remove truly unused functions",
+    "Document public API functions",
+    "Move test-only functions to test files"
+  ],
+  "priority_hint": "medium",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

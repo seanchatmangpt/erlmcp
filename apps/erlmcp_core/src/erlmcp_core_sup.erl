@@ -26,19 +26,10 @@ init([]) ->
         period => 60
     },
 
-    ChildSpecs = [
-        %% ================================================================
-        %% CLUSTER: Distributed registry and cluster management
-        %% ================================================================
-        #{
-            id => erlmcp_cluster_sup,
-            start => {erlmcp_cluster_sup, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => supervisor,
-            modules => [erlmcp_cluster_sup]
-        },
+    %% Build child specs dynamically based on configuration
+    ClusterEnabled = application:get_env(erlmcp_core, cluster_enabled, false),
 
+    BaseChildSpecs = [
         %% ================================================================
         %% REGISTRY: Message routing using gproc
         %% ================================================================
@@ -141,7 +132,101 @@ init([]) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_session_failover]
+        },
+
+        %% ================================================================
+        %% CONNECTION LIMITING: Prevent FD exhaustion at 10K connections
+        %% ================================================================
+        #{
+            id => erlmcp_connection_limiter,
+            start => {erlmcp_connection_limiter, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_connection_limiter]
+        },
+
+        %% ================================================================
+        %% CONNECTION MONITORING: Detect and prevent FD leaks
+        %% ================================================================
+        #{
+            id => erlmcp_connection_monitor,
+            start => {erlmcp_connection_monitor, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_connection_monitor]
+        },
+
+        %% ================================================================
+        %% MEMORY MONITORING: Binary garbage collection to prevent heap exhaustion
+        %% NOTE: Temporarily disabled due to syntax errors - needs review
+        %% #{
+        %%     id => erlmcp_memory_monitor,
+        %%     start => {erlmcp_memory_monitor, start_link, []},
+        %%     restart => permanent,
+        %%     shutdown => 5000,
+        %%     type => worker,
+        %%     modules => [erlmcp_memory_monitor]
+        %% },
+
+        %% ================================================================
+        %% CPU QUOTA MANAGEMENT: Prevent CPU-intensive DoS attacks (TASK #107)
+        %% ================================================================
+        #{
+            id => erlmcp_cpu_quota,
+            start => {erlmcp_cpu_quota, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_cpu_quota]
+        },
+
+        %% ================================================================
+        %% CANCELLATION: Request cancellation for long-running operations (TASK #142)
+        %% ================================================================
+        #{
+            id => erlmcp_cancellation,
+            start => {erlmcp_cancellation, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_cancellation]
+        },
+
+        %% ================================================================
+        %% PAGINATION: Cursor-based pagination for list operations (TASK #146)
+        %% ================================================================
+        #{
+            id => erlmcp_pagination,
+            start => {erlmcp_pagination, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_pagination]
         }
     ],
+
+    %% Conditionally include cluster supervisor
+    ChildSpecs = case ClusterEnabled of
+        true ->
+            [
+                %% ================================================================
+                %% CLUSTER: Distributed registry and cluster management
+                %% ================================================================
+                #{
+                    id => erlmcp_cluster_sup,
+                    start => {erlmcp_cluster_sup, start_link, []},
+                    restart => permanent,
+                    shutdown => 5000,
+                    type => supervisor,
+                    modules => [erlmcp_cluster_sup]
+                }
+                | BaseChildSpecs
+            ];
+        false ->
+            %% Skip cluster supervisor when disabled to prevent zombie process
+            BaseChildSpecs
+    end,
 
     {ok, {SupFlags, ChildSpecs}}.

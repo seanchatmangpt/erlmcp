@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "049-implement-missing-modules",
+  "title": "Implement Missing Modules",
+  "section": "quality-gates",
+  "state": "idea",
+  "overview": "Xref found 60+ undefined function calls to non-existent modules including erlmcp_request_id, erlmcp_tracing, erlmcp_task_manager, tcps_persistence, and tcps_work_order.\n\n**Motivation:** Cannot resolve Xref warnings until missing modules are implemented or references are removed. Blocks Dialyzer and Xref cleanup.\n\n**Success criteria:**\n- All missing modules audited\n- Decision made for each (implement or remove)\n- Needed modules implemented (stubs ok if not critical path)\n- References to unneeded modules removed\n- rebar3 xref shows 0 undefined function calls to missing modules\n\n**Technical constraints:**\n- For each missing module, must audit and decide: implement or remove references\n- Can create stub implementations for non-critical modules\n- Must document decision rationale\n\n**Signals:** priority: high, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": null,
+  "created_at": "2026-01-29T16:21:51.570Z",
+  "updated_at": "2026-01-29T16:21:51.570Z",
+  "problem_statement": "Xref found 60+ undefined function calls to non-existent modules including erlmcp_request_id, erlmcp_tracing, erlmcp_task_manager, tcps_persistence, and tcps_work_order.",
+  "motivation": "Cannot resolve Xref warnings until missing modules are implemented or references are removed. Blocks Dialyzer and Xref cleanup.",
+  "success_criteria": [
+    "All missing modules audited",
+    "Decision made for each (implement or remove)",
+    "Needed modules implemented (stubs ok if not critical path)",
+    "References to unneeded modules removed",
+    "rebar3 xref shows 0 undefined function calls to missing modules"
+  ],
+  "technical_constraints": [
+    "For each missing module, must audit and decide: implement or remove references",
+    "Can create stub implementations for non-critical modules",
+    "Must document decision rationale"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "015-fix-erlmcpobservabilitysuite-ranchcowboy-dashboard",
+  "title": "Fix erlmcp_observability_SUITE Ranch/Cowboy dashboard startup failure",
+  "section": "ct-fixes",
+  "state": "researched",
+  "overview": "Observability suite init_per_suite failing - Ranch not started before Cowboy dashboard\n\n**Motivation:** Cannot test observability functionality if dashboard won't start. Ranch supervision tree must be initialized before Cowboy listener.\n\n**Success criteria:**\n- Root cause documented (Ranch not started)\n- init_per_suite/1 fixed to start ranch/cowboy\n- Dashboard server starts successfully\n- Observability tests execute\n- rebar3 ct --suite=erlmcp_observability_SUITE runs\n\n**Technical constraints:**\n- Must start ranch before cowboy\n- Options: start in init_per_suite, make dashboard optional, or start full erlmcp_observability app\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS INTEGRATION TESTING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.355Z",
+  "updated_at": "2026-01-29T17:20:29.660Z",
+  "problem_statement": "Observability suite init_per_suite failing - Ranch not started before Cowboy dashboard",
+  "motivation": "Cannot test observability functionality if dashboard won't start. Ranch supervision tree must be initialized before Cowboy listener.",
+  "success_criteria": [
+    "Root cause documented (Ranch not started)",
+    "init_per_suite/1 fixed to start ranch/cowboy",
+    "Dashboard server starts successfully",
+    "Observability tests execute",
+    "rebar3 ct --suite=erlmcp_observability_SUITE runs"
+  ],
+  "technical_constraints": [
+    "Must start ranch before cowboy",
+    "Options: start in init_per_suite, make dashboard optional, or start full erlmcp_observability app"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS INTEGRATION TESTING"
+}

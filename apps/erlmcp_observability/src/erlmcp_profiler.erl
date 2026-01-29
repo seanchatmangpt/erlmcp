@@ -113,7 +113,7 @@ profile_mfa({M, F, A}, Duration, Opts) ->
         cprof ->
             cprof:start({M, F, A}),
             timer:sleep(Duration),
-            Result = cprof:analyse(M, F, A),
+            Result = cprof:analyse(M),
             cprof:stop(),
             {ok, #{result => Result, mode => cprof}}
     end.

@@ -242,7 +242,7 @@ validate_module_internal(Module) ->
             {error, module_not_loaded};
         {file, _} ->
             % Validate syntax by attempting to compile check
-            BeamFile = code:which(Module),
+            BeamFile = get_beam_path(Module),
             case BeamFile of
                 non_existing ->
                     {error, beam_file_not_found};
@@ -337,7 +337,7 @@ get_in_flight_count(_Module) ->
 
 -spec backup_module_beam(module()) -> ok | {error, term()}.
 backup_module_beam(Module) ->
-    case code:which(Module) of
+    case get_beam_path(Module) of
         non_existing ->
             {error, module_not_found};
         BeamPath when is_list(BeamPath) ->
@@ -382,7 +382,7 @@ perform_code_reload(Module) ->
 do_rollback_module(Module) ->
     logger:warning("Rolling back module ~p", [Module]),
 
-    case code:which(Module) of
+    case get_beam_path(Module) of
         non_existing ->
             {error, module_not_found};
         BeamPath when is_list(BeamPath) ->
@@ -454,7 +454,7 @@ build_dependency_graph(Modules) ->
 
 -spec get_module_dependencies(module()) -> [module()].
 get_module_dependencies(Module) ->
-    case code:which(Module) of
+    case get_beam_path(Module) of
         non_existing ->
             [];
         BeamPath when is_list(BeamPath) ->
@@ -513,9 +513,46 @@ calculate_in_degree(Graph, Nodes) ->
 %% Internal functions - Utilities
 %%====================================================================
 
+%% @doc Get the actual beam file path, handling cover_compiled modules
+-spec get_beam_path(module()) -> file:filename() | non_existing.
+get_beam_path(Module) ->
+    case code:which(Module) of
+        non_existing ->
+            non_existing;
+        BeamPath when is_list(BeamPath) ->
+            % Check if this is a cover_compiled path
+            case string:find(BeamPath, "cover_compiled") of
+                nomatch ->
+                    BeamPath;
+                _ ->
+                    % For cover_compiled modules, try to get the original beam path
+                    % The cover module stores the original path in the module info
+                    case get_original_beam_path(Module) of
+                        {ok, OriginalPath} -> OriginalPath;
+                        error -> BeamPath
+                    end
+            end
+    end.
+
+%% @doc Get the original beam path for a cover_compiled module
+-spec get_original_beam_path(module()) -> {ok, file:filename()} | error.
+get_original_beam_path(Module) ->
+    % Try to get the original beam file path from module info
+    % cover stores this in the compile info
+    case code:get_object_code(Module) of
+        {_Module, _Binary, Filename} when is_list(Filename) ->
+            {ok, Filename};
+        _ ->
+            % Fallback: try to find the beam file in code path
+            case code:where_is_file(atom_to_list(Module) ++ ".beam") of
+                non_existing -> error;
+                BeamPath when is_list(BeamPath) -> {ok, BeamPath}
+            end
+    end.
+
 -spec get_module_version(module()) -> term().
 get_module_version(Module) ->
-    case code:which(Module) of
+    case get_beam_path(Module) of
         non_existing ->
             undefined;
         BeamPath when is_list(BeamPath) ->

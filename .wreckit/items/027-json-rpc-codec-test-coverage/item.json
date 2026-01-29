@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "id": "027-json-rpc-codec-test-coverage",
+  "title": "JSON-RPC Codec Test Coverage",
+  "section": "coverage",
+  "state": "idea",
+  "overview": "erlmcp_json_rpc.erl has ZERO coverage despite processing EVERY message in and out of the system. A bug here breaks the entire protocol.\n\n**Motivation:** This is the protocol implementation layer - all JSON-RPC encoding/decoding flows through this module. JSON-RPC 2.0 spec compliance is critical for interoperability.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_core/test/erlmcp_json_rpc_tests.erl\n- All encode/decode functions tested\n- JSON-RPC 2.0 spec compliance verified\n- Error handling paths tested (parse error, invalid request, etc.)\n- Batch operations tested\n- Coverage: ≥80%\n- All tests pass: rebar3 eunit --module=erlmcp_json_rpc_tests\n\n**Technical constraints:**\n- JSON Encoding Tests - Valid JSON output, correct field ordering\n- JSON Decoding Tests - Valid JSON input, error handling\n- Schema Validation Tests - JSON-RPC 2.0 spec compliance\n- Edge Case Tests - Unicode, special characters, large payloads\n- Error Path Tests - Invalid JSON, missing fields, wrong types\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL PRODUCTION WORK",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.823Z",
+  "updated_at": "2026-01-29T05:40:17.809Z",
+  "problem_statement": "erlmcp_json_rpc.erl has ZERO coverage despite processing EVERY message in and out of the system. A bug here breaks the entire protocol.",
+  "motivation": "This is the protocol implementation layer - all JSON-RPC encoding/decoding flows through this module. JSON-RPC 2.0 spec compliance is critical for interoperability.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_core/test/erlmcp_json_rpc_tests.erl",
+    "All encode/decode functions tested",
+    "JSON-RPC 2.0 spec compliance verified",
+    "Error handling paths tested (parse error, invalid request, etc.)",
+    "Batch operations tested",
+    "Coverage: ≥80%",
+    "All tests pass: rebar3 eunit --module=erlmcp_json_rpc_tests"
+  ],
+  "technical_constraints": [
+    "JSON Encoding Tests - Valid JSON output, correct field ordering",
+    "JSON Decoding Tests - Valid JSON input, error handling",
+    "Schema Validation Tests - JSON-RPC 2.0 spec compliance",
+    "Edge Case Tests - Unicode, special characters, large payloads",
+    "Error Path Tests - Invalid JSON, missing fields, wrong types"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL PRODUCTION WORK"
+}

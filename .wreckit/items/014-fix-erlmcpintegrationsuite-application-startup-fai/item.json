@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "014-fix-erlmcpintegrationsuite-application-startup-fai",
+  "title": "Fix erlmcp_integration_SUITE application startup failure",
+  "section": "ct-fixes",
+  "state": "researched",
+  "overview": "Integration suite init_per_suite failing - application startup error\n\n**Motivation:** Blocks ALL integration testing. Cannot verify end-to-end functionality without this working.\n\n**Success criteria:**\n- Root cause identified and documented\n- init_per_suite/1 fixed\n- Application starts successfully\n- All tests in suite can run (may still fail, but not blocked by init)\n- rebar3 ct --suite=erlmcp_integration_SUITE executes\n\n**Technical constraints:**\n- Must investigate init_per_suite/1 logic\n- Must check application dependencies\n- Must verify supervisor start\n- Must check for missing supervisor children\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS INTEGRATION TESTING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.354Z",
+  "updated_at": "2026-01-29T17:16:39.508Z",
+  "problem_statement": "Integration suite init_per_suite failing - application startup error",
+  "motivation": "Blocks ALL integration testing. Cannot verify end-to-end functionality without this working.",
+  "success_criteria": [
+    "Root cause identified and documented",
+    "init_per_suite/1 fixed",
+    "Application starts successfully",
+    "All tests in suite can run (may still fail, but not blocked by init)",
+    "rebar3 ct --suite=erlmcp_integration_SUITE executes"
+  ],
+  "technical_constraints": [
+    "Must investigate init_per_suite/1 logic",
+    "Must check application dependencies",
+    "Must verify supervisor start",
+    "Must check for missing supervisor children"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS INTEGRATION TESTING"
+}

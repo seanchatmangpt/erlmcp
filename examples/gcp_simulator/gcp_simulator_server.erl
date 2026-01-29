@@ -1,9 +1,167 @@
 -module(gcp_simulator_server).
--export([start/0, main/1, init_state/0]).
+-behaviour(gen_server).
+
+%% API exports
+-export([start_link/0, stop/0, setup_gcp_simulator/0, start/0, main/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% GCP Simulator MCP Server
 %% Simulates common GCP services for testing and development
 %% Supports: Compute Engine, Cloud Storage, Cloud Functions, Cloud SQL, Pub/Sub, IAM
+
+%%====================================================================
+%% TYPE DEFINITIONS
+%%====================================================================
+
+%% GCP resource types
+-type gcp_compute_instance() :: #{
+    name := binary(),
+    machine_type := binary(),
+    zone := binary(),
+    status := binary(), %% <<"RUNNING">> | <<"TERMINATED">>
+    internal_ip := binary(),
+    external_ip := binary(),
+    created := binary()
+}.
+
+-type gcp_storage_bucket() :: #{
+    name := binary(),
+    location := binary(),
+    created := binary(),
+    storage_class := binary()
+}.
+
+-type gcp_storage_object() :: #{
+    bucket := binary(),
+    name := binary(),
+    content := binary(),
+    size := non_neg_integer(),
+    uploaded := binary()
+}.
+
+-type gcp_cloud_function() :: #{
+    name := binary(),
+    runtime := binary(),
+    entry_point := binary(),
+    status := binary(), %% <<"ACTIVE">>
+    deployed := binary(),
+    url := binary()
+}.
+
+-type gcp_sql_instance() :: #{
+    name := binary(),
+    database_version := binary(),
+    tier := binary(),
+    state := binary(), %% <<"RUNNABLE">>
+    connection_name := binary(),
+    ip_address := binary(),
+    created := binary()
+}.
+
+-type gcp_pubsub_topic() :: #{
+    name := binary(),
+    created := binary()
+}.
+
+-type gcp_pubsub_subscription() :: #{
+    name := binary(),
+    topic := binary(),
+    created := binary()
+}.
+
+-type gcp_service_account() :: #{
+    name := binary(),
+    display_name := binary(),
+    email := binary(),
+    created := binary()
+}.
+
+%% Unified error type
+-type gcp_error() :: {error, not_found | invalid_state | invalid_input}.
+
+%% Success response type
+-type gcp_response() :: binary().
+
+%% Generic result type
+-type gcp_result() :: {ok, gcp_response()} | gcp_error().
+
+%%====================================================================
+%% FUNCTION SPECIFICATIONS
+%%====================================================================
+
+%% Module entry points (backward compatibility)
+-spec start() -> ok | no_return().
+-spec main([string()]) -> no_return().
+
+%% gen_server API
+-spec start_link() -> {ok, pid()} | {error, term()}.
+-spec stop() -> ok.
+-spec setup_gcp_simulator() -> ok.
+
+%% Compute Engine functions
+-spec create_compute_instance(binary(), binary(), binary()) -> gcp_response().
+-spec list_compute_instances() -> gcp_response().
+-spec get_compute_instance(binary()) -> {ok, gcp_response()} | gcp_error().
+-spec start_compute_instance(binary()) -> {ok, gcp_response()} | gcp_error().
+-spec stop_compute_instance(binary()) -> {ok, gcp_response()} | gcp_error().
+-spec delete_compute_instance(binary()) -> {ok, gcp_response()} | gcp_error().
+-spec format_instance(gcp_compute_instance()) -> binary().
+
+%% Cloud Storage functions
+-spec create_storage_bucket(binary(), binary()) -> gcp_response().
+-spec list_storage_buckets() -> gcp_response().
+-spec upload_storage_object(binary(), binary(), binary()) -> {ok, gcp_response()} | gcp_error().
+-spec list_storage_objects(binary()) -> gcp_response().
+-spec download_storage_object(binary(), binary()) -> {ok, gcp_response()} | gcp_error().
+-spec delete_storage_object(binary(), binary()) -> {ok, gcp_response()} | gcp_error().
+-spec format_bucket(gcp_storage_bucket()) -> binary().
+-spec format_object(gcp_storage_object()) -> binary().
+
+%% Cloud Functions
+-spec deploy_cloud_function(binary(), binary(), binary()) -> gcp_response().
+-spec list_cloud_functions() -> gcp_response().
+-spec invoke_cloud_function(binary(), binary()) -> {ok, gcp_response()} | gcp_error().
+-spec delete_cloud_function(binary()) -> {ok, gcp_response()} | gcp_error().
+-spec format_function(gcp_cloud_function()) -> binary().
+
+%% Cloud SQL functions
+-spec create_sql_instance(binary(), binary(), binary()) -> gcp_response().
+-spec list_sql_instances() -> gcp_response().
+-spec delete_sql_instance(binary()) -> {ok, gcp_response()} | gcp_error().
+-spec format_sql_instance(gcp_sql_instance()) -> binary().
+
+%% Pub/Sub functions
+-spec create_pubsub_topic(binary()) -> gcp_response().
+-spec list_pubsub_topics() -> gcp_response().
+-spec publish_pubsub_message(binary(), binary()) -> {ok, gcp_response()} | gcp_error().
+-spec create_pubsub_subscription(binary(), binary()) -> {ok, gcp_response()} | gcp_error().
+
+%% IAM functions
+-spec create_service_account(binary(), binary()) -> gcp_response().
+-spec list_service_accounts() -> gcp_response().
+-spec format_service_account(gcp_service_account()) -> binary().
+
+%% Helper functions
+-spec get_simulator_status() -> gcp_response().
+-spec get_help_text() -> gcp_response().
+-spec generate_ip() -> binary().
+-spec generate_message_id() -> binary().
+-spec get_timestamp() -> binary().
+-spec wait_for_shutdown() -> no_return().
+
+%% Validation functions
+-spec validate_resource_name(binary()) -> ok | {error, invalid_input}.
+-spec validate_machine_type(binary()) -> ok | {error, invalid_input}.
+-spec validate_zone(binary()) -> ok | {error, invalid_input}.
+-spec validate_location(binary()) -> ok | {error, invalid_input}.
+-spec validate_runtime(binary()) -> ok | {error, invalid_input}.
+-spec validate_entry_point(binary()) -> ok | {error, invalid_input}.
+-spec validate_database_version(binary()) -> ok | {error, invalid_input}.
+-spec validate_tier(binary()) -> ok | {error, invalid_input}.
+-spec validate_email_safe_name(binary()) -> ok | {error, invalid_input}.
+-spec validate_no_control_chars(binary()) -> ok | {error, invalid_input}.
 
 start() ->
     main([]).
@@ -405,17 +563,29 @@ setup_gcp_simulator() ->
 %%====================================================================
 
 create_compute_instance(Name, MachineType, Zone) ->
-    Instance = #{
-        name => Name,
-        machine_type => MachineType,
-        zone => Zone,
-        status => <<"RUNNING">>,
-        internal_ip => generate_ip(),
-        external_ip => generate_ip(),
-        created => get_timestamp()
-    },
-    ets:insert(gcp_compute_instances, {Name, Instance}),
-    format_instance(Instance).
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {error, invalid_input};
+        ok ->
+            case validate_machine_type(MachineType) of
+                {error, invalid_input} -> {error, invalid_input};
+                ok ->
+                    case validate_zone(Zone) of
+                        {error, invalid_input} -> {error, invalid_input};
+                        ok ->
+                            Instance = #{
+                                name => Name,
+                                machine_type => MachineType,
+                                zone => Zone,
+                                status => <<"RUNNING">>,
+                                internal_ip => generate_ip(),
+                                external_ip => generate_ip(),
+                                created => get_timestamp()
+                            },
+                            ets:insert(gcp_compute_instances, {Name, Instance}),
+                            format_instance(Instance)
+                    end
+            end
+    end.
 
 list_compute_instances() ->
     Instances = ets:tab2list(gcp_compute_instances),
@@ -429,8 +599,8 @@ list_compute_instances() ->
 
 get_compute_instance(Name) ->
     case ets:lookup(gcp_compute_instances, Name) of
-        [{_, Instance}] -> format_instance(Instance);
-        [] -> <<"Error: Instance not found\n">>
+        [{_, Instance}] -> {ok, format_instance(Instance)};
+        [] -> {error, not_found}
     end.
 
 start_compute_instance(Name) ->
@@ -438,8 +608,8 @@ start_compute_instance(Name) ->
         [{_, Instance}] ->
             Updated = Instance#{status => <<"RUNNING">>},
             ets:insert(gcp_compute_instances, {Name, Updated}),
-            <<"Instance started successfully\n">>;
-        [] -> <<"Error: Instance not found\n">>
+            {ok, <<"Instance started successfully\n">>};
+        [] -> {error, not_found}
     end.
 
 stop_compute_instance(Name) ->
@@ -447,14 +617,14 @@ stop_compute_instance(Name) ->
         [{_, Instance}] ->
             Updated = Instance#{status => <<"TERMINATED">>},
             ets:insert(gcp_compute_instances, {Name, Updated}),
-            <<"Instance stopped successfully\n">>;
-        [] -> <<"Error: Instance not found\n">>
+            {ok, <<"Instance stopped successfully\n">>};
+        [] -> {error, not_found}
     end.
 
 delete_compute_instance(Name) ->
     case ets:delete(gcp_compute_instances, Name) of
-        true -> <<"Instance deleted successfully\n">>;
-        false -> <<"Error: Instance not found\n">>
+        true -> {ok, <<"Instance deleted successfully\n">>};
+        false -> {error, not_found}
     end.
 
 format_instance(#{name := Name, machine_type := Type, zone := Zone,
@@ -474,14 +644,22 @@ format_instance(#{name := Name, machine_type := Type, zone := Zone,
 %%====================================================================
 
 create_storage_bucket(Name, Location) ->
-    Bucket = #{
-        name => Name,
-        location => Location,
-        created => get_timestamp(),
-        storage_class => <<"STANDARD">>
-    },
-    ets:insert(gcp_storage_buckets, {Name, Bucket}),
-    iolist_to_binary(io_lib:format("Bucket '~s' created in ~s~n", [Name, Location])).
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {error, invalid_input};
+        ok ->
+            case validate_location(Location) of
+                {error, invalid_input} -> {error, invalid_input};
+                ok ->
+                    Bucket = #{
+                        name => Name,
+                        location => Location,
+                        created => get_timestamp(),
+                        storage_class => <<"STANDARD">>
+                    },
+                    ets:insert(gcp_storage_buckets, {Name, Bucket}),
+                    iolist_to_binary(io_lib:format("Bucket '~s' created in ~s~n", [Name, Location]))
+            end
+    end.
 
 list_storage_buckets() ->
     Buckets = ets:tab2list(gcp_storage_buckets),
@@ -495,7 +673,7 @@ list_storage_buckets() ->
 
 upload_storage_object(Bucket, ObjectName, Content) ->
     case ets:lookup(gcp_storage_buckets, Bucket) of
-        [] -> <<"Error: Bucket not found\n">>;
+        [] -> {error, not_found};
         _ ->
             Object = #{
                 bucket => Bucket,
@@ -505,8 +683,8 @@ upload_storage_object(Bucket, ObjectName, Content) ->
                 uploaded => get_timestamp()
             },
             ets:insert(gcp_storage_objects, {{Bucket, ObjectName}, Object}),
-            iolist_to_binary(io_lib:format("Object '~s' uploaded to bucket '~s' (~p bytes)~n",
-                                          [ObjectName, Bucket, byte_size(Content)]))
+            {ok, iolist_to_binary(io_lib:format("Object '~s' uploaded to bucket '~s' (~p bytes)~n",
+                                          [ObjectName, Bucket, byte_size(Content)]))}
     end.
 
 list_storage_objects(Bucket) ->
@@ -522,14 +700,14 @@ list_storage_objects(Bucket) ->
 download_storage_object(Bucket, ObjectName) ->
     case ets:lookup(gcp_storage_objects, {Bucket, ObjectName}) of
         [{_, #{content := Content}}] ->
-            iolist_to_binary(io_lib:format("Object content:~n~s~n", [Content]));
-        [] -> <<"Error: Object not found\n">>
+            {ok, iolist_to_binary(io_lib:format("Object content:~n~s~n", [Content]))};
+        [] -> {error, not_found}
     end.
 
 delete_storage_object(Bucket, ObjectName) ->
     case ets:delete(gcp_storage_objects, {Bucket, ObjectName}) of
-        true -> <<"Object deleted successfully\n">>;
-        false -> <<"Error: Object not found\n">>
+        true -> {ok, <<"Object deleted successfully\n">>};
+        false -> {error, not_found}
     end.
 
 format_bucket(#{name := Name, location := Location, storage_class := Class}) ->
@@ -543,22 +721,34 @@ format_object(#{name := Name, size := Size, uploaded := Time}) ->
 %%====================================================================
 
 deploy_cloud_function(Name, Runtime, EntryPoint) ->
-    Function = #{
-        name => Name,
-        runtime => Runtime,
-        entry_point => EntryPoint,
-        status => <<"ACTIVE">>,
-        deployed => get_timestamp(),
-        url => iolist_to_binary(io_lib:format("https://~s-abcd123.cloudfunctions.net", [Name]))
-    },
-    ets:insert(gcp_cloud_functions, {Name, Function}),
-    iolist_to_binary(io_lib:format(
-        "Function '~s' deployed successfully~n"
-        "Runtime: ~s~n"
-        "Entry Point: ~s~n"
-        "URL: ~s~n",
-        [Name, Runtime, EntryPoint, maps:get(url, Function)]
-    )).
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {error, invalid_input};
+        ok ->
+            case validate_runtime(Runtime) of
+                {error, invalid_input} -> {error, invalid_input};
+                ok ->
+                    case validate_entry_point(EntryPoint) of
+                        {error, invalid_input} -> {error, invalid_input};
+                        ok ->
+                            Function = #{
+                                name => Name,
+                                runtime => Runtime,
+                                entry_point => EntryPoint,
+                                status => <<"ACTIVE">>,
+                                deployed => get_timestamp(),
+                                url => iolist_to_binary(io_lib:format("https://~s-abcd123.cloudfunctions.net", [Name]))
+                            },
+                            ets:insert(gcp_cloud_functions, {Name, Function}),
+                            iolist_to_binary(io_lib:format(
+                                "Function '~s' deployed successfully~n"
+                                "Runtime: ~s~n"
+                                "Entry Point: ~s~n"
+                                "URL: ~s~n",
+                                [Name, Runtime, EntryPoint, maps:get(url, Function)]
+                            ))
+                    end
+            end
+    end.
 
 list_cloud_functions() ->
     Functions = ets:tab2list(gcp_cloud_functions),
@@ -573,20 +763,20 @@ list_cloud_functions() ->
 invoke_cloud_function(Name, Data) ->
     case ets:lookup(gcp_cloud_functions, Name) of
         [{_, #{status := <<"ACTIVE">>}}] ->
-            iolist_to_binary(io_lib:format(
+            {ok, iolist_to_binary(io_lib:format(
                 "Function '~s' invoked successfully~n"
                 "Input: ~s~n"
                 "Output: {\"result\": \"processed\", \"status\": \"success\"}~n",
                 [Name, Data]
-            ));
-        [{_, _}] -> <<"Error: Function is not active\n">>;
-        [] -> <<"Error: Function not found\n">>
+            ))};
+        [{_, _}] -> {error, invalid_state};
+        [] -> {error, not_found}
     end.
 
 delete_cloud_function(Name) ->
     case ets:delete(gcp_cloud_functions, Name) of
-        true -> <<"Function deleted successfully\n">>;
-        false -> <<"Error: Function not found\n">>
+        true -> {ok, <<"Function deleted successfully\n">>};
+        false -> {error, not_found}
     end.
 
 format_function(#{name := Name, runtime := Runtime, status := Status, url := Url}) ->
@@ -597,23 +787,35 @@ format_function(#{name := Name, runtime := Runtime, status := Status, url := Url
 %%====================================================================
 
 create_sql_instance(Name, DbVersion, Tier) ->
-    Instance = #{
-        name => Name,
-        database_version => DbVersion,
-        tier => Tier,
-        state => <<"RUNNABLE">>,
-        connection_name => iolist_to_binary(io_lib:format("project:region:~s", [Name])),
-        ip_address => generate_ip(),
-        created => get_timestamp()
-    },
-    ets:insert(gcp_cloud_sql, {Name, Instance}),
-    iolist_to_binary(io_lib:format(
-        "Cloud SQL instance '~s' created~n"
-        "Database Version: ~s~n"
-        "Tier: ~s~n"
-        "IP Address: ~s~n",
-        [Name, DbVersion, Tier, maps:get(ip_address, Instance)]
-    )).
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {error, invalid_input};
+        ok ->
+            case validate_database_version(DbVersion) of
+                {error, invalid_input} -> {error, invalid_input};
+                ok ->
+                    case validate_tier(Tier) of
+                        {error, invalid_input} -> {error, invalid_input};
+                        ok ->
+                            Instance = #{
+                                name => Name,
+                                database_version => DbVersion,
+                                tier => Tier,
+                                state => <<"RUNNABLE">>,
+                                connection_name => iolist_to_binary(io_lib:format("project:region:~s", [Name])),
+                                ip_address => generate_ip(),
+                                created => get_timestamp()
+                            },
+                            ets:insert(gcp_cloud_sql, {Name, Instance}),
+                            iolist_to_binary(io_lib:format(
+                                "Cloud SQL instance '~s' created~n"
+                                "Database Version: ~s~n"
+                                "Tier: ~s~n"
+                                "IP Address: ~s~n",
+                                [Name, DbVersion, Tier, maps:get(ip_address, Instance)]
+                            ))
+                    end
+            end
+    end.
 
 list_sql_instances() ->
     Instances = ets:tab2list(gcp_cloud_sql),
@@ -627,8 +829,8 @@ list_sql_instances() ->
 
 delete_sql_instance(Name) ->
     case ets:delete(gcp_cloud_sql, Name) of
-        true -> <<"SQL instance deleted successfully\n">>;
-        false -> <<"Error: SQL instance not found\n">>
+        true -> {ok, <<"SQL instance deleted successfully\n">>};
+        false -> {error, not_found}
     end.
 
 format_sql_instance(#{name := Name, database_version := Version, state := State, ip_address := IP}) ->
@@ -639,12 +841,16 @@ format_sql_instance(#{name := Name, database_version := Version, state := State,
 %%====================================================================
 
 create_pubsub_topic(Name) ->
-    Topic = #{
-        name => Name,
-        created => get_timestamp()
-    },
-    ets:insert(gcp_pubsub_topics, {Name, Topic}),
-    iolist_to_binary(io_lib:format("Topic '~s' created~n", [Name])).
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {error, invalid_input};
+        ok ->
+            Topic = #{
+                name => Name,
+                created => get_timestamp()
+            },
+            ets:insert(gcp_pubsub_topics, {Name, Topic}),
+            iolist_to_binary(io_lib:format("Topic '~s' created~n", [Name]))
+    end.
 
 list_pubsub_topics() ->
     Topics = ets:tab2list(gcp_pubsub_topics),
@@ -658,20 +864,20 @@ list_pubsub_topics() ->
 
 publish_pubsub_message(Topic, Message) ->
     case ets:lookup(gcp_pubsub_topics, Topic) of
-        [] -> <<"Error: Topic not found\n">>;
+        [] -> {error, not_found};
         _ ->
             MessageId = generate_message_id(),
-            iolist_to_binary(io_lib:format(
+            {ok, iolist_to_binary(io_lib:format(
                 "Message published to topic '~s'~n"
                 "Message ID: ~s~n"
                 "Message: ~s~n",
                 [Topic, MessageId, Message]
-            ))
+            ))}
     end.
 
 create_pubsub_subscription(Name, Topic) ->
     case ets:lookup(gcp_pubsub_topics, Topic) of
-        [] -> <<"Error: Topic not found\n">>;
+        [] -> {error, not_found};
         _ ->
             Subscription = #{
                 name => Name,
@@ -679,7 +885,7 @@ create_pubsub_subscription(Name, Topic) ->
                 created => get_timestamp()
             },
             ets:insert(gcp_pubsub_subscriptions, {Name, Subscription}),
-            iolist_to_binary(io_lib:format("Subscription '~s' created for topic '~s'~n", [Name, Topic]))
+            {ok, iolist_to_binary(io_lib:format("Subscription '~s' created for topic '~s'~n", [Name, Topic]))}
     end.
 
 %%====================================================================
@@ -687,20 +893,28 @@ create_pubsub_subscription(Name, Topic) ->
 %%====================================================================
 
 create_service_account(Name, DisplayName) ->
-    ServiceAccount = #{
-        name => Name,
-        display_name => DisplayName,
-        email => iolist_to_binary(io_lib:format("~s@project.iam.gserviceaccount.com", [Name])),
-        created => get_timestamp()
-    },
-    ets:insert(gcp_iam_service_accounts, {Name, ServiceAccount}),
-    iolist_to_binary(io_lib:format(
-        "Service account created~n"
-        "Name: ~s~n"
-        "Display Name: ~s~n"
-        "Email: ~s~n",
-        [Name, DisplayName, maps:get(email, ServiceAccount)]
-    )).
+    case validate_email_safe_name(Name) of
+        {error, invalid_input} -> {error, invalid_input};
+        ok ->
+            case validate_no_control_chars(DisplayName) of
+                {error, invalid_input} -> {error, invalid_input};
+                ok ->
+                    ServiceAccount = #{
+                        name => Name,
+                        display_name => DisplayName,
+                        email => iolist_to_binary(io_lib:format("~s@project.iam.gserviceaccount.com", [Name])),
+                        created => get_timestamp()
+                    },
+                    ets:insert(gcp_iam_service_accounts, {Name, ServiceAccount}),
+                    iolist_to_binary(io_lib:format(
+                        "Service account created~n"
+                        "Name: ~s~n"
+                        "Display Name: ~s~n"
+                        "Email: ~s~n",
+                        [Name, DisplayName, maps:get(email, ServiceAccount)]
+                    ))
+            end
+    end.
 
 list_service_accounts() ->
     Accounts = ets:tab2list(gcp_iam_service_accounts),
@@ -790,6 +1004,104 @@ get_timestamp() ->
     {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:universal_time(),
     iolist_to_binary(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0wZ",
         [Year, Month, Day, Hour, Minute, Second])).
+
+%%====================================================================
+%% VALIDATION FUNCTIONS
+%%====================================================================
+
+%% Validate resource name (not empty, reasonable length, no control chars)
+validate_resource_name(Name) when is_binary(Name) ->
+    Size = byte_size(Name),
+    if
+        Size =:= 0 -> {error, invalid_input};
+        Size > 100 -> {error, invalid_input};
+        true -> validate_no_control_chars(Name)
+    end;
+validate_resource_name(_) -> {error, invalid_input}.
+
+%% Validate machine type format (e.g., e2-micro, n1-standard-1, n2-highmem-16)
+validate_machine_type(Type) when is_binary(Type) ->
+    case re:run(Type, <<"^[a-z]\\d+-[a-z]+-?\\d*$">>, [{capture, none}]) of
+        match -> ok;
+        nomatch -> {error, invalid_input}
+    end;
+validate_machine_type(_) -> {error, invalid_input}.
+
+%% Validate zone format (e.g., us-central1-a, europe-west1-b)
+validate_zone(Zone) when is_binary(Zone) ->
+    case re:run(Zone, <<"^[a-z]+-[a-z]+\\d+-[a-z]$">>, [{capture, none}]) of
+        match -> ok;
+        nomatch -> {error, invalid_input}
+    end;
+validate_zone(_) -> {error, invalid_input}.
+
+%% Validate location format (e.g., US, EU, ASIA, us-central1)
+validate_location(Location) when is_binary(Location) ->
+    case re:run(Location, <<"^[A-Z]{2}$|^[a-z]+-[a-z]+\\d+$">>, [{capture, none}]) of
+        match -> ok;
+        nomatch -> {error, invalid_input}
+    end;
+validate_location(_) -> {error, invalid_input}.
+
+%% Validate runtime format (e.g., python39, nodejs18, go116)
+validate_runtime(Runtime) when is_binary(Runtime) ->
+    case re:run(Runtime, <<"^[a-z]+\\d+$">>, [{capture, none}]) of
+        match -> ok;
+        nomatch -> {error, invalid_input}
+    end;
+validate_runtime(_) -> {error, invalid_input}.
+
+%% Validate entry point (function name, alphanumeric with underscores)
+validate_entry_point(EntryPoint) when is_binary(EntryPoint) ->
+    Size = byte_size(EntryPoint),
+    if
+        Size =:= 0 -> {error, invalid_input};
+        Size > 100 -> {error, invalid_input};
+        true ->
+            case re:run(EntryPoint, <<"^[a-zA-Z_][a-zA-Z0-9_]*$">>, [{capture, none}]) of
+                match -> ok;
+                nomatch -> {error, invalid_input}
+            end
+    end;
+validate_entry_point(_) -> {error, invalid_input}.
+
+%% Validate database version (e.g., POSTGRES_14, MYSQL_8_0)
+validate_database_version(DbVersion) when is_binary(DbVersion) ->
+    case re:run(DbVersion, <<"^[A-Z]+_\\d+(_\\d+)?$">>, [{capture, none}]) of
+        match -> ok;
+        nomatch -> {error, invalid_input}
+    end;
+validate_database_version(_) -> {error, invalid_input}.
+
+%% Validate tier format (e.g., db-f1-micro, db-n1-standard-1)
+validate_tier(Tier) when is_binary(Tier) ->
+    case re:run(Tier, <<"^db-[a-z]\\d+-[a-z]+-?\\d*$">>, [{capture, none}]) of
+        match -> ok;
+        nomatch -> {error, invalid_input}
+    end;
+validate_tier(_) -> {error, invalid_input}.
+
+%% Validate email-safe name for service accounts (DNS-safe, no special chars)
+validate_email_safe_name(Name) when is_binary(Name) ->
+    Size = byte_size(Name),
+    if
+        Size =:= 0 -> {error, invalid_input};
+        Size > 64 -> {error, invalid_input};
+        true ->
+            case re:run(Name, <<"^[a-z0-9-]+$">>, [{capture, none}]) of
+                match -> ok;
+                nomatch -> {error, invalid_input}
+            end
+    end;
+validate_email_safe_name(_) -> {error, invalid_input}.
+
+%% Validate no control characters that could break JSON/protocols
+validate_no_control_chars(Binary) when is_binary(Binary) ->
+    case re:run(Binary, <<"[\x00-\x1F\x7F]">>, [{capture, none}]) of
+        match -> {error, invalid_input};
+        nomatch -> ok
+    end;
+validate_no_control_chars(_) -> {error, invalid_input}.
 
 wait_for_shutdown() ->
     case whereis(erlmcp_stdio_server) of

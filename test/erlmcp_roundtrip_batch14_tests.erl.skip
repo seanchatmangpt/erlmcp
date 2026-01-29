@@ -1,0 +1,617 @@
+-module(erlmcp_roundtrip_batch14_tests).
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("erlmcp_core/include/erlmcp.hrl").
+
+%%%===================================================================
+%%% MCP Roundtrip Batch 14: Resource Monitoring Tests (Servers 66-70)
+%%%===================================================================
+%%% Tests MCP server/client resource monitoring and change notifications:
+%%% - 5 servers on ports 9066-9070 with monitored resources
+%%% - 5 clients per server (25 total clients)
+%%% - Each client performs 100 update cycles (2500 total updates)
+%%% - Each cycle: list resources → subscribe → trigger update → receive notification
+%%% - Measures notification latency and verifies resource change propagation
+%%%
+%%% Chicago School TDD: Real servers, real clients, real subscriptions
+%%% State-based verification: Observable resource changes and notifications
+%%%===================================================================
+
+-define(SERVER_IDS, lists:seq(66, 70)).
+-define(PORTS, lists:seq(9066, 9070)).
+-define(CLIENTS_PER_SERVER, 5).
+-define(UPDATE_CYCLES_PER_CLIENT, 100).
+-define(TIMEOUT, 15000).
+-define(NOTIFICATION_TIMEOUT, 2000).
+
+%%%-------------------------------------------------------------------
+%%% Test Fixture: Setup/Teardown
+%%%-------------------------------------------------------------------
+
+batch14_test_() ->
+    {setup,
+     fun setup_batch14/0,
+     fun teardown_batch14/1,
+     fun run_batch14_tests/1}.
+
+setup_batch14() ->
+    logger:set_application_level(erlmcp, all),
+    Pids = start_servers(?SERVER_IDS, ?PORTS, []),
+    timer:sleep(500), % Let servers fully initialize
+    Pids.
+
+teardown_batch14(ServerPids) ->
+    stop_servers(ServerPids),
+    timer:sleep(200).
+
+run_batch14_tests(ServerPids) ->
+    [
+     ?_test(test_resource_monitoring_basic(ServerPids)),
+     ?_test(test_subscription_notification_flow(ServerPids)),
+     ?_test(test_concurrent_resource_updates(ServerPids)),
+     ?_test(test_notification_latency(ServerPids)),
+     ?_test(test_multiple_subscriptions(ServerPids))
+    ].
+
+%%%-------------------------------------------------------------------
+%%% Server Setup (Chicago School: Real gen_servers)
+%%%-------------------------------------------------------------------
+
+start_servers([], [], Acc) ->
+    lists:reverse(Acc);
+start_servers([Id | Ids], [Port | Ports], Acc) ->
+    ServerName = list_to_atom("mcp_server_" ++ integer_to_list(Id)),
+
+    % Configure server with monitored resources
+    % Resources will have counters and gauges that can be updated
+    Config = #{
+        name => ServerName,
+        transport => {erlmcp_transport_tcp, [{port, Port}]},
+        capabilities => #mcp_server_capabilities{
+            resources = #{
+                <<"subscribe">> => true,
+                <<"listChanged">> => true
+            }
+        },
+        resources => #{
+            <<"counter://", (integer_to_binary(Id))/binary, "/request_count">> => #{
+                handler => fun(_Uri) -> {ok, <<"0">>} end,
+                description => <<"Request counter">>
+            },
+            <<"counter://", (integer_to_binary(Id))/binary, "/error_count">> => #{
+                handler => fun(_Uri) -> {ok, <<"0">>} end,
+                description => <<"Error counter">>
+            },
+            <<"gauge://", (integer_to_binary(Id))/binary, "/active_connections">> => #{
+                handler => fun(_Uri) -> {ok, <<"0">>} end,
+                description => <<"Active connections gauge">>
+            },
+            <<"gauge://", (integer_to_binary(Id))/binary, "/memory_usage">> => #{
+                handler => fun(_Uri) -> {ok, <<"0">>} end,
+                description => <<"Memory usage gauge">>
+            }
+        },
+        tools => #{
+            <<"increment_counter">> => #{
+                description => <<"Increment a counter resource">>,
+                input_schema => #{
+                    type => object,
+                    properties => #{
+                        <<"counter_name">> => #{type => string},
+                        <<"amount">> => #{type => number, default => 1}
+                    },
+                    required => [<<"counter_name">>]
+                }
+            },
+            <<"update_gauge">> => #{
+                description => <<"Update a gauge resource">>,
+                input_schema => #{
+                    type => object,
+                    properties => #{
+                        <<"gauge_name">> => #{type => string},
+                        <<"value">> => #{type => number}
+                    },
+                    required => [<<"gauge_name">>, <<"value">>]
+                }
+            },
+            <<"get_resource_value">> => #{
+                description => <<"Get current resource value">>,
+                input_schema => #{
+                    type => object,
+                    properties => #{
+                        <<"resource_uri">> => #{type => string}
+                    },
+                    required => [<<"resource_uri">>]
+                }
+            }
+        }
+    },
+
+    case erlmcp_server:start_link(Id, Config) of
+        {ok, Pid} ->
+            % Add resources to server
+            add_monitored_resources(Pid, Id),
+            start_servers(Ids, Ports, [{Id, Pid, Port, ServerName} | Acc]);
+        {error, Reason} ->
+            logger:error("Failed to start server ~p on port ~p: ~p", [Id, Port, Reason]),
+            start_servers(Ids, Ports, Acc)
+    end.
+
+add_monitored_resources(ServerPid, ServerId) ->
+    % Add counter resources
+    lists:foreach(fun(CounterName) ->
+        Uri = <<"counter://", (integer_to_binary(ServerId))/binary, "/", CounterName/binary>>,
+        Handler = fun(_U) ->
+            % Get counter value from server state (simulated)
+            {ok, <<"0">>}
+        end,
+        erlmcp_server:add_resource(ServerPid, Uri, Handler)
+    end, [<<"request_count">>, <<"error_count">>]),
+
+    % Add gauge resources
+    lists:foreach(fun(GaugeName) ->
+        Uri = <<"gauge://", (integer_to_binary(ServerId))/binary, "/", GaugeName/binary>>,
+        Handler = fun(_U) ->
+            % Get gauge value from server state (simulated)
+            {ok, <<"0">>}
+        end,
+        erlmcp_server:add_resource(ServerPid, Uri, Handler)
+    end, [<<"active_connections">>, <<"memory_usage">>]),
+
+    ok.
+
+stop_servers(ServerPids) ->
+    lists:foreach(fun({Id, Pid, _Port, ServerName}) ->
+        case erlmcp_server:stop(Pid) of
+            ok -> ok;
+            {error, Reason} ->
+                logger:error("Failed to stop server ~p: ~p", [Id, Reason])
+        end
+    end, ServerPids).
+
+%%%-------------------------------------------------------------------
+%%% Test 1: Resource Monitoring Basic (list → read → update → verify)
+%%%-------------------------------------------------------------------
+
+test_resource_monitoring_basic(ServerPids) ->
+    logger:info("=== Testing Resource Monitoring Basic ===~n"),
+
+    % For each server, test basic resource monitoring
+    Results = lists:map(fun({ServerId, _Pid, Port, ServerName}) ->
+        test_resource_monitoring_on_server(ServerId, Port, ServerName)
+    end, ServerPids),
+
+    {TotalTests, TotalSuccess, Errors} = aggregate_basic_results(Results),
+
+    logger:info("Resource Monitoring Basic: ~p/~p tests successful~n",
+                [TotalSuccess, TotalTests]),
+
+    % Verify: All tests succeeded
+    ?assertEqual(TotalTests, TotalSuccess),
+
+    % Verify: Success rate >= 99%
+    SuccessRate = (TotalSuccess / TotalTests) * 100,
+    ?assert(SuccessRate >= 99.0),
+
+    case Errors of
+        [] -> ok;
+        _ -> logger:warning("Resource monitoring errors: ~p~n", [Errors])
+    end.
+
+test_resource_monitoring_on_server(ServerId, Port, ServerName) ->
+    % Create a single client to test resource monitoring
+    {ok, Client} = erlmcp_client:start_link(
+        {erlmcp_transport_tcp, [{port, Port}]}
+    ),
+
+    % Initialize client
+    Capabilities = #mcp_client_capabilities{
+        roots = #mcp_capability{enabled = false},
+        sampling = #mcp_capability{enabled = false}
+    },
+    {ok, _InitResult} = erlmcp_client:initialize(Client, Capabilities),
+
+    % Test 1: List resources
+    {ok, ResourceList} = erlmcp_client:list_resources(Client),
+    ?assert(is_list(ResourceList)),
+    ?assert(length(ResourceList) >= 4), % At least 4 resources (2 counters + 2 gauges)
+
+    % Test 2: Read a specific resource
+    RequestCounterUri = <<"counter://", (integer_to_binary(ServerId))/binary, "/request_count">>,
+    {ok, ResourceContent} = erlmcp_client:read_resource(Client, RequestCounterUri),
+    ?assert(maps:is_key(<<"contents">>, ResourceContent)),
+
+    % Test 3: Update resource via tool
+    {ok, ToolResult} = erlmcp_client:call_tool(Client, <<"increment_counter">>, #{
+        <<"counter_name">> => <<"request_count">>,
+        <<"amount">> => 5
+    }),
+    ?assert(maps:is_key(<<"content">>, ToolResult)),
+
+    % Test 4: Verify resource changed
+    {ok, UpdatedContent} = erlmcp_client:read_resource(Client, RequestCounterUri),
+    ?assert(maps:is_key(<<"contents">>, UpdatedContent)),
+
+    % Cleanup
+    erlmcp_client:stop(Client),
+
+    {ok, 4, 4, []}. % 4 tests, 4 successful, no errors
+
+aggregate_basic_results(Results) ->
+    TotalTests = lists:sum([Tests || {ok, Tests, _Success, _Errors} <- Results]),
+    TotalSuccess = lists:sum([Success || {ok, _Tests, Success, _Errors} <- Results]),
+    AllErrors = lists:flatmap(fun({ok, _Tests, _Success, Errors}) -> Errors end, Results),
+    {TotalTests, TotalSuccess, AllErrors}.
+
+%%%-------------------------------------------------------------------
+%%% Test 2: Subscription and Notification Flow
+%%%-------------------------------------------------------------------
+
+test_subscription_notification_flow(ServerPids) ->
+    logger:info("=== Testing Subscription Notification Flow ===~n"),
+
+    % For each server, test subscription flow
+    Results = lists:map(fun({ServerId, _Pid, Port, ServerName}) ->
+        test_subscription_flow_on_server(ServerId, Port, ServerName)
+    end, ServerPids),
+
+    {TotalSubscriptions, TotalNotifications, Errors} = aggregate_subscription_results(Results),
+
+    logger:info("Subscription Flow: ~p subscriptions, ~p notifications received~n",
+                [TotalSubscriptions, TotalNotifications]),
+
+    % Verify: All notifications received
+    ?assertEqual(TotalSubscriptions, TotalNotifications),
+
+    % Verify: Notification rate >= 95% (allow some edge cases)
+    NotificationRate = (TotalNotifications / TotalSubscriptions) * 100,
+    ?assert(NotificationRate >= 95.0),
+
+    case Errors of
+        [] -> ok;
+        _ -> logger:warning("Subscription errors: ~p~n", [Errors])
+    end.
+
+test_subscription_flow_on_server(ServerId, Port, ServerName) ->
+    {ok, Client} = erlmcp_client:start_link(
+        {erlmcp_transport_tcp, [{port, Port}]}
+    ),
+
+    % Initialize
+    Capabilities = #mcp_client_capabilities{},
+    {ok, _InitResult} = erlmcp_client:initialize(Client, Capabilities),
+
+    % Subscribe to resource updates
+    ResourceUri = <<"counter://", (integer_to_binary(ServerId))/binary, "/request_count">>,
+
+    % Set up notification handler
+    Parent = self(),
+    NotificationHandler = fun(Method, Params) ->
+        Parent ! {notification, Method, Params}
+    end,
+    ok = erlmcp_client:set_notification_handler(Client, <<"resources/updated">>, NotificationHandler),
+
+    % Subscribe to the resource
+    ok = erlmcp_client:subscribe_to_resource(Client, ResourceUri),
+
+    % Trigger resource update
+    {ok, _ToolResult} = erlmcp_client:call_tool(Client, <<"increment_counter">>, #{
+        <<"counter_name">> => <<"request_count">>,
+        <<"amount">> => 1
+    }),
+
+    % Wait for notification
+    receive
+        {notification, <<"resources/updated">>, Params} ->
+            ?assert(maps:is_key(<<"uri">>, Params)),
+            ?assertEqual(ResourceUri, maps:get(<<"uri">>, Params)),
+            logger:info("Received notification for ~s~n", [ResourceUri]),
+            {ok, 1, 1, []}
+    after ?NOTIFICATION_TIMEOUT ->
+        logger:error("No notification received for ~s~n", [ResourceUri]),
+        {ok, 1, 0, [{no_notification, ResourceUri}]}
+    end.
+
+aggregate_subscription_results(Results) ->
+    TotalSubscriptions = lists:sum([Subs || {ok, Subs, _Notifs, _Errors} <- Results]),
+    TotalNotifications = lists:sum([Notifs || {ok, _Subs, Notifs, _Errors} <- Results]),
+    AllErrors = lists:flatmap(fun({ok, _Subs, _Notifs, Errors}) -> Errors end, Results),
+    {TotalSubscriptions, TotalNotifications, AllErrors}.
+
+%%%-------------------------------------------------------------------
+%%% Test 3: Concurrent Resource Updates (100 cycles per client)
+%%%-------------------------------------------------------------------
+
+test_concurrent_resource_updates(ServerPids) ->
+    logger:info("=== Testing Concurrent Resource Updates ===~n"),
+
+    % Spawn multiple clients per server for concurrent updates
+    AllResults = lists:map(fun({ServerId, _Pid, Port, ServerName}) ->
+        test_concurrent_updates_on_server(ServerId, Port, ServerName)
+    end, ServerPids),
+
+    {TotalUpdates, TotalSuccess, Errors} = aggregate_concurrent_results(AllResults),
+
+    logger:info("Concurrent Updates: ~p/~p updates successful~n",
+                [TotalSuccess, TotalUpdates]),
+
+    % Verify: At least 98% success rate (allow some concurrency edge cases)
+    SuccessRate = (TotalSuccess / TotalUpdates) * 100,
+    ?assert(SuccessRate >= 98.0),
+
+    case Errors of
+        [] -> ok;
+        _ -> logger:warning("Concurrent update errors: ~p~n", [Errors])
+    end.
+
+test_concurrent_updates_on_server(ServerId, Port, ServerName) ->
+    % Spawn multiple clients
+    Clients = lists:map(fun(N) ->
+        ClientName = list_to_atom("update_client_" ++
+                                   integer_to_list(ServerId) ++
+                                   "_" ++ integer_to_list(N)),
+        spawn_link(fun() ->
+            update_client_loop(ClientName, Port, ServerId, N, ?UPDATE_CYCLES_PER_CLIENT, [])
+        end)
+    end, lists:seq(1, ?CLIENTS_PER_SERVER)),
+
+    % Collect results from all clients
+    lists:map(fun(ClientPid) ->
+        receive
+            {update_result, ClientPid, Result} -> Result
+        after ?TIMEOUT ->
+            {error, timeout}
+        end
+    end, Clients).
+
+update_client_loop(ClientName, Port, ServerId, ClientNum, CyclesRemaining, Acc) ->
+    if
+        CyclesRemaining =:= 0 ->
+            % Report results
+            Parent = self(),
+            Parent ! {update_result, self(), {ok, lists:reverse(Acc)}};
+
+        true ->
+            % Perform one update cycle
+            Result = perform_update_cycle(Port, ServerId, ClientNum, ?UPDATE_CYCLES_PER_CLIENT - CyclesRemaining + 1),
+            update_client_loop(ClientName, Port, ServerId, ClientNum, CyclesRemaining - 1, [Result | Acc])
+    end.
+
+perform_update_cycle(Port, ServerId, ClientNum, CycleNum) ->
+    try
+        % Create client
+        {ok, Client} = erlmcp_client:start_link(
+            {erlmcp_transport_tcp, [{port, Port}]}
+        ),
+
+        % Initialize
+        Capabilities = #mcp_client_capabilities{},
+        {ok, _InitResult} = erlmcp_client:initialize(Client, Capabilities),
+
+        % List resources
+        {ok, _ResourceList} = erlmcp_client:list_resources(Client),
+
+        % Subscribe to resource
+        ResourceUri = <<"counter://", (integer_to_binary(ServerId))/binary, "/request_count">>,
+        ok = erlmcp_client:subscribe_to_resource(Client, ResourceUri),
+
+        % Trigger update
+        {ok, _ToolResult} = erlmcp_client:call_tool(Client, <<"increment_counter">>, #{
+            <<"counter_name">> => <<"request_count">>,
+            <<"amount">> => 1
+        }),
+
+        % Cleanup
+        erlmcp_client:stop(Client),
+
+        {ok, CycleNum}
+    catch
+        Class:Reason:Stacktrace ->
+            logger:error("Update cycle failed: ~p:~p~n", [Class, Reason]),
+            {error, {Class, Reason, CycleNum}}
+    end.
+
+aggregate_concurrent_results(Results) ->
+    TotalUpdates = ?CLIENTS_PER_SERVER * length(?SERVER_IDS) * ?UPDATE_CYCLES_PER_CLIENT,
+    TotalSuccess = length([R || R <- Results, element(1, R) =:= ok]),
+    AllErrors = [Error || R <- Results, element(1, R) =:= error, Error <- [R]],
+    {TotalUpdates, TotalSuccess, AllErrors}.
+
+%%%-------------------------------------------------------------------
+%%% Test 4: Notification Latency Measurement
+%%%-------------------------------------------------------------------
+
+test_notification_latency(ServerPids) ->
+    logger:info("=== Testing Notification Latency ===~n"),
+
+    % Measure notification latency across all servers
+    AllLatencies = lists:map(fun({ServerId, _Pid, Port, ServerName}) ->
+        test_notification_latency_on_server(ServerId, Port, ServerName)
+    end, ServerPids),
+
+    FlatLatencies = lists:flatten(AllLatencies),
+
+    % Calculate statistics
+    AvgLatency = calculate_average(FlatLatencies),
+    MinLatency = lists:min(FlatLatencies),
+    MaxLatency = lists:max(FlatLatencies),
+
+    logger:info("Notification Latency: avg=~p ms, min=~p ms, max=~p ms~n",
+                [AvgLatency, MinLatency, MaxLatency]),
+
+    % Verify: Average latency < 100ms (reasonable threshold)
+    ?assert(AvgLatency < 100.0),
+
+    % Verify: No outliers > 500ms
+    ?assert(MaxLatency < 500.0),
+
+    ok.
+
+test_notification_latency_on_server(ServerId, Port, ServerName) ->
+    % Measure latency for 20 update cycles
+    Latencies = lists:map(fun(_N) ->
+        measure_single_notification_latency(Port, ServerId)
+    end, lists:seq(1, 20)),
+
+    Latencies.
+
+measure_single_notification_latency(Port, ServerId) ->
+    {ok, Client} = erlmcp_client:start_link(
+        {erlmcp_transport_tcp, [{port, Port}]}
+    ),
+
+    % Initialize
+    Capabilities = #mcp_client_capabilities{},
+    {ok, _InitResult} = erlmcp_client:initialize(Client, Capabilities),
+
+    % Subscribe to resource
+    ResourceUri = <<"counter://", (integer_to_binary(ServerId))/binary, "/request_count">>,
+
+    Parent = self(),
+    NotificationHandler = fun(Method, Params) ->
+        Parent ! {notification_received, erlang:monotonic_time(millisecond)}
+    end,
+    ok = erlmcp_client:set_notification_handler(Client, <<"resources/updated">>, NotificationHandler),
+    ok = erlmcp_client:subscribe_to_resource(Client, ResourceUri),
+
+    % Trigger update and measure latency
+    StartTime = erlang:monotonic_time(millisecond),
+    {ok, _ToolResult} = erlmcp_client:call_tool(Client, <<"increment_counter">>, #{
+        <<"counter_name">> => <<"request_count">>,
+        <<"amount">> => 1
+    }),
+
+    % Wait for notification
+    receive
+        {notification_received, EndTime} ->
+            Latency = EndTime - StartTime,
+            erlmcp_client:stop(Client),
+            Latency
+    after ?NOTIFICATION_TIMEOUT ->
+        erlmcp_client:stop(Client),
+        1000 % Timeout value
+    end.
+
+calculate_average(List) ->
+    Sum = lists:sum(List),
+    Length = length(List),
+    Sum / Length.
+
+%%%-------------------------------------------------------------------
+%%% Test 5: Multiple Subscriptions (one client, multiple resources)
+%%%-------------------------------------------------------------------
+
+test_multiple_subscriptions(ServerPids) ->
+    logger:info("=== Testing Multiple Subscriptions ===~n"),
+
+    % Test multiple subscriptions on single client
+    Results = lists:map(fun({ServerId, _Pid, Port, ServerName}) ->
+        test_multiple_subscriptions_on_server(ServerId, Port, ServerName)
+    end, ServerPids),
+
+    {TotalSubscriptions, TotalNotifications, Errors} = aggregate_multi_sub_results(Results),
+
+    logger:info("Multiple Subscriptions: ~p subscriptions, ~p notifications~n",
+                [TotalSubscriptions, TotalNotifications]),
+
+    % Verify: All notifications received for all subscriptions
+    ?assertEqual(TotalSubscriptions, TotalNotifications),
+
+    % Verify: Success rate >= 95%
+    SuccessRate = (TotalNotifications / TotalSubscriptions) * 100,
+    ?assert(SuccessRate >= 95.0),
+
+    case Errors of
+        [] -> ok;
+        _ -> logger:warning("Multi-subscription errors: ~p~n", [Errors])
+    end.
+
+test_multiple_subscriptions_on_server(ServerId, Port, ServerName) ->
+    {ok, Client} = erlmcp_client:start_link(
+        {erlmcp_transport_tcp, [{port, Port}]}
+    ),
+
+    % Initialize
+    Capabilities = #mcp_client_capabilities{},
+    {ok, _InitResult} = erlmcp_client:initialize(Client, Capabilities),
+
+    % Subscribe to multiple resources
+    Resources = [
+        <<"counter://", (integer_to_binary(ServerId))/binary, "/request_count">>,
+        <<"counter://", (integer_to_binary(ServerId))/binary, "/error_count">>,
+        <<"gauge://", (integer_to_binary(ServerId))/binary, "/active_connections">>,
+        <<"gauge://", (integer_to_binary(ServerId))/binary, "/memory_usage">>
+    ],
+
+    % Set up notification handler
+    Parent = self(),
+    NotificationHandler = fun(Method, Params) ->
+        Parent ! {notification, maps:get(<<"uri">>, Params)}
+    end,
+    ok = erlmcp_client:set_notification_handler(Client, <<"resources/updated">>, NotificationHandler),
+
+    % Subscribe to all resources
+    lists:foreach(fun(ResourceUri) ->
+        ok = erlmcp_client:subscribe_to_resource(Client, ResourceUri)
+    end, Resources),
+
+    % Trigger updates for each resource
+    Notifications = lists:map(fun(ResourceUri) ->
+        % Trigger update
+        case ResourceUri of
+            <<"counter://", _/binary>> ->
+                {ok, _} = erlmcp_client:call_tool(Client, <<"increment_counter">>, #{
+                    <<"counter_name">> => extract_resource_name(ResourceUri),
+                    <<"amount">> => 1
+                });
+            <<"gauge://", _/binary>> ->
+                {ok, _} = erlmcp_client:call_tool(Client, <<"update_gauge">>, #{
+                    <<"gauge_name">> => extract_resource_name(ResourceUri),
+                    <<"value">> => 42
+                })
+        end,
+
+        % Wait for notification
+        receive
+            {notification, NotifiedUri} ->
+                ?assertEqual(ResourceUri, NotifiedUri),
+                {ok, ResourceUri}
+        after ?NOTIFICATION_TIMEOUT ->
+            {error, {no_notification, ResourceUri}}
+        end
+    end, Resources),
+
+    % Cleanup
+    erlmcp_client:stop(Client),
+
+    % Count successes
+    SuccessCount = length([N || N <- Notifications, element(1, N) =:= ok]),
+    ErrorList = [Error || N <- Notifications, element(1, N) =:= error, Error <- [N]],
+
+    {length(Resources), SuccessCount, ErrorList}.
+
+extract_resource_name(<<"counter://", Rest/binary>>) ->
+    Parts = binary:split(Rest, <<"/">>),
+    lists:nth(2, Parts);
+extract_resource_name(<<"gauge://", Rest/binary>>) ->
+    Parts = binary:split(Rest, <<"/">>),
+    lists:nth(2, Parts).
+
+aggregate_multi_sub_results(Results) ->
+    TotalSubscriptions = lists:sum([Subs || {Subs, _Notifs, _Errors} <- Results]),
+    TotalNotifications = lists:sum([Notifs || {_Subs, Notifs, _Errors} <- Results]),
+    AllErrors = lists:flatmap(fun({_Subs, _Notifs, Errors}) -> Errors end, Results),
+    {TotalSubscriptions, TotalNotifications, AllErrors}.
+
+%%%-------------------------------------------------------------------
+%%% Helper Functions
+%%%-------------------------------------------------------------------
+
+%% Print batch results summary
+print_batch14_summary(ServerPids) ->
+    io:format("~n=== Batch 14 Results (Servers 66-70) ===~n"),
+    io:format("Servers Spawned: ~p/~p~n", [length(ServerPids), length(?SERVER_IDS)]),
+    io:format("Clients Spawned: ~p~n", [length(?SERVER_IDS) * ?CLIENTS_PER_SERVER]),
+    io:format("Update Cycles: ~p~n", [?UPDATE_CYCLES_PER_CLIENT]),
+    io:format("Total Updates: ~p~n", [length(?SERVER_IDS) * ?CLIENTS_PER_SERVER * ?UPDATE_CYCLES_PER_CLIENT]),
+    io:format("Ports: ~p~n", [?PORTS]),
+    io:format("=======================================~n~n").

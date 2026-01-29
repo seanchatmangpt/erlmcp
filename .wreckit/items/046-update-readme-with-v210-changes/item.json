@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "046-update-readme-with-v210-changes",
+  "title": "Update README with v2.1.0 Changes",
+  "section": "docs",
+  "state": "idea",
+  "overview": "README still references v1.x features. Needs update for v2.1.0 architecture and current production readiness status.\n\n**Motivation:** Documentation must reflect current architecture and production readiness status to set proper user expectations.\n\n**Success criteria:**\n- README.md updated\n- v2.1.0 features documented\n- Production readiness warnings added\n- Performance benchmarks updated\n- Test coverage status documented\n\n**Technical constraints:**\n- Update Architecture Section for 4-app umbrella structure\n- Update Quick Start Section for rebar3 (vs rebar)\n- Add production readiness warning\n- Update Performance Section with v2.1.0 benchmarks (2.52M msg/sec)\n- Document test coverage status\n\n**Signals:** priority: low, urgency: P3 - NICE TO HAVE",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.831Z",
+  "updated_at": "2026-01-29T06:37:27.055Z",
+  "problem_statement": "README still references v1.x features. Needs update for v2.1.0 architecture and current production readiness status.",
+  "motivation": "Documentation must reflect current architecture and production readiness status to set proper user expectations.",
+  "success_criteria": [
+    "README.md updated",
+    "v2.1.0 features documented",
+    "Production readiness warnings added",
+    "Performance benchmarks updated",
+    "Test coverage status documented"
+  ],
+  "technical_constraints": [
+    "Update Architecture Section for 4-app umbrella structure",
+    "Update Quick Start Section for rebar3 (vs rebar)",
+    "Add production readiness warning",
+    "Update Performance Section with v2.1.0 benchmarks (2.52M msg/sec)",
+    "Document test coverage status"
+  ],
+  "priority_hint": "low",
+  "urgency_hint": "P3 - NICE TO HAVE"
+}

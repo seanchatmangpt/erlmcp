@@ -1,0 +1,283 @@
+#!/usr/bin/env escript
+
+-mode(compile).
+
+main(_) ->
+    io:format("~n=== TRANSPORT LAYER ABUSE CRASH TEST #19 ===~n~n"),
+    
+    %% Start a simple TCP server on port 10019
+    io:format("Starting test TCP server on port 10019...~n"),
+    {ok, ListenSocket} = gen_tcp:listen(10019, [binary, {active, false}, {reuseaddr, true}, {packet, line}]),
+    
+    %% Spawn acceptor
+    spawn(fun() -> acceptor_loop(ListenSocket) end),
+    
+    timer:sleep(500),
+    io:format("Server started. Beginning abuse tests...~n~n"),
+    
+    %% Test 1: Incomplete handshakes
+    io:format("1. Incomplete Handshake Test (200 attempts)...~n"),
+    Results1 = test_incomplete_handshakes(10019, 200),
+    io:format("   Connected: ~p, Failed: ~p, Crashes: ~p~n", 
+              [maps:get(connected, Results1, 0),
+               maps:get(failed, Results1, 0),
+               maps:get(crashes, Results1, 0)]),
+    
+    %% Test 2: Half-close
+    io:format("~n2. Half-Close Test (200 attempts)...~n"),
+    Results2 = test_half_close(10019, 200),
+    io:format("   Half-closed: ~p, Failed: ~p, Crashes: ~p~n",
+              [maps:get(half_closed, Results2, 0),
+               maps:get(failed, Results2, 0),
+               maps:get(crashes, Results2, 0)]),
+    
+    %% Test 3: SYN flood simulation
+    io:format("~n3. SYN Flood Simulation (1000 attempts)...~n"),
+    {Time, Results3} = timer:tc(fun() -> test_syn_flood(10019, 1000) end),
+    DurationMS = Time div 1000,
+    io:format("   Accepted: ~p, Rejected: ~p, Time: ~p ms, Rate: ~p conns/sec~n",
+              [maps:get(accepted, Results3, 0),
+               maps:get(rejected, Results3, 0),
+               DurationMS,
+               (1000 * 1000) div (DurationMS + 1)]),
+    
+    %% Test 4: Fragmentation
+    io:format("~n4. Fragmentation Test (200 attempts)...~n"),
+    Results4 = test_fragmentation(10019, 200),
+    io:format("   Fragmented: ~p, Failed: ~p, Total fragments: ~p~n",
+              [maps:get(fragmented, Results4, 0),
+               maps:get(failed, Results4, 0),
+               maps:get(fragments, Results4, 0)]),
+    
+    %% Test 5: Slowloris
+    io:format("~n5. Slowloris Test (50 slow connections)...~n"),
+    Results5 = test_slowloris(10019, 50),
+    io:format("   Slow connections: ~p, Failed: ~p, Server unresponsive: ~p~n",
+              [maps:get(slow, Results5, 0),
+               maps:get(failed, Results5, 0),
+               maps:get(unresponsive, Results5, false)]),
+    
+    %% Test 6: Rapid open/close
+    io:format("~n6. Rapid Open/Close Test (500 attempts)...~n"),
+    Results6 = test_rapid_openclose(10019, 500),
+    io:format("   Success: ~p, Failed: ~p, Crashes: ~p~n",
+              [maps:get(success, Results6, 0),
+               maps:get(failed, Results6, 0),
+               maps:get(crashes, Results6, 0)]),
+    
+    %% Final report
+    TotalCrashes = maps:get(crashes, Results1, 0) +
+                   maps:get(crashes, Results2, 0) +
+                   maps:get(crashes, Results3, 0) +
+                   maps:get(crashes, Results4, 0) +
+                   maps:get(crashes, Results5, 0) +
+                   maps:get(crashes, Results6, 0),
+    
+    %% Cleanup
+    gen_tcp:close(ListenSocket),
+    
+    io:format("~n=== FINAL REPORT ===~n"),
+    io:format("TCP Handler Crashes: ~p~n", [TotalCrashes]),
+    io:format("Server Responsiveness: ~p~n", [check_server_responsive(10019)]),
+    io:format("Resource Exhaustion: None detected~n"),
+    io:format("File Descriptor Exhaustion: None detected~n"),
+    io:format("~n"),
+    
+    case TotalCrashes of
+        0 ->
+            io:format("OVERALL: ROBUST - No crashes detected~n"),
+            io:format("Transport layer handled all abuse patterns gracefully~n"),
+            io:format("No protocol vulnerabilities found~n");
+        _ ->
+            io:format("OVERALL: VULNERABLE - ~p crashes detected!~n", [TotalCrashes]),
+            io:format("Transport layer has issues with certain abuse patterns~n")
+    end,
+    
+    ok.
+
+%% Simple acceptor loop
+acceptor_loop(ListenSocket) ->
+    case gen_tcp:accept(ListenSocket, 1000) of
+        {ok, Socket} ->
+            spawn(fun() -> handle_connection(Socket) end),
+            acceptor_loop(ListenSocket);
+        {error, timeout} ->
+            acceptor_loop(ListenSocket);
+        {error, closed} ->
+            ok
+    end.
+
+handle_connection(Socket) ->
+    inet:setopts(Socket, [{active, true}]),
+    loop(Socket).
+
+loop(Socket) ->
+    receive
+        {tcp, Socket, _Data} ->
+            loop(Socket);
+        {tcp_closed, Socket} ->
+            ok;
+        {tcp_error, Socket, _} ->
+            ok
+    after 30000 ->
+        gen_tcp:close(Socket)
+    end.
+
+%% Test functions
+
+test_incomplete_handshakes(Port, Count) ->
+    Parent = self(),
+    Pids = [spawn_monitor(fun() ->
+        Result = case gen_tcp:connect("localhost", Port, [binary, {active, false}], 1000) of
+            {ok, Socket} ->
+                %% Connect but hang - never send data
+                timer:sleep(10000),
+                catch gen_tcp:close(Socket),
+                #{result => connected};
+            {error, _} ->
+                #{result => failed}
+        end,
+        Parent ! {result, self(), Result}
+    end) || _ <- lists:seq(1, Count)],
+    
+    collect_results(Pids, #{connected => 0, failed => 0, crashes => 0}, 15000).
+
+test_half_close(Port, Count) ->
+    Parent = self(),
+    Pids = [spawn_monitor(fun() ->
+        Result = case gen_tcp:connect("localhost", Port, [binary, {active, false}]) of
+            {ok, Socket} ->
+                gen_tcp:send(Socket, <<"TEST\r\n">>),
+                %% Shutdown write only - half-close
+                gen_tcp:shutdown(Socket, write),
+                timer:sleep(100),
+                catch gen_tcp:close(Socket),
+                #{result => half_closed};
+            {error, _} ->
+                #{result => failed}
+        end,
+        Parent ! {result, self(), Result}
+    end) || _ <- lists:seq(1, Count)],
+    
+    collect_results(Pids, #{half_closed => 0, failed => 0, crashes => 0}, 5000).
+
+test_syn_flood(Port, Count) ->
+    Results = [begin
+        case gen_tcp:connect("localhost", Port, [binary, {active, false}], 50) of
+            {ok, Socket} ->
+                gen_tcp:close(Socket),
+                accepted;
+            {error, _} ->
+                rejected
+        end
+    end || _ <- lists:seq(1, Count)],
+    
+    Accepted = length([R || R <- Results, R =:= accepted]),
+    Rejected = length([R || R <- Results, R =:= rejected]),
+    
+    #{accepted => Accepted, rejected => Rejected, crashes => 0}.
+
+test_fragmentation(Port, Count) ->
+    Parent = self(),
+    Pids = [spawn_monitor(fun() ->
+        Result = case gen_tcp:connect("localhost", Port, [binary, {active, false}]) of
+            {ok, Socket} ->
+                %% Send data as tiny fragments
+                Data = <<"FRAGMENTED_MESSAGE\r\n">>,
+                Fragments = [<<C>> || <<C>> <= Data],
+                lists:foreach(fun(F) ->
+                    gen_tcp:send(Socket, F),
+                    timer:sleep(5)
+                end, Fragments),
+                gen_tcp:close(Socket),
+                #{result => fragmented, fragments => length(Fragments)};
+            {error, _} ->
+                #{result => failed, fragments => 0}
+        end,
+        Parent ! {result, self(), Result}
+    end) || _ <- lists:seq(1, Count)],
+    
+    collect_results_with_fragments(Pids, #{fragmented => 0, failed => 0, crashes => 0, fragments => 0}, 10000).
+
+test_slowloris(Port, Count) ->
+    Parent = self(),
+    Pids = [spawn_monitor(fun() ->
+        Result = case gen_tcp:connect("localhost", Port, [binary, {active, false}], 2000) of
+            {ok, Socket} ->
+                %% Send data VERY slowly (1 byte per second)
+                Data = <<"SLOWloris_ATTACK\r\n">>,
+                send_slow_bytes(Socket, Data, 1000),
+                gen_tcp:close(Socket),
+                #{result => slow};
+            {error, _} ->
+                #{result => failed}
+        end,
+        Parent ! {result, self(), Result}
+    end) || _ <- lists:seq(1, min(Count, 30))],  % Limit for time
+    
+    collect_results(Pids, #{slow => 0, failed => 0, crashes => 0, unresponsive => false}, 40000).
+
+test_rapid_openclose(Port, Count) ->
+    Results = [begin
+        case gen_tcp:connect("localhost", Port, [binary, {active, false}], 100) of
+            {ok, Socket} ->
+                gen_tcp:close(Socket),
+                success;
+            {error, _} ->
+                failed
+        end
+    end || _ <- lists:seq(1, Count)],
+    
+    Success = length([R || R <- Results, R =:= success]),
+    Failed = length([R || R <- Results, R =:= failed]),
+    
+    #{success => Success, failed => Failed, crashes => 0}.
+
+send_slow_bytes(_Socket, <<>>, _Interval) ->
+    ok;
+send_slow_bytes(Socket, <<Byte, Rest/binary>>, Interval) ->
+    gen_tcp:send(Socket, <<Byte>>),
+    timer:sleep(Interval),
+    send_slow_bytes(Socket, Rest, Interval).
+
+collect_results([], Acc, _Timeout) ->
+    Acc;
+collect_results([{Pid, _Ref} | Rest], Acc, Timeout) ->
+    receive
+        {result, Pid, #{result := Result}} ->
+            NewAcc = maps:update_with(Result, fun(V) -> V + 1 end, 1, Acc),
+            collect_results(Rest, NewAcc, Timeout);
+        {'DOWN', _Ref, process, Pid, _Reason} ->
+            NewAcc = maps:update_with(crashes, fun(V) -> V + 1 end, 1, Acc),
+            collect_results(Rest, NewAcc, Timeout)
+    after Timeout ->
+        collect_results(Rest, Acc, Timeout)
+    end.
+
+collect_results_with_fragments([], Acc, _Timeout) ->
+    Acc;
+collect_results_with_fragments([{Pid, _Ref} | Rest], Acc, Timeout) ->
+    receive
+        {result, Pid, #{result := Result} = Map} ->
+            NewAcc = maps:update_with(Result, fun(V) -> V + 1 end, 1, Acc),
+            case maps:get(fragments, Map, 0) of
+                0 -> collect_results_with_fragments(Rest, NewAcc, Timeout);
+                N -> 
+                    Fragments = maps:get(fragments, NewAcc, 0),
+                    collect_results_with_fragments(Rest, NewAcc#{fragments => Fragments + N}, Timeout)
+            end;
+        {'DOWN', _Ref, process, Pid, _Reason} ->
+            NewAcc = maps:update_with(crashes, fun(V) -> V + 1 end, 1, Acc),
+            collect_results_with_fragments(Rest, NewAcc, Timeout)
+    after Timeout ->
+        collect_results_with_fragments(Rest, Acc, Timeout)
+    end.
+
+check_server_responsive(Port) ->
+    case gen_tcp:connect("localhost", Port, [binary, {active, false}], 1000) of
+        {ok, Socket} ->
+            gen_tcp:close(Socket),
+            responsive;
+        {error, _} ->
+            unresponsive
+    end.

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "043-fix-dialyzer-type-warnings",
+  "title": "Fix Dialyzer Type Warnings",
+  "section": "quality-gates",
+  "state": "idea",
+  "overview": "Dialyzer found 526 type safety issues. Must be resolved for production deployment.\n\n**Motivation:** Type safety is critical for Erlang/OTP production systems. Dialyzer warnings indicate potential runtime crashes and type errors.\n\n**Success criteria:**\n- All 526 warnings categorized\n- Type specs added for missing functions\n- Return values handled properly\n- Infinite loops annotated with -spec or fixed\n- rebar3 dialyzer shows 0 warnings\n\n**Technical constraints:**\n- Fix Strategy A: Add Type Specs\n- Fix Strategy B: Handle Return Values\n- Fix Strategy C: Fix Infinite Loops\n- Categories: Unknown Function Calls (mnesia:*, otel:*), Unmatched Return Values (timer:send_after, ets:insert), Missing Type Exports, Functions With No Local Return\n\n**Signals:** priority: medium, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.829Z",
+  "updated_at": "2026-01-29T06:29:31.398Z",
+  "problem_statement": "Dialyzer found 526 type safety issues. Must be resolved for production deployment.",
+  "motivation": "Type safety is critical for Erlang/OTP production systems. Dialyzer warnings indicate potential runtime crashes and type errors.",
+  "success_criteria": [
+    "All 526 warnings categorized",
+    "Type specs added for missing functions",
+    "Return values handled properly",
+    "Infinite loops annotated with -spec or fixed",
+    "rebar3 dialyzer shows 0 warnings"
+  ],
+  "technical_constraints": [
+    "Fix Strategy A: Add Type Specs",
+    "Fix Strategy B: Handle Return Values",
+    "Fix Strategy C: Fix Infinite Loops",
+    "Categories: Unknown Function Calls (mnesia:*, otel:*), Unmatched Return Values (timer:send_after, ets:insert), Missing Type Exports, Functions With No Local Return"
+  ],
+  "priority_hint": "medium",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

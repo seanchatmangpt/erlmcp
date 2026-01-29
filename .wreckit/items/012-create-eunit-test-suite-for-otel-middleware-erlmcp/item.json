@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "012-create-eunit-test-suite-for-otel-middleware-erlmcp",
+  "title": "Create EUnit test suite for OTEL middleware (erlmcp_otel_middleware)",
+  "section": "observability",
+  "state": "researched",
+  "overview": "OTEL middleware has 0% test coverage - automatic tracing is untested\n\n**Motivation:** Automatic tracing middleware ensures all MCP calls are traced without manual instrumentation. Critical for production observability.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_observability/test/erlmcp_otel_middleware_tests.erl\n- Automatic tracing verified\n- Coverage ≥80%\n- All tests pass\n\n**Technical constraints:**\n- Automatic tracing - verify all operations create spans\n- Context propagation - trace context through transport layers\n- Performance testing - minimal overhead from middleware\n- Error handling - middleware failures don't break transport\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION MONITORING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.354Z",
+  "updated_at": "2026-01-29T17:09:34.569Z",
+  "problem_statement": "OTEL middleware has 0% test coverage - automatic tracing is untested",
+  "motivation": "Automatic tracing middleware ensures all MCP calls are traced without manual instrumentation. Critical for production observability.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_observability/test/erlmcp_otel_middleware_tests.erl",
+    "Automatic tracing verified",
+    "Coverage ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "Automatic tracing - verify all operations create spans",
+    "Context propagation - trace context through transport layers",
+    "Performance testing - minimal overhead from middleware",
+    "Error handling - middleware failures don't break transport"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION MONITORING"
+}

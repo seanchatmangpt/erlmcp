@@ -324,14 +324,60 @@ docker-compose down
 export ERLANG_COOKIE=production_secret_cookie
 export NODE_NAME=erlmcp@node1.example.com
 
-# Recommended
-export LOG_LEVEL=warning
-export ERLANG_FLAGS="+P 262144 +K true +A 8"
+# VM Resource Limits (CRITICAL for high-concurrency)
+# +Q 65536: VM port limit (internal, must match ERL_MAX_PORTS)
+# +P 262144: Maximum processes (connections, workers, supervisors)
+# ERL_MAX_PORTS 65536: Maximum ports (TCP sockets, files, external programs)
+# Note: Both +Q flag and ERL_MAX_PORTS must be set to same value
+export ERLANG_FLAGS="+Q 65536 +P 262144 +K true +A 8"
+export ERL_MAX_PORTS=65536
 
 # Optional
+export LOG_LEVEL=warning
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318
 export DATADOG_AGENT_HOST=datadog-agent
 ```
+
+### VM Resource Limits
+
+Erlang VM has hard limits on concurrent resources. For production deployments:
+
+| Resource | Default | Production | Notes |
+|----------|---------|------------|-------|
+| **Ports** (`+Q`) | 24575 | **65536** | TCP sockets, files, external ports (2.67x increase) |
+| **Processes** (`+P`) | 262,144 | **262,144** | Connections, workers, supervisors |
+| **ETS Tables** | 1400 | **50000** | In-memory storage tables |
+
+**Connection Capacity:**
+- **Before** (default 24575): ~12K concurrent connections
+- **After** (+Q 65536): ~32K concurrent connections (with headroom)
+- **Improvement**: 2.67x increase in connection capacity
+- **Realistic allocation** (40% for TCP, 20% files, 20% external ports, 20% headroom):
+  - TCP connections: ~26K
+  - Files: ~13K
+  - External ports: ~13K
+  - Headroom: ~13K |
+
+**To verify limits:**
+```bash
+# In Erlang shell
+erlang:system_info(port_limit).        % Should return 65536
+erlang:system_info(process_limit).     % Should return 262144
+erlang:system_info(ets_limit).         % Should return 50000
+```
+
+**To monitor usage:**
+```bash
+# Check current usage
+erlang:system_info(port_count()).      % Current ports in use
+erlang:system_info(process_count()).   % Current processes in use
+erlang:system_info(ets_count()).       % Current ETS tables
+```
+
+**Symptoms of hitting limits:**
+- Port limit exceeded: `emfile` errors, "too many open files"
+- Process limit exceeded: `system_limit` errors, spawn failures
+- ETS limit exceeded: `system_limit` errors when creating tables
 
 ### System Configuration (sys.config)
 
@@ -343,7 +389,7 @@ export DATADOG_AGENT_HOST=datadog-agent
         {transport, {tcp, [{port, 5005}]}},
         {workers, 20},
         {connection_timeout, 30000},
-        {max_connections, 10000}
+        {max_connections, 50000}  % Increased: default 10K → 50K (with +Q 65536)
     ]},
 
     % TAIEA Governor
@@ -532,7 +578,7 @@ Log aggregation (ELK Stack):
 
 1. **Increase CPU/Memory**: Update container resources
 2. **Tune VM arguments**: Update ERL_FLAGS environment
-3. **Connection limits**: Update +P and +Q in VM args
+3. **Connection limits**: Update +P (processes) and ERL_MAX_PORTS in vm.args or ERL_FLAGS
 4. **Worker pools**: Update {workers, N} in sys.config
 
 ## Rollback Procedures

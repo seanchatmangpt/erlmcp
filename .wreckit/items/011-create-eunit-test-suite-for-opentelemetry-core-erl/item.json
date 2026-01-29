@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "011-create-eunit-test-suite-for-opentelemetry-core-erl",
+  "title": "Create EUnit test suite for OpenTelemetry core (erlmcp_otel)",
+  "section": "observability",
+  "state": "researched",
+  "overview": "OpenTelemetry core has 0% test coverage - observability is untested\n\n**Motivation:** OpenTelemetry integration for distributed tracing is critical for production observability and debugging.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_observability/test/erlmcp_otel_tests.erl\n- W3C trace context compliance verified\n- Coverage ≥80%\n- All tests pass\n\n**Technical constraints:**\n- W3C trace context - traceparent header format\n- Span lifecycle - start/end span hierarchy\n- Attribute testing - key-value pairs\n- Context propagation - in-process and cross-process\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION MONITORING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.353Z",
+  "updated_at": "2026-01-29T17:05:20.157Z",
+  "problem_statement": "OpenTelemetry core has 0% test coverage - observability is untested",
+  "motivation": "OpenTelemetry integration for distributed tracing is critical for production observability and debugging.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_observability/test/erlmcp_otel_tests.erl",
+    "W3C trace context compliance verified",
+    "Coverage ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "W3C trace context - traceparent header format",
+    "Span lifecycle - start/end span hierarchy",
+    "Attribute testing - key-value pairs",
+    "Context propagation - in-process and cross-process"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION MONITORING"
+}

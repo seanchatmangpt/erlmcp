@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "040-fix-registry-distributed-suite-failure",
+  "title": "Fix Registry Distributed Suite Failure",
+  "section": "ct-fixes",
+  "state": "idea",
+  "overview": "Distributed registry tests fail because distributed nodes can't initialize properly. single_node test and multi_node group both failing.\n\n**Motivation:** Distributed registry functionality is critical for multi-node deployments. Without tests, this functionality is unverified.\n\n**Success criteria:**\n- Root cause identified and documented\n- Distributed node setup fixed\n- single_node test passes\n- multi_node group init passes\n- rebar3 ct --suite=erlmcp_registry_dist_SUITE executes\n\n**Technical constraints:**\n- Check distributed node setup in init_per_suite/1\n- Check if slave nodes are being spawned\n- Check network connectivity between nodes\n- Check epmd (Erlang Port Mapper Daemon) availability\n- Check cookie authentication\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS INTEGRATION TESTING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.828Z",
+  "updated_at": "2026-01-29T06:13:25.063Z",
+  "problem_statement": "Distributed registry tests fail because distributed nodes can't initialize properly. single_node test and multi_node group both failing.",
+  "motivation": "Distributed registry functionality is critical for multi-node deployments. Without tests, this functionality is unverified.",
+  "success_criteria": [
+    "Root cause identified and documented",
+    "Distributed node setup fixed",
+    "single_node test passes",
+    "multi_node group init passes",
+    "rebar3 ct --suite=erlmcp_registry_dist_SUITE executes"
+  ],
+  "technical_constraints": [
+    "Check distributed node setup in init_per_suite/1",
+    "Check if slave nodes are being spawned",
+    "Check network connectivity between nodes",
+    "Check epmd (Erlang Port Mapper Daemon) availability",
+    "Check cookie authentication"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS INTEGRATION TESTING"
+}

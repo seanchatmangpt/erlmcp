@@ -7,13 +7,13 @@
 %%====================================================================
 
 setup() ->
-    %% Start applications needed for distributed tests
-    application:ensure_all_started(gproc),
+    %% Start applications needed for distributed tests using utility
+    ok = erlmcp_registry_utils:ensure_gproc_started(),
     ok.
 
 cleanup(_) ->
-    %% Stop gproc
-    application:stop(gproc),
+    %% Clear test registrations
+    ok = erlmcp_registry_utils:clear_test_registrations(),
     ok.
 
 %%====================================================================

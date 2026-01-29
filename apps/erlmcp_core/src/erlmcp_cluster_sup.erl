@@ -13,6 +13,13 @@
 %% - Split-brain detector: Detects and resolves network partitions
 %%
 %% Strategy: one_for_one - each component fails independently
+%% Intensity: 5 restarts per 60 seconds (OTP standard)
+%%
+%% Zombie Prevention FIX v1.0.0:
+%% - Returns {ok, Pid} unconditionally to prevent zombie processes
+%% - Dynamically adjusts child list based on cluster_enabled flag
+%% - Always starts supervisor with proper intensity tracking
+%% - Empty child list when clustering disabled prevents crashes
 %%====================================================================
 
 -spec start_link() -> {ok, pid()} | {error, term()}.
@@ -21,7 +28,9 @@ start_link() ->
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    %% Only start if clustering is enabled
+    process_flag(trap_exit, true),
+
+    %% Read cluster configuration
     ClusterEnabled = application:get_env(erlmcp_core, cluster_enabled, false),
 
     SupFlags = #{
@@ -30,8 +39,10 @@ init([]) ->
         period => 60
     },
 
+    %% Dynamically build child specs based on cluster_enabled flag
     ChildSpecs = case ClusterEnabled of
         true ->
+            logger:info("Starting cluster supervisor with distributed components"),
             [
                 %% Distributed registry (global gproc)
                 #{
@@ -64,7 +75,8 @@ init([]) ->
                 }
             ];
         false ->
-            %% No cluster components when disabled
+            logger:info("Starting cluster supervisor in local mode (no distributed components)"),
+            %% Empty child list when clustering disabled
             []
     end,
 

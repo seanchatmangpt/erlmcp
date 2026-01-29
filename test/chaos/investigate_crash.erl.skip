@@ -1,0 +1,35 @@
+#!/usr/bin/env escript
+%%%-------------------------------------------------------------------
+%%% @doc Investigate what's causing the "crash"
+%%%-------------------------------------------------------------------
+
+-mode(compile).
+
+main([]) ->
+    io:format("~n=== INVESTIGATING NON-TAIL RECURSION CRASH ===~n~n"),
+    
+    %% Test depth 1
+    io:format("Testing depth 1:~n"),
+    test_depth(1),
+    
+    %% Test depth 2
+    io:format("Testing depth 2:~n"),
+    test_depth(2),
+    
+    %% Test depth 10
+    io:format("Testing depth 10:~n"),
+    test_depth(10).
+
+test_depth(Depth) ->
+    case catch not_tail_recurse(Depth) of
+        {'EXIT', {Class, Reason, _Stack}} ->
+            io:format("  EXIT Class: ~p~n", [Class]),
+            io:format("  Reason: ~p~n~n", [Reason]);
+        Other ->
+            io:format("  Result: ~p~n~n", [Other])
+    end.
+
+not_tail_recurse(0) -> reached;
+not_tail_recurse(N) when N > 0 -> 
+    Result = not_tail_recurse(N - 1),
+    Result + 1.

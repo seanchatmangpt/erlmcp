@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "037-otel-exporters-test-coverage",
+  "title": "OTEL Exporters Test Coverage",
+  "section": "observability",
+  "state": "idea",
+  "overview": "OpenTelemetry exporters have ZERO coverage. Production telemetry depends on these exporters working correctly.\n\n**Motivation:** Exporters send telemetry data to backends. If they fail, all observability data is lost.\n\n**Success criteria:**\n- 3 test files created (one per exporter: jaeger, datadog, honeycomb)\n- Protocol compliance verified for each backend\n- Coverage: ≥80% per exporter\n- All tests pass\n\n**Technical constraints:**\n- Protocol Compliance - Correct backend format\n- Batch Testing - Multiple spans in one export\n- Error Handling - Backend unavailable, retry logic\n- Performance - Export overhead minimal\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION MONITORING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.827Z",
+  "updated_at": "2026-01-29T06:05:32.321Z",
+  "problem_statement": "OpenTelemetry exporters have ZERO coverage. Production telemetry depends on these exporters working correctly.",
+  "motivation": "Exporters send telemetry data to backends. If they fail, all observability data is lost.",
+  "success_criteria": [
+    "3 test files created (one per exporter: jaeger, datadog, honeycomb)",
+    "Protocol compliance verified for each backend",
+    "Coverage: ≥80% per exporter",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "Protocol Compliance - Correct backend format",
+    "Batch Testing - Multiple spans in one export",
+    "Error Handling - Backend unavailable, retry logic",
+    "Performance - Export overhead minimal"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION MONITORING"
+}

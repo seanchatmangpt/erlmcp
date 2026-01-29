@@ -1,0 +1,12 @@
+@@ -970,8 +970,8 @@
+                     % Clean up progress token after completion
+                     erlmcp_progress:cleanup_completed(ProgressToken)
+                 catch
+-                    Class:CatchReason:Stacktrace ->
+-                        erlmcp_tracing:record_exception(HandlerSpanCtx, ClassCatch, ReasonCatch, StackCatch),
+-                        logger:error("Tool handler crashed: ~p:~p~n~p", [ClassCatch, ReasonCatch, StackCatch]),
++                    ClassCatch:ReasonCatch:StackCatch ->
++                        erlmcp_tracing:record_exception(HandlerSpanCtx, ClassCatch, ReasonCatch, StackCatch),
++                        logger:error("Tool handler crashed: ~p:~p~n~p", [ClassCatch, ReasonCatch, StackCatch]),
+                         % Cleanup even on error
+                         erlmcp_progress:cleanup_completed(ProgressToken),

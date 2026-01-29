@@ -1,0 +1,421 @@
+-module(erlmcp_mcp_roundtrip_batch2_SUITE).
+-compile(export_all).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%====================================================================
+%% Common Test Callbacks
+%%====================================================================
+
+all() ->
+    [
+     batch2_roundtrip_test,
+     batch2_latency_test,
+     batch2_throughput_test,
+     batch2_concurrent_clients_test,
+     batch2_error_handling_test
+    ].
+
+init_per_suite(Config) ->
+    %% Start erlmcp applications
+    {ok, _} = application:ensure_all_started(erlmcp_core),
+    {ok, _} = application:ensure_all_started(erlmcp_transports),
+    {ok, _} = application:ensure_all_started(erlmcp_observability),
+
+    %% Start 5 MCP servers on ports 9006-9010
+    Servers = start_batch2_servers(),
+    [{servers, Servers} | Config].
+
+end_per_suite(Config) ->
+    %% Stop all servers
+    Servers = ?config(servers, Config),
+    lists:foreach(fun({Name, Pid, Port}) ->
+        logger:info("Stopping server ~p on port ~p", [Name, Port]),
+        catch erlmcp_server:stop(Pid)
+    end, Servers),
+
+    application:stop(erlmcp_observability),
+    application:stop(erlmcp_transports),
+    application:stop(erlmcp_core),
+    ok.
+
+init_per_testcase(_TestCase, Config) ->
+    Config.
+
+end_per_testcase(_TestCase, _Config) ->
+    ok.
+
+%%====================================================================
+%% Test Cases
+%%====================================================================
+
+batch2_roundtrip_test(Config) ->
+    Servers = ?config(servers, Config),
+    ServersSpawned = length(Servers),
+    ct:log("Servers spawned: ~p", [ServersSpawned]),
+    ?assertEqual(5, ServersSpawned),
+
+    %% Create 5 clients per server (25 total)
+    Clients = lists:flatmap(fun({_Name, ServerPid, Port}) ->
+        lists:map(fun(N) ->
+            ClientName = list_to_atom("client_" ++ integer_to_list(Port) ++ "_" ++ integer_to_list(N)),
+            {ok, ClientPid} = start_test_client(ClientName, Port, ServerPid),
+            {ClientName, ClientPid, Port}
+        end, lists:seq(1, 5))
+    end, Servers),
+
+    ClientsSpawned = length(Clients),
+    ct:log("Clients spawned: ~p", [ClientsSpawned]),
+    ?assertEqual(25, ClientsSpawned),
+
+    %% Run 100 operations per client (2500 total)
+    Results = lists:map(fun({ClientName, ClientPid, Port}) ->
+        run_client_operations(ClientPid, Port, ClientName)
+    end, Clients),
+
+    %% Verify results
+    TotalOps = lists:sum([proplists:get_value(operations, R) || R <- Results]),
+    SuccessCount = lists:sum([proplists:get_value(successes, R) || R <- Results]),
+    ErrorCount = lists:sum([proplists:get_value(errors, R) || R <- Results]),
+    AvgLatency = lists:sum([proplists:get_value(total_latency, R) || R <- Results]) / TotalOps,
+
+    ct:log("Batch 2 Roundtrip Results:"),
+    ct:log("  Servers Spawned: ~p/5", [ServersSpawned]),
+    ct:log("  Clients Spawned: ~p/25", [ClientsSpawned]),
+    ct:log("  Operations: ~p/2500", [TotalOps]),
+    ct:log("  Successes: ~p", [SuccessCount]),
+    ct:log("  Errors: ~p", [ErrorCount]),
+    ct:log("  Avg Latency: ~p ms", [AvgLatency]),
+
+    ?assertEqual(2500, TotalOps),
+    ?assertEqual(2500, SuccessCount),
+    ?assertEqual(0, ErrorCount),
+    ?assert(AvgLatency < 100), %% Average latency should be < 100ms
+
+    %% Clean up clients
+    lists:foreach(fun({ClientName, ClientPid, _Port}) ->
+        ct:log("Stopping client ~p", [ClientName]),
+        catch erlmcp_client:stop(ClientPid)
+    end, Clients),
+
+    %% Verify success rate
+    SuccessRate = (SuccessCount / TotalOps) * 100,
+    ?assert(SuccessRate >= 99.0), %% 99%+ success rate required
+
+    %% Return report
+    ct:comment("=== Batch 2 Results (Servers 6-10) ==="),
+    ct:comment("Servers Spawned: ~p/5", [ServersSpawned]),
+    ct:comment("Clients Spawned: ~p/25", [ClientsSpawned]),
+    ct:comment("Operations: ~p/2500", [TotalOps]),
+    ct:comment("Avg Latency: ~.2f ms", [AvgLatency]),
+    ct:comment("Success Rate: ~.2f%", [SuccessRate]),
+    ct:comment("Errors: ~p", [ErrorCount]).
+
+batch2_latency_test(Config) ->
+    Servers = ?config(servers, Config),
+
+    %% Test latency with varying load
+    LatencyResults = lists:map(fun({_Name, _ServerPid, Port}) ->
+        {ok, ClientPid} = start_test_client(latency_test, Port, element(2, hd(Servers))),
+
+        %% Measure latency for 10 operations
+        Latencies = lists:map(fun(_) ->
+            Start = erlang:monotonic_time(microsecond),
+            {ok, _} = erlmcp_client:call_tool(ClientPid, <<"get_current_time">>, #{}),
+            End = erlang:monotonic_time(microsecond),
+            End - Start
+        end, lists:seq(1, 10)),
+
+        AvgLatency = lists:sum(Latencies) / length(Latencies),
+        MinLatency = lists:min(Latencies),
+        MaxLatency = lists:max(Latencies),
+
+        erlmcp_client:stop(ClientPid),
+
+        {Port, AvgLatency, MinLatency, MaxLatency}
+    end, Servers),
+
+    ct:log("Latency Results:"),
+    lists:foreach(fun({Port, Avg, Min, Max}) ->
+        ct:log("  Port ~p: Avg=~p us, Min=~p us, Max=~p us", [Port, Avg, Min, Max])
+    end, LatencyResults),
+
+    %% Verify latency bounds
+    lists:foreach(fun({_Port, Avg, Min, Max}) ->
+        ?assert(Avg < 50000), %% Average < 50ms
+        ?assert(Min < 10000), %% Minimum < 10ms
+        ?assert(Max < 100000) %% Maximum < 100ms
+    end, LatencyResults).
+
+batch2_throughput_test(Config) ->
+    Servers = ?config(servers, Config),
+
+    %% Test throughput with concurrent operations
+    ThroughputResults = lists:map(fun({_Name, _ServerPid, Port}) ->
+        %% Start 5 concurrent clients per server
+        Pids = lists:map(fun(N) ->
+            {ok, Pid} = start_test_client(list_to_atom("throughput_" ++ integer_to_list(N)), Port, element(2, hd(Servers))),
+            Pid
+        end, lists:seq(1, 5)),
+
+        %% Run 50 operations per client (250 total per server)
+        StartTime = erlang:monotonic_time(millisecond),
+
+        lists:foreach(fun(Pid) ->
+            lists:foreach(fun(_) ->
+                erlmcp_client:call_tool(Pid, <<"get_weather">>, #{<<"location">> => <<"test">>})
+            end, lists:seq(1, 50))
+        end, Pids),
+
+        EndTime = erlang:monotonic_time(millisecond),
+        Duration = EndTime - StartTime,
+        Throughput = 250 / Duration * 1000, %% ops per second
+
+        lists:foreach(fun(Pid) -> erlmcp_client:stop(Pid) end, Pids),
+
+        {Port, Throughput, Duration}
+    end, Servers),
+
+    ct:log("Throughput Results:"),
+    lists:foreach(fun({Port, Throughput, Duration}) ->
+        ct:log("  Port ~p: ~p req/s (~p ms for 250 ops)", [Port, Throughput, Duration])
+    end, ThroughputResults),
+
+    %% Verify throughput
+    lists:foreach(fun({_Port, Throughput, _Duration}) ->
+        ?assert(Throughput > 100) %% Minimum 100 req/s
+    end, ThroughputResults).
+
+batch2_concurrent_clients_test(Config) ->
+    Servers = ?config(servers, Config),
+
+    %% Test with 25 concurrent clients (5 per server)
+    AllClients = lists:flatmap(fun({_Name, _ServerPid, Port}) ->
+        lists:map(fun(N) ->
+            {ok, Pid} = start_test_client(list_to_atom("concurrent_" ++ integer_to_list(N)), Port, element(2, hd(Servers))),
+            Pid
+        end, lists:seq(1, 5))
+    end, Servers),
+
+    ct:log("Started ~p concurrent clients", [length(AllClients)]),
+
+    %% Run operations concurrently
+    Start = erlang:monotonic_time(millisecond),
+
+    Results = lists:map(fun(Pid) ->
+        spawn_monitor(fun() ->
+            lists:foreach(fun(_) ->
+                erlmcp_client:call_tool(Pid, <<"get_timezone">>, #{<<"location">> => <<"UTC">>})
+            end, lists:seq(1, 20)),
+            exit(normal)
+        end)
+    end, AllClients),
+
+    %% Wait for all to complete
+    lists:foreach(fun({Pid, Ref}) ->
+        receive
+            {'DOWN', Ref, process, Pid, _Reason} -> ok
+        end
+    end, Results),
+
+    End = erlang:monotonic_time(millisecond),
+    Duration = End - Start,
+
+    ct:log("Concurrent clients completed in ~p ms", [Duration]),
+
+    %% Verify all clients completed
+    lists:foreach(fun(Pid) -> erlmcp_client:stop(Pid) end, AllClients),
+    ?assert(Duration < 10000). %% Should complete in < 10 seconds
+
+batch2_error_handling_test(Config) ->
+    Servers = ?config(servers, Config),
+
+    %% Test error handling with invalid operations
+    {ok, ClientPid} = start_test_client(error_test, 9006, element(2, hd(Servers))),
+
+    %% Test 1: Call non-existent tool
+    Result1 = erlmcp_client:call_tool(ClientPid, <<"nonexistent_tool">>, #{}),
+    ct:log("Non-existent tool result: ~p", [Result1]),
+    ?assertMatch({error, _}, Result1),
+
+    %% Test 2: Call tool with invalid arguments
+    Result2 = erlmcp_client:call_tool(ClientPid, <<"get_weather">>, #{}),
+    ct:log("Missing arguments result: ~p", [Result2]),
+    ?assertMatch({error, _}, Result2),
+
+    %% Test 3: Read non-existent resource
+    Result3 = erlmcp_client:read_resource(ClientPid, <<"weather://nonexistent">>),
+    ct:log("Non-existent resource result: ~p", [Result3]),
+    ?assertMatch({error, _}, Result3),
+
+    erlmcp_client:stop(ClientPid).
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+start_batch2_servers() ->
+    lists:map(fun(N) ->
+        Port = 9000 + N,
+        Name = list_to_atom("mcp_server_" ++ integer_to_list(N)),
+        ServerId = list_to_binary("server_batch2_" ++ integer_to_list(N)),
+
+        %% Create capabilities with tools and resources
+        Capabilities = #mcp_server_capabilities{
+            tools = #mcp_capability{enabled = true},
+            resources = #mcp_capability{enabled = true},
+            prompts = #mcp_capability{enabled = true}
+        },
+
+        %% Start server
+        {ok, ServerPid} = erlmcp_server:start_link(ServerId, Capabilities),
+
+        %% Add weather tools
+        add_weather_tools(ServerPid),
+        add_time_tools(ServerPid),
+        add_location_resources(ServerPid),
+
+        ct:log("Started server ~p on port ~p", [Name, Port]),
+        {Name, ServerPid, Port}
+    end, lists:seq(6, 10)).
+
+add_weather_tools(ServerPid) ->
+    WeatherTools = [
+        {<<"get_weather">>, fun(Args) ->
+            Location = maps:get(<<"location">>, Args, <<"unknown">>),
+            Temp = rand:uniform(40) - 10,
+            <<"Weather in ", Location/binary, ": ", (integer_to_binary(Temp))/binary, "°C">>
+        end},
+        {<<"get_forecast">>, fun(Args) ->
+            Location = maps:get(<<"location">>, Args, <<"unknown">>),
+            Days = maps:get(<<"days">>, Args, 3),
+            Forecast = lists:map(fun(Day) ->
+                Temp = rand:uniform(30) - 5,
+                <<"Day ", (integer_to_binary(Day))/binary, ": ", (integer_to_binary(Temp))/binary, "°C">>
+            end, lists:seq(1, Days)),
+            iolist_to_binary([<<"Forecast for ", Location/binary, ":\n">> | Forecast])
+        end}
+    ],
+
+    lists:foreach(fun({Name, Handler}) ->
+        erlmcp_server:add_tool(ServerPid, Name, Handler)
+    end, WeatherTools).
+
+add_time_tools(ServerPid) ->
+    TimeTools = [
+        {<<"get_current_time">>, fun(_Args) ->
+            {H, M, S} = time(),
+            <<"Current time: ", (format_time(H, M, S))/binary>>
+        end},
+        {<<"get_timezone">>, fun(Args) ->
+            Location = maps:get(<<"location">>, Args, <<"UTC">>),
+            <<"Timezone for ", Location/binary, ": UTC">>
+        end}
+    ],
+
+    lists:foreach(fun({Name, Handler}) ->
+        erlmcp_server:add_tool(ServerPid, Name, Handler)
+    end, TimeTools).
+
+add_location_resources(ServerPid) ->
+    Locations = [
+        {<<"weather://location/boston">>, fun(_Uri) -> <<"Boston, MA - Sunny, 22°C">> end},
+        {<<"weather://location/london">>, fun(_Uri) -> <<"London, UK - Cloudy, 15°C">> end},
+        {<<"weather://location/tokyo">>, fun(_Uri) -> <<"Tokyo, Japan - Rainy, 18°C">> end}
+    ],
+
+    lists:foreach(fun({Uri, Handler}) ->
+        erlmcp_server:add_resource(ServerPid, Uri, Handler)
+    end, Locations).
+
+start_test_client(Name, Port, ServerPid) ->
+    %% For this test, we'll use stdio transport (simplified)
+    %% In real scenario, you'd use TCP transport with proper port configuration
+    TransportOpts = {stdio, []},
+    ClientOpts = #{
+        strict_mode => false,
+        timeout => 5000
+    },
+
+    {ok, ClientPid} = erlmcp_client:start_link(TransportOpts, ClientOpts),
+
+    %% Initialize client
+    Capabilities = #mcp_client_capabilities{
+        roots = #mcp_capability{enabled = false},
+        sampling = #mcp_capability{enabled = false}
+    },
+    {ok, _InitResult} = erlmcp_client:initialize(ClientPid, Capabilities),
+
+    {ok, ClientPid}.
+
+run_client_operations(ClientPid, Port, ClientName) ->
+    %% Run 100 operations per client
+    Operations = lists:seq(1, 100),
+
+    {Successes, Errors, Latencies} = lists:foldl(fun(_N, {Succ, Err, LatAcc}) ->
+        OpType = rand:uniform(4),
+
+        case OpType of
+            1 ->
+                %% Weather tool
+                Start = erlang:monotonic_time(microsecond),
+                Result = erlmcp_client:call_tool(ClientPid, <<"get_weather">>, #{<<"location">> => <<"test">>}),
+                End = erlang:monotonic_time(microsecond),
+                case Result of
+                    {ok, _} -> {Succ + 1, Err, [End - Start | LatAcc]};
+                    {error, _} -> {Succ, Err + 1, LatAcc}
+                end;
+            2 ->
+                %% Forecast tool
+                Start = erlang:monotonic_time(microsecond),
+                Result = erlmcp_client:call_tool(ClientPid, <<"get_forecast">>, #{<<"location">> => <<"test">>, <<"days">> => 3}),
+                End = erlang:monotonic_time(microsecond),
+                case Result of
+                    {ok, _} -> {Succ + 1, Err, [End - Start | LatAcc]};
+                    {error, _} -> {Succ, Err + 1, LatAcc}
+                end;
+            3 ->
+                %% Time tool
+                Start = erlang:monotonic_time(microsecond),
+                Result = erlmcp_client:call_tool(ClientPid, <<"get_current_time">>, #{}),
+                End = erlang:monotonic_time(microsecond),
+                case Result of
+                    {ok, _} -> {Succ + 1, Err, [End - Start | LatAcc]};
+                    {error, _} -> {Succ, Err + 1, LatAcc}
+                end;
+            4 ->
+                %% Resource read
+                Start = erlang:monotonic_time(microsecond),
+                Result = erlmcp_client:read_resource(ClientPid, <<"weather://location/boston">>),
+                End = erlang:monotonic_time(microsecond),
+                case Result of
+                    {ok, _} -> {Succ + 1, Err, [End - Start | LatAcc]};
+                    {error, _} -> {Succ, Err + 1, LatAcc}
+                end
+        end
+    end, {0, 0, []}, Operations),
+
+    TotalLatency = lists:sum(Latencies),
+    AvgLatency = TotalLatency / length(Latencies),
+
+    ct:log("Client ~p (port ~p): ~p successes, ~p errors, ~p us avg latency",
+           [ClientName, Port, Successes, Errors, AvgLatency]),
+
+    [
+        {operations, 100},
+        {successes, Successes},
+        {errors, Errors},
+        {total_latency, TotalLatency},
+        {avg_latency, AvgLatency}
+    ].
+
+%% Helper functions
+format_time(H, M, S) ->
+    iolist_to_binary([
+        pad(H), $:, pad(M), $:, pad(S)
+    ]).
+
+pad(N) when N < 10 -> [$0, $0 + N];
+pad(N) -> integer_to_binary(N).

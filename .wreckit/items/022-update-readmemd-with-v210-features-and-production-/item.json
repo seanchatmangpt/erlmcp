@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "022-update-readmemd-with-v210-features-and-production-",
+  "title": "Update README.md with v2.1.0 features and production readiness status",
+  "section": "docs",
+  "state": "researched",
+  "overview": "README is outdated - references v1.x instead of v2.1.0\n\n**Motivation:** Users need accurate documentation for v2.1.0. Must warn about production readiness status.\n\n**Success criteria:**\n- README.md updated\n- v2.1.0 features documented\n- Production readiness warnings added\n- Performance benchmarks updated (2.52M msg/sec)\n- Test coverage status documented\n\n**Technical constraints:**\n- Architecture section: 4-app umbrella structure\n- Quick Start: rebar3 (vs rebar)\n- Performance section: v2.1.0 benchmarks\n- Testing section: coverage reports\n\n**Signals:** priority: low, urgency: P3 - NICE TO HAVE",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.358Z",
+  "updated_at": "2026-01-29T17:43:44.042Z",
+  "problem_statement": "README is outdated - references v1.x instead of v2.1.0",
+  "motivation": "Users need accurate documentation for v2.1.0. Must warn about production readiness status.",
+  "success_criteria": [
+    "README.md updated",
+    "v2.1.0 features documented",
+    "Production readiness warnings added",
+    "Performance benchmarks updated (2.52M msg/sec)",
+    "Test coverage status documented"
+  ],
+  "technical_constraints": [
+    "Architecture section: 4-app umbrella structure",
+    "Quick Start: rebar3 (vs rebar)",
+    "Performance section: v2.1.0 benchmarks",
+    "Testing section: coverage reports"
+  ],
+  "priority_hint": "low",
+  "urgency_hint": "P3 - NICE TO HAVE"
+}

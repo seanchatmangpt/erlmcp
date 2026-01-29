@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "042-implement-or-remove-missing-modules",
+  "title": "Implement or Remove Missing Modules",
+  "section": "quality-gates",
+  "state": "idea",
+  "overview": "Xref analysis found 60+ undefined function calls to modules that don't exist. Must implement modules or remove references.\n\n**Motivation:** Cannot pass Xref quality gate with undefined function calls. These missing modules indicate incomplete refactoring or dead code.\n\n**Success criteria:**\n- All missing modules audited\n- Decision made for each (implement or remove)\n- Needed modules implemented (stubs ok if not critical path)\n- References to unneeded modules removed\n- rebar3 xref shows 0 undefined function calls to missing modules\n\n**Technical constraints:**\n- For each missing module: search codebase for references\n- Determine if referenced by active code or dead code\n- Document why module was referenced but never implemented\n- Decision matrix: erlmcp_request_id, erlmcp_tracing, erlmcp_task_manager, tcps_persistence, tcps_work_order\n\n**Signals:** priority: medium, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.829Z",
+  "updated_at": "2026-01-29T06:25:31.019Z",
+  "problem_statement": "Xref analysis found 60+ undefined function calls to modules that don't exist. Must implement modules or remove references.",
+  "motivation": "Cannot pass Xref quality gate with undefined function calls. These missing modules indicate incomplete refactoring or dead code.",
+  "success_criteria": [
+    "All missing modules audited",
+    "Decision made for each (implement or remove)",
+    "Needed modules implemented (stubs ok if not critical path)",
+    "References to unneeded modules removed",
+    "rebar3 xref shows 0 undefined function calls to missing modules"
+  ],
+  "technical_constraints": [
+    "For each missing module: search codebase for references",
+    "Determine if referenced by active code or dead code",
+    "Document why module was referenced but never implemented",
+    "Decision matrix: erlmcp_request_id, erlmcp_tracing, erlmcp_task_manager, tcps_persistence, tcps_work_order"
+  ],
+  "priority_hint": "medium",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

@@ -25,7 +25,8 @@ registry_test_() ->
          fun test_message_routing_to_server/1,
          fun test_message_routing_to_transport/1,
          fun test_process_monitoring/1,
-         fun test_list_operations/1
+         fun test_list_operations/1,
+         fun test_concurrent_registration/1
      ]}.
 
 %%====================================================================
@@ -33,11 +34,11 @@ registry_test_() ->
 %%====================================================================
 
 setup() ->
-    % Ensure gproc is started
-    ok = ensure_gproc_started(),
+    % Ensure gproc is started using utility function
+    ok = erlmcp_registry_utils:ensure_gproc_started(),
 
-    % Clear any stale test registrations
-    clear_test_registrations(),
+    % Clear any stale test registrations using utility function
+    ok = erlmcp_registry_utils:clear_test_registrations(),
     timer:sleep(100),
 
     % Start an anonymous registry for testing
@@ -56,33 +57,9 @@ cleanup(#{registry := Registry} = State) ->
     % Stop registry gracefully
     catch gen_server:stop(Registry, shutdown, 5000),
 
-    % Clear test registrations
-    clear_test_registrations(),
+    % Clear test registrations using utility function
+    ok = erlmcp_registry_utils:clear_test_registrations(),
     timer:sleep(100),
-    ok.
-
-ensure_gproc_started() ->
-    case application:ensure_started(gproc) of
-        ok -> ok;
-        {error, {already_started, gproc}} -> ok
-    end.
-
-clear_test_registrations() ->
-    ok = ensure_gproc_started(),
-
-    % Clear servers
-    ServerPattern = [{{{n, l, {mcp, server, '$1'}}, '$2', '_'}, [], [{{'$1', '$2'}}]}],
-    ServerEntries = gproc:select(ServerPattern),
-    lists:foreach(fun({Id, Pid}) ->
-        catch gproc:unreg_other({n, l, {mcp, server, Id}}, Pid)
-    end, ServerEntries),
-
-    % Clear transports
-    TransportPattern = [{{{n, l, {mcp, transport, '$1'}}, '$2', '_'}, [], [{{'$1', '$2'}}]}],
-    TransportEntries = gproc:select(TransportPattern),
-    lists:foreach(fun({Id, Pid}) ->
-        catch gproc:unreg_other({n, l, {mcp, transport, Id}}, Pid)
-    end, TransportEntries),
     ok.
 
 %%====================================================================
@@ -378,3 +355,47 @@ wait_for_process_death(Pid, Timeout, StartTime) ->
                     wait_for_process_death(Pid, Timeout, StartTime)
             end
     end.
+
+test_concurrent_registration(#{registry := Registry} = State) ->
+    % Test concurrent registration to detect race conditions
+    ConcurrentCount = 10,
+    ServerId = concurrent_test_server,
+
+    % Spawn multiple processes trying to register the same server
+    Parent = self(),
+    Pids = lists:map(fun(_) ->
+        spawn_link(fun() ->
+            MockServer = self(),
+            Result = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}},
+                                     2000),
+            Parent ! {registration_result, self(), Result}
+        end)
+    end, lists:seq(1, ConcurrentCount)),
+
+    % Collect results
+    Results = [receive
+        {registration_result, Pid, Result} ->
+            {Pid, Result}
+    after 5000 ->
+        timeout
+    end || _ <- Pids],
+
+    % Count successes and failures
+    SuccessCount = lists:foldl(fun({_Pid, Result}, Acc) ->
+        case Result of
+            ok -> Acc + 1;
+            {error, already_registered} -> Acc;
+            _ -> Acc
+        end
+    end, 0, Results),
+
+    % Should have exactly one successful registration or all idempotent retries
+    Test = ?_assertEqual(ConcurrentCount, SuccessCount),
+
+    % Cleanup
+    gen_server:call(Registry, {unregister_server, ServerId}),
+
+    AllPids = [Pid || {Pid, _} <- Results],
+    maps:put(test_pids, AllPids ++ maps:get(test_pids, State, []), State),
+    [Test].
+

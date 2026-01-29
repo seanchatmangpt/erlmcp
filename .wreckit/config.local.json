@@ -1,0 +1,20 @@
+{
+  "agent": {
+    "mode": "sdk",
+    "sdk_model": "glm-4.7",
+    "sdk_max_tokens": 32000,
+    "sdk_tools": ["Read", "Edit", "Bash", "Glob", "Grep"]
+  },
+  "pr_checks": {
+    "commands": [
+      "TERM=dumb rebar3 compile",
+      "rebar3 eunit",
+      "rebar3 cover",
+      "rebar3 dialyzer",
+      "rebar3 xref"
+    ],
+    "secret_scan": true,
+    "require_all_stories_done": true,
+    "allow_unsafe_direct_merge": false
+  }
+}

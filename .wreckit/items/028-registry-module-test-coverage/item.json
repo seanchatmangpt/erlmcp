@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "028-registry-module-test-coverage",
+  "title": "Registry Module Test Coverage",
+  "section": "coverage",
+  "state": "idea",
+  "overview": "erlmcp_registry.erl has only 4% coverage with 80.8% pass rate (5/26 tests failing). This is the CENTRAL MESSAGE ROUTING system with performance baseline of 553K msg/sec.\n\n**Motivation:** Registry is the core message routing system. Performance is critical - must maintain 553K msg/sec baseline. Current test coverage is completely inadequate for such a critical component.\n\n**Success criteria:**\n- Fix 5 failing tests in existing suite\n- Add tests for uncovered functions\n- Performance tests verify ≥553K msg/sec\n- Coverage: ≥80%\n- All tests pass: rebar3 eunit --module=erlmcp_registry_tests\n\n**Technical constraints:**\n- Fix Existing Failing Tests - 5 tests currently failing, fix these first\n- Registration Testing - Register/unregister/whereis operations\n- Performance Testing - Verify 553K msg/sec baseline maintained\n- Concurrency Testing - Multiple processes registering/routing simultaneously\n- Distributed Testing - Multi-node registry operations (requires CT suites)\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL PRODUCTION WORK",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.824Z",
+  "updated_at": "2026-01-29T05:42:24.631Z",
+  "problem_statement": "erlmcp_registry.erl has only 4% coverage with 80.8% pass rate (5/26 tests failing). This is the CENTRAL MESSAGE ROUTING system with performance baseline of 553K msg/sec.",
+  "motivation": "Registry is the core message routing system. Performance is critical - must maintain 553K msg/sec baseline. Current test coverage is completely inadequate for such a critical component.",
+  "success_criteria": [
+    "Fix 5 failing tests in existing suite",
+    "Add tests for uncovered functions",
+    "Performance tests verify ≥553K msg/sec",
+    "Coverage: ≥80%",
+    "All tests pass: rebar3 eunit --module=erlmcp_registry_tests"
+  ],
+  "technical_constraints": [
+    "Fix Existing Failing Tests - 5 tests currently failing, fix these first",
+    "Registration Testing - Register/unregister/whereis operations",
+    "Performance Testing - Verify 553K msg/sec baseline maintained",
+    "Concurrency Testing - Multiple processes registering/routing simultaneously",
+    "Distributed Testing - Multi-node registry operations (requires CT suites)"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL PRODUCTION WORK"
+}

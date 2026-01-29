@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "047-create-migration-guide-from-v1-to-v2",
+  "title": "Create Migration Guide from v1 to v2",
+  "section": "docs",
+  "state": "idea",
+  "overview": "Users need guidance upgrading from v1.x to v2.1.0 but no migration guide exists.\n\n**Motivation:** Users may be on v1.x and need clear documentation on how to upgrade to v2.1.0.\n\n**Success criteria:**\n- MIGRATION.md created\n- Breaking changes documented\n- Upgrade steps provided\n- Rollback plan documented\n\n**Technical constraints:**\n- List all API changes\n- List config file changes\n- List dependency changes\n- Provide step-by-step migration process\n- Include code examples\n- Include testing checklist\n\n**Signals:** priority: low, urgency: P3 - NICE TO HAVE",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.831Z",
+  "updated_at": "2026-01-29T06:40:12.976Z",
+  "problem_statement": "Users need guidance upgrading from v1.x to v2.1.0 but no migration guide exists.",
+  "motivation": "Users may be on v1.x and need clear documentation on how to upgrade to v2.1.0.",
+  "success_criteria": [
+    "MIGRATION.md created",
+    "Breaking changes documented",
+    "Upgrade steps provided",
+    "Rollback plan documented"
+  ],
+  "technical_constraints": [
+    "List all API changes",
+    "List config file changes",
+    "List dependency changes",
+    "Provide step-by-step migration process",
+    "Include code examples",
+    "Include testing checklist"
+  ],
+  "priority_hint": "low",
+  "urgency_hint": "P3 - NICE TO HAVE"
+}

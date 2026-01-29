@@ -8,7 +8,12 @@
     validate_async/3,
     validate_regex/2,
     validate_range/3,
-    validate_dependencies/2
+    validate_dependencies/2,
+    do_validate/2,
+    format_jesse_error/1,
+    format_jesse_errors/1,
+    format_path/1,
+    format_error_message/1
 ]).
 
 %% gen_server callbacks
@@ -110,17 +115,38 @@ format_jesse_errors(Error) ->
     [format_jesse_error(Error)].
 
 -spec format_jesse_error(term()) -> validation_error().
-format_jesse_error({data_invalid, Schema, Error, Path, Data}) ->
+format_jesse_error({data_invalid, Schema, Error, Data, Path}) ->
     #{
         path => format_path(Path),
         message => format_error_message(Error),
         expected => Schema,
         actual => Data
     };
+format_jesse_error({schema_invalid, Schema, Error}) ->
+    #{
+        path => [],
+        message => format_error_message(Error),
+        expected => Schema,
+        actual => schema_error
+    };
+format_jesse_error({data_error, {parse_error, Reason}}) ->
+    #{
+        path => [],
+        message => iolist_to_binary(io_lib:format("Parse error: ~p", [Reason])),
+        expected => valid_json,
+        actual => parse_error
+    };
+format_jesse_error({schema_error, {parse_error, Reason}}) ->
+    #{
+        path => [],
+        message => iolist_to_binary(io_lib:format("Schema parse error: ~p", [Reason])),
+        expected => valid_schema,
+        actual => parse_error
+    };
 format_jesse_error(_Other) ->
     #{
         path => [],
-        message => <<"Unknown validation error">>,
+        message => iolist_to_binary(io_lib:format("Unknown validation error: ~p", [_Other])),
         expected => undefined,
         actual => undefined
     }.
@@ -143,14 +169,58 @@ format_error_message({not_in_enum, AllowedValues}) ->
     iolist_to_binary(io_lib:format("Value not in enum: ~p", [AllowedValues]));
 format_error_message({not_unique, _}) ->
     <<"Array items must be unique">>;
-format_error_message({too_short, MinLength}) ->
-    iolist_to_binary(io_lib:format("String too short, minimum: ~w", [MinLength]));
-format_error_message({too_long, MaxLength}) ->
-    iolist_to_binary(io_lib:format("String too long, maximum: ~w", [MaxLength]));
-format_error_message({too_small, Minimum}) ->
-    iolist_to_binary(io_lib:format("Number too small, minimum: ~w", [Minimum]));
-format_error_message({too_large, Maximum}) ->
-    iolist_to_binary(io_lib:format("Number too large, maximum: ~w", [Maximum]));
+format_error_message(wrong_length) ->
+    <<"Array/string has wrong length">>;
+format_error_message({wrong_length, Expected}) ->
+    iolist_to_binary(io_lib:format("Wrong length, expected: ~p", [Expected]));
+format_error_message(wrong_size) ->
+    <<"Array/string has wrong size">>;
+format_error_message({wrong_size, Expected}) ->
+    iolist_to_binary(io_lib:format("Wrong size, expected: ~p", [Expected]));
+format_error_message({missing_dependency, Dependency}) ->
+    iolist_to_binary(io_lib:format("Missing dependency: ~s", [Dependency]));
+format_error_message(no_match) ->
+    <<"Pattern does not match">>;
+format_error_message(no_extra_properties_allowed) ->
+    <<"No extra properties allowed">>;
+format_error_message(no_extra_items_allowed) ->
+    <<"No extra items allowed">>;
+format_error_message(not_allowed) ->
+    <<"Value not allowed">>;
+format_error_message(not_in_range) ->
+    <<"Value not in allowed range">>;
+format_error_message(not_divisible) ->
+    <<"Value not divisible">>;
+format_error_message(not_array) ->
+    <<"Value is not an array">>;
+format_error_message(wrong_format) ->
+    <<"Value has wrong format">>;
+format_error_message(too_many_properties) ->
+    <<"Object has too many properties">>;
+format_error_message(too_few_properties) ->
+    <<"Object has too few properties">>;
+format_error_message(all_schemas_not_valid) ->
+    <<"All schemas failed validation">>;
+format_error_message(any_schemas_not_valid) ->
+    <<"No schemas validated">>;
+format_error_message(not_multiple_of) ->
+    <<"Value is not a multiple">>;
+format_error_message(not_one_schema_valid) ->
+    <<"No schema validated">>;
+format_error_message(more_than_one_schema_valid) ->
+    <<"More than one schema validated">>;
+format_error_message(not_schema_valid) ->
+    <<"Schema not valid">>;
+format_error_message(validation_always_fails) ->
+    <<"Validation always fails">>;
+format_error_message(external) ->
+    <<"External validation error">>;
+format_error_message(not_found) ->
+    <<"Resource not found">>;
+format_error_message({ErrorType, Details}) when is_atom(ErrorType) ->
+    iolist_to_binary(io_lib:format("Validation error (~p): ~p", [ErrorType, Details]));
+format_error_message(Error) when is_atom(Error) ->
+    iolist_to_binary(io_lib:format("Validation error: ~p", [Error]));
 format_error_message(Error) ->
     iolist_to_binary(io_lib:format("Validation error: ~p", [Error])).
 

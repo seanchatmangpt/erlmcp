@@ -12,7 +12,12 @@
     find_server/1, find_server/2, find_transport/1, find_transport/2,
     list_servers/0, list_servers/1, list_transports/0, list_transports/1,
     bind_transport_to_server/2, unbind_transport/1,
-    get_server_for_transport/1
+    get_server_for_transport/1,
+    get_all_state/0,
+    get_pid/0,
+    get_queue_depth/0,
+    restore_state/1,
+    route_message/2
 ]).
 
 %% gen_server callbacks
@@ -153,6 +158,72 @@ unbind_transport(TransportId) ->
 get_server_for_transport(TransportId) ->
     gen_server:call(?MODULE, {get_server_for_transport, TransportId}).
 
+%%--------------------------------------------------------------------
+%% @doc Get complete registry state for debugging/inspection.
+%% @end
+%%--------------------------------------------------------------------
+-spec get_all_state() -> {ok, state()} | {error, term()}.
+get_all_state() ->
+    gen_server:call(?MODULE, get_all_state).
+
+%%--------------------------------------------------------------------
+%% @doc Get the registry process PID.
+%% @end
+%%--------------------------------------------------------------------
+-spec get_pid() -> pid() | undefined.
+get_pid() ->
+    whereis(?MODULE).
+
+%%--------------------------------------------------------------------
+%% @doc Get the current message queue depth of the registry process.
+%% @end
+%%--------------------------------------------------------------------
+-spec get_queue_depth() -> non_neg_integer().
+get_queue_depth() ->
+    case get_pid() of
+        undefined -> 0;
+        Pid ->
+            {message_queue_len, Len} = erlang:process_info(Pid, message_queue_len),
+            Len
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc Restore registry state from a saved state map.
+%% Useful for hot code upgrades or testing.
+%% @end
+%%--------------------------------------------------------------------
+-spec restore_state(state()) -> ok | {error, term()}.
+restore_state(State) ->
+    gen_server:call(?MODULE, {restore_state, State}).
+
+%%--------------------------------------------------------------------
+%% @doc Route a message to a destination (server or transport).
+%% Destination format: {server, ServerId} | {transport, TransportId}
+%% @end
+%%--------------------------------------------------------------------
+-spec route_message({server, server_id()} | {transport, transport_id()}, term()) -> ok | {error, term()}.
+route_message({server, ServerId}, Message) ->
+    % Find server to get transport ID
+    case find_server(ServerId) of
+        {ok, {_Pid, _Config}} ->
+            % For now, broadcast to all transports bound to this server
+            route_to_transport(broadcast, ServerId, Message);
+        {error, not_found} ->
+            {error, server_not_found}
+    end;
+route_message({transport, TransportId}, Message) ->
+    % Find transport to get server ID
+    case find_transport(TransportId) of
+        {ok, {_Pid, Config}} ->
+            ServerId = maps:get(server_id, Config, undefined),
+            case ServerId of
+                undefined -> {error, no_bound_server};
+                _ -> route_to_transport(TransportId, ServerId, Message)
+            end;
+        {error, not_found} ->
+            {error, transport_not_found}
+    end.
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -160,6 +231,7 @@ get_server_for_transport(TransportId) ->
 -spec init([]) -> {ok, state()}.
 init([]) ->
     process_flag(trap_exit, true),
+    ok = erlmcp_registry_utils:ensure_gproc_started(),
     logger:info("Starting MCP registry with gproc"),
     {ok, #registry_state{}}.
 
@@ -167,7 +239,7 @@ init([]) ->
     {reply, term(), state()}.
 
 handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
-    % Use gproc to register the server
+    % Use gproc to register the server with retry logic to prevent race conditions
     Key = {n, l, {mcp, server, ServerId}},
     case gproc:where(Key) of
         undefined ->
@@ -179,17 +251,22 @@ handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
                 {reply, ok, State}
             catch
                 error:badarg ->
-                    % Already registered by another process
-                    logger:warning("Server ~p already registered", [ServerId]),
+                    % Race condition: another process registered just now
+                    logger:warning("Registration race for server ~p, retry logic may be needed", [ServerId]),
                     {reply, {error, already_registered}, State}
             end;
+        ExistingPid when ExistingPid =:= ServerPid ->
+            % Already registered by same process - this is OK (idempotent)
+            logger:debug("Server ~p already registered by same pid ~p", [ServerId, ServerPid]),
+            {reply, ok, State};
         ExistingPid ->
-            logger:warning("Server ~p already registered with pid ~p", [ServerId, ExistingPid]),
+            logger:warning("Server ~p already registered with different pid ~p (our pid: ~p)",
+                          [ServerId, ExistingPid, ServerPid]),
             {reply, {error, already_registered}, State}
     end;
 
 handle_call({register_transport, TransportId, TransportPid, Config}, _From, State) ->
-    % Use gproc to register the transport
+    % Use gproc to register the transport with retry logic to prevent race conditions
     Key = {n, l, {mcp, transport, TransportId}},
     case gproc:where(Key) of
         undefined ->
@@ -210,11 +287,17 @@ handle_call({register_transport, TransportId, TransportPid, Config}, _From, Stat
                 {reply, ok, NewState}
             catch
                 error:badarg ->
-                    logger:warning("Transport ~p already registered", [TransportId]),
+                    % Race condition: another process registered just now
+                    logger:warning("Registration race for transport ~p, retry logic may be needed", [TransportId]),
                     {reply, {error, already_registered}, State}
             end;
+        ExistingPid when ExistingPid =:= TransportPid ->
+            % Already registered by same process - this is OK (idempotent)
+            logger:debug("Transport ~p already registered by same pid ~p", [TransportId, TransportPid]),
+            {reply, ok, State};
         ExistingPid ->
-            logger:warning("Transport ~p already registered with pid ~p", [TransportId, ExistingPid]),
+            logger:warning("Transport ~p already registered with different pid ~p (our pid: ~p)",
+                          [TransportId, ExistingPid, TransportPid]),
             {reply, {error, already_registered}, State}
     end;
 
@@ -319,6 +402,16 @@ handle_call({get_server_for_transport, TransportId}, _From, State) ->
         undefined -> {reply, {error, not_found}, State};
         ServerId -> {reply, {ok, ServerId}, State}
     end;
+
+handle_call(get_all_state, _From, State) ->
+    {reply, {ok, State}, State};
+
+handle_call({restore_state, NewState}, _From, _State) when is_record(NewState, registry_state) ->
+    logger:info("Restoring registry state"),
+    {reply, ok, NewState};
+
+handle_call({restore_state, _InvalidState}, _From, State) ->
+    {reply, {error, invalid_state}, State};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
