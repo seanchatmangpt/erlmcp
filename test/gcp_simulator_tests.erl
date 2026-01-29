@@ -44,28 +44,28 @@ cleanup(_) ->
 
 storage_test_() ->
     {setup, fun setup/0, fun cleanup/1, [
-        {"Create bucket", fun storage_create_bucket_test/0},
-        {"Bucket already exists", fun storage_bucket_exists_test/0},
-        {"Upload and download object", fun storage_object_roundtrip_test/0},
-        {"List objects", fun storage_list_objects_test/0},
-        {"Delete object", fun storage_delete_object_test/0},
-        {"Copy object", fun storage_copy_object_test/0},
-        {"Versioning", fun storage_versioning_test/0}
+        {"Create bucket", fun storage_create_bucket_/0},
+        {"Bucket already exists", fun storage_bucket_exists_/0},
+        {"Upload and download object", fun storage_object_roundtrip_/0},
+        {"List objects", fun storage_list_objects_/0},
+        {"Delete object", fun storage_delete_object_/0},
+        {"Copy object", fun storage_copy_object_/0},
+        {"Versioning", fun storage_versioning_/0}
     ]}.
 
-storage_create_bucket_test() ->
+storage_create_bucket_() ->
     {ok, Bucket} = gcp_storage_sim:create_bucket(<<"my-project">>, <<"my-bucket">>),
     ?assertEqual(<<"my-bucket">>, Bucket#gcp_bucket.name),
     ?assertEqual(<<"my-project">>, Bucket#gcp_bucket.project_id),
     ok.
 
-storage_bucket_exists_test() ->
+storage_bucket_exists_() ->
     %% Bucket already created in previous test
     {error, Error} = gcp_storage_sim:create_bucket(<<"my-project">>, <<"my-bucket">>),
     ?assertEqual(?GCP_CONFLICT, Error#gcp_error.code),
     ok.
 
-storage_object_roundtrip_test() ->
+storage_object_roundtrip_() ->
     Data = <<"Hello, GCP Storage!">>,
     {ok, Obj} = gcp_storage_sim:upload_object(
         <<"my-bucket">>, <<"test.txt">>, <<"text/plain">>, Data),
@@ -76,7 +76,7 @@ storage_object_roundtrip_test() ->
     ?assertEqual(Data, Downloaded),
     ok.
 
-storage_list_objects_test() ->
+storage_list_objects_() ->
     %% Upload a few more objects
     gcp_storage_sim:upload_object(<<"my-bucket">>, <<"dir/file1.txt">>,
                                    <<"text/plain">>, <<"content1">>),
@@ -92,14 +92,14 @@ storage_list_objects_test() ->
     ?assertEqual(2, length(DirObjects)),
     ok.
 
-storage_delete_object_test() ->
+storage_delete_object_() ->
     ok = gcp_storage_sim:delete_object(<<"my-bucket">>, <<"dir/file1.txt">>),
     {error, Error} = gcp_storage_sim:download_object(<<"my-bucket">>,
                                                       <<"dir/file1.txt">>),
     ?assertEqual(?GCP_NOT_FOUND, Error#gcp_error.code),
     ok.
 
-storage_copy_object_test() ->
+storage_copy_object_() ->
     %% Create destination bucket
     {ok, _} = gcp_storage_sim:create_bucket(<<"my-project">>, <<"dest-bucket">>),
 
@@ -116,7 +116,7 @@ storage_copy_object_test() ->
     ?assertEqual(<<"Hello, GCP Storage!">>, Data),
     ok.
 
-storage_versioning_test() ->
+storage_versioning_() ->
     %% Create bucket with versioning
     {ok, _} = gcp_storage_sim:create_bucket(<<"my-project">>, <<"versioned-bucket">>,
                                             #{versioning => true}),
@@ -139,19 +139,19 @@ storage_versioning_test() ->
 
 pubsub_test_() ->
     {setup, fun setup/0, fun cleanup/1, [
-        {"Create topic", fun pubsub_create_topic_test/0},
-        {"Create subscription", fun pubsub_create_subscription_test/0},
-        {"Publish and pull", fun pubsub_publish_pull_test/0},
-        {"Acknowledge message", fun pubsub_acknowledge_test/0},
-        {"Delete topic", fun pubsub_delete_topic_test/0}
+        {"Create topic", fun pubsub_create_topic_/0},
+        {"Create subscription", fun pubsub_create_subscription_/0},
+        {"Publish and pull", fun pubsub_publish_pull_/0},
+        {"Acknowledge message", fun pubsub_acknowledge_/0},
+        {"Delete topic", fun pubsub_delete_topic_/0}
     ]}.
 
-pubsub_create_topic_test() ->
+pubsub_create_topic_() ->
     {ok, Topic} = gcp_pubsub_sim:create_topic(<<"my-project">>, <<"my-topic">>),
     ?assertEqual(<<"projects/my-project/topics/my-topic">>, Topic#gcp_topic.name),
     ok.
 
-pubsub_create_subscription_test() ->
+pubsub_create_subscription_() ->
     TopicName = <<"projects/my-project/topics/my-topic">>,
     {ok, Sub} = gcp_pubsub_sim:create_subscription(
         <<"my-project">>, <<"my-sub">>, TopicName),
@@ -160,7 +160,7 @@ pubsub_create_subscription_test() ->
     ?assertEqual(TopicName, Sub#gcp_subscription.topic),
     ok.
 
-pubsub_publish_pull_test() ->
+pubsub_publish_pull_() ->
     TopicName = <<"projects/my-project/topics/my-topic">>,
     SubName = <<"projects/my-project/subscriptions/my-sub">>,
 
@@ -181,7 +181,7 @@ pubsub_publish_pull_test() ->
     ?assert(is_binary(Msg1#gcp_received_message.ack_id)),
     ok.
 
-pubsub_acknowledge_test() ->
+pubsub_acknowledge_() ->
     SubName = <<"projects/my-project/subscriptions/my-sub">>,
 
     %% Pull messages first
@@ -196,7 +196,7 @@ pubsub_acknowledge_test() ->
     ?assertEqual(0, length(MoreMessages)),
     ok.
 
-pubsub_delete_topic_test() ->
+pubsub_delete_topic_() ->
     %% Create new topic to delete
     {ok, _} = gcp_pubsub_sim:create_topic(<<"my-project">>, <<"delete-me">>),
     TopicName = <<"projects/my-project/topics/delete-me">>,
@@ -213,13 +213,13 @@ pubsub_delete_topic_test() ->
 
 iam_test_() ->
     {setup, fun setup/0, fun cleanup/1, [
-        {"Create service account", fun iam_create_service_account_test/0},
-        {"IAM policy", fun iam_policy_test/0},
-        {"Add binding", fun iam_add_binding_test/0},
-        {"Test permissions", fun iam_test_permissions_test/0}
+        {"Create service account", fun iam_create_service_account_/0},
+        {"IAM policy", fun iam_policy_/0},
+        {"Add binding", fun iam_add_binding_/0},
+        {"Test permissions", fun iam_test_permissions_/0}
     ]}.
 
-iam_create_service_account_test() ->
+iam_create_service_account_() ->
     {ok, SA} = gcp_iam_sim:create_service_account(
         <<"my-project">>, <<"my-sa">>, <<"My Service Account">>),
     ?assertEqual(<<"my-sa@my-project.iam.gserviceaccount.com">>,
@@ -227,13 +227,13 @@ iam_create_service_account_test() ->
     ?assertEqual(<<"My Service Account">>, SA#gcp_service_account.display_name),
     ok.
 
-iam_policy_test() ->
+iam_policy_() ->
     {ok, Policy} = gcp_iam_sim:get_iam_policy(bucket, <<"test-bucket">>),
     ?assertEqual(1, Policy#gcp_iam_policy.version),
     ?assertEqual([], Policy#gcp_iam_policy.bindings),
     ok.
 
-iam_add_binding_test() ->
+iam_add_binding_() ->
     {ok, Policy} = gcp_iam_sim:add_binding(
         bucket, <<"test-bucket">>,
         <<"roles/storage.admin">>,
@@ -244,7 +244,7 @@ iam_add_binding_test() ->
     ?assertEqual(<<"roles/storage.admin">>, Binding#gcp_iam_binding.role),
     ok.
 
-iam_test_permissions_test() ->
+iam_test_permissions_() ->
     %% Test permissions for the binding we added
     {ok, Allowed} = gcp_iam_sim:test_iam_permissions(
         bucket, <<"test-bucket">>,
@@ -260,14 +260,14 @@ iam_test_permissions_test() ->
 
 compute_test_() ->
     {setup, fun setup/0, fun cleanup/1, [
-        {"Create instance", fun compute_create_instance_test/0},
-        {"Get instance", fun compute_get_instance_test/0},
-        {"List instances", fun compute_list_instances_test/0},
-        {"Stop and start instance", fun compute_stop_start_test/0},
-        {"Set metadata", fun compute_set_metadata_test/0}
+        {"Create instance", fun compute_create_instance_/0},
+        {"Get instance", fun compute_get_instance_/0},
+        {"List instances", fun compute_list_instances_/0},
+        {"Stop and start instance", fun compute_stop_start_/0},
+        {"Set metadata", fun compute_set_metadata_/0}
     ]}.
 
-compute_create_instance_test() ->
+compute_create_instance_() ->
     {ok, Instance} = gcp_compute_sim:create_instance(
         <<"my-project">>, <<"us-central1-a">>, <<"my-vm">>, <<"e2-micro">>),
     ?assertEqual(<<"my-vm">>, Instance#gcp_instance.name),
@@ -275,13 +275,13 @@ compute_create_instance_test() ->
     ?assertEqual(provisioning, Instance#gcp_instance.status),
     ok.
 
-compute_get_instance_test() ->
+compute_get_instance_() ->
     {ok, Instance} = gcp_compute_sim:get_instance(
         <<"my-project">>, <<"us-central1-a">>, <<"my-vm">>),
     ?assertEqual(<<"my-vm">>, Instance#gcp_instance.name),
     ok.
 
-compute_list_instances_test() ->
+compute_list_instances_() ->
     %% Create another instance
     {ok, _} = gcp_compute_sim:create_instance(
         <<"my-project">>, <<"us-central1-a">>, <<"my-vm-2">>, <<"e2-small">>),
@@ -291,7 +291,7 @@ compute_list_instances_test() ->
     ?assert(length(Instances) >= 2),
     ok.
 
-compute_stop_start_test() ->
+compute_stop_start_() ->
     %% Wait for instance to be running
     timer:sleep(100),
 
@@ -310,7 +310,7 @@ compute_stop_start_test() ->
     end,
     ok.
 
-compute_set_metadata_test() ->
+compute_set_metadata_() ->
     Metadata = #{<<"startup-script">> => <<"echo hello">>},
     {ok, Instance} = gcp_compute_sim:set_metadata(
         <<"my-project">>, <<"us-central1-a">>, <<"my-vm">>, Metadata),
@@ -323,10 +323,10 @@ compute_set_metadata_test() ->
 
 integration_test_() ->
     {setup, fun setup/0, fun cleanup/1, [
-        {"Full workflow", fun integration_full_workflow_test/0}
+        {"Full workflow", fun integration_full_workflow_/0}
     ]}.
 
-integration_full_workflow_test() ->
+integration_full_workflow_() ->
     ProjectId = <<"integration-project">>,
 
     %% 1. Create service account

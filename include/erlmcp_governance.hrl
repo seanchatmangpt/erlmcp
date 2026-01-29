@@ -162,6 +162,21 @@
 -define(REFUSAL_KILL_SWITCH_FAMILY, 2042).
 -define(REFUSAL_KILL_SWITCH_CAPABILITY, 2043).
 -define(REFUSAL_KILL_SWITCH_EPOCH, 2044).
+-define(REFUSAL_KILL_SWITCH_ACTIVE, 2045).
+
+%%====================================================================
+%% Refusal Record - Governance Denial
+%%====================================================================
+
+-record(mcp_refusal, {
+    code :: pos_integer(),                  % Refusal code (2001-2050)
+    reason :: binary(),                     % Human-readable reason
+    timestamp :: timestamp_ms(),            % When refusal occurred
+    contract_id :: contract_id() | undefined,
+    details :: map() | undefined            % Additional context
+}).
+
+-type mcp_refusal() :: #mcp_refusal{}.
 
 %%====================================================================
 %% Receipt Record - Cryptographic Audit Trail

@@ -17,7 +17,10 @@
 -type region() :: binary().
 -type zone() :: binary().
 -type resource_id() :: binary().
+%% timestamp_ms() defined in erlmcp_governance.hrl if included
+-ifndef(ERLMCP_GOVERNANCE_HRL).
 -type timestamp_ms() :: non_neg_integer().
+-endif.
 -type etag() :: binary().
 
 %%====================================================================
