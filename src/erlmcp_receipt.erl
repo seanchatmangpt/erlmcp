@@ -203,7 +203,7 @@ hash_request(Payload) when is_binary(Payload) ->
     crypto:hash(sha256, Payload);
 hash_request(Payload) when is_map(Payload) ->
     %% Canonical JSON encoding for consistent hashing
-    Json = jsx:encode(Payload, [sorted]),
+    Json = erlmcp_json:canonical_encode(Payload),
     crypto:hash(sha256, Json).
 
 %% @doc Hash a response payload (text-blind).
@@ -211,7 +211,7 @@ hash_request(Payload) when is_map(Payload) ->
 hash_response(Payload) when is_binary(Payload) ->
     crypto:hash(sha256, Payload);
 hash_response(Payload) when is_map(Payload) ->
-    Json = jsx:encode(Payload, [sorted]),
+    Json = erlmcp_json:canonical_encode(Payload),
     crypto:hash(sha256, Json).
 
 %% @doc Compute receipt ID from contents.
@@ -456,7 +456,7 @@ receipt_to_signable(#mcp_receipt{} = R) ->
         <<"epoch">> => R#mcp_receipt.epoch,
         <<"timestamp">> => R#mcp_receipt.timestamp
     },
-    jsx:encode(Map, [sorted]).
+    erlmcp_json:canonical_encode(Map).
 
 -spec compute_receipt_hash(#mcp_receipt{}) -> hash().
 compute_receipt_hash(Receipt) ->

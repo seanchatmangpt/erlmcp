@@ -122,13 +122,13 @@ create(Family, Version, Specification, Opts) when
     },
 
     %% Compute hashes
+    %% Origin hash must be computed first and set before artifact hash
+    %% (artifact hash includes origin_hash in its computation)
     OriginHash = compute_origin_hash(Specification),
-    ArtifactHash = compute_artifact_hash(Contract),
+    ContractWithOrigin = Contract#mcp_contract{origin_hash = OriginHash},
+    ArtifactHash = compute_artifact_hash(ContractWithOrigin),
 
-    {ok, Contract#mcp_contract{
-        origin_hash = OriginHash,
-        artifact_hash = ArtifactHash
-    }}.
+    {ok, ContractWithOrigin#mcp_contract{artifact_hash = ArtifactHash}}.
 
 %% @doc Seal a contract with cryptographic signature.
 -spec seal(#mcp_contract{}, binary()) -> seal_result().
@@ -282,7 +282,7 @@ validate_tier(?TIER_A_AUTOMATE, _Operation) ->
 %% @doc Compute hash of origin specification.
 -spec compute_origin_hash(map()) -> hash().
 compute_origin_hash(Specification) when is_map(Specification) ->
-    CanonicalJson = jsx:encode(Specification, [sorted]),
+    CanonicalJson = erlmcp_json:canonical_encode(Specification),
     crypto:hash(sha256, CanonicalJson).
 
 %% @doc Compute hash of contract artifact (mu(O)).
@@ -440,7 +440,7 @@ contract_to_signable(#mcp_contract{} = C) ->
         <<"expires_at">> => C#mcp_contract.expires_at,
         <<"origin_hash">> => base64:encode(C#mcp_contract.origin_hash)
     },
-    jsx:encode(Map, [sorted]).
+    erlmcp_json:canonical_encode(Map).
 
 -spec generate_keypair() -> {binary(), binary()}.
 generate_keypair() ->

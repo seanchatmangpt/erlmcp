@@ -264,7 +264,7 @@ report_to_json(Result) ->
 -spec report_to_binary(#mcp_verification_result{}) -> binary().
 report_to_binary(Result) ->
     Report = generate_report(Result),
-    jsx:encode(Report, [sorted]).
+    erlmcp_json:canonical_encode(Report).
 
 %%====================================================================
 %% API - Verification Registry
