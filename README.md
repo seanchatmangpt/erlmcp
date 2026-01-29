@@ -227,6 +227,116 @@ See the [examples directory](examples/README.md) for comprehensive examples:
 ### Contributing
 - [Contributing Guide](CONTRIBUTING.md) - How to contribute code and documentation
 
+## Ontology-Driven Code Generation with ggen
+
+erlmcp integrates with [ggen](https://github.com/seanchatmangpt/ggen) for ontology-driven code generation, transforming TCPS (Toyota Code Production System) RDF ontologies into production artifacts.
+
+### What is ggen?
+
+ggen is a deterministic code generator that bridges semantic web technologies (RDF, SPARQL, OWL) with modern programming languages. It enables:
+
+- **Single Source of Truth**: Define domain models once in RDF
+- **SPARQL Queries**: Extract and transform ontology data
+- **Tera Templates**: Generate code in any language (Erlang, Rust, TypeScript, etc.)
+- **Deterministic Builds**: Same ontology + templates = identical output
+
+### Quick Start with ggen
+
+**Installation**:
+```bash
+# macOS/Linux
+brew install seanchatmangpt/ggen/ggen
+
+# Docker
+docker pull seanchatman/ggen:6.0.0
+```
+
+**Generate TCPS artifacts**:
+```bash
+# Validate ontologies with SHACL
+ggen validate --shacl
+
+# Generate all artifacts (SKU listings, receipts, types, docs)
+ggen sync
+
+# Generate specific artifact types
+ggen generate --rule sku_listings
+ggen generate --rule erlang_types
+ggen generate --rule quality_reports
+```
+
+### What Does ggen Generate?
+
+From the TCPS ontologies in `ontology/`, ggen produces:
+
+1. **SKU Marketplace Listings** (`generated/marketplace/`)
+   - Product descriptions with quality receipts
+   - Installation instructions
+   - Feature lists and metadata
+
+2. **Erlang Type Definitions** (`include/generated_types.hrl`)
+   - Type-safe Erlang records from ontology classes
+   - Guaranteed consistency between RDF and code
+
+3. **Production Receipts** (`generated/receipts/`)
+   - Cryptographic proof-of-work (SHA256)
+   - Stage completion evidence
+   - Deterministic and auditable
+
+4. **Quality Reports** (`generated/reports/`)
+   - Build and test metrics
+   - SHACL validation results
+   - Andon event summaries
+
+5. **Work Orders & Andon Events** (`generated/work_orders/`, `generated/andon/`)
+   - RDF instances for TCPS production flow
+   - Pull-based demand signals
+   - Quality alerts and root cause analysis
+
+6. **Standard Work Documentation** (`generated/docs/standard-work/`)
+   - Production stage procedures
+   - SLO definitions and quality gates
+   - Failure modes and mitigations
+
+### Directory Structure
+
+```
+erlmcp/
+├── ggen.toml                 # ggen configuration
+├── ontology/                 # RDF ontologies (source of truth)
+│   ├── tcps_core.ttl         # Core TCPS ontology
+│   ├── tcps_quality.ttl      # Quality metrics ontology
+│   └── tcps_flow.ttl         # Production flow ontology
+├── shapes/                   # SHACL validation shapes
+│   └── tcps_shapes.ttl
+├── sparql/                   # SPARQL queries
+│   └── tcps_queries/
+│       ├── sku_readiness.rq
+│       └── quality_metrics.rq
+├── templates/                # Tera templates
+│   └── ggen/
+│       ├── sku_listing.md.tera
+│       ├── receipt.json.tera
+│       └── erlang_types.hrl.tera
+└── generated/                # Generated artifacts (gitignored)
+    ├── marketplace/
+    ├── receipts/
+    └── docs/
+```
+
+### Documentation
+
+- **[GGEN Integration Guide](docs/GGEN_INTEGRATION.md)** - Complete ggen usage guide
+- **[Example Script](scripts/ggen_example.sh)** - Interactive examples
+
+### Benefits
+
+- ✅ **Consistency**: Ontology drives both documentation and code
+- ✅ **Determinism**: Reproducible builds with cryptographic receipts
+- ✅ **Validation**: SHACL shapes catch errors before generation
+- ✅ **Automation**: CI/CD integration for continuous generation
+- ✅ **Type Safety**: Generated Erlang types match ontology exactly
+
 ## Key Features
 
 ### Core MCP Support

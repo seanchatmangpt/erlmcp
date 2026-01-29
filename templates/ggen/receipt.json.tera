@@ -1,0 +1,56 @@
+{#
+  TCPS Receipt Template (JSON Format)
+
+  Generates deterministic receipt JSON as proof-of-work evidence.
+  Receipts prove that a production stage passed validation.
+
+  Context Variables (required):
+    - stage_name: string - Production stage name
+    - timestamp: string - ISO 8601 timestamp
+    - status: string - Status ("PASS", "FAIL", "SKIP")
+    - sku_id: string - SKU identifier
+    - evidence_data: object - Stage-specific evidence
+
+  Context Variables (optional):
+    - checksum: string - SHA256 checksum
+    - duration_ms: integer - Duration in milliseconds
+    - work_order_id: string - Work order reference
+    - environment: string - Build environment
+    - metadata: object - Additional metadata
+#}
+{
+  "receipt_version": "1.0.0",
+  "stage_name": "{{ stage_name }}",
+  "timestamp": "{{ timestamp }}",
+  "status": "{{ status }}",
+  "sku_id": "{{ sku_id }}",
+  {% if work_order_id -%}
+  "work_order_id": "{{ work_order_id }}",
+  {% endif -%}
+  {% if duration_ms -%}
+  "duration_ms": {{ duration_ms }},
+  {% endif -%}
+  {% if environment -%}
+  "environment": "{{ environment }}",
+  {% endif -%}
+  "evidence": {
+    {% for key, value in evidence_data -%}
+    "{{ key }}": {% if value is string %}"{{ value }}"{% else %}{{ value }}{% endif %}{% if not loop.last %},{% endif %}
+    {% endfor %}
+  },
+  {% if checksum -%}
+  "checksum": {
+    "algorithm": "sha256",
+    "value": "{{ checksum }}"
+  },
+  {% endif -%}
+  {% if metadata -%}
+  "metadata": {
+    {% for key, value in metadata -%}
+    "{{ key }}": "{{ value }}"{% if not loop.last %},{% endif %}
+    {% endfor %}
+  },
+  {% endif -%}
+  "generated_by": "ggen",
+  "generated_at": "{{ timestamp }}"
+}
