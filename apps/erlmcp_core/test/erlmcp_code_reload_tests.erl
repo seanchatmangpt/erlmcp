@@ -175,15 +175,33 @@ test_reload_history() ->
 %% Helper Functions
 %%====================================================================
 
+%% @doc Get module version, handling cover_compiled modules
 get_module_version(Module) ->
     case code:which(Module) of
         non_existing ->
             undefined;
         BeamPath when is_list(BeamPath) ->
-            case beam_lib:version(BeamPath) of
-                {ok, {Module, Version}} ->
-                    Version;
+            % Check if this is a cover_compiled path
+            case string:find(BeamPath, "cover_compiled") of
+                nomatch ->
+                    case beam_lib:version(BeamPath) of
+                        {ok, {Module, Version}} ->
+                            Version;
+                        _ ->
+                            undefined
+                    end;
                 _ ->
-                    undefined
+                    % For cover_compiled modules, try to get the original beam path
+                    case code:get_object_code(Module) of
+                        {_Module, _Binary, Filename} when is_list(Filename) ->
+                            case beam_lib:version(Filename) of
+                                {ok, {Module, Version}} ->
+                                    Version;
+                                _ ->
+                                    undefined
+                            end;
+                        _ ->
+                            undefined
+                    end
             end
     end.

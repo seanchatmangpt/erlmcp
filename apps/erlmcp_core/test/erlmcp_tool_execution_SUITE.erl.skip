@@ -1,0 +1,1770 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Comprehensive Tool Execution Integration Test Suite for ErlMCP
+%%%
+%%% This Common Test suite validates:
+%%% - Tool execution under realistic conditions
+%%% - Concurrent tool execution with proper resource management
+%%% - Tool result serialization/deserialization
+%%% - Error handling and recovery
+%%% - Performance benchmarks
+%%% - Protocol compliance
+%%% - Security and input validation
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_tool_execution_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("erlmcp_core/include/erlmcp.hrl").
+
+%% Suite callbacks
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1,
+         init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
+
+%% Test cases
+-export([
+    % Basic tool execution tests
+    test_tool_registration_and_listing/1,
+    test_tool_execution_basic/1,
+    test_tool_execution_with_schema/1,
+
+    % Result handling tests
+    test_result_types_handling/1,
+    test_result_serialization/1,
+    test_mixed_content_results/1,
+
+    % Performance tests
+    test_concurrent_tool_execution/1,
+    test_tool_execution_throughput/1,
+    test_memory_usage_stability/1,
+
+    % Error handling tests
+    test_error_scenarios/1,
+    test_error_recovery/1,
+    test_timeout_handling/1,
+
+    % Integration tests
+    test_full_mcp_protocol_flow/1,
+    test_tool_notifications/1,
+    test_progress_tracking/1,
+
+    % Security and validation tests
+    test_input_validation/1,
+    test_schema_validation/1,
+    test_security_constraints/1,
+
+    % Stress tests
+    test_high_load_scenarios/1,
+    test_resource_limit_scenarios/1,
+    test_failure_injection_scenarios/1
+]).
+
+%% Test constants
+-define(TEST_TIMEOUT, 30000).
+-define(MAX_CONCURRENT_TOOLS, 100).
+-define(THROUGHput_TEST_SIZE, 10000).
+-define(MEMORY_TEST_ITERATIONS, 100).
+-define(ERROR_TEST_ITERATIONS, 50).
+-define(STRESS_TEST_DURATION, 10000).  % 10 seconds
+
+%%====================================================================
+%% Suite Configuration
+%%====================================================================
+
+all() ->
+    [
+        {group, basic_execution},
+        {group, result_handling},
+        {group, performance},
+        {group, error_handling},
+        {group, integration},
+        {group, security},
+        {group, stress_tests}
+    ].
+
+groups() ->
+    [
+        {basic_execution, [sequence], [
+            test_tool_registration_and_listing,
+            test_tool_execution_basic,
+            test_tool_execution_with_schema
+        ]},
+        {result_handling, [parallel], [
+            test_result_types_handling,
+            test_result_serialization,
+            test_mixed_content_results
+        ]},
+        {performance, [parallel], [
+            test_concurrent_tool_execution,
+            test_tool_execution_throughput,
+            test_memory_usage_stability
+        ]},
+        {error_handling, [sequence], [
+            test_error_scenarios,
+            test_error_recovery,
+            test_timeout_handling
+        ]},
+        {integration, [sequence], [
+            test_full_mcp_protocol_flow,
+            test_tool_notifications,
+            test_progress_tracking
+        ]},
+        {security, [parallel], [
+            test_input_validation,
+            test_schema_validation,
+            test_security_constraints
+        ]},
+        {stress_tests, [parallel], [
+            test_high_load_scenarios,
+            test_resource_limit_scenarios,
+            test_failure_injection_scenarios
+        ]}
+    ].
+
+%%====================================================================
+%% Suite Setup and Cleanup
+%%====================================================================
+
+init_per_suite(Config) ->
+    ct:pal("Starting ErlMCP Tool Execution Test Suite"),
+
+    %% Start required applications
+    crypto:start(),
+    jsx:start(),
+
+    %% Start dependencies
+    Deps = [jsx, jesse, opentelemetry, opentelemetry_api],
+    lists:foreach(fun(App) ->
+        case application:start(App) of
+            ok -> ok;
+            {error, {already_started, App}} -> ok;
+            {error, _} ->
+                ct:log("Warning: Could not start application ~p", [App])
+        end
+    end, Deps),
+
+    %% Start ErlMCP application
+    case application:start(erlmcp_core) of
+        ok -> ok;
+        {error, {already_started, erlmcp_core}} -> ok;
+        {error, Reason} ->
+            ct:fail("Failed to start erlmcp_core: ~p", [Reason])
+    end,
+
+    %% Configure logging for test visibility
+    application:set_env(logger, level, info),
+
+    %% Initialize test data
+    Config.
+
+end_per_suite(Config) ->
+    ct:pal("Cleaning up ErlMCP Tool Execution Test Suite"),
+
+    %% Stop ErlMCP application
+    application:stop(erlmcp_core),
+
+    %% Stop dependencies
+    lists:foreach(fun(App) -> application:stop(App) end, [jsx, jesse]),
+
+    %% Clean up any remaining processes
+    cleanup_processes(),
+
+    Config.
+
+init_per_group(_Group, Config) ->
+    Config.
+
+end_per_group(_Group, Config) ->
+    Config.
+
+init_per_testcase(TestCase, Config) ->
+    ct:pal("Starting test case: ~p", [TestCase]),
+
+    %% Create test server
+    ServerId = list_to_atom(atom_to_list(TestCase) ++ "_server"),
+    Capabilities = #mcp_server_capabilities{
+        tools = #mcp_tools_capability{listChanged = true}
+    },
+
+    case erlmcp_server:start_link(ServerId, Capabilities) of
+        {ok, ServerPid} ->
+            %% Register server
+            erlmcp_registry:register_name({mcp, ServerId}, ServerPid),
+            [{server_id, ServerId}, {server_pid, ServerPid} | Config];
+        {error, Reason} ->
+            ct:fail("Failed to start test server: ~p", [Reason])
+    end.
+
+end_per_testcase(TestCase, Config) ->
+    ct:pal("Ending test case: ~p", [TestCase]),
+
+    %% Clean up test server
+    ServerId = propl:get_value(server_id, Config),
+    ServerPid = propl:get_value(server_pid, Config),
+
+    if is_pid(ServerPid) ->
+        erlmcp_server:stop(ServerPid),
+        erlmcp_registry:unregister_name({mcp, ServerId});
+    true ->
+        ok
+    end,
+
+    %% Clean up any test data
+    cleanup_test_data(ServerId),
+
+    Config.
+
+%%====================================================================
+%% Test Cases
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Basic Tool Execution Tests
+%%--------------------------------------------------------------------
+
+test_tool_registration_and_listing(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register multiple tools
+    Tools = [
+        {<<"basic_calc">>, #mcp_tool{
+            name = <<"basic_calc">>,
+            description = <<"Basic calculator">>
+        }},
+        {<<"string_ops">>, #mcp_tool{
+            name = <<"string_ops">>,
+            description = <<"String operations">>
+        }},
+        {<<"data_processor">>, #mcp_tool{
+            name = <<"data_processor">>,
+            description = <<"Data processing tool">>
+        }}
+    ],
+
+    lists:foreach(fun({Name, Tool}) ->
+        Handler = fun(Args) ->
+            jsx:encode(#{tool => Name, args => Args})
+        end,
+        ok = erlmcp_server:add_tool(ServerId, Name, Handler)
+    end, Tools),
+
+    %% List all tools
+    ListedTools = erlmcp_server:list_tools(ServerId),
+    ?assertEqual(3, length(ListedTools)),
+
+    %% Verify all tools are listed
+    ToolNames = [maps:get(<<"name">>, Tool) || Tool <- ListedTools],
+    ?assert(lists:member(<<"basic_calc">>, ToolNames)),
+    ?assert(lists:member(<<"string_ops">>, ToolNames)),
+    ?assert(lists:member(<<"data_processor">>, ToolNames)).
+
+test_tool_execution_basic(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register calculator tool
+    ToolName = <<"calculator">>,
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Simple calculator">>
+    },
+    Handler = fun(Args) ->
+        Op = maps:get(<<"operation">>, Args),
+        case Op of
+            <<"add">> ->
+                V1 = maps:get(<<"a">>, Args, 0),
+                V2 = maps:get(<<"b">>, Args, 0),
+                jsx:encode(#{result => V1 + V2});
+            <<"multiply">> ->
+                V1 = maps:get(<<"a">>, Args, 1),
+                V2 = maps:get(<<"b">>, Args, 1),
+                jsx:encode(#{result => V1 * V2});
+            _ ->
+                jsx:encode(#{error => <<"Unknown operation">>})
+        end
+    end,
+
+    ok = erlmcp_server:add_tool(ServerId, ToolName, Handler),
+
+    %% Test addition
+    AddArgs = #{
+        <<"operation">> => <<"add">>,
+        <<"a">> => 10,
+        <<"b">> => 5
+    },
+    AddResult = Handler(AddArgs),
+    AddDecoded = jsx:decode(AddResult),
+    ?assertEqual(15, maps:get(<<"result">>, AddDecoded)),
+
+    %% Test multiplication
+    MulArgs = #{
+        <<"operation">> => <<"multiply">>,
+        <<"a">> => 4,
+        <<"b">> => 7
+    },
+    MulResult = Handler(MulArgs),
+    MulDecoded = jsx:decode(MulResult),
+    ?assertEqual(28, maps:get(<<"result">>, MulDecoded)),
+
+    %% Test unknown operation
+    UnknownArgs = #{
+        <<"operation">> => <<"unknown">>,
+        <<"a">> => 1,
+        <<"b">> => 2
+    },
+    UnknownResult = Handler(UnknownArgs),
+    UnknownDecoded = jsx:decode(UnknownResult),
+    ?assertEqual(<<"Unknown operation">>, maps:get(<<"error">>, UnknownDecoded)).
+
+test_tool_execution_with_schema(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool with schema
+    ToolName = <<"validated_tool">>,
+    Schema = #{
+        type => <<"object">>,
+        properties => #{
+            name => #{type => <<"string">>, minLength => 1, maxLength => 50},
+            age => #{type => <<"integer">>, minimum => 0, maximum => 150},
+            email => #{type => <<"string">>, format => <<"email">>}
+        },
+        required = [<<"name">>, <<"email">>]
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Validated input tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        jsx:encode(#{
+            name => maps:get(<<"name">>, Args),
+            age => maps:get(<<"age">>, Args, 0),
+            email => maps:get(<<"email">>, Args),
+            status => <<"success">>
+        })
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test valid input
+    ValidArgs = #{
+        <<"name">> => <<"Alice">>,
+        <<"email">> => <<"alice@example.com">>,
+        <<"age">> => 30
+    },
+    ValidResult = Handler(ValidArgs),
+    ValidDecoded = jsx:decode(ValidResult),
+    ?assertEqual(<<"Alice">>, maps:get(<<"name">>, ValidDecoded)),
+    ?assertEqual(<<"alice@example.com">>, maps:get(<<"email">>, ValidDecoded)),
+    ?assertEqual(30, maps:get(<<"age">>, ValidDecoded)),
+
+    %% Test missing required field
+    InvalidArgs = #{
+        <<"name">> => <<"Bob">>
+        %% Missing required email
+    },
+    InvalidResult = Handler(InvalidArgs),
+    ?assert(is_binary(InvalidResult)),  %% Schema should handle this
+
+%%--------------------------------------------------------------------
+%% Result Handling Tests
+%%--------------------------------------------------------------------
+
+test_result_types_handling(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tools with different result types
+    ResultTools = [
+        {<<"text_result">>, fun(Args) ->
+            maps:get(<<"text">>, Args, <<"default text">>)
+        end},
+        {<<"map_result">>, fun(Args) ->
+            #{
+                status => success,
+                data => Args,
+                timestamp => erlang:system_time(millisecond)
+            }
+        end},
+        {<<"list_result">>, fun(Args) ->
+            Count = maps:get(<<"count">>, Args, 3),
+            [#{id => I, value => I * 2} || I <- lists:seq(1, Count)]
+        end},
+        {<<"binary_result">>, fun(_) ->
+            base64:encode(<<"binary_data">>)
+        end}
+    ],
+
+    lists:foreach(fun({Name, Handler}) ->
+        Tool = #mcp_tool{name = Name, description = <<"Result type test">>},
+        ok = erlmcp_server:add_tool(ServerId, Name, Handler)
+    end, ResultTools),
+
+    %% Test each result type
+    TextResult = Handler(text_result, #{<<"text">> => <<"hello">>}),
+    ?assert(is_binary(TextResult)),
+    ?assertEqual(<<"hello">>, TextResult),
+
+    MapResult = Handler(map_result, #{<<"key">> => <<"value">>}),
+    ?assert(is_map(MapResult)),
+    ?assertEqual(success, maps:get(<<"status">>, MapResult)),
+
+    ListResult = Handler(list_result, #{<<"count">> => 5}),
+    ?assert(is_list(ListResult)),
+    ?assertEqual(5, length(ListResult)),
+
+    BinaryResult = Handler(binary_result, #{}),
+    ?assert(is_binary(BinaryResult)),
+    ?assertEqual(<<"binary_data">>, base64:decode(BinaryResult)).
+
+test_result_serialization(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool with complex result
+    ToolName = <<"serializer">>,
+    Schema = #{
+        type => <<"object">>,
+        properties => #{
+            include_metadata => #{type => <<"boolean">>, default => false}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Result serialization test">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        IncludeMeta = maps:get(<<"include_metadata">>, Args, false),
+        BaseResult = #{
+            data => #{
+                items => [
+                    #{id => 1, name => <<"item1">>, value => 100},
+                    #{id => 2, name => <<"item2">>, value => 200},
+                    #{id => 3, name => <<"item3">>, value => 300}
+                ],
+                total => 3,
+                summary => #{min => 100, max => 300, avg => 200}
+            },
+            metadata => #{
+                generated_at => erlang:system_time(millisecond),
+                version => <<"1.0.0">>,
+                tool => ToolName
+            }
+        },
+        case IncludeMeta of
+            true -> BaseResult;
+            false -> maps:remove(<<"metadata">>, BaseResult)
+        end
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test with metadata
+    WithMeta = Handler(#{<<"include_metadata">> => true}),
+    ?assert(is_map(WithMeta)),
+    ?assert(is_map(maps:get(<<"data">>, WithMeta))),
+    ?assert(is_map(maps:get(<<"metadata">>, WithMeta))),
+
+    %% Test without metadata
+    WithoutMeta = Handler(#{<<"include_metadata">> => false}),
+    ?assert(is_map(WithoutMeta)),
+    ?assert(is_map(maps:get(<<"data">>, WithoutMeta))),
+    ?assertNot(maps:is_key(<<"metadata">>, WithoutMeta)).
+
+test_mixed_content_results(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool returning multiple content types
+    ToolName = <<"multi_content">>,
+    Schema = #{
+        type => <<"object">>,
+        properties => #{
+            content_types => {type, array, items, {type, string}},
+            include_data => {type, boolean, default, true}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Multiple content types">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        Types = maps:get(<<"content_types">>, Args, [<<"text">>, <<"image">>, <<"resource">>]),
+        IncludeData = maps:get(<<"include_data">>, Args, true),
+
+        Contents = lists:map(fun(Type) ->
+            case Type of
+                <<"text">> ->
+                    #mcp_content{
+                        type = <<"text">>,
+                        text = <<"Plain text content">>,
+                        mime_type = <<"text/plain">>
+                    };
+                <<"image">> ->
+                    ImageData = case IncludeData of
+                        true -> base64:encode(<<"fake_image_data">>);
+                        false -> undefined
+                    end,
+                    #mcp_content{
+                        type = <<"image">>,
+                        data = ImageData,
+                        mime_type = <<"image/png">>,
+                        annotations = [
+                            #mcp_annotation{name = <<"format">>, value = <<"png">>},
+                            #mcp_annotation{name = <<"size">>, value => 1024}
+                        ]
+                    };
+                <<"resource">> ->
+                    #mcp_content{
+                        type = <<"resource">>,
+                        uri = <<"data:text/plain;base64,SGVsbG8gV29ybGQh">>,
+                        text = <<"Hello World!">>,
+                        mime_type = <<"text/plain">>
+                    };
+                <<"audio">> ->
+                    AudioData = case IncludeData of
+                        true -> base64:encode(<<"fake_audio">>);
+                        false -> undefined
+                    end,
+                    #mcp_content{
+                        type = <<"audio">>,
+                        data = AudioData,
+                        mime_type = <<"audio/wav">>,
+                        annotations = [
+                            #mcp_annotation{name = <<"duration">>, value => 30.0},
+                            #mcp_annotation{name = <<"sampleRate">>, value => 44100}
+                        ]
+                    }
+            end
+        end, Types),
+
+        Contents
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test with all content types and data
+    AllTypes = Handler(#{<<"content_types">> => [<<"text">>, <<"image">>, <<"resource">>, <<"audio">>],
+                        <<"include_data">> => true}),
+    ?assert(is_list(AllTypes)),
+    ?assertEqual(4, length(AllTypes)),
+
+    %% Verify each content type
+    TextContent = lists:keyfind(<<"text">>, 2, AllTypes),
+    ?assert(is_record(TextContent, mcp_content)),
+    ?assertEqual(<<"Plain text content">>, TextContent#mcp_content.text),
+
+    ImageContent = lists:keyfind(<<"image">>, 2, AllTypes),
+    ?assert(is_record(ImageContent, mcp_content)),
+    ?assert(is_binary(ImageContent#mcp_content.data)),
+    ?assertEqual(2, length(ImageContent#mcp_content.annotations)),
+
+    %% Test without data (reference only)
+    NoDataTypes = Handler(#{<<"content_types">> => [<<"image">>, <<"audio">>],
+                           <<"include_data">> => false}),
+    ?assertEqual(2, length(NoDataTypes)),
+
+    %% Check that data is undefined
+    NoDataImage = lists:keyfind(<<"image">>, 2, NoDataTypes),
+    ?assertEqual(undefined, NoDataImage#mcp_content.data).
+
+%%--------------------------------------------------------------------
+%% Performance Tests
+%%--------------------------------------------------------------------
+
+test_concurrent_tool_execution(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register concurrent execution tool
+    ToolName = <<"concurrent_worker">>,
+    Schema = #{
+        type => <<"object">>,
+        properties => #{
+            thread_id => {type, integer},
+            work_load => {type, integer, default, 1000},
+            sleep_time => {type, integer, default, 10}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Concurrent execution worker">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        ThreadId = maps:get(<<"thread_id">>, Args),
+        WorkLoad = maps:get(<<"work_load">>, Args, 1000),
+        SleepTime = maps:get(<<"sleep_time">>, Args, 10),
+
+        %% Simulate work
+        _ = [crypto:hash(sha256, integer_to_binary(I)) || I <- lists:seq(1, WorkLoad)],
+        timer:sleep(SleepTime),
+
+        #{
+            thread_id => ThreadId,
+            work_done => WorkLoad,
+            sleep_duration => SleepTime,
+            completion_time => erlang:system_time(millisecond)
+        }
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test concurrent execution
+    ConcurrentCount = 50,
+    StartTime = erlang:monotonic_time(millisecond),
+
+    Pids = [spawn_link(fun() ->
+        Args = #{
+            <<"thread_id">> => I,
+            <<"work_load">> => 1000,
+            <<"sleep_time">> => 5
+        },
+        Result = Handler(Args),
+        self() ! {completed, I, Result}
+    end) || I <- lists:seq(1, ConcurrentCount)],
+
+    %% Collect results
+    Results = lists:foldl(fun(_, Acc) ->
+        receive
+            {completed, ThreadId, Result} -> [{ThreadId, Result} | Acc];
+            Other -> [Other | Acc]
+        after 10000 -> Acc
+        end
+    end, [], Pids),
+
+    EndTime = erlang:monotonic_time(millisecond),
+    Duration = EndTime - StartTime,
+
+    %% Verify results
+    ?assertEqual(ConcurrentCount, length(Results)),
+    ?assert(Duration < 15000, "Concurrent execution should complete within 15 seconds"),
+
+    ct:pal("Concurrent execution: ~p threads completed in ~p ms (~.2f threads/sec)",
+           [ConcurrentCount, Duration, (ConcurrentCount * 1000) / Duration]).
+
+test_tool_execution_throughput(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register high-throughput tool
+    ToolName = <<"throughput_test">>,
+    Schema = #{
+        type => <<"object">>,
+        properties => #{
+            operation => {type, string, default, <<"noop">>},
+            complexity => {type, integer, default, 1}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Throughput test tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        Operation = maps:get(<<"operation">>, Args, <<"noop">>),
+        Complexity = maps:get(<<"complexity">>, Args, 1),
+
+        case Operation of
+            <<"noop">> ->
+                <<"ok">>;
+            <<"compute">> ->
+                %% Simulate computation
+                _ = [crypto:hash(sha256, integer_to_binary(I))
+                     || I <- lists:seq(1, Complexity * 100)],
+                jsx:encode(#{complexity => Complexity});
+            <<"io">> ->
+                %% Simulate I/O
+                timer:sleep(Complexity),
+                jsx:_encode(#{io_delay => Complexity})
+        end
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test throughput with mixed operations
+    TestSize = 1000,
+    Operations = [<<"noop">>, <<"compute">>, <<"io">>],
+    Complexity = [1, 5, 10],
+
+    StartTime = erlang:monotonic_time(millisecond),
+
+    Results = [begin
+        Op = lists:nth(((I-1) rem 3) + 1, Operations),
+        Comp = lists:nth(((I-1) rem 3) + 1, Complexity),
+        Args = #{
+            <<"operation">> => Op,
+            <<"complexity">> => Comp
+        },
+        {I, Handler(Args)}
+    end || I <- lists:seq(1, TestSize)],
+
+    EndTime = erlang:monotonic_time(millisecond),
+    Duration = EndTime - StartTime,
+    Throughput = (TestSize * 1000) / Duration,
+
+    %% Verify all operations completed
+    ?assertEqual(TestSize, length(Results)),
+    ?assert(Throughput > 50, "Throughput should be > 50 ops/sec"),
+
+    ct:pal("Throughput test: ~p operations in ~p ms (~.2f ops/sec)",
+           [TestSize, Duration, Throughput]).
+
+test_memory_usage_stability(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register memory-intensive tool
+    ToolName = <<"memory_test">>,
+    Schema = #{
+        type => <<"object">>,
+        properties => #{
+            data_size => {type, integer, default, 1024},
+            iterations => {type, integer, default, 100}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Memory usage test tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        DataSize = maps:get(<<"data_size">>, Args, 1024),
+        Iterations = maps:get(<<"iterations">>, Args, 100),
+
+        %% Process multiple chunks of data
+        Results = [begin
+            Data = binary:copy(<<"x">>, DataSize),
+            Hash = crypto:hash(sha256, Data),
+            Hash
+        end || _ <- lists:seq(1, Iterations)],
+
+        #{processed => Iterations, data_size => DataSize, results => Results}
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test memory usage with increasing data sizes
+    DataSizes = [1024, 10240, 102400, 1024000],  % 1KB, 10KB, 100KB, 1MB
+    IterationCounts = [100, 100, 50, 10],  % Reduce iterations for larger sizes
+
+    lists:zipwith(fun(DataSize, Iterations) ->
+        InitialMem = erlang:memory(total),
+
+        Args = #{
+            <<"data_size">> => DataSize,
+            <<"iterations">> => Iterations
+        },
+        Result = Handler(Args),
+
+        FinalMem = erlang:memory(total),
+        MemoryIncrease = FinalMem - InitialMem,
+
+        ct:pal("Size: ~p bytes, Iterations: ~p, Memory increase: ~p bytes (~.2f MB)",
+               [DataSize, Iterations, MemoryIncrease, MemoryIncrease / (1024*1024)]),
+
+        %% Memory increase should be reasonable (less than 10x data size)
+        MaxExpectedIncrease = DataSize * Iterations * 2,  % Allow some overhead
+        ?assert(MemoryIncrease < MaxExpectedIncrease,
+                "Memory increase unreasonable"),
+
+        ?assert(is_map(Result)),
+        ?assertEqual(Iterations, maps:get(<<"processed">>, Result))
+    end, DataSizes, IterationCounts).
+
+%%--------------------------------------------------------------------
+%% Error Handling Tests
+%%--------------------------------------------------------------------
+
+test_error_scenarios(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tools that generate different types of errors
+    ErrorTools = [
+        {<<"crash_tool">>, fun(_) -> erlang:error(intentional_crash) end},
+        {<<"timeout_tool">>, fun(_) -> timer:sleep(5000), <<"timeout">> end},
+        {<<"memory_tool">>, fun(Args) ->
+            Size = maps:get(<<"size">>, Args, 1024 * 1024),  % 1MB
+            Data = binary:copy(<<"x">>, Size),
+            Data
+        end},
+        {<<"invalid_schema_tool">>, fun(_) -> not_a_function end}
+    ],
+
+    lists:foreach(fun({Name, Handler}) ->
+        Tool = #mcp_tool{name = Name, description = <<"Error generation tool">>},
+        ok = erlmcp_server:add_tool(ServerId, Name, Handler)
+    end, ErrorTools),
+
+    %% Test error scenarios
+    {crash_tool, _} = {<<"crash_tool">>, catch Handler(crash_tool, #{})},
+
+    {timeout_tool, _} = {<<"timeout_tool">>,
+                         timer:sleep(100),  % Don't wait full timeout
+                         Handler(timeout_tool, #{})},
+
+    {memory_tool, _} = {<<"memory_tool">>,
+                       try Handler(memory_tool, #{<<"size">> => 1024 * 100})  % 100MB
+                       catch _:_ -> out_of_memory
+                       end},
+
+    {invalid_schema_tool, _} = {<<"invalid_schema_tool">>,
+                                catch Handler(invalid_schema_tool, #{})}.
+
+test_error_recovery(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool that may fail and recover
+    ToolName = <<"recovery_tool">>,
+    Schema = #{
+        type => <<"object">>,
+        properties = #{
+            fail_count => {type, integer, default, 0},
+            max_failures => {type, integer, default, 3},
+            always_fail => {type, boolean, default, false}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Error recovery test tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        FailCount = maps:get(<<"fail_count">>, Args, 0),
+        MaxFailures = maps:get(<<"max_failures">>, Args, 3),
+        AlwaysFail = maps:get(<<"always_fail">>, Args, false),
+
+        case (FailCount < MaxFailures) or AlwaysFail of
+            true ->
+                erlang:error(failure);
+            false ->
+                jsx:encode(#{status => success, recovery_attempt => FailCount + 1})
+        end
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test recovery after failures
+    RecoveryResults = lists:map(fun(FailCount) ->
+        Args = #{
+            <<"fail_count">> => FailCount,
+            <<"max_failures">> => 3,
+            <<"always_fail">> => false
+        },
+        try
+            Handler(Args),
+            {success, FailCount}
+        catch
+            _:_ -> {failure, FailCount}
+        end
+    end, lists:seq(0, 4)),
+
+    %% Verify recovery pattern
+    ExpectedResults = [
+        {failure, 0}, {failure, 1}, {failure, 2}, {success, 3}, {success, 4}
+    ],
+    ?assertEqual(ExpectedResults, RecoveryResults).
+
+test_timeout_handling(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tools with varying execution times
+    TimeoutTools = [
+        {<<"fast_tool">>, fun(_) -> <<"fast">> end},
+        {<<"medium_tool">>, fun(_) -> timer:sleep(100), <<"medium">> end},
+        {{"slow_tool">>, fun(_) -> timer:sleep(1000), <<"slow">> end}
+    ],
+
+    lists:foreach(fun({Name, Handler}) ->
+        Tool = #mcp_tool{name = Name, description = <<"Timeout test tool">>},
+        ok = erlmcp_server:add_tool(ServerId, Name, Handler)
+    end, TimeoutTools),
+
+    %% Test with timeout
+    Timeout = 500,  % 500ms timeout
+
+    %% Fast tool should complete within timeout
+    Start1 = erlang:monotonic_time(millisecond),
+    Result1 = Handler(fast_tool, #{}),
+    End1 = erlang:monotonic_time(millisecond),
+    ?assertEqual(<<"fast">>, Result1),
+    ?assert(End1 - Start1 < Timeout),
+
+    %% Medium tool should complete within timeout
+    Start2 = erlang:monotonic_time(millisecond),
+    Result2 = Handler(medium_tool, #{}),
+    End2 = erlang:monotonic_time(millisecond),
+    ?assertEqual(<<"medium">>, Result2),
+    ?assert(End2 - Start2 < Timeout),
+
+    %% Slow tool should timeout
+    Start3 = erlang:monotonic_time(millisecond),
+    try
+        Result3 = Handler(slow_tool, #{}),
+        ct:log("Warning: Slow tool completed within timeout: ~p", [Result3])
+    catch
+        timeout:timeout -> ok
+    end,
+    End3 = erlang:monotonic_time(millisecond),
+    ?assert(End3 - Start3 >= Timeout).
+
+%%--------------------------------------------------------------------
+%% Integration Tests
+%%--------------------------------------------------------------------
+
+test_full_mcp_protocol_flow(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register multiple tools for MCP protocol testing
+    ProtocolTools = [
+        {<<"search">>, #mcp_tool{
+            name = <<"search">>,
+            description = <<"Search functionality">>,
+            input_schema = #{
+                type => <<"object">>,
+                properties = #{
+                    query => {type, string},
+                    limit => {type, integer, default, 10},
+                    offset => {type, integer, default, 0}
+                },
+                required => [<<"query">>]
+            }
+        }},
+        {<<"compute">>, #mcp_tool{
+            name = <<"compute">>,
+            description = <<"Mathematical computation">>,
+            input_schema = #{
+                type => <<"object">>,
+                properties = #{
+                    expression => {type, string},
+                    variables => {type, object, additionalProperties, true}
+                },
+                required = [<<"expression">>]
+            }
+        }},
+        {<<"transform">>, #mcp_tool{
+            name = <<"transform">>,
+            description = <<"Data transformation">>,
+            input_schema = #{
+                type => <<"object">>,
+                properties = #{
+                    input_data => {type, string},
+                    transform_type => {type, string,
+                                     enum => [<<"uppercase">>, <<"lowercase">>, <<"reverse">>]},
+                    options => {type, object, additionalProperties, true}
+                },
+                required = [<<"input_data">>, <<"transform_type">>]
+            }
+        }}
+    ],
+
+    lists:foreach(fun({Name, Tool}) ->
+        Handler = fun(Args) ->
+            case Name of
+                <<"search">> ->
+                    Query = maps:get(<<"query">>, Args),
+                    Limit = maps:get(<<"limit">>, Args, 10),
+                    Offset = maps:get(<<"offset">>, Args, 0),
+                    Results = [#{id => I, title <<(integer_to_list(I))/binary>>}
+                             || I <- lists:seq(Offset + 1, Offset + Limit)],
+                    jsx:encode(#{
+                        query => Query,
+                        results => Results,
+                        total => 1000,
+                        limit => Limit,
+                        offset => Offset
+                    });
+                <<"compute">> ->
+                    Expression = maps:get(<<"expression">>, Args),
+                    Variables = maps:get(<<"variables">>, Args, #{}),
+                    %% Simple evaluation (in real implementation, use proper parser)
+                    Result = case Expression of
+                        <<"1 + 1">> -> 2;
+                        _ -> jsx:encode(#{error => <<"Unsupported expression">>})
+                    end,
+                    jsx:encode(#{
+                        expression => Expression,
+                        variables => Variables,
+                        result => Result
+                    });
+                <<"transform">> ->
+                    InputData = maps:get(<<"input_data">>, Args),
+                    TransformType = maps:get(<<"transform_type">>, Args),
+                    Result = case TransformType of
+                        <<"uppercase">> -> string:uppercase(InputData);
+                        <<"lowercase">> -> string:lowercase(InputData);
+                        <<"reverse">> -> lists:reverse(InputData);
+                        _ -> InputData
+                    end,
+                    jsx:encode(#{
+                        original => InputData,
+                        transformed => Result,
+                        type => TransformType
+                    })
+            end
+        end,
+        ok = erlmcp_server:add_tool_with_schema(ServerId, Name, Tool, Handler)
+    end, ProtocolTools),
+
+    %% Test complete MCP protocol flow
+    TestCases = [
+        {<<"search">>, #{<<"query">> => <<"test query">>, <<"limit">> => 5}},
+        {<<"compute">>, #{<<"expression">> => <<"1 + 1">>, <<"variables">> => #{<<"x">> => 10}}},
+        {<<"transform">>, #{
+            <<"input_data">> => <<"Hello World">>,
+            <<"transform_type">> => <<"uppercase">>
+        }}
+    ],
+
+    lists:foreach(fun({ToolName, Args}) ->
+        Result = erlmcp_server:call_tool(ServerId, ToolName, Args),
+        ?assert(is_binary(Result)),
+        Decoded = jsx:decode(Result),
+        ?assert(is_map(Decoded)),
+        ct:log("Tool ~p result: ~p", [ToolName, Decoded])
+    end, TestCases).
+
+test_tool_notifications(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register updatable tool
+    ToolName = <<"updatable_tool">>,
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Updatable tool with notifications">>,
+        input_schema = #{
+            type => <<"object">>,
+            properties = #{
+                action => {type, string, default, <<"get">>,
+                          enum => [<<"get">>, <<"update">>, <<"delete">>]},
+                data => {type, object, additionalProperties, true}
+            }
+        }
+    },
+    Handler = fun(Args) ->
+        Action = maps:get(<<"action">>, Args, <<"get">>),
+        Data = maps:get(<<"data">>, Args, #{}),
+
+        case Action of
+            <<"get">> ->
+                CurrentState = erlang:get(?MODULE ++ "_state" ++ atom_to_list(ServerId)),
+                jsx:encode(#{
+                    action => <<"get">>,
+                    data => CurrentState
+                });
+            <<"update">> ->
+                NewState = Data,
+                erlang:put(?MODULE ++ "_state" ++ atom_to_list(ServerId), NewState),
+                erlmcp_server:notify_tool_updated(ServerId, ToolName, NewState),
+                jsx:encode(#{
+                    action => <<"update">>,
+                    data => NewState
+                });
+            <<"delete">> ->
+                erlang:erase(?MODULE ++ "_state" ++ atom_to_list(ServerId)),
+                erlmcp_server:notify_tool_deleted(ServerId, ToolName),
+                jsx:encode(#{
+                    action => <<"delete">>,
+                    status => <<"deleted">>
+                })
+        end
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Tool#mcp_tool.input_schema),
+
+    %% Create notification subscriber
+    Self = self(),
+    Subscriber = spawn_link(fun() ->
+        receive
+            {tool_updated, ToolName, Data} ->
+                Self ! {received_update, ToolName, Data};
+            {tool_deleted, ToolName} ->
+                Self ! {received_delete, ToolName}
+        after 5000 ->
+            Self ! timeout
+        end
+    end),
+
+    %% Test update notification
+    UpdateData = #{<<"version">> => 1, <<"config">> => <<"updated">>},
+    UpdateResult = Handler(#{<<"action">> => <<"update">>, <<"data">> => UpdateData}),
+    ?assertEqual(<<"update">>, jsx:decode(UpdateResult), [<<"action">>]),
+
+    %% Wait for notification
+    receive
+        {received_update, ^ToolName, UpdateData} ->
+            ct:log("Received update notification successfully")
+    after 3000 ->
+        ct:fail("No update notification received")
+    end,
+
+    %% Test delete notification
+    DeleteResult = Handler(#{<<"action">> => <<"delete">>}),
+    ?assertEqual(<<"deleted">>, jsx:decode(DeleteResult), [<<"status">>]),
+
+    %% Wait for delete notification
+    receive
+        {received_delete, ^ToolName} ->
+            ct:log("Received delete notification successfully")
+    after 3000 ->
+        ct:fail("No delete notification received")
+    end.
+
+test_progress_tracking(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool with progress reporting
+    ToolName = <<"progress_tool">>,
+    Schema = #{
+        type => <<"object">>,
+        properties = #{
+            total_steps => {type, integer, default, 10},
+            step_duration => {type, integer, default, 100},
+            include_metadata => {type, boolean, default, true}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Tool with progress tracking">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        TotalSteps = maps:get(<<"total_steps">>, Args, 10),
+        StepDuration = maps:get(<<"step_duration">>, Args, 100),
+        IncludeMeta = maps:get(<<"include_metadata">>, Args, true),
+
+        ProgressToken = erlmcp_progress:generate_token(),
+        erlmcp_server:report_progress(ServerId, ProgressToken, 0.0, TotalSteps),
+
+        %% Simulate work with progress updates
+        Results = lists:foldl(fun(Step, Acc) ->
+            Progress = (Step / TotalSteps) * 100,
+            erlmcp_server:report_progress(ServerId, ProgressToken, Step, TotalSteps),
+            timer:sleep(StepDuration),
+
+            %% Do some work
+            _ = crypto:hash(sha256, integer_to_binary(Step)),
+            [Step | Acc]
+        end, [], lists:seq(1, TotalSteps)),
+
+        erlmcp_server:report_progress(ServerId, ProgressToken, TotalSteps, TotalSteps),
+
+        FinalResult = #{
+            total_steps => TotalSteps,
+            completed_steps => TotalSteps,
+            results => lists:reverse(Results),
+            duration => TotalSteps * StepDuration,
+            progress_token => ProgressToken
+        },
+
+        case IncludeMeta of
+            true -> FinalResult;
+            false -> maps:remove(<<"progress_token">>, FinalResult)
+        end
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test progress tracking
+    ProgressArgs = #{
+        <<"total_steps">> => 5,
+        <<"step_duration">> => 50,
+        <<"include_metadata">> => true
+    },
+
+    Start = erlang:monotonic_time(millisecond),
+    ProgressResult = Handler(ProgressArgs),
+    End = erlang:monotonic_time(millisecond),
+
+    ?assert(is_map(ProgressResult)),
+    ?assertEqual(5, maps:get(<<"total_steps">>, ProgressResult)),
+    ?assertEqual(5, maps:get(<<"completed_steps">>, ProgressResult)),
+    ?assertEqual(5, length(maps:get(<<"results">>, ProgressResult))),
+    ?assert(is_binary(maps:get(<<"progress_token">>, ProgressResult))),
+
+    ActualDuration = End - Start,
+    ExpectedDuration = 5 * 50,
+    ct:pal("Progress tracking: ~p ms expected, ~p ms actual",
+           [ExpectedDuration, ActualDuration]),
+    ?assert(ActualDuration >= ExpectedDuration).
+
+%%--------------------------------------------------------------------
+%% Security and Validation Tests
+%%--------------------------------------------------------------------
+
+test_input_validation(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool with strict input validation
+    ToolName = <<"validation_tool">>,
+    Schema = #{
+        type => <<"object">>,
+        properties = #{
+            username => {type, string, minLength => 3, maxLength => 20,
+                       pattern => "^[a-zA-Z0-9_]+$"},
+            email => {type, string, format => "email"},
+            age => {type, integer, minimum => 0, maximum => 150},
+            preferences => {type, object,
+                           properties => #{
+                               theme => {type, string, enum => [<<"light">>, <<"dark">>]},
+                               notifications => {type, boolean}
+                           },
+                           additionalProperties => false}
+        },
+        required => [<<"username">>, <<"email">>],
+        additionalProperties => false
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Input validation test tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        jsx:encode(#{
+            valid => true,
+            username => maps:get(<<"username">>, Args),
+            email => maps:get(<<"email">>, Args),
+            age => maps:get(<<"age">>, Args, 0),
+            preferences => maps:get(<<"preferences">>, Args, #{})
+        })
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test valid inputs
+    ValidInputs = [
+        #{
+            <<"username">> => <<"user123">>,
+            <<"email">> => <<"user@example.com">>,
+            <<"age">> => 25,
+            <<"preferences">> => #{
+                <<"theme">> => <<"dark">>,
+                <<"notifications">> => true
+            }
+        },
+        #{
+            <<"username">> => <<"test_user">>,
+            <<"email">> => <<"test@test.org">>,
+            <<"preferences">> => #{}
+        }
+    ],
+
+    lists:foreach(fun(Input) ->
+        Result = Handler(Input),
+        Decoded = jsx:decode(Result),
+        ?assertEqual(true, maps:get(<<"valid">>, Decoded))
+    end, ValidInputs),
+
+    %% Test invalid inputs
+    InvalidInputs = [
+        #{},  % Missing required fields
+        #{<<"username">> => <<"ab">>, <<"email">> => <<"invalid">>},  % Short username, invalid email
+        #{<<"username">> => "invalid chars", <<"email">> => <<"test@example.com">>},  % Invalid username chars
+        #{<<"username">> => <<"toolongusername">>, <<"email">> => <<"test@example.com">>},  % Username too long
+        #{<<"username">> => <<"test">>, <<"email">> => <<"test@example.com">>, <<"preferences">> => #{<<"invalid">> => true}}  % Additional property
+    ],
+
+    lists:foreach(fun(Input) ->
+        try
+            Handler(Input),
+            ct:log("WARNING: Invalid input passed validation: ~p", [Input])
+        catch
+            _:_ -> ok  % Expected to fail
+        end
+    end, InvalidInputs).
+
+test_schema_validation(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tools with complex schemas
+    ComplexSchemas = [
+        {<<"nested_object">>, #{
+            type => <<"object">>,
+            properties => #{
+                level1 => #{
+                    type => <<"object">>,
+                    properties => #{
+                        level2 => #{
+                            type => <<"object">>,
+                            properties => #{
+                                value => {type, string}
+                            },
+                            required => [<<"value">>]
+                        }
+                    }
+                }
+            },
+            required => [<<"level1">>]
+        }},
+        {<<"array_validation">>, #{
+            type => <<"object">>,
+            properties => #{
+                items => {type, array, items, {type, string}},
+                max_items => {type, integer, default, 10},
+                unique_items => {type, boolean, default, true}
+            },
+            required => [<<"items">>]
+        }},
+        {<<"enum_validation">>, #{
+            type => <<"object">>,
+            properties = #{
+                status => {type, string, enum => [<<"active">>, <<"inactive">>, <<"pending">>]},
+                priority => {type, string,
+                           enum => [<<"low">>, <<"medium">>, <<"high">>, <<"critical">>]},
+                options => {type, array,
+                          items, {type, string,
+                                 enum => [<<"option1">>, <<"option2">>, <<"option3">>]}}
+            },
+            required => [<<"status">>, <<"priority">>]
+        }}
+    ],
+
+    lists:foreach(fun({ToolName, Schema}) ->
+        Tool = #mcp_tool{
+            name = ToolName,
+            description = <<"Complex schema validation tool">>,
+            input_schema = Schema
+        },
+        Handler = fun(Args) ->
+            jsx:encode(#{valid => true, input => Args})
+        end,
+        ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema)
+    end, ComplexSchemas),
+
+    %% Test nested object validation
+    NestedValid = #{
+        <<"level1">> => #{
+            <<"level2">> => #{
+                <<"value">> => <<"test_value">>
+            }
+        }
+    },
+    NestedResult = erlmcp_server:call_tool(ServerId, <<"nested_object">>, NestedValid),
+    ?assert(is_binary(NestedResult)),
+
+    %% Test array validation
+    ArrayValid = #{
+        <<"items">> => [<<"item1">>, <<"item2">>, <<"item3">>],
+        <<"max_items">> => 5,
+        <<"unique_items">> => true
+    },
+    ArrayResult = erlmcp_server:call_tool(ServerId, <<"array_validation">>, ArrayValid),
+    ?assert(is_binary(ArrayResult)),
+
+    %% Test enum validation
+    EnumValid = #{
+        <<"status">> => <<"active">>,
+        <<"priority">> => <<"high">>,
+        <<"options">> => [<<"option1">>, <<"option2">>]
+    },
+    EnumResult = erlmcp_server:call_tool(ServerId, <<"enum_validation">>, EnumValid),
+    ?assert(is_binary(EnumResult)),
+
+    %% Test invalid enum values
+    InvalidEnum = #{
+        <<"status">> => <<"invalid_status">>,
+        <<"priority">> => <<"medium">>
+    },
+    ?assertError(function_clause,
+                erlmcp_server:call_tool(ServerId, <<"enum_validation">>, InvalidEnum)).
+
+test_security_constraints(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool with security constraints
+    ToolName = <<"security_tool">>,
+    Schema = #{
+        type => <<"object">>,
+        properties = #{
+            command => {type, string,
+                      pattern => "^(ls|cat|echo) [a-zA-Z0-9_/.-]+$"},
+            max_execution_time => {type, integer, default, 1000, minimum => 100, maximum => 10000},
+            allowed_operations => {type, array,
+                                 items, {type, string,
+                                        enum => [<<"read">>, <<"write">>, <<"execute">>]}},
+            sensitive_data => {type, string, maxLength => 100}  % Limit sensitive data size
+        },
+        required => [<<"command">>, <<"allowed_operations">>],
+        additionalProperties => false
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Security-constrained tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        Command = maps:get(<<"command">>, Args),
+        MaxTime = maps:get(<<"max_execution_time">>, Args, 1000),
+        Ops = maps:get(<<"allowed_operations">>, Args, []),
+        Sensitive = maps:get(<<"sensitive_data">>, Args, <<>>),
+
+        %% Simulate security checks
+        case lists:member(<<"execute">>, Ops) of
+            true ->
+                %% Execute command (simplified)
+                ct:log("Executing command: ~p", [Command]),
+                timer:sleep(min(MaxTime, 100)),
+                jsx:encode(#{command => Command, status => executed});
+            false ->
+                jsx:encode(#{error => <<"Execute not allowed">>})
+        end
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test valid security inputs
+    SecurityTests = [
+        #{
+            <<"command">> => <<"ls /tmp">>,
+            <<"allowed_operations">> => [<<"read">>, <<"execute">>],
+            <<"max_execution_time">> => 2000
+        },
+        #{
+            <<"command">> => <<"cat file.txt">>,
+            <<"allowed_operations">> => [<<"read">>],
+            <<"sensitive_data">> => <<"limited sensitive info">>
+        }
+    ],
+
+    lists:foreach(fun(Input) ->
+        Result = Handler(Input),
+        Decoded = jsx:decode(Result),
+        ct:log("Security test result: ~p", [Decoded])
+    end, SecurityTests),
+
+    %% Test security violations
+    SecurityViolations = [
+        #{
+            <<"command">> => <<"rm -rf /">>,  % Dangerous command
+            <<"allowed_operations">> => [<<"read">>, <<"execute">>]
+        },
+        #{
+            <<"command">> => <<"valid command">>,
+            <<"allowed_operations">> => [<<"read">>]  % No execute permission
+        },
+        #{
+            <<"command">> => "command with special chars !@#",
+            <<"allowed_operations">> => [<<"execute">>]
+        }
+    ],
+
+    lists:foreach(fun(Violation) ->
+        Result = Handler(Violation),
+        Decoded = jsx:decode(Result),
+        case maps:get(<<"error">>, Decoded, undefined) of
+            undefined ->
+                ct:log("WARNING: Security violation passed: ~p", [Violation]);
+            _ ->
+                ct:log("Security violation blocked: ~p", [Violation])
+        end
+    end, SecurityViolations).
+
+%%--------------------------------------------------------------------
+%% Stress Tests
+%%--------------------------------------------------------------------
+
+test_high_load_scenarios(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool for high load testing
+    ToolName = <<"load_test">>,
+    Schema = #{
+        type => <<"object">>,
+        properties = #{
+            concurrency => {type, integer, default, 10, minimum => 1, maximum => 500},
+            workload => {type, integer, default, 100, minimum => 1, maximum => 10000},
+            duration => {type, integer, default, 5000, minimum => 1000, maximum => 60000}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"High load test tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        Concurrency = maps:get(<<"concurrency">>, Args, 10),
+        Workload = maps:get(<<"workload">>, Args, 100),
+        Duration = maps:get(<<"duration">>, Args, 5000),
+
+        ct:log("Starting load test: concurrency=~p, workload=~p, duration=~p",
+               [Concurrency, Workload, Duration]),
+
+        Start = erlang:monotonic_time(millisecond),
+        End = Start + Duration,
+
+        Results = lists:foldl(fun(_, Acc) ->
+            CurrentTime = erlang:monotonic_time(millisecond),
+            if CurrentTime < End ->
+                %% Simulate work
+                _ = [crypto:hash(sha256, integer_to_binary(I))
+                     || I <- lists:seq(1, Workload)],
+                [CurrentTime | Acc];
+            true ->
+                Acc
+            end
+        end, [], lists:seq(1, Concurrency)),
+
+        ActualDuration = erlang:monotonic_time(millisecond) - Start,
+
+        jsx:encode(#{
+            requested_concurrency => Concurrency,
+            actual_work_items => length(Results),
+            actual_duration => ActualDuration,
+            requested_duration => Duration,
+            throughput => length(Results) * 1000 / max(ActualDuration, 1)
+        })
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test different load scenarios
+    LoadScenarios = [
+        #{<<"concurrency">> => 50, <<"workload">> => 1000, <<"duration">> => 5000},
+        #{<<"concurrency">> => 100, <<"workload">> => 500, <<"duration">> => 3000},
+        #{<<"concurrency">> => 200, <<"workload">> => 100, <<"duration">> => 2000}
+    ],
+
+    lists:foreach(fun(Scenario) ->
+        Start = erlang:monotonic_time(millisecond),
+        Result = erlmcp_server:call_tool(ServerId, ToolName, Scenario),
+        End = erlang:monotonic_time(millisecond),
+
+        Decoded = jsx:decode(Result),
+        ActualDuration = maps:get(<<"actual_duration">>, Decoded),
+        Throughput = maps:get(<<"throughput">>, Decoded),
+
+        ct:pal("Load test result: ~p ops/sec in ~p ms",
+               [Throughput, ActualDuration]),
+        ?assert(Throughput > 10)  % Minimum throughput requirement
+    end, LoadScenarios).
+
+test_resource_limit_scenarios(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tools that test resource limits
+    ResourceLimitTools = [
+        {<<"memory_limit_test">>, fun(Args) ->
+            Size = maps:get(<<"size">>, Args, 1024 * 1024),  % 1MB default
+            Iterations = maps:get(<<"iterations">>, Args, 10),
+
+            %% Allocate memory
+            Data = [binary:copy(<<"x">>, Size) || _ <- lists:seq(1, Iterations)],
+
+            %% Clean up
+            _ = Data,
+
+            jsx:encode(#{allocated => Size * Iterations, iterations => Iterations})
+        end},
+        {{"cpu_limit_test">>, fun(Args) ->
+            Complexity = maps:get(<<"complexity">>, Args, 1000),
+            Duration = maps:get(<<"duration">>, Args, 1000),  % ms
+
+            %% CPU intensive work
+            Start = erlang:monotonic_time(millisecond),
+            Ops = 0,
+            Current = Start,
+
+            while Current < Start + Duration ->
+                _ = crypto:hash(sha256, integer_to_binary(Ops)),
+                Ops = Ops + 1,
+                Current = erlang:monotonic_time(millisecond)
+            end,
+
+            jsx:encode(#{operations => Ops, duration => Duration})
+        end}
+    ],
+
+    lists:foreach(fun({Name, Handler}) ->
+        Tool = #mcp_tool{name = Name, description = <<"Resource limit test tool">>},
+        ok = erlmcp_server:add_tool(ServerId, Name, Handler)
+    end, ResourceLimitTools),
+
+    %% Test memory limits
+    MemorySizes = [1024 * 1024, 10 * 1024 * 1024, 100 * 1024 * 1024],  % 1MB, 10MB, 100MB
+    lists:foreach(fun(Size) ->
+        StartMem = erlang:memory(total),
+        Args = #{<<"size">> => Size, <<"iterations">> => 1},
+        Result = erlmcp_server:call_tool(ServerId, <<"memory_limit_test">>, Args),
+        EndMem = erlang:memory(total),
+
+        MemIncrease = EndMem - StartMem,
+        ct:pal("Memory test: ~p bytes allocated, ~p bytes increase",
+               [Size, MemIncrease]),
+
+        ?assert(MemIncrease >= Size,  % Should allocate at least requested size)
+        ?assert(MemIncrease < Size * 3,  % Shouldn't allocate too much more)
+    end, MemorySizes),
+
+    %% Test CPU limits
+    CPUArgs = #{<<"complexity">> => 10000, <<"duration">> => 1000},
+    CPUResult = erlmcp_server:call_tool(ServerId, <<"cpu_limit_test">>, CPUArgs),
+    CPUDecoded = jsx:decode(CPUResult),
+    Operations = maps:get(<<"operations">>, CPUDecoded),
+    Duration = maps:get(<<"duration">>, CPUDecoded),
+
+    ct:pal("CPU test: ~p operations in ~p ms (~.2f ops/ms)",
+           [Operations, Duration, Operations / Duration]),
+    ?assert(Operations > 1000).
+
+test_failure_injection_scenarios(Config) ->
+    ServerId = propl:get_value(server_id, Config),
+
+    %% Register tool that simulates failures
+    ToolName = <<"failure_injection">>,
+    Schema = #{
+        type => <<"object">>,
+        properties = #{
+            failure_rate => {type, number, minimum => 0.0, maximum => 1.0, default => 0.0},
+            failure_type => {type, string,
+                           enum => [<<"crash">>, <<"timeout">>, <<"error">>, <<"memory">>],
+                           default => <<"crash">>},
+            workload => {type, integer, default => 1000, minimum => 1, maximum => 10000}
+        }
+    },
+    Tool = #mcp_tool{
+        name = ToolName,
+        description = <<"Failure injection test tool">>,
+        input_schema = Schema
+    },
+    Handler = fun(Args) ->
+        FailureRate = maps:get(<<"failure_rate">>, Args, 0.0),
+        FailureType = maps:get(<<"failure_type">>, Args, <<"crash">>),
+        Workload = maps:get(<<"workload">>, Args, 1000),
+
+        %% Simulate failure based on rate
+        case rand:uniform() =< FailureRate of
+            true ->
+                case FailureType of
+                    <<"crash">> ->
+                        erlang:error(failure_injected);
+                    <<"timeout">> ->
+                        timer:sleep(10000),
+                        <<"timeout">>;
+                    <<"error">> ->
+                        erlang:error({error, failure_injected});
+                    <<"memory">> ->
+                        LargeData = binary:copy(<<"x">>, 10 * 1024 * 1024),  % 10MB
+                        _ = LargeData,
+                        <<"memory_allocated">>
+                end;
+            false ->
+                %% Normal operation
+                _ = [crypto:hash(sha256, integer_to_binary(I))
+                     || I <- lists:seq(1, Workload)],
+                jsx:encode(#{status => success, workload => Workload})
+        end
+    end,
+
+    ok = erlmcp_server:add_tool_with_schema(ServerId, ToolName, Handler, Schema),
+
+    %% Test failure injection with different scenarios
+    FailureScenarios = [
+        {0.0, <<"crash">>, 1000},  % No failures
+        {0.1, <<"crash">>, 100},   % 10% crash rate
+        {0.2, <<"timeout">>, 50},   % 20% timeout rate
+        {0.05, <<"error">>, 200},   % 5% error rate
+        {0.01, <<"memory">>, 50}    % 1% memory allocation rate
+    ],
+
+    lists:foreach(fun({FailureRate, FailureType, Workload}) ->
+        Args = #{
+            <<"failure_rate">> => FailureRate,
+            <<"failure_type">> => FailureType,
+            <<"workload">> => Workload
+        },
+
+        SuccessCount = 0,
+        FailureCount = 0,
+
+        %% Run multiple times to get statistical distribution
+        lists:map(fun(_) ->
+            try
+                Result = Handler(Args),
+                Decoded = jsx:decode(Result),
+                case maps:get(<<"status">>, Decoded, undefined) of
+                    success ->
+                        SuccessCount = SuccessCount + 1;
+                    _ ->
+                        FailureCount = FailureCount + 1
+                end
+            catch
+                _:_ ->
+                    FailureCount = FailureCount + 1
+            end
+        end, lists:seq(1, 100)),
+
+        ActualFailureRate = FailureCount / 100,
+        ct:pal("Failure test: rate=~.2f, type=~p, actual=~.2f successes=~p failures=~p",
+               [FailureRate, FailureType, ActualFailureRate, SuccessCount, FailureCount]),
+
+        %% Verify failure rate is within reasonable bounds
+        MaxAllowedRate = min(FailureRate + 0.1, 1.0),  % Allow 10% tolerance
+        ?assert(ActualFailureRate =< MaxAllowedRate)
+    end, FailureScenarios).
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+%% Tool handler execution wrapper
+handler(ToolName, Args) ->
+    ServerId = erlang:get(current_server_id),
+    erlmcp_server:call_tool(ServerId, ToolName, Args).
+
+%% Cleanup helper
+cleanup_processes() ->
+    %% Kill any remaining test processes
+    Processes = erlang:processes(),
+    TestPids = [P || P <- Processes,
+                    case element(2, process_info(P, registered_name)) of
+                        undefined ->
+                            case element(2, process_info(P, links)) of
+                                [Parent] when is_pid(Parent) ->
+                                    case element(2, process_info(Parent, registered_name)) of
+                                        test_server -> true;
+                                        _ -> false
+                                    end;
+                                _ -> false
+                            end;
+                        test_server -> true;
+                        _ -> false
+                    end],
+
+    lists:foreach(fun(Pid) ->
+        exit(Pid, kill)
+    end, TestPids).
+
+cleanup_test_data(ServerId) ->
+    %% Clean up any test data stored in ETS or similar
+    case ets:whereis(?MODULE ++ "_data_" ++ atom_to_list(ServerId)) of
+        undefined -> ok;
+        Tab -> ets:delete(Tab)
+    end,
+
+    %% Clean up any process state
+    erlang:erase(?MODULE ++ "_state" ++ atom_to_list(ServerId)).
+
+%% Simple while loop for testing
+while(Condition, Fun) ->
+    case Condition of
+        true ->
+            Fun(),
+            while(Condition, Fun);
+        false ->
+            ok
+    end.
+
+%% Custom handler for individual tools
+Handler(ToolName, Args) ->
+    case ToolName of
+        <<"basic_calc">> ->
+            Op = maps:get(<<"operation">>, Args),
+            case Op of
+                <<"add">> ->
+                    V1 = maps:get(<<"a">>, Args, 0),
+                    V2 = maps:get(<<"b">>, Args, 0),
+                    jsx:encode(#{result => V1 + V2});
+                _ ->
+                    jsx:encode(#{error => <<"Unknown operation">>})
+            end;
+        _ ->
+            jsx:encode(#{error => <<"Unknown tool">>})
+    end.

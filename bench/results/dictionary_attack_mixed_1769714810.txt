@@ -1,0 +1,35 @@
+=== DICTIONARY ATTACK CRASH TEST ===
+
+Attack Configuration:
+- Total Attempts: 0
+- Connect Rate: 0.00/sec
+- Random IDs: yes (no reuse)
+- Duration: 2.15 seconds
+- Credential Type: mixed
+
+Credential Statistics:
+- Successful Auth: 0
+- Failed Auth: 0
+- Auth Success Rate: 0.00%
+
+RATE LIMITING:
+- Limit Detected: false
+- Rate Limited Count: 0
+
+SERVER STATUS:
+- Server Crashed: true
+- Connection Errors: 0
+
+MEMORY ANALYSIS:
+- Initial Memory: 38.35 MB
+- Final Memory: 38.67 MB
+- Memory Leaked: 0.32 MB
+
+CRASH POINT:
+- No crash detected
+- Server remained responsive
+
+ANALYSIS:
+Rate limiting NOT DETECTED - system VULNERABLE to brute force
+DoS resistance: POOR - implement rate limiting immediately
+Memory usage stable - no leaks detected

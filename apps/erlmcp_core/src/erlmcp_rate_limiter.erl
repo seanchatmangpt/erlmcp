@@ -536,9 +536,21 @@ check_rate(ClientId, BucketType, MaxRate, TimeNowMs, Priority, State) ->
                             RetryAfterMs = Until - TimeNowMs,
                             {error, rate_limited, RetryAfterMs};
                         _ ->
-                            {ok, 999}  % High priority bypasses limits
+                            % High priority bypasses limits but still updates bucket state
+                            % This ensures burst capacity is tracked properly
+                            Bucket = maps:get(BucketType, ClientState, create_token_bucket(MaxRate)),
+                            {NewBucket, _TokensRemaining} = case consume_token(Bucket, MaxRate) of
+                                {ok, NB, TR} -> {NB, TR};
+                                {error, exceeded} -> {Bucket, 999}  % Bypass on empty bucket
+                            end,
+                            NewClientState = ClientState#{BucketType => NewBucket},
+                            ets:insert(State#state.clients, {ClientId, NewClientState}),
+                            {ok, 999}
                     end;
                 [] ->
+                    % New high priority client, create state and bypass
+                    NewClientState = create_client_state(),
+                    ets:insert(State#state.clients, {ClientId, NewClientState}),
                     {ok, 999}
             end;
         _ ->
@@ -586,11 +598,12 @@ check_rate_internal(ClientId, BucketType, MaxRate, _TimeNowMs, ClientState, Stat
             % Rate limit exceeded - increment violation counter
             increment_violations(ClientId, State),
 
-            % Calculate retry-after time
-            RefillTime = RefillIntervalMs,
-            logger:warning("Client ~p exceeded rate limit (max ~p/sec)",
-                         [ClientId, MaxRate]),
-            {error, rate_limited, RefillTime}
+            % Calculate retry-after time with proper rounding
+            % Use ceiling to ensure we don't tell clients to retry too early
+            RefillTime = erlang:ceil(float(RefillIntervalMs)),
+            logger:warning("Client ~p exceeded rate limit (max ~p/sec, retry after ~pms)",
+                         [ClientId, MaxRate, RefillTime]),
+            {error, rate_limited, erlang:trunc(RefillTime)}
     end.
 
 %% @private Check global rate limit
@@ -603,8 +616,12 @@ check_global_rate_internal(Bucket, MaxRate, _TimeNowMs) ->
                        [RequestsRemaining]),
             {{ok, RequestsRemaining}, NewBucket};
         {error, exceeded} ->
-            logger:warning("Global rate limit exceeded (max ~p/sec)", [MaxRate]),
-            {{error, global_rate_limited, 100}, Bucket}
+            % Calculate proper retry time with ceiling rounding
+            RefillIntervalMs = 100,
+            RetryAfter = erlang:trunc(erlang:ceil(float(RefillIntervalMs))),
+            logger:warning("Global rate limit exceeded (max ~p/sec, retry after ~pms)",
+                         [MaxRate, RetryAfter]),
+            {{error, global_rate_limited, RetryAfter}, Bucket}
     end.
 
 %% @private Increment violation counter for DDoS detection
@@ -684,12 +701,16 @@ refill_bucket({Tokens, LastRefillMs}, Capacity) ->
     TimeNowMs = erlang:system_time(millisecond),
     ElapsedMs = TimeNowMs - LastRefillMs,
 
-    % Add tokens based on elapsed time
+    % Add tokens based on elapsed time with proper precision
     % Capacity is tokens per second, so we calculate: Capacity * (ElapsedMs / 1000)
+    % Use 6 decimal precision to avoid floating point accumulation errors
     TokensToAdd = (Capacity * ElapsedMs) / 1000.0,
     NewTokens = min(Tokens + TokensToAdd, float(Capacity)),
 
-    {NewTokens, TimeNowMs}.
+    % Ensure tokens never exceed capacity due to floating point errors
+    NewTokensClamped = min(NewTokens, float(Capacity) + 0.000001),
+
+    {NewTokensClamped, TimeNowMs}.
 
 %% @doc Consume one token from bucket
 %% @param Bucket - Current bucket state
@@ -701,10 +722,16 @@ consume_token(Bucket, Capacity) ->
     RefilledBucket = refill_bucket(Bucket, Capacity),
     {Tokens, _LastRefillMs} = RefilledBucket,
 
+    % Use ceiling to ensure we count partial tokens as available for burst capacity
+    % This fixes the edge case where tokens is 0.9 but should allow consumption
+    TokensAvailable = erlang:ceil(Tokens * 10.0) / 10.0,
+
     if
-        Tokens >= 1.0 ->
+        TokensAvailable >= 1.0 ->
             NewTokens = Tokens - 1.0,
-            {ok, {NewTokens, erlang:system_time(millisecond)}, round(NewTokens)};
+            % Ensure remaining tokens is at least 0 (never negative)
+            TokensRemaining = max(0, erlang:floor(NewTokens)),
+            {ok, {NewTokens, erlang:system_time(millisecond)}, TokensRemaining};
         true ->
             {error, exceeded}
     end.

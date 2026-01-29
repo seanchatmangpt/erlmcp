@@ -1,0 +1,135 @@
+#!/usr/bin/env escript
+-mode(compile).
+
+main(_) ->
+    io:format("~n=== AGGRESSIVE MEMORY EXHAUSTION TEST ===~n"),
+    io:format("Objective: CRASH the system with memory~n"),
+    io:format("NO MERCY - PUSH UNTIL VM TERMINATION~n~n"),
+    
+    %% Much more aggressive sizes
+    Sizes = [
+        {16 * 1024 * 1024 * 1024, "16GB"},
+        {32 * 1024 * 1024 * 1024, "32GB"},
+        {64 * 1024 * 1024 * 1024, "64GB"},
+        {128 * 1024 * 1024 * 1024, "128GB"},
+        {256 * 1024 * 1024 * 1024, "256GB"}
+    ],
+    
+    %% Increase pressure multiplier
+    PressureMultiplier = 1000,
+    
+    Results = test_sizes(Sizes, PressureMultiplier, []),
+    print_results(Results),
+    
+    io:format("~n=== TEST COMPLETE ===~n~n").
+
+test_sizes([], _Multiplier, Acc) ->
+    lists:reverse(Acc);
+test_sizes([{Size, Label} | Rest], Multiplier, Acc) ->
+    io:format("Testing: ~s (~p bytes) with ~p copies~n", [Label, Size, Multiplier]),
+    
+    MemoryBefore = erlang:memory(total) / (1024 * 1024),
+    
+    Result = case catch test_size(Size, Multiplier) of
+        {'EXIT', {Reason, _}} ->
+            MemAfter = erlang:memory(total) / (1024 * 1024),
+            {Label, Size, MemoryBefore, MemAfter, 0.0, crash, Reason};
+        {error, Reason} ->
+            MemAfter = erlang:memory(total) / (1024 * 1024),
+            Status = case Reason of
+                {system_memory_limit_exceeded, _} -> oom;
+                _ -> crash
+            end,
+            {Label, Size, MemoryBefore, MemAfter, 0.0, Status, Reason};
+        {Time, MemAfter} ->
+            TimeFloat = Time * 1.0,
+            {Label, Size, MemoryBefore, MemAfter, TimeFloat, pass, undefined}
+    end,
+    
+    case element(6, Result) of
+        crash -> io:format("CRASH at ~s - STOPPING~n", [Label]), lists:reverse([Result | Acc]);
+        oom -> io:format("OOM at ~s - STOPPING~n", [Label]), lists:reverse([Result | Acc]);
+        _ -> test_sizes(Rest, Multiplier, [Result | Acc])
+    end.
+
+test_size(Size, Multiplier) ->
+    StartTime = erlang:monotonic_time(millisecond),
+    
+    %% Allocate
+    Payload = generate(Size),
+    
+    %% Create MASSIVE pressure
+    _ = create_pressure(Payload, Multiplier),
+    
+    EndTime = erlang:monotonic_time(millisecond),
+    MemAfter = erlang:memory(total) / (1024 * 1024),
+    
+    {EndTime - StartTime, MemAfter}.
+
+generate(Size) ->
+    Pattern = <<"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789">>,
+    PatternSize = byte_size(Pattern),
+    Repeats = (Size div PatternSize) + 1,
+    Bin = binary:copy(Pattern, Repeats),
+    binary:part(Bin, {0, Size}).
+
+create_pressure(_Payload, 0) -> [];
+create_pressure(Payload, N) -> [Payload | create_pressure(Payload, N - 1)].
+
+print_results(Results) ->
+    io:format("~n=== AGGRESSIVE MEMORY EXHAUSTION CRASH TEST ===~n~n"),
+    
+    lists:foreach(fun({Label, Size, MemBefore, MemAfter, Time, Status, Error}) ->
+        StatusStr = case Status of
+            pass -> "PASS";
+            crash -> "CRASH";
+            oom -> "OOM";
+            timeout -> "TIMEOUT"
+        end,
+        
+        io:format("- ~s: ~s (memory: ~.2f -> ~.2f MB, time: ~.2f ms)~n", [
+            Label, StatusStr, MemBefore, MemAfter, Time
+        ]),
+        
+        TotalGB = (Size * 1000) / (1024 * 1024 * 1024),
+        io:format("  Total allocated: ~.2f TB~n", [TotalGB]),
+        
+        case Error of
+            undefined -> ok;
+            _ -> io:format("  ERROR: ~p~n", [Error])
+        end
+    end, Results),
+    
+    %% Find breaking point
+    BreakingPoint = case [R || R <- Results, element(6, R) =/= pass] of
+        [] -> undefined;
+        [First | _] -> First
+    end,
+    
+    case BreakingPoint of
+        undefined ->
+            io:format("~nNO BREAKING POINT (system survived all tests)~n");
+        {Label, Size, MemAfter, _, _, _, Error} ->
+            io:format("~nBREAKING POINT:~n"),
+            io:format("- Payload Size: ~s (~p bytes)~n", [Label, Size]),
+            io:format("- Erlang Memory: ~.2f MB (~.2f GB)~n", [MemAfter, MemAfter / 1024]),
+            io:format("- Error: ~p~n", [Error]),
+            io:format("- Crash Type: ~p~n", [element(6, BreakingPoint)])
+    end,
+    
+    %% Summary
+    Total = length(Results),
+    Passed = length([R || R <- Results, element(6, R) =:= pass]),
+    Crashed = length([R || R <- Results, element(6, R) =:= crash]),
+    Oom = length([R || R <- Results, element(6, R) =:= oom]),
+    MaxMem = case Results of
+        [] -> 0.0;
+        _ -> lists:max([element(4, R) || R <- Results])
+    end,
+    
+    io:format("~nSUMMARY:~n"),
+    io:format("- Total Tests: ~p~n", [Total]),
+    io:format("- Passed: ~p~n", [Passed]),
+    io:format("- Crashed: ~p~n", [Crashed]),
+    io:format("- OOM: ~p~n", [Oom]),
+    io:format("- Peak Erlang Memory: ~.2f MB (~.2f GB)~n", [MaxMem, MaxMem / 1024]).

@@ -10,11 +10,19 @@
 ## Enable kernel poll
 +K true
 
+## VM port limit for increased connection capacity
+## Default: 24575 (~12K connections)
+## New: 65535 (~32K connections with headroom)
++Q 65536
+
 ## Increase number of concurrent ports/sockets
--env ERL_MAX_PORTS 8192
+## Supports up to 65K concurrent connections (TCP ports, files, external processes)
+## Note: +Q flag above sets VM internal limit; this sets environment variable
+-env ERL_MAX_PORTS 65536
 
 ## Increase number of processes
-+P 1000000
+## Supports up to 262K concurrent processes (connections + workers + supervisors)
++P 262144
 
 ## Increase atom table size
 +t 5000000

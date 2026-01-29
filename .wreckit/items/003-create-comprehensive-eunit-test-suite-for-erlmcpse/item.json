@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "003-create-comprehensive-eunit-test-suite-for-erlmcpse",
+  "title": "Create comprehensive EUnit test suite for erlmcp_server.erl",
+  "section": "coverage",
+  "state": "researched",
+  "overview": "Core server module has 0% test coverage - server is completely untested\n\n**Motivation:** Server must be bulletproof - any server crash takes down ALL MCP connections. Critical for production reliability.\n\n**Success criteria:**\n- ≥80% code coverage achieved\n- ≥60 tests created\n- All resource management functions tested\n- All tool management functions tested\n- All prompt management functions tested\n- JSON-RPC request routing tested\n- Error handling paths tested\n- All tests pass: rebar3 eunit --module=erlmcp_server_tests\n\n**Technical constraints:**\n- Handler registration testing required\n- Request routing testing for JSON-RPC\n- Argument validation testing\n- Concurrent access testing\n- Mock handlers for execution verification\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL PRODUCTION WORK",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.350Z",
+  "updated_at": "2026-01-29T16:33:01.475Z",
+  "problem_statement": "Core server module has 0% test coverage - server is completely untested",
+  "motivation": "Server must be bulletproof - any server crash takes down ALL MCP connections. Critical for production reliability.",
+  "success_criteria": [
+    "≥80% code coverage achieved",
+    "≥60 tests created",
+    "All resource management functions tested",
+    "All tool management functions tested",
+    "All prompt management functions tested",
+    "JSON-RPC request routing tested",
+    "Error handling paths tested",
+    "All tests pass: rebar3 eunit --module=erlmcp_server_tests"
+  ],
+  "technical_constraints": [
+    "Handler registration testing required",
+    "Request routing testing for JSON-RPC",
+    "Argument validation testing",
+    "Concurrent access testing",
+    "Mock handlers for execution verification"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL PRODUCTION WORK"
+}

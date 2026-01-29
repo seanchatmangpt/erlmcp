@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "025-core-client-module-test-coverage",
+  "title": "Core Client Module Test Coverage",
+  "section": "coverage",
+  "state": "researched",
+  "overview": "erlmcp_client.erl has ZERO test coverage. This is the single most critical module in the entire codebase - every MCP client interaction flows through this module. Deploying without tests is unacceptable.\n\n**Motivation:** This is the MOST CRITICAL test suite in the entire backlog. All other client tests depend on patterns established here. The module handles client lifecycle, connection management, request-response correlation, capability negotiation, error handling, and state management.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_core/test/erlmcp_client_tests.erl\n- All public functions have tests (start_link, connect, disconnect, send_request, initialize, list_resources, list_tools, etc.)\n- All handle_info/handle_call/handle_cast clauses tested\n- All error paths tested\n- Coverage: ≥80%\n- All tests pass: rebar3 eunit --module=erlmcp_client_tests\n- No race conditions in concurrent request testing\n- Integration tests with real stdio transport pass\n\n**Technical constraints:**\n- Chicago School TDD - Real processes, real gen_server, no mocks\n- State-Based Verification - Check #state{} record contents after each operation\n- Race Condition Testing - Concurrent requests, timeouts, re-entrant calls\n- Error Path Coverage - Every error clause, every exit path\n- Integration Points - Test with real transports (stdio, tcp)\n- Use erlmcp_session_manager_tests.erl as reference for gen_server testing patterns\n\n**In scope:**\n- erlmcp_client.erl module testing\n- All public API functions\n- All gen_server callbacks\n- Error handling paths\n- Concurrent request scenarios\n- Integration with stdio transport\n**Out of scope:**\n- Server-side functionality\n- Other transport implementations beyond stdio for integration tests\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL PRODUCTION WORK. This is foundation work that all other client tests depend on.",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T04:07:02.821Z",
+  "updated_at": "2026-01-29T17:54:54.532Z",
+  "problem_statement": "erlmcp_client.erl has ZERO test coverage. This is the single most critical module in the entire codebase - every MCP client interaction flows through this module. Deploying without tests is unacceptable.",
+  "motivation": "This is the MOST CRITICAL test suite in the entire backlog. All other client tests depend on patterns established here. The module handles client lifecycle, connection management, request-response correlation, capability negotiation, error handling, and state management.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_core/test/erlmcp_client_tests.erl",
+    "All public functions have tests (start_link, connect, disconnect, send_request, initialize, list_resources, list_tools, etc.)",
+    "All handle_info/handle_call/handle_cast clauses tested",
+    "All error paths tested",
+    "Coverage: ≥80%",
+    "All tests pass: rebar3 eunit --module=erlmcp_client_tests",
+    "No race conditions in concurrent request testing",
+    "Integration tests with real stdio transport pass"
+  ],
+  "technical_constraints": [
+    "Chicago School TDD - Real processes, real gen_server, no mocks",
+    "State-Based Verification - Check #state{} record contents after each operation",
+    "Race Condition Testing - Concurrent requests, timeouts, re-entrant calls",
+    "Error Path Coverage - Every error clause, every exit path",
+    "Integration Points - Test with real transports (stdio, tcp)",
+    "Use erlmcp_session_manager_tests.erl as reference for gen_server testing patterns"
+  ],
+  "scope_in_scope": [
+    "erlmcp_client.erl module testing",
+    "All public API functions",
+    "All gen_server callbacks",
+    "Error handling paths",
+    "Concurrent request scenarios",
+    "Integration with stdio transport"
+  ],
+  "scope_out_of_scope": [
+    "Server-side functionality",
+    "Other transport implementations beyond stdio for integration tests"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL PRODUCTION WORK. This is foundation work that all other client tests depend on."
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "002-create-comprehensive-eunit-test-suite-for-erlmcpcl",
+  "title": "Create comprehensive EUnit test suite for erlmcp_client.erl",
+  "section": "coverage",
+  "state": "researched",
+  "overview": "Core client module has 0% test coverage - completely untested critical path\n\n**Motivation:** This is the MOST CRITICAL test suite - all other client tests depend on patterns established here. Deploying without tests is unacceptable for production.\n\n**Success criteria:**\n- ≥80% code coverage achieved\n- ≥50 tests created\n- All public functions tested\n- All handle_info/handle_call/handle_cast clauses tested\n- All error paths tested\n- All tests pass: rebar3 eunit --module=erlmcp_client_tests\n- No race conditions in concurrent request testing\n- Integration tests with real stdio transport pass\n- Execution time <5 seconds\n\n**Technical constraints:**\n- Use Chicago School TDD - real processes, real gen_server, no mocks\n- State-Based Verification - check #state{} record contents\n- Test with real transports (stdio, tcp)\n- Use erlmcp_session_manager_tests.erl as reference (527 lines, 25 tests, all passing)\n\n**In scope:**\n- Client lifecycle functions\n- Connection management\n- Request-response correlation\n- Capability negotiation\n- Error handling\n- State management\n**Out of scope:**\n- Transport implementation details (separate modules)\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL PRODUCTION WORK",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.350Z",
+  "updated_at": "2026-01-29T16:28:27.924Z",
+  "problem_statement": "Core client module has 0% test coverage - completely untested critical path",
+  "motivation": "This is the MOST CRITICAL test suite - all other client tests depend on patterns established here. Deploying without tests is unacceptable for production.",
+  "success_criteria": [
+    "≥80% code coverage achieved",
+    "≥50 tests created",
+    "All public functions tested",
+    "All handle_info/handle_call/handle_cast clauses tested",
+    "All error paths tested",
+    "All tests pass: rebar3 eunit --module=erlmcp_client_tests",
+    "No race conditions in concurrent request testing",
+    "Integration tests with real stdio transport pass",
+    "Execution time <5 seconds"
+  ],
+  "technical_constraints": [
+    "Use Chicago School TDD - real processes, real gen_server, no mocks",
+    "State-Based Verification - check #state{} record contents",
+    "Test with real transports (stdio, tcp)",
+    "Use erlmcp_session_manager_tests.erl as reference (527 lines, 25 tests, all passing)"
+  ],
+  "scope_in_scope": [
+    "Client lifecycle functions",
+    "Connection management",
+    "Request-response correlation",
+    "Capability negotiation",
+    "Error handling",
+    "State management"
+  ],
+  "scope_out_of_scope": [
+    "Transport implementation details (separate modules)"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL PRODUCTION WORK"
+}

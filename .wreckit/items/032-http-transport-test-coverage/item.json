@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "032-http-transport-test-coverage",
+  "title": "HTTP Transport Test Coverage",
+  "section": "transports",
+  "state": "idea",
+  "overview": "HTTP transport has ZERO coverage. Uses gun HTTP client for web-based MCP servers.\n\n**Motivation:** HTTP transport is used for web-based MCP servers. Important for browser and web service integrations.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_transports/test/erlmcp_transport_http_tests.erl\n- Gun client integration tested\n- Coverage: ≥80%\n- All tests pass\n\n**Technical constraints:**\n- Gun Integration - Real HTTP client testing\n- HTTP Protocol - POST requests, headers, JSON body\n- Error Handling - Connection refused, timeout, HTTP errors\n- Keep-Alive - Connection reuse\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION DEPLOYMENT",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.825Z",
+  "updated_at": "2026-01-29T05:51:56.045Z",
+  "problem_statement": "HTTP transport has ZERO coverage. Uses gun HTTP client for web-based MCP servers.",
+  "motivation": "HTTP transport is used for web-based MCP servers. Important for browser and web service integrations.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_transports/test/erlmcp_transport_http_tests.erl",
+    "Gun client integration tested",
+    "Coverage: ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "Gun Integration - Real HTTP client testing",
+    "HTTP Protocol - POST requests, headers, JSON body",
+    "Error Handling - Connection refused, timeout, HTTP errors",
+    "Keep-Alive - Connection reuse"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION DEPLOYMENT"
+}

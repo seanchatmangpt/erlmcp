@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "id": "019-fix-526-dialyzer-type-warnings",
+  "title": "Fix 526 Dialyzer type warnings",
+  "section": "quality-gates",
+  "state": "researched",
+  "overview": "526 Dialyzer type warnings blocking production deployment\n\n**Motivation:** Type safety is critical for production Erlang systems. Dialyzer warnings indicate potential runtime crashes.\n\n**Success criteria:**\n- All 526 warnings categorized\n- Type specs added for missing functions\n- Return values handled properly\n- Infinite loops annotated with -spec or fixed\n- rebar3 dialyzer shows 0 warnings\n\n**Technical constraints:**\n- Categorize warnings by type and severity\n- Fix Strategy A: Add Type Specs\n- Fix Strategy B: Handle Return Values\n- Fix Strategy C: Fix Infinite Loops\n- Dependency: Must implement or remove missing modules first (Item 018)\n\n**Signals:** priority: high, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.357Z",
+  "updated_at": "2026-01-29T17:33:19.425Z",
+  "problem_statement": "526 Dialyzer type warnings blocking production deployment",
+  "motivation": "Type safety is critical for production Erlang systems. Dialyzer warnings indicate potential runtime crashes.",
+  "success_criteria": [
+    "All 526 warnings categorized",
+    "Type specs added for missing functions",
+    "Return values handled properly",
+    "Infinite loops annotated with -spec or fixed",
+    "rebar3 dialyzer shows 0 warnings"
+  ],
+  "technical_constraints": [
+    "Categorize warnings by type and severity",
+    "Fix Strategy A: Add Type Specs",
+    "Fix Strategy B: Handle Return Values",
+    "Fix Strategy C: Fix Infinite Loops",
+    "Dependency: Must implement or remove missing modules first (Item 018)"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

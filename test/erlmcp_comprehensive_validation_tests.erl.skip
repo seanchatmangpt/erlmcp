@@ -54,7 +54,9 @@ all_modules_compile_test() ->
         erlmcp_pagination_handler
     ],
     Results = [{Module, code:which(Module)} || Module <- ModuleList],
-    NotFound = [{M, R} || {M, R} <- Results, R == non_existing orelse R == cover_compiled],
+    % Only consider modules that don't exist at all (non_existing)
+    % cover_compiled is valid when coverage is enabled
+    NotFound = [{M, R} || {M, R} <- Results, R == non_existing],
     case NotFound of
         [] ->
             {ok, "All modules compiled successfully"};

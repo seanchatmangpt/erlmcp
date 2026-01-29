@@ -1,0 +1,90 @@
+=================================================================
+           PORT EXHAUSTION CRASH TEST #8 - RESULTS
+=================================================================
+
+Test Date: January 29, 2026
+Test Type: Destructive Port Exhaustion Stress Test
+
+SYSTEM CONFIGURATION:
+- OS: macOS (unix/darwin)
+- Ephemeral Port Range: 49152-65535 (16384 ports available)
+- File Descriptor Limit: unlimited
+- Initial FD Count: 51
+- Initial Established Connections: 122
+
+OPENING PROGRESS:
+- 1K ports: Reached in 0.30 seconds (3289 conn/sec)
+- 10K ports: Reached in 3.14 seconds (3186 conn/sec)
+- 50K ports: Failed (reached 12261)
+- 64K ports: Failed (reached 12261)
+
+BREAKING POINT:
+- Last Successful Port: 12261 connections
+- Total Connections Opened: 12261
+- Time to Exhaust: 5.89 seconds
+- Error: timeout (with Erlang driver error)
+
+ERLANG DRIVER ERROR:
+"driver_select(0x0000000114dabcf8, 24576, ERL_DRV_WRITE ERL_DRV_USE, 1) 
+ by tcp_inet driver #Port<0.24531> failed: fd=24576 is larger than 
+ the largest allowed fd=24575"
+
+This indicates Erlang's internal file descriptor table limit was hit,
+not the OS limit.
+
+SYSTEM LIMITS:
+- Ephemeral Port Range: {49152,65535}
+- File Descriptor Limit: unlimited (OS level)
+- FDs Used at Limit: 24578
+- Port Limit Type: os_ephemeral_ports
+
+SERVER STATUS:
+- Server Survived: YES
+- Accepting Connections: NO (after limit hit)
+- Process Count at Limit: 12307
+
+VARIATIONS:
+- SO_REUSEADDR: Not tested
+- Rapid Open/Close: Not tested
+
+ANALYSIS:
+Primary Limit: Erlang VM internal file descriptor table overflow
+The Erlang VM hit its internal limit of 24576 file descriptors,
+despite the OS reporting "unlimited" fd limit.
+
+The system opened 12261 TCP connections in 5.89 seconds at a rate
+of ~2083 connections/second before hitting the Erlang internal limit.
+
+Key Finding: The limit is NOT the OS ephemeral port range (16384 ports)
+but rather Erlang's internal file descriptor table size.
+
+ROOT CAUSE:
+Erlang/OTP has a compile-time limit on the number of file descriptors
+(and thus ports) that can be opened. This is controlled by the
++Q flag and the ERL_MAX_PORTS environment variable.
+
+The error "fd=24576 is larger than the largest allowed fd=24575"
+indicates the default limit is 24576 ports (256 * 96).
+
+MITIGATION STRATEGIES:
+1. Increase Erlang port limit: erl +Q 65536 +P 134217727
+2. Set ERL_MAX_PORTS environment variable
+3. Use connection pooling to reuse connections
+4. Increase ephemeral port range: sysctl -w net.inet.ip.portrange.first=32768
+5. Reduce TIME_WAIT duration: sysctl -w net.inet.tcp.msl=1000
+6. Use SO_REUSEADDR with caution
+7. Use multiple source IP addresses
+
+RECOMMENDED ACTION:
+Increase Erlang VM port limit before running production workloads
+that require many concurrent connections:
+
+export ERL_MAX_PORTS=65536
+erl +Q 65536 +P 134217727
+
+=================================================================
+TEST CONCLUSION:
+The HARD LIMIT for this system configuration is 12,261 concurrent
+TCP connections before Erlang's internal port table overflows.
+The OS can handle more, but Erlang needs configuration changes.
+=================================================================

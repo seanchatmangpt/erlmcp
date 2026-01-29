@@ -104,6 +104,7 @@ is_distributed() ->
 -spec init([]) -> {ok, state()}.
 init([]) ->
     process_flag(trap_exit, true),
+    ok = erlmcp_registry_utils:ensure_gproc_started(),
 
     %% Read cluster configuration
     Enabled = application:get_env(erlmcp_core, cluster_enabled, false),
@@ -138,7 +139,7 @@ handle_call({register_global, Type, EntityId, EntityPid, Config}, _From, State) 
         false ->
             {reply, {error, distributed_mode_disabled}, State};
         true ->
-            %% Use gproc global registration
+            %% Use gproc global registration with idempotency
             Key = {n, g, {mcp_global, Type, EntityId}},
             case gproc:where(Key) of
                 undefined ->
@@ -151,12 +152,17 @@ handle_call({register_global, Type, EntityId, EntityPid, Config}, _From, State) 
                         {reply, ok, State}
                     catch
                         error:badarg ->
-                            logger:warning("Global ~p ~p already registered", [Type, EntityId]),
+                            %% Race condition: another process registered just now
+                            logger:warning("Global registration race for ~p ~p", [Type, EntityId]),
                             {reply, {error, already_registered}, State}
                     end;
+                ExistingPid when ExistingPid =:= EntityPid ->
+                    %% Already registered by same process - this is OK (idempotent)
+                    logger:debug("Global ~p ~p already registered by same pid ~p", [Type, EntityId, EntityPid]),
+                    {reply, ok, State};
                 ExistingPid ->
-                    logger:warning("Global ~p ~p already registered with pid ~p on node ~p",
-                                  [Type, EntityId, ExistingPid, node(ExistingPid)]),
+                    logger:warning("Global ~p ~p already registered with different pid ~p on node ~p (our pid: ~p on ~p)",
+                                  [Type, EntityId, ExistingPid, node(ExistingPid), EntityPid, node(EntityPid)]),
                     {reply, {error, already_registered}, State}
             end
     end;

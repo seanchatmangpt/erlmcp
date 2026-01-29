@@ -10,6 +10,7 @@
 %%%   Client -> Server: {subscribe, [metric_names]} | {unsubscribe, [metric_names]}
 %%%
 %%% Port: 9090 (configurable via application:get_env/2)
+%%% Listener Name: Uses unique atom per port to prevent conflicts
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -41,6 +42,7 @@
 
 -record(state, {
     port :: inet:port_number(),
+    listener_name :: atom(),
     listener_pid :: pid() | undefined,
     websocket_pids = [] :: [pid()],
     metrics_timer :: reference() | undefined
@@ -53,6 +55,16 @@
 
 -define(DEFAULT_PORT, 9090).
 -define(METRICS_INTERVAL, 1000). % Broadcast metrics every 1 second
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+%% @doc Generate unique listener name for the given port
+%% This prevents conflicts when multiple dashboard servers are started
+-spec listener_name(inet:port_number()) -> atom().
+listener_name(Port) ->
+    list_to_atom("erlmcp_dashboard_listener_" ++ integer_to_list(Port)).
 
 %%====================================================================
 %% API Functions
@@ -92,6 +104,8 @@ broadcast_metrics(Metrics) ->
 init([Port]) ->
     ?LOG_INFO("Starting dashboard server on port ~p", [Port]),
 
+    ListenerName = listener_name(Port),
+
     % Configure Cowboy routes
     Dispatch = cowboy_router:compile([
         {'_', [
@@ -102,9 +116,9 @@ init([Port]) ->
         ]}
     ]),
 
-    % Start Cowboy HTTP listener
+    % Start Cowboy HTTP listener with unique name
     {ok, ListenerPid} = cowboy:start_clear(
-        erlmcp_dashboard_listener,
+        ListenerName,
         [{port, Port}],
         #{env => #{dispatch => Dispatch}}
     ),
@@ -116,6 +130,7 @@ init([Port]) ->
 
     {ok, #state{
         port = Port,
+        listener_name = ListenerName,
         listener_pid = ListenerPid,
         metrics_timer = TimerRef
     }}.
@@ -173,10 +188,10 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, State) ->
-    % Stop Cowboy listener
-    case State#state.listener_pid of
+    % Stop Cowboy listener using the unique listener name
+    case State#state.listener_name of
         undefined -> ok;
-        _ -> cowboy:stop_listener(erlmcp_dashboard_listener)
+        ListenerName -> cowboy:stop_listener(ListenerName)
     end,
 
     % Cancel metrics timer

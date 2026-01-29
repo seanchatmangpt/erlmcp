@@ -12,7 +12,11 @@
     set_certification_valid/2,
     get_upgrade_timestamp/0,
     set_upgrade_timestamp/1,
-    get_all_state/0
+    get_all_state/0,
+    get_plan/1,
+    get_all_plans/0,
+    get_usage/1,
+    set_plans/1
 ]).
 
 -include("erlmcp.hrl").
@@ -106,3 +110,70 @@ get_all_state() ->
     ensure_table(),
     Entries = ets:tab2list(?STATE_TABLE),
     maps:from_list(Entries).
+
+%% @doc Get pricing plan by ID
+%% @doc Get pricing plan by tier atom
+%% Returns plan data from erlmcp_pricing_plan module
+-spec get_plan(Plan :: atom()) -> {ok, map()} | {error, not_found}.
+get_plan(Plan) when is_atom(Plan) ->
+    case erlmcp_pricing_plan:load_plan(Plan) of
+        {ok, PlanSpec} ->
+            {ok, PlanSpec};
+        {error, {invalid_tier, _}} ->
+            {error, not_found};
+        {error, {file_not_found, _}} ->
+            {error, not_found};
+        Error ->
+            Error
+    end.
+
+%% @doc Get all available pricing plans
+%% Returns map of all loaded pricing plans
+-spec get_all_plans() -> {ok, map()} | {error, term()}.
+get_all_plans() ->
+    case erlmcp_pricing_plan:list_available_plans() of
+        {ok, Tiers} ->
+            PlansMap = lists:foldl(
+                fun(Tier, Acc) ->
+                    case erlmcp_pricing_plan:load_plan(Tier) of
+                        {ok, PlanSpec} ->
+                            maps:put(Tier, PlanSpec, Acc);
+                        {error, _} ->
+                            Acc
+                    end
+                end,
+                #{},
+                Tiers
+            ),
+            {ok, PlansMap};
+        Error ->
+            Error
+    end.
+
+%% @doc Get usage metrics for a user
+%% Returns current usage statistics for the specified user
+-spec get_usage(User :: binary()) -> {ok, map()} | {error, term()}.
+get_usage(User) when is_binary(User) ->
+    ensure_table(),
+    Key = {usage, User},
+    case ets:lookup(?STATE_TABLE, Key) of
+        [{_, Usage}] when is_map(Usage) ->
+            {ok, Usage};
+        [] ->
+            %% Return default zero usage if not found
+            {ok, #{
+                user => User,
+                requests => 0,
+                connections => 0,
+                memory_bytes => 0,
+                last_updated => erlang:system_time(second)
+            }}
+    end.
+
+%% @doc Set pricing plans in state
+%% Stores map of all pricing plans for quick access
+-spec set_plans(Plans :: map()) -> ok.
+set_plans(Plans) when is_map(Plans) ->
+    ensure_table(),
+    ets:insert(?STATE_TABLE, {plans_cache, Plans}),
+    ok.

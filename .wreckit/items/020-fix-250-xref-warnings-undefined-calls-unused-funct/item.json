@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "020-fix-250-xref-warnings-undefined-calls-unused-funct",
+  "title": "Fix 250 Xref warnings (undefined calls + unused functions)",
+  "section": "quality-gates",
+  "state": "researched",
+  "overview": "250 Xref warnings - undefined calls, unused functions, deprecated functions\n\n**Motivation:** Xref warnings indicate dead code, potential bugs, and poor code hygiene. Must be clean for production.\n\n**Success criteria:**\n- All 250 warnings categorized\n- Undefined function calls resolved\n- Unused functions removed or documented\n- rebar3 xref shows 0 warnings\n\n**Technical constraints:**\n- Separate undefined calls from unused functions\n- Fix undefined calls: implement functions or remove calls\n- Fix unused functions: remove dead code or document public API exports\n- Dependency: Must resolve missing modules first (Item 018)\n\n**Signals:** priority: high, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.357Z",
+  "updated_at": "2026-01-29T17:36:51.564Z",
+  "problem_statement": "250 Xref warnings - undefined calls, unused functions, deprecated functions",
+  "motivation": "Xref warnings indicate dead code, potential bugs, and poor code hygiene. Must be clean for production.",
+  "success_criteria": [
+    "All 250 warnings categorized",
+    "Undefined function calls resolved",
+    "Unused functions removed or documented",
+    "rebar3 xref shows 0 warnings"
+  ],
+  "technical_constraints": [
+    "Separate undefined calls from unused functions",
+    "Fix undefined calls: implement functions or remove calls",
+    "Fix unused functions: remove dead code or document public API exports",
+    "Dependency: Must resolve missing modules first (Item 018)"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

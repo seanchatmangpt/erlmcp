@@ -1,0 +1,25 @@
+/tmp/final_leak_test.erl:216:17: Warning: this clause cannot match because a previous clause at line 213 always matches
+%  216|                 _ ->
+%     |                 ^
+
+=== TCP SOCKET LEAK TEST #13 ===
+Opening TCP connections and NEVER closing them
+This is a DESTRUCTIVE test to find resource exhaustion point
+
+Initial state:
+  FDs: 2
+  Memory: 38.57 MB
+  Processes: 41
+  ETS tables: 19
+
+Server listening on port 10013
+Starting leak test...
+
+escript: exception error: no match of right hand side value 3
+  in function  final_leak_test_erl__escript__1769__714725__661876__2321:leak_tcp_loop_aggressive/9 (/tmp/final_leak_test.erl, line 151)
+  in call from final_leak_test_erl__escript__1769__714725__661876__2321:main/1 (/tmp/final_leak_test.erl, line 42)
+  in call from escript:run/2 (escript.erl, line 904)
+  in call from escript:start/1 (escript.erl, line 418)
+  in call from init:start_it/1 
+  in call from init:start_em/1 
+  in call from init:do_boot/3 

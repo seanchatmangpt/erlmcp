@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "010-create-eunit-test-suite-for-sse-transport-erlmcptr",
+  "title": "Create EUnit test suite for SSE transport (erlmcp_transport_sse)",
+  "section": "transports",
+  "state": "researched",
+  "overview": "SSE transport has 0% test coverage - streaming transport is untested\n\n**Motivation:** Server-Sent Events transport for server-to-client streaming. Critical for real-time event streaming use cases.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl\n- SSE protocol compliance tested\n- Coverage ≥80%\n- All tests pass\n\n**Technical constraints:**\n- SSE protocol - correct event formatting\n- Stream testing - continuous event streaming\n- Keep-alive testing - automatic keep-alive messages\n- Error handling - stream interruption, reconnect\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION DEPLOYMENT",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.353Z",
+  "updated_at": "2026-01-29T16:59:54.947Z",
+  "problem_statement": "SSE transport has 0% test coverage - streaming transport is untested",
+  "motivation": "Server-Sent Events transport for server-to-client streaming. Critical for real-time event streaming use cases.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl",
+    "SSE protocol compliance tested",
+    "Coverage ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "SSE protocol - correct event formatting",
+    "Stream testing - continuous event streaming",
+    "Keep-alive testing - automatic keep-alive messages",
+    "Error handling - stream interruption, reconnect"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION DEPLOYMENT"
+}

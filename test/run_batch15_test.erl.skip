@@ -1,0 +1,9 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+%%! -pa _build/default/lib/erlmcp_core/ebin
+
+main(_) ->
+    io:format("Running Batch 15 Prompt Templates Test...~n"),
+    io:format("This test requires full erlmcp applications to be running.~n"),
+    io:format("Use: rebar3 eunit --module=erlmcp_roundtrip_batch15_prompt_templates_tests~n"),
+    ok.

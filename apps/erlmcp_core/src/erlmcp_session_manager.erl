@@ -159,6 +159,7 @@ handle_call({get_session, SessionId}, _From, State) ->
     case ets:lookup(State#state.table, SessionId) of
         [{SessionData, SessionId}] ->
             %% Update last accessed time
+            %% gen_server serializes access, so this is safe from race conditions
             Now = erlang:system_time(millisecond),
             UpdatedData = SessionData#{last_accessed => Now},
             ets:insert(State#state.table, {UpdatedData, SessionId}),

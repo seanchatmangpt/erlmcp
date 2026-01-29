@@ -1,0 +1,361 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp_cpu_quota_tests - CPU Quota and Timeout Tests
+%%%
+%%% Test suite for CPU quota management, timeout enforcement, and
+%%% protection against CPU-intensive DoS attacks.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_cpu_quota_tests).
+-include_lib("eunit/include/eunit.hrl").
+
+%%====================================================================
+%% Test Fixtures
+%%====================================================================
+
+setup() ->
+    {ok, Pid} = erlmcp_cpu_quota:start_link(#{
+        max_cpu_time_per_sec => 100,
+        max_ops_per_sec => 10,
+        window_ms => 1000
+    }),
+    Pid.
+
+cleanup(Pid) ->
+    erlmcp_cpu_quota:stop(),
+    % Wait for process to terminate
+    timer:sleep(100).
+
+%%====================================================================
+%% CPU Quota Tests
+%%====================================================================
+
+cpu_quota_check_within_limits_test() ->
+    Pid = setup(),
+    try
+        ClientId = <<"test_client_1">>,
+
+        % First operation should pass
+        ?assertEqual(ok, erlmcp_cpu_quota:check_quota(ClientId)),
+
+        % Record a small CPU operation
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 10),
+
+        % Still within quota
+        ?assertEqual(ok, erlmcp_cpu_quota:check_quota(ClientId))
+    after
+        cleanup(Pid)
+    end.
+
+cpu_quota_check_cpu_time_exceeded_test() ->
+    Pid = setup(),
+    try
+        ClientId = <<"test_client_cpu_exceed">>,
+
+        % Use up all CPU quota (100ms)
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 100),
+
+        % Next operation should exceed CPU quota
+        ?assertEqual({error, quota_exceeded, cpu_time},
+                    erlmcp_cpu_quota:check_quota(ClientId))
+    after
+        cleanup(Pid)
+    end.
+
+cpu_quota_check_operations_exceeded_test() ->
+    Pid = setup(),
+    try
+        ClientId = <<"test_client_ops_exceed">>,
+
+        % Use up all operation quota (10 ops)
+        lists:foreach(fun(_) ->
+            ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 1)
+        end, lists:seq(1, 10)),
+
+        % Next operation should exceed ops quota
+        ?assertEqual({error, quota_exceeded, operations},
+                    erlmcp_cpu_quota:check_quota(ClientId))
+    after
+        cleanup(Pid)
+    end.
+
+cpu_quota_sliding_window_reset_test() ->
+    Pid = setup(),
+    try
+        ClientId = <<"test_client_window">>,
+
+        % Use up all CPU quota
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 100),
+
+        % Should be exceeded
+        ?assertEqual({error, quota_exceeded, cpu_time},
+                    erlmcp_cpu_quota:check_quota(ClientId)),
+
+        % Wait for window to expire (1 second + buffer)
+        timer:sleep(1100),
+
+        % Should be reset now
+        ?assertEqual(ok, erlmcp_cpu_quota:check_quota(ClientId))
+    after
+        cleanup(Pid)
+    end.
+
+cpu_quota_client_stats_test() ->
+    Pid = setup(),
+    try
+        ClientId = <<"test_client_stats">>,
+
+        % Record some operations
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 10),
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 20),
+        ok = erlmcp_cpu_quota:record_operation(ClientId, resource_read, 30),
+
+        % Get stats
+        {ok, Stats} = erlmcp_cpu_quota:get_client_stats(ClientId),
+
+        ?assertEqual(3, Stats#client_stats.total_operations),
+        ?assertEqual(60, Stats#client_stats.total_cpu_time),
+        ?assertEqual(20.0, Stats#client_stats.average_cpu_per_op)
+    after
+        cleanup(Pid)
+    end.
+
+cpu_quota_reset_client_test() ->
+    Pid = setup(),
+    try
+        ClientId = <<"test_client_reset">>,
+
+        % Use up quota
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 100),
+
+        % Should be exceeded
+        ?assertEqual({error, quota_exceeded, cpu_time},
+                    erlmcp_cpu_quota:check_quota(ClientId)),
+
+        % Reset client
+        ok = erlmcp_cpu_quota:reset_client(ClientId),
+
+        % Should be ok now
+        ?assertEqual(ok, erlmcp_cpu_quota:check_quota(ClientId))
+    after
+        cleanup(Pid)
+    end.
+
+cpu_quota_config_update_test() ->
+    Pid = setup(),
+    try
+        % Get initial config
+        InitialConfig = erlmcp_cpu_quota:get_quota_config(),
+        ?assertEqual(100, maps:get(max_cpu_time_per_sec, InitialConfig)),
+
+        % Update config
+        ok = erlmcp_cpu_quota:update_quota_config(#{
+            max_cpu_time_per_sec => 200
+        }),
+
+        % Get updated config
+        UpdatedConfig = erlmcp_cpu_quota:get_quota_config(),
+        ?assertEqual(200, maps:get(max_cpu_time_per_sec, UpdatedConfig))
+    after
+        cleanup(Pid)
+    end.
+
+%%====================================================================
+%% CPU Timeout Tests
+%%====================================================================
+
+cpu_timeout_successful_execution_test() ->
+    % Simple function that completes quickly
+    Fun = fun() -> {ok, quick_result} end,
+
+    Result = erlmcp_cpu_timeout:execute_with_timeout(Fun, 1000),
+    ?assertMatch({ok, {ok, quick_result}, _CpuTime}, Result).
+
+cpu_timeout_function_with_args_test() ->
+    % Function with arguments
+    Fun = fun(X, Y) -> X + Y end,
+
+    Result = erlmcp_cpu_timeout:safe_execute(Fun, [5, 3], 1000),
+    ?assertEqual({ok, 8}, Result).
+
+cpu_timeout_module_function_call_test() ->
+    % M:F(A) style call
+    Result = erlmcp_cpu_timeout:safe_execute({lists, sum, [[1, 2, 3]]}, 1000),
+    ?assertEqual({ok, 6}, Result).
+
+cpu_timeout_exception_handling_test() ->
+    % Function that throws exception
+    Fun = fun() -> error(badarg) end,
+
+    Result = erlmcp_cpu_timeout:safe_execute(Fun, 1000),
+    ?assertEqual({error, badarg}, Result).
+
+cpu_timeout_infinite_loop_timeout_test() ->
+    % Function that would run forever (should timeout)
+    Fun = fun() ->
+        timer:sleep(infinity)
+    end,
+
+    Result = erlmcp_cpu_timeout:safe_execute(Fun, 100),
+    ?assertEqual({error, timeout}, Result).
+
+cpu_timeout_cpu_time_measurement_test() ->
+    % CPU-intensive function
+    Fun = fun() ->
+        lists:sum(lists:seq(1, 10000))
+    end,
+
+    Result = erlmcp_cpu_timeout:execute_with_timeout(Fun, 5000),
+    ?assertMatch({ok, 50005000, _CpuTime}, Result),
+
+    % Extract CPU time
+    {ok, _Result, CpuTime} = Result,
+    ?assert(CpuTime >= 0).
+
+%%====================================================================
+%% CPU Guard Integration Tests
+%%====================================================================
+
+cpu_guard_execute_with_protection_test() ->
+    ClientId = <<"test_guard_client">>,
+    Fun = fun() -> {ok, result} end,
+
+    Result = erlmcp_cpu_guard:execute_with_protection(
+        ClientId, tool_call, Fun, [], 5000
+    ),
+    ?assertMatch({ok, {ok, result}, _CpuTime}, Result).
+
+cpu_guard_quota_exceeded_test() ->
+    % This test requires a running quota manager
+    {ok, Pid} = erlmcp_cpu_quota:start_link(#{
+        max_cpu_time_per_sec => 10,
+        max_ops_per_sec => 2
+    }),
+
+    try
+        ClientId = <<"test_guard_exceed">>,
+
+        % Use up all ops quota
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 1),
+        ok = erlmcp_cpu_quota:record_operation(ClientId, tool_call, 1),
+
+        % Next operation should exceed quota
+        Fun = fun() -> {ok, result} end,
+        Result = erlmcp_cpu_guard:execute_with_protection(
+            ClientId, tool_call, Fun, [], 5000
+        ),
+        ?assertEqual({error, quota_exceeded, operations}, Result)
+    after
+        erlmcp_cpu_quota:stop()
+    end.
+
+cpu_guard_timeout_protection_test() ->
+    ClientId = <<"test_guard_timeout">>,
+
+    % Function that sleeps forever
+    Fun = fun() -> timer:sleep(infinity) end,
+
+    Result = erlmcp_cpu_guard:execute_with_protection(
+        ClientId, tool_call, Fun, [], 100
+    ),
+    ?assertEqual({error, timeout}, Result).
+
+cpu_guard_get_stats_test() ->
+    % This test requires a running quota manager
+    {ok, Pid} = erlmcp_cpu_quota:start_link(#{}),
+
+    try
+        ClientId = <<"test_guard_stats">>,
+
+        % Execute operation
+        Fun = fun() -> lists:sum([1, 2, 3]) end,
+        {ok, _Result, _CpuTime} = erlmcp_cpu_guard:execute_with_protection(
+            ClientId, tool_call, Fun, [], 5000
+        ),
+
+        % Get stats
+        {ok, Stats} = erlmcp_cpu_guard:get_protection_stats(ClientId),
+
+        ?assert(maps:is_key(total_operations, Stats)),
+        ?assert(maps:is_key(total_cpu_time_ms, Stats)),
+        ?assert(maps:is_key(average_cpu_per_op_ms, Stats))
+    after
+        erlmcp_cpu_quota:stop()
+    end.
+
+%%====================================================================
+%% DoS Resistance Tests
+%%====================================================================
+
+dos_resistance_cpu_bomb_test() ->
+    % Test that CPU bombs are contained
+    ClientId = <<"dos_cpu_bomb">>,
+
+    {ok, Pid} = erlmcp_cpu_quota:start_link(#{
+        max_cpu_time_per_sec => 50
+    }),
+
+    try
+        % Simulate CPU bomb (heavy computation)
+        CpuBombFun = fun() ->
+            lists:sum(lists:seq(1, 1000000))
+        end,
+
+        % First execution should work
+        Result1 = erlmcp_cpu_guard:execute_with_protection(
+            ClientId, tool_call, CpuBombFun, [], 5000
+        ),
+        ?assertMatch({ok, _, _}, Result1),
+
+        % Simulate multiple CPU bombs to exhaust quota
+        lists:foreach(fun(_) ->
+            erlmcp_cpu_quota:record_operation(ClientId, tool_call, 10)
+        end, lists:seq(1, 5)),
+
+        % Should now be quota exceeded
+        Result2 = erlmcp_cpu_guard:execute_with_protection(
+            ClientId, tool_call, CpuBombFun, [], 5000
+        ),
+        ?assertEqual({error, quota_exceeded, operations}, Result2)
+    after
+        erlmcp_cpu_quota:stop()
+    end.
+
+dos_resistance_infinite_loop_test() ->
+    % Test that infinite loops are terminated
+    ClientId = <<"dos_infinite_loop">>,
+
+    InfiniteFun = fun() ->
+        infinite_loop()
+    end,
+
+    Result = erlmcp_cpu_guard:execute_with_protection(
+        ClientId, tool_call, InfiniteFun, [], 100
+    ),
+    ?assertEqual({error, timeout}, Result).
+
+dos_resistance_fibonacci_bomb_test() ->
+    % Test that recursive fibonacci bombs are contained
+    ClientId = <<"dos_fib_bomb">>,
+
+    % Very slow fibonacci
+    FibBombFun = fun() ->
+        fib(1000000)
+    end,
+
+    Result = erlmcp_cpu_guard:execute_with_protection(
+        ClientId, tool_call, FibBombFun, [], 100
+    ),
+    % Should timeout
+    ?assertEqual({error, timeout}, Result).
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+infinite_loop() ->
+    infinite_loop().
+
+fib(0) -> 0;
+fib(1) -> 1;
+fib(N) -> fib(N - 1) + fib(N - 2).

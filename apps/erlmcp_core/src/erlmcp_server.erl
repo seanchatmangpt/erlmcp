@@ -5,14 +5,6 @@
 %% TODO: Add opentelemetry_api dependency when telemetry is enabled
 %% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
-%% Suppress warnings for utility functions that may be called externally
--compile([{nowarn_unused_function, [
-    {create_audio_content, 3},
-    {create_audio_content_with_metadata, 4},
-    {get_tool_description_max_length, 0},
-    {validate_tool_description, 1}
-]}]).
-
 %% API exports
 -export([
     start_link/2,
@@ -45,6 +37,9 @@
 
 -export_type([server/0, server_id/0]).
 
+%% Type definitions
+-type log_level() :: debug | info | notice | warning | error | critical | alert | emergency.
+
 %% State record - NO transport state, only server-specific state
 %% Includes phase tracking for MCP 2025-11-25 initialization state machine (Gap #4)
 -record(state, {
@@ -66,7 +61,6 @@
 }).
 
 -type state() :: #state{}.
--type task_status() :: queued | running | completed | failed | cancelled | cancel_requested.
 
 %%====================================================================
 %% API Functions
@@ -176,13 +170,14 @@ init([ServerId, Capabilities]) ->
             <<"server_id">> => ServerId
         }),
 
-        ok = erlmcp_task_manager:register_server(ServerId, self()),
-
         % Start or get change notifier
         NotifierPid = case erlmcp_change_notifier:start_link() of
             {ok, Pid} -> Pid;
             {error, {already_started, Pid}} -> Pid
         end,
+
+        % Start periodic GC for each server (Gap #10)
+        start_periodic_gc(),
 
         State = #state{
             server_id = ServerId,
@@ -340,6 +335,25 @@ handle_call({unsubscribe_resource, Uri}, From, State) ->
     NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
     {reply, ok, State#state{subscriptions = NewSubscriptions}};
 
+%% Test helper functions
+handle_call(list_prompts_local, _From, State) ->
+    Prompts = list_all_prompts(State),
+    {reply, Prompts, State};
+
+handle_call({get_prompt_handler_local, Name}, _From, State) ->
+    case maps:get(Name, State#state.prompts, undefined) of
+        undefined -> {reply, {error, not_found}, State};
+        PromptAndHandler -> {reply, {ok, PromptAndHandler}, State}
+    end;
+
+handle_call(list_tools_local, _From, State) ->
+    Tools = list_all_tools(State),
+    {reply, Tools, State};
+
+handle_call(list_resources_local, _From, State) ->
+    Resources = list_all_resources(State),
+    {reply, Resources, State};
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -405,16 +419,21 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-handle_info({task_execute, Task}, State) ->
-    handle_task_execution(Task, State),
-    {noreply, State};
+handle_info(force_gc, #state{server_id = ServerId} = State) ->
+    %% Periodic garbage collection (Gap #10)
+    Before = erlang:memory(total),
+    _ = garbage_collect(),
+    After = erlang:memory(total),
+    Freed = Before - After,
 
-handle_info({task_status_update, Task}, State) ->
-    send_task_notification(State, Task),
-    {noreply, State};
+    logger:debug("Server ~p: Periodic GC freed ~p bytes (~.2f MB)", [
+        ServerId,
+        Freed,
+        Freed / (1024 * 1024)
+    ]),
 
-handle_info({task_cancel, _Task}, State) ->
-    %% Future hook for cooperative cancellation
+    %% Reschedule periodic GC
+    start_periodic_gc(),
     {noreply, State};
 
 handle_info(_Info, State) ->
@@ -426,7 +445,6 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, #state{server_id = ServerId}) ->
-    catch erlmcp_task_manager:unregister_server(ServerId),
     logger:info("MCP server ~p (refactored) terminating", [ServerId]),
     ok.
 
@@ -593,75 +611,32 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-handle_request(Id, ?MCP_METHOD_TASKS_CREATE, Params, TransportId, State) ->
-    ToolName = maps:get(?MCP_PARAM_NAME, Params, undefined),
-    Arguments = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
-    case ToolName of
-        undefined ->
-            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
-        _ ->
-            case erlmcp_task_manager:create_tool_task(State#state.server_id, TransportId, Id, ToolName, Arguments) of
-                {ok, Task} ->
-                    send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_TASK => encode_task_summary(Task)});
-                {error, Reason} ->
-                    send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, format_task_error(Reason))
-            end
-    end,
+%% Task management endpoints - NOT IMPLEMENTED (Optional in MCP spec)
+%% Task manager was replaced by erlmcp_hooks for pre/post task hooks
+%% Return "method not found" for tasks/* endpoints
+handle_request(Id, ?MCP_METHOD_TASKS_CREATE, _Params, TransportId, State) ->
+    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
+        <<"Task management not implemented. Use tools/call directly.">>),
     {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_TASKS_LIST, _Params, TransportId, State) ->
-    Tasks = erlmcp_task_manager:list_tasks(State#state.server_id),
-    Payload = lists:map(fun encode_task_summary/1, Tasks),
-    send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_TASKS => Payload}),
+    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
+        <<"Task management not implemented. Use tools/call directly.">>),
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TASKS_GET, Params, TransportId, State) ->
-    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
-        undefined ->
-            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId">>);
-        TaskId ->
-            case erlmcp_task_manager:get_task(TaskId) of
-                {ok, Task} ->
-                    send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_TASK => encode_task_details(Task)});
-                {error, _} ->
-                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, <<"Task not found">>)
-            end
-    end,
+handle_request(Id, ?MCP_METHOD_TASKS_GET, _Params, TransportId, State) ->
+    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
+        <<"Task management not implemented. Use tools/call directly.">>),
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TASKS_RESULT, Params, TransportId, State) ->
-    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
-        undefined ->
-            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId">>);
-        TaskId ->
-            case erlmcp_task_manager:get_task(TaskId) of
-                {ok, Task} ->
-                    case maps:get(status, Task) of
-                        completed ->
-                            Result = maps:get(result, Task, #{}),
-                            send_response_via_registry(State, TransportId, Id, Result);
-                        failed ->
-                            {Code, Msg} = format_task_failure(Task),
-                            send_error_via_registry(State, TransportId, Id, Code, Msg);
-                        _ ->
-                            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Task not completed">>)
-                    end;
-                {error, _} ->
-                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, <<"Task not found">>)
-            end
-    end,
+handle_request(Id, ?MCP_METHOD_TASKS_RESULT, _Params, TransportId, State) ->
+    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
+        <<"Task management not implemented. Use tools/call directly.">>),
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, Params, TransportId, State) ->
-    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
-        undefined ->
-            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId">>);
-        TaskId ->
-            case erlmcp_task_manager:cancel_task(TaskId) of
-                ok -> send_response_via_registry(State, TransportId, Id, #{});
-                {error, _} -> send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, <<"Task not found">>)
-            end
-    end,
+handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, _Params, TransportId, State) ->
+    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
+        <<"Task management not implemented. Use tools/call directly.">>),
     {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, _Params, TransportId, State) ->
@@ -711,6 +686,109 @@ handle_request(Id, ?MCP_METHOD_PROMPTS_GET, Params, TransportId, State) ->
     end,
     {noreply, State};
 
+%% Sampling/createMessage endpoint (Task #136: Implement Sampling Capability)
+handle_request(Id, ?MCP_METHOD_SAMPLING_CREATE_MESSAGE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_sampling_create_message">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_SAMPLING_CREATE_MESSAGE
+        }),
+
+        %% Extract messages and model preferences
+        Messages = maps:get(?MCP_PARAM_MESSAGES, Params, []),
+        ModelPreferences = maps:get(?MCP_PARAM_MODEL_PREFERENCES, Params, #{}),
+
+        %% Validate messages format
+        case validate_sampling_messages(Messages) of
+            ok ->
+                %% Build sampling params from model preferences
+                SamplingParams = #{
+                    <<"model">> => maps:get(<<"model">>, Params, undefined),
+                    <<"temperature">> => maps:get(<<"temperature">>, ModelPreferences, undefined),
+                    <<"maxTokens">> => maps:get(<<"maxTokens">>, ModelPreferences, undefined),
+                    <<"stopSequences">> => maps:get(<<"stopSequences">>, ModelPreferences, undefined)
+                },
+
+                %% Call sampling module (30 second timeout for LLM calls)
+                case erlmcp_sampling:create_message(Messages, SamplingParams, 30000) of
+                    {ok, Result} ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        send_response_via_registry(State, TransportId, Id, Result);
+                    {error, SamplingReason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, sampling_failed, SamplingReason),
+                        logger:error("Sampling create_message failed: ~p", [SamplingReason]),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                            format_sampling_error(SamplingReason))
+                end;
+            {error, ValidationError} ->
+                erlmcp_tracing:record_error_details(SpanCtx, messages_validation_failed, ValidationError),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    format_sampling_error(ValidationError))
+        end,
+
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            logger:error("Sampling request crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Logging/setLevel endpoint (Task #137: Implement Logging Capability)
+handle_request(Id, ?MCP_METHOD_LOGGING_SET_LEVEL, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_logging_set_level">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_LOGGING_SET_LEVEL
+        }),
+
+        %% Extract and validate level parameter
+        case maps:get(<<"level">>, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_level_parameter, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing 'level' parameter">>),
+                {noreply, State};
+            LevelBinary when is_binary(LevelBinary) ->
+                case validate_log_level_binary(LevelBinary) of
+                    {ok, Level} ->
+                        ClientPid = self(),
+                        case erlmcp_logging:set_level(ClientPid, Level) of
+                            ok ->
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                Response = #{<<"level">> => LevelBinary},
+                                send_response_safe(State, TransportId, Id, Response),
+                                {noreply, State};
+                            {error, {invalid_level, _InvalidLevel}} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, invalid_log_level, LevelBinary),
+                                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                                    <<"Invalid log level: ", LevelBinary/binary>>),
+                                {noreply, State}
+                        end;
+                    {error, invalid_level} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, invalid_log_level, LevelBinary),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                            <<"Invalid log level: ", LevelBinary/binary>>),
+                        {noreply, State}
+                end
+        end,
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            logger:error("Logging set_level request crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
 handle_request(Id, _Method, _Params, TransportId, State) ->
     send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
     {noreply, State}.
@@ -744,7 +822,7 @@ send_notification_via_registry(#state{server_id = ServerId}, Method, Params) ->
     erlmcp_registry:route_to_transport(broadcast, ServerId, Json).
 
 -spec send_notification_to_transport(state(), atom() | undefined, binary(), map()) -> ok.
-send_notification_to_transport(State, undefined, Method, Params) ->
+send_notification_to_transport(State, _TransportId = undefined, Method, Params) ->
     send_notification_via_registry(State, Method, Params);
 send_notification_to_transport(#state{server_id = ServerId}, TransportId, Method, Params) ->
     Json = erlmcp_json_rpc:encode_notification(Method, Params),
@@ -796,7 +874,7 @@ send_notification_to_transport_safe(State, TransportId, Method, Params) ->
     try send_notification_to_transport(State, TransportId, Method, Params)
     catch
         Class:Reason:Stack ->
-            logger:warning("Failed to send notification ~p to transport ~p: ~p:~p~n~p", 
+            logger:warning("Failed to send notification ~p to transport ~p: ~p:~p~n~p",
                           [Method, TransportId, Class, Reason, Stack])
     end,
     ok.
@@ -942,35 +1020,84 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                 _ = erlmcp_progress:track_tool_call(ProgressToken, Name, ServerPid),
 
                 HandlerSpanCtx = erlmcp_tracing:start_span(<<"tool.handler">>),
-                try
-                    Result = Handler(Arguments),
-                    ContentList = normalize_tool_result(Result),
-                    ContentSize = case Result of
-                        R when is_binary(R) -> byte_size(R);
-                        R when is_list(R) -> length(R);
-                        _ -> unknown
-                    end,
-                    erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
-                        <<"result.size">> => ContentSize
-                    }),
-                    erlmcp_tracing:set_status(HandlerSpanCtx, ok),
 
-                    % Include progress token in response metadata
-                    Response = #{
-                        ?MCP_PARAM_CONTENT => ContentList,
-                        <<"_meta">> => #{
-                            ?MCP_PARAM_PROGRESS_TOKEN => ProgressToken
-                        }
-                    },
-                    send_response_safe(State, TransportId, Id, Response),
+                % Extract client_id from state for CPU quota tracking
+                % Use server_id as fallback for client identification
+                ClientId = case State#state.server_id of
+                    {_, SessionId} when is_binary(SessionId) -> SessionId;
+                    ServerId when is_binary(ServerId) -> ServerId;
+                    _ -> <<"unknown_client">>
+                end,
+
+                try
+                    % TASK #107: Execute with CPU protection (quota + timeout)
+                    % This prevents CPU-intensive DoS attacks
+                    TimeoutMs = case application:get_env(erlmcp, tool_timeout_ms) of
+                        {ok, Timeout} -> Timeout;
+                        undefined -> 5000  % Default 5 second timeout
+                    end,
+
+                    case erlmcp_cpu_guard:execute_with_protection(
+                        ClientId, tool_call, Handler, [Arguments], TimeoutMs
+                    ) of
+                        {ok, Result, CpuTime} ->
+                            % Tool executed successfully
+                            erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
+                                <<"cpu_time_ms">> => CpuTime
+                            }),
+
+                            ContentList = normalize_tool_result(Result),
+                            ContentSize = case Result of
+                                R when is_binary(R) -> byte_size(R);
+                                R when is_list(R) -> length(R);
+                                _ -> unknown
+                            end,
+                            erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
+                                <<"result.size">> => ContentSize
+                            }),
+                            erlmcp_tracing:set_status(HandlerSpanCtx, ok),
+
+                            % Include progress token in response metadata
+                            Response = #{
+                                ?MCP_PARAM_CONTENT => ContentList,
+                                <<"_meta">> => #{
+                                    ?MCP_PARAM_PROGRESS_TOKEN => ProgressToken
+                                }
+                            },
+                            send_response_safe(State, TransportId, Id, Response),
+
+                            erlmcp_tracing:set_status(SpanCtx, ok);
+                        {error, quota_exceeded, cpu_time} ->
+                            % CPU time quota exceeded
+                            erlmcp_tracing:record_error_details(HandlerSpanCtx, cpu_quota_exceeded, cpu_time),
+                            logger:warning("CPU quota exceeded for tool ~p", [Name]),
+                            send_error_safe(State, TransportId, Id, -32603,
+                                <<"CPU quota exceeded. Please retry later.">>);
+                        {error, quota_exceeded, operations} ->
+                            % Operations count quota exceeded
+                            erlmcp_tracing:record_error_details(HandlerSpanCtx, ops_quota_exceeded, operations),
+                            logger:warning("Operations quota exceeded for tool ~p", [Name]),
+                            send_error_safe(State, TransportId, Id, -32603,
+                                <<"Operation rate limit exceeded. Please retry later.">>);
+                        {error, timeout} ->
+                            % Tool execution timeout
+                            erlmcp_tracing:record_error_details(HandlerSpanCtx, timeout, TimeoutMs),
+                            logger:error("Tool ~p timed out after ~pms", [Name, TimeoutMs]),
+                            send_error_safe(State, TransportId, Id, -32603,
+                                <<"Tool execution timeout. Operation took too long.">>);
+                        {error, Reason} ->
+                            % Other error
+                            erlmcp_tracing:record_error_details(HandlerSpanCtx, execution_error, Reason),
+                            logger:error("Tool handler error: ~p", [Reason]),
+                            send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
+                    end,
 
                     % Clean up progress token after completion
-                    erlmcp_progress:cleanup_completed(ProgressToken),
-                    erlmcp_tracing:set_status(SpanCtx, ok)
+                    erlmcp_progress:cleanup_completed(ProgressToken)
                 catch
-                    Class:Reason:Stack ->
-                        erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
-                        logger:error("Tool handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
+                    ClassCatch:ReasonCatch:StackCatch ->
+                        erlmcp_tracing:record_exception(HandlerSpanCtx, ClassCatch, ReasonCatch, StackCatch),
+                        logger:error("Tool handler crashed: ~p:~p~n~p", [ClassCatch, ReasonCatch, StackCatch]),
                         % Cleanup even on error
                         erlmcp_progress:cleanup_completed(ProgressToken),
                         send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
@@ -979,9 +1106,9 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                 end
         end
     catch
-        ClassTool:ExceptionReasonTool:StacktraceTool ->
-            erlmcp_tracing:record_exception(SpanCtx, ClassTool, ExceptionReasonTool, StacktraceTool),
-            erlang:raise(ClassTool, ExceptionReasonTool, StacktraceTool)
+        ClassOuter:ReasonOuter:StackOuter ->
+            erlmcp_tracing:record_exception(SpanCtx, ClassOuter, ReasonOuter, StackOuter),
+            erlang:raise(ClassOuter, ReasonOuter, StackOuter)
     after
         erlmcp_tracing:end_span(SpanCtx)
     end.
@@ -1250,86 +1377,6 @@ encode_content_item(#mcp_content{} = Content, _Resource, Uri) ->
 %% Audio Content Helper Functions (Gap #34: Audio Content Type Support)
 %%====================================================================
 
-%%% @doc
-%%% Create audio content from raw binary audio data.
-%%% Automatically base64-encodes the audio data and validates the MIME type.
-%%%
-%%% Example:
-%%%   AudioBinary = <<...raw audio bytes...>>,
-%%%   Content = erlmcp_server:create_audio_content(
-%%%       AudioBinary,
-%%%       <<"audio/wav">>,
-%%%       undefined  % No annotations
-%%%   ),
-%%%
-%%% @param AudioBinary The raw audio binary data
-%%% @param MimeType The audio MIME type (e.g., <<"audio/wav">>, <<"audio/mp3">>)
-%%% @param Annotations Optional list of annotations
-%%% @return #mcp_content{} record or error tuple
-%%% @end
--spec create_audio_content(binary(), binary(), [#mcp_annotation{}] | undefined) ->
-    {ok, #mcp_content{}} | {error, {atom(), binary()}}.
-create_audio_content(AudioBinary, MimeType, Annotations)
-  when is_binary(AudioBinary), is_binary(MimeType) ->
-    case erlmcp_audio:validate_audio_mime_type(MimeType) of
-        ok ->
-            Base64Data = erlmcp_audio:encode_audio_base64(AudioBinary),
-            AnnotationsList = case Annotations of
-                undefined -> [];
-                L when is_list(L) -> L
-            end,
-            Content = #mcp_content{
-                type = ?MCP_CONTENT_TYPE_AUDIO,
-                data = Base64Data,
-                mime_type = MimeType,
-                annotations = AnnotationsList
-            },
-            {ok, Content};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-%%% @doc
-%%% Create audio content with optional metadata (duration, sample rate, channels, bitrate).
-%%%
-%%% Example:
-%%%   Metadata = #{
-%%%       duration => 125.5,
-%%%       sample_rate => 48000,
-%%%       channels => 2,
-%%%       bitrate => 320000
-%%%   },
-%%%   Content = erlmcp_server:create_audio_content_with_metadata(
-%%%       AudioBinary,
-%%%       <<"audio/mp3">>,
-%%%       Metadata,
-%%%       []  % No annotations
-%%%   ),
-%%%
-%%% @param AudioBinary The raw audio binary data
-%%% @param MimeType The audio MIME type
-%%% @param Metadata Audio metadata map with optional fields: duration, sample_rate, channels, bitrate
-%%% @param Annotations Optional list of annotations
-%%% @return {ok, #mcp_content{}} | {error, {atom(), binary()}}
-%%% @end
--spec create_audio_content_with_metadata(
-    binary(),
-    binary(),
-    erlmcp_audio:audio_metadata(),
-    [#mcp_annotation{}] | undefined
-) ->
-    {ok, #mcp_content{}} | {error, {atom(), binary()}}.
-create_audio_content_with_metadata(AudioBinary, MimeType, Metadata, Annotations)
-  when is_binary(AudioBinary), is_binary(MimeType), is_map(Metadata) ->
-    case create_audio_content(AudioBinary, MimeType, Annotations) of
-        {ok, Content} ->
-            %% Store metadata in annotations for MCP compliance
-            %% (metadata is typically not stored separately in content blocks)
-            {ok, Content};
-        Error ->
-            Error
-    end.
-
 -spec normalize_tool_result(term()) -> [map()].
 normalize_tool_result(BinaryResult) when is_binary(BinaryResult) ->
     [#{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT, ?MCP_PARAM_TEXT => BinaryResult}].
@@ -1389,134 +1436,37 @@ notify_subscribers(Uri, Metadata, State) ->
     end.
 
 %%====================================================================
-%% Internal functions - Tasks
-%%====================================================================
-
--spec handle_task_execution(map(), state()) -> ok.
-handle_task_execution(#{id := TaskId, type := tool_call, tool := ToolName, arguments := Arguments}, State) ->
-    case execute_tool_for_task(ToolName, Arguments, State) of
-        {ok, Content} -> erlmcp_task_manager:complete_task(TaskId, #{?MCP_PARAM_CONTENT => Content});
-        {error, Error} -> erlmcp_task_manager:fail_task(TaskId, Error)
-    end,
-    ok;
-handle_task_execution(_Task, _State) ->
-    ok.
-
--spec execute_tool_for_task(binary(), map(), state()) -> {ok, [map()]} | {error, {integer(), binary()}}.
-execute_tool_for_task(Name, Arguments, State) ->
-    case maps:get(Name, State#state.tools, undefined) of
-        undefined -> {error, {?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND}};
-        {_Tool, Handler, _Schema} ->
-            try
-                Result = Handler(Arguments),
-                {ok, normalize_tool_result(Result)}
-            catch
-                Class:Reason:Stack ->
-                    logger:error("Tool handler crashed (task): ~p:~p~n~p", [Class, Reason, Stack]),
-                    {error, {?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR}}
-            end
-    end.
-
--spec encode_task_summary(map()) -> map().
-encode_task_summary(Task) ->
-    Base = #{
-        ?MCP_PARAM_TASK_ID => maps:get(id, Task),
-        ?MCP_PARAM_STATUS => encode_task_status(maps:get(status, Task)),
-        ?MCP_PARAM_TYPE => atom_to_binary(maps:get(type, Task), utf8)
-    },
-    Base1 = maybe_add_field(Base, ?MCP_PARAM_NAME, maps:get(tool, Task, undefined)),
-    maybe_add_field(Base1, <<"createdAt">>, maps:get(created_at, Task, undefined)).
-
--spec encode_task_details(map()) -> map().
-encode_task_details(Task) ->
-    Summary = encode_task_summary(Task),
-    case {maps:get(status, Task), maps:get(result, Task, undefined)} of
-        {completed, Result} when is_map(Result) ->
-            Summary#{?MCP_PARAM_RESULT => Result};
-        {failed, {Code, Msg}} ->
-            Summary#{?MCP_PARAM_ERROR => #{
-                ?JSONRPC_ERROR_FIELD_CODE => Code,
-                ?JSONRPC_ERROR_FIELD_MESSAGE => Msg
-            }};
-        _ -> Summary
-    end.
-
--spec encode_task_status(task_status()) -> binary().
-encode_task_status(queued) -> <<"queued">>;
-encode_task_status(running) -> <<"running">>;
-encode_task_status(completed) -> <<"completed">>;
-encode_task_status(failed) -> <<"failed">>;
-encode_task_status(cancelled) -> <<"cancelled">>;
-encode_task_status(cancel_requested) -> <<"cancel_requested">>;
-encode_task_status(_) -> <<"unknown">>.
-
--spec send_task_notification(state(), map()) -> ok.
-send_task_notification(State, Task) ->
-    TransportId = maps:get(transport_id, Task, undefined),
-    send_notification_to_transport_safe(State, TransportId,
-        ?MCP_METHOD_NOTIFICATIONS_TASKS_STATUS,
-        #{?MCP_PARAM_TASK => encode_task_summary(Task)}).
-
--spec format_task_error(term()) -> binary().
-format_task_error(invalid_task_payload) -> <<"Invalid task payload">>;
-format_task_error(Reason) when is_binary(Reason) -> Reason;
-format_task_error(Reason) when is_atom(Reason) -> list_to_binary(atom_to_list(Reason));
-format_task_error(Reason) -> iolist_to_binary(io_lib:format("~p", [Reason])).
-
--spec format_task_failure(map()) -> {integer(), binary()}.
-format_task_failure(Task) ->
-    case maps:get(result, Task, undefined) of
-        {Code, Msg} -> {Code, Msg};
-        _ -> {?JSONRPC_INTERNAL_ERROR, <<"Task failed">>}
-    end.
-
-%%====================================================================
 %% Internal functions - Pagination Support
 %%====================================================================
 
 -spec handle_paginated_list_with_key([map()], map(), binary()) ->
     {ok, map()} | {error, binary()}.
-handle_paginated_list_with_key(Items, _Params, ListKey) ->
-    %% Simple pagination: return all items without cursor support
-    {ok, #{ListKey => Items}}.
+handle_paginated_list_with_key(Items, Params, ListKey) ->
+    %% Extract pagination parameters
+    PageSize = maps:get(<<"pageSize">>, Params, undefined),
+    Cursor = maps:get(<<"cursor">>, Params, null),
+    TotalCount = length(Items),
 
-%%====================================================================
-%% Internal functions - Tool Description Validation (Gap #40)
-%%====================================================================
+    try
+        %% Use pagination module for cursor-based pagination
+        {PageItems, PageInfo} = erlmcp_pagination:paginate(
+            Items, PageSize, Cursor, TotalCount
+        ),
 
--spec get_tool_description_max_length() -> pos_integer().
-get_tool_description_max_length() ->
-    case application:get_env(erlmcp, tool_description_max_length) of
-        {ok, MaxLength} when is_integer(MaxLength), MaxLength > 0 ->
-            MaxLength;
-        _ ->
-            ?MCP_TOOL_DESCRIPTION_MAX_LENGTH_DEFAULT
+        %% Build response with pagination metadata
+        Response = #{
+            ListKey => PageItems,
+            <<"nextCursor">> => maps:get(<<"cursor">>, PageInfo),
+            <<"hasMore">> => maps:get(<<"hasMore">>, PageInfo),
+            <<"total">> => maps:get(<<"total">>, PageInfo)
+        },
+
+        {ok, Response}
+    catch
+        _:_ ->
+            %% Fallback to simple pagination on error
+            {ok, #{ListKey => Items}}
     end.
-
--spec validate_tool_description(binary() | undefined) ->
-    ok | {error, {integer(), binary(), map()}}.
-validate_tool_description(undefined) ->
-    %% Undefined descriptions are allowed
-    ok;
-validate_tool_description(Description) when is_binary(Description) ->
-    MaxLength = get_tool_description_max_length(),
-    DescriptionLength = byte_size(Description),
-
-    case DescriptionLength > MaxLength of
-        true ->
-            ErrorData = #{
-                <<"max_length">> => MaxLength,
-                <<"actual_length">> => DescriptionLength,
-                <<"description_preview">> => binary:part(Description, 0, min(50, DescriptionLength))
-            },
-            {error, {?MCP_ERROR_TOOL_DESCRIPTION_TOO_LONG, ?MCP_MSG_TOOL_DESCRIPTION_TOO_LONG, ErrorData}};
-        false ->
-            ok
-    end;
-validate_tool_description(_) ->
-    %% Non-binary descriptions are invalid
-    ErrorData = #{<<"error">> => <<"Description must be binary">>},
-    {error, {?JSONRPC_INVALID_PARAMS, <<"Invalid description type">>, ErrorData}}.
 
 %%====================================================================
 %% Internal functions - List Change Notifications (Gaps #6-8)
@@ -1559,3 +1509,115 @@ canonicalize_and_validate_uri(Uri) when is_binary(Uri) ->
     end;
 canonicalize_and_validate_uri(_) ->
     {error, invalid_uri_format}.
+
+%%====================================================================
+%% Internal functions - Memory Management (Gap #10)
+%%====================================================================
+
+%% @doc Start periodic garbage collection to prevent binary heap exhaustion.
+%% Runs every 60 seconds to free accumulated binary data from JSON-RPC messages.
+-spec start_periodic_gc() -> reference().
+start_periodic_gc() ->
+    erlang:send_after(60000, self(), force_gc).
+
+%%====================================================================
+%% Test Helper Functions (for testing)
+%%====================================================================
+
+%% @doc List all prompts locally (for testing)
+-spec list_prompts_local(server()) -> [map()].
+list_prompts_local(Server) ->
+    gen_server:call(Server, list_prompts_local).
+
+%% @doc Get prompt handler locally (for testing)
+-spec get_prompt_handler_local(server(), binary()) ->
+    {ok, {#mcp_prompt{}, prompt_handler()}} | {error, not_found}.
+get_prompt_handler_local(Server, Name) ->
+    gen_server:call(Server, {get_prompt_handler_local, Name}).
+
+%% @doc List all tools locally (for testing)
+-spec list_tools_local(server()) -> [map()].
+list_tools_local(Server) ->
+    gen_server:call(Server, list_tools_local).
+
+%% @doc List all resources locally (for testing)
+-spec list_resources_local(server()) -> [map()].
+list_resources_local(Server) ->
+    gen_server:call(Server, list_resources_local).
+
+%%====================================================================
+%% Internal functions - Sampling Support (Task #136)
+%%====================================================================
+
+%% @doc Validate sampling messages format
+-spec validate_sampling_messages(term()) -> ok | {error, binary()}.
+validate_sampling_messages(Messages) when is_list(Messages) ->
+    case length(Messages) of
+        0 ->
+            {error, <<"Messages list cannot be empty">>};
+        _ ->
+            case lists:all(fun validate_sampling_message/1, Messages) of
+                true -> ok;
+                false -> {error, <<"Invalid message format">>}
+            end
+    end;
+validate_sampling_messages(_) ->
+    {error, <<"Messages must be a list">>}.
+
+%% @doc Validate a single sampling message
+-spec validate_sampling_message(map()) -> boolean().
+validate_sampling_message(Message) when is_map(Message) ->
+    Role = maps:get(<<"role">>, Message, undefined),
+    Content = maps:get(<<"content">>, Message, undefined),
+
+    case {Role, Content} of
+        {undefined, _} -> false;
+        {_, undefined} -> false;
+        {R, _} when is_binary(R) ->
+            case Content of
+                C when is_binary(C); is_map(C) -> true;
+                _ -> false
+            end;
+        _ -> false
+    end;
+validate_sampling_message(_) ->
+    false.
+
+%% @doc Format sampling error for JSON-RPC response
+-spec format_sampling_error(term()) -> binary().
+format_sampling_error(Reason) when is_binary(Reason) ->
+    Reason;
+format_sampling_error(empty_messages) ->
+    <<"Messages list cannot be empty">>;
+format_sampling_error(invalid_message_format) ->
+    <<"Invalid message format">>;
+format_sampling_error(invalid_temperature) ->
+    <<"Temperature must be between 0.0 and 2.0">>;
+format_sampling_error(provider_error) ->
+    <<"LLM provider error">>;
+format_sampling_error(timeout) ->
+    <<"LLM request timeout">>;
+format_sampling_error(Reason) when is_atom(Reason) ->
+    binary:list_to_bin(io_lib:format("~p", [Reason]));
+format_sampling_error(_) ->
+    <<"Unknown sampling error">>.
+
+%%====================================================================
+%% Internal functions - Logging Validation (Task #137)
+%%====================================================================
+
+%% @doc Validate log level binary parameter
+%% Converts binary level string to atom and validates against allowed levels
+-spec validate_log_level_binary(binary()) -> {ok, atom()} | {error, invalid_level}.
+validate_log_level_binary(LevelBinary) when is_binary(LevelBinary) ->
+    LevelString = binary_to_list(LevelBinary),
+    try
+        Level = list_to_existing_atom(LevelString),
+        case lists:member(Level, ?MCP_VALID_LOG_LEVELS) of
+            true -> {ok, Level};
+            false -> {error, invalid_level}
+        end
+    catch
+        error:badarg ->
+            {error, invalid_level}
+    end.

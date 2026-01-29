@@ -447,9 +447,22 @@ build_strict_tls_options(Hostname) ->
 
 -spec enqueue_request(binary(), {pid(), term()}, state()) -> state().
 enqueue_request(Data, From, State) ->
-    %% Add to queue
-    NewQueue = queue:in({Data, From}, State#state.message_queue),
-    State#state{message_queue = NewQueue}.
+    %% Validate message size before enqueueing
+    DataSize = byte_size(Data),
+    case erlmcp_memory_guard:check_allocation(DataSize) of
+        ok ->
+            %% Add to queue
+            NewQueue = queue:in({Data, From}, State#state.message_queue),
+            State#state{message_queue = NewQueue};
+        {error, payload_too_large} ->
+            logger:error("HTTP message too large: ~p bytes", [DataSize]),
+            gen_server:reply(From, {error, {message_too_large, DataSize}}),
+            State;
+        {error, resource_exhausted} ->
+            logger:error("System memory exhausted, rejecting HTTP request"),
+            gen_server:reply(From, {error, resource_exhausted}),
+            State
+    end.
 
 -spec process_request_queue(state()) -> state().
 process_request_queue(#state{active_requests = Active,
@@ -518,33 +531,65 @@ perform_request(Data, #state{gun_pid = GunPid, path = Path, headers = Headers,
 -spec handle_gun_response(reference(), non_neg_integer(),
                          [{binary(), binary()}], binary(), state()) -> state().
 handle_gun_response(StreamRef, StatusCode, Headers, Body, State) ->
-    case maps:take(StreamRef, State#state.pending_requests) of
-        {{From, _FromRef, Data, Attempts}, NewPending} ->
-            NewState = State#state{
-                pending_requests = NewPending,
-                active_requests = max(0, State#state.active_requests - 1)
-            },
+    %% Validate response body size before processing
+    BodySize = byte_size(Body),
+    case erlmcp_memory_guard:check_allocation(BodySize) of
+        ok ->
+            case maps:take(StreamRef, State#state.pending_requests) of
+                {{From, _FromRef, Data, Attempts}, NewPending} ->
+                    NewState = State#state{
+                        pending_requests = NewPending,
+                        active_requests = max(0, State#state.active_requests - 1)
+                    },
 
-            %% Process the response
-            case process_response(StatusCode, Headers, Body) of
-                {ok, Response} ->
-                    %% Success - send to owner and reply
-                    State#state.owner ! {transport_message, Response},
-                    gen_server:reply(From, ok),
-                    NewState;
-                {error, Reason} = Error ->
-                    %% Check if we should retry
-                    case should_retry(Reason, Attempts, State) of
-                        true ->
-                            schedule_retry(Data, From, Attempts + 1, NewState);
-                        false ->
-                            gen_server:reply(From, Error),
-                            NewState
-                    end
+                    %% Process the response
+                    case process_response(StatusCode, Headers, Body) of
+                        {ok, Response} ->
+                            %% Success - send to owner and reply
+                            State#state.owner ! {transport_message, Response},
+                            gen_server:reply(From, ok),
+                            NewState;
+                        {error, Reason} = Error ->
+                            %% Check if we should retry
+                            case should_retry(Reason, Attempts, State) of
+                                true ->
+                                    schedule_retry(Data, From, Attempts + 1, NewState);
+                                false ->
+                                    gen_server:reply(From, Error),
+                                    NewState
+                            end
+                    end;
+                error ->
+                    logger:warning("Received response for unknown stream: ~p", [StreamRef]),
+                    State
             end;
-        error ->
-            logger:warning("Received response for unknown stream: ~p", [StreamRef]),
-            State
+        {error, payload_too_large} ->
+            logger:error("HTTP response body too large: ~p bytes", [BodySize]),
+            %% Clean up the pending request
+            case maps:take(StreamRef, State#state.pending_requests) of
+                {{From, _FromRef, _Data, _Attempts}, NewPending} ->
+                    NewState = State#state{
+                        pending_requests = NewPending,
+                        active_requests = max(0, State#state.active_requests - 1)
+                    },
+                    gen_server:reply(From, {error, {response_too_large, BodySize}}),
+                    NewState;
+                error ->
+                    State
+            end;
+        {error, resource_exhausted} ->
+            logger:error("System memory exhausted, cannot process HTTP response"),
+            case maps:take(StreamRef, State#state.pending_requests) of
+                {{From, _FromRef, _Data, _Attempts}, NewPending} ->
+                    NewState = State#state{
+                        pending_requests = NewPending,
+                        active_requests = max(0, State#state.active_requests - 1)
+                    },
+                    gen_server:reply(From, {error, resource_exhausted}),
+                    NewState;
+                error ->
+                    State
+            end
     end.
 
 -spec handle_gun_error(reference(), term(), state()) -> state().

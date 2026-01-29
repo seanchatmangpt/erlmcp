@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "045-remove-dead-code",
+  "title": "Remove Dead Code",
+  "section": "quality-gates",
+  "state": "idea",
+  "overview": "Xref identified 27+ functions that are defined but never called. Dead code that should be removed.\n\n**Motivation:** Dead code increases maintenance burden and confuses developers. Should be removed for production cleanliness.\n\n**Success criteria:**\n- All 27+ unused functions audited\n- Truly unused functions removed\n- Public API functions documented\n- Test-only functions moved to test files\n- rebar3 xref shows 0 unused function warnings\n\n**Technical constraints:**\n- For each unused function: check if truly unused, part of public API, or testing stub\n- Remove truly unused functions\n- Document public API functions (why exported?)\n- Keep test-only functions (move to test file if needed)\n\n**Signals:** priority: medium, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.830Z",
+  "updated_at": "2026-01-29T06:34:58.726Z",
+  "problem_statement": "Xref identified 27+ functions that are defined but never called. Dead code that should be removed.",
+  "motivation": "Dead code increases maintenance burden and confuses developers. Should be removed for production cleanliness.",
+  "success_criteria": [
+    "All 27+ unused functions audited",
+    "Truly unused functions removed",
+    "Public API functions documented",
+    "Test-only functions moved to test files",
+    "rebar3 xref shows 0 unused function warnings"
+  ],
+  "technical_constraints": [
+    "For each unused function: check if truly unused, part of public API, or testing stub",
+    "Remove truly unused functions",
+    "Document public API functions (why exported?)",
+    "Keep test-only functions (move to test file if needed)"
+  ],
+  "priority_hint": "medium",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

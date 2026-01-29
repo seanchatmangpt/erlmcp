@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "038-fix-integration-suite-init-failure",
+  "title": "Fix Integration Suite Init Failure",
+  "section": "ct-fixes",
+  "state": "idea",
+  "overview": "erlmcp_integration_SUITE fails during init_per_suite - application won't start. This blocks ALL integration testing.\n\n**Motivation:** Integration testing is critical for validating end-to-end functionality. Currently completely blocked by init failure.\n\n**Success criteria:**\n- Root cause identified and documented\n- init_per_suite/1 fixed\n- Application starts successfully\n- All tests in suite can run (may still fail, but not blocked by init)\n- rebar3 ct --suite=erlmcp_integration_SUITE executes\n\n**Technical constraints:**\n- Check init_per_suite/1 - what applications are being started\n- Check application dependencies - are all required apps available\n- Check supervisor start - is erlmcp_core_sup starting correctly\n- Check missing supervisor children - are referenced modules available\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS INTEGRATION TESTING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.828Z",
+  "updated_at": "2026-01-29T06:07:36.256Z",
+  "problem_statement": "erlmcp_integration_SUITE fails during init_per_suite - application won't start. This blocks ALL integration testing.",
+  "motivation": "Integration testing is critical for validating end-to-end functionality. Currently completely blocked by init failure.",
+  "success_criteria": [
+    "Root cause identified and documented",
+    "init_per_suite/1 fixed",
+    "Application starts successfully",
+    "All tests in suite can run (may still fail, but not blocked by init)",
+    "rebar3 ct --suite=erlmcp_integration_SUITE executes"
+  ],
+  "technical_constraints": [
+    "Check init_per_suite/1 - what applications are being started",
+    "Check application dependencies - are all required apps available",
+    "Check supervisor start - is erlmcp_core_sup starting correctly",
+    "Check missing supervisor children - are referenced modules available"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS INTEGRATION TESTING"
+}

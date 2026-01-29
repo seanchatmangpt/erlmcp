@@ -2,6 +2,9 @@
 -behaviour(gen_server).
 -behaviour(ranch_protocol).
 
+-include("erlmcp.hrl").
+-include("erlmcp_refusal.hrl").
+
 %% Note: We implement erlmcp_transport behavior but use different naming
 %% to avoid conflicts with gen_server callbacks
 
@@ -55,7 +58,12 @@
     connected = false :: boolean(),
     reconnect_timer :: reference() | undefined,
     reconnect_attempts = 0 :: non_neg_integer(),
-    max_reconnect_attempts = infinity :: pos_integer() | infinity
+    max_reconnect_attempts = infinity :: pos_integer() | infinity,
+    idle_timer :: reference() | undefined,
+    resource_monitor_timer :: reference() | undefined,
+    last_activity :: integer() | undefined,
+    bytes_sent = 0 :: non_neg_integer(),
+    bytes_received = 0 :: non_neg_integer()
 }).
 
 -type state() :: #state{}.
@@ -70,6 +78,8 @@
 -define(INITIAL_RECONNECT_DELAY, 1000).
 -define(MAX_RECONNECT_DELAY, 60000).
 -define(DEFAULT_MAX_RECONNECT_ATTEMPTS, infinity).
+-define(IDLE_TIMEOUT, 300000). %% 5 minutes idle timeout
+-define(RESOURCE_MONITOR_INTERVAL, 60000). %% 1 minute
 
 %% Pool defaults
 -define(DEFAULT_POOL_MIN_SIZE, 10).
@@ -147,14 +157,24 @@ connect(Pid, Opts) when is_pid(Pid), is_map(Opts) ->
 %%====================================================================
 
 %% @doc Start a ranch protocol handler for an accepted connection
--spec start_link(ranch:ref(), module(), map()) -> {ok, pid()}.
+-spec start_link(ranch:ref(), module(), map()) -> {ok, pid()} | {error, term()}.
 start_link(RanchRef, _Transport, ProtocolOpts) ->
-    {ok, Pid} = gen_server:start_link(?MODULE, #{
-        mode => server,
-        ranch_ref => RanchRef,
-        protocol_opts => ProtocolOpts
-    }, []),
-    {ok, Pid}.
+    ServerId = maps:get(server_id, ProtocolOpts, undefined),
+
+    %% Check connection limit BEFORE accepting connection
+    case erlmcp_connection_limiter:accept_connection(ServerId) of
+        accept ->
+            {ok, Pid} = gen_server:start_link(?MODULE, #{
+                mode => server,
+                ranch_ref => RanchRef,
+                protocol_opts => ProtocolOpts,
+                server_id => ServerId
+            }, []),
+            {ok, Pid};
+        {error, too_many_connections} ->
+            logger:warning("Rejecting connection: too many connections for server ~p", [ServerId]),
+            {error, too_many_connections}
+    end.
 
 %%====================================================================
 %% gen_server Callbacks
@@ -175,6 +195,22 @@ init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
     %% Set socket to active mode for message reception
     ok = inet:setopts(Socket, [{active, true}]),
 
+    %% Start idle timeout timer
+    IdleTimer = erlang:send_after(?IDLE_TIMEOUT, self(), cleanup_idle),
+
+    %% Start resource monitor
+    ResourceMonitorTimer = erlang:send_after(?RESOURCE_MONITOR_INTERVAL, self(), check_resources),
+
+    %% Monitor connection for leak detection
+    ConnectionInfo = #{
+        socket => Socket,
+        server_id => ServerId,
+        transport_id => TransportId,
+        bytes_sent => 0,
+        bytes_received => 0
+    },
+    catch erlmcp_connection_monitor:monitor_connection(self(), ConnectionInfo),
+
     %% Notify owner of connection
     Owner ! {transport_connected, self()},
 
@@ -186,7 +222,10 @@ init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
         ranch_ref = RanchRef,
         owner = Owner,
         connected = true,
-        options = []
+        options = [],
+        idle_timer = IdleTimer,
+        resource_monitor_timer = ResourceMonitorTimer,
+        last_activity = erlang:monotonic_time(millisecond)
     }};
 
 init(#{mode := Mode} = Opts) ->
@@ -200,7 +239,13 @@ handle_call({send, Data}, _From, State) ->
     Result = send(State, Data),
     case Result of
         ok ->
-            {reply, ok, State};
+            %% Update activity tracking and byte count
+            DataSize = byte_size(Data),
+            NewState = State#state{
+                last_activity = erlang:monotonic_time(millisecond),
+                bytes_sent = State#state.bytes_sent + DataSize
+            },
+            {reply, ok, NewState};
         {error, _} = Error ->
             %% Connection might be lost, handle in async if needed
             {reply, Error, State}
@@ -240,19 +285,41 @@ handle_info(connect, #state{mode = client} = State) ->
     {noreply, attempt_connection(State)};
 
 handle_info({tcp, Socket, Data}, #state{socket = Socket, buffer = Buffer} = State) ->
-    %% Accumulate data in buffer
-    NewBuffer = <<Buffer/binary, Data/binary>>,
+    %% Validate message size before processing
+    DataSize = byte_size(Data),
+    case erlmcp_memory_guard:check_allocation(DataSize) of
+        ok ->
+            %% Accumulate data in buffer
+            NewBuffer = <<Buffer/binary, Data/binary>>,
 
-    %% Process complete messages
-    {Messages, RemainingBuffer} = extract_messages(NewBuffer),
+            %% Process complete messages
+            {Messages, RemainingBuffer} = extract_messages(NewBuffer),
 
-    %% Send messages to owner
-    Owner = State#state.owner,
-    lists:foreach(fun(Msg) ->
-        Owner ! {transport_message, Msg}
-    end, Messages),
+            %% Send messages to owner
+            Owner = State#state.owner,
+            lists:foreach(fun(Msg) ->
+                Owner ! {transport_message, Msg}
+            end, Messages),
 
-    {noreply, State#state{buffer = RemainingBuffer}};
+            %% Update activity tracking and byte count
+            {noreply, State#state{
+                buffer = RemainingBuffer,
+                last_activity = erlang:monotonic_time(millisecond),
+                bytes_received = State#state.bytes_received + DataSize
+            }};
+        {error, payload_too_large} ->
+            logger:error("TCP message too large: ~p bytes", [DataSize]),
+            %% Send bounded refusal to owner
+            State#state.owner ! {transport_error, {message_too_large, DataSize}},
+            %% Close connection to prevent resource exhaustion
+            gen_tcp:close(Socket),
+            {stop, {message_too_large, DataSize}, State};
+        {error, resource_exhausted} ->
+            logger:error("System memory exhausted, rejecting message"),
+            State#state.owner ! {transport_error, resource_exhausted},
+            gen_tcp:close(Socket),
+            {stop, resource_exhausted, State}
+    end;
 
 handle_info({tcp_closed, Socket}, #state{socket = Socket, mode = server} = State) ->
     %% Server connection closed - stop the handler process
@@ -291,18 +358,56 @@ handle_info({'EXIT', Socket, Reason}, #state{socket = Socket} = State) ->
             {noreply, handle_disconnect(State, Reason)}
     end;
 
+handle_info(cleanup_idle, #state{socket = Socket} = State) when Socket =/= undefined ->
+    %% Check if connection has been idle for too long
+    Now = erlang:monotonic_time(millisecond),
+    IdleTime = Now - State#state.last_activity,
+    case IdleTime > ?IDLE_TIMEOUT of
+        true ->
+            logger:info("Closing idle connection after ~pms", [IdleTime]),
+            gen_tcp:close(Socket),
+            {stop, normal, State};
+        false ->
+            %% Reschedule check
+            NewIdleTimer = erlang:send_after(?IDLE_TIMEOUT - IdleTime, self(), cleanup_idle),
+            {noreply, State#state{idle_timer = NewIdleTimer}}
+    end;
+
+handle_info(cleanup_idle, State) ->
+    %% No socket, ignore
+    {noreply, State};
+
+handle_info(check_resources, State) ->
+    %% Monitor resource usage and alert if approaching limits
+    check_resource_usage(State),
+    %% Reschedule next check
+    NewMonitorTimer = erlang:send_after(?RESOURCE_MONITOR_INTERVAL, self(), check_resources),
+    {noreply, State#state{resource_monitor_timer = NewMonitorTimer}};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @doc Cleanup on termination
 terminate(_Reason, State) ->
+    %% Unmonitor connection from leak detector
+    catch erlmcp_connection_monitor:unmonitor_connection(self()),
+
     %% Cancel reconnect timer if active
     cancel_reconnect_timer(State),
+
+    %% Cancel idle timer if active
+    cancel_idle_timer(State),
+
+    %% Cancel resource monitor timer if active
+    cancel_resource_monitor_timer(State),
 
     %% Close socket if connected
     case State#state.socket of
         undefined -> ok;
-        Socket -> gen_tcp:close(Socket)
+        Socket ->
+            catch gen_tcp:close(Socket),
+            logger:info("Socket closed, transferred ~p bytes sent, ~p bytes received",
+                       [State#state.bytes_sent, State#state.bytes_received])
     end,
 
     %% Note: ranch listener cleanup is handled separately via close/1
@@ -396,7 +501,8 @@ init_client_process(Opts) ->
         host = Host,
         port = Port,
         options = build_socket_options(Opts),
-        max_reconnect_attempts = MaxReconnect
+        max_reconnect_attempts = MaxReconnect,
+        last_activity = erlang:monotonic_time(millisecond)
     },
 
     %% Attempt initial connection
@@ -610,3 +716,42 @@ update_client_opts(State, NewOpts) ->
         port = maps:get(port, NewOpts, State#state.port),
         options = build_socket_options(NewOpts)
     }.
+
+%% @doc Check resource usage and alert if approaching limits
+check_resource_usage(#state{bytes_received = BytesRecv, bytes_sent = BytesSent, mode = Mode}) ->
+    TotalBytes = BytesRecv + BytesSent,
+    %% Check if we're approaching memory limits
+    case erlmcp_memory_guard:is_circuit_breaker_open() of
+        true ->
+            logger:warning("Circuit breaker open: system memory critical, total transferred: ~p bytes",
+                          [TotalBytes]);
+        false ->
+            ok
+    end,
+    %% Log resource usage if significant
+    case TotalBytes > 100 * 1024 * 1024 of  % 100MB threshold
+        true ->
+            logger:info("Transport (~p) transferred ~p bytes (sent: ~p, recv: ~p)",
+                       [Mode, TotalBytes, BytesSent, BytesRecv]);
+        false ->
+            ok
+    end,
+    ok.
+
+%% @doc Cancel idle timer
+cancel_idle_timer(#state{idle_timer = undefined}) ->
+    ok;
+cancel_idle_timer(#state{idle_timer = Timer}) ->
+    case erlang:cancel_timer(Timer) of
+        false -> ok;
+        _ -> ok
+    end.
+
+%% @doc Cancel resource monitor timer
+cancel_resource_monitor_timer(#state{resource_monitor_timer = undefined}) ->
+    ok;
+cancel_resource_monitor_timer(#state{resource_monitor_timer = Timer}) ->
+    case erlang:cancel_timer(Timer) of
+        false -> ok;
+        _ -> ok
+    end.

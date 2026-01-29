@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "044-fix-xref-warnings",
+  "title": "Fix Xref Warnings",
+  "section": "quality-gates",
+  "state": "idea",
+  "overview": "Xref found 250 code quality issues - undefined function calls and unused functions.\n\n**Motivation:** Xref warnings indicate broken code paths and dead code. Must be clean for production.\n\n**Success criteria:**\n- All 250 warnings categorized\n- Undefined function calls resolved\n- Unused functions removed or documented\n- rebar3 xref shows 0 warnings\n\n**Technical constraints:**\n- Categorize warnings: undefined calls vs unused functions vs deprecated functions\n- Fix undefined calls: implement missing functions or remove calls\n- Fix unused functions: remove dead code or document public API\n\n**Signals:** priority: medium, urgency: P2 - REQUIRED FOR PRODUCTION",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.830Z",
+  "updated_at": "2026-01-29T06:31:30.461Z",
+  "problem_statement": "Xref found 250 code quality issues - undefined function calls and unused functions.",
+  "motivation": "Xref warnings indicate broken code paths and dead code. Must be clean for production.",
+  "success_criteria": [
+    "All 250 warnings categorized",
+    "Undefined function calls resolved",
+    "Unused functions removed or documented",
+    "rebar3 xref shows 0 warnings"
+  ],
+  "technical_constraints": [
+    "Categorize warnings: undefined calls vs unused functions vs deprecated functions",
+    "Fix undefined calls: implement missing functions or remove calls",
+    "Fix unused functions: remove dead code or document public API"
+  ],
+  "priority_hint": "medium",
+  "urgency_hint": "P2 - REQUIRED FOR PRODUCTION"
+}

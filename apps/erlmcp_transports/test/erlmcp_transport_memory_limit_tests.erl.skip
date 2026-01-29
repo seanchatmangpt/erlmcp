@@ -1,0 +1,195 @@
+%%%-------------------------------------------------------------------
+%%% @doc Transport Memory Limit Integration Tests
+%%%
+%%% Integration tests for memory limit enforcement across all transport layers.
+%%% Tests verify that transports properly reject oversized messages and
+%%% return bounded refusal errors.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_memory_limit_tests).
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%%===================================================================
+%%% Test Cases
+%%%===================================================================
+
+%% @doc Test TCP transport memory limit enforcement
+tcp_transport_memory_limit_test() ->
+    %% Start TCP transport in test mode
+    {ok, TransportPid} = erlmcp_transport_tcp:start_link(#{
+        mode => server,
+        port => 0, % Random port
+        owner => self(),
+        transport_id => tcp_memory_test
+    }),
+
+    %% Get actual port
+    {ok, State} = erlmcp_transport_tcp:get_state(TransportPid),
+    Port = State#state.port,
+
+    %% Create oversize message (20MB)
+    OversizeMessage = <<0:(20 * 1024 * 1024)/unit:8>>,
+
+    %% Try to send oversize message via TCP
+    %% Note: This is a simplified test - real integration would connect a client
+    %% For now, we test the memory guard directly
+    ?assertEqual({error, payload_too_large},
+                 erlmcp_memory_guard:check_allocation(byte_size(OversizeMessage))),
+
+    %% Clean up
+    erlmcp_transport_tcp:close(TransportPid),
+
+    %% Verify normal-sized messages work
+    NormalMessage = <<"{\"test\": \"data\"}">>,
+    ?assertEqual(ok, erlmcp_memory_guard:check_allocation(byte_size(NormalMessage))).
+
+%% @doc Test stdio transport memory limit enforcement
+stdio_transport_memory_limit_test() ->
+    %% Test message size validation function directly
+    MaxSize = erlmcp_transport_stdio:get_max_message_size(),
+
+    %% Verify default is 16MB
+    ?assertEqual(?DEFAULT_MAX_MESSAGE_SIZE, MaxSize),
+
+    %% Small message should pass
+    SmallMessage = <<"{" ++ "{\"key\": \"value\"}" ++ "}">>,
+    ?assertEqual(ok, erlmcp_transport_stdio:validate_message_size(SmallMessage, MaxSize)),
+
+    %% Oversize message should fail
+    OversizeMessage = <<0:(20 * 1024 * 1024)/unit:8>>,
+    ?assertEqual({error, size_exceeded},
+                 erlmcp_transport_stdio:validate_message_size(OversizeMessage, MaxSize)).
+
+%% @doc Test HTTP transport memory limit enforcement
+http_transport_memory_limit_test() ->
+    %% Test that HTTP transport validates message size
+    %% Since we can't easily start a full HTTP server in tests,
+    %% we test the memory guard integration
+
+    %% Small message should pass
+    SmallMessage = jsx:encode(#{
+        jsonrpc => <<"2.0">>,
+        method => <<"test">>,
+        id => 1
+    }),
+    ?assertEqual(ok, erlmcp_memory_guard:check_allocation(byte_size(SmallMessage))),
+
+    %% Oversize message should fail
+    OversizePayload = lists:duplicate(1000000, ${), % 1 million opening braces
+    OversizeMessage = jsx:encode(#{
+        jsonrpc => <<"2.0">>,
+        method => <<"test">>,
+        params => #{payload := OversizePayload},
+        id => 1
+    }),
+    ?assertEqual({error, payload_too_large},
+                 erlmcp_memory_guard:check_allocation(byte_size(OversizeMessage))).
+
+%% @doc Test bounded refusal error responses
+bounded_refusal_error_test() ->
+    %% Test that error responses are properly formatted
+    OversizeMessage = <<0:(20 * 1024 * 1024)/unit:8>>,
+
+    %% Check allocation returns proper error
+    case erlmcp_memory_guard:check_allocation(byte_size(OversizeMessage)) of
+        {error, payload_too_large} ->
+            ?assert(true);
+        _Other ->
+            ?assert(false, "Expected payload_too_large error")
+    end.
+
+%% @doc Test memory limit with various message sizes
+memory_limit_various_sizes_test() ->
+    %% Test boundary conditions
+    Limit = erlmcp_memory_guard:get_payload_limit(),
+
+    %% At limit should pass
+    ?assertEqual(ok, erlmcp_memory_guard:check_allocation(Limit)),
+
+    %% Just over limit should fail
+    ?assertEqual({error, payload_too_large},
+                 erlmcp_memory_guard:check_allocation(Limit + 1)),
+
+    %% Test various sizes
+    TestSizes = [
+        {1, ok},
+        {1024, ok},
+        {1024 * 1024, ok}, % 1MB
+        {10 * 1024 * 1024, ok}, % 10MB
+        {Limit, ok},
+        {Limit + 1, {error, payload_too_large}},
+        {Limit * 2, {error, payload_too_large}}
+    ],
+
+    lists:foreach(fun({Size, Expected}) ->
+        ?assertEqual(Expected, erlmcp_memory_guard:check_allocation(Size))
+    end, TestSizes).
+
+%% @doc Test concurrent memory limit checks
+concurrent_memory_limit_test() ->
+    %% Simulate concurrent requests with various sizes
+    NumProcesses = 50,
+    Sizes = [1024, 1024 * 1024, 10 * 1024 * 1024], % Mix of sizes
+
+    Pids = [spawn(fun() ->
+        Size = lists:nth(rand:uniform(length(Sizes)), Sizes),
+        case erlmcp_memory_guard:check_allocation(Size) of
+            ok -> {ok, Size};
+            {error, Reason} -> {error, Reason, Size}
+        end
+    end) || _ <- lists:seq(1, NumProcesses)],
+
+    %% All should complete
+    Results = [wait_for_result(Pid, 5000) || Pid <- Pids],
+
+    %% Verify all results are valid
+    lists:foreach(fun(Result) ->
+        case Result of
+            {ok, _Size} -> ?assert(true);
+            {error, payload_too_large, _Size} -> ?assert(true);
+            {error, resource_exhausted, _Size} -> ?assert(true);
+            _Other -> ?assert(false, {unexpected_result, Result})
+        end
+    end, Results).
+
+%% @doc Test memory guard stats during load
+memory_guard_stats_under_load_test() ->
+    %% Get initial stats
+    InitialStats = erlmcp_memory_guard:get_memory_stats(),
+
+    %% Perform some allocations
+    lists:foreach(fun(Size) ->
+        erlmcp_memory_guard:check_allocation(Size)
+    end, [1024, 1024 * 1024, 10 * 1024 * 1024]),
+
+    %% Get stats after load
+    FinalStats = erlmcp_memory_guard:get_memory_stats(),
+
+    %% Stats should be available
+    ?assert(is_map(InitialStats)),
+    ?assert(is_map(FinalStats)),
+    ?assert(maps:is_key(used_percent, InitialStats)),
+    ?assert(maps:is_key(used_percent, FinalStats)).
+
+%%%===================================================================
+%%% Internal Functions
+%%%===================================================================
+
+%% @doc Wait for a process result
+wait_for_result(Pid, Timeout) ->
+    Ref = monitor(process, Pid),
+    receive
+        {'DOWN', Ref, process, Pid, {result, Result}} ->
+            Result;
+        {'DOWN', Ref, process, Pid, _Reason} ->
+            timeout
+    after Timeout ->
+        timeout
+    end.
+
+%% Helper to get state from TCP transport (if not already exported)
+%% This is a placeholder - the actual implementation may differ
+get_state(Pid) ->
+    gen_server:call(Pid, get_state).

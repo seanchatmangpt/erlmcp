@@ -150,12 +150,18 @@
 -define(MCP_METHOD_TASKS_RESULT, <<"tasks/result">>).
 -define(MCP_METHOD_TASKS_CANCEL, <<"tasks/cancel">>).
 
+%%% Cancellation Methods (TASK #142: Request Cancellation)
+-define(MCP_METHOD_CANCEL_OPERATION, <<"cancel_operation">>).
+
 %%% Prompt Methods
 -define(MCP_METHOD_PROMPTS_LIST, <<"prompts/list">>).
 -define(MCP_METHOD_PROMPTS_GET, <<"prompts/get">>).
 
 %%% Logging Methods (Gap #21)
 -define(MCP_METHOD_LOGGING_SET_LEVEL, <<"logging/setLevel">>).
+
+%%% Roots Methods (client-side capability)
+-define(MCP_METHOD_ROOTS_LIST, <<"roots/list">>).
 
 %%% Sampling Methods (for AI model sampling)
 -define(MCP_METHOD_SAMPLING_CREATE_MESSAGE, <<"sampling/createMessage">>).
@@ -180,6 +186,7 @@
 -define(MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED, <<"resources/list_changed">>).
 -define(MCP_METHOD_NOTIFICATIONS_PROMPTS_LIST_CHANGED, <<"prompts/list_changed">>).
 -define(MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED, <<"tools/list_changed">>).
+-define(MCP_METHOD_NOTIFICATIONS_ROOTS_LIST_CHANGED, <<"roots/list_changed">>).
 -define(MCP_METHOD_NOTIFICATIONS_TASKS_STATUS, <<"notifications/tasks/status">>).
 
 %%% Capability Names - used in capability negotiation
@@ -264,6 +271,9 @@
 -define(MCP_VALID_LOG_LEVELS, [debug, info, notice, warning, error, critical, alert, emergency]).
 -define(MCP_DEFAULT_LOG_LEVEL, info).
 
+%% Log level type for validation (Task #137: Logging Capability)
+-type log_level() :: debug | info | notice | warning | error | critical | alert | emergency.
+
 %%% Server/Client Info Fields
 -define(MCP_INFO_NAME, <<"name">>).
 -define(MCP_INFO_VERSION, <<"version">>).
@@ -290,6 +300,7 @@
 -define(MCP_PARAM_RESOURCE_TEMPLATES, <<"resourceTemplates">>).
 -define(MCP_PARAM_TOOLS, <<"tools">>).
 -define(MCP_PARAM_PROMPTS, <<"prompts">>).
+-define(MCP_PARAM_ROOTS, <<"roots">>).
 -define(MCP_PARAM_INPUT_SCHEMA, <<"inputSchema">>).
 -define(MCP_PARAM_URI_TEMPLATE, <<"uriTemplate">>).
 -define(MCP_PARAM_REQUIRED, <<"required">>).
@@ -303,6 +314,9 @@
 -define(MCP_PARAM_RESULT, <<"result">>).
 -define(MCP_PARAM_ERROR, <<"error">>).
 -define(MCP_PARAM_ANNOTATIONS, <<"annotations">>).
+-define(MCP_PARAM_REQUEST_ID, <<"requestId">>).
+-define(MCP_PARAM_REASON, <<"reason">>).
+-define(MCP_PARAM_TIMESTAMP, <<"timestamp">>).
 
 %%% JSON-RPC Types
 -type json_rpc_id() :: null | binary() | integer().
@@ -459,7 +473,8 @@
 %%% Export types
 -export_type([
     json_rpc_id/0,
-    json_rpc_params/0
+    json_rpc_params/0,
+    log_level/0
 ]).
 
 -record(mcp_model_preferences, {

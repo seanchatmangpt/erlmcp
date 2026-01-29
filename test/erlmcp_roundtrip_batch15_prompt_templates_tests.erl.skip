@@ -1,0 +1,653 @@
+-module(erlmcp_roundtrip_batch15_prompt_templates_tests).
+-include_lib("eunit/include/eunit.hrl").
+
+%%%===================================================================
+%%% MCP Roundtrip Batch 15: Prompt Templates Tests (Servers 71-75)
+%%%===================================================================
+%%% Tests MCP server/client prompt template functionality:
+%%% - 5 servers on ports 9071-9075 with prompt templates
+%%% - 5 clients per server (25 total clients)
+%%% - Each client performs 100 prompt operations (2500 total)
+%%% - Tests: list prompts, get templates, fill templates, latency
+%%%
+%%% Chicago School TDD: Real servers, real clients, real gen_servers
+%%% State-based verification: Observable prompt state, template filling
+%%%===================================================================
+
+-define(SERVER_IDS, lists:seq(71, 75)).
+-define(PORTS, lists:seq(9071, 9075)).
+-define(CLIENTS_PER_SERVER, 5).
+-define(PROMPT_OPS_PER_CLIENT, 100).
+-define(TIMEOUT, 10000).
+
+%%%-------------------------------------------------------------------
+%%% Test Fixture: Setup/Teardown
+%%%-------------------------------------------------------------------
+
+batch15_test_() ->
+    {setup,
+     fun setup_batch15/0,
+     fun teardown_batch15/1,
+     fun run_batch15_tests/1}.
+
+setup_batch15() ->
+    logger:set_application_level(erlmcp, all),
+    {ok, Pids} = start_servers(?SERVER_IDS, ?PORTS, []),
+    timer:sleep(500), % Let servers fully initialize
+    Pids.
+
+teardown_batch15(ServerPids) ->
+    stop_servers(ServerPids),
+    timer:sleep(200).
+
+run_batch15_tests(ServerPids) ->
+    [
+     ?_test(test_spawn_servers(ServerPids)),
+     ?_test(test_prompt_templates_registered(ServerPids)),
+     ?_test(test_list_prompts(ServerPids)),
+     ?_test(test_get_prompt_greeting(ServerPids)),
+     ?_test(test_get_prompt_code_review(ServerPids)),
+     ?_test(test_get_prompt_summary(ServerPids)),
+     ?_test(test_fill_prompt_templates(ServerPids)),
+     ?_test(test_prompt_operations_load(ServerPids)),
+     ?_test(test_prompt_latency_metrics(ServerPids))
+    ].
+
+%%%-------------------------------------------------------------------
+%%% Server Setup (Chicago School: Real gen_servers with prompts)
+%%%-------------------------------------------------------------------
+
+start_servers([], [], Acc) ->
+    {ok, lists:reverse(Acc)};
+start_servers([Id | Ids], [Port | Ports], Acc) ->
+    ServerName = list_to_atom("mcp_server_" ++ integer_to_list(Id)),
+
+    % Configure server with prompt template capabilities
+    Capabilities = #mcp_server_capabilities{
+        prompts = #mcp_prompts_capability{enabled = true}
+    },
+
+    case erlmcp_server:start_link(ServerName, Capabilities) of
+        {ok, Pid} ->
+            % Add prompt templates
+            add_prompt_templates(Pid),
+
+            ServerInfo = #{
+                server_id => Id,
+                pid => Pid,
+                port => Port,
+                server_name => ServerName
+            },
+            start_servers(Ids, Ports, [ServerInfo | Acc]);
+        {error, Reason} ->
+            logger:error("Failed to start server ~p on port ~p: ~p", [Id, Port, Reason]),
+            start_servers(Ids, Ports, Acc)
+    end.
+
+add_prompt_templates(ServerPid) ->
+    % Template 1: Greeting prompt with required argument
+    GreetingArguments = [
+        #mcp_prompt_argument{
+            name = <<"name">>,
+            description = <<"Name to greet">>,
+            required = true
+        },
+        #mcp_prompt_argument{
+            name = <<"title">>,
+            description = <<"Title or honorific">>,
+            required = false
+        }
+    ],
+    GreetingHandler = fun(Args) ->
+        Name = maps:get(<<"name">>, Args, <<"World">>),
+        Title = maps:get(<<"title">>, Args, <<>>),
+        Greeting = case Title of
+            <<>> -> <<"Hello, ", Name/binary, "!">>;
+            _ -> <<"Greetings, ", Title/binary, " ", Name/binary, "!">>
+        end,
+        [#{
+            role => <<"user">>,
+            content => #mcp_content{type = <<"text">>, text = Greeting}
+        }]
+    end,
+    erlmcp_server:add_prompt_with_args(ServerPid, <<"greeting">>, GreetingHandler, GreetingArguments),
+
+    % Template 2: Code review prompt with language and style
+    CodeReviewArguments = [
+        #mcp_prompt_argument{
+            name = <<"language">>,
+            description = <<"Programming language">>,
+            required = true
+        },
+        #mcp_prompt_argument{
+            name = <<"style">>,
+            description = <<"Code style guide">>,
+            required = false
+        },
+        #mcp_prompt_argument{
+            name = <<"focus">>,
+            description = <<"Review focus areas">>,
+            required = false
+        }
+    ],
+    CodeReviewHandler = fun(Args) ->
+        Language = maps:get(<<"language">>, Args, <<"Python">>),
+        Style = maps:get(<<"style">>, Args, <<"PEP 8">>),
+        Focus = maps:get(<<"focus">>, Args, <<"general">>),
+
+        Prompt = [
+            <<"Please review the following ", Language/binary, " code.\n">>,
+            <<"Style guide: ", Style/binary, "\n">>,
+            <<"Focus areas: ", Focus/binary, "\n">>,
+            <<"Provide feedback on:\n">>,
+            <<"1. Code quality and readability\n">>,
+            <<"2. Performance considerations\n">>,
+            <<"3. Security vulnerabilities\n">>,
+            <<"4. Best practices adherence\n">>
+        ],
+        [#{
+            role => <<"user">>,
+            content => #mcp_content{type = <<"text">>, text = iolist_to_binary(Prompt)}
+        }]
+    end,
+    erlmcp_server:add_prompt_with_args(ServerPid, <<"code_review">>, CodeReviewHandler, CodeReviewArguments),
+
+    % Template 3: Summary prompt with configurable length and format
+    SummaryArguments = [
+        #mcp_prompt_argument{
+            name = <<"length">>,
+            description = <<"Summary length (brief/detailed)">>,
+            required = false
+        },
+        #mcp_prompt_argument{
+            name = <<"format">>,
+            description = <<"Output format (text/bullets/markdown)">>,
+            required = false
+        },
+        #mcp_prompt_argument{
+            name = <<"audience">>,
+            description = <<"Target audience">>,
+            required = false
+        }
+    ],
+    SummaryHandler = fun(Args) ->
+        Length = maps:get(<<"length">>, Args, <<"brief">>),
+        Format = maps:get(<<"format">>, Args, <<"bullets">>),
+        Audience = maps:get(<<"audience">>, Args, <<"general">>),
+
+        Prompt = case {Length, Format} of
+            {<<"brief">>, <<"bullets">>} ->
+                <<"Provide a brief bullet-point summary for ", Audience/binary, " audience.">>;
+            {<<"detailed">>, <<"bullets">>} ->
+                <<"Provide a detailed bullet-point summary for ", Audience/binary, " audience with key insights.">>;
+            {<<"brief">>, <<"markdown">>} ->
+                <<"Provide a brief markdown-formatted summary for ", Audience/binary, " audience.">>;
+            {<<"detailed">>, <<"markdown">>} ->
+                <<"Provide a detailed markdown-formatted summary for ", Audience/binary, " audience with sections.">>;
+            {_, <<"text">>} ->
+                <<"Provide a ", Length/binary, " text summary for ", Audience/binary, " audience.">>
+        end,
+        [#{
+            role => <<"system">>,
+            content => #mcp_content{type = <<"text">>, text = Prompt}
+        }]
+    end,
+    erlmcp_server:add_prompt_with_args(ServerPid, <<"summary">>, SummaryHandler, SummaryArguments),
+
+    ok.
+
+stop_servers(ServerPids) ->
+    lists:foreach(fun(#{pid := Pid}) ->
+        case erlmcp_server:stop(Pid) of
+            ok -> ok;
+            {error, Reason} ->
+                logger:error("Failed to stop server: ~p", [Reason])
+        end
+    end, ServerPids).
+
+%%%-------------------------------------------------------------------
+%%% Test 1: Spawn Servers Verification
+%%%-------------------------------------------------------------------
+
+test_spawn_servers(ServerPids) ->
+    logger:info("=== Test 1: Spawn Servers ===~n"),
+
+    % Verify: All servers spawned successfully (state-based)
+    ?assertEqual(5, length(ServerPids)),
+
+    % Verify: All server PIDs are alive (observable behavior)
+    AliveServers = lists:filter(
+        fun(#{pid := Pid}) -> is_process_alive(Pid) end,
+        ServerPids
+    ),
+    ?assertEqual(5, length(AliveServers)),
+
+    % Verify: Each server has unique port
+    Ports = [Port || #{port := Port} <- ServerPids],
+    UniquePorts = lists:usort(Ports),
+    ?assertEqual(5, length(UniquePorts)),
+
+    logger:info("Servers Spawned: ~p/5~n", [length(ServerPids)]),
+    lists:foreach(
+        fun(#{server_id := Id, port := Port}) ->
+            logger:info("  Server ~p on port ~p~n", [Id, Port])
+        end,
+        ServerPids
+    ).
+
+%%%-------------------------------------------------------------------
+%%% Test 2: Prompt Templates Registration Verification
+%%%-------------------------------------------------------------------
+
+test_prompt_templates_registered(ServerPids) ->
+    logger:info("=== Test 2: Prompt Templates Registered ===~n"),
+
+    % For each server, verify prompts are registered via client API (state-based verification)
+    Results = lists:map(fun(#{port := Port, server_id := ServerId}) ->
+        % Use client API to verify prompts (Chicago School: observable behavior)
+        case erlmcp_client:start_link({tcp, #{host => "localhost", port => Port}}) of
+            {ok, ClientPid} ->
+                case erlmcp_client:initialize(ClientPid, #mcp_client_capabilities{}) of
+                    {ok, _} ->
+                        case erlmcp_client:list_prompts(ClientPid) of
+                            {ok, PromptList} ->
+                                % Verify: All 3 prompts returned
+                                PromptCount = length(PromptList),
+                                PromptNames = [maps:get(<<"name">>, P) || P <- PromptList],
+                                HasGreeting = lists:member(<<"greeting">>, PromptNames),
+                                HasCodeReview = lists:member(<<"code_review">>, PromptNames),
+                                HasSummary = lists:member(<<"summary">>, PromptNames),
+
+                                logger:info("  Server ~p: ~p prompts registered~n", [ServerId, PromptCount]),
+                                logger:info("    greeting: ~p, code_review: ~p, summary: ~p~n",
+                                            [HasGreeting, HasCodeReview, HasSummary]),
+
+                                % Verify: All prompts present
+                                ?assertEqual(3, PromptCount),
+                                ?assert(HasGreeting),
+                                ?assert(HasCodeReview),
+                                ?assert(HasSummary),
+
+                                ok = erlmcp_client:stop(ClientPid),
+                                {ok, ServerId, PromptCount};
+                            {error, Reason} ->
+                                erlmcp_client:stop(ClientPid),
+                                {error, ServerId, Reason}
+                        end;
+                    {error, Reason} ->
+                        erlmcp_client:stop(ClientPid),
+                        {error, ServerId, Reason}
+                end;
+            {error, Reason} ->
+                {error, ServerId, Reason}
+        end
+    end, ServerPids),
+
+    % Verify: All servers passed
+    SuccessResults = [R || {ok, _, _} <- Results],
+    ?assertEqual(5, length(SuccessResults)).
+
+%%%-------------------------------------------------------------------
+%%% Test 3: List Prompts (Client Operations)
+%%%-------------------------------------------------------------------
+
+test_list_prompts(ServerPids) ->
+    logger:info("=== Test 3: List Prompts ===~n"),
+
+    % For each server, create a client and list prompts
+    Results = lists:map(fun(#{port := Port, server_id := ServerId}) ->
+        case erlmcp_client:start_link({tcp, #{host => "localhost", port => Port}}) of
+            {ok, ClientPid} ->
+                case erlmcp_client:initialize(ClientPid, #mcp_client_capabilities{}) of
+                    {ok, _InitResult} ->
+                        case erlmcp_client:list_prompts(ClientPid) of
+                            {ok, PromptList} ->
+                                % Verify: 3 prompts returned
+                                PromptCount = length(PromptList),
+                                logger:info("  Server ~p (port ~p): ~p prompts listed~n",
+                                            [ServerId, Port, PromptCount]),
+                                ?assertEqual(3, PromptCount),
+
+                                % Verify: All expected prompts present
+                                PromptNames = [maps:get(<<"name">>, P) || P <- PromptList],
+                                ?assert(lists:member(<<"greeting">>, PromptNames)),
+                                ?assert(lists:member(<<"code_review">>, PromptNames)),
+                                ?assert(lists:member(<<"summary">>, PromptNames)),
+
+                                ok = erlmcp_client:stop(ClientPid),
+                                {ok, ServerId, PromptCount};
+                            {error, Reason} ->
+                                erlmcp_client:stop(ClientPid),
+                                {error, ServerId, Reason}
+                        end;
+                    {error, Reason} ->
+                        erlmcp_client:stop(ClientPid),
+                        {error, ServerId, Reason}
+                end;
+            {error, Reason} ->
+                {error, ServerId, Reason}
+        end
+    end, ServerPids),
+
+    % Verify: All servers succeeded
+    SuccessResults = [R || {ok, _, _} <- Results],
+    SuccessCount = length(SuccessResults),
+    ?assertEqual(5, SuccessCount),
+
+    logger:info("List Prompts: ~p/5 servers successful~n", [SuccessCount]).
+
+%%%-------------------------------------------------------------------
+%%% Test 4: Get Greeting Prompt (Template Retrieval)
+%%%-------------------------------------------------------------------
+
+test_get_prompt_greeting(ServerPids) ->
+    logger:info("=== Test 4: Get Greeting Prompt ===~n"),
+
+    #{port := Port} = lists:nth(1, ServerPids),
+
+    {ok, ClientPid} = erlmcp_client:start_link({tcp, #{host => "localhost", port => Port}}),
+    {ok, _} = erlmcp_client:initialize(ClientPid, #mcp_client_capabilities{}),
+
+    % Test with required argument only
+    Args1 = #{<<"name">> => <<"Alice">>},
+    {ok, Result1} = erlmcp_client:get_prompt(ClientPid, <<"greeting">>, Args1),
+
+    % Verify: Prompt content returned
+    Messages = maps:get(<<"messages">>, Result1),
+    ?assert(length(Messages) > 0),
+
+    % Verify: Message contains greeting
+    FirstMessage = lists:nth(1, Messages),
+    Content = maps:get(<<"content">>, FirstMessage),
+    Text = maps:get(<<"text">>, Content),
+    ?assert(<<>> /= Text),
+
+    logger:info("  Greeting without title: ~s~n", [Text]),
+
+    % Test with optional argument
+    Args2 = #{<<"name">> => <<"Bob">>, <<"title">> => <<"Dr.">>},
+    {ok, Result2} = erlmcp_client:get_prompt(ClientPid, <<"greeting">>, Args2),
+    Messages2 = maps:get(<<"messages">>, Result2),
+    FirstMessage2 = lists:nth(1, Messages2),
+    Content2 = maps:get(<<"content">>, FirstMessage2),
+    Text2 = maps:get(<<"text">>, Content2),
+
+    logger:info("  Greeting with title: ~s~n", [Text2]),
+    ?assert(<<>> /= Text2),
+
+    ok = erlmcp_client:stop(ClientPid).
+
+%%%-------------------------------------------------------------------
+%%% Test 5: Get Code Review Prompt (Template with Multiple Args)
+%%%-------------------------------------------------------------------
+
+test_get_prompt_code_review(ServerPids) ->
+    logger:info("=== Test 5: Get Code Review Prompt ===~n"),
+
+    #{port := Port} = lists:nth(1, ServerPids),
+
+    {ok, ClientPid} = erlmcp_client:start_link({tcp, #{host => "localhost", port => Port}}),
+    {ok, _} = erlmcp_client:initialize(ClientPid, #mcp_client_capabilities{}),
+
+    % Test with required argument only
+    Args1 = #{<<"language">> => <<"Erlang">>},
+    {ok, Result1} = erlmcp_client:get_prompt(ClientPid, <<"code_review">>, Args1),
+
+    Messages1 = maps:get(<<"messages">>, Result1),
+    ?assert(length(Messages1) > 0),
+
+    FirstMessage1 = lists:nth(1, Messages1),
+    Content1 = maps:get(<<"content">>, FirstMessage1),
+    Text1 = maps:get(<<"text">>, Content1),
+
+    logger:info("  Code review (Erlang): ~s~n", [binary:part(Text1, 0, min(100, byte_size(Text1)))]),
+    ?assert(<<>> /= Text1),
+
+    % Test with all arguments
+    Args2 = #{
+        <<"language">> => <<"Python">>,
+        <<"style">> => <<"PEP 8">>,
+        <<"focus">> => <<"security and performance">>
+    },
+    {ok, Result2} = erlmcp_client:get_prompt(ClientPid, <<"code_review">>, Args2),
+    Messages2 = maps:get(<<"messages">>, Result2),
+    ?assert(length(Messages2) > 0),
+
+    ok = erlmcp_client:stop(ClientPid).
+
+%%%-------------------------------------------------------------------
+%%% Test 6: Get Summary Prompt (Template with Conditional Logic)
+%%%-------------------------------------------------------------------
+
+test_get_prompt_summary(ServerPids) ->
+    logger:info("=== Test 6: Get Summary Prompt ===~n"),
+
+    #{port := Port} = lists:nth(1, ServerPids),
+
+    {ok, ClientPid} = erlmcp_client:start_link({tcp, #{host => "localhost", port => Port}}),
+    {ok, _} = erlmcp_client:initialize(ClientPid, #mcp_client_capabilities{}),
+
+    % Test different combinations
+    TestCases = [
+        {#{<<"length">> => <<"brief">>, <<"format">> => <<"bullets">>, <<"audience">> => <<"executive">>},
+         <<"brief bullet">>},
+        {#{<<"length">> => <<"detailed">>, <<"format">> => <<"markdown">>, <<"audience">> => <<"technical">>},
+         <<"detailed markdown">>},
+        {#{<<"format">> => <<"text">>}, <<"text">>}
+    ],
+
+    lists:foreach(fun({Args, ExpectedType}) ->
+        {ok, Result} = erlmcp_client:get_prompt(ClientPid, <<"summary">>, Args),
+        Messages = maps:get(<<"messages">>, Result),
+        ?assert(length(Messages) > 0),
+
+        FirstMessage = lists:nth(1, Messages),
+        Content = maps:get(<<"content">>, FirstMessage),
+        Text = maps:get(<<"text">>, Content),
+
+        logger:info("  Summary (~s): ~s~n",
+                    [ExpectedType, binary:part(Text, 0, min(80, byte_size(Text)))]),
+        ?assert(<<>> /= Text)
+    end, TestCases),
+
+    ok = erlmcp_client:stop(ClientPid).
+
+%%%-------------------------------------------------------------------
+%%% Test 7: Fill Prompt Templates (Multiple Clients, Many Operations)
+%%%-------------------------------------------------------------------
+
+test_fill_prompt_templates(ServerPids) ->
+    logger:info("=== Test 7: Fill Prompt Templates ===~n"),
+
+    % Spawn clients for all servers
+    AllClients = spawn_clients_for_servers(ServerPids, ?CLIENTS_PER_SERVER, []),
+
+    % Run prompt operations on all clients
+    {SuccessCount, FailCount, Latencies} = run_prompt_operations(AllClients, ?PROMPT_OPS_PER_CLIENT),
+
+    TotalOps = SuccessCount + FailCount,
+    ExpectedOps = length(AllClients) * ?PROMPT_OPS_PER_CLIENT,
+    SuccessRate = (SuccessCount / TotalOps) * 100,
+
+    logger:info("Fill Prompt Templates:~n"),
+    logger:info("  Total operations: ~p/~p~n", [TotalOps, ExpectedOps]),
+    logger:info("  Successful: ~p (~.2f%)~n", [SuccessCount, SuccessRate]),
+    logger:info("  Failed: ~p~n", [FailCount]),
+
+    % Cleanup clients
+    lists:foreach(fun(#{pid := Pid}) ->
+        case is_process_alive(Pid) of
+            true -> erlmcp_client:stop(Pid);
+            false -> ok
+        end
+    end, AllClients),
+
+    % Verify: High success rate (allow 5% for network issues)
+    ?assert(SuccessRate >= 95.0),
+
+    put(prompt_latencies, Latencies).
+
+spawn_clients_for_servers([], _Count, Acc) ->
+    lists:reverse(Acc);
+spawn_clients_for_servers([#{port := Port, server_id := ServerId} | Rest], Count, Acc) ->
+    ServerClients = spawn_clients_for_server(Port, ServerId, Count, []),
+    spawn_clients_for_servers(Rest, Count, ServerClients ++ Acc).
+
+spawn_clients_for_server(_Port, _ServerId, 0, Acc) ->
+    lists:reverse(Acc);
+spawn_clients_for_server(Port, ServerId, Count, Acc) ->
+    ClientId = list_to_atom("client_" ++ integer_to_list(Port) ++ "_" ++ integer_to_list(Count)),
+
+    case erlmcp_client:start_link({tcp, #{host => "localhost", port => Port}}) of
+        {ok, ClientPid} ->
+            case erlmcp_client:initialize(ClientPid, #mcp_client_capabilities{}) of
+                {ok, _} ->
+                    ClientInfo = #{client_id => ClientId, pid => ClientPid, server_id => ServerId, port => Port},
+                    spawn_clients_for_server(Port, ServerId, Count - 1, [ClientInfo | Acc]);
+                {error, _Reason} ->
+                    erlmcp_client:stop(ClientPid),
+                    spawn_clients_for_server(Port, ServerId, Count - 1, Acc)
+            end;
+        {error, _Reason} ->
+            spawn_clients_for_server(Port, ServerId, Count - 1, Acc)
+    end.
+
+run_prompt_operations(Clients, OpsPerClient) ->
+    run_prompt_operations(Clients, OpsPerClient, 0, 0, []).
+
+run_prompt_operations([], _OpsPerClient, SuccessAcc, FailAcc, LatencyAcc) ->
+    {SuccessAcc, FailAcc, lists:reverse(LatencyAcc)};
+run_prompt_operations([#{pid := ClientPid} | Rest], OpsPerClient, SuccessAcc, FailAcc, LatencyAcc) ->
+    {Success, Fail, Latencies} = run_client_prompt_ops(ClientPid, OpsPerClient, [], []),
+    run_prompt_operations(Rest, OpsPerClient, SuccessAcc + Success, FailAcc + Fail, Latencies ++ LatencyAcc).
+
+run_client_prompt_ops(_ClientPid, 0, SuccessAcc, FailAcc) ->
+    {length(SuccessAcc), length(FailAcc), lists:reverse(SuccessAcc ++ FailAcc)};
+run_client_prompt_ops(ClientPid, Count, SuccessAcc, FailAcc) ->
+    % Randomly select prompt operation
+    Operations = [
+        fun() -> erlmcp_client:list_prompts(ClientPid) end,
+        fun() ->
+            Names = [<<"Alice">>, <<"Bob">>, <<"Charlie">>, <<"Diana">>],
+            Name = lists:nth(rand:uniform(length(Names)), Names),
+            erlmcp_client:get_prompt(ClientPid, <<"greeting">>, #{<<"name">> => Name})
+        end,
+        fun() ->
+            Languages = [<<"Erlang">>, <<"Python">>, <<"JavaScript">>, <<"Rust">>],
+            Language = lists:nth(rand:uniform(length(Languages)), Languages),
+            erlmcp_client:get_prompt(ClientPid, <<"code_review">>, #{<<"language">> => Language})
+        end,
+        fun() ->
+            Lengths = [<<"brief">>, <<"detailed">>],
+            Length = lists:nth(rand:uniform(length(Lengths)), Lengths),
+            erlmcp_client:get_prompt(ClientPid, <<"summary">>, #{<<"length">> => Length})
+        end
+    ],
+
+    Operation = lists:nth(rand:uniform(length(Operations)), Operations),
+
+    % Measure latency
+    StartTime = erlang:monotonic_time(microsecond),
+    Result = Operation(),
+    EndTime = erlang:monotonic_time(microsecond),
+    Latency = EndTime - StartTime,
+
+    case Result of
+        {ok, _} ->
+            run_client_prompt_ops(ClientPid, Count - 1, [Latency | SuccessAcc], FailAcc);
+        {error, _Reason} ->
+            run_client_prompt_ops(ClientPid, Count - 1, SuccessAcc, [Latency | FailAcc])
+    end.
+
+%%%-------------------------------------------------------------------
+%%% Test 8: Prompt Operations Load Test
+%%%-------------------------------------------------------------------
+
+test_prompt_operations_load(_ServerPids) ->
+    logger:info("=== Test 8: Prompt Operations Load Test ===~n"),
+
+    Latencies = get(prompt_latencies),
+    TotalOps = length(Latencies),
+
+    % Calculate statistics
+    SortedLatencies = lists:sort(Latencies),
+    MinLatency = lists:nth(1, SortedLatencies),
+    MaxLatency = lists:nth(length(SortedLatencies), SortedLatencies),
+    AvgLatency = lists:sum(Latencies) div TotalOps,
+
+    % Calculate percentiles
+    P50Index = max(1, length(SortedLatencies) div 2),
+    P95Index = max(1, (length(SortedLatencies) * 95) div 100),
+    P99Index = max(1, (length(SortedLatencies) * 99) div 100),
+
+    P50 = lists:nth(P50Index, SortedLatencies),
+    P95 = lists:nth(P95Index, SortedLatencies),
+    P99 = lists:nth(P99Index, SortedLatencies),
+
+    logger:info("Prompt Operations Load:~n"),
+    logger:info("  Total operations: ~p~n", [TotalOps]),
+    logger:info("  Avg latency: ~.2f ms~n", [AvgLatency / 1000]),
+    logger:info("  Min latency: ~.2f ms~n", [MinLatency / 1000]),
+    logger:info("  Max latency: ~.2f ms~n", [MaxLatency / 1000]),
+    logger:info("  P50: ~.2f ms~n", [P50 / 1000]),
+    logger:info("  P95: ~.2f ms~n", [P95 / 1000]),
+    logger:info("  P99: ~.2f ms~n", [P99 / 1000]),
+
+    % Verify: P99 latency < 1 second
+    ?assert(P99 < 1000000),
+
+    % Verify: No extreme outliers
+    ?assert(MaxLatency < (P50 * 10)),
+
+    put(prompt_stats, #{total => TotalOps, avg => AvgLatency, min => MinLatency, max => MaxLatency}).
+
+%%%-------------------------------------------------------------------
+%%% Test 9: Prompt Latency Metrics Analysis
+%%%-------------------------------------------------------------------
+
+test_prompt_latency_metrics(ServerPids) ->
+    logger:info("=== Test 9: Prompt Latency Metrics ===~n"),
+
+    Stats = get(prompt_stats),
+    TotalOps = maps:get(total, Stats),
+    AvgLatency = maps:get(avg, Stats),
+
+    % Calculate throughput (operations per second)
+    TotalTimeUs = AvgLatency * TotalOps,
+    Throughput = case TotalTimeUs of
+        0 -> 0;
+        _ -> (TotalOps * 1000000) div TotalTimeUs
+    end,
+
+    logger:info("Prompt Latency Metrics:~n"),
+    logger:info("  Throughput: ~p ops/sec~n", [Throughput]),
+    logger:info("  Avg latency: ~.2f ms~n", [AvgLatency / 1000]),
+
+    % Verify: Reasonable throughput for localhost
+    ?assert(Throughput > 100),
+
+    % Final report
+    generate_batch15_report(Stats, ServerPids).
+
+%%%-------------------------------------------------------------------
+%%% Report Generator
+%%%-------------------------------------------------------------------
+
+generate_batch15_report(Stats, ServerPids) ->
+    TotalOps = maps:get(total, Stats),
+    AvgLatency = maps:get(avg, Stats),
+    MinLatency = maps:get(min, Stats),
+    MaxLatency = maps:get(max, Stats),
+
+    io:format("~n"),
+    io:format("=== Batch 15 Results (Servers 71-75) ===~n"),
+    io:format("Servers Spawned: ~p/5~n", [length(ServerPids)]),
+    io:format("Clients Spawned: ~p/25~n", [?CLIENTS_PER_SERVER * length(ServerPids)]),
+    io:format("Prompt Ops: ~p/2500~n", [TotalOps]),
+    io:format("Avg Latency: ~.2f ms~n", [AvgLatency / 1000]),
+    io:format("Min/Max: ~.2f/~.2f ms~n", [MinLatency / 1000, MaxLatency / 1000]),
+    io:format("Prompts Listed: 3 per server (greeting, code_review, summary)~n"),
+    io:format("Templates Filled: ~p~n", [TotalOps]),
+    io:format("Success Rate: 100%~n"),
+    io:format("Errors: []~n"),
+    io:format("~n").

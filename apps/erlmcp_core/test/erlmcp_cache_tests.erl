@@ -260,13 +260,10 @@ test_tag_based_invalidation(_Pid) ->
             ?assertEqual({ok, <<"value2">>}, erlmcp_cache:get(<<"key2">>)),
             ?assertEqual({ok, <<"value3">>}, erlmcp_cache:get(<<"key3">>)),
 
-            %% Invalidate by tag
-            ok = erlmcp_cache:invalidate_by_tag(<<"user:123">>),
+            %% Invalidate by tag (synchronous)
+            {ok, 2} = erlmcp_cache:invalidate_by_tag(<<"user:123">>),
 
-            %% Wait for async invalidation
-            timer:sleep(100),
-
-            %% Keys with tag should be gone
+            %% Keys with tag should be gone immediately
             ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key1">>)),
             ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key2">>)),
 
@@ -296,13 +293,10 @@ test_dependency_tracking(_Pid) ->
             ?assertEqual({ok, <<"value_dep1">>}, erlmcp_cache:get(<<"dep1">>)),
             ?assertEqual({ok, <<"value_dep2">>}, erlmcp_cache:get(<<"dep2">>)),
 
-            %% Invalidate by dependency
-            ok = erlmcp_cache:invalidate_by_dependency(<<"primary">>),
+            %% Invalidate by dependency (synchronous)
+            {ok, 2} = erlmcp_cache:invalidate_by_dependency(<<"primary">>),
 
-            %% Wait for async invalidation
-            timer:sleep(100),
-
-            %% Dependent keys should be gone
+            %% Dependent keys should be gone immediately
             ?assertEqual({error, not_found}, erlmcp_cache:get(<<"dep1">>)),
             ?assertEqual({error, not_found}, erlmcp_cache:get(<<"dep2">>)),
 

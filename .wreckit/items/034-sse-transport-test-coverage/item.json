@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "034-sse-transport-test-coverage",
+  "title": "SSE Transport Test Coverage",
+  "section": "transports",
+  "state": "idea",
+  "overview": "Server-Sent Events transport has ZERO coverage despite being critical for real-time event streaming from server to client.\n\n**Motivation:** SSE transport enables server-to-client streaming for real-time events. Important for monitoring and notification use cases.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl\n- SSE protocol compliance tested\n- Coverage: ≥80%\n- All tests pass\n\n**Technical constraints:**\n- SSE Protocol - Correct event formatting\n- Stream Testing - Continuous event streaming\n- Keep-Alive - Automatic keep-alive messages\n- Error Handling - Stream interruption, reconnect\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION DEPLOYMENT",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.826Z",
+  "updated_at": "2026-01-29T05:58:26.495Z",
+  "problem_statement": "Server-Sent Events transport has ZERO coverage despite being critical for real-time event streaming from server to client.",
+  "motivation": "SSE transport enables server-to-client streaming for real-time events. Important for monitoring and notification use cases.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl",
+    "SSE protocol compliance tested",
+    "Coverage: ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "SSE Protocol - Correct event formatting",
+    "Stream Testing - Continuous event streaming",
+    "Keep-Alive - Automatic keep-alive messages",
+    "Error Handling - Stream interruption, reconnect"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION DEPLOYMENT"
+}

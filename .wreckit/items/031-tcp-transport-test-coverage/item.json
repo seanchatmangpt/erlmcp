@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "031-tcp-transport-test-coverage",
+  "title": "TCP Transport Test Coverage",
+  "section": "transports",
+  "state": "idea",
+  "overview": "TCP transport has ZERO coverage despite being critical for production deployments. Uses ranch for connection management.\n\n**Motivation:** TCP transport is for long-lived connections in production deployments. Critical for production use cases.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_transports/test/erlmcp_transport_tcp_tests.erl\n- Ranch integration tested\n- Concurrent connection handling tested\n- Coverage: ≥80%\n- All tests pass\n\n**Technical constraints:**\n- Socket Testing - Real TCP sockets on localhost\n- Ranch Integration - Listener lifecycle\n- Concurrent Connections - Multiple simultaneous TCP connections\n- Error Handling - Connection refused, timeout, socket close\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION DEPLOYMENT",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.825Z",
+  "updated_at": "2026-01-29T05:48:41.332Z",
+  "problem_statement": "TCP transport has ZERO coverage despite being critical for production deployments. Uses ranch for connection management.",
+  "motivation": "TCP transport is for long-lived connections in production deployments. Critical for production use cases.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_transports/test/erlmcp_transport_tcp_tests.erl",
+    "Ranch integration tested",
+    "Concurrent connection handling tested",
+    "Coverage: ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "Socket Testing - Real TCP sockets on localhost",
+    "Ranch Integration - Listener lifecycle",
+    "Concurrent Connections - Multiple simultaneous TCP connections",
+    "Error Handling - Connection refused, timeout, socket close"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION DEPLOYMENT"
+}

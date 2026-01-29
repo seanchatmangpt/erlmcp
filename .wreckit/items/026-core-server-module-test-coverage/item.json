@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "id": "026-core-server-module-test-coverage",
+  "title": "Core Server Module Test Coverage",
+  "section": "coverage",
+  "state": "researched",
+  "overview": "erlmcp_server.erl has ZERO test coverage. This module handles incoming requests, manages resources, tools, and prompts. Any server crash takes down ALL MCP connections.\n\n**Motivation:** This is the second most critical module after the client. It manages resource/tool/prompt registries and handles all incoming MCP requests. A bug here affects all connected clients.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_core/test/erlmcp_server_tests.erl\n- All resource management functions tested (add/remove/list/get)\n- All tool management functions tested\n- All prompt management functions tested\n- JSON-RPC request routing tested\n- Error handling paths tested (invalid_request, method_not_found, invalid_params)\n- Coverage: ≥80%\n- All tests pass: rebar3 eunit --module=erlmcp_server_tests\n\n**Technical constraints:**\n- Handler Registration Testing - Add/remove/list operations\n- Request Routing Testing - JSON-RPC method calls to correct handlers\n- Argument Validation - Invalid arguments, missing required params\n- Concurrent Access - Multiple clients registering/calling simultaneously\n- Handler Execution - Mock handlers that return test data, verify execution\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL PRODUCTION WORK",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.823Z",
+  "updated_at": "2026-01-29T17:54:54.596Z",
+  "problem_statement": "erlmcp_server.erl has ZERO test coverage. This module handles incoming requests, manages resources, tools, and prompts. Any server crash takes down ALL MCP connections.",
+  "motivation": "This is the second most critical module after the client. It manages resource/tool/prompt registries and handles all incoming MCP requests. A bug here affects all connected clients.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_core/test/erlmcp_server_tests.erl",
+    "All resource management functions tested (add/remove/list/get)",
+    "All tool management functions tested",
+    "All prompt management functions tested",
+    "JSON-RPC request routing tested",
+    "Error handling paths tested (invalid_request, method_not_found, invalid_params)",
+    "Coverage: ≥80%",
+    "All tests pass: rebar3 eunit --module=erlmcp_server_tests"
+  ],
+  "technical_constraints": [
+    "Handler Registration Testing - Add/remove/list operations",
+    "Request Routing Testing - JSON-RPC method calls to correct handlers",
+    "Argument Validation - Invalid arguments, missing required params",
+    "Concurrent Access - Multiple clients registering/calling simultaneously",
+    "Handler Execution - Mock handlers that return test data, verify execution"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL PRODUCTION WORK"
+}

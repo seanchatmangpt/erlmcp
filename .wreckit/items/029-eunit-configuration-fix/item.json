@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "029-eunit-configuration-fix",
+  "title": "EUnit Configuration Fix",
+  "section": "infra",
+  "state": "idea",
+  "overview": "EUnit is misconfigured in rebar.config. It's trying to run Common Test SUITE modules as EUnit tests, causing 'module not found' errors for 13 SUITE modules.\n\n**Motivation:** This MUST be fixed before any EUnit test development can proceed. Currently blocks all EUnit work.\n\n**Success criteria:**\n- EUnit configuration fixed in rebar.config\n- rebar3 eunit runs without 'module not found' errors\n- EUnit only processes *_tests.erl files\n- EUnit ignores *_SUITE.erl files\n- All existing EUnit tests still pass\n\n**Technical constraints:**\n- Option 1: Fix the exclude pattern (recommended)\n- Option 2: Move CT suites to separate directory\n- Option 3: Explicitly list test modules with test_suffix\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL EUNIT WORK. Must be fixed before any EUnit test development.",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.824Z",
+  "updated_at": "2026-01-29T05:44:25.861Z",
+  "problem_statement": "EUnit is misconfigured in rebar.config. It's trying to run Common Test SUITE modules as EUnit tests, causing 'module not found' errors for 13 SUITE modules.",
+  "motivation": "This MUST be fixed before any EUnit test development can proceed. Currently blocks all EUnit work.",
+  "success_criteria": [
+    "EUnit configuration fixed in rebar.config",
+    "rebar3 eunit runs without 'module not found' errors",
+    "EUnit only processes *_tests.erl files",
+    "EUnit ignores *_SUITE.erl files",
+    "All existing EUnit tests still pass"
+  ],
+  "technical_constraints": [
+    "Option 1: Fix the exclude pattern (recommended)",
+    "Option 2: Move CT suites to separate directory",
+    "Option 3: Explicitly list test modules with test_suffix"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL EUNIT WORK. Must be fixed before any EUnit test development."
+}

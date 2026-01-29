@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "001-fix-eunit-configuration-to-exclude-ct-suite-files",
+  "title": "Fix EUnit configuration to exclude CT SUITE files",
+  "section": "infra",
+  "state": "researched",
+  "overview": "EUnit configuration exclude pattern is not working, causing test execution failures\n\n**Motivation:** Blocks all EUnit test development work - 40+ hours of test coverage work cannot proceed until this is fixed\n\n**Success criteria:**\n- rebar3 eunit runs without 'module not found' errors\n- EUnit only processes *_tests.erl files\n- EUnit ignores *_SUITE.erl files\n- All existing EUnit tests still pass\n\n**Technical constraints:**\n- Fix must be in rebar.config\n- Cannot break existing passing tests\n- Execution time should remain under 30 seconds\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS ALL EUNIT WORK (40-80 hours of dependent work)",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.348Z",
+  "updated_at": "2026-01-29T16:25:01.454Z",
+  "problem_statement": "EUnit configuration exclude pattern is not working, causing test execution failures",
+  "motivation": "Blocks all EUnit test development work - 40+ hours of test coverage work cannot proceed until this is fixed",
+  "success_criteria": [
+    "rebar3 eunit runs without 'module not found' errors",
+    "EUnit only processes *_tests.erl files",
+    "EUnit ignores *_SUITE.erl files",
+    "All existing EUnit tests still pass"
+  ],
+  "technical_constraints": [
+    "Fix must be in rebar.config",
+    "Cannot break existing passing tests",
+    "Execution time should remain under 30 seconds"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS ALL EUNIT WORK (40-80 hours of dependent work)"
+}

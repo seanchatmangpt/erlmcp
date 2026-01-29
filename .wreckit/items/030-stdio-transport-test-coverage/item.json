@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "030-stdio-transport-test-coverage",
+  "title": "STDIO Transport Test Coverage",
+  "section": "transports",
+  "state": "idea",
+  "overview": "STDIO transport has ZERO coverage despite being the DEFAULT transport for MCP. Every CLI tool uses this transport.\n\n**Motivation:** STDIO is the default transport for local CLI MCP tools. Critical for local development workflows.\n\n**Success criteria:**\n- Test file created: apps/erlmcp_transports/test/erlmcp_transport_stdio_tests.erl\n- All transport behavior callbacks tested\n- Coverage: ≥80%\n- All tests pass\n\n**Technical constraints:**\n- Process Testing - Real stdin/stdout process spawning\n- I/O Testing - Read/write to streams\n- Protocol Testing - JSON-RPC message framing\n- Error Handling - Broken pipe, invalid JSON, EOF\n\n**Signals:** priority: high, urgency: P1 - BLOCKS PRODUCTION DEPLOYMENT",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.825Z",
+  "updated_at": "2026-01-29T05:46:06.968Z",
+  "problem_statement": "STDIO transport has ZERO coverage despite being the DEFAULT transport for MCP. Every CLI tool uses this transport.",
+  "motivation": "STDIO is the default transport for local CLI MCP tools. Critical for local development workflows.",
+  "success_criteria": [
+    "Test file created: apps/erlmcp_transports/test/erlmcp_transport_stdio_tests.erl",
+    "All transport behavior callbacks tested",
+    "Coverage: ≥80%",
+    "All tests pass"
+  ],
+  "technical_constraints": [
+    "Process Testing - Real stdin/stdout process spawning",
+    "I/O Testing - Read/write to streams",
+    "Protocol Testing - JSON-RPC message framing",
+    "Error Handling - Broken pipe, invalid JSON, EOF"
+  ],
+  "priority_hint": "high",
+  "urgency_hint": "P1 - BLOCKS PRODUCTION DEPLOYMENT"
+}

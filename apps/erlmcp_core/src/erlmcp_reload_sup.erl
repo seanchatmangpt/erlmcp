@@ -32,6 +32,16 @@ init([]) ->
     },
 
     ChildSpecs = [
+        %% Memory monitor - periodic GC and memory pressure detection (Gap #10)
+        #{
+            id => erlmcp_memory_monitor,
+            start => {erlmcp_memory_monitor, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_memory_monitor]
+        },
+
         %% Graceful drain service - pauses new requests during reload
         #{
             id => erlmcp_graceful_drain,

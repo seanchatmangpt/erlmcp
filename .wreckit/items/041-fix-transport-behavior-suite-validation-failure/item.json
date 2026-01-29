@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "041-fix-transport-behavior-suite-validation-failure",
+  "title": "Fix Transport Behavior Suite Validation Failure",
+  "section": "ct-fixes",
+  "state": "idea",
+  "overview": "Transport behavior validation test failing - expected error but got ok. Need to determine if validation logic is wrong or test expectation is wrong.\n\n**Motivation:** Transport behavior compliance tests ensure all transports implement the behavior correctly. This validation failure indicates either broken validation or wrong test.\n\n**Success criteria:**\n- Root cause documented (validation logic or test expectation)\n- Fix applied (validation or test)\n- stdio_opts_validation test passes\n- All transport behavior tests pass\n- rebar3 ct --suite=erlmcp_transport_behavior_SUITE executes\n\n**Technical constraints:**\n- Option A: Fix the test (validation is correct)\n- Option B: Fix the validation (test is correct)\n\n**Signals:** priority: critical, urgency: P0 - BLOCKS INTEGRATION TESTING",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Research quality validation failed:\nMissing required sections: Research Question, Recommended Approach",
+  "created_at": "2026-01-29T04:07:02.829Z",
+  "updated_at": "2026-01-29T06:17:09.921Z",
+  "problem_statement": "Transport behavior validation test failing - expected error but got ok. Need to determine if validation logic is wrong or test expectation is wrong.",
+  "motivation": "Transport behavior compliance tests ensure all transports implement the behavior correctly. This validation failure indicates either broken validation or wrong test.",
+  "success_criteria": [
+    "Root cause documented (validation logic or test expectation)",
+    "Fix applied (validation or test)",
+    "stdio_opts_validation test passes",
+    "All transport behavior tests pass",
+    "rebar3 ct --suite=erlmcp_transport_behavior_SUITE executes"
+  ],
+  "technical_constraints": [
+    "Option A: Fix the test (validation is correct)",
+    "Option B: Fix the validation (test is correct)"
+  ],
+  "priority_hint": "critical",
+  "urgency_hint": "P0 - BLOCKS INTEGRATION TESTING"
+}

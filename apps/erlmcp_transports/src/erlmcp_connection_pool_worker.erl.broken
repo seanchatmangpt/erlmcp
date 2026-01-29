@@ -1,0 +1,174 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp_connection_pool_worker - Pool Worker for TCP Connections
+%%%
+%%% This module implements the poolboy worker behavior for individual
+%%% TCP connections in the connection pool.
+%%%
+%%% Each worker maintains a single TCP connection and handles:
+%%% - Connection lifecycle (connect, disconnect, reconnect)
+%%% - Health monitoring
+%%% - Send/receive operations
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_connection_pool_worker).
+-behaviour(gen_server).
+
+%% poolboy worker API
+-export([start_link/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
+
+%% Types
+-type host() :: inet:hostname() | inet:ip_address().
+-type worker_state() :: #{
+    socket => gen_tcp:socket() | undefined,
+    host => host(),
+    port => inet:port_number(),
+    pool_name => atom(),
+    connected => boolean(),
+    last_used => integer()
+}.
+
+%%====================================================================
+%% API
+%%====================================================================
+
+%% @doc Start a worker (called by poolboy)
+-spec start_link(map()) -> {ok, pid()} | {error, term()}.
+start_link(WorkerArgs) ->
+    gen_server:start_link(?MODULE, WorkerArgs, []).
+
+%%====================================================================
+%% gen_server Callbacks
+%%====================================================================
+
+%% @doc Initialize worker connection
+-spec init(map()) -> {ok, worker_state()}.
+init(WorkerArgs) ->
+    process_flag(trap_exit, true),
+
+    Host = maps:get(host, WorkerArgs, {127, 0, 0, 1}),
+    Port = maps:get(port, WorkerArgs, 10010),
+
+    %% Connect to target
+    case connect(Host, Port) of
+        {ok, Socket} ->
+            State = #{
+                socket => Socket,
+                host => Host,
+                port => Port,
+                pool_name => undefined,
+                connected => true,
+                last_used => erlang:monotonic_time(millisecond)
+            },
+            {ok, State};
+        {error, Reason} ->
+            %% Retry once after delay
+            timer:sleep(1000),
+            case connect(Host, Port) of
+                {ok, Socket} ->
+                    State = #{
+                        socket => Socket,
+                        host => Host,
+                        port => Port,
+                        pool_name => undefined,
+                        connected => true,
+                        last_used => erlang:monotonic_time(millisecond)
+                    },
+                    {ok, State};
+                {error, RetryReason} ->
+                    logger:error("Worker failed to connect to ~p:~p - ~p", [Host, Port, RetryReason]),
+                    {stop, RetryReason}
+            end
+    end.
+
+%% @doc Handle synchronous calls
+handle_call(get_socket, _From, #{socket := Socket} = State) ->
+    {reply, {ok, Socket}, State};
+
+handle_call({send, Data}, _From, #{socket := Socket} = State) ->
+    Result = gen_tcp:send(Socket, Data),
+    {reply, Result, State};
+
+handle_call({recv, Length, Timeout}, _From, #{socket := Socket} = State) ->
+    Result = gen_tcp:recv(Socket, Length, Timeout),
+    {reply, Result, State};
+
+handle_call(ping, _From, State) ->
+    {reply, pong, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+%% @doc Handle asynchronous casts
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+%% @doc Handle info messages
+handle_info({tcp_closed, _Socket}, State) ->
+    %% Connection closed, attempt reconnection
+    logger:warning("Worker connection closed, attempting reconnect"),
+    NewState = attempt_reconnect(State),
+    {noreply, NewState};
+
+handle_info({tcp_error, _Socket, Reason}, State) ->
+    %% Connection error, attempt reconnection
+    logger:warning("Worker connection error: ~p, attempting reconnect", [Reason]),
+    NewState = attempt_reconnect(State),
+    {noreply, NewState};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @doc Cleanup worker
+terminate(_Reason, #{socket := Socket}) when Socket =/= undefined ->
+    catch gen_tcp:close(Socket),
+    ok;
+terminate(_Reason, _State) ->
+    ok.
+
+%% @doc Handle code upgrades
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+%% @doc Connect to host:port
+-spec connect(host(), inet:port_number()) -> {ok, gen_tcp:socket()} | {error, term()}.
+connect(Host, Port) ->
+    SocketOpts = [
+        binary,
+        {packet, 0},
+        {active, true},
+        {reuseaddr, true},
+        {nodelay, true}
+    ],
+    gen_tcp:connect(Host, Port, SocketOpts, 5000).
+
+%% @doc Attempt to reconnect
+-spec attempt_reconnect(worker_state()) -> worker_state().
+attempt_reconnect(#{host := Host, port := Port} = State) ->
+    case catch gen_tcp:close(maps:get(socket, State, undefined)) of
+        ok -> ok;
+        _ -> ok
+    end,
+
+    case connect(Host, Port) of
+        {ok, Socket} ->
+            State#{
+                socket => Socket,
+                connected => true,
+                last_used => erlang:monotonic_time(millisecond)
+            };
+        {error, Reason} ->
+            logger:error("Worker reconnection failed: ~p", [Reason]),
+            State#{
+                socket => undefined,
+                connected => false
+            }
+    end.

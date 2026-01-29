@@ -1,0 +1,9 @@
+@@ -970,7 +970,7 @@
+                     % Clean up progress token after completion
+                     erlmcp_progress:cleanup_completed(ProgressToken)
+                 catch
+-                    Class:Reason:Stack ->
++                    ClassCatch:ReasonCatch:StackCatch ->
+                         erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
+                         logger:error("Tool handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
+                         % Cleanup even on error

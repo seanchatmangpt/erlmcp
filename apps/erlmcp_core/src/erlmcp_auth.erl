@@ -62,7 +62,8 @@
     rbac_roles :: ets:tid(),         % role -> [permissions]
     user_roles :: ets:tid(),         % user_id -> [roles]
     acls :: ets:tid(),               % {resource, action} -> [roles]
-    revoked_tokens :: ets:tid()      % token -> revoked_at
+    revoked_tokens :: ets:tid(),      % token -> revoked_at
+    rate_limiter_enabled :: boolean() % whether rate limiting is enabled
 }).
 
 -type state() :: #state{}.
@@ -90,6 +91,11 @@ start_link() ->
 -spec start_link(map()) -> {ok, pid()} | {error, term()}.
 start_link(Config) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
+
+%% @doc Check if rate limiter is enabled
+-spec is_rate_limiter_enabled() -> boolean().
+is_rate_limiter_enabled() ->
+    gen_server:call(?MODULE, is_rate_limiter_enabled).
 
 %% @doc Authenticate user with given method and credentials.
 -spec authenticate(auth_method(), map()) ->
@@ -181,6 +187,9 @@ stop() ->
 init([Config]) ->
     process_flag(trap_exit, true),
 
+    % Check if rate limiter should be enabled
+    RateLimiterEnabled = maps:get(rate_limiter_enabled, Config, true),
+
     State = #state{
         sessions = ets:new(auth_sessions, [set, protected]),
         api_keys = ets:new(auth_api_keys, [set, protected]),
@@ -190,7 +199,8 @@ init([Config]) ->
         rbac_roles = ets:new(auth_rbac_roles, [set, protected]),
         user_roles = ets:new(auth_user_roles, [set, protected]),
         acls = ets:new(auth_acls, [bag, protected]),  % bag for multiple roles per resource
-        revoked_tokens = ets:new(auth_revoked_tokens, [set, protected])
+        revoked_tokens = ets:new(auth_revoked_tokens, [set, protected]),
+        rate_limiter_enabled = RateLimiterEnabled
     },
 
     % Initialize default roles
@@ -285,6 +295,9 @@ handle_call({remove_permission, Resource, Permission, Roles}, _From, State) ->
     end, Roles),
     {reply, ok, State};
 
+handle_call(is_rate_limiter_enabled, _From, State) ->
+    {reply, State#state.rate_limiter_enabled, State};
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -349,32 +362,76 @@ init_jwt_keys(State, Config) ->
     ok.
 
 %% @private Authenticate with given method.
-do_authenticate(api_key, #{api_key := ApiKey}, State) ->
+do_authenticate(Method, Credentials, State) ->
+    % Extract client_id and ip_address for rate limiting
+    ClientId = get_client_id(Method, Credentials),
+    IpAddress = maps:get(ip_address, Credentials, undefined),
+
+    % Check rate limit if enabled
+    case State#state.rate_limiter_enabled of
+        true ->
+            case erlmcp_auth_rate_limiter:check_rate_limit(ClientId, IpAddress) of
+                ok ->
+                    do_authenticate_with_rate_limit(Method, Credentials, State, ClientId, IpAddress);
+                {error, rate_limited} ->
+                    logger:warning("Rate limit exceeded for client: ~p", [ClientId]),
+                    {error, rate_limited};
+                {error, blocked, Reason} ->
+                    logger:warning("Client blocked: ~p, reason: ~p", [ClientId, Reason]),
+                    {error, blocked, Reason}
+            end;
+        false ->
+            do_authenticate_with_rate_limit(Method, Credentials, State, ClientId, IpAddress)
+    end.
+
+%% @private Authenticate with rate limiting tracking
+do_authenticate_with_rate_limit(api_key, #{api_key := ApiKey}, State, ClientId, IpAddress) ->
     case do_validate_api_key(ApiKey, State) of
-        {ok, UserId} -> do_create_session(UserId, #{auth_method => api_key}, State);
-        Error -> Error
+        {ok, UserId} ->
+            erlmcp_auth_rate_limiter:record_success(ClientId, IpAddress),
+            do_create_session(UserId, #{auth_method => api_key}, State);
+        Error ->
+            erlmcp_auth_rate_limiter:record_failure(ClientId, IpAddress),
+            Error
     end;
-do_authenticate(jwt, #{token := Token}, State) ->
+do_authenticate_with_rate_limit(jwt, #{token := Token}, State, ClientId, IpAddress) ->
     case do_validate_jwt(Token, State) of
         {ok, Claims} ->
             UserId = maps:get(<<"sub">>, Claims, <<"unknown">>),
+            erlmcp_auth_rate_limiter:record_success(ClientId, IpAddress),
             do_create_session(UserId, #{auth_method => jwt, claims => Claims}, State);
-        Error -> Error
+        Error ->
+            erlmcp_auth_rate_limiter:record_failure(ClientId, IpAddress),
+            Error
     end;
-do_authenticate(oauth2, #{token := Token}, State) ->
+do_authenticate_with_rate_limit(oauth2, #{token := Token}, State, ClientId, IpAddress) ->
     case do_validate_oauth2_token(Token, State) of
         {ok, TokenInfo} ->
             UserId = maps:get(<<"user_id">>, TokenInfo, <<"unknown">>),
+            erlmcp_auth_rate_limiter:record_success(ClientId, IpAddress),
             do_create_session(UserId, #{auth_method => oauth2, token_info => TokenInfo}, State);
-        Error -> Error
+        Error ->
+            erlmcp_auth_rate_limiter:record_failure(ClientId, IpAddress),
+            Error
     end;
-do_authenticate(mtls, CertInfo, State) ->
+do_authenticate_with_rate_limit(mtls, CertInfo, State, ClientId, IpAddress) ->
     case do_validate_mtls(CertInfo, State) of
-        {ok, UserId} -> do_create_session(UserId, #{auth_method => mtls, cert => CertInfo}, State);
-        Error -> Error
+        {ok, UserId} ->
+            erlmcp_auth_rate_limiter:record_success(ClientId, IpAddress),
+            do_create_session(UserId, #{auth_method => mtls, cert => CertInfo}, State);
+        Error ->
+            erlmcp_auth_rate_limiter:record_failure(ClientId, IpAddress),
+            Error
     end;
-do_authenticate(_Method, _Credentials, _State) ->
+do_authenticate_with_rate_limit(_Method, _Credentials, _State, _ClientId, _IpAddress) ->
     {error, unsupported_auth_method}.
+
+%% @private Extract client_id from credentials
+get_client_id(api_key, #{api_key := ApiKey}) -> ApiKey;
+get_client_id(jwt, #{token := Token}) -> Token;
+get_client_id(oauth2, #{token := Token}) -> Token;
+get_client_id(mtls, CertInfo) -> maps:get(cn, CertInfo, <<"unknown">>);
+get_client_id(_, _) -> <<"unknown">>.
 
 %% @private Validate JWT token.
 do_validate_jwt(Token, State) ->

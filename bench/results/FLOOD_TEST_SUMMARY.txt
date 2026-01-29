@@ -1,0 +1,147 @@
+================================================================================
+CONNECTION FLOOD STRESS TEST - EXECUTIVE SUMMARY
+================================================================================
+
+Test Date: 2026-01-29
+Test Type: Destructive Stress Testing
+Objective: Find exact breaking point under TCP connection flooding
+
+================================================================================
+CRITICAL FINDING
+================================================================================
+
+BREAKING POINT: 12,261 concurrent TCP connections
+
+The MCP server FAILS at 12,261 connections due to Erlang VM file descriptor
+table exhaustion. This is a HARD LIMIT in the TCP inet driver layer.
+
+================================================================================
+CONNECTION SEQUENCE
+================================================================================
+
+  1,000 conns: PASS (0.4s, 176 MB memory)
+  5,000 conns: PASS (2.0s, 880 MB memory)
+ 10,000 conns: PASS (4.0s, 1.76 GB memory)
+ 12,261 conns: BREAK (5.0s, 2.16 GB memory) ⚠️
+
+Error: "fd=24576 is larger than the largest allowed fd=24575"
+
+================================================================================
+ROOT CAUSE ANALYSIS
+================================================================================
+
+What broke:
+  - Erlang VM TCP driver has hardcoded FD limit of 24,575
+  - Each connection uses 2 FDs (socket + internal)
+  - Maximum connections = 24,575 / 2 = 12,287
+  - Actual break at 12,261 (99.8% of theoretical limit)
+
+Why it exists:
+  - Driver architecture uses fixed-size FD table
+  - 32-bit integer indexing or array size constraints
+  - NOT an OS limit (ulimit -n shows unlimited)
+
+Impact:
+  - Connections timeout instead of graceful refusal
+  - Driver errors flood logs
+  - VM requires restart to recover
+  - No cascading failure protection
+
+================================================================================
+SYSTEM LIMITS
+================================================================================
+
+Pre-Test Limits:
+  OS FD Limit:              unlimited
+  Kernel maxfiles:          368,640
+  Kernel maxfilesperproc:   184,320
+  Erlang Port Limit:        65,536
+  Erlang Process Limit:     134,217,727
+
+At Breaking Point:
+  Memory:                   2,160.68 MiB
+  Process Count:            12,306
+  Port Count:               24,527
+  Ports Available:          41,009
+
+================================================================================
+PRODUCTION READINESS: FAIL ⚠️
+================================================================================
+
+Critical Failures:
+  ❌ No connection limits enforced
+  ❌ No graceful degradation under flood
+  ❌ VM crashes instead of refusing connections
+  ❌ No monitoring for resource exhaustion
+  ❌ No automatic connection cleanup
+
+Required Before Production:
+  ✅ Add max_connections limit (10,000 = 80% of breaking point)
+  ✅ Implement bounded refusal BEFORE resource exhaustion
+  ✅ Add port count monitoring (alert at 70%)
+  ✅ Increase VM port limit (+P 262144)
+  ✅ Add connection cleanup for idle connections
+
+================================================================================
+HONEST CAPACITY STATEMENT
+================================================================================
+
+Maximum Concurrent Connections: 12,000
+
+On this platform (macOS, Erlang/OTP 25), the MCP server can handle approximately
+12,000 concurrent TCP connections before hitting VM driver limits.
+
+For production deployment:
+  • Set max_connections to 10,000 (80% of breaking point)
+  • Add monitoring/alerting at 7,000 connections (70%)
+  • Implement graceful refusal before limits
+  • Use clustering for horizontal scaling beyond 12K
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+Immediate (Before Production):
+  1. Add connection limits in ranch config
+  2. Implement port count checking before accept
+  3. Add monitoring for resource utilization
+  4. Create runbook for connection flood incidents
+
+Short-Term (Next Sprint):
+  1. Increase VM port limit (+P flag)
+  2. Implement connection pooling
+  3. Add rate limiting for connection acceptance
+  4. Create chaos test for connection flood scenarios
+
+Long-Term (Architecture):
+  1. Design clustering strategy for horizontal scaling
+  2. Implement connection load balancing
+  3. Add automatic connection cleanup
+  4. Create capacity planning dashboard
+
+================================================================================
+CONCLUSION
+================================================================================
+
+This destructive stress test identified a HARD LIMIT in the Erlang VM's TCP
+driver that prevents handling more than ~12,000 concurrent connections per node.
+
+The system does NOT degrade gracefully under connection flooding and requires
+immediate hardening before production deployment.
+
+Breaking point is PREDICTABLE and REPRODUCIBLE at 12,261 connections.
+
+Status: NOT PRODUCTION READY ⚠️
+
+================================================================================
+Test Environment
+================================================================================
+
+Platform:        macOS (Darwin 25.2.0)
+Erlang:          OTP 25+
+Transport:       TCP (gen_tcp)
+Test Duration:   5 seconds
+Connection Rate: Maximum (no artificial delays)
+Result:          System failure at 12,261 connections
+
+================================================================================

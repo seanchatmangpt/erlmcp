@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "024-archive-90-95-v1-markdown-files-to-docsarchive",
+  "title": "Archive 90-95 v1 markdown files to docs/archive/",
+  "section": "docs",
+  "state": "researched",
+  "overview": "Root directory has 171 markdown files (should be ~5) - cluttered with v1 docs\n\n**Motivation:** Repository root is cluttered with old v1 documentation. Should only have README, CHANGELOG, CONTRIBUTING, DEVELOPMENT, CLAUDE in root.\n\n**Success criteria:**\n- Archive directories created (v1-agent-deliverables, v1-phase-deliverables, v1-version-releases)\n- 90-95 files moved to archive\n- Root directory has ≤5 markdown files\n- README, CHANGELOG, CONTRIBUTING, DEVELOPMENT, CLAUDE remain in root\n\n**Technical constraints:**\n- Create docs/archive/v1-agent-deliverables/\n- Create docs/archive/v1-phase-deliverables/\n- Create docs/archive/v1-version-releases/\n- Delete duplicate files\n- Remove transient docs (scratch pads, etc.)\n\n**Signals:** priority: low, urgency: P3 - NICE TO HAVE",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.359Z",
+  "updated_at": "2026-01-29T17:51:33.787Z",
+  "problem_statement": "Root directory has 171 markdown files (should be ~5) - cluttered with v1 docs",
+  "motivation": "Repository root is cluttered with old v1 documentation. Should only have README, CHANGELOG, CONTRIBUTING, DEVELOPMENT, CLAUDE in root.",
+  "success_criteria": [
+    "Archive directories created (v1-agent-deliverables, v1-phase-deliverables, v1-version-releases)",
+    "90-95 files moved to archive",
+    "Root directory has ≤5 markdown files",
+    "README, CHANGELOG, CONTRIBUTING, DEVELOPMENT, CLAUDE remain in root"
+  ],
+  "technical_constraints": [
+    "Create docs/archive/v1-agent-deliverables/",
+    "Create docs/archive/v1-phase-deliverables/",
+    "Create docs/archive/v1-version-releases/",
+    "Delete duplicate files",
+    "Remove transient docs (scratch pads, etc.)"
+  ],
+  "priority_hint": "low",
+  "urgency_hint": "P3 - NICE TO HAVE"
+}

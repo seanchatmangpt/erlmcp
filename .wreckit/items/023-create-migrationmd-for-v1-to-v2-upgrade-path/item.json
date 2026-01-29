@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "023-create-migrationmd-for-v1-to-v2-upgrade-path",
+  "title": "Create MIGRATION.md for v1 to v2 upgrade path",
+  "section": "docs",
+  "state": "researched",
+  "overview": "No migration guide exists for v1 to v2 upgrade\n\n**Motivation:** Users need clear documentation on how to upgrade from v1.x to v2.1.0. Breaking changes must be clearly documented.\n\n**Success criteria:**\n- MIGRATION.md created\n- Breaking changes documented\n- Upgrade steps provided with code examples\n- Rollback plan documented\n\n**Technical constraints:**\n- Document all API changes\n- Document config file changes\n- Document dependency changes\n- Provide step-by-step process\n- Include testing checklist\n\n**Signals:** priority: low, urgency: P3 - NICE TO HAVE",
+  "branch": null,
+  "pr_url": null,
+  "pr_number": null,
+  "last_error": "Plan quality validation failed:\nMissing required sections: Implementation Plan Title, Implementation Approach",
+  "created_at": "2026-01-29T01:31:39.358Z",
+  "updated_at": "2026-01-29T17:47:19.861Z",
+  "problem_statement": "No migration guide exists for v1 to v2 upgrade",
+  "motivation": "Users need clear documentation on how to upgrade from v1.x to v2.1.0. Breaking changes must be clearly documented.",
+  "success_criteria": [
+    "MIGRATION.md created",
+    "Breaking changes documented",
+    "Upgrade steps provided with code examples",
+    "Rollback plan documented"
+  ],
+  "technical_constraints": [
+    "Document all API changes",
+    "Document config file changes",
+    "Document dependency changes",
+    "Provide step-by-step process",
+    "Include testing checklist"
+  ],
+  "priority_hint": "low",
+  "urgency_hint": "P3 - NICE TO HAVE"
+}

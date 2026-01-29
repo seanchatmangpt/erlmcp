@@ -123,6 +123,16 @@ init(_Opts) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_chaos]
+        },
+
+        %% Process Monitor - Process count monitoring and capacity planning
+        #{
+            id => erlmcp_process_monitor,
+            start => {erlmcp_process_monitor, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_process_monitor]
         }
 
         %% Note: Receipt chain (erlmcp_receipt_chain) is ETS-based with no process
