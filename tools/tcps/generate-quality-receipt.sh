@@ -14,7 +14,7 @@ GIT_SHA=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 OTP_VERSION=$(erl -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' -noshell)
 REBAR_VERSION=$(rebar3 version 2>/dev/null | head -1 || echo "unknown")
-DEPS_LOCK_HASH=$(sha256sum rebar.lock 2>/dev/null | awk '{print $1}' || echo "no-lock")
+DEPS_LOCK_HASH=$(shasum -a 256 rebar.lock 2>/dev/null | awk '{print $1}' || echo "no-lock")
 
 RECEIPT_FILE="$RECEIPT_DIR/${GIT_SHA}.json"
 
@@ -152,7 +152,7 @@ EOF
 
 # Compute receipt hash
 RECEIPT_CONTENT=$(cat "$RECEIPT_FILE")
-RECEIPT_HASH=$(echo "$RECEIPT_CONTENT" | sha256sum | awk '{print $1}')
+RECEIPT_HASH=$(echo "$RECEIPT_CONTENT" | shasum -a 256 | awk '{print $1}')
 
 # Update receipt with hash
 TMP_FILE=$(mktemp)
