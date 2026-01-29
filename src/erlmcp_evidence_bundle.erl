@@ -243,7 +243,7 @@ to_mcpb(#mcp_evidence_bundle{} = Bundle) ->
 
 %% @doc Parse bundle from .mcpb binary format.
 -spec from_mcpb(binary()) -> {ok, #mcp_evidence_bundle{}} | {error, term()}.
-from_mcpb(<<?MCPB_MAGIC:4/binary, ?MCPB_VERSION:3/binary,
+from_mcpb(<<"MCPB", "1.0",
             MetadataLen:32/big, Metadata:MetadataLen/binary,
             ReceiptsLen:32/big, ReceiptsJson:ReceiptsLen/binary>>) ->
     try

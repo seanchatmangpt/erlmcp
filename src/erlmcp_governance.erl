@@ -186,20 +186,20 @@ handle_call({execute, Contract, Envelope, Operation, Args, Context}, _From, Stat
     Result = case KillCheck of
         {refused, KillSwitch} ->
             %% Kill switch active - immediate refusal
-            Refusal = make_kill_switch_refusal(KillSwitch),
-            {refused, Refusal};
+            KillRefusal = make_kill_switch_refusal(KillSwitch),
+            {refused, KillRefusal};
         ok ->
             %% Step 2: Validate contract
             case erlmcp_contract:validate(Contract) of
                 {error, ContractError} ->
-                    Refusal = make_contract_refusal(ContractError),
-                    {refused, Refusal};
+                    ContractRefusal = make_contract_refusal(ContractError),
+                    {refused, ContractRefusal};
                 ok ->
                     %% Step 3: Check preconditions
                     case erlmcp_contract:check_preconditions(Contract, Args) of
                         {error, PreError} ->
-                            Refusal = make_precondition_refusal(PreError),
-                            {refused, Refusal};
+                            PreRefusal = make_precondition_refusal(PreError),
+                            {refused, PreRefusal};
                         ok ->
                             %% Step 4: Enforce envelope (pre-execution)
                             EnvelopeContext = Context#{

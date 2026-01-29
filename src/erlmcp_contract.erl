@@ -508,7 +508,7 @@ check_invariant_list([_Invariant | Rest], Context) ->
 -spec is_supervised() -> boolean().
 is_supervised() ->
     %% Check if current operation has supervision flag
-    case get(governance_supervised) of
+    case erlang:get(governance_supervised) of
         true -> true;
         _ -> false
     end.
