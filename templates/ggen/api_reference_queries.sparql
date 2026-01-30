@@ -1,0 +1,308 @@
+# SPARQL Queries for API Reference Documentation Generation
+#
+# These queries extract data from the MCP ontology to populate
+# the api_reference.md.tera template.
+#
+# Usage:
+#   ggen query --ontology ontology/mcp_protocol.ttl \
+#               --query templates/ggen/api_reference_queries.sparql \
+#               --template templates/ggen/api_reference.md.tera \
+#               --output docs/api-reference.md
+
+# Query 1: Extract project metadata
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?project_name ?project_version ?protocol_version ?description
+WHERE {
+    ?project a mcp:Project ;
+             dcterms:title ?project_name ;
+             mcp:version ?project_version ;
+             mcp:protocolVersion ?protocol_version ;
+             dcterms:description ?description .
+}
+
+# Query 2: Extract all MCP methods
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?method_name ?description ?direction ?required_capability ?phase
+       ?request_params ?response_schema ?dialyzer_spec
+WHERE {
+    ?method a mcp:Method ;
+            mcp:methodName ?method_name ;
+            rdfs:comment ?description ;
+            mcp:direction ?direction ;
+            mcp:phase ?phase .
+
+    OPTIONAL { ?method mcp:requiredCapability ?required_capability }
+    OPTIONAL { ?method mcp:requestSchema ?request_params }
+    OPTIONAL { ?method mcp:responseSchema ?response_schema }
+    OPTIONAL { ?method mcp:dialyzerSpec ?dialyzer_spec }
+}
+ORDER BY ?phase ?method_name
+
+# Query 3: Extract error codes for methods
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+
+SELECT ?method_name ?error_code ?error_description
+WHERE {
+    ?method a mcp:Method ;
+            mcp:methodName ?method_name ;
+            mcp:possibleError ?error .
+
+    ?error mcp:errorCode ?error_code ;
+           rdfs:comment ?error_description .
+}
+ORDER BY ?method_name ?error_code
+
+# Query 4: Extract code examples for methods
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX ex: <http://modelcontextprotocol.org/examples#>
+
+SELECT ?method_name ?example_description ?example_code
+WHERE {
+    ?method a mcp:Method ;
+            mcp:methodName ?method_name ;
+            mcp:example ?example .
+
+    ?example rdfs:label ?example_description ;
+             ex:code ?example_code .
+}
+ORDER BY ?method_name
+
+# Query 5: Extract type definitions
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?type_name ?description ?erlang_record ?dialyzer_spec
+WHERE {
+    ?type a mcp:Type ;
+          mcp:typeName ?type_name ;
+          rdfs:comment ?description .
+
+    OPTIONAL { ?type mcp:erlangRecord ?erlang_record }
+    OPTIONAL { ?type mcp:dialyzerSpec ?dialyzer_spec }
+}
+ORDER BY ?type_name
+
+# Query 6: Extract type fields
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?type_name ?field_name ?field_type ?field_description ?field_required
+WHERE {
+    ?type a mcp:Type ;
+          mcp:typeName ?type_name ;
+          mcp:hasField ?field .
+
+    ?field mcp:fieldName ?field_name ;
+           mcp:fieldType ?field_type .
+
+    OPTIONAL { ?field rdfs:comment ?field_description }
+    OPTIONAL { ?field mcp:required ?field_required }
+}
+ORDER BY ?type_name ?field_name
+
+# Query 7: Extract capability definitions
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?capability_name ?description ?erlang_record
+WHERE {
+    ?capability a mcp:Capability ;
+                mcp:capabilityName ?capability_name ;
+                rdfs:comment ?description .
+
+    OPTIONAL { ?capability mcp:erlangRecord ?erlang_record }
+}
+ORDER BY ?capability_name
+
+# Query 8: Extract methods enabled by each capability
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+
+SELECT ?capability_name ?method_name
+WHERE {
+    ?capability a mcp:Capability ;
+                mcp:capabilityName ?capability_name .
+
+    ?method a mcp:Method ;
+            mcp:methodName ?method_name ;
+            mcp:requiredCapability ?capability .
+}
+ORDER BY ?capability_name ?method_name
+
+# Query 9: Extract transport definitions
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?transport_name ?description ?module_name ?config_example
+WHERE {
+    ?transport a mcp:Transport ;
+               mcp:transportName ?transport_name ;
+               rdfs:comment ?description ;
+               mcp:moduleName ?module_name .
+
+    OPTIONAL { ?transport mcp:configExample ?config_example }
+}
+ORDER BY ?transport_name
+
+# Query 10: Extract transport use cases
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX ex: <http://modelcontextprotocol.org/examples#>
+
+SELECT ?transport_name ?use_case
+WHERE {
+    ?transport a mcp:Transport ;
+               mcp:transportName ?transport_name ;
+               mcp:useCase ?use_case .
+}
+ORDER BY ?transport_name
+
+# Query 11: Extract supervision tree structure
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX otp: <http://erlang.org/otp/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?supervisor_name ?strategy ?parent_supervisor
+WHERE {
+    ?supervisor a otp:Supervisor ;
+                otp:supervisorName ?supervisor_name ;
+                otp:strategy ?strategy .
+
+    OPTIONAL { ?supervisor otp:parentSupervisor ?parent }
+    OPTIONAL { ?parent otp:supervisorName ?parent_supervisor }
+}
+ORDER BY ?parent_supervisor ?supervisor_name
+
+# Query 12: Extract supervisor children
+PREFIX otp: <http://erlang.org/otp/ontology#>
+
+SELECT ?supervisor_name ?child_name ?child_type ?restart_strategy
+WHERE {
+    ?supervisor a otp:Supervisor ;
+                otp:supervisorName ?supervisor_name ;
+                otp:hasChild ?child .
+
+    ?child otp:name ?child_name ;
+           otp:type ?child_type ;
+           otp:restart ?restart_strategy .
+}
+ORDER BY ?supervisor_name ?child_name
+
+# Query 13: Extract state machines
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX fsm: <http://erlang.org/fsm/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?machine_name ?state_name
+WHERE {
+    ?machine a fsm:StateMachine ;
+             fsm:machineName ?machine_name ;
+             fsm:hasState ?state .
+
+    ?state fsm:stateName ?state_name .
+}
+ORDER BY ?machine_name ?state_name
+
+# Query 14: Extract state transitions
+PREFIX fsm: <http://erlang.org/fsm/ontology#>
+
+SELECT ?machine_name ?from_state ?to_state ?event
+WHERE {
+    ?machine a fsm:StateMachine ;
+             fsm:machineName ?machine_name ;
+             fsm:hasTransition ?transition .
+
+    ?transition fsm:fromState ?from ;
+                fsm:toState ?to ;
+                fsm:onEvent ?event .
+
+    ?from fsm:stateName ?from_state .
+    ?to fsm:stateName ?to_state .
+}
+ORDER BY ?machine_name ?from_state ?to_state
+
+# Query 15: Extract migration breaking changes
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+PREFIX migration: <http://modelcontextprotocol.org/migration#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?title ?description ?before_code ?after_code ?impact
+WHERE {
+    ?change a migration:BreakingChange ;
+            dcterms:title ?title ;
+            rdfs:comment ?description ;
+            migration:impact ?impact .
+
+    OPTIONAL { ?change migration:beforeCode ?before_code }
+    OPTIONAL { ?change migration:afterCode ?after_code }
+}
+ORDER BY ?title
+
+# Query 16: Extract migration steps
+PREFIX migration: <http://modelcontextprotocol.org/migration#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?step_number ?title ?description ?commands ?verification
+WHERE {
+    ?step a migration:MigrationStep ;
+          migration:stepNumber ?step_number ;
+          dcterms:title ?title ;
+          rdfs:comment ?description .
+
+    OPTIONAL { ?step migration:commands ?commands }
+    OPTIONAL { ?step migration:verification ?verification }
+}
+ORDER BY ?step_number
+
+# Query 17: Extract compatibility notes
+PREFIX migration: <http://modelcontextprotocol.org/migration#>
+
+SELECT ?note
+WHERE {
+    ?migration a migration:MigrationGuide ;
+               migration:compatibilityNote ?note .
+}
+
+# Query 18: Extract benchmark results (for performance table)
+PREFIX bench: <http://modelcontextprotocol.org/benchmark#>
+PREFIX mcp: <http://modelcontextprotocol.org/ontology#>
+
+SELECT ?metric_name ?target_value ?achieved_value ?unit
+WHERE {
+    ?benchmark a bench:Benchmark ;
+               bench:metricName ?metric_name ;
+               bench:targetValue ?target_value ;
+               bench:achievedValue ?achieved_value ;
+               bench:unit ?unit .
+}
+ORDER BY ?metric_name
+
+# Query 19: Extract OTP design principles
+PREFIX otp: <http://erlang.org/otp/ontology#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?principle_name ?description ?rationale
+WHERE {
+    ?principle a otp:DesignPrinciple ;
+               otp:principleName ?principle_name ;
+               rdfs:comment ?description ;
+               otp:rationale ?rationale .
+}
+ORDER BY ?principle_name
+
+# Query 20: Extract complete example applications
+PREFIX ex: <http://modelcontextprotocol.org/examples#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?example_name ?description ?code ?use_case
+WHERE {
+    ?example a ex:Example ;
+             ex:exampleName ?example_name ;
+             rdfs:comment ?description ;
+             ex:code ?code ;
+             ex:useCase ?use_case .
+}
+ORDER BY ?example_name

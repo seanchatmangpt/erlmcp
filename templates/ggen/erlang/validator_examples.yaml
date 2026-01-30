@@ -1,0 +1,232 @@
+# Validator Template Configuration Examples
+# Shows how to use validator.erl.tera for different component types
+
+# Example 1: Tool Argument Validator (CRITICAL GAP FIX)
+tool_validator:
+  template: validator.erl.tera
+  output: apps/erlmcp_core/src/erlmcp_tool_argument_validator.erl
+  variables:
+    component: tool
+    module_name: erlmcp_tool_argument_validator
+    validation_type: argument
+    validation_rules:
+      - name: description_length
+        description: "Validate tool description does not exceed maximum length"
+        constraint: "byte_size(Description) =< 10000"
+      - name: input_schema_structure
+        description: "Validate tool input schema is valid JSON Schema"
+        constraint: "jesse:validate_schema(InputSchema)"
+      - name: version_format
+        description: "Validate tool version follows semantic versioning"
+        constraint: "matches_semver_pattern(Version)"
+    schema:
+      type: object
+      required: [name, description]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 10000
+        inputSchema:
+          type: object
+        metadata:
+          type: object
+        version:
+          type: string
+          pattern: "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$"
+    description_max_length: 10000
+    uri_validation_enabled: false
+    path_traversal_check: false
+    error_code_prefix: MCP_ERROR_TOOL_
+    includes_schema_validator: true
+    timestamp: "2026-01-30T16:54:00Z"
+    generator_version: "1.0.0"
+
+# Example 2: Resource URI Validator
+resource_validator:
+  template: validator.erl.tera
+  output: apps/erlmcp_core/src/erlmcp_resource_uri_validator.erl
+  variables:
+    component: resource
+    module_name: erlmcp_resource_uri_validator
+    validation_type: semantic
+    validation_rules:
+      - name: uri_canonicalization
+        description: "Canonicalize URIs to prevent injection attacks"
+        constraint: "normalize_uri(Uri) =:= Uri"
+      - name: path_traversal_prevention
+        description: "Prevent path traversal attacks in resource URIs"
+        constraint: "not contains_path_traversal(Uri)"
+      - name: scheme_validation
+        description: "Validate URI scheme is allowed"
+        constraint: "is_valid_scheme(get_scheme(Uri))"
+      - name: length_limit
+        description: "Enforce URI length limits"
+        constraint: "byte_size(Uri) =< 2048"
+    schema:
+      type: object
+      required: [uri, name]
+      properties:
+        uri:
+          type: string
+          format: uri
+          maxLength: 2048
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 10000
+        mimeType:
+          type: string
+          pattern: "^[a-z]+/[a-z0-9+.-]+$"
+        metadata:
+          type: object
+    description_max_length: 10000
+    uri_validation_enabled: true
+    path_traversal_check: true
+    error_code_prefix: MCP_ERROR_RESOURCE_
+    includes_schema_validator: true
+    timestamp: "2026-01-30T16:54:00Z"
+    generator_version: "1.0.0"
+
+# Example 3: Prompt Argument Validator
+prompt_validator:
+  template: validator.erl.tera
+  output: apps/erlmcp_core/src/erlmcp_prompt_argument_validator_v2.erl
+  variables:
+    component: prompt
+    module_name: erlmcp_prompt_argument_validator_v2
+    validation_type: argument
+    validation_rules:
+      - name: required_arguments
+        description: "Validate required prompt arguments are provided"
+        constraint: "all_required_present(Arguments, ProvidedArgs)"
+      - name: argument_types
+        description: "Validate argument types match schema"
+        constraint: "jesse:validate(InputSchema, ProvidedArgs)"
+      - name: description_length
+        description: "Validate prompt description length"
+        constraint: "byte_size(Description) =< 5000"
+    schema:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 5000
+        arguments:
+          type: array
+          items:
+            type: object
+            required: [name, required]
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              required:
+                type: boolean
+        inputSchema:
+          type: object
+    description_max_length: 5000
+    uri_validation_enabled: false
+    path_traversal_check: false
+    error_code_prefix: MCP_ERROR_PROMPT_
+    includes_schema_validator: true
+    timestamp: "2026-01-30T16:54:00Z"
+    generator_version: "1.0.0"
+
+# Example 4: Task Validator (NEW in MCP 2025-11-25)
+task_validator:
+  template: validator.erl.tera
+  output: apps/erlmcp_core/src/erlmcp_task_validator.erl
+  variables:
+    component: task
+    module_name: erlmcp_task_validator
+    validation_type: structure
+    validation_rules:
+      - name: task_id_format
+        description: "Validate task ID format"
+        constraint: "is_valid_task_id(TaskId)"
+      - name: status_validation
+        description: "Validate task status is valid enum value"
+        constraint: "lists:member(Status, [pending, running, completed, failed, cancelled])"
+      - name: timestamp_validation
+        description: "Validate task timestamps are ISO 8601"
+        constraint: "is_iso8601(Timestamp)"
+    schema:
+      type: object
+      required: [taskId, name, status]
+      properties:
+        taskId:
+          type: string
+          pattern: "^[a-zA-Z0-9_-]+$"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 256
+        description:
+          type: string
+          maxLength: 5000
+        status:
+          type: string
+          enum: [pending, running, completed, failed, cancelled]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        result:
+          type: object
+        error:
+          type: object
+    description_max_length: 5000
+    uri_validation_enabled: false
+    path_traversal_check: false
+    error_code_prefix: MCP_ERROR_TASK_
+    includes_schema_validator: true
+    timestamp: "2026-01-30T16:54:00Z"
+    generator_version: "1.0.0"
+
+# Usage Instructions:
+#
+# 1. For Tool Argument Validation (Critical Gap Fix):
+#    This generates a validator that checks tool arguments BEFORE handler invocation.
+#    Use case: erlmcp_tool_argument_validator:validate_tool_arguments(Args, ToolDef)
+#
+# 2. For Resource URI Validation:
+#    This generates a validator with URI canonicalization and path traversal prevention.
+#    Use case: erlmcp_resource_uri_validator:validate_uri(Uri)
+#
+# 3. For Prompt Argument Validation:
+#    This generates a validator similar to the existing erlmcp_prompt_argument_validator.
+#    Use case: erlmcp_prompt_argument_validator_v2:validate_prompt_arguments(Args, PromptDef)
+#
+# 4. For Task Validation:
+#    This generates a validator for the new tasks capability in MCP 2025-11-25.
+#    Use case: erlmcp_task_validator:validate_task(Task)
+#
+# Integration with SPARQL:
+#   The validation_rules can be populated from SPARQL queries against the ontology.
+#   Example SPARQL query to extract validation rules:
+#
+#   PREFIX mcp: <http://erlmcp.org/ontology#>
+#   PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+#
+#   SELECT ?rule ?description ?constraint
+#   WHERE {
+#     ?rule a mcp:ValidationRule ;
+#           mcp:appliesTo mcp:Tool ;
+#           rdfs:comment ?description ;
+#           mcp:constraint ?constraint .
+#   }
