@@ -240,29 +240,29 @@ read_loop(Parent, Owner, MaxMessageSize) ->
             exit({read_error, Reason});
         Line when is_list(Line) ->
             BinaryLine = iolist_to_binary(Line),
-            case validate_message_size(BinaryLine, MaxMessageSize) of
+            %% Use centralized message size validation
+            case erlmcp_message_size:validate_stdio_size(BinaryLine) of
                 ok ->
                     process_line(Parent, BinaryLine),
                     read_loop(Parent, Owner, MaxMessageSize);
-                {error, size_exceeded} ->
+                {error, {message_too_large, ErrorResponse}} ->
                     logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
                         [byte_size(BinaryLine), MaxMessageSize]),
-                    % Send proper JSON-RPC error response with MESSAGE_TOO_LARGE code (-32012)
-                    ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
-                    io:format("~s~n", [ErrorMsg]),
+                    %% Send the standardized error response from centralized module
+                    io:format("~s~n", [ErrorResponse]),
                     read_loop(Parent, Owner, MaxMessageSize)
             end;
         Line when is_binary(Line) ->
-            case validate_message_size(Line, MaxMessageSize) of
+            %% Use centralized message size validation
+            case erlmcp_message_size:validate_stdio_size(Line) of
                 ok ->
                     process_line(Parent, Line),
                     read_loop(Parent, Owner, MaxMessageSize);
-                {error, size_exceeded} ->
+                {error, {message_too_large, ErrorResponse}} ->
                     logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
                         [byte_size(Line), MaxMessageSize]),
-                    % Send proper JSON-RPC error response with MESSAGE_TOO_LARGE code (-32012)
-                    ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
-                    io:format("~s~n", [ErrorMsg]),
+                    %% Send the standardized error response from centralized module
+                    io:format("~s~n", [ErrorResponse]),
                     read_loop(Parent, Owner, MaxMessageSize)
             end
     end.
@@ -314,6 +314,8 @@ get_max_message_size() ->
     end.
 
 %% @doc Validate that a message does not exceed the maximum allowed size.
+%% Deprecated: Use erlmcp_message_size:validate_stdio_size/1 instead.
+%% Kept for backward compatibility.
 -spec validate_message_size(binary(), pos_integer()) -> ok | {error, size_exceeded}.
 validate_message_size(Message, MaxSize) when is_binary(Message), is_integer(MaxSize), MaxSize > 0 ->
     case byte_size(Message) =< MaxSize of

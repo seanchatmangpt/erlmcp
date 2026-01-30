@@ -96,12 +96,31 @@
 %% This is separate from gen_server init/1 to avoid callback conflicts
 -spec transport_init(transport_opts()) -> {ok, state()} | {error, term()}.
 transport_init(Opts) when is_map(Opts) ->
-    Mode = maps:get(mode, Opts, client),
-    case Mode of
-        server ->
-            init_server(Opts);
-        client ->
-            init_client(Opts)
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.init">>),
+    try
+        Mode = maps:get(mode, Opts, client),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"mode">> => Mode,
+            <<"host">> => maps:get(host, Opts, undefined),
+            <<"port">> => maps:get(port, Opts, undefined)
+        }),
+
+        Result = case Mode of
+            server ->
+                init_server(Opts);
+            client ->
+                init_client(Opts)
+        end,
+
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        Result
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            {error, {Class, Reason}}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end.
 
 %% @doc Send data through the transport
@@ -109,12 +128,41 @@ transport_init(Opts) when is_map(Opts) ->
 -spec send(state(), iodata()) -> ok | {error, term()}.
 send(#state{socket = undefined}, _Data) ->
     {error, not_connected};
-send(#state{socket = Socket, connected = true}, Data) ->
-    %% Use iolist format [Data, Newline] to avoid binary rebuilding
-    %% gen_tcp:send/2 efficiently handles iolist encoding
-    case gen_tcp:send(Socket, [Data, <<"\n">>]) of
-        ok -> ok;
-        {error, Reason} -> {error, {tcp_send_failed, Reason}}
+send(#state{socket = Socket, connected = true, host = Host, port = Port} = State, Data) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.send">>),
+    StartTime = erlang:monotonic_time(microsecond),
+    try
+        DataSize = iolist_size(Data),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"host">> => format_host(Host),
+            <<"port">> => Port,
+            <<"bytes_sent">> => DataSize,
+            <<"total_bytes_sent">> => State#state.bytes_sent
+        }),
+
+        %% Use iolist format [Data, Newline] to avoid binary rebuilding
+        %% gen_tcp:send/2 efficiently handles iolist encoding
+        Result = case gen_tcp:send(Socket, [Data, <<"\n">>]) of
+            ok ->
+                EndTime = erlang:monotonic_time(microsecond),
+                LatencyMs = (EndTime - StartTime) / 1000,
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"latency_ms">> => LatencyMs
+                }),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                ok;
+            {error, Reason} ->
+                erlmcp_tracing:record_error_details(SpanCtx, tcp_send_failed, Reason),
+                {error, {tcp_send_failed, Reason}}
+        end,
+        Result
+    catch
+        Class:CaughtReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+            {error, {Class, CaughtReason}}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end;
 send(_State, _Data) ->
     {error, not_connected}.
@@ -122,11 +170,43 @@ send(_State, _Data) ->
 %% @doc Close the transport
 -spec close(state()) -> ok.
 close(#state{mode = server, ranch_ref = RanchRef}) when RanchRef =/= undefined ->
-    ranch:stop_listener(RanchRef),
-    ok;
-close(#state{socket = Socket}) when Socket =/= undefined ->
-    gen_tcp:close(Socket),
-    ok;
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.close">>),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"mode">> => <<"server">>
+        }),
+        ranch:stop_listener(RanchRef),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        ok
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            ok
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+close(#state{socket = Socket, host = Host, port = Port, bytes_sent = BytesSent, bytes_received = BytesRecv}) when Socket =/= undefined ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.close">>),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"mode">> => <<"client">>,
+            <<"host">> => format_host(Host),
+            <<"port">> => Port,
+            <<"total_bytes_sent">> => BytesSent,
+            <<"total_bytes_received">> => BytesRecv
+        }),
+        gen_tcp:close(Socket),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        ok
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            ok
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 close(_State) ->
     ok.
 
@@ -184,55 +264,78 @@ start_link(RanchRef, _Transport, ProtocolOpts) ->
 
 %% @doc Initialize gen_server
 init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
-    %% This is a ranch protocol handler for an accepted connection
-    process_flag(trap_exit, true),
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.server_accept">>),
+    try
+        %% This is a ranch protocol handler for an accepted connection
+        process_flag(trap_exit, true),
 
-    Owner = maps:get(owner, ProtocolOpts, self()),
-    ServerId = maps:get(server_id, ProtocolOpts, undefined),
-    TransportId = maps:get(transport_id, ProtocolOpts, undefined),
+        Owner = maps:get(owner, ProtocolOpts, self()),
+        ServerId = maps:get(server_id, ProtocolOpts, undefined),
+        TransportId = maps:get(transport_id, ProtocolOpts, undefined),
 
-    %% Get the socket from ranch
-    {ok, Socket} = ranch:handshake(RanchRef),
+        %% Get the socket from ranch
+        {ok, Socket} = ranch:handshake(RanchRef),
 
-    %% Set socket to active mode for message reception
-    ok = inet:setopts(Socket, [{active, true}]),
+        %% Get peer info for tracing
+        {ok, {PeerAddr, PeerPort}} = inet:peername(Socket),
 
-    %% Start idle timeout timer
-    IdleTimer = erlang:send_after(?IDLE_TIMEOUT, self(), cleanup_idle),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"mode">> => <<"server">>,
+            <<"transport_id">> => TransportId,
+            <<"server_id">> => ServerId,
+            <<"peer_addr">> => format_addr(PeerAddr),
+            <<"peer_port">> => PeerPort
+        }),
 
-    %% Start resource monitor
-    ResourceMonitorTimer = erlang:send_after(?RESOURCE_MONITOR_INTERVAL, self(), check_resources),
+        %% Set socket to active mode for message reception
+        ok = inet:setopts(Socket, [{active, true}]),
 
-    %% Monitor connection for leak detection
-    ConnectionInfo = #{
-        socket => Socket,
-        server_id => ServerId,
-        transport_id => TransportId,
-        bytes_sent => 0,
-        bytes_received => 0
-    },
-    catch erlmcp_connection_monitor:monitor_connection(self(), ConnectionInfo),
+        %% Start idle timeout timer
+        IdleTimer = erlang:send_after(?IDLE_TIMEOUT, self(), cleanup_idle),
 
-    %% Notify owner of connection
-    Owner ! {transport_connected, self()},
+        %% Start resource monitor
+        ResourceMonitorTimer = erlang:send_after(?RESOURCE_MONITOR_INTERVAL, self(), check_resources),
 
-    %% Get max message size (default 16MB)
-    MaxMessageSize = get_max_message_size(),
+        %% Monitor connection for leak detection
+        ConnectionInfo = #{
+            socket => Socket,
+            server_id => ServerId,
+            transport_id => TransportId,
+            bytes_sent => 0,
+            bytes_received => 0
+        },
+        catch erlmcp_connection_monitor:monitor_connection(self(), ConnectionInfo),
 
-    {ok, #state{
-        mode = server,
-        transport_id = TransportId,
-        server_id = ServerId,
-        socket = Socket,
-        ranch_ref = RanchRef,
-        owner = Owner,
-        connected = true,
-        options = [],
-        idle_timer = IdleTimer,
-        resource_monitor_timer = ResourceMonitorTimer,
-        last_activity = erlang:monotonic_time(millisecond),
-        max_message_size = MaxMessageSize
-    }};
+        %% Notify owner of connection
+        Owner ! {transport_connected, self()},
+
+        %% Get max message size (default 16MB)
+        MaxMessageSize = get_max_message_size(),
+
+        erlmcp_tracing:set_status(SpanCtx, ok),
+
+        {ok, #state{
+            mode = server,
+            transport_id = TransportId,
+            server_id = ServerId,
+            socket = Socket,
+            ranch_ref = RanchRef,
+            owner = Owner,
+            connected = true,
+            options = [],
+            idle_timer = IdleTimer,
+            resource_monitor_timer = ResourceMonitorTimer,
+            last_activity = erlang:monotonic_time(millisecond),
+            max_message_size = MaxMessageSize
+        }}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            {stop, {init_failed, Reason}}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
 init(#{mode := Mode} = Opts) ->
     case Mode of
@@ -246,7 +349,7 @@ handle_call({send, Data}, _From, State) ->
     case Result of
         ok ->
             %% Update activity tracking and byte count
-            DataSize = byte_size(Data),
+            DataSize = iolist_size(Data),
             NewState = State#state{
                 last_activity = erlang:monotonic_time(millisecond),
                 bytes_sent = State#state.bytes_sent + DataSize
@@ -291,76 +394,137 @@ handle_info(connect, #state{mode = client} = State) ->
     {noreply, attempt_connection(State)};
 
 handle_info({tcp, Socket, Data}, #state{socket = Socket, buffer = Buffer, max_message_size = MaxMessageSize} = State) ->
-    %% Step 1: Validate 16MB message size limit first (transport-level enforcement)
-    DataSize = byte_size(Data),
-    NewBufferSize = byte_size(Buffer) + DataSize,
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.receive">>),
+    StartTime = erlang:monotonic_time(microsecond),
+    try
+        %% Step 1: Accumulate data in buffer
+        DataSize = byte_size(Data),
+        NewBuffer = <<Buffer/binary, Data/binary>>,
 
-    case NewBufferSize > MaxMessageSize of
-        true ->
-            logger:error("TCP message exceeds 16MB limit (~p bytes > ~p bytes)",
-                [NewBufferSize, MaxMessageSize]),
-            %% Send proper JSON-RPC error response to client before closing
-            ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
-            catch gen_tcp:send(Socket, [ErrorMsg, <<"\n">>]),
-            %% Close connection to prevent resource exhaustion
-            gen_tcp:close(Socket),
-            {stop, {message_too_large, NewBufferSize}, State};
-        false ->
-            %% Step 2: Check system memory guard (second line of defense)
-            case erlmcp_memory_guard:check_allocation(DataSize) of
-                ok ->
-                    %% Accumulate data in buffer
-                    NewBuffer = <<Buffer/binary, Data/binary>>,
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"bytes_received">> => DataSize,
+            <<"buffer_size">> => byte_size(NewBuffer),
+            <<"total_bytes_received">> => State#state.bytes_received,
+            <<"host">> => format_host(State#state.host),
+            <<"port">> => State#state.port
+        }),
 
-                    %% Process complete messages
-                    {Messages, RemainingBuffer} = extract_messages(NewBuffer),
+        %% Step 2: Validate buffer size using centralized validation
+        case erlmcp_message_size:validate_tcp_size(NewBuffer) of
+            ok ->
+                %% Step 3: Check system memory guard (second line of defense)
+                case erlmcp_memory_guard:check_allocation(DataSize) of
+                    ok ->
+                        %% Process complete messages
+                        {Messages, RemainingBuffer} = extract_messages(NewBuffer),
 
-                    %% Send messages to owner
-                    Owner = State#state.owner,
-                    lists:foreach(fun(Msg) ->
-                        Owner ! {transport_message, Msg}
-                    end, Messages),
+                        %% Send messages to owner
+                        Owner = State#state.owner,
+                        lists:foreach(fun(Msg) ->
+                            Owner ! {transport_message, Msg}
+                        end, Messages),
 
-                    %% Update activity tracking and byte count
-                    {noreply, State#state{
-                        buffer = RemainingBuffer,
-                        last_activity = erlang:monotonic_time(millisecond),
-                        bytes_received = State#state.bytes_received + DataSize
-                    }};
-                {error, payload_too_large} ->
-                    logger:error("TCP message rejected by memory guard: ~p bytes", [DataSize]),
-                    %% Send proper JSON-RPC error response to client
-                    ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
-                    catch gen_tcp:send(Socket, [ErrorMsg, <<"\n">>]),
-                    %% Close connection to prevent resource exhaustion
-                    gen_tcp:close(Socket),
-                    {stop, {message_too_large, DataSize}, State};
-                {error, resource_exhausted} ->
-                    logger:error("System memory exhausted, rejecting message"),
-                    %% Send resource exhausted error
-                    ErrorMsg = erlmcp_json_rpc:error_internal(<<"System memory exhausted">>),
-                    catch gen_tcp:send(Socket, [ErrorMsg, <<"\n">>]),
-                    gen_tcp:close(Socket),
-                    {stop, resource_exhausted, State}
-            end
+                        EndTime = erlang:monotonic_time(microsecond),
+                        LatencyMs = (EndTime - StartTime) / 1000,
+
+                        erlmcp_tracing:set_attributes(SpanCtx, #{
+                            <<"messages_extracted">> => length(Messages),
+                            <<"latency_ms">> => LatencyMs
+                        }),
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+
+                        %% Update activity tracking and byte count
+                        {noreply, State#state{
+                            buffer = RemainingBuffer,
+                            last_activity = erlang:monotonic_time(millisecond),
+                            bytes_received = State#state.bytes_received + DataSize
+                        }};
+                    {error, payload_too_large} ->
+                        logger:error("TCP message rejected by memory guard: ~p bytes", [DataSize]),
+                        erlmcp_tracing:record_error_details(SpanCtx, memory_guard_rejected, DataSize),
+                        %% Get error response from centralized module
+                        ErrorResponse = erlmcp_message_size:get_max_size_error(State#state.max_message_size),
+                        catch gen_tcp:send(Socket, [ErrorResponse, <<"\n">>]),
+                        %% Close connection to prevent resource exhaustion
+                        gen_tcp:close(Socket),
+                        {stop, {message_too_large, DataSize}, State};
+                    {error, resource_exhausted} ->
+                        logger:error("System memory exhausted, rejecting message"),
+                        erlmcp_tracing:record_error_details(SpanCtx, resource_exhausted, DataSize),
+                        %% Send resource exhausted error
+                        ErrorMsg = erlmcp_json_rpc:error_internal(<<"System memory exhausted">>),
+                        catch gen_tcp:send(Socket, [ErrorMsg, <<"\n">>]),
+                        gen_tcp:close(Socket),
+                        {stop, resource_exhausted, State}
+                end;
+            {error, {message_too_large, ErrorResponse}} ->
+                %% Message size validation failed - use centralized error response
+                logger:error("TCP buffer exceeds size limit (~p bytes > ~p bytes)",
+                    [byte_size(NewBuffer), State#state.max_message_size]),
+                erlmcp_tracing:record_error_details(SpanCtx, message_too_large, byte_size(NewBuffer)),
+                %% Send the standardized error response from centralized module
+                catch gen_tcp:send(Socket, [ErrorResponse, <<"\n">>]),
+                %% Close connection to prevent resource exhaustion
+                gen_tcp:close(Socket),
+                {stop, {message_too_large, byte_size(NewBuffer)}, State}
+        end
+        end
+    catch
+        Class:CaughtReason:Stacktrace ->
+            {stop, {receive_error, CaughtReason}, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end;
 
 handle_info({tcp_closed, Socket}, #state{socket = Socket, mode = server} = State) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.connection_closed">>),
+    erlmcp_tracing:set_attributes(SpanCtx, #{
+        <<"transport">> => <<"tcp">>,
+        <<"mode">> => <<"server">>,
+        <<"reason">> => <<"normal">>,
+        <<"bytes_sent">> => State#state.bytes_sent,
+        <<"bytes_received">> => State#state.bytes_received
+    }),
+    erlmcp_tracing:end_span(SpanCtx),
     %% Server connection closed - stop the handler process
     logger:info("Server connection closed"),
     {stop, normal, State};
 
 handle_info({tcp_closed, Socket}, #state{socket = Socket, mode = client} = State) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.connection_closed">>),
+    erlmcp_tracing:set_attributes(SpanCtx, #{
+        <<"transport">> => <<"tcp">>,
+        <<"mode">> => <<"client">>,
+        <<"reason">> => <<"normal">>,
+        <<"bytes_sent">> => State#state.bytes_sent,
+        <<"bytes_received">> => State#state.bytes_received
+    }),
+    erlmcp_tracing:end_span(SpanCtx),
     %% Client connection closed - attempt reconnection
     logger:info("Client connection closed"),
     {noreply, handle_disconnect(State, normal)};
 
 handle_info({tcp_error, Socket, Reason}, #state{socket = Socket, mode = server} = State) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.connection_error">>),
+    erlmcp_tracing:set_attributes(SpanCtx, #{
+        <<"transport">> => <<"tcp">>,
+        <<"mode">> => <<"server">>
+    }),
+    erlmcp_tracing:record_error_details(SpanCtx, tcp_error, Reason),
+    erlmcp_tracing:end_span(SpanCtx),
     %% Server connection error - stop the handler process
     logger:error("Server connection error: ~p", [Reason]),
     {stop, {tcp_error, Reason}, State};
 
 handle_info({tcp_error, Socket, Reason}, #state{socket = Socket, mode = client} = State) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.connection_error">>),
+    erlmcp_tracing:set_attributes(SpanCtx, #{
+        <<"transport">> => <<"tcp">>,
+        <<"mode">> => <<"client">>
+    }),
+    erlmcp_tracing:record_error_details(SpanCtx, tcp_error, Reason),
+    erlmcp_tracing:end_span(SpanCtx),
     %% Client connection error - attempt reconnection
     logger:error("Client connection error: ~p", [Reason]),
     {noreply, handle_disconnect(State, Reason)};
@@ -447,63 +611,88 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Initialize server listener using ranch
 init_server_listener(Opts) ->
-    process_flag(trap_exit, true),
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.server_init">>),
+    try
+        process_flag(trap_exit, true),
 
-    Port = maps:get(port, Opts, 0),
-    ServerId = maps:get(server_id, Opts, undefined),
-    TransportId = maps:get(transport_id, Opts, undefined),
-    Owner = maps:get(owner, Opts, self()),
-    NumAcceptors = maps:get(num_acceptors, Opts, ?DEFAULT_NUM_ACCEPTORS),
-    MaxConnections = maps:get(max_connections, Opts, ?DEFAULT_MAX_CONNECTIONS),
+        Port = maps:get(port, Opts, 0),
+        ServerId = maps:get(server_id, Opts, undefined),
+        TransportId = maps:get(transport_id, Opts, undefined),
+        Owner = maps:get(owner, Opts, self()),
+        NumAcceptors = maps:get(num_acceptors, Opts, ?DEFAULT_NUM_ACCEPTORS),
+        MaxConnections = maps:get(max_connections, Opts, ?DEFAULT_MAX_CONNECTIONS),
 
-    %% Create unique ranch reference
-    RanchRef = make_ranch_ref(TransportId, ServerId),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"mode">> => <<"server">>,
+            <<"port">> => Port,
+            <<"transport_id">> => TransportId,
+            <<"server_id">> => ServerId,
+            <<"num_acceptors">> => NumAcceptors,
+            <<"max_connections">> => MaxConnections
+        }),
 
-    %% Build socket options for ranch
-    SocketOpts = build_ranch_socket_options(Opts, Port),
+        %% Create unique ranch reference
+        RanchRef = make_ranch_ref(TransportId, ServerId),
 
-    %% Transport options for ranch
-    TransportOpts = #{
-        socket_opts => SocketOpts,
-        num_acceptors => NumAcceptors,
-        max_connections => MaxConnections
-    },
+        %% Build socket options for ranch
+        SocketOpts = build_ranch_socket_options(Opts, Port),
 
-    %% Protocol options passed to each connection handler
-    ProtocolOpts = #{
-        owner => Owner,
-        server_id => ServerId,
-        transport_id => TransportId
-    },
+        %% Transport options for ranch
+        TransportOpts = #{
+            socket_opts => SocketOpts,
+            num_acceptors => NumAcceptors,
+            max_connections => MaxConnections
+        },
 
-    %% Start ranch listener
-    case ranch:start_listener(RanchRef, ranch_tcp, TransportOpts,
-                               ?MODULE, ProtocolOpts) of
-        {ok, _ListenerPid} ->
-            logger:info("TCP server started on port ~p with ranch ref ~p",
-                       [Port, RanchRef]),
+        %% Protocol options passed to each connection handler
+        ProtocolOpts = #{
+            owner => Owner,
+            server_id => ServerId,
+            transport_id => TransportId
+        },
 
-            %% Get the actual port if 0 was specified
-            ActualPort = case Port of
-                0 -> ranch:get_port(RanchRef);
-                _ -> Port
-            end,
+        %% Start ranch listener
+        case ranch:start_listener(RanchRef, ranch_tcp, TransportOpts,
+                                   ?MODULE, ProtocolOpts) of
+            {ok, _ListenerPid} ->
+                logger:info("TCP server started on port ~p with ranch ref ~p",
+                           [Port, RanchRef]),
 
-            %% Get max message size (default 16MB)
-            MaxMessageSize = get_max_message_size(),
+                %% Get the actual port if 0 was specified
+                ActualPort = case Port of
+                    0 -> ranch:get_port(RanchRef);
+                    _ -> Port
+                end,
 
-            {ok, #state{
-                mode = server,
-                transport_id = TransportId,
-                server_id = ServerId,
-                ranch_ref = RanchRef,
-                owner = Owner,
-                port = ActualPort,
-                connected = true,
-                max_message_size = MaxMessageSize
-            }};
-        {error, Reason} ->
-            {stop, {ranch_start_failed, Reason}}
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"actual_port">> => ActualPort
+                }),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+
+                %% Get max message size (default 16MB)
+                MaxMessageSize = get_max_message_size(),
+
+                {ok, #state{
+                    mode = server,
+                    transport_id = TransportId,
+                    server_id = ServerId,
+                    ranch_ref = RanchRef,
+                    owner = Owner,
+                    port = ActualPort,
+                    connected = true,
+                    max_message_size = MaxMessageSize
+                }};
+            {error, Reason} ->
+                erlmcp_tracing:record_error_details(SpanCtx, ranch_start_failed, Reason),
+                {stop, {ranch_start_failed, Reason}}
+        end
+    catch
+        Class:CaughtReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+            {stop, {init_failed, CaughtReason}}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end.
 
 %% @doc Initialize client process
@@ -625,45 +814,91 @@ attempt_connection(#state{reconnect_attempts = Attempts,
     State#state{connected = false};
 
 attempt_connection(#state{host = Host, port = Port, options = Options} = State) ->
-    ConnectTimeout = ?DEFAULT_CONNECT_TIMEOUT,
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.connect">>),
+    StartTime = erlang:monotonic_time(microsecond),
+    try
+        ConnectTimeout = ?DEFAULT_CONNECT_TIMEOUT,
 
-    logger:info("Attempting TCP connection to ~s:~p", [Host, Port]),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"host">> => format_host(Host),
+            <<"port">> => Port,
+            <<"attempt">> => State#state.reconnect_attempts + 1
+        }),
 
-    case gen_tcp:connect(Host, Port, Options, ConnectTimeout) of
-        {ok, Socket} ->
-            logger:info("TCP connection established"),
-            %% Notify owner of successful connection
-            State#state.owner ! {transport_connected, self()},
+        logger:info("Attempting TCP connection to ~s:~p", [Host, Port]),
 
-            State#state{
-                socket = Socket,
-                connected = true,
-                reconnect_attempts = 0,
-                buffer = <<>>
-            };
-        {error, Reason} ->
-            logger:error("TCP connection failed: ~p", [Reason]),
+        case gen_tcp:connect(Host, Port, Options, ConnectTimeout) of
+            {ok, Socket} ->
+                EndTime = erlang:monotonic_time(microsecond),
+                LatencyMs = (EndTime - StartTime) / 1000,
+
+                logger:info("TCP connection established"),
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"latency_ms">> => LatencyMs,
+                    <<"connected">> => true
+                }),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+
+                %% Notify owner of successful connection
+                State#state.owner ! {transport_connected, self()},
+
+                State#state{
+                    socket = Socket,
+                    connected = true,
+                    reconnect_attempts = 0,
+                    buffer = <<>>
+                };
+            {error, Reason} ->
+                logger:error("TCP connection failed: ~p", [Reason]),
+                erlmcp_tracing:record_error_details(SpanCtx, connection_failed, Reason),
+                schedule_reconnect(State)
+        end
+    catch
+        Class:CaughtReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
             schedule_reconnect(State)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
     end.
 
 %% @doc Handle disconnection
 handle_disconnect(#state{socket = undefined} = State, _Reason) ->
     State;
-handle_disconnect(#state{socket = Socket, owner = Owner} = State, Reason) ->
-    %% Close the socket
-    catch gen_tcp:close(Socket),
+handle_disconnect(#state{socket = Socket, owner = Owner, host = Host, port = Port} = State, Reason) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_tcp.disconnect">>),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport">> => <<"tcp">>,
+            <<"host">> => format_host(Host),
+            <<"port">> => Port,
+            <<"reason">> => format_term(Reason),
+            <<"bytes_sent">> => State#state.bytes_sent,
+            <<"bytes_received">> => State#state.bytes_received
+        }),
 
-    %% Notify owner
-    Owner ! {transport_disconnected, self(), Reason},
+        %% Close the socket
+        catch gen_tcp:close(Socket),
 
-    %% Schedule reconnection
-    NewState = State#state{
-        socket = undefined,
-        connected = false,
-        buffer = <<>>
-    },
+        %% Notify owner
+        Owner ! {transport_disconnected, self(), Reason},
 
-    schedule_reconnect(NewState).
+        %% Schedule reconnection
+        NewState = State#state{
+            socket = undefined,
+            connected = false,
+            buffer = <<>>
+        },
+
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        schedule_reconnect(NewState)
+    catch
+        Class:CaughtReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+            State
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
 
 %% @doc Schedule a reconnection attempt
 schedule_reconnect(#state{reconnect_timer = Timer} = State)
@@ -798,3 +1033,37 @@ get_max_message_size() ->
         _ ->
             ?DEFAULT_MAX_MESSAGE_SIZE
     end.
+
+%% @doc Format host for tracing
+-spec format_host(inet:hostname() | inet:ip_address() | undefined) -> binary().
+format_host(undefined) ->
+    <<"undefined">>;
+format_host(Host) when is_list(Host) ->
+    list_to_binary(Host);
+format_host(Host) when is_tuple(Host) ->
+    list_to_binary(inet:ntoa(Host));
+format_host(Host) ->
+    format_term(Host).
+
+%% @doc Format IP address for tracing
+-spec format_addr(inet:ip_address()) -> binary().
+format_addr(Addr) when is_tuple(Addr) ->
+    list_to_binary(inet:ntoa(Addr));
+format_addr(Addr) ->
+    format_term(Addr).
+
+%% @doc Format term as binary
+-spec format_term(term()) -> binary().
+format_term(Term) when is_binary(Term) ->
+    Term;
+format_term(Term) when is_atom(Term) ->
+    atom_to_binary(Term, utf8);
+format_term(Term) when is_list(Term) ->
+    try
+        list_to_binary(Term)
+    catch
+        _:_ ->
+            list_to_binary(io_lib:format("~p", [Term]))
+    end;
+format_term(Term) ->
+    list_to_binary(io_lib:format("~p", [Term])).

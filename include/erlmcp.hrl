@@ -154,6 +154,12 @@
 -define(MCP_ERROR_PROGRESS_TOTAL_INVALID, -32099).
 -define(MCP_ERROR_CUSTOM_SERVER_ERROR, -32000).  %% Generic fallback
 
+%% Completion errors (using reserved MCP range)
+-define(MCP_ERROR_COMPLETION_NOT_FOUND, -32101).
+-define(MCP_ERROR_INVALID_COMPLETION_REF, -32102).
+-define(MCP_ERROR_INVALID_COMPLETION_ARGUMENT, -32103).
+-define(MCP_ERROR_COMPLETION_FAILED, -32104).
+
 %%% Convenience list of all valid error codes for validation
 %%% Includes JSON-RPC 2.0 standard codes and MCP-specific codes
 -define(VALID_ERROR_CODES, [
@@ -400,6 +406,12 @@
 -define(MCP_MSG_PROGRESS_VALUE_INVALID, <<"Progress value invalid">>).
 -define(MCP_MSG_PROGRESS_TOTAL_INVALID, <<"Progress total invalid">>).
 -define(MCP_MSG_CUSTOM_SERVER_ERROR, <<"Custom server error">>).
+
+%%% Completion Error Messages
+-define(MCP_MSG_COMPLETION_NOT_FOUND, <<"Completion handler not found">>).
+-define(MCP_MSG_INVALID_COMPLETION_REF, <<"Invalid completion reference">>).
+-define(MCP_MSG_INVALID_COMPLETION_ARGUMENT, <<"Invalid completion argument">>).
+-define(MCP_MSG_COMPLETION_FAILED, <<"Completion failed">>).
 
 %%% Legacy Parameter Error Messages (kept for backward compatibility)
 -define(MCP_MSG_MISSING_URI_PARAMETER, <<"Missing uri parameter">>).
@@ -835,6 +847,68 @@
     max_tokens :: integer() | undefined,
     stop_sequences :: [binary()] | undefined
 }).
+
+%%% MCP Task Records (MCP 2025-11-25 Task Capability)
+%% Task states: working, input_required, completed, failed, cancelled
+-type task_id() :: binary().
+-type task_status() :: working | input_required | completed | failed | cancelled.
+
+%% Task record - represents a long-running operation
+-record(mcp_task, {
+    id :: task_id(),
+    name :: binary(),
+    status = working :: task_status(),
+    progress :: float() | undefined,
+    total :: float() | undefined,
+    result :: term() | undefined,
+    error :: #mcp_error{} | undefined,
+    created_at :: integer(),
+    updated_at :: integer(),
+    completed_at :: integer() | undefined,
+    expires_at :: integer() | undefined,
+    metadata :: map() | undefined
+}).
+
+%%% MCP Completion Records (MCP 2025-11-25 Completion Capability - Gap #11)
+%% Completion reference types
+-type completion_ref_type() :: ref_prompt | ref_resource_template.
+
+%% Completion reference - identifies what is being completed
+-record(mcp_completion_ref, {
+    type :: completion_ref_type(),
+    name :: binary()  % Prompt name or resource template URI
+}).
+
+%% Completion argument - the specific argument being completed
+-record(mcp_completion_argument, {
+    name :: binary(),
+    value :: binary()
+}).
+
+%% Completion request parameters
+-record(mcp_completion_request, {
+    ref :: #mcp_completion_ref{},
+    argument :: #mcp_completion_argument{},
+    context = #{} :: map()  % Additional context with other argument values
+}).
+
+%% Individual completion suggestion
+-record(mcp_completion, {
+    value :: binary(),               % The suggested completion value
+    label :: binary() | undefined,   % Optional display label
+    description :: binary() | undefined,  % Optional description
+    score :: float() | undefined     % Optional relevance/confidence score (0.0-1.0)
+}).
+
+%% Completion result
+-record(mcp_completion_result, {
+    completions :: [#mcp_completion{}],  % List of completion suggestions
+    hasMore = false :: boolean(),        % Whether more completions are available
+    metadata = #{} :: map()              % Additional metadata
+}).
+
+%% Completion handler function type
+-type completion_handler() :: fun((#mcp_completion_request{}) -> #mcp_completion_result{}).
 
 %% MCP App Record (for MCP Apps feature)
 -type app_id() :: binary().

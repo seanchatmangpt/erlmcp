@@ -287,6 +287,163 @@ test_notify_resources_changed(Server) ->
     ?assertMatch(ok, Result).
 
 %%====================================================================
+%% Ping Tests (MCP 2025-11-25)
+%%====================================================================
+
+ping_test_() ->
+    {setup,
+     fun setup_ping_server/0,
+     fun cleanup_ping_server/1,
+     fun(Server) ->
+         [
+             ?_test(test_ping_without_echo(Server)),
+             ?_test(test_ping_with_echo(Server)),
+             ?_test(test_ping_before_initialization(Server)),
+             ?_test(test_ping_with_binary_echo(Server)),
+             ?_test(test_ping_with_map_echo(Server))
+         ]
+     end}.
+
+test_ping_without_echo(Server) ->
+    %% Test ping without echo parameter
+    TransportId = test_transport_ping,
+    RequestId = 1,
+    PingRequest = #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => RequestId,
+        <<"method">> => <<"ping">>,
+        <<"params">> => #{}
+    },
+    Data = jsx:encode(PingRequest),
+
+    %% Send ping message to server
+    Server ! {mcp_message, TransportId, Data},
+
+    %% Give server time to process
+    timer:sleep(100),
+
+    %% Verify we got a response (we can't easily check the response in this unit test
+    %% without mocking the transport, but we verify the server doesn't crash)
+    ?assert(erlang:is_process_alive(Server)).
+
+test_ping_with_echo(Server) ->
+    %% Test ping with echo parameter
+    TransportId = test_transport_ping_echo,
+    RequestId = 2,
+    EchoData = <<"test-echo-data">>,
+    PingRequest = #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => RequestId,
+        <<"method">> => <<"ping">>,
+        <<"params">> => #{<<"echo">> => EchoData}
+    },
+    Data = jsx:encode(PingRequest),
+
+    %% Send ping message to server
+    Server ! {mcp_message, TransportId, Data},
+
+    %% Give server time to process
+    timer:sleep(100),
+
+    %% Verify server is still alive
+    ?assert(erlang:is_process_alive(Server)).
+
+test_ping_before_initialization(Server) ->
+    %% Test that ping works before initialization (per MCP spec)
+    %% Server starts uninitialized, so this tests ping in that state
+    TransportId = test_transport_ping_pre_init,
+    RequestId = 3,
+    PingRequest = #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => RequestId,
+        <<"method">> => <<"ping">>,
+        <<"params">> => #{<<"echo">> => <<"pre-init-ping">>}
+    },
+    Data = jsx:encode(PingRequest),
+
+    %% Send ping message to server (before initialization)
+    Server ! {mcp_message, TransportId, Data},
+
+    %% Give server time to process
+    timer:sleep(100),
+
+    %% Verify server is still alive and can process ping
+    ?assert(erlang:is_process_alive(Server)).
+
+test_ping_with_binary_echo(Server) ->
+    %% Test ping with binary echo data
+    TransportId = test_transport_ping_binary,
+    RequestId = 4,
+    EchoData = <<"binary-test-data-with-special-chars-äöü"/utf8>>,
+    PingRequest = #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => RequestId,
+        <<"method">> => <<"ping">>,
+        <<"params">> => #{<<"echo">> => EchoData}
+    },
+    Data = jsx:encode(PingRequest),
+
+    %% Send ping message to server
+    Server ! {mcp_message, TransportId, Data},
+
+    %% Give server time to process
+    timer:sleep(100),
+
+    ?assert(erlang:is_process_alive(Server)).
+
+test_ping_with_map_echo(Server) ->
+    %% Test ping with map/object echo data
+    TransportId = test_transport_ping_map,
+    RequestId = 5,
+    EchoData = #{
+        <<"key1">> => <<"value1">>,
+        <<"key2">> => 42,
+        <<"nested">> => #{<<"inner">> => true}
+    },
+    PingRequest = #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => RequestId,
+        <<"method">> => <<"ping">>,
+        <<"params">> => #{<<"echo">> => EchoData}
+    },
+    Data = jsx:encode(PingRequest),
+
+    %% Send ping message to server
+    Server ! {mcp_message, TransportId, Data},
+
+    %% Give server time to process
+    timer:sleep(100),
+
+    ?assert(erlang:is_process_alive(Server)).
+
+%%====================================================================
+%% Ping Test Helpers
+%%====================================================================
+
+setup_ping_server() ->
+    setup(),
+    ServerId = test_server_ping,
+    Capabilities = default_capabilities(),
+    {ok, Server} = erlmcp_server:start_link(ServerId, Capabilities),
+    %% Register the test process to receive responses
+    gproc:reg({p, l, {mcp_transport, test_transport_ping}}),
+    gproc:reg({p, l, {mcp_transport, test_transport_ping_echo}}),
+    gproc:reg({p, l, {mcp_transport, test_transport_ping_pre_init}}),
+    gproc:reg({p, l, {mcp_transport, test_transport_ping_binary}}),
+    gproc:reg({p, l, {mcp_transport, test_transport_ping_map}}),
+    Server.
+
+cleanup_ping_server(Server) ->
+    erlmcp_server:stop(Server),
+    %% Unregister
+    catch gproc:unreg({p, l, {mcp_transport, test_transport_ping}}),
+    catch gproc:unreg({p, l, {mcp_transport, test_transport_ping_echo}}),
+    catch gproc:unreg({p, l, {mcp_transport, test_transport_ping_pre_init}}),
+    catch gproc:unreg({p, l, {mcp_transport, test_transport_ping_binary}}),
+    catch gproc:unreg({p, l, {mcp_transport, test_transport_ping_map}}),
+    cleanup(ok).
+
+%%====================================================================
 %% Setup and Cleanup
 %%====================================================================
 

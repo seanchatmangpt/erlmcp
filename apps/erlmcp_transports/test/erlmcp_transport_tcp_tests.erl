@@ -697,3 +697,342 @@ ranch_protocol_handler_test_() ->
          timer:sleep(100),
          cleanup(ServerPid)
      end}.
+
+%%====================================================================
+%% OpenTelemetry Tracing Tests
+%%====================================================================
+
+otel_tracing_transport_init_test_() ->
+    {timeout, 10,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Test client init tracing
+         ClientOpts = #{
+             mode => client,
+             host => "localhost",
+             port => 9999,
+             owner => self()
+         },
+         {ok, _ClientState} = erlmcp_transport_tcp:transport_init(ClientOpts),
+
+         %% Test server init tracing
+         ServerOpts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => otel_test_transport,
+             server_id => otel_test_server
+         },
+         {ok, ServerState} = erlmcp_transport_tcp:transport_init(ServerOpts),
+
+         %% Verify tracing didn't crash the transport
+         ?assertEqual(server, ServerState#state.mode),
+         ?assert(ServerState#state.connected),
+
+         %% Cleanup
+         erlmcp_transport_tcp:close(ServerState),
+         timer:sleep(100)
+     end}.
+
+otel_tracing_send_receive_test_() ->
+    {timeout, 15,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Start server
+         ServerOpts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => otel_send_test_transport,
+             server_id => otel_send_test_server
+         },
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
+         {ok, ServerState} = gen_server:call(ServerPid, get_state),
+         Port = ServerState#state.port,
+
+         %% Start client
+         ClientOpts = #{
+             mode => client,
+             host => "localhost",
+             port => Port,
+             owner => self(),
+             transport_id => otel_send_test_client
+         },
+         {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
+
+         %% Wait for connection
+         receive {transport_connected, ClientPid} -> ok
+         after 3000 -> error("Connection timeout")
+         end,
+
+         %% Send message (this will create OTEL send span)
+         Message = <<"test tracing message">>,
+         ok = gen_server:call(ClientPid, {send, Message}),
+
+         %% Verify message received (this will create OTEL receive span)
+         receive
+             {transport_connected, _Handler} -> ok
+         after 2000 ->
+             error("Server handler not received")
+         end,
+
+         receive
+             {transport_message, ReceivedMsg} ->
+                 ?assertEqual(Message, ReceivedMsg)
+         after 3000 ->
+             error("Message not received")
+         end,
+
+         %% Cleanup
+         cleanup(ClientPid),
+         cleanup(ServerPid),
+         timer:sleep(100)
+     end}.
+
+otel_tracing_connection_lifecycle_test_() ->
+    {timeout, 15,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Start server
+         ServerOpts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => otel_lifecycle_transport,
+             server_id => otel_lifecycle_server
+         },
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
+         {ok, ServerState} = gen_server:call(ServerPid, get_state),
+         Port = ServerState#state.port,
+
+         %% Start client (creates connect span)
+         ClientOpts = #{
+             mode => client,
+             host => "localhost",
+             port => Port,
+             owner => self()
+         },
+         {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
+
+         %% Wait for connection (connect span should be created)
+         receive {transport_connected, ClientPid} -> ok
+         after 3000 -> error("Connection timeout")
+         end,
+
+         %% Get server handler
+         ServerHandler = receive
+             {transport_connected, Handler} -> Handler
+         after 2000 ->
+             error("Server did not receive connection")
+         end,
+
+         %% Close connection (creates close/disconnect spans)
+         cleanup(ServerHandler),
+
+         %% Wait for disconnect notification (disconnect span should be created)
+         receive
+             {transport_disconnected, ClientPid, _Reason} -> ok
+         after 2000 ->
+             error("Disconnect not received")
+         end,
+
+         %% Cleanup
+         cleanup(ClientPid),
+         cleanup(ServerPid),
+         timer:sleep(100)
+     end}.
+
+otel_tracing_error_scenarios_test_() ->
+    {timeout, 10,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Test connection error tracing
+         ClientOpts = #{
+             mode => client,
+             host => "invalid.host.that.does.not.exist",
+             port => 9999,
+             owner => self(),
+             max_reconnect_attempts => 1
+         },
+         {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
+
+         %% Wait for connection attempt to fail (error span should be created)
+         timer:sleep(2000),
+
+         %% Verify process is still alive despite errors
+         ?assert(erlang:is_process_alive(ClientPid)),
+
+         %% Get state and verify connection failed
+         {ok, State} = gen_server:call(ClientPid, get_state),
+         ?assertEqual(false, State#state.connected),
+         ?assert(State#state.reconnect_attempts > 0),
+
+         %% Cleanup
+         cleanup(ClientPid)
+     end}.
+
+otel_tracing_attributes_test_() ->
+    {timeout, 10,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Start server
+         ServerOpts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => otel_attr_transport,
+             server_id => otel_attr_server
+         },
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
+         {ok, ServerState} = gen_server:call(ServerPid, get_state),
+         Port = ServerState#state.port,
+
+         %% Start client
+         ClientOpts = #{
+             mode => client,
+             host => "localhost",
+             port => Port,
+             owner => self()
+         },
+         {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
+
+         %% Wait for connection
+         receive {transport_connected, ClientPid} -> ok
+         after 3000 -> error("Connection timeout")
+         end,
+
+         %% Send multiple messages to accumulate bytes_sent/received
+         lists:foreach(fun(N) ->
+             Msg = iolist_to_binary(io_lib:format("Message ~p", [N])),
+             ok = gen_server:call(ClientPid, {send, Msg})
+         end, lists:seq(1, 5)),
+
+         %% Wait for messages
+         timer:sleep(500),
+
+         %% Verify state has accumulated byte counters
+         {ok, ClientState} = gen_server:call(ClientPid, get_state),
+         ?assert(ClientState#state.bytes_sent > 0),
+
+         %% Cleanup
+         cleanup(ClientPid),
+         cleanup(ServerPid),
+         timer:sleep(100)
+     end}.
+
+%%====================================================================
+%% Message Size Validation Tests
+%%====================================================================
+
+message_size_validation_test_() ->
+    {timeout, 20,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Start server
+         ServerOpts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => size_test_server_transport,
+             server_id => size_test_server
+         },
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
+         {ok, ServerState} = gen_server:call(ServerPid, get_state),
+         Port = ServerState#state.port,
+
+         %% Start client
+         ClientOpts = #{
+             mode => client,
+             host => "localhost",
+             port => Port,
+             owner => self(),
+             transport_id => size_test_client_transport
+         },
+         {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
+
+         %% Wait for connection
+         receive {transport_connected, ClientPid} -> ok
+         after 3000 -> error("Client connection timeout")
+         end,
+
+         %% Get server handler
+         ServerHandler = receive
+             {transport_connected, Handler} -> Handler
+         after 3000 -> error("Server did not receive connection")
+         end,
+
+         %% Test 1: Normal sized message should work
+         NormalMsg = <<"test message">>,
+         ok = gen_server:call(ClientPid, {send, NormalMsg}),
+         
+         receive
+             {transport_message, ReceivedMsg} ->
+                 ?assertEqual(NormalMsg, ReceivedMsg)
+         after 2000 ->
+             ?assert(false, "Normal message not received")
+         end,
+
+         %% Test 2: Large but acceptable message (1MB)
+         LargeMsg = binary:copy(<<"x">>, 1024 * 1024),
+         ok = gen_server:call(ClientPid, {send, LargeMsg}),
+         
+         receive
+             {transport_message, ReceivedLargeMsg} ->
+                 ?assertEqual(LargeMsg, ReceivedLargeMsg)
+         after 2000 ->
+             ?assert(false, "Large message not received")
+         end,
+
+         %% Test 3: Verify centralized validation is available
+         TestBuffer = <<"test">>,
+         ?assertEqual(ok, erlmcp_message_size:validate_tcp_size(TestBuffer)),
+
+         OversizedBuffer = binary:copy(<<"x">>, 17 * 1024 * 1024), % 17MB
+         Result = erlmcp_message_size:validate_tcp_size(OversizedBuffer),
+         ?assertMatch({error, {message_too_large, _}}, Result),
+         
+         {error, {message_too_large, ErrorResp}} = Result,
+         ?assert(is_binary(ErrorResp)),
+
+         %% Cleanup
+         cleanup(ClientPid),
+         cleanup(ServerHandler),
+         cleanup(ServerPid),
+         timer:sleep(100)
+     end}.
+
+centralized_validation_test_() ->
+    [
+     {"TCP validation with normal message",
+      fun() ->
+          NormalMsg = <<"test message">>,
+          ?assertEqual(ok, erlmcp_message_size:validate_tcp_size(NormalMsg))
+      end},
+
+     {"TCP validation with oversized message",
+      fun() ->
+          OversizedMsg = binary:copy(<<"x">>, 17 * 1024 * 1024), % 17 MB
+          Result = erlmcp_message_size:validate_tcp_size(OversizedMsg),
+          ?assertMatch({error, {message_too_large, _}}, Result),
+          
+          %% Verify error response is a binary JSON-RPC error
+          {error, {message_too_large, ErrorResponse}} = Result,
+          ?assert(is_binary(ErrorResponse)),
+          ?assert(byte_size(ErrorResponse) > 0)
+      end},
+
+     {"TCP max message size configuration",
+      fun() ->
+          MaxSize = erlmcp_transport_tcp:get_max_message_size(),
+          ?assert(is_integer(MaxSize)),
+          ?assert(MaxSize > 0),
+          %% Default should be 16MB
+          ?assertEqual(16777216, MaxSize)
+      end}
+    ].

@@ -17,9 +17,11 @@
     add_prompt/3,
     add_prompt_with_args/4,
     add_prompt_with_args_and_schema/5,
+    add_completion/3,
     delete_resource/2,
     delete_tool/2,
     delete_prompt/2,
+    delete_completion/2,
     subscribe_resource/3,
     unsubscribe_resource/2,
     report_progress/4,
@@ -56,6 +58,7 @@
     resource_templates = #{} :: #{binary() => {#mcp_resource_template{}, resource_handler()}},
     tools = #{} :: #{binary() => {#mcp_tool{}, tool_handler(), map() | undefined}},
     prompts = #{} :: #{binary() => {#mcp_prompt{}, prompt_handler()}},
+    completions = #{} :: #{binary() => completion_handler()},  % Gap #11: Completion handlers
     subscriptions = #{} :: #{binary() => sets:set(pid())},
     progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
     notifier_pid :: pid() | undefined,
@@ -151,6 +154,16 @@ delete_tool(Server, Name) when is_binary(Name) ->
 -spec delete_prompt(server(), binary()) -> ok | {error, not_found}.
 delete_prompt(Server, Name) when is_binary(Name) ->
     gen_server:call(Server, {delete_prompt, Name}).
+
+%% Completion operations (Gap #11: MCP 2025-11-25 Completion API)
+
+-spec add_completion(server(), binary(), completion_handler()) -> ok.
+add_completion(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_completion, Name, Handler}).
+
+-spec delete_completion(server(), binary()) -> ok | {error, not_found}.
+delete_completion(Server, Name) when is_binary(Name) ->
+    gen_server:call(Server, {delete_completion, Name}).
 
 -spec subscribe_resource(server(), binary(), pid()) -> ok.
 subscribe_resource(Server, Uri, Subscriber) when is_binary(Uri), is_pid(Subscriber) ->
@@ -381,6 +394,23 @@ handle_call({delete_prompt, Name}, _From, State) ->
             NewPrompts = maps:remove(Name, State#state.prompts),
             notify_list_changed(prompts, State),
             {reply, ok, State#state{prompts = NewPrompts}};
+        false ->
+            {reply, {error, not_found}, State}
+    end;
+
+%% Completion operations (Gap #11: MCP 2025-11-25 Completion API)
+
+handle_call({add_completion, Name, Handler}, _From, State) ->
+    NewCompletions = maps:put(Name, Handler, State#state.completions),
+    logger:info("Added completion handler: ~p", [Name]),
+    {reply, ok, State#state{completions = NewCompletions}};
+
+handle_call({delete_completion, Name}, _From, State) ->
+    case maps:is_key(Name, State#state.completions) of
+        true ->
+            NewCompletions = maps:remove(Name, State#state.completions),
+            logger:info("Deleted completion handler: ~p", [Name]),
+            {reply, ok, State#state{completions = NewCompletions}};
         false ->
             {reply, {error, not_found}, State}
     end;
@@ -644,6 +674,21 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, _Params, TransportId, #state{initiali
         <<"Server already initialized. Initialize must be called only once.">>),
     {noreply, State};
 
+%% Ping handler - allowed at any time (before or after initialization)
+%% MCP 2025-11-25: Ping is used for connection health checks and can be sent at any time
+handle_request(Id, ?MCP_METHOD_PING, Params, TransportId, State) ->
+    %% Extract optional echo parameter
+    Echo = maps:get(<<"echo">>, Params, undefined),
+
+    %% Build response - include echo if it was provided
+    Response = case Echo of
+        undefined -> #{};
+        _ -> #{<<"echo">> => Echo}
+    end,
+
+    send_response_via_registry(State, TransportId, Id, Response),
+    {noreply, State};
+
 %% P0 SECURITY: Reject ALL non-initialize RPC requests before initialization
 %% This is critical for protocol safety - prevents any operation until handshake completes
 handle_request(Id, Method, _Params, TransportId, #state{initialized = false} = State) ->
@@ -734,32 +779,86 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-%% Task management endpoints - NOT IMPLEMENTED (Optional in MCP spec)
-%% Task manager was replaced by erlmcp_hooks for pre/post task hooks
-%% Return "method not found" for tasks/* endpoints
-handle_request(Id, ?MCP_METHOD_TASKS_CREATE, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
+%% Task management endpoints (MCP 2025-11-25 Tasks Capability)
+%% Implements task lifecycle: create, list, get, result, cancel
+handle_request(Id, ?MCP_METHOD_TASKS_CREATE, Params, TransportId, State) ->
+    Name = maps:get(<<"name">>, Params, <<"Unnamed Task">>),
+    Metadata = maps:get(<<"metadata">>, Params, #{}),
+
+    case erlmcp_tasks:create_task(Name, Metadata) of
+        {ok, TaskId} ->
+            Response = #{?MCP_PARAM_TASK_ID => TaskId},
+            send_response_via_registry(State, TransportId, Id, Response);
+        {error, {Code, Message, Data}} ->
+            send_error_via_registry(State, TransportId, Id, Code, Message, Data)
+    end,
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TASKS_LIST, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
+handle_request(Id, ?MCP_METHOD_TASKS_LIST, Params, TransportId, State) ->
+    Result = case maps:size(Params) of
+        0 -> erlmcp_tasks:list_tasks();
+        _ -> erlmcp_tasks:list_tasks(Params)
+    end,
+
+    case Result of
+        {ok, Tasks} ->
+            SerializedTasks = [encode_task(Task) || Task <- Tasks],
+            Response = #{?MCP_PARAM_TASKS => SerializedTasks},
+            send_response_via_registry(State, TransportId, Id, Response);
+        {error, Reason} ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, iolist_to_binary(io_lib:format("~p", [Reason])))
+    end,
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TASKS_GET, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
+handle_request(Id, ?MCP_METHOD_TASKS_GET, Params, TransportId, State) ->
+    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+        undefined ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId parameter">>);
+        TaskId ->
+            case erlmcp_tasks:get_task(TaskId) of
+                {ok, Task} ->
+                    Response = #{?MCP_PARAM_TASK => encode_task(Task)},
+                    send_response_via_registry(State, TransportId, Id, Response);
+                {error, not_found} ->
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_NOT_FOUND, ?MCP_MSG_TASK_NOT_FOUND)
+            end
+    end,
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TASKS_RESULT, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
+handle_request(Id, ?MCP_METHOD_TASKS_RESULT, Params, TransportId, State) ->
+    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+        undefined ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId parameter">>);
+        TaskId ->
+            case erlmcp_tasks:get_task_result(TaskId) of
+                {ok, Result} ->
+                    Response = #{<<"result">> => Result},
+                    send_response_via_registry(State, TransportId, Id, Response);
+                {error, not_found} ->
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_NOT_FOUND, ?MCP_MSG_TASK_NOT_FOUND);
+                {error, not_ready} ->
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_RESULT_NOT_READY, ?MCP_MSG_TASK_RESULT_NOT_READY);
+                {error, cancelled} ->
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_CANCELLED, ?MCP_MSG_TASK_CANCELLED);
+                {error, {task_failed, Error}} ->
+                    ErrorData = #{<<"taskError">> => encode_error(Error)},
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_FAILED, ?MCP_MSG_TASK_FAILED, ErrorData)
+            end
+    end,
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
+handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, Params, TransportId, State) ->
+    case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+        undefined ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing taskId parameter">>);
+        TaskId ->
+            case erlmcp_tasks:cancel_task(TaskId) of
+                ok ->
+                    send_response_via_registry(State, TransportId, Id, #{});
+                {error, {Code, Message, Data}} ->
+                    send_error_via_registry(State, TransportId, Id, Code, Message, Data)
+            end
+    end,
     {noreply, State};
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, Params, TransportId, State) ->
@@ -813,6 +912,57 @@ handle_request(Id, ?MCP_METHOD_PROMPTS_GET, Params, TransportId, State) ->
             handle_get_prompt(Id, Name, Arguments, TransportId, State)
     end,
     {noreply, State};
+
+%% Completion/complete endpoint (Gap #11: MCP 2025-11-25 Completion API)
+handle_request(Id, ?MCP_METHOD_COMPLETION_COMPLETE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_completion_complete">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_COMPLETION_COMPLETE
+        }),
+
+        %% Decode completion request from params
+        case erlmcp_completion:decode_completion_request(Params) of
+            {ok, Request} ->
+                %% Extract the ref name to find the handler
+                RefName = Request#mcp_completion_request.ref#mcp_completion_ref.name,
+                erlmcp_tracing:set_attributes(SpanCtx, #{<<"completion.ref">> => RefName}),
+
+                %% Execute completion
+                case erlmcp_completion:complete(State#state.completions, RefName, Request) of
+                    {ok, Result} ->
+                        Response = erlmcp_completion:encode_completion_result(Result),
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        send_response_via_registry(State, TransportId, Id, Response);
+                    {error, {completion_not_found, _}} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, completion_not_found, RefName),
+                        send_error_via_registry(State, TransportId, Id,
+                            ?MCP_ERROR_COMPLETION_NOT_FOUND, ?MCP_MSG_COMPLETION_NOT_FOUND);
+                    {error, CompletionReason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, completion_failed, CompletionReason),
+                        logger:error("Completion failed: ~p", [CompletionReason]),
+                        send_error_via_registry(State, TransportId, Id,
+                            ?MCP_ERROR_COMPLETION_FAILED, ?MCP_MSG_COMPLETION_FAILED)
+                end;
+            {error, DecodeError} ->
+                erlmcp_tracing:record_error_details(SpanCtx, invalid_params, DecodeError),
+                logger:error("Invalid completion request params: ~p", [DecodeError]),
+                send_error_via_registry(State, TransportId, Id,
+                    ?JSONRPC_INVALID_PARAMS, format_decode_error(DecodeError))
+        end,
+
+        {noreply, State}
+    catch
+        Class:CatchReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CatchReason, Stacktrace),
+            logger:error("Completion request crashed: ~p:~p~n~p", [Class, CatchReason, Stacktrace]),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
 %% Sampling/createMessage endpoint (Task #136: Implement Sampling Capability)
 handle_request(Id, ?MCP_METHOD_SAMPLING_CREATE_MESSAGE, Params, TransportId, #state{server_id = ServerId} = State) ->
@@ -1349,11 +1499,18 @@ handle_prompt_execution(
         }),
         erlmcp_tracing:set_status(HandlerSpanCtx, ok),
 
-        Messages = normalize_prompt_result(Result),
+        % Template rendering: Render templates in the result before normalizing
+        RenderedResult = render_prompt_templates(Result, Arguments),
+        Messages = normalize_prompt_result(RenderedResult),
         Response = #{?MCP_PARAM_MESSAGES => Messages},
         Response1 = maybe_add_field(Response, ?MCP_PARAM_DESCRIPTION, Prompt#mcp_prompt.description),
         send_response_safe(State, TransportId, Id, Response1)
     catch
+        error:{template_render_error, TemplateReason} ->
+            erlmcp_tracing:record_error_details(HandlerSpanCtx, template_render_failed, TemplateReason),
+            logger:error("Prompt template rendering failed: ~p", [TemplateReason]),
+            send_error_safe(State, TransportId, Id, ?MCP_ERROR_PROMPT_RENDER_FAILED,
+                iolist_to_binary(io_lib:format("Template rendering failed: ~p", [TemplateReason])));
         Class:Reason:Stack ->
             erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
             logger:error("Prompt handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
@@ -1430,6 +1587,36 @@ encode_prompt_argument(#mcp_prompt_argument{} = Arg) ->
         ?MCP_PARAM_REQUIRED => Arg#mcp_prompt_argument.required,
         ?MCP_PARAM_DESCRIPTION => Arg#mcp_prompt_argument.description
     }.
+
+%% Encode task for JSON-RPC response
+-spec encode_task(#mcp_task{}) -> map().
+encode_task(#mcp_task{} = Task) ->
+    Base = #{
+        <<"id">> => Task#mcp_task.id,
+        <<"name">> => Task#mcp_task.name,
+        <<"status">> => atom_to_binary(Task#mcp_task.status, utf8),
+        <<"createdAt">> => Task#mcp_task.created_at,
+        <<"updatedAt">> => Task#mcp_task.updated_at
+    },
+    Base1 = maybe_add_field(Base, <<"progress">>, Task#mcp_task.progress),
+    Base2 = maybe_add_field(Base1, <<"total">>, Task#mcp_task.total),
+    Base3 = maybe_add_field(Base2, <<"completedAt">>, Task#mcp_task.completed_at),
+    Base4 = maybe_add_field(Base3, <<"expiresAt">>, Task#mcp_task.expires_at),
+    Base5 = maybe_add_field(Base4, <<"metadata">>, Task#mcp_task.metadata),
+    Base6 = case Task#mcp_task.error of
+        undefined -> Base5;
+        Error -> Base5#{<<"error">> => encode_error(Error)}
+    end,
+    maybe_add_field(Base6, <<"result">>, Task#mcp_task.result).
+
+%% Encode error record for JSON-RPC response
+-spec encode_error(#mcp_error{}) -> map().
+encode_error(#mcp_error{} = Error) ->
+    Base = #{
+        <<"code">> => Error#mcp_error.code,
+        <<"message">> => Error#mcp_error.message
+    },
+    maybe_add_field(Base, <<"data">>, Error#mcp_error.data).
 
 -spec maybe_add_field(map(), binary(), term()) -> map().
 maybe_add_field(Map, _Key, undefined) -> Map;
@@ -1659,6 +1846,66 @@ format_invalid_content(ContentMap) ->
         {<<>>, _} -> Data;
         {_, <<>>} -> Text;
         {T, D} -> <<T/binary, " ", D/binary>>
+    end.
+
+%% @doc Render templates in prompt results if they contain template syntax.
+%% Supports both binary results and message lists with text content.
+-spec render_prompt_templates(term(), map()) -> term().
+render_prompt_templates(BinaryResult, Arguments) when is_binary(BinaryResult) ->
+    % Check if the binary contains template syntax
+    case erlmcp_prompt_template:has_template_syntax(BinaryResult) of
+        true ->
+            % Render the template with provided arguments
+            erlmcp_prompt_template:render(BinaryResult, Arguments);
+        false ->
+            % No template syntax, return as-is
+            BinaryResult
+    end;
+render_prompt_templates(MessageList, Arguments) when is_list(MessageList) ->
+    % Process each message in the list
+    lists:map(fun(Message) when is_map(Message) ->
+        render_message_templates(Message, Arguments);
+        (Other) -> Other
+    end, MessageList);
+render_prompt_templates(Other, _Arguments) ->
+    % Unknown type, return as-is
+    Other.
+
+%% @doc Render templates in a single message map.
+-spec render_message_templates(map(), map()) -> map().
+render_message_templates(Message, Arguments) ->
+    % Check if the message has a content field with text
+    case maps:get(?MCP_PARAM_CONTENT, Message, undefined) of
+        undefined ->
+            Message;
+        Content when is_map(Content) ->
+            % Render template in the text field if present
+            case maps:get(?MCP_PARAM_TEXT, Content, undefined) of
+                undefined ->
+                    Message;
+                Text when is_binary(Text) ->
+                    case erlmcp_prompt_template:has_template_syntax(Text) of
+                        true ->
+                            RenderedText = erlmcp_prompt_template:render(Text, Arguments),
+                            NewContent = maps:put(?MCP_PARAM_TEXT, RenderedText, Content),
+                            maps:put(?MCP_PARAM_CONTENT, NewContent, Message);
+                        false ->
+                            Message
+                    end;
+                _ ->
+                    Message
+            end;
+        Content when is_binary(Content) ->
+            % Legacy: content is a binary string directly
+            case erlmcp_prompt_template:has_template_syntax(Content) of
+                true ->
+                    RenderedContent = erlmcp_prompt_template:render(Content, Arguments),
+                    maps:put(?MCP_PARAM_CONTENT, RenderedContent, Message);
+                false ->
+                    Message
+            end;
+        _ ->
+            Message
     end.
 
 -spec normalize_prompt_result(term()) -> [map()].
@@ -2018,6 +2265,24 @@ format_sampling_error(Reason) when is_atom(Reason) ->
     binary:list_to_bin(io_lib:format("~p", [Reason]));
 format_sampling_error(_) ->
     <<"Unknown sampling error">>.
+
+%% Format completion decode errors (Gap #11)
+-spec format_decode_error(term()) -> binary().
+format_decode_error({missing_required_fields, Fields}) ->
+    FieldsList = [binary_to_list(F) || F <- Fields],
+    list_to_binary(io_lib:format("Missing required fields: ~s", [string:join(FieldsList, ", ")]));
+format_decode_error({invalid_ref_type, Type}) ->
+    iolist_to_binary([<<"Invalid ref type: ">>, Type]);
+format_decode_error({missing_ref_fields, _}) ->
+    <<"Missing ref fields: type, name">>;
+format_decode_error({missing_argument_fields, _}) ->
+    <<"Missing argument fields: name, value">>;
+format_decode_error(Reason) when is_binary(Reason) ->
+    Reason;
+format_decode_error(Reason) when is_atom(Reason) ->
+    atom_to_binary(Reason);
+format_decode_error(_) ->
+    <<"Invalid completion request format">>.
 
 %%====================================================================
 %% Internal functions - Logging Validation (Task #137)

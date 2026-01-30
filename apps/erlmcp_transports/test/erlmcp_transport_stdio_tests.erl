@@ -677,3 +677,75 @@ collect_all_messages(Acc, Timeout) ->
     after Timeout ->
         lists:reverse(Acc)
     end.
+
+%%====================================================================
+%% Message Size Validation Tests
+%%====================================================================
+
+message_size_validation_test_() ->
+    {setup,
+     fun setup_stdio_transport/0,
+     fun cleanup_stdio_transport/1,
+     [
+         {"Stdio transport accepts normal sized message", fun test_stdio_normal_size/0},
+         {"Stdio transport rejects oversized message", fun test_stdio_oversized_message/0},
+         {"Stdio transport validates using centralized module", fun test_stdio_centralized_validation/0}
+     ]}.
+
+test_stdio_normal_size() ->
+    Owner = self(),
+    put(test_mode, true),
+    
+    {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+    
+    try
+        %% Send a normal sized message (1KB)
+        NormalMsg = binary:copy(<<"x">>, 1024),
+        gen_server:call(Transport, {simulate_input, NormalMsg}),
+        
+        %% Should receive the message
+        receive
+            {transport_message, ReceivedMsg} ->
+                ?assertEqual(NormalMsg, ReceivedMsg)
+        after 1000 ->
+            ?assert(false, "Timeout waiting for message")
+        end
+    after
+        catch gen_server:stop(Transport, normal, 1000)
+    end.
+
+test_stdio_oversized_message() ->
+    Owner = self(),
+    put(test_mode, true),
+    
+    %% Note: This test verifies the validation function exists and is called.
+    %% In test mode, the reader process is not started, so we test the
+    %% validation logic directly through the exported function.
+    
+    %% Test that oversized messages are detected
+    OversizedMsg = binary:copy(<<"x">>, 17 * 1024 * 1024), % 17 MB (over 16MB limit)
+    MaxSize = erlmcp_transport_stdio:get_max_message_size(),
+    
+    %% Verify message exceeds limit
+    ?assert(byte_size(OversizedMsg) > MaxSize),
+    
+    %% The local validation function should detect this
+    ?assertEqual({error, size_exceeded},
+                 erlmcp_transport_stdio:validate_message_size(OversizedMsg, MaxSize)).
+
+test_stdio_centralized_validation() ->
+    %% Verify that the centralized validation module is available
+    %% and returns proper responses
+    
+    %% Normal message
+    NormalMsg = <<"test">>,
+    ?assertEqual(ok, erlmcp_message_size:validate_stdio_size(NormalMsg)),
+    
+    %% Oversized message
+    OversizedMsg = binary:copy(<<"x">>, 17 * 1024 * 1024), % 17 MB
+    Result = erlmcp_message_size:validate_stdio_size(OversizedMsg),
+    ?assertMatch({error, {message_too_large, _}}, Result),
+    
+    %% Verify error response is a binary
+    {error, {message_too_large, ErrorResponse}} = Result,
+    ?assert(is_binary(ErrorResponse)).

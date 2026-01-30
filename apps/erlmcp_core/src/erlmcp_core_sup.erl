@@ -66,8 +66,18 @@ init([]) ->
             modules => [erlmcp_session_manager]
         },
 
-        %% NOTE: erlmcp_task_manager removed - module was never implemented
-        %% Replaced by erlmcp_hooks for Claude Code integration
+        %% ================================================================
+        %% TASKS: MCP 2025-11-25 task lifecycle management
+        %% ================================================================
+        #{
+            id => erlmcp_tasks,
+            start => {erlmcp_tasks, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_tasks]
+        },
+
         #{
             id => erlmcp_hooks,
             start => {erlmcp_hooks, start_link, []},

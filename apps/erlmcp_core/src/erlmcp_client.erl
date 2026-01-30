@@ -6,16 +6,27 @@
 %% API exports
 -export([
     start_link/1, start_link/2,
-    initialize/2, initialize/3,
-    list_roots/1,
-    list_resources/1, list_resource_templates/1,
-    read_resource/2, subscribe_to_resource/2, unsubscribe_from_resource/2,
-    list_prompts/1, get_prompt/2, get_prompt/3,
-    list_tools/1, call_tool/3,
-    with_batch/2, send_batch_request/4,
-    set_notification_handler/3, remove_notification_handler/2,
-    set_sampling_handler/2, remove_sampling_handler/1,
-    set_strict_mode/2,
+    initialize/2, initialize/3, initialize/4,
+    get_timeout/1, get_timeout/2,
+    list_roots/1, list_roots/2,
+    list_resources/1, list_resources/2,
+    list_resource_templates/1, list_resource_templates/2,
+    read_resource/2, read_resource/3,
+    subscribe_to_resource/2, subscribe_to_resource/3,
+    unsubscribe_from_resource/2, unsubscribe_from_resource/3,
+    list_prompts/1, list_prompts/2,
+    get_prompt/2, get_prompt/3, get_prompt/4,
+    list_tools/1, list_tools/2,
+    call_tool/3, call_tool/4,
+    complete/2, complete/3, complete/4,
+    ping/1, ping/2, ping/3,
+    with_batch/2, with_batch/3,
+    send_batch_request/4, send_batch_request/5,
+    set_notification_handler/3, set_notification_handler/4,
+    remove_notification_handler/2, remove_notification_handler/3,
+    set_sampling_handler/2, set_sampling_handler/3,
+    remove_sampling_handler/1, remove_sampling_handler/2,
+    set_strict_mode/2, set_strict_mode/3,
     stop/1
 ]).
 
@@ -95,6 +106,14 @@ start_link(TransportOpts) ->
 start_link(TransportOpts, Options) ->
     gen_server:start_link(?MODULE, [TransportOpts, Options], []).
 
+-spec get_timeout(client()) -> {ok, timeout()} | {error, term()}.
+get_timeout(Client) ->
+    get_timeout(Client, 1000).
+
+-spec get_timeout(client(), timeout()) -> {ok, timeout()} | {error, term()}.
+get_timeout(Client, Timeout) ->
+    gen_server:call(Client, get_timeout, Timeout).
+
 -spec initialize(client(), #mcp_client_capabilities{}) ->
     {ok, map()} | {error, term()}.
 initialize(Client, Capabilities) ->
@@ -103,23 +122,44 @@ initialize(Client, Capabilities) ->
 -spec initialize(client(), #mcp_client_capabilities{}, map()) ->
     {ok, map()} | {error, term()}.
 initialize(Client, Capabilities, Options) ->
-    gen_server:call(Client, {initialize, Capabilities, Options}, infinity).
+    initialize(Client, Capabilities, Options, infinity).
+
+-spec initialize(client(), #mcp_client_capabilities{}, map(), timeout()) ->
+    {ok, map()} | {error, term()}.
+initialize(Client, Capabilities, Options, Timeout) ->
+    gen_server:call(Client, {initialize, Capabilities, Options}, Timeout).
 
 -spec list_roots(client()) -> {ok, [map()]} | {error, term()}.
 list_roots(Client) ->
-    gen_server:call(Client, list_roots).
+    list_roots(Client, 5000).
+
+-spec list_roots(client(), timeout()) -> {ok, [map()]} | {error, term()}.
+list_roots(Client, Timeout) ->
+    gen_server:call(Client, list_roots, Timeout).
 
 -spec list_resources(client()) -> {ok, [map()]} | {error, term()}.
 list_resources(Client) ->
-    gen_server:call(Client, list_resources).
+    list_resources(Client, 5000).
+
+-spec list_resources(client(), timeout()) -> {ok, [map()]} | {error, term()}.
+list_resources(Client, Timeout) ->
+    gen_server:call(Client, list_resources, Timeout).
 
 -spec read_resource(client(), binary()) -> {ok, map()} | {error, term()}.
 read_resource(Client, Uri) when is_binary(Uri) ->
-    gen_server:call(Client, {read_resource, Uri}).
+    read_resource(Client, Uri, 10000).
+
+-spec read_resource(client(), binary(), timeout()) -> {ok, map()} | {error, term()}.
+read_resource(Client, Uri, Timeout) when is_binary(Uri) ->
+    gen_server:call(Client, {read_resource, Uri}, Timeout).
 
 -spec list_prompts(client()) -> {ok, [map()]} | {error, term()}.
 list_prompts(Client) ->
-    gen_server:call(Client, list_prompts).
+    list_prompts(Client, 5000).
+
+-spec list_prompts(client(), timeout()) -> {ok, [map()]} | {error, term()}.
+list_prompts(Client, Timeout) ->
+    gen_server:call(Client, list_prompts, Timeout).
 
 -spec get_prompt(client(), binary()) -> {ok, map()} | {error, term()}.
 get_prompt(Client, Name) when is_binary(Name) ->
@@ -127,15 +167,125 @@ get_prompt(Client, Name) when is_binary(Name) ->
 
 -spec get_prompt(client(), binary(), map()) -> {ok, map()} | {error, term()}.
 get_prompt(Client, Name, Arguments) when is_binary(Name), is_map(Arguments) ->
-    gen_server:call(Client, {get_prompt, Name, Arguments}).
+    get_prompt(Client, Name, Arguments, 10000).
+
+-spec get_prompt(client(), binary(), map(), timeout()) -> {ok, map()} | {error, term()}.
+get_prompt(Client, Name, Arguments, Timeout) when is_binary(Name), is_map(Arguments) ->
+    gen_server:call(Client, {get_prompt, Name, Arguments}, Timeout).
 
 -spec list_tools(client()) -> {ok, [map()]} | {error, term()}.
 list_tools(Client) ->
-    gen_server:call(Client, list_tools).
+    list_tools(Client, 5000).
+
+-spec list_tools(client(), timeout()) -> {ok, [map()]} | {error, term()}.
+list_tools(Client, Timeout) ->
+    gen_server:call(Client, list_tools, Timeout).
 
 -spec call_tool(client(), binary(), map()) -> {ok, map()} | {error, term()}.
 call_tool(Client, Name, Arguments) when is_binary(Name), is_map(Arguments) ->
-    gen_server:call(Client, {call_tool, Name, Arguments}).
+    call_tool(Client, Name, Arguments, 30000).
+
+-spec call_tool(client(), binary(), map(), timeout()) -> {ok, map()} | {error, term()}.
+call_tool(Client, Name, Arguments, Timeout) when is_binary(Name), is_map(Arguments) ->
+    gen_server:call(Client, {call_tool, Name, Arguments}, Timeout).
+
+%% @doc Request completions for a prompt or resource template argument.
+%% This is a convenience function that creates a completion request with default timeout.
+-spec complete(client(), #mcp_completion_request{}) -> {ok, #mcp_completion_result{}} | {error, term()}.
+complete(Client, Request) when is_record(Request, mcp_completion_request) ->
+    complete(Client, Request, 5000).
+
+-spec complete(client(), #mcp_completion_request{}, timeout()) ->
+    {ok, #mcp_completion_result{}} | {error, term()}.
+complete(Client, Request, Timeout) when is_record(Request, mcp_completion_request) ->
+    gen_server:call(Client, {complete, Request}, Timeout).
+
+%% @doc Request completions with simplified parameters.
+%% Creates a completion request from a ref and argument, with optional context.
+-spec complete(client(), #mcp_completion_ref{}, #mcp_completion_argument{}, map() | timeout()) ->
+    {ok, #mcp_completion_result{}} | {error, term()}.
+complete(Client, Ref, Argument, ContextOrTimeout)
+  when is_record(Ref, mcp_completion_ref),
+       is_record(Argument, mcp_completion_argument),
+       is_map(ContextOrTimeout) ->
+    Request = #mcp_completion_request{ref = Ref, argument = Argument, context = ContextOrTimeout},
+    complete(Client, Request, 5000);
+complete(Client, Ref, Argument, Timeout)
+  when is_record(Ref, mcp_completion_ref),
+       is_record(Argument, mcp_completion_argument),
+       is_integer(Timeout) ->
+    Request = #mcp_completion_request{ref = Ref, argument = Argument, context = #{}},
+    complete(Client, Request, Timeout).
+
+%% @doc Send a ping request without echo data.
+%% Ping is a lightweight request to check if the connection is alive.
+%% Can be sent at any time, even before initialization.
+-spec ping(client()) -> ok | {error, term()}.
+ping(Client) ->
+    ping(Client, undefined, 5000).
+
+%% @doc Send a ping request with optional echo data.
+%% The server will echo back the same data in the response.
+%% @param Client The client process
+%% @param Echo Optional data to echo back (binary, map, or undefined)
+-spec ping(client(), term()) -> {ok, term()} | {error, term()}.
+ping(Client, Echo) ->
+    ping(Client, Echo, 5000).
+
+-spec ping(client(), term(), timeout()) -> {ok, term()} | {error, term()}.
+
+%% Task API Functions (MCP 2025-11-25 Tasks Capability)
+
+-spec create_task(client(), binary()) -> {ok, binary()} | {error, term()}.
+create_task(Client, Name) when is_binary(Name) ->
+    create_task(Client, Name, #{}).
+
+-spec create_task(client(), binary(), map()) -> {ok, binary()} | {error, term()}.
+create_task(Client, Name, Metadata) when is_binary(Name), is_map(Metadata) ->
+    create_task(Client, Name, Metadata, 5000).
+
+-spec create_task(client(), binary(), map(), timeout()) -> {ok, binary()} | {error, term()}.
+create_task(Client, Name, Metadata, Timeout) when is_binary(Name), is_map(Metadata) ->
+    gen_server:call(Client, {create_task, Name, Metadata}, Timeout).
+
+-spec list_tasks(client()) -> {ok, [map()]} | {error, term()}.
+list_tasks(Client) ->
+    list_tasks(Client, #{}).
+
+-spec list_tasks(client(), map()) -> {ok, [map()]} | {error, term()}.
+list_tasks(Client, Filter) when is_map(Filter) ->
+    list_tasks(Client, Filter, 5000).
+
+-spec list_tasks(client(), map(), timeout()) -> {ok, [map()]} | {error, term()}.
+list_tasks(Client, Filter, Timeout) when is_map(Filter) ->
+    gen_server:call(Client, {list_tasks, Filter}, Timeout).
+
+-spec get_task(client(), binary()) -> {ok, map()} | {error, term()}.
+get_task(Client, TaskId) when is_binary(TaskId) ->
+    get_task(Client, TaskId, 5000).
+
+-spec get_task(client(), binary(), timeout()) -> {ok, map()} | {error, term()}.
+get_task(Client, TaskId, Timeout) when is_binary(TaskId) ->
+    gen_server:call(Client, {get_task, TaskId}, Timeout).
+
+-spec get_task_result(client(), binary()) -> {ok, term()} | {error, term()}.
+get_task_result(Client, TaskId) when is_binary(TaskId) ->
+    get_task_result(Client, TaskId, 5000).
+
+-spec get_task_result(client(), binary(), timeout()) -> {ok, term()} | {error, term()}.
+get_task_result(Client, TaskId, Timeout) when is_binary(TaskId) ->
+    gen_server:call(Client, {get_task_result, TaskId}, Timeout).
+
+-spec cancel_task(client(), binary()) -> ok | {error, term()}.
+cancel_task(Client, TaskId) when is_binary(TaskId) ->
+    cancel_task(Client, TaskId, 5000).
+
+-spec cancel_task(client(), binary(), timeout()) -> ok | {error, term()}.
+cancel_task(Client, TaskId, Timeout) when is_binary(TaskId) ->
+    gen_server:call(Client, {cancel_task, TaskId}, Timeout).
+
+ping(Client, Echo, Timeout) ->
+    gen_server:call(Client, {ping, Echo}, Timeout).
 
 -spec stop(client()) -> ok.
 stop(Client) ->
@@ -143,27 +293,43 @@ stop(Client) ->
 
 -spec list_resource_templates(client()) -> {ok, [map()]} | {error, term()}.
 list_resource_templates(Client) ->
-    gen_server:call(Client, list_resource_templates).
+    list_resource_templates(Client, 5000).
+
+-spec list_resource_templates(client(), timeout()) -> {ok, [map()]} | {error, term()}.
+list_resource_templates(Client, Timeout) ->
+    gen_server:call(Client, list_resource_templates, Timeout).
 
 -spec subscribe_to_resource(client(), binary()) -> ok | {error, term()}.
 subscribe_to_resource(Client, Uri) when is_binary(Uri) ->
-    gen_server:call(Client, {subscribe_resource, Uri}).
+    subscribe_to_resource(Client, Uri, 5000).
+
+-spec subscribe_to_resource(client(), binary(), timeout()) -> ok | {error, term()}.
+subscribe_to_resource(Client, Uri, Timeout) when is_binary(Uri) ->
+    gen_server:call(Client, {subscribe_resource, Uri}, Timeout).
 
 -spec unsubscribe_from_resource(client(), binary()) -> ok | {error, term()}.
 unsubscribe_from_resource(Client, Uri) when is_binary(Uri) ->
-    gen_server:call(Client, {unsubscribe_resource, Uri}).
+    unsubscribe_from_resource(Client, Uri, 5000).
+
+-spec unsubscribe_from_resource(client(), binary(), timeout()) -> ok | {error, term()}.
+unsubscribe_from_resource(Client, Uri, Timeout) when is_binary(Uri) ->
+    gen_server:call(Client, {unsubscribe_resource, Uri}, Timeout).
 
 -spec with_batch(client(), fun((batch_id()) -> Result)) -> Result when Result :: term().
 with_batch(Client, BatchFun) when is_function(BatchFun, 1) ->
+    with_batch(Client, BatchFun, 5000).
+
+-spec with_batch(client(), fun((batch_id()) -> Result), timeout()) -> Result when Result :: term().
+with_batch(Client, BatchFun, Timeout) when is_function(BatchFun, 1) ->
     BatchId = make_ref(),
-    ok = gen_server:call(Client, {start_batch, BatchId}),
+    ok = gen_server:call(Client, {start_batch, BatchId}, Timeout),
     try
         Result = BatchFun(BatchId),
-        {ok, _Count} = gen_server:call(Client, {execute_batch, BatchId}),
+        {ok, _Count} = gen_server:call(Client, {execute_batch, BatchId}, Timeout),
         Result
     catch
         Class:Reason:Stacktrace ->
-            gen_server:call(Client, {cancel_batch, BatchId}),
+            gen_server:call(Client, {cancel_batch, BatchId}, Timeout),
             erlang:raise(Class, Reason, Stacktrace)
     end.
 
@@ -171,27 +337,53 @@ with_batch(Client, BatchFun) when is_function(BatchFun, 1) ->
     {ok, request_id()} | {error, term()}.
 send_batch_request(Client, BatchId, Method, Params)
   when is_reference(BatchId), is_binary(Method), is_map(Params) ->
-    gen_server:call(Client, {add_to_batch, BatchId, Method, Params}).
+    send_batch_request(Client, BatchId, Method, Params, 5000).
+
+-spec send_batch_request(client(), batch_id(), binary(), map(), timeout()) ->
+    {ok, request_id()} | {error, term()}.
+send_batch_request(Client, BatchId, Method, Params, Timeout)
+  when is_reference(BatchId), is_binary(Method), is_map(Params) ->
+    gen_server:call(Client, {add_to_batch, BatchId, Method, Params}, Timeout).
 
 -spec set_notification_handler(client(), binary(), notification_handler()) -> ok.
 set_notification_handler(Client, Method, Handler) when is_binary(Method) ->
-    gen_server:call(Client, {set_notification_handler, Method, Handler}).
+    set_notification_handler(Client, Method, Handler, 5000).
+
+-spec set_notification_handler(client(), binary(), notification_handler(), timeout()) -> ok.
+set_notification_handler(Client, Method, Handler, Timeout) when is_binary(Method) ->
+    gen_server:call(Client, {set_notification_handler, Method, Handler}, Timeout).
 
 -spec remove_notification_handler(client(), binary()) -> ok.
 remove_notification_handler(Client, Method) when is_binary(Method) ->
-    gen_server:call(Client, {remove_notification_handler, Method}).
+    remove_notification_handler(Client, Method, 5000).
+
+-spec remove_notification_handler(client(), binary(), timeout()) -> ok.
+remove_notification_handler(Client, Method, Timeout) when is_binary(Method) ->
+    gen_server:call(Client, {remove_notification_handler, Method}, Timeout).
 
 -spec set_sampling_handler(client(), sampling_handler()) -> ok.
 set_sampling_handler(Client, Handler) ->
-    gen_server:call(Client, {set_sampling_handler, Handler}).
+    set_sampling_handler(Client, Handler, 5000).
+
+-spec set_sampling_handler(client(), sampling_handler(), timeout()) -> ok.
+set_sampling_handler(Client, Handler, Timeout) ->
+    gen_server:call(Client, {set_sampling_handler, Handler}, Timeout).
 
 -spec remove_sampling_handler(client()) -> ok.
 remove_sampling_handler(Client) ->
-    gen_server:call(Client, remove_sampling_handler).
+    remove_sampling_handler(Client, 5000).
+
+-spec remove_sampling_handler(client(), timeout()) -> ok.
+remove_sampling_handler(Client, Timeout) ->
+    gen_server:call(Client, remove_sampling_handler, Timeout).
 
 -spec set_strict_mode(client(), boolean()) -> ok.
 set_strict_mode(Client, Enabled) when is_boolean(Enabled) ->
-    gen_server:call(Client, {set_strict_mode, Enabled}).
+    set_strict_mode(Client, Enabled, 5000).
+
+-spec set_strict_mode(client(), boolean(), timeout()) -> ok.
+set_strict_mode(Client, Enabled, Timeout) when is_boolean(Enabled) ->
+    gen_server:call(Client, {set_strict_mode, Enabled}, Timeout).
 
 %%====================================================================
 %% gen_server callbacks
@@ -229,6 +421,10 @@ handle_call({initialize, Capabilities, _Options}, From, #state{phase = pre_initi
 handle_call({initialize, _Capabilities, _Options}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {invalid_phase, Phase, <<"Initialize must be called in pre_initialization phase">>}}),
     {noreply, State};
+
+%% Get timeout - can be called at any time
+handle_call(get_timeout, _From, State) ->
+    {reply, {ok, State#state.timeout}, State};
 
 %% All capability requests require initialized phase
 handle_call(list_resources, From, #state{phase = initialized} = State) ->
@@ -270,6 +466,20 @@ handle_call(list_tools, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
 
+%% Completion endpoint (Gap #11: MCP 2025-11-25 Completion API)
+handle_call({complete, Request}, From, #state{phase = initialized} = State) ->
+    %% Encode request to JSON-RPC params
+    Params = #{
+        <<"ref">> => encode_completion_ref(Request#mcp_completion_request.ref),
+        <<"argument">> => encode_completion_argument(Request#mcp_completion_request.argument),
+        <<"context">> => Request#mcp_completion_request.context
+    },
+    send_request(State, ?MCP_METHOD_COMPLETION_COMPLETE, Params, {complete, From});
+
+handle_call({complete, _}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
 %% Call tool requires initialized phase
 handle_call({call_tool, Name, Arguments}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, tools) of
@@ -283,6 +493,15 @@ handle_call({call_tool, Name, Arguments}, From, #state{phase = initialized} = St
 handle_call({call_tool, _, _}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
+
+%% Ping - allowed at any time (before or after initialization)
+%% MCP 2025-11-25: Ping is used for connection health checks
+handle_call({ping, Echo}, From, State) ->
+    Params = case Echo of
+        undefined -> #{};
+        _ -> #{<<"echo">> => Echo}
+    end,
+    send_request(State, ?MCP_METHOD_PING, Params, {ping, From});
 
 %% List prompts requires initialized phase
 handle_call(list_prompts, From, #state{phase = initialized} = State) ->
@@ -355,6 +574,14 @@ handle_call({unsubscribe_resource, Uri}, From, #state{phase = initialized} = Sta
     end;
 
 handle_call({unsubscribe_resource, _Uri}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% List roots requires initialized phase
+handle_call(list_roots, From, #state{phase = initialized} = State) ->
+    send_request(State, <<"roots/list">>, #{}, {list_roots, From});
+
+handle_call(list_roots, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
 
@@ -713,6 +940,28 @@ spawn_handler({Module, Function}, Method, Params) ->
 spawn_handler(Pid, Method, Params) when is_pid(Pid) ->
     Pid ! {sampling_request, Method, Params},
     ok.
+
+%%====================================================================
+%% Completion Encoding Functions (Gap #11)
+%%====================================================================
+
+%% @doc Encode completion ref to map for JSON serialization
+-spec encode_completion_ref(#mcp_completion_ref{}) -> map().
+encode_completion_ref(#mcp_completion_ref{type = Type, name = Name}) ->
+    TypeBin = case Type of
+        ref_prompt -> <<"ref/prompt">>;
+        ref_resource_template -> <<"ref/resource_template">>
+    end,
+    #{<<"type">> => TypeBin, <<"name">> => Name}.
+
+%% @doc Encode completion argument to map for JSON serialization
+-spec encode_completion_argument(#mcp_completion_argument{}) -> map().
+encode_completion_argument(#mcp_completion_argument{name = Name, value = Value}) ->
+    #{<<"name">> => Name, <<"value">> => Value}.
+
+%%====================================================================
+%% Batch Request Execution
+%%====================================================================
 
 -spec execute_batch_requests([{request_id(), binary(), map()}], state()) -> ok.
 execute_batch_requests([], _State) ->
