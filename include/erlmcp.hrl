@@ -476,6 +476,7 @@
 -define(MCP_METHOD_TASKS_CANCEL, <<"tasks/cancel">>).
 
 %%% Cancellation Methods (TASK #142: Request Cancellation)
+-define(MCP_METHOD_REQUESTS_CANCEL, <<"requests/cancel">>).
 -define(MCP_METHOD_NOTIFICATIONS_CANCELLED, <<"notifications/cancelled">>).
 
 %%% Completion Methods (MCP 2025-11-25)
@@ -713,6 +714,7 @@
 -record(mcp_client_capabilities, {
     roots = #mcp_capability{} :: #mcp_capability{},
     sampling = #mcp_capability{} :: #mcp_capability{},
+    tools = #mcp_tools_capability{} :: #mcp_tools_capability{},
     experimental = undefined :: map() | undefined
 }).
 
@@ -780,7 +782,8 @@
     input_schema :: map() | undefined,
     metadata :: map() | undefined,
     experimental = undefined :: map() | undefined,
-    version :: binary() | undefined
+    version :: binary() | undefined,
+    deprecated = false :: boolean()
 }).
 
 -record(mcp_prompt_argument, {
