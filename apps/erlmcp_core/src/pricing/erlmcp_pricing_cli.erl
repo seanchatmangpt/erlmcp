@@ -44,11 +44,6 @@ check_usage(User) ->
 %% @doc Upgrade user to new plan
 -spec upgrade(User :: binary(), NewPlan :: atom()) -> ok | {error, term()}.
 upgrade(User, NewPlan) ->
-    case erlmcp_pricing_upgrade:upgrade(User, NewPlan) of
-        ok ->
-            io:format("Successfully upgraded ~s to ~p~n", [User, NewPlan]),
-            ok;
-        {error, Reason} ->
-            io:format("Upgrade failed: ~p~n", [Reason]),
-            {error, Reason}
-    end.
+    % TODO: Implement pricing upgrade logic
+    io:format("Upgrade not yet implemented: ~s to ~p~n", [User, NewPlan]),
+    {error, not_implemented}.

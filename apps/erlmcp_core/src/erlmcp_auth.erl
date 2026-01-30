@@ -35,6 +35,7 @@
     add_role/2,
     add_permission/3,
     remove_permission/3,
+    is_rate_limiter_enabled/0,
     stop/0
 ]).
 

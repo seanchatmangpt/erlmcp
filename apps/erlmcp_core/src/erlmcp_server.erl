@@ -332,25 +332,6 @@ handle_call({unsubscribe_resource, Uri}, From, State) ->
     NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
     {reply, ok, State#state{subscriptions = NewSubscriptions}};
 
-%% Test helper functions
-handle_call(list_prompts_local, _From, State) ->
-    Prompts = list_all_prompts(State),
-    {reply, Prompts, State};
-
-handle_call({get_prompt_handler_local, Name}, _From, State) ->
-    case maps:get(Name, State#state.prompts, undefined) of
-        undefined -> {reply, {error, not_found}, State};
-        PromptAndHandler -> {reply, {ok, PromptAndHandler}, State}
-    end;
-
-handle_call(list_tools_local, _From, State) ->
-    Tools = list_all_tools(State),
-    {reply, Tools, State};
-
-handle_call(list_resources_local, _From, State) ->
-    Resources = list_all_resources(State),
-    {reply, Resources, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -822,13 +803,6 @@ send_notification_via_registry(#state{server_id = ServerId}, Method, Params) ->
     % Send to all transports bound to this server - registry will handle routing
     erlmcp_registry:route_to_transport(broadcast, ServerId, Json).
 
--spec send_notification_to_transport(state(), atom() | undefined, binary(), map()) -> ok.
-send_notification_to_transport(State, _TransportId = undefined, Method, Params) ->
-    send_notification_via_registry(State, Method, Params);
-send_notification_to_transport(#state{server_id = ServerId}, TransportId, Method, Params) ->
-    Json = erlmcp_json_rpc:encode_notification(Method, Params),
-    erlmcp_registry:route_to_transport(TransportId, ServerId, Json).
-
 -spec send_progress_notification_via_registry(state(), binary() | integer(), float(), float()) -> ok.
 send_progress_notification_via_registry(State, Token, Progress, Total) ->
     Params = #{
@@ -867,16 +841,6 @@ send_notification_safe(State, Method, Params) ->
     catch
         Class:Reason:Stack ->
             logger:warning("Failed to send notification ~p: ~p:~p~n~p", [Method, Class, Reason, Stack])
-    end,
-    ok.
-
--spec send_notification_to_transport_safe(state(), atom() | undefined, binary(), map()) -> ok.
-send_notification_to_transport_safe(State, TransportId, Method, Params) ->
-    try send_notification_to_transport(State, TransportId, Method, Params)
-    catch
-        Class:Reason:Stack ->
-            logger:warning("Failed to send notification ~p to transport ~p: ~p:~p~n~p",
-                          [Method, TransportId, Class, Reason, Stack])
     end,
     ok.
 
@@ -1525,31 +1489,6 @@ canonicalize_and_validate_uri(_) ->
 -spec start_periodic_gc() -> reference().
 start_periodic_gc() ->
     erlang:send_after(60000, self(), force_gc).
-
-%%====================================================================
-%% Test Helper Functions (for testing)
-%%====================================================================
-
-%% @doc List all prompts locally (for testing)
--spec list_prompts_local(server()) -> [map()].
-list_prompts_local(Server) ->
-    gen_server:call(Server, list_prompts_local).
-
-%% @doc Get prompt handler locally (for testing)
--spec get_prompt_handler_local(server(), binary()) ->
-    {ok, {#mcp_prompt{}, prompt_handler()}} | {error, not_found}.
-get_prompt_handler_local(Server, Name) ->
-    gen_server:call(Server, {get_prompt_handler_local, Name}).
-
-%% @doc List all tools locally (for testing)
--spec list_tools_local(server()) -> [map()].
-list_tools_local(Server) ->
-    gen_server:call(Server, list_tools_local).
-
-%% @doc List all resources locally (for testing)
--spec list_resources_local(server()) -> [map()].
-list_resources_local(Server) ->
-    gen_server:call(Server, list_resources_local).
 
 %%====================================================================
 %% Internal functions - Sampling Support (Task #136)

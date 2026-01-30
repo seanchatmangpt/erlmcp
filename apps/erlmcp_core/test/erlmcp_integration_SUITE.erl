@@ -17,7 +17,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp/include/erlmcp.hrl").
+-include_lib("erlmcp_core/include/erlmcp.hrl").
 
 %% Suite callbacks
 -export([all/0, groups/0, init_per_suite/1, end_per_suite/1,

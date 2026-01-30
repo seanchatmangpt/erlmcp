@@ -21,7 +21,8 @@
     add_headers/2,
     get_default_headers/0,
     configure/1,
-    wrap_handler/1
+    wrap_handler/1,
+    execute/2  % Cowboy middleware callback
 ]).
 
 %% Types

@@ -604,13 +604,18 @@ receipt_filename(Timestamp) ->
 find_receipt_file(ReceiptId) ->
     ReceiptIdStr = binary_to_list(ReceiptId),
 
-    case filelib:find_files(?RECEIPTS_BASE_DIR, "*.receipt.json") of
-        [] -> {error, not_found};
-        Files ->
-            case [F || F <- Files, string:str(F, ReceiptIdStr) > 0] of
+    % Use file:list_dir since filelib:find_files doesn't exist
+    case file:list_dir(?RECEIPTS_BASE_DIR) of
+        {ok, Files} ->
+            FilteredFiles = [F || F <- Files,
+                                  lists:suffix(".receipt.json", F),
+                                  string:str(F, ReceiptIdStr) > 0],
+            case FilteredFiles of
                 [] -> {error, not_found};
-                [File | _] -> {ok, File}
-            end
+                [File | _] -> {ok, filename:join(?RECEIPTS_BASE_DIR, File)}
+            end;
+        {error, _} ->
+            {error, not_found}
     end.
 
 %% Read receipt from file
