@@ -10,7 +10,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_PORT, 9091).
+-define(TEST_PORT, 18080).
 -define(LOCALHOST, "http://localhost:" ++ integer_to_list(?TEST_PORT)).
 
 %%====================================================================

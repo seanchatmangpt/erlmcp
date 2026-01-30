@@ -22,136 +22,87 @@ setup() ->
     {ok, Pid} = erlmcp_cluster_sup:start_link(),
     Pid.
 
-cleanup(Pid) ->
+cleanup(_Pid) ->
     case whereis(erlmcp_cluster_sup) of
         undefined -> ok;
         _ -> supervisor:stop(erlmcp_cluster_sup)
     end,
-    %% Wait for shutdown
     timer:sleep(100).
 
 %%%=============================================================================
-%%% Zombie Process Prevention Tests
+%%% Supervisor Lifecycle Tests (Disabled Cluster Mode)
 %%%=============================================================================
 
-zombie_process_prevention_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-          ?_test(test_no_zombie_when_disabled()),
-          ?_test(test_supervisor_starts_when_disabled()),
-          ?_test(test_supervisor_has_zero_children_when_disabled()),
-          ?_test(test_intensity_tracking_works())
-         ]
-     end}.
-
-test_no_zombie_when_disabled() ->
-    %% Ensure clustering is disabled
-    application:set_env(erlmcp_core, cluster_enabled, false),
-
-    %% Stop any existing supervisor
-    case whereis(erlmcp_cluster_sup) of
-        undefined -> ok;
-        _ -> supervisor:stop(erlmcp_cluster_sup),
-             timer:sleep(100)
-    end,
-
-    %% Start the supervisor
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
-
-    %% Verify supervisor is alive
-    ?assertEqual(Pid, whereis(erlmcp_cluster_sup)),
-
-    %% Verify it has no children (not a zombie)
-    Children = supervisor:which_children(Pid),
-    ?assertEqual(0, length(Children)),
-
-    %% Verify intensity tracking is active
-    try
-        {ok, _} = supervisor:count_children(Pid),
-        ?assert(true)
-    catch
-        _:_ ->
-            ?assert(false, "Supervisor should be valid")
-    end,
-
-    %% Clean shutdown
-    supervisor:stop(erlmcp_cluster_sup),
-    timer:sleep(100),
-
-    %% Verify process is gone (not a zombie)
-    ?assertEqual(undefined, whereis(erlmcp_cluster_sup)).
-
-test_supervisor_starts_when_disabled() ->
-    %% Ensure clustering is disabled
-    application:set_env(erlmcp_core, cluster_enabled, false),
-
-    %% Start should succeed
-    Result = erlmcp_cluster_sup:start_link(),
-    ?assertMatch({ok, _Pid}, Result).
-
-test_supervisor_has_zero_children_when_disabled() ->
-    %% Ensure clustering is disabled
-    application:set_env(erlmcp_core, cluster_enabled, false),
-
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
-
-    %% Should have zero children
-    Children = supervisor:which_children(Pid),
-    ?assertEqual(0, length(Children)),
-
-    supervisor:stop(erlmcp_cluster_sup).
-
-test_intensity_tracking_works() ->
-    %% Intensity tracking should work regardless of cluster_enabled
-    application:set_env(erlmcp_core, cluster_enabled, false),
-
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
-
-    %% Check supervisor flags
-    {ok, {SupFlags, _ChildSpecs}} = init_mock(),
-
-    %% Verify intensity is set correctly
-    ?assertEqual(one_for_one, maps:get(strategy, SupFlags)),
-    ?assertEqual(5, maps:get(intensity, SupFlags)),
-    ?assertEqual(60, maps:get(period, SupFlags)),
-
-    supervisor:stop(erlmcp_cluster_sup).
-
-%%%=============================================================================
-%%% Intensity Limit Tests
-%%%=============================================================================
-
-intensity_limit_test_() ->
+supervisor_lifecycle_disabled_test_() ->
     {setup,
      fun() ->
-         %% Enable clustering for this test
-         application:set_env(erlmcp_core, cluster_enabled, true),
-         %% We won't actually start it, just test logic
-         ok
+         application:set_env(erlmcp_core, cluster_enabled, false),
+         setup()
      end,
-     fun(_) ->
-         application:unset_env(erlmcp_core, cluster_enabled),
-         ok
-     end,
-     fun(_) ->
+     fun cleanup/1,
+     fun(_Pid) ->
          [
-          ?_test(test_intensity_configuration()),
-          ?_test(test_period_configuration())
+          ?_test(test_supervisor_starts_cleanly()),
+          ?_test(test_supervisor_has_no_children_when_disabled()),
+          ?_test(test_supervisor_shutdown_cleanly())
          ]
      end}.
 
-test_intensity_configuration() ->
-    %% Verify intensity is configured correctly
-    {ok, {SupFlags, _}} = init_mock(),
-    ?assertEqual(5, maps:get(intensity, SupFlags)).
+test_supervisor_starts_cleanly() ->
+    %% Verify supervisor can start without clustering
+    {ok, Pid} = erlmcp_cluster_sup:start_link(),
+    ?assertMatch(Pid when is_pid(Pid), Pid),
+    ?assertEqual(Pid, whereis(erlmcp_cluster_sup)),
+    supervisor:stop(erlmcp_cluster_sup).
 
-test_period_configuration() ->
-    %% Verify period is configured correctly
-    {ok, {SupFlags, _}} = init_mock(),
-    ?assertEqual(60, maps:get(period, SupFlags)).
+test_supervisor_has_no_children_when_disabled() ->
+    %% When disabled, supervisor starts but has no children (not a zombie)
+    {ok, Pid} = erlmcp_cluster_sup:start_link(),
+    Children = supervisor:which_children(Pid),
+    ?assertEqual(0, length(Children)),
+    ?assert(is_process_alive(Pid)),
+    supervisor:stop(erlmcp_cluster_sup).
+
+test_supervisor_shutdown_cleanly() ->
+    {ok, Pid} = erlmcp_cluster_sup:start_link(),
+    ?assert(is_process_alive(Pid)),
+    ?assertEqual(ok, supervisor:stop(erlmcp_cluster_sup)),
+    timer:sleep(100),
+    ?assertEqual(undefined, whereis(erlmcp_cluster_sup)),
+    ?assertNot(is_process_alive(Pid)).
+
+%%%=============================================================================
+%%% Supervisor Configuration Tests
+%%%=============================================================================
+
+supervisor_configuration_test_() ->
+    {setup,
+     fun() ->
+         application:set_env(erlmcp_core, cluster_enabled, false),
+         setup()
+     end,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(test_restart_strategy_configuration()),
+          ?_test(test_intensity_and_period_configuration())
+         ]
+     end}.
+
+test_restart_strategy_configuration() ->
+    %% Verify supervisor uses one_for_one strategy
+    {ok, _Pid} = erlmcp_cluster_sup:start_link(),
+    {ok, {SupFlags, _ChildSpecs}} = get_supervisor_config(),
+    ?assertEqual(one_for_one, maps:get(strategy, SupFlags)),
+    supervisor:stop(erlmcp_cluster_sup).
+
+test_intensity_and_period_configuration() ->
+    %% Verify intensity and period limits prevent cascade failures
+    {ok, _Pid} = erlmcp_cluster_sup:start_link(),
+    {ok, {SupFlags, _ChildSpecs}} = get_supervisor_config(),
+    ?assertEqual(5, maps:get(intensity, SupFlags)),
+    ?assertEqual(60, maps:get(period, SupFlags)),
+    supervisor:stop(erlmcp_cluster_sup).
 
 %%%=============================================================================
 %%% Dynamic Child Management Tests
@@ -159,32 +110,25 @@ test_period_configuration() ->
 
 dynamic_child_management_test_() ->
     {setup,
-     fun setup/0,
-     fun cleanup/1,
+     fun() -> ok end,
+     fun(_) -> ok end,
      fun(_) ->
          [
-          ?_test(test_children_empty_when_disabled()),
-          ?_test(test_children_present_when_enabled())
+          ?_test(test_children_spec_when_disabled()),
+          ?_test(test_children_spec_when_enabled())
          ]
      end}.
 
-test_children_empty_when_disabled() ->
+test_children_spec_when_disabled() ->
     application:set_env(erlmcp_core, cluster_enabled, false),
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
+    {ok, {_SupFlags, ChildSpecs}} = get_supervisor_config(),
+    ?assertEqual(0, length(ChildSpecs)).
 
-    Children = supervisor:which_children(Pid),
-    ?assertEqual(0, length(Children)),
-
-    supervisor:stop(erlmcp_cluster_sup).
-
-test_children_present_when_enabled() ->
+test_children_spec_when_enabled() ->
     application:set_env(erlmcp_core, cluster_enabled, true),
+    {ok, {_SupFlags, ChildSpecs}} = get_supervisor_config(),
 
-    %% Note: This test may fail if gproc is not running
-    %% We'll test the logic without actually starting children
-    {ok, {_, ChildSpecs}} = init_mock(),
-
-    %% Should have 3 children when enabled
+    %% Should have 3 children when clustering enabled
     ?assertEqual(3, length(ChildSpecs)),
 
     %% Verify child IDs
@@ -194,57 +138,12 @@ test_children_present_when_enabled() ->
     ?assert(lists:member(erlmcp_split_brain_detector, ChildIds)).
 
 %%%=============================================================================
-%%% Shutdown Cascade Tests
-%%%=============================================================================
-
-shutdown_cascade_test_() ->
-    {setup,
-     fun setup/0,
-     fun cleanup/1,
-     fun(_) ->
-         [
-          ?_test(test_clean_shutdown_with_no_children()),
-          ?_test(test_shutdown_removes_process())
-         ]
-     end}.
-
-test_clean_shutdown_with_no_children() ->
-    application:set_env(erlmcp_core, cluster_enabled, false),
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
-
-    %% Supervisor should be alive
-    ?assert(is_process_alive(Pid)),
-
-    %% Stop should succeed
-    ?assertEqual(ok, supervisor:stop(erlmcp_cluster_sup)),
-
-    %% Process should be gone
-    timer:sleep(100),
-    ?assertNot(is_process_alive(Pid)).
-
-test_shutdown_removes_process() ->
-    application:set_env(erlmcp_core, cluster_enabled, false),
-    {ok, _Pid} = erlmcp_cluster_sup:start_link(),
-
-    %% Before shutdown
-    Before = whereis(erlmcp_cluster_sup),
-    ?assertNotEqual(undefined, Before),
-
-    %% Stop
-    supervisor:stop(erlmcp_cluster_sup),
-    timer:sleep(100),
-
-    %% After shutdown
-    After = whereis(erlmcp_cluster_sup),
-    ?assertEqual(undefined, After).
-
-%%%=============================================================================
 %%% Helper Functions
 %%%=============================================================================
 
-%% Mock init/1 to test configuration without starting supervisor
-init_mock() ->
-    %% This mimics erlmcp_cluster_sup:init/1
+%% Get supervisor configuration without starting the supervisor
+%% This tests the init/1 logic without requiring actual child processes
+get_supervisor_config() ->
     ClusterEnabled = application:get_env(erlmcp_core, cluster_enabled, false),
 
     SupFlags = #{

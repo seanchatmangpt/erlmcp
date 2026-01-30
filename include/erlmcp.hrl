@@ -152,6 +152,11 @@
 -define(MCP_ERROR_NOTIFICATION_NOT_DELIVERED, -32097).
 -define(MCP_ERROR_PROGRESS_VALUE_INVALID, -32098).
 -define(MCP_ERROR_PROGRESS_TOTAL_INVALID, -32099).
+%% Completion errors (-32110 to -32113)
+-define(MCP_ERROR_COMPLETION_NOT_FOUND, -32110).
+-define(MCP_ERROR_INVALID_COMPLETION_REFERENCE, -32111).
+-define(MCP_ERROR_INVALID_COMPLETION_ARGUMENT, -32112).
+-define(MCP_ERROR_COMPLETION_FAILED, -32113).
 -define(MCP_ERROR_CUSTOM_SERVER_ERROR, -32000).  %% Generic fallback
 
 %%% Convenience list of all valid error codes for validation
@@ -271,6 +276,11 @@
     -32097,  % Notification not delivered
     -32098,  % Progress value invalid
     -32099,  % Progress total invalid
+    %% Completion errors (-32110 to -32113)
+    -32110,  % Completion not found
+    -32111,  % Invalid completion reference
+    -32112,  % Invalid completion argument
+    -32113,  % Completion failed
     -32000   % Custom server error (generic fallback)
 ]).
 
@@ -399,6 +409,11 @@
 -define(MCP_MSG_NOTIFICATION_NOT_DELIVERED, <<"Notification not delivered">>).
 -define(MCP_MSG_PROGRESS_VALUE_INVALID, <<"Progress value invalid">>).
 -define(MCP_MSG_PROGRESS_TOTAL_INVALID, <<"Progress total invalid">>).
+%% Completion error messages (-32110 to -32113)
+-define(MCP_MSG_COMPLETION_NOT_FOUND, <<"Completion not found">>).
+-define(MCP_MSG_INVALID_COMPLETION_REFERENCE, <<"Invalid completion reference">>).
+-define(MCP_MSG_INVALID_COMPLETION_ARGUMENT, <<"Invalid completion argument">>).
+-define(MCP_MSG_COMPLETION_FAILED, <<"Completion failed">>).
 -define(MCP_MSG_CUSTOM_SERVER_ERROR, <<"Custom server error">>).
 
 %%% Legacy Parameter Error Messages (kept for backward compatibility)
@@ -712,10 +727,10 @@
 
 %% Client capabilities sent during initialize
 -record(mcp_client_capabilities, {
-    roots = #mcp_capability{} :: #mcp_capability{},
-    sampling = #mcp_sampling_capability{} :: #mcp_sampling_capability{},
-    tools = #mcp_tools_capability{} :: #mcp_tools_capability{},
-    experimental = undefined :: map() | undefined
+    roots = undefined :: map() | undefined,  % NEW: Workspace roots
+    sampling = undefined :: #mcp_sampling_capability{} | undefined,  % NEW
+    experimental = undefined :: map() | undefined,  % NEW: Features testing
+    tools = #mcp_tools_capability{} :: #mcp_tools_capability{}
 }).
 
 %% Server capabilities sent in initialize response
@@ -726,6 +741,7 @@
     logging = #mcp_logging_capability{} :: #mcp_logging_capability{},
     sampling = #mcp_sampling_capability{} :: #mcp_sampling_capability{},
     roots = #mcp_roots_capability{} :: #mcp_roots_capability{},
+    completions = undefined :: #mcp_capability{} | undefined,
     experimental = undefined :: map() | undefined
 }).
 
@@ -895,10 +911,251 @@
     analyzed_at :: integer()
 }).
 
+%%% MCP Task Record (for erlmcp_tasks)
+-record(mcp_task, {
+    id :: binary(),
+    status :: pending | processing | completed | failed | cancelled,
+    action :: map(),
+    metadata :: map(),
+    result :: term() | undefined,
+    error :: #mcp_error{} | undefined,
+    created_at :: integer(),
+    updated_at :: integer(),
+    expires_at :: integer() | undefined,
+    client_pid :: pid() | undefined,
+    worker_pid :: pid() | undefined,
+    worker_monitor :: reference() | undefined,
+    progress_token :: reference() | undefined,
+    progress :: number() | undefined,
+    total :: number() | undefined,
+    timeout_ms :: integer(),
+    timer_ref :: reference() | undefined
+}).
+
 %%% Request ID Space Monitoring (RPN 720: Request ID Overflow Fix)
 -define(MAX_SAFE_REQUEST_ID, 1152921504606846975).  % 2^60 - 1
 -define(ID_WARNING_THRESHOLD, 922337203685477580).  % 80% of max
 -define(ID_CRITICAL_THRESHOLD, 1037629354146165277). % 90% of max
 -define(ID_RESERVED_THRESHOLD, 1106804644422573050). % 96% of max
+
+%%% Security: Prompt Injection Prevention (Agent #6: Security Fix)
+-define(MAX_PROMPT_SIZE, 1048576).  %% 1 MB max prompt size
+-define(MAX_TEMPLATE_DEPTH, 10).     %% Max nested template depth
+-define(MAX_VARIABLE_NAME_LEN, 64).  %% Max variable name length
+-define(ALLOWED_VAR_NAME, "^[a-zA-Z_][a-zA-Z0-9_]*$"). %% Allowed variable names
+
+%%% Security: Rate Limiting
+-define(MAX_PROMPT_COMPILES_PER_MINUTE, 100).
+
+%%% Security: Error Codes
+-define(MCP_ERROR_PROMPT_TOO_LARGE, -32101).
+-define(MCP_ERROR_DANGEROUS_PATTERN_DETECTED, -32102).
+-define(MCP_ERROR_INVALID_VARIABLE_NAME, -32103).
+-define(MCP_ERROR_PROMPT_RATE_LIMITED, -32104).
+
+-define(MCP_MSG_PROMPT_TOO_LARGE, <<"Prompt template exceeds maximum size">>).
+-define(MCP_MSG_DANGEROUS_PATTERN_DETECTED, <<"Dangerous pattern detected in prompt">>).
+-define(MCP_MSG_INVALID_VARIABLE_NAME, <<"Invalid variable name">>).
+-define(MCP_MSG_PROMPT_RATE_LIMITED, <<"Prompt compilation rate limit exceeded">>).
+
+%%% JSON Schema Validation Error Types (Jesse-compatible)
+%%% These are used by validation modules and tests for JSON Schema validation
+%%% Based on jesse error format and JSON Schema Draft 4/7/2019-09 specifications
+
+%% Validation error atoms (from jesse)
+-define(JESSE_ERR_MISSING_REQUIRED_PROPERTY, missing_required_property).
+-define(JESSE_ERR_WRONG_TYPE, wrong_type).
+-define(JESSE_ERR_NOT_IN_ENUM, not_in_enum).
+-define(JESSE_ERR_NOT_UNIQUE, not_unique).
+-define(JESSE_ERR_WRONG_LENGTH, wrong_length).
+-define(JESSE_ERR_WRONG_SIZE, wrong_size).
+-define(JESSE_ERR_MISSING_DEPENDENCY, missing_dependency).
+-define(JESSE_ERR_NO_MATCH, no_match).
+-define(JESSE_ERR_NO_EXTRA_PROPERTIES, no_extra_properties).
+-define(JESSE_ERR_NO_EXTRA_ITEMS, no_extra_items).
+-define(JESSE_ERR_NOT_IN_RANGE, not_in_range).
+-define(JESSE_ERR_TOO_MANY_PROPERTIES, too_many_properties).
+-define(JESSE_ERR_TOO_FEW_PROPERTIES, too_few_properties).
+-define(JESSE_ERR_ALL_SCHEMAS_NOT_VALID, all_schemas_not_valid).
+-define(JESSE_ERR_NOT_MULTIPLE_OF, not_multiple_of).
+-define(JESSE_ERR_NOT_ONE_SCHEMA_VALID, not_one_schema_valid).
+-define(JESSE_ERR_MORE_THAN_ONE_SCHEMA_VALID, more_than_one_schema_valid).
+-define(JESSE_ERR_DATA_INVALID, data_invalid).
+-define(JESSE_ERR_SCHEMA_INVALID, schema_invalid).
+-define(JESSE_ERR_DATA_ERROR, data_error).
+-define(JESSE_ERR_SCHEMA_ERROR, schema_error).
+-define(JESSE_ERR_PARSE_ERROR, parse_error).
+
+%% Validation error categories (for better error handling)
+-define(JESSE_CATEGORY_DATA, data).
+-define(JESSE_CATEGORY_SCHEMA, schema).
+-define(JESSE_CATEGORY_PARSE, parse).
+
+%% Validation field names
+-define(JESSE_FIELD_PATH, path).
+-define(JESSE_FIELD_MESSAGE, message).
+-define(JESSE_FIELD_EXPECTED, expected).
+-define(JESSE_FIELD_ACTUAL, actual).
+-define(JESSE_FIELD_SCHEMA, schema).
+-define(JESSE_FIELD_ERROR, error).
+-define(JESSE_FIELD_DATA, data).
+
+%% Validation error tuples (for pattern matching)
+-define(JESSE_MISSING_REQUIRED(Property), {missing_required_property, Property}).
+-define(JESSE_WRONG_TYPE(ExpectedType), {wrong_type, ExpectedType}).
+-define(JESSE_NOT_IN_ENUM(AllowedValues), {not_in_enum, AllowedValues}).
+-define(JESSE_NOT_UNIQUE, not_unique).
+-define(JESSE_WRONG_LENGTH(Length), {wrong_length, Length}).
+-define(JESSE_WRONG_SIZE(Size), {wrong_size, Size}).
+-define(JESSE_MISSING_DEPENDENCY(Dep), {missing_dependency, Dep}).
+-define(JESSE_NO_MATCH, no_match).
+-define(JESSE_NO_EXTRA_PROPERTIES, no_extra_properties).
+-define(JESSE_NO_EXTRA_ITEMS, no_extra_items).
+-define(JESSE_NOT_IN_RANGE(Min, Max), {not_in_range, Min, Max}).
+-define(JESSE_TOO_MANY_PROPERTIES(Max), {too_many_properties, Max}).
+-define(JESSE_TOO_FEW_PROPERTIES(Min), {too_few_properties, Min}).
+-define(JESSE_ALL_SCHEMAS_NOT_VALID, all_schemas_not_valid).
+-define(JESSE_NOT_MULTIPLE_OF(Multiple), {not_multiple_of, Multiple}).
+-define(JESSE_NOT_ONE_SCHEMA_VALID, not_one_schema_valid).
+-define(JESSE_MORE_THAN_ONE_SCHEMA_VALID, more_than_one_schema_valid).
+-define(JESSE_DATA_INVALID(Schema, Error, Data, Path), {data_invalid, Schema, Error, Data, Path}).
+-define(JESSE_SCHEMA_INVALID(Schema, Error), {schema_invalid, Schema, Error}).
+-define(JESSE_DATA_ERROR(Error), {data_error, Error}).
+-define(JESSE_SCHEMA_ERROR(Error), {schema_error, Error}).
+-define(JESSE_PARSE_ERROR(Message), {parse_error, Message}).
+
+%%% Validation Error Messages (for consistency with jesse errors)
+-define(JESSE_MSG_MISSING_REQUIRED_PROPERTY(Property),
+        <<"Missing required property: ", Property/binary>>).
+-define(JESSE_MSG_WRONG_TYPE(Expected),
+        <<"Wrong type, expected: ", Expected/binary>>).
+-define(JESSE_MSG_NOT_IN_ENUM(Values),
+        <<"Value not in enum: ", Values/binary>>).
+-define(JESSE_MSG_NOT_UNIQUE, <<"Array elements must be unique">>).
+-define(JESSE_MSG_WRONG_LENGTH(Length),
+        <<"Array/string has wrong length: ", Length/binary>>).
+-define(JESSE_MSG_WRONG_SIZE(Size),
+        <<"Array/object has wrong size: ", Size/binary>>).
+-define(JESSE_MSG_MISSING_DEPENDENCY(Dep),
+        <<"Missing dependency: ", Dep/binary>>).
+-define(JESSE_MSG_NO_MATCH, <<"Value does not match any schema">>).
+-define(JESSE_MSG_NO_EXTRA_PROPERTIES, <<"Object has extra properties not allowed by schema">>).
+-define(JESSE_MSG_NO_EXTRA_ITEMS, <<"Array has extra items not allowed by schema">>).
+-define(JESSE_MSG_NOT_IN_RANGE(Range),
+        <<"Value not in range: ", Range/binary>>).
+-define(JESSE_MSG_TOO_MANY_PROPERTIES(Max),
+        <<"Object has too many properties (max: ", Max/binary, ")">>).
+-define(JESSE_MSG_TOO_FEW_PROPERTIES(Min),
+        <<"Object has too few properties (min: ", Min/binary, ")">>).
+-define(JESSE_MSG_ALL_SCHEMAS_NOT_VALID, <<"Value does not match any of the required schemas">>).
+-define(JESSE_MSG_NOT_MULTIPLE_OF(Multiple),
+        <<"Value is not a multiple of: ", Multiple/binary>>).
+-define(JESSE_MSG_NOT_ONE_SCHEMA_VALID, <<"Value must match exactly one schema, matched none">>).
+-define(JESSE_MSG_MORE_THAN_ONE_SCHEMA_VALID, <<"Value must match exactly one schema, matched multiple">>).
+-define(JESSE_MSG_DATA_ERROR(Message),
+        <<"Data error: ", Message/binary>>).
+-define(JESSE_MSG_SCHEMA_ERROR(Message),
+        <<"Schema error: ", Message/binary>>).
+-define(JESSE_MSG_PARSE_ERROR(Message),
+        <<"Parse error: ", Message/binary>>).
+
+%%% Validation Error Result Record (for consistent error reporting)
+-record(jesse_validation_error, {
+    path = [] :: list(),
+    message :: binary(),
+    expected :: term(),
+    actual :: term()
+}).
+
+%%% Validation helper macros
+-define(VALIDATION_ERROR(Path, Msg, Expected, Actual),
+        #jesse_validation_error{
+            path = Path,
+            message = Msg,
+            expected = Expected,
+            actual = Actual
+        }).
+
+-define(IS_VALIDATION_ERROR(Term),
+        is_record(Term, jesse_validation_error)).
+
+%%% Common Error Atoms (for {error, Reason} tuples)
+%%% These are used throughout the codebase for error returns
+%%% NOTE: These are atoms, not to be confused with ERROR_* macros that return tuples
+
+%% Generic errors
+-define(ERR_NOT_FOUND, not_found).
+-define(ERR_ALREADY_EXISTS, already_exists).
+-define(ERR_TIMEOUT, timeout).
+-define(ERR_INVALID_STATE, invalid_state).
+-define(ERR_INVALID_ARGUMENT, invalid_argument).
+-define(ERR_INVALID_REQUEST_ATOM, invalid_request).  % Use distinct name from ERROR_INVALID_REQUEST
+
+%% Circuit breaker errors
+-define(ERR_CIRCUIT_BREAKER_OPEN, circuit_breaker_open).
+-define(ERR_BREAKER_NOT_FOUND, breaker_not_found).
+-define(ERR_BREAKER_ALREADY_EXISTS, breaker_already_exists).
+
+%% Rate limiter errors
+-define(ERR_RATE_LIMITED, rate_limited).
+-define(ERR_RATE_LIMITER_NOT_FOUND, rate_limiter_not_found).
+
+%% Cache errors
+-define(ERR_CACHE_MISS, cache_miss).
+-define(ERR_CACHE_DISABLED, cache_disabled).
+
+%% Batch errors
+-define(ERR_BATCH_NOT_FOUND, batch_not_found).
+-define(ERR_BATCH_FULL, batch_full).
+-define(ERR_BATCH_CLOSED, batch_closed).
+
+%% Module/Process errors
+-define(ERR_MODULE_NOT_LOADED, module_not_loaded).
+-define(ERR_PROCESS_NOT_FOUND, process_not_found).
+-define(ERR_PROCESS_DEAD, process_dead).
+
+%% Session errors
+-define(ERR_SESSION_NOT_FOUND, session_not_found).
+-define(ERR_SESSION_EXPIRED, session_expired).
+-define(ERR_SESSION_CLOSED, session_closed).
+
+%% Transport errors
+-define(ERR_TRANSPORT_NOT_FOUND, transport_not_found).
+-define(ERR_TRANSPORT_CLOSED, transport_closed).
+-define(ERR_TRANSPORT_ERROR_ATOM, transport_error).
+
+%% Resource/Tool/Prompt errors
+-define(ERR_RESOURCE_NOT_FOUND_ATOM, resource_not_found).  % Use distinct name from ERROR_RESOURCE_NOT_FOUND
+-define(ERR_TOOL_NOT_FOUND_ATOM, tool_not_found).         % Use distinct name from ERROR_TOOL_NOT_FOUND
+-define(ERR_PROMPT_NOT_FOUND_ATOM, prompt_not_found).     % Use distinct name from ERROR_PROMPT_NOT_FOUND
+
+%% Validation errors
+-define(ERR_VALIDATION_FAILED, validation_failed).
+-define(ERR_SCHEMA_INVALID, schema_invalid).
+
+%% Authentication/Authorization errors
+-define(ERR_AUTHENTICATION_FAILED, authentication_failed).
+-define(ERR_AUTHORIZATION_FAILED, authorization_failed).
+-define(ERR_ACCESS_DENIED, access_denied).
+
+%% Convenience error tuple macros
+-define(ERR_NOT_FOUND_T, {error, ?ERR_NOT_FOUND}).
+-define(ERR_ALREADY_EXISTS_T, {error, ?ERR_ALREADY_EXISTS}).
+-define(ERR_TIMEOUT_T, {error, ?ERR_TIMEOUT}).
+-define(ERR_INVALID_STATE_T, {error, ?ERR_INVALID_STATE}).
+-define(ERR_INVALID_ARGUMENT_T, {error, ?ERR_INVALID_ARGUMENT}).
+-define(ERR_CIRCUIT_BREAKER_OPEN_T, {error, ?ERR_CIRCUIT_BREAKER_OPEN}).
+-define(ERR_RATE_LIMITED_T, {error, ?ERR_RATE_LIMITED}).
+
+%%% Error reason atoms for type specs
+-type error_reason() :: not_found | already_exists | timeout | invalid_state
+                       | invalid_argument | invalid_request | circuit_breaker_open
+                       | rate_limited | validation_failed | access_denied
+                       | authentication_failed | authorization_failed
+                       | transport_closed | process_dead
+                       | breaker_not_found | batch_not_found
+                       | session_not_found | session_expired
+                       | resource_not_found | tool_not_found
+                       | prompt_not_found | term().
 
 -endif.

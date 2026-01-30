@@ -881,6 +881,88 @@ call_tool_test() ->
     erlmcp_client:stop(Pid).
 
 %%====================================================================
+%% Completion Tests
+%%====================================================================
+
+complete_before_init_test() ->
+    %% Setup: Start client (not initialized)
+    {ok, Pid} = erlmcp_client:start_link({stdio, []}),
+
+    %% Exercise: Try to complete before initialization
+    Result = erlmcp_client:complete(Pid, <<"test://ref">>, <<"arg_name">>),
+
+    %% Verify: Phase error returned
+    ?assertMatch({error, {not_initialized, pre_initialization, _}}, Result),
+
+    %% Cleanup
+    erlmcp_client:stop(Pid).
+
+complete_with_default_timeout_test() ->
+    %% Setup: Start client
+    {ok, Pid} = erlmcp_client:start_link({stdio, []}),
+
+    %% Exercise: Complete with default timeout
+    Result = erlmcp_client:complete(Pid, <<"test://ref">>, <<"arg_name">>),
+
+    %% Verify: Phase error (not initialized)
+    ?assertMatch({error, {not_initialized, pre_initialization, _}}, Result),
+
+    %% Cleanup
+    erlmcp_client:stop(Pid).
+
+complete_with_custom_timeout_test() ->
+    %% Setup: Start client
+    {ok, Pid} = erlmcp_client:start_link({stdio, []}),
+
+    %% Exercise: Complete with custom timeout
+    Result = erlmcp_client:complete(Pid, <<"test://ref">>, <<"arg_name">>, 10000),
+
+    %% Verify: Phase error (not initialized)
+    ?assertMatch({error, {not_initialized, pre_initialization, _}}, Result),
+
+    %% Cleanup
+    erlmcp_client:stop(Pid).
+
+complete_with_unicode_test() ->
+    %% Setup: Start client
+    {ok, Pid} = erlmcp_client:start_link({stdio, []}),
+
+    %% Exercise: Complete with unicode in argument
+    Result = erlmcp_client:complete(Pid, <<"test://ref">>, <<"参数世界">>),
+
+    %% Verify: Phase error (not initialized)
+    ?assertMatch({error, {not_initialized, pre_initialization, _}}, Result),
+
+    %% Cleanup
+    erlmcp_client:stop(Pid).
+
+complete_with_empty_ref_test() ->
+    %% Setup: Start client
+    {ok, Pid} = erlmcp_client:start_link({stdio, []}),
+
+    %% Exercise: Complete with empty ref
+    Result = erlmcp_client:complete(Pid, <<>>, <<"arg_name">>),
+
+    %% Verify: Phase error (not initialized)
+    ?assertMatch({error, {not_initialized, pre_initialization, _}}, Result),
+
+    %% Cleanup
+    erlmcp_client:stop(Pid).
+
+complete_with_empty_argument_test() ->
+    %% Setup: Start client
+    {ok, Pid} = erlmcp_client:start_link({stdio, []}),
+
+    %% Exercise: Complete with empty argument
+    Result = erlmcp_client:complete(Pid, <<"test://ref">>, <<>>),
+
+    %% Verify: Phase error (not initialized)
+    ?assertMatch({error, {not_initialized, pre_initialization, _}}, Result),
+
+    %% Cleanup
+    erlmcp_client:stop(Pid).
+
+%%====================================================================
 %% Roots Tests
 %%====================================================================
 
