@@ -1,0 +1,4 @@
+===> Verifying dependencies...
+===> Upgrading fs v0.9.2
+===> Fetching cowlib v2.12.1
+===> Dependency failure: source for cowlib does not contain a recognizable project and can not be built

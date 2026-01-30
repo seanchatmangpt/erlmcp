@@ -18,6 +18,7 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("erlmcp_core/include/erlmcp.hrl").
+-include_lib("erlmcp_core/include/erlmcp_test_constants.hrl").
 
 %% Suite callbacks
 -export([all/0, groups/0, init_per_suite/1, end_per_suite/1,
@@ -59,14 +60,6 @@
     test_metrics_collection_integration/1,
     test_tracing_integration/1
 ]).
-
-%% Test constants
--define(TEST_TIMEOUT, 30000).
--define(LOAD_TEST_DURATION, 10000).  % 10 seconds
--define(CONCURRENT_CLIENTS, 50).
--define(MESSAGE_BURST_SIZE, 100).
--define(TEST_SERVER_PREFIX, integration_test_server).
--define(TEST_TRANSPORT_PREFIX, integration_test_transport).
 
 %%====================================================================
 %% Suite Configuration
@@ -121,7 +114,7 @@ groups() ->
 
 init_per_suite(Config) ->
     ct:pal("Starting ErlMCP Integration Test Suite"),
-    
+
     %% Start required applications
     case application:start(crypto) of
         ok -> ok;
@@ -131,7 +124,7 @@ init_per_suite(Config) ->
         ok -> ok;
         {error, {already_started, ssl}} -> ok
     end,
-    
+
     %% Start dependencies for JSON handling and validation
     DepsToStart = [gproc, jsx, jesse],
     lists:foreach(fun(App) ->
@@ -158,55 +151,46 @@ init_per_suite(Config) ->
                 ok
         end
     end, OptionalDeps),
-    
-    %% Start ErlMCP Core application
-    case application:start(erlmcp_core) of
-        ok ->
-            ct:pal("Started erlmcp_core application successfully"),
-            ok;
-        {error, {already_started, erlmcp_core}} ->
-            ct:pal("erlmcp_core application already started"),
-            ok;
-        {error, {not_started, Dep}} ->
-            ct:pal("Error starting erlmcp_core: dependency ~p not started, trying to start it", [Dep]),
-            case application:start(Dep, temporary) of
-                ok ->
-                    ct:pal("Started dependency ~p, retrying erlmcp_core", [Dep]),
-                    case application:start(erlmcp_core, temporary) of
-                        ok -> ok;
-                        {error, Reason2} ->
-                            ct:pal("Failed to start erlmcp_core after starting ~p: ~p", [Dep, Reason2]),
-                            {error, Reason2}
-                    end;
-                {error, Reason1} ->
-                    ct:pal("Failed to start dependency ~p: ~p", [Dep, Reason1]),
-                    {error, Reason1}
-            end;
-        {error, Reason} ->
-            ct:pal("Failed to start erlmcp_core: ~p", [Reason]),
-            {error, Reason}
-    end,
-    
+
+    %% Start core components manually to avoid observability dependency
+    %% Start core supervisor (includes registry)
+    {ok, _CoreSupPid} = erlmcp_core_sup:start_link(),
+
+    %% Start server supervisor
+    {ok, _ServerSupPid} = erlmcp_server_sup:start_link(),
+
     %% Wait for system to stabilize
-    timer:sleep(1000),
-    
+    timer:sleep(500),
+
     %% Verify core components are running
-    ?assertNotEqual(undefined, whereis(erlmcp_sup)),
-    ?assertNotEqual(undefined, whereis(erlmcp_registry)),
-    
+    ?assertNotEqual(undefined, whereis(erlmcp_core_sup), "erlmcp_core_sup should be running"),
+    ?assertNotEqual(undefined, whereis(erlmcp_registry), "erlmcp_registry should be running"),
+    ?assertNotEqual(undefined, whereis(erlmcp_server_sup), "erlmcp_server_sup should be running"),
+
+    ct:pal("Core components started successfully"),
     [{suite_start_time, erlang:system_time(millisecond)} | Config].
 
 end_per_suite(Config) ->
     ct:pal("Ending ErlMCP Integration Test Suite"),
-    
-    %% Stop application
-    application:stop(erlmcp_core),
-    
+
+    %% Stop supervisors
+    ServerSupPid = whereis(erlmcp_server_sup),
+    case ServerSupPid of
+        undefined -> ok;
+        _ -> supervisor:stop(erlmcp_server_sup)
+    end,
+
+    CoreSupPid = whereis(erlmcp_core_sup),
+    case CoreSupPid of
+        undefined -> ok;
+        _ -> supervisor:stop(erlmcp_core_sup)
+    end,
+
     %% Calculate total suite time
     StartTime = proplists:get_value(suite_start_time, Config, 0),
     Duration = erlang:system_time(millisecond) - StartTime,
     ct:pal("Total suite duration: ~pms", [Duration]),
-    
+
     ok.
 
 init_per_group(Group, Config) ->
@@ -733,7 +717,7 @@ test_registry_failure_handling(Config) ->
 %%====================================================================
 
 test_concurrent_connections(Config) ->
-    ct:pal("Testing concurrent connections (load: ~p clients)", [?CONCURRENT_CLIENTS]),
+    ct:pal("Testing concurrent connections (load: ~p clients)", [?TEST_CONCURRENT_CLIENTS]),
     
     %% Create a server to handle concurrent clients
     ServerId = make_test_server_id(20),
@@ -753,7 +737,7 @@ test_concurrent_connections(Config) ->
         spawn(fun() ->
             client_simulation_worker(ServerId, ClientNum, 10) % 10 messages per client
         end)
-    end, lists:seq(1, ?CONCURRENT_CLIENTS)),
+    end, lists:seq(1, ?TEST_CONCURRENT_CLIENTS)),
     
     %% Wait for all clients to complete
     lists:foreach(fun(Pid) ->
@@ -762,7 +746,7 @@ test_concurrent_connections(Config) ->
             {'DOWN', Ref, process, Pid, normal} -> ok;
             {'DOWN', Ref, process, Pid, Reason} ->
                 ct:pal("Client ~p failed: ~p", [Pid, Reason])
-        after ?TEST_TIMEOUT ->
+        after ?TEST_TIMEOUT_DEFAULT ->
             ct:fail("Client ~p timed out", [Pid])
         end
     end, ClientPids),
@@ -770,14 +754,14 @@ test_concurrent_connections(Config) ->
     EndTime = erlang:system_time(millisecond),
     Duration = EndTime - StartTime,
     
-    TotalMessages = ?CONCURRENT_CLIENTS * 10,
+    TotalMessages = ?TEST_CONCURRENT_CLIENTS * 10,
     MessagesPerSecond = (TotalMessages * 1000) div max(Duration, 1),
     
     ct:pal("Concurrent test completed: ~p clients, ~p messages in ~pms (~p msg/sec)",
-           [?CONCURRENT_CLIENTS, TotalMessages, Duration, MessagesPerSecond]),
+           [?TEST_CONCURRENT_CLIENTS, TotalMessages, Duration, MessagesPerSecond]),
     
     %% Performance validation
-    ?assert(Duration < ?TEST_TIMEOUT, "Test should complete within timeout"),
+    ?assert(Duration < ?TEST_TIMEOUT_DEFAULT, "Test should complete within timeout"),
     ?assert(MessagesPerSecond > 10, "Should handle at least 10 messages per second"),
     
     %% Cleanup
@@ -834,7 +818,7 @@ test_high_message_throughput(Config) ->
         TransportPid ! {message, MessageJson},
         
         {MsgNum, sent}
-    end, lists:seq(1, ?MESSAGE_BURST_SIZE)),
+    end, lists:seq(1, ?TEST_MESSAGE_BURST_SIZE)),
     
     %% Wait for processing
     timer:sleep(1000),
@@ -850,7 +834,7 @@ test_high_message_throughput(Config) ->
            [ProcessedMessages, DurationMs, ThroughputMPS]),
     
     %% Performance validation
-    ?assert(ProcessedMessages >= ?MESSAGE_BURST_SIZE, "All messages should be processed"),
+    ?assert(ProcessedMessages >= ?TEST_MESSAGE_BURST_SIZE, "All messages should be processed"),
     ?assert(ThroughputMPS > 100, "Should handle at least 100 messages per second"),
     
     %% Cleanup
@@ -1683,17 +1667,17 @@ test_tracing_integration(Config) ->
 
 %% Create unique test server ID
 make_test_server_id(TestNum) ->
-    list_to_atom(io_lib:format("~p_~p", [?TEST_SERVER_PREFIX, TestNum])).
+    list_to_atom(lists:flatten(io_lib:format("~s_~p", [?TEST_SERVER_PREFIX, TestNum]))).
 
 make_test_server_id(TestNum, SubNum) ->
-    list_to_atom(io_lib:format("~p_~p_~p", [?TEST_SERVER_PREFIX, TestNum, SubNum])).
+    list_to_atom(lists:flatten(io_lib:format("~s_~p_~p", [?TEST_SERVER_PREFIX, TestNum, SubNum]))).
 
 %% Create unique test transport ID
 make_test_transport_id(TestNum) ->
-    list_to_atom(io_lib:format("~p_~p", [?TEST_TRANSPORT_PREFIX, TestNum])).
+    list_to_atom(lists:flatten(io_lib:format("~s_~p", [?TEST_TRANSPORT_PREFIX, TestNum]))).
 
 make_test_transport_id(TestNum, Type) ->
-    list_to_atom(io_lib:format("~p_~p_~p", [?TEST_TRANSPORT_PREFIX, TestNum, Type])).
+    list_to_atom(lists:flatten(io_lib:format("~s_~p_~p", [?TEST_TRANSPORT_PREFIX, TestNum, Type]))).
 
 %% Client simulation worker for concurrent testing
 client_simulation_worker(ServerId, ClientNum, MessageCount) ->

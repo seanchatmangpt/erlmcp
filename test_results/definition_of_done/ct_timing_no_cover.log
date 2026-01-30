@@ -1,0 +1,1902 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 883 │                  [1;31m{[0mnoreply, State};[0m
+     │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 893 │                                  [1;31m{[0mnoreply, State};[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 898 │                                  [1;31m{[0mnoreply, State}[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 904 │                          [1;31m{[0mnoreply, State}[0m
+     │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 106 │          Value = maps:get(value, Arg, [1;31m<<>>),[0m[0m
+     │                                       [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 379 │          Value = maps:get(value, Arg, [1;31m<<>>),[0m[0m
+     │                                       [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+   ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+   │
+ 6 │  -[1;31mrecord[0m(state, {[0m
+   │   [1;31m╰──[0m[0m Warning: record state is unused
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1008 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1008 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1026 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1026 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1050 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1050 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1068 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1068 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1087 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1087 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1105 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1105 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1124 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1124 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl:
+     │
+ 370 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl:
+     │
+ 640 │  -[1;31mrecord[0m(mock_state, {[0m
+     │   [1;31m╰──[0m[0m Warning: record mock_state is unused
+
+
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_validation/ebin/erlmcp_spec_parser_tests.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_client_tests.beam"}
+[0m[0;32m===> Running Common Test suites...
+[0m%%% erlmcp_integration_SUITE: [0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_integration_SUITE ==> tasks_e2e_workflow_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_tasks,
+                     {create_task,<0.6106.0>,
+                                  #{<<"type">> => <<"test_action">>},
+                                  #{<<"progressToken">> => true,
+                                    <<"timeout">> => 5000}}]}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> tasks_progress_tracking_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_tasks,
+                     {create_task,<0.6109.0>,
+                                  #{<<"type">> => <<"long_running">>},
+                                  #{<<"progressToken">> => true}}]}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> tasks_timeout_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_tasks,
+                     {create_task,<0.6112.0>,
+                                  #{<<"type">> => <<"slow">>},
+                                  #{<<"timeout">> => 100}}]}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> tasks_worker_failure_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_tasks,
+                     {create_task,<0.6115.0>,
+                                  #{<<"type">> => <<"crash_prone">>},
+                                  #{}}]}}[0m[0m
+[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_integration_SUITE ==> jwt_verification_e2e_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_auth,
+                     {create_session,<<"user123">>,
+                                     #{<<"method">> => api_key}}]}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> authorization_e2e_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_auth,
+                     {create_session,<<"user456">>,
+                                     #{<<"roles">> => [<<"user">>]}}]}}[0m[0m
+[0;32m.[0m[0m
+%%% erlmcp_integration_SUITE ==> session_lifecycle_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_auth,
+                     {create_session,<<"user789">>,
+                                     #{<<"ip">> => <<"127.0.0.1">>}}]}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> rbac_permission_test: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{noproc,{gen_server,call,
+                    [erlmcp_auth,
+                     {create_session,<<"admin_user">>,
+                                     #{<<"roles">> => [<<"admin">>]}}]}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE: [0;32m.[0m[0m
+=ERROR REPORT==== 30-Jan-2026::13:06:48.117656 ===
+** Generic server erlmcp_registry_dist terminating 
+** Last message in was {register_global,server,single_server,<0.6166.0>,#{}}
+** When Server state == {dist_state,true,[],#{},10000,
+                                    #Ref<0.879244837.1298399234.166908>,
+                                    winner_takes_all}
+** Reason for termination ==
+** {local_only,
+       [{gproc,reg_other,
+            [{n,g,{mcp_global,server,single_server}},<0.6166.0>,#{}],
+            [{file,"/Users/sac/erlmcp/_build/default/lib/gproc/src/gproc.erl"},
+             {line,1091}]},
+        {erlmcp_registry_dist,handle_call,3,
+            [{file,
+                 "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_registry_dist.erl"},
+             {line,149}]},
+        {gen_server,try_handle_call,4,[{file,"gen_server.erl"},{line,2381}]},
+        {gen_server,handle_msg,6,[{file,"gen_server.erl"},{line,2410}]},
+        {proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}
+** Client <0.6163.0> stacktrace
+** [{gen,do_call,4,[{file,"gen.erl"},{line,260}]},
+    {gen_server,call,2,[{file,"gen_server.erl"},{line,1138}]},
+    {erlmcp_registry_dist_SUITE,single_node_enabled,1,
+        [{file,
+             "/Users/sac/erlmcp/apps/erlmcp_core/test/erlmcp_registry_dist_SUITE.erl"},
+         {line,148}]},
+    {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+    {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1303}]},
+    {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]
+
+=CRASH REPORT==== 30-Jan-2026::13:06:48.117880 ===
+  crasher:
+    initial call: erlmcp_registry_dist:init/1
+    pid: <0.6165.0>
+    registered_name: erlmcp_registry_dist
+    exception error: local_only
+      in function  gproc:reg_other/3
+         called as gproc:reg_other({n,g,{mcp_global,server,single_server}},
+                                   <0.6166.0>,#{})
+      in call from erlmcp_registry_dist:handle_call/3 (/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_registry_dist.erl, line 149)
+      in call from gen_server:try_handle_call/4 (gen_server.erl, line 2381)
+      in call from gen_server:handle_msg/6 (gen_server.erl, line 2410)
+    ancestors: [<0.6163.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.6163.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 610
+    stack_size: 29
+    reductions: 461
+  neighbours:
+    neighbour:
+      pid: <0.6164.0>
+      registered_name: []
+      initial_call: {test_server_sup,timetrap,4}
+      current_function: {test_server_sup,timetrap,4}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.6163.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 233
+      stack_size: 5
+      reductions: 6
+      current_stacktrace: [{test_server_sup,timetrap,4,
+                                   [{file,"test_server_sup.erl"},{line,64}]}]
+    neighbour:
+      pid: <0.6163.0>
+      registered_name: []
+      initial_call: {erlang,apply,2}
+      current_function: {gen,do_call,4}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.6164.0>,<0.6165.0>,<0.6011.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 2586
+      stack_size: 40
+      reductions: 2319
+      current_stacktrace: [{gen,do_call,4,[{file,"gen.erl"},{line,260}]},
+                  {gen_server,call,2,[{file,"gen_server.erl"},{line,1138}]},
+                  {erlmcp_registry_dist_SUITE,single_node_enabled,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_core/test/erlmcp_registry_dist_SUITE.erl"},
+                       {line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1303}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]
+
+%%% erlmcp_registry_dist_SUITE ==> single_node.single_node_enabled: [0;31mFAILED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;31m{'EXIT',{local_only,{gproc,reg_other,
+                           [{n,g,{mcp_global,server,single_server}},
+                            <0.6166.0>,#{}],
+                           [{file,"/Users/sac/erlmcp/_build/default/lib/gproc/src/gproc.erl"},
+                            {line,1091}]}}}[0m[0m
+
+=ERROR REPORT==== 30-Jan-2026::13:06:48.199741 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:49.202257 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:50.204379 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:51.206247 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:52.209025 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:53.211745 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:54.213563 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:55.215845 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:56.219344 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:57.221981 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:58.224465 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:06:59.226517 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:00.228768 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:01.230528 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:02.232476 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:03.234560 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:04.236459 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:05.239082 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:06.241632 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:07.244219 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:08.246561 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:09.248771 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:10.250980 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:11.253538 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:12.257147 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:13.261036 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:14.263288 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:15.265849 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:16.267634 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::13:07:17.270029 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Seans-MacBook-Pro.local is illegal **
+
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.init_per_group: [0;31mFAILED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;31mtimetrap_timeout[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.multi_node_registration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.multi_node_failover: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.split_brain_detection: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.global_name_conflict: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.node_reconnection: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.end_per_group: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_observability_SUITE: erlmcp_hooks starting...
+[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_transport_behavior_SUITE: 
+%%% erlmcp_transport_behavior_SUITE ==> init_per_suite: [0;31mFAILED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;31m{{badmatch,{ok,[]}},
+ [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+      [{file,"erlmcp_transport_behavior_SUITE.erl"},{line,89}]},
+  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+  {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1391}]},
+  {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> behavior_module_exists: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> behavior_callbacks_defined: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> behavior_types_exported: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> behavior_optional_callbacks: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> validate_json_rpc_message: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> validate_transport_opts: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> message_creation_functions: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> error_message_creation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> stdio_opts_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> tcp_opts_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> http_opts_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> websocket_opts_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> json_rpc_structure: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> notification_format: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> response_format: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> error_response_format: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> stdio_behavior_compliance: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> tcp_behavior_compliance: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> http_behavior_compliance: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> url_validation_functions: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> host_validation_functions: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> message_content_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> error_structure_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> behavior_error_handling: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> behavior_lifecycle: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_behavior_SUITE ==> end_per_suite: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_behavior_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_behavior_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{ok,[]}},
+                 [{erlmcp_transport_behavior_SUITE,init_per_suite,1,
+                      [{file,"erlmcp_transport_behavior_SUITE.erl"},
+                       {line,89}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+%%% erlmcp_transport_http_SUITE: 
+
+----------------------------------------------------
+2026-01-30 13:07:21.060
+Starting HTTP transport test suite
+
+
+%%% erlmcp_transport_http_SUITE ==> init_per_suite: [0;31mFAILED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;31m{{badmatch,{{0,0,0,0},49220}},
+ [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                               [{file,"/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                                {line,664}]},
+  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                               [{file,"/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                                {line,136}]},
+  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+  {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1391}]},
+  {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_transport_init_success: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_transport_init_invalid_url: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_transport_init_missing_owner: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_transport_init_with_custom_headers: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_transport_init_with_ssl_options: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_connection_establish: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_connection_refused: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_connection_timeout: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_connection_reconnect: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_send_post_request: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_send_get_request: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_send_multiple_requests: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_send_large_request: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_receive_success_response: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_receive_error_response: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_receive_empty_response: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_retry_on_connection_failure: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_retry_max_attempts_exceeded: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_error_timeout: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_error_message_too_large: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_pool_size_respected: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_pool_request_completion: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_close_connection: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> http_close_pending_requests: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_http_SUITE ==> end_per_suite: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_http_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_http_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,{{0,0,0,0},49220}},
+                 [{erlmcp_transport_http_SUITE,start_mock_http_server,0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,664}]},
+                  {erlmcp_transport_http_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl"},
+                       {line,136}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+%%% erlmcp_transport_integration_SUITE: erlmcp_hooks starting...
+
+=ERROR REPORT==== 30-Jan-2026::13:07:21.111038 ===
+Failed to create Mnesia cache table: {bad_type,erlmcp_cache_l2,disc_copies,
+                                      nonode@nohost}
+=ERROR REPORT==== 30-Jan-2026::13:07:21.177284 ===
+Failed to start erlmcp_observability: {already_started,<0.6553.0>}
+=INFO REPORT==== 30-Jan-2026::13:07:21.177399 ===
+    application: erlmcp_observability
+    exited: {{already_started,<0.6553.0>},
+             {erlmcp_observability_app,start,[normal,[]]}}
+    type: temporary
+
+=CRASH REPORT==== 30-Jan-2026::13:07:21.177408 ===
+  crasher:
+    initial call: application_master:init/3
+    pid: <0.6605.0>
+    registered_name: []
+    exception exit: {{already_started,<0.6553.0>},
+                     {erlmcp_observability_app,start,[normal,[]]}}
+      in function  application_master:init/3 (application_master.erl, line 143)
+    ancestors: [application_controller,<0.10.0>]
+    message_queue_len: 1
+    messages: [{'EXIT',<0.6606.0>,normal}]
+    links: [<0.45.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 376
+    stack_size: 29
+    reductions: 68
+  neighbours:
+
+=SUPERVISOR REPORT==== 30-Jan-2026::13:07:26.178477 ===
+    supervisor: {<0.6601.0>,otel_tracer_server_sup}
+    errorContext: shutdown_error
+    reason: killed
+    offender: [{pid,<0.6602.0>},
+               {id,otel_span_processor_sup},
+               {mfargs,
+                   {otel_span_processor_sup,start_link,
+                       [otel_span_processor_sup_global]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,supervisor}]
+
+=SUPERVISOR REPORT==== 30-Jan-2026::13:07:26.178483 ===
+    supervisor: {local,opentelemetry_sup}
+    errorContext: shutdown_error
+    reason: killed
+    offender: [{pid,<0.6600.0>},
+               {id,otel_tracer_provider_sup},
+               {mfargs,{otel_tracer_provider_sup,start_link,[]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,supervisor}]
+
+=INFO REPORT==== 30-Jan-2026::13:07:26.179649 ===
+    application: opentelemetry
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::13:07:26.182121 ===
+    application: opentelemetry_api
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::13:07:26.183009 ===
+    application: erlmcp_core
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::13:07:26.183059 ===
+    application: jesse
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::13:07:26.183088 ===
+    application: poolboy
+    exited: stopped
+    type: temporary
+
+
+%%% erlmcp_transport_integration_SUITE ==> init_per_suite: [0;31mFAILED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;31m{{badmatch,
+     {error,
+         {erlmcp_observability,
+             {{already_started,<0.6553.0>},
+              {erlmcp_observability_app,start,[normal,[]]}}}}},
+ [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+      [{file,
+           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+       {line,42}]},
+  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+  {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1391}]},
+  {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> application_startup: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> supervisor_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> gproc_registration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> multi_transport_coordination: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> transport_message_routing: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> tcp_client_server_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> transport_failover: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> end_per_suite: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_transport_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{badmatch,
+                     {error,
+                         {erlmcp_observability,
+                             {{already_started,<0.6553.0>},
+                              {erlmcp_observability_app,start,[normal,[]]}}}}},
+                 [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+                       {line,42}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE: 
+%%% erlmcp_error_handling_robustness_SUITE ==> network_timeout_during_request_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,start_test_client_with_timeout,
+         1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,534}]},
+     {erlmcp_error_handling_robustness_SUITE,
+         network_timeout_during_request_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,65}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_error_handling_robustness_SUITE ==> network_timeout_cleanup_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,start_test_client_with_timeout,
+         1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,534}]},
+     {erlmcp_error_handling_robustness_SUITE,network_timeout_cleanup_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,92}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_error_handling_robustness_SUITE ==> configurable_timeout_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,start_test_client_with_timeout,
+         1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,534}]},
+     {erlmcp_error_handling_robustness_SUITE,configurable_timeout_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,123}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+[0;32m.[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> oversized_response_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{test_case_failed,"Oversized message should have been rejected"}[0m[0m
+[0;32m.[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> transport_disconnect_during_validation_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,
+         transport_disconnect_during_validation_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,201}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_error_handling_robustness_SUITE ==> transport_reconnect_after_failure_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,
+         [tcp,#{port => 9999,host => "localhost"}],
+         []},
+     {erlmcp_error_handling_robustness_SUITE,
+         transport_reconnect_after_failure_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,230}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_error_handling_robustness_SUITE ==> transport_failure_notification_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,
+         transport_failure_notification_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,246}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_error_handling_robustness_SUITE ==> error_message_includes_context_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{test_case_failed,"Expected code -32602, got -32601"}[0m[0m
+
+%%% erlmcp_error_handling_robustness_SUITE ==> error_message_actionable_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{{badmatch,false},
+ [{erlmcp_error_handling_robustness_SUITE,error_message_actionable_test,1,
+      [{file,
+           "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+       {line,322}]},
+  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+  {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1303}]},
+  {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+[0;32m.[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> cleanup_resources_on_timeout_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,start_test_client_with_timeout,
+         1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,534}]},
+     {erlmcp_error_handling_robustness_SUITE,
+         cleanup_resources_on_timeout_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,363}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+[0;32m.[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> cleanup_no_resource_leaks_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,cleanup_no_resource_leaks_test,
+         1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,385}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_error_handling_robustness_SUITE ==> concurrent_request_timeout_test: [0;31mFAILED[0m[0m
+%%% erlmcp_error_handling_robustness_SUITE ==> [0;31m{undef,
+    [{erlmcp_test_client,start_test_server,[stdio,[]],[]},
+     {erlmcp_error_handling_robustness_SUITE,start_test_client_with_timeout,
+         1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,534}]},
+     {erlmcp_error_handling_robustness_SUITE,concurrent_request_timeout_test,
+         1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl"},
+          {line,410}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_error_response_SUITE: [0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_performance_validator_SUITE: [0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_performance_validator_SUITE ==> concurrent_99_percent_success_rate_test: [0;31mFAILED[0m[0m
+%%% erlmcp_performance_validator_SUITE ==> [0;31m
+Failure/Error: ?assert(maps : get ( passed , Validation99 ))
+  expected: true
+       got: false
+      line: 643[0m[0m
+
+%%% erlmcp_performance_validator_SUITE ==> concurrent_stability_test: [0;31mFAILED[0m[0m
+%%% erlmcp_performance_validator_SUITE ==> [0;31m
+Failure/Error: ?assert(maps : get ( passed , Validation2 ))
+  expected: true
+       got: false
+      line: 684[0m[0m
+[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_performance_validator_SUITE ==> report_generated_correctly_test: [0;31mFAILED[0m[0m
+%%% erlmcp_performance_validator_SUITE ==> [0;31m{badarg,
+    [{io_lib,format,
+         ["  Throughput: ~.2f req/s~n",[1500]],
+         [{file,"io_lib.erl"},{line,297}]},
+     {erlmcp_performance_validator,format_section,2,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl"},
+          {line,752}]},
+     {erlmcp_performance_validator,format_report,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl"},
+          {line,702}]},
+     {erlmcp_performance_validator_SUITE,report_generated_correctly_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_performance_validator_SUITE.erl"},
+          {line,767}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_performance_validator_SUITE ==> report_pass_fail_indicated_test: [0;31mFAILED[0m[0m
+%%% erlmcp_performance_validator_SUITE ==> [0;31m{badarg,
+    [{io_lib,format,
+         ["  Throughput: ~.2f req/s~n",[1500]],
+         [{file,"io_lib.erl"},{line,297}]},
+     {erlmcp_performance_validator,format_section,2,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl"},
+          {line,752}]},
+     {erlmcp_performance_validator,format_report,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl"},
+          {line,702}]},
+     {erlmcp_performance_validator_SUITE,report_pass_fail_indicated_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_performance_validator_SUITE.erl"},
+          {line,798}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_performance_validator_SUITE ==> report_recommendations_included_test: [0;31mFAILED[0m[0m
+%%% erlmcp_performance_validator_SUITE ==> [0;31m{badarg,
+    [{io_lib,format,
+         ["  Throughput: ~.2f req/s~n",[800]],
+         [{file,"io_lib.erl"},{line,297}]},
+     {erlmcp_performance_validator,format_section,2,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl"},
+          {line,752}]},
+     {erlmcp_performance_validator,format_report,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl"},
+          {line,702}]},
+     {erlmcp_performance_validator_SUITE,
+         report_recommendations_included_test,1,
+         [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_performance_validator_SUITE.erl"},
+          {line,836}]},
+     {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+     {test_server,run_test_case_eval1,6,
+         [{file,"test_server.erl"},{line,1303}]},
+     {test_server,run_test_case_eval,9,
+         [{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_protocol_checker_SUITE: [0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m[0;32m.[0m[0m
+%%% erlmcp_protocol_checker_SUITE ==> error_recovery_test: [0;31mFAILED[0m[0m
+%%% erlmcp_protocol_checker_SUITE ==> [0;31m{{badmatch,ok},
+ [{erlmcp_protocol_checker_SUITE,error_recovery_test,1,
+      [{file,
+           "/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_protocol_checker_SUITE.erl"},
+       {line,171}]},
+  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+  {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1303}]},
+  {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+[0;32m.[0m[0m
+EXPERIMENTAL: Writing retry specification at /Users/sac/erlmcp/_build/test/logs/retry.spec
+              call rebar3 ct with '--retry' to re-run failing cases.
+Failed 27 tests. Skipped 61 (0, 61) tests. Passed 85 tests. 
+Results written to "/Users/sac/erlmcp/_build/test/logs/index.html".
+[0;31m===> [1mFailures occurred running tests: 88
+[0m[0m

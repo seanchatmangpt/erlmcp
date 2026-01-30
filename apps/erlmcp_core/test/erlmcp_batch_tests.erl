@@ -150,8 +150,16 @@ test_time_based_execution() ->
         Ref
     end || I <- lists:seq(1, 3)],
 
-    % Wait for timeout (plus buffer)
-    timer:sleep(TimeoutMs + 50),
+    % Wait for timeout using poll (check for results)
+    {ok, _} = erlmcp_test_sync:poll_until(
+        fun() ->
+            Results = collect_results(Refs, 10),
+            length(Results) =:= 3
+        end,
+        batch_complete,
+        TimeoutMs + 200,
+        10
+    ),
 
     % Should have results
     Results = collect_results(Refs, 100),
@@ -171,7 +179,17 @@ test_multiple_time_batches() ->
         Ref
     end || I <- lists:seq(1, 2)],
 
-    timer:sleep(TimeoutMs + 20),
+    % Wait for first batch using poll
+    {ok, _} = erlmcp_test_sync:poll_until(
+        fun() ->
+            Results = collect_results(Refs1, 10),
+            length(Results) =:= 2
+        end,
+        batch1_complete,
+        TimeoutMs + 100,
+        5
+    ),
+
     Results1 = collect_results(Refs1, 100),
     ?assertEqual(2, length(Results1)),
 
@@ -181,7 +199,17 @@ test_multiple_time_batches() ->
         Ref
     end || I <- lists:seq(1, 2)],
 
-    timer:sleep(TimeoutMs + 20),
+    % Wait for second batch using poll
+    {ok, _} = erlmcp_test_sync:poll_until(
+        fun() ->
+            Results = collect_results(Refs2, 10),
+            length(Results) =:= 2
+        end,
+        batch2_complete,
+        TimeoutMs + 100,
+        5
+    ),
+
     Results2 = collect_results(Refs2, 100),
     ?assertEqual(2, length(Results2)),
 
@@ -208,17 +236,22 @@ test_adaptive_adjustment() ->
 
     % Send requests in batches to trigger adaptive behavior
     % Adaptive starts at min=2, so every 2 requests should trigger a batch
-    _ = [begin
+    Refs = [begin
         {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{i => I}),
-        % Don't wait for result immediately to allow batching
         Ref
     end || I <- lists:seq(1, 50)],
 
-    % Wait for a bit to let batches complete
-    timer:sleep(500),
-
-    % Now collect all results
-    % (not needed for test, but ensures cleanup)
+    % Wait for all batches to complete using poll (check stats)
+    {ok, _} = erlmcp_test_sync:poll_until(
+        fun() ->
+            Stats = erlmcp_batch:get_stats(Batcher),
+            TotalBatches = maps:get(total_batches, Stats, 0),
+            TotalBatches > 5
+        end,
+        batches_complete,
+        2000,
+        50
+    ),
 
     % Check stats
     Stats = erlmcp_batch:get_stats(Batcher),
@@ -238,14 +271,23 @@ test_adaptive_failure_response() ->
         parallel_workers => 1  % Sequential for predictable failure pattern
     }),
 
-    % Send many requests (don't wait for each individually)
-    _ = [begin
+    % Send many requests
+    Refs = [begin
         {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{i => I}),
         Ref
     end || I <- lists:seq(1, 100)],
 
-    % Wait for batches to complete
-    timer:sleep(1000),
+    % Wait for batches to complete using poll (check failures)
+    {ok, _} = erlmcp_test_sync:poll_until(
+        fun() ->
+            Stats = erlmcp_batch:get_stats(Batcher),
+            TotalFailures = maps:get(total_failures, Stats, 0),
+            TotalFailures > 0
+        end,
+        failures_detected,
+        2000,
+        50
+    ),
 
     % Check stats
     Stats = erlmcp_batch:get_stats(Batcher),
@@ -385,7 +427,16 @@ test_avg_batch_size() ->
     % Wait for all batch 2 results
     _ = [receive {batch_result, Ref, _} -> ok after 5000 -> timeout end || Ref <- Refs2],
 
-    timer:sleep(100),  % Let stats update
+    % Wait for stats to update using poll
+    {ok, _} = erlmcp_test_sync:poll_until(
+        fun() ->
+            Stats = erlmcp_batch:get_stats(Batcher),
+            maps:get(avg_batch_size, Stats, 0) > 0
+        end,
+        stats_updated,
+        500,
+        10
+    ),
 
     Stats = erlmcp_batch:get_stats(Batcher),
 
@@ -417,16 +468,13 @@ test_strategy_update() ->
     % Add request
     {ok, Ref} = erlmcp_batch:add_request(Batcher, <<"test">>, #{}),
 
-    % Should execute after timeout
-    timer:sleep(100),
+    % Wait for timeout using poll (check for result)
+    {ok, Result} = erlmcp_test_sync:wait_for_message(
+        fun({batch_result, Ref, _}) -> true; (_) -> false end,
+        200
+    ),
 
-    Result = receive
-        {batch_result, Ref, R} -> R
-    after 1000 ->
-        timeout
-    end,
-
-    ?assertMatch({ok, _}, Result),
+    ?assertMatch({ok, _}, element(3, Result)),
 
     erlmcp_batch:stop(Batcher).
 

@@ -519,6 +519,13 @@ get_beam_path(Module) ->
     case code:which(Module) of
         non_existing ->
             non_existing;
+        cover_compiled ->
+            % For cover_compiled modules, try to get the original beam path
+            % The cover module stores the original path in the module info
+            case get_original_beam_path(Module) of
+                {ok, OriginalPath} -> OriginalPath;
+                error -> non_existing
+            end;
         BeamPath when is_list(BeamPath) ->
             % Check if this is a cover_compiled path
             case string:find(BeamPath, "cover_compiled") of

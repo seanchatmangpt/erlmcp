@@ -25,9 +25,6 @@ discovery_test_() ->
      ]}.
 
 setup() ->
-    % Start required applications
-    application:ensure_all_started(gproc),
-
     % Set environment variables for testing
     os:putenv("ERLMCP_TRANSPORT_TEST1_TYPE", "tcp"),
     os:putenv("ERLMCP_TRANSPORT_TEST1_HOST", "localhost"),
@@ -43,11 +40,10 @@ setup() ->
     Pid.
 
 cleanup(Pid) ->
-    % Stop discovery service
+    % Stop discovery service gracefully
     case is_process_alive(Pid) of
         true ->
-            exit(Pid, kill),
-            timer:sleep(100);
+            gen_server:stop(erlmcp_transport_discovery, normal, 1000);
         false ->
             ok
     end,

@@ -135,9 +135,8 @@
     clients :: ets:table(),         % ETS table for per-client buckets
     global_bucket :: token_bucket(),
     violations :: ets:table(),      % ETS table for violation tracking
-    last_cleanup :: integer(),       % Last cleanup timestamp
-    %% Reserved for v2 expansion (add new fields here in v2)
-    _v2_reserved = undefined :: term()
+    last_cleanup :: integer()        % Last cleanup timestamp
+    %% Note: v2_reserved field removed
 }).
 
 -define(ETS_CLIENTS, rate_limit_clients).
@@ -480,8 +479,38 @@ terminate(_Reason, State) ->
     ok.
 
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(OldVsn, State, Extra) ->
+    try
+        logger:info("Rate limiter: Code change from ~p", [OldVsn]),
+        NewState = migrate_rate_limiter_state(OldVsn, State, Extra),
+        logger:info("Rate limiter: Code change completed successfully"),
+        {ok, NewState}
+    catch
+        Class:Reason:Stack ->
+            logger:error("Rate limiter: Code change failed: ~p:~p~n~p",
+                        [Class, Reason, Stack]),
+            error({code_change_failed, Class, Reason})
+    end.
+
+%% @private Migrate rate limiter state based on version
+-spec migrate_rate_limiter_state(term(), #state{}, term()) -> #state{}.
+migrate_rate_limiter_state(_OldVsn, #state{version = v1} = State, _Extra) ->
+    %% Already at current version (v1)
+    State;
+migrate_rate_limiter_state({down, _FromVsn}, #state{} = State, _Extra) ->
+    %% Downgrade migration - ensure version field exists
+    case State#state.version of
+        undefined -> State#state{version = v1};
+        _ -> State
+    end;
+migrate_rate_limiter_state(OldVsn, #state{version = undefined} = State, _Extra)
+  when is_list(OldVsn); is_atom(OldVsn) ->
+    %% Legacy state (pre-versioning) - upgrade to v1
+    logger:info("Rate limiter: Upgrading legacy state to v1"),
+    State#state{version = v1};
+migrate_rate_limiter_state(OldVsn, State, _Extra) ->
+    logger:warning("Rate limiter: Unknown code_change from version ~p", [OldVsn]),
+    State.
 
 %%====================================================================
 %% Internal Functions

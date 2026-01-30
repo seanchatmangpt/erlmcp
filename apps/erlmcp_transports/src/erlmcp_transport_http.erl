@@ -1,5 +1,5 @@
 -module(erlmcp_transport_http).
--behaviour(erlmcp_transport).
+-behaviour(erlmcp_transport_behavior).
 
 %% Transport behavior callbacks
 -export([send/2, close/1, init/1]).

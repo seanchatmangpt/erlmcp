@@ -1,0 +1,121 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;31m===> [1mCompiling apps/erlmcp_validation/src/erlmcp_test_client.erl failed
+[0m[0m    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 47 │  [1;31mAll[0m transport-specific errors are normalized to consistent error tuples:[0m
+    │  [1;31m╰──[0m[0m syntax error before: All
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 58 │  [1;31m1[0m. start_test_server/2 - Initialize server and transport[0m
+    │  [1;31m╰──[0m[0m syntax error before: 1
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 58 │  1. start_test_server[1;31m/[0m2 - Initialize server and transport[0m
+    │                      [1;31m╰──[0m[0m syntax error before: '/'
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 59 │  2. send_request[1;31m/[0m2 - Send JSON-RPC requests (returns response or error)[0m
+    │                 [1;31m╰──[0m[0m syntax error before: '/'
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 60 │  3. send_notification[1;31m/[0m2 - Send one-way notifications[0m
+    │                      [1;31m╰──[0m[0m syntax error before: '/'
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 61 │  4. wait_for_response[1;31m/[0m2 - Wait for specific response by ID[0m
+    │                      [1;31m╰──[0m[0m syntax error before: '/'
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 62 │  5. close_test_server[1;31m/[0m1 - Clean up resources[0m
+    │                      [1;31m╰──[0m[0m syntax error before: '/'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 119 │      jsonrpc := <<[1;31m"2[0m.0">>,[0m
+     │                   [1;31m╰──[0m[0m syntax error before: "2.0"
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 161 │      gen_server:start_link(?[1;31mMODULE[0m, [TransportType, Config], []).[0m
+     │                             [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 322 │      ?[1;31mLOG_INFO[0m("Starting test client for transport: ~p", [TransportType]),[0m
+     │       [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 371 │                      maps:get(RequestId, State#state.pending_requests)[1;31m#[0m{[0m
+     │                                                                       [1;31m╰──[0m[0m syntax error before: '#'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 403 │      ?[1;31mLOG_DEBUG[0m("Received response for request ~p", [RequestId]),[0m
+     │       [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 67 │  -[1;31mbehaviour[0m(gen_server).[0m
+    │   [1;31m╰──[0m[0m no module definition
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 72 │  -[1;31mexport[0m([[0m
+    │   [1;31m╰──[0m[0m function start_test_server/2 undefined
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 88 │  -[1;31mexport[0m([[0m
+    │   [1;31m╰──[0m[0m function handle_call/3 undefined
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 88 │  -[1;31mexport[0m([[0m
+    │   [1;31m╰──[0m[0m function handle_info/2 undefined
+
+    ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+    │
+ 88 │  -[1;31mexport[0m([[0m
+    │   [1;31m╰──[0m[0m function init/1 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 158 │  -[1;31mspec[0m start_test_server(transport_type(), server_config()) ->[0m
+     │   [1;31m╰──[0m[0m spec for undefined function start_test_server/2
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 177 │      {ok, [1;31mjson_rpc_response[0m()} | {error, term()}.[0m
+     │           [1;31m╰──[0m[0m type json_rpc_response() undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 196 │      {ok, [1;31mjson_rpc_response[0m()} | {error, term()}.[0m
+     │           [1;31m╰──[0m[0m type json_rpc_response() undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 223 │  -spec validate_response([1;31mjson_rpc_response[0m(), validation_rules()) ->[0m
+     │                          [1;31m╰──[0m[0m type json_rpc_response() undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_test_client.erl:
+     │
+ 320 │  -[1;31mspec[0m init([term()]) -> {ok, #state{}} | {stop, term()}.[0m
+     │   [1;31m╰──[0m[0m spec for undefined function init/1
+
+
