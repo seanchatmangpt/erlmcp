@@ -1,0 +1,19 @@
+File,Category,Status,Module Exists,Priority,Action,Estimated Effort
+apps/erlmcp_core/test/erlmcp_batch_tests.erl.skip,Core Test,SKIP,YES,HIGH,Fix and enable,2-4 hours
+apps/erlmcp_core/test/erlmcp_cpu_quota_tests.erl.skip,Core Test,SKIP,YES,HIGH,Fix and enable,2-3 hours
+apps/erlmcp_core/test/erlmcp_progress_tests.erl.broken,Core Test,BROKEN,YES,HIGH,Fix and enable,3-5 hours
+apps/erlmcp_core/test/erlmcp_json_rpc_tests.erl.skip,Core Test,SKIP,YES,MEDIUM,Fix and enable,4-6 hours
+apps/erlmcp_core/test/erlmcp_prompt_injection_tests.erl.skip,Security Test,SKIP,NO,LOW,Evaluate and implement or delete,8-12 hours
+apps/erlmcp_core/test/erlmcp_integration_SUITE.erl.skip,Integration Test,SKIP,N/A,HIGH,Fix and enable,6-8 hours
+apps/erlmcp_core/test/erlmcp_integration_SUITE.erl.broken,Integration Test,BROKEN,N/A,HIGH,Merge and fix,2-3 hours
+apps/erlmcp_core/test/erlmcp_tool_execution_tests.erl.skip,Integration Test,SKIP,N/A,HIGH,Fix and enable,6-8 hours
+apps/erlmcp_core/test/erlmcp_tool_execution_SUITE.erl.skip,Integration Test,SKIP,N/A,HIGH,Fix and enable,6-8 hours
+apps/erlmcp_transports/test/erlmcp_transport_validator_SUITE.erl.broken,Transport Test,BROKEN,Partial,MEDIUM,Complete and enable,8-12 hours
+apps/erlmcp_core/src/erlmcp_uri_validator.erl.broken,Source Module,BROKEN,NO,LOW,Implement or delete,12-16 hours
+apps/erlmcp_core/src/erlmcp_schema_validator.erl.broken,Source Module,BROKEN,NO,LOW,Implement or delete,16-20 hours
+apps/erlmcp_core/src/erlmcp_prompt_argument_validator.erl.broken,Source Module,BROKEN,NO,LOW,Implement or delete,8-12 hours
+apps/erlmcp_core/src/erlmcp_request_id.erl.broken,Source Module,BROKEN,NO,LOW,Implement or delete,4-6 hours
+apps/erlmcp_core/src/erlmcp_rate_limiter_v2.erl.broken,Source Module,BROKEN,NO,LOW,Implement or delete,12-16 hours
+apps/erlmcp_transports/src/erlmcp_connection_pool.erl.skip,Source Module,SKIP,NO,MEDIUM,Implement or delete,16-20 hours
+apps/erlmcp_transports/src/erlmcp_connection_pool_worker.erl.broken,Source Module,BROKEN,NO,MEDIUM,Implement or delete,8-12 hours
+apps/erlmcp_core/src/pricing/erlmcp_pricing_upgrade.erl.broken,Source Module,BROKEN,NO,LOW,Implement or delete,12-16 hours

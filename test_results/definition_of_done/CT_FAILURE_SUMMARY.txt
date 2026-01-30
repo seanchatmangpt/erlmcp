@@ -1,0 +1,149 @@
+================================================================================
+COMMON TEST SUITE VERIFICATION SUMMARY
+================================================================================
+Generated: 2026-01-30
+Test Command: rebar3 ct
+
+================================================================================
+OVERALL STATISTICS
+================================================================================
+Total Suites:           10
+Total Test Cases:       178
+Passed:                 62 (34.8%)
+Failed:                 34 (19.1%)
+Skipped:                82 (46.1%)
+
+Target Pass Rate:       80%
+Current Pass Rate:      34.8% ❌ FAIL
+Gap to Target:          -45.2%
+
+================================================================================
+SUITE BREAKDOWN
+================================================================================
+
+Suite                                    Passed  Failed  Skipped  Pass Rate
+--------------------------------------------------------------------------------
+erlmcp_integration_SUITE                     8       8        0     50.0% ❌
+erlmcp_protocol_checker_SUITE               14      10        0     58.3% ❌
+erlmcp_error_handling_robustness_SUITE       0       0        0      N/A
+erlmcp_error_response_SUITE                  0       0        0      N/A
+erlmcp_observability_SUITE                   0       0        0      N/A
+erlmcp_performance_validator_SUITE           0       0        0      N/A
+erlmcp_registry_dist_SUITE                   0       0        0      N/A
+erlmcp_transport_behavior_SUITE              0       0        0      N/A
+erlmcp_transport_http_SUITE                  0       0        0      N/A
+erlmcp_transport_integration_SUITE           0       0        0      N/A
+--------------------------------------------------------------------------------
+
+================================================================================
+FAILING TESTS BY CATEGORY
+================================================================================
+
+CATEGORY 1: Process Startup Dependencies (8 failures)
+--------------------------------------------------------------------------------
+Suite: erlmcp_integration_SUITE
+Root Cause: erlmcp_tasks and erlmcp_auth processes not started
+
+Failing Tests:
+  1. tasks_e2e_workflow_test
+  2. tasks_progress_tracking_test
+  3. tasks_timeout_test
+  4. tasks_worker_failure_test
+  5. jwt_verification_e2e_test
+  6. authorization_e2e_test
+  7. session_lifecycle_test
+  8. rbac_permission_test
+
+Error Pattern:
+  {noproc,{gen_server,call,[erlmcp_tasks|erlmcp_auth,...]}}
+
+Fix: Update init_per_suite/1 to start required processes
+Estimated Time: 30 minutes
+
+CATEGORY 2: API Implementation Mismatch (10+ failures)
+--------------------------------------------------------------------------------
+Suite: erlmcp_protocol_checker_SUITE
+Root Cause: Exported functions not implemented
+
+Failing Tests:
+  1. initialize_request_test
+  2. initialized_notification_test
+  3. tools_list_test
+  4. tools_call_test
+  5. resources_list_test
+  6. resources_read_test
+  7. prompts_list_test
+  8. progress_test
+  9. cancelled_test
+  10. full_initialize_sequence_test
+  11. error_recovery_test
+  12. concurrent_requests_test
+
+Error Pattern:
+  {undef, [{erlmcp_protocol_checker,validate_*,...}]}
+
+Fix: Implement missing validation functions OR update test suite
+Estimated Time: 2-4 hours
+
+CATEGORY 3: Skipped Tests (82 tests)
+--------------------------------------------------------------------------------
+Root Cause: Tests marked with .skip or skip conditions
+
+Impact:
+  - No error handling robustness coverage
+  - No error response coverage
+  - No observability coverage
+  - No performance validation coverage
+  - No distributed registry coverage
+  - No transport behavior compliance coverage
+  - No HTTP transport coverage
+  - No transport integration coverage
+
+Fix: Review and enable skipped tests
+Estimated Time: 4-8 hours
+
+================================================================================
+RECOMMENDED ACTIONS
+================================================================================
+
+PRIORITY 1 - CRITICAL (Fix Immediately)
+--------------------------------------------------------------------------------
+[ ] Fix process startup in erlmcp_integration_SUITE (30 min)
+[ ] Fix API mismatch in erlmcp_protocol_checker (2-4 hours)
+[ ] Re-run CT suite and verify results
+
+PRIORITY 2 - HIGH (Fix This Week)
+--------------------------------------------------------------------------------
+[ ] Enable skipped test suites (4-8 hours)
+[ ] Add process cleanup between tests (1 hour)
+[ ] Update test documentation (2 hours)
+
+PRIORITY 3 - MEDIUM (Fix This Sprint)
+--------------------------------------------------------------------------------
+[ ] Improve test coverage to 80%+ (16-24 hours)
+[ ] Add integration test documentation (2 hours)
+[ ] Refactor tests for maintainability
+
+================================================================================
+DEFINITION OF DONE STATUS
+================================================================================
+
+Criteria: All CT suites pass with 80%+ success rate
+Current: 34.8% pass rate (62/178)
+Status: ❌ FAIL
+
+Blockers:
+  - 34 failing tests (19.1%)
+  - 82 skipped tests (46.1%)
+  - Missing process startup configuration
+  - API implementation mismatch
+
+Required Actions:
+  1. Fix 8 integration suite failures (process startup)
+  2. Fix 10+ protocol checker failures (API mismatch)
+  3. Enable 82 skipped tests
+  4. Achieve 80%+ pass rate (142+ passing tests)
+
+Estimated Time to Completion: 8-16 hours
+
+================================================================================

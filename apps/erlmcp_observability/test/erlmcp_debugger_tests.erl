@@ -25,8 +25,9 @@ debugger_test_() ->
 
 setup() ->
     application:ensure_all_started(erlmcp_observability),
-    %% Start test gen_server
-    {ok, Pid} = test_server:start_link(),
+    %% Start inline test gen_server
+    {ok, Pid} = gen_server:start_link(?MODULE, [], []),
+    register(test_server, Pid),
     Pid.
 
 cleanup(Pid) ->
@@ -151,3 +152,27 @@ test_trace_messages() ->
 %
 % terminate(_Reason, _State) ->
 %     ok.
+
+%%%=============================================================================
+%%% GEN_SERVER CALLBACKS (inline test server)
+%%%=============================================================================
+
+%% These callbacks make this module a test gen_server
+
+init([]) ->
+    {ok, #{counter => 0}}.
+
+handle_call(_Request, _From, State) ->
+    {reply, ok, State}.
+
+handle_cast(_Msg, State = #{counter := N}) ->
+    {noreply, State#{counter => N + 1}}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.

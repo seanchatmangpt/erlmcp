@@ -107,12 +107,19 @@ handle_call({create_message, Messages, Params}, _From, State) ->
 
                         %% Call the model provider
                         ProviderModule = State#state.model_provider,
-                        Result = case erlang:function_exported(ProviderModule, create_message, 2) of
-                            true ->
-                                ProviderModule:create_message(Messages, MergedParams);
-                            false ->
-                                logger:error("Model provider ~p does not export create_message/2",
-                                            [ProviderModule]),
+                        Result = case code:ensure_loaded(ProviderModule) of
+                            {module, ProviderModule} ->
+                                case erlang:function_exported(ProviderModule, create_message, 2) of
+                                    true ->
+                                        ProviderModule:create_message(Messages, MergedParams);
+                                    false ->
+                                        logger:error("Model provider ~p does not export create_message/2",
+                                                    [ProviderModule]),
+                                        {error, invalid_provider}
+                                end;
+                            {error, LoadReason} ->
+                                logger:error("Failed to load model provider ~p: ~p",
+                                            [ProviderModule, LoadReason]),
                                 {error, invalid_provider}
                         end,
 

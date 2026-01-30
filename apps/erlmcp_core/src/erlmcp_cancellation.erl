@@ -251,7 +251,8 @@ handle_info({'DOWN', Monitor, process, _Pid, Reason}, State) ->
     end, State#state.operations),
     {noreply, State#state{operations = Ops}};
 
-handle_info(_Info, State) ->
+handle_info(Info, State) ->
+    logger:warning("Unexpected handle_info message: ~p", [Info]),
     {noreply, State}.
 
 %% @private

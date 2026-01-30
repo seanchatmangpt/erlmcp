@@ -11,7 +11,7 @@ init_test() ->
         exporter_endpoint => "http://localhost:4318"
     },
     Result = erlmcp_otel:init(Config),
-    ?assertMatch({ok, _}, Result).
+    ?assertMatch(ok, Result).
 
 start_span_test() ->
     erlmcp_otel:init(#{service_name => <<"test">>}),
