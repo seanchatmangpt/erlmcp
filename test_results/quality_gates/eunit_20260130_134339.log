@@ -1,0 +1,25 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;31m===> [1mCompiling apps/erlmcp_validation/test/erlmcp_integration_contracts_SUITE.erl failed
+[0m[0m     ┌─ apps/erlmcp_validation/test/erlmcp_integration_contracts_SUITE.erl:
+     │
+ 112 │      ?assertEqual(initialized, S[1;31m#state[0m.phase),[0m
+     │                                 [1;31m╰──[0m[0m record state undefined
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_integration_contracts_SUITE.erl:
+     │
+ 118 │      ClientCaps = #mcp_client_capabilities{roots = [1;31m#mcp_client_capability[0m{}},[0m
+     │                                                    [1;31m╰──[0m[0m record mcp_client_capability undefined
+
+

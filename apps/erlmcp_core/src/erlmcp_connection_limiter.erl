@@ -66,7 +66,8 @@
 -record(state, {
     max_connections :: pos_integer(),
     alert_threshold :: float(),
-    last_alert :: integer() | undefined
+    last_alert :: integer() | undefined,
+    server_counts :: #{server_id() => non_neg_integer()}
 }).
 
 %%====================================================================
@@ -88,18 +89,12 @@ stop() ->
 -spec ensure_counter_registered() -> ok.
 ensure_counter_registered() ->
     try
-        case gproc:reg(?GPROC_KEY, 0) of
-            true ->
-                logger:info("Counter registered: ~p", [?GPROC_KEY]);
-            {false, _Pid} ->
-                logger:info("Counter already exists, resetting"),
-                reset_existing_counter()
-        end
+        gproc:reg_shared(?GPROC_KEY),
+        ok
     catch
         error:badarg ->
-            logger:warning("Counter registration failed, retrying..."),
-            timer:sleep(10),
-            ensure_counter_registered()
+            %% Counter already exists
+            ok
     end.
 
 %% @doc Check if connection should be accepted
@@ -140,15 +135,9 @@ get_connection_count() ->
 get_connection_count(ServerId) ->
     %% Always return actual count, even when limiting disabled
     try
-        Key = {c, l, {erlmcp_server_connections, ServerId}},
-        case gproc:get_value(Key) of
-            Value when is_integer(Value) ->
-                Value;
-            _ ->
-                0
-        end
+        gen_server:call(?MODULE, {get_connection_count, ServerId})
     catch
-        error:badarg ->
+        _:_ ->
             0
     end.
 
@@ -197,23 +186,28 @@ init([]) ->
 
     logger:info("Loaded config: max=~p, alert_threshold=~p", [MaxConnections, AlertThreshold]),
 
-    %% Register gproc counter
+    %% Register gproc counter for global count
     ensure_counter_registered(),
 
     {ok, #state{
         max_connections = MaxConnections,
         alert_threshold = AlertThreshold,
-        last_alert = undefined
+        last_alert = undefined,
+        server_counts = #{}
     }}.
 
 handle_call(get_connection_count, _From, State) ->
     Count = get_counter_value(),
     {reply, Count, State};
 
+handle_call({get_connection_count, ServerId}, _From, State) ->
+    Count = maps:get(ServerId, State#state.server_counts, 0),
+    {reply, Count, State};
+
 handle_call({check_accept, ServerId}, _From, State) ->
     %% Increment counters
     increment_counter(),
-    increment_server_counter(ServerId),
+    NewServerCounts = maps:update_with(ServerId, fun(V) -> V + 1 end, 1, State#state.server_counts),
 
     CurrentCount = get_counter_value(),
     MaxConnections = State#state.max_connections,
@@ -222,19 +216,18 @@ handle_call({check_accept, ServerId}, _From, State) ->
         true ->
             %% Check for alert threshold
             check_alert_threshold(CurrentCount, MaxConnections),
-            {reply, {ok, CurrentCount}, State};
+            {reply, {ok, CurrentCount}, State#state{server_counts = NewServerCounts}};
         false ->
             %% Rollback the increment since we're rejecting
             decrement_counter(),
-            decrement_server_counter(ServerId),
             {reply, {error, too_many_connections, CurrentCount}, State}
     end;
 
 handle_call({accept_connection, ServerId}, _From, State) ->
     %% Increment counters without checking limit (when limiting disabled)
     increment_counter(),
-    increment_server_counter(ServerId),
-    {reply, accept, State};
+    NewServerCounts = maps:update_with(ServerId, fun(V) -> V + 1 end, 1, State#state.server_counts),
+    {reply, accept, State#state{server_counts = NewServerCounts}};
 
 handle_call({set_limit, Limit}, _From, State) when is_integer(Limit), Limit > 0 ->
     logger:info("Connection limit updated: ~p -> ~p",
@@ -260,8 +253,8 @@ handle_call(_Request, _From, State) ->
 handle_cast({release_connection, ServerId}, State) ->
     %% Decrement counters
     decrement_counter(),
-    decrement_server_counter(ServerId),
-    {noreply, State};
+    NewServerCounts = maps:update_with(ServerId, fun(V) -> V - 1 end, 0, State#state.server_counts),
+    {noreply, State#state{server_counts = NewServerCounts}};
 
 handle_cast({check_alert, CurrentCount, MaxConnections}, State) ->
     NewState = handle_alert(CurrentCount, MaxConnections, State),
@@ -328,7 +321,7 @@ get_counter_value() ->
                 0
             catch
                 error:badarg ->
-                    %% Still can't register (race condition)
+                    %% Still can't register (race condition or already exists)
                     logger:error("Failed to register counter after badarg"),
                     0
             end
@@ -342,9 +335,10 @@ increment_counter() ->
         logger:debug("Counter incremented to: ~p", [NewValue])
     catch
         error:badarg ->
-            %% Counter doesn't exist, create it
+            %% Counter doesn't exist, create it with initial value 0, then increment
             logger:warning("Counter not registered, creating now"),
-            gproc:reg(?GPROC_KEY, 1)
+            gproc:reg(?GPROC_KEY, 0),
+            gproc:update_counter(?GPROC_KEY, 1)
     end,
     ok.
 
@@ -353,31 +347,6 @@ increment_counter() ->
 decrement_counter() ->
     try
         gproc:update_counter(?GPROC_KEY, -1)
-    catch
-        error:badarg ->
-            ok
-    end,
-    ok.
-
-%% @private Increment server-specific counter
--spec increment_server_counter(server_id()) -> ok.
-increment_server_counter(ServerId) ->
-    Key = {c, l, {erlmcp_server_connections, ServerId}},
-    try
-        gproc:update_counter(Key, 1)
-    catch
-        error:badarg ->
-            %% Counter doesn't exist, create it
-            gproc:reg(Key, 1)
-    end,
-    ok.
-
-%% @private Decrement server-specific counter
--spec decrement_server_counter(server_id()) -> ok.
-decrement_server_counter(ServerId) ->
-    try
-        Key = {c, l, {erlmcp_server_connections, ServerId}},
-        gproc:update_counter(Key, -1)
     catch
         error:badarg ->
             ok
@@ -422,26 +391,6 @@ handle_alert(CurrentCount, MaxConnections, State) ->
         _ ->
             %% Cooldown active, skip alert
             State
-    end.
-
-%% @private Reset existing counter to 0
-%% Called when counter already exists from previous test
--spec reset_existing_counter() -> ok.
-reset_existing_counter() ->
-    try
-        case gproc:get_value(?GPROC_KEY) of
-            Value when is_integer(Value), Value > 0 ->
-                %% Reset to 0 by subtracting current value
-                gproc:update_counter(?GPROC_KEY, -Value),
-                logger:info("Counter reset from ~p to 0", [Value]);
-            _ ->
-                logger:info("Counter already at 0 or invalid"),
-                ok
-        end
-    catch
-        error:badarg ->
-            logger:warning("Could not reset counter"),
-            ok
     end.
 
 %% @private Emit alert log
