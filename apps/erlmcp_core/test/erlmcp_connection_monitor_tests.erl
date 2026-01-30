@@ -13,7 +13,6 @@
 -module(erlmcp_connection_monitor_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp_test_constants.hrl").
 
 %%====================================================================
 %% Test Fixtures
@@ -51,17 +50,18 @@ cleanup(_Pid) ->
 %% @doc Test that connection monitor starts and stops
 test_start_stop() ->
     %% Verify monitor is running
-    ?assertEqual(true, is_process_alive(erlmcp_connection_monitor)),
+    MonitorPid = whereis(erlmcp_connection_monitor),
+    ?assertNotEqual(undefined, MonitorPid),
+    ?assertEqual(true, is_process_alive(MonitorPid)),
 
     %% Stop and restart
     ok = erlmcp_connection_monitor:stop(),
     timer:sleep(100),
 
-    {ok, _Pid} = erlmcp_connection_monitor:start_link(),
-    ?assertEqual(true, is_process_alive(erlmcp_connection_monitor)),
-
-    %% Cleanup
-    erlmcp_connection_monitor:stop().
+    {ok, _NewPid} = erlmcp_connection_monitor:start_link(),
+    NewMonitorPid = whereis(erlmcp_connection_monitor),
+    ?assertNotEqual(undefined, NewMonitorPid),
+    ?assertEqual(true, is_process_alive(NewMonitorPid)).
 
 %% @doc Test monitoring a connection
 test_monitor_connection() ->
@@ -124,7 +124,8 @@ test_process_death_cleanup() ->
 
     CountBefore = erlmcp_connection_monitor:get_connection_count(),
 
-    %% Kill the connection process
+    %% Unlink before killing to avoid killing test process
+    unlink(ConnPid),
     exit(ConnPid, kill),
     timer:sleep(200),  % Allow time for DOWN message processing
 
@@ -176,7 +177,10 @@ test_orphaned_cleanup() ->
 
     %% Kill half the processes to create orphans
     OrphanedPids = lists:sublist(ConnectionPids, 5),
-    lists:foreach(fun(Pid) -> exit(Pid, kill) end, OrphanedPids),
+    lists:foreach(fun(Pid) ->
+        unlink(Pid),
+        exit(Pid, kill)
+    end, OrphanedPids),
 
     timer:sleep(200),  % Allow time for cleanup
 
@@ -234,7 +238,10 @@ test_force_cleanup() ->
     end, lists:seq(1, 10)),
 
     %% Kill some to create orphans
-    lists:foreach(fun(Pid) -> exit(Pid, kill) end, lists:sublist(ConnectionPids, 3)),
+    lists:foreach(fun(Pid) ->
+        unlink(Pid),
+        exit(Pid, kill)
+    end, lists:sublist(ConnectionPids, 3)),
 
     timer:sleep(200),
 
@@ -288,18 +295,19 @@ test_multiple_connections() ->
 
 %% @doc Start a mock connection process
 start_mock_connection() ->
-    spawn_link(fun() ->
+    Pid = spawn_link(fun() ->
         receive
             stop -> ok
         after
             10000 -> timeout
         end
-    end).
+    end),
+    {ok, Pid}.
 
 %% @doc Stop a mock connection process
 stop_mock_connection(Pid) when is_pid(Pid) ->
     case is_process_alive(Pid) of
-        true -> exit(Pid, stop);
+        true -> exit(Pid, normal);  % Use 'normal' to not kill linked test process
         false -> ok
     end;
 stop_mock_connection(_) ->
