@@ -1,0 +1,1145 @@
+{#
+  MCP API Reference Documentation Template (Diataxis Framework)
+
+  Generates comprehensive API documentation from MCP ontology.
+
+  Context Variables (from SPARQL queries):
+    - project_name: string (e.g., "erlmcp")
+    - project_version: string (e.g., "2.0.0")
+    - protocol_version: string (e.g., "2025-11-25")
+    - generated_at: timestamp
+    - generator_version: string
+
+    - methods: array of {
+        method_name: string,
+        description: string,
+        direction: "client_to_server" | "server_to_client",
+        required_capability: string | null,
+        phase: string (e.g., "initialization", "operation"),
+        request_params: object,
+        response_schema: object,
+        error_codes: array,
+        examples: array of {code, description}
+      }
+
+    - types: array of {
+        type_name: string,
+        erlang_record: string,
+        dialyzer_spec: string,
+        fields: array of {name, type, description, required},
+        examples: array
+      }
+
+    - capabilities: array of {
+        capability_name: string,
+        description: string,
+        enables_methods: array of strings,
+        erlang_record: string
+      }
+
+    - transports: array of {
+        transport_name: string,
+        description: string,
+        module_name: string,
+        config_example: string,
+        use_cases: array
+      }
+
+    - supervision_tree: object with {
+        root_supervisor: string,
+        strategy: string,
+        children: array (recursive)
+      }
+
+    - state_machines: array of {
+        machine_name: string,
+        states: array,
+        transitions: array of {from, to, event}
+      }
+
+    - migration_guide: object with {
+        breaking_changes: array,
+        migration_steps: array,
+        compatibility_notes: array
+      }
+#}
+# {{ project_name }} API Reference v{{ project_version }}
+
+**Protocol Version**: {{ protocol_version }}
+**Generated**: {{ generated_at }}
+**Generator**: ggen v{{ generator_version | default(value="6.0.0") }}
+
+---
+
+# Table of Contents
+
+1. [Getting Started (Tutorial)](#getting-started-tutorial)
+2. [How-To Guides](#how-to-guides)
+3. [API Reference](#api-reference)
+4. [Explanation & Architecture](#explanation--architecture)
+5. [Migration Guide](#migration-guide)
+
+---
+
+# Getting Started (Tutorial)
+
+## What is {{ project_name }}?
+
+{{ project_name }} is a production-grade Erlang/OTP implementation of the Model Context Protocol (MCP), enabling AI-to-service communication with fault-tolerant supervision, pluggable transports, and comprehensive observability.
+
+## Quick Start in 5 Minutes
+
+### Step 1: Install Dependencies
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/{{ project_name }}.git
+cd {{ project_name }}
+
+# Install Erlang/OTP 25+
+# Build the project
+rebar3 compile
+```
+
+### Step 2: Start Your First MCP Server
+
+```erlang
+%% my_first_server.erl
+-module(my_first_server).
+-export([start/0]).
+
+start() ->
+    %% Configure STDIO transport
+    TransportConfig = #{
+        type => stdio,
+        server_id => my_server
+    },
+
+    %% Define server capabilities
+    Capabilities = #{
+        resources => #{enabled => true},
+        tools => #{enabled => true},
+        prompts => #{enabled => true}
+    },
+
+    %% Start the server
+    {ok, ServerPid} = erlmcp_server:start_link(TransportConfig, Capabilities),
+
+    %% Add a simple tool
+    erlmcp_server:add_tool(ServerPid, <<"hello">>,
+        fun(#{<<"name">> := Name}) ->
+            <<"Hello, ", Name/binary, "!">>
+        end),
+
+    {ok, ServerPid}.
+```
+
+### Step 3: Connect with an MCP Client
+
+```erlang
+%% In Erlang shell
+1> {ok, Client} = erlmcp_client:start_link({stdio, []}, #{}).
+{ok, <0.123.0>}
+
+2> erlmcp_client:initialize(Client, #{}).
+{ok, #{<<"protocolVersion">> => <<"{{ protocol_version }}">>}}
+
+3> erlmcp_client:call_tool(Client, <<"hello">>, #{<<"name">> => <<"World">>}).
+{ok, #{<<"content">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"Hello, World!">>}]}}
+```
+
+### Step 4: Explore Examples
+
+```bash
+# Run the calculator example
+cd examples/calculator
+rebar3 shell
+```
+
+**Congratulations!** You've created your first MCP server. 🎉
+
+---
+
+# How-To Guides
+
+## Common Tasks
+
+### How to Add a Tool with JSON Schema Validation
+
+```erlang
+%% Define JSON Schema for validation
+Schema = #{
+    <<"type">> => <<"object">>,
+    <<"properties">> => #{
+        <<"x">> => #{
+            <<"type">> => <<"number">>,
+            <<"description">> => <<"First operand">>
+        },
+        <<"y">> => #{
+            <<"type">> => <<"number">>,
+            <<"description">> => <<"Second operand">>
+        },
+        <<"operation">> => #{
+            <<"type">> => <<"string">>,
+            <<"enum">> => [<<"add">>, <<"subtract">>, <<"multiply">>, <<"divide">>]
+        }
+    },
+    <<"required">> => [<<"x">>, <<"y">>, <<"operation">>]
+},
+
+%% Add tool with schema
+erlmcp_server:add_tool_with_schema(ServerPid, <<"calculator">>,
+    fun(#{<<"x">> := X, <<"y">> := Y, <<"operation">> := Op}) ->
+        Result = case Op of
+            <<"add">> -> X + Y;
+            <<"subtract">> -> X - Y;
+            <<"multiply">> -> X * Y;
+            <<"divide">> when Y =/= 0 -> X / Y;
+            <<"divide">> -> throw({mcp_error, -32602, <<"Division by zero">>})
+        end,
+        float_to_binary(Result)
+    end, Schema).
+```
+
+### How to Implement Dynamic Resources with Templates
+
+```erlang
+%% Add a resource template with URI pattern
+erlmcp_server:add_resource_template(ServerPid,
+    <<"user://{username}/profile">>,
+    <<"User Profile">>,
+    fun(Uri) ->
+        %% Extract username from URI
+        case re:run(Uri, <<"user://([^/]+)/profile">>, [{capture, all_but_first, binary}]) of
+            {match, [Username]} ->
+                %% Fetch profile from database
+                Profile = db:get_user_profile(Username),
+                #{
+                    <<"type">> => <<"application/json">>,
+                    <<"text">> => jsx:encode(Profile)
+                };
+            nomatch ->
+                throw({mcp_error, -32602, <<"Invalid URI format">>})
+        end
+    end).
+```
+
+### How to Configure TCP Transport with Ranch
+
+```erlang
+%% Server mode - accept incoming connections
+TcpServerConfig = #{
+    type => tcp,
+    mode => server,
+    port => 8080,
+    server_id => my_tcp_server,
+    num_acceptors => 10,        %% Ranch acceptor pool size
+    max_connections => 1000,    %% Connection limit
+    keepalive => true,
+    nodelay => true
+},
+
+{ok, Transport} = erlmcp_transport_tcp:start_link(tcp_transport, TcpServerConfig).
+```
+
+### How to Configure HTTP/2 Transport with Gun
+
+```erlang
+%% Client mode - connect to MCP server via HTTP
+HttpConfig = #{
+    type => http,
+    url => "https://api.example.com/mcp",
+    method => <<"POST">>,
+    headers => [
+        {<<"content-type">>, <<"application/json">>},
+        {<<"authorization">>, <<"Bearer ", Token/binary>>}
+    ],
+    timeout => 30000,
+    protocols => [http2, http],  %% Prefer HTTP/2
+    retry => 5,
+    retry_timeout => 1000
+},
+
+{ok, Transport} = erlmcp_transport_http:start_link(http_transport, HttpConfig).
+```
+
+### How to Subscribe to Resource Updates
+
+```erlang
+%% Server: Enable resource subscriptions
+erlmcp_server:add_resource(ServerPid, <<"config://app">>,
+    fun(_Uri) -> get_app_config() end),
+
+%% Client: Subscribe to resource
+ok = erlmcp_client:subscribe_to_resource(ClientPid, <<"config://app">>),
+
+%% Client: Handle notifications
+erlmcp_client:set_notification_handler(ClientPid, <<"resources/updated">>,
+    fun(Params) ->
+        Uri = maps:get(<<"uri">>, Params),
+        io:format("Resource updated: ~s~n", [Uri]),
+        %% Fetch updated resource
+        {ok, Content} = erlmcp_client:read_resource(ClientPid, Uri),
+        process_update(Content)
+    end).
+```
+
+### How to Implement Connection Pooling
+
+```erlang
+%% Start a connection pool (poolboy)
+PoolConfig = [
+    {name, {local, mcp_pool}},
+    {worker_module, erlmcp_http_worker},
+    {size, 10},              %% Pool size
+    {max_overflow, 5}        %% Max overflow workers
+],
+
+{ok, PoolPid} = poolboy:start_link(PoolConfig),
+
+%% Use a pooled connection
+Result = poolboy:transaction(mcp_pool, fun(Worker) ->
+    erlmcp_http_worker:call_tool(Worker, <<"search">>, #{<<"query">> => <<"erlang">>})
+end).
+```
+
+### How to Handle Errors Gracefully
+
+```erlang
+%% Tool handler with comprehensive error handling
+erlmcp_server:add_tool(ServerPid, <<"database_query">>,
+    fun(Args) ->
+        try
+            %% Validate arguments
+            Query = maps:get(<<"query">>, Args),
+            validate_query(Query),
+
+            %% Execute with timeout
+            case db:execute(Query, 5000) of
+                {ok, Results} ->
+                    jsx:encode(Results);
+                {error, timeout} ->
+                    throw({mcp_error, -32603, <<"Query timeout">>});
+                {error, Reason} ->
+                    throw({mcp_error, -32603, iolist_to_binary(io_lib:format("Database error: ~p", [Reason]))})
+            end
+        catch
+            error:{badkey, Key} ->
+                throw({mcp_error, -32602, <<"Missing required parameter: ", (atom_to_binary(Key))/binary>>});
+            throw:{mcp_error, Code, Message} ->
+                throw({mcp_error, Code, Message});
+            Class:Reason:Stack ->
+                logger:error("Tool execution failed: ~p:~p~n~p", [Class, Reason, Stack]),
+                throw({mcp_error, -32603, <<"Internal server error">>})
+        end
+    end).
+```
+
+---
+
+# API Reference
+
+## MCP Methods
+
+{% for method in methods -%}
+### {{ method.method_name }}
+
+**Direction**: {{ method.direction | replace(from="_", to=" ") | title }}
+**Phase**: {{ method.phase | title }}
+{% if method.required_capability -%}
+**Required Capability**: `{{ method.required_capability }}`
+{% else -%}
+**Required Capability**: None
+{% endif -%}
+
+{{ method.description }}
+
+#### Request Parameters
+
+```erlang
+{{ method.request_params | default(value="No parameters") }}
+```
+
+#### Response Schema
+
+```erlang
+{{ method.response_schema | default(value="No response body") }}
+```
+
+#### Error Codes
+
+{% if method.error_codes -%}
+| Code | Description |
+|------|-------------|
+{% for error in method.error_codes -%}
+| {{ error.code }} | {{ error.description }} |
+{% endfor -%}
+{% else -%}
+Standard JSON-RPC 2.0 error codes apply.
+{% endif %}
+
+#### Examples
+
+{% for example in method.examples -%}
+**{{ example.description }}**
+
+```erlang
+{{ example.code }}
+```
+
+{% endfor -%}
+
+#### Dialyzer Type Spec
+
+```erlang
+{{ method.dialyzer_spec | default(value="% No type spec available") }}
+```
+
+---
+
+{% endfor %}
+
+## Type Definitions
+
+{% for type in types -%}
+### {{ type.type_name }}
+
+{{ type.description | default(value="No description available") }}
+
+#### Erlang Record
+
+```erlang
+{{ type.erlang_record }}
+```
+
+#### Dialyzer Spec
+
+```erlang
+{{ type.dialyzer_spec }}
+```
+
+#### Fields
+
+{% if type.fields -%}
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+{% for field in type.fields -%}
+| `{{ field.name }}` | `{{ field.type }}` | {{ field.required | default(value=false) | yesno: "Yes,No" }} | {{ field.description | default(value="") }} |
+{% endfor -%}
+{% endif %}
+
+#### Examples
+
+{% for example in type.examples -%}
+```erlang
+{{ example }}
+```
+
+{% endfor -%}
+
+---
+
+{% endfor %}
+
+## Capabilities
+
+{% for cap in capabilities -%}
+### {{ cap.capability_name }}
+
+{{ cap.description }}
+
+**Enables Methods**:
+{% for method in cap.enables_methods -%}
+- `{{ method }}`
+{% endfor %}
+
+**Erlang Record**:
+
+```erlang
+{{ cap.erlang_record }}
+```
+
+**Usage Example**:
+
+```erlang
+%% Enable {{ cap.capability_name }} capability
+Capabilities = #{
+    {{ cap.capability_name }} => #{enabled => true}
+}.
+```
+
+---
+
+{% endfor %}
+
+## Transports
+
+{% for transport in transports -%}
+### {{ transport.transport_name }}
+
+**Module**: `{{ transport.module_name }}`
+
+{{ transport.description }}
+
+#### Configuration Example
+
+```erlang
+{{ transport.config_example }}
+```
+
+#### Use Cases
+
+{% for use_case in transport.use_cases -%}
+- {{ use_case }}
+{% endfor %}
+
+#### Transport Behavior Callbacks
+
+All transports implement the `erlmcp_transport` behavior:
+
+```erlang
+-callback init(TransportId :: atom(), Config :: map()) ->
+    {ok, State :: term()} | {error, Reason :: term()}.
+
+-callback send(State :: term(), Data :: iodata()) ->
+    ok | {error, Reason :: term()}.
+
+-callback close(State :: term()) -> ok.
+
+%% Optional callbacks
+-callback get_info(State :: term()) ->
+    #{type => atom(), status => atom(), peer => term()}.
+
+-callback handle_transport_call(Request :: term(), State :: term()) ->
+    {reply, Reply :: term(), NewState :: term()} | {error, Reason :: term()}.
+```
+
+---
+
+{% endfor %}
+
+## Registry API (gproc-based)
+
+The registry provides process discovery and routing using `gproc`.
+
+### Registration Functions
+
+```erlang
+%% Register a server
+-spec register_server(ServerId, ServerPid, Config) -> ok.
+ServerId :: atom() | binary()
+ServerPid :: pid()
+Config :: map()
+
+%% Register a transport
+-spec register_transport(TransportId, TransportPid, Config) -> ok.
+
+%% Find registered processes
+-spec find_server(ServerId) -> {ok, pid()} | {error, not_found}.
+-spec find_transport(TransportId) -> {ok, pid()} | {error, not_found}.
+
+%% List all registered processes
+-spec list_servers() -> [{ServerId, ServerPid}].
+-spec list_transports() -> [{TransportId, TransportPid}].
+
+%% Bind transport to server
+-spec bind_transport_to_server(TransportId, ServerId) -> ok.
+-spec get_server_for_transport(TransportId) -> {ok, ServerId} | {error, not_found}.
+```
+
+### Benefits of gproc
+
+- **Automatic monitoring**: No manual `monitor`/`demonitor` needed
+- **Automatic cleanup**: Process death triggers cleanup
+- **O(1) lookups**: Fast ETS-based lookups
+- **Distributed support**: Can be used in clustered deployments
+
+---
+
+# Explanation & Architecture
+
+## System Architecture Overview
+
+{{ project_name }} is built as an **umbrella application** with 4 independent OTP applications:
+
+1. **erlmcp_core** - Protocol engine, client/server, registry
+2. **erlmcp_transports** - Transport implementations (STDIO, TCP, HTTP/2, WebSocket)
+3. **erlmcp_observability** - Metrics, OpenTelemetry, receipt chains
+4. **tcps_erlmcp** - Toyota Code Production System (optional quality gates)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  {{ project_name }} Umbrella            │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌──────────────┐         ┌──────────────┐             │
+│  │ MCP Client   │ ◄─────► │ MCP Server   │             │
+│  │ (gen_server) │         │ (gen_server) │             │
+│  └──────┬───────┘         └──────┬───────┘             │
+│         │                        │                     │
+│         ▼                        ▼                     │
+│  ┌────────────────────────────────────────┐            │
+│  │   erlmcp_registry (gproc routing)      │            │
+│  └────────────────────────────────────────┘            │
+│         │                        │                     │
+│         ▼                        ▼                     │
+│  ┌────────────────────────────────────────┐            │
+│  │   Transport Layer (pluggable)          │            │
+│  │   STDIO │ TCP │ HTTP/2 │ WebSocket     │            │
+│  └────────────────────────────────────────┘            │
+│         │                        │                     │
+│         ▼                        ▼                     │
+│  ┌────────────────────────────────────────┐            │
+│  │   Observability (OTEL, Metrics)        │            │
+│  └────────────────────────────────────────┘            │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Supervision Tree Architecture
+
+{% if supervision_tree -%}
+```mermaid
+graph TD
+    Root[{{ supervision_tree.root_supervisor }}]
+    Root -->|{{ supervision_tree.strategy }}| A[erlmcp_core_sup]
+    Root --> B[erlmcp_server_sup]
+    Root --> C[erlmcp_observability_sup]
+
+    A --> A1[erlmcp_registry]
+    A --> A2[erlmcp_session_manager]
+    A --> A3[erlmcp_task_manager]
+    A --> A4[erlmcp_cache]
+
+    B --> B1[Dynamic MCP Servers]
+
+    C --> C1[erlmcp_metrics]
+    C --> C2[erlmcp_otel]
+    C --> C3[erlmcp_health_monitor]
+
+    style Root fill:#f9f,stroke:#333,stroke-width:4px
+    style A fill:#bbf,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#bbf,stroke:#333,stroke-width:2px
+```
+{% else -%}
+```
+{{ project_name }}_sup (one_for_one)
+├── erlmcp_core_sup (one_for_one)
+│   ├── erlmcp_registry
+│   ├── erlmcp_session_manager
+│   ├── erlmcp_task_manager
+│   └── erlmcp_cache
+├── erlmcp_server_sup (simple_one_for_one)
+│   └── [Dynamic MCP servers]
+└── erlmcp_observability_sup (one_for_one)
+    ├── erlmcp_metrics
+    ├── erlmcp_otel
+    └── erlmcp_health_monitor
+```
+{% endif %}
+
+### Supervision Strategies Explained
+
+| Supervisor | Strategy | Rationale |
+|------------|----------|-----------|
+| `erlmcp_sup` | `one_for_one` | Each subsystem fails independently - no cascading failures |
+| `erlmcp_core_sup` | `one_for_one` | Core components isolated - registry failure doesn't restart sessions |
+| `erlmcp_server_sup` | `simple_one_for_one` | Dynamic MCP server instances - individual failures don't affect others |
+| `erlmcp_transport_sup` | `one_for_one` | Transport failures isolated - TCP crash doesn't affect HTTP |
+| `erlmcp_observability_sup` | `one_for_one` | Observability failures NEVER affect protocol operation |
+
+### Failure Isolation Guarantees
+
+| Component Crash | Restart Scope | Recovery Time | Impact |
+|-----------------|---------------|---------------|--------|
+| Registry | Registry only | ~500ms | New routing fails; existing connections continue |
+| Session Manager | Session Manager only | ~1s | New sessions fail; existing sessions continue |
+| Transport (TCP) | That transport only | ~2s | TCP connections drop; HTTP/STDIO unaffected |
+| Metrics Server | Metrics Server only | ~500ms | Metrics temporarily unavailable; protocol unaffected |
+| Observability | Observability workers | ~500ms | Zero impact on core MCP protocol |
+
+## State Machines
+
+{% for machine in state_machines -%}
+### {{ machine.machine_name }}
+
+```mermaid
+stateDiagram-v2
+    {% for state in machine.states -%}
+    state {{ state }}
+    {% endfor %}
+
+    {% for transition in machine.transitions -%}
+    {{ transition.from }} --> {{ transition.to }}: {{ transition.event }}
+    {% endfor %}
+```
+
+**States**:
+{% for state in machine.states -%}
+- `{{ state }}`
+{% endfor %}
+
+**Transitions**:
+| From | To | Event |
+|------|-----|-------|
+{% for transition in machine.transitions -%}
+| {{ transition.from }} | {{ transition.to }} | {{ transition.event }} |
+{% endfor %}
+
+---
+
+{% endfor %}
+
+## Message Flow Patterns
+
+### Client Request Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client API
+    participant CS as erlmcp_client
+    participant R as erlmcp_registry
+    participant T as Transport
+    participant N as Network
+
+    C->>CS: call_tool(Name, Args)
+    CS->>CS: Encode JSON-RPC
+    CS->>R: Lookup transport
+    R-->>CS: TransportPid
+    CS->>T: send(EncodedMsg)
+    T->>N: Network I/O
+    N-->>T: Response
+    T->>R: Route to client
+    R->>CS: Response message
+    CS->>CS: Decode JSON-RPC
+    CS-->>C: Return result
+```
+
+### Server Request Handling
+
+```mermaid
+sequenceDiagram
+    participant N as Network
+    participant T as Transport
+    participant R as erlmcp_registry
+    participant S as erlmcp_server
+    participant H as Handler Function
+
+    N->>T: Incoming data
+    T->>R: Route to server
+    R->>S: Request message
+    S->>S: Decode JSON-RPC
+    S->>H: Execute handler
+    H-->>S: Result
+    S->>S: Encode JSON-RPC
+    S->>T: send(Response)
+    T->>N: Network I/O
+```
+
+## Design Principles
+
+### 1. Process Isolation
+
+Each connection runs in its own Erlang process, ensuring:
+- **Fault isolation**: One connection crash doesn't affect others
+- **Independent state**: Each process manages its own state
+- **Concurrent operation**: Processes run in parallel across schedulers
+
+### 2. Let-It-Crash Philosophy
+
+Following OTP best practices:
+- Processes fail fast on errors
+- Supervisors detect failures and restart workers
+- System recovers to known-good state automatically
+- No defensive error handling in hot path
+
+### 3. Bulkhead Pattern
+
+Failures are contained within application boundaries:
+- `one_for_one` strategy prevents cascading restarts
+- Observability failures don't affect protocol layer
+- Transport failures are isolated per transport type
+- Independent supervision trees for each subsystem
+
+### 4. Pluggable Transports
+
+Transport behavior interface allows custom implementations:
+- Implement 3 callbacks: `init/2`, `send/2`, `close/1`
+- Optional callbacks for extended functionality
+- Standard message protocol for all transports
+- Easy to add new transport types (gRPC, QUIC, etc.)
+
+### 5. Registry-Based Routing
+
+Using `gproc` for process discovery:
+- No hardcoded process references
+- Automatic cleanup on process death
+- O(1) lookups via ETS
+- Supports distributed deployments
+
+## Performance Characteristics
+
+| Metric | Target | Achieved |
+|--------|--------|----------|
+| Registry Throughput | >500K msg/s | 553K msg/s |
+| Queue Operations | >900K ops/s | 971K ops/s |
+| Pool Management | >100K ops/s | 149K ops/s |
+| Session Handling | >200K ops/s | 242K ops/s |
+| Network I/O | >40K msg/s | 43K msg/s (4KB packets) |
+| Sustained Load | >300K msg/s | 372K msg/s (60M ops/30s) |
+| Concurrent Connections | >40K | 40-50K per node |
+
+### Scalability Limits
+
+**Single Node**: 40-50K concurrent active connections
+**Clustered**: 100K+ connections with horizontal scaling
+**Memory**: ~2.5 KB per connection (process heap)
+**CPU**: Scales linearly across schedulers
+
+---
+
+# Migration Guide
+
+{% if migration_guide -%}
+
+## Migrating from Previous Versions
+
+### Breaking Changes
+
+{% for change in migration_guide.breaking_changes -%}
+#### {{ change.title }}
+
+{{ change.description }}
+
+**Before**:
+```erlang
+{{ change.before_code }}
+```
+
+**After**:
+```erlang
+{{ change.after_code }}
+```
+
+**Impact**: {{ change.impact }}
+
+---
+
+{% endfor %}
+
+### Migration Steps
+
+{% for step in migration_guide.migration_steps -%}
+#### Step {{ loop.index }}: {{ step.title }}
+
+{{ step.description }}
+
+```bash
+{{ step.commands }}
+```
+
+{% if step.verification -%}
+**Verification**:
+```bash
+{{ step.verification }}
+```
+{% endif %}
+
+---
+
+{% endfor %}
+
+### Compatibility Notes
+
+{% for note in migration_guide.compatibility_notes -%}
+- {{ note }}
+{% endfor %}
+
+{% else -%}
+
+## Migration from v1.x to v2.0
+
+### Breaking Changes
+
+#### 1. Umbrella Application Structure
+
+The project has been reorganized from a single application to an umbrella with 4 apps.
+
+**Before (v1.x)**:
+```erlang
+{deps, [
+    {erlmcp, "1.5.0"}
+]}.
+
+{applications, [erlmcp]}.
+```
+
+**After (v2.0)**:
+```erlang
+{deps, [
+    {erlmcp, "2.0.0"}  %% Umbrella
+]}.
+
+{applications, [
+    erlmcp_core,
+    erlmcp_transports,
+    erlmcp_observability
+    %% tcps_erlmcp is optional
+]}.
+```
+
+#### 2. Module Locations
+
+Modules have moved to app-specific directories.
+
+**Module Path Changes**:
+- `src/erlmcp_client.erl` → `apps/erlmcp_core/src/erlmcp_client.erl`
+- `src/erlmcp_transport_tcp.erl` → `apps/erlmcp_transports/src/erlmcp_transport_tcp.erl`
+- `src/erlmcp_metrics.erl` → `apps/erlmcp_observability/src/erlmcp_metrics.erl`
+
+**API remains unchanged** - module names and functions are the same.
+
+#### 3. Transport Configuration
+
+Transport configuration now uses library-specific options.
+
+**TCP Transport (ranch)**:
+
+Before:
+```erlang
+#{type => tcp, port => 8080, acceptors => 10}
+```
+
+After:
+```erlang
+#{
+    type => tcp,
+    mode => server,
+    port => 8080,
+    num_acceptors => 10,      %% ranch-specific
+    max_connections => 1000   %% ranch-specific
+}
+```
+
+**HTTP Transport (gun)**:
+
+Before:
+```erlang
+#{type => http, url => "http://localhost:3000"}
+```
+
+After:
+```erlang
+#{
+    type => http,
+    url => "http://localhost:3000",
+    protocols => [http2, http],  %% gun-specific
+    retry => 5,                  %% gun-specific
+    retry_timeout => 1000
+}
+```
+
+### Migration Steps
+
+#### Step 1: Update Dependencies
+
+```bash
+# Update rebar.config
+# Change erlmcp dependency version from 1.x to 2.0
+vim rebar.config
+
+# Update dependencies
+rebar3 upgrade erlmcp
+```
+
+#### Step 2: Update Application Configuration
+
+```bash
+# Edit sys.config or config/sys.config.src
+# Add new applications to the start list
+vim config/sys.config
+```
+
+Example `sys.config`:
+```erlang
+[
+  {erlmcp_core, [
+    {client_defaults, #{timeout => 5000}},
+    {server_defaults, #{max_subscriptions_per_resource => 1000}}
+  ]},
+  {erlmcp_transports, [
+    {transport_defaults, #{
+      tcp => #{port => 8080, keepalive => true}
+    }}
+  ]},
+  {erlmcp_observability, [
+    {otel_defaults, #{service_name => <<"my_service">>}}
+  ]}
+].
+```
+
+#### Step 3: Rebuild Your Project
+
+```bash
+# Clean and recompile
+rebar3 clean
+rebar3 compile
+
+# Run tests to verify
+rebar3 eunit
+```
+
+**Verification**:
+```bash
+# Check that all apps started
+rebar3 shell
+1> application:which_applications().
+[{erlmcp_core,...}, {erlmcp_transports,...}, {erlmcp_observability,...}, ...]
+```
+
+#### Step 4: Update Custom Transports (if any)
+
+If you've implemented custom transports, update to new behavior interface:
+
+```erlang
+%% Add optional callbacks attribute
+-optional_callbacks([get_info/1, handle_transport_call/2]).
+
+%% Implement get_info/1 (optional)
+get_info(State) ->
+    #{
+        type => my_transport,
+        status => connected,
+        peer => State#state.peer_info
+    }.
+```
+
+### Compatibility Guarantees
+
+- ✅ **API Compatibility**: All client/server APIs unchanged
+- ✅ **Protocol Compatibility**: MCP protocol version unchanged
+- ✅ **Transport Interface**: Custom transports work with minimal changes
+- ✅ **Configuration Format**: Config structure mostly backward compatible
+- ⚠️ **Build Structure**: Umbrella requires application list update
+- ⚠️ **Module Paths**: Internal module paths changed (API unaffected)
+
+### Testing Your Migration
+
+```bash
+# Run full test suite
+rebar3 eunit
+rebar3 ct
+
+# Run dialyzer
+rebar3 dialyzer
+
+# Run xref analysis
+rebar3 xref
+
+# Optional: Run benchmarks to verify performance
+make benchmark-quick
+```
+
+{% endif %}
+
+---
+
+# Appendices
+
+## Appendix A: Complete Type Definitions
+
+See [erlmcp.hrl](../include/erlmcp.hrl) for complete type definitions.
+
+## Appendix B: Error Code Reference
+
+| Code | Name | Description |
+|------|------|-------------|
+| -32700 | Parse error | Invalid JSON received |
+| -32600 | Invalid request | JSON-RPC request malformed |
+| -32601 | Method not found | Method does not exist |
+| -32602 | Invalid params | Invalid method parameters |
+| -32603 | Internal error | Server internal error |
+
+## Appendix C: Capability Matrix
+
+| Method | Required Capability | Client | Server |
+|--------|-------------------|--------|--------|
+| `initialize` | None | ✅ | ✅ |
+| `resources/list` | resources | ✅ | ✅ |
+| `resources/read` | resources | ✅ | ✅ |
+| `resources/subscribe` | resources | ✅ | ✅ |
+| `tools/list` | tools | ✅ | ✅ |
+| `tools/call` | tools | ✅ | ✅ |
+| `prompts/list` | prompts | ✅ | ✅ |
+| `prompts/get` | prompts | ✅ | ✅ |
+
+## Appendix D: Configuration Reference
+
+### Client Configuration
+
+```erlang
+#{
+    timeout => 5000,              %% Request timeout (ms)
+    strict_mode => false,         %% Strict protocol validation
+    max_pending_requests => 100,  %% Max concurrent requests
+    notification_handlers => #{}  %% Notification callbacks
+}
+```
+
+### Server Configuration
+
+```erlang
+#{
+    max_subscriptions_per_resource => 1000,  %% Subscription limit
+    max_progress_tokens => 10000,            %% Progress tracking limit
+    resource_cache_ttl => 60000              %% Resource cache TTL (ms)
+}
+```
+
+### Transport Configuration
+
+See the [Transports](#transports) section for transport-specific configuration.
+
+## Appendix E: Benchmarking
+
+```bash
+# Quick benchmarks (< 2 minutes)
+make benchmark-quick
+
+# Full benchmark suite (10-15 minutes)
+./scripts/bench/run_all_benchmarks.sh
+
+# Individual benchmarks
+rebar3 shell
+1> erlmcp_bench_core_ops:run(<<"core_ops_100k">>).
+2> erlmcp_bench_network_real:run(<<"tcp_sustained_10k">>).
+```
+
+## Appendix F: Observability Integration
+
+### OpenTelemetry Configuration
+
+```erlang
+{erlmcp_observability, [
+    {otel_defaults, #{
+        service_name => <<"my_mcp_service">>,
+        exporter => {otlp, #{
+            endpoint => "http://localhost:4318",
+            protocol => http_protobuf
+        }},
+        sampling_rate => 1.0
+    }}
+]}.
+```
+
+### Metrics Endpoint
+
+Access metrics at `http://localhost:9090/metrics` (configurable).
+
+---
+
+**Documentation generated by ggen v{{ generator_version | default(value="6.0.0") }}**
+**Source**: {{ project_name }} ontology ({{ protocol_version }})
+**License**: MIT
+**Issues**: https://github.com/your-org/{{ project_name }}/issues

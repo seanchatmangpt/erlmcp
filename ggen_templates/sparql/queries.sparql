@@ -1,0 +1,641 @@
+# Comprehensive SPARQL Queries for MCP Protocol Code Generation
+# Version 1.0.0
+# Generated for erlmcp - Erlang MCP SDK
+# Ontology-driven extraction of MCP server handlers, client APIs, and protocol metadata
+
+# Namespace Declarations
+PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX mcp: <http://erlmcp.org/ontology/mcp#>
+PREFIX mcp-proto: <http://erlmcp.org/ontology/mcp/protocol#>
+PREFIX mcp-server: <http://erlmcp.org/ontology/mcp/server#>
+PREFIX mcp-client: <http://erlmcp.org/ontology/mcp/client#>
+PREFIX mcp-validation: <http://erlmcp.org/ontology/mcp/validation#>
+PREFIX mcp-error: <http://erlmcp.org/ontology/mcp/error#>
+PREFIX mcp-transport: <http://erlmcp.org/ontology/mcp/transport#>
+PREFIX sh: <http://www.w3.org/ns/shacl#>
+PREFIX dcterms: <http://purl.org/dc/terms/>
+
+###############################################################################
+# Query 1: Extract Server Request Handlers
+###############################################################################
+# Extracts all server-side request methods with:
+# - method name, description
+# - phase requirements (initialization, ready, running)
+# - required capabilities
+# - validation flags
+# - request/response schemas
+# - error codes
+
+SELECT ?handlerId ?methodName ?methodDescription ?phase ?phaseLabel
+       ?requiredCapability ?validationRequired ?requestSchema ?responseSchema
+       ?errorCodes ?timeout
+WHERE {
+    ?handler a mcp-server:RequestHandler ;
+             mcp-proto:handlerId ?handlerId ;
+             mcp-proto:methodName ?methodName ;
+             rdfs:comment ?methodDescription ;
+             mcp-server:phase ?phase ;
+             mcp-server:requiredCapability ?requiredCapability ;
+             mcp-server:validationRequired ?validationRequired ;
+             mcp-proto:requestSchema ?requestSchema ;
+             mcp-proto:responseSchema ?responseSchema ;
+             mcp-server:timeout ?timeout .
+
+    ?phase rdfs:label ?phaseLabel .
+    OPTIONAL { ?handler mcp-error:errorCode ?errorCodes . }
+}
+ORDER BY ?methodName
+
+
+###############################################################################
+# Query 2: Extract Client API Methods
+###############################################################################
+# Extracts all client method signatures with:
+# - method name and module
+# - parameters (name, type, required, default value)
+# - return type specification
+# - timeout configuration
+# - phase requirements (can only call in certain phases)
+# - example usage
+
+SELECT ?methodId ?moduleName ?methodName ?methodDescription
+       ?paramName ?paramType ?paramRequired ?paramDefault
+       ?returnType ?timeout ?requiredPhase ?exampleUsage
+WHERE {
+    ?method a mcp-client:ClientMethod ;
+            mcp-proto:methodId ?methodId ;
+            mcp-client:moduleName ?moduleName ;
+            mcp-proto:methodName ?methodName ;
+            rdfs:comment ?methodDescription ;
+            mcp-client:returnType ?returnType ;
+            mcp-client:timeout ?timeout ;
+            mcp-client:requiredPhase ?requiredPhase .
+
+    OPTIONAL { ?method mcp-proto:parameter ?param .
+               ?param mcp-proto:paramName ?paramName ;
+                      mcp-proto:paramType ?paramType ;
+                      mcp-proto:required ?paramRequired .
+               OPTIONAL { ?param mcp-proto:default ?paramDefault . } }
+
+    OPTIONAL { ?method mcp-proto:exampleUsage ?exampleUsage . }
+}
+ORDER BY ?methodName ?paramName
+
+
+###############################################################################
+# Query 3: Extract Validation Rules
+###############################################################################
+# Extracts all validation rules with:
+# - component type (request, response, tool, resource, prompt)
+# - validation type (schema, semantic, business rule)
+# - validation rules and error codes
+# - failure severity (warn, error, critical)
+# - custom validation logic references
+
+SELECT ?ruleId ?componentType ?validationType ?ruleName ?ruleDescription
+       ?schemaConstraint ?semanticRule ?businessRule ?errorCode ?severity
+       ?validatorModule ?validatorFunction
+WHERE {
+    ?rule a mcp-validation:ValidationRule ;
+          mcp-validation:ruleId ?ruleId ;
+          mcp-validation:appliesTo ?componentType ;
+          mcp-validation:validationType ?validationType ;
+          mcp-validation:ruleName ?ruleName ;
+          rdfs:comment ?ruleDescription ;
+          mcp-validation:severity ?severity .
+
+    OPTIONAL { ?rule mcp-validation:schemaConstraint ?schemaConstraint . }
+    OPTIONAL { ?rule mcp-validation:semanticRule ?semanticRule . }
+    OPTIONAL { ?rule mcp-validation:businessRule ?businessRule . }
+    OPTIONAL { ?rule mcp-validation:errorCode ?errorCode . }
+    OPTIONAL { ?rule mcp-validation:validatorModule ?validatorModule ;
+                      mcp-validation:validatorFunction ?validatorFunction . }
+}
+ORDER BY ?componentType ?validationType ?ruleName
+
+
+###############################################################################
+# Query 4: Extract Task Lifecycle State Machine
+###############################################################################
+# Extracts task/request lifecycle state machine with:
+# - states (name, description, entry/exit actions)
+# - transitions (from state, to state, event, guard condition)
+# - events and triggers
+# - guard conditions and timing constraints
+
+SELECT ?stateId ?stateName ?stateDescription ?entryAction ?exitAction
+       ?toStateId ?toStateName ?event ?eventDescription ?guard ?timeout
+WHERE {
+    ?state a mcp-proto:State ;
+           mcp-proto:stateId ?stateId ;
+           mcp-proto:stateName ?stateName ;
+           rdfs:comment ?stateDescription .
+
+    OPTIONAL { ?state mcp-proto:entryAction ?entryAction . }
+    OPTIONAL { ?state mcp-proto:exitAction ?exitAction . }
+
+    OPTIONAL {
+        ?transition a mcp-proto:Transition ;
+                    mcp-proto:fromState ?state ;
+                    mcp-proto:toState ?toState ;
+                    mcp-proto:triggeredBy ?event ;
+                    mcp-proto:description ?eventDescription .
+
+        ?toState mcp-proto:stateId ?toStateId ;
+                 mcp-proto:stateName ?toStateName .
+
+        ?event mcp-proto:eventId ?eventId ;
+               rdfs:label ?event .
+
+        OPTIONAL { ?transition mcp-proto:guard ?guard . }
+        OPTIONAL { ?transition mcp-proto:timeout ?timeout . }
+    }
+}
+ORDER BY ?stateName ?toStateName
+
+
+###############################################################################
+# Query 5: Extract Capability Definitions
+###############################################################################
+# Extracts capability definitions with:
+# - capability name (resources, tools, prompts, logging, sampling, roots)
+# - supported methods
+# - experimental flag
+# - version introduced
+# - deprecation info
+# - feature documentation
+
+SELECT ?capabilityId ?capabilityName ?capabilityDescription ?experimental
+       ?versionIntroduced ?deprecatedVersion ?supportedMethod ?methodDescription
+       ?isOptional ?requiresNegotiation
+WHERE {
+    ?capability a mcp-proto:Capability ;
+                mcp-proto:capabilityId ?capabilityId ;
+                mcp-proto:capabilityName ?capabilityName ;
+                rdfs:comment ?capabilityDescription ;
+                mcp-proto:experimental ?experimental ;
+                mcp-proto:optional ?isOptional ;
+                mcp-proto:requiresNegotiation ?requiresNegotiation ;
+                mcp-proto:versionIntroduced ?versionIntroduced .
+
+    OPTIONAL { ?capability mcp-proto:deprecatedVersion ?deprecatedVersion . }
+
+    OPTIONAL { ?capability mcp-proto:supportedMethod ?methodUri .
+               ?methodUri mcp-proto:methodName ?supportedMethod ;
+                          rdfs:comment ?methodDescription . }
+}
+ORDER BY ?capabilityName ?supportedMethod
+
+
+###############################################################################
+# Query 6: Extract Error Code Taxonomy
+###############################################################################
+# Extracts error code definitions with:
+# - code number (JSON-RPC error codes)
+# - symbolic name
+# - message template
+# - usage context
+# - recovery suggestions
+# - related error codes
+
+SELECT ?errorCode ?errorName ?messageTemplate ?description ?context
+       ?recoveryAction ?relatedErrorCode ?severity ?httpStatus
+WHERE {
+    ?error a mcp-error:ErrorCode ;
+           mcp-error:code ?errorCode ;
+           mcp-error:name ?errorName ;
+           mcp-error:messageTemplate ?messageTemplate ;
+           rdfs:comment ?description ;
+           mcp-error:context ?context ;
+           mcp-error:severity ?severity .
+
+    OPTIONAL { ?error mcp-error:recoveryAction ?recoveryAction . }
+    OPTIONAL { ?error mcp-error:httpStatus ?httpStatus . }
+    OPTIONAL { ?error mcp-error:relatedError ?relatedErrorUri .
+               ?relatedErrorUri mcp-error:code ?relatedErrorCode . }
+}
+ORDER BY ?errorCode
+
+
+###############################################################################
+# Query 7: Extract Transport Requirements
+###############################################################################
+# Extracts transport layer specifications with:
+# - transport type (stdio, TCP, HTTP, WebSocket)
+# - required callbacks (init, send, close, connect, disconnect)
+# - message framing
+# - validation and error handling
+# - features and limitations
+
+SELECT ?transportId ?transportType ?transportDescription
+       ?callbackName ?callbackSignature ?callbackDescription
+       ?messageFraming ?maxMessageSize ?keepAlive ?tlsRequired
+       ?featureName ?featureDescription ?limitation ?limitation_description
+WHERE {
+    ?transport a mcp-transport:Transport ;
+               mcp-transport:transportId ?transportId ;
+               mcp-transport:type ?transportType ;
+               rdfs:comment ?transportDescription ;
+               mcp-transport:messageFraming ?messageFraming ;
+               mcp-transport:maxMessageSize ?maxMessageSize ;
+               mcp-transport:tlsRequired ?tlsRequired .
+
+    OPTIONAL { ?transport mcp-transport:keepAlive ?keepAlive . }
+
+    OPTIONAL { ?transport mcp-transport:callback ?callbackUri .
+               ?callbackUri mcp-transport:callbackName ?callbackName ;
+                            mcp-transport:signature ?callbackSignature ;
+                            rdfs:comment ?callbackDescription . }
+
+    OPTIONAL { ?transport mcp-proto:feature ?featureUri .
+               ?featureUri mcp-proto:featureName ?featureName ;
+                           rdfs:comment ?featureDescription . }
+
+    OPTIONAL { ?transport mcp-proto:limitation ?limitation_uri .
+               ?limitation_uri rdfs:label ?limitation ;
+                               rdfs:comment ?limitation_description . }
+}
+ORDER BY ?transportType ?callbackName
+
+
+###############################################################################
+# Query 8: Extract Resource Definitions
+###############################################################################
+# Extracts resource type definitions with:
+# - resource URI pattern/template
+# - properties (type, required, schema)
+# - content types supported
+# - validation rules
+# - subscription support
+# - creation/update triggers
+
+SELECT ?resourceId ?uriPattern ?resourceDescription ?propertyName
+       ?propertyType ?propertyRequired ?propertySchema ?contentType
+       ?readOnly ?mutable ?subscriptionSupported ?validationRule
+WHERE {
+    ?resource a mcp-proto:ResourceType ;
+              mcp-proto:resourceId ?resourceId ;
+              mcp-proto:uriPattern ?uriPattern ;
+              rdfs:comment ?resourceDescription ;
+              mcp-proto:contentType ?contentType ;
+              mcp-proto:subscriptionSupported ?subscriptionSupported .
+
+    OPTIONAL { ?resource mcp-proto:property ?propertyUri .
+               ?propertyUri mcp-proto:propertyName ?propertyName ;
+                            mcp-proto:propertyType ?propertyType ;
+                            mcp-proto:required ?propertyRequired ;
+                            mcp-proto:readOnly ?readOnly ;
+                            mcp-proto:mutable ?mutable ;
+                            mcp-proto:schema ?propertySchema . }
+
+    OPTIONAL { ?resource mcp-validation:appliesValidation ?validationUri .
+               ?validationUri mcp-validation:ruleName ?validationRule . }
+}
+ORDER BY ?uriPattern ?propertyName
+
+
+###############################################################################
+# Query 9: Extract Tool Definitions
+###############################################################################
+# Extracts tool metadata with:
+# - tool name and description
+# - input parameters (name, type, required, schema, description)
+# - input validation schema (JSON Schema)
+# - execution constraints (timeout, memory, resource limits)
+# - error codes
+# - examples
+
+SELECT ?toolId ?toolName ?toolDescription ?paramName ?paramType
+       ?paramRequired ?paramDescription ?paramSchema ?paramDefault
+       ?inputSchema ?timeout ?maxMemory ?maxDuration ?example
+WHERE {
+    ?tool a mcp-proto:Tool ;
+          mcp-proto:toolId ?toolId ;
+          mcp-proto:toolName ?toolName ;
+          rdfs:comment ?toolDescription ;
+          mcp-proto:inputSchema ?inputSchema ;
+          mcp-proto:timeout ?timeout .
+
+    OPTIONAL { ?tool mcp-proto:maxMemory ?maxMemory . }
+    OPTIONAL { ?tool mcp-proto:maxDuration ?maxDuration . }
+
+    OPTIONAL { ?inputSchema mcp-proto:property ?paramUri .
+               ?paramUri mcp-proto:propertyName ?paramName ;
+                         mcp-proto:type ?paramType ;
+                         mcp-proto:required ?paramRequired ;
+                         rdfs:comment ?paramDescription ;
+                         mcp-proto:schema ?paramSchema .
+               OPTIONAL { ?paramUri mcp-proto:default ?paramDefault . } }
+
+    OPTIONAL { ?tool mcp-proto:example ?example . }
+}
+ORDER BY ?toolName ?paramName
+
+
+###############################################################################
+# Query 10: Extract Prompt Definitions
+###############################################################################
+# Extracts prompt templates with:
+# - prompt name and description
+# - arguments (name, type, required, description, regex pattern)
+# - argument schema
+# - template string
+# - example inputs/outputs
+
+SELECT ?promptId ?promptName ?promptDescription ?argumentName
+       ?argumentType ?argumentRequired ?argumentDescription
+       ?argumentPattern ?argumentSchema ?template ?exampleInput
+WHERE {
+    ?prompt a mcp-proto:Prompt ;
+            mcp-proto:promptId ?promptId ;
+            mcp-proto:promptName ?promptName ;
+            rdfs:comment ?promptDescription ;
+            mcp-proto:template ?template .
+
+    OPTIONAL { ?prompt mcp-proto:argument ?argUri .
+               ?argUri mcp-proto:argumentName ?argumentName ;
+                       mcp-proto:type ?argumentType ;
+                       mcp-proto:required ?argumentRequired ;
+                       rdfs:comment ?argumentDescription ;
+                       mcp-proto:schema ?argumentSchema .
+               OPTIONAL { ?argUri mcp-proto:pattern ?argumentPattern . } }
+
+    OPTIONAL { ?prompt mcp-proto:exampleInput ?exampleInput . }
+}
+ORDER BY ?promptName ?argumentName
+
+
+###############################################################################
+# Query 11: Extract Request-Response Correlations
+###############################################################################
+# Extracts how requests are correlated with responses:
+# - request ID generation strategy
+# - request/response timeout mapping
+# - async request handling
+# - subscription management
+
+SELECT ?methodName ?requestIdStrategy ?responseTimeout ?asyncSupported
+       ?subscriptionSupported ?subscriptionMethod
+WHERE {
+    ?method a mcp-proto:Method ;
+            mcp-proto:methodName ?methodName ;
+            mcp-proto:requestIdStrategy ?requestIdStrategy ;
+            mcp-proto:responseTimeout ?responseTimeout ;
+            mcp-proto:asyncSupported ?asyncSupported ;
+            mcp-proto:subscriptionSupported ?subscriptionSupported .
+
+    OPTIONAL { ?method mcp-proto:subscriptionMethod ?subscriptionMethod . }
+}
+ORDER BY ?methodName
+
+
+###############################################################################
+# Query 12: Extract Message Schema Definitions
+###############################################################################
+# Extracts JSON-RPC message schemas and constraints:
+# - message type (request, response, notification)
+# - required fields
+# - optional fields and their constraints
+# - version compatibility
+
+SELECT ?schemaId ?messageType ?schemaVersion ?fieldName
+       ?fieldType ?fieldRequired ?fieldMinLength ?fieldMaxLength
+       ?fieldPattern ?fieldEnum ?fieldDescription
+WHERE {
+    ?schema a mcp-proto:MessageSchema ;
+            mcp-proto:schemaId ?schemaId ;
+            mcp-proto:messageType ?messageType ;
+            mcp-proto:schemaVersion ?schemaVersion ;
+            mcp-proto:field ?fieldUri .
+
+    ?fieldUri mcp-proto:fieldName ?fieldName ;
+              mcp-proto:fieldType ?fieldType ;
+              mcp-proto:required ?fieldRequired ;
+              rdfs:comment ?fieldDescription .
+
+    OPTIONAL { ?fieldUri mcp-proto:minLength ?fieldMinLength . }
+    OPTIONAL { ?fieldUri mcp-proto:maxLength ?fieldMaxLength . }
+    OPTIONAL { ?fieldUri mcp-proto:pattern ?fieldPattern . }
+    OPTIONAL { ?fieldUri mcp-proto:enum ?fieldEnum . }
+}
+ORDER BY ?messageType ?fieldName
+
+
+###############################################################################
+# Query 13: Extract Initialization Handshake Protocol
+###############################################################################
+# Extracts initialization flow with:
+# - client capabilities to declare
+# - server capabilities to announce
+# - negotiation rules
+# - protocol version requirements
+# - timeout and error handling
+
+SELECT ?clientCapability ?serverCapability ?capabilityOptional
+       ?protocolVersion ?negotiationRule ?timeout ?mustUnderstand
+WHERE {
+    ?init a mcp-proto:InitializationProtocol ;
+          mcp-proto:clientCapability ?clientCapability ;
+          mcp-proto:serverCapability ?serverCapability ;
+          mcp-proto:protocolVersion ?protocolVersion ;
+          mcp-proto:timeout ?timeout .
+
+    OPTIONAL { ?clientCapability mcp-proto:optional ?capabilityOptional . }
+    OPTIONAL { ?serverCapability mcp-proto:mustUnderstand ?mustUnderstand . }
+    OPTIONAL { ?init mcp-proto:negotiationRule ?negotiationRule . }
+}
+
+
+###############################################################################
+# Query 14: Extract Protocol Versioning and Compatibility
+###############################################################################
+# Extracts versioning information:
+# - protocol version number
+# - breaking changes between versions
+# - deprecated features
+# - forward/backward compatibility matrix
+
+SELECT ?versionNumber ?versionDate ?description ?breakingChange
+       ?deprecatedFeature ?minSupportedVersion ?maxSupportedVersion
+WHERE {
+    ?version a mcp-proto:ProtocolVersion ;
+             mcp-proto:versionNumber ?versionNumber ;
+             mcp-proto:releaseDate ?versionDate ;
+             rdfs:comment ?description .
+
+    OPTIONAL { ?version mcp-proto:breakingChange ?breakingChangeUri .
+               ?breakingChangeUri rdfs:label ?breakingChange . }
+    OPTIONAL { ?version mcp-proto:deprecatedFeature ?deprecatedFeatureUri .
+               ?deprecatedFeatureUri rdfs:label ?deprecatedFeature . }
+    OPTIONAL { ?version mcp-proto:minSupportedVersion ?minSupportedVersion . }
+    OPTIONAL { ?version mcp-proto:maxSupportedVersion ?maxSupportedVersion . }
+}
+ORDER BY DESC(?versionNumber)
+
+
+###############################################################################
+# Query 15: Extract Phase-Based Access Control
+###############################################################################
+# Extracts which methods/resources are available in each phase:
+# - phases (initialization, ready, running, closing)
+# - available methods per phase
+# - state machine transitions
+# - illegal transitions and error codes
+
+SELECT ?phase ?phaseLabel ?phaseDescription
+       ?allowedMethod ?methodName ?notAllowedMethod
+       ?legalTransition ?toPhase ?transitionEvent ?errorOnIllegal
+WHERE {
+    ?phase a mcp-proto:Phase ;
+           mcp-proto:phaseId ?phase ;
+           rdfs:label ?phaseLabel ;
+           rdfs:comment ?phaseDescription ;
+           mcp-proto:allowedMethod ?allowedMethodUri .
+
+    ?allowedMethodUri mcp-proto:methodId ?allowedMethod ;
+                      mcp-proto:methodName ?methodName .
+
+    OPTIONAL { ?phase mcp-proto:notAllowedMethod ?notAllowedMethodUri .
+               ?notAllowedMethodUri mcp-proto:methodId ?notAllowedMethod . }
+
+    OPTIONAL { ?phase mcp-proto:transitionTo ?transitionUri .
+               ?transitionUri mcp-proto:toPhase ?toPhase ;
+                              mcp-proto:triggeredBy ?transitionEvent ;
+                              mcp-error:errorOnIllegal ?errorOnIllegal . }
+}
+ORDER BY ?phase ?methodName
+
+
+###############################################################################
+# Query 16: Extract Notification Types
+###############################################################################
+# Extracts server-to-client notification definitions:
+# - notification type (resource updated, tool list changed, etc.)
+# - parameters
+# - triggering conditions
+# - batching/coalescing rules
+
+SELECT ?notificationType ?notificationDescription ?paramName
+       ?paramType ?triggeringCondition ?batchingAllowed ?coalescingRules
+WHERE {
+    ?notification a mcp-proto:Notification ;
+                  mcp-proto:notificationType ?notificationType ;
+                  rdfs:comment ?notificationDescription ;
+                  mcp-proto:parameter ?paramUri .
+
+    ?paramUri mcp-proto:paramName ?paramName ;
+              mcp-proto:paramType ?paramType .
+
+    OPTIONAL { ?notification mcp-proto:triggeringCondition ?triggeringCondition . }
+    OPTIONAL { ?notification mcp-proto:batchingAllowed ?batchingAllowed . }
+    OPTIONAL { ?notification mcp-proto:coalescingRules ?coalescingRules . }
+}
+ORDER BY ?notificationType ?paramName
+
+
+###############################################################################
+# Query 17: Extract Request Rate Limiting and Flow Control
+###############################################################################
+# Extracts rate limiting and flow control requirements:
+# - rate limits per method
+# - burst allowances
+# - backpressure mechanisms
+# - flow control tokens
+
+SELECT ?method ?rateLimit ?rateLimitPeriod ?burstLimit
+       ?backpressureEnabled ?flowControlMechanism ?tokenBucketSize
+WHERE {
+    ?ratelimit a mcp-proto:RateLimit ;
+               mcp-proto:appliesTo ?methodUri ;
+               mcp-proto:requestsPerPeriod ?rateLimit ;
+               mcp-proto:period ?rateLimitPeriod .
+
+    ?methodUri mcp-proto:methodName ?method .
+
+    OPTIONAL { ?ratelimit mcp-proto:burstLimit ?burstLimit . }
+    OPTIONAL { ?ratelimit mcp-proto:backpressureEnabled ?backpressureEnabled ;
+                           mcp-proto:flowControlMechanism ?flowControlMechanism ;
+                           mcp-proto:tokenBucketSize ?tokenBucketSize . }
+}
+ORDER BY ?method
+
+
+###############################################################################
+# Query 18: Extract Progress Tracking and Long-Running Operations
+###############################################################################
+# Extracts progress token and long-running operation support:
+# - operation type
+# - progress reporting interval
+# - result storage location
+# - cancellation support
+
+SELECT ?operationType ?operationDescription ?progressTokens
+       ?reportingInterval ?progressFormat ?resultLocation
+       ?cancellationSupported ?timeoutMillis
+WHERE {
+    ?operation a mcp-proto:LongRunningOperation ;
+               mcp-proto:operationType ?operationType ;
+               rdfs:comment ?operationDescription ;
+               mcp-proto:progressTokens ?progressTokens ;
+               mcp-proto:reportingInterval ?reportingInterval ;
+               mcp-proto:progressFormat ?progressFormat ;
+               mcp-proto:resultLocation ?resultLocation ;
+               mcp-proto:cancellationSupported ?cancellationSupported ;
+               mcp-proto:timeoutMillis ?timeoutMillis .
+}
+ORDER BY ?operationType
+
+
+###############################################################################
+# Query 19: Extract Sampling and LLM Integration Points
+###############################################################################
+# Extracts LLM sampling integration:
+# - sampling methods
+# - model parameters (temperature, max_tokens, etc.)
+# - stop sequences
+# - tool use support
+
+SELECT ?samplingMethod ?modelName ?temperature ?maxTokens
+       ?topP ?topK ?stopSequence ?toolUseSupported
+WHERE {
+    ?sampling a mcp-proto:LLMSampling ;
+              mcp-proto:samplingMethod ?samplingMethod ;
+              mcp-proto:modelName ?modelName ;
+              mcp-proto:temperature ?temperature ;
+              mcp-proto:maxTokens ?maxTokens ;
+              mcp-proto:toolUseSupported ?toolUseSupported .
+
+    OPTIONAL { ?sampling mcp-proto:topP ?topP . }
+    OPTIONAL { ?sampling mcp-proto:topK ?topK . }
+    OPTIONAL { ?sampling mcp-proto:stopSequence ?stopSequence . }
+}
+ORDER BY ?modelName
+
+
+###############################################################################
+# Query 20: Extract Security and Authorization
+###############################################################################
+# Extracts security requirements:
+# - authentication methods
+# - authorization rules (RBAC, ABAC)
+# - capability-based access control
+# - sensitive data handling
+
+SELECT ?authMethod ?authDescription ?isRequired ?authenticationFlow
+       ?rbacEnabled ?abacEnabled ?capabilityBased ?dataClassification
+WHERE {
+    ?auth a mcp-proto:Authentication ;
+          mcp-proto:authMethod ?authMethod ;
+          rdfs:comment ?authDescription ;
+          mcp-proto:required ?isRequired ;
+          mcp-proto:authenticationFlow ?authenticationFlow .
+
+    OPTIONAL { ?auth mcp-proto:rbacEnabled ?rbacEnabled . }
+    OPTIONAL { ?auth mcp-proto:abacEnabled ?abacEnabled . }
+    OPTIONAL { ?auth mcp-proto:capabilityBased ?capabilityBased . }
+    OPTIONAL { ?auth mcp-proto:dataClassification ?dataClassification . }
+}
+ORDER BY ?authMethod
