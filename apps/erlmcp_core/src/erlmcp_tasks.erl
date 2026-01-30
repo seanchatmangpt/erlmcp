@@ -20,7 +20,14 @@
 
 %% Client API
 -export([start_link/0]).
--export([create_task/3, list_tasks/3, get_task/2, cancel_task/3, get_task_result/2]).
+-export([create_task/3, create_task/4, create/3, create/4]).
+-export([list_tasks/2, list_tasks/3]).
+-export([get_task/2, get/2]).
+-export([cancel_task/3, cancel/3, cancel_task/2]).
+-export([get_task_result/2, get_result/2]).
+-export([update_task/3, update_status/3, update_progress/3]).
+-export([cleanup_expired/0, cleanup_expired/1]).
+-export([get_max_concurrent/0, stop/1, complete/3]).
 
 %% Server API (internal)
 -export([start_task_execution/2, complete_task/2, fail_task/2]).
@@ -53,6 +60,7 @@
     tasks := [map()],
     cursor => binary()
 }.
+-type update_function() :: fun((map()) -> map()).
 
 -record(state, {
     task_count = 0 :: non_neg_integer(),
@@ -99,6 +107,110 @@ cancel_task(ClientPid, TaskId, Reason) when is_binary(TaskId), is_binary(Reason)
     {ok, term()} | {error, term()}.
 get_task_result(ClientPid, TaskId) when is_binary(TaskId) ->
     gen_server:call(?SERVER, {get_task_result, ClientPid, TaskId}).
+
+%% @doc Alternative API: Create task (alias for create_task/3).
+-spec create(pid() | undefined, map(), map()) ->
+    {ok, task_id()} | {error, term()}.
+create(ClientPid, Action, Metadata) ->
+    create_task(ClientPid, Action, Metadata).
+
+%% @doc Create task with options map (supports ttl_ms for expiry).
+-spec create(pid() | undefined, map(), map(), map()) ->
+    {ok, task_id()} | {error, term()}.
+create(ClientPid, Action, Metadata, Options) when is_map(Action), is_map(Metadata), is_map(Options) ->
+    gen_server:call(?SERVER, {create_task, ClientPid, Action, Metadata, Options}).
+
+%% @doc Alternative API: Create task with options (alias for create_task/4).
+-spec create_task(pid() | undefined, map(), map(), map()) ->
+    {ok, task_id()} | {error, term()}.
+create_task(ClientPid, Action, Metadata, Options) ->
+    create(ClientPid, Action, Metadata, Options).
+
+%% @doc List tasks without cursor (defaults to limit 100).
+-spec list_tasks(pid() | undefined) ->
+    {ok, task_list_result()} | {error, term()}.
+list_tasks(ClientPid) ->
+    list_tasks(ClientPid, undefined, 100).
+
+%% @doc List tasks with limit only (no cursor).
+-spec list_tasks(pid() | undefined, pos_integer()) ->
+    {ok, task_list_result()} | {error, term()}.
+list_tasks(ClientPid, Limit) when is_integer(Limit), Limit > 0 ->
+    list_tasks(ClientPid, undefined, Limit).
+
+%% @doc Alternative API: Get task (alias for get_task/2).
+-spec get(pid() | undefined, task_id()) ->
+    {ok, task()} | {error, term()}.
+get(ClientPid, TaskId) ->
+    get_task(ClientPid, TaskId).
+
+%% @doc Alternative API: Get task result (alias for get_task_result/2).
+-spec get_result(pid() | undefined, task_id()) ->
+    {ok, term()} | {error, term()}.
+get_result(ClientPid, TaskId) ->
+    get_task_result(ClientPid, TaskId).
+
+%% @doc Cancel task with default reason.
+-spec cancel_task(pid() | undefined, task_id()) ->
+    {ok, cancelled} | {error, term()}.
+cancel_task(ClientPid, TaskId) ->
+    cancel_task(ClientPid, TaskId, <<"Cancelled by request">>).
+
+%% @doc Alternative API: Cancel task (alias for cancel_task/3).
+-spec cancel(pid() | undefined, task_id(), binary()) ->
+    {ok, cancelled} | {error, term()}.
+cancel(ClientPid, TaskId, Reason) ->
+    cancel_task(ClientPid, TaskId, Reason).
+
+%% @doc Alternative API: Complete task (alias for complete_task/2).
+-spec complete(pid() | undefined, task_id(), term()) -> ok | {error, term()}.
+complete(_ClientPid, TaskId, Result) ->
+    complete_task(TaskId, Result).
+
+%% @doc Update task with custom function.
+%% Fun receives task map and returns updated task map.
+-spec update_task(pid() | undefined, task_id(), fun((map()) -> map())) ->
+    ok | {error, term()}.
+update_task(ClientPid, TaskId, UpdateFun) when is_function(UpdateFun, 1) ->
+    gen_server:call(?SERVER, {update_task, ClientPid, TaskId, UpdateFun}).
+
+%% @doc Directly update task status.
+-spec update_status(pid() | undefined, task_id(), binary()) ->
+    ok | {error, term()}.
+update_status(ClientPid, TaskId, Status) when is_binary(Status) ->
+    gen_server:call(?SERVER, {update_status, ClientPid, TaskId, Status}).
+
+%% @doc Update progress with token.
+-spec update_progress(pid() | undefined, task_id(), map()) -> ok | {error, term()}.
+update_progress(_ClientPid, TaskId, Update) when is_map(Update) ->
+    case maps:get(<<"progressToken">>, Update, undefined) of
+        undefined ->
+            {error, ?MCP_MSG_INVALID_PROGRESS_TOKEN};
+        Token ->
+            _Progress = maps:get(<<"progress">>, Update, 0.0),
+            Total = maps:get(<<"total">>, Update, undefined),
+            set_task_progress(TaskId, {_Progress, Total})
+    end.
+
+%% @doc Manually trigger cleanup of expired tasks.
+-spec cleanup_expired() -> {ok, non_neg_integer()}.
+cleanup_expired() ->
+    gen_server:call(?SERVER, cleanup_expired).
+
+%% @doc Alternative API: Cleanup expired (for compatibility).
+-spec cleanup_expired(pid()) -> {ok, non_neg_integer()}.
+cleanup_expired(_Pid) ->
+    cleanup_expired().
+
+%% @doc Get maximum concurrent tasks limit.
+-spec get_max_concurrent() -> pos_integer().
+get_max_concurrent() ->
+    ?MAX_CONCURRENT_TASKS.
+
+%% @doc Stop the tasks manager.
+-spec stop(pid()) -> ok.
+stop(Pid) when is_pid(Pid) ->
+    gen_server:stop(Pid).
 
 %%%===================================================================
 %%% Server API (Internal)
@@ -197,6 +309,27 @@ handle_call({fail_task, TaskId, Error}, _From, State) ->
     {Reply, NewState} = do_fail_task(TaskId, Error, State),
     {reply, Reply, NewState};
 
+handle_call({create_task, ClientPid, Action, Metadata, Options}, _From, State) ->
+    case State#state.task_count >= ?MAX_CONCURRENT_TASKS of
+        true ->
+            {reply, {error, ?MCP_ERROR_MAX_CONCURRENT_TASKS}, State};
+        false ->
+            {Reply, NewState} = do_create_task_with_options(ClientPid, Action, Metadata, Options, State),
+            {reply, Reply, NewState}
+    end;
+
+handle_call({update_task, ClientPid, TaskId, UpdateFun}, _From, State) ->
+    Reply = do_update_task(ClientPid, TaskId, UpdateFun),
+    {reply, Reply, State};
+
+handle_call({update_status, ClientPid, TaskId, Status}, _From, State) ->
+    Reply = do_update_status(ClientPid, TaskId, Status),
+    {reply, Reply, State};
+
+handle_call(cleanup_expired, _From, State) ->
+    {Reply, NewState} = do_cleanup_expired_tasks_with_count(State),
+    {reply, Reply, NewState};
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -284,7 +417,7 @@ do_create_task(ClientPid, Action, Metadata, State) ->
 
     case ProgressToken of
         undefined -> ok;
-        Token ->
+        _Token ->
             erlmcp_progress:create(ClientPid, <<"Task created: ", TaskId/binary>>)
     end,
 
@@ -296,7 +429,7 @@ do_create_task(ClientPid, Action, Metadata, State) ->
 %% @private
 do_list_tasks(ClientPid, Cursor, Limit) ->
     AllTasks = ets:foldl(
-        fun(#mcp_task{id = Id, client_pid = Pid} = Task, Acc) ->
+        fun(#mcp_task{client_pid = Pid} = Task, Acc) ->
             case Pid =:= ClientPid of
                 true -> [Task | Acc];
                 false -> Acc
@@ -319,7 +452,7 @@ do_list_tasks(ClientPid, Cursor, Limit) ->
             case lists:keyfind(Cursor, #mcp_task.id, SortedTasks) of
                 false -> [];
                 _CursorTask ->
-                    {Before, After} = lists:splitwith(
+                    {_Before, After} = lists:splitwith(
                         fun(T) -> T#mcp_task.id =/= Cursor end,
                         SortedTasks
                     ),
@@ -757,3 +890,151 @@ send_task_notification(ClientPid, TaskId) when is_pid(ClientPid) ->
 %% @private
 schedule_cleanup() ->
     erlang:send_after(300000, self(), cleanup_expired_tasks).
+
+%% @private
+do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
+    TaskId = generate_task_id(),
+    TimeoutMs = maps:get(<<"timeout">>, Metadata, ?DEFAULT_TASK_TIMEOUT_MS),
+
+    % Calculate expiry time based on ttl_ms option or default
+    TTL = maps:get(ttl_ms, Options, maps:get(<<"expiresAfter">>, Metadata, ?DEFAULT_EXPIRY_MS)),
+    ExpiresAt = erlang:system_time(millisecond) + TTL,
+
+    ProgressToken = case maps:get(<<"progressToken">>, Metadata, undefined) of
+        undefined -> undefined;
+        _ -> erlmcp_progress:generate_token()
+    end,
+
+    Now = erlang:system_time(millisecond),
+
+    Task = #mcp_task{
+        id = TaskId,
+        status = pending,
+        action = Action,
+        metadata = Metadata,
+        result = undefined,
+        error = undefined,
+        created_at = Now,
+        updated_at = Now,
+        expires_at = ExpiresAt,
+        client_pid = ClientPid,
+        worker_pid = undefined,
+        worker_monitor = undefined,
+        progress_token = ProgressToken,
+        progress = undefined,
+        total = undefined,
+        timeout_ms = TimeoutMs,
+        timer_ref = undefined
+    },
+
+    ets:insert(?TASKS_TABLE, Task),
+
+    TimerRef = erlang:send_after(TimeoutMs, self(), {task_timeout, TaskId}),
+    Task1 = Task#mcp_task{timer_ref = TimerRef},
+    ets:insert(?TASKS_TABLE, Task1),
+
+    case ProgressToken of
+        undefined -> ok;
+        _Token ->
+            erlmcp_progress:create(ClientPid, <<"Task created: ", TaskId/binary>>)
+    end,
+
+    logger:debug("Created task ~p for client ~p with TTL ~p ms", [TaskId, ClientPid, TTL]),
+    send_task_notification(ClientPid, TaskId),
+
+    {{ok, TaskId}, State#state{task_count = State#state.task_count + 1}}.
+
+%% @private
+do_update_task(ClientPid, TaskId, UpdateFun) ->
+    case ets:lookup(?TASKS_TABLE, TaskId) of
+        [#mcp_task{client_pid = Pid} = Task] when Pid =:= ClientPid; Pid =:= undefined ->
+            try
+                TaskMap = format_task_for_api(Task),
+                UpdatedTaskMap = UpdateFun(TaskMap),
+
+                % Extract updated fields from map
+                NewMetadata = maps:get(<<"metadata">>, UpdatedTaskMap, Task#mcp_task.metadata),
+
+                UpdatedTask = Task#mcp_task{
+                    metadata = NewMetadata,
+                    updated_at = erlang:system_time(millisecond)
+                },
+                ets:insert(?TASKS_TABLE, UpdatedTask),
+                ok
+            catch
+                _:Error ->
+                    logger:error("Update function failed for task ~p: ~p", [TaskId, Error]),
+                    {error, invalid_update_function}
+            end;
+        [#mcp_task{}] ->
+            {error, ?MCP_MSG_TASK_NOT_FOUND};
+        [] ->
+            {error, ?MCP_ERROR_TASK_NOT_FOUND}
+    end.
+
+%% @private
+do_update_status(ClientPid, TaskId, StatusBin) ->
+    Status = case StatusBin of
+        <<"pending">> -> pending;
+        <<"processing">> -> processing;
+        <<"completed">> -> completed;
+        <<"failed">> -> failed;
+        <<"cancelled">> -> cancelled;
+        _ -> undefined
+    end,
+
+    case Status of
+        undefined ->
+            {error, ?MCP_ERROR_TASK_STATE_INVALID};
+        _ ->
+            case ets:lookup(?TASKS_TABLE, TaskId) of
+                [#mcp_task{client_pid = Pid} = Task] when Pid =:= ClientPid; Pid =:= undefined ->
+                    UpdatedTask = Task#mcp_task{
+                        status = Status,
+                        updated_at = erlang:system_time(millisecond)
+                    },
+                    ets:insert(?TASKS_TABLE, UpdatedTask),
+                    send_task_notification(ClientPid, TaskId),
+                    ok;
+                [#mcp_task{}] ->
+                    {error, ?MCP_MSG_TASK_NOT_FOUND};
+                [] ->
+                    {error, ?MCP_ERROR_TASK_NOT_FOUND}
+            end
+    end.
+
+%% @private
+do_cleanup_expired_tasks_with_count(State) ->
+    Now = erlang:system_time(millisecond),
+
+    ExpiredTasks = ets:foldl(
+        fun(#mcp_task{id = Id, expires_at = Expires, status = Status}, Acc) ->
+            case Status of
+                completed ->
+                    case Expires =< Now of
+                        true -> [Id | Acc];
+                        false -> Acc
+                    end;
+                failed ->
+                    case Expires =< Now of
+                        true -> [Id | Acc];
+                        false -> Acc
+                    end;
+                _ ->
+                    Acc
+            end
+        end,
+        [],
+        ?TASKS_TABLE
+    ),
+
+    lists:foreach(
+        fun(TaskId) ->
+            ets:delete(?TASKS_TABLE, TaskId),
+            logger:debug("Cleaned up expired task ~p", [TaskId])
+        end,
+        ExpiredTasks
+    ),
+
+    Count = length(ExpiredTasks),
+    {ok, Count, State#state{task_count = max(0, State#state.task_count - Count)}}.

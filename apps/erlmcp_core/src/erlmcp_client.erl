@@ -15,7 +15,8 @@
     with_batch/2, send_batch_request/4,
     set_notification_handler/3, remove_notification_handler/2,
     set_sampling_handler/2, remove_sampling_handler/1,
-    stop/1
+    stop/1,
+    cleanup_stale_correlations/0
 ]).
 
 %% Test exports
@@ -62,7 +63,8 @@
     last_event_id :: binary() | undefined,
     reconnect_timer :: reference() | undefined,
     auto_reconnect = true :: boolean(),
-    active_handlers = [] :: [pid()]  % Track supervised handler PIDs for cleanup
+    active_handlers = [] :: [pid()],  % Track supervised handler PIDs for cleanup
+    correlation_table :: ets:tid() | undefined  % ETS table for persistent correlation storage
 }).
 
 -type state() :: #state{}.
@@ -201,6 +203,19 @@ remove_sampling_handler(Client) ->
 -spec init([transport_opts() | client_opts()]) -> {ok, state()}.
 init([TransportOpts, Options]) ->
     process_flag(trap_exit, true),
+    %% Initialize ETS table for persistent correlation storage
+    CorrelationTable = case ets:info(erlmcp_correlation_table) of
+        undefined ->
+            ets:new(erlmcp_correlation_table, [
+                named_table,
+                set,
+                public,
+                {read_concurrency, true},
+                {write_concurrency, true}
+            ]);
+        _ ->
+            erlmcp_correlation_table
+    end,
     case init_transport(TransportOpts) of
         {ok, Transport, TransportState} ->
             State = #state{
@@ -208,9 +223,12 @@ init([TransportOpts, Options]) ->
                 transport_state = TransportState,
                 strict_mode = maps:get(strict_mode, Options, false),
                 timeout = maps:get(timeout, Options, 5000),
-                subscriptions = sets:new()
+                subscriptions = sets:new(),
+                correlation_table = CorrelationTable
             },
-            {ok, State};
+            %% Recover pending correlations from ETS table on initialization
+            State2 = recover_correlations(State),
+            {ok, State2};
         {error, Reason} ->
             {stop, Reason}
     end.
@@ -471,12 +489,25 @@ handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.transport_sta
     logger:error("Transport process died: ~p", [Reason]),
     {stop, {transport_died, Reason}, State};
 
+%% Handle initialization timeout
+handle_info(initialization_timeout, #state{phase = initializing} = State) ->
+    logger:error("Initialization timeout - server did not send notifications/initialized within ~p ms",
+                 [State#state.timeout]),
+    {stop, initialization_timeout, State};
+
+%% Ignore initialization timeout if already initialized
+handle_info(initialization_timeout, State) ->
+    logger:debug("Ignoring initialization timeout - already in phase ~p", [State#state.phase]),
+    {noreply, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
     close_transport(State),
+    %% Clean up stale correlations on termination
+    cleanup_stale_correlations(),
     %% Note: Active handlers are transient and will be cleaned up by their supervisor
     %% No manual cleanup needed for supervised processes
     ok.
@@ -548,6 +579,8 @@ send_request(State, Method, Params, RequestInfo) ->
                     Json = erlmcp_json_rpc:encode_request(RequestId, Method, Params),
                     case send_message(State, Json) of
                         ok ->
+                            %% Store correlation in ETS for persistence across reconnection
+                            store_correlation(State#state.correlation_table, RequestId, RequestInfo, Method),
                             NewState = State#state{
                                 request_id = SafeNextId,
                                 pending_requests = maps:put(RequestId, RequestInfo, State#state.pending_requests)
@@ -654,16 +687,21 @@ handle_response(Id, Result, State) ->
     case maps:take(Id, State#state.pending_requests) of
         {{initialize, From}, NewPending} ->
             gen_server:reply(From, Result),
+            %% Remove from persistent ETS storage
+            delete_correlation(State#state.correlation_table, Id),
             case Result of
                 {ok, InitResult} ->
                     ServerCapabilities = extract_server_capabilities(InitResult),
-                    %% Stay in initializing phase until client sends initialized notification
+                    %% Stay in initializing phase until server sends notifications/initialized
+                    %% Do NOT set initialized=true yet - wait for the notification
                     NewState = State#state{
                         pending_requests = NewPending,
                         capabilities = ServerCapabilities,
-                        initialized = true,
                         phase = initializing
                     },
+                    %% Set initialization timeout to prevent hanging
+                    InitTimeout = State#state.timeout,
+                    erlang:send_after(InitTimeout, self(), initialization_timeout),
                     {noreply, NewState};
                 {error, _} ->
                     %% Go to error phase on initialization failure
@@ -675,6 +713,8 @@ handle_response(Id, Result, State) ->
             end;
         {{_RequestType, From}, NewPending} ->
             gen_server:reply(From, Result),
+            %% Remove from persistent ETS storage
+            delete_correlation(State#state.correlation_table, Id),
             {noreply, State#state{pending_requests = NewPending}};
         error ->
             logger:warning("Received response for unknown request ID: ~p", [Id]),
@@ -706,9 +746,16 @@ extract_capability(_) ->
 -spec handle_notification(binary(), map(), state()) -> {noreply, state()}.
 
 %% INITIALIZED notification transitions to initialized phase
-handle_notification(<<"notifications/initialized">> = _Method, _Params, #state{phase = initializing} = State) ->
+handle_notification(<<"notifications/initialized">> = Method, _Params, #state{phase = initializing} = State) ->
     logger:info("Client received initialized notification, transitioning to initialized phase"),
-    {noreply, State#state{phase = initialized}};
+    %% Cancel the initialization timeout since we received the notification
+    %% (We can't cancel send_after messages easily, so we handle them in handle_info)
+    {noreply, State#state{phase = initialized, initialized = true}};
+
+%% Ignore notifications/initialized if not in initializing phase (already initialized)
+handle_notification(<<"notifications/initialized">> = Method, _Params, State) ->
+    logger:debug("Received notifications/initialized in phase ~p, ignoring", [State#state.phase]),
+    {noreply, State};
 
 handle_notification(<<"sampling/createMessage">> = Method, Params, State) ->
     spawn_handler(State#state.sampling_handler, Method, Params),
@@ -775,4 +822,78 @@ execute_batch_requests([{RequestId, Method, Params} | Rest], State) ->
         {error, Reason} ->
             logger:warning("Failed to send batch request ~p: ~p", [RequestId, Reason]),
             execute_batch_requests(Rest, State)
+    end.
+
+%%====================================================================
+%% Correlation Persistence Functions
+%%====================================================================
+
+%% @doc Store correlation in ETS for persistence across reconnection
+-spec store_correlation(ets:tid() | undefined, request_id(), {atom(), pid()}, binary()) -> true.
+store_correlation(undefined, _RequestId, _RequestInfo, _Method) ->
+    true;
+store_correlation(Table, RequestId, {RequestType, FromPid}, Method) ->
+    CorrelationData = #{
+        timestamp => erlang:system_time(millisecond),
+        request_type => RequestType,
+        from_pid => FromPid,
+        method => Method
+    },
+    ets:insert(Table, {RequestId, CorrelationData}),
+    logger:debug("Stored correlation for request ID ~w: ~p", [RequestId, CorrelationData]),
+    true.
+
+%% @doc Delete correlation from ETS table
+-spec delete_correlation(ets:tid() | undefined, request_id()) -> true.
+delete_correlation(undefined, _RequestId) ->
+    true;
+delete_correlation(Table, RequestId) ->
+    ets:delete(Table, RequestId),
+    logger:debug("Deleted correlation for request ID ~w", [RequestId]),
+    true.
+
+%% @doc Recover pending correlations from ETS table on reconnection
+-spec recover_correlations(state()) -> state().
+recover_correlations(#state{correlation_table = undefined} = State) ->
+    State;
+recover_correlations(#state{correlation_table = Table, pending_requests = Pending} = State) ->
+    Now = erlang:system_time(millisecond),
+    %% Get all correlations from ETS table
+    Correlations = ets:tab2list(Table),
+    %% Filter out stale correlations (> 5 minutes old) and dead PIDs
+    ValidCorrelations = lists:filter(
+        fun({_RequestId, #{timestamp := TS, from_pid := Pid}}) ->
+            Age = Now - TS,
+            Age < 300000 andalso is_process_alive(Pid)
+        end,
+        Correlations
+    ),
+    %% Update pending requests map with recovered correlations
+    RecoveredPending = lists:foldl(
+        fun({RequestId, #{request_type := Type, from_pid := Pid}}, Acc) ->
+            maps:put(RequestId, {Type, Pid}, Acc)
+        end,
+        Pending,
+        ValidCorrelations
+    ),
+    logger:info("Recovered ~p correlations from ETS table", [length(ValidCorrelations)]),
+    State#state{pending_requests = RecoveredPending}.
+
+%% @doc Clean up stale correlations older than 5 minutes
+-spec cleanup_stale_correlations() -> non_neg_integer().
+cleanup_stale_correlations() ->
+    case ets:info(erlmcp_correlation_table) of
+        undefined ->
+            logger:warning("Correlation table not found, skipping cleanup"),
+            0;
+        _ ->
+            Now = erlang:system_time(millisecond),
+            DeletedCount = ets:select_delete(erlmcp_correlation_table,
+                fun({_RequestId, #{timestamp := TS}}) when Now - TS > 300000 ->
+                    true;
+                   (_) ->
+                    false
+                end),
+            logger:info("Cleaned up ~p stale correlations", [DeletedCount]),
+            DeletedCount
     end.

@@ -606,6 +606,10 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, Params, TransportId, #state{server_id
                 send_response_via_registry(State, TransportId, Id, Response),
                 erlmcp_tracing:set_status(SpanCtx, ok),
 
+                %% Send notifications/initialized after successful initialize
+                %% This is REQUIRED by MCP 2025-11-25 specification (Gap P0-1)
+                send_notification_via_registry(State, ?MCP_METHOD_INITIALIZED, #{}),
+
                 %% Transition to initialized phase
                 NewState = State#state{
                     initialized = true,

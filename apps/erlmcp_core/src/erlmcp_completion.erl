@@ -9,8 +9,13 @@
     start_link/1,
     complete/3,
     complete/4,
+    stream_completion/3,
+    stream_completion/4,
+    cancel_completion/2,
+    get_cached_completion/3,
     add_completion_handler/3,
     add_completion_handler/4,
+    add_completion_handler/5,
     remove_completion_handler/2,
     stop/1,
     jaro_winkler_similarity/2
@@ -19,15 +24,22 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+%% Stream process exports
+-export([stream_loop/3]).
+
 %%====================================================================
 %% Types
 %%====================================================================
 
 -type client() :: pid().
--type completion_ref() :: binary().
+-type completion_ref() :: binary() | #{type := binary(), name := binary()}.
 -type argument() :: #{
     name := binary(),
     value => binary() | undefined
+}.
+-type completion_context() :: #{
+    arguments => map(),
+    type => binary()  %% <<"tool">>, <<"resource">>, <<"prompt">>
 }.
 -type completion_item() :: #{
     value := binary(),
@@ -38,17 +50,36 @@
     hasMore := boolean(),
     total => non_neg_integer()
 }.
--type completion_handler() :: fun((completion_ref(), argument()) -> {ok, [completion_item()]} | {error, term()}).
+-type completion_handler() :: fun((completion_ref(), argument(), completion_context()) ->
+    {ok, [completion_item()]} | {error, term()}).
 -type rate_limit_key() :: {client(), completion_ref()}.
+-type completion_id() :: binary().
+-type stream_state() :: pending | streaming | completed | cancelled.
+-type stream_chunk() :: {chunk, binary()} | {done, completion_result()}.
+
+-record(completion_stream, {
+    id :: completion_id(),
+    client :: client(),
+    ref :: completion_ref(),
+    argument :: argument(),
+    context :: completion_context(),
+    status :: stream_state(),
+    chunks :: queue:queue(binary()),
+    handler :: completion_handler(),
+    created_at :: integer()
+}).
 
 -record(state, {
-    handlers :: #{completion_ref() => completion_handler()},
+    handlers :: #{completion_ref() => {completion_handler(), binary()}},  % {handler, type}
     rate_limits :: #{rate_limit_key() => {integer(), integer()}},  % {count, window_start}
     cache :: ets:tid(),
     cache_ttl :: pos_integer(),
+    cache_max_size :: pos_integer(),
+    cache_current_size :: non_neg_integer(),
     max_results :: pos_integer(),
     rate_limit :: pos_integer(),  % requests per second
-    ranking_threshold :: float()
+    ranking_threshold :: float(),
+    streams :: #{completion_id() => #completion_stream{}}
 }).
 
 %% Completion error codes (MCP 2025-11-25)
@@ -58,10 +89,12 @@
 -define(MCP_ERROR_COMPLETION_RATE_LIMITED, -32101).
 
 -define(DEFAULT_CACHE_TTL, 3600).  % 1 hour
+-define(DEFAULT_CACHE_MAX_SIZE, 1000).  % Max 1000 cached results
 -define(DEFAULT_MAX_RESULTS, 10).
 -define(DEFAULT_RATE_LIMIT, 10).  % 10 req/sec
 -define(DEFAULT_RANKING_THRESHOLD, 0.7).
 -define(RATE_LIMIT_WINDOW, 1000).  % 1 second window
+-define(STREAM_CHUNK_SIZE, 1024).  % 1KB chunks for streaming
 
 %%====================================================================
 %% API Functions
@@ -77,18 +110,60 @@ start_link(Options) ->
 
 -spec complete(client(), completion_ref(), argument()) -> {ok, completion_result()} | {error, term()}.
 complete(Client, Ref, Argument) ->
-    complete(Client, Ref, Argument, 5000).
+    complete(Client, Ref, Argument, #{}).
 
--spec complete(client(), completion_ref(), argument(), timeout()) -> {ok, completion_result()} | {error, term()}.
-complete(Client, Ref, Argument, Timeout) when is_pid(Client), is_binary(Ref), is_map(Argument) ->
-    gen_server:call(Client, {complete, Ref, Argument}, Timeout).
+-spec complete(client(), completion_ref(), argument(), completion_context() | timeout()) ->
+    {ok, completion_result()} | {error, term()}.
+complete(Client, Ref, Argument, Context) when is_map(Context) ->
+    complete(Client, Ref, Argument, Context, 5000);
+complete(Client, Ref, Argument, Timeout) when is_integer(Timeout) ->
+    complete(Client, Ref, Argument, #{}, Timeout).
+
+-spec complete(client(), completion_ref(), argument(), completion_context(), timeout()) ->
+    {ok, completion_result()} | {error, term()}.
+complete(Client, Ref, Argument, Context, Timeout) when is_pid(Client), is_map(Argument), is_map(Context) ->
+    gen_server:call(Client, {complete, Ref, Argument, Context}, Timeout).
+
+%% Streaming completion API
+-spec stream_completion(client(), completion_ref(), argument()) ->
+    {ok, completion_id(), pid()} | {error, term()}.
+stream_completion(Client, Ref, Argument) ->
+    stream_completion(Client, Ref, Argument, #{}).
+
+-spec stream_completion(client(), completion_ref(), argument(), completion_context()) ->
+    {ok, completion_id(), pid()} | {error, term()}.
+stream_completion(Client, Ref, Argument, Context) when is_pid(Client), is_map(Argument), is_map(Context) ->
+    gen_server:call(Client, {stream_completion, Ref, Argument, Context}, 5000).
+
+-spec cancel_completion(client(), completion_id()) -> ok | {error, term()}.
+cancel_completion(Client, CompletionId) when is_pid(Client), is_binary(CompletionId) ->
+    gen_server:call(Client, {cancel_completion, CompletionId}, 5000).
+
+-spec get_cached_completion(client(), completion_ref(), argument()) ->
+    {ok, completion_result()} | not_found | {error, term()}.
+get_cached_completion(Client, Ref, Argument) when is_pid(Client), is_map(Argument) ->
+    gen_server:call(Client, {get_cached, Ref, Argument}, 5000).
 
 -spec add_completion_handler(pid(), completion_ref(), completion_handler()) -> ok | {error, term()}.
 add_completion_handler(Server, Ref, Handler) ->
-    add_completion_handler(Server, Ref, Handler, undefined).
+    add_completion_handler(Server, Ref, Handler, <<"general">>).
 
+-spec add_completion_handler(pid(), completion_ref(), completion_handler(), binary()) -> ok | {error, term()}.
+add_completion_handler(Server, Ref, Handler, Type) when is_pid(Server), is_binary(Ref), is_binary(Type) ->
+    gen_server:call(Server, {add_completion_handler, Ref, Handler, Type}).
+
+%% Backward compatibility
 -spec add_completion_handler(pid(), completion_ref(), completion_handler(), atom() | undefined) -> ok | {error, term()}.
 add_completion_handler(Server, Ref, Handler, Type) when is_pid(Server), is_binary(Ref) ->
+    TypeBin = case Type of
+        undefined -> <<"general">>;
+        Atom when is_atom(Atom) -> atom_to_binary(Atom, utf8)
+    end,
+    add_completion_handler(Server, Ref, Handler, TypeBin).
+
+-spec add_completion_handler(pid(), completion_ref(), completion_handler(), binary(), completion_context()) ->
+    ok | {error, term()}.
+add_completion_handler(Server, Ref, Handler, Type, _Context) when is_pid(Server), is_binary(Ref), is_binary(Type) ->
     gen_server:call(Server, {add_completion_handler, Ref, Handler, Type}).
 
 -spec remove_completion_handler(pid(), completion_ref()) -> ok | {error, term()}.
@@ -106,6 +181,7 @@ stop(Server) when is_pid(Server) ->
 -spec init(map()) -> {ok, #state{}}.
 init(Options) ->
     CacheTTL = maps:get(cache_ttl, Options, ?DEFAULT_CACHE_TTL),
+    CacheMaxSize = maps:get(cache_max_size, Options, ?DEFAULT_CACHE_MAX_SIZE),
     MaxResults = maps:get(max_results, Options, ?DEFAULT_MAX_RESULTS),
     RateLimit = maps:get(rate_limit, Options, ?DEFAULT_RATE_LIMIT),
     RankingThreshold = maps:get(ranking_threshold, Options, ?DEFAULT_RANKING_THRESHOLD),
@@ -122,19 +198,22 @@ init(Options) ->
         rate_limits = #{},
         cache = Cache,
         cache_ttl = CacheTTL,
+        cache_max_size = CacheMaxSize,
+        cache_current_size = 0,
         max_results = MaxResults,
         rate_limit = RateLimit,
-        ranking_threshold = RankingThreshold
+        ranking_threshold = RankingThreshold,
+        streams = #{}
     },
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}} | {noreply, #state{}}.
-handle_call({complete, Ref, Argument}, From, State) ->
+handle_call({complete, Ref, Argument, Context}, From, State) ->
     Client = element(1, From),
     case check_rate_limit(Client, Ref, State) of
         {ok, NewRateLimits} ->
-            case do_complete(Ref, Argument, State) of
+            case do_complete(Ref, Argument, Context, State) of
                 {ok, Result} ->
                     {reply, {ok, Result}, State#state{rate_limits = NewRateLimits}};
                 {error, _Reason} = Error ->
@@ -144,10 +223,56 @@ handle_call({complete, Ref, Argument}, From, State) ->
             {reply, Error, State}
     end;
 
-handle_call({add_completion_handler, Ref, Handler, _Type}, _From, State) ->
+handle_call({stream_completion, Ref, Argument, Context}, _From, State) ->
+    case do_stream_completion(Ref, Argument, Context, State) of
+        {ok, CompletionId, StreamPid} ->
+            NewStreams = maps:put(CompletionId,
+                #completion_stream{
+                    id = CompletionId,
+                    client = self(),
+                    ref = Ref,
+                    argument = Argument,
+                    context = Context,
+                    status = streaming,
+                    chunks = queue:new(),
+                    handler = maps:get(Ref, State#state.handlers, undefined),
+                    created_at = erlang:system_time(millisecond)
+                },
+                State#state.streams),
+            {reply, {ok, CompletionId, StreamPid}, State#state{streams = NewStreams}};
+        {error, _Reason} = Error ->
+            {reply, Error, State}
+    end;
+
+handle_call({cancel_completion, CompletionId}, _From, State) ->
+    case maps:get(CompletionId, State#state.streams, undefined) of
+        undefined ->
+            {reply, {error, {completion_not_found, -32102, <<"Completion not found">>}}, State};
+        Stream ->
+            Stream#completion_stream.client ! {cancel, CompletionId},
+            NewStreams = maps:remove(CompletionId, State#state.streams),
+            {reply, ok, State#state{streams = NewStreams}}
+    end;
+
+handle_call({get_cached, Ref, Argument}, _From, State) ->
+    CacheKey = {Ref, Argument},
+    case ets:lookup(State#state.cache, CacheKey) of
+        [{CacheKey, Result, Expiry}] ->
+            Now = erlang:system_time(second),
+            case Expiry > Now of
+                true -> {reply, {ok, Result}, State};
+                false -> {reply, not_found, State}
+            end;
+        _ ->
+            {reply, not_found, State}
+    end;
+
+handle_call({add_completion_handler, Ref, Handler, Type}, _From, State) ->
     case validate_completion_ref(Ref) of
         ok ->
-            NewHandlers = maps:put(Ref, Handler, State#state.handlers),
+            NewHandlers = maps:put(Ref, {Handler, Type}, State#state.handlers),
+            % Invalidate cache for this ref when handler changes
+            invalidate_cache_for_ref(Ref, State#state.cache),
             {reply, ok, State#state{handlers = NewHandlers}};
         {error, _} = Error ->
             {reply, Error, State}
@@ -155,6 +280,8 @@ handle_call({add_completion_handler, Ref, Handler, _Type}, _From, State) ->
 
 handle_call({remove_completion_handler, Ref}, _From, State) ->
     NewHandlers = maps:remove(Ref, State#state.handlers),
+    % Invalidate cache for this ref when handler removed
+    invalidate_cache_for_ref(Ref, State#state.cache),
     {reply, ok, State#state{handlers = NewHandlers}};
 
 handle_call(_Request, _From, State) ->
@@ -200,10 +327,10 @@ check_rate_limit(Client, Ref, State) ->
     end.
 
 %% Execute completion with caching
--spec do_complete(completion_ref(), argument(), #state{}) ->
+-spec do_complete(completion_ref(), argument(), completion_context(), #state{}) ->
     {ok, completion_result()} | {error, term()}.
-do_complete(Ref, Argument, State) ->
-    CacheKey = {Ref, Argument},
+do_complete(Ref, Argument, Context, State) ->
+    CacheKey = {Ref, Argument, Context},
 
     case ets:lookup(State#state.cache, CacheKey) of
         [{CacheKey, Result, Expiry}] ->
@@ -216,8 +343,8 @@ do_complete(Ref, Argument, State) ->
                         undefined ->
                             {error, {completion_ref_not_found, ?MCP_ERROR_COMPLETION_REF_NOT_FOUND,
                                      <<"Completion reference not found">>}};
-                        Handler ->
-                            invoke_completion_handler(Ref, Argument, Handler, State)
+                        {Handler, _Type} ->
+                            invoke_completion_handler(Ref, Argument, Context, Handler, State)
                     end
             end;
         _ ->
@@ -225,17 +352,17 @@ do_complete(Ref, Argument, State) ->
                 undefined ->
                     {error, {completion_ref_not_found, ?MCP_ERROR_COMPLETION_REF_NOT_FOUND,
                              <<"Completion reference not found">>}};
-                Handler ->
-                    invoke_completion_handler(Ref, Argument, Handler, State)
+                {Handler, _Type} ->
+                    invoke_completion_handler(Ref, Argument, Context, Handler, State)
             end
     end.
 
 %% Invoke completion handler with error handling
--spec invoke_completion_handler(completion_ref(), argument(), completion_handler(), #state{}) ->
+-spec invoke_completion_handler(completion_ref(), argument(), completion_context(), completion_handler(), #state{}) ->
     {ok, completion_result()} | {error, term()}.
-invoke_completion_handler(Ref, Argument, Handler, State) ->
+invoke_completion_handler(Ref, Argument, Context, Handler, State) ->
     try
-        case Handler(Ref, Argument) of
+        case Handler(Ref, Argument, Context) of
             {ok, Items} when is_list(Items) ->
                 RankedItems = rank_completions(Argument, Items, State),
                 Result = #{
@@ -243,7 +370,7 @@ invoke_completion_handler(Ref, Argument, Handler, State) ->
                     hasMore => length(RankedItems) >= State#state.max_results,
                     total => length(RankedItems)
                 },
-                cache_result({Ref, Argument}, Result, State),
+                cache_result({Ref, Argument, Context}, Result, State),
                 {ok, Result};
             {error, _Reason} ->
                 {error, {completion_handler_failed, ?MCP_ERROR_COMPLETION_HANDLER_FAILED,
@@ -373,9 +500,146 @@ validate_completion_ref(_) ->
     {error, {invalid_completion_ref, ?MCP_ERROR_COMPLETION_INVALID_ARGUMENT,
              <<"Completion reference must be a non-empty binary">>}}.
 
-%% Cache completion result
--spec cache_result({completion_ref(), argument()}, completion_result(), #state{}) -> ok.
+%% Cache completion result with size limit enforcement
+-spec cache_result({completion_ref(), argument(), completion_context()}, completion_result(), #state{}) -> ok.
 cache_result(Key, Result, State) ->
+    % Check cache size limit
+    CacheSize = ets:info(State#state.cache, size),
+    case CacheSize >= State#state.cache_max_size of
+        true ->
+            % Evict oldest entries (LRU) - delete 10% of cache
+            evict_cache_entries(State#state.cache, trunc(State#state.cache_max_size * 0.1));
+        false ->
+            ok
+    end,
+
     Expiry = erlang:system_time(second) + State#state.cache_ttl,
     ets:insert(State#state.cache, {Key, Result, Expiry}),
     ok.
+
+%% Evict cache entries (LRU approximation)
+-spec evict_cache_entries(ets:tid(), non_neg_integer()) -> ok.
+evict_cache_entries(Cache, Count) ->
+    % Get all keys and delete first Count entries
+    Keys = ets:foldl(fun({Key, _Value, _Expiry}, Acc) -> [Key | Acc] end, [], Cache),
+    ToDelete = lists:sublist(Keys, Count),
+    lists:foreach(fun(Key) -> ets:delete(Cache, Key) end, ToDelete),
+    ok.
+
+%% Invalidate cache for a specific ref
+-spec invalidate_cache_for_ref(completion_ref(), ets:tid()) -> ok.
+invalidate_cache_for_ref(Ref, Cache) ->
+    % Delete all cache entries for this ref
+    Pattern = {Ref, '_', '_'},
+    ets:match_delete(Cache, Pattern),
+    ok.
+
+%% Streaming completion implementation
+-spec do_stream_completion(completion_ref(), argument(), completion_context(), #state{}) ->
+    {ok, completion_id(), pid()} | {error, term()}.
+do_stream_completion(Ref, Argument, Context, State) ->
+    case maps:get(Ref, State#state.handlers, undefined) of
+        undefined ->
+            {error, {completion_ref_not_found, ?MCP_ERROR_COMPLETION_REF_NOT_FOUND,
+                     <<"Completion reference not found">>}};
+        {Handler, _Type} ->
+            CompletionId = generate_completion_id(),
+            Pid = spawn_link(?MODULE, stream_loop, [
+                CompletionId,
+                Ref,
+                Argument,
+                Context,
+                Handler,
+                State#state.max_results,
+                State#state.ranking_threshold
+            ]),
+            {ok, CompletionId, Pid}
+    end.
+
+%% Stream loop - handles streaming completion delivery
+-spec stream_loop(completion_id(), completion_ref(), argument(), completion_context(),
+                  completion_handler(), pos_integer(), float()) -> ok.
+stream_loop(CompletionId, Ref, Argument, Context, Handler, MaxResults, RankingThreshold) ->
+    receive
+        {cancel, CompletionId} ->
+            logger:info("Stream completion cancelled: ~p", [CompletionId]),
+            exit(normal);
+        {get_chunk, Caller} ->
+            % Invoke handler and stream results in chunks
+            try Handler(Ref, Argument, Context) of
+                {ok, Items} when is_list(Items) ->
+                    RankedItems = rank_completions_with_threshold(Argument, Items, RankingThreshold),
+                    PaginatedItems = lists:sublist(RankedItems, MaxResults),
+
+                    % Send items in chunks
+                    Chunks = chunkify_items(PaginatedItems, ?STREAM_CHUNK_SIZE),
+                    send_chunks(Caller, Chunks),
+
+                    % Send final result
+                    Result = #{
+                        completions => PaginatedItems,
+                        hasMore => length(RankedItems) >= MaxResults,
+                        total => length(RankedItems)
+                    },
+                    Caller ! {done, CompletionId, Result},
+                    exit(normal);
+                {error, Reason} ->
+                    Caller ! {error, Reason},
+                    exit(normal)
+            catch
+                _:Error:Stack ->
+                    logger:error("Stream handler crashed: ~p~nStack: ~p", [Error, Stack]),
+                    Caller ! {error, {completion_handler_crashed, ?MCP_ERROR_COMPLETION_HANDLER_FAILED,
+                                     <<"Completion handler crashed">>}},
+                    exit(normal)
+            end
+    after
+        30000 ->  % 30 second timeout
+            logger:warning("Stream completion timeout: ~p", [CompletionId]),
+            exit(timeout)
+    end.
+
+%% Rank completions with custom threshold
+-spec rank_completions_with_threshold(argument(), [completion_item()], float()) -> [completion_item()].
+rank_completions_with_threshold(Argument, Items, Threshold) ->
+    TargetValue = maps:get(value, Argument, <<>>),
+
+    ScoredItems = lists:map(fun(Item) ->
+        Value = maps:get(value, Item, <<>>),
+        Score = jaro_winkler_similarity(TargetValue, Value),
+        Item#{score => Score}
+    end, Items),
+
+    FilteredItems = lists:filter(fun(Item) ->
+        maps:get(score, Item, 0.0) >= Threshold
+    end, ScoredItems),
+
+    lists:sort(fun(A, B) ->
+        maps:get(score, A, 0.0) >= maps:get(score, B, 0.0)
+    end, FilteredItems).
+
+%% Chunkify completion items
+-spec chunkify_items([completion_item()], pos_integer()) -> [[completion_item()]].
+chunkify_items(Items, MaxSize) ->
+    chunkify_items(Items, MaxSize, []).
+
+chunkify_items([], _MaxSize, Acc) ->
+    lists:reverse(Acc);
+chunkify_items(Items, MaxSize, Acc) ->
+    {Chunk, Rest} = lists:split(min(MaxSize, length(Items)), Items),
+    chunkify_items(Rest, MaxSize, [Chunk | Acc]).
+
+%% Send chunks to caller
+-spec send_chunks(pid(), [[completion_item()]]) -> ok.
+send_chunks(_Caller, []) ->
+    ok;
+send_chunks(Caller, [Chunk | Rest]) ->
+    Caller ! {chunk, Chunk},
+    timer:sleep(10),  % Small delay between chunks
+    send_chunks(Caller, Rest).
+
+%% Generate unique completion ID
+-spec generate_completion_id() -> completion_id().
+generate_completion_id() ->
+    Binary = term_to_binary({self(), erlang:unique_integer([positive])}),
+    base64:encode(Binary).

@@ -401,6 +401,171 @@ build_methods() ->
             capability_required = <<"prompts">>,
             deprecation_status = stable,
             documentation = <<"Get a specific prompt">>
+        },
+
+        %% PING - Liveness check
+        #method_req{
+            name = <<"ping">>,
+            method_type = request,
+            direction = client_to_server,
+            required = false,
+            params_spec = #{},
+            result_spec = #{
+                <<"timestamp">> => #{type => <<"string">>, required => false},
+                <<"status">> => #{type => <<"string">>, required => false}
+            },
+            capability_required = undefined,
+            deprecation_status = stable,
+            documentation = <<"Liveness check to verify connection is active">>
+        },
+
+        %% NOTIFICATIONS/INITIALIZED - Initialization complete
+        #method_req{
+            name = <<"notifications/initialized">>,
+            method_type = notification,
+            direction = server_to_client,
+            required = true,
+            params_spec = #{
+                <<"protocolVersion">> => #{type => <<"string">>, required => true},
+                <<"capabilities">> => #{type => <<"object">>, required => true},
+                <<"serverInfo">> => #{type => <<"object">>, required => true}
+            },
+            result_spec = undefined,
+            capability_required = undefined,
+            deprecation_status = stable,
+            documentation = <<"Server sends this after successful initialization">>
+        },
+
+        %% NOTIFICATIONS/MESSAGE - Server messages to client
+        #method_req{
+            name = <<"notifications/message">>,
+            method_type = notification,
+            direction = server_to_client,
+            required = false,
+            params_spec = #{
+                <<"level">> => #{type => <<"string">>, required => false},
+                <<"message">> => #{type => <<"string">>, required => true},
+                <<"data">> => #{type => <<"object">>, required => false}
+            },
+            result_spec = undefined,
+            capability_required = undefined,
+            deprecation_status = stable,
+            documentation = <<"Server sends informational messages to client">>
+        },
+
+        %% TASKS/CREATE - Create background task
+        #method_req{
+            name = <<"tasks/create">>,
+            method_type = request,
+            direction = client_to_server,
+            required = false,
+            params_spec = #{
+                <<"id">> => #{type => <<"string">>, required => true},
+                <<"metadata">> => #{type => <<"object">>, required => false}
+            },
+            result_spec = #{
+                <<"taskId">> => #{type => <<"string">>, required => true},
+                <<"status">> => #{type => <<"string">>, required => true}
+            },
+            capability_required = <<"tasks">>,
+            deprecation_status = stable,
+            documentation = <<"Create a new background task">>
+        },
+
+        %% TASKS/LIST - List tasks
+        #method_req{
+            name = <<"tasks/list">>,
+            method_type = request,
+            direction = client_to_server,
+            required = false,
+            params_spec = #{
+                <<"cursor">> => #{type => <<"string">>, required => false}
+            },
+            result_spec = #{
+                <<"tasks">> => #{type => <<"array">>, required => true},
+                <<"nextCursor">> => #{type => <<"string">>, required => false}
+            },
+            capability_required = <<"tasks">>,
+            deprecation_status = stable,
+            documentation = <<"List all background tasks">>
+        },
+
+        %% TASKS/CANCEL - Cancel task
+        #method_req{
+            name = <<"tasks/cancel">>,
+            method_type = request,
+            direction = client_to_server,
+            required = false,
+            params_spec = #{
+                <<"taskId">> => #{type => <<"string">>, required => true}
+            },
+            result_spec = #{
+                <<"success">> => #{type => <<"boolean">>, required => true},
+                <<"message">> => #{type => <<"string">>, required => false}
+            },
+            capability_required = <<"tasks">>,
+            deprecation_status = stable,
+            documentation = <<"Cancel a running background task">>
+        },
+
+        %% TASKS/STATUS - Get task status
+        #method_req{
+            name = <<"tasks/status">>,
+            method_type = request,
+            direction = client_to_server,
+            required = false,
+            params_spec = #{
+                <<"taskId">> => #{type => <<"string">>, required => true}
+            },
+            result_spec = #{
+                <<"taskId">> => #{type => <<"string">>, required => true},
+                <<"status">> => #{type => <<"string">>, required => true},
+                <<"progress">> => #{type => <<"number">>, required => false},
+                <<"metadata">> => #{type => <<"object">>, required => false}
+            },
+            capability_required = <<"tasks">>,
+            deprecation_status = stable,
+            documentation = <<"Get the current status of a background task">>
+        },
+
+        %% REQUESTS/CANCEL - Cancel pending request
+        #method_req{
+            name = <<"requests/cancel">>,
+            method_type = request,
+            direction = client_to_server,
+            required = false,
+            params_spec = #{
+                <<"requestId">> => #{type => <<"string">>, required => true},
+                <<"reason">> => #{type => <<"string">>, required => false}
+            },
+            result_spec = #{
+                <<"cancelled">> => #{type => <<"boolean">>, required => true}
+            },
+            capability_required = undefined,
+            deprecation_status = stable,
+            documentation = <<"Cancel a pending request">>
+        },
+
+        %% COMPLETION/COMPLETE - Complete request
+        #method_req{
+            name = <<"completion/complete">>,
+            method_type = request,
+            direction = client_to_server,
+            required = false,
+            params_spec = #{
+                <<"prompt">> => #{type => <<"string">>, required => true},
+                <<"modelPreferences">> => #{type => <<"object">>, required => false},
+                <<"maxTokens">> => #{type => <<"integer">>, required => false},
+                <<"temperature">> => #{type => <<"number">>, required => false}
+            },
+            result_spec = #{
+                <<"text">> => #{type => <<"string">>, required => true},
+                <<"finishReason">> => #{type => <<"string">>, required => false},
+                <<"usage">> => #{type => <<"object">>, required => false}
+            },
+            capability_required = <<"sampling">>,
+            deprecation_status = stable,
+            documentation = <<"Complete a text prompt using LLM sampling">>
         }
     ].
 
@@ -1266,6 +1431,31 @@ build_capabilities() ->
             features = [<<"level">>],
             validation_rules = [
                 <<"logging/set must accept level parameter">>
+            ]
+        },
+        #capability_req{
+            name = <<"tasks">>,
+            category = server,
+            required = false,
+            dependencies = [],
+            features = [<<"create">>, <<"list">>, <<"cancel">>, <<"status">>],
+            validation_rules = [
+                <<"tasks/create must return taskId and status">>,
+                <<"tasks/list must return tasks array">>,
+                <<"tasks/cancel must accept taskId">>,
+                <<"tasks/status must return status and progress">>
+            ]
+        },
+        #capability_req{
+            name = <<"sampling">>,
+            category = client,
+            required = false,
+            dependencies = [],
+            features = [<<"complete">>],
+            validation_rules = [
+                <<"completion/complete must accept prompt">>,
+                <<"completion/complete must return generated text">>,
+                <<"completion/complete must support maxTokens parameter">>
             ]
         }
     ].
