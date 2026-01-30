@@ -1,0 +1,365 @@
+%%%-------------------------------------------------------------------
+%%% @doc Hot Code Loading Upgrade Tests
+%%%
+%%% Comprehensive test suite for state migration during hot code loading.
+%%% Tests cover:
+%%%
+%%% - Legacy state upgrade (no version field -> v1)
+%%% - Version field preservation
+%%% - Downgrade scenarios
+%%% - ETS table migration
+%%% - Error recovery during migration
+%%% - Data preservation
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_state_migration_tests).
+-include_lib("eunit/include/eunit.hrl").
+
+%%====================================================================
+%% Test Setup
+%%====================================================================
+
+%% Test fixture setup
+setup() ->
+    {ok, Pid} = erlmcp_rate_limiter:start_link(),
+    Pid.
+
+cleanup(Pid) ->
+    gen_server:stop(Pid).
+
+%%====================================================================
+%% Rate Limiter State Migration Tests
+%%====================================================================
+
+rate_limiter_legacy_state_test() ->
+    %% Test migrating legacy state (no version field)
+    LegacyState = #{
+        config => #{max_messages_per_sec => 100},
+        clients => ets:new(test_clients, [set]),
+        global_bucket => {100.0, erlang:system_time(millisecond)},
+        violations => ets:new(test_violations, [set]),
+        last_cleanup => erlang:system_time(millisecond)
+    },
+
+    %% Simulate code_change from legacy version
+    OldVsn = "$Id: legacy_state.erl,v 1.0 2024-01-01 12:00:00 user $",
+    {ok, NewState} = erlmcp_rate_limiter:code_change(OldVsn, LegacyState, []),
+
+    %% Verify version field was added
+    ?assertEqual(v1, element(2, NewState)),  % version is 2nd field
+    ?assert(is_record(NewState, state)).
+
+rate_limiter_current_state_test() ->
+    %% Test that current version state is unchanged
+    CurrentState = erlmcp_rate_limiter:init([]),
+
+    %% Simulate code_change from current version
+    {ok, NewState} = erlmcp_rate_limiter:code_change([], CurrentState, []),
+
+    %% State should be unchanged
+    ?assertEqual(CurrentState, NewState).
+
+rate_limiter_downgrade_test() ->
+    %% Test downgrade migration
+    StateV1 = erlmcp_rate_limiter:init([]),
+
+    %% Simulate downgrade
+    {ok, DowngradedState} = erlmcp_rate_limiter:code_change({down, v2}, StateV1, []),
+
+    %% Version should be preserved
+    ?assertEqual(v1, element(2, DowngradedState)).
+
+%%====================================================================
+%% Session Manager State Migration Tests
+%%====================================================================
+
+session_manager_legacy_state_test() ->
+    %% Test migrating legacy session state
+    LegacyState = #{
+        table => ets:new(test_sessions, [ordered_set]),
+        cleanup_timer => undefined,
+        cleanup_interval_ms => 60000,
+        default_timeout_ms => 3600000
+    },
+
+    %% Simulate code_change from legacy version
+    OldVsn = "$Id: legacy_state.erl,v 1.0 2024-01-01 12:00:00 user $",
+    {ok, NewState} = erlmcp_session_manager:code_change(OldVsn, LegacyState, []),
+
+    %% Verify version field was added
+    ?assertEqual(v1, element(2, NewState)),
+    ?assert(is_record(NewState, state)).
+
+session_manager_current_state_test() ->
+    %% Test that current version state is unchanged
+    {ok, State} = erlmcp_session_manager:init([]),
+
+    %% Simulate code_change from current version
+    {ok, NewState} = erlmcp_session_manager:code_change([], State, []),
+
+    %% State should be unchanged
+    ?assertEqual(State, NewState).
+
+%%====================================================================
+%% Cache State Migration Tests
+%%====================================================================
+
+cache_legacy_state_test() ->
+    %% Test migrating legacy cache state
+    L1Table = ets:new(test_cache_l1, [set]),
+    LegacyState = #{
+        l1_table => L1Table,
+        l2_enabled => false,
+        l3_enabled => false,
+        l3_module => undefined,
+        l3_conn => undefined,
+        max_l1_size => 10000,
+        max_l2_size => 100000,
+        default_ttl_seconds => 300,
+        cleanup_interval_ms => 60000,
+        cleanup_timer => undefined,
+        stats => #{
+            hits => 0, misses => 0, l1_hits => 0, l2_hits => 0, l3_hits => 0,
+            evictions => 0, expirations => 0, writes => 0, deletes => 0
+        }
+    },
+
+    %% Simulate code_change from legacy version
+    OldVsn = "$Id: legacy_state.erl,v 1.0 2024-01-01 12:00:00 user $",
+    {ok, NewState} = erlmcp_cache:code_change(OldVsn, LegacyState, []),
+
+    %% Verify version field was added
+    ?assertEqual(v1, element(2, NewState)),
+    ?assert(is_record(NewState, state)),
+
+    %% Cleanup
+    ets:delete(L1Table).
+
+cache_current_state_test() ->
+    %% Test that current version state is unchanged
+    {ok, State} = erlmcp_cache:init(#{}),
+
+    %% Simulate code_change from current version
+    {ok, NewState} = erlmcp_cache:code_change([], State, []),
+
+    %% State should be unchanged
+    ?assertEqual(State, NewState).
+
+%%====================================================================
+%% ETS Table Migration Tests
+%%====================================================================
+
+ets_backup_restore_test() ->
+    %% Test ETS table backup and restore
+    SourceTable = ets:new(test_source, [set]),
+
+    %% Add test data
+    ets:insert(SourceTable, [{key1, value1}, {key2, value2}, {key3, value3}]),
+
+    %% Create backup
+    BackupTable = erlmcp_state_migration:backup_ets_table(SourceTable, test_module),
+
+    %% Verify backup has same data
+    ?assertEqual(3, ets:info(BackupTable, size)),
+    [{key1, value1}] = ets:lookup(BackupTable, key1),
+    [{key2, value2}] = ets:lookup(BackupTable, key2),
+    [{key3, value3}] = ets:lookup(BackupTable, key3),
+
+    %% Modify original
+    ets:delete(SourceTable, key2),
+    ets:insert(SourceTable, {key4, value4}),
+
+    %% Restore from backup
+    erlmcp_state_migration:restore_ets_table(SourceTable, BackupTable, test_module),
+
+    %% Verify restore worked
+    ?assertEqual(3, ets:info(SourceTable, size)),
+    [{key2, value2}] = ets:lookup(SourceTable, key2),
+    ?assertEqual([], ets:lookup(SourceTable, key4)),
+
+    %% Cleanup
+    ets:delete(SourceTable),
+    ets:delete(BackupTable).
+
+ets_migration_transform_test() ->
+    %% Test ETS table data transformation during migration
+    SourceTable = ets:new(test_transform, [set]),
+
+    %% Add test data (v1 format)
+    ets:insert(SourceTable, [
+        {key1, {v1_value, data1}},
+        {key2, {v1_value, data2}},
+        {key3, {v1_value, data3}}
+    ]),
+
+    %% Transform function (v1 -> v2)
+    TransformFun = fun({Key, {v1_value, Data}}) ->
+        {Key, {v2_value, Data, upgraded}};
+    ({Key, Value}) ->
+        {Key, Value}
+    end,
+
+    %% Perform migration
+    ok = erlmcp_state_migration:migrate_ets_table(
+        SourceTable, test_module, v1, v2, TransformFun),
+
+    %% Verify transformation
+    [{key1, {v2_value, data1, upgraded}}] = ets:lookup(SourceTable, key1),
+    [{key2, {v2_value, data2, upgraded}}] = ets:lookup(SourceTable, key2),
+    [{key3, {v2_value, data3, upgraded}}] = ets:lookup(SourceTable, key3),
+
+    %% Cleanup
+    ets:delete(SourceTable).
+
+%%====================================================================
+%% Integration Tests
+%%====================================================================
+
+hot_code_reload_cycle_test() ->
+    %% Test full hot code reload cycle
+    Pid = setup(),
+
+    %% Get current state
+    {ok, State1} = sys:get_state(Pid),
+
+    %% Simulate code change (no-op for current version)
+    sys:suspend(Pid),
+    sys:change_code(Pid, erlmcp_rate_limiter, [], []),
+    sys:resume(Pid),
+
+    %% Get state after reload
+    {ok, State2} = sys:get_state(Pid),
+
+    %% State should be consistent
+    ?assertEqual(element(2, State1), element(2, State2)),  % version field
+
+    cleanup(Pid).
+
+data_preservation_during_upgrade_test() ->
+    %% Test that data is preserved during upgrade
+    {ok, _Pid} = erlmcp_session_manager:start_link(),
+
+    %% Create some sessions
+    {ok, SessionId1} = erlmcp_session_manager:create_session(#{user => bob}),
+    {ok, SessionId2} = erlmcp_session_manager:create_session(#{user => alice}),
+
+    %% Get session data before upgrade
+    {ok, Session1Before} = erlmcp_session_manager:get_session(SessionId1),
+    {ok, Session2Before} = erlmcp_session_manager:get_session(SessionId2),
+
+    %% Simulate hot code reload (in real scenario, this would be
+    %% synchronizing code change across the cluster)
+    %% For now, just verify state migration works
+    sys:suspend(erlmcp_session_manager),
+    sys:change_code(erlmcp_session_manager, [], []),
+    sys:resume(erlmcp_session_manager),
+
+    %% Verify data is preserved
+    {ok, Session1After} = erlmcp_session_manager:get_session(SessionId1),
+    {ok, Session2After} = erlmcp_session_manager:get_session(SessionId2),
+
+    ?assertEqual(maps:get(user, Session1Before), maps:get(user, Session1After)),
+    ?assertEqual(maps:get(user, Session2Before), maps:get(user, Session2After)),
+
+    %% Cleanup
+    erlmcp_session_manager:stop().
+
+%%====================================================================
+%% Error Recovery Tests
+%%====================================================================
+
+migration_failure_recovery_test() ->
+    %% Test error recovery during failed migration
+    SourceTable = ets:new(test_failure, [set]),
+
+    %% Add test data
+    ets:insert(SourceTable, [{key1, value1}, {key2, value2}, {badkey, badvalue}]),
+
+    %% Create backup
+    BackupTable = erlmcp_state_migration:backup_ets_table(SourceTable, test_module),
+
+    %% Transform function that fails on specific key
+    TransformFun = fun
+        ({badkey, _}) -> error({transform_failed, badkey});
+        ({Key, Value}) -> {Key, Value}
+    end,
+
+    %% Migration should fail and restore from backup
+    ?assertError(
+        {ets_migration_failed, badkey, _, _},
+        erlmcp_state_migration:migrate_ets_table(
+            SourceTable, test_module, v1, v2, TransformFun)
+    ),
+
+    %% Verify data was restored from backup
+    ?assertEqual(3, ets:info(SourceTable, size)),
+    [{key1, value1}] = ets:lookup(SourceTable, key1),
+    [{key2, value2}] = ets:lookup(SourceTable, key2),
+    [{badkey, badvalue}] = ets:lookup(SourceTable, badkey),
+
+    %% Cleanup
+    ets:delete(SourceTable),
+    ets:delete(BackupTable).
+
+invalid_state_format_test() ->
+    %% Test handling of invalid state format
+    InvalidState = #{invalid => data},
+
+    %% Should handle gracefully
+    try
+        erlmcp_rate_limiter:code_change([], InvalidState, []),
+        ?assert(false)  % Should not reach here
+    catch
+        error:{invalid_state_format, _} ->
+            ok  % Expected error
+    end.
+
+%%====================================================================
+%% Version Detection Tests
+%%====================================================================
+
+version_extraction_test() ->
+    %% Test version extraction from different state formats
+    StateV1 = #state{version = v1, config => #{}},
+    ?assertEqual(v1, erlmcp_state_migration:version(StateV1)),
+
+    MapStateV1 = #{version => v1, data => test},
+    ?assertEqual(v1, erlmcp_state_migration:version(MapStateV1)),
+
+    %% Legacy state (no version field) defaults to v1
+    LegacyState = #{data => test},
+    ?assertEqual(v1, erlmcp_state_migration:version(LegacyState)).
+
+%%====================================================================
+%% Performance Tests
+%%====================================================================
+
+large_state_migration_performance_test() ->
+    %% Test migration performance with large ETS table
+    LargeTable = ets:new(large_table, [set]),
+
+    %% Insert 10000 entries
+    lists:foreach(fun(I) ->
+        ets:insert(LargeTable, {I, {data, I}})
+    end, lists:seq(1, 10000)),
+
+    %% Measure migration time
+    StartTime = erlang:monotonic_time(microsecond),
+
+    TransformFun = fun({Key, {data, I}}) -> {Key, {upgraded, I}} end,
+    ok = erlmcp_state_migration:migrate_ets_table(
+        LargeTable, test_module, v1, v2, TransformFun),
+
+    EndTime = erlang:monotonic_time(microsecond),
+    DurationMs = (EndTime - StartTime) / 1000.0,
+
+    %% Verify all entries were migrated
+    ?assertEqual(10000, ets:info(LargeTable, size)),
+    [{1, {upgraded, 1}}] = ets:lookup(LargeTable, 1),
+
+    %% Migration should complete in reasonable time (< 5 seconds for 10K entries)
+    ?assert(DurationMs < 5000),
+
+    %% Cleanup
+    ets:delete(LargeTable).

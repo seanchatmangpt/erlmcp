@@ -9,20 +9,10 @@
 
 -include("erlmcp.hrl").
 
-%%====================================================================
-%%% Type Definitions
-%%%====================================================================
-
--type notification_handler() :: fun((binary(), map()) -> any()) | {module(), atom()} | pid().
--export_type([notification_handler/0]).
-
-%%====================================================================
-%%% Records
-%%%====================================================================
-
+%% State record
 -record(state, {
     method :: binary(),
-    handler :: notification_handler(),
+    handler :: term(),
     params :: map(),
     client_pid :: pid()
 }).
@@ -33,7 +23,7 @@
 %% API Functions
 %%====================================================================
 
--spec start_link(binary(), notification_handler(), map()) -> {ok, pid()} | {error, term()}.
+-spec start_link(binary(), term(), map()) -> {ok, pid()} | {error, term()}.
 start_link(Method, Handler, Params) ->
     gen_server:start_link(?MODULE, [Method, Handler, Params], []).
 
@@ -41,7 +31,7 @@ start_link(Method, Handler, Params) ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init(list()) -> {ok, state()}.
+-spec init([binary(), term(), map()]) -> {ok, state()}.
 init([Method, Handler, Params]) ->
     %% Trap exit for graceful shutdown
     process_flag(trap_exit, true),
