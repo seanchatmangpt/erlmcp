@@ -9,7 +9,7 @@
 %% to avoid conflicts with gen_server callbacks
 
 %% Transport API (erlmcp_transport-like interface)
--export([send/2, close/1, transport_init/1]).
+-export([send/2, close/1, transport_init/1, get_max_message_size/0]).
 
 %% Public API
 -export([start_link/1, start_server/1, start_client/1, connect/2]).
@@ -63,7 +63,8 @@
     resource_monitor_timer :: reference() | undefined,
     last_activity :: integer() | undefined,
     bytes_sent = 0 :: non_neg_integer(),
-    bytes_received = 0 :: non_neg_integer()
+    bytes_received = 0 :: non_neg_integer(),
+    max_message_size :: pos_integer()  % Maximum allowed message size in bytes
 }).
 
 -type state() :: #state{}.
@@ -80,6 +81,7 @@
 -define(DEFAULT_MAX_RECONNECT_ATTEMPTS, infinity).
 -define(IDLE_TIMEOUT, 300000). %% 5 minutes idle timeout
 -define(RESOURCE_MONITOR_INTERVAL, 60000). %% 1 minute
+-define(DEFAULT_MAX_MESSAGE_SIZE, 16777216). %% 16 MB
 
 %% Pool defaults
 -define(DEFAULT_POOL_MIN_SIZE, 10).
@@ -214,6 +216,9 @@ init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
     %% Notify owner of connection
     Owner ! {transport_connected, self()},
 
+    %% Get max message size (default 16MB)
+    MaxMessageSize = get_max_message_size(),
+
     {ok, #state{
         mode = server,
         transport_id = TransportId,
@@ -225,7 +230,8 @@ init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
         options = [],
         idle_timer = IdleTimer,
         resource_monitor_timer = ResourceMonitorTimer,
-        last_activity = erlang:monotonic_time(millisecond)
+        last_activity = erlang:monotonic_time(millisecond),
+        max_message_size = MaxMessageSize
     }};
 
 init(#{mode := Mode} = Opts) ->
@@ -284,41 +290,59 @@ handle_cast(_Msg, State) ->
 handle_info(connect, #state{mode = client} = State) ->
     {noreply, attempt_connection(State)};
 
-handle_info({tcp, Socket, Data}, #state{socket = Socket, buffer = Buffer} = State) ->
-    %% Validate message size before processing
+handle_info({tcp, Socket, Data}, #state{socket = Socket, buffer = Buffer, max_message_size = MaxMessageSize} = State) ->
+    %% Step 1: Validate 16MB message size limit first (transport-level enforcement)
     DataSize = byte_size(Data),
-    case erlmcp_memory_guard:check_allocation(DataSize) of
-        ok ->
-            %% Accumulate data in buffer
-            NewBuffer = <<Buffer/binary, Data/binary>>,
+    NewBufferSize = byte_size(Buffer) + DataSize,
 
-            %% Process complete messages
-            {Messages, RemainingBuffer} = extract_messages(NewBuffer),
-
-            %% Send messages to owner
-            Owner = State#state.owner,
-            lists:foreach(fun(Msg) ->
-                Owner ! {transport_message, Msg}
-            end, Messages),
-
-            %% Update activity tracking and byte count
-            {noreply, State#state{
-                buffer = RemainingBuffer,
-                last_activity = erlang:monotonic_time(millisecond),
-                bytes_received = State#state.bytes_received + DataSize
-            }};
-        {error, payload_too_large} ->
-            logger:error("TCP message too large: ~p bytes", [DataSize]),
-            %% Send bounded refusal to owner
-            State#state.owner ! {transport_error, {message_too_large, DataSize}},
+    case NewBufferSize > MaxMessageSize of
+        true ->
+            logger:error("TCP message exceeds 16MB limit (~p bytes > ~p bytes)",
+                [NewBufferSize, MaxMessageSize]),
+            %% Send proper JSON-RPC error response to client before closing
+            ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
+            catch gen_tcp:send(Socket, [ErrorMsg, <<"\n">>]),
             %% Close connection to prevent resource exhaustion
             gen_tcp:close(Socket),
-            {stop, {message_too_large, DataSize}, State};
-        {error, resource_exhausted} ->
-            logger:error("System memory exhausted, rejecting message"),
-            State#state.owner ! {transport_error, resource_exhausted},
-            gen_tcp:close(Socket),
-            {stop, resource_exhausted, State}
+            {stop, {message_too_large, NewBufferSize}, State};
+        false ->
+            %% Step 2: Check system memory guard (second line of defense)
+            case erlmcp_memory_guard:check_allocation(DataSize) of
+                ok ->
+                    %% Accumulate data in buffer
+                    NewBuffer = <<Buffer/binary, Data/binary>>,
+
+                    %% Process complete messages
+                    {Messages, RemainingBuffer} = extract_messages(NewBuffer),
+
+                    %% Send messages to owner
+                    Owner = State#state.owner,
+                    lists:foreach(fun(Msg) ->
+                        Owner ! {transport_message, Msg}
+                    end, Messages),
+
+                    %% Update activity tracking and byte count
+                    {noreply, State#state{
+                        buffer = RemainingBuffer,
+                        last_activity = erlang:monotonic_time(millisecond),
+                        bytes_received = State#state.bytes_received + DataSize
+                    }};
+                {error, payload_too_large} ->
+                    logger:error("TCP message rejected by memory guard: ~p bytes", [DataSize]),
+                    %% Send proper JSON-RPC error response to client
+                    ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
+                    catch gen_tcp:send(Socket, [ErrorMsg, <<"\n">>]),
+                    %% Close connection to prevent resource exhaustion
+                    gen_tcp:close(Socket),
+                    {stop, {message_too_large, DataSize}, State};
+                {error, resource_exhausted} ->
+                    logger:error("System memory exhausted, rejecting message"),
+                    %% Send resource exhausted error
+                    ErrorMsg = erlmcp_json_rpc:error_internal(<<"System memory exhausted">>),
+                    catch gen_tcp:send(Socket, [ErrorMsg, <<"\n">>]),
+                    gen_tcp:close(Socket),
+                    {stop, resource_exhausted, State}
+            end
     end;
 
 handle_info({tcp_closed, Socket}, #state{socket = Socket, mode = server} = State) ->
@@ -465,6 +489,9 @@ init_server_listener(Opts) ->
                 _ -> Port
             end,
 
+            %% Get max message size (default 16MB)
+            MaxMessageSize = get_max_message_size(),
+
             {ok, #state{
                 mode = server,
                 transport_id = TransportId,
@@ -472,7 +499,8 @@ init_server_listener(Opts) ->
                 ranch_ref = RanchRef,
                 owner = Owner,
                 port = ActualPort,
-                connected = true
+                connected = true,
+                max_message_size = MaxMessageSize
             }};
         {error, Reason} ->
             {stop, {ranch_start_failed, Reason}}
@@ -493,6 +521,9 @@ init_client_process(Opts) ->
     %% Monitor the owner process
     monitor(process, Owner),
 
+    %% Get max message size (default 16MB)
+    MaxMessageSize = get_max_message_size(),
+
     State = #state{
         mode = client,
         transport_id = TransportId,
@@ -502,7 +533,8 @@ init_client_process(Opts) ->
         port = Port,
         options = build_socket_options(Opts),
         max_reconnect_attempts = MaxReconnect,
-        last_activity = erlang:monotonic_time(millisecond)
+        last_activity = erlang:monotonic_time(millisecond),
+        max_message_size = MaxMessageSize
     },
 
     %% Attempt initial connection
@@ -754,4 +786,15 @@ cancel_resource_monitor_timer(#state{resource_monitor_timer = Timer}) ->
     case erlang:cancel_timer(Timer) of
         false -> ok;
         _ -> ok
+    end.
+
+%% @doc Get the maximum allowed message size from configuration.
+%% Falls back to default 16MB if not configured.
+-spec get_max_message_size() -> pos_integer().
+get_max_message_size() ->
+    case application:get_env(erlmcp, message_size_limits) of
+        {ok, Limits} when is_map(Limits) ->
+            maps:get(tcp, Limits, ?DEFAULT_MAX_MESSAGE_SIZE);
+        _ ->
+            ?DEFAULT_MAX_MESSAGE_SIZE
     end.

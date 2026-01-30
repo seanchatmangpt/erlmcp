@@ -1,6 +1,6 @@
 -module(erlmcp_registry_tests).
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp.hrl").
+-include_lib("erlmcp/include/erlmcp.hrl").
 
 %%%===================================================================
 %%% Test Suite for erlmcp_registry with gproc

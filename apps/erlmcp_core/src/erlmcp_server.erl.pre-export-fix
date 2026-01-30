@@ -37,6 +37,9 @@
 
 -export_type([server/0, server_id/0]).
 
+%% Type definitions
+-type log_level() :: debug | info | notice | warning | error | critical | alert | emergency.
+
 %% State record - NO transport state, only server-specific state
 %% Includes phase tracking for MCP 2025-11-25 initialization state machine (Gap #4)
 -record(state, {
@@ -331,6 +334,25 @@ handle_call({unsubscribe_resource, Uri}, From, State) ->
     CallerPid = element(1, From),
     NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
     {reply, ok, State#state{subscriptions = NewSubscriptions}};
+
+%% Test helper functions
+handle_call(list_prompts_local, _From, State) ->
+    Prompts = list_all_prompts(State),
+    {reply, Prompts, State};
+
+handle_call({get_prompt_handler_local, Name}, _From, State) ->
+    case maps:get(Name, State#state.prompts, undefined) of
+        undefined -> {reply, {error, not_found}, State};
+        PromptAndHandler -> {reply, {ok, PromptAndHandler}, State}
+    end;
+
+handle_call(list_tools_local, _From, State) ->
+    Tools = list_all_tools(State),
+    {reply, Tools, State};
+
+handle_call(list_resources_local, _From, State) ->
+    Resources = list_all_resources(State),
+    {reply, Resources, State};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -664,6 +686,109 @@ handle_request(Id, ?MCP_METHOD_PROMPTS_GET, Params, TransportId, State) ->
     end,
     {noreply, State};
 
+%% Sampling/createMessage endpoint (Task #136: Implement Sampling Capability)
+handle_request(Id, ?MCP_METHOD_SAMPLING_CREATE_MESSAGE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_sampling_create_message">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_SAMPLING_CREATE_MESSAGE
+        }),
+
+        %% Extract messages and model preferences
+        Messages = maps:get(?MCP_PARAM_MESSAGES, Params, []),
+        ModelPreferences = maps:get(?MCP_PARAM_MODEL_PREFERENCES, Params, #{}),
+
+        %% Validate messages format
+        case validate_sampling_messages(Messages) of
+            ok ->
+                %% Build sampling params from model preferences
+                SamplingParams = #{
+                    <<"model">> => maps:get(<<"model">>, Params, undefined),
+                    <<"temperature">> => maps:get(<<"temperature">>, ModelPreferences, undefined),
+                    <<"maxTokens">> => maps:get(<<"maxTokens">>, ModelPreferences, undefined),
+                    <<"stopSequences">> => maps:get(<<"stopSequences">>, ModelPreferences, undefined)
+                },
+
+                %% Call sampling module (30 second timeout for LLM calls)
+                case erlmcp_sampling:create_message(Messages, SamplingParams, 30000) of
+                    {ok, Result} ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        send_response_via_registry(State, TransportId, Id, Result);
+                    {error, SamplingReason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, sampling_failed, SamplingReason),
+                        logger:error("Sampling create_message failed: ~p", [SamplingReason]),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                            format_sampling_error(SamplingReason))
+                end;
+            {error, ValidationError} ->
+                erlmcp_tracing:record_error_details(SpanCtx, messages_validation_failed, ValidationError),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    format_sampling_error(ValidationError))
+        end,
+
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            logger:error("Sampling request crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Logging/setLevel endpoint (Task #137: Implement Logging Capability)
+handle_request(Id, ?MCP_METHOD_LOGGING_SET_LEVEL, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_logging_set_level">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_LOGGING_SET_LEVEL
+        }),
+
+        %% Extract and validate level parameter
+        case maps:get(<<"level">>, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_level_parameter, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, <<"Missing 'level' parameter">>),
+                {noreply, State};
+            LevelBinary when is_binary(LevelBinary) ->
+                case validate_log_level_binary(LevelBinary) of
+                    {ok, Level} ->
+                        ClientPid = self(),
+                        case erlmcp_logging:set_level(ClientPid, Level) of
+                            ok ->
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                Response = #{<<"level">> => LevelBinary},
+                                send_response_safe(State, TransportId, Id, Response),
+                                {noreply, State};
+                            {error, {invalid_level, _InvalidLevel}} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, invalid_log_level, LevelBinary),
+                                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                                    <<"Invalid log level: ", LevelBinary/binary>>),
+                                {noreply, State}
+                        end;
+                    {error, invalid_level} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, invalid_log_level, LevelBinary),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                            <<"Invalid log level: ", LevelBinary/binary>>),
+                        {noreply, State}
+                end
+        end,
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            logger:error("Logging set_level request crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
 handle_request(Id, _Method, _Params, TransportId, State) ->
     send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
     {noreply, State}.
@@ -720,7 +845,7 @@ send_progress_notification_via_registry(State, Token, Progress, Total) ->
 send_response_safe(State, TransportId, Id, Result) ->
     try send_response_via_registry(State, TransportId, Id, Result)
     catch 
-        Class:_Reason:Stack ->
+        Class:Reason:Stack ->
             logger:warning("Failed to send response for request ~p: ~p:~p~n~p", [Id, Class, Reason, Stack])
     end,
     ok.
@@ -729,7 +854,7 @@ send_response_safe(State, TransportId, Id, Result) ->
 send_error_safe(State, TransportId, Id, Code, Message) ->
     try send_error_via_registry(State, TransportId, Id, Code, Message)
     catch
-        Class:_Reason:Stack ->
+        Class:Reason:Stack ->
             logger:warning("Failed to send error response for request ~p (code ~p): ~p:~p~n~p", 
                           [Id, Code, Class, Reason, Stack])
     end,
@@ -739,7 +864,7 @@ send_error_safe(State, TransportId, Id, Code, Message) ->
 send_notification_safe(State, Method, Params) ->
     try send_notification_via_registry(State, Method, Params)
     catch
-        Class:_Reason:Stack ->
+        Class:Reason:Stack ->
             logger:warning("Failed to send notification ~p: ~p:~p~n~p", [Method, Class, Reason, Stack])
     end,
     ok.
@@ -748,7 +873,7 @@ send_notification_safe(State, Method, Params) ->
 send_notification_to_transport_safe(State, TransportId, Method, Params) ->
     try send_notification_to_transport(State, TransportId, Method, Params)
     catch
-        Class:_Reason:Stack ->
+        Class:Reason:Stack ->
             logger:warning("Failed to send notification ~p to transport ~p: ~p:~p~n~p",
                           [Method, TransportId, Class, Reason, Stack])
     end,
@@ -758,7 +883,7 @@ send_notification_to_transport_safe(State, TransportId, Method, Params) ->
 send_progress_notification_safe(State, Token, Progress, Total) ->
     try send_progress_notification_via_registry(State, Token, Progress, Total)
     catch
-        Class:_Reason:Stack ->
+        Class:Reason:Stack ->
             logger:warning("Failed to send progress notification for token ~p: ~p:~p~n~p", 
                           [Token, Class, Reason, Stack])
     end,
@@ -842,7 +967,7 @@ handle_read_resource(Id, Uri, TransportId, #state{server_id = ServerId} = State)
                             send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]}),
                             erlmcp_tracing:set_status(SpanCtx, ok)
                         catch
-                            Class:_Reason:Stack ->
+                            Class:Reason:Stack ->
                                 erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
                                 logger:error("Resource handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
                                 send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
@@ -970,9 +1095,9 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                     % Clean up progress token after completion
                     erlmcp_progress:cleanup_completed(ProgressToken)
                 catch
-                    Class:_Reason:Stack ->
-                        erlmcp_tracing:record_exception(HandlerSpanCtx, Class, CatchReason, Stacktrace),
-                        logger:error("Tool handler crashed: ~p:~p~n~p", [Class, CatchReason, Stacktrace]),
+                    ClassCatch:ReasonCatch:StackCatch ->
+                        erlmcp_tracing:record_exception(HandlerSpanCtx, ClassCatch, ReasonCatch, StackCatch),
+                        logger:error("Tool handler crashed: ~p:~p~n~p", [ClassCatch, ReasonCatch, StackCatch]),
                         % Cleanup even on error
                         erlmcp_progress:cleanup_completed(ProgressToken),
                         send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
@@ -1063,7 +1188,7 @@ handle_prompt_execution(
         Response1 = maybe_add_field(Response, ?MCP_PARAM_DESCRIPTION, Prompt#mcp_prompt.description),
         send_response_safe(State, TransportId, Id, Response1)
     catch
-        Class:_Reason:Stack ->
+        Class:Reason:Stack ->
             erlmcp_tracing:record_exception(HandlerSpanCtx, Class, Reason, Stack),
             logger:error("Prompt handler crashed: ~p:~p~n~p", [Class, Reason, Stack]),
             send_error_safe(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR)
@@ -1316,9 +1441,32 @@ notify_subscribers(Uri, Metadata, State) ->
 
 -spec handle_paginated_list_with_key([map()], map(), binary()) ->
     {ok, map()} | {error, binary()}.
-handle_paginated_list_with_key(Items, _Params, ListKey) ->
-    %% Simple pagination: return all items without cursor support
-    {ok, #{ListKey => Items}}.
+handle_paginated_list_with_key(Items, Params, ListKey) ->
+    %% Extract pagination parameters
+    PageSize = maps:get(<<"pageSize">>, Params, undefined),
+    Cursor = maps:get(<<"cursor">>, Params, null),
+    TotalCount = length(Items),
+
+    try
+        %% Use pagination module for cursor-based pagination
+        {PageItems, PageInfo} = erlmcp_pagination:paginate(
+            Items, PageSize, Cursor, TotalCount
+        ),
+
+        %% Build response with pagination metadata
+        Response = #{
+            ListKey => PageItems,
+            <<"nextCursor">> => maps:get(<<"cursor">>, PageInfo),
+            <<"hasMore">> => maps:get(<<"hasMore">>, PageInfo),
+            <<"total">> => maps:get(<<"total">>, PageInfo)
+        },
+
+        {ok, Response}
+    catch
+        _:_ ->
+            %% Fallback to simple pagination on error
+            {ok, #{ListKey => Items}}
+    end.
 
 %%====================================================================
 %% Internal functions - List Change Notifications (Gaps #6-8)
@@ -1371,3 +1519,105 @@ canonicalize_and_validate_uri(_) ->
 -spec start_periodic_gc() -> reference().
 start_periodic_gc() ->
     erlang:send_after(60000, self(), force_gc).
+
+%%====================================================================
+%% Test Helper Functions (for testing)
+%%====================================================================
+
+%% @doc List all prompts locally (for testing)
+-spec list_prompts_local(server()) -> [map()].
+list_prompts_local(Server) ->
+    gen_server:call(Server, list_prompts_local).
+
+%% @doc Get prompt handler locally (for testing)
+-spec get_prompt_handler_local(server(), binary()) ->
+    {ok, {#mcp_prompt{}, prompt_handler()}} | {error, not_found}.
+get_prompt_handler_local(Server, Name) ->
+    gen_server:call(Server, {get_prompt_handler_local, Name}).
+
+%% @doc List all tools locally (for testing)
+-spec list_tools_local(server()) -> [map()].
+list_tools_local(Server) ->
+    gen_server:call(Server, list_tools_local).
+
+%% @doc List all resources locally (for testing)
+-spec list_resources_local(server()) -> [map()].
+list_resources_local(Server) ->
+    gen_server:call(Server, list_resources_local).
+
+%%====================================================================
+%% Internal functions - Sampling Support (Task #136)
+%%====================================================================
+
+%% @doc Validate sampling messages format
+-spec validate_sampling_messages(term()) -> ok | {error, binary()}.
+validate_sampling_messages(Messages) when is_list(Messages) ->
+    case length(Messages) of
+        0 ->
+            {error, <<"Messages list cannot be empty">>};
+        _ ->
+            case lists:all(fun validate_sampling_message/1, Messages) of
+                true -> ok;
+                false -> {error, <<"Invalid message format">>}
+            end
+    end;
+validate_sampling_messages(_) ->
+    {error, <<"Messages must be a list">>}.
+
+%% @doc Validate a single sampling message
+-spec validate_sampling_message(map()) -> boolean().
+validate_sampling_message(Message) when is_map(Message) ->
+    Role = maps:get(<<"role">>, Message, undefined),
+    Content = maps:get(<<"content">>, Message, undefined),
+
+    case {Role, Content} of
+        {undefined, _} -> false;
+        {_, undefined} -> false;
+        {R, _} when is_binary(R) ->
+            case Content of
+                C when is_binary(C); is_map(C) -> true;
+                _ -> false
+            end;
+        _ -> false
+    end;
+validate_sampling_message(_) ->
+    false.
+
+%% @doc Format sampling error for JSON-RPC response
+-spec format_sampling_error(term()) -> binary().
+format_sampling_error(Reason) when is_binary(Reason) ->
+    Reason;
+format_sampling_error(empty_messages) ->
+    <<"Messages list cannot be empty">>;
+format_sampling_error(invalid_message_format) ->
+    <<"Invalid message format">>;
+format_sampling_error(invalid_temperature) ->
+    <<"Temperature must be between 0.0 and 2.0">>;
+format_sampling_error(provider_error) ->
+    <<"LLM provider error">>;
+format_sampling_error(timeout) ->
+    <<"LLM request timeout">>;
+format_sampling_error(Reason) when is_atom(Reason) ->
+    binary:list_to_bin(io_lib:format("~p", [Reason]));
+format_sampling_error(_) ->
+    <<"Unknown sampling error">>.
+
+%%====================================================================
+%% Internal functions - Logging Validation (Task #137)
+%%====================================================================
+
+%% @doc Validate log level binary parameter
+%% Converts binary level string to atom and validates against allowed levels
+-spec validate_log_level_binary(binary()) -> {ok, atom()} | {error, invalid_level}.
+validate_log_level_binary(LevelBinary) when is_binary(LevelBinary) ->
+    LevelString = binary_to_list(LevelBinary),
+    try
+        Level = list_to_existing_atom(LevelString),
+        case lists:member(Level, ?MCP_VALID_LOG_LEVELS) of
+            true -> {ok, Level};
+            false -> {error, invalid_level}
+        end
+    catch
+        error:badarg ->
+            {error, invalid_level}
+    end.

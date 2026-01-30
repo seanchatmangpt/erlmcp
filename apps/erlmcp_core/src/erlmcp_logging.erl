@@ -38,14 +38,13 @@
     code_change/3
 ]).
 
+-include("erlmcp.hrl").
+
 %% Type exports
 -export_type([
-    log_level/0,
     log_entry/0,
     log_options/0
 ]).
-
--include("erlmcp.hrl").
 
 %% Constants
 -define(MAX_LOGS_PER_CLIENT, 1000).
@@ -53,7 +52,6 @@
 -define(DEFAULT_LEVEL, info).
 
 %% Type definitions
--type log_level() :: debug | info | notice | warning | error | critical | alert | emergency.
 -type log_entry() :: #{
     timestamp => integer(),
     level => log_level(),
@@ -66,6 +64,7 @@
 %% State record
 -record(state, {
     client_buffers = #{} :: #{pid() => [log_entry()]},
+    client_monitors = #{} :: #{pid() => reference()},
     global_level = ?DEFAULT_LEVEL :: atom(),
     client_levels = #{} :: #{pid() => atom()},
     stats = #{
@@ -91,9 +90,10 @@ log(ClientPid, Level, Component, Message, Data) ->
     gen_server:cast(?MODULE, {log, ClientPid, Level, Component, Message, Data}),
     ok.
 
-%% @doc Set log level for a specific client.
-%% Overrides the global level for this client.
--spec set_level(pid(), atom()) -> ok | {error, term()}.
+%% @doc Set log level for a specific client or globally.
+%% When ClientPid is undefined, sets the global log level.
+%% When ClientPid is a pid, overrides the global level for that specific client.
+-spec set_level(pid() | undefined, atom()) -> ok | {error, term()}.
 set_level(ClientPid, Level) when is_atom(Level) ->
     case lists:member(Level, ?LOG_LEVELS) of
         true -> gen_server:call(?MODULE, {set_level, ClientPid, Level});
@@ -149,6 +149,8 @@ init([]) ->
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
+handle_call({set_level, undefined, Level}, _From, State) ->
+    {reply, ok, State#state{global_level = Level}};
 handle_call({set_level, ClientPid, Level}, _From, State) ->
     NewLevels = maps:put(ClientPid, Level, State#state.client_levels),
     {reply, ok, State#state{client_levels = NewLevels}};
@@ -182,29 +184,49 @@ handle_cast({log, ClientPid, Level, Component, Message, Data}, State) ->
 
 handle_cast({create_buffer, ClientPid}, State) ->
     Buffers = State#state.client_buffers,
+    Monitors = State#state.client_monitors,
     case maps:is_key(ClientPid, Buffers) of
         true ->
             logger:warning("Log buffer already exists for ~p", [ClientPid]),
             {noreply, State};
         false ->
             logger:info("Creating log buffer for client ~p", [ClientPid]),
+            MRef = monitor(process, ClientPid),
             NewBuffers = maps:put(ClientPid, [], Buffers),
-            {noreply, State#state{client_buffers = NewBuffers}}
+            NewMonitors = maps:put(ClientPid, MRef, Monitors),
+            {noreply, State#state{
+                client_buffers = NewBuffers,
+                client_monitors = NewMonitors
+            }}
     end;
 
-handle_cast({delete_buffer, ClientPid}, #state{client_buffers = Buffers} = State) ->
+handle_cast({delete_buffer, ClientPid}, #state{client_buffers = Buffers, client_monitors = Monitors} = State) ->
     case maps:is_key(ClientPid, Buffers) of
         true ->
             logger:info("Deleting log buffer for client ~p", [ClientPid]),
             NewBuffers = maps:remove(ClientPid, Buffers),
             NewLevels = maps:remove(ClientPid, State#state.client_levels),
-            {noreply, State#state{
-                client_buffers = NewBuffers,
-                client_levels = NewLevels
-            }};
+            case maps:get(ClientPid, Monitors, undefined) of
+                undefined ->
+                    {noreply, State#state{
+                        client_buffers = NewBuffers,
+                        client_levels = NewLevels
+                    }};
+                MRef ->
+                    demonitor(MRef, [flush]),
+                    NewMonitors = maps:remove(ClientPid, Monitors),
+                    {noreply, State#state{
+                        client_buffers = NewBuffers,
+                        client_levels = NewLevels,
+                        client_monitors = NewMonitors
+                    }}
+            end;
         false ->
             {noreply, State}
     end;
+
+handle_cast({'DOWN', _MRef, process, ClientPid, _Reason}, State) ->
+    handle_cast({delete_buffer, ClientPid}, State);
 
 handle_cast({clear_buffer, ClientPid}, State) ->
     Buffers = State#state.client_buffers,
@@ -226,8 +248,12 @@ handle_info(_Info, State) ->
 
 %% @private
 -spec terminate(term(), term()) -> ok.
-terminate(_Reason, #state{client_buffers = Buffers}) ->
+terminate(_Reason, #state{client_buffers = Buffers, client_monitors = Monitors}) ->
     logger:info("MCP logging server terminating (~p clients)", [maps:size(Buffers)]),
+    % Clean up all monitors
+    maps:foreach(fun(_Pid, MRef) ->
+        demonitor(MRef, [flush])
+    end, Monitors),
     ok.
 
 %% @private
@@ -255,13 +281,14 @@ do_log(ClientPid, Level, Component, Message, Data, State) ->
             ClientLogs = maps:get(ClientPid, Buffers, []),
             {NewClientLogs, Overflow} = append_log(Entry, ClientLogs),
             NewBuffers = maps:put(ClientPid, NewClientLogs, Buffers),
-            NewStats = case Overflow of
+            NewStats = increment_stat(State#state.stats, total_logs),
+            NewStats2 = case Overflow of
                 true ->
-                    increment_stat(State#state.stats, buffer_overflows);
+                    increment_stat(NewStats, buffer_overflows);
                 false ->
-                    increment_stat(State#state.stats, total_logs)
+                    NewStats
             end,
-            State#state{client_buffers = NewBuffers, stats = NewStats};
+            State#state{client_buffers = NewBuffers, stats = NewStats2};
         false ->
             State
     end.
@@ -294,11 +321,11 @@ level_compare(Level1, Level2) ->
     Index1 - Index2.
 
 %% @doc Get index of element in list.
--spec index_of(tuple(), [tuple()]) -> non_neg_integer().
+-spec index_of(atom(), [atom()]) -> non_neg_integer().
 index_of(Element, List) ->
     index_of(Element, List, 0).
 index_of(_Element, [], _Index) ->
-    0;
+    error({invalid_level, element_not_found});
 index_of(Element, [Element | _], Index) ->
     Index;
 index_of(Element, [_ | Rest], Index) ->

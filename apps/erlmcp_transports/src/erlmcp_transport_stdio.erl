@@ -25,8 +25,11 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+-include("erlmcp.hrl").
+
 -record(state, {
     owner :: pid(),
+    owner_monitor :: reference() | undefined,
     reader :: pid() | undefined,
     buffer = <<>> :: binary(),
     test_mode = false :: boolean(),
@@ -83,6 +86,9 @@ init([Owner]) ->
 init([Owner, Opts]) when is_map(Opts) ->
     process_flag(trap_exit, true),
 
+    % Monitor the owner process for immediate termination
+    OwnerMonitor = monitor(process, Owner),
+
     % Register with registry if transport_id is provided
     TransportId = maps:get(transport_id, Opts, undefined),
     case TransportId of
@@ -103,6 +109,7 @@ init([Owner, Opts]) when is_map(Opts) ->
 
     State = #state{
         owner = Owner,
+        owner_monitor = OwnerMonitor,
         test_mode = TestMode,
         max_message_size = MaxMessageSize,
         transport_id = TransportId
@@ -151,19 +158,27 @@ handle_info({'EXIT', Pid, Reason}, #state{reader = Pid, test_mode = false} = Sta
             {stop, {reader_died, Reason}, State}
     end;
 
-handle_info({'EXIT', Pid, Reason}, #state{owner = Pid} = State) ->
+handle_info({'DOWN', MonitorRef, process, Owner, Reason}, #state{owner_monitor = MonitorRef, owner = Owner} = State) ->
+    logger:info("Owner process ~p died: ~p", [Owner, Reason]),
     {stop, {owner_died, Reason}, State};
 
 handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, #state{reader = Reader, transport_id = TransportId}) ->
+terminate(_Reason, #state{reader = Reader, transport_id = TransportId, owner_monitor = OwnerMonitor}) ->
     % Unregister from registry if registered
     case TransportId of
         undefined -> ok;
         _ ->
             erlmcp_registry:unregister_transport(TransportId)
+    end,
+
+    % Demonitor owner process to avoid DOWN messages during shutdown
+    case OwnerMonitor of
+        undefined -> ok;
+        MonitorRef when is_reference(MonitorRef) ->
+            erlang:demonitor(MonitorRef, [flush])
     end,
 
     % Stop reader process
@@ -232,14 +247,9 @@ read_loop(Parent, Owner, MaxMessageSize) ->
                 {error, size_exceeded} ->
                     logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
                         [byte_size(BinaryLine), MaxMessageSize]),
-                    ErrorMsg = jsx:encode(#{
-                        jsonrpc => <<"2.0">>,
-                        error => #{
-                            code => -32700,
-                            message => <<"Message too large">>
-                        }
-                    }),
-                    Parent ! {line, ErrorMsg},
+                    % Send proper JSON-RPC error response with MESSAGE_TOO_LARGE code (-32012)
+                    ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
+                    io:format("~s~n", [ErrorMsg]),
                     read_loop(Parent, Owner, MaxMessageSize)
             end;
         Line when is_binary(Line) ->
@@ -250,14 +260,9 @@ read_loop(Parent, Owner, MaxMessageSize) ->
                 {error, size_exceeded} ->
                     logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
                         [byte_size(Line), MaxMessageSize]),
-                    ErrorMsg = jsx:encode(#{
-                        jsonrpc => <<"2.0">>,
-                        error => #{
-                            code => -32700,
-                            message => <<"Message too large">>
-                        }
-                    }),
-                    Parent ! {line, ErrorMsg},
+                    % Send proper JSON-RPC error response with MESSAGE_TOO_LARGE code (-32012)
+                    ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
+                    io:format("~s~n", [ErrorMsg]),
                     read_loop(Parent, Owner, MaxMessageSize)
             end
     end.
