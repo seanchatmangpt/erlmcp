@@ -11,7 +11,9 @@
     add_resource/3,
     add_resource_template/4,
     add_tool/3,
+    add_tool_with_description/4,
     add_tool_with_schema/4,
+    add_tool_full/5,
     add_prompt/3,
     add_prompt_with_args/4,
     add_prompt_with_args_and_schema/5,
@@ -26,6 +28,9 @@
     encode_resource_link/2,
     encode_resource_link/4,
     validate_resource_link_uri/1,
+    register_notification_handler/3,
+    unregister_notification_handler/2,
+    unregister_all_handlers/1,
     stop/1
 ]).
 
@@ -54,7 +59,10 @@
     subscriptions = #{} :: #{binary() => sets:set(pid())},
     progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
     notifier_pid :: pid() | undefined,
-    initialized = false :: boolean()
+    initialized = false :: boolean(),
+    last_tools_notification :: integer() | undefined,  % Rate limiting: timestamp of last tools/list_changed notification
+    roots = #{} :: map(),  % Track roots state for change detection
+    notification_handlers = #{} :: #{binary() => {pid(), reference()}}  % Notification method -> {HandlerPid, MonitorRef}
 }).
 
 -type state() :: #state{}.
@@ -88,6 +96,22 @@ add_tool(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
 add_tool_with_schema(Server, Name, Handler, Schema)
   when is_binary(Name), is_function(Handler, 1), is_map(Schema) ->
     gen_server:call(Server, {add_tool_with_schema, Name, Handler, Schema}).
+
+%% @doc Add tool with custom description (max 10000 characters).
+%% Validates description length before adding tool.
+-spec add_tool_with_description(server(), binary(), binary(), tool_handler()) -> ok.
+add_tool_with_description(Server, Name, Description, Handler)
+  when is_binary(Name), is_binary(Description), is_function(Handler, 1) ->
+    gen_server:call(Server, {add_tool_with_description, Name, Description, Handler}).
+
+%% @doc Add tool with full metadata including description, schema, and deprecated flag.
+%% Description is required and must be <= 10000 characters.
+%% InputSchema is optional JSON Schema for argument validation.
+%% Deprecated marks the tool as deprecated (default: false).
+-spec add_tool_full(server(), binary(), binary(), tool_handler(), map()) -> ok.
+add_tool_full(Server, Name, Description, Handler, Options)
+  when is_binary(Name), is_binary(Description), is_function(Handler, 1), is_map(Options) ->
+    gen_server:call(Server, {add_tool_full, Name, Description, Handler, Options}).
 
 -spec add_prompt(server(), binary(), prompt_handler()) -> ok.
 add_prompt(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
@@ -148,6 +172,25 @@ notify_resource_updated(Server, Uri, Metadata) when is_binary(Uri), is_map(Metad
 -spec notify_resources_changed(server()) -> ok.
 notify_resources_changed(Server) ->
     gen_server:cast(Server, notify_resources_changed).
+
+%% @doc Register a handler for a specific notification method.
+%% The handler process will receive {mcp_notification, Method, Params} messages
+%% when notifications of this type are received.
+%% HandlerPid is monitored and will be automatically unregistered if it dies.
+-spec register_notification_handler(server(), binary(), pid()) -> ok.
+register_notification_handler(Server, Method, HandlerPid) when is_binary(Method), is_pid(HandlerPid) ->
+    gen_server:call(Server, {register_notification_handler, Method, HandlerPid}).
+
+%% @doc Unregister a handler for a specific notification method.
+-spec unregister_notification_handler(server(), binary()) -> ok.
+unregister_notification_handler(Server, Method) when is_binary(Method) ->
+    gen_server:call(Server, {unregister_notification_handler, Method}).
+
+%% @doc Unregister all notification handlers for the calling process.
+%% Useful for cleanup when a client disconnects.
+-spec unregister_all_handlers(server()) -> ok.
+unregister_all_handlers(Server) ->
+    gen_server:call(Server, unregister_all_handlers).
 
 -spec stop(server()) -> ok.
 stop(Server) ->
@@ -253,6 +296,26 @@ handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
     notify_tools_changed(State),
     {reply, ok, State#state{tools = NewTools}};
 
+
+handle_call({add_tool_full, Name, Description, Handler, Options}, _From, State) ->
+    InputSchema = maps:get(<<"inputSchema">>, Options, undefined),
+    Deprecated = maps:get(<<"deprecated">>, Options, false),
+    Metadata = maps:get(<<"metadata">>, Options, undefined),
+    Experimental = maps:get(<<"experimental">>, Options, undefined),
+    Version = maps:get(<<"version">>, Options, undefined),
+
+    Tool = #mcp_tool{
+        name = Name,
+        description = Description,
+        input_schema = InputSchema,
+        deprecated = Deprecated,
+        metadata = Metadata,
+        experimental = Experimental,
+        version = Version
+    },
+    NewTools = maps:put(Name, {Tool, Handler, InputSchema}, State#state.tools),
+    notify_tools_changed(State),
+    {reply, ok, State#state{tools = NewTools}};
 handle_call({add_prompt, Name, Handler}, _From, State) ->
     Prompt = #mcp_prompt{
         name = Name,
@@ -332,6 +395,45 @@ handle_call({unsubscribe_resource, Uri}, From, State) ->
     NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
     {reply, ok, State#state{subscriptions = NewSubscriptions}};
 
+handle_call({register_notification_handler, Method, HandlerPid}, _From, State) ->
+    % Monitor the handler process for automatic cleanup
+    case maps:get(Method, State#state.notification_handlers, undefined) of
+        undefined ->
+            % New handler registration
+            Ref = monitor(process, HandlerPid),
+            NewHandlers = maps:put(Method, {HandlerPid, Ref}, State#state.notification_handlers),
+            logger:info("Registered notification handler for ~p: ~p", [Method, HandlerPid]),
+            {reply, ok, State#state{notification_handlers = NewHandlers}};
+        {_ExistingPid, _ExistingRef} ->
+            % Handler already registered for this method
+            {reply, {error, already_registered}, State}
+    end;
+
+handle_call({unregister_notification_handler, Method}, _From, State) ->
+    case maps:get(Method, State#state.notification_handlers, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        {_HandlerPid, Ref} ->
+            % Demonitor the process
+            demonitor(Ref, [flush]),
+            NewHandlers = maps:remove(Method, State#state.notification_handlers),
+            logger:info("Unregistered notification handler for ~p", [Method]),
+            {reply, ok, State#state{notification_handlers = NewHandlers}}
+    end;
+
+handle_call(unregister_all_handlers, {CallerPid, _Tag}, State) ->
+    % Remove all handlers registered by the caller
+    NewHandlers = maps:filter(fun(_Method, {HandlerPid, Ref}) ->
+        if
+            HandlerPid =:= CallerPid ->
+                demonitor(Ref, [flush]),
+                false;
+            true ->
+                true
+        end
+    end, State#state.notification_handlers),
+    {reply, ok, State#state{notification_handlers = NewHandlers}};
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -356,8 +458,8 @@ handle_cast(notify_resources_changed, State) ->
     {noreply, State};
 
 handle_cast(notify_tools_changed, State) ->
-    send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED, #{}),
-    {noreply, State};
+    NewState = maybe_send_tools_list_changed(State),
+    {noreply, NewState};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -418,6 +520,22 @@ handle_info(force_gc, #state{server_id = ServerId} = State) ->
     start_periodic_gc(),
     {noreply, State};
 
+% Handle handler process death - automatic cleanup
+handle_info({'DOWN', Ref, process, _Pid, _Reason}, State) ->
+    % Find and remove the handler with this monitor reference
+    NewHandlers = maps:filter(fun(_Method, {_HandlerPid, HandlerRef}) ->
+        HandlerRef =/= Ref
+    end, State#state.notification_handlers),
+    case maps:size(State#state.notification_handlers) - maps:size(NewHandlers) of
+        0 ->
+            % No handler was removed (Ref not found)
+            {noreply, State};
+        _ ->
+            % At least one handler was removed
+            logger:info("Automatically unregistered dead notification handler (ref: ~p)", [Ref]),
+            {noreply, State#state{notification_handlers = NewHandlers}}
+    end;
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -457,33 +575,56 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, Params, TransportId, #state{server_id
             <<"phase_enforcement">> => <<"strict">>
         }),
 
+        %% Validate client info first (required field)
+        case validate_client_info(Params) of
+            ok ->
+                ok;
+            {error, ClientInfoError} ->
+                erlmcp_tracing:record_error_details(SpanCtx, invalid_client_info, ClientInfoError),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ClientInfoError),
+                throw({client_info_error, ClientInfoError})
+        end,
+
         %% Extract and validate client capabilities
         ClientCapabilities = erlmcp_capabilities:extract_client_capabilities(Params),
         ProtocolVersion = maps:get(?MCP_FIELD_PROTOCOL_VERSION, Params, ?MCP_VERSION),
 
-        %% Validate protocol version
+        %% Validate protocol version against supported versions
         case erlmcp_capabilities:validate_protocol_version(ProtocolVersion) of
             ok ->
                 erlmcp_tracing:set_attributes(SpanCtx, #{
                     <<"client.protocol_version">> => ProtocolVersion,
                     <<"client.capabilities">> => <<"negotiated">>
                 }),
-                Response = build_initialize_response(State#state.capabilities),
+
+                %% Negotiate capabilities - validate requested against server capabilities
+                NegotiatedCapabilities = erlmcp_capabilities:negotiate_capabilities(
+                    ClientCapabilities,
+                    State#state.capabilities
+                ),
+
+                %% Build and send initialize response with negotiated capabilities
+                Response = build_initialize_response(NegotiatedCapabilities),
                 send_response_via_registry(State, TransportId, Id, Response),
                 erlmcp_tracing:set_status(SpanCtx, ok),
+
+                %% Transition to initialized phase
                 NewState = State#state{
                     initialized = true,
                     client_capabilities = ClientCapabilities,
                     protocol_version = ProtocolVersion,
-                    phase = ?MCP_PHASE_INITIALIZED
+                    phase = ?MCP_PHASE_INITIALIZED,
+                    capabilities = NegotiatedCapabilities
                 },
                 {noreply, NewState};
             {error, ErrorMsg} ->
                 erlmcp_tracing:record_error_details(SpanCtx, protocol_version_mismatch, ErrorMsg),
-                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ErrorMsg),
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_UNSUPPORTED_PROTOCOL_VERSION, ErrorMsg),
                 {noreply, State}
         end
     catch
+        {client_info_error, _Reason} ->
+            {noreply, State};
         Class:Reason:Stacktrace ->
             erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
             erlang:raise(Class, Reason, Stacktrace)
@@ -621,11 +762,16 @@ handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, _Params, TransportId, State) ->
         <<"Task management not implemented. Use tools/call directly.">>),
     {noreply, State};
 
-handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, _Params, TransportId, State) ->
+handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, Params, TransportId, State) ->
     Templates = list_all_templates(State),
-    send_response_via_registry(State, TransportId, Id, #{?MCP_PARAM_RESOURCE_TEMPLATES => Templates}),
-    {noreply, State};
-
+    case handle_paginated_templates_list(Templates, Params) of
+        {ok, Response} ->
+            send_response_via_registry(State, TransportId, Id, Response),
+            {noreply, State};
+        {error, Reason} ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, Reason),
+            {noreply, State}
+    end;
 handle_request(Id, ?MCP_METHOD_RESOURCES_SUBSCRIBE, Params, TransportId, State) ->
     case maps:get(?MCP_PARAM_URI, Params, undefined) of
         undefined ->
@@ -776,8 +922,25 @@ handle_request(Id, _Method, _Params, TransportId, State) ->
     {noreply, State}.
 
 -spec handle_notification(binary(), map(), state()) -> {noreply, state()}.
-handle_notification(_Method, _Params, State) ->
-    {noreply, State}.
+handle_notification(Method, Params, #state{notification_handlers = Handlers} = State) ->
+    % Dispatch to registered handler if one exists
+    case maps:get(Method, Handlers, undefined) of
+        undefined ->
+            % No handler registered, just log and continue
+            logger:debug("No handler registered for notification method: ~p", [Method]),
+            {noreply, State};
+        {HandlerPid, _Ref} ->
+            % Send notification to handler process
+            try
+                HandlerPid ! {mcp_notification, Method, Params},
+                logger:debug("Dispatched notification ~p to handler ~p", [Method, HandlerPid])
+            catch
+                Class:Reason ->
+                    logger:error("Failed to dispatch notification ~p to handler ~p: ~p:~p",
+                               [Method, HandlerPid, Class, Reason])
+            end,
+            {noreply, State}
+    end.
 
 %%====================================================================
 %% Internal functions - Registry Communication (NEW!)
@@ -869,6 +1032,44 @@ build_initialize_response(Capabilities) ->
             ?MCP_INFO_VERSION => list_to_binary(Version)
         }
     }.
+
+%% @doc Validate client info from initialize request.
+%% Ensures required clientInfo field is present and valid.
+-spec validate_client_info(map()) -> ok | {error, binary()}.
+validate_client_info(Params) when is_map(Params) ->
+    case maps:get(<<"clientInfo">>, Params, undefined) of
+        undefined ->
+            {error, <<"Missing required field: clientInfo">>};
+        ClientInfo when is_map(ClientInfo) ->
+            case validate_client_info_fields(ClientInfo) of
+                ok -> ok;
+                {error, _} = Error -> Error
+            end;
+        _ ->
+            {error, <<"Invalid clientInfo format">>}
+    end.
+
+%% @doc Validate client info fields.
+%% Checks that name and version are present and valid.
+-spec validate_client_info_fields(map()) -> ok | {error, binary()}.
+validate_client_info_fields(ClientInfo) ->
+    Name = maps:get(<<"name">>, ClientInfo, undefined),
+    Version = maps:get(<<"version">>, ClientInfo, undefined),
+
+    case {Name, Version} of
+        {undefined, _} ->
+            {error, <<"Missing required field: clientInfo.name">>};
+        {_, undefined} ->
+            {error, <<"Missing required field: clientInfo.version">>};
+        {N, V} when is_binary(N), is_binary(V), byte_size(N) > 0, byte_size(V) > 0 ->
+            ok;
+        {N, _} when is_binary(N); is_list(N) ->
+            {error, <<"Invalid clientInfo.name: must be non-empty string">>};
+        {_, V} when is_binary(V); is_list(V) ->
+            {error, <<"Invalid clientInfo.version: must be non-empty string">>};
+        _ ->
+            {error, <<"Invalid clientInfo format">>}
+    end.
 
 %%====================================================================
 %% Internal functions - Resource Handling (same as before but using safe functions)
@@ -1185,19 +1386,25 @@ find_resource(Uri, State) ->
 
 -spec encode_resource(#mcp_resource{}) -> map().
 encode_resource(#mcp_resource{} = Resource) ->
-    #{
+    Base = #{
         ?MCP_PARAM_URI => Resource#mcp_resource.uri,
         ?MCP_PARAM_NAME => Resource#mcp_resource.name,
         ?MCP_PARAM_MIME_TYPE => Resource#mcp_resource.mime_type
-    }.
+    },
+    Base1 = maybe_add_field(Base, ?MCP_PARAM_DESCRIPTION, Resource#mcp_resource.description),
+    Base2 = maybe_add_field(Base1, ?MCP_PARAM_ANNOTATIONS, Resource#mcp_resource.annotations),
+    Base3 = maybe_add_field(Base2, <<"size">>, Resource#mcp_resource.size),
+    %% Add metadata (optional field)
+    maybe_add_field(Base3, ?MCP_PARAM_METADATA, Resource#mcp_resource.metadata).
 
 -spec encode_resource_template(#mcp_resource_template{}) -> map().
 encode_resource_template(#mcp_resource_template{} = Template) ->
-    #{
+    Base = #{
         ?MCP_PARAM_URI_TEMPLATE => Template#mcp_resource_template.uri_template,
         ?MCP_PARAM_NAME => Template#mcp_resource_template.name,
         ?MCP_PARAM_MIME_TYPE => Template#mcp_resource_template.mime_type
-    }.
+    },
+    maybe_add_field(Base, ?MCP_PARAM_DESCRIPTION, Template#mcp_resource_template.description).
 
 -spec encode_tool(#mcp_tool{}) -> map().
 encode_tool(#mcp_tool{} = Tool) ->
@@ -1339,12 +1546,120 @@ encode_content_item(#mcp_content{} = Content, _Resource, Uri) ->
     maybe_add_resource_link(Base4, Content#mcp_content.resource_link).
 
 %%====================================================================
-%% Audio Content Helper Functions (Gap #34: Audio Content Type Support)
+%% Content Type Helper Functions (Tool Results Support)
 %%====================================================================
 
+%% @doc Normalize tool result to content array format.
+%% Supports multiple content types: text, image, resource, audio, resource_link
+%% Validates content type against allowed values per MCP 2025-11-25 spec.
 -spec normalize_tool_result(term()) -> [map()].
 normalize_tool_result(BinaryResult) when is_binary(BinaryResult) ->
-    [#{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT, ?MCP_PARAM_TEXT => BinaryResult}].
+    [#{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT, ?MCP_PARAM_TEXT => BinaryResult}];
+normalize_tool_result(ContentList) when is_list(ContentList) ->
+    %% Handle list of content objects
+    lists:map(fun normalize_content_item/1, ContentList);
+normalize_tool_result(#mcp_content{} = Content) ->
+    %% Handle single mcp_content record
+    [encode_mcp_content(Content)];
+normalize_tool_result({#mcp_content{}} = ContentTuple) ->
+    %% Handle single mcp_content wrapped in tuple
+    [encode_mcp_content(element(1, ContentTuple))];
+normalize_tool_result(ContentMap) when is_map(ContentMap) ->
+    %% Handle single content object as map
+    case maps:get(?MCP_PARAM_TYPE, ContentMap, undefined) of
+        undefined ->
+            %% No type field, assume text content
+            [#{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT,
+               ?MCP_PARAM_TEXT => maps:get(?MCP_PARAM_TEXT, ContentMap, <<>>)}];
+        Type ->
+            case validate_content_type(Type) of
+                ok ->
+                    [ContentMap];
+                {error, invalid_type} ->
+                    logger:warning("Invalid content type in tool result: ~p, defaulting to text", [Type]),
+                    [#{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT,
+                       ?MCP_PARAM_TEXT => format_invalid_content(ContentMap)}]
+            end
+    end;
+normalize_tool_result(Other) ->
+    logger:warning("Unexpected tool result format: ~p, converting to text", [Other]),
+    [#{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT,
+       ?MCP_PARAM_TEXT => io_lib:format("~p", [Other])}].
+
+%% @doc Normalize a single content item from various formats to map.
+-spec normalize_content_item(term()) -> map().
+normalize_content_item(#mcp_content{} = Content) ->
+    encode_mcp_content(Content);
+normalize_content_item(ContentMap) when is_map(ContentMap) ->
+    Type = maps:get(?MCP_PARAM_TYPE, ContentMap, ?MCP_CONTENT_TYPE_TEXT),
+    case validate_content_type(Type) of
+        ok -> ContentMap;
+        {error, invalid_type} ->
+            logger:warning("Invalid content type: ~p, defaulting to text", [Type]),
+            #{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT,
+              ?MCP_PARAM_TEXT => format_invalid_content(ContentMap)}
+    end;
+normalize_content_item(BinaryContent) when is_binary(BinaryContent) ->
+    #{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT, ?MCP_PARAM_TEXT => BinaryContent};
+normalize_content_item(Other) ->
+    logger:warning("Unexpected content item format: ~p, converting to text", [Other]),
+    #{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT,
+      ?MCP_PARAM_TEXT => io_lib:format("~p", [Other])}.
+
+%% @doc Encode mcp_content record to map format for JSON response.
+-spec encode_mcp_content(#mcp_content{}) -> map().
+encode_mcp_content(#mcp_content{type = Type} = Content) ->
+    case validate_content_type(Type) of
+        ok ->
+            Base = #{?MCP_PARAM_TYPE => Type},
+            %% Add type-specific fields
+            Base1 = case Type of
+                ?MCP_CONTENT_TYPE_TEXT ->
+                    maybe_add_field(Base, ?MCP_PARAM_TEXT, Content#mcp_content.text);
+                ?MCP_CONTENT_TYPE_IMAGE ->
+                    ImageBase = maybe_add_field(Base, ?MCP_PARAM_DATA, Content#mcp_content.data),
+                    maybe_add_field(ImageBase, ?MCP_PARAM_MIME_TYPE, Content#mcp_content.mime_type);
+                ?MCP_CONTENT_TYPE_AUDIO ->
+                    AudioBase = maybe_add_field(Base, ?MCP_PARAM_DATA, Content#mcp_content.data),
+                    maybe_add_field(AudioBase, ?MCP_PARAM_MIME_TYPE, Content#mcp_content.mime_type);
+                ?MCP_CONTENT_TYPE_RESOURCE ->
+                    ResourceBase = maybe_add_field(Base, ?MCP_PARAM_URI, Content#mcp_content.text),
+                    maybe_add_field(ResourceBase, ?MCP_PARAM_MIME_TYPE, Content#mcp_content.mime_type);
+                ?MCP_CONTENT_TYPE_RESOURCE_LINK ->
+                    maybe_add_resource_link(Base, Content#mcp_content.resource_link);
+                _ ->
+                    logger:warning("Unknown content type: ~p, using text field", [Type]),
+                    maybe_add_field(Base, ?MCP_PARAM_TEXT, Content#mcp_content.text)
+            end,
+            %% Add annotations if present (Gap #22)
+            maybe_add_annotations(Base1, Content#mcp_content.annotations);
+        {error, invalid_type} ->
+            logger:error("Invalid content type in mcp_content record: ~p", [Type]),
+            #{?MCP_PARAM_TYPE => ?MCP_CONTENT_TYPE_TEXT,
+              ?MCP_PARAM_TEXT => <<"Error: Invalid content type">>}
+    end.
+
+%% @doc Validate content type against allowed values per MCP 2025-11-25 spec.
+%% Allowed types: text, image, resource, audio, resource_link
+-spec validate_content_type(binary()) -> ok | {error, invalid_type}.
+validate_content_type(?MCP_CONTENT_TYPE_TEXT) -> ok;
+validate_content_type(?MCP_CONTENT_TYPE_IMAGE) -> ok;
+validate_content_type(?MCP_CONTENT_TYPE_RESOURCE) -> ok;
+validate_content_type(?MCP_CONTENT_TYPE_AUDIO) -> ok;
+validate_content_type(?MCP_CONTENT_TYPE_RESOURCE_LINK) -> ok;
+validate_content_type(_) -> {error, invalid_type}.
+
+%% @doc Format invalid content object as text string.
+-spec format_invalid_content(map()) -> binary().
+format_invalid_content(ContentMap) ->
+    Text = maps:get(?MCP_PARAM_TEXT, ContentMap, <<>>),
+    Data = maps:get(?MCP_PARAM_DATA, ContentMap, <<>>),
+    case {Text, Data} of
+        {<<>>, <<>>} -> <<"Invalid content object">>;
+        {<<>>, _} -> Data;
+        {_, <<>>} -> Text;
+        {T, D} -> <<T/binary, " ", D/binary>>
+    end.
 
 -spec normalize_prompt_result(term()) -> [map()].
 normalize_prompt_result(BinaryResult) when is_binary(BinaryResult) ->
@@ -1433,6 +1748,116 @@ handle_paginated_list_with_key(Items, Params, ListKey) ->
             {ok, #{ListKey => Items}}
     end.
 
+%% @doc Handle paginated resource templates list with cursor-based pagination.
+%% Supports filtering by URI pattern and returns _nextCursor for pagination.
+%% Cursor format: base64:encode(<<"templates:", Offset/binary>>)
+-spec handle_paginated_templates_list([map()], map()) ->
+    {ok, map()} | {error, binary()}.
+handle_paginated_templates_list(Templates, Params) ->
+    try
+        %% Extract pagination parameters
+        Limit = case maps:get(<<"limit">>, Params, undefined) of
+            undefined -> 100;  %% Default limit
+            L when is_integer(L), L > 0, L =< 1000 -> L;
+            _ -> throw({error, <<"Invalid limit parameter">>})
+        end,
+
+        Cursor = maps:get(<<"cursor">>, Params, undefined),
+        UriPattern = maps:get(<<"uriPattern">>, Params, undefined),
+
+        %% Apply URI pattern filter if provided
+        FilteredTemplates = case UriPattern of
+            undefined -> Templates;
+            Pattern when is_binary(Pattern) ->
+                filter_templates_by_uri_pattern(Templates, Pattern);
+            _ ->
+                throw({error, <<"Invalid uriPattern parameter">>})
+        end,
+
+        %% Decode cursor to get offset
+        Offset = case Cursor of
+            undefined -> 0;
+            null -> 0;
+            <<>> -> 0;
+            CursorBin when is_binary(CursorBin) ->
+                decode_template_cursor(CursorBin)
+        end,
+
+        %% Get total count before pagination
+        TotalCount = length(FilteredTemplates),
+
+        %% Apply offset and limit
+        PaginatedTemplates = apply_offset_limit(FilteredTemplates, Offset, Limit),
+
+        %% Build response
+        ResponseBase = #{
+            ?MCP_PARAM_RESOURCE_TEMPLATES => PaginatedTemplates
+        },
+
+        %% Add _nextCursor if more results exist
+        Response = case Offset + length(PaginatedTemplates) < TotalCount of
+            true ->
+                NextOffset = Offset + length(PaginatedTemplates),
+                NextCursor = encode_template_cursor(NextOffset),
+                ResponseBase#{<<"_nextCursor">> => NextCursor};
+            false ->
+                ResponseBase
+        end,
+
+        {ok, Response}
+    catch
+        throw:{error, Reason} -> {error, Reason};
+        _:_ -> {error, <<"Pagination processing failed">>}
+    end.
+
+%% @doc Filter templates by URI pattern (simple prefix match).
+-spec filter_templates_by_uri_pattern([map()], binary()) -> [map()].
+filter_templates_by_uri_pattern(Templates, Pattern) ->
+    lists:filter(fun(Template) ->
+        UriTemplate = maps:get(<<"uriTemplate">>, Template, <<>>),
+        case UriTemplate of
+            <<>> -> false;
+            _ ->
+                %% Simple prefix match for URI pattern
+                PatternSize = byte_size(Pattern),
+                case UriTemplate of
+                    <<Pattern:PatternSize/binary, _/binary>> -> true;
+                    _ -> false
+                end
+        end
+    end, Templates).
+
+%% @doc Apply offset and limit to a list.
+-spec apply_offset_limit([map()], non_neg_integer(), pos_integer()) -> [map()].
+apply_offset_limit(List, Offset, Limit) ->
+    Length = length(List),
+    Start = min(Offset, Length),
+    End = min(Start + Limit, Length),
+    lists:sublist(List, Start + 1, End - Start).
+
+%% @doc Encode template cursor: base64:encode(<<"templates:", Offset/binary>>).
+-spec encode_template_cursor(non_neg_integer()) -> binary().
+encode_template_cursor(Offset) ->
+    OffsetBin = integer_to_binary(Offset),
+    CursorBin = <<"templates:", OffsetBin/binary>>,
+    base64:encode(CursorBin).
+
+%% @doc Decode template cursor: extract offset from base64:decode(<<"templates:", Offset/binary>>).
+-spec decode_template_cursor(binary()) -> non_neg_integer().
+decode_template_cursor(Cursor) ->
+    try
+        Decoded = base64:decode(Cursor),
+        case Decoded of
+            <<"templates:", OffsetBin/binary>> ->
+                binary_to_integer(OffsetBin);
+            _ ->
+                0  %% Invalid cursor format, start from beginning
+        end
+    catch
+        _:_ -> 0  %% Invalid base64, start from beginning
+    end.
+
+
 %%====================================================================
 %% Internal functions - List Change Notifications (Gaps #6-8)
 %%====================================================================
@@ -1455,6 +1880,53 @@ notify_list_changed(Feature, State) ->
 notify_tools_changed(State) ->
     gen_server:cast(self(), notify_tools_changed),
     ok.
+
+%% @doc Check if client supports tools/list_changed and send notification with rate limiting.
+%% Only sends if:
+%% 1. Client declared tools.listChanged capability
+%% 2. At least 1 second has passed since last notification (rate limiting)
+-spec maybe_send_tools_list_changed(state()) -> state().
+maybe_send_tools_list_changed(#state{client_capabilities = undefined} = State) ->
+    % No client capabilities yet, don't send
+    State;
+maybe_send_tools_list_changed(#state{client_capabilities = ClientCaps} = State) ->
+    % Check if client supports tools.listChanged capability
+    case client_supports_tools_list_changed(ClientCaps) of
+        false ->
+            % Client doesn't support this notification, skip
+            State;
+        true ->
+            % Client supports it, check rate limit
+            CurrentTime = erlang:system_time(millisecond),
+            case State#state.last_tools_notification of
+                undefined ->
+                    % Never sent, send now
+                    send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED, #{}),
+                    State#state{last_tools_notification = CurrentTime};
+                LastTime when CurrentTime - LastTime >= 1000 ->
+                    % At least 1 second passed, send now
+                    send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED, #{}),
+                    State#state{last_tools_notification = CurrentTime};
+                _LastTime ->
+                    % Less than 1 second since last notification, skip (rate limited)
+                    State
+            end
+    end.
+
+%% @doc Check if client declared tools/list_changed capability.
+%% Returns true if client supports it, false otherwise.
+-spec client_supports_tools_list_changed(#mcp_client_capabilities{}) -> boolean().
+client_supports_tools_list_changed(ClientCaps) ->
+    % Check if client's tools capability has listChanged flag set to true
+    ToolsCap = ClientCaps#mcp_client_capabilities.tools,
+    case ToolsCap of
+        undefined ->
+            false;
+        #mcp_tools_capability{listChanged = true} ->
+            true;
+        #mcp_tools_capability{} ->
+            false
+    end.
 
 %%====================================================================
 %% Internal functions - Path Canonicalization (Gap #36)

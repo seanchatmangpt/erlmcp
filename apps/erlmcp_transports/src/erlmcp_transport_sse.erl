@@ -321,7 +321,8 @@ sse_event_loop(Req, StreamState, State) ->
     receive
         ping ->
             %% Send keep-alive ping comment (SSE standard)
-            PingData = format_sse_event(?EVENT_TYPE_KEEPALIVE, <<"ping">>),
+            %% Format: ":\n\n" (colon followed by two newlines)
+            PingData = format_sse_keepalive(),
             cowboy_req:stream_body(PingData, Req),
             sse_event_loop(Req, StreamState, State);
 
@@ -375,20 +376,67 @@ terminate(_Reason, _Req, _State) ->
     ok.
 
 %%====================================================================
-%% Internal Functions
+%% Internal Functions - SSE Event Formatting
 %%====================================================================
 
 %% @doc Format SSE event with event type
 %% SSE format: "event: <type>\ndata: <json>\n\n"
+%% Handles multiline data by prefixing each line with "data: "
+%% @private
 -spec format_sse_event(binary(), binary()) -> binary().
 format_sse_event(EventType, Data) ->
-    <<"event: ", EventType/binary, "\ndata: ", Data/binary, "\n\n">>.
+    %% Split data by newlines and prefix each line with "data: "
+    DataLines = split_data_by_newline(Data),
+    FormattedData = format_data_lines(DataLines),
+    <<"event: ", EventType/binary, "\n", FormattedData/binary, "\n">>.
 
 %% @doc Format SSE event with event type and ID
 %% SSE format: "id: <id>\nevent: <type>\ndata: <json>\n\n"
+%% Handles multiline data by prefixing each line with "data: "
+%% @private
 -spec format_sse_event_with_id(binary(), binary(), binary()) -> binary().
 format_sse_event_with_id(EventType, EventId, Data) ->
-    <<"id: ", EventId/binary, "\nevent: ", EventType/binary, "\ndata: ", Data/binary, "\n\n">>.
+    %% Split data by newlines and prefix each line with "data: "
+    DataLines = split_data_by_newline(Data),
+    FormattedData = format_data_lines(DataLines),
+    <<"id: ", EventId/binary, "\nevent: ", EventType/binary, "\n", FormattedData/binary, "\n">>.
+
+%% @doc Format SSE keepalive ping comment
+%% SSE format: ":\n\n" (colon followed by two newlines)
+%% This is the standard SSE keepalive format
+%% @private
+-spec format_sse_keepalive() -> binary().
+format_sse_keepalive() ->
+    <<":\n\n">>.
+
+%% @doc Split binary data by newlines for SSE multiline formatting
+%% Handles both \n and \r\n line endings
+%% @private
+-spec split_data_by_newline(binary()) -> [binary()].
+split_data_by_newline(Data) ->
+    %% First normalize \r\n to \n, then split by \n
+    Normalized = binary:replace(Data, <<"\r\n">>, <<"\n">>, [global]),
+    binary:split(Normalized, <<"\n">>, [global]).
+
+%% @doc Format data lines for SSE, prefixing each non-empty line with "data: "
+%% Empty lines become "data:\n" (which represents an empty data field)
+%% @private
+-spec format_data_lines([binary()]) -> binary().
+format_data_lines([]) ->
+    <<"data: ">>;
+format_data_lines(Lines) ->
+    FormattedLines = [format_data_line(Line) || Line <- Lines],
+    binary:list_to_bin(FormattedLines).
+
+%% @doc Format a single data line with "data: " prefix
+%% @private
+-spec format_data_line(binary()) -> binary().
+format_data_line(Line) ->
+    <<"data: ", Line/binary, "\n">>.
+
+%%====================================================================
+%% Internal Functions - Utility
+%%====================================================================
 
 %% @doc Generate session ID from client ID and timestamp
 -spec generate_session_id(binary()) -> binary().
@@ -560,7 +608,7 @@ get_retry_timeout() ->
             end
     end.
 
-%% @doc Format SSE retry field: "retry: N\n"
+%% @doc Format SSE retry field: "retry: N\n\n"
 %% Per SSE specification, retry field tells client to wait N milliseconds
 %% before attempting reconnection. (Gap #29)
 %% @private

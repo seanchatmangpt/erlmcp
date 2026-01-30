@@ -31,7 +31,24 @@
     apply_graceful_degradation_enhanced/2,
     extract_flag_from_map/3,
     build_capability_map/2,
-    negotiate_subscribe_flag/2
+    negotiate_subscribe_flag/2,
+    %% Complete capability negotiation API
+    get_required_capabilities/0,
+    get_optional_capabilities/0,
+    is_capability_required/1,
+    is_capability_optional/1,
+    get_capability_dependencies/1,
+    validate_capability_dependencies/1,
+    get_negotiated_capabilities/0,
+    set_negotiated_capabilities/1,
+    reset_negotiated_capabilities/0,
+    get_capability_flags/2,
+    set_capability_flag/4,
+    get_capability_description/1,
+    get_feature_description/2,
+    build_client_init_params/1,
+    build_server_init_response/2,
+    client_supports_tools_list_changed/1
 ]).
 
 %% gen_server callbacks
@@ -65,6 +82,7 @@ extract_client_capabilities(Params) when is_map(Params) ->
     #mcp_client_capabilities{
         roots = extract_roots_client_capability(CapsMap),
         sampling = extract_sampling_client_capability(CapsMap),
+        tools = extract_tools_client_capability(CapsMap),
         experimental = maps:get(<<"experimental">>, CapsMap, undefined)
     }.
 
@@ -98,6 +116,20 @@ extract_sampling_client_capability(CapsMap) ->
             #mcp_capability{enabled = false}
     end.
 
+%% @doc Extract tools capability from client with feature flags
+-spec extract_tools_client_capability(map()) -> #mcp_tools_capability{}.
+extract_tools_client_capability(CapsMap) ->
+    case maps:get(<<"tools">>, CapsMap, undefined) of
+        undefined ->
+            #mcp_tools_capability{listChanged = false};
+        CapMap when is_map(CapMap) ->
+            #mcp_tools_capability{
+                listChanged = maps:get(<<"listChanged">>, CapMap, false)
+            };
+        _ ->
+            #mcp_tools_capability{listChanged = false}
+    end.
+
 %% @doc Extract server capabilities from initialize response
 -spec extract_server_capabilities(map()) -> #mcp_server_capabilities{}.
 extract_server_capabilities(Response) when is_map(Response) ->
@@ -128,7 +160,8 @@ capability_to_map(#mcp_client_capabilities{} = Caps) ->
     Base = #{},
     Base1 = maybe_add_capability_map(Base, <<"roots">>, Caps#mcp_client_capabilities.roots),
     Base2 = maybe_add_capability_map(Base1, <<"sampling">>, Caps#mcp_client_capabilities.sampling),
-    maybe_add_experimental(Base2, Caps#mcp_client_capabilities.experimental).
+    Base3 = maybe_add_capability_map(Base2, <<"tools">>, Caps#mcp_client_capabilities.tools),
+    maybe_add_experimental(Base3, Caps#mcp_client_capabilities.experimental).
 
 %% @doc Convert map to capability record
 -spec map_to_capability(map()) -> #mcp_server_capabilities{} | #mcp_client_capabilities{}.
@@ -153,6 +186,7 @@ map_to_capability(Map) when is_map(Map) ->
             #mcp_client_capabilities{
                 roots = extract_capability(Map, <<"roots">>),
                 sampling = extract_capability(Map, <<"sampling">>),
+                tools = extract_tools_capability(Map),
                 experimental = maps:get(<<"experimental">>, Map, undefined)
             }
     end.
@@ -276,6 +310,7 @@ get_client_capabilities() ->
     #mcp_client_capabilities{
         roots = #mcp_capability{enabled = true},
         sampling = #mcp_capability{enabled = false},  % Default: no sampling
+        tools = #mcp_tools_capability{listChanged = false},  % Default: no listChanged
         experimental = undefined
     }.
 
@@ -718,7 +753,7 @@ validate_capability_structures(ClientCaps, ServerCaps) ->
 
 %% @doc Validate client capability record structure
 -spec validate_client_capability_record(#mcp_client_capabilities{}) -> ok.
-validate_client_capability_record(#mcp_client_capabilities{roots = Roots, sampling = Sampling}) ->
+validate_client_capability_record(#mcp_client_capabilities{roots = Roots, sampling = Sampling, tools = Tools}) ->
     %% Validate roots capability
     case Roots of
         #mcp_capability{enabled = IsEnabled} when is_boolean(IsEnabled) -> ok;
@@ -728,6 +763,11 @@ validate_client_capability_record(#mcp_client_capabilities{roots = Roots, sampli
     case Sampling of
         #mcp_capability{enabled = IsEnabled2} when is_boolean(IsEnabled2) -> ok;
         _ -> error({invalid_capability_structure, sampling})
+    end,
+    %% Validate tools capability
+    case Tools of
+        #mcp_tools_capability{listChanged = ListChanged} when is_boolean(ListChanged) -> ok;
+        _ -> error({invalid_capability_structure, tools})
     end,
     ok.
 
@@ -962,3 +1002,252 @@ build_capability_map(sampling, Flags) ->
     end;
 build_capability_map(roots, _Flags) ->
     #{}.
+
+%%%====================================================================
+%%% Complete Capability Negotiation API
+%%%====================================================================
+
+%% @doc Get list of required capabilities that must be supported
+%% These capabilities are mandatory for MCP protocol compliance
+-spec get_required_capabilities() -> [atom()].
+get_required_capabilities() ->
+    [
+        %% Core capabilities - these must always be available
+        initialize  %% Initialize is mandatory for protocol handshake
+    ].
+
+%% @doc Get list of optional capabilities that may be supported
+%% These capabilities provide enhanced functionality but are not required
+-spec get_optional_capabilities() -> [atom()].
+get_optional_capabilities() ->
+    [
+        resources,
+        tools,
+        prompts,
+        logging,
+        sampling,
+        roots
+    ].
+
+%% @doc Check if a capability is required for protocol compliance
+-spec is_capability_required(atom()) -> boolean().
+is_capability_required(Capability) ->
+    lists:member(Capability, get_required_capabilities()).
+
+%% @doc Check if a capability is optional (not required)
+-spec is_capability_optional(atom()) -> boolean().
+is_capability_optional(Capability) ->
+    lists:member(Capability, get_optional_capabilities()).
+
+%% @doc Get capability dependencies
+%% Returns a list of capabilities that must be present for the given capability to work
+-spec get_capability_dependencies(atom()) -> [atom()].
+get_capability_dependencies(resources) ->
+    %% Resources depends on roots for listChanged functionality
+    [roots];
+get_capability_dependencies(sampling) ->
+    %% Sampling has no hard dependencies
+    [];
+get_capability_dependencies(tools) ->
+    [];
+get_capability_dependencies(prompts) ->
+    [];
+get_capability_dependencies(logging) ->
+    [];
+get_capability_dependencies(roots) ->
+    [];
+get_capability_dependencies(_) ->
+    [].
+
+%% @doc Validate capability dependencies
+%% Returns ok if all dependencies are satisfied, error otherwise
+-spec validate_capability_dependencies(#mcp_server_capabilities{}) ->
+    ok | {error, {missing_dependencies, atom(), [atom()]}}.
+validate_capability_dependencies(ServerCaps) ->
+    lists:foldl(fun(Capability, Acc) ->
+        case Acc of
+            {error, _} = Error -> Error;
+            ok ->
+                Dependencies = get_capability_dependencies(Capability),
+                case has_capability(ServerCaps, Capability) of
+                    true ->
+                        %% Check if all dependencies are met
+                        MissingDeps = lists:filter(fun(Dep) ->
+                            not has_capability(ServerCaps, Dep)
+                        end, Dependencies),
+                        case MissingDeps of
+                            [] -> ok;
+                            _ ->
+                                {error, {missing_dependencies, Capability, MissingDeps}}
+                        end;
+                    false ->
+                        %% Capability not present, no dependency check needed
+                        ok
+                end
+        end
+    end, ok, get_optional_capabilities()).
+
+%% @doc Get currently negotiated capabilities
+%% Returns the stored negotiated capabilities for this process
+-spec get_negotiated_capabilities() -> {ok, #mcp_server_capabilities{}} | {error, not_found}.
+get_negotiated_capabilities() ->
+    case get(erlmcp_negotiated_caps) of
+        undefined -> {error, not_found};
+        Caps -> {ok, Caps}
+    end.
+
+%% @doc Set negotiated capabilities in process dictionary
+%% Stores the negotiated capabilities for later retrieval
+-spec set_negotiated_capabilities(#mcp_server_capabilities{}) -> ok.
+set_negotiated_capabilities(Caps) ->
+    put(erlmcp_negotiated_caps, Caps),
+    ok.
+
+%% @doc Reset negotiated capabilities
+%% Clears stored negotiated capabilities from process dictionary
+-spec reset_negotiated_capabilities() -> ok.
+reset_negotiated_capabilities() ->
+    erase(erlmcp_negotiated_caps),
+    ok.
+
+%% @doc Get all capability flags for a given capability
+%% Returns a map of feature flag names to boolean values
+-spec get_capability_flags(#mcp_server_capabilities{}, atom()) -> map().
+get_capability_flags(Caps, resources) when is_record(Caps, mcp_server_capabilities) ->
+    case Caps#mcp_server_capabilities.resources of
+        #mcp_resources_capability{subscribe = S, listChanged = L} ->
+            #{
+                <<"subscribe">> => S,
+                <<"listChanged">> => L
+            };
+        _ ->
+            #{}
+    end;
+get_capability_flags(Caps, tools) when is_record(Caps, mcp_server_capabilities) ->
+    case Caps#mcp_server_capabilities.tools of
+        #mcp_tools_capability{listChanged = L} ->
+            #{<<"listChanged">> => L};
+        _ ->
+            #{}
+    end;
+get_capability_flags(Caps, prompts) when is_record(Caps, mcp_server_capabilities) ->
+    case Caps#mcp_server_capabilities.prompts of
+        #mcp_prompts_capability{listChanged = L} ->
+            #{<<"listChanged">> => L};
+        _ ->
+            #{}
+    end;
+get_capability_flags(_, _) ->
+    #{}.
+
+%% @doc Set a specific capability flag
+%% Returns updated capabilities record with the flag set
+-spec set_capability_flag(#mcp_server_capabilities{}, atom(), atom(), boolean()) ->
+    #mcp_server_capabilities{}.
+set_capability_flag(Caps, resources, subscribe, Value) when is_boolean(Value) ->
+    ResCaps = Caps#mcp_server_capabilities.resources,
+    Caps#mcp_server_capabilities{
+        resources = ResCaps#mcp_resources_capability{subscribe = Value}
+    };
+set_capability_flag(Caps, resources, listChanged, Value) when is_boolean(Value) ->
+    ResCaps = Caps#mcp_server_capabilities.resources,
+    Caps#mcp_server_capabilities{
+        resources = ResCaps#mcp_resources_capability{listChanged = Value}
+    };
+set_capability_flag(Caps, tools, listChanged, Value) when is_boolean(Value) ->
+    ToolsCaps = Caps#mcp_server_capabilities.tools,
+    Caps#mcp_server_capabilities{
+        tools = ToolsCaps#mcp_tools_capability{listChanged = Value}
+    };
+set_capability_flag(Caps, prompts, listChanged, Value) when is_boolean(Value) ->
+    PromptsCaps = Caps#mcp_server_capabilities.prompts,
+    Caps#mcp_server_capabilities{
+        prompts = PromptsCaps#mcp_prompts_capability{listChanged = Value}
+    };
+set_capability_flag(Caps, _, _, _) ->
+    Caps.
+
+%% @doc Get capability description
+%% Returns human-readable description of a capability
+-spec get_capability_description(atom()) -> binary().
+get_capability_description(resources) ->
+    <<"Resources capability provides access to static and dynamic data sources">>;
+get_capability_description(tools) ->
+    <<"Tools capability enables execution of server-side functions">>;
+get_capability_description(prompts) ->
+    <<"Prompts capability provides pre-configured message templates">>;
+get_capability_description(logging) ->
+    <<"Logging capability allows dynamic log level control">>;
+get_capability_description(sampling) ->
+    <<"Sampling capability enables LLM text generation via the server">>;
+get_capability_description(roots) ->
+    <<"Roots capability allows clients to advertise local file system roots">>;
+get_capability_description(Capability) ->
+    <<"Unknown capability: ", (atom_to_binary(Capability))/binary>>.
+
+%% @doc Get feature description
+%% Returns human-readable description of a capability feature flag
+-spec get_feature_description(atom(), atom()) -> binary().
+get_feature_description(resources, subscribe) ->
+    <<"Subscribe feature enables clients to receive resource update notifications">>;
+get_feature_description(resources, listChanged) ->
+    <<"ListChanged feature enables clients to receive notifications when resource list changes">>;
+get_feature_description(tools, listChanged) ->
+    <<"ListChanged feature enables clients to receive notifications when tool list changes">>;
+get_feature_description(prompts, listChanged) ->
+    <<"ListChanged feature enables clients to receive notifications when prompt list changes">>;
+get_feature_description(Capability, Feature) ->
+    <<"Unknown feature '", (atom_to_binary(Feature))/binary,
+      "' for capability '", (atom_to_binary(Capability))/binary, "'">>.
+
+%% @doc Build client initialize parameters with capabilities
+%% Constructs the initialize request params from client capabilities
+-spec build_client_init_params(#mcp_client_capabilities{} | map()) -> map().
+build_client_init_params(#mcp_client_capabilities{} = ClientCaps) ->
+    CapMap = capability_to_map(ClientCaps),
+    #{
+        <<"protocolVersion">> => ?MCP_VERSION,
+        <<"capabilities">> => CapMap,
+        <<"clientInfo">> => #{
+            <<"name">> => ?APP_NAME,
+            <<"version">> => <<"1.0.0">>
+        }
+    };
+build_client_init_params(CustomCaps) when is_map(CustomCaps) ->
+    #{
+        <<"protocolVersion">> => ?MCP_VERSION,
+        <<"capabilities">> => CustomCaps,
+        <<"clientInfo">> => #{
+            <<"name">> => ?APP_NAME,
+            <<"version">> => <<"1.0.0">>
+        }
+    }.
+
+%% @doc Build server initialize response with negotiated capabilities
+%% Constructs the initialize result with negotiated capabilities and server info
+-spec build_server_init_response(#mcp_server_capabilities{}, map()) -> map().
+build_server_init_response(ServerCaps, ServerInfo) ->
+    DefaultServerInfo = #{
+        <<"name">> => ?APP_NAME,
+        <<"version">> => <<"1.0.0">>
+    },
+    MergedInfo = maps:merge(DefaultServerInfo, ServerInfo),
+    #{
+        <<"protocolVersion">> => ?MCP_VERSION,
+        <<"capabilities">> => capability_to_map(ServerCaps),
+        <<"serverInfo">> => MergedInfo
+    }.
+
+%%%-----------------------------------------------------------------
+%%% Internal Helper Functions
+%%%-----------------------------------------------------------------
+
+%% @doc Check if client supports tools listChanged capability
+%% @private
+-spec client_supports_tools_list_changed(#mcp_client_capabilities{}) -> boolean().
+client_supports_tools_list_changed(ClientCaps) ->
+    case ClientCaps#mcp_client_capabilities.tools of
+        undefined -> false;
+        #mcp_tools_capability{listChanged = true} -> true;
+        #mcp_tools_capability{} -> false
+    end.
