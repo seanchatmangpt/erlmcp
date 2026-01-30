@@ -1,0 +1,270 @@
+================================================================================
+DEFINITION OF DONE - QUICK REFERENCE GUIDE
+================================================================================
+
+Generated: 2026-01-30 13:15:00
+Project: erlmcp v2.1.0
+Purpose: Quick reference for test status and fixes
+
+================================================================================
+OVERALL STATUS: ❌ NOT MET (5 of 7 requirements failing)
+================================================================================
+
+================================================================================
+KEY METRICS AT A GLANCE
+================================================================================
+
+┌─────────────────────────────┬──────────┬─────────┬───────────┬─────────┐
+│ Metric                      │ Current  │ Target  │ Gap       │ Status  │
+├─────────────────────────────┼──────────┼─────────┼───────────┼─────────┤
+│ EUnit Pass Rate             │ 90.9%    │ 100%    │ 78 tests  │ ⚠️ PARTIAL│
+│ CT Pass Rate                │ 34.8%    │ 80%     │ 116 tests │ ❌ FAIL  │
+│ Code Coverage               │ 3.0%     │ 80%     │ 77pp      │ ❌ CRITICAL│
+│ Xref Warnings               │ 23       │ 0       │ 20 undef  │ ❌ FAIL  │
+│ Cover Compilation           │ 100%     │ 100%    │ 0         │ ✅ PASS  │
+│ Test Runtime                │ 63s      │ <5min   │ 0         │ ✅ PASS  │
+│ Dialyzer Warnings           │ 14       │ 0       │ 14        │ ⚠️ PARTIAL│
+└─────────────────────────────┴──────────┴─────────┴───────────┴─────────┘
+
+================================================================================
+CRITICAL FIXES REQUIRED (10-15 hours)
+================================================================================
+
+1. ✅ FIX EUNIT TESTS (2-3 hours)
+   ├─ Create: apps/erlmcp_core/test/erlmcp_test_helper.erl
+   ├─ Update: 14 failing test modules
+   └─ Verify: 861/861 tests pass (100%)
+
+2. ✅ FIX COMMON TESTS (4-6 hours)
+   ├─ Fix: erlmcp_integration_SUITE (8 tests)
+   ├─ Fix: erlmcp_protocol_checker_SUITE (10 tests)
+   └─ Verify: 142+/178 tests pass (80%+)
+
+3. ✅ FIX XREF UNDEFINED FUNCTIONS (1.5-2.5 hours)
+   ├─ Fix: jose API calls (3 functions, 5 min)
+   ├─ Implement: Missing validators (4 modules, 1-2 hours)
+   ├─ Export: erlmcp_refusal:is_valid_code/1 (5 min)
+   └─ Update: xref_ignores (15 min)
+
+4. ✅ FIX DIALYZER WARNINGS (2-3 hours)
+   ├─ Fix: Spec type mismatches (6 warnings)
+   ├─ Fix: Contract violations (4 warnings)
+   └─ Clean up: Unused functions (3 warnings)
+
+================================================================================
+COVERAGE IMPROVEMENT ROADMAP (8 weeks)
+================================================================================
+
+Phase 1 (Weeks 1-2): Core Protocol → 20% coverage
+  ├─ erlmcp_client, server, registry, json_rpc, auth
+  └─ ~1,500 lines of test code
+
+Phase 2 (Weeks 3-4): Transport Modules → 40% coverage
+  ├─ stdio, tcp, http, websocket, sse transports
+  └─ ~2,000 lines of test code
+
+Phase 3 (Weeks 5-6): Observability → 60% coverage
+  ├─ metrics, dashboard, health_monitor, tracing
+  └─ ~2,000 lines of test code
+
+Phase 4 (Weeks 7-8): Remaining Modules → 80% coverage
+  ├─ All remaining modules across all apps
+  └─ ~2,200 lines of test code
+
+Total: ~7,700 lines of test code
+
+================================================================================
+TOP 10 FAILING MODULES (by failure count)
+================================================================================
+
+1. erlmcp_logging_tests           19 failures → Start erlmcp_logging
+2. erlmcp_pagination_tests        17 failures → Start erlmcp_pagination
+3. erlmcp_integration_SUITE        8 failures → Start erlmcp_tasks, erlmcp_auth
+4. erlmcp_protocol_checker_SUITE  10 failures → Implement missing functions
+5. erlmcp_registry_tests           3 failures → Start erlmcp_registry
+6. erlmcp_session_manager_tests    3 failures → Start erlmcp_session_manager
+7. erlmcp_notification_handler_    3 failures → Start notification supervisor
+8. erlmcp_rate_limit_middleware_   3 failures → Start erlmcp_rate_limiter
+9. erlmcp_progress_tests           2 failures → Start erlmcp_progress
+10. erlmcp_cache_tests             2 failures → Start erlmcp_cache
+
+================================================================================
+CRITICAL XREF ISSUES (fix immediately)
+================================================================================
+
+HIGH PRIORITY - JWT Authentication Broken:
+  File: erlmcp_auth.erl
+  Lines: 230, 500
+  Wrong: jose:jwk_from_pem/1, jose:jwt_verify/2
+  Correct: jose_jwk:from_pem/1, jose_jwt:verify/2
+  Impact: Authentication will fail
+  Fix Time: 5 minutes
+
+MEDIUM PRIORITY - Missing Modules:
+  - tcps_quality_gates
+  - erlmcp_schema_validator
+  - erlmcp_prompt_argument_validator
+  - erlmcp_tls_validation
+  Action: Implement stubs or add to xref_ignores
+  Fix Time: 1-2 hours
+
+================================================================================
+QUICK WIN: OPTIMIZE TEST RUNTIME (no code changes)
+================================================================================
+
+Current: 63 seconds
+Quick Win: 35-40 seconds (35-44% faster)
+
+Command:
+  rebar3 compile && rebar3 ct --cover=false
+
+Savings: 25-40 seconds immediately
+
+================================================================================
+COMMAND REFERENCE
+================================================================================
+
+# Run EUnit tests
+TERM=dumb rebar3 as test eunit --dir apps/erlmcp_core/test
+
+# Run Common Test suites
+rebar3 ct
+
+# Generate coverage report
+rebar3 cover --verbose
+
+# Run Xref analysis
+rebar3 xref
+
+# Run Dialyzer
+rebar3 dialyzer
+
+# Full test suite (optimized)
+rebar3 compile && rebar3 ct --cover=false
+
+================================================================================
+NEXT ACTIONS (priority order)
+================================================================================
+
+IMMEDIATE (Today):
+  ☐ Fix jose API calls (5 min)
+  ☐ Create erlmcp_test_helper.erl (30 min)
+  ☐ Update 1 test module as proof of concept (15 min)
+  ☐ Verify fix works (5 min)
+
+THIS WEEK:
+  ☐ Apply fixes to all 14 failing EUnit modules (2 hours)
+  ☐ Verify 100% EUnit pass rate (15 min)
+  ☐ Fix integration suite init_per_suite (30 min)
+  ☐ Verify 80%+ CT pass rate (15 min)
+
+NEXT 2 WEEKS:
+  ☐ Implement missing validators or add to xref_ignores (2 hours)
+  ☐ Fix all Dialyzer warnings (3 hours)
+  ☐ Update xref_ignores (15 min)
+  ☐ Re-run full quality gate verification (15 min)
+
+NEXT 8 WEEKS:
+  ☐ Phase 1: Core protocol coverage (2 weeks)
+  ☐ Phase 2: Transport coverage (2 weeks)
+  ☐ Phase 3: Observability coverage (2 weeks)
+  ☐ Phase 4: Remaining modules (2 weeks)
+  ☐ Achieve 80% coverage target
+
+================================================================================
+QUALITY GATES STATUS
+================================================================================
+
+Requirement                          Status    Score    Gap
+───────────────────────────────────────────────────────────────────
+All EUnit tests pass (0 failures)    ❌ FAIL    90.9%    78 tests
+All CT tests pass (0 failures)       ❌ FAIL    34.8%    116 tests
+Code coverage ≥80%                   ❌ FAIL    3.0%     77pp
+Xref clean (0 undefined)             ❌ FAIL    23 warn  20 undef
+Cover compilation succeeds           ✅ PASS    100%     0
+Test runtime <5 minutes              ✅ PASS    63s      0
+Dialyzer warnings = 0                ❌ PARTIAL 14 warn  14 warn
+
+Overall: ❌ NOT MET (5 of 7 requirements failing)
+
+================================================================================
+ESTIMATED TIME TO DoD COMPLIANCE
+================================================================================
+
+Critical Path Fixes:        10-15 hours  (this week)
+Coverage Improvements:      320-400 hours (8 weeks)
+Test Infrastructure:        12-24 hours  (weeks 9-10)
+Documentation:              7-14 hours   (ongoing)
+
+───────────────────────────────────────────────────────────────────
+TOTAL ESTIMATED EFFORT:     80-120 hours focused work
+TIMELINE:                   8-10 weeks to full compliance
+
+================================================================================
+RECOMMENDATION
+================================================================================
+
+❌ DO NOT DEPLOY to production
+
+✅ FOCUS on critical path fixes (10-15 hours)
+
+✅ PRIORITIZE coverage improvements (8 weeks)
+
+✅ IMPLEMENT TDD workflow going forward
+
+✅ STRENGTHEN quality gates
+
+With focused effort, the project can achieve full DoD compliance in 8-10 weeks
+and be ready for production deployment.
+
+================================================================================
+FILES REQUIRING CHANGES
+================================================================================
+
+NEW FILES TO CREATE:
+  apps/erlmcp_core/test/erlmcp_test_helper.erl
+
+EUNIT TEST MODULES TO UPDATE (14):
+  apps/erlmcp_core/test/erlmcp_pagination_tests.erl
+  apps/erlmcp_core/test/erlmcp_logging_tests.erl
+  apps/erlmcp_core/test/erlmcp_connection_limiter_tests.erl
+  apps/erlmcp_core/test/erlmcp_registry_tests.erl
+  apps/erlmcp_core/test/erlmcp_session_manager_tests.erl
+  apps/erlmcp_core/test/erlmcp_notification_handler_tests.erl
+  apps/erlmcp_core/test/erlmcp_rate_limit_middleware_tests.erl
+  apps/erlmcp_core/test/erlmcp_progress_tests.erl
+  apps/erlmcp_core/test/erlmcp_cache_tests.erl
+  apps/erlmcp_core/test/erlmcp_auth_tests.erl
+  apps/erlmcp_core/test/erlmcp_client_tests.erl
+  apps/erlmcp_core/test/erlmcp_code_reload_tests.erl
+  apps/erlmcp_core/test/erlmcp_memory_guard_tests.erl
+  apps/erlmcp_transports/test/erlmcp_sse_event_store_tests.erl
+
+CT SUITES TO UPDATE (2):
+  apps/erlmcp_core/test/erlmcp_integration_SUITE.erl
+  apps/erlmcp_validation/test/erlmcp_protocol_checker_SUITE.erl
+
+SOURCE FILES TO FIX (Xref):
+  apps/erlmcp_core/src/erlmcp_auth.erl (lines 230, 500)
+  apps/erlmcp_core/src/erlmcp_registry.erl (update_server/2)
+  apps/erlmcp_transports/src/erlmcp_hooks.erl (lines 288, 419)
+
+CONFIG TO UPDATE:
+  rebar.config (xref_ignores section)
+
+================================================================================
+DETAILED REPORTS
+================================================================================
+
+Full analysis available in:
+  test_results/definition_of_done/FINAL_TEST_SUMMARY.md
+
+Individual agent reports:
+  test_results/definition_of_done/EUNIT_FAILURE_REPORT.md
+  test_results/definition_of_done/CT_FAILURE_REPORT.md
+  test_results/definition_of_done/COVERAGE_THRESHOLD_REPORT.md
+  test_results/definition_of_done/XREF_REPORT.md
+  test_results/definition_of_done/COVER_Compilation_Report.md
+  test_results/definition_of_done/TEST_PERFORMANCE_REPORT.md
+
+================================================================================

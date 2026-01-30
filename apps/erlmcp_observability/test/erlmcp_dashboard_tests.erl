@@ -314,7 +314,11 @@ test_percentiles() ->
 
     % P999 should be approximately 99.91 (interpolation)
     P999 = maps:get(p999, Percentiles),
-    ?assert(P999 > 99.9 andalso P999 =< 100.0).
+    ?assert(P999 > 99.9 andalso P999 =< 100.0),
+
+    % Verify exact values for P95 and P99 (accounting for floating point)
+    ?assertEqual(95.5, P95),
+    ?assertEqual(99.1, P99).
 
 test_percentiles_edge_cases() ->
     % Test with empty list

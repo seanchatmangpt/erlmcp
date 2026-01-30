@@ -62,9 +62,25 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %% @doc Generate a compliance report in the specified format
+%% This function works without requiring the gen_server to be started
 -spec generate_report(report_format(), compliance_data()) -> {ok, binary()} | {error, term()}.
 generate_report(Format, Data) when is_map(Data) ->
-    gen_server:call(?MODULE, {generate_report, Format, Data}).
+    try
+        %% Try gen_server first if it's running
+        case whereis(?MODULE) of
+            Pid when is_pid(Pid) ->
+                gen_server:call(?MODULE, {generate_report, Format, Data});
+            undefined ->
+                %% If gen_server not running, do direct generation
+                generate_report_direct(Format, Data)
+        end
+    catch
+        exit:{noproc, _} ->
+            %% Fallback to direct generation if gen_server call fails
+            generate_report_direct(Format, Data);
+        _:Error ->
+            {error, {report_generation_failed, Error}}
+    end.
 
 %% @doc Calculate overall compliance percentage
 -spec calculate_compliance(compliance_data()) -> {ok, float(), map()}.
@@ -110,7 +126,7 @@ format_markdown(Report) when is_map(Report) ->
 %% @doc Format report as JSON
 -spec format_json(compliance_report()) -> binary().
 format_json(Report) when is_map(Report) ->
-    jsx:encode(Report, [pretty, space]).
+    jsx:encode(Report).
 
 %% @doc Format report as HTML
 -spec format_html(compliance_report()) -> binary().
@@ -170,11 +186,11 @@ create_traceability_matrix(Data) when is_map(Data) ->
         RelatedTests = find_related_tests(ReqId, ReqName, TestResults),
 
         maps:put(ReqId, #{
-            requirement => ReqName,
-            section => Section,
-            tests => [maps:get(name, T) || T <- RelatedTests],
-            status => determine_requirement_status(RelatedTests),
-            last_tested => get_latest_test_date(RelatedTests)
+            <<"requirement">> => ReqName,
+            <<"section">> => Section,
+            <<"tests">> => [maps:get(name, T) || T <- RelatedTests],
+            <<"status">> => determine_requirement_status(RelatedTests),
+            <<"last_tested">> => get_latest_test_date(RelatedTests)
         }, Acc)
     end, #{}, Requirements).
 
@@ -195,10 +211,10 @@ identify_gaps(Data) when is_map(Data) ->
             [] ->
                 %% No tests for this requirement
                 [#{
-                    requirement => Req,
-                    status => missing,
-                    severity => determine_severity(Section),
-                    recommendation => <<"Create tests to validate this requirement">>
+                    <<"requirement">> => Req,
+                    <<"status">> => missing,
+                    <<"severity">> => determine_severity(Section),
+                    <<"recommendation">> => <<"Create tests to validate this requirement">>
                 } | Acc];
             Tests ->
                 %% Check if all tests passed
@@ -209,10 +225,10 @@ identify_gaps(Data) when is_map(Data) ->
                     [] -> Acc; %% All tests passed
                     _ ->
                         [#{
-                            requirement => Req,
-                            status => failed,
-                            severity => high,
-                            recommendation => <<"Fix failing tests for this requirement">>
+                            <<"requirement">> => Req,
+                            <<"status">> => failed,
+                            <<"severity">> => high,
+                            <<"recommendation">> => <<"Fix failing tests for this requirement">>
                         } | Acc]
                 end
         end
@@ -228,6 +244,43 @@ get_report_summary(Report) when is_map(Report) ->
         total_gaps => length(maps:get(gaps, Report, [])),
         timestamp => maps:get(timestamp, Report)
     }.
+
+%% @private Generate report directly without gen_server
+generate_report_direct(Format, Data) ->
+    try
+        %% Calculate compliance
+        {ok, Compliance, Details} = calculate_compliance(Data),
+
+        %% Create traceability matrix
+        Traceability = create_traceability_matrix(Data),
+
+        %% Identify gaps
+        Gaps = identify_gaps(Data),
+
+        %% Build report
+        Report = #{
+            spec_version => maps:get(spec_version, Data, <<"unknown">>),
+            timestamp => maps:get(timestamp, Data, iso8601_timestamp()),
+            overall => Compliance,
+            by_section => maps:get(by_section, Details),
+            evidence => extract_evidence(Data),
+            gaps => Gaps,
+            recommendations => generate_recommendations(Gaps, Compliance),
+            traceability => Traceability,
+            details => Details
+        },
+
+        %% Format report
+        Formatted = case Format of
+            markdown -> format_markdown(Report);
+            json -> format_json(Report);
+            html -> format_html(Report)
+        end,
+
+        {ok, Formatted}
+    catch
+        _:Error -> {error, {report_generation_failed, Error}}
+    end.
 
 %%%====================================================================
 %%% gen_server callbacks
@@ -363,11 +416,11 @@ extract_evidence(Data) ->
     TestResults = maps:get(test_results, Data, []),
     [begin
         #{
-            test => maps:get(name, T),
-            requirement => maps:get(requirement_name, T, <<"unknown">>),
-            status => maps:get(status, T),
-            evidence => maps:get(evidence, T, <<"No evidence provided">>),
-            timestamp => maps:get(timestamp, T, <<"unknown">>)
+            <<"test">> => maps:get(name, T),
+            <<"requirement">> => maps:get(requirement_name, T, <<"unknown">>),
+            <<"status">> => maps:get(status, T, <<"unknown">>),
+            <<"evidence">> => maps:get(evidence, T, <<"No evidence provided">>),
+            <<"timestamp">> => maps:get(timestamp, T, <<"unknown">>)
         }
     end || T <- TestResults, maps:get(status, T, <<"unknown">>) =:= <<"passed">>].
 
@@ -436,9 +489,9 @@ format_markdown_evidence(Report) ->
     Evidence = maps:get(evidence, Report, []),
     ["## Detailed Evidence\n\n",
      lists:map(fun(E) ->
-         Test = maps:get(test, E),
-         Status = maps:get(status, E),
-         Ev = maps:get(evidence, E),
+         Test = maps:get(<<"test">>, E),
+         Status = maps:get(<<"status">>, E),
+         Ev = maps:get(<<"evidence">>, E),
          io_lib:format("### ~s\n\nStatus: ~s\n\nEvidence:\n```\n~s\n```\n\n",
                       [Test, Status, Ev])
      end, Evidence),
@@ -571,9 +624,9 @@ format_html_evidence(Report) ->
                 "        <div class=\"section\">\n",
                 "            <h2>Detailed Evidence</h2>\n",
                 lists:map(fun(E) ->
-                    Test = maps:get(test, E),
-                    Status = maps:get(status, E),
-                    Ev = maps:get(evidence, E),
+                    Test = maps:get(<<"test">>, E),
+                    Status = maps:get(<<"status">>, E),
+                    Ev = maps:get(<<"evidence">>, E),
                     [
                         "            <div class=\"evidence\">\n",
                         io_lib:format("                <h3>~s</h3>\n", [Test]),

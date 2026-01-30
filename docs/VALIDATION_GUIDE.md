@@ -107,14 +107,44 @@ rebar3 as validation compile
 rebar3 compile
 ```
 
-3. **Verify Installation**:
+3. **Build CLI escript**:
+
+```bash
+# Build the standalone validation CLI
+rebar3 escriptize
+
+# The executable will be created at:
+# _build/default/bin/erlmcp_validate
+```
+
+4. **Verify Installation**:
 
 ```bash
 # Check validation app is built
 ls _build/default/lib/erlmcp_validation/ebin/
 
+# Verify CLI executable exists
+ls -lh _build/default/bin/erlmcp_validate
+
+# Test CLI
+./_build/default/bin/erlmcp_validate --version
+
 # Run quick validation check
 make validate-compile
+```
+
+5. **Optional: Install to PATH**:
+
+```bash
+# Create symlink for global access
+sudo ln -s $(pwd)/_build/default/bin/erlmcp_validate /usr/local/bin/erlmcp_validate
+
+# Or add to PATH in your shell profile
+echo 'export PATH="$PATH:'$(pwd)'/_build/default/bin"' >> ~/.bashrc
+source ~/.bashrc
+
+# Now you can run from anywhere
+erlmcp_validate --version
 ```
 
 ### Configuration
@@ -207,7 +237,387 @@ Overall: MCP 2025-11-25 Specification Compliance
 
 ---
 
+## CLI Command Reference
+
+The `erlmcp_validate` CLI provides a comprehensive interface for running validation tests and generating compliance reports.
+
+### Building the CLI
+
+```bash
+# Build the standalone CLI executable
+rebar3 escriptize
+
+# Executable location
+./_build/default/bin/erlmcp_validate
+
+# Make it globally available (optional)
+sudo ln -s $(pwd)/_build/default/bin/erlmcp_validate /usr/local/bin/erlmcp_validate
+```
+
+### CLI Commands Overview
+
+```bash
+# Show help
+erlmcp_validate --help
+
+# Show version
+erlmcp_validate --version
+
+# Run all validators
+erlmcp_validate run --all
+
+# Run specific validator
+erlmcp_validate run --section protocol
+
+# Generate compliance report
+erlmcp_validate report --format markdown --output report.md
+
+# Quick validation check
+erlmcp_validate quick-check
+
+# Show validation status
+erlmcp_validate status
+```
+
+### Run Command
+
+The `run` command executes validation tests.
+
+#### Run All Validators
+
+```bash
+# Run all validation sections
+./_build/default/bin/erlmcp_validate run --all
+
+# With verbose output
+./_build/default/bin/erlmcp_validate run --all --verbose
+
+# With minimal output
+./_build/default/bin/erlmcp_validate run --all --quiet
+
+# Output as JSON
+./_build/default/bin/erlmcp_validate run --all --format json
+
+# Output as Markdown
+./_build/default/bin/erlmcp_validate run --all --format markdown
+```
+
+#### Run Specific Section
+
+```bash
+# Validate protocol compliance
+./_build/default/bin/erlmcp_validate run --section protocol
+
+# Validate transport behavior
+./_build/default/bin/erlmcp_validate run --section transport
+
+# Validate security features
+./_build/default/bin/erlmcp_validate run --section security
+
+# Validate error handling
+./_build/default/bin/erlmcp_validate run --section error_handling
+
+# Validate performance
+./_build/default/bin/erlmcp_validate run --section performance
+
+# Multiple sections
+./_build/default/bin/erlmcp_validate run --section protocol --section transport
+```
+
+#### Run with Specific Transport
+
+```bash
+# Validate stdio transport
+./_build/default/bin/erlmcp_validate run --transport stdio
+
+# Validate TCP transport
+./_build/default/bin/erlmcp_validate run --transport tcp
+
+# Validate HTTP transport
+./_build/default/bin/erlmcp_validate run --transport http
+
+# Validate WebSocket transport
+./_build/default/bin/erlmcp_validate run --transport websocket
+```
+
+#### Available Sections
+
+| Section | Description |
+|---------|-------------|
+| `protocol` | MCP protocol compliance (JSON-RPC 2.0, message formats) |
+| `transport` | Transport layer behavior (stdio, tcp, http) |
+| `security` | Security features (authentication, JWT validation) |
+| `error_handling` | Error response validation and edge cases |
+| `performance` | Performance benchmarks and load testing |
+
+### Report Command
+
+The `report` command generates compliance reports in various formats.
+
+#### Generate Markdown Report
+
+```bash
+# Generate markdown report to stdout
+./_build/default/bin/erlmcp_validate report --format markdown
+
+# Save to file
+./_build/default/bin/erlmcp_validate report --format markdown --output compliance_report.md
+```
+
+#### Generate JSON Report
+
+```bash
+# Generate JSON report
+./_build/default/bin/erlmcp_validate report --format json
+
+# Save to file
+./_build/default/bin/erlmcp_validate report --format json --output compliance_report.json
+```
+
+#### Generate Text Report
+
+```bash
+# Generate text report (default)
+./_build/default/bin/erlmcp_validate report --format text
+
+# Save to file
+./_build/default/bin/erlmcp_validate report --format text --output compliance_report.txt
+```
+
+#### Generate HTML Report
+
+```bash
+# Generate HTML report
+./_build/default/bin/erlmcp_validate report --format html
+
+# Save to file
+./_build/default/bin/erlmcp_validate report --format html --output compliance_report.html
+```
+
+### Quick Check Command
+
+Perform basic validation checks:
+
+```bash
+# Run quick validation check
+./_build/default/bin/erlmcp_validate quick-check
+
+# Checks performed:
+# - Applications loaded
+# - Modules available
+# - Configuration valid
+```
+
+### Status Command
+
+Show validation system status:
+
+```bash
+# Show status
+./_build/default/bin/erlmcp_validate status
+
+# Output includes:
+# - CLI version
+# - OTP release
+# - Loaded applications
+# - System status
+```
+
+### CLI Options Reference
+
+| Option | Description | Valid Values |
+|--------|-------------|--------------|
+| `--all` | Run all validation sections | - |
+| `--section <name>` | Run specific section | protocol, transport, security, error_handling, performance |
+| `--transport <type>` | Validate specific transport | stdio, tcp, http, websocket |
+| `--format <type>` | Output format | text, json, markdown, html |
+| `--output <file>` | Write output to file | Any filename |
+| `--verbose` | Show detailed output | - |
+| `--quiet` | Minimal output | - |
+| `--help` | Show help message | - |
+| `--version` | Show version | - |
+
+### CLI Examples
+
+#### Example 1: Full Validation with Markdown Report
+
+```bash
+# Run full validation and generate markdown report
+./_build/default/bin/erlmcp_validate run --all --format markdown > validation_report.md
+
+# Or save directly
+./_build/default/bin/erlmcp_validate run --all --format markdown --output validation_report.md
+```
+
+#### Example 2: CI/CD Integration
+
+```bash
+#!/bin/bash
+# CI validation script
+
+# Build CLI
+rebar3 escriptize
+
+# Run validation (exit on failure)
+./_build/default/bin/erlmcp_validate run --all --format json --output validation_results.json
+
+# Check compliance threshold
+COMPLIANCE=$(jq '.summary.compliance' validation_results.json)
+if (( $(echo "$COMPLIANCE < 95.0" | bc -l) )); then
+    echo "Compliance below 95%: $COMPLIANCE%"
+    exit 1
+fi
+
+echo "Compliance OK: $COMPLIANCE%"
+```
+
+#### Example 3: Transport-Specific Validation
+
+```bash
+# Validate all transports
+for transport in stdio tcp http websocket; do
+    echo "Validating $transport..."
+    ./_build/default/bin/erlmcp_validate run --transport $transport --format json > "${transport}_validation.json"
+done
+```
+
+#### Example 4: Section-Specific Validation
+
+```bash
+# Validate only protocol and security
+./_build/default/bin/erlmcp_validate run \
+    --section protocol \
+    --section security \
+    --format markdown \
+    --output protocol_security_report.md
+```
+
+---
+
 ## Running Compliance Tests
+
+### Test Suite Usage
+
+The validation framework provides multiple ways to run tests depending on your needs.
+
+#### Running Common Test Suites
+
+```bash
+# Run all Common Test suites
+rebar3 as validation ct
+
+# Run specific test suite
+rebar3 as validation ct --suite=erlmcp_spec_compliance_SUITE
+
+# Run with verbose output
+rebar3 as validation ct --verbose
+
+# Run specific test case
+rebar3 as validation ct --suite=erlmcp_spec_compliance_SUITE --case=initialize_must_be_first_test
+
+# Run tests matching pattern
+rebar3 as validation ct --suite=erlmcp_spec_compliance_SUITE --testcase="tools_*"
+```
+
+#### Running EUnit Tests
+
+```bash
+# Run all EUnit tests
+rebar3 eunit
+
+# Run specific module tests
+rebar3 eunit --module=erlmcp_spec_parser_tests
+
+# Run with verbose output
+rebar3 eunit --verbose
+
+# Generate coverage report
+rebar3 cover
+```
+
+#### Coverage Reports
+
+```bash
+# Generate coverage report
+rebar3 as validation cover
+
+# View coverage report
+open _build/validation/cover/index.html
+
+# Generate coverage summary
+rebar3 as validation cover --verbose
+
+# Check specific module coverage
+rebar3 as validation cover --module=erlmcp_protocol_validator
+```
+
+#### Test Suite Examples
+
+**Example 1: Full Test Suite with Coverage**
+
+```bash
+#!/bin/bash
+# Run complete test suite with coverage
+
+echo "Building..."
+rebar3 compile
+
+echo "Running EUnit tests..."
+rebar3 eunit
+
+echo "Running Common Test suites..."
+rebar3 as validation ct
+
+echo "Generating coverage report..."
+rebar3 as validation cover
+
+echo "Coverage report: _build/validation/cover/index.html"
+```
+
+**Example 2: Quick Test During Development**
+
+```bash
+#!/bin/bash
+# Quick test for specific module
+
+# Test protocol validator
+rebar3 eunit --module=erlmcp_protocol_validator_tests
+
+# Test spec parser
+rebar3 eunit --module=erlmcp_spec_parser_tests
+
+# Test compliance report
+rebar3 eunit --module=erlmcp_compliance_report_tests
+```
+
+**Example 3: CI/CD Test Pipeline**
+
+```bash
+#!/bin/bash
+# CI test pipeline
+
+set -e
+
+echo "Running validation tests..."
+
+# Compile
+rebar3 compile
+
+# Run EUnit
+rebar3 eunit
+
+# Run Common Test
+rebar3 as validation ct
+
+# Check coverage
+COVERAGE=$(rebar3 as validation cover | grep "^[0-9]" | awk '{print $1}' | cut -d'%' -f1)
+if [ "$COVERAGE" -lt 80 ]; then
+    echo "Coverage below 80%: $COVERAGE%"
+    exit 1
+fi
+
+echo "All tests passed!"
+```
 
 ### Command-Line Usage
 
@@ -832,7 +1242,107 @@ chmod +x .git/hooks/pre-commit
 
 ### Common Issues
 
-#### 1. Compilation Failures
+#### 1. CLI Build Errors
+
+**Symptom**:
+```
+Error: escript build failed
+Error: Could not find module 'erlmcp_validate_cli'
+```
+
+**Solutions**:
+
+```bash
+# Ensure all apps are compiled
+rebar3 compile
+
+# Clean and rebuild
+rebar3 clean --all
+rebar3 compile
+
+# Build escript explicitly
+rebar3 escriptize
+
+# Check escript configuration
+grep -A 5 "escript_" rebar.config
+```
+
+**Verify escript was created**:
+```bash
+# Check if executable exists
+ls -lh _build/default/bin/erlmcp_validate
+
+# Test executable
+./_build/default/bin/erlmcp_validate --version
+```
+
+#### 2. CLI Runtime Errors
+
+**Symptom**:
+```
+Error: {badarg,[{erlmcp_validate_cli,main,1}]}
+Error: Failed to start applications
+```
+
+**Solutions**:
+
+```bash
+# Ensure all dependencies are available
+rebar3 get-deps
+
+# Check application is started
+erl -pa _build/default/lib/*/ebin -eval "application:ensure_all_started(erlmcp_validation), halt()."
+
+# Run with verbose output
+./_build/default/bin/erlmcp_validate run --all --verbose
+```
+
+#### 3. Module Not Found Errors
+
+**Symptom**:
+```
+Error: module 'erlmcp_protocol_validator' is not available
+Error: {undef,[{erlmcp_protocol_validator,run,...}]}
+```
+
+**Solutions**:
+
+```bash
+# Check if module is compiled
+find _build -name "erlmcp_protocol_validator.beam"
+
+# Ensure all apps are compiled
+rebar3 compile
+
+# Check escript includes required apps
+grep "escript_incl_apps" rebar.config
+
+# Manually add module path if needed
+erl -pa _build/default/lib/*/ebin -eval "code:which(erlmcp_protocol_validator), halt()."
+```
+
+#### 4. Permission Denied Errors
+
+**Symptom**:
+```
+bash: ./_build/default/bin/erlmcp_validate: Permission denied
+```
+
+**Solutions**:
+
+```bash
+# Make executable
+chmod +x _build/default/bin/erlmcp_validate
+
+# Or run with escript
+escript _build/default/bin/erlmcp_validate --version
+
+# If using symlink, ensure source is executable
+chmod +x $(pwd)/_build/default/bin/erlmcp_validate
+sudo ln -s $(pwd)/_build/default/bin/erlmcp_validate /usr/local/bin/erlmcp_validate
+```
+
+#### 5. Compilation Failures
 
 **Symptom**:
 ```
@@ -849,14 +1359,16 @@ rebar3 compile
 rebar3 as validation compile
 ```
 
-#### 2. Test Timeouts
+#### 6. Test Timeouts
 
 **Symptom**:
 ```
 Error: Test timeout exceeded
+Error: Validation timeout after 30s
 ```
 
-**Solution**:
+**Solutions**:
+
 ```erlang
 %% Increase timeout in config
 {erlmcp_validation, [
@@ -869,7 +1381,7 @@ Or via command line:
 rebar3 as validation ct --timeout 60
 ```
 
-#### 3. Port Already in Use
+#### 7. Port Already in Use
 
 **Symptom**:
 ```
@@ -889,14 +1401,16 @@ lsof -ti:8080 | xargs kill -9
 ]}.
 ```
 
-#### 4. Missing Dependencies
+#### 8. Missing Dependencies
 
 **Symptom**:
 ```
 Error: Missing module jsx
+Error: {undef,[{jsx,encode,...}]}
 ```
 
-**Solution**:
+**Solutions**:
+
 ```bash
 # Ensure all dependencies are fetched
 rebar3 get-deps
@@ -905,9 +1419,34 @@ rebar3 compile
 # Or explicitly for validation profile
 rebar3 as validation get-deps
 rebar3 as validation compile
+
+# Check if dependency is in rebar.config
+grep "jsx" apps/erlmcp_validation/rebar.config
 ```
 
-#### 5. Low Test Coverage
+#### 9. JSON Encoding Errors
+
+**Symptom**:
+```
+Error: JSON encode failed
+Error: {badarg,[{jsx,encode,...}]}
+```
+
+**Solutions**:
+
+```bash
+# Ensure jsx is available
+rebar3 deps
+
+# Test jsx module
+erl -pa _build/default/lib/*/ebin -eval "jsx:encode(#{<<"test">> => 1}), halt()."
+
+# Check escript includes jsx
+grep "escript_incl_apps" rebar.config
+# Should include: [erlmcp_validation, erlmcp_core, erlmcp_transports, jsx, jesse]
+```
+
+#### 10. Low Test Coverage
 
 **Symptom**:
 ```

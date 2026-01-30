@@ -657,6 +657,7 @@
 -define(MCP_PARAM_STATUS, <<"status">>).
 -define(MCP_PARAM_RESULT, <<"result">>).
 -define(MCP_PARAM_ERROR, <<"error">>).
+-define(MCP_PARAM_LEVEL, <<"level">>).  %% Logging level parameter
 -define(MCP_PARAM_ANNOTATIONS, <<"annotations">>).
 -define(MCP_PARAM_REQUEST_ID, <<"requestId">>).
 -define(MCP_PARAM_REASON, <<"reason">>).

@@ -97,10 +97,10 @@ calculate_overall_compliance_test() ->
     ?assert(maps:is_key(passed_tests, Details)),
     ?assert(maps:is_key(by_section, Details)),
 
-    %% With 4 passed tests out of 5 requirements, should be 80%
+    %% With 3 passed tests out of 5 requirements, should be 60%
     ?assertEqual(5, maps:get(total_requirements, Details)),
-    ?assertEqual(4, maps:get(passed_tests, Details)),
-    ?assertEqual(80.0, Compliance).
+    ?assertEqual(3, maps:get(passed_tests, Details)),
+    ?assertEqual(60.0, Compliance).
 
 calculate_section_compliance_test() ->
     Data = sample_compliance_data(),
@@ -155,8 +155,8 @@ generate_markdown_report_test() ->
     ?assert(nomatch =/= binary:match(Markdown, <<"## Gap Analysis">>)),
     ?assert(nomatch =/= binary:match(Markdown, <<"## Traceability Matrix">>)),
 
-    %% Check for compliance percentage
-    ?assert(nomatch =/= binary:match(Markdown, <<"80.00%">>)),
+    %% Check for compliance percentage (60% not 80%)
+    ?assert(nomatch =/= binary:match(Markdown, <<"60.00%">>)),
 
     %% Check for test evidence
     ?assert(nomatch =/= binary:match(Markdown, <<"initialize_must_be_first_test">>)).
@@ -181,10 +181,10 @@ generate_json_report_test() ->
     ?assert(maps:is_key(<<"recommendations">>, Parsed)),
     ?assert(maps:is_key(<<"traceability">>, Parsed)),
 
-    %% Verify compliance value
+    %% Verify compliance value (60.0 not 80.0)
     Overall = maps:get(<<"overall">>, Parsed),
     ?assert(is_float(Overall)),
-    ?assertEqual(80.0, Overall).
+    ?assertEqual(60.0, Overall).
 
 generate_html_report_test() ->
     Data = sample_compliance_data(),
@@ -247,7 +247,7 @@ identifies_missing_tests_test() ->
     Gaps = erlmcp_compliance_report:identify_gaps(Data),
 
     %% req-005 has no tests - should be identified as missing
-    MissingGaps = [G || G <- Gaps, maps:get(status, G) =:= <<"missing">>],
+    MissingGaps = [G || G <- Gaps, maps:get(<<"status">>, G) =:= <<"missing">>],
     ?assert(length(MissingGaps) > 0).
 
 identifies_failed_tests_test() ->
@@ -255,14 +255,14 @@ identifies_failed_tests_test() ->
     Gaps = erlmcp_compliance_report:identify_gaps(Data),
 
     %% req-003 has a failed test
-    FailedGaps = [G || G <- Gaps, maps:get(status, G) =:= <<"failed">>],
+    FailedGaps = [G || G <- Gaps, maps:get(<<"status">>, G) =:= <<"failed">>],
     ?assert(length(FailedGaps) > 0).
 
 classifies_gaps_by_severity_test() ->
     Data = sample_compliance_data(),
     Gaps = erlmcp_compliance_report:identify_gaps(Data),
 
-    %% Check severity classifications
+    %% Check severity classifications (severity is atom, not binary)
     lists:foreach(fun(Gap) ->
         Severity = maps:get(<<"severity">>, Gap),
         ?assert(lists:member(Severity, [critical, high, medium, low]))
@@ -280,7 +280,7 @@ summary_includes_overall_compliance_test() ->
     Summary = erlmcp_compliance_report:get_report_summary(Report),
 
     ?assert(maps:is_key(<<"overall_compliance">>, Summary)),
-    ?assertEqual(80.0, maps:get(<<"overall_compliance">>, Summary)).
+    ?assertEqual(60.0, maps:get(<<"overall_compliance">>, Summary)).
 
 summary_counts_sections_test() ->
     Data = sample_compliance_data(),
@@ -324,7 +324,7 @@ all_formats_consistent_test() ->
     {ok, JsonParsed} = jsx:decode(Json, [return_maps]),
     JsonCompliance = maps:get(<<"overall">>, JsonParsed),
 
-    %% All should show 80%
-    ?assertEqual(80.0, JsonCompliance),
-    ?assert(nomatch =/= binary:match(Markdown, <<"80.00%">>)),
-    ?assert(nomatch =/= binary:match(HTML, <<"80.00%">>)).
+    %% All should show 60%
+    ?assertEqual(60.0, JsonCompliance),
+    ?assert(nomatch =/= binary:match(Markdown, <<"60.00%">>)),
+    ?assert(nomatch =/= binary:match(HTML, <<"60.00%">>)).

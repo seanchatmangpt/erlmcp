@@ -64,36 +64,41 @@ create_progress_token() ->
 update_progress_with_increment() ->
     ClientPid = self(),
     Token = erlmcp_progress:create(ClientPid, <<"Initializing">>),
-    flush_notifications(),
+    % Consume initial notification for THIS token (has progress=0)
+    wait_for_token_notification(Token, 0),
+    timer:sleep(50),  % Let create finish processing
+    % Do the update
     erlmcp_progress:update(Token, #{increment => 25}),
-    timer:sleep(50),  % Allow gen_server:cast to process
-    receive
-        {mcp_notification, Notification} ->
-            Params = maps:get(<<"params">>, Notification),
-            ?assertEqual(25, maps_get_current(Params))
-    after 1000 ->
-        ?assert(false, "No notification received after increment")
-    end.
+    timer:sleep(100),  % Let update finish processing
+    % Verify the update was applied (synchronous check via get_progress)
+    {ok, ProgressAfter} = erlmcp_progress:get_progress(Token),
+    ?assertEqual(25, maps:get(current, ProgressAfter)),
+    % Wait for update notification from THIS token
+    % Note: Update without total sends progress=undefined
+    wait_for_token_notification(Token, undefined).
 
 %% @doc Test updating progress with absolute current value
 update_progress_with_current() ->
     ClientPid = self(),
     Token = erlmcp_progress:create(ClientPid, <<"Starting">>),
-    flush_notifications(),
+    % Consume initial notification for THIS token (has progress=0)
+    wait_for_token_notification(Token, 0),
+    timer:sleep(50),  % Let create finish processing
+    % Do the update
     erlmcp_progress:update(Token, #{current => 50}),
-    timer:sleep(50),  % Allow gen_server:cast to process
-    receive
-        {mcp_notification, Notification} ->
-            Params = maps:get(<<"params">>, Notification),
-            ?assertEqual(50, maps_get_current(Params))
-    after 1000 ->
-        ?assert(false, "No notification received after current update")
-    end.
+    timer:sleep(100),  % Let update finish processing
+    % Verify the update was applied (synchronous check via get_progress)
+    {ok, ProgressAfter} = erlmcp_progress:get_progress(Token),
+    ?assertEqual(50, maps:get(current, ProgressAfter)),
+    % Wait for update notification from THIS token
+    % Note: Update without total sends progress=undefined
+    wait_for_token_notification(Token, undefined).
 
 %% @doc Test updating progress with total (for percentage)
 update_progress_with_total() ->
     ClientPid = self(),
     Token = erlmcp_progress:create(ClientPid, <<"Starting">>),
+    timer:sleep(50),  % Allow initial notification to be delivered
     flush_notifications(),
     erlmcp_progress:update(Token, #{current => 25, total => 100}),
     timer:sleep(50),  % Allow gen_server:cast to process
@@ -111,6 +116,7 @@ update_progress_with_total() ->
 update_progress_with_message() ->
     ClientPid = self(),
     Token = erlmcp_progress:create(ClientPid, <<"Starting">>),
+    timer:sleep(50),  % Allow initial notification to be delivered
     flush_notifications(),
     erlmcp_progress:update(Token, #{message => <<"Processing data">>}),
     timer:sleep(50),  % Allow gen_server:cast to process
@@ -126,6 +132,7 @@ update_progress_with_message() ->
 complete_progress() ->
     ClientPid = self(),
     Token = erlmcp_progress:create(ClientPid, <<"Starting">>),
+    timer:sleep(50),  % Allow initial notification to be delivered
     flush_notifications(),
     erlmcp_progress:complete(Token),
     timer:sleep(50),  % Allow gen_server:cast to process
@@ -145,6 +152,11 @@ complete_progress() ->
 cancel_progress() ->
     ClientPid = self(),
     Token = erlmcp_progress:create(ClientPid, <<"Starting">>),
+    % Wait for initial notification
+    receive
+        {mcp_notification, _} -> ok
+    after 500 -> ?assert(false, "No initial notification received")
+    end,
     flush_notifications(),
     erlmcp_progress:cancel(Token),
     timer:sleep(50),  % Allow gen_server:cast to process
@@ -204,6 +216,7 @@ track_tool_call() ->
 cleanup_completed() ->
     ClientPid = self(),
     Token = erlmcp_progress:create(ClientPid, <<"Starting">>),
+    timer:sleep(50),  % Allow initial notification to be delivered
     flush_notifications(),
     ?assertMatch({ok, _}, erlmcp_progress:get_progress(Token)),
     erlmcp_progress:cleanup_completed(Token),
@@ -277,13 +290,15 @@ progress_notification_format() ->
 undefined_client_pid() ->
     Token = erlmcp_progress:create(undefined, <<"No client">>),
     ?assert(is_reference(Token)),
+    flush_notifications(),
     % Should not crash or send notification
     erlmcp_progress:update(Token, #{current => 50}),
     erlmcp_progress:complete(Token),
-    timer:sleep(50),  % Allow gen_server:cast to process
+    timer:sleep(100),  % Allow operations to process
     % No notification should be received
     receive
         {mcp_notification, _} ->
+            flush_notifications(),  % Flush any stray notifications
             ?assert(false, "Unexpected notification with undefined client")
     after 100 ->
         ok
@@ -313,4 +328,30 @@ maps_get(Key, Map) ->
     case maps:get(Key, Map, undefined) of
         undefined -> error({missing_key, Key});
         Val -> Val
+    end.
+
+%% @doc Wait for notification with specific token and progress value
+%% This filters out notifications from other tokens
+wait_for_token_notification(Token, ExpectedProgress) ->
+    wait_for_token_notification(Token, ExpectedProgress, 20).
+
+wait_for_token_notification(_Token, _ExpectedProgress, 0) ->
+    ?assert(false, "Max retries exceeded waiting for notification");
+wait_for_token_notification(Token, ExpectedProgress, Retries) ->
+    receive
+        {mcp_notification, Notification} ->
+            Params = maps:get(<<"params">>, Notification),
+            NotificationToken = maps:get(<<"progressToken">>, Params),
+            case NotificationToken of
+                Token ->
+                    % Correct token, check progress value
+                    % Get raw progress value (undefined is allowed)
+                    CurrentValue = maps:get(<<"progress">>, Params, undefined),
+                    ?assertEqual(ExpectedProgress, CurrentValue);
+                _OtherToken ->
+                    % Notification from different token, retry
+                    wait_for_token_notification(Token, ExpectedProgress, Retries - 1)
+            end
+    after 500 ->
+        ?assert(false, "No notification received within 500ms")
     end.

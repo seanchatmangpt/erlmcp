@@ -188,6 +188,130 @@ erlmcp integrates Toyota Production System principles for manufacturing-grade qu
 - Receipt chain for immutable audit trail
 - Evidence bundles for every release
 
+## 🚨 CRITICAL: Parallel Agent Execution
+
+**ABSOLUTE RULE: ALL AGENTS MUST BE LAUNCHED IN ONE MESSAGE**
+
+### The Only Correct Pattern
+
+```
+✅ CORRECT: Launch ALL agents in a SINGLE message
+[Single Message - Parallel Agent Execution]:
+
+  Task("Agent 1", "Task description 1", "agent-type-1")
+  Task("Agent 2", "Task description 2", "agent-type-2")
+  Task("Agent 3", "Task description 3", "agent-type-3")
+  ...
+  Task("Agent N", "Task description N", "agent-type-N")
+
+  TodoWrite { todos: [10+ todos in ONE call] }
+
+  [Batch all file operations]
+  Read "file1.erl"
+  Read "file2.erl"
+  ...
+
+  [Batch all writes]
+  Write "output1.erl"
+  Write "output2.erl"
+  ...
+```
+
+### ❌ WRONG Patterns
+
+```
+❌ WRONG: Multiple messages (breaks parallelism)
+Message 1: Task("Agent 1", ...)
+Message 2: Task("Agent 2", ...)
+Message 3: Task("Agent 3", ...)
+```
+
+### Available Agent Types for erlmcp
+
+| Agent Type | Use For |
+|------------|---------|
+| `erlang-otp-developer` | Implementing Erlang/OTP behaviors, gen_server, supervisor |
+| `erlang-test-engineer` | Creating EUnit/Common Test suites with Chicago TDD |
+| `erlang-architect` | Designing OTP supervision trees, architecture |
+| `erlang-researcher` | Exploring codebase, finding patterns |
+| `erlang-github-ops` | Git workflows, PRs, CI/CD |
+| `erlang-performance` | Benchmarking, performance optimization |
+| `erlang-transport-builder` | Transport implementation (stdio, tcp, http, websocket) |
+| `code-reviewer` | Code quality review (Erlang-specific) |
+
+### Example: 20-Agent Parallel Launch
+
+```
+[Single Message - All 20 agents launched at once]:
+
+  # Phase 1: Foundation
+  Task("Spec Parser", "Implement erlmcp_spec_parser.erl with hardcoded MCP 2025-11-25 spec metadata", "erlang-otp-developer")
+  Task("Test Client", "Enhance erlmcp_test_client.erl for multi-transport validation", "erlang-otp-developer")
+  Task("Compliance Report", "Enhance erlmcp_compliance_report.erl with evidence collection", "erlang-otp-developer")
+
+  # Phase 2: Validators
+  Task("Protocol Validator", "Implement erlmcp_protocol_validator.erl for JSON-RPC 2.0 and MCP validation", "erlang-otp-developer")
+  Task("Transport Validator", "Implement erlmcp_transport_validator.erl for transport behavior compliance", "erlang-otp-developer")
+  Task("Security Validator", "Implement erlmcp_security_validator.erl for auth, input validation, secrets", "erlang-otp-developer")
+  Task("Performance Validator", "Implement erlmcp_performance_validator.erl for latency, throughput, memory", "erlang-otp-developer")
+
+  # Phase 3: Test Suites
+  Task("Lifecycle Tests", "Create 10 lifecycle tests in erlmcp_spec_compliance_SUITE.ct", "erlang-test-engineer")
+  Task("Tools API Tests", "Create 12 tools API tests in erlmcp_spec_compliance_SUITE.ct", "erlang-test-engineer")
+  Task("Resources API Tests", "Create 14 resources API tests in erlmcp_spec_compliance_SUITE.ct", "erlang-test-engineer")
+  Task("Prompts API Tests", "Create 8 prompts API tests in erlmcp_spec_compliance_SUITE.ct", "erlang-test-engineer")
+  Task("Transport Tests", "Create 15 transport behavior tests in erlmcp_spec_compliance_SUITE.ct", "erlang-test-engineer")
+  Task("Error Codes Tests", "Create 12 error code tests in erlmcp_spec_compliance_SUITE.ct", "erlang-test-engineer")
+  Task("Protocol Validator Tests", "Create 50+ protocol validator test suite", "erlang-test-engineer")
+  Task("Transport Validator Tests", "Create 40+ transport validator test suite", "erlang-test-engineer")
+  Task("Security Validator Tests", "Create 60+ security validator test suite", "erlang-test-engineer")
+  Task("Performance Validator Tests", "Create 30+ performance validator test suite", "erlang-test-engineer")
+  Task("Spec Parser Tests", "Create 20+ spec parser unit tests", "erlang-test-engineer")
+
+  # Phase 4: Integration
+  Task("CLI Integration", "Wire up validators in erlmcp_validate_cli.erl", "erlang-otp-developer")
+  Task("CI/CD Integration", "Enhance .github/workflows/validation-quality-gates.yml", "erlang-github-ops")
+  Task("Documentation", "Create docs/SPEC_PARSER_GUIDE.md, VALIDATOR_GUIDE.md, SPEC_COMPLIANCE_TESTING.md", "erlang-architect")
+
+  # Batch todos
+  TodoWrite { todos: [
+    {id: "1", content: "Implement erlmcp_spec_parser.erl with hardcoded spec", status: "in_progress"},
+    {id: "2", content: "Enhance erlmcp_test_client.erl for multi-transport", status: "pending"},
+    {id: "3", content: "Enhance erlmcp_compliance_report.erl with evidence", status: "pending"},
+    {id: "4", content: "Implement erlmcp_protocol_validator.erl", status: "pending"},
+    {id: "5", content: "Implement erlmcp_transport_validator.erl", status: "pending"},
+    {id: "6", content: "Implement erlmcp_security_validator.erl", status: "pending"},
+    {id: "7", content: "Implement erlmcp_performance_validator.erl", status: "pending"},
+    {id: "8", content: "Create 10 lifecycle tests", status: "pending"},
+    {id: "9", content: "Create 12 tools API tests", status: "pending"},
+    {id: "10", content: "Create 14 resources API tests", status: "pending"},
+    {id: "11", content: "Create 8 prompts API tests", status: "pending"},
+    {id: "12", content: "Create 15 transport tests", status: "pending"},
+    {id: "13", content: "Create 12 error code tests", status: "pending"},
+    {id: "14", content: "Create protocol validator test suite", status: "pending"},
+    {id: "15", content: "Create transport validator test suite", status: "pending"},
+    {id: "16", content: "Create security validator test suite", status: "pending"},
+    {id: "17", content: "Create performance validator test suite", status: "pending"},
+    {id: "18", content: "Create spec parser unit tests", status: "pending"},
+    {id: "19", content: "Wire up CLI validators", status: "pending"},
+    {id: "20", content: "Integrate CI/CD workflows", status: "pending"},
+    {id: "21", content: "Create comprehensive documentation", status: "pending"},
+    {id: "22", content: "Run TERM=dumb rebar3 compile", status: "pending"},
+    {id: "23", content: "Run rebar3 eunit", status: "pending"},
+    {id: "24", content: "Run rebar3 ct", status: "pending"},
+    {id: "25", content: "Verify ≥80% coverage", status: "pending"}
+  ]}
+```
+
+### Key Points
+
+1. **ONE message** contains ALL `Task()` calls
+2. **ONE message** contains ALL `TodoWrite()` calls
+3. **ONE message** contains ALL file operations
+4. Agents run in parallel for maximum speed
+5. Each agent gets full context and works independently
+6. Use specialized agent types for best results
+
 ## Best Practices
 
 ### TDD: Chicago School (STRICT ENFORCEMENT)

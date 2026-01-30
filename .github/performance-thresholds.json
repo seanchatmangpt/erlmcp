@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://erlmcp.dev/schemas/performance-thresholds.json",
+  "title": "erlmcp Performance Regression Thresholds",
+  "description": "Configuration for performance regression detection thresholds. Used by CI/CD workflows to determine when performance changes are considered regressions.",
+  "version": "1.0.0",
+
+  "thresholds": {
+    "latency": {
+      "description": "Maximum acceptable latency increase percentage",
+      "p50": {
+        "threshold_percent": 10,
+        "direction": "increase",
+        "severity": "medium",
+        "description": "P50 latency should not increase by more than 10%"
+      },
+      "p95": {
+        "threshold_percent": 15,
+        "direction": "increase",
+        "severity": "high",
+        "description": "P95 latency should not increase by more than 15%"
+      },
+      "p99": {
+        "threshold_percent": 20,
+        "direction": "increase",
+        "severity": "high",
+        "description": "P99 latency should not increase by more than 20%"
+      }
+    },
+
+    "throughput": {
+      "description": "Maximum acceptable throughput decrease percentage",
+      "threshold_percent": 10,
+      "direction": "decrease",
+      "severity": "high",
+      "description": "Throughput should not decrease by more than 10%"
+    },
+
+    "memory": {
+      "description": "Maximum acceptable memory increase percentage",
+      "per_connection": {
+        "threshold_percent": 20,
+        "direction": "increase",
+        "severity": "medium",
+        "description": "Memory per connection should not increase by more than 20%"
+      },
+      "total": {
+        "threshold_percent": 25,
+        "direction": "increase",
+        "severity": "medium",
+        "description": "Total memory usage should not increase by more than 25%"
+      },
+      "leak_threshold": {
+        "threshold_mb": 10,
+        "duration_minutes": 5,
+        "severity": "critical",
+        "description": "Memory leaks detected if growth > 10MB over 5 minutes"
+      }
+    },
+
+    "connection_setup": {
+      "description": "Maximum acceptable connection setup time increase",
+      "threshold_percent": 15,
+      "direction": "increase",
+      "severity": "medium",
+      "description": "Connection setup time should not increase by more than 15%"
+    },
+
+    "concurrent_connections": {
+      "description": "Minimum acceptable concurrent connection success rate",
+      "success_rate_percent": 99,
+      "severity": "critical",
+      "description": "99% of concurrent connection attempts should succeed"
+    },
+
+    "error_rate": {
+      "description": "Maximum acceptable error rate increase",
+      "threshold_percent": 5,
+      "direction": "increase",
+      "severity": "critical",
+      "description": "Error rate should not increase by more than 5 percentage points"
+    },
+
+    "sustained_load": {
+      "description": "Performance under sustained load (30s - 24hr)",
+      "degradation_threshold_percent": 10,
+      "severity": "high",
+      "description": "Performance should not degrade more than 10% under sustained load"
+    }
+  },
+
+  "benchmarks": {
+    "core_ops_100k": {
+      "description": "Core operations benchmark (100K operations)",
+      "thresholds": {
+        "throughput_msg_per_s": {
+          "min": 500000,
+          "severity": "high"
+        },
+        "latency_p50_us": {
+          "max": 10,
+          "severity": "medium"
+        },
+        "latency_p95_us": {
+          "max": 50,
+          "severity": "high"
+        },
+        "memory_delta_mib": {
+          "max": 50,
+          "severity": "medium"
+        }
+      }
+    },
+
+    "tcp_quick_1k": {
+      "description": "TCP transport benchmark (1K connections)",
+      "thresholds": {
+        "throughput_msg_per_s": {
+          "min": 10000,
+          "severity": "high"
+        },
+        "latency_p95_us": {
+          "max": 100,
+          "severity": "high"
+        },
+        "memory_per_connection_mib": {
+          "max": 0.1,
+          "severity": "medium"
+        }
+      }
+    },
+
+    "stress_30s_100k_ops": {
+      "description": "Sustained load benchmark (30 seconds)",
+      "thresholds": {
+        "throughput_msg_per_s": {
+          "min": 100000,
+          "severity": "high"
+        },
+        "degradation_percent": {
+          "max": 10,
+          "severity": "high"
+        }
+      }
+    },
+
+    "integration_mcp_tool_sequence": {
+      "description": "End-to-end MCP workflow benchmark",
+      "thresholds": {
+        "total_latency_ms": {
+          "max": 1000,
+          "severity": "high"
+        },
+        "success_rate_percent": {
+          "min": 100,
+          "severity": "critical"
+        }
+      }
+    }
+  },
+
+  "exceptions": {
+    "description": "Special cases where thresholds may be adjusted",
+    "rules": [
+      {
+        "name": "intentional_refactor",
+        "description": "Code refactors with explicit justification",
+        "requires": {
+          "justification": "string",
+          "reviewer_approval": true
+        }
+      },
+      {
+        "name": "experimental_features",
+        "description": "Experimental feature development",
+        "condition": "feature_flag_enabled",
+        "threshold_multiplier": 2.0
+      },
+      {
+        "name": "environment_differences",
+        "description": "CI environment variations",
+        "condition": "ci_environment",
+        "allowed_variance": 5
+      }
+    ]
+  },
+
+  "alerting": {
+    "description": "Alert configuration for regressions",
+    "channels": {
+      "log": {
+        "enabled": true,
+        "level": "info"
+      },
+      "github_comment": {
+        "enabled": true,
+        "on_pr": true
+      },
+      "block_merge": {
+        "enabled": true,
+        "severity_threshold": "medium"
+      }
+    },
+
+    "severity_levels": {
+      "critical": {
+        "description": "Blocks merge immediately",
+        "examples": ["error_rate", "concurrent_connections", "memory_leak"]
+      },
+      "high": {
+        "description": "Blocks merge with warning",
+        "examples": ["latency_p95", "latency_p99", "throughput"]
+      },
+      "medium": {
+        "description": "Warning only, does not block merge",
+        "examples": ["latency_p50", "memory", "connection_setup"]
+      },
+      "low": {
+        "description": "Informational only",
+        "examples": ["minor_improvements", "noise"]
+      }
+    }
+  },
+
+  "baseline_management": {
+    "description": "Baseline update and versioning rules",
+    "auto_update": {
+      "enabled": true,
+      "trigger": "on_main_branch_merge",
+      "requires_tests_pass": true
+    },
+    "versioning": {
+      "strategy": "semantic_version",
+      "format": "YYYY-MM-DD_vX.Y.Z.json"
+    },
+    "retention": {
+      "count": 10,
+      "period_days": 90
+    }
+  },
+
+  "metadata": {
+    "created": "2026-01-30T00:00:00Z",
+    "last_updated": "2026-01-30T00:00:00Z",
+    "maintainer": "erlmcp-performance-team",
+    "documentation": "docs/performance_regression_detection.md"
+  }
+}

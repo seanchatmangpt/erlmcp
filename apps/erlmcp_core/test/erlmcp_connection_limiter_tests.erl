@@ -21,11 +21,11 @@
 %%====================================================================
 
 setup() ->
-    % Start gproc if not already started
-    case whereis(gproc) of
-        undefined ->
-            {ok, _} = application:ensure_all_started(gproc);
-        _ ->
+    % Start gproc first (minimal dependency)
+    case application:start(gproc) of
+        ok ->
+            ok;
+        {error, {already_started, gproc}} ->
             ok
     end,
 
@@ -35,7 +35,22 @@ setup() ->
         alert_threshold => 0.7,
         enabled => true
     }),
+
+    % Start the connection limiter
     {ok, _Pid} = erlmcp_connection_limiter:start_link(),
+
+    % Wait for gproc counter to be fully registered
+    % Use a small delay to ensure counter is ready
+    timer:sleep(10),
+
+    % Verify counter is accessible
+    case gproc:where({c, l, erlmcp_connection_count}) of
+        undefined ->
+            error({failed_to_register_counter, timeout});
+        _ ->
+            ok
+    end,
+
     ok.
 
 cleanup(_) ->
@@ -178,7 +193,9 @@ test_connection_tracking() ->
 
     % Accept connections for different servers
     accept = erlmcp_connection_limiter:accept_connection(ServerId1),
+    timer:sleep(1),  % Small delay for counter update
     accept = erlmcp_connection_limiter:accept_connection(ServerId2),
+    timer:sleep(1),  % Small delay for counter update
 
     % Check per-server counts
     Count1 = erlmcp_connection_limiter:get_connection_count(ServerId1),
@@ -343,6 +360,7 @@ test_counter_increment() ->
 
     % Accept connection
     accept = erlmcp_connection_limiter:accept_connection(ServerId),
+    timer:sleep(1),  % Small delay for counter update
     CountAfter = erlmcp_connection_limiter:get_connection_count(),
 
     ?assertEqual(CountBefore + 1, CountAfter),
@@ -355,10 +373,12 @@ test_counter_decrement() ->
 
     % Accept connection
     accept = erlmcp_connection_limiter:accept_connection(ServerId),
+    timer:sleep(1),  % Small delay for counter update
     CountDuring = erlmcp_connection_limiter:get_connection_count(),
 
     % Release connection
     ok = erlmcp_connection_limiter:release_connection(ServerId),
+    timer:sleep(1),  % Small delay for counter update
     CountAfter = erlmcp_connection_limiter:get_connection_count(),
 
     ?assertEqual(CountDuring - 1, CountAfter).
@@ -369,8 +389,11 @@ test_per_server_counters() ->
 
     % Accept connections for different servers
     accept = erlmcp_connection_limiter:accept_connection(ServerId1),
+    timer:sleep(1),  % Small delay for counter update
     accept = erlmcp_connection_limiter:accept_connection(ServerId1),
+    timer:sleep(1),  % Small delay for counter update
     accept = erlmcp_connection_limiter:accept_connection(ServerId2),
+    timer:sleep(1),  % Small delay for counter update
 
     % Check per-server counts
     Count1 = erlmcp_connection_limiter:get_connection_count(ServerId1),
@@ -718,8 +741,14 @@ test_multiple_servers() ->
     AcceptCounts = [10, 20, 30],
 
     lists:foreach(fun({ServerId, Count}) ->
-        [erlmcp_connection_limiter:accept_connection(ServerId) || _ <- lists:seq(1, Count)]
+        [begin
+            erlmcp_connection_limiter:accept_connection(ServerId),
+            timer:sleep(1)  % Small delay for counter update
+        end || _ <- lists:seq(1, Count)]
     end, lists:zip(ServerIds, AcceptCounts)),
+
+    % Small delay to ensure all counters are updated
+    timer:sleep(10),
 
     % Verify per-server counts
     lists:foreach(fun({ServerId, ExpectedCount}) ->
