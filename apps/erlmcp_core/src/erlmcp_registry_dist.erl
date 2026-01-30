@@ -7,6 +7,7 @@
 -export([
     start_link/0,
     register_global/3,
+    register_global/4,
     unregister_global/1,
     whereis_global/1,
     list_global_servers/0,

@@ -15,6 +15,7 @@
 
 %% WebSocket handler exports
 -export([
+    init/3,  % Cowboy WebSocket handler callback
     websocket_handle/2,
     websocket_info/2
 ]).
@@ -192,7 +193,8 @@ init(Req, [TransportId, Config], _Opts) ->
 
     %% Collect connection info
     PeerAddr = cowboy_req:peer(Req),
-    Certificates = cowboy_req:certificates(Req),
+    % Note: cowboy_req:certificates/1 not available in this version
+    Certificates = undefined,
     ConnectionInfo = #{
         peer => PeerAddr,
         certificates => Certificates,

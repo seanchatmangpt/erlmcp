@@ -1,7 +1,7 @@
 -module(erlmcp_tool_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp/include/erlmcp.hrl").
+-include_lib("erlmcp_core/include/erlmcp.hrl").
 
 %%====================================================================
 %% Test Suite for erlmcp_tool Module

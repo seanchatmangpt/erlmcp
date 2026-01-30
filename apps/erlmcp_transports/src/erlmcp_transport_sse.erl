@@ -150,7 +150,9 @@ handle(Req, #{transport_id := TransportId} = State) ->
                     <<"POST">> ->
                         handle_post_request(Req, TransportId, State);
                     <<"DELETE">> ->
-                        erlmcp_http_delete_handler:handle_delete(Req, TransportId, State);
+                        % TODO: Implement DELETE handler
+                        ReqReply = cowboy_req:reply(501, #{}, <<"Not implemented">>, Req),
+                        {ok, ReqReply, State};
                     _ ->
                         ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
                         {ok, ReqReply, State}
@@ -387,12 +389,6 @@ format_sse_event(EventType, Data) ->
 -spec format_sse_event_with_id(binary(), binary(), binary()) -> binary().
 format_sse_event_with_id(EventType, EventId, Data) ->
     <<"id: ", EventId/binary, "\nevent: ", EventType/binary, "\ndata: ", Data/binary, "\n\n">>.
-
-%% @doc Format SSE comment for keepalive (standard SSE ping)
-%% SSE format: ": <comment>\n"
--spec format_sse_comment(binary()) -> binary().
-format_sse_comment(Comment) ->
-    <<": ", Comment/binary, "\n\n">>.
 
 %% @doc Generate session ID from client ID and timestamp
 -spec generate_session_id(binary()) -> binary().
