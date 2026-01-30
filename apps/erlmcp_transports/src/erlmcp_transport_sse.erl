@@ -212,7 +212,7 @@ handle_sse_stream(Req, TransportId, State) ->
             %% Send initial retry field
             InitialRetry = format_retry_field(get_retry_timeout()),
             Req2 = cowboy_req:stream_reply(200, Headers, Req),
-            cowboy_req:stream_body(InitialRetry, Req2),
+            cowboy_req:stream_body(InitialRetry, nofin, Req2),
 
             %% Register with registry
             RegistryPid = erlmcp_registry:get_pid(),
@@ -323,7 +323,7 @@ sse_event_loop(Req, StreamState, State) ->
             %% Send keep-alive ping comment (SSE standard)
             %% Format: ":\n\n" (colon followed by two newlines)
             PingData = format_sse_keepalive(),
-            cowboy_req:stream_body(PingData, Req),
+            cowboy_req:stream_body(PingData, nofin, Req),
             sse_event_loop(Req, StreamState, State);
 
         {send_event, EventType, Data} ->
@@ -336,7 +336,7 @@ sse_event_loop(Req, StreamState, State) ->
 
             %% Format as SSE event with event type and event ID
             EventData = format_sse_event_with_id(EventType, EventId, Data),
-            cowboy_req:stream_body(EventData, Req),
+            cowboy_req:stream_body(EventData, nofin, Req),
 
             %% Update state with new event number
             UpdatedSseState = SseState#sse_state{event_number = NewEventNumber},
@@ -347,7 +347,7 @@ sse_event_loop(Req, StreamState, State) ->
         close ->
             %% Close the stream with retry hint
             CloseData = format_close_event_with_retry(get_retry_timeout()),
-            cowboy_req:stream_body(CloseData, Req),
+            cowboy_req:stream_body(CloseData, fin, Req),
             {ok, Req, State};
 
         {disconnect, Reason} ->
@@ -357,14 +357,14 @@ sse_event_loop(Req, StreamState, State) ->
                 <<"reason">> => format_disconnect_reason(Reason),
                 <<"retry">> => get_retry_timeout()
             })),
-            cowboy_req:stream_body(ErrorData, Req),
+            cowboy_req:stream_body(ErrorData, fin, Req),
             {ok, Req, State};
 
         _ ->
             sse_event_loop(Req, StreamState, State)
     after 300000 ->
         %% 5 minute idle timeout - send retry hint before closing
-        cowboy_req:stream_body(format_retry_field(get_retry_timeout()), Req),
+        cowboy_req:stream_body(format_retry_field(get_retry_timeout()), fin, Req),
         {ok, Req, State}
     end.
 
@@ -472,14 +472,14 @@ handle_stream_resumption(Req, TransportId, SessionId, LastEventId, SpanCtx, SseS
                 <<"from_event_id">> => LastEventId,
                 <<"events_count">> => length(Events)
             })),
-            cowboy_req:stream_body(ResumptionNotice, Req),
+            cowboy_req:stream_body(ResumptionNotice, nofin, Req),
 
             %% Replay all stored events
             lists:foreach(
                 fun(EventData) ->
                     %% Use message event type for replayed data
                     EventBody = format_sse_event_with_id(?EVENT_TYPE_MESSAGE, <<"replay">>, EventData),
-                    cowboy_req:stream_body(EventBody, Req)
+                    cowboy_req:stream_body(EventBody, nofin, Req)
                 end,
                 Events
             ),
@@ -506,7 +506,7 @@ handle_stream_resumption(Req, TransportId, SessionId, LastEventId, SpanCtx, SseS
                 <<"message">> => <<"Failed to resume session">>,
                 <<"reason">> => format_term(Reason)
             })),
-            cowboy_req:stream_body(ErrorEvent, Req),
+            cowboy_req:stream_body(ErrorEvent, fin, Req),
             {ok, Req, State}
     end.
 

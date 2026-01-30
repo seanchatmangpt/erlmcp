@@ -4,6 +4,7 @@
 
 -include("erlmcp.hrl").
 -include("erlmcp_refusal.hrl").
+-include_lib("erlmcp_transports/include/erlmcp_transport_tcp.hrl").
 
 %% Note: We implement erlmcp_transport behavior but use different naming
 %% to avoid conflicts with gen_server callbacks
@@ -44,28 +45,7 @@
     pool_strategy => round_robin | least_loaded | random
 }.
 
--record(state, {
-    mode :: mode(),
-    transport_id :: atom() | undefined,
-    server_id :: atom() | undefined,
-    socket :: gen_tcp:socket() | undefined,
-    ranch_ref :: ranch:ref() | undefined,
-    owner :: pid() | undefined,
-    host :: inet:hostname() | inet:ip_address() | undefined,
-    port :: inet:port_number() | undefined,
-    options :: [gen_tcp:connect_option()],
-    buffer = <<>> :: binary(),
-    connected = false :: boolean(),
-    reconnect_timer :: reference() | undefined,
-    reconnect_attempts = 0 :: non_neg_integer(),
-    max_reconnect_attempts = infinity :: pos_integer() | infinity,
-    idle_timer :: reference() | undefined,
-    resource_monitor_timer :: reference() | undefined,
-    last_activity :: integer() | undefined,
-    bytes_sent = 0 :: non_neg_integer(),
-    bytes_received = 0 :: non_neg_integer(),
-    max_message_size :: pos_integer()  % Maximum allowed message size in bytes
-}).
+%%% State record definition is now in include/erlmcp_transport_tcp.hrl
 
 -type state() :: #state{}.
 
@@ -87,6 +67,9 @@
 -define(DEFAULT_POOL_MIN_SIZE, 10).
 -define(DEFAULT_POOL_MAX_SIZE, 1000).
 -define(DEFAULT_POOL_STRATEGY, round_robin).
+
+%% Connection lease timeout (prevents stuck connections)
+-define(CONNECTION_LEASE_TIMEOUT, 30000). %% 30 seconds max for handler init
 
 %%====================================================================
 %% Transport API (erlmcp_transport-like interface)
@@ -121,10 +104,15 @@ send(_State, _Data) ->
 
 %% @doc Close the transport
 -spec close(state()) -> ok.
-close(#state{mode = server, ranch_ref = RanchRef}) when RanchRef =/= undefined ->
+close(#state{mode = server, ranch_ref = RanchRef, server_id = ServerId})
+  when RanchRef =/= undefined ->
+    %% Release connection slot before stopping listener
+    catch erlmcp_connection_limiter:release_connection(ServerId),
     ranch:stop_listener(RanchRef),
     ok;
-close(#state{socket = Socket}) when Socket =/= undefined ->
+close(#state{socket = Socket, server_id = ServerId}) when Socket =/= undefined ->
+    %% Release connection slot on close
+    catch erlmcp_connection_limiter:release_connection(ServerId),
     gen_tcp:close(Socket),
     ok;
 close(_State) ->
@@ -159,6 +147,7 @@ connect(Pid, Opts) when is_pid(Pid), is_map(Opts) ->
 %%====================================================================
 
 %% @doc Start a ranch protocol handler for an accepted connection
+%% CRITICAL: Guaranteed cleanup of connection slot via try...catch/after
 -spec start_link(ranch:ref(), module(), map()) -> {ok, pid()} | {error, term()}.
 start_link(RanchRef, _Transport, ProtocolOpts) ->
     ServerId = maps:get(server_id, ProtocolOpts, undefined),
@@ -166,13 +155,33 @@ start_link(RanchRef, _Transport, ProtocolOpts) ->
     %% Check connection limit BEFORE accepting connection
     case erlmcp_connection_limiter:accept_connection(ServerId) of
         accept ->
-            {ok, Pid} = gen_server:start_link(?MODULE, #{
-                mode => server,
-                ranch_ref => RanchRef,
-                protocol_opts => ProtocolOpts,
-                server_id => ServerId
-            }, []),
-            {ok, Pid};
+            %% CRITICAL FIX: Use try...catch/after to guarantee slot release
+            %% If init fails for ANY reason, we MUST release the slot
+            try
+                case gen_server:start_link(?MODULE, #{
+                    mode => server,
+                    ranch_ref => RanchRef,
+                    protocol_opts => ProtocolOpts,
+                    server_id => ServerId
+                }, []) of
+                    {ok, Pid} = Result ->
+                        %% Monitor the handler process to detect early crashes
+                        erlang:monitor(process, Pid),
+                        Result;
+                    {error, Reason} = Error ->
+                        %% Handler failed to start, release slot immediately
+                        logger:warning("Handler init failed, releasing slot: ~p", [Reason]),
+                        erlmcp_connection_limiter:release_connection(ServerId),
+                        Error
+                end
+            catch
+                Type:Error:Stacktrace ->
+                    %% EXCEPTION during handler start - MUST release slot
+                    logger:error("Handler start exception ~p:~p, releasing slot~n~p",
+                               [Type, Error, Stacktrace]),
+                    erlmcp_connection_limiter:release_connection(ServerId),
+                    {error, {handler_start_exception, {Type, Error}}}
+            end;
         {error, too_many_connections} ->
             logger:warning("Rejecting connection: too many connections for server ~p", [ServerId]),
             {error, too_many_connections}
@@ -182,59 +191,82 @@ start_link(RanchRef, _Transport, ProtocolOpts) ->
 %% gen_server Callbacks
 %%====================================================================
 
-%% @doc Initialize gen_server
-init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts}) ->
-    %% This is a ranch protocol handler for an accepted connection
+%% @doc Initialize gen_server for accepted ranch connection
+init(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts} = InitArgs) ->
+    %% CRITICAL: Track that we own a connection slot
+    %% We'll release it in terminate/2
     process_flag(trap_exit, true),
 
-    Owner = maps:get(owner, ProtocolOpts, self()),
     ServerId = maps:get(server_id, ProtocolOpts, undefined),
     TransportId = maps:get(transport_id, ProtocolOpts, undefined),
 
-    %% Get the socket from ranch
-    {ok, Socket} = ranch:handshake(RanchRef),
+    %% CRITICAL: Set up connection lease timeout
+    %% If init takes too long, we'll kill ourselves to release the slot
+    LeaseTimer = erlang:send_after(?CONNECTION_LEASE_TIMEOUT, self(), connection_lease_timeout),
 
-    %% Set socket to active mode for message reception
-    ok = inet:setopts(Socket, [{active, true}]),
+    try
+        Owner = maps:get(owner, ProtocolOpts, self()),
 
-    %% Start idle timeout timer
-    IdleTimer = erlang:send_after(?IDLE_TIMEOUT, self(), cleanup_idle),
+        %% Get the socket from ranch (can fail)
+        {ok, Socket} = ranch:handshake(RanchRef),
 
-    %% Start resource monitor
-    ResourceMonitorTimer = erlang:send_after(?RESOURCE_MONITOR_INTERVAL, self(), check_resources),
+        %% Set socket to active mode for message reception
+        ok = inet:setopts(Socket, [{active, true}]),
 
-    %% Monitor connection for leak detection
-    ConnectionInfo = #{
-        socket => Socket,
-        server_id => ServerId,
-        transport_id => TransportId,
-        bytes_sent => 0,
-        bytes_received => 0
-    },
-    catch erlmcp_connection_monitor:monitor_connection(self(), ConnectionInfo),
+        %% Cancel lease timeout - we initialized successfully
+        erlang:cancel_timer(LeaseTimer),
+        flush_message(connection_lease_timeout),
 
-    %% Notify owner of connection
-    Owner ! {transport_connected, self()},
+        %% Start idle timeout timer
+        IdleTimer = erlang:send_after(?IDLE_TIMEOUT, self(), cleanup_idle),
 
-    %% Get max message size (default 16MB)
-    MaxMessageSize = get_max_message_size(),
+        %% Start resource monitor
+        ResourceMonitorTimer = erlang:send_after(?RESOURCE_MONITOR_INTERVAL, self(), check_resources),
 
-    {ok, #state{
-        mode = server,
-        transport_id = TransportId,
-        server_id = ServerId,
-        socket = Socket,
-        ranch_ref = RanchRef,
-        owner = Owner,
-        connected = true,
-        options = [],
-        idle_timer = IdleTimer,
-        resource_monitor_timer = ResourceMonitorTimer,
-        last_activity = erlang:monotonic_time(millisecond),
-        max_message_size = MaxMessageSize
-    }};
+        %% Monitor connection for leak detection
+        ConnectionInfo = #{
+            socket => Socket,
+            server_id => ServerId,
+            transport_id => TransportId,
+            bytes_sent => 0,
+            bytes_received => 0
+        },
+        catch erlmcp_connection_monitor:monitor_connection(self(), ConnectionInfo),
+
+        %% Notify owner of connection
+        Owner ! {transport_connected, self()},
+
+        %% Get max message size (default 16MB)
+        MaxMessageSize = get_max_message_size(),
+
+        %% Mark that we successfully initialized (flag for terminate/2)
+        {ok, #state{
+            mode = server,
+            transport_id = TransportId,
+            server_id = ServerId,
+            socket = Socket,
+            ranch_ref = RanchRef,
+            owner = Owner,
+            connected = true,
+            options = [],
+            idle_timer = IdleTimer,
+            resource_monitor_timer = ResourceMonitorTimer,
+            last_activity = erlang:monotonic_time(millisecond),
+            max_message_size = MaxMessageSize,
+            initialized = true  %% FLAG: Successfully initialized
+        }}
+    catch
+        Type:Error:Stacktrace ->
+            %% INIT FAILED - Clean up and release slot in terminate/2
+            logger:error("TCP handler init failed ~p:~p, slot will be released in terminate~n~p",
+                       [Type, Error, Stacktrace]),
+            erlang:cancel_timer(LeaseTimer),
+            flush_message(connection_lease_timeout),
+            {stop, {init_failed, {Type, Error}}}
+    end;
 
 init(#{mode := Mode} = Opts) ->
+    process_flag(trap_exit, true),
     case Mode of
         server -> init_server_listener(Opts);
         client -> init_client_process(Opts)
@@ -408,11 +440,45 @@ handle_info(check_resources, State) ->
     NewMonitorTimer = erlang:send_after(?RESOURCE_MONITOR_INTERVAL, self(), check_resources),
     {noreply, State#state{resource_monitor_timer = NewMonitorTimer}};
 
+handle_info(connection_lease_timeout, State) ->
+    %% Handler init took too long - kill ourselves to release slot
+    logger:error("Connection lease timeout during init, terminating to release slot"),
+    {stop, connection_lease_timeout, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @doc Cleanup on termination
+%% CRITICAL: Release connection slot on ALL termination paths
+terminate(Reason, #state{mode = server, server_id = ServerId, initialized = true} = State) ->
+    %% Successfully initialized handler - release slot
+    logger:info("TCP handler terminating: ~p, releasing connection slot for server ~p",
+               [Reason, ServerId]),
+    erlmcp_connection_limiter:release_connection(ServerId),
+    cleanup_common(State),
+    ok;
+
+terminate(Reason, #state{mode = server, server_id = ServerId} = State) ->
+    %% Init failed - slot was already released in start_link/3 or init/1
+    logger:warning("TCP handler terminating before init complete: ~p", [Reason]),
+    cleanup_common(State),
+    ok;
+
 terminate(_Reason, State) ->
+    %% Client mode or other - no slot to release
+    cleanup_common(State),
+    ok.
+
+%% @doc Handle code upgrades
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions - Cleanup
+%%====================================================================
+
+%% @doc Common cleanup for all termination paths
+cleanup_common(State) ->
     %% Unmonitor connection from leak detector
     catch erlmcp_connection_monitor:unmonitor_connection(self()),
 
@@ -437,9 +503,14 @@ terminate(_Reason, State) ->
     %% Note: ranch listener cleanup is handled separately via close/1
     ok.
 
-%% @doc Handle code upgrades
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+%% @doc Flush any pending message of the given type
+flush_message(MsgType) ->
+    receive
+        MsgType ->
+            ok
+    after 0 ->
+        ok
+    end.
 
 %%====================================================================
 %% Internal Functions - Initialization
@@ -447,8 +518,6 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Initialize server listener using ranch
 init_server_listener(Opts) ->
-    process_flag(trap_exit, true),
-
     Port = maps:get(port, Opts, 0),
     ServerId = maps:get(server_id, Opts, undefined),
     TransportId = maps:get(transport_id, Opts, undefined),
@@ -508,8 +577,6 @@ init_server_listener(Opts) ->
 
 %% @doc Initialize client process
 init_client_process(Opts) ->
-    process_flag(trap_exit, true),
-
     Host = maps:get(host, Opts),
     Port = maps:get(port, Opts),
     Owner = maps:get(owner, Opts, self()),

@@ -1,0 +1,140 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 885 │                  [1;31m{[0mnoreply, State};[0m
+     │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 895 │                                  [1;31m{[0mnoreply, State};[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 900 │                                  [1;31m{[0mnoreply, State}[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 906 │                          [1;31m{[0mnoreply, State}[0m
+     │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+     ┌─ apps/erlmcp_core/test/erlmcp_integration_SUITE.erl:
+     │
+ 179 │                              [1;31m{[0merror, Reason2}[0m
+     │                              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/test/erlmcp_integration_SUITE.erl:
+     │
+ 183 │                      [1;31m{[0merror, Reason1}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/test/erlmcp_integration_SUITE.erl:
+     │
+ 187 │              [1;31m{[0merror, Reason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl:
+     │
+ 370 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl:
+     │
+ 640 │  -[1;31mrecord[0m(mock_state, {[0m
+     │   [1;31m╰──[0m[0m Warning: record mock_state is unused
+
+
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_client_tests.beam"}
+[0m[0;32m===> Performing EUnit tests...
+[0m======================== EUnit ========================
+file "erlmcp_transports.app"
+  application 'erlmcp_transports'
+    module 'erlmcp_http_header_validator'
+    module 'erlmcp_origin_validator'
+    module 'erlmcp_pool_manager'
+      module 'erlmcp_pool_manager_tests'
+        erlmcp_pool_manager_tests: pool_creation_test...[0.003 s] ok
+        erlmcp_pool_manager_tests: checkout_checkin_test...ok
+        erlmcp_pool_manager_tests: multiple_checkouts_test...ok
+        erlmcp_pool_manager_tests: round_robin_strategy_test...ok
+        erlmcp_pool_manager_tests: least_loaded_strategy_test...ok
+        erlmcp_pool_manager_tests: random_strategy_test...ok
+        erlmcp_pool_manager_tests: pool_resize_grow_test...ok
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980056 ===
+Connection <0.4717.0> died: shutdown
+        =WARNING REPORT==== 29-Jan-2026::21:49:52.980102 ===
+Connection <0.4718.0> died: shutdown
+erlmcp_pool_manager_tests: pool_resize_shrink_test...=WARNING REPORT==== 29-Jan-2026::21:49:52.980146 ===
+Connection <0.4719.0> died: shutdown
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980171 ===
+Connection <0.4720.0> died: shutdown
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980190 ===
+Connection <0.4721.0> died: shutdown
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980220 ===
+Connection <0.4722.0> died: shutdown
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980251 ===
+Connection <0.4723.0> died: shutdown
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980267 ===
+Connection <0.4724.0> died: shutdown
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980286 ===
+Connection <0.4725.0> died: shutdown
+=WARNING REPORT==== 29-Jan-2026::21:49:52.980307 ===
+Connection <0.4726.0> died: shutdown
+ok
+        erlmcp_pool_manager_tests: pool_resize_bounds_test...ok
+        erlmcp_pool_manager_tests: metrics_tracking_test...ok
+        erlmcp_pool_manager_tests: utilization_calculation_test...ok
+        erlmcp_pool_manager_tests: -health_check_test_/0-fun-1-...[1.003 s] ok
+        erlmcp_pool_manager_tests: connection_recovery_test...=WARNING REPORT==== 29-Jan-2026::21:49:53.998068 ===
+Connection <0.4767.0> died: killed
+[0.105 s] ok
+        erlmcp_pool_manager_tests: -concurrent_checkouts_test_/0-fun-5-...[0.011 s] ok
+        erlmcp_pool_manager_tests: -high_concurrency_stress_test_/0-fun-7-...[0.010 s] ok
+        erlmcp_pool_manager_tests: pool_exhaustion_test...ok
+        erlmcp_pool_manager_tests: no_connections_available_test...ok
+        erlmcp_pool_manager_tests: invalid_checkin_test...=WARNING REPORT==== 29-Jan-2026::21:49:54.138921 ===
+Checkin of unknown connection: <0.5094.0>
+ok
+        erlmcp_pool_manager_tests: pool_lifecycle_test...[0.203 s] ok
+        [done in 1.392 s]
+      [done in 1.392 s]
+    module 'erlmcp_pool_strategy'
+    module 'erlmcp_security_headers'
+    module 'erlmcp_transport_behavior'
+    module 'erlmcp_transport_discovery'
+      module 'erlmcp_transport_discovery_tests'
+        erlmcp_transport_discovery_tests:68: -test_start_stop/1-fun-3-...ok
+        erlmcp_transport_discovery_tests:69: -test_start_stop/1-fun-1-...ok
+undefined
+*unexpected termination of test process*
+::killed
+
+=======================================================
+  Failed: 0.  Skipped: 0.  Passed: 21.
+One or more tests were cancelled.
+[0;31m===> [1mError running tests
+[0m[0m

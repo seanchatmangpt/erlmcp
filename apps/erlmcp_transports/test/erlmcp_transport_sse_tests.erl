@@ -7,7 +7,12 @@
 %%====================================================================
 
 setup() ->
-    {ok, _} = application:ensure_all_started(erlmcp),
+    %% Start required dependencies
+    {ok, _} = application:ensure_all_started(gproc),
+    {ok, _} = application:ensure_all_started(cowboy),
+    {ok, _} = application:ensure_all_started(erlmcp_core),
+    {ok, _} = application:ensure_all_started(erlmcp_observability),
+    {ok, _} = application:ensure_all_started(erlmcp_transports),
     ok.
 
 cleanup(_) ->

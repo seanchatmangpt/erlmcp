@@ -1,0 +1,523 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 885 │                  [1;31m{[0mnoreply, State};[0m
+     │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 895 │                                  [1;31m{[0mnoreply, State};[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 900 │                                  [1;31m{[0mnoreply, State}[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 906 │                          [1;31m{[0mnoreply, State}[0m
+     │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl:
+     │
+ 370 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;32m===> Running Common Test suites...
+[0m%%% erlmcp_transport_integration_SUITE: erlmcp_hooks starting...
+
+=ERROR REPORT==== 29-Jan-2026::19:50:00.160982 ===
+Failed to create Mnesia cache table: {bad_type,erlmcp_cache_l2,disc_copies,
+                                      nonode@nohost}
+=CRASH REPORT==== 29-Jan-2026::19:50:00.208165 ===
+  crasher:
+    initial call: erlmcp_process_monitor:init/1
+    pid: <0.4698.0>
+    registered_name: []
+    exception error: an error occurred when evaluating an arithmetic expression
+      in operator  div/2
+         called as 858993459.2 div 3072
+      in call from erlmcp_process_monitor:calculate_connection_capacity/2 (/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl, line 282)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [erlmcp_observability_sup,erlmcp_sup,<0.4621.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.4662.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 376
+    stack_size: 29
+    reductions: 111
+  neighbours:
+
+=SUPERVISOR REPORT==== 29-Jan-2026::19:50:00.208200 ===
+    supervisor: {local,erlmcp_observability_sup}
+    errorContext: start_error
+    reason: {badarith,
+                [{erlang,'div',
+                     [858993459.2,3072],
+                     [{error_info,#{module => erl_erts_errors}}]},
+                 {erlmcp_process_monitor,calculate_connection_capacity,2,
+                     [{file,
+                          "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                      {line,282}]},
+                 {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+                 {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+                 {proc_lib,init_p_do_apply,3,
+                     [{file,"proc_lib.erl"},{line,329}]}]}
+    offender: [{pid,undefined},
+               {id,erlmcp_process_monitor},
+               {mfargs,{erlmcp_process_monitor,start_link,[]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,worker}]
+
+=SUPERVISOR REPORT==== 29-Jan-2026::19:50:00.208290 ===
+    supervisor: {local,erlmcp_sup}
+    errorContext: start_error
+    reason: {shutdown,
+                {failed_to_start_child,erlmcp_process_monitor,
+                    {badarith,
+                        [{erlang,'div',
+                             [858993459.2,3072],
+                             [{error_info,#{module => erl_erts_errors}}]},
+                         {erlmcp_process_monitor,
+                             calculate_connection_capacity,2,
+                             [{file,
+                                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                              {line,282}]},
+                         {gen_server,init_it,2,
+                             [{file,"gen_server.erl"},{line,2229}]},
+                         {gen_server,init_it,6,
+                             [{file,"gen_server.erl"},{line,2184}]},
+                         {proc_lib,init_p_do_apply,3,
+                             [{file,"proc_lib.erl"},{line,329}]}]}}}
+    offender: [{pid,undefined},
+               {id,erlmcp_observability_sup},
+               {mfargs,{erlmcp_observability_sup,start_link,[]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,infinity},
+               {child_type,supervisor}]
+
+=INFO REPORT==== 29-Jan-2026::19:50:00.208448 ===
+    application: erlmcp_core
+    exited: {{shutdown,
+              {failed_to_start_child,erlmcp_observability_sup,
+               {shutdown,
+                {failed_to_start_child,erlmcp_process_monitor,
+                 {badarith,
+                  [{erlang,'div',
+                    [858993459.2,3072],
+                    [{error_info,#{module => erl_erts_errors}}]},
+                   {erlmcp_process_monitor,calculate_connection_capacity,2,
+                    [{file,
+                      "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                     {line,282}]},
+                   {gen_server,init_it,2,
+                    [{file,"gen_server.erl"},{line,2229}]},
+                   {gen_server,init_it,6,
+                    [{file,"gen_server.erl"},{line,2184}]},
+                   {proc_lib,init_p_do_apply,3,
+                    [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+             {erlmcp_app,start,[normal,[]]}}
+    type: temporary
+
+=CRASH REPORT==== 29-Jan-2026::19:50:00.208455 ===
+  crasher:
+    initial call: application_master:init/3
+    pid: <0.4620.0>
+    registered_name: []
+    exception exit: {{shutdown,
+                      {failed_to_start_child,erlmcp_observability_sup,
+                       {shutdown,
+                        {failed_to_start_child,erlmcp_process_monitor,
+                         {badarith,
+                          [{erlang,'div',
+                            [858993459.2,3072],
+                            [{error_info,#{module => erl_erts_errors}}]},
+                           {erlmcp_process_monitor,
+                            calculate_connection_capacity,2,
+                            [{file,
+                              "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                             {line,282}]},
+                           {gen_server,init_it,2,
+                            [{file,"gen_server.erl"},{line,2229}]},
+                           {gen_server,init_it,6,
+                            [{file,"gen_server.erl"},{line,2184}]},
+                           {proc_lib,init_p_do_apply,3,
+                            [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+                     {erlmcp_app,start,[normal,[]]}}
+      in function  application_master:init/3 (application_master.erl, line 143)
+    ancestors: [application_controller,<0.10.0>]
+    message_queue_len: 1
+    messages: [{'EXIT',<0.4621.0>,normal}]
+    links: [<0.45.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 610
+    stack_size: 29
+    reductions: 134
+  neighbours:
+
+=INFO REPORT==== 29-Jan-2026::19:50:00.208593 ===
+    application: jesse
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 29-Jan-2026::19:50:00.208652 ===
+    application: jsx
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 29-Jan-2026::19:50:00.209804 ===
+    application: cowboy
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 29-Jan-2026::19:50:00.209840 ===
+    application: poolboy
+    exited: stopped
+    type: temporary
+
+
+%%% erlmcp_transport_integration_SUITE ==> init_per_suite: [0;31mFAILED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;31m{{badmatch,
+  {error,
+   {erlmcp_core,
+    {{shutdown,
+      {failed_to_start_child,erlmcp_observability_sup,
+       {shutdown,
+        {failed_to_start_child,erlmcp_process_monitor,
+         {badarith,
+          [{erlang,'div',
+            [858993459.2,3072],
+            [{error_info,#{module => erl_erts_errors}}]},
+           {erlmcp_process_monitor,calculate_connection_capacity,2,
+            [{file,
+              "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+             {line,282}]},
+           {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+           {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+           {proc_lib,init_p_do_apply,3,
+            [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+     {erlmcp_app,start,[normal,[]]}}}}},
+ [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+   [{file,
+     "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+    {line,42}]},
+  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+  {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1391}]},
+  {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> application_startup: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> supervisor_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> gproc_registration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> multi_transport_coordination: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> transport_message_routing: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> tcp_client_server_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> transport_failover: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_transport_integration_SUITE ==> end_per_suite: [0;35mSKIPPED[0m[0m
+%%% erlmcp_transport_integration_SUITE ==> [0;35m{tc_auto_skip,
+ {failed,
+  {erlmcp_transport_integration_SUITE,init_per_suite,
+   {'EXIT',
+    {{badmatch,
+      {error,
+       {erlmcp_core,
+        {{shutdown,
+          {failed_to_start_child,erlmcp_observability_sup,
+           {shutdown,
+            {failed_to_start_child,erlmcp_process_monitor,
+             {badarith,
+              [{erlang,'div',
+                [858993459.2,3072],
+                [{error_info,#{module => erl_erts_errors}}]},
+               {erlmcp_process_monitor,calculate_connection_capacity,2,
+                [{file,
+                  "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_process_monitor.erl"},
+                 {line,282}]},
+               {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+               {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+               {proc_lib,init_p_do_apply,3,
+                [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+         {erlmcp_app,start,[normal,[]]}}}}},
+     [{erlmcp_transport_integration_SUITE,init_per_suite,1,
+       [{file,
+         "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_integration_SUITE.erl"},
+        {line,42}]},
+      {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+      {test_server,run_test_case_eval1,6,
+       [{file,"test_server.erl"},{line,1391}]},
+      {test_server,run_test_case_eval,9,
+       [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+EXPERIMENTAL: Writing retry specification at /Users/sac/erlmcp/_build/test/logs/retry.spec
+              call rebar3 ct with '--retry' to re-run failing cases.
+Skipped 7 (0, 7) tests. Passed 0 tests. 
+Results written to "/Users/sac/erlmcp/_build/test/logs/index.html".
+[0;31m===> [1mFailures occurred running tests: 7
+[0m[0m

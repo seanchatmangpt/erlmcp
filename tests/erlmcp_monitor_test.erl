@@ -61,25 +61,27 @@ test_monitor_startup(Config) ->
 test_health_checks(_Config) ->
     % Wait for initial health check
     timer:sleep(200),
-    
+
     {ok, HealthStatus} = erlmcp_monitor:get_health_status(),
-    
+    Components = maps:get(components, HealthStatus),
+    Overall = maps:get(overall, HealthStatus),
+    Score = maps:get(score, HealthStatus),
+
     [
         % Test health status structure
         ?_assert(maps:is_key(overall, HealthStatus)),
         ?_assert(maps:is_key(score, HealthStatus)),
         ?_assert(maps:is_key(components, HealthStatus)),
         ?_assert(maps:is_key(timestamp, HealthStatus)),
-        
+
         % Test health score is within valid range
-        ?_assert(maps:get(score, HealthStatus) >= 0.0),
-        ?_assert(maps:get(score, HealthStatus) =< 1.0),
-        
+        ?_assert(Score >= 0.0),
+        ?_assert(Score =< 1.0),
+
         % Test overall status is valid
-        ?_assert(lists:member(maps:get(overall, HealthStatus), [healthy, degraded, unhealthy])),
-        
+        ?_assert(lists:member(Overall, [healthy, degraded, unhealthy])),
+
         % Test components are checked
-        Components = maps:get(components, HealthStatus),
         ?_assert(maps:is_key(memory, Components)),
         ?_assert(maps:is_key(processes, Components))
     ].
@@ -87,21 +89,24 @@ test_health_checks(_Config) ->
 test_metrics_collection(_Config) ->
     % Wait for metrics collection
     timer:sleep(200),
-    
+
     {ok, Metrics} = erlmcp_monitor:get_metrics(),
-    
+    ProcessCount = maps:get(process_count, Metrics),
+    MemoryTotal = maps:get(memory_total, Metrics),
+    MemoryUsagePercent = maps:get(memory_usage_percent, Metrics),
+
     [
         % Test metrics structure
         ?_assert(maps:is_key(timestamp, Metrics)),
         ?_assert(maps:is_key(process_count, Metrics)),
         ?_assert(maps:is_key(memory_total, Metrics)),
         ?_assert(maps:is_key(memory_usage_percent, Metrics)),
-        
+
         % Test metric values are reasonable
-        ?_assert(maps:get(process_count, Metrics) > 0),
-        ?_assert(maps:get(memory_total, Metrics) > 0),
-        ?_assert(maps:get(memory_usage_percent, Metrics) >= 0.0),
-        ?_assert(maps:get(memory_usage_percent, Metrics) =< 100.0)
+        ?_assert(ProcessCount > 0),
+        ?_assert(MemoryTotal > 0),
+        ?_assert(MemoryUsagePercent >= 0.0),
+        ?_assert(MemoryUsagePercent =< 100.0)
     ].
 
 test_alert_rules(_Config) ->
@@ -257,7 +262,7 @@ teardown_dashboard(_Config) ->
     erlmcp_monitor_dashboard:stop_dashboard(),
     ok.
 
-test_dashboard_data_creation(Config) ->
+test_dashboard_data_creation(_Config) ->
     % Add some test data
     HealthStatus = #{
         overall => healthy,
@@ -319,23 +324,25 @@ test_monitoring_performance() ->
         check_interval_ms => 10, % Very fast for stress test
         dashboard_enabled => false
     },
-    
+
     {ok, _Pid} = erlmcp_monitor_sup:start_link(Config),
-    
+
     % Let it run for a few seconds
     timer:sleep(3000),
-    
+
     % Check that it's still responsive
     {ok, HealthStatus} = erlmcp_monitor:get_health_status(),
     {ok, Metrics} = erlmcp_monitor:get_metrics(),
-    
+    HealthTimestamp = maps:get(timestamp, HealthStatus),
+    MetricsTimestamp = maps:get(timestamp, Metrics),
+
     erlmcp_monitor_sup:stop_monitoring(),
-    
+
     [
         ?_assert(maps:is_key(timestamp, HealthStatus)),
         ?_assert(maps:is_key(timestamp, Metrics)),
-        ?_assert(maps:get(timestamp, HealthStatus) > 0),
-        ?_assert(maps:get(timestamp, Metrics) > 0)
+        ?_assert(HealthTimestamp > 0),
+        ?_assert(MetricsTimestamp > 0)
     ].
 
 test_memory_usage() ->
@@ -397,16 +404,18 @@ teardown_integration(_Config) ->
 test_end_to_end_monitoring(_Config) ->
     % Test the full monitoring pipeline
     timer:sleep(500), % Let monitoring run
-    
+
     {ok, HealthStatus} = erlmcp_monitor:get_health_status(),
     {ok, Metrics} = erlmcp_monitor:get_metrics(),
-    
+    HealthTimestamp = maps:get(timestamp, HealthStatus),
+    MetricsTimestamp = maps:get(timestamp, Metrics),
+
     [
         % Test that monitoring is working end-to-end
         ?_assert(is_map(HealthStatus)),
         ?_assert(is_map(Metrics)),
-        ?_assert(maps:get(timestamp, HealthStatus) > 0),
-        ?_assert(maps:get(timestamp, Metrics) > 0)
+        ?_assert(HealthTimestamp > 0),
+        ?_assert(MetricsTimestamp > 0)
     ].
 
 test_alert_triggering(_Config) ->

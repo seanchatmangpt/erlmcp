@@ -1,0 +1,735 @@
+-module(erlmcp_transport_tcp_tests).
+
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("erlmcp_transports/include/erlmcp_transport_tcp.hrl").
+
+%%====================================================================
+%% Test Fixtures
+%%====================================================================
+
+setup_client() ->
+    application:ensure_all_started(ranch),
+    Owner = self(),
+    Opts = #{
+        mode => client,
+        host => "localhost",
+        port => 9999,
+        owner => Owner,
+        transport_id => test_client_transport,
+        server_id => test_server,
+        max_reconnect_attempts => 3
+    },
+    {ok, Pid} = erlmcp_transport_tcp:start_client(Opts),
+    {Pid, Owner}.
+
+setup_server() ->
+    application:ensure_all_started(ranch),
+    %% Start gproc for connection limiter
+    application:ensure_started(gproc),
+    %% Start connection limiter for server mode tests
+    {ok, _LimiterPid} = erlmcp_connection_limiter:start_link(),
+    Owner = self(),
+    %% Use unique ID to avoid ranch ref conflicts
+    UniqueId = erlang:unique_integer([positive]),
+    Opts = #{
+        mode => server,
+        port => 0,  % Use random port
+        owner => Owner,
+        transport_id => list_to_atom("test_server_transport_" ++ integer_to_list(UniqueId)),
+        server_id => list_to_atom("test_server_" ++ integer_to_list(UniqueId)),
+        num_acceptors => 5,
+        max_connections => 100
+    },
+    {ok, Pid} = erlmcp_transport_tcp:start_server(Opts),
+    timer:sleep(100),  % Give server time to start
+    {Pid, Owner}.
+
+cleanup(Pid) when is_pid(Pid) ->
+    case erlang:is_process_alive(Pid) of
+        true ->
+            unlink(Pid),
+            exit(Pid, kill),
+            timer:sleep(50);
+        false ->
+            ok
+    end,
+    %% Stop connection limiter if it's running
+    catch erlmcp_connection_limiter:stop();
+cleanup(_) ->
+    catch erlmcp_connection_limiter:stop(),
+    ok.
+
+%%====================================================================
+%% Client Mode Tests
+%%====================================================================
+
+client_start_test_() ->
+    {setup,
+     fun() -> application:ensure_all_started(ranch) end,
+     fun(_) -> ok end,
+     [
+      {"Start client with valid options",
+       fun() ->
+           Opts = #{
+               mode => client,
+               host => "localhost",
+               port => 9999,
+               owner => self(),
+               transport_id => test_transport,
+               server_id => test_server
+           },
+           {ok, Pid} = erlmcp_transport_tcp:start_client(Opts),
+           ?assert(is_pid(Pid)),
+           ?assert(erlang:is_process_alive(Pid)),
+           cleanup(Pid)
+       end},
+
+      {"Client init creates proper process",
+       fun() ->
+           Opts = #{
+               mode => client,
+               host => "127.0.0.1",
+               port => 8888,
+               owner => self(),
+               keepalive => true,
+               nodelay => true,
+               buffer_size => 32768
+           },
+           {ok, Pid} = erlmcp_transport_tcp:start_client(Opts),
+           %% Verify process is alive (observable behavior)
+           ?assert(is_pid(Pid)),
+           ?assert(erlang:is_process_alive(Pid)),
+           cleanup(Pid)
+       end}
+     ]}.
+
+client_connection_failure_test_() ->
+    {timeout, 10,
+     fun() ->
+         {Pid, _Owner} = setup_client(),
+
+         %% Client should attempt to connect to non-existent server
+         %% and fail, then schedule reconnection
+         timer:sleep(200),
+
+         %% Verify process is still alive (handling reconnection - observable behavior)
+         ?assert(erlang:is_process_alive(Pid)),
+
+         %% Verify no connection established (no transport_connected message)
+         receive
+             {transport_connected, Pid} ->
+                 ?assert(false, "Should not connect to non-existent server")
+         after 100 ->
+             ok
+         end,
+
+         cleanup(Pid)
+     end}.
+
+client_send_not_connected_test_() ->
+    {setup,
+     fun setup_client/0,
+     fun({Pid, _}) -> cleanup(Pid) end,
+     fun({Pid, _}) ->
+         {"Send fails when not connected",
+          fun() ->
+              timer:sleep(100),  % Wait for initial connection attempt
+              Result = gen_server:call(Pid, {send, <<"test">>}),
+              ?assertEqual({error, not_connected}, Result)
+          end}
+     end}.
+
+%%====================================================================
+%% Server Mode Tests
+%%====================================================================
+
+server_start_test_() ->
+    {setup,
+     fun() ->
+         application:ensure_all_started(ranch),
+         application:ensure_started(gproc),
+         {ok, _LimiterPid} = erlmcp_connection_limiter:start_link()
+     end,
+     fun(_) -> catch erlmcp_connection_limiter:stop() end,
+     [
+      {"Start server with valid options",
+       fun() ->
+           Opts = #{
+               mode => server,
+               port => 0,
+               owner => self(),
+               transport_id => test_server_transport,
+               server_id => test_server
+           },
+           {ok, Pid} = erlmcp_transport_tcp:start_server(Opts),
+           ?assert(is_pid(Pid)),
+           ?assert(erlang:is_process_alive(Pid)),
+
+           %% Verify server can accept connections (observable behavior)
+           %% We can reconstruct the ranch_ref from the options we passed
+           RanchRef = list_to_atom("test_server_transport_test_server_ranch"),
+
+           %% Verify ranch listener is running (observable via ranch API)
+           Status = ranch:get_status(RanchRef),
+           ?assert(Status =:= running orelse Status =:= {ok, listening}),
+
+           %% Verify we got a port assigned (observable via ranch)
+           Port = ranch:get_port(RanchRef),
+           ?assert(is_integer(Port)),
+           ?assert(Port > 0),
+
+           cleanup(Pid),
+           timer:sleep(100)  % Give ranch time to cleanup
+       end},
+
+      {"Server state initialization",
+       fun() ->
+           Opts = #{
+               mode => server,
+               port => 0,
+               owner => self(),
+               transport_id => my_transport,
+               server_id => my_server,
+               num_acceptors => 15,
+               max_connections => 500
+           },
+           {ok, Pid} = erlmcp_transport_tcp:start_server(Opts),
+
+           %% Verify server process is alive and configured (observable behavior)
+           ?assert(is_pid(Pid)),
+           ?assert(erlang:is_process_alive(Pid)),
+
+           cleanup(Pid),
+           timer:sleep(100)
+       end}
+     ]}.
+
+server_ranch_integration_test_() ->
+    {timeout, 15,
+     fun() ->
+         application:ensure_all_started(ranch),
+         application:ensure_started(gproc),
+         {ok, _LimiterPid} = erlmcp_connection_limiter:start_link(),
+
+         %% Start server
+         Opts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => ranch_test_transport,
+             server_id => ranch_test_server
+         },
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(Opts),
+
+         %% Reconstruct ranch_ref from options (observable: we know what we passed)
+         RanchRef = list_to_atom("ranch_test_transport_ranch_test_server_ranch"),
+         Port = ranch:get_port(RanchRef),
+
+         %% Verify ranch listener info (ranch 2.x returns 'running' atom)
+         Status = ranch:get_status(RanchRef),
+         ?assert(Status =:= running orelse Status =:= {ok, listening}),
+         ?assert(is_integer(Port)),
+         ?assert(Port > 0),
+
+         %% Connect a client
+         {ok, ClientSocket} = gen_tcp:connect("localhost", Port,
+                                               [binary, {active, false},
+                                                {packet, line}], 5000),
+
+         %% Verify connection was accepted by ranch
+         timer:sleep(200),  % Give ranch time to accept
+
+         %% Send data from client
+         ok = gen_tcp:send(ClientSocket, <<"hello server\n">>),
+
+         %% Cleanup
+         gen_tcp:close(ClientSocket),
+         cleanup(ServerPid),
+         catch erlmcp_connection_limiter:stop(),
+         timer:sleep(100)
+     end}.
+
+%%====================================================================
+%% Client-Server Integration Tests
+%%====================================================================
+
+client_server_integration_test_() ->
+    {timeout, 15,
+     fun() ->
+         application:ensure_all_started(ranch),
+         application:ensure_started(gproc),
+         {ok, _LimiterPid} = erlmcp_connection_limiter:start_link(),
+
+         %% Start server
+         ServerOpts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => integration_server_transport,
+             server_id => integration_server
+         },
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
+
+         %% Reconstruct ranch_ref from options (observable: we know what we passed)
+         RanchRef = list_to_atom("integration_server_transport_integration_server_ranch"),
+         Port = ranch:get_port(RanchRef),
+
+         %% Start client pointing to server
+         ClientOpts = #{
+             mode => client,
+             host => "localhost",
+             port => Port,
+             owner => self(),
+             transport_id => integration_client_transport,
+             server_id => integration_server,
+             max_reconnect_attempts => 5
+         },
+         {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
+
+         %% Wait for connection (observable behavior - message receipt)
+         receive
+             {transport_connected, ClientPid} ->
+                 ?assert(true)
+         after 5000 ->
+             ?assert(false, "Client connection timeout")
+         end,
+
+         %% Wait for server to receive connection (before sending message)
+         ServerHandler = receive
+             {transport_connected, Handler} when is_pid(Handler), Handler =/= ClientPid ->
+                 Handler
+         after 3000 ->
+             error("Server did not receive connection")
+         end,
+
+         %% Now send message from client
+         Message = <<"test message">>,
+         ok = gen_server:call(ClientPid, {send, Message}),
+
+         %% Verify message received at server handler
+         receive
+             {transport_message, ReceivedMsg} ->
+                 ?assertEqual(Message, ReceivedMsg)
+         after 3000 ->
+             ?assert(false, "Message not received")
+         end,
+
+         %% Cleanup
+         cleanup(ClientPid),
+         cleanup(ServerHandler),
+         cleanup(ServerPid),
+         catch erlmcp_connection_limiter:stop(),
+         timer:sleep(100)
+     end}.
+
+%%====================================================================
+%% Buffer Management Tests
+%%====================================================================
+
+%% Helper to test buffer message extraction
+extract_messages_helper(Buffer) ->
+    extract_messages_helper(Buffer, []).
+
+extract_messages_helper(Buffer, Acc) ->
+    case binary:split(Buffer, <<"\n">>) of
+        [_] ->
+            {lists:reverse(Acc), Buffer};
+        [Message, Rest] ->
+            extract_messages_helper(Rest, [Message | Acc])
+    end.
+
+message_extraction_test_() ->
+    [
+     {"Extract single complete message",
+      fun() ->
+          Buffer = <<"hello\n">>,
+          {Messages, Remaining} = extract_messages_helper(Buffer),
+          ?assertEqual([<<"hello">>], Messages),
+          ?assertEqual(<<>>, Remaining)
+      end},
+
+     {"Extract multiple complete messages",
+      fun() ->
+          Buffer = <<"msg1\nmsg2\nmsg3\n">>,
+          {Messages, Remaining} = extract_messages_helper(Buffer),
+          ?assertEqual([<<"msg1">>, <<"msg2">>, <<"msg3">>], Messages),
+          ?assertEqual(<<>>, Remaining)
+      end},
+
+     {"Incomplete message remains in buffer",
+      fun() ->
+          Buffer = <<"hello\nworld">>,
+          {Messages, Remaining} = extract_messages_helper(Buffer),
+          ?assertEqual([<<"hello">>], Messages),
+          ?assertEqual(<<"world">>, Remaining)
+      end},
+
+     {"No complete message",
+      fun() ->
+          Buffer = <<"incomplete">>,
+          {Messages, Remaining} = extract_messages_helper(Buffer),
+          ?assertEqual([], Messages),
+          ?assertEqual(<<"incomplete">>, Remaining)
+      end},
+
+     {"Empty buffer",
+      fun() ->
+          Buffer = <<>>,
+          {Messages, Remaining} = extract_messages_helper(Buffer),
+          ?assertEqual([], Messages),
+          ?assertEqual(<<>>, Remaining)
+      end}
+    ].
+
+%%====================================================================
+%% Transport Behavior Tests
+%%====================================================================
+
+transport_behavior_init_test_() ->
+    [
+     {"Init with client mode",
+      fun() ->
+          Opts = #{
+              mode => client,
+              host => "localhost",
+              port => 9999,
+              owner => self()
+          },
+          {ok, State} = erlmcp_transport_tcp:transport_init(Opts),
+          ?assertEqual(client, State#state.mode),
+          ?assertEqual("localhost", State#state.host)
+      end},
+
+     {"Init with server mode",
+      fun() ->
+          application:ensure_all_started(ranch),
+          Opts = #{
+              mode => server,
+              port => 0,
+              owner => self(),
+              transport_id => behavior_test_transport,
+              server_id => behavior_test_server
+          },
+          {ok, State} = erlmcp_transport_tcp:transport_init(Opts),
+          ?assertEqual(server, State#state.mode),
+          ?assert(State#state.connected),
+
+          %% Cleanup
+          erlmcp_transport_tcp:close(State),
+          timer:sleep(100)
+      end}
+    ].
+
+transport_behavior_send_test_() ->
+    [
+     {"Send with undefined socket",
+      fun() ->
+          State = #state{socket = undefined},
+          Result = erlmcp_transport_tcp:send(State, <<"test">>),
+          ?assertEqual({error, not_connected}, Result)
+      end},
+
+     {"Send with socket but not connected",
+      fun() ->
+          %% Create a dummy socket state (won't actually send)
+          State = #state{socket = make_ref(), connected = false},
+          Result = erlmcp_transport_tcp:send(State, <<"test">>),
+          ?assertEqual({error, not_connected}, Result)
+      end}
+    ].
+
+transport_behavior_close_test_() ->
+    [
+     {"Close client connection",
+      fun() ->
+          State = #state{mode = client, socket = undefined},
+          Result = erlmcp_transport_tcp:close(State),
+          ?assertEqual(ok, Result)
+      end},
+
+     {"Close server with ranch",
+      fun() ->
+          application:ensure_all_started(ranch),
+          application:ensure_started(gproc),
+          {ok, _LimiterPid} = erlmcp_connection_limiter:start_link(),
+
+          %% Start a server
+          Opts = #{
+              mode => server,
+              port => 0,
+              owner => self(),
+              transport_id => close_test_transport,
+              server_id => close_test_server
+          },
+          {ok, State} = erlmcp_transport_tcp:transport_init(Opts),
+          RanchRef = State#state.ranch_ref,
+
+          %% Verify ranch listener is running (ranch 2.x returns 'running', not {ok, listening})
+          Status = ranch:get_status(RanchRef),
+          ?assert(Status =:= running orelse Status =:= {ok, listening}),
+
+          %% Close the server
+          ok = erlmcp_transport_tcp:close(State),
+
+          timer:sleep(100),
+
+          %% Verify ranch listener is stopped
+          ?assertError(badarg, ranch:get_status(RanchRef)),
+
+          %% Cleanup
+          catch erlmcp_connection_limiter:stop()
+      end}
+    ].
+
+%%====================================================================
+%% Reconnection Tests
+%%====================================================================
+
+%% Helper to calculate backoff (mirrors internal implementation)
+calculate_backoff_helper(Attempts) ->
+    InitialDelay = 1000,
+    MaxDelay = 60000,
+    BaseDelay = min(InitialDelay * (1 bsl Attempts), MaxDelay),
+    Jitter = rand:uniform(BaseDelay div 4),
+    BaseDelay + Jitter.
+
+reconnection_backoff_test_() ->
+    [
+     {"Backoff increases exponentially",
+      fun() ->
+          Delay0 = calculate_backoff_helper(0),
+          Delay1 = calculate_backoff_helper(1),
+          Delay2 = calculate_backoff_helper(2),
+          Delay3 = calculate_backoff_helper(3),
+
+          %% Delays should generally increase
+          ?assert(Delay1 > Delay0),
+          ?assert(Delay2 > Delay1),
+          ?assert(Delay3 > Delay2),
+
+          %% Should have reasonable bounds (with jitter)
+          ?assert(Delay0 >= 1000),
+          ?assert(Delay0 =< 1500),
+          ?assert(Delay3 >= 8000),
+          ?assert(Delay3 =< 12000)
+      end},
+
+     {"Backoff caps at max delay",
+      fun() ->
+          Delay10 = calculate_backoff_helper(10),
+          Delay20 = calculate_backoff_helper(20),
+
+          %% Both should be capped near max delay (60s + jitter)
+          ?assert(Delay10 >= 60000),
+          ?assert(Delay10 =< 75000),
+          ?assert(Delay20 >= 60000),
+          ?assert(Delay20 =< 75000)
+      end}
+    ].
+
+reconnection_max_attempts_test_() ->
+    {timeout, 15,
+     fun() ->
+         %% Start client with max 2 reconnection attempts
+         Opts = #{
+             mode => client,
+             host => "localhost",
+             port => 9999,  % Non-existent server
+             owner => self(),
+             max_reconnect_attempts => 2
+         },
+         {ok, Pid} = erlmcp_transport_tcp:start_client(Opts),
+
+         %% Wait for initial connection attempt + 2 reconnections
+         %% Initial delay ~1s, second ~2s = ~3s total + overhead
+         timer:sleep(4000),
+
+         %% Verify no connection established (observable behavior)
+         receive
+             {transport_connected, Pid} ->
+                 ?assert(false, "Should not connect to non-existent server")
+         after 100 ->
+             ok
+         end,
+
+         cleanup(Pid)
+     end}.
+
+%%====================================================================
+%% Error Handling Tests
+%%====================================================================
+
+tcp_error_handling_test_() ->
+    {timeout, 10,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Start server
+         {ServerPid, _} = setup_server(),
+
+         %% Use setup_server's port extraction logic (observable via messages)
+         %% We need to get the port from the server that was started
+         %% Since setup_server uses port=0, we need to find the actual port
+         %% Use a unique atom to reconstruct the ranch_ref
+         UniqueId = receive
+             {transport_connected, Handler} when is_pid(Handler) ->
+                 %% This is the handler, extract from its registered name
+                 {dictionary, Dict} = erlang:process_info(Handler, dictionary),
+                 case lists:keyfind(server_id, 1, Dict) of
+                     false -> "unknown";
+                     {_, Val} -> atom_to_list(Val)
+                 end
+         after 100 ->
+             "fallback"
+         end,
+
+         %% Get all ranch listeners and find ours
+         Listeners = ranch:listeners(),
+         RanchRef = case lists:filter(fun(R) ->
+             atom_to_list(R) =/= "erlmcp_connection_limiter"
+         end, Listeners) of
+             [Ref | _] -> Ref;
+             [] -> error("No ranch listener found")
+         end,
+         Port = ranch:get_port(RanchRef),
+
+         %% Connect client
+         ClientOpts = #{
+             mode => client,
+             host => "localhost",
+             port => Port,
+             owner => self()
+         },
+         {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
+
+         %% Wait for connection
+         receive {transport_connected, ClientPid} -> ok
+         after 2000 -> error("Connection timeout")
+         end,
+
+         %% Get server handler
+         ServerHandler = receive
+             {transport_connected, Handler} -> Handler
+         after 2000 ->
+             error("Server did not receive connection")
+         end,
+
+         %% Close server to trigger tcp_closed on client
+         cleanup(ServerHandler),
+
+         %% Client should receive disconnect notification (observable behavior)
+         receive
+             {transport_disconnected, ClientPid, _Reason} -> ok
+         after 2000 ->
+             ?assert(false, "Client did not detect disconnection")
+         end,
+
+         cleanup(ClientPid),
+         cleanup(ServerPid),
+         timer:sleep(100)
+     end}.
+
+%%====================================================================
+%% Concurrency Tests
+%%====================================================================
+
+multiple_clients_test_() ->
+    {timeout, 20,
+     fun() ->
+         application:ensure_all_started(ranch),
+         application:ensure_started(gproc),
+         {ok, _LimiterPid} = erlmcp_connection_limiter:start_link(),
+
+         %% Start server
+         ServerOpts = #{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => multi_client_transport,
+             server_id => multi_client_server,
+             max_connections => 10
+         },
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
+
+         %% Reconstruct ranch_ref from options (observable: we know what we passed)
+         RanchRef = list_to_atom("multi_client_transport_multi_client_server_ranch"),
+         Port = ranch:get_port(RanchRef),
+
+         %% Start multiple clients
+         NumClients = 5,
+         Clients = [begin
+             Opts = #{
+                 mode => client,
+                 host => "localhost",
+                 port => Port,
+                 owner => self(),
+                 transport_id => list_to_atom("client_" ++ integer_to_list(N))
+             },
+             {ok, Pid} = erlmcp_transport_tcp:start_client(Opts),
+             Pid
+         end || N <- lists:seq(1, NumClients)],
+
+         %% Wait for all clients to connect (observable behavior - message receipts)
+         [receive {transport_connected, CPid} -> ok
+          after 3000 -> error({client_timeout, CPid})
+          end || CPid <- Clients],
+
+         %% Cleanup
+         [cleanup(CPid) || CPid <- Clients],
+         cleanup(ServerPid),
+         timer:sleep(100)
+     end}.
+
+%%====================================================================
+%% Ranch Protocol Handler Tests
+%%====================================================================
+
+ranch_protocol_handler_test_() ->
+    {timeout, 10,
+     fun() ->
+         application:ensure_all_started(ranch),
+
+         %% Start server with known transport_id and server_id
+         UniqueId = erlang:unique_integer([positive]),
+         TransportId = list_to_atom("protocol_test_transport_" ++ integer_to_list(UniqueId)),
+         ServerId = list_to_atom("protocol_test_server_" ++ integer_to_list(UniqueId)),
+
+         {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
+             mode => server,
+             port => 0,
+             owner => self(),
+             transport_id => TransportId,
+             server_id => ServerId
+         }),
+
+         %% Reconstruct ranch_ref from options (observable: we know what we passed)
+         RanchRef = list_to_atom(atom_to_list(TransportId) ++ "_" ++ atom_to_list(ServerId) ++ "_ranch"),
+         Port = ranch:get_port(RanchRef),
+
+         %% Verify ranch protocol is registered (ranch 2.x returns 'running' atom)
+         Status = ranch:get_status(RanchRef),
+         ?assert(Status =:= running orelse Status =:= {ok, listening}),
+
+         %% Connect a raw TCP client
+         {ok, Socket} = gen_tcp:connect("localhost", Port,
+                                        [binary, {active, false}, {packet, line}],
+                                        5000),
+
+         %% Wait for protocol handler to start
+         timer:sleep(200),
+
+         %% Server should notify owner of new connection
+         Handler = receive
+             {transport_connected, H} -> H
+         after 2000 ->
+             error("No handler notification received")
+         end,
+
+         ?assert(is_pid(Handler)),
+         ?assert(erlang:is_process_alive(Handler)),
+
+         %% Cleanup
+         gen_tcp:close(Socket),
+         timer:sleep(100),
+         cleanup(ServerPid)
+     end}.

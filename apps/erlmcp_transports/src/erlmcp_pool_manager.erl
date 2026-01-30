@@ -338,6 +338,23 @@ do_checkout(State, Timeout) ->
                         false ->
                             {error, connection_not_found, State}
                     end;
+                {error, no_idle_connections} ->
+                    %% No idle connections, try to grow pool if under max_size
+                    case length(State#state.connections) < State#state.max_size of
+                        true ->
+                            try
+                                NewConn = create_connection(State),
+                                NewState = State#state{
+                                    connections = [NewConn | State#state.connections]
+                                },
+                                checkout_connection(NewState, NewConn)
+                            catch
+                                _:Error ->
+                                    {error, {connection_creation_failed, Error}, State}
+                            end;
+                        false ->
+                            {error, no_idle_connections, State}
+                    end;
                 {error, Reason} ->
                     {error, Reason, State}
             end

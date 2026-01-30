@@ -695,8 +695,11 @@ validate_tcp_opts(Opts) ->
                 undefined ->
                     {error, {invalid_opts, missing_host}};
                 Host when is_list(Host) ->
-                    % String host is valid
-                    ok;
+                    % String host - check not empty
+                    case Host of
+                        "" -> {error, {invalid_opts, empty_host}};
+                        _ -> ok
+                    end;
                 {A, B, C, D} when is_integer(A), is_integer(B), is_integer(C), is_integer(D),
                                   A >= 0, A =< 255, B >= 0, B =< 255,
                                   C >= 0, C =< 255, D >= 0, D =< 255 ->

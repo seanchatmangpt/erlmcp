@@ -2,7 +2,35 @@
 -behaviour(gen_server).
 
 %% API exports
--export([start_link/0, stop/0, setup_gcp_simulator/0, start/0, main/1]).
+-export([start_link/0, stop/0, setup_gcp_simulator/0, start/0, main/1,
+         %% Compute Engine
+         create_compute_instance/3, list_compute_instances/0, get_compute_instance/1,
+         start_compute_instance/1, stop_compute_instance/1, delete_compute_instance/1,
+         format_instance/1,
+         %% Cloud Storage
+         create_storage_bucket/2, list_storage_buckets/0, upload_storage_object/3,
+         list_storage_objects/1, download_storage_object/2, delete_storage_object/2,
+         format_bucket/1, format_object/1,
+         %% Cloud Functions
+         deploy_cloud_function/3, list_cloud_functions/0, invoke_cloud_function/2,
+         delete_cloud_function/1, format_function/1,
+         %% Cloud SQL
+         create_sql_instance/3, list_sql_instances/0, delete_sql_instance/1,
+         format_sql_instance/1,
+         %% Pub/Sub
+         create_pubsub_topic/1, list_pubsub_topics/0, publish_pubsub_message/2,
+         create_pubsub_subscription/2,
+         %% IAM
+         create_service_account/2, list_service_accounts/0, format_service_account/1,
+         %% Helpers
+         get_simulator_status/0, get_help_text/0,
+         generate_ip/0, generate_message_id/0, get_timestamp/0,
+         wait_for_shutdown/0,
+         %% Validation
+         validate_resource_name/1, validate_machine_type/1, validate_zone/1,
+         validate_location/1, validate_runtime/1, validate_entry_point/1,
+         validate_database_version/1, validate_tier/1,
+         validate_email_safe_name/1, validate_no_control_chars/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -87,6 +115,18 @@
 %% Generic result type
 -type gcp_result() :: {ok, gcp_response()} | gcp_error().
 
+%% State record
+-record(state, {
+    compute_instances :: ets:tid(),
+    storage_buckets :: ets:tid(),
+    storage_objects :: ets:tid(),
+    cloud_functions :: ets:tid(),
+    cloud_sql :: ets:tid(),
+    pubsub_topics :: ets:tid(),
+    pubsub_subscriptions :: ets:tid(),
+    service_accounts :: ets:tid()
+}).
+
 %%====================================================================
 %% FUNCTION SPECIFICATIONS
 %%====================================================================
@@ -163,6 +203,10 @@
 -spec validate_email_safe_name(binary()) -> ok | {error, invalid_input}.
 -spec validate_no_control_chars(binary()) -> ok | {error, invalid_input}.
 
+%%====================================================================
+%% API FUNCTIONS
+%%====================================================================
+
 start() ->
     main([]).
 
@@ -193,8 +237,15 @@ main(_Args) ->
 
     logger:info("Starting GCP Simulator MCP server...~n"),
 
-    %% Initialize state storage
-    init_state(),
+    %% Start the gen_server
+    case start_link() of
+        {ok, _Pid} ->
+            logger:info("Successfully started gcp_simulator_server~n"),
+            ok;
+        {error, StartErrReason} ->
+            logger:error("Failed to start gcp_simulator_server: ~p", [StartErrReason]),
+            halt(1)
+    end,
 
     %% Start the stdio MCP server
     case erlmcp_stdio:start() of
@@ -203,25 +254,20 @@ main(_Args) ->
             setup_gcp_simulator(),
             logger:info("GCP Simulator setup complete, waiting for shutdown...~n"),
             wait_for_shutdown();
-        {error, StartErrReason} ->
-            logger:error("Failed to start stdio server: ~p", [StartErrReason]),
+        {error, StdioReason} ->
+            logger:error("Failed to start stdio server: ~p", [StdioReason]),
             halt(1)
     end.
 
-%% Initialize ETS tables for state storage
-init_state() ->
-    %% Create ETS tables for each GCP service
-    ets:new(gcp_compute_instances, [named_table, public, set]),
-    ets:new(gcp_storage_buckets, [named_table, public, set]),
-    ets:new(gcp_storage_objects, [named_table, public, bag]),
-    ets:new(gcp_cloud_functions, [named_table, public, set]),
-    ets:new(gcp_cloud_sql, [named_table, public, set]),
-    ets:new(gcp_pubsub_topics, [named_table, public, set]),
-    ets:new(gcp_pubsub_subscriptions, [named_table, public, set]),
-    ets:new(gcp_iam_service_accounts, [named_table, public, set]),
-    logger:info("Initialized GCP state storage~n"),
-    ok.
+%% @doc Start the gen_server
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
+%% @doc Stop the gen_server
+stop() ->
+    gen_server:stop(?MODULE).
+
+%% @doc Setup GCP simulator tools and resources
 setup_gcp_simulator() ->
     %% ===============================================
     %% COMPUTE ENGINE TOOLS
@@ -563,69 +609,22 @@ setup_gcp_simulator() ->
 %%====================================================================
 
 create_compute_instance(Name, MachineType, Zone) ->
-    case validate_resource_name(Name) of
-        {error, invalid_input} -> {error, invalid_input};
-        ok ->
-            case validate_machine_type(MachineType) of
-                {error, invalid_input} -> {error, invalid_input};
-                ok ->
-                    case validate_zone(Zone) of
-                        {error, invalid_input} -> {error, invalid_input};
-                        ok ->
-                            Instance = #{
-                                name => Name,
-                                machine_type => MachineType,
-                                zone => Zone,
-                                status => <<"RUNNING">>,
-                                internal_ip => generate_ip(),
-                                external_ip => generate_ip(),
-                                created => get_timestamp()
-                            },
-                            ets:insert(gcp_compute_instances, {Name, Instance}),
-                            format_instance(Instance)
-                    end
-            end
-    end.
+    gen_server:call(?MODULE, {create_compute_instance, Name, MachineType, Zone}, 5000).
 
 list_compute_instances() ->
-    Instances = ets:tab2list(gcp_compute_instances),
-    case Instances of
-        [] -> <<"No instances found\n">>;
-        _ ->
-            Header = <<"COMPUTE ENGINE INSTANCES:\n\n">>,
-            Body = [format_instance(I) || {_K, I} <- Instances],
-            iolist_to_binary([Header, Body])
-    end.
+    gen_server:call(?MODULE, list_compute_instances, 5000).
 
 get_compute_instance(Name) ->
-    case ets:lookup(gcp_compute_instances, Name) of
-        [{_, Instance}] -> {ok, format_instance(Instance)};
-        [] -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {get_compute_instance, Name}, 5000).
 
 start_compute_instance(Name) ->
-    case ets:lookup(gcp_compute_instances, Name) of
-        [{_, Instance}] ->
-            Updated = Instance#{status => <<"RUNNING">>},
-            ets:insert(gcp_compute_instances, {Name, Updated}),
-            {ok, <<"Instance started successfully\n">>};
-        [] -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {start_compute_instance, Name}, 5000).
 
 stop_compute_instance(Name) ->
-    case ets:lookup(gcp_compute_instances, Name) of
-        [{_, Instance}] ->
-            Updated = Instance#{status => <<"TERMINATED">>},
-            ets:insert(gcp_compute_instances, {Name, Updated}),
-            {ok, <<"Instance stopped successfully\n">>};
-        [] -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {stop_compute_instance, Name}, 5000).
 
 delete_compute_instance(Name) ->
-    case ets:delete(gcp_compute_instances, Name) of
-        true -> {ok, <<"Instance deleted successfully\n">>};
-        false -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {delete_compute_instance, Name}, 5000).
 
 format_instance(#{name := Name, machine_type := Type, zone := Zone,
                   status := Status, internal_ip := IntIP, external_ip := ExtIP}) ->
@@ -644,71 +643,22 @@ format_instance(#{name := Name, machine_type := Type, zone := Zone,
 %%====================================================================
 
 create_storage_bucket(Name, Location) ->
-    case validate_resource_name(Name) of
-        {error, invalid_input} -> {error, invalid_input};
-        ok ->
-            case validate_location(Location) of
-                {error, invalid_input} -> {error, invalid_input};
-                ok ->
-                    Bucket = #{
-                        name => Name,
-                        location => Location,
-                        created => get_timestamp(),
-                        storage_class => <<"STANDARD">>
-                    },
-                    ets:insert(gcp_storage_buckets, {Name, Bucket}),
-                    iolist_to_binary(io_lib:format("Bucket '~s' created in ~s~n", [Name, Location]))
-            end
-    end.
+    gen_server:call(?MODULE, {create_storage_bucket, Name, Location}, 5000).
 
 list_storage_buckets() ->
-    Buckets = ets:tab2list(gcp_storage_buckets),
-    case Buckets of
-        [] -> <<"No buckets found\n">>;
-        _ ->
-            Header = <<"CLOUD STORAGE BUCKETS:\n\n">>,
-            Body = [format_bucket(B) || {_K, B} <- Buckets],
-            iolist_to_binary([Header, Body])
-    end.
+    gen_server:call(?MODULE, list_storage_buckets, 5000).
 
 upload_storage_object(Bucket, ObjectName, Content) ->
-    case ets:lookup(gcp_storage_buckets, Bucket) of
-        [] -> {error, not_found};
-        _ ->
-            Object = #{
-                bucket => Bucket,
-                name => ObjectName,
-                content => Content,
-                size => byte_size(Content),
-                uploaded => get_timestamp()
-            },
-            ets:insert(gcp_storage_objects, {{Bucket, ObjectName}, Object}),
-            {ok, iolist_to_binary(io_lib:format("Object '~s' uploaded to bucket '~s' (~p bytes)~n",
-                                          [ObjectName, Bucket, byte_size(Content)]))}
-    end.
+    gen_server:call(?MODULE, {upload_storage_object, Bucket, ObjectName, Content}, 5000).
 
 list_storage_objects(Bucket) ->
-    Objects = ets:match_object(gcp_storage_objects, {{Bucket, '_'}, '_'}),
-    case Objects of
-        [] -> iolist_to_binary(io_lib:format("No objects in bucket '~s'~n", [Bucket]));
-        _ ->
-            Header = iolist_to_binary(io_lib:format("OBJECTS IN BUCKET '~s':~n~n", [Bucket])),
-            Body = [format_object(O) || {_K, O} <- Objects],
-            iolist_to_binary([Header, Body])
-    end.
+    gen_server:call(?MODULE, {list_storage_objects, Bucket}, 5000).
 
 download_storage_object(Bucket, ObjectName) ->
-    case ets:lookup(gcp_storage_objects, {Bucket, ObjectName}) of
-        [{_, #{content := Content}}] ->
-            {ok, iolist_to_binary(io_lib:format("Object content:~n~s~n", [Content]))};
-        [] -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {download_storage_object, Bucket, ObjectName}, 5000).
 
 delete_storage_object(Bucket, ObjectName) ->
-    case ets:delete(gcp_storage_objects, {Bucket, ObjectName}) of
-        true -> {ok, <<"Object deleted successfully\n">>};
-        false -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {delete_storage_object, Bucket, ObjectName}, 5000).
 
 format_bucket(#{name := Name, location := Location, storage_class := Class}) ->
     iolist_to_binary(io_lib:format("  ~s (~s, ~s)~n", [Name, Location, Class])).
@@ -721,63 +671,16 @@ format_object(#{name := Name, size := Size, uploaded := Time}) ->
 %%====================================================================
 
 deploy_cloud_function(Name, Runtime, EntryPoint) ->
-    case validate_resource_name(Name) of
-        {error, invalid_input} -> {error, invalid_input};
-        ok ->
-            case validate_runtime(Runtime) of
-                {error, invalid_input} -> {error, invalid_input};
-                ok ->
-                    case validate_entry_point(EntryPoint) of
-                        {error, invalid_input} -> {error, invalid_input};
-                        ok ->
-                            Function = #{
-                                name => Name,
-                                runtime => Runtime,
-                                entry_point => EntryPoint,
-                                status => <<"ACTIVE">>,
-                                deployed => get_timestamp(),
-                                url => iolist_to_binary(io_lib:format("https://~s-abcd123.cloudfunctions.net", [Name]))
-                            },
-                            ets:insert(gcp_cloud_functions, {Name, Function}),
-                            iolist_to_binary(io_lib:format(
-                                "Function '~s' deployed successfully~n"
-                                "Runtime: ~s~n"
-                                "Entry Point: ~s~n"
-                                "URL: ~s~n",
-                                [Name, Runtime, EntryPoint, maps:get(url, Function)]
-                            ))
-                    end
-            end
-    end.
+    gen_server:call(?MODULE, {deploy_cloud_function, Name, Runtime, EntryPoint}, 5000).
 
 list_cloud_functions() ->
-    Functions = ets:tab2list(gcp_cloud_functions),
-    case Functions of
-        [] -> <<"No functions found\n">>;
-        _ ->
-            Header = <<"CLOUD FUNCTIONS:\n\n">>,
-            Body = [format_function(F) || {_K, F} <- Functions],
-            iolist_to_binary([Header, Body])
-    end.
+    gen_server:call(?MODULE, list_cloud_functions, 5000).
 
 invoke_cloud_function(Name, Data) ->
-    case ets:lookup(gcp_cloud_functions, Name) of
-        [{_, #{status := <<"ACTIVE">>}}] ->
-            {ok, iolist_to_binary(io_lib:format(
-                "Function '~s' invoked successfully~n"
-                "Input: ~s~n"
-                "Output: {\"result\": \"processed\", \"status\": \"success\"}~n",
-                [Name, Data]
-            ))};
-        [{_, _}] -> {error, invalid_state};
-        [] -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {invoke_cloud_function, Name, Data}, 5000).
 
 delete_cloud_function(Name) ->
-    case ets:delete(gcp_cloud_functions, Name) of
-        true -> {ok, <<"Function deleted successfully\n">>};
-        false -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {delete_cloud_function, Name}, 5000).
 
 format_function(#{name := Name, runtime := Runtime, status := Status, url := Url}) ->
     iolist_to_binary(io_lib:format("  ~s (~s, ~s)~n    URL: ~s~n", [Name, Runtime, Status, Url])).
@@ -787,51 +690,13 @@ format_function(#{name := Name, runtime := Runtime, status := Status, url := Url
 %%====================================================================
 
 create_sql_instance(Name, DbVersion, Tier) ->
-    case validate_resource_name(Name) of
-        {error, invalid_input} -> {error, invalid_input};
-        ok ->
-            case validate_database_version(DbVersion) of
-                {error, invalid_input} -> {error, invalid_input};
-                ok ->
-                    case validate_tier(Tier) of
-                        {error, invalid_input} -> {error, invalid_input};
-                        ok ->
-                            Instance = #{
-                                name => Name,
-                                database_version => DbVersion,
-                                tier => Tier,
-                                state => <<"RUNNABLE">>,
-                                connection_name => iolist_to_binary(io_lib:format("project:region:~s", [Name])),
-                                ip_address => generate_ip(),
-                                created => get_timestamp()
-                            },
-                            ets:insert(gcp_cloud_sql, {Name, Instance}),
-                            iolist_to_binary(io_lib:format(
-                                "Cloud SQL instance '~s' created~n"
-                                "Database Version: ~s~n"
-                                "Tier: ~s~n"
-                                "IP Address: ~s~n",
-                                [Name, DbVersion, Tier, maps:get(ip_address, Instance)]
-                            ))
-                    end
-            end
-    end.
+    gen_server:call(?MODULE, {create_sql_instance, Name, DbVersion, Tier}, 5000).
 
 list_sql_instances() ->
-    Instances = ets:tab2list(gcp_cloud_sql),
-    case Instances of
-        [] -> <<"No SQL instances found\n">>;
-        _ ->
-            Header = <<"CLOUD SQL INSTANCES:\n\n">>,
-            Body = [format_sql_instance(I) || {_K, I} <- Instances],
-            iolist_to_binary([Header, Body])
-    end.
+    gen_server:call(?MODULE, list_sql_instances, 5000).
 
 delete_sql_instance(Name) ->
-    case ets:delete(gcp_cloud_sql, Name) of
-        true -> {ok, <<"SQL instance deleted successfully\n">>};
-        false -> {error, not_found}
-    end.
+    gen_server:call(?MODULE, {delete_sql_instance, Name}, 5000).
 
 format_sql_instance(#{name := Name, database_version := Version, state := State, ip_address := IP}) ->
     iolist_to_binary(io_lib:format("  ~s (~s, ~s, IP: ~s)~n", [Name, Version, State, IP])).
@@ -841,90 +706,26 @@ format_sql_instance(#{name := Name, database_version := Version, state := State,
 %%====================================================================
 
 create_pubsub_topic(Name) ->
-    case validate_resource_name(Name) of
-        {error, invalid_input} -> {error, invalid_input};
-        ok ->
-            Topic = #{
-                name => Name,
-                created => get_timestamp()
-            },
-            ets:insert(gcp_pubsub_topics, {Name, Topic}),
-            iolist_to_binary(io_lib:format("Topic '~s' created~n", [Name]))
-    end.
+    gen_server:call(?MODULE, {create_pubsub_topic, Name}, 5000).
 
 list_pubsub_topics() ->
-    Topics = ets:tab2list(gcp_pubsub_topics),
-    case Topics of
-        [] -> <<"No topics found\n">>;
-        _ ->
-            Header = <<"PUB/SUB TOPICS:\n\n">>,
-            Body = [iolist_to_binary(io_lib:format("  ~s~n", [N])) || {N, _} <- Topics],
-            iolist_to_binary([Header, Body])
-    end.
+    gen_server:call(?MODULE, list_pubsub_topics, 5000).
 
 publish_pubsub_message(Topic, Message) ->
-    case ets:lookup(gcp_pubsub_topics, Topic) of
-        [] -> {error, not_found};
-        _ ->
-            MessageId = generate_message_id(),
-            {ok, iolist_to_binary(io_lib:format(
-                "Message published to topic '~s'~n"
-                "Message ID: ~s~n"
-                "Message: ~s~n",
-                [Topic, MessageId, Message]
-            ))}
-    end.
+    gen_server:call(?MODULE, {publish_pubsub_message, Topic, Message}, 5000).
 
 create_pubsub_subscription(Name, Topic) ->
-    case ets:lookup(gcp_pubsub_topics, Topic) of
-        [] -> {error, not_found};
-        _ ->
-            Subscription = #{
-                name => Name,
-                topic => Topic,
-                created => get_timestamp()
-            },
-            ets:insert(gcp_pubsub_subscriptions, {Name, Subscription}),
-            {ok, iolist_to_binary(io_lib:format("Subscription '~s' created for topic '~s'~n", [Name, Topic]))}
-    end.
+    gen_server:call(?MODULE, {create_pubsub_subscription, Name, Topic}, 5000).
 
 %%====================================================================
 %% IAM
 %%====================================================================
 
 create_service_account(Name, DisplayName) ->
-    case validate_email_safe_name(Name) of
-        {error, invalid_input} -> {error, invalid_input};
-        ok ->
-            case validate_no_control_chars(DisplayName) of
-                {error, invalid_input} -> {error, invalid_input};
-                ok ->
-                    ServiceAccount = #{
-                        name => Name,
-                        display_name => DisplayName,
-                        email => iolist_to_binary(io_lib:format("~s@project.iam.gserviceaccount.com", [Name])),
-                        created => get_timestamp()
-                    },
-                    ets:insert(gcp_iam_service_accounts, {Name, ServiceAccount}),
-                    iolist_to_binary(io_lib:format(
-                        "Service account created~n"
-                        "Name: ~s~n"
-                        "Display Name: ~s~n"
-                        "Email: ~s~n",
-                        [Name, DisplayName, maps:get(email, ServiceAccount)]
-                    ))
-            end
-    end.
+    gen_server:call(?MODULE, {create_service_account, Name, DisplayName}, 5000).
 
 list_service_accounts() ->
-    Accounts = ets:tab2list(gcp_iam_service_accounts),
-    case Accounts of
-        [] -> <<"No service accounts found\n">>;
-        _ ->
-            Header = <<"SERVICE ACCOUNTS:\n\n">>,
-            Body = [format_service_account(A) || {_K, A} <- Accounts],
-            iolist_to_binary([Header, Body])
-    end.
+    gen_server:call(?MODULE, list_service_accounts, 5000).
 
 format_service_account(#{name := Name, display_name := DisplayName, email := Email}) ->
     iolist_to_binary(io_lib:format("  ~s (~s) - ~s~n", [Name, DisplayName, Email])).
@@ -934,25 +735,7 @@ format_service_account(#{name := Name, display_name := DisplayName, email := Ema
 %%====================================================================
 
 get_simulator_status() ->
-    ComputeCount = ets:info(gcp_compute_instances, size),
-    BucketCount = ets:info(gcp_storage_buckets, size),
-    FunctionCount = ets:info(gcp_cloud_functions, size),
-    SqlCount = ets:info(gcp_cloud_sql, size),
-    TopicCount = ets:info(gcp_pubsub_topics, size),
-    AccountCount = ets:info(gcp_iam_service_accounts, size),
-
-    iolist_to_binary(io_lib:format(
-        "GCP SIMULATOR STATUS~n~n"
-        "Compute Engine Instances: ~p~n"
-        "Cloud Storage Buckets: ~p~n"
-        "Cloud Functions: ~p~n"
-        "Cloud SQL Instances: ~p~n"
-        "Pub/Sub Topics: ~p~n"
-        "Service Accounts: ~p~n~n"
-        "Simulator Version: 1.0.0~n"
-        "Status: Active~n",
-        [ComputeCount, BucketCount, FunctionCount, SqlCount, TopicCount, AccountCount]
-    )).
+    gen_server:call(?MODULE, get_simulator_status, 5000).
 
 get_help_text() ->
     <<"GCP SIMULATOR HELP\n\n"
@@ -1004,6 +787,18 @@ get_timestamp() ->
     {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:universal_time(),
     iolist_to_binary(io_lib:format("~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0wZ",
         [Year, Month, Day, Hour, Minute, Second])).
+
+wait_for_shutdown() ->
+    case whereis(erlmcp_stdio_server) of
+        undefined ->
+            logger:warn("Stdio server not found, exiting~n");
+        Pid ->
+            monitor(process, Pid),
+            receive
+                {'DOWN', _Ref, process, Pid, _Reason} ->
+                    logger:info("Stdio server terminated, exiting~n")
+            end
+    end.
 
 %%====================================================================
 %% VALIDATION FUNCTIONS
@@ -1097,20 +892,435 @@ validate_email_safe_name(_) -> {error, invalid_input}.
 
 %% Validate no control characters that could break JSON/protocols
 validate_no_control_chars(Binary) when is_binary(Binary) ->
-    case re:run(Binary, <<"[\x00-\x1F\x7F]">>, [{capture, none}]) of
+    case re:run(Binary, <<"[\\x00-\\x1F\\x7F]">>, [{capture, none}]) of
         match -> {error, invalid_input};
         nomatch -> ok
     end;
 validate_no_control_chars(_) -> {error, invalid_input}.
 
-wait_for_shutdown() ->
-    case whereis(erlmcp_stdio_server) of
-        undefined ->
-            logger:warn("Stdio server not found, exiting~n");
-        Pid ->
-            monitor(process, Pid),
-            receive
-                {'DOWN', _Ref, process, Pid, _Reason} ->
-                    logger:info("Stdio server terminated, exiting~n")
+%%====================================================================
+%% GEN_SERVER CALLBACKS
+%%====================================================================
+
+%% @private
+init([]) ->
+    %% Create ETS tables for each GCP service
+    ComputeInstances = ets:new(gcp_compute_instances, [set, private]),
+    StorageBuckets = ets:new(gcp_storage_buckets, [set, private]),
+    StorageObjects = ets:new(gcp_storage_objects, [bag, private]),
+    CloudFunctions = ets:new(gcp_cloud_functions, [set, private]),
+    CloudSql = ets:new(gcp_cloud_sql, [set, private]),
+    PubsubTopics = ets:new(gcp_pubsub_topics, [set, private]),
+    PubsubSubscriptions = ets:new(gcp_pubsub_subscriptions, [set, private]),
+    ServiceAccounts = ets:new(gcp_iam_service_accounts, [set, private]),
+
+    logger:info("Initialized GCP state storage~n"),
+
+    State = #state{
+        compute_instances = ComputeInstances,
+        storage_buckets = StorageBuckets,
+        storage_objects = StorageObjects,
+        cloud_functions = CloudFunctions,
+        cloud_sql = CloudSql,
+        pubsub_topics = PubsubTopics,
+        pubsub_subscriptions = PubsubSubscriptions,
+        service_accounts = ServiceAccounts
+    },
+
+    {ok, State}.
+
+%% @private
+handle_call({create_compute_instance, Name, MachineType, Zone}, _From, State) ->
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+        ok ->
+            case validate_machine_type(MachineType) of
+                {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                ok ->
+                    case validate_zone(Zone) of
+                        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                        ok ->
+                            Instance = #{
+                                name => Name,
+                                machine_type => MachineType,
+                                zone => Zone,
+                                status => <<"RUNNING">>,
+                                internal_ip => generate_ip(),
+                                external_ip => generate_ip(),
+                                created => get_timestamp()
+                            },
+                            ets:insert(State#state.compute_instances, {Name, Instance}),
+                            {reply, format_instance(Instance), State}
+                    end
             end
-    end.
+    end;
+
+handle_call(list_compute_instances, _From, State) ->
+    Instances = ets:tab2list(State#state.compute_instances),
+    Response = case Instances of
+        [] -> <<"No instances found\n">>;
+        _ ->
+            Header = <<"COMPUTE ENGINE INSTANCES:\n\n">>,
+            Body = [format_instance(I) || {_K, I} <- Instances],
+            iolist_to_binary([Header, Body])
+    end,
+    {reply, Response, State};
+
+handle_call({get_compute_instance, Name}, _From, State) ->
+    Response = case ets:lookup(State#state.compute_instances, Name) of
+        [{_, Instance}] -> {ok, format_instance(Instance)};
+        [] -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({start_compute_instance, Name}, _From, State) ->
+    Response = case ets:lookup(State#state.compute_instances, Name) of
+        [{_, Instance}] ->
+            Updated = Instance#{status => <<"RUNNING">>},
+            ets:insert(State#state.compute_instances, {Name, Updated}),
+            {ok, <<"Instance started successfully\n">>};
+        [] -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({stop_compute_instance, Name}, _From, State) ->
+    Response = case ets:lookup(State#state.compute_instances, Name) of
+        [{_, Instance}] ->
+            Updated = Instance#{status => <<"TERMINATED">>},
+            ets:insert(State#state.compute_instances, {Name, Updated}),
+            {ok, <<"Instance stopped successfully\n">>};
+        [] -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({delete_compute_instance, Name}, _From, State) ->
+    Response = case ets:delete(State#state.compute_instances, Name) of
+        true -> {ok, <<"Instance deleted successfully\n">>};
+        false -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({create_storage_bucket, Name, Location}, _From, State) ->
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+        ok ->
+            case validate_location(Location) of
+                {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                ok ->
+                    Bucket = #{
+                        name => Name,
+                        location => Location,
+                        created => get_timestamp(),
+                        storage_class => <<"STANDARD">>
+                    },
+                    ets:insert(State#state.storage_buckets, {Name, Bucket}),
+                    Response = iolist_to_binary(io_lib:format("Bucket '~s' created in ~s~n", [Name, Location])),
+                    {reply, Response, State}
+            end
+    end;
+
+handle_call(list_storage_buckets, _From, State) ->
+    Buckets = ets:tab2list(State#state.storage_buckets),
+    Response = case Buckets of
+        [] -> <<"No buckets found\n">>;
+        _ ->
+            Header = <<"CLOUD STORAGE BUCKETS:\n\n">>,
+            Body = [format_bucket(B) || {_K, B} <- Buckets],
+            iolist_to_binary([Header, Body])
+    end,
+    {reply, Response, State};
+
+handle_call({upload_storage_object, Bucket, ObjectName, Content}, _From, State) ->
+    Response = case ets:lookup(State#state.storage_buckets, Bucket) of
+        [] -> {error, not_found};
+        _ ->
+            Object = #{
+                bucket => Bucket,
+                name => ObjectName,
+                content => Content,
+                size => byte_size(Content),
+                uploaded => get_timestamp()
+            },
+            ets:insert(State#state.storage_objects, {{Bucket, ObjectName}, Object}),
+            {ok, iolist_to_binary(io_lib:format("Object '~s' uploaded to bucket '~s' (~p bytes)~n",
+                                          [ObjectName, Bucket, byte_size(Content)]))}
+    end,
+    {reply, Response, State};
+
+handle_call({list_storage_objects, Bucket}, _From, State) ->
+    Objects = ets:match_object(State#state.storage_objects, {{Bucket, '_'}, '_'}),
+    Response = case Objects of
+        [] -> iolist_to_binary(io_lib:format("No objects in bucket '~s'~n", [Bucket]));
+        _ ->
+            Header = iolist_to_binary(io_lib:format("OBJECTS IN BUCKET '~s':~n~n", [Bucket])),
+            Body = [format_object(O) || {_K, O} <- Objects],
+            iolist_to_binary([Header, Body])
+    end,
+    {reply, Response, State};
+
+handle_call({download_storage_object, Bucket, ObjectName}, _From, State) ->
+    Response = case ets:lookup(State#state.storage_objects, {Bucket, ObjectName}) of
+        [{_, #{content := Content}}] ->
+            {ok, iolist_to_binary(io_lib:format("Object content:~n~s~n", [Content]))};
+        [] -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({delete_storage_object, Bucket, ObjectName}, _From, State) ->
+    Response = case ets:delete(State#state.storage_objects, {Bucket, ObjectName}) of
+        true -> {ok, <<"Object deleted successfully\n">>};
+        false -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({deploy_cloud_function, Name, Runtime, EntryPoint}, _From, State) ->
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+        ok ->
+            case validate_runtime(Runtime) of
+                {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                ok ->
+                    case validate_entry_point(EntryPoint) of
+                        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                        ok ->
+                            Function = #{
+                                name => Name,
+                                runtime => Runtime,
+                                entry_point => EntryPoint,
+                                status => <<"ACTIVE">>,
+                                deployed => get_timestamp(),
+                                url => iolist_to_binary(io_lib:format("https://~s-abcd123.cloudfunctions.net", [Name]))
+                            },
+                            ets:insert(State#state.cloud_functions, {Name, Function}),
+                            Response = iolist_to_binary(io_lib:format(
+                                "Function '~s' deployed successfully~n"
+                                "Runtime: ~s~n"
+                                "Entry Point: ~s~n"
+                                "URL: ~s~n",
+                                [Name, Runtime, EntryPoint, maps:get(url, Function)]
+                            )),
+                            {reply, Response, State}
+                    end
+            end
+    end;
+
+handle_call(list_cloud_functions, _From, State) ->
+    Functions = ets:tab2list(State#state.cloud_functions),
+    Response = case Functions of
+        [] -> <<"No functions found\n">>;
+        _ ->
+            Header = <<"CLOUD FUNCTIONS:\n\n">>,
+            Body = [format_function(F) || {_K, F} <- Functions],
+            iolist_to_binary([Header, Body])
+    end,
+    {reply, Response, State};
+
+handle_call({invoke_cloud_function, Name, Data}, _From, State) ->
+    Response = case ets:lookup(State#state.cloud_functions, Name) of
+        [{_, #{status := <<"ACTIVE">>}}] ->
+            {ok, iolist_to_binary(io_lib:format(
+                "Function '~s' invoked successfully~n"
+                "Input: ~s~n"
+                "Output: {\"result\": \"processed\", \"status\": \"success\"}~n",
+                [Name, Data]
+            ))};
+        [{_, _}] -> {error, invalid_state};
+        [] -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({delete_cloud_function, Name}, _From, State) ->
+    Response = case ets:delete(State#state.cloud_functions, Name) of
+        true -> {ok, <<"Function deleted successfully\n">>};
+        false -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({create_sql_instance, Name, DbVersion, Tier}, _From, State) ->
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+        ok ->
+            case validate_database_version(DbVersion) of
+                {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                ok ->
+                    case validate_tier(Tier) of
+                        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                        ok ->
+                            Instance = #{
+                                name => Name,
+                                database_version => DbVersion,
+                                tier => Tier,
+                                state => <<"RUNNABLE">>,
+                                connection_name => iolist_to_binary(io_lib:format("project:region:~s", [Name])),
+                                ip_address => generate_ip(),
+                                created => get_timestamp()
+                            },
+                            ets:insert(State#state.cloud_sql, {Name, Instance}),
+                            Response = iolist_to_binary(io_lib:format(
+                                "Cloud SQL instance '~s' created~n"
+                                "Database Version: ~s~n"
+                                "Tier: ~s~n"
+                                "IP Address: ~s~n",
+                                [Name, DbVersion, Tier, maps:get(ip_address, Instance)]
+                            )),
+                            {reply, Response, State}
+                    end
+            end
+    end;
+
+handle_call(list_sql_instances, _From, State) ->
+    Instances = ets:tab2list(State#state.cloud_sql),
+    Response = case Instances of
+        [] -> <<"No SQL instances found\n">>;
+        _ ->
+            Header = <<"CLOUD SQL INSTANCES:\n\n">>,
+            Body = [format_sql_instance(I) || {_K, I} <- Instances],
+            iolist_to_binary([Header, Body])
+    end,
+    {reply, Response, State};
+
+handle_call({delete_sql_instance, Name}, _From, State) ->
+    Response = case ets:delete(State#state.cloud_sql, Name) of
+        true -> {ok, <<"SQL instance deleted successfully\n">>};
+        false -> {error, not_found}
+    end,
+    {reply, Response, State};
+
+handle_call({create_pubsub_topic, Name}, _From, State) ->
+    case validate_resource_name(Name) of
+        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+        ok ->
+            Topic = #{
+                name => Name,
+                created => get_timestamp()
+            },
+            ets:insert(State#state.pubsub_topics, {Name, Topic}),
+            Response = iolist_to_binary(io_lib:format("Topic '~s' created~n", [Name])),
+            {reply, Response, State}
+    end;
+
+handle_call(list_pubsub_topics, _From, State) ->
+    Topics = ets:tab2list(State#state.pubsub_topics),
+    Response = case Topics of
+        [] -> <<"No topics found\n">>;
+        _ ->
+            Header = <<"PUB/SUB TOPICS:\n\n">>,
+            Body = [iolist_to_binary(io_lib:format("  ~s~n", [N])) || {N, _} <- Topics],
+            iolist_to_binary([Header, Body])
+    end,
+    {reply, Response, State};
+
+handle_call({publish_pubsub_message, Topic, Message}, _From, State) ->
+    Response = case ets:lookup(State#state.pubsub_topics, Topic) of
+        [] -> {error, not_found};
+        _ ->
+            MessageId = generate_message_id(),
+            {ok, iolist_to_binary(io_lib:format(
+                "Message published to topic '~s'~n"
+                "Message ID: ~s~n"
+                "Message: ~s~n",
+                [Topic, MessageId, Message]
+            ))}
+    end,
+    {reply, Response, State};
+
+handle_call({create_pubsub_subscription, Name, Topic}, _From, State) ->
+    Response = case ets:lookup(State#state.pubsub_topics, Topic) of
+        [] -> {error, not_found};
+        _ ->
+            Subscription = #{
+                name => Name,
+                topic => Topic,
+                created => get_timestamp()
+            },
+            ets:insert(State#state.pubsub_subscriptions, {Name, Subscription}),
+            {ok, iolist_to_binary(io_lib:format("Subscription '~s' created for topic '~s'~n", [Name, Topic]))}
+    end,
+    {reply, Response, State};
+
+handle_call({create_service_account, Name, DisplayName}, _From, State) ->
+    case validate_email_safe_name(Name) of
+        {error, invalid_input} -> {reply, {error, invalid_input}, State};
+        ok ->
+            case validate_no_control_chars(DisplayName) of
+                {error, invalid_input} -> {reply, {error, invalid_input}, State};
+                ok ->
+                    ServiceAccount = #{
+                        name => Name,
+                        display_name => DisplayName,
+                        email => iolist_to_binary(io_lib:format("~s@project.iam.gserviceaccount.com", [Name])),
+                        created => get_timestamp()
+                    },
+                    ets:insert(State#state.service_accounts, {Name, ServiceAccount}),
+                    Response = iolist_to_binary(io_lib:format(
+                        "Service account created~n"
+                        "Name: ~s~n"
+                        "Display Name: ~s~n"
+                        "Email: ~s~n",
+                        [Name, DisplayName, maps:get(email, ServiceAccount)]
+                    )),
+                    {reply, Response, State}
+            end
+    end;
+
+handle_call(list_service_accounts, _From, State) ->
+    Accounts = ets:tab2list(State#state.service_accounts),
+    Response = case Accounts of
+        [] -> <<"No service accounts found\n">>;
+        _ ->
+            Header = <<"SERVICE ACCOUNTS:\n\n">>,
+            Body = [format_service_account(A) || {_K, A} <- Accounts],
+            iolist_to_binary([Header, Body])
+    end,
+    {reply, Response, State};
+
+handle_call(get_simulator_status, _From, State) ->
+    ComputeCount = ets:info(State#state.compute_instances, size),
+    BucketCount = ets:info(State#state.storage_buckets, size),
+    FunctionCount = ets:info(State#state.cloud_functions, size),
+    SqlCount = ets:info(State#state.cloud_sql, size),
+    TopicCount = ets:info(State#state.pubsub_topics, size),
+    AccountCount = ets:info(State#state.service_accounts, size),
+
+    Response = iolist_to_binary(io_lib:format(
+        "GCP SIMULATOR STATUS~n~n"
+        "Compute Engine Instances: ~p~n"
+        "Cloud Storage Buckets: ~p~n"
+        "Cloud Functions: ~p~n"
+        "Cloud SQL Instances: ~p~n"
+        "Pub/Sub Topics: ~p~n"
+        "Service Accounts: ~p~n~n"
+        "Simulator Version: 1.0.0~n"
+        "Status: Active~n",
+        [ComputeCount, BucketCount, FunctionCount, SqlCount, TopicCount, AccountCount]
+    )),
+    {reply, Response, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+%% @private
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+%% @private
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @private
+terminate(_Reason, State) ->
+    %% Clean up ETS tables
+    ets:delete(State#state.compute_instances),
+    ets:delete(State#state.storage_buckets),
+    ets:delete(State#state.storage_objects),
+    ets:delete(State#state.cloud_functions),
+    ets:delete(State#state.cloud_sql),
+    ets:delete(State#state.pubsub_topics),
+    ets:delete(State#state.pubsub_subscriptions),
+    ets:delete(State#state.service_accounts),
+    logger:info("GCP Simulator terminated: ~p~n", [_Reason]),
+    ok.
+
+%% @private
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.

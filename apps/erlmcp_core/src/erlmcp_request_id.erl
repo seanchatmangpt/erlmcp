@@ -13,11 +13,12 @@
 -module(erlmcp_request_id).
 
 %% API exports
--export([safe_increment/1, validate_id/1]).
+-export([safe_increment/1, validate_id/1, get_usage_percentage/1, check_thresholds/1]).
 
 %% Types
 -type request_id() :: pos_integer().
--export_type([request_id/0]).
+-type usage_level() :: normal | warning | critical | reserved | exhausted.
+-export_type([request_id/0, usage_level/0]).
 
 %%====================================================================
 %% Constants
@@ -33,6 +34,11 @@
 
 %% Minimum valid request ID
 -define(MIN_REQUEST_ID, 1).
+
+%% ID space usage thresholds (for monitoring and auto-reconnection)
+-define(ID_WARNING_THRESHOLD, 922337203685477580).   % 80% of max
+-define(ID_CRITICAL_THRESHOLD, 1037629354146165277).  % 90% of max
+-define(ID_RESERVED_THRESHOLD, 1106804644422573050).  % 96% of max
 
 %%====================================================================
 %% API Functions
@@ -98,6 +104,65 @@ validate_id(Id) when is_integer(Id) ->
     end;
 validate_id(Id) ->
     {error, {not_integer, Id}}.
+
+%% @doc Calculate ID space usage percentage.
+%%
+%% Returns the percentage of ID space consumed (0.0 to 100.0).
+%% Use for monitoring and triggering auto-reconnection.
+%%
+%% @param CurrentId The current request ID
+%% @returns Usage percentage as float (0.0 to 100.0)
+%%
+%% @example
+%% ```
+%% > erlmcp_request_id:get_usage_percentage(1).
+%% 8.673617379884036e-19
+%%
+%% > erlmcp_request_id:get_usage_percentage(1152921504606846975).
+%% 100.0
+%% ```
+-spec get_usage_percentage(request_id()) -> float().
+get_usage_percentage(CurrentId) when is_integer(CurrentId), CurrentId >= ?MIN_REQUEST_ID ->
+    (CurrentId / ?MAX_SAFE_REQUEST_ID) * 100.0;
+get_usage_percentage(_InvalidId) ->
+    0.0.
+
+%% @doc Check if current ID is at a usage threshold.
+%%
+%% Returns the current usage level based on predefined thresholds.
+%% Use this to trigger monitoring events and auto-reconnection.
+%%
+%% Thresholds:
+%% - normal: < 80% ID space used
+%% - warning: >= 80% (log warning, consider reconnection)
+%% - critical: >= 90% (log critical, schedule reconnection)
+%% - reserved: >= 96% (imminent exhaustion, reconnect now)
+%% - exhausted: >= 100% (cannot continue, must reconnect)
+%%
+%% @param CurrentId The current request ID
+%% @returns {ok, Level, Percentage} where Level is usage_level()
+%%
+%% @example
+%% ```
+%% > erlmcp_request_id:check_thresholds(1).
+%% {ok, normal, 8.673617379884036e-19}
+%%
+%% > erlmcp_request_id:check_thresholds(1000000000000000000).
+%% {ok, warning, 86.73617379884036}
+%% ```
+-spec check_thresholds(request_id()) -> {ok, usage_level(), float()}.
+check_thresholds(CurrentId) when is_integer(CurrentId), CurrentId >= ?MIN_REQUEST_ID ->
+    Usage = get_usage_percentage(CurrentId),
+    Level = case CurrentId of
+        _ when CurrentId >= ?MAX_SAFE_REQUEST_ID -> exhausted;
+        _ when CurrentId >= ?ID_RESERVED_THRESHOLD -> reserved;
+        _ when CurrentId >= ?ID_CRITICAL_THRESHOLD -> critical;
+        _ when CurrentId >= ?ID_WARNING_THRESHOLD -> warning;
+        _ -> normal
+    end,
+    {ok, Level, Usage};
+check_thresholds(_InvalidId) ->
+    {ok, normal, 0.0}.
 
 %%====================================================================
 %% Internal functions

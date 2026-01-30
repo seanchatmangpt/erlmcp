@@ -1,24 +1,7 @@
 -module(erlmcp_transport_tcp_tests).
 
 -include_lib("eunit/include/eunit.hrl").
-
-%% Include the state record definition for testing
--record(state, {
-    mode :: client | server,
-    transport_id :: atom() | undefined,
-    server_id :: atom() | undefined,
-    socket :: gen_tcp:socket() | undefined,
-    ranch_ref :: ranch:ref() | undefined,
-    owner :: pid() | undefined,
-    host :: inet:hostname() | inet:ip_address() | undefined,
-    port :: inet:port_number() | undefined,
-    options :: [gen_tcp:connect_option()],
-    buffer = <<>> :: binary(),
-    connected = false :: boolean(),
-    reconnect_timer :: reference() | undefined,
-    reconnect_attempts = 0 :: non_neg_integer(),
-    max_reconnect_attempts = infinity :: pos_integer() | infinity
-}).
+-include_lib("erlmcp_transports/include/erlmcp_transport_tcp.hrl").
 
 %%====================================================================
 %% Test Fixtures

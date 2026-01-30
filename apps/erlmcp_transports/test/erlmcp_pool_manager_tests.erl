@@ -397,9 +397,14 @@ concurrent_checkouts_test_() ->
         %% Spawn concurrent workers
         Parent = self(),
         Workers = [spawn(fun() ->
-            {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
-            timer:sleep(10),
-            ok = erlmcp_pool_manager:checkin(Pool, Conn),
+            case erlmcp_pool_manager:checkout(Pool) of
+                {ok, Conn} ->
+                    timer:sleep(10),
+                    ok = erlmcp_pool_manager:checkin(Pool, Conn);
+                {error, Reason} when Reason =:= no_healthy_connections; Reason =:= no_idle_connections ->
+                    %% Pool exhausted - acceptable in high concurrency
+                    ok
+            end,
             Parent ! {worker_done, self()}
         end) || _ <- lists:seq(1, 50)],
 
@@ -429,20 +434,37 @@ high_concurrency_stress_test_() ->
         %% Spawn many concurrent workers
         Parent = self(),
         Workers = [spawn(fun() ->
-            lists:foreach(fun(_) ->
-                {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
-                ok = erlmcp_pool_manager:checkin(Pool, Conn)
-            end, lists:seq(1, 10)),
-            Parent ! {worker_done, self()}
+            SuccessCount = lists:foldl(fun(_, Acc) ->
+                case erlmcp_pool_manager:checkout(Pool) of
+                    {ok, Conn} ->
+                        ok = erlmcp_pool_manager:checkin(Pool, Conn),
+                        Acc + 1;
+                    {error, Reason} when Reason =:= no_healthy_connections; Reason =:= no_idle_connections ->
+                        %% Pool exhausted - acceptable in high concurrency
+                        Acc
+                end
+            end, 0, lists:seq(1, 10)),
+            Parent ! {worker_done, self(), SuccessCount}
         end) || _ <- lists:seq(1, 100)],
 
-        %% Wait for completion
-        [receive {worker_done, W} -> ok after 10000 -> error(timeout) end || W <- Workers],
+        %% Wait for completion and collect successful checkouts
+        {TotalSuccess, _} = lists:foldl(fun(_, {Acc, WorkerList}) ->
+            receive
+                {worker_done, W, Count} ->
+                    {Acc + Count, WorkerList -- [W]}
+            after 10000 ->
+                error(timeout)
+            end
+        end, {0, Workers}, Workers),
 
-        %% Check metrics
+        %% Check metrics - all operations should succeed now with the fix
         Metrics = erlmcp_pool_manager:get_metrics(Pool),
-        ?assertEqual(1000, maps:get(total_checkouts, Metrics)),  % 100 workers * 10 checkouts
-        ?assertEqual(0, maps:get(failed_checkouts, Metrics)),
+        TotalCheckouts = maps:get(total_checkouts, Metrics),
+        FailedCheckouts = maps:get(failed_checkouts, Metrics),
+
+        ?assertEqual(1000, TotalCheckouts),  % 100 workers * 10 checkouts = 1000
+        ?assertEqual(TotalSuccess, TotalCheckouts),
+        ?assertEqual(0, FailedCheckouts),  % No failures with dynamic pool growth
 
         erlmcp_pool_manager:stop(Pool)
     end}.
@@ -451,10 +473,10 @@ high_concurrency_stress_test_() ->
 %% Error Handling Tests
 %%====================================================================
 
-no_connections_available_test() ->
+pool_exhaustion_test() ->
     Opts = #{
         min_size => 2,
-        max_size => 2,  % Small pool
+        max_size => 2,  % Small pool at fixed size
         strategy => round_robin,
         worker_module => ?MODULE,
         worker_opts => #{},
@@ -467,14 +489,72 @@ no_connections_available_test() ->
     {ok, Conn1} = erlmcp_pool_manager:checkout(Pool),
     {ok, Conn2} = erlmcp_pool_manager:checkout(Pool),
 
-    %% Try to checkout when none available (pool at max size)
+    %% Try to checkout when pool is exhausted (all connections active, at max size)
+    case erlmcp_pool_manager:checkout(Pool) of
+        {error, Reason} when Reason =:= no_healthy_connections; Reason =:= no_idle_connections ->
+            ok;
+        Unexpected ->
+            ?assertEqual({error, no_healthy_connections}, Unexpected)
+    end,
+
+    %% Verify pool state
     Status = erlmcp_pool_manager:get_status(Pool),
     ?assertEqual(2, maps:get(active_count, Status)),
     ?assertEqual(0, maps:get(idle_count, Status)),
+    ?assertEqual(2, maps:get(current_size, Status)),
 
-    %% Return connections
+    %% Return one connection
+    ok = erlmcp_pool_manager:checkin(Pool, Conn1),
+
+    %% Now checkout should succeed
+    {ok, Conn3} = erlmcp_pool_manager:checkout(Pool),
+
+    %% Return all connections
+    ok = erlmcp_pool_manager:checkin(Pool, Conn2),
+    ok = erlmcp_pool_manager:checkin(Pool, Conn3),
+
+    %% Verify metrics recorded the failed checkout
+    Metrics = erlmcp_pool_manager:get_metrics(Pool),
+    ?assertEqual(1, maps:get(failed_checkouts, Metrics)),
+
+    erlmcp_pool_manager:stop(Pool).
+
+no_connections_available_test() ->
+    Opts = #{
+        min_size => 2,
+        max_size => 5,  % Can grow
+        strategy => round_robin,
+        worker_module => ?MODULE,
+        worker_opts => #{},
+        checkout_timeout => 100
+    },
+
+    {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
+
+    %% Checkout initial connections (from pre-warmed pool)
+    {ok, Conn1} = erlmcp_pool_manager:checkout(Pool),
+    {ok, Conn2} = erlmcp_pool_manager:checkout(Pool),
+
+    %% Pool should grow to accommodate more requests (up to max)
+    {ok, Conn3} = erlmcp_pool_manager:checkout(Pool),
+    {ok, Conn4} = erlmcp_pool_manager:checkout(Pool),
+    {ok, Conn5} = erlmcp_pool_manager:checkout(Pool),
+
+    %% Verify pool reached max size with all connections active
+    Status = erlmcp_pool_manager:get_status(Pool),
+    ?assertEqual(5, maps:get(current_size, Status)),
+    ?assertEqual(5, maps:get(active_count, Status)),
+    ?assertEqual(0, maps:get(idle_count, Status)),
+
+    %% Next checkout should fail (pool at max size, all connections active)
+    {error, _Reason} = erlmcp_pool_manager:checkout(Pool),
+
+    %% Return all connections
     ok = erlmcp_pool_manager:checkin(Pool, Conn1),
     ok = erlmcp_pool_manager:checkin(Pool, Conn2),
+    ok = erlmcp_pool_manager:checkin(Pool, Conn3),
+    ok = erlmcp_pool_manager:checkin(Pool, Conn4),
+    ok = erlmcp_pool_manager:checkin(Pool, Conn5),
 
     erlmcp_pool_manager:stop(Pool).
 

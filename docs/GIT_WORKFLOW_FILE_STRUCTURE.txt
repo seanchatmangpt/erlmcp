@@ -1,0 +1,277 @@
+ERLMCP v0.6.0 RELEASE MANAGEMENT - FILE STRUCTURE
+==================================================
+
+DOCUMENTATION (docs/)
+├── GIT_WORKFLOW_PLAN.md          (1,100+ lines)
+│   └── Comprehensive workflow strategy
+│       ├─ Git analysis (46 files, 5,649 insertions)
+│       ├─ Branch organization
+│       ├─ Commit organization (8 phases)
+│       ├─ Release tag strategy
+│       ├─ CI/CD configuration
+│       ├─ Issue tracking setup
+│       └─ Migration guide
+│
+├── GIT_OPERATIONS_QUICKREF.md    (500+ lines)
+│   └── Quick reference for developers
+│       ├─ Release workflow commands
+│       ├─ Branch strategy
+│       ├─ Commit conventions
+│       ├─ Quality gates checklist
+│       ├─ Common operations
+│       ├─ CI/CD integration
+│       ├─ Issue tracking
+│       └─ Troubleshooting
+│
+├── RELEASE_MANAGEMENT_SUMMARY.md (600+ lines)
+│   └── Executive summary
+│       ├─ Git workflow infrastructure
+│       ├─ Quality gates & CI/CD
+│       ├─ Release automation
+│       ├─ Issue tracking
+│       ├─ PR workflow
+│       ├─ Release checklist
+│       └─ Migration guide
+│
+└── GIT_WORKFLOW_README.txt       (this file)
+
+AUTOMATION SCRIPTS (scripts/)
+├── release-prepare-v0.6.0.sh     (400+ lines, executable)
+│   └── Release preparation automation
+│       ├─ check_preconditions()
+│       ├─ create_release_branch()
+│       ├─ organize_commits() [8 phases]
+│       ├─ run_quality_gates()
+│       ├─ create_release_tag()
+│       ├─ generate_changelog()
+│       └─ show_summary()
+│
+└── release-create-v0.6.0.sh      (350+ lines, executable)
+    └─ Release execution automation
+        ├─ check_dependencies()
+        ├─ check_branch()
+        ├─ run_full_quality_gates()
+        ├─ build_release_artifacts()
+        ├─ generate_quality_report()
+        ├─ create_github_release()
+        ├─ merge_to_main()
+        ├─ push_changes()
+        └─ show_summary()
+
+ISSUE TEMPLATES (.github/ISSUE_TEMPLATE/)
+├── bug_report.md                 (Bug report template)
+│   └─ Bug description
+│   ├─ Reproduction steps
+│   ├─ Expected vs actual behavior
+│   ├─ Environment details
+│   ├─ Logs and test cases
+│   └─ Quality gate checklist
+│
+├── feature_request.md            (Feature request template)
+│   └─ Feature description
+│   ├─ Use case and impact
+│   ├─ Proposed solution
+│   ├─ Alternatives considered
+│   └─ Priority assessment
+│
+├── quality_gate.md               (Quality gate failure template)
+│   └─ Which gate failed
+│   ├─ Error details
+│   ├─ Impact assessment
+│   ├─ Resolution plan
+│   ├─ Root cause analysis
+│   └─ Quality metrics
+│
+└── performance_issue.md          (Performance issue template)
+    └─ Performance problem type
+    ├─ Baseline vs actual metrics
+    ├─ Reproduction steps
+    ├─ Benchmark results
+    ├─ Environment details
+    └─ Metrology compliance
+
+PULL REQUEST TEMPLATE
+└── .github/PULL_REQUEST_TEMPLATE.md
+    └─ Comprehensive PR template
+        ├─ Summary
+        ├─ Type of change
+        ├─ Related issues
+        ├─ Changes made
+        ├─ Quality gates checklist
+        ├─ Test plan
+        ├─ Breaking changes
+        ├─ Documentation checklist
+        └─ Quality gate results
+
+CI/CD WORKFLOWS (.github/workflows/)
+├── quality-gates.yml             (EXISTING - verified)
+│   └─ Manufacturing-grade quality gates
+│       ├─ Trigger: push to main, PRs, daily
+│       ├─ Matrix: 4 test suites
+│       ├─ Jobs:
+│       │   ├─ quality-gates (8 checks)
+│       │   ├─ comprehensive-gate (full validation)
+│       │   └─ deploy-gate (production gate)
+│       └─ Quality metrics reporting
+│
+└── release.yml                   (EXISTING - verified)
+    └─ Release workflow
+        ├─ Trigger: push tags (v*)
+        ├─ Build release artifacts
+        ├─ Run quality gates
+        ├─ Generate changelog
+        ├─ Create GitHub release
+        └─ Upload artifacts
+
+==================================================
+QUALITY GATES (8 checks)
+==================================================
+
+1. COMPILATION (BLOCKING)
+   - 0 errors required
+   - TERM=dumb rebar3 compile
+
+2. EUNIT TESTS (BLOCKING)
+   - 100% pass rate required
+   - rebar3 eunit
+
+3. COMMON TEST (BLOCKING)
+   - 100% pass rate required
+   - rebar3 ct
+
+4. COVERAGE (BLOCKING)
+   - 80%+ minimum required
+   - rebar3 cover
+
+5. DIALYZER (REPORTING)
+   - 0 type errors expected
+   - rebar3 dialyzer
+
+6. XREF (REPORTING)
+   - 0 undefined functions expected
+   - rebar3 xref
+
+7. CODE FORMATTING (BLOCKING)
+   - 100% formatted required
+   - rebar3 format --verify
+
+8. SECURITY SCAN (BLOCKING)
+   - 0 vulnerabilities required
+   - Check for hardcoded secrets
+
+==================================================
+RELEASE ARTIFACTS
+==================================================
+
+Generated in _build/release_artifacts/:
+├── erlmcp.tar.gz              (Production release tarball)
+├── SHA256SUMS                 (Checksums for verification)
+├── QUALITY_REPORT.md          (Quality gate results)
+└── CHANGELOG-v0.6.0.md        (Release notes)
+
+==================================================
+GIT WORKFLOW SUMMARY
+==================================================
+
+CURRENT STATE:
+- Version: 2.1.0
+- Branch: main
+- Changes: 46 files (5,649 insertions, 4,406 deletions)
+
+COMMIT ORGANIZATION (8 phases):
+1. Test suite expansion (+5,000+ lines)
+2. Core improvements (+76 lines)
+3. Test cleanup (-2,997 lines)
+4. Transport improvements (+17 lines)
+5. Observability enhancements (+344 lines)
+6. GCP integration (+846 lines)
+7. Documentation updates
+8. Configuration updates
+
+BRANCH STRATEGY:
+main (production)
+├── release/v0.6.0 (NEW)
+├── feature/mcp-spec-compliance
+├── feature/test-coverage-expansion
+└── feature/gcp-integration
+
+RELEASE WORKFLOW:
+1. ./scripts/release-prepare-v0.6.0.sh
+2. Review commits: git log --oneline
+3. Verify quality: make check
+4. ./scripts/release-create-v0.6.0.sh
+5. GitHub release created automatically
+6. Merge to main
+7. Announce release
+
+==================================================
+QUALITY METRICS BASELINES
+==================================================
+
+Performance:
+- Core ops: 2.69M ops/sec
+- Network I/O: 43K msg/s (TCP)
+- Sustained load: 372K msg/s (60M ops/30s)
+
+Test Coverage:
+- Target: 85%+ (exceeds 80% minimum)
+- Methodology: Chicago School TDD
+- Test lines: 5,000+ new tests added
+
+Type Safety:
+- Dialyzer: Strict mode, 0 errors
+- Xref: 0 undefined functions
+- Specs: 100% on public APIs
+
+==================================================
+COMMAND REFERENCE
+==================================================
+
+RELEASE PREPARATION:
+./scripts/release-prepare-v0.6.0.sh
+
+RELEASE EXECUTION:
+./scripts/release-create-v0.6.0.sh
+
+QUALITY GATES:
+make check
+# or
+TERM=dumb rebar3 compile && rebar3 eunit && rebar3 ct
+
+CREATE PR:
+gh pr create --title "feat: My feature" --body "..."
+# Use .github/PULL_REQUEST_TEMPLATE.md
+
+CREATE ISSUE:
+gh issue create --title "[BUG] Issue" --body "..."
+# Use .github/ISSUE_TEMPLATE/ templates
+
+VIEW RELEASE:
+gh release view v0.6.0
+
+==================================================
+NEXT STEPS
+==================================================
+
+1. Review documentation:
+   - docs/GIT_WORKFLOW_PLAN.md
+   - docs/GIT_OPERATIONS_QUICKREF.md
+   - docs/RELEASE_MANAGEMENT_SUMMARY.md
+
+2. Prepare release:
+   ./scripts/release-prepare-v0.6.0.sh
+
+3. Verify organization:
+   git log --oneline
+   git diff main..release/v0.6.0
+
+4. Run quality gates:
+   make check
+
+5. Create release:
+   ./scripts/release-create-v0.6.0.sh
+
+==================================================
+END OF FILE STRUCTURE
+==================================================
+

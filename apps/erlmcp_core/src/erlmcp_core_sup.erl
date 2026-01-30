@@ -204,6 +204,18 @@ init([]) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_pagination]
+        },
+
+        %% ================================================================
+        %% NOTIFICATION HANDLERS: Supervised notification processing (RPN 168)
+        %% ================================================================
+        #{
+            id => erlmcp_notification_handler_sup,
+            start => {erlmcp_notification_handler_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_notification_handler_sup]
         }
     ],
 

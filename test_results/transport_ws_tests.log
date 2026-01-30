@@ -1,0 +1,27 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;32m===> Performing EUnit tests...
+[0m======================== EUnit ========================
+module 'erlmcp_transport_ws_tests'
+  *** context setup failed ***
+**in function erlmcp_transport_ws_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl, line 10)
+**error:{badmatch,{error,{erlmcp,{"no such file or directory","erlmcp.app"}}}}
+
+
+=======================================================
+  Failed: 0.  Skipped: 0.  Passed: 0.
+One or more tests were cancelled.
+[0;31m===> [1mError running tests
+[0m[0m
