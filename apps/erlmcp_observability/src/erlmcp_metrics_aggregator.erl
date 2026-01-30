@@ -303,11 +303,36 @@ calculate_percentiles(Values) ->
         p999 => percentile(Sorted, Len, 0.999)
     }.
 
-%% @doc Get percentile value from sorted list
+%% @doc Get percentile value from sorted list using linear interpolation
+%% Uses the "linear interpolation of closest ranks" method which is more accurate
+%% than the simple nearest-rank method, especially for small datasets.
+%%
+%% Algorithm:
+%%   Position = 1 + (N - 1) * p
+%%   Interpolate between floor(Position) and ceil(Position)
+%%
 -spec percentile([number()], pos_integer(), float()) -> number().
+percentile([SingleValue], _Len, _Percent) ->
+    SingleValue;
 percentile(Sorted, Len, Percent) ->
-    Index = max(1, round(Len * Percent)),
-    lists:nth(min(Index, Len), Sorted).
+    % Calculate position using linear interpolation method
+    % This is the same method used by numpy.percentile with interpolation='linear'
+    Pos = 1.0 + (Len - 1) * Percent,
+
+    LowerIdx = max(1, floor(Pos)),
+    UpperIdx = min(Len, ceil(Pos)),
+
+    LowerVal = lists:nth(LowerIdx, Sorted),
+    UpperVal = lists:nth(UpperIdx, Sorted),
+
+    if LowerIdx =:= UpperIdx ->
+        % Exact index match, no interpolation needed
+        LowerVal;
+    true ->
+        % Linear interpolation between the two values
+        Fraction = Pos - LowerIdx,
+        LowerVal + Fraction * (UpperVal - LowerVal)
+    end.
 
 %% @doc Calculate throughput trend
 -spec calculate_throughput_trend([#bucket{}]) -> number().

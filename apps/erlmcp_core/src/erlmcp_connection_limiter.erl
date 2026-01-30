@@ -66,7 +66,8 @@
 -record(state, {
     max_connections :: pos_integer(),
     alert_threshold :: float(),
-    last_alert :: integer() | undefined
+    last_alert :: integer() | undefined,
+    server_counts :: #{server_id() => non_neg_integer()}
 }).
 
 %%====================================================================
@@ -83,30 +84,35 @@ start_link() ->
 stop() ->
     gen_server:stop(?MODULE).
 
+%% @doc Ensure counter is registered (called during init)
+%% @private
+-spec ensure_counter_registered() -> ok.
+ensure_counter_registered() ->
+    try
+        gproc:reg_shared(?GPROC_KEY),
+        ok
+    catch
+        error:badarg ->
+            %% Counter already exists
+            ok
+    end.
+
 %% @doc Check if connection should be accepted
 %% Returns 'accept' or '{error, too_many_connections}'
 -spec accept_connection(server_id()) -> limit_result().
 accept_connection(ServerId) ->
     case is_limit_enabled() of
         false ->
-            accept;
+            %% Track but don't enforce - still use call for synchronization
+            gen_server:call(?MODULE, {accept_connection, ServerId});
         true ->
-            MaxConnections = get_limit(),
-            CurrentCount = get_connection_count(),
-
-            case CurrentCount < MaxConnections of
-                true ->
-                    %% Increment counter
-                    increment_counter(),
-                    increment_server_counter(ServerId),
-
-                    %% Check for alert threshold
-                    check_alert_threshold(CurrentCount, MaxConnections),
-
+            %% Check and potentially accept
+            case gen_server:call(?MODULE, {check_accept, ServerId}) of
+                {ok, Count} ->
                     accept;
-                false ->
-                    logger:warning("Connection limit exceeded: ~p/~p for server ~p",
-                                 [CurrentCount, MaxConnections, ServerId]),
+                {error, too_many_connections, Count} ->
+                    logger:warning("Connection limit exceeded: ~p for server ~p",
+                                 [Count, ServerId]),
                     {error, too_many_connections}
             end
     end.
@@ -114,44 +120,25 @@ accept_connection(ServerId) ->
 %% @doc Release a connection slot
 -spec release_connection(server_id()) -> ok.
 release_connection(ServerId) ->
-    case is_limit_enabled() of
-        false ->
-            ok;
-        true ->
-            decrement_counter(),
-            decrement_server_counter(ServerId),
-            ok
-    end.
+    %% Use cast for release since we don't need to wait for confirmation
+    gen_server:cast(?MODULE, {release_connection, ServerId}),
+    ok.
 
 %% @doc Get current global connection count
 -spec get_connection_count() -> non_neg_integer().
 get_connection_count() ->
-    case is_limit_enabled() of
-        false ->
-            0;
-        true ->
-            gen_server:call(?MODULE, get_connection_count)
-    end.
+    %% Always return actual count, even when limiting disabled
+    gen_server:call(?MODULE, get_connection_count).
 
 %% @doc Get connection count for a specific server
 -spec get_connection_count(server_id()) -> non_neg_integer().
 get_connection_count(ServerId) ->
-    case is_limit_enabled() of
-        false ->
-            0;
-        true ->
-            try
-                Key = {c, l, {erlmcp_server_connections, ServerId}},
-                case gproc:lookup_value(Key) of
-                    Value when is_integer(Value) ->
-                        Value;
-                    _ ->
-                        0
-                end
-            catch
-                error:badarg ->
-                    0
-            end
+    %% Always return actual count, even when limiting disabled
+    try
+        gen_server:call(?MODULE, {get_connection_count, ServerId})
+    catch
+        _:_ ->
+            0
     end.
 
 %% @doc Set the maximum connection limit
@@ -160,7 +147,7 @@ set_limit(Limit) when is_integer(Limit), Limit > 0 ->
     gen_server:call(?MODULE, {set_limit, Limit}).
 
 %% @doc Get the current maximum connection limit
--spec get_limit() -> pos_integer().
+-spec get_limit() -> pos_integer() | infinity.
 get_limit() ->
     case is_limit_enabled() of
         false ->
@@ -177,7 +164,7 @@ get_stats() ->
 %% @doc Check if connection limiting is enabled
 -spec is_limit_enabled() -> boolean().
 is_limit_enabled() ->
-    case application:get_env(erlmcp, connection_limiting) of
+    case application:get_env(erlmcp_core, connection_limiting) of
         {ok, Config} when is_map(Config) ->
             maps:get(enabled, Config, true);
         {ok, Config} when is_list(Config) ->
@@ -192,30 +179,55 @@ is_limit_enabled() ->
 
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
+    logger:info("Connection limiter init starting"),
     %% Load configuration
     MaxConnections = load_config(max_connections, ?DEFAULT_MAX_CONNECTIONS),
     AlertThreshold = load_config(alert_threshold, ?DEFAULT_ALERT_THRESHOLD),
 
-    %% Initialize gproc counter
-    try
-        gproc:reg(?GPROC_KEY, 0),
-        logger:info("Connection limiter started: max=~p, alert_threshold=~p",
-                   [MaxConnections, AlertThreshold])
-    catch
-        error:badarg ->
-            %% Already registered
-            ok
-    end,
+    logger:info("Loaded config: max=~p, alert_threshold=~p", [MaxConnections, AlertThreshold]),
+
+    %% Register gproc counter for global count
+    ensure_counter_registered(),
 
     {ok, #state{
         max_connections = MaxConnections,
         alert_threshold = AlertThreshold,
-        last_alert = undefined
+        last_alert = undefined,
+        server_counts = #{}
     }}.
 
 handle_call(get_connection_count, _From, State) ->
     Count = get_counter_value(),
     {reply, Count, State};
+
+handle_call({get_connection_count, ServerId}, _From, State) ->
+    Count = maps:get(ServerId, State#state.server_counts, 0),
+    {reply, Count, State};
+
+handle_call({check_accept, ServerId}, _From, State) ->
+    %% Increment counters
+    increment_counter(),
+    NewServerCounts = maps:update_with(ServerId, fun(V) -> V + 1 end, 1, State#state.server_counts),
+
+    CurrentCount = get_counter_value(),
+    MaxConnections = State#state.max_connections,
+
+    case CurrentCount =< MaxConnections of
+        true ->
+            %% Check for alert threshold
+            check_alert_threshold(CurrentCount, MaxConnections),
+            {reply, {ok, CurrentCount}, State#state{server_counts = NewServerCounts}};
+        false ->
+            %% Rollback the increment since we're rejecting
+            decrement_counter(),
+            {reply, {error, too_many_connections, CurrentCount}, State}
+    end;
+
+handle_call({accept_connection, ServerId}, _From, State) ->
+    %% Increment counters without checking limit (when limiting disabled)
+    increment_counter(),
+    NewServerCounts = maps:update_with(ServerId, fun(V) -> V + 1 end, 1, State#state.server_counts),
+    {reply, accept, State#state{server_counts = NewServerCounts}};
 
 handle_call({set_limit, Limit}, _From, State) when is_integer(Limit), Limit > 0 ->
     logger:info("Connection limit updated: ~p -> ~p",
@@ -237,6 +249,12 @@ handle_call(get_stats, _From, State) ->
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
+
+handle_cast({release_connection, ServerId}, State) ->
+    %% Decrement counters
+    decrement_counter(),
+    NewServerCounts = maps:update_with(ServerId, fun(V) -> V - 1 end, 0, State#state.server_counts),
+    {noreply, State#state{server_counts = NewServerCounts}};
 
 handle_cast({check_alert, CurrentCount, MaxConnections}, State) ->
     NewState = handle_alert(CurrentCount, MaxConnections, State),
@@ -271,7 +289,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private Load configuration value
 -spec load_config(atom(), term()) -> term().
 load_config(Key, Default) ->
-    case application:get_env(erlmcp, connection_limiting) of
+    case application:get_env(erlmcp_core, connection_limiting) of
         {ok, Config} when is_map(Config) ->
             maps:get(Key, Config, Default);
         {ok, Config} when is_list(Config) ->
@@ -280,30 +298,47 @@ load_config(Key, Default) ->
             Default
     end.
 
-%% @private Get current counter value
+%% @private Get current counter value with fallback
 -spec get_counter_value() -> non_neg_integer().
 get_counter_value() ->
     try
-        case gproc:lookup_value(?GPROC_KEY) of
+        %% Use get_value for counters (type c), not lookup_value
+        %% lookup_value only works for types: n, a, rc
+        case gproc:get_value(?GPROC_KEY) of
             Value when is_integer(Value) ->
+                logger:debug("Counter value retrieved: ~p", [Value]),
                 Value;
             _ ->
+                logger:warning("Counter exists but has non-integer value"),
                 0
         end
     catch
         error:badarg ->
-            0
+            %% Counter doesn't exist, try to create it
+            logger:warning("Counter not found, attempting to register"),
+            try
+                gproc:reg(?GPROC_KEY, 0),
+                0
+            catch
+                error:badarg ->
+                    %% Still can't register (race condition or already exists)
+                    logger:error("Failed to register counter after badarg"),
+                    0
+            end
     end.
 
 %% @private Increment global counter
 -spec increment_counter() -> ok.
 increment_counter() ->
     try
-        gproc:update_counter(?GPROC_KEY, 1)
+        NewValue = gproc:update_counter(?GPROC_KEY, 1),
+        logger:debug("Counter incremented to: ~p", [NewValue])
     catch
         error:badarg ->
-            %% Counter doesn't exist, create it
-            gproc:reg(?GPROC_KEY, 1)
+            %% Counter doesn't exist, create it with initial value 0, then increment
+            logger:warning("Counter not registered, creating now"),
+            gproc:reg(?GPROC_KEY, 0),
+            gproc:update_counter(?GPROC_KEY, 1)
     end,
     ok.
 
@@ -318,35 +353,10 @@ decrement_counter() ->
     end,
     ok.
 
-%% @private Increment server-specific counter
--spec increment_server_counter(server_id()) -> ok.
-increment_server_counter(ServerId) ->
-    Key = {c, l, {erlmcp_server_connections, ServerId}},
-    try
-        gproc:update_counter(Key, 1)
-    catch
-        error:badarg ->
-            %% Counter doesn't exist, create it
-            gproc:reg(Key, 1)
-    end,
-    ok.
-
-%% @private Decrement server-specific counter
--spec decrement_server_counter(server_id()) -> ok.
-decrement_server_counter(ServerId) ->
-    try
-        Key = {c, l, {erlmcp_server_connections, ServerId}},
-        gproc:update_counter(Key, -1)
-    catch
-        error:badarg ->
-            ok
-    end,
-    ok.
-
 %% @private Check if alert threshold is exceeded
 -spec check_alert_threshold(non_neg_integer(), pos_integer()) -> ok.
 check_alert_threshold(CurrentCount, MaxConnections) ->
-    Threshold = case application:get_env(erlmcp, connection_limiting) of
+    Threshold = case application:get_env(erlmcp_core, connection_limiting) of
         {ok, Config} when is_map(Config) ->
             maps:get(alert_threshold, Config, ?DEFAULT_ALERT_THRESHOLD);
         {ok, Config} when is_list(Config) ->

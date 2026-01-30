@@ -1,0 +1,334 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Fetching coveralls v2.2.0
+[0m[0;32m===> Fetching meck v0.9.2
+[0m[0;32m===> Fetching proper v1.4.0
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling setup
+[0m[0;32m===> Compiling parse_trans
+[0m[0;32m===> Compiling jobs
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;32m===> Compiling acceptor_pool
+[0m[0;32m===> Compiling grpcbox
+[0m[0;32m===> Compiling opentelemetry_exporter
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling jose
+[0m[0;32m===> Compiling cowlib
+[0m[0;32m===> Compiling gun
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m/Users/sac/erlmcp/_build/test/lib/proper/src/proper.erl:2406:10: Warning: slave:start_link/2 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+% 2406|     case slave:start_link(HostName, SlaveName) of
+%     |          ^
+
+/Users/sac/erlmcp/_build/test/lib/proper/src/proper.erl:2478:64: Warning: slave:stop/1 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+% 2478|             StopFun = fun({Node, {already_running, false}}) -> slave:stop(Node);
+%     |                                                                ^
+
+      ┌─ _build/test/lib/proper/src/proper.erl:
+      │
+ 2406 │      case [1;31mslave[0m:start_link(HostName, SlaveName) of[0m
+      │           [1;31m╰──[0m[0m Warning: slave:start_link/2 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+
+      ┌─ _build/test/lib/proper/src/proper.erl:
+      │
+ 2478 │              StopFun = fun({Node, {already_running, false}}) -> [1;31mslave[0m:stop(Node);[0m
+      │                                                                 [1;31m╰──[0m[0m Warning: slave:stop/1 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+
+
+[0;32m===> Compiling meck
+[0m[0;32m===> Building escript for setup...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 883 │                  [1;31m{[0mnoreply, State};[0m
+     │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 893 │                                  [1;31m{[0mnoreply, State};[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 898 │                                  [1;31m{[0mnoreply, State}[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 904 │                          [1;31m{[0mnoreply, State}[0m
+     │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 106 │          Value = maps:get(value, Arg, [1;31m<<>>),[0m[0m
+     │                                       [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 375 │          Value = maps:get(value, Arg, [1;31m<<>>),[0m[0m
+     │                                       [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+   ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+   │
+ 6 │  -[1;31mrecord[0m(state, {[0m
+   │   [1;31m╰──[0m[0m Warning: record state is unused
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1008 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1008 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1026 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1026 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1050 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1050 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1068 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1068 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1087 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1087 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1105 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1105 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1124 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1124 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl:
+     │
+ 640 │  -[1;31mrecord[0m(mock_state, {[0m
+     │   [1;31m╰──[0m[0m Warning: record mock_state is unused
+
+
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_message_handler.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_registry.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_split_brain_detector.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_auth_rate_limiter.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_loader.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_node_monitor.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_resource_subscriptions.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_notification_handler.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_tracing.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_path_canonicalizer.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_change_notifier.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_client_transport.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_session_failover.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_registry_utils.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_circuit_breaker.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_client.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_mock_llm.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_session_replicator.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_sla_envelope.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_uri_validator.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_completion.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_connection_monitor.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_session_manager.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_sse_event_store.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_supervisor_collapse_tests.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_receipt.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_validator.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_icon_cache.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_message_size.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_auth.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_request_id.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_registry_dist.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pagination.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_util.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_memory_guard.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_code_reload.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_rate_limiter.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_prompt_template.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_plan.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_subscription.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_cpu_guard.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_logging.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_server_sup.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_rate_limit_middleware.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_progress.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_connection_limiter.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_message_parser.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_capabilities.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_prompt_list_change_notifier.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_session.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_sampling.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_reload_sup.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_tasks.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_cli.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_cpu_quota.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_resource.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/tcps_poka_yoke.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_state.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_graceful_drain.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_tool.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_cluster_sup.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_pricing_http.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/tcps_poka_yoke_validator.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_hooks.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_sla_monitor.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_app.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_server.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_sup.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_core_sup.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_test_sync.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_notification_handler_sup.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_secrets.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_batch.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_cancellation.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_json_rpc.beam"}
+[0m[0;32m===> Performing cover analysis...
+[0m[0;35m===> No coverdata found
+[0m

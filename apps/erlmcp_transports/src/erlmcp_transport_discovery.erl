@@ -315,9 +315,9 @@ discover_from_env() ->
     AllEnv = application:get_all_env(),
 
     % Extract ERLMCP_TRANSPORT_* from OS environment
+    % os:env() returns [{KeyString, ValueString}, ...]
     OsEnv = lists:filter(fun({Key, _Value}) ->
-        KeyStr = atom_to_list(Key),
-        lists:prefix("ERLMCP_TRANSPORT_", KeyStr)
+        lists:prefix("ERLMCP_TRANSPORT_", Key)
     end, os:env()),
 
     % Parse environment variables into transport configs
@@ -413,9 +413,10 @@ parse_env_key(Key) ->
 -spec build_transport_config(atom(), map()) -> {ok, map()} | {error, term()}.
 build_transport_config(Name, Config) ->
     % Ensure required fields
-    case maps:is_key("type", Config) of
+    % Note: Config has atom keys (from parse_env_key), not string keys
+    case maps:is_key(type, Config) of
         true ->
-            Type = list_to_atom(maps:get("type", Config)),
+            Type = list_to_atom(maps:get(type, Config)),
             FinalConfig = #{
                 transport_id => Name,
                 type => Type,
@@ -432,17 +433,18 @@ build_transport_config(Name, Config) ->
 %% @doc Convert string environment values to appropriate types
 -spec convert_env_types(map()) -> map().
 convert_env_types(Config) ->
+    % Note: Config has atom keys (from parse_env_key), not string keys
     maps:fold(fun
-        ("port", Value, Acc) when is_list(Value) ->
+        (port, Value, Acc) when is_list(Value) ->
             maps:put(port, list_to_integer(Value), Acc);
-        ("connect_timeout", Value, Acc) when is_list(Value) ->
+        (connect_timeout, Value, Acc) when is_list(Value) ->
             maps:put(connect_timeout, list_to_integer(Value), Acc);
-        ("keepalive", "true", Acc) ->
+        (keepalive, "true", Acc) ->
             maps:put(keepalive, true, Acc);
-        ("keepalive", "false", Acc) ->
+        (keepalive, "false", Acc) ->
             maps:put(keepalive, false, Acc);
-        (Key, Value, Acc) ->
-            maps:put(list_to_atom(Key), Value, Acc)
+        (Key, Value, Acc) when is_atom(Key) ->
+            maps:put(Key, Value, Acc)
     end, #{}, Config).
 
 %%====================================================================

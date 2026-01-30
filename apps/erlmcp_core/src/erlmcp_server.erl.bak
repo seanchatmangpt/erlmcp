@@ -202,28 +202,39 @@ stop(Server) ->
 
 -spec init([server_id() | #mcp_server_capabilities{}]) -> {ok, state()}.
 init([ServerId, Capabilities]) ->
-    process_flag(trap_exit, true),
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.init">>, ServerId),
+    try
+        process_flag(trap_exit, true),
 
-    % Start or get change notifier
-    NotifierPid = case erlmcp_change_notifier:start_link() of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
-    end,
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"server_id">> => ServerId
+        }),
 
-    % Monitor the notifier process
-    MonitorRef = erlang:monitor(process, NotifierPid),
+        % Start or get change notifier
+        NotifierPid = case erlmcp_change_notifier:start_link() of
+            {ok, Pid} -> Pid;
+            {error, {already_started, Pid}} -> Pid
+        end,
 
-    % Start periodic GC for each server (Gap #10)
-    start_periodic_gc(),
+        % Start periodic GC for each server (Gap #10)
+        start_periodic_gc(),
 
-    State = #state{
-        server_id = ServerId,
-        capabilities = Capabilities,
-        notifier_pid = NotifierPid
-    },
+        State = #state{
+            server_id = ServerId,
+            capabilities = Capabilities,
+            notifier_pid = NotifierPid
+        },
 
-    logger:info("Starting MCP server ~p with capabilities: ~p", [ServerId, Capabilities]),
-    {ok, State}.
+        logger:info("Starting MCP server ~p (refactored)", [ServerId]),
+        erlmcp_tracing:set_status(SpanCtx, ok),
+        {ok, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            erlang:raise(Class, Reason, Stacktrace)
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
@@ -723,34 +734,199 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-%% Task management endpoints - NOT IMPLEMENTED (Optional in MCP spec)
-%% Task manager was replaced by erlmcp_hooks for pre/post task hooks
-%% Return "method not found" for tasks/* endpoints
-handle_request(Id, ?MCP_METHOD_TASKS_CREATE, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+%% Tasks/create - Create a new async task
+handle_request(Id, ?MCP_METHOD_TASKS_CREATE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.tasks_create">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId
+        }),
 
-handle_request(Id, ?MCP_METHOD_TASKS_LIST, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+        % Extract action and metadata
+        Action = maps:get(<<"action">>, Params, #{}),
+        Metadata = maps:get(<<"metadata">>, Params, #{}),
 
-handle_request(Id, ?MCP_METHOD_TASKS_GET, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+        % Create task without explicit client PID - notifications via registry
+        case erlmcp_tasks:create_task(undefined, Action, Metadata) of
+            {ok, TaskId} ->
+                Response = #{
+                    ?MCP_PARAM_TASK_ID => TaskId
+                },
+                send_response_via_registry(State, TransportId, Id, Response),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                {noreply, State};
+            {error, ErrorCode} when is_integer(ErrorCode) ->
+                send_error_via_registry(State, TransportId, Id, ErrorCode,
+                    maps:get(<<"message">>, Params, <<"Task creation failed">>)),
+                {noreply, State};
+            {error, _Reason} when is_binary(_Reason) ->
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                    <<"Task creation failed">>),
+                {noreply, State}
+        end
+    catch
+        _Class:_Reason:_Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, error, _Reason, []),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                <<"Task creation failed">>),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
-handle_request(Id, ?MCP_METHOD_TASKS_RESULT, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+%% Tasks/list - List tasks with pagination
+handle_request(Id, ?MCP_METHOD_TASKS_LIST, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.tasks_list">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId
+        }),
 
-handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+        Cursor = maps:get(<<"cursor">>, Params, undefined),
+        Limit = maps:get(<<"limit">>, Params, 100),
 
+        % List all tasks (client filtering done in erlmcp_tasks)
+        case erlmcp_tasks:list_tasks(undefined, Cursor, Limit) of
+            {ok, TaskList} ->
+                send_response_via_registry(State, TransportId, Id, TaskList),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                {noreply, State};
+            {error, Reason} ->
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, Reason),
+                {noreply, State}
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                <<"Task list failed">>),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Tasks/get - Get task details
+handle_request(Id, ?MCP_METHOD_TASKS_GET, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.tasks_get">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId
+        }),
+
+        TaskId = maps:get(?MCP_PARAM_TASK_ID, Params),
+
+        case erlmcp_tasks:get_task(undefined, TaskId) of
+            {ok, Task} ->
+                send_response_via_registry(State, TransportId, Id, Task),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                {noreply, State};
+            {error, ?MCP_ERROR_TASK_NOT_FOUND} ->
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_NOT_FOUND,
+                    ?MCP_MSG_TASK_NOT_FOUND),
+                {noreply, State};
+            {error, Reason} ->
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, Reason),
+                {noreply, State}
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                <<"Task get failed">>),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Tasks/result - Get task result
+handle_request(Id, ?MCP_METHOD_TASKS_RESULT, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.tasks_result">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId
+        }),
+
+        TaskId = maps:get(?MCP_PARAM_TASK_ID, Params),
+
+        case erlmcp_tasks:get_task_result(undefined, TaskId) of
+            {ok, Result} ->
+                Response = #{
+                    ?MCP_PARAM_RESULT => Result
+                },
+                send_response_via_registry(State, TransportId, Id, Response),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                {noreply, State};
+            {error, ?MCP_ERROR_TASK_NOT_FOUND} ->
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_NOT_FOUND,
+                    ?MCP_MSG_TASK_NOT_FOUND),
+                {noreply, State};
+            {error, ?MCP_ERROR_TASK_FAILED} ->
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_FAILED,
+                    ?MCP_MSG_TASK_FAILED),
+                {noreply, State};
+            {error, ?MCP_ERROR_TASK_RESULT_NOT_READY} ->
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_RESULT_NOT_READY,
+                    ?MCP_MSG_TASK_RESULT_NOT_READY),
+                {noreply, State};
+            {error, Reason} ->
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, Reason),
+                {noreply, State}
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                <<"Task result failed">>),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Tasks/cancel - Cancel a task
+handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.tasks_cancel">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId
+        }),
+
+        TaskId = maps:get(?MCP_PARAM_TASK_ID, Params),
+        Reason = maps:get(?MCP_PARAM_REASON, Params, <<"Cancelled by client">>),
+
+        case erlmcp_tasks:cancel_task(undefined, TaskId, Reason) of
+            {ok, cancelled} ->
+                send_response_via_registry(State, TransportId, Id, #{
+                    ?MCP_PARAM_TASK_ID => TaskId,
+                    ?MCP_PARAM_STATUS => <<"cancelled">>
+                }),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                {noreply, State};
+            {error, ?MCP_ERROR_TASK_NOT_FOUND} ->
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_NOT_FOUND,
+                    ?MCP_MSG_TASK_NOT_FOUND),
+                {noreply, State};
+            {error, ?MCP_ERROR_TASK_ALREADY_COMPLETED} ->
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_ALREADY_COMPLETED,
+                    ?MCP_MSG_TASK_ALREADY_COMPLETED),
+                {noreply, State};
+            {error, Reason} ->
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, Reason),
+                {noreply, State}
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                <<"Task cancel failed">>),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, Params, TransportId, State) ->
     Templates = list_all_templates(State),
     case handle_paginated_templates_list(Templates, Params) of

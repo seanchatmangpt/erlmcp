@@ -11,6 +11,7 @@
     read_resource/2, subscribe_to_resource/2, unsubscribe_from_resource/2,
     list_prompts/1, get_prompt/2, get_prompt/3,
     list_tools/1, call_tool/3,
+    complete/3, complete/4,
     with_batch/2, send_batch_request/4,
     set_notification_handler/3, remove_notification_handler/2,
     set_sampling_handler/2, remove_sampling_handler/1,
@@ -131,6 +132,15 @@ list_tools(Client) ->
 -spec call_tool(client(), binary(), map()) -> {ok, map()} | {error, term()}.
 call_tool(Client, Name, Arguments) when is_binary(Name), is_map(Arguments) ->
     gen_server:call(Client, {call_tool, Name, Arguments}).
+
+-spec complete(client(), binary(), binary()) -> {ok, map()} | {error, term()}.
+complete(Client, Ref, Argument) ->
+    complete(Client, Ref, Argument, 5000).
+
+-spec complete(client(), binary(), binary(), timeout()) -> {ok, map()} | {error, term()}.
+complete(Client, Ref, Argument, Timeout)
+  when is_binary(Ref), is_binary(Argument), is_integer(Timeout) ->
+    gen_server:call(Client, {complete, Ref, Argument}, Timeout).
 
 -spec stop(client()) -> ok.
 stop(Client) ->
@@ -278,6 +288,27 @@ handle_call({call_tool, Name, Arguments}, From, #state{phase = initialized} = St
     end;
 
 handle_call({call_tool, _, _}, From, #state{phase = Phase} = State) ->
+    gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
+    {noreply, State};
+
+%% Complete requires initialized phase
+handle_call({complete, Ref, Argument}, From, #state{phase = initialized} = State) ->
+    case ?CHECK_CAPABILITY(State, completions) of
+        do_request ->
+            Params = #{
+                <<"ref">> => Ref,
+                <<"argument">> => #{
+                    <<"name">> => Argument,
+                    <<"value">> => <<>>
+                }
+            },
+            {ok, NewState} = send_request(State, <<"completion/complete">>, Params, {complete, From}),
+            {noreply, NewState};
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
+    end;
+
+handle_call({complete, _Ref, _Argument}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
 
@@ -602,6 +633,11 @@ check_server_capability(Caps, tools) ->
     check_capability_enabled(Caps#mcp_server_capabilities.tools);
 check_server_capability(Caps, prompts) ->
     check_capability_enabled(Caps#mcp_server_capabilities.prompts);
+check_server_capability(Caps, completions) ->
+    case Caps#mcp_server_capabilities.experimental of
+        #{<<"completions">> := _} -> ok;
+        _ -> {error, capability_not_supported}
+    end;
 check_server_capability(_Caps, _) ->
     ok.
 

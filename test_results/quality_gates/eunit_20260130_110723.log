@@ -1,0 +1,26 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_validation
+[0m     ┌─ apps/erlmcp_validation/src/erlmcp_validation_runner.erl:
+     │
+ 731 │      Failed = maps:get(failed_tests, Result, [1;31m0[0m),[0m
+     │                                              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;31m===> [1mCompiling apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl failed
+[0m[0m    ┌─ apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl:
+    │
+ 58 │      ?assert(lists:keymember(<<"initialize_test">>, #test_name[1;31m, [0mTraceability)),[0m
+    │                                                               [1;31m╰──[0m[0m syntax error before: ','
+
+

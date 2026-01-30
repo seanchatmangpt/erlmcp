@@ -107,23 +107,29 @@ init([Port]) ->
     ListenerName = listener_name(Port),
 
     % Configure Cowboy routes
+    % IMPORTANT: More specific routes must come before less specific ones
+    % because Cowboy matches routes in order
     Dispatch = cowboy_router:compile([
         {'_', [
             {"/", cowboy_static, {priv_file, erlmcp_observability, "dashboard/index.html"}},
             {"/static/[...]", cowboy_static, {priv_dir, erlmcp_observability, "dashboard/static"}},
             {"/ws", ?MODULE, []},
-            {"/api/metrics", erlmcp_dashboard_http_handler, []},
             {"/api/metrics/historical", erlmcp_dashboard_http_handler, []},
-            {"/api/metrics/export", erlmcp_dashboard_http_handler, []}
+            {"/api/metrics/export", erlmcp_dashboard_http_handler, []},
+            {"/api/metrics", erlmcp_dashboard_http_handler, []}
         ]}
     ]),
 
     % Start Cowboy HTTP listener with unique name
-    {ok, ListenerPid} = cowboy:start_clear(
+    % Handle case where listener might already be started (e.g., in tests)
+    ListenerPid = case cowboy:start_clear(
         ListenerName,
         [{port, Port}],
         #{env => #{dispatch => Dispatch}}
-    ),
+    ) of
+        {ok, Pid} -> Pid;
+        {error, {already_started, Pid}} -> Pid
+    end,
 
     % Start periodic metrics broadcast timer
     {ok, TimerRef} = timer:send_interval(?METRICS_INTERVAL, self(), broadcast_metrics),

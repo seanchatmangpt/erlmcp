@@ -1,0 +1,7 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;31m===> [1mCompiling _build/default/lib/fs/src/sys/inotifywait_win32.erl failed
+[0m[0m_build/default/lib/fs/ebin/inotifywait_win32.bea#:none: error writing file: no such file or directory
+

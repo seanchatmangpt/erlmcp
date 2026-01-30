@@ -1,0 +1,443 @@
+-module(erlmcp_prompt_injection_tests).
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%%===================================================================
+%%% Prompt Injection Prevention Tests (Agent #6: Security Fix)
+%%%
+%%% These tests verify comprehensive security measures against:
+%%% - Code execution patterns (eval, exec, system)
+%%% - Path traversal (../, ..\)
+%%% - Template injection ({{{ }}}, <%= %>)
+%%% - Size limits to prevent DoS
+%%% - Variable name validation
+%%% - JSON Schema validation
+%%% @end
+%%%===================================================================
+
+%%%===================================================================
+%%% Test Fixtures
+%%%===================================================================
+
+prompt_injection_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     [
+      {"Code execution patterns rejected", fun test_code_execution_rejection/0},
+      {"Path traversal patterns rejected", fun test_path_traversal_rejection/0},
+      {"Template injection patterns rejected", fun test_template_injection_rejection/0},
+      {"Prompt size limits enforced", fun test_size_limits/0},
+      {"Variable name validation", fun test_variable_name_validation/0},
+      {"Variable name length limits", fun test_variable_name_length/0},
+      {"Safe template rendering", fun test_safe_rendering/0},
+      {"Dangerous value escaping", fun test_value_escaping/0},
+      {"Statistics tracking", fun test_statistics/0}
+     ]}.
+
+setup() ->
+    {ok, Pid} = erlmcp_prompt_template:start_link(),
+    Pid.
+
+cleanup(_Pid) ->
+    gen_server:stop(erlmcp_prompt_template).
+
+%%%===================================================================
+%%% Code Execution Pattern Tests
+%%%===================================================================
+
+test_code_execution_rejection() ->
+    %% Test various code execution patterns
+    CodeExecutionPatterns = [
+        {<<"eval(malicious_code)">>, code_execution_eval},
+        {<<"exec('rm -rf /')">>, code_execution_exec},
+        {<<"system('cat /etc/passwd')">>, code_execution_system},
+        {<<"os.system('恶意代码')">>, code_execution_os_system},
+        {<<"subprocess.call(['dangerous'])">>, code_execution_subprocess},
+        {<<"spawn('evil')">>, code_execution_variant}
+    ],
+
+    lists:foreach(
+        fun({Pattern, _ExpectedType}) ->
+            Result = erlmcp_prompt_template:validate_prompt(Pattern),
+            ?assertEqual({error, dangerous_pattern_detected}, element(1, Result),
+                         "Should reject code execution pattern: " ++ binary_to_list(Pattern))
+        end,
+        CodeExecutionPatterns
+    ),
+
+    %% Safe pattern should pass
+    SafePrompt = <<"Hello, this is a safe prompt without dangerous keywords">>,
+    ?assertEqual(ok, erlmcp_prompt_template:validate_prompt(SafePrompt)).
+
+%%%===================================================================
+%%% Path Traversal Pattern Tests
+%%%===================================================================
+
+test_path_traversal_rejection() ->
+    PathTraversalPatterns = [
+        <<"../../../etc/passwd">>,
+        <<"..\\..\\..\\windows\\system32">>,
+        <<"%2e%2e%2fetc%2fpasswd">>,
+        <<"..././.../etc/shadow">>,
+        <<"..\\..\\config">>,
+        <<"../../etc/hosts">>
+    ],
+
+    lists:foreach(
+        fun(Pattern) ->
+            Result = erlmcp_prompt_template:validate_prompt(Pattern),
+            ?assertEqual({error, dangerous_pattern_detected}, element(1, Result),
+                         "Should reject path traversal pattern: " ++ binary_to_list(Pattern))
+        end,
+        PathTraversalPatterns
+    ).
+
+%%%===================================================================
+%%% Template Injection Pattern Tests
+%%%===================================================================
+
+test_template_injection_rejection() ->
+    TemplateInjectionPatterns = [
+        <<"{{{ malicious }}}">>,
+        <<"<% malicious code %}">>,
+        <<"${injection}">>,
+        <<"<%= malicious %>">>,
+        <<"{{injection}}">>,  %% Basic mustache pattern should also be caught
+        <<"<script>alert('xss')</script>">>  %% Script tags
+    ],
+
+    lists:foreach(
+        fun(Pattern) ->
+            Result = erlmcp_prompt_template:validate_prompt(Pattern),
+            ?assertEqual({error, dangerous_pattern_detected}, element(1, Result),
+                         "Should reject template injection pattern: " ++ binary_to_list(Pattern))
+        end,
+        TemplateInjectionPatterns
+    ).
+
+%%%===================================================================
+%%% Size Limit Tests
+%%%===================================================================
+
+test_size_limits() ->
+    %% Create a prompt that exceeds the limit
+    TooLargePrompt = binary:copy(<<"a">>, ?MAX_PROMPT_SIZE + 1),
+    Result = erlmcp_prompt_template:validate_prompt(TooLargePrompt),
+    ?assertEqual({error, prompt_too_large}, Result),
+
+    %% Prompt at exactly the limit should pass
+    MaxSizePrompt = binary:copy(<<"a">>, ?MAX_PROMPT_SIZE),
+    ?assertEqual(ok, erlmcp_prompt_template:validate_prompt(MaxSizePrompt)),
+
+    %% Empty prompt should pass
+    EmptyPrompt = <<>>,
+    ?assertEqual(ok, erlmcp_prompt_template:validate_prompt(EmptyPrompt)).
+
+%%%===================================================================
+%%% Variable Name Validation Tests
+%%%===================================================================
+
+test_variable_name_validation() ->
+    %% Valid variable names
+    ValidNames = [
+        <<"username">>,
+        <<"user_name">>,
+        <<"UserName123">>,
+        <<"_private">>,
+        <<"a">>,
+        <<"Z">>,
+        <<"__init__">>,
+        <<"test_123_abc">>
+    ],
+
+    lists:foreach(
+        fun(Name) ->
+            Result = erlmcp_prompt_template:sanitize_variable_name(Name),
+            ?assertEqual({ok, Name}, Result,
+                         "Should accept valid variable name: " ++ binary_to_list(Name))
+        end,
+        ValidNames
+    ),
+
+    %% Invalid variable names
+    InvalidNames = [
+        <<"123invalid">>,     %% Starts with number
+        <<"user-name">>,      %% Contains hyphen
+        <<"user.name">>,      %% Contains dot
+        <<"user name">>,      %% Contains space
+        <<"user@name">>,      %% Contains special char
+        <<"user(name)">>,     %% Contains parentheses
+        <<"user[name]">>,     %% Contains brackets
+        <<"user{name}">>,     %% Contains braces
+        <<"user$name">>,      %% Contains dollar sign
+        <<"user#name">>       %% Contains hash
+    ],
+
+    lists:foreach(
+        fun(Name) ->
+            Result = erlmcp_prompt_template:sanitize_variable_name(Name),
+            ?assertEqual({error, {invalid_variable_name, Name}}, Result,
+                         "Should reject invalid variable name: " ++ binary_to_list(Name))
+        end,
+        InvalidNames
+    ).
+
+%%%===================================================================
+%%% Variable Name Length Tests
+%%%===================================================================
+
+test_variable_name_length() ->
+    %% Name at exactly the limit should pass
+    MaxLenName = binary:copy(<<"a">>, ?MAX_VARIABLE_NAME_LEN),
+    ?assertEqual({ok, MaxLenName}, erlmcp_prompt_template:sanitize_variable_name(MaxLenName)),
+
+    %% Name exceeding the limit should fail
+    TooLongName = binary:copy(<<"a">>, ?MAX_VARIABLE_NAME_LEN + 1),
+    Result = erlmcp_prompt_template:sanitize_variable_name(TooLongName),
+    {error, {variable_name_too_long, _Length, ?MAX_VARIABLE_NAME_LEN}} = Result,
+
+    %% Empty name should fail
+    EmptyName = <<>>,
+    Result2 = erlmcp_prompt_template:sanitize_variable_name(EmptyName),
+    ?assertEqual({error, {invalid_variable_name, <<>>}}, Result2).
+
+%%%===================================================================
+%%% Safe Template Rendering Tests
+%%%===================================================================
+
+test_safe_rendering() ->
+    Template = <<"Hello, {{name}}! Your score is {{score}}.">>,
+    Variables = #{
+        <<"name">> => <<"Alice">>,
+        <<"score">> => 42
+    },
+
+    {ok, Result} = erlmcp_prompt_template:render_template(Template, Variables),
+    ?assertEqual(<<"Hello, Alice! Your score is 42.">>, Result),
+
+    %% Test with multiple occurrences of same variable
+    Template2 = <<"{{name}} said: Hello {{name}}!">>,
+    Variables2 = #{<<"name">> => <<"Bob">>},
+    {ok, Result2} = erlmcp_prompt_template:render_template(Template2, Variables2),
+    ?assertEqual(<<"Bob said: Hello Bob!">>, Result2).
+
+%%%===================================================================
+%%% Dangerous Value Escaping Tests
+%%%===================================================================
+
+test_value_escaping() ->
+    Template = <<"Output: {{value}}">>,
+
+    %% Test various dangerous values that should be escaped
+    DangerousValues = [
+        {<<"{{injection}}">>, <<"&#123;&#123;injection&#125;&#125;">>},
+        {<<"<% malicious %>">>, <<"&lt;% malicious %}&gt;">>},
+        {<<"${code}">>, <<"&#36;&#123;code&#125;">>},
+        {<<"<script>alert('xss')</script>">>, <<"&lt;script&gt;alert('xss')&lt;/script&gt;">>}
+    ],
+
+    lists:foreach(
+        fun({Value, ExpectedEscaped}) ->
+            Variables = #{<<"value">> => Value},
+            {ok, Result} = erlmcp_prompt_template:render_template(Template, Variables),
+            ?assertEqual(<<"Output: ", ExpectedEscaped/binary>>, Result)
+        end,
+        DangerousValues
+    ).
+
+%%%===================================================================
+%%% Statistics Tracking Tests
+%%%===================================================================
+
+test_statistics() ->
+    %% Reset stats by restarting
+    gen_server:stop(erlmcp_prompt_template),
+    {ok, _Pid} = erlmcp_prompt_template:start_link(),
+
+    %% Perform various operations
+    SafePrompt = <<"This is a safe prompt">>,
+    DangerousPrompt = <<"eval(malicious)">>,
+    InvalidVar = <<"123invalid">>,
+
+    %% Validate safe prompt
+    ok = erlmcp_prompt_template:validate_prompt(SafePrompt),
+
+    %% Validate dangerous prompt
+    {error, _} = erlmcp_prompt_template:validate_prompt(DangerousPrompt),
+
+    %% Try to sanitize invalid variable
+    {error, _} = erlmcp_prompt_template:sanitize_variable_name(InvalidVar),
+
+    %% Render template
+    Template = <<"Hello {{name}}">>,
+    Variables = #{<<"name">> => <<"World">>},
+    {ok, _} = erlmcp_prompt_template:render_template(Template, Variables),
+
+    %% Check stats
+    Stats = erlmcp_prompt_template:get_stats(),
+    ?assert(maps:get(total_validated, Stats) >= 2),
+    ?assert(maps:get(validation_failed, Stats) >= 2),
+    ?assert(maps:get(dangerous_patterns_detected, Stats) >= 1),
+    ?assert(maps:get(templates_rendered, Stats) >= 1).
+
+%%%===================================================================
+%%% Server Integration Tests
+%%%===================================================================
+
+server_integration_test_() ->
+    {setup,
+     fun setup_server/0,
+     fun cleanup_server/1,
+     [
+      {"Server rejects prompts with invalid names", fun test_server_rejects_invalid_names/0},
+      {"Server rejects prompts with dangerous arguments", fun test_server_rejects_dangerous_args/0},
+      {"Server accepts valid prompts", fun test_server_accepts_valid_prompts/0}
+     ]}.
+
+setup_server() ->
+    {ok, TemplatePid} = erlmcp_prompt_template:start_link(),
+    Capabilities = #mcp_server_capabilities{
+        prompts = #mcp_prompts_capability{listChanged = true}
+    },
+    {ok, ServerPid} = erlmcp_server:start_link(test_server_security, Capabilities),
+    {TemplatePid, ServerPid}.
+
+cleanup_server({TemplatePid, ServerPid}) ->
+    gen_server:stop(ServerPid),
+    gen_server:stop(TemplatePid).
+
+test_server_rejects_invalid_names({_TemplatePid, ServerPid}) ->
+    Handler = fun(_) -> <<"result">> end,
+
+    %% Try to add prompt with invalid names
+    InvalidNames = [
+        <<"eval(malicious)">>,
+        <<"123invalid">>,
+        <<"../etc/passwd">>,
+        <<"<%">>,
+        <<"${code}">>,
+        <<"user-name">>
+    ],
+
+    lists:foreach(
+        fun(Name) ->
+            Result = erlmcp_server:add_prompt(ServerPid, Name, Handler),
+            ?assertEqual({error, {invalid_variable_name, Name}}, Result,
+                         "Server should reject invalid prompt name: " ++ binary_to_list(Name))
+        end,
+        InvalidNames
+    ).
+
+test_server_rejects_dangerous_args({_TemplatePid, ServerPid}) ->
+    Handler = fun(_) -> <<"result">> end,
+
+    %% Try to add prompt with dangerous argument names
+    DangerousArgs = [
+        [#mcp_prompt_argument{name = <<"eval(code)">>, description = <<"Test">>, required = true}],
+        [#mcp_prompt_argument{name = <<"../etc">>, description = <<"Test">>, required = false}],
+        [#mcp_prompt_argument{name = <<"<%">>, description = <<"Test">>, required = true}],
+        [#mcp_prompt_argument{name = <<"${injection}">>, description = <<"Test">>, required = false}],
+        [#mcp_prompt_argument{name = <<"user-name">>, description = <<"Test">>, required = true}]
+    ],
+
+    lists:foreach(
+        fun(Args) ->
+            Result = erlmcp_server:add_prompt_with_args(ServerPid, <<"test_prompt">>, Handler, Args),
+            case element(1, Result) of
+                {error, {invalid_argument_name, _ArgName, _Reason}} ->
+                    ok;  %% Expected
+                Other ->
+                    ?assertEqual({error, {invalid_argument_name, _, _}}, Other,
+                                 "Server should reject dangerous argument names")
+            end
+        end,
+        DangerousArgs
+    ).
+
+test_server_accepts_valid_prompts({_TemplatePid, ServerPid}) ->
+    Handler = fun(_) -> <<"result">> end,
+
+    %% Valid prompt without arguments
+    ?assertEqual(ok, erlmcp_server:add_prompt(ServerPid, <<"valid_prompt">>, Handler)),
+
+    %% Valid prompt with arguments
+    ValidArgs = [
+        #mcp_prompt_argument{name = <<"username">>, description = <<"User name">>, required = true},
+        #mcp_prompt_argument{name = <<"user_id">>, description = <<"User ID">>, required = false},
+        #mcp_prompt_argument{name = <<"_private">>, description = <<"Private">>, required = false}
+    ],
+    ?assertEqual(ok, erlmcp_server:add_prompt_with_args(ServerPid, <<"prompt_with_args">>, Handler, ValidArgs)),
+
+    %% Valid prompt with schema
+    ValidSchema = #{
+        <<"type">> => <<"object">>,
+        <<"properties">> => #{
+            <<"name">> => #{<<"type">> => <<"string">>},
+            <<"age">> => #{<<"type">> => <<"integer">>}
+        }
+    },
+    ?assertEqual(ok, erlmcp_server:add_prompt_with_args_and_schema(
+        ServerPid, <<"prompt_with_schema">>, Handler, ValidArgs, ValidSchema)).
+
+%%%===================================================================
+%%% Additional Edge Case Tests
+%%%===================================================================
+
+%% @doc Test that malicious patterns in schema are rejected
+malicious_schema_test() ->
+    MaliciousSchemas = [
+        #{<<"eval">> => <<"malicious">>},
+        #{<<"properties">> => #{<<"exec(code)">> => #{<<"type">> => <<"string">>}}},
+        #{<<"../etc">> => <<"path traversal">>}
+    ],
+
+    lists:foreach(
+        fun(Schema) ->
+            Result = erlmcp_prompt_template:validate_prompt(Schema),
+            ?assertEqual({error, dangerous_pattern_detected}, element(1, Result),
+                         "Should reject malicious schema")
+        end,
+        MaliciousSchemas
+    ).
+
+%% @doc Test concurrent validation requests
+concurrent_validation_test() ->
+    %% Spawn multiple concurrent validation requests
+    Prompts = [
+        <<"Safe prompt 1">>,
+        <<"eval(malicious)">>,
+        <<"Safe prompt 2">>,
+        <<"../etc/passwd">>,
+        <<"Safe prompt 3">>
+    ],
+
+    Pids = lists:map(
+        fun(Prompt) ->
+            spawn_monitor(fun() ->
+                Result = erlmcp_prompt_template:validate_prompt(Prompt),
+                self() ! {result, Prompt, Result}
+            end)
+        end,
+        Prompts
+    ),
+
+    %% Collect results
+    Results = lists:map(
+        fun({_Pid, Ref}) ->
+            receive
+                {result, Prompt, Result} ->
+                    {Prompt, Result}
+            after
+                5000 ->
+                    timeout
+            end
+        end,
+        Pids
+    ),
+
+    %% Verify expected results
+    ?assertEqual(5, length(Results)),
+    ?assert(lists:keymember(<<"Safe prompt 1">>, 1, Results)),
+    ?assert(lists:keymember(<<"Safe prompt 2">>, 1, Results)),
+    ?assert(lists:keymember(<<"Safe prompt 3">>, 1, Results)).

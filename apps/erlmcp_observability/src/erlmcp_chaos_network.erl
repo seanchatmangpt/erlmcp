@@ -29,29 +29,34 @@
 inject_latency(Config) ->
     Latency = maps:get(latency, Config),
     Rate = maps:get(rate, Config, 0.2),
-    Interval = maps:get(interval, Config, 30000),
-    
-    ?LOG_INFO("Injecting ~pms latency to ~.1f% of traffic", [Latency, Rate * 100]),
-    
-    % Run latency injection loop
-    inject_latency_loop(Latency, Rate, Interval).
+    Duration = maps:get(duration, Config, 30000),
+    Interval = maps:get(interval, Config, 100),
 
--spec inject_latency_loop(pos_integer(), float(), pos_integer()) -> ok.
-inject_latency_loop(Latency, Rate, Interval) ->
+    ?LOG_INFO("Injecting ~pms latency to ~.1f% of traffic for ~pms",
+             [Latency, Rate * 100, Duration]),
+
+    % Run latency injection loop for specified duration
+    inject_latency_loop(Latency, Rate, Interval, Duration).
+
+-spec inject_latency_loop(pos_integer(), float(), pos_integer(), pos_integer()) -> ok.
+inject_latency_loop(_Latency, _Rate, _Interval, Remaining) when Remaining =< 0 ->
+    ok;
+inject_latency_loop(Latency, Rate, Interval, Remaining) ->
     % Intercept messages and delay them
-    timer:sleep(Interval),
-    
+    SleepTime = min(Interval, Remaining),
+    timer:sleep(SleepTime),
+
     % In real implementation, would hook into message passing
     % For now, simulate the effect
     case rand:uniform() < Rate of
         true ->
             ?LOG_DEBUG("Injecting ~pms latency", [Latency]),
-            timer:sleep(Latency);
+            timer:sleep(min(Latency, Remaining));
         false ->
             ok
     end,
-    
-    inject_latency_loop(Latency, Rate, Interval).
+
+    inject_latency_loop(Latency, Rate, Interval, Remaining - SleepTime - Latency).
 
 %% @doc Simulate network partition between nodes
 -spec inject_partition(map()) -> ok.

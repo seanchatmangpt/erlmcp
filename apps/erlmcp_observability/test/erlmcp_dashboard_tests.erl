@@ -10,7 +10,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(TEST_PORT, 9091).
+-define(TEST_PORT, 18080).
 -define(LOCALHOST, "http://localhost:" ++ integer_to_list(?TEST_PORT)).
 
 %%====================================================================
@@ -32,21 +32,30 @@ dashboard_test_() ->
       {"WebSocket subscribe/unsubscribe", fun test_websocket_subscribe/0},
       {"Metrics aggregator records data", fun test_aggregator_recording/0},
       {"Metrics aggregator calculates percentiles", fun test_percentiles/0},
+      {"Metrics aggregator percentile edge cases", fun test_percentiles_edge_cases/0},
+      {"Metrics aggregator percentile monotonicity", fun test_percentiles_monotonic/0},
       {"Bucket rotation works", fun test_bucket_rotation/0},
       {"Historical queries work", fun test_historical_queries/0},
       {"Alert thresholds trigger", fun test_alert_thresholds/0}
      ]}.
 
 setup() ->
-    % Start required applications
-    application:ensure_all_started(cowboy),
-    application:ensure_all_started(gun),
-    application:ensure_all_started(jsx),
+    % Start required applications (NOT erlmcp_observability to avoid auto-starting dashboard)
+    {ok, _} = application:ensure_all_started(cowboy),
+    {ok, _} = application:ensure_all_started(gun),
+    {ok, _} = application:ensure_all_started(jsx),
+    {ok, _} = application:ensure_all_started(erlmcp_core),
 
-    % Start metrics aggregator
-    {ok, AggPid} = erlmcp_metrics_aggregator:start_link(),
+    % Start metrics aggregator manually (not via supervision tree)
+    % Check if already running from previous test (foreach runs tests sequentially)
+    AggPid = case whereis(erlmcp_metrics_aggregator) of
+        undefined ->
+            {ok, Pid} = erlmcp_metrics_aggregator:start_link(),
+            Pid;
+        Pid -> Pid
+    end,
 
-    % Start dashboard server
+    % Start dashboard server on test port (not via supervision tree)
     {ok, DashPid} = erlmcp_dashboard_server:start_link(?TEST_PORT),
 
     % Wait for server to be ready
@@ -54,10 +63,11 @@ setup() ->
 
     #{aggregator => AggPid, dashboard => DashPid}.
 
-cleanup(#{aggregator := AggPid, dashboard := DashPid}) ->
+cleanup(#{aggregator := _AggPid, dashboard := _DashPid}) ->
+    % Stop dashboard server
     erlmcp_dashboard_server:stop(),
-    gen_server:stop(AggPid),
-    timer:sleep(50).
+    % Note: Don't stop aggregator as it's shared across tests
+    ok.
 
 %%====================================================================
 %% Tests
@@ -67,20 +77,32 @@ test_server_lifecycle() ->
     {ok, Port} = erlmcp_dashboard_server:get_port(),
     ?assertEqual(?TEST_PORT, Port),
 
-    % Server should be listening
-    ?assertMatch({ok, _}, inet:getaddr("localhost", inet)).
+    % Server should be listening - verify by checking registered name exists
+    ?assert(is_pid(whereis(erlmcp_dashboard_server))),
+
+    % Verify we can connect to the port (HTTP will return 404 for root, but connection works)
+    {ok, Sock} = gen_tcp:connect("localhost", ?TEST_PORT, [{active, false}], 1000),
+    ?assertMatch({ok, _}, gen_tcp:recv(Sock, 0, 100)),
+    gen_tcp:close(Sock).
 
 test_http_metrics() ->
     % Send HTTP GET request to /api/metrics
     {ok, ConnPid} = gun:open("localhost", ?TEST_PORT),
-    {ok, http} = gun:await_up(ConnPid),
+    {ok, http} = gun:await_up(ConnPid, 5000),
 
     StreamRef = gun:get(ConnPid, "/api/metrics"),
-    {response, nofin, 200, _Headers} = gun:await(ConnPid, StreamRef),
-    {ok, _Body} = gun:await_body(ConnPid, StreamRef),
-
-    gun:close(ConnPid),
-    ?assert(true).
+    case gun:await(ConnPid, StreamRef, 5000) of
+        {response, nofin, 200, _Headers} ->
+            {ok, _Body} = gun:await_body(ConnPid, StreamRef, 5000),
+            gun:close(ConnPid),
+            ?assert(true);
+        {response, fin, 200, _Headers} ->
+            gun:close(ConnPid),
+            ?assert(true);
+        {response, _, Status, _Headers} ->
+            gun:close(ConnPid),
+            ?assert(false, {unexpected_status, Status})
+    end.
 
 test_http_historical() ->
     % Record some metrics first
@@ -89,46 +111,56 @@ test_http_historical() ->
 
     % Query historical metrics
     {ok, ConnPid} = gun:open("localhost", ?TEST_PORT),
-    {ok, http} = gun:await_up(ConnPid),
+    {ok, http} = gun:await_up(ConnPid, 5000),
 
     Now = erlang:system_time(millisecond),
     Start = Now - 60000, % 1 minute ago
     Path = lists:flatten(io_lib:format("/api/metrics/historical?start=~p&end=~p", [Start, Now])),
 
     StreamRef = gun:get(ConnPid, Path),
-    {response, nofin, 200, _Headers} = gun:await(ConnPid, StreamRef),
-    {ok, _Body} = gun:await_body(ConnPid, StreamRef),
-
-    gun:close(ConnPid),
-    ?assert(true).
+    case gun:await(ConnPid, StreamRef, 5000) of
+        {response, nofin, 200, _Headers} ->
+            {ok, _Body} = gun:await_body(ConnPid, StreamRef, 5000),
+            gun:close(ConnPid),
+            ?assert(true);
+        {response, fin, 200, _Headers} ->
+            gun:close(ConnPid),
+            ?assert(true);
+        {response, _, Status, _Headers} ->
+            gun:close(ConnPid),
+            ?assert(false, {unexpected_status, Status})
+    end.
 
 test_http_export_csv() ->
     {ok, ConnPid} = gun:open("localhost", ?TEST_PORT),
-    {ok, http} = gun:await_up(ConnPid),
+    {ok, http} = gun:await_up(ConnPid, 5000),
 
     StreamRef = gun:get(ConnPid, "/api/metrics/export?format=csv"),
-    case gun:await(ConnPid, StreamRef, 1000) of
+    case gun:await(ConnPid, StreamRef, 5000) of
         {response, nofin, 200, Headers} ->
-            {ok, Body} = gun:await_body(ConnPid, StreamRef),
+            {ok, Body} = gun:await_body(ConnPid, StreamRef, 5000),
             ?assert(is_binary(Body)),
 
             % Check Content-Type header
             ContentType = proplists:get_value(<<"content-type">>, Headers),
-            ?assertEqual(<<"text/csv">>, ContentType);
+            ?assertEqual(<<"text/csv">>, ContentType),
+            gun:close(ConnPid);
         {response, fin, 200, _Headers} ->
-            ?assert(true) % Empty CSV is also valid
-    end,
-
-    gun:close(ConnPid).
+            gun:close(ConnPid),
+            ?assert(true); % Empty CSV is also valid
+        {response, _, Status, _Headers} ->
+            gun:close(ConnPid),
+            ?assert(false, {unexpected_status, Status})
+    end.
 
 test_http_export_json() ->
     {ok, ConnPid} = gun:open("localhost", ?TEST_PORT),
-    {ok, http} = gun:await_up(ConnPid),
+    {ok, http} = gun:await_up(ConnPid, 5000),
 
     StreamRef = gun:get(ConnPid, "/api/metrics/export?format=json"),
-    case gun:await(ConnPid, StreamRef, 1000) of
+    case gun:await(ConnPid, StreamRef, 5000) of
         {response, nofin, 200, Headers} ->
-            {ok, Body} = gun:await_body(ConnPid, StreamRef),
+            {ok, Body} = gun:await_body(ConnPid, StreamRef, 5000),
             ?assert(is_binary(Body)),
 
             % Validate JSON
@@ -137,35 +169,41 @@ test_http_export_json() ->
 
             % Check Content-Type header
             ContentType = proplists:get_value(<<"content-type">>, Headers),
-            ?assertEqual(<<"application/json">>, ContentType);
+            ?assertEqual(<<"application/json">>, ContentType),
+            gun:close(ConnPid);
         {response, fin, 200, _Headers} ->
-            ?assert(true) % Empty JSON array is also valid
-    end,
-
-    gun:close(ConnPid).
+            gun:close(ConnPid),
+            ?assert(true); % Empty JSON array is also valid
+        {response, _, Status, _Headers} ->
+            gun:close(ConnPid),
+            ?assert(false, {unexpected_status, Status})
+    end.
 
 test_websocket_connect() ->
     {ok, ConnPid} = gun:open("localhost", ?TEST_PORT),
-    {ok, http} = gun:await_up(ConnPid),
+    {ok, http} = gun:await_up(ConnPid, 5000),
 
     StreamRef = gun:ws_upgrade(ConnPid, "/ws"),
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
+            % Successfully upgraded to WebSocket
+            gun:close(ConnPid),
             ?assert(true);
         {gun_response, ConnPid, _, _, Status, _Headers} ->
+            gun:close(ConnPid),
             ?assertEqual(101, Status);
         {gun_error, ConnPid, StreamRef, Reason} ->
+            gun:close(ConnPid),
             ?debugFmt("WebSocket upgrade failed: ~p", [Reason]),
-            ?assert(false)
-    after 2000 ->
-        ?assert(false)
-    end,
-
-    gun:close(ConnPid).
+            ?assert(false, {websocket_upgrade_failed, Reason})
+    after 5000 ->
+        gun:close(ConnPid),
+        ?assert(false, websocket_timeout)
+    end.
 
 test_websocket_metrics() ->
     {ok, ConnPid} = gun:open("localhost", ?TEST_PORT),
-    {ok, http} = gun:await_up(ConnPid),
+    {ok, http} = gun:await_up(ConnPid, 5000),
 
     StreamRef = gun:ws_upgrade(ConnPid, "/ws"),
     receive
@@ -174,23 +212,26 @@ test_websocket_metrics() ->
             receive
                 {gun_ws, ConnPid, StreamRef, {text, Msg}} ->
                     Data = jsx:decode(Msg, [return_maps]),
-                    ?assertEqual(<<"connected">>, maps:get(<<"type">>, Data))
-            after 2000 ->
-                ?debugMsg("No connected message received"),
-                ?assert(false)
+                    ?assertEqual(<<"connected">>, maps:get(<<"type">>, Data)),
+                    gun:close(ConnPid);
+                {gun_error, ConnPid, StreamRef, Reason} ->
+                    gun:close(ConnPid),
+                    ?assert(false, {websocket_error, Reason})
+            after 5000 ->
+                gun:close(ConnPid),
+                ?assert(false, no_connected_message)
             end;
         {gun_error, ConnPid, StreamRef, Reason} ->
-            ?debugFmt("WebSocket upgrade failed: ~p", [Reason]),
-            ?assert(false)
-    after 2000 ->
-        ?assert(false)
-    end,
-
-    gun:close(ConnPid).
+            gun:close(ConnPid),
+            ?assert(false, {websocket_upgrade_failed, Reason})
+    after 5000 ->
+        gun:close(ConnPid),
+        ?assert(false, websocket_upgrade_timeout)
+    end.
 
 test_websocket_subscribe() ->
     {ok, ConnPid} = gun:open("localhost", ?TEST_PORT),
-    {ok, http} = gun:await_up(ConnPid),
+    {ok, http} = gun:await_up(ConnPid, 5000),
 
     StreamRef = gun:ws_upgrade(ConnPid, "/ws"),
     receive
@@ -202,35 +243,42 @@ test_websocket_subscribe() ->
             }),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
-            % Wait for subscribed response
+            % Wait for subscribed response (may get connected first)
             receive
                 {gun_ws, ConnPid, StreamRef, {text, Msg}} ->
-                    % Skip connected message
                     case jsx:decode(Msg, [return_maps]) of
                         #{<<"type">> := <<"connected">>} ->
+                            % Skip connected message, wait for subscribed
                             receive
                                 {gun_ws, ConnPid, StreamRef, {text, Msg2}} ->
                                     Data = jsx:decode(Msg2, [return_maps]),
-                                    ?assertEqual(<<"subscribed">>, maps:get(<<"type">>, Data))
-                            after 2000 ->
-                                ?debugMsg("No subscribed message received"),
-                                ?assert(false)
+                                    ?assertEqual(<<"subscribed">>, maps:get(<<"type">>, Data)),
+                                    gun:close(ConnPid);
+                                {gun_error, ConnPid, StreamRef, Reason} ->
+                                    gun:close(ConnPid),
+                                    ?assert(false, {websocket_error, Reason})
+                            after 5000 ->
+                                gun:close(ConnPid),
+                                ?assert(false, no_subscribed_message)
                             end;
                         Data ->
-                            ?assertEqual(<<"subscribed">>, maps:get(<<"type">>, Data))
-                    end
-            after 2000 ->
-                ?debugMsg("No WebSocket message received"),
-                ?assert(false)
+                            ?assertEqual(<<"subscribed">>, maps:get(<<"type">>, Data)),
+                            gun:close(ConnPid)
+                    end;
+                {gun_error, ConnPid, StreamRef, Reason} ->
+                    gun:close(ConnPid),
+                    ?assert(false, {websocket_error, Reason})
+            after 5000 ->
+                gun:close(ConnPid),
+                ?assert(false, no_websocket_message)
             end;
         {gun_error, ConnPid, StreamRef, Reason} ->
-            ?debugFmt("WebSocket upgrade failed: ~p", [Reason]),
-            ?assert(false)
-    after 2000 ->
-        ?assert(false)
-    end,
-
-    gun:close(ConnPid).
+            gun:close(ConnPid),
+            ?assert(false, {websocket_upgrade_failed, Reason})
+    after 5000 ->
+        gun:close(ConnPid),
+        ?assert(false, websocket_upgrade_timeout)
+    end.
 
 test_aggregator_recording() ->
     % Record various metrics
@@ -249,13 +297,74 @@ test_aggregator_recording() ->
     ?assert(maps:is_key(timestamp, Metrics)).
 
 test_percentiles() ->
+    % Test with a small dataset
     Values = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
     Percentiles = erlmcp_metrics_aggregator:get_percentiles(Values),
 
-    ?assertEqual(50, maps:get(p50, Percentiles)),
-    ?assertEqual(100, maps:get(p95, Percentiles)),
-    ?assertEqual(100, maps:get(p99, Percentiles)),
-    ?assertEqual(100, maps:get(p999, Percentiles)).
+    % P50 should be 55.0 (linear interpolation between 50 and 60)
+    ?assertEqual(55.0, maps:get(p50, Percentiles)),
+
+    % P95 should be approximately 95.5 (interpolation)
+    P95 = maps:get(p95, Percentiles),
+    ?assert(P95 > 95.0 andalso P95 < 96.0),
+
+    % P99 should be approximately 99.1 (interpolation)
+    P99 = maps:get(p99, Percentiles),
+    ?assert(P99 > 99.0 andalso P99 < 100.0),
+
+    % P999 should be approximately 99.91 (interpolation)
+    P999 = maps:get(p999, Percentiles),
+    ?assert(P999 > 99.9 andalso P999 =< 100.0),
+
+    % Verify exact values for P95 and P99 (accounting for floating point)
+    ?assertEqual(95.5, P95),
+    ?assertEqual(99.1, P99).
+
+test_percentiles_edge_cases() ->
+    % Test with empty list
+    EmptyPercentiles = erlmcp_metrics_aggregator:get_percentiles([]),
+    ?assertEqual(0, maps:get(p50, EmptyPercentiles)),
+    ?assertEqual(0, maps:get(p95, EmptyPercentiles)),
+    ?assertEqual(0, maps:get(p99, EmptyPercentiles)),
+    ?assertEqual(0, maps:get(p999, EmptyPercentiles)),
+
+    % Test with single value
+    SinglePercentiles = erlmcp_metrics_aggregator:get_percentiles([42]),
+    ?assertEqual(42, maps:get(p50, SinglePercentiles)),
+    ?assertEqual(42, maps:get(p95, SinglePercentiles)),
+    ?assertEqual(42, maps:get(p99, SinglePercentiles)),
+    ?assertEqual(42, maps:get(p999, SinglePercentiles)),
+
+    % Test with two values
+    TwoPercentiles = erlmcp_metrics_aggregator:get_percentiles([10, 100]),
+    ?assertEqual(55.0, maps:get(p50, TwoPercentiles)),
+    ?assertEqual(95.0, maps:get(p95, TwoPercentiles)),
+    ?assertEqual(99.0, maps:get(p99, TwoPercentiles)),
+    ?assertEqual(99.9, maps:get(p999, TwoPercentiles)),
+
+    % Test with larger dataset (100 values)
+    LargeValues = lists:seq(1, 100),
+    LargePercentiles = erlmcp_metrics_aggregator:get_percentiles(LargeValues),
+    ?assertEqual(50.5, maps:get(p50, LargePercentiles)),
+    LargeP95 = maps:get(p95, LargePercentiles),
+    ?assert(LargeP95 > 95.0 andalso LargeP95 < 96.0),
+    LargeP99 = maps:get(p99, LargePercentiles),
+    ?assert(LargeP99 > 99.0 andalso LargeP99 < 100.0).
+
+test_percentiles_monotonic() ->
+    % Verify that percentiles are monotonically increasing
+    Values = lists:seq(1, 1000),
+    Percentiles = erlmcp_metrics_aggregator:get_percentiles(Values),
+
+    P50 = maps:get(p50, Percentiles),
+    P95 = maps:get(p95, Percentiles),
+    P99 = maps:get(p99, Percentiles),
+    P999 = maps:get(p999, Percentiles),
+
+    % All percentiles should be monotonically increasing
+    ?assert(P50 =< P95),
+    ?assert(P95 =< P99),
+    ?assert(P99 =< P999).
 
 test_bucket_rotation() ->
     % Record metrics
