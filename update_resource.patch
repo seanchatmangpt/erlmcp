@@ -1,0 +1,52 @@
+--- a/apps/erlmcp_core/src/erlmcp_server.erl
++++ b/apps/erlmcp_core/src/erlmcp_server.erl
+@@ -8,6 +8,7 @@
+ -export([
+     start_link/2,
+     add_resource/3,
++    update_resource/3,
+     add_resource_template/4,
+     add_tool/3,
+     add_tool_with_schema/4,
+@@ -87,6 +88,13 @@ add_resource_template(Server, UriTemplate, Name, Handler)
+   when is_binary(UriTemplate), is_binary(Name), is_function(Handler, 1) ->
+     gen_server:call(Server, {add_resource_template, UriTemplate, Name, Handler}).
+
++%% @doc Update an existing resource's handler function.
++%% If the resource doesn't exist, returns {error, not_found}.
++%% After updating, sends resources/updated notification to all subscribers.
++-spec update_resource(server(), binary(), resource_handler()) -> ok | {error, not_found}.
++update_resource(Server, Uri, Handler) when is_binary(Uri), is_function(Handler, 1) ->
++    gen_server:call(Server, {update_resource, Uri, Handler}).
++
+ -spec add_tool(server(), binary(), tool_handler()) -> ok.
+ add_tool(Server, Name, Handler) when is_binary(Name), is_function(Handler, 1) ->
+     gen_server:call(Server, {add_tool, Name, Handler}).
+@@ -246,6 +254,26 @@ handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) ->
+             }}}, State}
+     end;
+
++handle_call({update_resource, Uri, Handler}, _From, State) ->
++    %% Update existing resource handler
++    case maps:get(Uri, State#state.resources, undefined) of
++        undefined ->
++            {reply, {error, not_found}, State};
++        {Resource, _OldHandler} ->
++            %% Validate URI format before updating
++            case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
++                ok ->
++                    NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
++                    %% Notify subscribers that resource has been updated
++                    notify_resource_updated(Uri, #{}),
++                    {reply, ok, State#state{resources = NewResources}};
++                {error, {ErrorType, ErrorMsg}} ->
++                    {reply, {error, {?JSONRPC_INVALID_PARAMS, ErrorMsg, #{
++                        <<"error_type">> => atom_to_binary(ErrorType, utf8),
++                        <<"uri">> => Uri
++                    }}}, State}
++            end
++    end;
++
+ handle_call({add_tool, Name, Handler}, _From, State) ->
+     Tool = #mcp_tool{
+         name = Name,

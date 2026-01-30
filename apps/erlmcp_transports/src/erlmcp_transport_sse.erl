@@ -1,7 +1,6 @@
 -module(erlmcp_transport_sse).
 
 -include("erlmcp.hrl").
--include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 %% Note: This module does NOT implement erlmcp_transport_behavior
 %% It is a Cowboy SSE handler with its own init/2 interface
@@ -23,6 +22,14 @@
 -define(PING_INTERVAL, 30000). %% 30 seconds
 -define(MAX_RETRIES, 3).
 -define(DEFAULT_RETRY_TIMEOUT, 5000). %% 5 seconds (Gap #29)
+-define(DEFAULT_MAX_MESSAGE_SIZE, 16777216). %% 16 MB
+
+%% SSE Event Types
+-define(EVENT_TYPE_MESSAGE, <<"message">>).
+-define(EVENT_TYPE_NOTIFICATION, <<"notification">>).
+-define(EVENT_TYPE_ERROR, <<"error">>).
+-define(EVENT_TYPE_KEEPALIVE, <<"keepalive">>).
+-define(EVENT_TYPE_CLOSE, <<"close">>).
 
 -record(sse_state, {
     transport_id :: binary(),
@@ -31,7 +38,8 @@
     request_ref :: reference() | undefined,
     ping_timer :: reference() | undefined,
     event_number = 0 :: non_neg_integer(),
-    last_received_event_id :: binary() | undefined
+    last_received_event_id :: binary() | undefined,
+    max_message_size :: pos_integer()  % Maximum allowed message size in bytes
 }).
 
 %%====================================================================
@@ -44,17 +52,19 @@ init(TransportId, Config) ->
     try
         Port = maps:get(port, Config, 8081),
         Path = maps:get(path, Config, "/mcp/sse"),
+        MaxMessageSize = maps:get(max_message_size, Config, ?DEFAULT_MAX_MESSAGE_SIZE),
 
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"transport_id">> => TransportId,
             <<"port">> => Port,
-            <<"path">> => Path
+            <<"path">> => Path,
+            <<"max_message_size">> => MaxMessageSize
         }),
 
         Dispatch = cowboy_router:compile([
             {'_', [
-                {Path, erlmcp_transport_sse_handler, [TransportId]},
-                {<<Path/binary, "/subscribe">>, erlmcp_transport_sse_handler, [TransportId]}
+                {Path, erlmcp_transport_sse, [TransportId, Config]},
+                {<<Path/binary, "/subscribe">>, erlmcp_transport_sse, [TransportId, Config]}
             ]}
         ]),
 
@@ -80,7 +90,7 @@ send(ClientPid, Data) when is_pid(ClientPid), is_binary(Data) ->
             <<"data_size">> => byte_size(Data)
         }),
 
-        ClientPid ! {send_event, Data},
+        ClientPid ! {send_event, ?EVENT_TYPE_MESSAGE, Data},
         erlmcp_tracing:set_status(SpanCtx, ok),
         ok
     catch
@@ -197,7 +207,10 @@ handle_sse_stream(Req, TransportId, State) ->
                 <<"mcp-session-id">> => SessionId
             },
 
-            Req2 = cowboy_req:reply(200, Headers, Req),
+            %% Send initial retry field
+            InitialRetry = format_retry_field(get_retry_timeout()),
+            Req2 = cowboy_req:stream_reply(200, Headers, Req),
+            cowboy_req:stream_body(InitialRetry, Req2),
 
             %% Register with registry
             RegistryPid = erlmcp_registry:get_pid(),
@@ -209,13 +222,17 @@ handle_sse_stream(Req, TransportId, State) ->
             %% Start ping timer
             {ok, PingRef} = timer:send_interval(?PING_INTERVAL, ping),
 
+            %% Get max message size (default 16MB)
+            MaxMessageSize = get_max_message_size(),
+
             %% Prepare initial state
             SseState = #sse_state{
                 transport_id = TransportId,
                 client_id = ClientId,
                 session_id = SessionId,
                 ping_timer = PingRef,
-                last_received_event_id = LastEventId
+                last_received_event_id = LastEventId,
+                max_message_size = MaxMessageSize
             },
 
             %% If resuming, replay missed events
@@ -253,43 +270,60 @@ handle_post_request(Req, TransportId, State) ->
             %% POST requests deliver messages to the SSE stream
             {ok, Body, Req2} = cowboy_req:read_body(Req),
 
-            try
-                case jsx:decode(Body) of
-                    {error, _} ->
-                        erlmcp_tracing:record_error_details(SpanCtx, parse_error, Body),
-                        Req3 = cowboy_req:reply(400, #{}, <<"Invalid JSON">>, Req2),
-                        {ok, Req3, State};
-                    Message ->
-                        erlmcp_tracing:set_attributes(SpanCtx, #{
-                            <<"message_size">> => byte_size(Body)
-                        }),
+            %% Validate message size (16MB limit)
+            BodySize = byte_size(Body),
+            MaxMessageSize = get_max_message_size(),
 
-                        %% Route to registry
-                        RegistryPid = erlmcp_registry:get_pid(),
-                        RegistryPid ! {transport_data, TransportId, Message},
+            case BodySize > MaxMessageSize of
+                true ->
+                    logger:error("SSE POST message exceeds 16MB limit (~p bytes > ~p bytes)",
+                        [BodySize, MaxMessageSize]),
+                    %% Send proper JSON-RPC error response
+                    ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
+                    Req3 = cowboy_req:reply(413, #{
+                        <<"content-type">> => <<"application/json">>
+                    }, ErrorMsg, Req2),
+                    {ok, Req3, State};
+                false ->
+                    try
+                        case jsx:decode(Body) of
+                            {error, _} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, parse_error, Body),
+                                Req3 = cowboy_req:reply(400, #{}, <<"Invalid JSON">>, Req2),
+                                {ok, Req3, State};
+                            Message ->
+                                erlmcp_tracing:set_attributes(SpanCtx, #{
+                                    <<"message_size">> => BodySize
+                                }),
 
-                        erlmcp_tracing:set_status(SpanCtx, ok),
-                        ReqFinal = cowboy_req:reply(202, #{}, <<"Accepted">>, Req2),
-                        {ok, ReqFinal, State}
-                end
-            catch
-                Class:CaughtReason:Stacktrace ->
-                    erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
-                    ReqFinalError = cowboy_req:reply(500, #{}, <<"Internal error">>, Req2),
-                    {ok, ReqFinalError, State}
-            after
-                erlmcp_tracing:end_span(SpanCtx)
+                                %% Route to registry
+                                RegistryPid = erlmcp_registry:get_pid(),
+                                RegistryPid ! {transport_data, TransportId, Message},
+
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                ReqFinal = cowboy_req:reply(202, #{}, <<"Accepted">>, Req2),
+                                {ok, ReqFinal, State}
+                        end
+                    catch
+                        Class:CaughtReason:Stacktrace ->
+                            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+                            ReqFinalError = cowboy_req:reply(500, #{}, <<"Internal error">>, Req2),
+                            {ok, ReqFinalError, State}
+                    after
+                        erlmcp_tracing:end_span(SpanCtx)
+                    end
             end
     end.
 
 sse_event_loop(Req, StreamState, State) ->
     receive
         ping ->
-            %% Send keep-alive ping comment
-            cowboy_req:stream_body(<<":\n">>, Req),
+            %% Send keep-alive ping comment (SSE standard)
+            PingData = format_sse_event(?EVENT_TYPE_KEEPALIVE, <<"ping">>),
+            cowboy_req:stream_body(PingData, Req),
             sse_event_loop(Req, StreamState, State);
 
-        {send_event, Data} ->
+        {send_event, EventType, Data} ->
             %% Get session and event info
             #{sse_state := SseState, session_id := SessionId} = StreamState,
             NewEventNumber = SseState#sse_state.event_number + 1,
@@ -297,8 +331,8 @@ sse_event_loop(Req, StreamState, State) ->
             %% Store event for resumability
             {ok, EventId} = erlmcp_sse_event_store:add_event(SessionId, NewEventNumber, Data),
 
-            %% Format as SSE event with event ID
-            EventData = format_sse_event_with_id(EventId, Data),
+            %% Format as SSE event with event type and event ID
+            EventData = format_sse_event_with_id(EventType, EventId, Data),
             cowboy_req:stream_body(EventData, Req),
 
             %% Update state with new event number
@@ -309,15 +343,25 @@ sse_event_loop(Req, StreamState, State) ->
 
         close ->
             %% Close the stream with retry hint
-            CloseData = <<"event: close\ndata: {\"status\":\"closed\"}\nretry: 3000\n\n">>,
+            CloseData = format_close_event_with_retry(get_retry_timeout()),
             cowboy_req:stream_body(CloseData, Req),
+            {ok, Req, State};
+
+        {disconnect, Reason} ->
+            %% Handle unexpected disconnection
+            ErrorData = format_sse_event(?EVENT_TYPE_ERROR, jsx:encode(#{
+                <<"error">> => <<"disconnected">>,
+                <<"reason">> => format_disconnect_reason(Reason),
+                <<"retry">> => get_retry_timeout()
+            })),
+            cowboy_req:stream_body(ErrorData, Req),
             {ok, Req, State};
 
         _ ->
             sse_event_loop(Req, StreamState, State)
     after 300000 ->
         %% 5 minute idle timeout - send retry hint before closing
-        cowboy_req:stream_body(<<"retry: 3000\n">>, Req),
+        cowboy_req:stream_body(format_retry_field(get_retry_timeout()), Req),
         {ok, Req, State}
     end.
 
@@ -332,17 +376,25 @@ terminate(_Reason, _Req, _State) ->
 %% Internal Functions
 %%====================================================================
 
--spec format_sse_event(binary()) -> binary().
-format_sse_event(Data) ->
-    %% Format: event: message\ndata: {json}\n\n
-    <<"event: message\ndata: ", Data/binary, "\n\n">>.
+%% @doc Format SSE event with event type
+%% SSE format: "event: <type>\ndata: <json>\n\n"
+-spec format_sse_event(binary(), binary()) -> binary().
+format_sse_event(EventType, Data) ->
+    <<"event: ", EventType/binary, "\ndata: ", Data/binary, "\n\n">>.
 
--spec format_sse_event_with_id(binary(), binary()) -> binary().
-format_sse_event_with_id(EventId, Data) ->
-    %% Format with event ID for resumability:
-    %% id: session_abc123_42\ndata: {json}\n\n
-    <<"id: ", EventId/binary, "\ndata: ", Data/binary, "\n\n">>.
+%% @doc Format SSE event with event type and ID
+%% SSE format: "id: <id>\nevent: <type>\ndata: <json>\n\n"
+-spec format_sse_event_with_id(binary(), binary(), binary()) -> binary().
+format_sse_event_with_id(EventType, EventId, Data) ->
+    <<"id: ", EventId/binary, "\nevent: ", EventType/binary, "\ndata: ", Data/binary, "\n\n">>.
 
+%% @doc Format SSE comment for keepalive (standard SSE ping)
+%% SSE format: ": <comment>\n"
+-spec format_sse_comment(binary()) -> binary().
+format_sse_comment(Comment) ->
+    <<": ", Comment/binary, "\n\n">>.
+
+%% @doc Generate session ID from client ID and timestamp
 -spec generate_session_id(binary()) -> binary().
 generate_session_id(ClientId) ->
     %% Create session ID from client ID and timestamp
@@ -350,6 +402,7 @@ generate_session_id(ClientId) ->
     Random = integer_to_binary(erlang:abs(erlang:system_time(nanosecond) rem 1000000)),
     <<"session_", ClientId/binary, "_", Timestamp/binary, "_", Random/binary>>.
 
+%% @doc Handle stream resumption by replaying missed events
 -spec handle_stream_resumption(
     term(),
     binary(),
@@ -369,10 +422,19 @@ handle_stream_resumption(Req, TransportId, SessionId, LastEventId, SpanCtx, SseS
                 <<"events_to_replay">> => length(Events)
             }),
 
+            %% Send resumption notification
+            ResumptionNotice = format_sse_event(?EVENT_TYPE_NOTIFICATION, jsx:encode(#{
+                <<"type">> => <<"resumption">>,
+                <<"from_event_id">> => LastEventId,
+                <<"events_count">> => length(Events)
+            })),
+            cowboy_req:stream_body(ResumptionNotice, Req),
+
             %% Replay all stored events
             lists:foreach(
                 fun(EventData) ->
-                    EventBody = format_sse_event(EventData),
+                    %% Use message event type for replayed data
+                    EventBody = format_sse_event_with_id(?EVENT_TYPE_MESSAGE, <<"replay">>, EventData),
                     cowboy_req:stream_body(EventBody, Req)
                 end,
                 Events
@@ -394,9 +456,29 @@ handle_stream_resumption(Req, TransportId, SessionId, LastEventId, SpanCtx, SseS
             }, State);
         {error, Reason} ->
             erlmcp_tracing:record_error_details(SpanCtx, resumption_error, Reason),
-            cowboy_req:reply(500, #{}, <<"Resume failed">>, Req),
+            %% Send error event to client
+            ErrorEvent = format_sse_event(?EVENT_TYPE_ERROR, jsx:encode(#{
+                <<"error">> => <<"resumption_failed">>,
+                <<"message">> => <<"Failed to resume session">>,
+                <<"reason">> => format_term(Reason)
+            })),
+            cowboy_req:stream_body(ErrorEvent, Req),
             {ok, Req, State}
     end.
+
+%% @doc Format disconnect reason for client
+-spec format_disconnect_reason(term()) -> binary().
+format_disconnect_reason(Reason) when is_binary(Reason) ->
+    Reason;
+format_disconnect_reason(Reason) when is_atom(Reason) ->
+    atom_to_binary(Reason, utf8);
+format_disconnect_reason(Reason) ->
+    iolist_to_binary(io_lib:format("~p", [Reason])).
+
+%% @doc Format Erlang term to binary
+-spec format_term(term()) -> binary().
+format_term(Term) ->
+    iolist_to_binary(io_lib:format("~p", [Term])).
 
 %%====================================================================
 %% Security and Validation Functions
@@ -489,7 +571,7 @@ get_retry_timeout() ->
 -spec format_retry_field(pos_integer()) -> binary().
 format_retry_field(RetryMs) when is_integer(RetryMs), RetryMs > 0 ->
     RetryBin = integer_to_binary(RetryMs),
-    <<"retry: ", RetryBin/binary, "\n">>.
+    <<"retry: ", RetryBin/binary, "\n\n">>.
 
 %% @doc Format SSE close event with retry field (Gap #29)
 %% Sends close event with retry hint so client knows to reconnect
@@ -498,6 +580,16 @@ format_retry_field(RetryMs) when is_integer(RetryMs), RetryMs > 0 ->
 -spec format_close_event_with_retry(pos_integer()) -> binary().
 format_close_event_with_retry(RetryMs) when is_integer(RetryMs), RetryMs > 0 ->
     RetryBin = integer_to_binary(RetryMs),
-    <<"event: close\ndata: {\"status\":\"closed\"}\nretry: ",
+    <<"event: ", ?EVENT_TYPE_CLOSE/binary, "\ndata: {\"status\":\"closed\"}\nretry: ",
       RetryBin/binary, "\n\n">>.
 
+%% @doc Get the maximum allowed message size from configuration.
+%% Falls back to default 16MB if not configured.
+-spec get_max_message_size() -> pos_integer().
+get_max_message_size() ->
+    case application:get_env(erlmcp, message_size_limits) of
+        {ok, Limits} when is_map(Limits) ->
+            maps:get(sse, Limits, ?DEFAULT_MAX_MESSAGE_SIZE);
+        _ ->
+            ?DEFAULT_MAX_MESSAGE_SIZE
+    end.

@@ -27,7 +27,8 @@
     error_validation_failed/2,
     error_message_too_large/2,
     error_internal/1,
-    error_parse/1
+    error_parse/1,
+    create_batch_error_response/3
 ]).
 
 %% Types
@@ -256,6 +257,66 @@ error_message_too_large(Id, MaxSize) when is_integer(MaxSize), MaxSize > 0 ->
     encode_error_response(Id, ?MCP_ERROR_MESSAGE_TOO_LARGE, ?MCP_MSG_MESSAGE_TOO_LARGE, Data).
 
 %%====================================================================
+%% Batch Error Response Functions
+%%====================================================================
+
+%% @doc Create error response for invalid batch request
+%% Per JSON-RPC 2.0 spec, each invalid request in a batch should generate
+%% an error response with the request's ID (if present) or null
+-spec create_batch_error_response(map() | term(), atom(), term()) -> json_rpc_message().
+create_batch_error_response(Request, Reason, Details) when is_map(Request) ->
+    %% Try to extract ID from the request for the error response
+    Id = case maps:get(<<"id">>, Request, undefined) of
+        undefined -> null;
+        IdVal -> IdVal
+    end,
+    %% Map error reason to JSON-RPC error codes
+    {Code, Message} = map_batch_error_to_code(Reason, Details),
+    Error = build_error_object(Code, Message, Details),
+    #json_rpc_response{
+        id = Id,
+        error = Error
+    };
+create_batch_error_response(_Request, Reason, Details) ->
+    %% Completely invalid request (not a map), use null ID
+    {Code, Message} = map_batch_error_to_code(Reason, Details),
+    Error = build_error_object(Code, Message, Details),
+    #json_rpc_response{
+        id = null,
+        error = Error
+    }.
+
+%% @doc Map batch error reasons to JSON-RPC error codes and messages
+-spec map_batch_error_to_code(atom(), term()) -> {integer(), binary()}.
+map_batch_error_to_code(invalid_request, not_an_object) ->
+    {?JSONRPC_INVALID_REQUEST, <<"Invalid Request: not an object">>};
+map_batch_error_to_code(invalid_request, _) ->
+    {?JSONRPC_INVALID_REQUEST, ?JSONRPC_MSG_INVALID_REQUEST};
+map_batch_error_to_code(parse_error, _) ->
+    {?JSONRPC_PARSE_ERROR, ?JSONRPC_MSG_PARSE_ERROR};
+map_batch_error_to_code(missing_jsonrpc, _) ->
+    {?JSONRPC_INVALID_REQUEST, <<"Missing jsonrpc version field">>};
+map_batch_error_to_code(wrong_version, _) ->
+    {?JSONRPC_INVALID_REQUEST, <<"Invalid jsonrpc version (must be 2.0)">>};
+map_batch_error_to_code(invalid_method, Method) ->
+    Message = <<"Invalid method: ", (binify(Method))/binary>>,
+    {?JSONRPC_INVALID_REQUEST, Message};
+map_batch_error_to_code(unknown_message_type, _) ->
+    {?JSONRPC_INVALID_REQUEST, <<"Unknown message type">>};
+map_batch_error_to_code(Reason, _) ->
+    %% Fallback to internal error for unknown reasons
+    logger:warning("Unknown batch error reason: ~p", [Reason]),
+    {?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR}.
+
+%% @doc Convert various types to binary for error messages
+-spec binify(term()) -> binary().
+binify(Bin) when is_binary(Bin) -> Bin;
+binify(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
+binify(Int) when is_integer(Int) -> integer_to_binary(Int);
+binify(List) when is_list(List) -> list_to_binary(List);
+binify(Term) -> term_to_binary(Term).
+
+%%====================================================================
 %% Batch Processing Functions
 %%====================================================================
 
@@ -264,11 +325,40 @@ parse_batch([]) ->
     %% Empty batch is invalid per JSON-RPC 2.0 spec
     {error, {invalid_request, empty_batch}};
 parse_batch(Requests) when is_list(Requests) ->
-    %% Process each request in the batch
-    case parse_batch_requests(Requests, []) of
-        {ok, Messages} -> {ok, Messages};
-        Error -> Error
+    %% Validate version field for all requests first
+    case validate_batch_version(Requests) of
+        ok ->
+            %% Process each request in the batch
+            case parse_batch_requests(Requests, []) of
+                {ok, Messages} -> {ok, Messages};
+                Error -> Error
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
+
+%% @doc Validate jsonrpc version field in all batch requests
+%% Per JSON-RPC 2.0 spec, all requests must have "jsonrpc": "2.0"
+-spec validate_batch_version(list()) -> ok | {error, {invalid_request, term()}}.
+validate_batch_version([]) ->
+    ok;
+validate_batch_version([Request | Rest]) when is_map(Request) ->
+    case validate_single_request_version(Request) of
+        ok -> validate_batch_version(Rest);
+        Error -> Error
+    end;
+validate_batch_version([_ | _]) ->
+    %% Not a map - invalid request structure
+    {error, {invalid_request, not_an_object}}.
+
+%% @doc Validate jsonrpc version field in a single request
+-spec validate_single_request_version(map()) -> ok | {error, {invalid_request, term()}}.
+validate_single_request_version(#{?JSONRPC_FIELD_JSONRPC := ?JSONRPC_VERSION}) ->
+    ok;
+validate_single_request_version(#{?JSONRPC_FIELD_JSONRPC := Version}) ->
+    {error, {invalid_request, {wrong_version, Version}}};
+validate_single_request_version(_) ->
+    {error, {invalid_request, missing_jsonrpc}}.
 
 -spec parse_batch_requests(list(), [json_rpc_message()]) ->
     {ok, [json_rpc_message()]} | {error, {atom(), term()}}.
@@ -279,13 +369,15 @@ parse_batch_requests([Request | Rest], Acc) when is_map(Request) ->
     case erlmcp_message_parser:parse_json_rpc(Request) of
         {ok, Message} ->
             parse_batch_requests(Rest, [Message | Acc]);
-        {error, _} ->
-            %% Continue processing batch even on error, collect all errors
-            parse_batch_requests(Rest, Acc)
+        {error, {Reason, Details}} ->
+            %% Create error response for invalid batch request per JSON-RPC 2.0 spec
+            ErrorMsg = create_batch_error_response(Request, Reason, Details),
+            parse_batch_requests(Rest, [ErrorMsg | Acc])
     end;
-parse_batch_requests([_Invalid | Rest], Acc) ->
-    %% Invalid request in batch, skip and continue
-    parse_batch_requests(Rest, Acc).
+parse_batch_requests([Invalid | Rest], Acc) ->
+    %% Completely invalid request (not a map), create error response
+    ErrorMsg = create_batch_error_response(Invalid, invalid_request, not_an_object),
+    parse_batch_requests(Rest, [ErrorMsg | Acc]).
 
 %%====================================================================
 %% Internal Functions

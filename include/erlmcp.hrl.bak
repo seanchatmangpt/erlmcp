@@ -48,7 +48,6 @@
 
 %% Content and message errors (-32011 to -32020)
 -define(MCP_ERROR_TOOL_DESCRIPTION_TOO_LONG, -32011).  %% Gap #40
--define(MCP_TOOL_DESCRIPTION_MAX_LENGTH_DEFAULT, 10000).  %% Default max tool description length
 -define(MCP_ERROR_MESSAGE_TOO_LARGE, -32012).  %% Gap #45
 -define(MCP_ERROR_INVALID_CONTENT_TYPE, -32013).
 -define(MCP_ERROR_CONTENT_TOO_LARGE, -32014).
@@ -407,6 +406,7 @@
 -define(MCP_MSG_MISSING_PROMPT_NAME, <<"Missing prompt name">>).
 
 %%% Model Preferences Validation Messages
+-define(MCP_MSG_INVALID_MODEL_PREFERENCES, <<"Invalid model preferences">>).
 -define(MCP_MSG_INVALID_TEMPERATURE, <<"Invalid temperature">>).
 -define(MCP_MSG_INVALID_MAX_TOKENS, <<"Invalid maxTokens">>).
 -define(MCP_MSG_INVALID_STOP_SEQUENCES, <<"Invalid stopSequences">>).
@@ -421,6 +421,9 @@
 -define(MCP_PARAM_STOP_SEQUENCES, <<"stopSequences">>).
 
 %%% Legacy Parameter Error Messages (kept for backward compatibility)
+-define(MCP_MSG_MISSING_URI_PARAMETER, <<"Missing uri parameter">>).
+-define(MCP_MSG_MISSING_TOOL_NAME, <<"Missing tool name">>).
+-define(MCP_MSG_MISSING_PROMPT_NAME, <<"Missing prompt name">>).
 
 %%% Convenience macros for common error responses
 -define(ERROR_PARSE, {?JSONRPC_PARSE_ERROR, ?JSONRPC_MSG_PARSE_ERROR}).

@@ -1,0 +1,183 @@
+--- a/apps/erlmcp_core/src/erlmcp_server.erl
++++ b/apps/erlmcp_core/src/erlmcp_server.erl
+@@ -290,7 +290,8 @@ handle_call({update_resource, Uri, Handler}, _From, State) ->
+             case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
+                 ok ->
+                     NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
+-                    %% Notify subscribers that resource has been updated
+-                    notify_resource_updated(Uri, #{}),
++                    %% Notify subscribers that resource has been updated via notification system
++                    _ = notify_subscribers(Uri, #{}, State),
+                     {reply, ok, State#state{resources = NewResources}};
+                 {error, {ErrorType, ErrorMsg}} ->
+                     {reply, {error, {?JSONRPC_INVALID_PARAMS, ErrorMsg, #{
+@@ -624,17 +625,56 @@ handle_request(Id, ?MCP_METHOD_INITIALIZE, Params, TransportId, #state{server_i
+         }),
+
+         %% Extract and validate client capabilities
+-        ClientCapabilities = erlmcp_capabilities:extract_client_capabilities(Params),
+-        ProtocolVersion = maps:get(?MCP_FIELD_PROTOCOL_VERSION, Params, ?MCP_VERSION),
+-
+-        %% Validate protocol version
+-        case erlmcp_capabilities:validate_protocol_version(ProtocolVersion) of
++        %% Step 1: Validate required parameters exist
++        case validate_initialize_params(Params) of
++            {error, Code, Message} ->
++                erlmcp_tracing:record_error_details(SpanCtx, missing_required_params, Message),
++                send_error_via_registry(State, TransportId, Id, Code, Message),
++                {noreply, State};
++            ok ->
++                ok
++        end,
++
++        %% Step 2: Extract and validate protocol version
++        ProtocolVersion = maps:get(?MCP_FIELD_PROTOCOL_VERSION, Params),
++        case erlmcp_capabilities:validate_protocol_version(ProtocolVersion) of
++            {error, ErrorMsg} ->
++                erlmcp_tracing:record_error_details(SpanCtx, protocol_version_mismatch, ErrorMsg),
++                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_UNSUPPORTED_PROTOCOL_VERSION, ErrorMsg),
++                {noreply, State};
++            ok ->
++                ok
++        end,
++
++        %% Step 3: Extract client capabilities
++        ClientCapabilities = erlmcp_capabilities:extract_client_capabilities(Params),
++
++        %% Step 4: Validate required capabilities based on server configuration
++        case validate_required_capabilities(ClientCapabilities, State#state.capabilities) of
++            {error, CapabilityError} ->
++                erlmcp_tracing:record_error_details(SpanCtx, capability_validation_failed, CapabilityError),
++                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_CAPABILITY_NOT_SUPPORTED, CapabilityError),
++                {noreply, State};
++            ok ->
++                ok
++        end,
++
++        %% Step 5: Negotiate capabilities with graceful degradation
++        NegotiatedCaps = erlmcp_capabilities:negotiate_capabilities(
++            ClientCapabilities,
++            State#state.capabilities
++        ),
++
++        %% Step 6: Build and send successful initialize response
++        Response = build_initialize_response(NegotiatedCaps, ProtocolVersion),
++        send_response_via_registry(State, TransportId, Id, Response),
++
++        %% Step 7: Transition to initialized phase
++        erlmcp_tracing:set_attributes(SpanCtx, #{
++            <<"client.protocol_version">> => ProtocolVersion,
++            <<"client.capabilities">> => <<"negotiated">>,
++            <<"server.capabilities">> => <<"negotiated">>
++        }),
+         erlmcp_tracing:set_status(SpanCtx, ok),
+-        Response = build_initialize_response(State#state.capabilities),
+-        send_response_via_registry(State, TransportId, Id, Response),
++
+         NewState = State#state{
+             initialized = true,
+             client_capabilities = ClientCapabilities,
+             protocol_version = ProtocolVersion,
+-            phase = ?MCP_PHASE_INITIALIZED
++            phase = ?MCP_PHASE_INITIALIZED,
++            capabilities = NegotiatedCaps
+         },
+         {noreply, NewState};
+-            {error, ErrorMsg} ->
+-                erlmcp_tracing:record_error_details(SpanCtx, protocol_version_mismatch, ErrorMsg),
+-                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ErrorMsg),
+-                {noreply, State}
+-        end
+     catch
+         Class:Reason:Stacktrace ->
+             erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+@@ -1072,7 +1114,7 @@ send_progress_notification_safe(State, Token, Progress, Total) ->
+
+ %%====================================================================
+ %% Internal functions - Response Building (same as before)
+ %%====================================================================
+
+--spec build_initialize_response(#mcp_server_capabilities{}) -> map().
++-spec build_initialize_response(#mcp_server_capabilities{}, binary()) -> map().
+ build_initialize_response(Capabilities) ->
+     {ok, Version} = application:get_key(list_to_atom(binary_to_list(?APP_NAME)), vsn),
+     #{
+         ?MCP_FIELD_PROTOCOL_VERSION => <<"2025-11-25">>,
+@@ -1820,6 +1862,71 @@ validate_log_level_binary(LevelBinary) when is_binary(LevelBinary) ->
+             {error, invalid_level}
+     end.
+
++%%====================================================================
++%% Internal functions - Initialize Handshake Validation (Task #217)
++%%====================================================================
++
++%% @doc Validate initialize request parameters
++%% Task #217: Ensure required parameters are present and valid
++-spec validate_initialize_params(map()) -> ok | {error, integer(), binary()}.
++validate_initialize_params(Params) when is_map(Params) ->
++    %% Check for required protocolVersion field
++    case maps:get(?MCP_FIELD_PROTOCOL_VERSION, Params, undefined) of
++        undefined ->
++            {error, ?JSONRPC_INVALID_PARAMS, <<"Missing required parameter: protocolVersion">>};
++        Version when is_binary(Version) ->
++            %% Check for required capabilities field
++            case maps:get(?MCP_FIELD_CAPABILITIES, Params, undefined) of
++                undefined ->
++                    {error, ?JSONRPC_INVALID_PARAMS, <<"Missing required parameter: capabilities">>};
++                Caps when is_map(Caps) ->
++                    ok;
++                _ ->
++                    {error, ?JSONRPC_INVALID_PARAMS, <<"Invalid capabilities format: must be an object">>}
++            end;
++        _ ->
++            {error, ?JSONRPC_INVALID_PARAMS, <<"Invalid protocolVersion format: must be a string">>}
++    end;
++validate_initialize_params(_) ->
++    {error, ?JSONRPC_INVALID_PARAMS, <<"Invalid parameters format: must be an object">>}.
++
++%% @doc Validate required capabilities based on server configuration
++%% Task #217: Check if client declares incompatible capabilities
++-spec validate_required_capabilities(#mcp_client_capabilities{}, #mcp_server_capabilities{}) ->
++    ok | {error, binary()}.
++validate_required_capabilities(_ClientCaps, _ServerCaps) ->
++    %% Currently, erlmcp doesn't have strict capability requirements
++    %% All capabilities are optional for graceful degradation
++    %% This function is a placeholder for future strict validation
++    %%
++    %% Example of future strict validation:
++    %% case ServerCaps#mcp_server_capabilities.sampling of
++    %%     #mcp_sampling_capability{} when ServerCaps#mcp_server_capabilities.sampling /= undefined ->
++    %%         %% Server requires sampling capability
++    %%         case ClientCaps#mcp_client_capabilities.sampling of
++    %%             #mcp_capability{enabled = true} -> ok;
++    %%             _ -> {error, <<"Server requires sampling capability">>}
++    %%         end;
++    %%     _ -> ok
++    %% end
++    ok.
++
++%% @doc Build initialize response with negotiated capabilities
++%% Task #217: Return proper protocol version from handshake
++-spec build_initialize_response(#mcp_server_capabilities{}, binary()) -> map().
++build_initialize_response(Capabilities, ProtocolVersion) ->
++    {ok, Version} = application:get_key(list_to_atom(binary_to_list(?APP_NAME)), vsn),
++    #{
++        ?MCP_FIELD_PROTOCOL_VERSION => ProtocolVersion,
++        ?MCP_FIELD_CAPABILITIES => erlmcp_capabilities:capability_to_map(Capabilities),
++        ?MCP_FIELD_SERVER_INFO => #{
++            ?MCP_INFO_NAME => ?APP_NAME,
++            ?MCP_INFO_VERSION => list_to_binary(Version)
++        }
++    }.
++
++%% @doc Format handshake validation error for logging
++%% Task #217: Provide detailed error context for debugging
++-spec format_handshake_error(term()) -> binary().
++format_handshake_error({missing_param, Param}) ->
++    <<"Missing required parameter: ", (atom_to_binary(Param))/binary>>;
++format_handshake_error({invalid_version, Version}) ->
++    <<"Unsupported protocol version: ", (binary_to_list(Version))/binary>>;
++format_handshake_error({capability_mismatch, Cap}) ->
++    <<"Capability mismatch: ", (atom_to_binary(Cap))/binary>>;
++format_handshake_error(Other) ->
++    iolist_to_binary(io_lib:format("~p", [Other])).

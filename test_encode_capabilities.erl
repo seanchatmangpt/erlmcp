@@ -1,7 +1,7 @@
 #!/usr/bin/env escript
 %%! -pa apps/erlmcp_core/ebin -pa apps/erlmcp_core/_build/test/lib/*/ebin -pa _build/test/lib/*/ebin
 
--include_lib("apps/erlmcp_core/include/erlmcp.hrl").
+-include_lib("erlmcp/include/erlmcp.hrl").
 
 main([]) ->
     %% Start applications

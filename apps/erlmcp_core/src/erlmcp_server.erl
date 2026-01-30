@@ -37,9 +37,6 @@
 
 -export_type([server/0, server_id/0]).
 
-%% Type definitions
--type log_level() :: debug | info | notice | warning | error | critical | alert | emergency.
-
 %% State record - NO transport state, only server-specific state
 %% Includes phase tracking for MCP 2025-11-25 initialization state machine (Gap #4)
 -record(state, {
@@ -243,7 +240,7 @@ handle_call({add_tool, Name, Handler}, _From, State) ->
         description = <<"Tool: ", Name/binary>>
     },
     NewTools = maps:put(Name, {Tool, Handler, undefined}, State#state.tools),
-    notify_list_changed(tools, State),
+    notify_tools_changed(State),
     {reply, ok, State#state{tools = NewTools}};
 
 handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
@@ -253,7 +250,7 @@ handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
         input_schema = Schema
     },
     NewTools = maps:put(Name, {Tool, Handler, Schema}, State#state.tools),
-    notify_list_changed(tools, State),
+    notify_tools_changed(State),
     {reply, ok, State#state{tools = NewTools}};
 
 handle_call({add_prompt, Name, Handler}, _From, State) ->
@@ -309,7 +306,7 @@ handle_call({delete_tool, Name}, _From, State) ->
     case maps:is_key(Name, State#state.tools) of
         true ->
             NewTools = maps:remove(Name, State#state.tools),
-            notify_list_changed(tools, State),
+            notify_tools_changed(State),
             {reply, ok, State#state{tools = NewTools}};
         false ->
             {reply, {error, not_found}, State}
@@ -375,6 +372,10 @@ handle_cast({notify_resource_updated, Uri, Metadata}, State) ->
 
 handle_cast(notify_resources_changed, State) ->
     send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED, #{}),
+    {noreply, State};
+
+handle_cast(notify_tools_changed, State) ->
+    send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED, #{}),
     {noreply, State};
 
 handle_cast(_Msg, State) ->
@@ -1485,6 +1486,11 @@ notify_list_changed(Feature, State) ->
                     ok
             end
     end.
+
+-spec notify_tools_changed(state()) -> ok.
+notify_tools_changed(State) ->
+    gen_server:cast(self(), notify_tools_changed),
+    ok.
 
 %%====================================================================
 %% Internal functions - Path Canonicalization (Gap #36)
