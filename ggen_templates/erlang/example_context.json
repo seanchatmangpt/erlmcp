@@ -1,0 +1,34 @@
+{
+  "module_name": "mcp_handler_tools_call",
+  "method": "tools/call",
+  "method_const": "MCP_METHOD_TOOLS_CALL",
+  "requires_phase": "initialized",
+  "capability": "tools",
+  "capability_record": "tools",
+  "validate_schema": true,
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100,
+        "description": "Name of the tool to call"
+      },
+      "arguments": {
+        "type": "object",
+        "description": "Arguments to pass to the tool"
+      }
+    },
+    "required": ["name"],
+    "additionalProperties": false
+  },
+  "params_required": ["name", "arguments"],
+  "supports_progress": true,
+  "supports_cancellation": true,
+  "timeout_ms": 30000,
+  "handler_function": "execute_tool",
+  "description": "Executes a tool with given arguments and returns results with progress tracking.",
+  "timestamp": "2026-01-30T16:54:00Z",
+  "generator_version": "1.0.0"
+}

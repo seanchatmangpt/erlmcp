@@ -1,0 +1,368 @@
+{
+  "timestamp": "2026-01-30T17:30:00Z",
+  "generator_version": "1.0.0",
+  "mcp_version": "2025-11-25",
+  "methods": [
+    {
+      "function_name": "initialize",
+      "method": "initialize",
+      "description": "Initialize the MCP connection with server capabilities negotiation",
+      "params": [
+        {
+          "name": "capabilities",
+          "type": "#mcp_client_capabilities{}",
+          "required": true,
+          "description": "Client capabilities to advertise to server"
+        },
+        {
+          "name": "options",
+          "type": "map()",
+          "required": false,
+          "description": "Additional initialization options",
+          "default_value": "#{}"
+        }
+      ],
+      "return_type": "{ok, map()} | {error, term()}",
+      "requires_phase": "pre_initialization",
+      "requires_capability": null,
+      "timeout_ms": null,
+      "arity": 2,
+      "has_optional_params": true,
+      "next_phase": "initializing",
+      "request_params": [
+        {
+          "json_name": "protocolVersion",
+          "value": "?MCP_VERSION"
+        },
+        {
+          "json_name": "capabilities",
+          "value": "encode_capabilities(Capabilities)"
+        },
+        {
+          "json_name": "clientInfo",
+          "value": "#{<<\"name\">> => <<\"erlmcp\">>, <<\"version\">> => <<\"0.6.0\">>}"
+        }
+      ]
+    },
+    {
+      "function_name": "list_resources",
+      "method": "resources/list",
+      "description": "List all available resources from the server",
+      "params": [],
+      "return_type": "{ok, [map()]} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "resources",
+      "timeout_ms": null,
+      "arity": 1,
+      "has_optional_params": false,
+      "request_params": []
+    },
+    {
+      "function_name": "read_resource",
+      "method": "resources/read",
+      "description": "Read a specific resource by URI",
+      "params": [
+        {
+          "name": "uri",
+          "type": "binary()",
+          "required": true,
+          "description": "Resource URI to read"
+        }
+      ],
+      "return_type": "{ok, map()} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "resources",
+      "timeout_ms": null,
+      "arity": 2,
+      "has_optional_params": false,
+      "request_params": [
+        {
+          "json_name": "uri",
+          "value": "Uri"
+        }
+      ]
+    },
+    {
+      "function_name": "list_resource_templates",
+      "method": "resources/templates/list",
+      "description": "List all available resource templates",
+      "params": [],
+      "return_type": "{ok, [map()]} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "resources",
+      "timeout_ms": null,
+      "arity": 1,
+      "has_optional_params": false,
+      "request_params": []
+    },
+    {
+      "function_name": "subscribe_to_resource",
+      "method": "resources/subscribe",
+      "description": "Subscribe to updates for a specific resource",
+      "params": [
+        {
+          "name": "uri",
+          "type": "binary()",
+          "required": true,
+          "description": "Resource URI to subscribe to"
+        }
+      ],
+      "return_type": "ok | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "resources",
+      "timeout_ms": null,
+      "arity": 2,
+      "has_optional_params": false,
+      "request_params": [
+        {
+          "json_name": "uri",
+          "value": "Uri"
+        }
+      ]
+    },
+    {
+      "function_name": "unsubscribe_from_resource",
+      "method": "resources/unsubscribe",
+      "description": "Unsubscribe from updates for a specific resource",
+      "params": [
+        {
+          "name": "uri",
+          "type": "binary()",
+          "required": true,
+          "description": "Resource URI to unsubscribe from"
+        }
+      ],
+      "return_type": "ok | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "resources",
+      "timeout_ms": null,
+      "arity": 2,
+      "has_optional_params": false,
+      "request_params": [
+        {
+          "json_name": "uri",
+          "value": "Uri"
+        }
+      ]
+    },
+    {
+      "function_name": "list_tools",
+      "method": "tools/list",
+      "description": "List all available tools from the server",
+      "params": [],
+      "return_type": "{ok, [map()]} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "tools",
+      "timeout_ms": null,
+      "arity": 1,
+      "has_optional_params": false,
+      "request_params": []
+    },
+    {
+      "function_name": "call_tool",
+      "method": "tools/call",
+      "description": "Execute a tool with the given arguments",
+      "params": [
+        {
+          "name": "name",
+          "type": "binary()",
+          "required": true,
+          "description": "Tool name to execute"
+        },
+        {
+          "name": "arguments",
+          "type": "map()",
+          "required": true,
+          "description": "Tool arguments as a map"
+        }
+      ],
+      "return_type": "{ok, map()} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "tools",
+      "timeout_ms": null,
+      "arity": 3,
+      "has_optional_params": false,
+      "request_params": [
+        {
+          "json_name": "name",
+          "value": "Name"
+        },
+        {
+          "json_name": "arguments",
+          "value": "Arguments"
+        }
+      ]
+    },
+    {
+      "function_name": "list_prompts",
+      "method": "prompts/list",
+      "description": "List all available prompts from the server",
+      "params": [],
+      "return_type": "{ok, [map()]} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "prompts",
+      "timeout_ms": null,
+      "arity": 1,
+      "has_optional_params": false,
+      "request_params": []
+    },
+    {
+      "function_name": "get_prompt",
+      "method": "prompts/get",
+      "description": "Get a specific prompt by name with optional arguments",
+      "params": [
+        {
+          "name": "name",
+          "type": "binary()",
+          "required": true,
+          "description": "Prompt name to retrieve"
+        },
+        {
+          "name": "arguments",
+          "type": "map()",
+          "required": false,
+          "description": "Prompt arguments",
+          "default_value": "#{}"
+        }
+      ],
+      "return_type": "{ok, map()} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "prompts",
+      "timeout_ms": null,
+      "arity": 2,
+      "has_optional_params": true,
+      "request_params": [
+        {
+          "json_name": "name",
+          "value": "Name"
+        },
+        {
+          "json_name": "arguments",
+          "value": "Arguments"
+        }
+      ]
+    },
+    {
+      "function_name": "create_task",
+      "method": "tasks/create",
+      "description": "Create a new long-running task",
+      "params": [
+        {
+          "name": "name",
+          "type": "binary()",
+          "required": true,
+          "description": "Task name"
+        },
+        {
+          "name": "arguments",
+          "type": "map()",
+          "required": true,
+          "description": "Task arguments"
+        }
+      ],
+      "return_type": "{ok, map()} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "tasks",
+      "timeout_ms": null,
+      "arity": 3,
+      "has_optional_params": false,
+      "request_params": [
+        {
+          "json_name": "name",
+          "value": "Name"
+        },
+        {
+          "json_name": "arguments",
+          "value": "Arguments"
+        }
+      ]
+    },
+    {
+      "function_name": "list_tasks",
+      "method": "tasks/list",
+      "description": "List all tasks",
+      "params": [],
+      "return_type": "{ok, [map()]} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "tasks",
+      "timeout_ms": null,
+      "arity": 1,
+      "has_optional_params": false,
+      "request_params": []
+    },
+    {
+      "function_name": "get_task",
+      "method": "tasks/get",
+      "description": "Get task status by ID",
+      "params": [
+        {
+          "name": "task_id",
+          "type": "binary()",
+          "required": true,
+          "description": "Task ID to query"
+        }
+      ],
+      "return_type": "{ok, map()} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "tasks",
+      "timeout_ms": null,
+      "arity": 2,
+      "has_optional_params": false,
+      "request_params": [
+        {
+          "json_name": "taskId",
+          "value": "TaskId"
+        }
+      ]
+    },
+    {
+      "function_name": "cancel_task",
+      "method": "tasks/cancel",
+      "description": "Cancel a running task",
+      "params": [
+        {
+          "name": "task_id",
+          "type": "binary()",
+          "required": true,
+          "description": "Task ID to cancel"
+        },
+        {
+          "name": "reason",
+          "type": "binary()",
+          "required": false,
+          "description": "Cancellation reason",
+          "default_value": "<<\"User requested\">>"
+        }
+      ],
+      "return_type": "ok | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": "tasks",
+      "timeout_ms": null,
+      "arity": 2,
+      "has_optional_params": true,
+      "request_params": [
+        {
+          "json_name": "taskId",
+          "value": "TaskId"
+        },
+        {
+          "json_name": "reason",
+          "value": "Reason"
+        }
+      ]
+    },
+    {
+      "function_name": "ping",
+      "method": "ping",
+      "description": "Send a ping request to verify connection",
+      "params": [],
+      "return_type": "{ok, map()} | {error, term()}",
+      "requires_phase": "initialized",
+      "requires_capability": null,
+      "timeout_ms": 5000,
+      "arity": 1,
+      "has_optional_params": false,
+      "request_params": []
+    }
+  ]
+}
