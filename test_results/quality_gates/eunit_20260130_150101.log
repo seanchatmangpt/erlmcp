@@ -1,0 +1,97 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_tasks.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 23 │  -[1;31mexport[0m([create_task/3, create_task/4, create/3, create/4]).[0m
+    │   [1;31m╰──[0m[0m function create/3 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 23 │  -[1;31mexport[0m([create_task/3, create_task/4, create/3, create/4]).[0m
+    │   [1;31m╰──[0m[0m function create/4 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 23 │  -[1;31mexport[0m([create_task/3, create_task/4, create/3, create/4]).[0m
+    │   [1;31m╰──[0m[0m function create_task/4 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 24 │  -[1;31mexport[0m([list_tasks/2, list_tasks/3, list_tasks/4]).[0m
+    │   [1;31m╰──[0m[0m function list_tasks/2 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 24 │  -[1;31mexport[0m([list_tasks/2, list_tasks/3, list_tasks/4]).[0m
+    │   [1;31m╰──[0m[0m function list_tasks/4 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 25 │  -[1;31mexport[0m([get_task/2, get/2]).[0m
+    │   [1;31m╰──[0m[0m function get/2 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 26 │  -[1;31mexport[0m([cancel_task/3, cancel/3, cancel_task/2]).[0m
+    │   [1;31m╰──[0m[0m function cancel/3 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 26 │  -[1;31mexport[0m([cancel_task/3, cancel/3, cancel_task/2]).[0m
+    │   [1;31m╰──[0m[0m function cancel_task/2 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 27 │  -[1;31mexport[0m([get_task_result/2, get_result/2]).[0m
+    │   [1;31m╰──[0m[0m function get_result/2 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 28 │  -[1;31mexport[0m([update_task/3, update_status/3, update_progress/3]).[0m
+    │   [1;31m╰──[0m[0m function update_progress/3 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 28 │  -[1;31mexport[0m([update_task/3, update_status/3, update_progress/3]).[0m
+    │   [1;31m╰──[0m[0m function update_status/3 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 28 │  -[1;31mexport[0m([update_task/3, update_status/3, update_progress/3]).[0m
+    │   [1;31m╰──[0m[0m function update_task/3 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 29 │  -[1;31mexport[0m([cleanup_expired/0, cleanup_expired/1]).[0m
+    │   [1;31m╰──[0m[0m function cleanup_expired/0 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 29 │  -[1;31mexport[0m([cleanup_expired/0, cleanup_expired/1]).[0m
+    │   [1;31m╰──[0m[0m function cleanup_expired/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 30 │  -[1;31mexport[0m([get_max_concurrent/0, stop/1, complete/3]).[0m
+    │   [1;31m╰──[0m[0m function complete/3 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 30 │  -[1;31mexport[0m([get_max_concurrent/0, stop/1, complete/3]).[0m
+    │   [1;31m╰──[0m[0m function get_max_concurrent/0 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_tasks.erl:
+    │
+ 30 │  -[1;31mexport[0m([get_max_concurrent/0, stop/1, complete/3]).[0m
+    │   [1;31m╰──[0m[0m function stop/1 undefined
+
+

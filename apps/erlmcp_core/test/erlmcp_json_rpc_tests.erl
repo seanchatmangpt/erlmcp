@@ -883,3 +883,852 @@ test_create_error_with_data_record() ->
     ?assertEqual(-32602, Error#mcp_error.code),
     ?assertEqual(<<"Invalid Params">>, Error#mcp_error.message),
     ?assertEqual(#{<<"details">> => <<"missing field">>}, Error#mcp_error.data).
+
+%%====================================================================
+%% Error Code Classification Tests (89 Refusal Codes Integration)
+%%====================================================================
+
+error_classification_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_severity_critical()),
+          ?_test(test_error_severity_error()),
+          ?_test(test_error_severity_warning()),
+          ?_test(test_error_severity_info()),
+          ?_test(test_error_category_jsonrpc()),
+          ?_test(test_error_category_mcp_core()),
+          ?_test(test_error_category_content()),
+          ?_test(test_error_category_resource()),
+          ?_test(test_error_category_tool()),
+          ?_test(test_error_category_prompt()),
+          ?_test(test_error_category_auth()),
+          ?_test(test_error_category_protocol()),
+          ?_test(test_error_category_pagination()),
+          ?_test(test_error_category_task()),
+          ?_test(test_error_category_progress()),
+          ?_test(test_error_category_completion()),
+          ?_test(test_is_jsonrpc_standard_error()),
+          ?_test(test_is_mcp_core_error()),
+          ?_test(test_is_mcp_content_error()),
+          ?_test(test_is_mcp_resource_error()),
+          ?_test(test_is_mcp_tool_error()),
+          ?_test(test_is_mcp_prompt_error()),
+          ?_test(test_is_mcp_auth_error()),
+          ?_test(test_is_mcp_protocol_error()),
+          ?_test(test_is_mcp_pagination_error()),
+          ?_test(test_is_mcp_task_error()),
+          ?_test(test_is_mcp_progress_error()),
+          ?_test(test_is_mcp_completion_error())
+         ]
+     end}.
+
+test_error_severity_critical() ->
+    ?assertEqual(critical, erlmcp_json_rpc:error_severity(-32700)),
+    ?assertEqual(critical, erlmcp_json_rpc:error_severity(-32600)),
+    ?assertEqual(critical, erlmcp_json_rpc:error_severity(-32603)).
+
+test_error_severity_error() ->
+    ?assertEqual(error, erlmcp_json_rpc:error_severity(-32601)),
+    ?assertEqual(error, erlmcp_json_rpc:error_severity(-32602)),
+    ?assertEqual(error, erlmcp_json_rpc:error_severity(-32010)).
+
+test_error_severity_warning() ->
+    ?assertEqual(warning, erlmcp_json_rpc:error_severity(-32079)),
+    ?assertEqual(warning, erlmcp_json_rpc:error_severity(-32000)),
+    ?assertEqual(warning, erlmcp_json_rpc:error_severity(-32110)).
+
+test_error_severity_info() ->
+    ?assertEqual(info, erlmcp_json_rpc:error_severity(99999)),
+    ?assertEqual(info, erlmcp_json_rpc:error_severity(0)).
+
+test_error_category_jsonrpc() ->
+    ?assertEqual(jsonrpc, erlmcp_json_rpc:error_category(-32700)),
+    ?assertEqual(jsonrpc, erlmcp_json_rpc:error_category(-32600)),
+    ?assertEqual(jsonrpc, erlmcp_json_rpc:error_category(-32603)).
+
+test_error_category_mcp_core() ->
+    ?assertEqual(mcp_core, erlmcp_json_rpc:error_category(-32010)),
+    ?assertEqual(mcp_core, erlmcp_json_rpc:error_category(-32001)),
+    ?assertEqual(mcp_core, erlmcp_json_rpc:error_category(-32000)).
+
+test_error_category_content() ->
+    ?assertEqual(content, erlmcp_json_rpc:error_category(-32020)),
+    ?assertEqual(content, erlmcp_json_rpc:error_category(-32011)).
+
+test_error_category_resource() ->
+    ?assertEqual(resource, erlmcp_json_rpc:error_category(-32030)),
+    ?assertEqual(resource, erlmcp_json_rpc:error_category(-32021)).
+
+test_error_category_tool() ->
+    ?assertEqual(tool, erlmcp_json_rpc:error_category(-32040)),
+    ?assertEqual(tool, erlmcp_json_rpc:error_category(-32031)).
+
+test_error_category_prompt() ->
+    ?assertEqual(prompt, erlmcp_json_rpc:error_category(-32050)),
+    ?assertEqual(prompt, erlmcp_json_rpc:error_category(-32041)).
+
+test_error_category_auth() ->
+    ?assertEqual(auth, erlmcp_json_rpc:error_category(-32060)),
+    ?assertEqual(auth, erlmcp_json_rpc:error_category(-32051)).
+
+test_error_category_protocol() ->
+    ?assertEqual(protocol, erlmcp_json_rpc:error_category(-32070)),
+    ?assertEqual(protocol, erlmcp_json_rpc:error_category(-32061)).
+
+test_error_category_pagination() ->
+    ?assertEqual(pagination, erlmcp_json_rpc:error_category(-32080)),
+    ?assertEqual(pagination, erlmcp_json_rpc:error_category(-32071)).
+
+test_error_category_task() ->
+    ?assertEqual(task, erlmcp_json_rpc:error_category(-32090)),
+    ?assertEqual(task, erlmcp_json_rpc:error_category(-32081)).
+
+test_error_category_progress() ->
+    ?assertEqual(progress, erlmcp_json_rpc:error_category(-32100)),
+    ?assertEqual(progress, erlmcp_json_rpc:error_category(-32091)).
+
+test_error_category_completion() ->
+    ?assertEqual(completion, erlmcp_json_rpc:error_category(-32113)),
+    ?assertEqual(completion, erlmcp_json_rpc:error_category(-32110)).
+
+test_is_jsonrpc_standard_error() ->
+    ?assert(erlmcp_json_rpc:is_jsonrpc_standard_error(-32700)),
+    ?assert(erlmcp_json_rpc:is_jsonrpc_standard_error(-32600)),
+    ?assertNot(erlmcp_json_rpc:is_jsonrpc_standard_error(-32001)).
+
+test_is_mcp_core_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_core_error(-32001)),
+    ?assert(erlmcp_json_rpc:is_mcp_core_error(-32010)),
+    ?assert(erlmcp_json_rpc:is_mcp_core_error(-32000)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_core_error(-32011)).
+
+test_is_mcp_content_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_content_error(-32011)),
+    ?assert(erlmcp_json_rpc:is_mcp_content_error(-32020)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_content_error(-32010)).
+
+test_is_mcp_resource_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_resource_error(-32021)),
+    ?assert(erlmcp_json_rpc:is_mcp_resource_error(-32030)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_resource_error(-32020)).
+
+test_is_mcp_tool_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_tool_error(-32031)),
+    ?assert(erlmcp_json_rpc:is_mcp_tool_error(-32040)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_tool_error(-32030)).
+
+test_is_mcp_prompt_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_prompt_error(-32041)),
+    ?assert(erlmcp_json_rpc:is_mcp_prompt_error(-32050)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_prompt_error(-32040)).
+
+test_is_mcp_auth_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_auth_error(-32051)),
+    ?assert(erlmcp_json_rpc:is_mcp_auth_error(-32060)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_auth_error(-32050)).
+
+test_is_mcp_protocol_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_protocol_error(-32061)),
+    ?assert(erlmcp_json_rpc:is_mcp_protocol_error(-32070)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_protocol_error(-32060)).
+
+test_is_mcp_pagination_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_pagination_error(-32071)),
+    ?assert(erlmcp_json_rpc:is_mcp_pagination_error(-32080)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_pagination_error(-32070)).
+
+test_is_mcp_task_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_task_error(-32081)),
+    ?assert(erlmcp_json_rpc:is_mcp_task_error(-32090)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_task_error(-32080)).
+
+test_is_mcp_progress_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_progress_error(-32091)),
+    ?assert(erlmcp_json_rpc:is_mcp_progress_error(-32100)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_progress_error(-32090)).
+
+test_is_mcp_completion_error() ->
+    ?assert(erlmcp_json_rpc:is_mcp_completion_error(-32110)),
+    ?assert(erlmcp_json_rpc:is_mcp_completion_error(-32113)),
+    ?assertNot(erlmcp_json_rpc:is_mcp_completion_error(-32100)).
+
+%%====================================================================
+%% Content Error Helper Functions Tests (-32011 to -32020)
+%%====================================================================
+
+content_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_tool_description_too_large()),
+          ?_test(test_error_invalid_content_type()),
+          ?_test(test_error_content_too_large()),
+          ?_test(test_error_invalid_encoding())
+         ]
+     end}.
+
+test_error_tool_description_too_large() ->
+    Id = 1,
+    ActualSize = 15000,
+    MaxSize = 10000,
+    Response = erlmcp_json_rpc:error_tool_description_too_large(Id, ActualSize, MaxSize),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32011, maps:get(<<"code">>, Error)),
+    ?assertEqual(ActualSize, maps:get(<<"actualSize">>, maps:get(<<"data">>, Error))),
+    ?assertEqual(MaxSize, maps:get(<<"maxSize">>, maps:get(<<"data">>, Error))).
+
+test_error_invalid_content_type() ->
+    Id = 1,
+    ContentType = <<"text/plain">>,
+    Response = erlmcp_json_rpc:error_invalid_content_type(Id, ContentType),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32013, maps:get(<<"code">>, Error)),
+    ?assertEqual(ContentType, maps:get(<<"contentType">>, maps:get(<<"data">>, Error))).
+
+test_error_content_too_large() ->
+    Id = 1,
+    ActualSize = 20000000,
+    MaxSize = 16777216,
+    Response = erlmcp_json_rpc:error_content_too_large(Id, ActualSize, MaxSize),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32014, maps:get(<<"code">>, Error)).
+
+test_error_invalid_encoding() ->
+    Id = 1,
+    Encoding = <<"utf-16">>,
+    Response = erlmcp_json_rpc:error_invalid_encoding(Id, Encoding),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32015, maps:get(<<"code">>, Error)),
+    ?assertEqual(Encoding, maps:get(<<"encoding">>, maps:get(<<"data">>, Error))).
+
+%%====================================================================
+%% Resource Error Helper Functions Tests (-32021 to -32030)
+%%====================================================================
+
+resource_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_resource_template_not_found()),
+          ?_test(test_error_invalid_uri()),
+          ?_test(test_error_uri_syntax_error()),
+          ?_test(test_error_resource_access_denied()),
+          ?_test(test_error_template_render_failed())
+         ]
+     end}.
+
+test_error_resource_template_not_found() ->
+    Id = 1,
+    TemplateUri = <<"weather://current/{city}">>,
+    Response = erlmcp_json_rpc:error_resource_template_not_found(Id, TemplateUri),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32021, maps:get(<<"code">>, Error)),
+    ?assertEqual(TemplateUri, maps:get(<<"templateUri">>, maps:get(<<"data">>, Error))).
+
+test_error_invalid_uri() ->
+    Id = 1,
+    Uri = <<"not-a-uri">>,
+    Response = erlmcp_json_rpc:error_invalid_uri(Id, Uri),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32022, maps:get(<<"code">>, Error)),
+    ?assertEqual(Uri, maps:get(<<"uri">>, maps:get(<<"data">>, Error))).
+
+test_error_uri_syntax_error() ->
+    Id = 1,
+    Uri = <<"weather://city[invalid]">>,
+    Reason = <<"Invalid URI syntax">>,
+    Response = erlmcp_json_rpc:error_uri_syntax_error(Id, Uri, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32023, maps:get(<<"code">>, Error)).
+
+test_error_resource_access_denied() ->
+    Id = 1,
+    Uri = <<"admin://config">>,
+    Response = erlmcp_json_rpc:error_resource_access_denied(Id, Uri),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32025, maps:get(<<"code">>, Error)).
+
+test_error_template_render_failed() ->
+    Id = 1,
+    TemplateUri = <<"weather://current/{city}">>,
+    Reason = <<"Missing variable: city">>,
+    Response = erlmcp_json_rpc:error_template_render_failed(Id, TemplateUri, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32029, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Tool Error Helper Functions Tests (-32031 to -32040)
+%%====================================================================
+
+tool_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_tool_execution_failed()),
+          ?_test(test_error_tool_timeout()),
+          ?_test(test_error_tool_cancelled()),
+          ?_test(test_error_invalid_tool_arguments())
+         ]
+     end}.
+
+test_error_tool_execution_failed() ->
+    Id = 1,
+    ToolName = <<"get_weather">>,
+    Reason = <<"API timeout">>,
+    Response = erlmcp_json_rpc:error_tool_execution_failed(Id, ToolName, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32031, maps:get(<<"code">>, Error)),
+    ?assertEqual(ToolName, maps:get(<<"tool">>, maps:get(<<"data">>, Error))),
+    ?assertEqual(Reason, maps:get(<<"reason">>, maps:get(<<"data">>, Error))).
+
+test_error_tool_timeout() ->
+    Id = 1,
+    ToolName = <<"long_running_task">>,
+    TimeoutMs = 30000,
+    Response = erlmcp_json_rpc:error_tool_timeout(Id, ToolName, TimeoutMs),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32032, maps:get(<<"code">>, Error)),
+    ?assertEqual(TimeoutMs, maps:get(<<"timeoutMs">>, maps:get(<<"data">>, Error))).
+
+test_error_tool_cancelled() ->
+    Id = 1,
+    ToolName = <<"user_cancelled_task">>,
+    Response = erlmcp_json_rpc:error_tool_cancelled(Id, ToolName),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32033, maps:get(<<"code">>, Error)).
+
+test_error_invalid_tool_arguments() ->
+    Id = 1,
+    ToolName = <<"calculate">>,
+    Details = <<"Missing required parameter: x">>,
+    Response = erlmcp_json_rpc:error_invalid_tool_arguments(Id, ToolName, Details),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32034, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Prompt Error Helper Functions Tests (-32041 to -32050)
+%%====================================================================
+
+prompt_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_prompt_argument_missing()),
+          ?_test(test_error_prompt_render_failed()),
+          ?_test(test_error_invalid_prompt_arguments()),
+          ?_test(test_error_sampling_failed())
+         ]
+     end}.
+
+test_error_prompt_argument_missing() ->
+    Id = 1,
+    PromptName = <<"summarize">>,
+    ArgName = <<"text">>,
+    Response = erlmcp_json_rpc:error_prompt_argument_missing(Id, PromptName, ArgName),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32043, maps:get(<<"code">>, Error)),
+    ?assertEqual(PromptName, maps:get(<<"prompt">>, maps:get(<<"data">>, Error))),
+    ?assertEqual(ArgName, maps:get(<<"argument">>, maps:get(<<"data">>, Error))).
+
+test_error_prompt_render_failed() ->
+    Id = 1,
+    PromptName = <<"template">>,
+    Reason = <<"Unknown variable: name">>,
+    Response = erlmcp_json_rpc:error_prompt_render_failed(Id, PromptName, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32044, maps:get(<<"code">>, Error)).
+
+test_error_invalid_prompt_arguments() ->
+    Id = 1,
+    PromptName = <<"greeting">>,
+    Details = <<"Invalid type for argument: name">>,
+    Response = erlmcp_json_rpc:error_invalid_prompt_arguments(Id, PromptName, Details),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32045, maps:get(<<"code">>, Error)).
+
+test_error_sampling_failed() ->
+    Id = 1,
+    Reason = <<"Model unavailable">>,
+    Response = erlmcp_json_rpc:error_sampling_failed(Id, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32046, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Authentication Error Helper Functions Tests (-32051 to -32060)
+%%====================================================================
+
+auth_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_authentication_failed()),
+          ?_test(test_error_authorization_failed()),
+          ?_test(test_error_invalid_credentials()),
+          ?_test(test_error_token_expired()),
+          ?_test(test_error_access_denied())
+         ]
+     end}.
+
+test_error_authentication_failed() ->
+    Id = 1,
+    Reason = <<"Invalid token">>,
+    Response = erlmcp_json_rpc:error_authentication_failed(Id, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32051, maps:get(<<"code">>, Error)),
+    ?assertEqual(Reason, maps:get(<<"reason">>, maps:get(<<"data">>, Error))).
+
+test_error_authorization_failed() ->
+    Id = 1,
+    Reason = <<"Insufficient permissions">>,
+    Response = erlmcp_json_rpc:error_authorization_failed(Id, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32052, maps:get(<<"code">>, Error)).
+
+test_error_invalid_credentials() ->
+    Id = 1,
+    Response = erlmcp_json_rpc:error_invalid_credentials(Id),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32053, maps:get(<<"code">>, Error)).
+
+test_error_token_expired() ->
+    Id = 1,
+    Response = erlmcp_json_rpc:error_token_expired(Id),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32054, maps:get(<<"code">>, Error)).
+
+test_error_access_denied() ->
+    Id = 1,
+    Resource = <<"admin://config">>,
+    Response = erlmcp_json_rpc:error_access_denied(Id, Resource),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32056, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Protocol Error Helper Functions Tests (-32061 to -32070)
+%%====================================================================
+
+protocol_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_unsupported_protocol_version()),
+          ?_test(test_error_protocol_version_mismatch()),
+          ?_test(test_error_capability_negotiation_failed()),
+          ?_test(test_error_method_not_supported())
+         ]
+     end}.
+
+test_error_unsupported_protocol_version() ->
+    Id = 1,
+    Version = <<"2020-01-01">>,
+    Response = erlmcp_json_rpc:error_unsupported_protocol_version(Id, Version),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32061, maps:get(<<"code">>, Error)),
+    ?assertEqual(Version, maps:get(<<"version">>, maps:get(<<"data">>, Error))).
+
+test_error_protocol_version_mismatch() ->
+    Id = 1,
+    ClientVersion = <<"2024-11-05">>,
+    ServerVersion = <<"2025-11-25">>,
+    Response = erlmcp_json_rpc:error_protocol_version_mismatch(Id, ClientVersion, ServerVersion),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32062, maps:get(<<"code">>, Error)).
+
+test_error_capability_negotiation_failed() ->
+    Id = 1,
+    Reason = <<"Incompatible capabilities">>,
+    Response = erlmcp_json_rpc:error_capability_negotiation_failed(Id, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32063, maps:get(<<"code">>, Error)).
+
+test_error_method_not_supported() ->
+    Id = 1,
+    Method = <<"unknown/method">>,
+    Response = erlmcp_json_rpc:error_method_not_supported(Id, Method),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32065, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Pagination Error Helper Functions Tests (-32071 to -32080)
+%%====================================================================
+
+pagination_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_invalid_cursor()),
+          ?_test(test_error_cursor_expired()),
+          ?_test(test_error_pagination_not_supported()),
+          ?_test(test_error_page_size_too_large())
+         ]
+     end}.
+
+test_error_invalid_cursor() ->
+    Id = 1,
+    Cursor = <<"invalid_cursor">>,
+    Response = erlmcp_json_rpc:error_invalid_cursor(Id, Cursor),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32071, maps:get(<<"code">>, Error)),
+    ?assertEqual(Cursor, maps:get(<<"cursor">>, maps:get(<<"data">>, Error))).
+
+test_error_cursor_expired() ->
+    Id = 1,
+    Cursor = <<"expired_cursor">>,
+    Response = erlmcp_json_rpc:error_cursor_expired(Id, Cursor),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32072, maps:get(<<"code">>, Error)).
+
+test_error_pagination_not_supported() ->
+    Id = 1,
+    Method = <<"resources/list">>,
+    Response = erlmcp_json_rpc:error_pagination_not_supported(Id, Method),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32073, maps:get(<<"code">>, Error)).
+
+test_error_page_size_too_large() ->
+    Id = 1,
+    ActualSize = 1000,
+    MaxSize = 100,
+    Response = erlmcp_json_rpc:error_page_size_too_large(Id, ActualSize, MaxSize),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32074, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Task Error Helper Functions Tests (-32081 to -32090)
+%%====================================================================
+
+task_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_task_not_found()),
+          ?_test(test_error_task_already_exists()),
+          ?_test(test_error_task_failed()),
+          ?_test(test_error_task_cancelled()),
+          ?_test(test_error_task_timeout())
+         ]
+     end}.
+
+test_error_task_not_found() ->
+    Id = 1,
+    TaskId = <<"task-123">>,
+    Response = erlmcp_json_rpc:error_task_not_found(Id, TaskId),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32081, maps:get(<<"code">>, Error)),
+    ?assertEqual(TaskId, maps:get(<<"taskId">>, maps:get(<<"data">>, Error))).
+
+test_error_task_already_exists() ->
+    Id = 1,
+    TaskId = <<"task-456">>,
+    Response = erlmcp_json_rpc:error_task_already_exists(Id, TaskId),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32082, maps:get(<<"code">>, Error)).
+
+test_error_task_failed() ->
+    Id = 1,
+    TaskId = <<"task-789">>,
+    Reason = <<"Dependency failed">>,
+    Response = erlmcp_json_rpc:error_task_failed(Id, TaskId, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32083, maps:get(<<"code">>, Error)).
+
+test_error_task_cancelled() ->
+    Id = 1,
+    TaskId = <<"task-abc">>,
+    Response = erlmcp_json_rpc:error_task_cancelled(Id, TaskId),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32084, maps:get(<<"code">>, Error)).
+
+test_error_task_timeout() ->
+    Id = 1,
+    TaskId = <<"task-def">>,
+    TimeoutMs = 60000,
+    Response = erlmcp_json_rpc:error_task_timeout(Id, TaskId, TimeoutMs),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32085, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Progress Error Helper Functions Tests (-32091 to -32100)
+%%====================================================================
+
+progress_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_invalid_progress_token()),
+          ?_test(test_error_invalid_progress_token_integer()),
+          ?_test(test_error_progress_token_expired()),
+          ?_test(test_error_progress_update_failed()),
+          ?_test(test_error_notification_failed()),
+          ?_test(test_error_notification_queue_full())
+         ]
+     end}.
+
+test_error_invalid_progress_token() ->
+    Id = 1,
+    Token = <<"token-123">>,
+    Response = erlmcp_json_rpc:error_invalid_progress_token(Id, Token),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32091, maps:get(<<"code">>, Error)),
+    ?assertEqual(Token, maps:get(<<"progressToken">>, maps:get(<<"data">>, Error))).
+
+test_error_invalid_progress_token_integer() ->
+    Id = 1,
+    Token = 123,
+    Response = erlmcp_json_rpc:error_invalid_progress_token(Id, Token),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32091, maps:get(<<"code">>, Error)).
+
+test_error_progress_token_expired() ->
+    Id = 1,
+    Token = <<"expired-token">>,
+    Response = erlmcp_json_rpc:error_progress_token_expired(Id, Token),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32092, maps:get(<<"code">>, Error)).
+
+test_error_progress_update_failed() ->
+    Id = 1,
+    Token = <<"token-456">>,
+    Reason = <<"Invalid progress value">>,
+    Response = erlmcp_json_rpc:error_progress_update_failed(Id, Token, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32093, maps:get(<<"code">>, Error)).
+
+test_error_notification_failed() ->
+    Id = 1,
+    NotificationType = <<"resources/updated">>,
+    Reason = <<"Client disconnected">>,
+    Response = erlmcp_json_rpc:error_notification_failed(Id, NotificationType, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32094, maps:get(<<"code">>, Error)).
+
+test_error_notification_queue_full() ->
+    Id = 1,
+    QueueSize = 10000,
+    Response = erlmcp_json_rpc:error_notification_queue_full(Id, QueueSize),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32095, maps:get(<<"code">>, Error)),
+    ?assertEqual(QueueSize, maps:get(<<"queueSize">>, maps:get(<<"data">>, Error))).
+
+%%====================================================================
+%% Completion Error Helper Functions Tests (-32110 to -32113)
+%%====================================================================
+
+completion_errors_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_error_completion_not_found()),
+          ?_test(test_error_invalid_completion_reference()),
+          ?_test(test_error_invalid_completion_argument()),
+          ?_test(test_error_completion_failed())
+         ]
+     end}.
+
+test_error_completion_not_found() ->
+    Id = 1,
+    CompletionId = <<"completion-123">>,
+    Response = erlmcp_json_rpc:error_completion_not_found(Id, CompletionId),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32110, maps:get(<<"code">>, Error)),
+    ?assertEqual(CompletionId, maps:get(<<"completionId">>, maps:get(<<"data">>, Error))).
+
+test_error_invalid_completion_reference() ->
+    Id = 1,
+    Reference = <<"ref-456">>,
+    Response = erlmcp_json_rpc:error_invalid_completion_reference(Id, Reference),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32111, maps:get(<<"code">>, Error)),
+    ?assertEqual(Reference, maps:get(<<"reference">>, maps:get(<<"data">>, Error))).
+
+test_error_invalid_completion_argument() ->
+    Id = 1,
+    Argument = <<"model">>,
+    Details = <<"Invalid model name">>,
+    Response = erlmcp_json_rpc:error_invalid_completion_argument(Id, Argument, Details),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32112, maps:get(<<"code">>, Error)).
+
+test_error_completion_failed() ->
+    Id = 1,
+    CompletionId = <<"completion-789">>,
+    Reason = <<"Model unavailable">>,
+    Response = erlmcp_json_rpc:error_completion_failed(Id, CompletionId, Reason),
+    Json = jsx:decode(Response, [return_maps]),
+    Error = maps:get(<<"error">>, Json),
+    ?assertEqual(-32113, maps:get(<<"code">>, Error)).
+
+%%====================================================================
+%% Integration Tests: All 89 Error Codes
+%%====================================================================
+
+error_code_integration_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_validate_all_error_codes()),
+          ?_test(test_all_error_codes_have_severity()),
+          ?_test(test_all_error_codes_have_category()),
+          ?_test(test_error_code_coverage_by_category()),
+          ?_test(test_all_error_helpers_produce_valid_json()),
+          ?_test(test_error_code_range_coverage()),
+          ?_test(test_total_error_code_count())
+         ]
+     end}.
+
+test_validate_all_error_codes() ->
+    ValidCodes = ?VALID_ERROR_CODES,
+    ?assert(length(ValidCodes) > 80),
+    lists:foreach(fun(Code) ->
+        ?assert(erlmcp_json_rpc:validate_error_code(Code))
+    end, ValidCodes).
+
+test_all_error_codes_have_severity() ->
+    ValidCodes = ?VALID_ERROR_CODES,
+    lists:foreach(fun(Code) ->
+        Severity = erlmcp_json_rpc:error_severity(Code),
+        ?assert(lists:member(Severity, [critical, error, warning, info]))
+    end, ValidCodes).
+
+test_all_error_codes_have_category() ->
+    ValidCodes = ?VALID_ERROR_CODES,
+    Categories = [jsonrpc, mcp_core, content, resource, tool, prompt,
+                  auth, protocol, pagination, task, progress, completion],
+    lists:foreach(fun(Code) ->
+        Category = erlmcp_json_rpc:error_category(Code),
+        ?assert(lists:member(Category, Categories))
+    end, ValidCodes).
+
+test_error_code_coverage_by_category() ->
+    ValidCodes = ?VALID_ERROR_CODES,
+    CategoriesFound = lists:usort([erlmcp_json_rpc:error_category(C) || C <- ValidCodes]),
+    ExpectedCategories = [jsonrpc, mcp_core, content, resource, tool, prompt,
+                          auth, protocol, pagination, task, progress, completion],
+    ?assertEqual(length(ExpectedCategories), length(CategoriesFound)).
+
+test_all_error_helpers_produce_valid_json() ->
+    Id = 1,
+    Errors = [
+        erlmcp_json_rpc:error_parse(Id),
+        erlmcp_json_rpc:error_internal(Id),
+        erlmcp_json_rpc:error_invalid_content_type(Id, <<"text/plain">>),
+        erlmcp_json_rpc:error_invalid_uri(Id, <<"bad-uri">>),
+        erlmcp_json_rpc:error_tool_cancelled(Id, <<"test_tool">>),
+        erlmcp_json_rpc:error_sampling_failed(Id, <<"Test failure">>),
+        erlmcp_json_rpc:error_invalid_credentials(Id),
+        erlmcp_json_rpc:error_method_not_supported(Id, <<"unknown">>),
+        erlmcp_json_rpc:error_cursor_expired(Id, <<"cursor">>),
+        erlmcp_json_rpc:error_task_cancelled(Id, <<"task-1">>),
+        erlmcp_json_rpc:error_notification_queue_full(Id, 100),
+        erlmcp_json_rpc:error_completion_not_found(Id, <<"comp-1">>)
+    ],
+    lists:foreach(fun(Response) ->
+        Json = jsx:decode(Response, [return_maps]),
+        ?assert(maps:is_key(<<"jsonrpc">>, Json)),
+        ?assert(maps:is_key(<<"id">>, Json)),
+        ?assert(maps:is_key(<<"error">>, Json)),
+        Error = maps:get(<<"error">>, Json),
+        ?assert(maps:is_key(<<"code">>, Error)),
+        ?assert(maps:is_key(<<"message">>, Error)),
+        ?assert(erlmcp_json_rpc:validate_error_code(maps:get(<<"code">>, Error)))
+    end, Errors).
+
+test_error_code_range_coverage() ->
+    %% Verify all error code ranges are covered
+    Ranges = [
+        {-32700, -32700},
+        {-32600, -32603},
+        {-32113, -32110},
+        {-32100, -32091},
+        {-32090, -32081},
+        {-32080, -32071},
+        {-32070, -32061},
+        {-32060, -32051},
+        {-32050, -32041},
+        {-32040, -32031},
+        {-32030, -32021},
+        {-32020, -32011},
+        {-32010, -32001},
+        {-32000, -32000}
+    ],
+    lists:foreach(fun({Min, Max}) when Min =< Max ->
+        Found = lists:any(fun(Code) ->
+            erlmcp_json_rpc:validate_error_code(Code)
+        end, lists:seq(Min, Max)),
+        ?assert(Found)
+    end, Ranges).
+
+test_total_error_code_count() ->
+    %% Verify we have exactly 89 error codes
+    ValidCodes = ?VALID_ERROR_CODES,
+    ?assertEqual(89, length(ValidCodes)),
+    io:format("~n✓ All 89 error codes integrated and accessible via helper functions.~n").

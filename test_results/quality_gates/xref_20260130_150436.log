@@ -1,0 +1,24 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_completion.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/src/erlmcp_completion.erl:
+    │
+ 28 │  -[1;31mexport[0m([stream_loop/3]).[0m
+    │   [1;31m╰──[0m[0m function stream_loop/3 undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_completion.erl:
+     │
+ 156 │  -[1;31mspec[0m add_completion_handler(pid(), completion_ref(), completion_handler(), atom() | undefined) -> ok | {error, term()}.[0m
+     │   [1;31m╰──[0m[0m spec for add_completion_handler/4 already defined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_completion.erl:
+     │
+ 157 │  [1;31madd_completion_handler[0m(Server, Ref, Handler, Type) when is_pid(Server), is_binary(Ref) ->[0m
+     │  [1;31m╰──[0m[0m function add_completion_handler/4 already defined
+
+

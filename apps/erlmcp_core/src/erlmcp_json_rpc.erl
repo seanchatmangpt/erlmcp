@@ -28,7 +28,31 @@
     error_message_too_large/2,
     error_internal/1,
     error_parse/1,
-    create_batch_error_response/3
+    create_batch_error_response/3,
+    error_severity/1,
+    error_category/1,
+    is_jsonrpc_standard_error/1,
+    is_mcp_core_error/1,
+    is_mcp_content_error/1,
+    is_mcp_resource_error/1,
+    is_mcp_tool_error/1,
+    is_mcp_prompt_error/1,
+    is_mcp_auth_error/1,
+    is_mcp_protocol_error/1,
+    is_mcp_pagination_error/1,
+    is_mcp_task_error/1,
+    is_mcp_progress_error/1,
+    is_mcp_completion_error/1,
+    error_elicitation_failed/2,
+    error_elicitation_timeout/2,
+    error_elicitation_cancelled/1,
+    error_invalid_elicitation_mode/2,
+    error_elicitation_security_error/2,
+    error_experimental_task_not_found/2,
+    error_task_dependency_failed/3,
+    error_experimental_task_cancelled/2,
+    error_experimental_task_timeout/3,
+    error_invalid_task_state/4
 ]).
 
 %% Types
@@ -179,6 +203,198 @@ validate_error_code(Code) when is_integer(Code) ->
     lists:member(Code, ?VALID_ERROR_CODES).
 
 %%====================================================================
+%% Error Code Classification Functions
+%%====================================================================
+
+%% @doc Get severity level for an error code
+%% Returns: critical | error | warning | info
+-spec error_severity(integer()) -> critical | error | warning | info.
+error_severity(Code) when Code =:= -32700; Code =:= -32600; Code =:= -32603 ->
+    critical;  % Parse errors, invalid request, internal errors are critical
+error_severity(Code) when Code =:= -32601; Code =:= -32602 ->
+    error;     % Method not found, invalid params are standard errors
+error_severity(Code) when Code >= -32099, Code =< -32080 ->
+    error;     % MCP core through pagination errors are errors
+error_severity(Code) when Code >= -32079, Code =< -32000 ->
+    warning;   % Task, progress, completion errors are warnings (recoverable)
+error_severity(Code) when Code >= -32113, Code =< -32110 ->
+    warning;   % Completion errors are warnings (recoverable)
+error_severity(_Code) ->
+    info.      % Unknown codes are info level
+
+%% @doc Get error category for an error code
+%% Returns: jsonrpc | mcp_core | content | resource | tool | prompt |
+%%          auth | protocol | pagination | task | progress | completion | unknown
+-spec error_category(integer()) -> jsonrpc | mcp_core | content | resource | tool |
+                                   prompt | auth | protocol | pagination |
+                                   task | progress | completion | unknown.
+error_category(Code) when Code >= -32700, Code =< -32600 ->
+    jsonrpc;   % JSON-RPC 2.0 standard errors
+error_category(Code) when Code >= -32010, Code =< -32001 ->
+    mcp_core;  % Core MCP errors
+error_category(Code) when Code >= -32020, Code =< -32011 ->
+    content;   % Content and message errors
+error_category(Code) when Code >= -32030, Code =< -32021 ->
+    resource;  % Resource and template errors
+error_category(Code) when Code >= -32040, Code =< -32031 ->
+    tool;      % Tool and execution errors
+error_category(Code) when Code >= -32050, Code =< -32041 ->
+    prompt;    % Prompt and sampling errors
+error_category(Code) when Code >= -32060, Code =< -32051 ->
+    auth;      % Authentication and authorization errors
+error_category(Code) when Code >= -32070, Code =< -32061 ->
+    protocol;  % Protocol and negotiation errors
+error_category(Code) when Code >= -32080, Code =< -32071 ->
+    pagination; % Pagination and cursor errors
+error_category(Code) when Code >= -32090, Code =< -32081 ->
+    task;      % Task and job errors
+error_category(Code) when Code >= -32100, Code =< -32091 ->
+    progress;  % Progress and notification errors
+error_category(Code) when Code >= -32113, Code =< -32110 ->
+    completion; % Completion errors
+error_category(Code) when Code =:= -32000 ->
+    mcp_core;  % Custom server error
+error_category(_Code) ->
+    unknown.   % Unknown error code
+
+%% @doc Check if error code is a JSON-RPC 2.0 standard error
+-spec is_jsonrpc_standard_error(integer()) -> boolean().
+is_jsonrpc_standard_error(Code) when Code >= -32700, Code =< -32600 -> true;
+is_jsonrpc_standard_error(_Code) -> false.
+
+%% @doc Check if error code is a core MCP error
+-spec is_mcp_core_error(integer()) -> boolean().
+is_mcp_core_error(Code) when Code >= -32010, Code =< -32001 -> true;
+is_mcp_core_error(-32000) -> true;  % Custom server error
+is_mcp_core_error(_Code) -> false.
+
+%% @doc Check if error code is a content error
+-spec is_mcp_content_error(integer()) -> boolean().
+is_mcp_content_error(Code) when Code >= -32020, Code =< -32011 -> true;
+is_mcp_content_error(_Code) -> false.
+
+%% @doc Check if error code is a resource error
+-spec is_mcp_resource_error(integer()) -> boolean().
+is_mcp_resource_error(Code) when Code >= -32030, Code =< -32021 -> true;
+is_mcp_resource_error(_Code) -> false.
+
+%% @doc Check if error code is a tool error
+-spec is_mcp_tool_error(integer()) -> boolean().
+is_mcp_tool_error(Code) when Code >= -32040, Code =< -32031 -> true;
+is_mcp_tool_error(_Code) -> false.
+
+%% @doc Check if error code is a prompt error
+-spec is_mcp_prompt_error(integer()) -> boolean().
+is_mcp_prompt_error(Code) when Code >= -32050, Code =< -32041 -> true;
+is_mcp_prompt_error(_Code) -> false.
+
+%% @doc Check if error code is an auth error
+-spec is_mcp_auth_error(integer()) -> boolean().
+is_mcp_auth_error(Code) when Code >= -32060, Code =< -32051 -> true;
+is_mcp_auth_error(_Code) -> false.
+
+%% @doc Check if error code is a protocol error
+-spec is_mcp_protocol_error(integer()) -> boolean().
+is_mcp_protocol_error(Code) when Code >= -32070, Code =< -32061 -> true;
+is_mcp_protocol_error(_Code) -> false.
+
+%% @doc Check if error code is a pagination error
+-spec is_mcp_pagination_error(integer()) -> boolean().
+is_mcp_pagination_error(Code) when Code >= -32080, Code =< -32071 -> true;
+is_mcp_pagination_error(_Code) -> false.
+
+%% @doc Check if error code is a task error
+-spec is_mcp_task_error(integer()) -> boolean().
+is_mcp_task_error(Code) when Code >= -32090, Code =< -32081 -> true;
+is_mcp_task_error(_Code) -> false.
+
+%% @doc Check if error code is a progress error
+-spec is_mcp_progress_error(integer()) -> boolean().
+is_mcp_progress_error(Code) when Code >= -32100, Code =< -32091 -> true;
+is_mcp_progress_error(_Code) -> false.
+
+%% @doc Check if error code is a completion error
+-spec is_mcp_completion_error(integer()) -> boolean().
+is_mcp_completion_error(Code) when Code >= -32113, Code =< -32110 -> true;
+is_mcp_completion_error(_Code) -> false.
+
+%%====================================================================
+%% Experimental Error Helper Functions (1090-1099)
+%%====================================================================
+
+%% Elicitation failed error
+-spec error_elicitation_failed(json_rpc_id(), binary()) -> binary().
+error_elicitation_failed(Id, Reason) when is_binary(Reason) ->
+    Data = #{<<"reason">> => Reason},
+    encode_error_response(Id, ?ELICITATION_FAILED, ?MSG_ELICITATION_FAILED, Data).
+
+%% Elicitation timeout error
+-spec error_elicitation_timeout(json_rpc_id(), pos_integer()) -> binary().
+error_elicitation_timeout(Id, TimeoutMs) when is_integer(TimeoutMs) ->
+    Data = #{<<"timeoutMs">> => TimeoutMs},
+    encode_error_response(Id, ?ELICITATION_TIMEOUT, ?MSG_ELICITATION_TIMEOUT, Data).
+
+%% Elicitation cancelled error
+-spec error_elicitation_cancelled(json_rpc_id()) -> binary().
+error_elicitation_cancelled(Id) ->
+    encode_error_response(Id, ?ELICITATION_CANCELLED, ?MSG_ELICITATION_CANCELLED, undefined).
+
+%% Invalid elicitation mode error
+-spec error_invalid_elicitation_mode(json_rpc_id(), binary()) -> binary().
+error_invalid_elicitation_mode(Id, Mode) when is_binary(Mode) ->
+    Data = #{<<"mode">> => Mode},
+    encode_error_response(Id, ?INVALID_ELICITATION_MODE, ?MSG_INVALID_ELICITATION_MODE, Data).
+
+%% Elicitation security error
+-spec error_elicitation_security_error(json_rpc_id(), binary()) -> binary().
+error_elicitation_security_error(Id, Reason) when is_binary(Reason) ->
+    Data = #{<<"reason">> => Reason},
+    encode_error_response(Id, ?ELICITATION_SECURITY_ERROR, ?MSG_ELICITATION_SECURITY_ERROR, Data).
+
+%% Experimental task not found error (positive code 1095)
+-spec error_experimental_task_not_found(json_rpc_id(), binary()) -> binary().
+error_experimental_task_not_found(Id, TaskId) when is_binary(TaskId) ->
+    Data = #{<<"taskId">> => TaskId},
+    encode_error_response(Id, ?TASK_NOT_FOUND, ?MSG_TASK_NOT_FOUND, Data).
+
+%% Task dependency failed error
+-spec error_task_dependency_failed(json_rpc_id(), binary(), binary()) -> binary().
+error_task_dependency_failed(Id, TaskId, DependencyId)
+  when is_binary(TaskId), is_binary(DependencyId) ->
+    Data = #{
+        <<"taskId">> => TaskId,
+        <<"dependencyId">> => DependencyId
+    },
+    encode_error_response(Id, ?TASK_DEPENDENCY_FAILED, ?MSG_TASK_DEPENDENCY_FAILED, Data).
+
+%% Experimental task cancelled error (positive code 1097)
+-spec error_experimental_task_cancelled(json_rpc_id(), binary()) -> binary().
+error_experimental_task_cancelled(Id, TaskId) when is_binary(TaskId) ->
+    Data = #{<<"taskId">> => TaskId},
+    encode_error_response(Id, ?TASK_CANCELLED, ?MSG_TASK_CANCELLED, Data).
+
+%% Experimental task timeout error (positive code 1098)
+-spec error_experimental_task_timeout(json_rpc_id(), binary(), pos_integer()) -> binary().
+error_experimental_task_timeout(Id, TaskId, TimeoutMs)
+  when is_binary(TaskId), is_integer(TimeoutMs) ->
+    Data = #{
+        <<"taskId">> => TaskId,
+        <<"timeoutMs">> => TimeoutMs
+    },
+    encode_error_response(Id, ?TASK_TIMEOUT, ?MSG_TASK_TIMEOUT, Data).
+
+%% Invalid task state error
+-spec error_invalid_task_state(json_rpc_id(), binary(), binary(), binary()) -> binary().
+error_invalid_task_state(Id, TaskId, CurrentState, ExpectedState)
+  when is_binary(TaskId), is_binary(CurrentState), is_binary(ExpectedState) ->
+    Data = #{
+        <<"taskId">> => TaskId,
+        <<"currentState">> => CurrentState,
+        <<"expectedState">> => ExpectedState
+    },
+    encode_error_response(Id, ?INVALID_TASK_STATE, ?MSG_INVALID_TASK_STATE, Data).
+
+%%====================================================================
 %% Error Helper Functions - Common MCP Error Types
 %%====================================================================
 
@@ -255,6 +471,409 @@ error_message_too_large(Id, MaxSize) when is_integer(MaxSize), MaxSize > 0 ->
         <<"unit">> => <<"bytes">>
     },
     encode_error_response(Id, ?MCP_ERROR_MESSAGE_TOO_LARGE, ?MCP_MSG_MESSAGE_TOO_LARGE, Data).
+
+%%====================================================================
+%% Content Error Helper Functions (-32011 to -32020)
+%%====================================================================
+
+%% Tool description too long error
+-spec error_tool_description_too_large(json_rpc_id(), pos_integer(), pos_integer()) -> binary().
+error_tool_description_too_large(Id, ActualSize, MaxSize)
+  when is_integer(ActualSize), is_integer(MaxSize) ->
+    Data = #{
+        <<"actualSize">> => ActualSize,
+        <<"maxSize">> => MaxSize
+    },
+    encode_error_response(Id, ?MCP_ERROR_TOOL_DESCRIPTION_TOO_LONG,
+                          ?MCP_MSG_TOOL_DESCRIPTION_TOO_LONG, Data).
+
+%% Invalid content type error
+-spec error_invalid_content_type(json_rpc_id(), binary()) -> binary().
+error_invalid_content_type(Id, ContentType) when is_binary(ContentType) ->
+    Data = #{<<"contentType">> => ContentType},
+    encode_error_response(Id, ?MCP_ERROR_INVALID_CONTENT_TYPE,
+                          ?MCP_MSG_INVALID_CONTENT_TYPE, Data).
+
+%% Content too large error
+-spec error_content_too_large(json_rpc_id(), pos_integer(), pos_integer()) -> binary().
+error_content_too_large(Id, ActualSize, MaxSize)
+  when is_integer(ActualSize), is_integer(MaxSize) ->
+    Data = #{
+        <<"actualSize">> => ActualSize,
+        <<"maxSize">> => MaxSize
+    },
+    encode_error_response(Id, ?MCP_ERROR_CONTENT_TOO_LARGE,
+                          ?MCP_MSG_CONTENT_TOO_LARGE, Data).
+
+%% Invalid encoding error
+-spec error_invalid_encoding(json_rpc_id(), binary()) -> binary().
+error_invalid_encoding(Id, Encoding) when is_binary(Encoding) ->
+    Data = #{<<"encoding">> => Encoding},
+    encode_error_response(Id, ?MCP_ERROR_INVALID_ENCODING,
+                          ?MCP_MSG_INVALID_ENCODING, Data).
+
+%%====================================================================
+%% Resource Error Helper Functions (-32021 to -32030)
+%%====================================================================
+
+%% Resource template not found error
+-spec error_resource_template_not_found(json_rpc_id(), binary()) -> binary().
+error_resource_template_not_found(Id, TemplateUri) when is_binary(TemplateUri) ->
+    Data = #{<<"templateUri">> => TemplateUri},
+    encode_error_response(Id, ?MCP_ERROR_RESOURCE_TEMPLATE_NOT_FOUND,
+                          ?MCP_MSG_RESOURCE_TEMPLATE_NOT_FOUND, Data).
+
+%% Invalid URI error
+-spec error_invalid_uri(json_rpc_id(), binary()) -> binary().
+error_invalid_uri(Id, Uri) when is_binary(Uri) ->
+    Data = #{<<"uri">> => Uri},
+    encode_error_response(Id, ?MCP_ERROR_INVALID_URI, ?MCP_MSG_INVALID_URI, Data).
+
+%% URI syntax error
+-spec error_uri_syntax_error(json_rpc_id(), binary(), binary()) -> binary().
+error_uri_syntax_error(Id, Uri, Reason) when is_binary(Uri), is_binary(Reason) ->
+    Data = #{
+        <<"uri">> => Uri,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_URI_SYNTAX_ERROR,
+                          ?MCP_MSG_URI_SYNTAX_ERROR, Data).
+
+%% Resource access denied error
+-spec error_resource_access_denied(json_rpc_id(), binary()) -> binary().
+error_resource_access_denied(Id, Uri) when is_binary(Uri) ->
+    Data = #{<<"uri">> => Uri},
+    encode_error_response(Id, ?MCP_ERROR_RESOURCE_ACCESS_DENIED,
+                          ?MCP_MSG_RESOURCE_ACCESS_DENIED, Data).
+
+%% Template render failed error
+-spec error_template_render_failed(json_rpc_id(), binary(), binary()) -> binary().
+error_template_render_failed(Id, TemplateUri, Reason)
+  when is_binary(TemplateUri), is_binary(Reason) ->
+    Data = #{
+        <<"templateUri">> => TemplateUri,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_TEMPLATE_RENDER_FAILED,
+                          ?MCP_MSG_TEMPLATE_RENDER_FAILED, Data).
+
+%%====================================================================
+%% Tool Error Helper Functions (-32031 to -32040)
+%%====================================================================
+
+%% Tool execution failed error
+-spec error_tool_execution_failed(json_rpc_id(), binary(), binary()) -> binary().
+error_tool_execution_failed(Id, ToolName, Reason)
+  when is_binary(ToolName), is_binary(Reason) ->
+    Data = #{
+        <<"tool">> => ToolName,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_TOOL_EXECUTION_FAILED,
+                          ?MCP_MSG_TOOL_EXECUTION_FAILED, Data).
+
+%% Tool timeout error
+-spec error_tool_timeout(json_rpc_id(), binary(), pos_integer()) -> binary().
+error_tool_timeout(Id, ToolName, TimeoutMs)
+  when is_binary(ToolName), is_integer(TimeoutMs) ->
+    Data = #{
+        <<"tool">> => ToolName,
+        <<"timeoutMs">> => TimeoutMs
+    },
+    encode_error_response(Id, ?MCP_ERROR_TOOL_TIMEOUT, ?MCP_MSG_TOOL_TIMEOUT, Data).
+
+%% Tool cancelled error
+-spec error_tool_cancelled(json_rpc_id(), binary()) -> binary().
+error_tool_cancelled(Id, ToolName) when is_binary(ToolName) ->
+    Data = #{<<"tool">> => ToolName},
+    encode_error_response(Id, ?MCP_ERROR_TOOL_CANCELLED, ?MCP_MSG_TOOL_CANCELLED, Data).
+
+%% Invalid tool arguments error
+-spec error_invalid_tool_arguments(json_rpc_id(), binary(), binary()) -> binary().
+error_invalid_tool_arguments(Id, ToolName, Details)
+  when is_binary(ToolName), is_binary(Details) ->
+    Data = #{
+        <<"tool">> => ToolName,
+        <<"details">> => Details
+    },
+    encode_error_response(Id, ?MCP_ERROR_INVALID_TOOL_ARGUMENTS,
+                          ?MCP_MSG_INVALID_TOOL_ARGUMENTS, Data).
+
+%%====================================================================
+%% Prompt Error Helper Functions (-32041 to -32050)
+%%====================================================================
+
+%% Prompt argument missing error
+-spec error_prompt_argument_missing(json_rpc_id(), binary(), binary()) -> binary().
+error_prompt_argument_missing(Id, PromptName, ArgName)
+  when is_binary(PromptName), is_binary(ArgName) ->
+    Data = #{
+        <<"prompt">> => PromptName,
+        <<"argument">> => ArgName
+    },
+    encode_error_response(Id, ?MCP_ERROR_PROMPT_ARGUMENT_MISSING,
+                          ?MCP_MSG_PROMPT_ARGUMENT_MISSING, Data).
+
+%% Prompt render failed error
+-spec error_prompt_render_failed(json_rpc_id(), binary(), binary()) -> binary().
+error_prompt_render_failed(Id, PromptName, Reason)
+  when is_binary(PromptName), is_binary(Reason) ->
+    Data = #{
+        <<"prompt">> => PromptName,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_PROMPT_RENDER_FAILED,
+                          ?MCP_MSG_PROMPT_RENDER_FAILED, Data).
+
+%% Invalid prompt arguments error
+-spec error_invalid_prompt_arguments(json_rpc_id(), binary(), binary()) -> binary().
+error_invalid_prompt_arguments(Id, PromptName, Details)
+  when is_binary(PromptName), is_binary(Details) ->
+    Data = #{
+        <<"prompt">> => PromptName,
+        <<"details">> => Details
+    },
+    encode_error_response(Id, ?MCP_ERROR_INVALID_PROMPT_ARGUMENTS,
+                          ?MCP_MSG_INVALID_PROMPT_ARGUMENTS, Data).
+
+%% Sampling failed error
+-spec error_sampling_failed(json_rpc_id(), binary()) -> binary().
+error_sampling_failed(Id, Reason) when is_binary(Reason) ->
+    Data = #{<<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_SAMPLING_FAILED, ?MCP_MSG_SAMPLING_FAILED, Data).
+
+%%====================================================================
+%% Authentication Error Helper Functions (-32051 to -32060)
+%%====================================================================
+
+%% Authentication failed error
+-spec error_authentication_failed(json_rpc_id(), binary()) -> binary().
+error_authentication_failed(Id, Reason) when is_binary(Reason) ->
+    Data = #{<<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_AUTHENTICATION_FAILED,
+                          ?MCP_MSG_AUTHENTICATION_FAILED, Data).
+
+%% Authorization failed error
+-spec error_authorization_failed(json_rpc_id(), binary()) -> binary().
+error_authorization_failed(Id, Reason) when is_binary(Reason) ->
+    Data = #{<<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_AUTHORIZATION_FAILED,
+                          ?MCP_MSG_AUTHORIZATION_FAILED, Data).
+
+%% Invalid credentials error
+-spec error_invalid_credentials(json_rpc_id()) -> binary().
+error_invalid_credentials(Id) ->
+    encode_error_response(Id, ?MCP_ERROR_INVALID_CREDENTIALS,
+                          ?MCP_MSG_INVALID_CREDENTIALS, undefined).
+
+%% Token expired error
+-spec error_token_expired(json_rpc_id()) -> binary().
+error_token_expired(Id) ->
+    encode_error_response(Id, ?MCP_ERROR_TOKEN_EXPIRED, ?MCP_MSG_TOKEN_EXPIRED, undefined).
+
+%% Access denied error
+-spec error_access_denied(json_rpc_id(), binary()) -> binary().
+error_access_denied(Id, Resource) when is_binary(Resource) ->
+    Data = #{<<"resource">> => Resource},
+    encode_error_response(Id, ?MCP_ERROR_ACCESS_DENIED, ?MCP_MSG_ACCESS_DENIED, Data).
+
+%%====================================================================
+%% Protocol Error Helper Functions (-32061 to -32070)
+%%====================================================================
+
+%% Unsupported protocol version error
+-spec error_unsupported_protocol_version(json_rpc_id(), binary()) -> binary().
+error_unsupported_protocol_version(Id, Version) when is_binary(Version) ->
+    Data = #{<<"version">> => Version},
+    encode_error_response(Id, ?MCP_ERROR_UNSUPPORTED_PROTOCOL_VERSION,
+                          ?MCP_MSG_UNSUPPORTED_PROTOCOL_VERSION, Data).
+
+%% Protocol version mismatch error
+-spec error_protocol_version_mismatch(json_rpc_id(), binary(), binary()) -> binary().
+error_protocol_version_mismatch(Id, ClientVersion, ServerVersion)
+  when is_binary(ClientVersion), is_binary(ServerVersion) ->
+    Data = #{
+        <<"clientVersion">> => ClientVersion,
+        <<"serverVersion">> => ServerVersion
+    },
+    encode_error_response(Id, ?MCP_ERROR_PROTOCOL_VERSION_MISMATCH,
+                          ?MCP_MSG_PROTOCOL_VERSION_MISMATCH, Data).
+
+%% Capability negotiation failed error
+-spec error_capability_negotiation_failed(json_rpc_id(), binary()) -> binary().
+error_capability_negotiation_failed(Id, Reason) when is_binary(Reason) ->
+    Data = #{<<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_CAPABILITY_NEGOTIATION_FAILED,
+                          ?MCP_MSG_CAPABILITY_NEGOTIATION_FAILED, Data).
+
+%% Method not supported error
+-spec error_method_not_supported(json_rpc_id(), binary()) -> binary().
+error_method_not_supported(Id, Method) when is_binary(Method) ->
+    Data = #{<<"method">> => Method},
+    encode_error_response(Id, ?MCP_ERROR_METHOD_NOT_SUPPORTED,
+                          ?MCP_MSG_METHOD_NOT_SUPPORTED, Data).
+
+%%====================================================================
+%% Pagination Error Helper Functions (-32071 to -32080)
+%%====================================================================
+
+%% Invalid cursor error
+-spec error_invalid_cursor(json_rpc_id(), binary()) -> binary().
+error_invalid_cursor(Id, Cursor) when is_binary(Cursor) ->
+    Data = #{<<"cursor">> => Cursor},
+    encode_error_response(Id, ?MCP_ERROR_INVALID_CURSOR, ?MCP_MSG_INVALID_CURSOR, Data).
+
+%% Cursor expired error
+-spec error_cursor_expired(json_rpc_id(), binary()) -> binary().
+error_cursor_expired(Id, Cursor) when is_binary(Cursor) ->
+    Data = #{<<"cursor">> => Cursor},
+    encode_error_response(Id, ?MCP_ERROR_CURSOR_EXPIRED, ?MCP_MSG_CURSOR_EXPIRED, Data).
+
+%% Pagination not supported error
+-spec error_pagination_not_supported(json_rpc_id(), binary()) -> binary().
+error_pagination_not_supported(Id, Method) when is_binary(Method) ->
+    Data = #{<<"method">> => Method},
+    encode_error_response(Id, ?MCP_ERROR_PAGINATION_NOT_SUPPORTED,
+                          ?MCP_MSG_PAGINATION_NOT_SUPPORTED, Data).
+
+%% Page size too large error
+-spec error_page_size_too_large(json_rpc_id(), pos_integer(), pos_integer()) -> binary().
+error_page_size_too_large(Id, ActualSize, MaxSize)
+  when is_integer(ActualSize), is_integer(MaxSize) ->
+    Data = #{
+        <<"actualSize">> => ActualSize,
+        <<"maxSize">> => MaxSize
+    },
+    encode_error_response(Id, ?MCP_ERROR_PAGE_SIZE_TOO_LARGE,
+                          ?MCP_MSG_PAGE_SIZE_TOO_LARGE, Data).
+
+%%====================================================================
+%% Task Error Helper Functions (-32081 to -32090)
+%%====================================================================
+
+%% Task not found error
+-spec error_task_not_found(json_rpc_id(), binary()) -> binary().
+error_task_not_found(Id, TaskId) when is_binary(TaskId) ->
+    Data = #{<<"taskId">> => TaskId},
+    encode_error_response(Id, ?MCP_ERROR_TASK_NOT_FOUND, ?MCP_MSG_TASK_NOT_FOUND, Data).
+
+%% Task already exists error
+-spec error_task_already_exists(json_rpc_id(), binary()) -> binary().
+error_task_already_exists(Id, TaskId) when is_binary(TaskId) ->
+    Data = #{<<"taskId">> => TaskId},
+    encode_error_response(Id, ?MCP_ERROR_TASK_ALREADY_EXISTS,
+                          ?MCP_MSG_TASK_ALREADY_EXISTS, Data).
+
+%% Task failed error
+-spec error_task_failed(json_rpc_id(), binary(), binary()) -> binary().
+error_task_failed(Id, TaskId, Reason) when is_binary(TaskId), is_binary(Reason) ->
+    Data = #{
+        <<"taskId">> => TaskId,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_TASK_FAILED, ?MCP_MSG_TASK_FAILED, Data).
+
+%% Task cancelled error
+-spec error_task_cancelled(json_rpc_id(), binary()) -> binary().
+error_task_cancelled(Id, TaskId) when is_binary(TaskId) ->
+    Data = #{<<"taskId">> => TaskId},
+    encode_error_response(Id, ?MCP_ERROR_TASK_CANCELLED, ?MCP_MSG_TASK_CANCELLED, Data).
+
+%% Task timeout error
+-spec error_task_timeout(json_rpc_id(), binary(), pos_integer()) -> binary().
+error_task_timeout(Id, TaskId, TimeoutMs) when is_binary(TaskId), is_integer(TimeoutMs) ->
+    Data = #{
+        <<"taskId">> => TaskId,
+        <<"timeoutMs">> => TimeoutMs
+    },
+    encode_error_response(Id, ?MCP_ERROR_TASK_TIMEOUT, ?MCP_MSG_TASK_TIMEOUT, Data).
+
+%%====================================================================
+%% Progress Error Helper Functions (-32091 to -32100)
+%%====================================================================
+
+%% Invalid progress token error
+-spec error_invalid_progress_token(json_rpc_id(), binary() | integer()) -> binary().
+error_invalid_progress_token(Id, Token) when is_binary(Token); is_integer(Token) ->
+    Data = #{<<"progressToken">> => Token},
+    encode_error_response(Id, ?MCP_ERROR_INVALID_PROGRESS_TOKEN,
+                          ?MCP_MSG_INVALID_PROGRESS_TOKEN, Data).
+
+%% Progress token expired error
+-spec error_progress_token_expired(json_rpc_id(), binary() | integer()) -> binary().
+error_progress_token_expired(Id, Token) when is_binary(Token); is_integer(Token) ->
+    Data = #{<<"progressToken">> => Token},
+    encode_error_response(Id, ?MCP_ERROR_PROGRESS_TOKEN_EXPIRED,
+                          ?MCP_MSG_PROGRESS_TOKEN_EXPIRED, Data).
+
+%% Progress update failed error
+-spec error_progress_update_failed(json_rpc_id(), binary() | integer(), binary()) -> binary().
+error_progress_update_failed(Id, Token, Reason)
+  when is_binary(Token); is_integer(Token), is_binary(Reason) ->
+    Data = #{
+        <<"progressToken">> => Token,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_PROGRESS_UPDATE_FAILED,
+                          ?MCP_MSG_PROGRESS_UPDATE_FAILED, Data).
+
+%% Notification failed error
+-spec error_notification_failed(json_rpc_id(), binary(), binary()) -> binary().
+error_notification_failed(Id, NotificationType, Reason)
+  when is_binary(NotificationType), is_binary(Reason) ->
+    Data = #{
+        <<"notificationType">> => NotificationType,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_NOTIFICATION_FAILED,
+                          ?MCP_MSG_NOTIFICATION_FAILED, Data).
+
+%% Notification queue full error
+-spec error_notification_queue_full(json_rpc_id(), pos_integer()) -> binary().
+error_notification_queue_full(Id, QueueSize) when is_integer(QueueSize) ->
+    Data = #{<<"queueSize">> => QueueSize},
+    encode_error_response(Id, ?MCP_ERROR_NOTIFICATION_QUEUE_FULL,
+                          ?MCP_MSG_NOTIFICATION_QUEUE_FULL, Data).
+
+%%====================================================================
+%% Completion Error Helper Functions (-32110 to -32113)
+%%====================================================================
+
+%% Completion not found error
+-spec error_completion_not_found(json_rpc_id(), binary()) -> binary().
+error_completion_not_found(Id, CompletionId) when is_binary(CompletionId) ->
+    Data = #{<<"completionId">> => CompletionId},
+    encode_error_response(Id, ?MCP_ERROR_COMPLETION_NOT_FOUND,
+                          ?MCP_MSG_COMPLETION_NOT_FOUND, Data).
+
+%% Invalid completion reference error
+-spec error_invalid_completion_reference(json_rpc_id(), binary()) -> binary().
+error_invalid_completion_reference(Id, Reference) when is_binary(Reference) ->
+    Data = #{<<"reference">> => Reference},
+    encode_error_response(Id, ?MCP_ERROR_INVALID_COMPLETION_REFERENCE,
+                          ?MCP_MSG_INVALID_COMPLETION_REFERENCE, Data).
+
+%% Invalid completion argument error
+-spec error_invalid_completion_argument(json_rpc_id(), binary(), binary()) -> binary().
+error_invalid_completion_argument(Id, Argument, Details)
+  when is_binary(Argument), is_binary(Details) ->
+    Data = #{
+        <<"argument">> => Argument,
+        <<"details">> => Details
+    },
+    encode_error_response(Id, ?MCP_ERROR_INVALID_COMPLETION_ARGUMENT,
+                          ?MCP_MSG_INVALID_COMPLETION_ARGUMENT, Data).
+
+%% Completion failed error
+-spec error_completion_failed(json_rpc_id(), binary(), binary()) -> binary().
+error_completion_failed(Id, CompletionId, Reason)
+  when is_binary(CompletionId), is_binary(Reason) ->
+    Data = #{
+        <<"completionId">> => CompletionId,
+        <<"reason">> => Reason
+    },
+    encode_error_response(Id, ?MCP_ERROR_COMPLETION_FAILED,
+                          ?MCP_MSG_COMPLETION_FAILED, Data).
 
 %%====================================================================
 %% Batch Error Response Functions

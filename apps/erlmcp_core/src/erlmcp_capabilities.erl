@@ -48,7 +48,13 @@
     get_feature_description/2,
     build_client_init_params/1,
     build_server_init_response/2,
-    client_supports_tools_list_changed/1
+    client_supports_tools_list_changed/1,
+    %% Experimental feature support queries
+    supports_elicitation/1,
+    supports_tasks/1,
+    supports_streaming/1,
+    supports_progress/1,
+    get_experimental_features/1
 ]).
 
 %% gen_server callbacks
@@ -241,12 +247,43 @@ negotiate_experimental(ClientCaps, ServerCaps) ->
             undefined;
         {ServerMap, ClientMap} when is_map(ServerMap), is_map(ClientMap) ->
             %% Intersection of experimental features
-            maps:filter(fun(Key, _Value) ->
-                maps:is_key(Key, ClientMap)
-            end, ServerMap);
+            %% For each feature both support, negotiate the specific settings
+            Negotiated = maps:fold(fun(Key, ServerVal, Acc) ->
+                case maps:get(Key, ClientMap, undefined) of
+                    undefined ->
+                        %% Client doesn't support this feature
+                        Acc;
+                    _ClientVal ->
+                        %% Both support it - add to negotiated map
+                        Acc#{Key => negotiate_experimental_feature(Key, ServerVal, maps:get(Key, ClientMap))}
+                end
+            end, #{}, ServerMap),
+            case maps:size(Negotiated) of
+                0 -> undefined;
+                _ -> Negotiated
+            end;
         _ ->
             undefined
     end.
+
+%% @doc Negotiate a specific experimental feature
+%% For boolean features, both must be true. For map features, merge appropriately.
+-spec negotiate_experimental_feature(binary(), term(), term()) -> term().
+negotiate_experimental_feature(<<"elicitation">>, ServerVal, ClientVal) ->
+    %% Elicitation support requires both client and server to support it
+    is_boolean(ServerVal) andalso is_boolean(ClientVal) andalso ServerVal andalso ClientVal;
+negotiate_experimental_feature(<<"tasks">>, ServerVal, ClientVal) ->
+    %% Task support requires both client and server to support it
+    is_boolean(ServerVal) andalso is_boolean(ClientVal) andalso ServerVal andalso ClientVal;
+negotiate_experimental_feature(<<"streaming">>, ServerVal, ClientVal) ->
+    %% Streaming support requires both client and server to support it
+    is_boolean(ServerVal) andalso is_boolean(ClientVal) andalso ServerVal andalso ClientVal;
+negotiate_experimental_feature(<<"progress">>, ServerVal, ClientVal) ->
+    %% Progress support requires both client and server to support it
+    is_boolean(ServerVal) andalso is_boolean(ClientVal) andalso ServerVal andalso ClientVal;
+negotiate_experimental_feature(_Key, ServerVal, _ClientVal) ->
+    %% Default: use server value if client supports it
+    ServerVal.
 
 %% @doc Apply graceful degradation based on client capabilities
 %% Disables features that the client doesn't support
@@ -1250,4 +1287,108 @@ client_supports_tools_list_changed(ClientCaps) ->
         undefined -> false;
         #mcp_tools_capability{listChanged = true} -> true;
         #mcp_tools_capability{} -> false
+    end.
+
+%%%-----------------------------------------------------------------
+%%% Experimental Feature Support Queries
+%%%-----------------------------------------------------------------
+
+%% @doc Check if experimental elicitation feature is supported
+%% Elicitation enables secure out-of-band interactions
+-spec supports_elicitation(#mcp_client_capabilities{} | #mcp_server_capabilities{}) -> boolean().
+supports_elicitation(#mcp_client_capabilities{} = ClientCaps) ->
+    case ClientCaps#mcp_client_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"elicitation">>, ExpMap, false) =:= true;
+        _ -> false
+    end;
+supports_elicitation(#mcp_server_capabilities{} = ServerCaps) ->
+    case ServerCaps#mcp_server_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"elicitation">>, ExpMap, false) =:= true;
+        _ -> false
+    end.
+
+%% @doc Check if experimental tasks feature is supported
+%% Tasks enable background task management
+-spec supports_tasks(#mcp_client_capabilities{} | #mcp_server_capabilities{}) -> boolean().
+supports_tasks(#mcp_client_capabilities{} = ClientCaps) ->
+    case ClientCaps#mcp_client_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"tasks">>, ExpMap, false) =:= true;
+        _ -> false
+    end;
+supports_tasks(#mcp_server_capabilities{} = ServerCaps) ->
+    case ServerCaps#mcp_server_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"tasks">>, ExpMap, false) =:= true;
+        _ -> false
+    end.
+
+%% @doc Check if experimental streaming feature is supported
+%% Streaming enables streaming responses
+-spec supports_streaming(#mcp_client_capabilities{} | #mcp_server_capabilities{}) -> boolean().
+supports_streaming(#mcp_client_capabilities{} = ClientCaps) ->
+    case ClientCaps#mcp_client_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"streaming">>, ExpMap, false) =:= true;
+        _ -> false
+    end;
+supports_streaming(#mcp_server_capabilities{} = ServerCaps) ->
+    case ServerCaps#mcp_server_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"streaming">>, ExpMap, false) =:= true;
+        _ -> false
+    end.
+
+%% @doc Check if experimental progress feature is supported
+%% Progress enables progress token support
+-spec supports_progress(#mcp_client_capabilities{} | #mcp_server_capabilities{}) -> boolean().
+supports_progress(#mcp_client_capabilities{} = ClientCaps) ->
+    case ClientCaps#mcp_client_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"progress">>, ExpMap, false) =:= true;
+        _ -> false
+    end;
+supports_progress(#mcp_server_capabilities{} = ServerCaps) ->
+    case ServerCaps#mcp_server_capabilities.experimental of
+        undefined -> false;
+        ExpMap when is_map(ExpMap) ->
+            maps:get(<<"progress">>, ExpMap, false) =:= true;
+        _ -> false
+    end.
+
+%% @doc Get all supported experimental features from capabilities
+%% Returns a list of binary feature names
+-spec get_experimental_features(#mcp_client_capabilities{} | #mcp_server_capabilities{}) -> [binary()].
+get_experimental_features(#mcp_client_capabilities{} = ClientCaps) ->
+    case ClientCaps#mcp_client_capabilities.experimental of
+        undefined -> [];
+        ExpMap when is_map(ExpMap) ->
+            maps:fold(fun(Key, Value, Acc) ->
+                case Value of
+                    true -> [Key | Acc];
+                    _ -> Acc
+                end
+            end, [], ExpMap);
+        _ -> []
+    end;
+get_experimental_features(#mcp_server_capabilities{} = ServerCaps) ->
+    case ServerCaps#mcp_server_capabilities.experimental of
+        undefined -> [];
+        ExpMap when is_map(ExpMap) ->
+            maps:fold(fun(Key, Value, Acc) ->
+                case Value of
+                    true -> [Key | Acc];
+                    _ -> Acc
+                end
+            end, [], ExpMap);
+        _ -> []
     end.

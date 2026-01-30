@@ -281,18 +281,7 @@
     -32111,  % Invalid completion reference
     -32112,  % Invalid completion argument
     -32113,  % Completion failed
-    -32000,  % Custom server error (generic fallback)
-    %% Experimental error codes (1090-1099)
-    1090,    % Elicitation failed
-    1091,    % Elicitation timeout
-    1092,    % Elicitation cancelled
-    1093,    % Invalid elicitation mode
-    1094,    % Elicitation security error
-    1095,    % Task not found
-    1096,    % Task dependency failed
-    1097,    % Task cancelled
-    1098,    % Task timeout
-    1099     % Invalid task state
+    -32000   % Custom server error (generic fallback)
 ]).
 
 %%% Error Messages (for consistency)
@@ -969,35 +958,6 @@
 -define(MCP_MSG_DANGEROUS_PATTERN_DETECTED, <<"Dangerous pattern detected in prompt">>).
 -define(MCP_MSG_INVALID_VARIABLE_NAME, <<"Invalid variable name">>).
 -define(MCP_MSG_PROMPT_RATE_LIMITED, <<"Prompt compilation rate limit exceeded">>).
-
-%%% Experimental Error Codes (1090-1099)
-%%% These are positive error codes for experimental features
-
-%% Elicitation errors (1090-1094)
--define(ELICITATION_FAILED, 1090).
--define(ELICITATION_TIMEOUT, 1091).
--define(ELICITATION_CANCELLED, 1092).
--define(INVALID_ELICITATION_MODE, 1093).
--define(ELICITATION_SECURITY_ERROR, 1094).
-
-%% Task errors (1095-1099)
--define(TASK_NOT_FOUND, 1095).
--define(TASK_DEPENDENCY_FAILED, 1096).
--define(TASK_CANCELLED, 1097).
--define(TASK_TIMEOUT, 1098).
--define(INVALID_TASK_STATE, 1099).
-
-%%% Experimental Error Messages
--define(MSG_ELICITATION_FAILED, <<"Elicitation failed">>).
--define(MSG_ELICITATION_TIMEOUT, <<"Elicitation timeout">>).
--define(MSG_ELICITATION_CANCELLED, <<"Elicitation cancelled">>).
--define(MSG_INVALID_ELICITATION_MODE, <<"Invalid elicitation mode">>).
--define(MSG_ELICITATION_SECURITY_ERROR, <<"Elicitation security error">>).
--define(MSG_TASK_NOT_FOUND, <<"Task not found">>).
--define(MSG_TASK_DEPENDENCY_FAILED, <<"Task dependency failed">>).
--define(MSG_TASK_CANCELLED, <<"Task cancelled">>).
--define(MSG_TASK_TIMEOUT, <<"Task timeout">>).
--define(MSG_INVALID_TASK_STATE, <<"Invalid task state">>).
 
 %%% JSON Schema Validation Error Types (Jesse-compatible)
 %%% These are used by validation modules and tests for JSON Schema validation
