@@ -80,7 +80,11 @@
     strategy :: cache_strategy()
 }).
 
+%% State version for hot code loading
+-type state_version() :: v1 | v2.
+
 -record(state, {
+    version = v1 :: state_version(),  % State version for hot code loading
     l1_table :: ets:tid(),  % ETS table for L1 cache
     l2_enabled = false :: boolean(),  % Mnesia available?
     l3_enabled = false :: boolean(),  % External cache available?
@@ -103,7 +107,9 @@
         expirations => 0,
         writes => 0,
         deletes => 0
-    } :: map()
+    } :: map(),
+    %% Reserved for v2 expansion
+    _v2_reserved = undefined :: term()
 }).
 
 -type state() :: #state{}.
@@ -447,8 +453,38 @@ terminate(_Reason, State) ->
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(OldVsn, State, Extra) ->
+    try
+        logger:info("Cache: Code change from ~p", [OldVsn]),
+        NewState = migrate_cache_state(OldVsn, State, Extra),
+        logger:info("Cache: Code change completed successfully"),
+        {ok, NewState}
+    catch
+        Class:Reason:Stack ->
+            logger:error("Cache: Code change failed: ~p:~p~n~p",
+                        [Class, Reason, Stack]),
+            error({code_change_failed, Class, Reason})
+    end.
+
+%% @private Migrate cache state based on version
+-spec migrate_cache_state(term(), state(), term()) -> state().
+migrate_cache_state(_OldVsn, #state{version = v1} = State, _Extra) ->
+    %% Already at current version (v1)
+    State;
+migrate_cache_state({down, _FromVsn}, #state{} = State, _Extra) ->
+    %% Downgrade migration - ensure version field exists
+    case State#state.version of
+        undefined -> State#state{version = v1};
+        _ -> State
+    end;
+migrate_cache_state(OldVsn, #state{version = undefined} = State, _Extra)
+  when is_list(OldVsn); is_atom(OldVsn) ->
+    %% Legacy state (pre-versioning) - upgrade to v1
+    logger:info("Cache: Upgrading legacy state to v1"),
+    State#state{version = v1};
+migrate_cache_state(OldVsn, State, _Extra) ->
+    logger:warning("Cache: Unknown code_change from version ~p", [OldVsn]),
+    State.
 
 %%====================================================================
 %% Internal functions - L1 Cache (ETS)

@@ -162,6 +162,62 @@ prop_increment_validate_consistency() ->
         end).
 
 %%%====================================================================
+%%% Monitoring and Threshold Tests
+%%%====================================================================
+
+%% @doc Test get_usage_percentage at minimum ID
+get_usage_percentage_min_test() ->
+    Usage = erlmcp_request_id:get_usage_percentage(1),
+    ?assert(Usage > 0.0),
+    ?assert(Usage < 0.000001).
+
+%% @doc Test get_usage_percentage at 50%
+get_usage_percentage_half_test() ->
+    HalfId = ?MAX_SAFE_REQUEST_ID div 2,
+    Usage = erlmcp_request_id:get_usage_percentage(HalfId),
+    ?assert(Usage > 49.0),
+    ?assert(Usage < 51.0).
+
+%% @doc Test get_usage_percentage at maximum
+get_usage_percentage_max_test() ->
+    Usage = erlmcp_request_id:get_usage_percentage(?MAX_SAFE_REQUEST_ID),
+    ?assertEqual(100.0, Usage).
+
+%% @doc Test check_thresholds at normal level
+check_thresholds_normal_test() ->
+    {ok, normal, Usage} = erlmcp_request_id:check_thresholds(1),
+    ?assert(Usage < 80.0).
+
+%% @doc Test check_thresholds at warning level
+check_thresholds_warning_test() ->
+    {ok, warning, Usage} = erlmcp_request_id:check_thresholds(?ID_WARNING_THRESHOLD),
+    ?assert(Usage >= 80.0),
+    ?assert(Usage < 90.0).
+
+%% @doc Test check_thresholds at critical level
+check_thresholds_critical_test() ->
+    {ok, critical, Usage} = erlmcp_request_id:check_thresholds(?ID_CRITICAL_THRESHOLD),
+    ?assert(Usage >= 90.0),
+    ?assert(Usage < 96.0).
+
+%% @doc Test check_thresholds at reserved level
+check_thresholds_reserved_test() ->
+    {ok, reserved, Usage} = erlmcp_request_id:check_thresholds(?ID_RESERVED_THRESHOLD),
+    ?assert(Usage >= 96.0),
+    ?assert(Usage < 100.0).
+
+%% @doc Test check_thresholds at exhausted level
+check_thresholds_exhausted_test() ->
+    {ok, exhausted, Usage} = erlmcp_request_id:check_thresholds(?MAX_SAFE_REQUEST_ID),
+    ?assertEqual(100.0, Usage).
+
+%% @doc Test check_thresholds with invalid ID
+check_thresholds_invalid_test() ->
+    {ok, normal, 0.0} = erlmcp_request_id:check_thresholds(0),
+    {ok, normal, 0.0} = erlmcp_request_id:check_thresholds(-1),
+    {ok, normal, 0.0} = erlmcp_request_id:check_thresholds(1.5).
+
+%%%====================================================================
 %%% Integration Tests
 %%%====================================================================
 
