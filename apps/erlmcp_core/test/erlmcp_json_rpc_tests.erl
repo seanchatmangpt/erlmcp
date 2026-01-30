@@ -1728,7 +1728,170 @@ test_error_code_range_coverage() ->
     end, Ranges).
 
 test_total_error_code_count() ->
-    %% Verify we have exactly 89 error codes
+    %% Verify we have exactly 99 error codes (89 + 10 experimental)
     ValidCodes = ?VALID_ERROR_CODES,
-    ?assertEqual(89, length(ValidCodes)),
-    io:format("~n✓ All 89 error codes integrated and accessible via helper functions.~n").
+    ?assertEqual(99, length(ValidCodes)),
+    io:format("~n✓ All 99 error codes integrated and accessible via helper functions.~n").
+
+%%====================================================================
+%% Experimental Error Code Tests (1090-1099)
+%%====================================================================
+
+experimental_error_codes_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          ?_test(test_elicitation_failed_error()),
+          ?_test(test_elicitation_timeout_error()),
+          ?_test(test_elicitation_cancelled_error()),
+          ?_test(test_invalid_elicitation_mode_error()),
+          ?_test(test_elicitation_security_error()),
+          ?_test(test_experimental_task_not_found_error()),
+          ?_test(test_task_dependency_failed_error()),
+          ?_test(test_experimental_task_cancelled_error()),
+          ?_test(test_experimental_task_timeout_error()),
+          ?_test(test_invalid_task_state_error()),
+          ?_test(test_experimental_error_codes_validation())
+         ]
+     end}.
+
+test_elicitation_failed_error() ->
+    Id = 1,
+    Reason = <<"Failed to elicit URL from user">>,
+    Encoded = erlmcp_json_rpc:error_elicitation_failed(Id, Reason),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1090, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Elicitation failed">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(Reason, maps:get(<<"reason">>, Data)).
+
+test_elicitation_timeout_error() ->
+    Id = 2,
+    TimeoutMs = 30000,
+    Encoded = erlmcp_json_rpc:error_elicitation_timeout(Id, TimeoutMs),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1091, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Elicitation timeout">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(TimeoutMs, maps:get(<<"timeoutMs">>, Data)).
+
+test_elicitation_cancelled_error() ->
+    Id = 3,
+    Encoded = erlmcp_json_rpc:error_elicitation_cancelled(Id),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1092, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Elicitation cancelled">>, maps:get(<<"message">>, Error)),
+    ?assertNot(maps:is_key(<<"data">>, Error)).
+
+test_invalid_elicitation_mode_error() ->
+    Id = 4,
+    Mode = <<"invalid_mode">>,
+    Encoded = erlmcp_json_rpc:error_invalid_elicitation_mode(Id, Mode),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1093, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Invalid elicitation mode">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(Mode, maps:get(<<"mode">>, Data)).
+
+test_elicitation_security_error() ->
+    Id = 5,
+    Reason = <<"Potential security threat detected">>,
+    Encoded = erlmcp_json_rpc:error_elicitation_security_error(Id, Reason),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1094, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Elicitation security error">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(Reason, maps:get(<<"reason">>, Data)).
+
+test_experimental_task_not_found_error() ->
+    Id = 6,
+    TaskId = <<"task-12345">>,
+    Encoded = erlmcp_json_rpc:error_experimental_task_not_found(Id, TaskId),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1095, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Task not found">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(TaskId, maps:get(<<"taskId">>, Data)).
+
+test_task_dependency_failed_error() ->
+    Id = 7,
+    TaskId = <<"task-12345">>,
+    DependencyId = <<"task-67890">>,
+    Encoded = erlmcp_json_rpc:error_task_dependency_failed(Id, TaskId, DependencyId),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1096, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Task dependency failed">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(TaskId, maps:get(<<"taskId">>, Data)),
+    ?assertEqual(DependencyId, maps:get(<<"dependencyId">>, Data)).
+
+test_experimental_task_cancelled_error() ->
+    Id = 8,
+    TaskId = <<"task-12345">>,
+    Encoded = erlmcp_json_rpc:error_experimental_task_cancelled(Id, TaskId),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1097, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Task cancelled">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(TaskId, maps:get(<<"taskId">>, Data)).
+
+test_experimental_task_timeout_error() ->
+    Id = 9,
+    TaskId = <<"task-12345">>,
+    TimeoutMs = 60000,
+    Encoded = erlmcp_json_rpc:error_experimental_task_timeout(Id, TaskId, TimeoutMs),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1098, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Task timeout">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(TaskId, maps:get(<<"taskId">>, Data)),
+    ?assertEqual(TimeoutMs, maps:get(<<"timeoutMs">>, Data)).
+
+test_invalid_task_state_error() ->
+    Id = 10,
+    TaskId = <<"task-12345">>,
+    CurrentState = <<"running">>,
+    ExpectedState = <<"pending">>,
+    Encoded = erlmcp_json_rpc:error_invalid_task_state(Id, TaskId, CurrentState, ExpectedState),
+    ?assert(is_binary(Encoded)),
+    Decoded = jsx:decode(Encoded, [return_maps]),
+    Error = maps:get(<<"error">>, Decoded),
+    ?assertEqual(1099, maps:get(<<"code">>, Error)),
+    ?assertEqual(<<"Invalid task state">>, maps:get(<<"message">>, Error)),
+    Data = maps:get(<<"data">>, Error),
+    ?assertEqual(TaskId, maps:get(<<"taskId">>, Data)),
+    ?assertEqual(CurrentState, maps:get(<<"currentState">>, Data)),
+    ?assertEqual(ExpectedState, maps:get(<<"expectedState">>, Data)).
+
+test_experimental_error_codes_validation() ->
+    %% All experimental error codes should be valid
+    ?assert(erlmcp_json_rpc:validate_error_code(1090)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1091)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1092)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1093)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1094)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1095)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1096)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1097)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1098)),
+    ?assert(erlmcp_json_rpc:validate_error_code(1099)).
