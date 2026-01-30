@@ -1,0 +1,147 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║              ERLMCP PERFORMANCE OPTIMIZATION PLAN - START HERE               ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+OVERVIEW
+========
+This directory contains a comprehensive 4-week performance optimization plan
+to improve erlmcp throughput from 2.52M msg/s to 3.5M msg/s (+41%).
+
+QUICK START
+===========
+1. Read: optimization_plan.md (MAIN DOCUMENT - 1283 lines, 4 PlantUML diagrams)
+2. Reference: QUICK_REFERENCE.md (copy-paste code snippets)
+3. Check: README.md (index and quick start guide)
+
+CRITICAL FIRST STEP
+===================
+BEFORE making ANY code changes, capture the baseline:
+
+  erlmcp_bench_core_ops:run(<<"core_ops_100k">>).
+  cp bench/results/*.json bench/results/baseline/
+  echo "Baseline captured: $(date)" > bench/results/baseline/README.md
+
+4-WEEK ROADMAP
+==============
+Week 1: Fix registry benchmark bug (synthetic latencies)
+Week 2: Switch to jiffy for JSON encoding (2-3x improvement)
+Week 3: Use ETS for request correlation (10-20% improvement)
+Week 4: State/binary optimizations (5-10% cumulative)
+
+Expected Result: 2.52M → 3.5M msg/s (+41% throughput)
+
+KEY BOTTLENECKS
+===============
+1. JSON Encoding (jsx)                 - 2-3x slower than jiffy (P1)
+2. Registry Benchmark Bug              - Synthetic latencies (P1)
+3. Request Correlation (maps)          - O(log N) vs O(1) with ETS (P2)
+4. Percentile Calculation (lists:nth)  - O(N) vs O(1) with array (P2)
+5. Large State Records (18 fields)     - Full copy on update (P3)
+
+FILES TO MODIFY
+===============
+Week 1: bench/erlmcp_bench_core_ops.erl (lines 195-199)
+Week 2: apps/erlmcp_core/src/erlmcp_json_rpc.erl (line 389)
+        rebar.config (add jiffy dependency)
+Week 3: apps/erlmcp_core/src/erlmcp_client.erl (lines 53, 618, 642)
+Week 4: bench/erlmcp_bench_core_ops.erl (lines 364-368)
+        apps/erlmcp_core/src/erlmcp_json_rpc.erl (lines 391-398)
+        apps/erlmcp_core/src/erlmcp_server.erl (lines 47-66)
+
+PERFORMANCE TARGETS
+===================
+Core Throughput:              2.52M → 3.5M msg/s (+41%)
+JSON Encoding (1KB):          45us → 16us p95 (2.8x)
+JSON Encoding (100KB):        1850us → 595us p95 (3.1x)
+Request Correlation (10K):    100us → 10us p95 (10x)
+Percentile Calc (1M samples): 1000ms → 10ms (100x)
+Integration Overhead:         8.5% → 3.0% (-65%)
+TCP Sustained (10K):          100K → 120K msg/s (+20%)
+
+QUALITY GATES
+=============
+Before declaring "DONE" for each week:
+  □ Compilation: TERM=dumb rebar3 compile (0 errors)
+  □ Tests: rebar3 eunit (100% pass)
+  □ Coverage: rebar3 cover (≥80%)
+  □ Dialyzer: rebar3 dialyzer (0 new warnings)
+  □ Xref: rebar3 xref (0 new issues)
+  □ Benchmarks: make benchmark-quick (<10% regression)
+  □ Memory: 5min stress test (no leaks)
+
+KEY COMMANDS
+============
+# Baseline (CRITICAL - RUN FIRST!)
+erlmcp_bench_core_ops:run(<<"core_ops_100k">>).
+cp bench/results/*.json bench/results/baseline/
+
+# Quick regression check (<2 min)
+make benchmark-quick && ./scripts/bench/regression_check.sh
+
+# Full suite (10-15 min)
+./scripts/bench/run_all_benchmarks.sh
+
+# Week 1: Validate registry fix
+erlmcp_bench_core_ops:run(<<"core_ops_100k">>).
+
+# Week 2: Validate jiffy
+erlmcp_bench_integration:run_all().
+erlmcp_bench_network_real:run(<<"tcp_sustained_10k_1kib">>).
+
+# Week 3: Validate ETS
+erlmcp_bench_network_real:run(<<"tcp_sustained_10k_1kib">>).
+
+# Week 4: Full validation
+./scripts/bench/run_all_benchmarks.sh
+
+DOCUMENTS
+=========
+optimization_plan.md    - MAIN PLAN (36KB, 1283 lines, 4 diagrams)
+README.md               - Index & quick start (5.9KB, 207 lines)
+QUICK_REFERENCE.md      - Copy-paste snippets (12KB, 284 lines)
+DELIVERY_SUMMARY.md     - Deliverables overview (13KB, 428 lines)
+START_HERE.txt          - This file
+
+PLANTUML DIAGRAMS
+=================
+1. Performance Profile        - Current bottlenecks by component
+2. Benchmark Comparison       - jsx vs jiffy (1KB, 10KB, 100KB)
+3. Throughput Timeline        - 4-week improvement roadmap
+4. Component Performance      - Hotspots and optimization targets
+
+To render: plantuml docs/performance/optimization_plan.md
+Or online: https://www.plantuml.com/plantuml/uml/
+
+RISK MITIGATION
+===============
+jiffy NIF:        Feature flag for jsx fallback, chaos testing
+ETS leak:         Private ETS (auto-deleted), process crash testing
+State refactor:   Dialyzer validation, incremental updates
+
+NEXT STEPS
+==========
+1. Review optimization_plan.md (START HERE - most comprehensive)
+2. Approve plan with stakeholders
+3. Capture baseline (erlmcp_bench_core_ops:run/1)
+4. Start Week 1: Fix registry benchmark bug
+5. Validate incrementally after each week
+6. Update plan with "Actual" results
+7. Generate final comparison report
+
+CONTACT
+=======
+Agent:   erlang-performance
+Version: 0.6.0
+Date:    2026-01-30
+Status:  DELIVERY COMPLETE ✓
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  REMEMBER: Always capture baseline BEFORE any code changes!                 ║
+║                                                                              ║
+║  erlmcp_bench_core_ops:run(<<"core_ops_100k">>).                            ║
+║  cp bench/results/*.json bench/results/baseline/                            ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
