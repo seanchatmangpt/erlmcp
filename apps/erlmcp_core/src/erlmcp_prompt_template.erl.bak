@@ -1,0 +1,295 @@
+-module(erlmcp_prompt_template).
+-behaviour(gen_server).
+
+%% @doc
+%% Prompt template security and validation module.
+%% Prevents prompt injection attacks through comprehensive validation:
+%% - Code execution patterns (eval, exec, system)
+%% - Path traversal (../, ..\)
+%% - Template injection ({{{ }}}, <%= %>)
+%% - Size limits to prevent DoS
+%%
+%% @end
+
+-include("erlmcp.hrl").
+
+%% API
+-export([
+    start_link/0,
+    validate_prompt/1,
+    sanitize_variable_name/1,
+    render_template/2,
+    get_stats/0
+]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% Security Constants (moved to erlmcp.hrl for consistency)
+-define(MAX_PROMPT_SIZE, 1048576).  %% 1 MB max prompt size
+-define(MAX_TEMPLATE_DEPTH, 10).     %% Max nested template depth
+-define(MAX_VARIABLE_NAME_LEN, 64).  %% Max variable name length
+-define(ALLOWED_VAR_NAME, "^[a-zA-Z_][a-zA-Z0-9_]*$"). %% Allowed variable names
+
+%% Rate limiting
+-define(MAX_COMPILES_PER_MINUTE, 100).
+
+%% State record
+-record(state, {
+    compile_count = 0 :: non_neg_integer(),
+    compile_window_start = 0 :: integer(),
+    stats = #{
+        total_validated => 0,
+        validation_failed => 0,
+        dangerous_patterns_detected => 0,
+        templates_rendered => 0
+    } :: map()
+}).
+
+-type state() :: #state{}.
+
+%%%===================================================================
+%%% API Functions
+%%%===================================================================
+
+%% @doc Start the prompt template validator
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+%% @doc Validate a prompt template for security issues
+%% Returns ok | {error, Reason}
+-spec validate_prompt(binary()) -> ok | {error, term()}.
+validate_prompt(Template) ->
+    gen_server:call(?MODULE, {validate_prompt, Template}).
+
+%% @doc Sanitize a variable name to prevent injection
+%% Returns {ok, SanitizedName} | {error, Reason}
+-spec sanitize_variable_name(binary()) -> {ok, binary()} | {error, term()}.
+sanitize_variable_name(Name) ->
+    gen_server:call(?MODULE, {sanitize_variable_name, Name}).
+
+%% @doc Render a template with variables (after validation)
+-spec render_template(binary(), map()) -> {ok, binary()} | {error, term()}.
+render_template(Template, Variables) ->
+    gen_server:call(?MODULE, {render_template, Template, Variables}).
+
+%% @doc Get validation statistics
+-spec get_stats() -> map().
+get_stats() ->
+    gen_server:call(?MODULE, get_stats).
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+-spec init(list()) -> {ok, state()}.
+init([]) ->
+    {ok, #state{}}.
+
+-spec handle_call(term(), {pid(), term()}, state()) ->
+    {reply, term(), state()} | {noreply, state()}.
+handle_call({validate_prompt, Template}, _From, State) ->
+    {Result, NewState} = do_validate_prompt(Template, State),
+    {reply, Result, NewState};
+
+handle_call({sanitize_variable_name, Name}, _From, State) ->
+    Result = do_sanitize_variable_name(Name),
+    {reply, Result, State};
+
+handle_call({render_template, Template, Variables}, _From, State) ->
+    {Result, NewState} = do_render_template(Template, Variables, State),
+    {reply, Result, NewState};
+
+handle_call(get_stats, _From, State) ->
+    {reply, State#state.stats, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+-spec handle_cast(term(), state()) -> {noreply, state()}.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+-spec handle_info(term(), state()) -> {noreply, state()}.
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+-spec terminate(term(), state()) -> ok.
+terminate(_Reason, _State) ->
+    ok.
+
+-spec code_change(term(), state(), term()) -> {ok, state()}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%===================================================================
+%%% Internal functions
+%%%===================================================================
+
+%% @doc Validate prompt template with comprehensive security checks
+-spec do_validate_prompt(binary(), state()) -> {{ok | {error, term()}, state()}}.
+do_validate_prompt(Template, State) ->
+    %% Update stats
+    NewStats = maps:update_with(
+        total_validated,
+        fun(V) -> V + 1 end,
+        1,
+        State#state.stats
+    ),
+
+    %% Perform validation checks
+    case byte_size(Template) > ?MAX_PROMPT_SIZE of
+        true ->
+            FinalStats = maps:update_with(
+                validation_failed,
+                fun(V) -> V + 1 end,
+                1,
+                NewStats
+            ),
+            {{{error, prompt_too_large}, State#state{stats = FinalStats}};
+        false ->
+            case detect_dangerous_patterns(Template) of
+                {true, Pattern} ->
+                    FinalStats = maps:update_with(
+                        dangerous_patterns_detected,
+                        fun(V) -> V + 1 end,
+                        1,
+                        NewStats
+                    ),
+                    FailedStats = maps:update_with(
+                        validation_failed,
+                        fun(V) -> V + 1 end,
+                        1,
+                        FinalStats
+                    ),
+                    {{{error, {dangerous_pattern_detected, Pattern}}, State#state{stats = FailedStats}};
+                false ->
+                    {{ok, State#state{stats = NewStats}}
+            end
+    end.
+
+%% @doc Detect dangerous patterns in template
+%% Returns {true, Pattern} | false
+-spec detect_dangerous_patterns(binary()) -> {true, binary()} | false.
+detect_dangerous_patterns(Template) ->
+    %% Define dangerous patterns
+    Patterns = [
+        {<<"eval(">>, <<"code_execution_eval">>},
+        {<<"exec(">>, <<"code_execution_exec">>},
+        {<<"system(">>, <<"code_execution_system">>},
+        {<<"os.system(">>, <<"code_execution_os_system">>},
+        {<<"subprocess.">>, <<"code_execution_subprocess">>},
+        {<<"../">>, <<"path_traversal_parent">>},
+        {<<"..\\">>, <<"path_traversal_windows">>},
+        {<<"%2e%2e">>, <<"path_traversal_encoded">>},
+        {<<"{{{">>, <<"template_injection_mustache">>},
+        {<<"<%">>, <<"template_injection_ejs">>},
+        {<<"${">>, <<"template_injection_expression">>},
+        {<<"<%=">>, <<"template_injection_ruby">>},
+        {<<"{{">>, <<"template_injection_jinja">>},
+        {<<"execut">>, <<"code_execution_variant">>}
+    ],
+
+    check_patterns(Template, Patterns).
+
+%% @doc Check if any dangerous pattern exists in template
+-spec check_patterns(binary(), [{binary(), binary()}]) -> {true, binary()} | false.
+check_patterns(_Template, []) ->
+    false;
+check_patterns(Template, [{Pattern, Name} | Rest]) ->
+    case binary:match(Template, Pattern) of
+        nomatch ->
+            check_patterns(Template, Rest);
+        {_, _} ->
+            {true, Name}
+    end.
+
+%% @doc Sanitize variable name
+-spec do_sanitize_variable_name(binary()) -> {ok, binary()} | {error, term()}.
+do_sanitize_variable_name(Name) ->
+    %% Check length
+    case byte_size(Name) > ?MAX_VARIABLE_NAME_LEN of
+        true ->
+            {error, {variable_name_too_long, byte_size(Name), ?MAX_VARIABLE_NAME_LEN}};
+        false ->
+            %% Check pattern (alphanumeric and underscores only)
+            case re:run(Name, ?ALLOWED_VAR_NAME, [{capture, none}]) of
+                match ->
+                    {ok, Name};
+                nomatch ->
+                    {error, {invalid_variable_name, Name}}
+            end
+    end.
+
+%% @doc Render template with variables (safe substitution)
+-spec do_render_template(binary(), map(), state()) -> {{ok, binary()} | {error, term()}, state()}.
+do_render_template(Template, Variables, State) ->
+    %% Validate template first
+    case do_validate_prompt(Template, State) of
+        {{error, Reason}, NewState} ->
+            {{{error, Reason}, NewState}};
+        {ok, NewState} ->
+            %% Sanitize all variable names
+            case sanitize_all_variables(maps:keys(Variables), NewState) of
+                {error, Reason} ->
+                    {{{error, Reason}, NewState}};
+                ok ->
+                    %% Perform safe substitution
+                    Result = safe_substitute(Template, Variables),
+                    %% Update stats
+                    UpdatedStats = maps:update_with(
+                        templates_rendered,
+                        fun(V) -> V + 1 end,
+                        1,
+                        NewState#state.stats
+                    ),
+                    {{{ok, Result}, NewState#state{stats = UpdatedStats}}
+            end
+    end.
+
+%% @doc Sanitize all variable names in a map
+-spec sanitize_all_variables([binary()], state()) -> ok | {error, term()}.
+sanitize_all_variables([], _State) ->
+    ok;
+sanitize_all_variables([VarName | Rest], State) ->
+    case do_sanitize_variable_name(VarName) of
+        {ok, _} ->
+            sanitize_all_variables(Rest, State);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Safe template variable substitution
+%% Replaces {{varname}} with sanitized values
+-spec safe_substitute(binary(), map()) -> binary().
+safe_substitute(Template, Variables) ->
+    maps:fold(
+        fun(Key, Value, Acc) ->
+            Pattern = <<"{{", Key/binary, "}}">>,
+            Replacement = sanitize_value(Value),
+            binary:replace(Acc, Pattern, Replacement, [global])
+        end,
+        Template,
+        Variables
+    ).
+
+%% @doc Sanitize variable values
+-spec sanitize_value(term()) -> binary().
+sanitize_value(Value) when is_binary(Value) ->
+    %% Escape dangerous characters in values
+    Escaped = binary:replace(Value, <<"{{">>, <<"&#123;&#123;">>, [global]),
+    Escaped2 = binary:replace(Escaped, <<"}}">>, <<"&#125;&#125;">>, [global]),
+    Escaped3 = binary:replace(Escaped2, <<"<%">>, <<"&lt;%">>, [global]),
+    Escaped4 = binary:replace(Escaped3, <<"${">>, <<"&#36;&#123;">>, [global]),
+    Escaped4;
+sanitize_value(Value) when is_integer(Value) ->
+    integer_to_binary(Value);
+sanitize_value(Value) when is_float(Value) ->
+    float_to_binary(Value, [{decimals, 10}, compact]);
+sanitize_value(Value) when is_atom(Value) ->
+    atom_to_binary(Value, utf8);
+sanitize_value(Value) ->
+    %% For other types, convert to binary but sanitize
+    ValueBin = io_lib:format("~p", [Value]),
+    iolist_to_binary(ValueBin).

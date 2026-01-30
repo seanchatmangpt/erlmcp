@@ -30,6 +30,7 @@
     destroy_session/1,
     rotate_token/1,
     revoke_token/1,
+    rotate_public_key/2,
     get_user_roles/1,
     get_role_permissions/1,
     add_role/2,
@@ -150,6 +151,11 @@ rotate_token(SessionId) ->
 revoke_token(Token) ->
     gen_server:call(?MODULE, {revoke_token, Token}).
 
+%% @doc Rotate public key for JWT verification (key ID -> new public key).
+-spec rotate_public_key(binary(), binary()) -> ok.
+rotate_public_key(KeyId, PublicKeyPem) ->
+    gen_server:call(?MODULE, {rotate_public_key, KeyId, PublicKeyPem}).
+
 %% @doc Get user roles.
 -spec get_user_roles(user_id()) -> {ok, [role()]} | {error, not_found}.
 get_user_roles(UserId) ->
@@ -261,6 +267,19 @@ handle_call({revoke_token, Token}, _From, State) ->
     ets:insert(State#state.revoked_tokens, {Token, erlang:system_time(second)}),
     logger:warning("Token revoked: ~p", [Token]),
     {reply, ok, State};
+
+handle_call({rotate_public_key, KeyId, PublicKeyPem}, _From, State) ->
+    % Validate the public key format before storing
+    try jose:jwk_from_pem(PublicKeyPem) of
+        _JWK ->
+            ets:insert(State#state.jwt_keys, {KeyId, PublicKeyPem}),
+            logger:info("Public key rotated for kid: ~p", [KeyId]),
+            {reply, ok, State}
+    catch
+        error:_ ->
+            logger:error("Failed to parse public key for kid: ~p", [KeyId]),
+            {reply, {error, invalid_public_key}, State}
+    end;
 
 handle_call({get_user_roles, UserId}, _From, State) ->
     Result = case ets:lookup(State#state.user_roles, UserId) of
@@ -434,34 +453,118 @@ get_client_id(oauth2, #{token := Token}) -> Token;
 get_client_id(mtls, CertInfo) -> maps:get(cn, CertInfo, <<"unknown">>);
 get_client_id(_, _) -> <<"unknown">>.
 
-%% @private Validate JWT token.
+%% @private Validate JWT token with cryptographic signature verification.
 do_validate_jwt(Token, State) ->
     % Check if token is revoked
     case ets:lookup(State#state.revoked_tokens, Token) of
         [{_, _}] -> {error, token_revoked};
         [] ->
-            % TODO: Implement full JWT validation with jose library
-            % For now, basic structure validation
-            case binary:split(Token, <<".">>, [global]) of
-                [_Header, Payload, _Signature] ->
-                    try
-                        ClaimsJson = base64:decode(Payload),
-                        Claims = jsx:decode(ClaimsJson, [return_maps]),
-                        validate_jwt_claims(Claims)
-                    catch
-                        _:_ -> {error, invalid_jwt}
-                    end;
-                _ -> {error, invalid_jwt_format}
-            end
+            verify_jwt_signature(Token, State)
     end.
 
-%% @private Validate JWT claims (expiration, issuer, etc.).
+%% @private Verify JWT signature using jose library.
+verify_jwt_signature(Token, State) ->
+    try
+        % Decode JWT to get header and key ID
+        case binary:split(Token, <<".">>, [global]) of
+            [HeaderB64, _Payload, _Signature] ->
+                HeaderJson = base64:decode(HeaderB64),
+                Header = jsx:decode(HeaderJson, [return_maps]),
+
+                % Extract key ID (kid) from header
+                KeyId = maps:get(<<"kid">>, Header, undefined),
+
+                case KeyId of
+                    undefined ->
+                        logger:warning("JWT missing key ID (kid) in header"),
+                        {error, missing_key_id};
+                    _ ->
+                        % Lookup public key from ETS
+                        case ets:lookup(State#state.jwt_keys, KeyId) of
+                            [{_, PublicKeyPem}] ->
+                                verify_jwt_with_key(Token, PublicKeyPem);
+                            [] ->
+                                logger:warning("JWT key ID not found: ~p", [KeyId]),
+                                {error, unknown_key_id}
+                        end
+                end;
+            _ ->
+                {error, invalid_jwt_format}
+        end
+    catch
+        error:{badmatch, _} -> {error, invalid_jwt_format};
+        error:_ -> {error, invalid_jwt}
+    end.
+
+%% @private Verify JWT with specific public key.
+verify_jwt_with_key(Token, PublicKeyPem) ->
+    try
+        % Decode public key from PEM format
+        PublicKey = jose:jwk_from_pem(PublicKeyPem),
+
+        % Verify JWT signature using RS256
+        case jose:jwt_verify(Token, PublicKey) of
+            {true, Payload, _} ->
+                Claims = jsx:decode(Payload, [return_maps]),
+                validate_jwt_claims(Claims);
+            {false, _, _} ->
+                logger:warning("JWT signature verification failed"),
+                {error, invalid_signature};
+            {error, Reason} ->
+                logger:warning("JWT verification error: ~p", [Reason]),
+                {error, verification_failed}
+        end
+    catch
+        error:_Reason ->
+            logger:error("Failed to parse public key or verify JWT: ~p", [_Reason]),
+            {error, key_parsing_failed}
+    end.
+
+%% @private Validate JWT claims (expiration, issuer, audience, nbf).
 validate_jwt_claims(Claims) ->
     Now = erlang:system_time(second),
+
+    % Check expiration (exp) - CRITICAL for security
     case maps:get(<<"exp">>, Claims, undefined) of
-        undefined -> {error, missing_expiration};
-        Exp when Exp > Now -> {ok, Claims};
-        _ -> {error, token_expired}
+        undefined ->
+            {error, missing_expiration};
+        Exp when Exp =< Now ->
+            {error, token_expired};
+        _Exp ->
+            % Continue validation
+            validate_nbf_claim(Claims, Now)
+    end.
+
+%% @private Validate not-before (nbf) claim
+validate_nbf_claim(Claims, Now) ->
+    case maps:get(<<"nbf">>, Claims, undefined) of
+        undefined ->
+            validate_issuer_claim(Claims);
+        Nbf when Nbf > Now ->
+            {error, token_not_yet_valid};
+        _Nbf ->
+            validate_issuer_claim(Claims)
+    end.
+
+%% @private Validate issuer (iss) claim
+validate_issuer_claim(Claims) ->
+    case maps:get(<<"iss">>, Claims, undefined) of
+        undefined ->
+            validate_subject_claim(Claims);
+        Issuer when is_binary(Issuer), byte_size(Issuer) > 0 ->
+            validate_subject_claim(Claims);
+        _Issuer ->
+            {error, invalid_issuer}
+    end.
+
+%% @private Validate subject (sub) claim - CRITICAL for security
+validate_subject_claim(Claims) ->
+    case maps:get(<<"sub">>, Claims, undefined) of
+        undefined ->
+            {error, missing_subject};
+        _Sub ->
+            % All validations passed
+            {ok, Claims}
     end.
 
 %% @private Validate API key.

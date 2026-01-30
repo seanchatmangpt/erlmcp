@@ -13,9 +13,7 @@
 -module(erlmcp_connection_monitor_tests).
 
 -include_lib("eunit/include/eunit.hrl").
-
-%% Test fixtures
--define(TEST_TIMEOUT, 5000).
+-include_lib("erlmcp_core/include/erlmcp_test_constants.hrl").
 
 %%====================================================================
 %% Test Fixtures

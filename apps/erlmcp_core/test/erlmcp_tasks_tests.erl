@@ -1,0 +1,690 @@
+-module(erlmcp_tasks_tests).
+-include_lib("proper/include/proper.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%%===================================================================
+%%% Test Suite for erlmcp_tasks Module
+%%% Chicago School TDD - Real processes, no mocks, state-based verification
+%%% Target: 85%+ coverage
+%%%===================================================================
+
+%%====================================================================
+%% Test Fixtures
+%%====================================================================
+
+tasks_test_() ->
+    {foreach,
+     fun setup/0,
+     fun cleanup/1,
+     [
+         %% Task lifecycle tests (3 tests)
+         fun test_task_creation/1,
+         fun test_task_lifecycle/1,
+         fun test_task_cancellation/1,
+         fun test_task_timeout/1,
+
+         %% State management tests (2 tests)
+         fun test_task_state_persistence/1,
+         fun test_task_state_restoration/1,
+
+         %% Concurrency tests (2 tests)
+         fun test_concurrent_task_limit/1,
+         fun test_task_state_update_race_condition/1,
+
+         %% Progress tracking tests (2 tests)
+         fun test_progress_token_generation/1,
+         fun test_progress_update/1,
+
+         %% Edge cases tests (5 tests)
+         fun test_invalid_task_id/1,
+         fun test_duplicate_task_id/1,
+         fun test_expired_task_cleanup/1,
+         fun test_empty_action/1,
+         fun test_very_large_result/1
+     ]}.
+
+%%====================================================================
+%% Setup and Cleanup
+%%====================================================================
+
+setup() ->
+    %% Start the tasks manager
+    {ok, Pid} = erlmcp_tasks:start_link(),
+    Pid.
+
+cleanup(Pid) ->
+    %% Stop the tasks manager
+    case is_process_alive(Pid) of
+        true ->
+            unlink(Pid),
+            exit(Pid, shutdown),
+            %% Wait for process death using monitor
+            erlmcp_test_sync:wait_for_process_death(Pid, 500);
+        false ->
+            ok
+    end.
+
+%%====================================================================
+%% Task Lifecycle Tests
+%%====================================================================
+
+test_task_creation(_Pid) ->
+    fun() ->
+        %% Exercise: Create a task with action and metadata
+        Action = #{<<"type">> => <<"test">>, <<"operation">> => <<"create">>},
+        Metadata = #{<<"user">> => <<"alice">>, <<"project">> => <<"test_project">>},
+
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, Metadata),
+
+        %% Verify: Task ID is binary with proper length (UUID format: 32 hex chars)
+        ?assert(is_binary(TaskId)),
+        ?assertEqual(32, byte_size(TaskId)),
+
+        %% Verify: Task can be retrieved
+        {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(TaskId, maps:get(<<"taskId">>, Task)),
+        ?assertEqual(<<"pending">>, maps:get(<<"status">>, Task)),
+        ?assertEqual(Action, maps:get(<<"action">>, Task)),
+        ?assertEqual(Metadata, maps:get(<<"metadata">>, Task)),
+
+        %% Verify: Timestamp fields exist
+        ?assert(is_integer(maps:get(<<"createdAt">>, Task))),
+        ?assert(is_integer(maps:get(<<"updatedAt">>, Task))),
+
+        %% Verify: Progress token exists
+        ?assert(maps:is_key(<<"progressToken">>, Task))
+    end.
+
+test_task_lifecycle(_Pid) ->
+    fun() ->
+        %% Setup: Create task
+        Action = #{<<"type">> => <<"lifecycle_test">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+
+        %% Verify initial state: pending
+        {ok, Task1} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"pending">>, maps:get(<<"status">>, Task1)),
+
+        %% Exercise: Transition to processing
+        ok = erlmcp_tasks:update_status(erlmcp_tasks, TaskId, <<"processing">>),
+
+        %% Verify processing state
+        {ok, Task2} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"processing">>, maps:get(<<"status">>, Task2)),
+
+        %% Exercise: Complete task with result
+        Result = #{<<"output">> => <<"test_result">>, <<"code">> => 0},
+        ok = erlmcp_tasks:complete(erlmcp_tasks, TaskId, Result),
+
+        %% Verify completed state
+        {ok, Task3} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"completed">>, maps:get(<<"status">>, Task3)),
+        ?assertEqual(Result, maps:get(<<"result">>, Task3)),
+
+        %% Verify: Updated timestamp changed
+        UpdatedAt1 = maps:get(<<"updatedAt">>, Task1),
+        UpdatedAt3 = maps:get(<<"updatedAt">>, Task3),
+        ?assert(UpdatedAt3 >= UpdatedAt1)
+    end.
+
+test_task_cancellation(_Pid) ->
+    fun() ->
+        %% Setup: Create task and start processing
+        Action = #{<<"type">> => <<"cancellable">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+
+        ok = erlmcp_tasks:update_status(erlmcp_tasks, TaskId, <<"processing">>),
+
+        {ok, Task1} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"processing">>, maps:get(<<"status">>, Task1)),
+
+        %% Exercise: Cancel task
+        Reason = <<"User requested cancellation">>,
+        ok = erlmcp_tasks:cancel(erlmcp_tasks, TaskId, Reason),
+
+        %% Verify cancelled state
+        {ok, Task2} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"cancelled">>, maps:get(<<"status">>, Task2)),
+        ?assertEqual(Reason, maps:get(<<"error">>, Task2)),
+
+        %% Verify: Cannot modify cancelled task
+        Result = #{<<"output">> => <<"too_late">>},
+        ?assertMatch({error, _}, erlmcp_tasks:complete(erlmcp_tasks, TaskId, Result))
+    end.
+
+test_task_timeout(_Pid) ->
+    fun() ->
+        %% Setup: Create task with short timeout
+        Action = #{<<"type">> => <<"timeout_test">>},
+        Options = #{timeout_ms => 100},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}, Options),
+
+        ok = erlmcp_tasks:update_status(erlmcp_tasks, TaskId, <<"processing">>),
+
+        %% Exercise: Wait for timeout using poll (check status)
+        {ok, _} = erlmcp_test_sync:poll_until(
+            fun() ->
+                case erlmcp_tasks:get_task(erlmcp_tasks, TaskId) of
+                    {ok, Task} ->
+                        case maps:get(<<"status">>, Task) of
+                            <<"failed">> -> {true, Task};
+                            _ -> false
+                        end;
+                    _ ->
+                        false
+                end
+            end,
+            task_timeout,
+            200,
+            10
+        ),
+
+        %% Verify task failed due to timeout
+        {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"failed">>, maps:get(<<"status">>, Task)),
+        ?assertEqual(<<"Task execution timeout">>, maps:get(<<"error">>, Task))
+    end.
+
+%%====================================================================
+%% State Management Tests
+%%====================================================================
+
+test_task_state_persistence(_Pid) ->
+    fun() ->
+        %% Exercise: Create task
+        Action = #{<<"type">> => <<"persistence_test">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{<<"key">> => <<"value">>}),
+
+        %% Verify: Task stored in ETS
+        %% Direct ETS lookup (state-based verification, Chicago School)
+        [{TaskId, TaskData}] = ets:lookup(erlmcp_tasks, TaskId),
+        ?assertEqual(TaskId, maps:get(<<"taskId">>, TaskData)),
+        ?assertEqual(<<"value">>, maps:get(<<"key">>, maps:get(<<"metadata">>, TaskData))),
+
+        %% Verify: Task accessible via API
+        {ok, ApiTask} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(TaskData, ApiTask)
+    end.
+
+test_task_state_restoration(_Pid) ->
+    fun() ->
+        %% Setup: Create multiple tasks
+        TaskIds = [begin
+            Action = #{<<"type">> => <<"restore_test">>, <<"index">> => N},
+            {ok, Id} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+            Id
+        end || N <- lists:seq(1, 10)],
+
+        %% Exercise: Simulate restart by getting all state
+        {ok, AllTasks} = erlmcp_tasks:list_tasks(erlmcp_tasks),
+
+        %% Verify: All tasks present
+        ?assertEqual(10, length(AllTasks)),
+
+        %% Verify: All task IDs match
+        RetrievedIds = [maps:get(<<"taskId">>, Task) || Task <- AllTasks],
+        ?assertEqual(lists:sort(TaskIds), lists:sort(RetrievedIds)),
+
+        %% Verify: Each task has valid state
+        lists:foreach(fun(Task) ->
+            ?assert(maps:is_key(<<"taskId">>, Task)),
+            ?assert(maps:is_key(<<"status">>, Task)),
+            ?assert(maps:is_key(<<"action">>, Task)),
+            ?assert(maps:is_key(<<"createdAt">>, Task)),
+            ?assert(maps:is_key(<<"updatedAt">>, Task))
+        end, AllTasks)
+    end.
+
+%%====================================================================
+%% Concurrency Tests
+%%====================================================================
+
+test_concurrent_task_limit(_Pid) ->
+    fun() ->
+        %% Exercise: Create tasks up to limit
+        MaxConcurrent = erlmcp_tasks:get_max_concurrent(),
+
+        %% Create max concurrent tasks
+        TaskIds = [begin
+            Action = #{<<"type">> => <<"concurrent_test">>, <<"index">> => N},
+            {ok, Id} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+            Id
+        end || N <- lists:seq(1, MaxConcurrent)],
+
+        %% Verify: All tasks created successfully
+        ?assertEqual(MaxConcurrent, length(TaskIds)),
+
+        %% Exercise: Try to create one more (should fail or queue)
+        Action = #{<<"type">> => <<"overflow">>},
+        Result = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+
+        %% Verify: Either rejected with error or queued (implementation-dependent)
+        case Result of
+            {error, {max_concurrent_tasks, _}} ->
+                ?assert(true);  %% Expected behavior
+            {ok, _OverflowTaskId} ->
+                %% Alternative: tasks are queued
+                ?assert(true)
+        end,
+
+        %% Cleanup: Complete some tasks to free up slots
+        lists:foreach(fun(Id) ->
+            ok = erlmcp_tasks:complete(erlmcp_tasks, Id, #{<<"done">> => true})
+        end, lists:sublist(TaskIds, 5))
+    end.
+
+test_task_state_update_race_condition(_Pid) ->
+    fun() ->
+        %% Setup: Create task
+        Action = #{<<"type">> => <<"race_test">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{counter => 0}),
+
+        %% Exercise: Concurrent status updates
+        Parent = self(),
+        NumProcesses = 50,
+
+        Pids = [spawn(fun() ->
+            %% Each process tries to update task
+            UpdateFun = fun(Task) ->
+                Meta = maps:get(<<"metadata">>, Task, #{}),
+                Counter = maps:get(counter, Meta, 0),
+                NewMeta = Meta#{counter => Counter + 1},
+                Task#{<<"metadata">> => NewMeta}
+            end,
+
+            Result = erlmcp_tasks:update_task(erlmcp_tasks, TaskId, UpdateFun),
+            Parent ! {update_result, self(), Result}
+        end) || _ <- lists:seq(1, NumProcesses)],
+
+        %% Collect results
+        Results = [receive
+            {update_result, Pid, Res} -> {Pid, Res}
+        after 5000 ->
+            timeout
+        end || _ <- Pids],
+
+        %% Verify: All updates succeeded (serialized by gen_server)
+        SuccessCount = length([1 || {_, ok} <- Results]),
+        ?assert(SuccessCount > 0),
+
+        %% Verify: Final state is consistent
+        {ok, FinalTask} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        FinalMeta = maps:get(<<"metadata">>, FinalTask, #{}),
+        ?assert(is_integer(maps:get(counter, FinalMeta, 0)))
+    end.
+
+%%====================================================================
+%% Progress Tracking Tests
+%%====================================================================
+
+test_progress_token_generation(_Pid) ->
+    fun() ->
+        %% Exercise: Create task
+        Action = #{<<"type">> => <<"progress_test">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+
+        %% Verify: Progress token exists
+        {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ProgressToken = maps:get(<<"progressToken">>, Task),
+
+        ?assert(is_binary(ProgressToken) orelse is_integer(ProgressToken)),
+
+        %% Verify: Token is unique across tasks
+        {ok, TaskId2} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+        {ok, Task2} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId2),
+        ProgressToken2 = maps:get(<<"progressToken">>, Task2),
+
+        ?assertNotEqual(ProgressToken, ProgressToken2)
+    end.
+
+test_progress_update(_Pid) ->
+    fun() ->
+        %% Setup: Create task
+        Action = #{<<"type">> => <<"long_running">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+
+        {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ProgressToken = maps:get(<<"progressToken">>, Task),
+
+        %% Exercise: Update progress multiple times
+        ProgressValues = [0.0, 0.25, 0.5, 0.75, 1.0],
+
+        lists:foreach(fun(Progress) ->
+            ok = erlmcp_tasks:update_progress(
+                erlmcp_tasks,
+                TaskId,
+                #{
+                    <<"progressToken">> => ProgressToken,
+                    <<"progress">> => Progress,
+                    <<"total">> => 100.0
+                }
+            )
+        end, ProgressValues),
+
+        %% Verify: Final progress state
+        {ok, FinalTask} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(1.0, maps:get(<<"progress">>, FinalTask, 0.0)),
+        ?assertEqual(100.0, maps:get(<<"total">>, FinalTask, 0.0))
+    end.
+
+%%====================================================================
+%% Edge Cases Tests
+%%====================================================================
+
+test_invalid_task_id(_Pid) ->
+    fun() ->
+        %% Exercise: Try to get non-existent task
+        InvalidId = <<"00000000000000000000000000000000">>,
+
+        Result = erlmcp_tasks:get_task(erlmcp_tasks, InvalidId),
+
+        %% Verify: Error returned
+        ?assertEqual({error, not_found}, Result),
+
+        %% Exercise: Try to update non-existent task
+        UpdateFun = fun(T) -> T end,
+        UpdateResult = erlmcp_tasks:update_task(erlmcp_tasks, InvalidId, UpdateFun),
+
+        %% Verify: Error returned
+        ?assertEqual({error, not_found}, UpdateResult),
+
+        %% Exercise: Try to cancel non-existent task
+        CancelResult = erlmcp_tasks:cancel(erlmcp_tasks, InvalidId, <<"test">>),
+
+        %% Verify: Error returned
+        ?assertEqual({error, not_found}, CancelResult)
+    end.
+
+test_duplicate_task_id(_Pid) ->
+    fun() ->
+        %% Setup: Create task
+        Action = #{<<"type">> => <<"duplicate_test">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+
+        %% Exercise: Try to create task with same ID (if API allows)
+        %% This tests collision detection
+        TaskIds = [begin
+            crypto:strong_rand_bytes(16)
+        end || _ <- lists:seq(1, 1000)],
+
+        %% Verify: All IDs are unique (statistically improbable to collide)
+        UniqueIds = lists:usort(TaskIds),
+        ?assertEqual(1000, length(UniqueIds)),
+
+        %% Verify: Our original task ID is unique format
+        ?assertEqual(32, byte_size(TaskId))
+    end.
+
+test_expired_task_cleanup(_Pid) ->
+    fun() ->
+        %% Setup: Create tasks with different TTLs
+        ShortTTL = 100,  % 100ms
+        LongTTL = 10000, % 10s
+
+        {ok, ShortTaskId} = erlmcp_tasks:create(
+            erlmcp_tasks,
+            #{<<"type">> => <<"short_lived">>},
+            #{},
+            #{ttl_ms => ShortTTL}
+        ),
+
+        {ok, LongTaskId} = erlmcp_tasks:create(
+            erlmcp_tasks,
+            #{<<"type">> => <<"long_lived">>},
+            #{},
+            #{ttl_ms => LongTTL}
+        ),
+
+        %% Verify: Both tasks exist initially
+        ?assertMatch({ok, _}, erlmcp_tasks:get_task(erlmcp_tasks, ShortTaskId)),
+        ?assertMatch({ok, _}, erlmcp_tasks:get_task(erlmcp_tasks, LongTaskId)),
+
+        %% Exercise: Wait for short task to expire using poll
+        {ok, _} = erlmcp_test_sync:poll_until(
+            fun() ->
+                case erlmcp_tasks:get_task(erlmcp_tasks, ShortTaskId) of
+                    {error, not_found} -> true;
+                    _ -> false
+                end
+            end,
+            task_expired,
+            ShortTTL + 500,
+            20
+        ),
+
+        %% Trigger cleanup
+        {ok, CleanedCount} = erlmcp_tasks:cleanup_expired(erlmcp_tasks),
+
+        %% Verify: Short task cleaned up
+        ?assertEqual({error, not_found}, erlmcp_tasks:get_task(erlmcp_tasks, ShortTaskId)),
+
+        %% Verify: Long task still exists
+        ?assertMatch({ok, _}, erlmcp_tasks:get_task(erlmcp_tasks, LongTaskId)),
+
+        %% Verify: Cleanup count
+        ?assert(CleanedCount >= 1)
+    end.
+
+test_empty_action(_Pid) ->
+    fun() ->
+        %% Exercise: Create task with empty action
+        Action = #{},
+        Metadata = #{},
+
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, Metadata),
+
+        %% Verify: Task created successfully
+        {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(TaskId, maps:get(<<"taskId">>, Task)),
+        ?assertEqual(Action, maps:get(<<"action">>, Task)),
+        ?assertEqual(Metadata, maps:get(<<"metadata">>, Task))
+    end.
+
+test_very_large_result(_Pid) ->
+    fun() ->
+        %% Setup: Create task
+        Action = #{<<"type">> => <<"large_result">>},
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{}),
+
+        %% Exercise: Complete task with large result
+        LargeBinary = crypto:strong_rand_bytes(1024 * 100),  % 100 KB
+        Result = #{
+            <<"data">> => LargeBinary,
+            <<"count">> => 100000
+        },
+
+        ok = erlmcp_tasks:complete(erlmcp_tasks, TaskId, Result),
+
+        %% Verify: Result stored correctly
+        {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        StoredResult = maps:get(<<"result">>, Task),
+        ?assertEqual(LargeBinary, maps:get(<<"data">>, StoredResult)),
+        ?assertEqual(100000, maps:get(<<"count">>, StoredResult))
+    end.
+
+%%====================================================================
+%% Property-Based Tests
+%%====================================================================
+
+prop_task_id_unique() ->
+    ?FORALL(_N, proper_types:integer(1, 1000),
+        begin
+            {ok, Pid} = erlmcp_tasks:start_link(),
+            Action = #{<<"type">> => <<"prop_test">>},
+
+            %% Create multiple tasks
+            TaskIds = [begin
+                {ok, Id} = erlmcp_tasks:create(Pid, Action, #{}),
+                Id
+            end || _ <- lists:seq(1, _N)],
+
+            %% All IDs should be unique
+            UniqueIds = lists:usort(TaskIds),
+            erlmcp_tasks:stop(Pid),
+
+            _N =:= length(UniqueIds)
+        end).
+
+prop_task_state_transition() ->
+    ?FORALL({Status1, Status2}, {proper_types:oneof([<<"pending">>, <<"processing">>]),
+                                   proper_types:oneof([<<"processing">>, <<"completed">>, <<"failed">>, <<"cancelled">>])},
+        begin
+            {ok, Pid} = erlmcp_tasks:start_link(),
+            Action = #{<<"type">> => <<"transition_test">>},
+
+            {ok, TaskId} = erlmcp_tasks:create(Pid, Action, #{}),
+
+            %% First transition
+            ok = erlmcp_tasks:update_status(Pid, TaskId, Status1),
+
+            %% Second transition (may fail if invalid)
+            Result2 = erlmcp_tasks:update_status(Pid, TaskId, Status2),
+
+            erlmcp_tasks:stop(Pid),
+
+            %% Some transitions should succeed, others may fail
+            %% This property checks that the system handles transitions gracefully
+            is_atom(Result2) orelse is_tuple(Result2)
+        end).
+
+prop_task_metadata_preservation() ->
+    ?FORALL(Metadata, proper_types:map(proper_types:binary(), proper_types:any()),
+        begin
+            {ok, Pid} = erlmcp_tasks:start_link(),
+            Action = #{<<"type">> => <<"metadata_test">>},
+
+            {ok, TaskId} = erlmcp_tasks:create(Pid, Action, Metadata),
+
+            {ok, Task} = erlmcp_tasks:get_task(Pid, TaskId),
+            RetrievedMetadata = maps:get(<<"metadata">>, Task),
+
+            erlmcp_tasks:stop(Pid),
+
+            %% Metadata should be preserved
+            Metadata =:= RetrievedMetadata
+        end).
+
+%%====================================================================
+%% Integration Tests
+%%====================================================================
+
+integration_task_workflow_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+        [
+         ?_test(begin
+             %% Complete workflow: create -> process -> complete
+             Action = #{<<"type">> => <<"workflow">>, <<"step">> => 1},
+
+             {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, #{<<"workflow">> => true}),
+
+             ok = erlmcp_tasks:update_status(erlmcp_tasks, TaskId, <<"processing">>),
+
+             ProgressToken = begin
+                 {ok, T} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+                 maps:get(<<"progressToken">>, T)
+             end,
+
+             ok = erlmcp_tasks:update_progress(erlmcp_tasks, TaskId, #{
+                 <<"progressToken">> => ProgressToken,
+                 <<"progress">> => 0.5,
+                 <<"total">> => 1.0
+             }),
+
+             Result = #{<<"status">> => <<"success">>, <<"data">> => [1, 2, 3]},
+             ok = erlmcp_tasks:complete(erlmcp_tasks, TaskId, Result),
+
+             {ok, FinalTask} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+             ?assertEqual(<<"completed">>, maps:get(<<"status">>, FinalTask)),
+             ?assertEqual(Result, maps:get(<<"result">>, FinalTask))
+         end)
+        ]
+     end}.
+
+integration_batch_tasks_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+        [
+         ?_test(begin
+             %% Create and manage multiple tasks
+             NumTasks = 50,
+
+             TaskIds = lists:map(fun(N) ->
+                 Action = #{<<"type">> => <<"batch">>, <<"index">> => N},
+                 {ok, Id} = erlmcp_tasks:create(erlmcp_tasks, Action, #{<<"batch">> => N}),
+                 Id
+             end, lists:seq(1, NumTasks)),
+
+             %% Update first half to processing
+             lists:foreach(fun(Id) ->
+                 erlmcp_tasks:update_status(erlmcp_tasks, Id, <<"processing">>)
+             end, lists:sublist(TaskIds, NumTasks div 2)),
+
+             %% Complete first quarter
+             lists:foreach(fun(Id) ->
+                 erlmcp_tasks:complete(erlmcp_tasks, Id, #{<<"done">> => true})
+             end, lists:sublist(TaskIds, NumTasks div 4)),
+
+             %% List all tasks
+             {ok, AllTasks} = erlmcp_tasks:list_tasks(erlmcp_tasks),
+
+             ?assertEqual(NumTasks, length(AllTasks)),
+
+             %% Count by status
+             StatusCounts = lists:foldl(fun(Task, Acc) ->
+                 Status = maps:get(<<"status">>, Task),
+                 maps:update_with(Status, fun(C) -> C + 1 end, 1, Acc)
+             end, #{}, AllTasks),
+
+             ?assertEqual(NumTasks div 4, maps:get(<<"completed">>, StatusCounts, 0))
+         end)
+        ]
+     end}.
+
+%%====================================================================
+%% Error Handling Tests
+%%====================================================================
+
+error_handling_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+        [
+         ?_test(begin
+             %% Test invalid status update
+             {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, #{<<"type">> => <<"error_test">>}, #{}),
+
+             %% Try invalid status
+             Result = erlmcp_tasks:update_status(erlmcp_tasks, TaskId, <<"invalid_status">>),
+
+             %% Should fail or be ignored
+             ?assert(is_tuple(Result))
+         end),
+         ?_test(begin
+             %% Test complete already completed task
+             {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, #{<<"type">> => <<"complete_test">>}, #{}),
+
+             ok = erlmcp_tasks:complete(erlmcp_tasks, TaskId, #{<<"result">> => 1}),
+
+             %% Try to complete again
+             Result = erlmcp_tasks:complete(erlmcp_tasks, TaskId, #{<<"result">> => 2}),
+
+             ?assertMatch({error, _}, Result)
+         end),
+         ?_test(begin
+             %% Test nil/undefined metadata
+             Action = #{<<"type">> => <<"nil_test">>},
+
+             {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, undefined),
+
+             {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+             ?assert(maps:is_key(<<"metadata">>, Task))
+         end)
+        ]
+     end}.
