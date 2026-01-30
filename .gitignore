@@ -43,6 +43,8 @@ ct_logs/
 cover/
 .cover/
 erl_crash.dump
+test_results/quality_gates/*.log
+test_results/quality_gates/*.txt
 
 # IDE
 .erlang.cookie
@@ -52,3 +54,22 @@ Mnesia.*/
 
 # Generated artifacts (ggen)
 /generated/
+
+# Backup files and broken modules
+*.bak
+*.broken
+*.old
+*.crashdump
+
+# Agent-generated documentation (archived separately)
+AGENT_*_*.md
+*_SUMMARY.md
+*_REPORT.md
+MERGE_*.md
+*_FIX.md
+*_FIXES.md
+*_ASSESSMENT.md
+*_ANALYSIS.md
+
+# Archive directory for old documentation
+docs/archive/cleanup_*/
