@@ -285,6 +285,14 @@ handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
     notify_tools_changed(State),
     {reply, ok, State#state{tools = NewTools}};
 
+handle_call({add_tool_with_description, Name, Description, Handler}, _From, State) ->
+    Tool = #mcp_tool{
+        name = Name,
+        description = Description
+    },
+    NewTools = maps:put(Name, {Tool, Handler, undefined}, State#state.tools),
+    notify_tools_changed(State),
+    {reply, ok, State#state{tools = NewTools}};
 
 handle_call({add_tool_full, Name, Description, Handler, Options}, _From, State) ->
     InputSchema = maps:get(<<"inputSchema">>, Options, undefined),
@@ -348,7 +356,8 @@ handle_call({delete_resource, Uri}, _From, State) ->
     case maps:is_key(Uri, State#state.resources) of
         true ->
             NewResources = maps:remove(Uri, State#state.resources),
-            notify_resources_changed(State),
+            %% Notify about list changed inline
+            _ = notify_list_changed(resources, State),
             {reply, ok, State#state{resources = NewResources}};
         false ->
             {reply, {error, not_found}, State}

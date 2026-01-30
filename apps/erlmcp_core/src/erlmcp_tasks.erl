@@ -134,15 +134,20 @@ set_task_progress(TaskId, Progress) when is_binary(TaskId) ->
 init([]) ->
     logger:info("Starting MCP Tasks manager"),
 
-    % Create ETS table for tasks
-    ets:new(?TASKS_TABLE, [
-        named_table,
-        public,
-        set,
-        {keypos, #mcp_task.id},
-        {read_concurrency, true},
-        {write_concurrency, true}
-    ]),
+    % Create ETS table for tasks (only if it doesn't exist)
+    case ets:info(?TASKS_TABLE) of
+        undefined ->
+            ets:new(?TASKS_TABLE, [
+                named_table,
+                public,
+                set,
+                {keypos, #mcp_task.id},
+                {read_concurrency, true},
+                {write_concurrency, true}
+            ]);
+        _ ->
+            ok  % Table already exists
+    end,
 
     % Schedule periodic cleanup of expired tasks
     schedule_cleanup(),
@@ -687,8 +692,8 @@ format_task_for_api(#mcp_task{
         _ -> Base2#{<<"expiresAt">> => ExpiresAt}
     end,
 
-    Base4 = case Metadata of
-        #{} -> Base3;
+    Base4 = case maps:size(Metadata) of
+        0 -> Base3;
         _ -> Base3#{?MCP_PARAM_METADATA => Metadata}
     end,
 

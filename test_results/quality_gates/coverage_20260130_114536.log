@@ -1,0 +1,102 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+   ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+   │
+ 6 │  -[1;31mrecord[0m(state, {[0m
+   │   [1;31m╰──[0m[0m Warning: record state is unused
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1008 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1008 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1026 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1026 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1050 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1050 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1068 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1068 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1087 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1087 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1105 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1105 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1124 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1124 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mCompiling apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl failed
+[0m[0m     ┌─ apps/erlmcp_validation/test/erlmcp_error_handling_robustness_SUITE.erl:
+     │
+ 346 │              [1;31m{[0mcomment, "Remediation information not yet implemented"};[0m
+     │              [1;31m╰──[0m[0m a term is constructed, but never used
+
+

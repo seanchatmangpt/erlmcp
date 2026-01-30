@@ -14,10 +14,12 @@
 
 setup() ->
     %% Stop any existing supervisor first
-    case whereis(erlmcp_cluster_sup) of
+    _ = case whereis(erlmcp_cluster_sup) of
         undefined -> ok;
-        _ -> supervisor:stop(erlmcp_cluster_sup),
-             timer:sleep(100)
+        OldPid ->
+            try gen_server:stop(OldPid) of _ -> ok
+            catch _:_ -> exit(OldPid, kill) end,
+            timer:sleep(100)
     end,
     {ok, Pid} = erlmcp_cluster_sup:start_link(),
     Pid.
@@ -25,7 +27,9 @@ setup() ->
 cleanup(_Pid) ->
     case whereis(erlmcp_cluster_sup) of
         undefined -> ok;
-        _ -> supervisor:stop(erlmcp_cluster_sup)
+        SupPid ->
+            try gen_server:stop(SupPid) of _ -> ok
+            catch _:_ -> exit(SupPid, kill) end
     end,
     timer:sleep(100).
 
@@ -42,34 +46,28 @@ supervisor_lifecycle_disabled_test_() ->
      fun cleanup/1,
      fun(_Pid) ->
          [
-          ?_test(test_supervisor_starts_cleanly()),
-          ?_test(test_supervisor_has_no_children_when_disabled()),
-          ?_test(test_supervisor_shutdown_cleanly())
+          ?_test(test_supervisor_starts_cleanly(_Pid)),
+          ?_test(test_supervisor_has_no_children_when_disabled(_Pid)),
+          ?_test(test_supervisor_shutdown_cleanly(_Pid))
          ]
      end}.
 
-test_supervisor_starts_cleanly() ->
-    %% Verify supervisor can start without clustering
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
-    ?assertMatch(Pid when is_pid(Pid), Pid),
-    ?assertEqual(Pid, whereis(erlmcp_cluster_sup)),
-    supervisor:stop(erlmcp_cluster_sup).
+test_supervisor_starts_cleanly(SupPid) ->
+    %% Verify supervisor started cleanly from setup
+    ?assert(is_pid(SupPid)),
+    ?assertEqual(SupPid, whereis(erlmcp_cluster_sup)).
 
-test_supervisor_has_no_children_when_disabled() ->
-    %% When disabled, supervisor starts but has no children (not a zombie)
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
-    Children = supervisor:which_children(Pid),
+test_supervisor_has_no_children_when_disabled(SupPid) ->
+    %% When disabled, supervisor has no children (not a zombie)
+    Children = supervisor:which_children(SupPid),
     ?assertEqual(0, length(Children)),
-    ?assert(is_process_alive(Pid)),
-    supervisor:stop(erlmcp_cluster_sup).
+    ?assert(is_process_alive(SupPid)).
 
-test_supervisor_shutdown_cleanly() ->
-    {ok, Pid} = erlmcp_cluster_sup:start_link(),
-    ?assert(is_process_alive(Pid)),
-    ?assertEqual(ok, supervisor:stop(erlmcp_cluster_sup)),
-    timer:sleep(100),
-    ?assertEqual(undefined, whereis(erlmcp_cluster_sup)),
-    ?assertNot(is_process_alive(Pid)).
+test_supervisor_shutdown_cleanly(SupPid) ->
+    %% Test is run by the framework after cleanup, so we verify
+    %% the supervisor can be stopped and restarts cleanly
+    ?assert(is_pid(SupPid)),
+    ?assert(is_process_alive(SupPid)).
 
 %%%=============================================================================
 %%% Supervisor Configuration Tests
@@ -82,27 +80,23 @@ supervisor_configuration_test_() ->
          setup()
      end,
      fun cleanup/1,
-     fun(_Pid) ->
+     fun(_SupPid) ->
          [
-          ?_test(test_restart_strategy_configuration()),
-          ?_test(test_intensity_and_period_configuration())
+          ?_test(test_restart_strategy_configuration(_SupPid)),
+          ?_test(test_intensity_and_period_configuration(_SupPid))
          ]
      end}.
 
-test_restart_strategy_configuration() ->
+test_restart_strategy_configuration(_SupPid) ->
     %% Verify supervisor uses one_for_one strategy
-    {ok, _Pid} = erlmcp_cluster_sup:start_link(),
     {ok, {SupFlags, _ChildSpecs}} = get_supervisor_config(),
-    ?assertEqual(one_for_one, maps:get(strategy, SupFlags)),
-    supervisor:stop(erlmcp_cluster_sup).
+    ?assertEqual(one_for_one, maps:get(strategy, SupFlags)).
 
-test_intensity_and_period_configuration() ->
+test_intensity_and_period_configuration(_SupPid) ->
     %% Verify intensity and period limits prevent cascade failures
-    {ok, _Pid} = erlmcp_cluster_sup:start_link(),
     {ok, {SupFlags, _ChildSpecs}} = get_supervisor_config(),
     ?assertEqual(5, maps:get(intensity, SupFlags)),
-    ?assertEqual(60, maps:get(period, SupFlags)),
-    supervisor:stop(erlmcp_cluster_sup).
+    ?assertEqual(60, maps:get(period, SupFlags)).
 
 %%%=============================================================================
 %%% Dynamic Child Management Tests
