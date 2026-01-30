@@ -1,0 +1,427 @@
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Fetching opentelemetry v1.7.0
+[0m[0;32m===> Fetching opentelemetry_exporter v1.10.0
+[0m[0;32m===> Fetching poolboy v1.5.2
+[0m[0;32m===> Fetching ranch v2.1.0
+[0m[0;32m===> Fetching cowlib v2.12.1
+[0m[0;32m===> Fetching parse_trans v3.4.0
+[0m[0;32m===> Fetching setup v2.1.0
+[0m[0;32m===> Fetching tls_certificate_check v1.31.0
+[0m[0;32m===> Fetching ctx v0.6.0
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling setup
+[0m[0;32m===> Compiling parse_trans
+[0m[0;32m===> Compiling jobs
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;32m===> Compiling acceptor_pool
+[0m[0;32m===> Compiling grpcbox
+[0m[0;32m===> Compiling opentelemetry_exporter
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling cowlib
+[0m[0;32m===> Compiling gun
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Building escript for setup...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 885 │                  [1;31m{[0mnoreply, State};[0m
+     │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 895 │                                  [1;31m{[0mnoreply, State};[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 900 │                                  [1;31m{[0mnoreply, State}[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 906 │                          [1;31m{[0mnoreply, State}[0m
+     │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl:
+     │
+ 370 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;32m===> Running Common Test suites...
+[0m%%% erlmcp_integration_SUITE: 
+%%% erlmcp_integration_SUITE ==> init_per_suite: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{{case_clause,{error,{"no such file or directory","erlmcp.app"}}},
+ [{erlmcp_integration_SUITE,init_per_suite,1,
+                            [{file,"test/erlmcp_integration_SUITE.erl"},
+                             {line,148}]},
+  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+  {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1391}]},
+  {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_system_startup_shutdown: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_complete_message_flow: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_multi_transport_coordination: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_server_registry_coordination: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_configuration_loading: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_configuration_hot_reload: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_transport_config_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_failure_recovery_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_transport_failure_recovery: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_server_crash_recovery: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_registry_failure_handling: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_concurrent_connections: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_high_message_throughput: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_resource_management_under_load: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_real_mcp_client_interaction: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_tool_execution_end_to_end: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_resource_access_end_to_end: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_prompt_handling_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_monitoring_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_metrics_collection_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_tracing_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> end_per_suite: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {{case_clause,
+                     {error,{"no such file or directory","erlmcp.app"}}},
+                 [{erlmcp_integration_SUITE,init_per_suite,1,
+                      [{file,"test/erlmcp_integration_SUITE.erl"},{line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1391}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]}}}}}[0m[0m
+EXPERIMENTAL: Writing retry specification at /Users/sac/erlmcp/_build/test/logs/retry.spec
+              call rebar3 ct with '--retry' to re-run failing cases.
+Skipped 21 (0, 21) tests. Passed 0 tests. 
+Results written to "/Users/sac/erlmcp/_build/test/logs/index.html".
+[0;31m===> [1mFailures occurred running tests: 21
+[0m[0m

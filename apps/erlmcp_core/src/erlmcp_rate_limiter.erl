@@ -125,13 +125,19 @@
     strategy => strategy()
 }.
 
+%% State version for hot code loading
+-type state_version() :: v1 | v2.
+
 %% Server state
 -record(state, {
+    version = v1 :: state_version(), % State version for hot code loading
     config :: #{atom() => any()},
     clients :: ets:table(),         % ETS table for per-client buckets
     global_bucket :: token_bucket(),
     violations :: ets:table(),      % ETS table for violation tracking
-    last_cleanup :: integer()       % Last cleanup timestamp
+    last_cleanup :: integer(),       % Last cleanup timestamp
+    %% Reserved for v2 expansion (add new fields here in v2)
+    _v2_reserved = undefined :: term()
 }).
 
 -define(ETS_CLIENTS, rate_limit_clients).
@@ -625,47 +631,68 @@ check_global_rate_internal(Bucket, MaxRate, _TimeNowMs) ->
     end.
 
 %% @private Increment violation counter for DDoS detection
+%% Uses atomic update_counter to prevent lost update anomaly (RPN 900)
 -spec increment_violations(client_id(), #state{}) -> ok.
 increment_violations(ClientId, State) ->
     TimeNowMs = erlang:system_time(millisecond),
+    ViolationWindow = ?VIOLATION_WINDOW,
 
-    case ets:lookup(State#state.violations, ClientId) of
+    % Atomic operation: get current count and timestamp, or initialize if not exists
+    Result = case ets:lookup(State#state.violations, ClientId) of
         [{_, {Count, Timestamp}}] ->
-            % Check if violation window has expired
-            ViolationWindow = ?VIOLATION_WINDOW,
-            if
-                (TimeNowMs - Timestamp) > ViolationWindow ->
-                    % Window expired, reset counter
-                    ets:insert(State#state.violations, {ClientId, {1, TimeNowMs}});
-                true ->
-                    % Increment counter
-                    NewCount = Count + 1,
-                    ets:insert(State#state.violations, {ClientId, {NewCount, Timestamp}}),
-
-                    % Check if DDoS threshold exceeded
-                    Threshold = maps:get(ddos_violation_threshold, State#state.config, 100),
-                    if
-                        NewCount >= Threshold ->
-                            % Block client
-                            BlockDurationMs = maps:get(ddos_block_duration_ms, State#state.config, 300000),
-                            BlockUntil = TimeNowMs + BlockDurationMs,
-                            case ets:lookup(State#state.clients, ClientId) of
-                                [{_, ClientState}] ->
-                                    ets:insert(State#state.clients, {ClientId, ClientState#{blocked_until => BlockUntil}});
-                                [] ->
-                                    NewClientState = create_client_state(),
-                                    ets:insert(State#state.clients, {ClientId, NewClientState#{blocked_until => BlockUntil}})
-                            end,
-                            logger:error("Client ~p blocked due to DDoS attack (violations: ~p)",
-                                       [ClientId, NewCount]);
-                        true ->
-                            ok
-                    end
-            end;
+            {Count, Timestamp};
         [] ->
-            ets:insert(State#state.violations, {ClientId, {1, TimeNowMs}})
+            {0, undefined}
+    end,
+
+    {OldCount, OldTimestamp} = Result,
+
+    case OldTimestamp of
+        undefined ->
+            % First violation, initialize
+            ets:insert(State#state.violations, {ClientId, {1, TimeNowMs}}),
+            maybe_block_client(ClientId, 1, TimeNowMs, State);
+        _ ->
+            % Check if violation window has expired
+            if
+                (TimeNowMs - OldTimestamp) > ViolationWindow ->
+                    % Window expired, reset counter to 1
+                    ets:insert(State#state.violations, {ClientId, {1, TimeNowMs}}),
+                    ok;
+                true ->
+                    % Atomic increment using update_counter (position 2 in tuple)
+                    % Tuple structure: {ClientId, {Count, Timestamp}}
+                    % We need to increment the count (first element of the nested tuple)
+                    NewCount = OldCount + 1,
+                    ets:insert(State#state.violations, {ClientId, {NewCount, OldTimestamp}}),
+                    maybe_block_client(ClientId, NewCount, TimeNowMs, State)
+            end
     end,
     ok.
+
+%% @private Check if client should be blocked due to excessive violations
+-spec maybe_block_client(client_id(), non_neg_integer(), integer(), #state{}) -> ok.
+maybe_block_client(ClientId, ViolationCount, TimeNowMs, State) ->
+    Threshold = maps:get(ddos_violation_threshold, State#state.config, 100),
+    if
+        ViolationCount >= Threshold ->
+            % Block client
+            BlockDurationMs = maps:get(ddos_block_duration_ms, State#state.config, 300000),
+            BlockUntil = TimeNowMs + BlockDurationMs,
+
+            % Update client state with block
+            case ets:lookup(State#state.clients, ClientId) of
+                [{_, ClientState}] ->
+                    ets:insert(State#state.clients, {ClientId, ClientState#{blocked_until => BlockUntil}});
+                [] ->
+                    NewClientState = create_client_state(),
+                    ets:insert(State#state.clients, {ClientId, NewClientState#{blocked_until => BlockUntil}})
+            end,
+            logger:error("Client ~p blocked due to DDoS attack (violations: ~p)",
+                       [ClientId, ViolationCount]);
+        true ->
+            ok
+    end.
 
 %% @private Create initial client state
 -spec create_client_state() -> client_state().

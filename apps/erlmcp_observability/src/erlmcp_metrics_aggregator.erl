@@ -368,7 +368,7 @@ export_metrics_internal(State, csv) ->
                  ++ State#state.buckets_1hr,
     Header = <<"timestamp,throughput,latency_p99,errors,connections,memory_mb,cpu_percent\n">>,
     Rows = lists:map(fun(B) ->
-        #{latency_p99 := P99} = calculate_percentiles(B#bucket.latencies),
+        #{p99 := P99} = calculate_percentiles(B#bucket.latencies),
         io_lib:format("~p,~p,~p,~p,~p,~.2f,~.2f\n", [
             B#bucket.timestamp,
             B#bucket.throughput,

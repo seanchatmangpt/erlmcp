@@ -97,14 +97,9 @@ test_stdio_init() ->
     {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
 
     try
-        % Verify transport started
+        %% Verify transport started (observable behavior)
         ?assert(is_pid(Transport)),
-        ?assert(is_process_alive(Transport)),
-
-        % Get transport state - verify it's a valid state
-        {ok, State} = gen_server:call(Transport, get_state),
-        ?assert(is_tuple(State)),
-        ?assert(tuple_size(State) >= 1)
+        ?assert(is_process_alive(Transport))
     after
         catch gen_server:stop(Transport, normal, 1000)
     end.
@@ -153,16 +148,14 @@ test_stdio_close() ->
 test_stdio_test_mode() ->
     Owner = self(),
 
-    % Ensure test mode is set
+    %% Ensure test mode is set
     put(test_mode, true),
 
     {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
 
     try
-        {ok, State} = gen_server:call(Transport, get_state),
-
-        % In test mode, should not start reader
-        ?assert(is_tuple(State))
+        %% In test mode, transport should be alive
+        ?assert(is_process_alive(Transport))
     after
         catch gen_server:stop(Transport, normal, 1000)
     end.
@@ -197,17 +190,15 @@ test_stdio_simulated_input() ->
 test_stdio_reader_lifecycle() ->
     Owner = self(),
 
-    % Disable test mode to start reader
+    %% Disable test mode to start reader
     erase(test_mode),
 
     {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
 
     try
-        {ok, State} = gen_server:call(Transport, get_state),
-
-        % In non-test mode, reader might be started
-        % (or not if stdin is unavailable, which is expected in tests)
-        ?assert(is_tuple(State))
+        %% In non-test mode, transport should be alive
+        %% (reader may or may not start depending on stdin availability)
+        ?assert(is_process_alive(Transport))
     after
         catch gen_server:stop(Transport, normal, 1000)
     end.
@@ -322,10 +313,8 @@ test_stdio_buffer_management() ->
     {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
 
     try
-        {ok, State} = gen_server:call(Transport, get_state),
-
-        % Buffer should be initialized
-        ?assert(is_tuple(State))
+        %% Verify transport is alive (observable behavior)
+        ?assert(is_process_alive(Transport))
     after
         catch gen_server:stop(Transport, normal, 1000)
     end.
@@ -504,10 +493,8 @@ test_stdio_state_management() ->
     {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
 
     try
-        {ok, State} = gen_server:call(Transport, get_state),
-
-        % Verify state is valid
-        ?assert(is_tuple(State))
+        %% Verify transport is alive (observable behavior)
+        ?assert(is_process_alive(Transport))
     after
         catch gen_server:stop(Transport, normal, 1000)
     end.

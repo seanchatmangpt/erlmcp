@@ -713,7 +713,7 @@
 %% Client capabilities sent during initialize
 -record(mcp_client_capabilities, {
     roots = #mcp_capability{} :: #mcp_capability{},
-    sampling = #mcp_capability{} :: #mcp_capability{},
+    sampling = #mcp_sampling_capability{} :: #mcp_sampling_capability{},
     tools = #mcp_tools_capability{} :: #mcp_tools_capability{},
     experimental = undefined :: map() | undefined
 }).
@@ -883,5 +883,22 @@
     notifier_pid :: pid() | undefined,
     initialized = false :: boolean()
 }).
+
+%%% Trace Analysis Record (for erlmcp_trace_analyzer)
+-record(trace_analysis, {
+    trace_id :: binary(),
+    bottlenecks = [] :: [map()],
+    performance_score = 0 :: number(),
+    avg_duration = 0 :: number(),
+    error_rate = 0.0 :: float(),
+    recommendations = [] :: [binary()],
+    analyzed_at :: integer()
+}).
+
+%%% Request ID Space Monitoring (RPN 720: Request ID Overflow Fix)
+-define(MAX_SAFE_REQUEST_ID, 1152921504606846975).  % 2^60 - 1
+-define(ID_WARNING_THRESHOLD, 922337203685477580).  % 80% of max
+-define(ID_CRITICAL_THRESHOLD, 1037629354146165277). % 90% of max
+-define(ID_RESERVED_THRESHOLD, 1106804644422573050). % 96% of max
 
 -endif.

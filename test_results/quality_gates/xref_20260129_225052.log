@@ -1,0 +1,57 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;31m===> [1mCompiling apps/erlmcp_transports/src/erlmcp_transport_pool.erl failed
+[0m[0m     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 152 │      {ok, #state{pools = #{PoolId => PoolWithConnections}, health_timer [1;31m=> [0mTimer}}.[0m
+     │                                                                         [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 429 │              _ [1;31m=> [0mInUseCount / TotalSize[0m
+     │                [1;31m╰──[0m[0m syntax error before: '=>'
+
+
+    ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+    │
+ 34 │  -[1;31mexport[0m([init/1, handle_call/3, handle_cast/2, handle_info/2,[0m
+    │   [1;31m╰──[0m[0m function init/1 undefined
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 162 │              Stats = [1;31mcalculate_pool_stats[0m(PoolId, PoolState),[0m
+     │                      [1;31m╰──[0m[0m function calculate_pool_stats/2 undefined
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 211 │      {noreply, NewState#state{[1;31mhealth_timer[0m = Timer}};[0m
+     │                               [1;31m╰──[0m[0m field health_timer undefined in record state
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 220 │  terminate(_Reason, #state{pools = Pools, [1;31mhealth_timer[0m = Timer}) ->[0m
+     │                                           [1;31m╰──[0m[0m field health_timer undefined in record state
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 224 │      end, [1;31mPools[0m),[0m
+     │           [1;31m╰──[0m[0m variable 'Pools' is unbound
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 227 │      case [1;31mTimer[0m of[0m
+     │           [1;31m╰──[0m[0m variable 'Timer' is unbound
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_pool.erl:
+     │
+ 413 │  -[1;31mspec[0m calculate_pool_stats(pool_id(), pool_state()) -> map().[0m
+     │   [1;31m╰──[0m[0m spec for undefined function calculate_pool_stats/2
+
+

@@ -1,0 +1,18 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Running cross reference analysis...
+[0m[0;31m===> [1mapps/erlmcp_core/src/erlmcp.erl:95: Warning: erlmcp:update_server_config/2 calls undefined function erlmcp_registry:update_server/2 (Xref)
+apps/erlmcp_core/src/erlmcp_hooks.erl:288: Warning: erlmcp_hooks:do_post_task/3 calls undefined function tcps_quality_gates:check_all_gates/1 (Xref)
+apps/erlmcp_core/src/erlmcp_hooks.erl:419: Warning: erlmcp_hooks:do_session_end/2 calls undefined function tcps_quality_gates:get_quality_metrics/0 (Xref)
+apps/erlmcp_core/src/erlmcp_registry.erl: Warning: erlmcp_registry:update_server/2 is undefined function (Xref)
+Warning: tcps_quality_gates:check_all_gates/1 is undefined function (Xref)
+Warning: tcps_quality_gates:get_quality_metrics/0 is undefined function (Xref)
+
+[0m[0m

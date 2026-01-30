@@ -1,3 +1,9 @@
+---
+name: erlmcp-agents
+description: erlmcp agent registry for Claude Code
+version: 1.0.0
+---
+
 # erlmcp Agents (v1.0.0)
 
 **Last Updated**: 2026-01-27

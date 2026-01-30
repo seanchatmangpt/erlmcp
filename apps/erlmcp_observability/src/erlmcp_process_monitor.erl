@@ -279,7 +279,7 @@ calculate_connection_capacity(ProcessLimit, CapacityConfig) ->
     } = CapacityConfig,
 
     %% Calculate memory-limited capacity
-    MemoryCapacity = (TargetMemory * (1.0 - SafetyMargin)) div PerConnOverhead,
+    MemoryCapacity = trunc((TargetMemory * (1.0 - SafetyMargin)) / PerConnOverhead),
 
     %% Calculate process-limited capacity (assume 70% of limit for safety)
     ProcessCapacity = trunc(ProcessLimit * 0.70),

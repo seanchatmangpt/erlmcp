@@ -112,7 +112,9 @@ init([Port]) ->
             {"/", cowboy_static, {priv_file, erlmcp_observability, "dashboard/index.html"}},
             {"/static/[...]", cowboy_static, {priv_dir, erlmcp_observability, "dashboard/static"}},
             {"/ws", ?MODULE, []},
-            {"/api/metrics", erlmcp_dashboard_http_handler, []}
+            {"/api/metrics", erlmcp_dashboard_http_handler, []},
+            {"/api/metrics/historical", erlmcp_dashboard_http_handler, []},
+            {"/api/metrics/export", erlmcp_dashboard_http_handler, []}
         ]}
     ]),
 

@@ -133,24 +133,58 @@ init_per_suite(Config) ->
     end,
     
     %% Start dependencies for JSON handling and validation
-    DepsToStart = [jsx, jesse, opentelemetry_api, opentelemetry],
+    DepsToStart = [gproc, jsx, jesse],
     lists:foreach(fun(App) ->
         case application:start(App) of
             ok -> ok;
             {error, {already_started, App}} -> ok;
-            {error, {not_started, _}} -> 
+            {error, {not_started, _}} ->
                 %% Try to start the app anyway, might work
                 application:start(App, temporary)
         end
     end, DepsToStart),
+
+    %% Start optional dependencies (OpenTelemetry)
+    OptionalDeps = [opentelemetry_api, opentelemetry],
+    lists:foreach(fun(App) ->
+        case application:start(App) of
+            ok -> ok;
+            {error, {already_started, App}} -> ok;
+            {error, {not_started, _}} ->
+                %% Optional dependency not available, continue
+                ok;
+            {error, _} ->
+                %% Optional dependency failed to start, continue
+                ok
+        end
+    end, OptionalDeps),
     
-    %% Start ErlMCP application
-    case application:start(erlmcp) of
-        ok -> ok;
-        {error, {already_started, erlmcp}} -> ok;
-        {error, {not_started, _}} ->
-            %% Try to start it anyway
-            application:start(erlmcp, temporary)
+    %% Start ErlMCP Core application
+    case application:start(erlmcp_core) of
+        ok ->
+            ct:pal("Started erlmcp_core application successfully"),
+            ok;
+        {error, {already_started, erlmcp_core}} ->
+            ct:pal("erlmcp_core application already started"),
+            ok;
+        {error, {not_started, Dep}} ->
+            ct:pal("Error starting erlmcp_core: dependency ~p not started, trying to start it", [Dep]),
+            case application:start(Dep, temporary) of
+                ok ->
+                    ct:pal("Started dependency ~p, retrying erlmcp_core", [Dep]),
+                    case application:start(erlmcp_core, temporary) of
+                        ok -> ok;
+                        {error, Reason2} ->
+                            ct:pal("Failed to start erlmcp_core after starting ~p: ~p", [Dep, Reason2]),
+                            {error, Reason2}
+                    end;
+                {error, Reason1} ->
+                    ct:pal("Failed to start dependency ~p: ~p", [Dep, Reason1]),
+                    {error, Reason1}
+            end;
+        {error, Reason} ->
+            ct:pal("Failed to start erlmcp_core: ~p", [Reason]),
+            {error, Reason}
     end,
     
     %% Wait for system to stabilize
@@ -166,7 +200,7 @@ end_per_suite(Config) ->
     ct:pal("Ending ErlMCP Integration Test Suite"),
     
     %% Stop application
-    application:stop(erlmcp),
+    application:stop(erlmcp_core),
     
     %% Calculate total suite time
     StartTime = proplists:get_value(suite_start_time, Config, 0),

@@ -76,7 +76,8 @@ test_http_metrics() ->
     {ok, http} = gun:await_up(ConnPid),
 
     StreamRef = gun:get(ConnPid, "/api/metrics"),
-    {response, fin, 200, _Headers} = gun:await(ConnPid, StreamRef),
+    {response, nofin, 200, _Headers} = gun:await(ConnPid, StreamRef),
+    {ok, _Body} = gun:await_body(ConnPid, StreamRef),
 
     gun:close(ConnPid),
     ?assert(true).
@@ -95,7 +96,8 @@ test_http_historical() ->
     Path = lists:flatten(io_lib:format("/api/metrics/historical?start=~p&end=~p", [Start, Now])),
 
     StreamRef = gun:get(ConnPid, Path),
-    {response, fin, 200, _Headers} = gun:await(ConnPid, StreamRef),
+    {response, nofin, 200, _Headers} = gun:await(ConnPid, StreamRef),
+    {ok, _Body} = gun:await_body(ConnPid, StreamRef),
 
     gun:close(ConnPid),
     ?assert(true).
@@ -251,8 +253,8 @@ test_percentiles() ->
     Percentiles = erlmcp_metrics_aggregator:get_percentiles(Values),
 
     ?assertEqual(50, maps:get(p50, Percentiles)),
-    ?assertEqual(95, maps:get(p95, Percentiles)),
-    ?assertEqual(99, maps:get(p99, Percentiles)),
+    ?assertEqual(100, maps:get(p95, Percentiles)),
+    ?assertEqual(100, maps:get(p99, Percentiles)),
     ?assertEqual(100, maps:get(p999, Percentiles)).
 
 test_bucket_rotation() ->

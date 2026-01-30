@@ -89,9 +89,14 @@ init_per_group(multi_node, Config) ->
     application:set_env(erlmcp_core, cluster_enabled, true),
     application:set_env(erlmcp_core, cluster_cookie, erlmcp_test_cookie),
 
-    %% Start slave nodes
-    Nodes = start_slave_nodes(2, Config),
-    [{slave_nodes, Nodes} | Config].
+    %% Start slave nodes with better error handling
+    case start_slave_nodes(2, Config) of
+        {ok, Nodes} ->
+            [{slave_nodes, Nodes} | Config];
+        {error, Reason} ->
+            ct:pal("Failed to start slave nodes: ~p~nSkipping multi-node tests", [Reason]),
+            {skip, {slave_start_failed, Reason}}
+    end.
 
 end_per_group(single_node, _Config) ->
     ok;
@@ -331,26 +336,37 @@ node_reconnection(Config) ->
 %% Helper Functions
 %%====================================================================
 
-start_slave_nodes(Count, _Config) ->
-    start_slave_nodes(Count, 1, []).
+start_slave_nodes(Count, Config) ->
+    start_slave_nodes(Count, 1, [], Config).
 
-start_slave_nodes(0, _N, Acc) ->
-    lists:reverse(Acc);
-start_slave_nodes(Count, N, Acc) ->
-    NodeName = list_to_atom("slave" ++ integer_to_list(N)),
-    {ok, Node} = ct_slave:start(NodeName, [
-        {boot_timeout, 10},
-        {init_timeout, 10},
-        {startup_timeout, 10},
+start_slave_nodes(0, _N, Acc, _Config) ->
+    {ok, lists:reverse(Acc)};
+start_slave_nodes(Count, N, Acc, Config) ->
+    NodeName = list_to_atom("slave" ++ integer_to_list(N) ++ "@" ++ net_adm:localhost()),
+
+    case ct_slave:start(NodeName, [
+        {boot_timeout, 60},
+        {init_timeout, 60},
+        {startup_timeout, 60},
         {monitor_master, true},
         {kill_if_fail, true},
-        {erl_flags, "-setcookie erlmcp_test_cookie"}
-    ]),
-
-    %% Ensure node is connected
-    pong = net_adm:ping(Node),
-
-    start_slave_nodes(Count - 1, N + 1, [Node | Acc]).
+        {erl_flags, "-setcookie erlmcp_test_cookie -kernel dist_auto_connect once"}
+    ]) of
+        {ok, Node} ->
+            %% Ensure node is connected
+            case net_adm:ping(Node) of
+                pong ->
+                    ct:pal("Successfully started slave node ~p", [Node]),
+                    start_slave_nodes(Count - 1, N + 1, [Node | Acc], Config);
+                pang ->
+                    ct:pal("Failed to ping slave node ~p", [Node]),
+                    ct_slave:stop(Node),
+                    {error, {ping_failed, Node}}
+            end;
+        {error, Reason} ->
+            ct:pal("Failed to start slave node ~p: ~p", [NodeName, Reason]),
+            {error, {start_failed, NodeName, Reason}}
+    end.
 
 setup_cluster_on_nodes(Nodes) ->
     lists:foreach(fun(Node) ->
