@@ -41,8 +41,12 @@
 
 -export_type([session_id/0, session_data/0]).
 
+%% State version for hot code loading
+-type state_version() :: v1 | v2.
+
 %% State record
 -record(state, {
+    version = v1 :: state_version(),  % State version for hot code loading
     table :: ets:tid(),
     cleanup_timer :: reference() | undefined,
     cleanup_interval_ms = 60000 :: pos_integer(),  % 1 minute
@@ -283,8 +287,38 @@ terminate(_Reason, State) ->
     ok.
 
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(OldVsn, State, Extra) ->
+    try
+        logger:info("Session manager: Code change from ~p", [OldVsn]),
+        NewState = migrate_session_state(OldVsn, State, Extra),
+        logger:info("Session manager: Code change completed successfully"),
+        {ok, NewState}
+    catch
+        Class:Reason:Stack ->
+            logger:error("Session manager: Code change failed: ~p:~p~n~p",
+                        [Class, Reason, Stack]),
+            error({code_change_failed, Class, Reason})
+    end.
+
+%% @private Migrate session manager state based on version
+-spec migrate_session_state(term(), #state{}, term()) -> #state{}.
+migrate_session_state(_OldVsn, #state{version = v1} = State, _Extra) ->
+    %% Already at current version (v1)
+    State;
+migrate_session_state({down, _FromVsn}, #state{} = State, _Extra) ->
+    %% Downgrade migration - ensure version field exists
+    case State#state.version of
+        undefined -> State#state{version = v1};
+        _ -> State
+    end;
+migrate_session_state(OldVsn, #state{version = undefined} = State, _Extra)
+  when is_list(OldVsn); is_atom(OldVsn) ->
+    %% Legacy state (pre-versioning) - upgrade to v1
+    logger:info("Session manager: Upgrading legacy state to v1"),
+    State#state{version = v1};
+migrate_session_state(OldVsn, State, _Extra) ->
+    logger:warning("Session manager: Unknown code_change from version ~p", [OldVsn]),
+    State.
 
 %%====================================================================
 %% Internal Functions

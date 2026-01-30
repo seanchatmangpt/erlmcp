@@ -1,0 +1,37 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Fetching fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Running cross reference analysis...
+[0m[0;31m===> [1mapps/erlmcp_observability/src/erlmcp_chaos_resource.erl:71: Warning: erlmcp_chaos_resource:allocate_chunks/4 is unused local function (Xref)
+apps/erlmcp_observability/src/erlmcp_chaos_resource.erl:60: Warning: erlmcp_chaos_resource:allocate_memory_gradually/2 is unused local function (Xref)
+apps/erlmcp_validation/src/erlmcp_validate_cli.erl:606: Warning: erlmcp_validate_cli:convert_error_msg/1 is unused local function (Xref)
+apps/erlmcp_core/src/erlmcp.erl:95: Warning: erlmcp:update_server_config/2 calls undefined function erlmcp_registry:update_server/2 (Xref)
+apps/erlmcp_core/src/erlmcp_auth.erl:230: Warning: erlmcp_auth:handle_call/3 calls undefined function jose:jwk_from_pem/1 (Xref)
+apps/erlmcp_core/src/erlmcp_auth.erl:500: Warning: erlmcp_auth:verify_jwt_with_key/2 calls undefined function jose:jwk_from_pem/1 (Xref)
+apps/erlmcp_core/src/erlmcp_auth.erl:500: Warning: erlmcp_auth:verify_jwt_with_key/2 calls undefined function jose:jwt_verify/2 (Xref)
+apps/erlmcp_core/src/erlmcp_hooks.erl:288: Warning: erlmcp_hooks:do_post_task/3 calls undefined function tcps_quality_gates:check_all_gates/1 (Xref)
+apps/erlmcp_core/src/erlmcp_hooks.erl:419: Warning: erlmcp_hooks:do_session_end/2 calls undefined function tcps_quality_gates:get_quality_metrics/0 (Xref)
+apps/erlmcp_validation/src/erlmcp_memory_manager.erl:222: Warning: erlmcp_memory_manager:calculate_term_size/1 calls undefined function erts_debug:size_of/1 (Xref)
+apps/erlmcp_core/src/erlmcp_schema_registry.erl:133: Warning: erlmcp_schema_registry:handle_call/3 calls undefined function erlmcp_schema_validator:validate/3 (Xref)
+apps/erlmcp_core/src/erlmcp_server.erl:1370: Warning: erlmcp_server:validate_prompt_arguments/3 calls undefined function erlmcp_prompt_argument_validator:validate_prompt_arguments/3 (Xref)
+apps/erlmcp_transports/src/erlmcp_transport_http_server.erl:399: Warning: erlmcp_transport_http_server:build_gun_opts/1 calls undefined function erlmcp_tls_validation:build_tls_options/2 (Xref)
+apps/erlmcp_core/src/pricing/tcps_poka_yoke.erl:389: Warning: tcps_poka_yoke:validate_error_code_exists/1 calls undefined function erlmcp_refusal:is_valid_code/1 (Xref)
+Warning: erlmcp_prompt_argument_validator:validate_prompt_arguments/3 is undefined function (Xref)
+Warning: erlmcp_refusal:is_valid_code/1 is undefined function (Xref)
+apps/erlmcp_core/src/erlmcp_registry.erl: Warning: erlmcp_registry:update_server/2 is undefined function (Xref)
+Warning: erlmcp_schema_validator:validate/3 is undefined function (Xref)
+Warning: erlmcp_tls_validation:build_tls_options/2 is undefined function (Xref)
+erts_debug.erl: Warning: erts_debug:size_of/1 is undefined function (Xref)
+_build/default/lib/jose/src/jose.erl: Warning: jose:jwk_from_pem/1 is undefined function (Xref)
+_build/default/lib/jose/src/jose.erl: Warning: jose:jwt_verify/2 is undefined function (Xref)
+Warning: tcps_quality_gates:check_all_gates/1 is undefined function (Xref)
+Warning: tcps_quality_gates:get_quality_metrics/0 is undefined function (Xref)
+
+[0m[0m

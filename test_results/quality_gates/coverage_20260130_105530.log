@@ -1,0 +1,4 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;31m===> [1mDependency failure: source for fs does not contain a recognizable project and can not be built
+[0m[0m

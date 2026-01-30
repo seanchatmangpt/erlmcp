@@ -1,0 +1,9 @@
+===> Verifying dependencies...
+===> Upgrading fs v0.9.2
+===> Analyzing applications...
+===> Compiling fs
+===> Compiling cowboy
+===> Compiling coveralls
+===> Compiling proper
+===> Compiling meck
+===> Failed to read required .app.src file for processing the application 'fs': no such file or directory

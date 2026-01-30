@@ -1,0 +1,662 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp Protocol Checker
+%%%
+%%% Functional API for protocol validation (non-gen_server version).
+%%% Validates JSON-RPC 2.0 and MCP 2025-11-25 protocol compliance.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_protocol_checker).
+-include_lib("erlmcp/include/erlmcp.hrl").
+
+%% API exports
+-export([
+    %% JSON-RPC 2.0 Validation
+    validate_jsonrpc_version/1,
+    validate_request/1,
+    validate_response/1,
+    validate_notification/1,
+    validate_batch/1,
+    validate_error_object/1,
+    validate_error_code/1,
+
+    %% MCP Protocol Validation
+    validate_initialize_request/1,
+    validate_initialized_notification/1,
+    validate_protocol_version/1,
+    validate_capabilities/1,
+    validate_client_info/1,
+    validate_server_info/1,
+    validate_phase_transition/3,
+
+    %% Method Validation
+    validate_tools_list/1,
+    validate_tools_call/1,
+    validate_resources_list/1,
+    validate_resources_read/1,
+    validate_prompts_list/1,
+    validate_prompts_get/1,
+    validate_ping/1,
+    validate_progress/1,
+    validate_setLevel/1,
+    validate_cancelled/1,
+
+    %% Integration Validation
+    validate_initialize_sequence/2,
+    validate_method_call/4,
+    validate_notification/2
+]).
+
+%% Types
+-type validation_result() :: ok | {error, {atom(), term()}}.
+-type phase() :: initialization | initialized | disconnected | closed.
+-type capabilities() :: map().
+
+%%====================================================================
+%% JSON-RPC 2.0 Validation
+%%====================================================================
+
+%% @doc Validate JSON-RPC version field (must be "2.0")
+-spec validate_jsonrpc_version(map()) -> validation_result().
+validate_jsonrpc_version(#{?JSONRPC_FIELD_JSONRPC := ?JSONRPC_VERSION}) ->
+    ok;
+validate_jsonrpc_version(#{?JSONRPC_FIELD_JSONRPC := Version}) ->
+    {error, {invalid_request, {wrong_version, Version}}};
+validate_jsonrpc_version(_) ->
+    {error, {invalid_request, missing_jsonrpc}}.
+
+%% @doc Validate JSON-RPC request message
+-spec validate_request(map()) -> validation_result().
+validate_request(Data) ->
+    case validate_jsonrpc_version(Data) of
+        ok ->
+            case {maps:get(?JSONRPC_FIELD_ID, Data, undefined),
+                  maps:get(?JSONRPC_FIELD_METHOD, Data, undefined)} of
+                {undefined, _} ->
+                    {error, {invalid_request, missing_id}};
+                {_, undefined} ->
+                    {error, {invalid_request, missing_method}};
+                {Id, Method} when is_binary(Method), Method /= <<>> ->
+                    validate_id(Id);
+                {_, Method} ->
+                    {error, {invalid_request, {invalid_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate JSON-RPC response message
+-spec validate_response(map()) -> validation_result().
+validate_response(Data) ->
+    case validate_jsonrpc_version(Data) of
+        ok ->
+            case maps:get(?JSONRPC_FIELD_ID, Data, undefined) of
+                undefined ->
+                    {error, {invalid_request, missing_id}};
+                Id ->
+                    case {maps:get(?JSONRPC_FIELD_RESULT, Data, undefined),
+                          maps:get(?JSONRPC_FIELD_ERROR, Data, undefined)} of
+                        {undefined, undefined} ->
+                            {error, {invalid_request, missing_result_and_error}};
+                        {_, Error} when Error =/= undefined ->
+                            validate_error_object(Data);
+                        _ ->
+                            validate_id(Id)
+                    end
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate JSON-RPC notification message
+-spec validate_notification(map()) -> validation_result().
+validate_notification(Data) ->
+    case validate_jsonrpc_version(Data) of
+        ok ->
+            case maps:get(?JSONRPC_FIELD_ID, Data, undefined) of
+                undefined ->
+                    case maps:get(?JSONRPC_FIELD_METHOD, Data, undefined) of
+                        undefined ->
+                            {error, {invalid_request, missing_method}};
+                        Method when is_binary(Method), Method /= <<>> ->
+                            ok;
+                        Method ->
+                            {error, {invalid_request, {invalid_method, Method}}}
+                    end;
+                _Id ->
+                    {error, {invalid_request, notification_has_id}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate batch request (must be array, not empty)
+-spec validate_batch(term()) -> validation_result().
+validate_batch(Batch) when is_list(Batch) ->
+    case length(Batch) of
+        0 -> {error, {invalid_request, empty_batch}};
+        _ -> ok
+    end;
+validate_batch(_) ->
+    {error, {invalid_request, batch_not_array}}.
+
+%% @doc Validate error object structure
+-spec validate_error_object(map()) -> validation_result().
+validate_error_object(Data) ->
+    case maps:get(?JSONRPC_FIELD_ERROR, Data, undefined) of
+        undefined ->
+            {error, {invalid_request, missing_error}};
+        Error when is_map(Error) ->
+            case {maps:get(?JSONRPC_ERROR_FIELD_CODE, Error, undefined),
+                  maps:get(?JSONRPC_ERROR_FIELD_MESSAGE, Error, undefined)} of
+                {undefined, _} ->
+                    {error, {invalid_request, missing_error_code}};
+                {_, undefined} ->
+                    {error, {invalid_request, missing_error_message}};
+                {Code, Message} when is_integer(Code), is_binary(Message) ->
+                    case validate_error_code(Code) of
+                        true -> ok;
+                        false -> {error, {invalid_request, {invalid_error_code, Code}}}
+                    end;
+                {Code, _} when not is_integer(Code) ->
+                    {error, {invalid_request, {error_code_not_integer, Code}}};
+                {_, Message} when not is_binary(Message) ->
+                    {error, {invalid_request, {error_message_not_string, Message}}}
+            end;
+        _ ->
+            {error, {invalid_request, error_not_object}}
+    end.
+
+%% @doc Validate error code is in valid range
+-spec validate_error_code(integer()) -> boolean().
+validate_error_code(Code) when is_integer(Code) ->
+    lists:member(Code, ?VALID_ERROR_CODES);
+validate_error_code(_) ->
+    false.
+
+%%====================================================================
+%% MCP Protocol Validation
+%%====================================================================
+
+%% @doc Validate initialize request (must be first message)
+-spec validate_initialize_request(map()) -> validation_result().
+validate_initialize_request(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_INITIALIZE ->
+                    validate_init_params(maps:get(?JSONRPC_FIELD_PARAMS, Data, #{}));
+                _ ->
+                    {error, {not_initialized, first_message_not_initialize}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @private Validate initialize parameters
+validate_init_params(Params) when is_map(Params) ->
+    case {maps:get(?MCP_FIELD_PROTOCOL_VERSION, Params, undefined),
+          maps:get(?MCP_FIELD_CAPABILITIES, Params, undefined),
+          maps:get(?MCP_FIELD_CLIENT_INFO, Params, undefined)} of
+        {undefined, _, _} ->
+            {error, {invalid_params, missing_protocol_version}};
+        {_, undefined, _} ->
+            {error, {invalid_params, missing_capabilities}};
+        {_, _, undefined} ->
+            {error, {invalid_params, missing_client_info}};
+        {Version, Capabilities, ClientInfo} ->
+            case validate_protocol_version(Version) of
+                ok ->
+                    case validate_capabilities(Capabilities) of
+                        ok ->
+                            validate_client_info(ClientInfo);
+                        Error ->
+                            Error
+                    end;
+                Error ->
+                    Error
+            end
+    end;
+validate_init_params(_) ->
+    {error, {invalid_params, params_not_map}}.
+
+%% @doc Validate initialized notification
+-spec validate_initialized_notification(map()) -> validation_result().
+validate_initialized_notification(Data) ->
+    case validate_notification(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_INITIALIZED -> ok;
+                _ -> {error, {invalid_request, {wrong_notification, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate MCP protocol version
+-spec validate_protocol_version(binary()) -> validation_result().
+validate_protocol_version(Version) when is_binary(Version) ->
+    case Version of
+        ?MCP_VERSION -> ok;
+        _ -> {error, {unsupported_protocol_version, Version}}
+    end;
+validate_protocol_version(_) ->
+    {error, {invalid_params, protocol_version_not_binary}}.
+
+%% @doc Validate capabilities structure
+-spec validate_capabilities(capabilities()) -> validation_result().
+validate_capabilities(Capabilities) when is_map(Capabilities) ->
+    KnownCaps = [
+        ?MCP_CAPABILITY_RESOURCES,
+        ?MCP_CAPABILITY_TOOLS,
+        ?MCP_CAPABILITY_PROMPTS,
+        ?MCP_CAPABILITY_LOGGING,
+        ?MCP_CAPABILITY_ROOTS,
+        ?MCP_CAPABILITY_SAMPLING
+    ],
+    case lists:any(fun(Cap) -> maps:is_key(Cap, Capabilities) end, KnownCaps) of
+        true -> ok;
+        false -> {error, {invalid_params, no_capabilities}}
+    end;
+validate_capabilities(_) ->
+    {error, {invalid_params, capabilities_not_map}}.
+
+%% @doc Validate client info structure
+-spec validate_client_info(map()) -> validation_result().
+validate_client_info(ClientInfo) when is_map(ClientInfo) ->
+    case {maps:get(?MCP_INFO_NAME, ClientInfo, undefined),
+          maps:get(?MCP_INFO_VERSION, ClientInfo, undefined)} of
+        {undefined, _} ->
+            {error, {invalid_params, missing_client_name}};
+        {_, undefined} ->
+            {error, {invalid_params, missing_client_version}};
+        {Name, Version} when is_binary(Name), is_binary(Version) ->
+            ok;
+        {Name, _} when not is_binary(Name) ->
+            {error, {invalid_params, {client_name_not_binary, Name}}};
+        {_, Version} when not is_binary(Version) ->
+            {error, {invalid_params, {client_version_not_binary, Version}}}
+    end;
+validate_client_info(_) ->
+    {error, {invalid_params, client_info_not_map}}.
+
+%% @doc Validate server info structure
+-spec validate_server_info(map()) -> validation_result().
+validate_server_info(ServerInfo) when is_map(ServerInfo) ->
+    case {maps:get(?MCP_INFO_NAME, ServerInfo, undefined),
+          maps:get(?MCP_INFO_VERSION, ServerInfo, undefined)} of
+        {undefined, _} ->
+            {error, {invalid_params, missing_server_name}};
+        {_, undefined} ->
+            {error, {invalid_params, missing_server_version}};
+        {Name, Version} when is_binary(Name), is_binary(Version) ->
+            ok;
+        {Name, _} when not is_binary(Name) ->
+            {error, {invalid_params, {server_name_not_binary, Name}}};
+        {_, Version} when not is_binary(Version) ->
+            {error, {invalid_params, {server_version_not_binary, Version}}}
+    end;
+validate_server_info(_) ->
+    {error, {invalid_params, server_info_not_map}}.
+
+%% @doc Validate phase transition is legal
+-spec validate_phase_transition(phase(), phase(), atom()) -> validation_result().
+validate_phase_transition(initialization, initialized, initialize) -> ok;
+validate_phase_transition(initialized, initialized, _Method) -> ok;
+validate_phase_transition(initialized, closed, close) -> ok;
+validate_phase_transition(Phase, Phase, _Method) -> ok;
+validate_phase_transition(From, To, Method) ->
+    {error, {phase_violation, {From, To, Method}}}.
+
+%%====================================================================
+%% Method Validation
+%%====================================================================
+
+%% @doc Validate tools/list method
+-spec validate_tools_list(map()) -> validation_result().
+validate_tools_list(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_TOOLS_LIST -> ok;
+                _ -> {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate tools/call method
+-spec validate_tools_call(map()) -> validation_result().
+validate_tools_call(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_TOOLS_CALL ->
+                    validate_tools_call_params(maps:get(?JSONRPC_FIELD_PARAMS, Data, #{}));
+                _ ->
+                    {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @private Validate tools/call parameters
+validate_tools_call_params(Params) when is_map(Params) ->
+    case maps:get(?MCP_PARAM_NAME, Params, undefined) of
+        undefined ->
+            {error, {invalid_params, missing_tool_name}};
+        Name when is_binary(Name), Name /= <<>> ->
+            case maps:get(?MCP_PARAM_ARGUMENTS, Params, undefined) of
+                undefined ->
+                    {error, {invalid_params, missing_tool_arguments}};
+                Args when is_map(Args) ->
+                    ok;
+                InvalidArgs ->
+                    {error, {invalid_params, {arguments_not_map, InvalidArgs}}}
+            end;
+        _ ->
+            {error, {invalid_params, {invalid_tool_name}}}
+    end;
+validate_tools_call_params(_) ->
+    {error, {invalid_params, params_not_map}}.
+
+%% @doc Validate resources/list method
+-spec validate_resources_list(map()) -> validation_result().
+validate_resources_list(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_RESOURCES_LIST -> ok;
+                _ -> {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate resources/read method
+-spec validate_resources_read(map()) -> validation_result().
+validate_resources_read(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_RESOURCES_READ ->
+                    validate_resources_read_params(maps:get(?JSONRPC_FIELD_PARAMS, Data, #{}));
+                _ ->
+                    {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @private Validate resources/read parameters
+validate_resources_read_params(Params) when is_map(Params) ->
+    case maps:get(?MCP_PARAM_URI, Params, undefined) of
+        undefined ->
+            {error, {invalid_params, missing_uri}};
+        Uri when is_binary(Uri), Uri /= <<>> ->
+            ok;
+        _ ->
+            {error, {invalid_params, {invalid_uri, not_binary}}}
+    end;
+validate_resources_read_params(_) ->
+    {error, {invalid_params, params_not_map}}.
+
+%% @doc Validate prompts/list method
+-spec validate_prompts_list(map()) -> validation_result().
+validate_prompts_list(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_PROMPTS_LIST -> ok;
+                _ -> {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate prompts/get method
+-spec validate_prompts_get(map()) -> validation_result().
+validate_prompts_get(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_PROMPTS_GET ->
+                    Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, #{}),
+                    case maps:get(?MCP_PARAM_NAME, Params, undefined) of
+                        undefined ->
+                            {error, {invalid_params, missing_prompt_name}};
+                        Name when is_binary(Name), Name /= <<>> ->
+                            ok;
+                        _ ->
+                            {error, {invalid_params, {invalid_prompt_name}}}
+                    end;
+                _ ->
+                    {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate ping method
+-spec validate_ping(map()) -> validation_result().
+validate_ping(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_PING -> ok;
+                _ -> {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate progress notification
+-spec validate_progress(map()) -> validation_result().
+validate_progress(Data) ->
+    case validate_notification(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_NOTIFICATIONS_PROGRESS ->
+                    Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, #{}),
+                    case maps:get(?MCP_PARAM_PROGRESS_TOKEN, Params, undefined) of
+                        undefined ->
+                            {error, {invalid_params, missing_progress_token}};
+                        _Token ->
+                            case {maps:get(?MCP_PARAM_PROGRESS, Params, undefined),
+                                  maps:get(?MCP_PARAM_TOTAL, Params, undefined)} of
+                                {undefined, _} ->
+                                    {error, {invalid_params, missing_progress_value}};
+                                {_, undefined} ->
+                                    {error, {invalid_params, missing_progress_total}};
+                                {Progress, Total} when is_number(Progress), is_number(Total) ->
+                                    ok;
+                                {Progress, _} when not is_number(Progress) ->
+                                    {error, {invalid_params, {progress_not_number, Progress}}};
+                                {_, Total} when not is_number(Total) ->
+                                    {error, {invalid_params, {total_not_number, Total}}}
+                            end
+                    end;
+                _ ->
+                    {error, {invalid_request, {wrong_notification, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate setLevel method
+-spec validate_setLevel(map()) -> validation_result().
+validate_setLevel(Data) ->
+    case validate_request(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_LOGGING_SET_LEVEL ->
+                    Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, #{}),
+                    case maps:get(?MCP_PARAM_LEVEL, Params, undefined) of
+                        undefined ->
+                            {error, {invalid_params, missing_level}};
+                        Level when is_atom(Level) ->
+                            case lists:member(Level, ?MCP_VALID_LOG_LEVELS) of
+                                true -> ok;
+                                false -> {error, {invalid_params, {invalid_log_level, Level}}}
+                            end;
+                        Level when is_binary(Level) ->
+                            try binary_to_existing_atom(Level, utf8) of
+                                AtomLevel ->
+                                    case lists:member(AtomLevel, ?MCP_VALID_LOG_LEVELS) of
+                                        true -> ok;
+                                        false -> {error, {invalid_params, {invalid_log_level, Level}}}
+                                    end
+                            catch
+                                error:badarg ->
+                                    {error, {invalid_params, {invalid_log_level, Level}}}
+                            end;
+                        _ ->
+                            {error, {invalid_params, {invalid_level_type}}}
+                    end;
+                _ ->
+                    {error, {invalid_request, {wrong_method, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate cancelled notification
+-spec validate_cancelled(map()) -> validation_result().
+validate_cancelled(Data) ->
+    case validate_notification(Data) of
+        ok ->
+            Method = maps:get(?JSONRPC_FIELD_METHOD, Data),
+            case Method of
+                ?MCP_METHOD_NOTIFICATIONS_CANCELLED ->
+                    Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, #{}),
+                    case maps:get(?MCP_PARAM_REQUEST_ID, Params, undefined) of
+                        undefined ->
+                            {error, {invalid_params, missing_request_id}};
+                        _RequestId ->
+                            Reason = maps:get(?MCP_PARAM_REASON, Params, undefined),
+                            case Reason of
+                                undefined -> ok;
+                                _ when is_binary(Reason) -> ok;
+                                _ -> {error, {invalid_params, {invalid_reason_type}}}
+                            end
+                    end;
+                _ ->
+                    {error, {invalid_request, {wrong_notification, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%%====================================================================
+%% Integration Validation
+%%====================================================================
+
+%% @doc Validate complete initialize sequence
+-spec validate_initialize_sequence(map(), map()) -> validation_result().
+validate_initialize_sequence(InitRequest, InitNotification) ->
+    case validate_initialize_request(InitRequest) of
+        ok ->
+            case validate_initialized_notification(InitNotification) of
+                ok ->
+                    __InitId = maps:get(?JSONRPC_FIELD_ID, InitRequest),
+                    case maps:get(?JSONRPC_FIELD_ID, InitNotification, undefined) of
+                        undefined -> ok;
+                        _ -> {error, {invalid_request, initialized_notification_has_id}}
+                    end;
+                Error ->
+                    Error
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate method call with phase checking
+-spec validate_method_call(atom(), phase(), binary(), map()) -> validation_result().
+validate_method_call(Type, CurrentPhase, Method, Params) when Type =:= request; Type =:= notification ->
+    Msg = case Type of
+        request ->
+            #{
+                ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+                ?JSONRPC_FIELD_ID => 1,
+                ?JSONRPC_FIELD_METHOD => Method,
+                ?JSONRPC_FIELD_PARAMS => Params
+            };
+        notification ->
+            #{
+                ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+                ?JSONRPC_FIELD_METHOD => Method,
+                ?JSONRPC_FIELD_PARAMS => Params
+            }
+    end,
+
+    Validator = case Method of
+        ?MCP_METHOD_INITIALIZE -> fun validate_initialize_request/1;
+        ?MCP_METHOD_INITIALIZED -> fun validate_initialized_notification/1;
+        ?MCP_METHOD_TOOLS_LIST -> fun validate_tools_list/1;
+        ?MCP_METHOD_TOOLS_CALL -> fun validate_tools_call/1;
+        ?MCP_METHOD_RESOURCES_LIST -> fun validate_resources_list/1;
+        ?MCP_METHOD_RESOURCES_READ -> fun validate_resources_read/1;
+        ?MCP_METHOD_PROMPTS_LIST -> fun validate_prompts_list/1;
+        ?MCP_METHOD_PROMPTS_GET -> fun validate_prompts_get/1;
+        ?MCP_METHOD_PING -> fun validate_ping/1;
+        ?MCP_METHOD_LOGGING_SET_LEVEL -> fun validate_setLevel/1;
+        ?MCP_METHOD_NOTIFICATIONS_PROGRESS -> fun validate_progress/1;
+        ?MCP_METHOD_NOTIFICATIONS_CANCELLED -> fun validate_cancelled/1;
+        _ -> fun(_) -> ok end
+    end,
+
+    case Validator(Msg) of
+        ok ->
+            case Method of
+                ?MCP_METHOD_INITIALIZE ->
+                    validate_phase_transition(CurrentPhase, initialized, Method);
+                ?MCP_METHOD_INITIALIZED ->
+                    validate_phase_transition(CurrentPhase, initialized, Method);
+                _ when CurrentPhase =:= initialized; CurrentPhase =:= initialization ->
+                    ok;
+                _ ->
+                    {error, {phase_violation, {CurrentPhase, Method}}}
+            end;
+        Error ->
+            Error
+    end.
+
+%% @doc Validate notification with method-specific checks
+-spec validate_notification(binary(), map()) -> validation_result().
+validate_notification(Method, Params) ->
+    Msg = #{
+        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+        ?JSONRPC_FIELD_METHOD => Method,
+        ?JSONRPC_FIELD_PARAMS => Params
+    },
+
+    Validator = case Method of
+        ?MCP_METHOD_INITIALIZED -> fun validate_initialized_notification/1;
+        ?MCP_METHOD_NOTIFICATIONS_PROGRESS -> fun validate_progress/1;
+        ?MCP_METHOD_NOTIFICATIONS_CANCELLED -> fun validate_cancelled/1;
+        _ -> fun validate_notification/1
+    end,
+
+    Validator(Msg).
+
+%%====================================================================
+%% Internal Helpers
+%%====================================================================
+
+%% @private Validate ID field
+-spec validate_id(term()) -> validation_result().
+validate_id(Id) when is_integer(Id); is_binary(Id); Id =:= null ->
+    ok;
+validate_id(Id) ->
+    {error, {invalid_request, {invalid_id, Id}}}.

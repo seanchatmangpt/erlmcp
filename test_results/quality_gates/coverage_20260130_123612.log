@@ -1,0 +1,249 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;31m===> [1mCompiling apps/erlmcp_validation/src/erlmcp_protocol_validator.erl failed
+[0m[0m     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 547 │              message [1;31m=> <<[0m"Null ID handling for notifications is correct">>,[0m
+     │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 576 │          evidence [1;31m=> [0m#{first_message => <<"initialize">>},[0m
+     │                   [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 607 │              evidence [1;31m=> [0m#{[0m
+     │                       [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 642 │              evidence [1;31m=> [0m#{method => <<"initialized">>, no_id => true},[0m
+     │                       [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 666 │          evidence [1;31m=> [0m#{expected_error_code => -32003, message => <<"Server not initialized">>},[0m
+     │                   [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 691 │              evidence [1;31m=> [0m#{valid_codes => ValidCodes},[0m
+     │                       [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 722 │              message [1;31m=> <<[0m"All MCP-specific error codes validated">>,[0m
+     │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 754 │              message [1;31m=> <<[0m"Refusal codes validated">>,[0m
+     │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 794 │              message [1;31m=> <<[0m"Error structure validation passed">>,[0m
+     │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 830 │              capability_required = <<"tools"[1;31m>[0m[0m
+     │                                             [1;31m╰──[0m[0m syntax error before: '>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 871 │              message [1;31m=> <<[0m"tools/call method validated">>,[0m
+     │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 901 │              capability_required = <<"resources"[1;31m>[0m[0m
+     │                                                 [1;31m╰──[0m[0m syntax error before: '>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 942 │              message [1;31m=> <<[0m"resources/read method validated">>,[0m
+     │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 976 │              message [1;31m=> <<[0m"resources/subscribe method validated">>,[0m
+     │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1010 │              message [1;31m=> <<[0m"resources/unsubscribe method validated">>,[0m
+      │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1040 │              capability_required = <<"prompts"[1;31m>[0m[0m
+      │                                               [1;31m╰──[0m[0m syntax error before: '>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1081 │              message [1;31m=> <<[0m"prompts/get method validated">>,[0m
+      │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1119 │              message [1;31m=> <<[0m"ping method validated">>,[0m
+      │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1157 │              message [1;31m=> <<[0m"progress notification validated">>,[0m
+      │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1193 │              message [1;31m=> <<[0m"Protocol version negotiation validated">>,[0m
+      │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1226 │              message [1;31m=> <<[0m"Capability declaration validated">>,[0m
+      │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1256 │              message [1;31m=> <<[0m"Optional capabilities validated">>,[0m
+      │                      [1;31m╰──[0m[0m syntax error before: '=>'
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1365 │  [1;31mvalidate_batch_request[0m(Batch) ->[0m
+      │  [1;31m╰──[0m[0m head mismatch: function validate_batch_request with arities 2 and 1 is regarded as two distinct functions. Is the number of arguments incorrect or is the semicolon in validate_batch_request/2 unwanted?
+
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 249 │          [1;31mvalidate_null_id_handling[0m()[0m
+     │          [1;31m╰──[0m[0m function validate_null_id_handling/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 259 │          [1;31mvalidate_initialize_first_message[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_initialize_first_message/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 260 │          [1;31mvalidate_capability_negotiation[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_capability_negotiation/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 261 │          [1;31mvalidate_initialized_notification[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_initialized_notification/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 262 │          [1;31mvalidate_reinitialize_rejection[0m()[0m
+     │          [1;31m╰──[0m[0m function validate_reinitialize_rejection/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 272 │          [1;31mvalidate_jsonrpc_error_codes[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_jsonrpc_error_codes/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 273 │          [1;31mvalidate_mcp_error_codes[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_mcp_error_codes/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 274 │          [1;31mvalidate_refusal_codes[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_refusal_codes/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 275 │          [1;31mvalidate_error_structure[0m()[0m
+     │          [1;31m╰──[0m[0m function validate_error_structure/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 285 │          [1;31mvalidate_tools_list_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_tools_list_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 286 │          [1;31mvalidate_tools_call_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_tools_call_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 287 │          [1;31mvalidate_resources_list_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_resources_list_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 288 │          [1;31mvalidate_resources_read_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_resources_read_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 289 │          [1;31mvalidate_resources_subscribe_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_resources_subscribe_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 290 │          [1;31mvalidate_resources_unsubscribe_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_resources_unsubscribe_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 291 │          [1;31mvalidate_prompts_list_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_prompts_list_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 292 │          [1;31mvalidate_prompts_get_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_prompts_get_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 293 │          [1;31mvalidate_ping_method[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_ping_method/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 294 │          [1;31mvalidate_progress_notification[0m()[0m
+     │          [1;31m╰──[0m[0m function validate_progress_notification/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 304 │          [1;31mvalidate_protocol_version_negotiation[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_protocol_version_negotiation/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 305 │          [1;31mvalidate_capability_declaration[0m(),[0m
+     │          [1;31m╰──[0m[0m function validate_capability_declaration/0 undefined
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 306 │          [1;31mvalidate_optional_capabilities[0m()[0m
+     │          [1;31m╰──[0m[0m function validate_optional_capabilities/0 undefined
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1284 │              true -> [1;31mvalidate_batch_request[0m(Message);[0m
+      │                      [1;31m╰──[0m[0m function validate_batch_request/1 undefined
+
+      ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+      │
+ 1291 │      [1;31mvalidate_batch_request[0m(Batch, State).[0m
+      │      [1;31m╰──[0m[0m function validate_batch_request/2 undefined
+
+

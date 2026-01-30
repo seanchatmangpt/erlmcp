@@ -202,39 +202,28 @@ stop(Server) ->
 
 -spec init([server_id() | #mcp_server_capabilities{}]) -> {ok, state()}.
 init([ServerId, Capabilities]) ->
-    SpanCtx = erlmcp_tracing:start_server_span(<<"server.init">>, ServerId),
-    try
-        process_flag(trap_exit, true),
+    process_flag(trap_exit, true),
 
-        erlmcp_tracing:set_attributes(SpanCtx, #{
-            <<"server_id">> => ServerId
-        }),
+    % Start or get change notifier
+    NotifierPid = case erlmcp_change_notifier:start_link() of
+        {ok, Pid} -> Pid;
+        {error, {already_started, Pid}} -> Pid
+    end,
 
-        % Start or get change notifier
-        NotifierPid = case erlmcp_change_notifier:start_link() of
-            {ok, Pid} -> Pid;
-            {error, {already_started, Pid}} -> Pid
-        end,
+    % Monitor the notifier process
+    MonitorRef = erlang:monitor(process, NotifierPid),
 
-        % Start periodic GC for each server (Gap #10)
-        start_periodic_gc(),
+    % Start periodic GC for each server (Gap #10)
+    start_periodic_gc(),
 
-        State = #state{
-            server_id = ServerId,
-            capabilities = Capabilities,
-            notifier_pid = NotifierPid
-        },
+    State = #state{
+        server_id = ServerId,
+        capabilities = Capabilities,
+        notifier_pid = NotifierPid
+    },
 
-        logger:info("Starting MCP server ~p (refactored)", [ServerId]),
-        erlmcp_tracing:set_status(SpanCtx, ok),
-        {ok, State}
-    catch
-        Class:Reason:Stacktrace ->
-            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
-            erlang:raise(Class, Reason, Stacktrace)
-    after
-        erlmcp_tracing:end_span(SpanCtx)
-    end.
+    logger:info("Starting MCP server ~p with capabilities: ~p", [ServerId, Capabilities]),
+    {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
@@ -296,6 +285,14 @@ handle_call({add_tool_with_schema, Name, Handler, Schema}, _From, State) ->
     notify_tools_changed(State),
     {reply, ok, State#state{tools = NewTools}};
 
+handle_call({add_tool_with_description, Name, Description, Handler}, _From, State) ->
+    Tool = #mcp_tool{
+        name = Name,
+        description = Description
+    },
+    NewTools = maps:put(Name, {Tool, Handler, undefined}, State#state.tools),
+    notify_tools_changed(State),
+    {reply, ok, State#state{tools = NewTools}};
 
 handle_call({add_tool_full, Name, Description, Handler, Options}, _From, State) ->
     InputSchema = maps:get(<<"inputSchema">>, Options, undefined),
@@ -359,7 +356,8 @@ handle_call({delete_resource, Uri}, _From, State) ->
     case maps:is_key(Uri, State#state.resources) of
         true ->
             NewResources = maps:remove(Uri, State#state.resources),
-            notify_resources_changed(State),
+            %% Notify about list changed inline
+            _ = notify_list_changed(resources, State),
             {reply, ok, State#state{resources = NewResources}};
         false ->
             {reply, {error, not_found}, State}

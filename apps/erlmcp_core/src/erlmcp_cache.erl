@@ -80,7 +80,11 @@
     strategy :: cache_strategy()
 }).
 
+%% State version for hot code loading
+-type state_version() :: v1 | v2.
+
 -record(state, {
+    version = v1 :: state_version(),  % State version for hot code loading
     l1_table :: ets:tid(),  % ETS table for L1 cache
     l2_enabled = false :: boolean(),  % Mnesia available?
     l3_enabled = false :: boolean(),  % External cache available?
@@ -447,8 +451,38 @@ terminate(_Reason, State) ->
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(OldVsn, State, Extra) ->
+    try
+        logger:info("Cache: Code change from ~p", [OldVsn]),
+        NewState = migrate_cache_state(OldVsn, State, Extra),
+        logger:info("Cache: Code change completed successfully"),
+        {ok, NewState}
+    catch
+        Class:Reason:Stack ->
+            logger:error("Cache: Code change failed: ~p:~p~n~p",
+                        [Class, Reason, Stack]),
+            error({code_change_failed, Class, Reason})
+    end.
+
+%% @private Migrate cache state based on version
+-spec migrate_cache_state(term(), state(), term()) -> state().
+migrate_cache_state(_OldVsn, #state{version = v1} = State, _Extra) ->
+    %% Already at current version (v1)
+    State;
+migrate_cache_state({down, _FromVsn}, #state{} = State, _Extra) ->
+    %% Downgrade migration - ensure version field exists
+    case State#state.version of
+        undefined -> State#state{version = v1};
+        _ -> State
+    end;
+migrate_cache_state(OldVsn, #state{version = undefined} = State, _Extra)
+  when is_list(OldVsn); is_atom(OldVsn) ->
+    %% Legacy state (pre-versioning) - upgrade to v1
+    logger:info("Cache: Upgrading legacy state to v1"),
+    State#state{version = v1};
+migrate_cache_state(OldVsn, State, _Extra) ->
+    logger:warning("Cache: Unknown code_change from version ~p", [OldVsn]),
+    State.
 
 %%====================================================================
 %% Internal functions - L1 Cache (ETS)
@@ -560,17 +594,14 @@ mnesia_rec_to_cache_entry({erlmcp_cache_l2, Key, Value, Level, InsertedAt,
 ensure_mnesia_started() ->
     case mnesia:system_info(is_running) of
         yes ->
-            ensure_cache_table(),
-            true;
+            ensure_cache_table();
         no ->
             %% Try to start Mnesia
             case application:start(mnesia) of
                 ok ->
-                    ensure_cache_table(),
-                    true;
+                    ensure_cache_table();
                 {error, {already_started, mnesia}} ->
-                    ensure_cache_table(),
-                    true;
+                    ensure_cache_table();
                 {error, Reason} ->
                     ?LOG_WARNING("Failed to start Mnesia: ~p", [Reason]),
                     false
@@ -579,29 +610,31 @@ ensure_mnesia_started() ->
             false
     end.
 
--spec ensure_cache_table() -> ok.
+-spec ensure_cache_table() -> boolean().
 ensure_cache_table() ->
     %% Check if table already exists
     case lists:member(erlmcp_cache_l2, mnesia:system_info(tables)) of
         true ->
             ?LOG_DEBUG("Mnesia cache table already exists"),
-            ok;
+            true;
         false ->
-            %% Create table
+            %% Create table with explicit field names (Mnesia needs table name as first field)
             case mnesia:create_table(erlmcp_cache_l2, [
                 {type, set},
-                {attributes, record_info(fields, cache_entry)},
+                {attributes, [key, value, level, inserted_at, expires_at,
+                              access_count, last_accessed, etag, tags,
+                              dependencies, strategy]},
                 {disc_copies, [node()]},
                 {index, [tags, dependencies]}
             ]) of
                 {atomic, ok} ->
                     ?LOG_INFO("Created Mnesia cache table: erlmcp_cache_l2"),
-                    ok;
+                    true;
                 {aborted, {already_exists, _}} ->
-                    ok;
+                    true;
                 {aborted, Reason} ->
                     ?LOG_ERROR("Failed to create Mnesia cache table: ~p", [Reason]),
-                    ok
+                    false
             end
     end.
 

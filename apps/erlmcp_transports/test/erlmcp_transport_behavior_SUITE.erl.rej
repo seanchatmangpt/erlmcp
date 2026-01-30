@@ -1,0 +1,45 @@
+@@ -523,24 +523,22 @@
+-    % Test that stdio transport implements the behavior correctly
+-    % Test init callback
+-    StdioOpts = #{owner => self(), test_mode => true},
+-    case erlmcp_transport_stdio:init([transport_id, StdioOpts]) of
+-        {ok, State} ->
+-            % Test send callback
+-            ?assertEqual(ok, erlmcp_transport_stdio:send(State, <<"test">>)),
+-
+-            % Test close callback
+-            ?assertEqual(ok, erlmcp_transport_stdio:close(State)),
+-
+-            % Test optional get_info callback if implemented
+-            try
+-                Info = erlmcp_transport_stdio:get_info(State),
+-                ?assert(is_map(Info)),
+-                ?assert(maps:is_key(type, Info))
+-            catch
+-                error:undef ->
+-                    ok % Optional callback not implemented
+-            end;
+-        {stop, Reason} ->
+-            ct:pal("Stdio transport failed to initialize: ~p", [Reason])
++    % Test that stdio transport implements the behavior correctly
++    % Use the public API to start the transport (not init/1 directly)
++    StdioOpts = #{test_mode => true},
++    case erlmcp_transport_stdio:start_link(self(), StdioOpts) of
++        {ok, Pid} when is_pid(Pid) ->
++            % Get state via gen_server call (public API pattern)
++            {ok, State} = gen_server:call(Pid, get_state),
++
++            % Test send callback using the state (send is stateless for stdio)
++            ?assertEqual(ok, erlmcp_transport_stdio:send(State, <<"test message">>)),
++
++            % Test close callback
++            ?assertEqual(ok, erlmcp_transport_stdio:close(Pid)),
++
++            % Verify process stopped after close
++            timer:sleep(50),
++            ?assertNot(is_process_alive(Pid));
++
++        {error, Reason} ->
++            ct:fail("Stdio transport failed to start: ~p", [Reason])
+     end,
+     ok.

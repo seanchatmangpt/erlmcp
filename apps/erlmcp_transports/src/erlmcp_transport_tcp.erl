@@ -4,7 +4,7 @@
 
 -include("erlmcp.hrl").
 -include("erlmcp_refusal.hrl").
--include_lib("erlmcp_transports/include/erlmcp_transport_tcp.hrl").
+-include("erlmcp_transport_tcp.hrl").
 
 %% Note: We implement erlmcp_transport behavior but use different naming
 %% to avoid conflicts with gen_server callbacks
@@ -149,9 +149,7 @@ connect(Pid, Opts) when is_pid(Pid), is_map(Opts) ->
 %% @doc Start a ranch protocol handler for an accepted connection
 %% CRITICAL: Guaranteed cleanup of connection slot via try...catch/after
 -spec start_link(ranch:ref(), module(), map()) -> {ok, pid()} | {error, term()}.
-start_link(RanchRef, _Transport, ProtocolOpts) ->
-    ServerId = maps:get(server_id, ProtocolOpts, undefined),
-
+start_link(RanchRef, _Transport, ProtocolOpts) ->    ServerId = maps:get(server_id, ProtocolOpts, undefined),    %% Check connection limit BEFORE accepting connection    case erlmcp_connection_limiter:accept_connection(ServerId) of        accept ->            %% CRITICAL FIX: Use try...catch/after to guarantee slot release            %% If init fails for ANY reason, we MUST release the slot            try                case gen_server:start_link(?MODULE, #{                    mode => server,                    ranch_ref => RanchRef,                    protocol_opts => ProtocolOpts,                    server_id => ServerId                }, []) of                    {ok, Pid} = Result ->                        %% Monitor the handler process to detect early crashes                        erlang:monitor(process, Pid),                        Result;                    {error, Reason} = StartError ->                        %% Handler failed to start, release slot immediately                        logger:warning("Handler init failed, releasing slot: ~p", [Reason]),                        erlmcp_connection_limiter:release_connection(ServerId),                        StartError                end            catch                Type:Exception:Stacktrace ->                    %% EXCEPTION during handler start - MUST release slot                    logger:error("Handler start exception ~p:~p, releasing slot~n~p",                               [Type, Exception, Stacktrace]),                    erlmcp_connection_limiter:release_connection(ServerId),                    {error, {handler_start_exception, {Type, Exception}}}            end;        {error, too_many_connections} ->            logger:warning("Rejecting connection: too many connections for server ~p", [ServerId]),            {error, too_many_connections}    end.
     %% Check connection limit BEFORE accepting connection
     case erlmcp_connection_limiter:accept_connection(ServerId) of
         accept ->
@@ -168,19 +166,19 @@ start_link(RanchRef, _Transport, ProtocolOpts) ->
                         %% Monitor the handler process to detect early crashes
                         erlang:monitor(process, Pid),
                         Result;
-                    {error, Reason} = Error ->
+                    {error, Reason} = StartError ->
                         %% Handler failed to start, release slot immediately
                         logger:warning("Handler init failed, releasing slot: ~p", [Reason]),
                         erlmcp_connection_limiter:release_connection(ServerId),
-                        Error
+                        StartError
                 end
             catch
-                Type:Error:Stacktrace ->
+                CatchType:CatchError:Stacktrace ->
                     %% EXCEPTION during handler start - MUST release slot
                     logger:error("Handler start exception ~p:~p, releasing slot~n~p",
-                               [Type, Error, Stacktrace]),
+                               [CatchType, CatchError, Stacktrace]),
                     erlmcp_connection_limiter:release_connection(ServerId),
-                    {error, {handler_start_exception, {Type, Error}}}
+                    {error, {handler_start_exception, {CatchType, CatchError}}}
             end;
         {error, too_many_connections} ->
             logger:warning("Rejecting connection: too many connections for server ~p", [ServerId]),
