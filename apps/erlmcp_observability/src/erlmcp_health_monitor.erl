@@ -7,12 +7,14 @@
          unregister_component/1, get_system_health/0, get_component_health/1,
          get_all_component_health/0, set_health_check_config/2, get_health_check_config/1,
          report_circuit_breaker/2, report_degradation/1, reset_health_status/0,
-         trigger_health_check/1, trigger_system_health_check/0]).
+         trigger_health_check/1, trigger_system_health_check/0,
+         enumerate_process_health/0, find_overloaded_processes/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
 
 -include_lib("kernel/include/logger.hrl").
+-include("otp_compat.hrl").
 
 %% Types
 -type component_id() :: atom().
@@ -43,7 +45,9 @@
          system_health = unknown :: health_status(),
          system_metrics = #{} :: map(),
          health_timer :: undefined | timer:tref(),
-         alerts = [] :: list()}).
+         alerts = [] :: list(),
+         priority_messages_delivered = 0 :: non_neg_integer(),
+         priority_latency_sum_us = 0 :: non_neg_integer()}).
 
 -define(DEFAULT_CONFIG,
         #{check_interval => 30000,          % 30 seconds
@@ -132,6 +136,15 @@ init(Opts) ->
     % Set up process monitoring
     process_flag(trap_exit, true),
 
+    % Enable priority messages on OTP 28+ for critical health checks
+    -ifdef(OTP_28).
+    process_flag(message_queue_data, off_heap),
+    process_flag(priority, high),
+    ?LOG_INFO("OTP 28 priority messages enabled for health monitor"),
+    -else.
+    ?LOG_INFO("Running on OTP 25-27, priority messages not available"),
+    -endif.
+
     DefaultConfig =
         maps:merge(?DEFAULT_CONFIG, proplists:get_value(default_config, Opts, #{})),
 
@@ -145,7 +158,9 @@ init(Opts) ->
                    #{memory_status => ok,
                      process_count => 0,
                      system_load => 0.0,
-                     last_check => erlang:timestamp()}},
+                     last_check => erlang:timestamp(),
+                     priority_messages_delivered => 0,
+                     priority_latency_sum_us => 0}},
 
     ?LOG_INFO("Health monitor initialized"),
     {ok, State}.
@@ -175,16 +190,59 @@ handle_call({register_component, ComponentId, Pid, CheckFun}, _From, State) ->
     schedule_health_check(ComponentId, maps:get(check_interval, State#state.default_config)),
 
     {reply, ok, NewState};
-handle_call(get_system_health, _From, State) ->
+handle_call(get_system_health, From, State) ->
+    StartTime = erlang:monotonic_time(microsecond),
+
+    -ifdef(OTP_28).
+    % Send priority response for K8s liveness probes
+    SystemHealth = generate_system_health_report(State),
+    gen_server:reply(From, SystemHealth),
+
+    EndTime = erlang:monotonic_time(microsecond),
+    LatencyUs = EndTime - StartTime,
+
+    NewMetrics = maps:merge(State#state.system_metrics, #{
+        priority_messages_delivered => maps:get(priority_messages_delivered, State#state.system_metrics, 0) + 1,
+        priority_latency_sum_us => maps:get(priority_latency_sum_us, State#state.system_metrics, 0) + LatencyUs,
+        last_priority_latency_us => LatencyUs
+    }),
+
+    {noreply, State#state{system_metrics = NewMetrics}};
+    -else.
     SystemHealth = generate_system_health_report(State),
     {reply, SystemHealth, State};
-handle_call({get_component_health, ComponentId}, _From, State) ->
+    -endif.
+handle_call({get_component_health, ComponentId}, From, State) ->
+    StartTime = erlang:monotonic_time(microsecond),
+
+    -ifdef(OTP_28).
+    % Priority health check for component
+    Result = case maps:find(ComponentId, State#state.components) of
+        {ok, Component} ->
+            Component#component_health.status;
+        error ->
+            not_found
+    end,
+    gen_server:reply(From, Result),
+
+    EndTime = erlang:monotonic_time(microsecond),
+    LatencyUs = EndTime - StartTime,
+
+    NewMetrics = maps:merge(State#state.system_metrics, #{
+        priority_messages_delivered => maps:get(priority_messages_delivered, State#state.system_metrics, 0) + 1,
+        priority_latency_sum_us => maps:get(priority_latency_sum_us, State#state.system_metrics, 0) + LatencyUs,
+        last_priority_latency_us => LatencyUs
+    }),
+
+    {noreply, State#state{system_metrics = NewMetrics}};
+    -else.
     case maps:find(ComponentId, State#state.components) of
         {ok, Component} ->
             {reply, Component#component_health.status, State};
         error ->
             {reply, not_found, State}
     end;
+    -endif.
 handle_call(get_all_component_health, _From, State) ->
     AllHealth =
         maps:map(fun(_Id, Component) ->
@@ -727,3 +785,149 @@ find_component_by_pid(Pid, Components) ->
 schedule_health_check(ComponentId, Interval) ->
     erlang:send_after(Interval, self(), {health_check, ComponentId}),
     ok.
+
+%%--------------------------------------------------------------------
+%% @doc Enumerate all processes for health monitoring (OTP 28 optimized)
+%%
+%% On OTP 28+: Uses erlang:processes_iterator/0 for O(1) memory allocation
+%% to scan all processes and check for potential health issues.
+%%
+%% On OTP 25-27: Falls back to erlang:processes() with list construction.
+%%
+%% Returns: {ok, #{healthy => N, unhealthy => M}}
+%% @end
+%%--------------------------------------------------------------------
+-spec enumerate_process_health() -> {ok, map()}.
+
+-ifdef(OTP_28).
+%% OTP 28+ implementation using process iterator
+enumerate_process_health() ->
+    Iterator = erlang:processes_iterator(),
+    enumerate_process_health_iterator(Iterator, #{healthy => 0, unhealthy => 0}).
+
+%% @private Check each process for health issues
+%% Considers a process unhealthy if:
+%% - Message queue > 10000
+%% - Memory > 100MB
+%% - Not responding to process_info
+-spec enumerate_process_health_iterator(term(), map()) -> {ok, map()}.
+enumerate_process_health_iterator(Iterator, Acc) ->
+    case erlang:process_next(Iterator) of
+        {Pid, NewIterator} ->
+            %% Check process health
+            Status = case process_info(Pid, [message_queue_len, memory]) of
+                undefined ->
+                    unhealthy;  % Process died or not responding
+                Info ->
+                    QLen = proplists:get_value(message_queue_len, Info, 0),
+                    Memory = proplists:get_value(memory, Info, 0),
+
+                    %% Health thresholds
+                    if
+                        QLen > 10000 -> unhealthy;  % Large message queue
+                        Memory > 104857600 -> unhealthy;  % >100MB memory
+                        true -> healthy
+                    end
+            end,
+
+            %% Update counter
+            NewAcc = case Status of
+                healthy ->
+                    maps:update_with(healthy, fun(N) -> N + 1 end, 1, Acc);
+                unhealthy ->
+                    maps:update_with(unhealthy, fun(N) -> N + 1 end, 1, Acc)
+            end,
+
+            enumerate_process_health_iterator(NewIterator, NewAcc);
+        none ->
+            {ok, Acc}
+    end.
+
+-else.
+%% OTP 25-27 fallback implementation
+enumerate_process_health() ->
+    Processes = erlang:processes(),
+
+    Result = lists:foldl(fun(Pid, Acc) ->
+        Status = case process_info(Pid, [message_queue_len, memory]) of
+            undefined ->
+                unhealthy;
+            Info ->
+                QLen = proplists:get_value(message_queue_len, Info, 0),
+                Memory = proplists:get_value(memory, Info, 0),
+
+                if
+                    QLen > 10000 -> unhealthy;
+                    Memory > 104857600 -> unhealthy;
+                    true -> healthy
+                end
+        end,
+
+        case Status of
+            healthy ->
+                maps:update_with(healthy, fun(N) -> N + 1 end, 1, Acc);
+            unhealthy ->
+                maps:update_with(unhealthy, fun(N) -> N + 1 end, 1, Acc)
+        end
+    end, #{healthy => 0, unhealthy => 0}, Processes),
+
+    {ok, Result}.
+-endif.
+
+%%--------------------------------------------------------------------
+%% @doc Find processes with excessive message queues (OTP 28 optimized)
+%%
+%% Returns list of PIDs with message queue length > Threshold
+%% @end
+%%--------------------------------------------------------------------
+-spec find_overloaded_processes(non_neg_integer()) -> {ok, [#{pid => pid(), queue_length => non_neg_integer()}]}.
+
+-ifdef(OTP_28).
+find_overloaded_processes(Threshold) ->
+    Iterator = erlang:processes_iterator(),
+    find_overloaded_iterator(Iterator, Threshold, []).
+
+-spec find_overloaded_iterator(term(), non_neg_integer(), list()) -> {ok, list()}.
+find_overloaded_iterator(Iterator, Threshold, Acc) ->
+    case erlang:process_next(Iterator) of
+        {Pid, NewIterator} ->
+            NewAcc = case process_info(Pid, [message_queue_len, registered_name]) of
+                undefined ->
+                    Acc;
+                Info ->
+                    QLen = proplists:get_value(message_queue_len, Info, 0),
+                    case QLen > Threshold of
+                        true ->
+                            RegName = proplists:get_value(registered_name, Info, undefined),
+                            [#{pid => Pid, queue_length => QLen, registered_name => RegName} | Acc];
+                        false ->
+                            Acc
+                    end
+            end,
+            find_overloaded_iterator(NewIterator, Threshold, NewAcc);
+        none ->
+            {ok, lists:reverse(Acc)}
+    end.
+
+-else.
+find_overloaded_processes(Threshold) ->
+    Processes = erlang:processes(),
+
+    Result = lists:filtermap(fun(Pid) ->
+        case process_info(Pid, [message_queue_len, registered_name]) of
+            undefined ->
+                false;
+            Info ->
+                QLen = proplists:get_value(message_queue_len, Info, 0),
+                case QLen > Threshold of
+                    true ->
+                        RegName = proplists:get_value(registered_name, Info, undefined),
+                        {true, #{pid => Pid, queue_length => QLen, registered_name => RegName}};
+                    false ->
+                        false
+                end
+        end
+    end, Processes),
+
+    {ok, Result}.
+-endif.

@@ -1,6 +1,8 @@
 -module(erlmcp_circuit_breaker).
 -behaviour(gen_statem).
 
+-include("otp_compat.hrl").
+
 %% API
 -export([
     start_link/0,
@@ -57,7 +59,8 @@
       success_threshold => pos_integer(),      % Successes in half_open to close (default: 2)
       timeout => pos_integer(),                % Time in ms before half_open attempt (default: 60000)
       window_size => pos_integer(),            % Rolling window for failure rate (default: 10)
-      failure_rate_threshold => float()}.      % Percentage 0.0-1.0 (default: 0.5)
+      failure_rate_threshold => float(),       % Percentage 0.0-1.0 (default: 0.5)
+      priority_level => normal | high}.        % OTP 28 priority level (default: normal)
 
 -record(data, {
     name :: atom(),
@@ -73,7 +76,10 @@
     last_failure_time :: undefined | integer(),
     last_state_change :: integer(),
     % Rolling window for failure rate
-    call_history = [] :: [{integer(), success | failure}]
+    call_history = [] :: [{integer(), success | failure}],
+    % Priority message metrics
+    priority_messages_delivered = 0 :: non_neg_integer(),
+    priority_latency_sum_us = 0 :: non_neg_integer()
 }).
 
 -type state_name() :: closed | open | half_open.
@@ -88,7 +94,8 @@
     success_threshold => 2,
     timeout => 60000,
     window_size => 10,
-    failure_rate_threshold => 0.5
+    failure_rate_threshold => 0.5,
+    priority_level => normal
 }).
 
 -define(BREAKER_OPEN_ERROR, circuit_breaker_open).
@@ -288,6 +295,22 @@ callback_mode() ->
 init({Name, UserConfig}) ->
     process_flag(trap_exit, true),
     Config = maps:merge(?DEFAULT_CONFIG, UserConfig),
+
+    % Enable priority messages on OTP 28+ for critical state transitions
+    -ifdef(OTP_28).
+    PriorityLevel = maps:get(priority_level, Config, normal),
+    case PriorityLevel of
+        high ->
+            process_flag(message_queue_data, off_heap),
+            process_flag(priority, high),
+            ?LOG_INFO("Circuit breaker ~p: OTP 28 priority messages enabled", [Name]);
+        _ ->
+            ok
+    end,
+    -else.
+    ok,
+    -endif.
+
     Data = #data{
         name = Name,
         config = Config,
@@ -318,10 +341,24 @@ format_status(#{state := State, data := Data}) ->
 
 %% CLOSED state - Normal operation
 closed(enter, _OldState, Data) ->
+    StartTime = erlang:monotonic_time(microsecond),
     ?LOG_DEBUG("Circuit breaker ~p entered CLOSED state", [Data#data.name]),
+
+    -ifdef(OTP_28).
+    % Send priority notification to health monitor for state change
+    notify_state_change_priority(Data#data.name, closed),
+    -else.
+    notify_state_change_normal(Data#data.name, closed),
+    -endif.
+
+    EndTime = erlang:monotonic_time(microsecond),
+    LatencyUs = EndTime - StartTime,
+
     NewData = Data#data{
         consecutive_failures = 0,
-        last_state_change = erlang:monotonic_time(millisecond)
+        last_state_change = erlang:monotonic_time(millisecond),
+        priority_messages_delivered = Data#data.priority_messages_delivered + 1,
+        priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs
     },
     {keep_state, NewData};
 
@@ -377,12 +414,26 @@ closed(EventType, EventContent, Data) ->
 
 %% OPEN state - Failing, reject requests
 open(enter, _OldState, Data) ->
+    StartTime = erlang:monotonic_time(microsecond),
     ?LOG_WARNING("Circuit breaker ~p entered OPEN state", [Data#data.name]),
+
+    -ifdef(OTP_28).
+    % CRITICAL: Send priority notification to health monitor immediately
+    notify_state_change_priority(Data#data.name, open),
+    -else.
+    notify_state_change_normal(Data#data.name, open),
+    -endif.
+
+    EndTime = erlang:monotonic_time(microsecond),
+    LatencyUs = EndTime - StartTime,
+
     Config = Data#data.config,
     Timeout = maps:get(timeout, Config),
     NewData = Data#data{
         consecutive_successes = 0,
-        last_state_change = erlang:monotonic_time(millisecond)
+        last_state_change = erlang:monotonic_time(millisecond),
+        priority_messages_delivered = Data#data.priority_messages_delivered + 1,
+        priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs
     },
     {keep_state, NewData, [{state_timeout, Timeout, attempt_recovery}]};
 
@@ -423,11 +474,25 @@ open(EventType, EventContent, Data) ->
 
 %% HALF_OPEN state - Testing recovery
 half_open(enter, _OldState, Data) ->
+    StartTime = erlang:monotonic_time(microsecond),
     ?LOG_INFO("Circuit breaker ~p entered HALF_OPEN state", [Data#data.name]),
+
+    -ifdef(OTP_28).
+    % Send priority notification for half_open state (recovery attempt)
+    notify_state_change_priority(Data#data.name, half_open),
+    -else.
+    notify_state_change_normal(Data#data.name, half_open),
+    -endif.
+
+    EndTime = erlang:monotonic_time(microsecond),
+    LatencyUs = EndTime - StartTime,
+
     NewData = Data#data{
         consecutive_failures = 0,
         consecutive_successes = 0,
-        last_state_change = erlang:monotonic_time(millisecond)
+        last_state_change = erlang:monotonic_time(millisecond),
+        priority_messages_delivered = Data#data.priority_messages_delivered + 1,
+        priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs
     },
     {keep_state, NewData};
 
@@ -581,6 +646,11 @@ build_stats(State, Data) ->
         Total -> Data#data.total_successes / Total
     end,
 
+    AvgPriorityLatencyUs = case Data#data.priority_messages_delivered of
+        0 -> 0;
+        Count -> Data#data.priority_latency_sum_us / Count
+    end,
+
     #{
         name => Data#data.name,
         state => State,
@@ -594,7 +664,9 @@ build_stats(State, Data) ->
         success_rate => SuccessRate,
         last_failure_time => Data#data.last_failure_time,
         last_state_change => Data#data.last_state_change,
-        config => Data#data.config
+        config => Data#data.config,
+        priority_messages_delivered => Data#data.priority_messages_delivered,
+        priority_latency_us => AvgPriorityLatencyUs
     }.
 
 %% @private Ensure manager table exists
@@ -605,5 +677,31 @@ ensure_manager_table() ->
             ets:new(?MANAGER_TABLE, [named_table, public, set]),
             ok;
         _ ->
+            ok
+    end.
+
+%% @private Notify health monitor of state change with priority (OTP 28)
+-ifdef(OTP_28).
+-spec notify_state_change_priority(atom(), state_name()) -> ok.
+notify_state_change_priority(Name, NewState) ->
+    case whereis(erlmcp_health_monitor) of
+        undefined ->
+            ok;
+        Pid ->
+            % Use priority cast for immediate delivery
+            erlang:send(Pid, {circuit_breaker_state_change, Name, NewState}, [nosuspend]),
+            ok
+    end.
+-endif.
+
+%% @private Notify health monitor of state change (OTP 25-27)
+-spec notify_state_change_normal(atom(), state_name()) -> ok.
+notify_state_change_normal(Name, NewState) ->
+    case whereis(erlmcp_health_monitor) of
+        undefined ->
+            ok;
+        _Pid ->
+            % Use cast for normal delivery
+            erlmcp_health_monitor:report_circuit_breaker(Name, NewState),
             ok
     end.
