@@ -207,16 +207,16 @@ test_cancel_during_tool() ->
 
     case OperationPid of
         undefined -> ok;
-        Pid ->
+        OpPid ->
             %% Register and cancel
-            Token = erlmcp_cancellation:register(self(), Pid, <<"tools/call">>),
+            Token = erlmcp_cancellation:register(self(), OpPid, <<"tools/call">>),
             ok = erlmcp_cancellation:cancel(Token),
 
             %% Wait for cancellation
             timer:sleep(200),
 
             %% Operation should be stopped
-            ?assertNot(is_process_alive(Pid))
+            ?assertNot(is_process_alive(OpPid))
     end,
 
     stop_test_server(Server).
@@ -258,13 +258,13 @@ test_tool_cleanup() ->
 
     case OperationPid of
         undefined -> ok;
-        Pid ->
-            Token = erlmcp_cancellation:register(self(), Pid, <<"tools/call">>),
+        OpPid ->
+            Token = erlmcp_cancellation:register(self(), OpPid, <<"tools/call">>),
             ok = erlmcp_cancellation:cancel(Token),
 
             %% Verify cleanup executed
             receive
-                {cleanup_executed, Pid} -> ok
+                {cleanup_executed, OpPid} -> ok
             after 1000 -> ok
             end
     end,
@@ -315,13 +315,13 @@ test_cancel_resource_read() ->
 
     case OperationPid of
         undefined -> ok;
-        Pid ->
+        OpPid ->
             %% Cancel read
-            Token = erlmcp_cancellation:register(self(), Pid, <<"resources/read">>),
+            Token = erlmcp_cancellation:register(self(), OpPid, <<"resources/read">>),
             ok = erlmcp_cancellation:cancel(Token),
 
             timer:sleep(200),
-            ?assertNot(is_process_alive(Pid))
+            ?assertNot(is_process_alive(OpPid))
     end,
 
     stop_test_server(Server).
@@ -375,16 +375,16 @@ test_cancel_with_progress() ->
 
     case OperationPid of
         undefined -> ok;
-        Pid ->
+        OpPid ->
             %% Wait for some progress
             timer:sleep(300),
 
             %% Cancel mid-progress
-            Token = erlmcp_cancellation:register(self(), Pid, <<"tools/call">>),
+            Token = erlmcp_cancellation:register(self(), OpPid, <<"tools/call">>),
             ok = erlmcp_cancellation:cancel(Token),
 
             timer:sleep(200),
-            ?assertNot(is_process_alive(Pid))
+            ?assertNot(is_process_alive(OpPid))
     end,
 
     stop_test_server(Server).

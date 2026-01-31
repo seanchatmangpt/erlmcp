@@ -492,11 +492,11 @@ test_rate_limit(Pid) ->
     Results = [erlmcp_completion:complete(Pid, Ref, Argument) || _ <- lists:seq(1, 15)],
 
     %% Some should succeed
-    Successes = [R || {ok, _} <- Results],
+    Successes = [R || {ok, R} <- Results],
     ?assert(length(Successes) >= 1),
 
     %% Some may be rate limited
-    Errors = [R || {error, _} <- Results],
+    Errors = [R || {error, R} <- Results],
     ?assert(length(Errors) >= 0).
 
 %%%===================================================================
