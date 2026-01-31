@@ -50,7 +50,8 @@
 
 -record(ws_state, {
     subscribed_metrics = all :: all | [binary()],
-    client_id :: binary()
+    client_id :: binary(),
+    filter = #{} :: map()  % Metric type filter: #{<<"types">> => [<<"cpu">>, <<"memory">>], ...}
 }).
 
 -define(DEFAULT_PORT, 9090).
@@ -276,8 +277,9 @@ websocket_info({send_metrics, Message}, State) ->
         [] ->
             {ok, State};
         _SubscribedList ->
-            % TODO: Filter metrics based on subscription
-            {[{text, Message}], State}
+            % Filter metrics based on subscription (Joe Armstrong: "Send only what's needed")
+            FilteredMessage = filter_metrics_message(Message, State#ws_state.filter),
+            {[{text, FilteredMessage}], State}
     end;
 
 websocket_info(_Info, State) ->
@@ -303,8 +305,23 @@ handle_client_message(#{<<"type">> := <<"subscribe">>, <<"metrics">> := Metrics}
     }),
     {[{text, Response}], NewState};
 
+handle_client_message(#{<<"type">> := <<"subscribe">>, <<"filter">> := Filter}, State) ->
+    % Subscribe with filter (Joe Armstrong: "Process per subscriber" - each client has its own filter)
+    NewState = State#ws_state{
+        subscribed_metrics = filtered,
+        filter = Filter
+    },
+    Response = jsx:encode(#{
+        type => <<"subscribed">>,
+        filter => Filter
+    }),
+    {[{text, Response}], NewState};
+
 handle_client_message(#{<<"type">> := <<"unsubscribe">>}, State) ->
-    NewState = State#ws_state{subscribed_metrics = []},
+    NewState = State#ws_state{
+        subscribed_metrics = [],
+        filter = #{}
+    },
     Response = jsx:encode(#{
         type => <<"unsubscribed">>
     }),
@@ -329,3 +346,36 @@ handle_client_message(_Unknown, State) ->
 generate_client_id() ->
     <<A:32, B:32, C:32>> = crypto:strong_rand_bytes(12),
     list_to_binary(io_lib:format("client_~8.16.0b~8.16.0b~8.16.0b", [A, B, C])).
+
+%% @doc Filter metrics message based on subscription filter
+%% Joe Armstrong: "Pattern matching for clarity" - use pattern matching to handle filter cases
+-spec filter_metrics_message(binary(), map()) -> binary().
+filter_metrics_message(Message, Filter) when map_size(Filter) =:= 0 ->
+    % No filter, return original message
+    Message;
+filter_metrics_message(Message, Filter) ->
+    % Decode and filter based on filter criteria
+    Decoded = jsx:decode(Message, [return_maps]),
+    case maps:get(<<"data">>, Decoded, undefined) of
+        undefined -> Message;
+        Data ->
+            FilteredData = apply_metric_filter(Data, Filter),
+            jsx:encode(maps:put(<<"data">>, FilteredData, Decoded))
+    end.
+
+%% @doc Apply filter to metrics data
+-spec apply_metric_filter(map(), map()) -> map().
+apply_metric_filter(Metrics, Filter) ->
+    % Filter by metric types (e.g., cpu, memory, throughput)
+    case maps:get(<<"types">>, Filter, undefined) of
+        undefined -> Metrics;
+        Types when is_list(Types) ->
+            lists:foldl(fun(Type, Acc) ->
+                case maps:get(Type, Metrics, undefined) of
+                    undefined -> Acc;
+                    Value -> maps:put(Type, Value, Acc)
+                end
+            end, #{}, Types);
+        _ -> Metrics
+    end.
+

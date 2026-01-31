@@ -98,7 +98,7 @@ test_bind_nonexistent_server(#{}) ->
     TransportId = test_transport_no_server,
     ServerId = nonexistent_server,
 
-    TransportPid = spawn_transport_process(),
+    TransportPid = start_real_transport(),
     TransportConfig = #{type => stdio},
     ok = erlmcp_registry:register_transport(TransportId, TransportPid, TransportConfig),
 
@@ -159,7 +159,7 @@ test_transport_process_death_cleanup(#{}) ->
     ServerId = death_server,
 
     erlmcp_test_helpers:with_test_server(ServerId, fun(_ServerPid) ->
-        TransportPid = spawn_transport_process(),
+        TransportPid = start_real_transport(),
 
         % Register and bind
         ok = erlmcp_registry:register_transport(TransportId, TransportPid, #{type => stdio}),
@@ -168,10 +168,8 @@ test_transport_process_death_cleanup(#{}) ->
         % Verify binding exists
         {ok, ServerId} = erlmcp_registry:get_server_for_transport(TransportId),
 
-        % Kill transport process
-        unlink(TransportPid),
-        exit(TransportPid, kill),
-        wait_for_process_death(TransportPid, 2000),
+        % Stop transport process
+        stop_real_transport(TransportPid),
         timer:sleep(200),  % Allow gproc monitor cleanup
 
         [
@@ -192,8 +190,8 @@ test_server_death_cleans_up_bindings(#{}) ->
     Transport2Id = death_cleanup_transport_2,
 
     {ok, ServerPid} = erlmcp_test_helpers:start_test_server(ServerId),
-    Transport1Pid = spawn_transport_process(),
-    Transport2Pid = spawn_transport_process(),
+    Transport1Pid = start_real_transport(),
+    Transport2Pid = start_real_transport(),
 
     % Register and bind multiple transports
     ok = erlmcp_registry:register_server(ServerId, ServerPid, #{}),
@@ -247,7 +245,7 @@ test_route_message_to_nonexistent_transport(#{}) ->
 test_route_message_to_transport_no_server(#{}) ->
     TransportId = no_server_transport,
 
-    TransportPid = spawn_transport_process(),
+    TransportPid = start_real_transport(),
     ok = erlmcp_registry:register_transport(TransportId, TransportPid, #{type => stdio}),
 
     TestMessage = #{<<"test">> => <<"data">>},
@@ -292,27 +290,12 @@ test_unknown_handle_info(#{registry_pid := RegistryPid}) ->
 %% Helper Functions
 %%====================================================================
 
-%% @doc Spawn a mock transport process for testing
-spawn_transport_process() ->
-    spawn_link(fun() ->
-        receive stop -> ok after 5000 -> ok end
-    end).
+%% @doc Start a REAL erlmcp_client transport process (Chicago School TDD)
+%% Uses real gen_server process, not a mock spawn
+start_real_transport() ->
+    {ok, ClientPid} = erlmcp_test_helpers:start_test_client(#{transport => {stdio, []}}),
+    ClientPid.
 
-%% @doc Wait for a process to die (with timeout)
-wait_for_process_death(Pid, Timeout) ->
-    wait_for_process_death(Pid, Timeout, erlang:system_time(millisecond)).
-
-wait_for_process_death(Pid, Timeout, StartTime) ->
-    case is_process_alive(Pid) of
-        false ->
-            ok;
-        true ->
-            Now = erlang:system_time(millisecond),
-            case Now - StartTime > Timeout of
-                true ->
-                    throw({timeout_waiting_for_process_death, Pid});
-                false ->
-                    timer:sleep(10),
-                    wait_for_process_death(Pid, Timeout, StartTime)
-            end
-    end.
+%% @doc Stop a REAL erlmcp_client transport process
+stop_real_transport(ClientPid) ->
+    erlmcp_test_helpers:stop_test_client(ClientPid).

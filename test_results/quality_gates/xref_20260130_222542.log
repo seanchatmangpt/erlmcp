@@ -1,0 +1,53 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;31m===> [1mCompiling apps/erlmcp_transports/src/erlmcp_transport_discovery.erl failed
+[0m[0m    ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+    │
+ 48 │  -type [1;31mdiscovery_event[0m() ::[0m
+    │        [1;31m╰──[0m[0m syntax error before: discovery_event
+
+
+    ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+    │
+ 53 │  -[1;31mexport_type[0m([discovery_event/0]).[0m
+    │   [1;31m╰──[0m[0m type discovery_event() undefined
+
+    ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+    │
+ 88 │  -spec watch(fun(([1;31mdiscovery_event[0m()) -> any())) -> ok.[0m
+    │                   [1;31m╰──[0m[0m type discovery_event() undefined
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 456 │  -spec generate_discovery_events(#{atom() => map()}, #{atom() => map()}) -> [[1;31mdiscovery_event[0m()].[0m
+     │                                                                              [1;31m╰──[0m[0m type discovery_event() undefined
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 481 │  -spec notify_watchers([pid()], [[1;31mdiscovery_event[0m()]) -> ok.[0m
+     │                                  [1;31m╰──[0m[0m type discovery_event() undefined
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 496 │  -spec auto_start_transports([[1;31mdiscovery_event[0m()]) -> ok.[0m
+     │                               [1;31m╰──[0m[0m type discovery_event() undefined
+
+
+    ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+    │
+ 20 │  -[1;31mbehaviour[0m(gen_server).[0m
+    │   [1;31m╰──[0m[0m Warning: undefined callback function handle_call/3 (behaviour 'gen_server')
+
+    ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+    │
+ 20 │  -[1;31mbehaviour[0m(gen_server).[0m
+    │   [1;31m╰──[0m[0m Warning: undefined callback function handle_cast/2 (behaviour 'gen_server')
+
+    ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+    │
+ 20 │  -[1;31mbehaviour[0m(gen_server).[0m
+    │   [1;31m╰──[0m[0m Warning: undefined callback function init/1 (behaviour 'gen_server')
+
+
