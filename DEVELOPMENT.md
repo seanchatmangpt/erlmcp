@@ -6,7 +6,7 @@ This guide covers setting up and working with the erlmcp workspace, which coordi
 
 ## Prerequisites
 
-- **Erlang/OTP 25+** (required)
+- **Erlang/OTP 28.3.1+** (required - OTP 28+ features exclusive)
 - **rebar3** (package manager and build tool)
 - **git** (version control)
 - Optional but recommended:
