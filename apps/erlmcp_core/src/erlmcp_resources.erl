@@ -71,6 +71,16 @@ resolve_root_uri(Uri) when is_binary(Uri) ->
 read_resource(Uri) when is_binary(Uri) ->
     gen_server:call(?MODULE, {read_resource, Uri}).
 
+%% @doc List all resource roots with optional server state context
+-spec list_roots_with_state(term()) -> {ok, [root_entry()]}.
+list_roots_with_state(_ServerState) ->
+    list_roots().
+
+%% @doc Read a resource with root URI resolution (supports file:// scheme)
+-spec read_resource_with_roots(binary(), term()) -> {ok, binary()} | {error, term()}.
+read_resource_with_roots(Uri, _ServerState) ->
+    read_resource(Uri).
+
 %%%====================================================================
 %%% gen_server callbacks
 %%%====================================================================
