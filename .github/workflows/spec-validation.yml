@@ -1,0 +1,50 @@
+name: MCP Spec Validation
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Erlang
+        uses: erlang-solutions/setup-beam@v1
+        with:
+          otp-version: '26'
+
+      - name: Compile
+        run: TERM=dumb rebar3 compile
+
+      - name: Run Spec Validation Tests
+        run: rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_spec_compliance_SUITE.ct
+
+      - name: Generate Validation Report
+        run: |
+          rebar3 compile
+          rebar3 as validation escriptize
+          ./_build/validation/bin/erlmcp_validate run --all --output-file=validation_report.json
+
+      - name: Upload Report
+        uses: actions/upload-artifact@v3
+        with:
+          name: validation-report
+          path: validation_report.json
+
+      - name: Check Results
+        run: |
+          if [ -f validation_report.json ]; then
+            if grep -q '"overall_status":"fail"' validation_report.json; then
+              echo "Spec validation FAILED"
+              exit 1
+            fi
+            echo "Spec validation PASSED"
+          else
+            echo "No validation report generated, checking CT exit status"
+            echo "CT validation completed (see above logs)"
+          fi

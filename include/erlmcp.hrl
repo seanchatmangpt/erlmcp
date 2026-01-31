@@ -926,7 +926,7 @@
 %%% MCP Task Record (for erlmcp_tasks)
 -record(mcp_task, {
     id :: binary(),
-    status :: pending | processing | completed | failed | cancelled,
+    status :: pending | processing | input_required | completed | failed | cancelled,
     action :: map(),
     metadata :: map(),
     result :: term() | undefined,

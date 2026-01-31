@@ -1,6 +1,24 @@
 %%%-------------------------------------------------------------------
 %%% @doc erlmcp_sampling - Sampling/createMessage capability implementation
 %%% Implements MCP sampling for LLM message generation
+%%%
+%%% Supports multiple LLM providers:
+%%% - OpenAI (GPT-4, GPT-3.5-turbo)
+%%% - Anthropic Claude (Claude 3, Claude 2)
+%%% - Local (Ollama, LM Studio, OpenAI-compatible)
+%%% - Mock (for testing)
+%%%
+%%% Provider Configuration:
+%%%   Set provider via application env:
+%%%     {erlmcp, [
+%%%       {llm_provider, openai},  % openai, anthropic, local, mock
+%%%       {llm_provider_config, #{
+%%%         api_key => <<"sk-...">>,
+%%%         model => <<"gpt-4">>,
+%%%         base_url => <<"https://api.openai.com">>
+%%%       }}
+%%%     ]}
+%%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_sampling).
@@ -12,7 +30,9 @@
     create_message/2,
     create_message/3,
     set_model_provider/2,
-    get_model_provider/0
+    get_model_provider/0,
+    get_provider_config/0,
+    set_provider_config/1
 ]).
 
 %% gen_server callbacks
@@ -70,6 +90,16 @@ set_model_provider(ProviderModule, ProviderModule) when is_atom(ProviderModule) 
 get_model_provider() ->
     gen_server:call(?MODULE, get_model_provider).
 
+%% @doc Get provider configuration
+-spec get_provider_config() -> map().
+get_provider_config() ->
+    gen_server:call(?MODULE, get_provider_config).
+
+%% @doc Set provider configuration
+-spec set_provider_config(map()) -> ok.
+set_provider_config(Config) ->
+    gen_server:call(?MODULE, {set_provider_config, Config}).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -78,8 +108,31 @@ get_model_provider() ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     logger:info("Starting erlmcp_sampling server"),
+
+    %% Get provider from config
+    ProviderName = application:get_env(erlmcp, llm_provider, mock),
+    ProviderModule = provider_name_to_module(ProviderName),
+
+    %% Get provider config
+    ProviderConfig = application:get_env(erlmcp, llm_provider_config, #{}),
+
+    %% Start the provider if it's a gen_server
+    case ProviderModule of
+        erlmcp_mock_llm ->
+            ok;  % Mock doesn't need to be started
+        _ ->
+            case ProviderModule:start_link(ProviderConfig) of
+                {ok, _Pid} ->
+                    logger:info("Started LLM provider: ~p", [ProviderModule]);
+                {error, {already_started, _Pid}} ->
+                    logger:info("LLM provider already started: ~p", [ProviderModule]);
+                {error, Reason} ->
+                    logger:error("Failed to start LLM provider ~p: ~p", [ProviderModule, Reason])
+            end
+    end,
+
     {ok, #state{
-        model_provider = application:get_env(erlmcp, model_provider, erlmcp_mock_llm),
+        model_provider = ProviderModule,
         default_params = get_default_params()
     }}.
 
@@ -158,6 +211,14 @@ handle_call({set_model_provider, ProviderModule}, _From, State) when is_atom(Pro
 
 handle_call(get_model_provider, _From, State) ->
     {reply, State#state.model_provider, State};
+
+handle_call(get_provider_config, _From, State) ->
+    {reply, get_default_params(), State};
+
+handle_call({set_provider_config, Config}, _From, State) ->
+    %% Update default params
+    NewDefaultParams = maps:merge(State#state.default_params, Config),
+    {reply, ok, State#state{default_params = NewDefaultParams}};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -243,3 +304,11 @@ get_default_params() ->
         <<"temperature">> => application:get_env(erlmcp, default_temperature, 0.7),
         <<"maxTokens">> => application:get_env(erlmcp, default_max_tokens, 1000)
     }.
+
+%% @private Convert provider name to module
+-spec provider_name_to_module(openai | anthropic | local | mock) -> module().
+provider_name_to_module(openai) -> erlmcp_llm_provider_openai;
+provider_name_to_module(anthropic) -> erlmcp_llm_provider_anthropic;
+provider_name_to_module(local) -> erlmcp_llm_provider_local;
+provider_name_to_module(mock) -> erlmcp_mock_llm;
+provider_name_to_module(_) -> erlmcp_mock_llm.

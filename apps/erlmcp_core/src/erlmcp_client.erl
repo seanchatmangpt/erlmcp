@@ -107,6 +107,12 @@ initialize(Client, Capabilities) ->
 initialize(Client, Capabilities, Options) ->
     gen_server:call(Client, {initialize, Capabilities, Options}, infinity).
 
+%% Ping method (MCP 2025-11-25)
+%% Simplest possible request - returns empty object on success
+-spec ping(client()) -> {ok, map()} | {error, term()}.
+ping(Client) ->
+    gen_server:call(Client, ping).
+
 -spec list_resources(client()) -> {ok, [map()]} | {error, term()}.
 list_resources(Client) ->
     gen_server:call(Client, list_resources).
@@ -250,6 +256,12 @@ handle_call({initialize, Capabilities, _Options}, From, #state{phase = pre_initi
 handle_call({initialize, _Capabilities, _Options}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {invalid_phase, Phase, <<"Initialize must be called in pre_initialization phase">>}}),
     {noreply, State};
+
+%% Ping method (MCP 2025-11-25)
+%% Allowed in any phase - simple liveness check
+handle_call(ping, From, State) ->
+    {ok, NewState} = send_request(State, <<"ping">>, #{}, {ping, From}),
+    {noreply, NewState};
 
 %% All capability requests require initialized phase
 handle_call(list_resources, From, #state{phase = initialized} = State) ->

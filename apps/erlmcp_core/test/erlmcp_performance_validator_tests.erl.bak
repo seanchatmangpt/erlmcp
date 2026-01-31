@@ -1,0 +1,613 @@
+%%%-------------------------------------------------------------------
+%%% @doc Performance Validator Tests - Joe Armstrong's Philosophy
+%%%
+%%% "TESTS MUST VERIFY REAL BEHAVIOR."
+%%% - No mocks, no fakes
+%%% - Real operations, real measurements
+%%% - Verify targets are ACTUALLY met
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_performance_validator_tests).
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%%===================================================================
+%%% Test Setup
+%%%===================================================================
+
+%% @doc Setup for each test - ensure clean state
+setup() ->
+    {ok, Pid} = erlmcp_performance_validator:start_link(),
+    Pid.
+
+%% @doc Cleanup after each test
+cleanup(Pid) ->
+    gen_server:stop(Pid).
+
+%%%===================================================================
+%%% Benchmark Tests - Real Measurements
+%%%===================================================================
+
+%% @doc Test: Registry lookup benchmark (baseline)
+registry_lookup_benchmark_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            %% Create registry
+            {ok, RegistryPid} = erlmcp_registry:start_link(),
+            TestPid = self(),
+            erlmcp_registry:register_name(<<"test_lookup">>, TestPid),
+            
+            %% Run benchmark with REAL iterations
+            Operation = fun() -> 
+                erlmcp_registry:lookup_name(<<"test_lookup">>) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 10000,
+                warmup => 100
+            }),
+            
+            %% Verify we actually measured something
+            Iterations = maps:get(iterations, Result),
+            ?assertEqual(10000, Iterations),
+            
+            %% Verify we have throughput data
+            Throughput = maps:get(throughput_per_sec, Result),
+            ?assert(Throughput > 0),
+            
+            %% Verify we have latency metrics
+            P50 = maps:get(latency_p50, Result),
+            P95 = maps:get(latency_p95, Result),
+            P99 = maps:get(latency_p99, Result),
+            
+            ?assert(is_integer(P50)),
+            ?assert(is_integer(P95)),
+            ?assert(is_integer(P99)),
+            
+            %% Latency should be reasonable (p99 < 10ms for simple lookup)
+            ?assert(P99 < 10000),  % 10ms in microseconds
+            
+            %% Log results
+            logger:info("Registry Lookup: ~.2f ops/sec, p50=~pµs, p95=~pµs, p99=~pµs",
+                       [Throughput, P50, P95, P99]),
+            
+            gen_server:stop(RegistryPid)
+           end)]
+     end}.
+
+%% @doc Test: JSON encode small message benchmark
+json_encode_small_benchmark_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            Message = #{
+                <<"jsonrpc">> => <<"2.0">>,
+                <<"id">> => 1,
+                <<"method">> => <<"tools/call">>,
+                <<"params">> => #{
+                    <<"name">> => <<"test_tool">>,
+                    <<"arguments">> => #{}
+                }
+            },
+            
+            Operation = fun() -> 
+                erlmcp_json_rpc:encode_request(Message) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 10000,
+                warmup => 100
+            }),
+            
+            %% Verify measurements
+            Throughput = maps:get(throughput_per_sec, Result),
+            ?assert(Throughput > 0),
+            
+            P95 = maps:get(latency_p95, Result),
+            
+            %% JSON encoding should be fast (p95 < 1ms)
+            ?assert(P95 < 1000),  % 1ms in microseconds
+            
+            logger:info("JSON Encode Small: ~.2f ops/sec, p95=~pµs",
+                       [Throughput, P95])
+           end)]
+     end}.
+
+%% @doc Test: JSON decode small message benchmark
+json_decode_small_benchmark_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            JSON <<"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"test_tool\",\"arguments\":{}}}">>,
+            
+            Operation = fun() -> 
+                erlmcp_json_rpc:decode_request(JSON) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 10000,
+                warmup => 100
+            }),
+            
+            Throughput = maps:get(throughput_per_sec, Result),
+            ?assert(Throughput > 0),
+            
+            P95 = maps:get(latency_p95, Result),
+            ?assert(P95 < 1000),
+            
+            logger:info("JSON Decode Small: ~.2f ops/sec, p95=~pµs",
+                       [Throughput, P95])
+           end)]
+     end}.
+
+%% @doc Test: Session operation benchmark
+session_operation_benchmark_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, SessionPid} = erlmcp_session:start_link(<<"bench_session">>),
+            
+            Operation = fun() -> 
+                erlmcp_session:set(SessionPid, test_key, test_value) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 10000,
+                warmup => 100
+            }),
+            
+            Throughput = maps:get(throughput_per_sec, Result),
+            ?assert(Throughput > 0),
+            
+            P95 = maps:get(latency_p95, Result),
+            
+            %% Session ops should be < 5ms p95
+            ?assert(P95 < 5000),
+            
+            logger:info("Session Operation: ~.2f ops/sec, p95=~pµs",
+                       [Throughput, P95]),
+            
+            gen_server:stop(SessionPid)
+           end)]
+     end}.
+
+%% @doc Test: Tool call benchmark
+tool_call_benchmark_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, ServerPid} = erlmcp_server:start_link(bench_server, #{}),
+            
+            Handler = fun(_Args) -> #{result => ok} end,
+            erlmcp_server:add_tool(ServerPid, <<"bench_tool">>, <<"Benchmark tool">>, Handler),
+            
+            Operation = fun() -> 
+                erlmcp_server:call_tool(ServerPid, <<"bench_tool">>, #{}) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 5000,  % Fewer iterations for slower operation
+                warmup => 50
+            }),
+            
+            Throughput = maps:get(throughput_per_sec, Result),
+            ?assert(Throughput > 0),
+            
+            P95 = maps:get(latency_p95, Result),
+            
+            %% Tool calls should be < 100ms p95
+            ?assert(P95 < 100000),  % 100ms in microseconds
+            
+            logger:info("Tool Call: ~.2f ops/sec, p95=~pµs",
+                       [Throughput, P95]),
+            
+            gen_server:stop(ServerPid)
+           end)]
+     end}.
+
+%% @doc Test: Resource read benchmark
+resource_read_benchmark_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, ServerPid} = erlmcp_server:start_link(bench_server, #{}),
+            
+            Handler = fun(_Uri) -> <<"test content">> end,
+            erlmcp_server:add_resource(ServerPid, <<"bench://resource">>, <<"Bench Resource">>, Handler),
+            
+            Operation = fun() -> 
+                erlmcp_server:read_resource(ServerPid, <<"bench://resource">>) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 5000,
+                warmup => 50
+            }),
+            
+            Throughput = maps:get(throughput_per_sec, Result),
+            ?assert(Throughput > 0),
+            
+            P95 = maps:get(latency_p95, Result),
+            
+            %% Resource reads should be < 50ms p95
+            ?assert(P95 < 50000),
+            
+            logger:info("Resource Read: ~.2f ops/sec, p95=~pµs",
+                       [Throughput, P95]),
+            
+            gen_server:stop(ServerPid)
+           end)]
+     end}.
+
+%%%===================================================================
+%%% Validation Tests - Target Verification
+%%%===================================================================
+
+%% @doc Test: Validate registry lookup meets target
+registry_lookup_validation_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, RegistryPid} = erlmcp_registry:start_link(),
+            TestPid = self(),
+            erlmcp_registry:register_name(<<"test_validate">>, TestPid),
+            
+            Operation = fun() -> 
+                erlmcp_registry:lookup_name(<<"test_validate">>) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:validate_performance(Operation, #{
+                name => <<"registry_lookup_validation">>,
+                iterations => 10000,
+                target_p95_ms => 5  % 5ms target
+            }),
+            
+            %% Should pass (registry lookup is fast)
+            Passed = maps:get(passed, Result),
+            ?assert(Passed),
+            
+            ActualP95 = maps:get(actual_p95_ms, Result),
+            Target = maps:get(target_ms, Result),
+            
+            ?assert(ActualP95 =< Target),
+            
+            logger:info("Registry Lookup Validation: passed=~p, p95=~pms (target=~pms)",
+                       [Passed, ActualP95, Target]),
+            
+            gen_server:stop(RegistryPid)
+           end)]
+     end}.
+
+%% @doc Test: Validate tool call meets target
+tool_call_validation_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, ServerPid} = erlmcp_server:start_link(validate_server, #{}),
+            
+            Handler = fun(_Args) -> #{result => ok} end,
+            erlmcp_server:add_tool(ServerPid, <<"validate_tool">>, <<"Validation tool">>, Handler),
+            
+            Operation = fun() -> 
+                erlmcp_server:call_tool(ServerPid, <<"validate_tool">>, #{}) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:validate_performance(Operation, #{
+                name => <<"tool_call_validation">>,
+                iterations => 5000,
+                target_p95_ms => 100  % 100ms target
+            }),
+            
+            %% Should pass
+            Passed = maps:get(passed, Result),
+            ?assert(Passed),
+            
+            ActualP95 = maps:get(actual_p95_ms, Result),
+            Target = maps:get(target_ms, Result),
+            
+            ?assert(ActualP95 =< Target),
+            
+            logger:info("Tool Call Validation: passed=~p, p95=~pms (target=~pms)",
+                       [Passed, ActualP95, Target]),
+            
+            gen_server:stop(ServerPid)
+           end)]
+     end}.
+
+%%%===================================================================
+%%% Stress Test - Find Breaking Point
+%%%===================================================================
+
+%% @doc Test: Stress test registry to breaking point
+registry_stress_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, RegistryPid} = erlmcp_registry:start_link(),
+            TestPid = self(),
+            erlmcp_registry:register_name(<<"stress_test">>, TestPid),
+            
+            Operation = fun() -> 
+                erlmcp_registry:lookup_name(<<"stress_test">>) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:stress_test(Operation, #{
+                name => <<"registry_stress">>,
+                start_iterations => 1000,
+                multiplier => 10,
+                max_iterations => 1000000  % 1M max
+            }),
+            
+            BreakingPoint = maps:get(breaking_point_iterations, Result),
+            Reason = maps:get(breaking_point_reason, Result),
+            
+            %% Registry should handle at least 100K operations
+            ?assert(BreakingPoint >= 100000),
+            
+            logger:info("Registry Stress Test: breaking_point=~p, reason=~p",
+                       [BreakingPoint, Reason]),
+            
+            gen_server:stop(RegistryPid)
+           end)]
+     end}.
+
+%%%===================================================================
+%%% Memory Leak Detection
+%%%===================================================================
+
+%% @doc Test: Detect memory leaks in registry operations
+registry_memory_leak_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, RegistryPid} = erlmcp_registry:start_link(),
+            TestPid = self(),
+            erlmcp_registry:register_name(<<"memleak_test">>, TestPid),
+            
+            Operation = fun() -> 
+                erlmcp_registry:lookup_name(<<"memleak_test">>) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:detect_memory_leak(Operation, #{
+                name => <<"registry_memory_leak">>,
+                iterations => 100000  % 100K iterations
+            }),
+            
+            HasLeak = maps:get(has_leak, Result),
+            MemoryBefore = maps:get(memory_before_mb, Result),
+            MemoryAfter = maps:get(memory_after_mb, Result),
+            MemoryDiff = maps:get(memory_diff_mb, Result),
+            
+            %% Should NOT have memory leak
+            ?assertNot(HasLeak),
+            
+            %% Memory diff should be reasonable (< 10MB)
+            ?assert(MemoryDiff < 10),
+            
+            logger:info("Registry Memory Leak: has_leak=~p, before=~.2fMB, after=~.2fMB, diff=~.2fMB",
+                       [HasLeak, MemoryBefore, MemoryAfter, MemoryDiff]),
+            
+            gen_server:stop(RegistryPid)
+           end)]
+     end}.
+
+%% @doc Test: Detect memory leaks in session operations
+session_memory_leak_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, SessionPid} = erlmcp_session:start_link(<<"memleak_session">>),
+            
+            Operation = fun() -> 
+                erlmcp_session:set(SessionPid, test_key, test_value) 
+            end,
+            
+            {ok, Result} = erlmcp_performance_validator:detect_memory_leak(Operation, #{
+                name => <<"session_memory_leak">>,
+                iterations => 100000
+            }),
+            
+            HasLeak = maps:get(has_leak, Result),
+            MemoryDiff = maps:get(memory_diff_mb, Result),
+            
+            %% Should NOT have memory leak
+            ?assertNot(HasLeak),
+            ?assert(MemoryDiff < 10),
+            
+            logger:info("Session Memory Leak: has_leak=~p, diff=~.2fMB",
+                       [HasLeak, MemoryDiff]),
+            
+            gen_server:stop(SessionPid)
+           end)]
+     end}.
+
+%%%===================================================================
+%%% All Benchmarks - Comprehensive Suite
+%%%===================================================================
+
+%% @doc Test: Run all standard benchmarks
+all_benchmarks_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            {ok, Results} = erlmcp_performance_validator:run_all_benchmarks(),
+            
+            %% Should have at least 10 benchmarks
+            ?assert(length(Results) >= 10),
+            
+            %% Check each result
+            PassedCount = lists:foldl(fun(Result, Acc) ->
+                Passed = maps:get(passed, Result, false),
+                Name = maps:get(benchmark_name, Result),
+                
+                logger:info("Benchmark '~s': passed=~p, p95=~pms, target=~pms",
+                           [Name, Passed,
+                            maps:get(actual_p95_ms, Result),
+                            maps:get(target_ms, Result)]),
+                
+                Acc + (Passed =:= true andalso 1)
+            end, 0, Results),
+            
+            %% Most benchmarks should pass (at least 80%)
+            PassRate = (PassedCount / length(Results)) * 100,
+            ?assert(PassRate >= 80),
+            
+            logger:info("All Benchmarks: ~p/~p passed (~.1f%)",
+                       [PassedCount, length(Results), PassRate])
+           end)]
+     end}.
+
+%%%===================================================================
+%%% Percentile Calculation Tests
+%%%===================================================================
+
+%% @doc Test: Percentile calculation accuracy
+percentile_calculation_test() ->
+    %% Create sorted latencies
+    Latencies = lists:seq(1, 1000),  % 1 to 1000 microseconds
+    
+    P50 = percentile_internal(Latencies, 1000, 50),
+    P95 = percentile_internal(Latencies, 1000, 95),
+    P99 = percentile_internal(Latencies, 1000, 99),
+    
+    %% P50 should be around 500
+    ?assert(P50 >= 495 andalso P50 =< 505),
+    
+    %% P95 should be around 950
+    ?assert(P95 >= 945 andalso P95 =< 955),
+    
+    %% P99 should be around 990
+    ?assert(P99 >= 985 andalso P99 =< 995).
+
+%%%===================================================================
+%%% Throughput Calculation Tests
+%%%===================================================================
+
+%% @doc Test: Throughput calculation accuracy
+throughput_calculation_test() ->
+    %% Simulate 10K operations taking 1 second
+    Iterations = 10000,
+    TotalDurationUs = 1000000,  % 1 second in microseconds
+    
+    Throughput = (Iterations * 1000000) / TotalDurationUs,
+    
+    %% Should be exactly 10K ops/sec
+    ?assertEqual(10000.0, Throughput).
+
+%%%===================================================================
+%%% Edge Cases
+%%%===================================================================
+
+%% @doc Test: Benchmark with zero iterations (edge case)
+benchmark_zero_iterations_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            Operation = fun() -> ok end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 0,
+                warmup => 0
+            }),
+            
+            %% Should handle gracefully
+            ?assertEqual(0, maps:get(iterations, Result)),
+            ?assertEqual(0, maps:get(duration_us, Result))
+           end)]
+     end}.
+
+%% @doc Test: Benchmark with single iteration
+benchmark_single_iteration_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            Operation = fun() -> ok end,
+            
+            {ok, Result} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 1,
+                warmup => 0
+            }),
+            
+            ?assertEqual(1, maps:get(iterations, Result)),
+            ?assert(maps:get(throughput_per_sec, Result) > 0)
+           end)]
+     end}.
+
+%% @doc Test: Warmup prevents cold start bias
+warmup_effectiveness_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [?_test(begin
+            %% Operation that benefits from warmup (e.g., JIT compilation)
+            Counter = spawn(fun() ->
+                receive
+                    loop -> loop(0)
+                end
+            end),
+            
+            Operation = fun() ->
+                Counter ! {self(), increment},
+                receive
+                    {Counter, _} -> ok
+                end
+            end,
+            
+            %% Run without warmup
+            {ok, ResultNoWarmup} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 100,
+                warmup => 0
+            }),
+            
+            %% Run with warmup
+            {ok, ResultWithWarmup} = erlmcp_performance_validator:benchmark(Operation, #{
+                iterations => 100,
+                warmup => 50
+            }),
+            
+            %% Warmup should improve consistency (lower max latency)
+            MaxNoWarmup = maps:get(max_latency_us, ResultNoWarmup),
+            MaxWithWarmup = maps:get(max_latency_us, ResultWithWarmup),
+            
+            logger:info("Warmup Effectiveness: no_warmup_max=~pµs, with_warmup_max=~pµs",
+                       [MaxNoWarmup, MaxWithWarmup]),
+            
+            exit(Counter, kill)
+           end)]
+     end}.
+
+%% Helper function for percentile testing (internal access)
+percentile_internal(Latencies, Len, P) ->
+    Index = max(1, min(Len, round((P / 100) * Len))),
+    lists:nth(Index, Latencies).

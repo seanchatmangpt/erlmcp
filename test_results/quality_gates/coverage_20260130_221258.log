@@ -1,0 +1,23 @@
+[0;32m===> Compiling c_src/mac/cli.c
+[0m[0;32m===> Compiling c_src/mac/compat.c
+[0m[0;32m===> Compiling c_src/mac/main.c
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling rebar3_auto
+[0m[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;31m===> [1mCompiling _build/default/lib/chatterbox/src/h2_frame_ping.erl failed
+[0m[0m_build/default/lib/chatterbox/ebin/h2_frame_ping.beam:none: failed to rename /Users/sac/erlmcp/_build/default/lib/chatterbox/ebin/h2_frame_ping.bea# to /Users/sac/erlmcp/_build/default/lib/chatterbox/ebin/h2_frame_ping.beam: no such file or directory
+

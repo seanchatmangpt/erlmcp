@@ -87,11 +87,11 @@ test_replicate_async_no_replicas() ->
 
 test_replicate_async_multiple_sessions() ->
     %% Replicate multiple sessions asynchronously
-    Sessions = [create_test_session(<<"session", (integer_to_binary(I))/binary>>) || I <- lists:seq(1, 10)],
-
-    lists:foreach(fun({SessionId, Session}) ->
+    lists:foreach(fun(I) ->
+        SessionId = <<"session", (integer_to_binary(I))/binary>>,
+        Session = create_test_session(SessionId),
         erlmcp_session_replicator:replicate_async(SessionId, Session)
-    end, Sessions),
+    end, lists:seq(1, 10)),
 
     %% Give time for processing
     timer:sleep(200),
@@ -348,7 +348,7 @@ test_concurrent_async_replications() ->
 test_concurrent_sync_replications() ->
     %% Spawn multiple processes replicating synchronously
     Parent = self(),
-    Pids = [spawn(fun() ->
+    _ = [spawn(fun() ->
         SessionId = <<"concurrent_sync_", (integer_to_binary(I))/binary>>,
         Session = create_test_session(SessionId),
         Result = erlmcp_session_replicator:sync_replicate(SessionId, Session),
@@ -378,13 +378,11 @@ queue_management_test_() ->
 
 test_queue_flush_on_batch_size() ->
     %% The queue flushes when batch size (100) is reached
-    Sessions = [create_test_session(<<"batch_", (integer_to_binary(I))/binary>>)
-                 || I <- lists:seq(1, 150)],
-
-    %% Add all to queue
-    lists:foreach(fun({SessionId, Session}) ->
+    lists:foreach(fun(I) ->
+        SessionId = <<"batch_", (integer_to_binary(I))/binary>>,
+        Session = create_test_session(SessionId),
         erlmcp_session_replicator:replicate_async(SessionId, Session)
-    end, Sessions),
+    end, lists:seq(1, 150)),
 
     %% Wait for flushes to complete
     timer:sleep(500),
@@ -462,7 +460,8 @@ test_full_replication_workflow() ->
     %% Async replicate
     ?assertEqual(ok, erlmcp_session_replicator:replicate_async(SessionId, Session)),
 
-    timer:sleep(100),
+    %% Wait for queue to process (timer fires every 1 second)
+    timer:sleep(1200),
 
     %% Check status
     {ok, Status} = erlmcp_session_replicator:get_replication_status(),
@@ -487,7 +486,8 @@ test_replication_session_lifecycle() ->
     Session1 = create_test_session(SessionId, #{stage => created}),
     ?assertEqual(ok, erlmcp_session_replicator:replicate_async(SessionId, Session1)),
 
-    timer:sleep(100),
+    %% Wait for queue to process
+    timer:sleep(1200),
 
     %% Update and replicate
     Session2 = create_test_session(SessionId, #{stage => updated}),

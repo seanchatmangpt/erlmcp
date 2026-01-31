@@ -1,0 +1,22 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;31m===> [1mCompiling apps/erlmcp_transports/src/erlmcp_transport_discovery.erl failed
+[0m[0m     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 520 │                  Labels = maps:get(<<"labels">>, ServiceMetadata, #{{}[1;31m),[0m[0m
+     │                                                                       [1;31m╰──[0m[0m syntax error before: ')'
+
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 364 │                          case [1;31mk8s_service_to_transport[0m(Service, K8sConfig) of[0m
+     │                               [1;31m╰──[0m[0m function k8s_service_to_transport/2 undefined
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 500 │  -[1;31mspec[0m k8s_service_to_transport(map(), map()) -> {ok, #{atom() => map()}} | {error, term()}.[0m
+     │   [1;31m╰──[0m[0m spec for undefined function k8s_service_to_transport/2
+
+
