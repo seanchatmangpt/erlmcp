@@ -26,6 +26,11 @@ rebar.config.lock
 .DS_Store
 *.iml
 
+# Editor temporary files for documentation
+*.md.tmp
+*.md.bak
+*.md~
+
 # Environment
 .env
 .env.local
@@ -80,3 +85,10 @@ coverage*.txt
 test*.txt
 eunit*.txt
 dialyzer*.txt
+
+# Documentation structure (TRACKED - DO NOT IGNORE)
+# The following directories are TRACKED and contain important project documentation:
+#   - archive/: Historical documentation, phase reports, quality reports, strategy docs
+#   - docs/: Main project documentation, architecture, API references
+#   - _archived_tests/: Historical test documentation
+# These directories should NEVER be added to .gitignore
