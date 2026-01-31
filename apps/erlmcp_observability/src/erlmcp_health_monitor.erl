@@ -1,5 +1,7 @@
 -module(erlmcp_health_monitor).
 
+-include("otp_compat.hrl").
+
 -behaviour(gen_server).
 
 %% API

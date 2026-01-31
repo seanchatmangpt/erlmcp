@@ -20,6 +20,9 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_process_monitor).
+
+-include("otp_compat.hrl").
+
 -behaviour(gen_server).
 
 %% API
