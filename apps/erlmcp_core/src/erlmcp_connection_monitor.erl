@@ -35,8 +35,6 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_connection_monitor).
 
--include("otp_compat.hrl").
-
 -behaviour(gen_statem).
 
 %% API
@@ -540,20 +538,15 @@ cleanup_connection(Pid, MonitorRef) ->
     end.
 
 %%--------------------------------------------------------------------
-%% @private Cleanup all orphaned connections (OTP 28 optimized)
+%% @private Cleanup all orphaned connections
 %%
-%% On OTP 28+: Builds a set of alive PIDs using process iterator (O(1) memory)
+%% Builds a set of alive PIDs using process iterator (O(1) memory)
 %% then checks each connection against that set. Avoids N×is_process_alive/1 calls.
-%%
-%% On OTP 25-27: Falls back to checking is_process_alive/1 for each connection.
 %%
 %% Returns: Count of cleaned up connections
 %% @end
 %%--------------------------------------------------------------------
 -spec do_cleanup_connections() -> non_neg_integer().
-
--ifdef(OTP_28).
-%% OTP 28+ implementation using process iterator
 do_cleanup_connections() ->
     Now = erlang:monotonic_time(millisecond),
     OrphanedThreshold = 5 * 60 * 1000,  % 5 minutes
@@ -606,39 +599,6 @@ build_alive_pids_set_iterator(Iterator, Set) ->
             %% Iterator exhausted, return set
             Set
     end.
-
--else.
-%% OTP 25-27 fallback implementation
-do_cleanup_connections() ->
-    Now = erlang:monotonic_time(millisecond),
-    OrphanedThreshold = 5 * 60 * 1000,  % 5 minutes
-
-    %% Find orphaned connections (no process alive or inactive)
-    Orphaned = ets:foldl(fun({Pid, Info}, Acc) ->
-        case erlang:is_process_alive(Pid) of
-            false ->
-                [Pid | Acc];
-            true ->
-                LastActivity = maps:get(last_activity, Info, Now),
-                case (Now - LastActivity) > OrphanedThreshold of
-                    true -> [Pid | Acc];
-                    false -> Acc
-                end
-        end
-    end, [], ?ETS_TABLE),
-
-    %% Cleanup orphaned connections
-    lists:foreach(fun(Pid) ->
-        cleanup_connection(Pid, undefined)
-    end, Orphaned),
-
-    case length(Orphaned) of
-        0 -> ok;
-        Count -> logger:warning("Cleaned up ~p orphaned connections", [Count])
-    end,
-
-    length(Orphaned).
--endif.
 
 %% @private Check for connection leaks
 -spec do_check_leak(#data{}) -> {ok, #data{}} | {leak_detected, #data{}}.

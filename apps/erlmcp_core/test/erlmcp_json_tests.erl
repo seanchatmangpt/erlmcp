@@ -3,32 +3,12 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
-%% Test Suite for JSON Encoding/Decoding Compatibility
+%% Test Suite for erlmcp_json - Native JSON Wrapper (OTP 28.3.1+)
 %% Chicago School TDD: Test ONLY observable behavior through public API
 %%
-%% Purpose: Verify jsx and native OTP json module produce equivalent output
-%% OTP Support: jsx (OTP 25-28), native json (OTP 27-28)
+%% Purpose: Verify erlmcp_json wrapper around native json module
+%% OTP Support: OTP 28.3.1+ only (no backward compatibility)
 %%====================================================================
-
-%%====================================================================
-%% Test: Detect which JSON implementations are available
-%% Why: OTP 25-26 only have jsx, OTP 27+ have both
-%%====================================================================
-
-has_native_json() ->
-    erlang:function_exported(json, encode, 1).
-
-json_decode(Binary) ->
-    case has_native_json() of
-        true -> json:decode(Binary);
-        false -> jsx:decode(Binary, [return_maps])
-    end.
-
-json_encode(Term) ->
-    case has_native_json() of
-        true -> json:encode(Term);
-        false -> jsx:encode(Term)
-    end.
 
 %%====================================================================
 %% Basic Types Tests
@@ -38,34 +18,34 @@ json_encode(Term) ->
 
 json_encode_basic_types_test() ->
     %% Test: Integer encoding
-    IntJson = jsx:encode(42),
+    IntJson = erlmcp_json:encode(42),
     ?assertEqual(<<"42">>, IntJson),
-    ?assertEqual(42, jsx:decode(IntJson)),
+    ?assertEqual(42, erlmcp_json:decode(IntJson)),
 
     %% Test: Float encoding
-    FloatJson = jsx:encode(3.14159),
+    FloatJson = erlmcp_json:encode(3.14159),
     ?assert(is_binary(FloatJson)),
-    ?assertEqual(3.14159, jsx:decode(FloatJson)),
+    ?assertEqual(3.14159, erlmcp_json:decode(FloatJson)),
 
     %% Test: String encoding
-    StringJson = jsx:encode(<<"hello">>),
+    StringJson = erlmcp_json:encode(<<"hello">>),
     ?assertEqual(<<"\"hello\"">>, StringJson),
-    ?assertEqual(<<"hello">>, jsx:decode(StringJson)),
+    ?assertEqual(<<"hello">>, erlmcp_json:decode(StringJson)),
 
     %% Test: Boolean true
-    TrueJson = jsx:encode(true),
+    TrueJson = erlmcp_json:encode(true),
     ?assertEqual(<<"true">>, TrueJson),
-    ?assertEqual(true, jsx:decode(TrueJson)),
+    ?assertEqual(true, erlmcp_json:decode(TrueJson)),
 
     %% Test: Boolean false
-    FalseJson = jsx:encode(false),
+    FalseJson = erlmcp_json:encode(false),
     ?assertEqual(<<"false">>, FalseJson),
-    ?assertEqual(false, jsx:decode(FalseJson)),
+    ?assertEqual(false, erlmcp_json:decode(FalseJson)),
 
     %% Test: Null encoding
-    NullJson = jsx:encode(null),
+    NullJson = erlmcp_json:encode(null),
     ?assertEqual(<<"null">>, NullJson),
-    ?assertEqual(null, jsx:decode(NullJson)).
+    ?assertEqual(null, erlmcp_json:decode(NullJson)).
 
 %%====================================================================
 %% Lists (JSON Arrays) Tests
@@ -75,25 +55,25 @@ json_encode_basic_types_test() ->
 
 json_encode_lists_test() ->
     %% Test: Empty array
-    EmptyJson = jsx:encode([]),
+    EmptyJson = erlmcp_json:encode([]),
     ?assertEqual(<<"[]">>, EmptyJson),
-    ?assertEqual([], jsx:decode(EmptyJson)),
+    ?assertEqual([], erlmcp_json:decode(EmptyJson)),
 
     %% Test: Array of integers
-    IntArrayJson = jsx:encode([1, 2, 3, 4, 5]),
+    IntArrayJson = erlmcp_json:encode([1, 2, 3, 4, 5]),
     ?assert(is_binary(IntArrayJson)),
-    ?assertEqual([1, 2, 3, 4, 5], jsx:decode(IntArrayJson)),
+    ?assertEqual([1, 2, 3, 4, 5], erlmcp_json:decode(IntArrayJson)),
 
     %% Test: Array of mixed types
-    MixedJson = jsx:encode([1, <<"test">>, true, null, 3.14]),
+    MixedJson = erlmcp_json:encode([1, <<"test">>, true, null, 3.14]),
     ?assert(is_binary(MixedJson)),
-    Decoded = jsx:decode(MixedJson),
+    Decoded = erlmcp_json:decode(MixedJson),
     ?assertEqual(5, length(Decoded)),
 
     %% Test: Nested arrays
-    NestedJson = jsx:encode([[1, 2], [3, 4], [5, 6]]),
+    NestedJson = erlmcp_json:encode([[1, 2], [3, 4], [5, 6]]),
     ?assert(is_binary(NestedJson)),
-    ?assertEqual([[1, 2], [3, 4], [5, 6]], jsx:decode(NestedJson)).
+    ?assertEqual([[1, 2], [3, 4], [5, 6]], erlmcp_json:decode(NestedJson)).
 
 %%====================================================================
 %% Maps (JSON Objects) Tests
@@ -103,15 +83,15 @@ json_encode_lists_test() ->
 
 json_encode_maps_test() ->
     %% Test: Empty map
-    EmptyJson = jsx:encode(#{}),
+    EmptyJson = erlmcp_json:encode(#{}),
     ?assertEqual(<<"{}">> , EmptyJson),
-    ?assertEqual(#{}, jsx:decode(EmptyJson, [return_maps])),
+    ?assertEqual(#{}, erlmcp_json:decode(EmptyJson)),
 
     %% Test: Map with binary keys
     BinaryKeyMap = #{<<"name">> => <<"John">>, <<"age">> => 30},
-    BinaryKeyJson = jsx:encode(BinaryKeyMap),
+    BinaryKeyJson = erlmcp_json:encode(BinaryKeyMap),
     ?assert(is_binary(BinaryKeyJson)),
-    DecodedBinary = jsx:decode(BinaryKeyJson, [return_maps]),
+    DecodedBinary = erlmcp_json:decode(BinaryKeyJson),
     ?assertEqual(<<"John">>, maps:get(<<"name">>, DecodedBinary)),
     ?assertEqual(30, maps:get(<<"age">>, DecodedBinary)),
 
@@ -123,9 +103,9 @@ json_encode_maps_test() ->
         <<"bool">> => true,
         <<"null">> => null
     },
-    MixedJson = jsx:encode(MixedMap),
+    MixedJson = erlmcp_json:encode(MixedMap),
     ?assert(is_binary(MixedJson)),
-    DecodedMixed = jsx:decode(MixedJson, [return_maps]),
+    DecodedMixed = erlmcp_json:decode(MixedJson),
     ?assertEqual(5, maps:size(DecodedMixed)).
 
 %%====================================================================
@@ -145,9 +125,9 @@ json_encode_nested_structures_test() ->
             }
         }
     },
-    NestedJson = jsx:encode(Nested),
+    NestedJson = erlmcp_json:encode(Nested),
     ?assert(is_binary(NestedJson)),
-    DecodedNested = jsx:decode(NestedJson, [return_maps]),
+    DecodedNested = erlmcp_json:decode(NestedJson),
     Level1 = maps:get(<<"level1">>, DecodedNested),
     Level2 = maps:get(<<"level2">>, Level1),
     Level3 = maps:get(<<"level3">>, Level2),
@@ -159,9 +139,9 @@ json_encode_nested_structures_test() ->
         #{<<"id">> => 2, <<"name">> => <<"second">>},
         #{<<"id">> => 3, <<"name">> => <<"third">>}
     ],
-    ArrayJson = jsx:encode(ArrayOfObjects),
+    ArrayJson = erlmcp_json:encode(ArrayOfObjects),
     ?assert(is_binary(ArrayJson)),
-    DecodedArray = jsx:decode(ArrayJson, [return_maps]),
+    DecodedArray = erlmcp_json:decode(ArrayJson),
     ?assertEqual(3, length(DecodedArray)),
 
     %% Test: Object with arrays
@@ -170,9 +150,9 @@ json_encode_nested_structures_test() ->
         <<"strings">> => [<<"a">>, <<"b">>, <<"c">>],
         <<"mixed">> => [1, <<"two">>, true]
     },
-    ObjectJson = jsx:encode(ObjectWithArrays),
+    ObjectJson = erlmcp_json:encode(ObjectWithArrays),
     ?assert(is_binary(ObjectJson)),
-    DecodedObject = jsx:decode(ObjectJson, [return_maps]),
+    DecodedObject = erlmcp_json:decode(ObjectJson),
     ?assertEqual(3, maps:size(DecodedObject)).
 
 %%====================================================================
@@ -184,9 +164,9 @@ json_encode_nested_structures_test() ->
 json_encode_unicode_test() ->
     %% Test: Basic Unicode characters
     UnicodeText = <<"Hello 世界 🌍"/utf8>>,
-    UnicodeJson = jsx:encode(UnicodeText),
+    UnicodeJson = erlmcp_json:encode(UnicodeText),
     ?assert(is_binary(UnicodeJson)),
-    DecodedUnicode = jsx:decode(UnicodeJson),
+    DecodedUnicode = erlmcp_json:decode(UnicodeJson),
     ?assertEqual(UnicodeText, DecodedUnicode),
 
     %% Test: Various Unicode ranges
@@ -196,16 +176,16 @@ json_encode_unicode_test() ->
         <<"arabic">> => <<"مرحبا"/utf8>>,
         <<"emoji">> => <<"🎉🎊✨"/utf8>>
     },
-    UnicodeMapJson = jsx:encode(UnicodeMap),
+    UnicodeMapJson = erlmcp_json:encode(UnicodeMap),
     ?assert(is_binary(UnicodeMapJson)),
-    DecodedUnicodeMap = jsx:decode(UnicodeMapJson, [return_maps]),
+    DecodedUnicodeMap = erlmcp_json:decode(UnicodeMapJson),
     ?assertEqual(4, maps:size(DecodedUnicodeMap)),
 
     %% Test: Escaped characters
     EscapedText = <<"Line1\nLine2\tTabbed\"Quoted\"">>,
-    EscapedJson = jsx:encode(EscapedText),
+    EscapedJson = erlmcp_json:encode(EscapedText),
     ?assert(is_binary(EscapedJson)),
-    DecodedEscaped = jsx:decode(EscapedJson),
+    DecodedEscaped = erlmcp_json:decode(EscapedJson),
     ?assertEqual(EscapedText, DecodedEscaped).
 
 %%====================================================================
@@ -216,26 +196,26 @@ json_encode_unicode_test() ->
 
 json_decode_basic_types_test() ->
     %% Test: Decode integer
-    ?assertEqual(42, jsx:decode(<<"42">>)),
+    ?assertEqual(42, erlmcp_json:decode(<<"42">>)),
 
     %% Test: Decode float
-    ?assertEqual(3.14, jsx:decode(<<"3.14">>)),
+    ?assertEqual(3.14, erlmcp_json:decode(<<"3.14">>)),
 
     %% Test: Decode string
-    ?assertEqual(<<"hello">>, jsx:decode(<<"\"hello\"">>)),
+    ?assertEqual(<<"hello">>, erlmcp_json:decode(<<"\"hello\"">>)),
 
     %% Test: Decode boolean
-    ?assertEqual(true, jsx:decode(<<"true">>)),
-    ?assertEqual(false, jsx:decode(<<"false">>)),
+    ?assertEqual(true, erlmcp_json:decode(<<"true">>)),
+    ?assertEqual(false, erlmcp_json:decode(<<"false">>)),
 
     %% Test: Decode null
-    ?assertEqual(null, jsx:decode(<<"null">>)),
+    ?assertEqual(null, erlmcp_json:decode(<<"null">>)),
 
     %% Test: Decode array
-    ?assertEqual([1, 2, 3], jsx:decode(<<"[1,2,3]">>)),
+    ?assertEqual([1, 2, 3], erlmcp_json:decode(<<"[1,2,3]">>)),
 
     %% Test: Decode object
-    Decoded = jsx:decode(<<"{\"key\":\"value\"}">>, [return_maps]),
+    Decoded = erlmcp_json:decode(<<"{\"key\":\"value\"}">>),
     ?assertEqual(#{<<"key">> => <<"value">>}, Decoded).
 
 %%====================================================================
@@ -247,22 +227,22 @@ json_decode_basic_types_test() ->
 json_decode_maps_test() ->
     Json = <<"{\"name\":\"John\",\"age\":30}">>,
 
-    %% Test: Decode with return_maps
-    DecodedMap = jsx:decode(Json, [return_maps]),
+    %% Test: Decode to map (OTP 28 native json returns maps by default)
+    DecodedMap = erlmcp_json:decode(Json),
     ?assert(is_map(DecodedMap)),
     ?assertEqual(<<"John">>, maps:get(<<"name">>, DecodedMap)),
     ?assertEqual(30, maps:get(<<"age">>, DecodedMap)),
 
-    %% Test: Nested objects with return_maps
+    %% Test: Nested objects
     NestedJson = <<"{\"user\":{\"name\":\"Jane\",\"age\":25}}">>,
-    DecodedNested = jsx:decode(NestedJson, [return_maps]),
+    DecodedNested = erlmcp_json:decode(NestedJson),
     User = maps:get(<<"user">>, DecodedNested),
     ?assert(is_map(User)),
     ?assertEqual(<<"Jane">>, maps:get(<<"name">>, User)),
 
-    %% Test: Array of objects with return_maps
+    %% Test: Array of objects
     ArrayJson = <<"[{\"id\":1},{\"id\":2},{\"id\":3}]">>,
-    DecodedArray = jsx:decode(ArrayJson, [return_maps]),
+    DecodedArray = erlmcp_json:decode(ArrayJson),
     ?assert(is_list(DecodedArray)),
     ?assertEqual(3, length(DecodedArray)),
     [First | _] = DecodedArray,
@@ -276,15 +256,15 @@ json_decode_maps_test() ->
 
 json_roundtrip_test() ->
     %% Test: Simple types round-trip
-    ?assertEqual(42, jsx:decode(jsx:encode(42))),
-    ?assertEqual(3.14, jsx:decode(jsx:encode(3.14))),
-    ?assertEqual(<<"test">>, jsx:decode(jsx:encode(<<"test">>))),
-    ?assertEqual(true, jsx:decode(jsx:encode(true))),
-    ?assertEqual(null, jsx:decode(jsx:encode(null))),
+    ?assertEqual(42, erlmcp_json:decode(erlmcp_json:encode(42))),
+    ?assertEqual(3.14, erlmcp_json:decode(erlmcp_json:encode(3.14))),
+    ?assertEqual(<<"test">>, erlmcp_json:decode(erlmcp_json:encode(<<"test">>))),
+    ?assertEqual(true, erlmcp_json:decode(erlmcp_json:encode(true))),
+    ?assertEqual(null, erlmcp_json:decode(erlmcp_json:encode(null))),
 
     %% Test: Array round-trip
     Array = [1, 2, 3, <<"test">>, true, null],
-    ?assertEqual(Array, jsx:decode(jsx:encode(Array))),
+    ?assertEqual(Array, erlmcp_json:decode(erlmcp_json:encode(Array))),
 
     %% Test: Map round-trip
     Map = #{
@@ -294,7 +274,7 @@ json_roundtrip_test() ->
         <<"null">> => null,
         <<"array">> => [1, 2, 3]
     },
-    RoundTrip = jsx:decode(jsx:encode(Map), [return_maps]),
+    RoundTrip = erlmcp_json:decode(erlmcp_json:encode(Map)),
     ?assertEqual(Map, RoundTrip),
 
     %% Test: Complex nested structure round-trip
@@ -308,7 +288,7 @@ json_roundtrip_test() ->
             <<"page">> => 1
         }
     },
-    ComplexRoundTrip = jsx:decode(jsx:encode(Complex), [return_maps]),
+    ComplexRoundTrip = erlmcp_json:decode(erlmcp_json:encode(Complex)),
     ?assertEqual(Complex, ComplexRoundTrip).
 
 %%====================================================================
@@ -319,23 +299,23 @@ json_roundtrip_test() ->
 
 json_error_handling_test() ->
     %% Test: Invalid JSON syntax
-    ?assertError(badarg, jsx:decode(<<"not valid json">>)),
-    ?assertError(badarg, jsx:decode(<<"{invalid}">>)),
-    ?assertError(badarg, jsx:decode(<<"{\"key\": invalid}">>)),
+    ?assertError(badarg, erlmcp_json:decode(<<"not valid json">>)),
+    ?assertError(badarg, erlmcp_json:decode(<<"{invalid}">>)),
+    ?assertError(badarg, erlmcp_json:decode(<<"{\"key\": invalid}">>)),
 
     %% Test: Incomplete JSON
-    ?assertError(badarg, jsx:decode(<<"{\"key\":">>)),
-    ?assertError(badarg, jsx:decode(<<"[1,2,">>)),
+    ?assertError(badarg, erlmcp_json:decode(<<"{\"key\":">>)),
+    ?assertError(badarg, erlmcp_json:decode(<<"[1,2,">>)),
 
     %% Test: Invalid UTF-8 (create invalid UTF-8 sequence)
     InvalidUtf8 = <<"{\"key\":\"", 16#FF, 16#FE, "\"}" >>,
-    ?assertError(badarg, jsx:decode(InvalidUtf8)),
+    ?assertError(badarg, erlmcp_json:decode(InvalidUtf8)),
 
     %% Test: Empty string
-    ?assertError(badarg, jsx:decode(<<"">>)),
+    ?assertError(badarg, erlmcp_json:decode(<<"">>)),
 
     %% Test: Only whitespace
-    ?assertError(badarg, jsx:decode(<<"   ">>)).
+    ?assertError(badarg, erlmcp_json:decode(<<"   ">>)).
 
 %%====================================================================
 %% Large Payload Tests
@@ -346,18 +326,18 @@ json_error_handling_test() ->
 json_large_payload_test() ->
     %% Test: Large array (10000 integers = ~50KB)
     LargeArray = lists:seq(1, 10000),
-    LargeArrayJson = jsx:encode(LargeArray),
+    LargeArrayJson = erlmcp_json:encode(LargeArray),
     ?assert(byte_size(LargeArrayJson) > 10000),
-    ?assertEqual(LargeArray, jsx:decode(LargeArrayJson)),
+    ?assertEqual(LargeArray, erlmcp_json:decode(LargeArrayJson)),
 
     %% Test: Large object (1000 key-value pairs)
     LargeMap = maps:from_list([
         {list_to_binary("key" ++ integer_to_list(N)), N}
         || N <- lists:seq(1, 1000)
     ]),
-    LargeMapJson = jsx:encode(LargeMap),
+    LargeMapJson = erlmcp_json:encode(LargeMap),
     ?assert(byte_size(LargeMapJson) > 10000),
-    DecodedLargeMap = jsx:decode(LargeMapJson, [return_maps]),
+    DecodedLargeMap = erlmcp_json:decode(LargeMapJson),
     ?assertEqual(1000, maps:size(DecodedLargeMap)),
 
     %% Test: Deep nesting (100 levels)
@@ -366,129 +346,17 @@ json_large_payload_test() ->
         #{<<"value">> => <<"deep">>},
         lists:seq(1, 100)
     ),
-    DeepJson = jsx:encode(DeepNested),
+    DeepJson = erlmcp_json:encode(DeepNested),
     ?assert(byte_size(DeepJson) > 1000),
-    DecodedDeep = jsx:decode(DeepJson, [return_maps]),
+    DecodedDeep = erlmcp_json:decode(DeepJson),
     ?assert(is_map(DecodedDeep)),
 
     %% Test: Large strings
     LargeString = binary:copy(<<"X">>, 50000),
-    LargeStringJson = jsx:encode(LargeString),
+    LargeStringJson = erlmcp_json:encode(LargeString),
     ?assert(byte_size(LargeStringJson) > 50000),
-    ?assertEqual(LargeString, jsx:decode(LargeStringJson)).
+    ?assertEqual(LargeString, erlmcp_json:decode(LargeStringJson)).
 
-%%====================================================================
-%% Native JSON Compatibility Tests (OTP 27+)
-%% Test: Compare jsx vs native json module if both available
-%% Why: Ensure semantic equivalence between implementations
-%%====================================================================
-
-json_compatibility_jsx_vs_native_test_() ->
-    case has_native_json() of
-        true -> jsx_vs_native_tests();
-        false -> {setup, fun() -> ok end, fun(_) -> ok end, fun(_) -> [
-            ?_test(io:format("~nNative json module not available (OTP < 27), skipping compatibility tests~n"))
-        ] end}
-    end.
-
-jsx_vs_native_tests() ->
-    {setup,
-     fun() -> ok end,
-     fun(_) -> ok end,
-     fun(_) ->
-         [
-             ?_test(test_jsx_native_basic_types()),
-             ?_test(test_jsx_native_arrays()),
-             ?_test(test_jsx_native_objects()),
-             ?_test(test_jsx_native_unicode()),
-             ?_test(test_jsx_native_roundtrip())
-         ]
-     end}.
-
-test_jsx_native_basic_types() ->
-    %% Test: Both produce same output for basic types
-    ?assertEqual(jsx:encode(42), json:encode(42)),
-    ?assertEqual(jsx:encode(3.14), json:encode(3.14)),
-    ?assertEqual(jsx:encode(true), json:encode(true)),
-    ?assertEqual(jsx:encode(false), json:encode(false)),
-    ?assertEqual(jsx:encode(null), json:encode(null)),
-
-    %% Test: Both decode identically
-    ?assertEqual(jsx:decode(<<"42">>), json:decode(<<"42">>)),
-    ?assertEqual(jsx:decode(<<"true">>), json:decode(<<"true">>)),
-    ?assertEqual(jsx:decode(<<"null">>), json:decode(<<"null">>)).
-
-test_jsx_native_arrays() ->
-    Array = [1, 2, 3, <<"test">>, true, null],
-    JsxJson = jsx:encode(Array),
-    NativeJson = json:encode(Array),
-
-    %% Test: Both produce valid JSON (may differ in whitespace)
-    ?assertEqual(Array, jsx:decode(JsxJson)),
-    ?assertEqual(Array, json:decode(NativeJson)),
-
-    %% Test: Cross-decode works
-    ?assertEqual(Array, jsx:decode(NativeJson)),
-    ?assertEqual(Array, json:decode(JsxJson)).
-
-test_jsx_native_objects() ->
-    Map = #{
-        <<"name">> => <<"John">>,
-        <<"age">> => 30,
-        <<"active">> => true
-    },
-    JsxJson = jsx:encode(Map),
-    NativeJson = json:encode(Map),
-
-    %% Test: Both produce valid JSON
-    JsxDecoded = jsx:decode(JsxJson, [return_maps]),
-    NativeDecoded = json:decode(NativeJson),
-
-    ?assertEqual(Map, JsxDecoded),
-    ?assertEqual(Map, NativeDecoded),
-
-    %% Test: Cross-decode works
-    ?assertEqual(Map, jsx:decode(NativeJson, [return_maps])),
-    ?assertEqual(Map, json:decode(JsxJson)).
-
-test_jsx_native_unicode() ->
-    Unicode = <<"Hello 世界 🌍"/utf8>>,
-    JsxJson = jsx:encode(Unicode),
-    NativeJson = json:encode(Unicode),
-
-    %% Test: Both handle Unicode correctly
-    ?assertEqual(Unicode, jsx:decode(JsxJson)),
-    ?assertEqual(Unicode, json:decode(NativeJson)),
-
-    %% Test: Cross-decode works
-    ?assertEqual(Unicode, jsx:decode(NativeJson)),
-    ?assertEqual(Unicode, json:decode(JsxJson)).
-
-test_jsx_native_roundtrip() ->
-    Complex = #{
-        <<"users">> => [
-            #{<<"id">> => 1, <<"name">> => <<"Alice">>},
-            #{<<"id">> => 2, <<"name">> => <<"Bob">>}
-        ],
-        <<"count">> => 2,
-        <<"active">> => true
-    },
-
-    %% Test: jsx round-trip
-    JsxRoundTrip = jsx:decode(jsx:encode(Complex), [return_maps]),
-    ?assertEqual(Complex, JsxRoundTrip),
-
-    %% Test: native round-trip
-    NativeRoundTrip = json:decode(json:encode(Complex)),
-    ?assertEqual(Complex, NativeRoundTrip),
-
-    %% Test: Cross round-trip (jsx encode, native decode)
-    CrossRoundTrip1 = json:decode(jsx:encode(Complex)),
-    ?assertEqual(Complex, CrossRoundTrip1),
-
-    %% Test: Cross round-trip (native encode, jsx decode)
-    CrossRoundTrip2 = jsx:decode(json:encode(Complex), [return_maps]),
-    ?assertEqual(Complex, CrossRoundTrip2).
 
 %%====================================================================
 %% Empty Collections Tests
@@ -499,26 +367,26 @@ test_jsx_native_roundtrip() ->
 json_empty_collections_test() ->
     %% Test: Empty array
     EmptyArray = [],
-    EmptyArrayJson = jsx:encode(EmptyArray),
+    EmptyArrayJson = erlmcp_json:encode(EmptyArray),
     ?assertEqual(<<"[]">>, EmptyArrayJson),
-    ?assertEqual(EmptyArray, jsx:decode(EmptyArrayJson)),
+    ?assertEqual(EmptyArray, erlmcp_json:decode(EmptyArrayJson)),
 
     %% Test: Empty map
     EmptyMap = #{},
-    EmptyMapJson = jsx:encode(EmptyMap),
+    EmptyMapJson = erlmcp_json:encode(EmptyMap),
     ?assertEqual(<<"{}">> , EmptyMapJson),
-    ?assertEqual(EmptyMap, jsx:decode(EmptyMapJson, [return_maps])),
+    ?assertEqual(EmptyMap, erlmcp_json:decode(EmptyMapJson)),
 
     %% Test: Map with empty array value
     MapWithEmptyArray = #{<<"items">> => []},
-    MapWithEmptyArrayJson = jsx:encode(MapWithEmptyArray),
-    DecodedMapWithEmptyArray = jsx:decode(MapWithEmptyArrayJson, [return_maps]),
+    MapWithEmptyArrayJson = erlmcp_json:encode(MapWithEmptyArray),
+    DecodedMapWithEmptyArray = erlmcp_json:decode(MapWithEmptyArrayJson),
     ?assertEqual([], maps:get(<<"items">>, DecodedMapWithEmptyArray)),
 
     %% Test: Array with empty map
     ArrayWithEmptyMap = [#{}],
-    ArrayWithEmptyMapJson = jsx:encode(ArrayWithEmptyMap),
-    DecodedArrayWithEmptyMap = jsx:decode(ArrayWithEmptyMapJson, [return_maps]),
+    ArrayWithEmptyMapJson = erlmcp_json:encode(ArrayWithEmptyMap),
+    DecodedArrayWithEmptyMap = erlmcp_json:decode(ArrayWithEmptyMapJson),
     ?assertEqual([#{}], DecodedArrayWithEmptyMap).
 
 %%====================================================================
@@ -530,24 +398,24 @@ json_empty_collections_test() ->
 json_special_floats_test() ->
     %% Test: Very small float
     SmallFloat = 0.000001,
-    SmallFloatJson = jsx:encode(SmallFloat),
-    DecodedSmall = jsx:decode(SmallFloatJson),
+    SmallFloatJson = erlmcp_json:encode(SmallFloat),
+    DecodedSmall = erlmcp_json:decode(SmallFloatJson),
     ?assert(abs(SmallFloat - DecodedSmall) < 0.0000001),
 
     %% Test: Very large float
     LargeFloat = 999999999.999999,
-    LargeFloatJson = jsx:encode(LargeFloat),
-    DecodedLarge = jsx:decode(LargeFloatJson),
+    LargeFloatJson = erlmcp_json:encode(LargeFloat),
+    DecodedLarge = erlmcp_json:decode(LargeFloatJson),
     ?assert(abs(LargeFloat - DecodedLarge) < 1.0),
 
     %% Test: Negative float
     NegativeFloat = -3.14159,
-    NegativeFloatJson = jsx:encode(NegativeFloat),
-    ?assertEqual(NegativeFloat, jsx:decode(NegativeFloatJson)),
+    NegativeFloatJson = erlmcp_json:encode(NegativeFloat),
+    ?assertEqual(NegativeFloat, erlmcp_json:decode(NegativeFloatJson)),
 
     %% Test: Zero
-    ?assertEqual(0.0, jsx:decode(jsx:encode(0.0))),
-    ?assertEqual(0, jsx:decode(jsx:encode(0))).
+    ?assertEqual(0.0, erlmcp_json:decode(erlmcp_json:encode(0.0))),
+    ?assertEqual(0, erlmcp_json:decode(erlmcp_json:encode(0))).
 
 %%====================================================================
 %% Mixed Key Types Tests
@@ -562,8 +430,8 @@ json_binary_keys_test() ->
         <<"key2">> => 42,
         <<"key3">> => true
     },
-    BinaryJson = jsx:encode(BinaryKeyMap),
-    DecodedBinary = jsx:decode(BinaryJson, [return_maps]),
+    BinaryJson = erlmcp_json:encode(BinaryKeyMap),
+    DecodedBinary = erlmcp_json:decode(BinaryJson),
     ?assertEqual(BinaryKeyMap, DecodedBinary),
 
     %% Test: Nested maps with binary keys
@@ -574,8 +442,8 @@ json_binary_keys_test() ->
             }
         }
     },
-    NestedJson = jsx:encode(NestedBinaryMap),
-    DecodedNested = jsx:decode(NestedJson, [return_maps]),
+    NestedJson = erlmcp_json:encode(NestedBinaryMap),
+    DecodedNested = erlmcp_json:decode(NestedJson),
     ?assertEqual(NestedBinaryMap, DecodedNested),
 
     %% Test: Keys with special characters
@@ -585,8 +453,8 @@ json_binary_keys_test() ->
         <<"key_with_underscore">> => 3,
         <<"key with space">> => 4
     },
-    SpecialJson = jsx:encode(SpecialKeyMap),
-    DecodedSpecial = jsx:decode(SpecialJson, [return_maps]),
+    SpecialJson = erlmcp_json:encode(SpecialKeyMap),
+    DecodedSpecial = erlmcp_json:decode(SpecialJson),
     ?assertEqual(SpecialKeyMap, DecodedSpecial).
 
 %%====================================================================
@@ -598,19 +466,19 @@ json_binary_keys_test() ->
 json_whitespace_test() ->
     %% Test: Compact JSON (no whitespace)
     CompactJson = <<"{\"key\":\"value\"}">>,
-    ?assertEqual(#{<<"key">> => <<"value">>}, jsx:decode(CompactJson, [return_maps])),
+    ?assertEqual(#{<<"key">> => <<"value">>}, erlmcp_json:decode(CompactJson)),
 
     %% Test: JSON with spaces
     SpacedJson = <<"{ \"key\" : \"value\" }">>,
-    ?assertEqual(#{<<"key">> => <<"value">>}, jsx:decode(SpacedJson, [return_maps])),
+    ?assertEqual(#{<<"key">> => <<"value">>}, erlmcp_json:decode(SpacedJson)),
 
     %% Test: JSON with newlines and tabs
     FormattedJson = <<"{\n\t\"key\": \"value\"\n}">>,
-    ?assertEqual(#{<<"key">> => <<"value">>}, jsx:decode(FormattedJson, [return_maps])),
+    ?assertEqual(#{<<"key">> => <<"value">>}, erlmcp_json:decode(FormattedJson)),
 
     %% Test: Array with whitespace
     ArrayJson = <<"[ 1 , 2 , 3 ]">>,
-    ?assertEqual([1, 2, 3], jsx:decode(ArrayJson)).
+    ?assertEqual([1, 2, 3], erlmcp_json:decode(ArrayJson)).
 
 %%====================================================================
 %% Number Precision Tests
@@ -621,18 +489,18 @@ json_whitespace_test() ->
 json_number_precision_test() ->
     %% Test: Large integer (within JavaScript safe range)
     LargeInt = 9007199254740991, % 2^53 - 1 (max safe JavaScript integer)
-    LargeIntJson = jsx:encode(LargeInt),
-    ?assertEqual(LargeInt, jsx:decode(LargeIntJson)),
+    LargeIntJson = erlmcp_json:encode(LargeInt),
+    ?assertEqual(LargeInt, erlmcp_json:decode(LargeIntJson)),
 
     %% Test: Negative large integer
     NegativeLargeInt = -9007199254740991,
-    NegativeLargeIntJson = jsx:encode(NegativeLargeInt),
-    ?assertEqual(NegativeLargeInt, jsx:decode(NegativeLargeIntJson)),
+    NegativeLargeIntJson = erlmcp_json:encode(NegativeLargeInt),
+    ?assertEqual(NegativeLargeInt, erlmcp_json:decode(NegativeLargeIntJson)),
 
     %% Test: Decimal precision
     Decimal = 1.23456789,
-    DecimalJson = jsx:encode(Decimal),
-    DecodedDecimal = jsx:decode(DecimalJson),
+    DecimalJson = erlmcp_json:encode(Decimal),
+    DecodedDecimal = erlmcp_json:decode(DecimalJson),
     ?assert(abs(Decimal - DecodedDecimal) < 0.00000001).
 
 %%====================================================================
@@ -643,20 +511,20 @@ json_number_precision_test() ->
 
 json_escaped_characters_test() ->
     %% Test: Backslash
-    ?assertEqual(<<"\\">>, jsx:decode(jsx:encode(<<"\\"/utf8>>))),
+    ?assertEqual(<<"\\">>, erlmcp_json:decode(erlmcp_json:encode(<<"\\"/utf8>>))),
 
     %% Test: Quote
-    ?assertEqual(<<"\"">>, jsx:decode(jsx:encode(<<"\""/utf8>>))),
+    ?assertEqual(<<"\"">>, erlmcp_json:decode(erlmcp_json:encode(<<"\""/utf8>>))),
 
     %% Test: Newline
-    ?assertEqual(<<"\n">>, jsx:decode(jsx:encode(<<"\n">>))),
+    ?assertEqual(<<"\n">>, erlmcp_json:decode(erlmcp_json:encode(<<"\n">>))),
 
     %% Test: Tab
-    ?assertEqual(<<"\t">>, jsx:decode(jsx:encode(<<"\t">>))),
+    ?assertEqual(<<"\t">>, erlmcp_json:decode(erlmcp_json:encode(<<"\t">>))),
 
     %% Test: Carriage return
-    ?assertEqual(<<"\r">>, jsx:decode(jsx:encode(<<"\r">>))),
+    ?assertEqual(<<"\r">>, erlmcp_json:decode(erlmcp_json:encode(<<"\r">>))),
 
     %% Test: Combined escape sequences
     ComplexString = <<"Line1\nLine2\tTabbed\"Quoted\"\\Backslash">>,
-    ?assertEqual(ComplexString, jsx:decode(jsx:encode(ComplexString))).
+    ?assertEqual(ComplexString, erlmcp_json:decode(erlmcp_json:encode(ComplexString))).

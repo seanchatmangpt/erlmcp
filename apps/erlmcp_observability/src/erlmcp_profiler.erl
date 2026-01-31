@@ -27,7 +27,6 @@
 %%%-----------------------------------------------------------------------------
 -module(erlmcp_profiler).
 
--include("otp_compat.hrl").
 
 %% API - CPU Profiling
 -export([

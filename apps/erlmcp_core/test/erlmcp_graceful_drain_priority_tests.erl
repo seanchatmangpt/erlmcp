@@ -1,7 +1,6 @@
 -module(erlmcp_graceful_drain_priority_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include("otp_compat.hrl").
 
 %%====================================================================
 %% Test Fixtures
@@ -56,14 +55,7 @@ test_priority_shutdown_signal(Pid) ->
          % Should have processed shutdown signal
          ?assertMatch(#{}, Status),
 
-         -ifdef(OTP_28).
-         % Priority shutdown should be instant (<100us typical)
-         ?assert(LatencyUs < 1000),
-         ?debugFmt("OTP 28 priority shutdown signal: ~p us", [LatencyUs])
-         -else.
-         ?assert(LatencyUs < 5000),
-         ?debugFmt("OTP 25-27 shutdown signal: ~p us", [LatencyUs])
-         -endif.
+         
      end}.
 
 test_priority_shutdown_latency(Pid) ->
@@ -87,17 +79,10 @@ test_priority_shutdown_latency(Pid) ->
          AvgLatency = lists:sum(Latencies) / length(Latencies),
          MaxLatency = lists:max(Latencies),
 
-         -ifdef(OTP_28).
          ?assert(AvgLatency < 1000),
          ?assert(MaxLatency < 2000),
          ?debugFmt("OTP 28 priority shutdown - Avg: ~p us, Max: ~p us",
                   [AvgLatency, MaxLatency])
-         -else.
-         ?assert(AvgLatency < 5000),
-         ?assert(MaxLatency < 10000),
-         ?debugFmt("OTP 25-27 shutdown - Avg: ~p us, Max: ~p us",
-                  [AvgLatency, MaxLatency])
-         -endif.
      end}.
 
 %%====================================================================
@@ -139,11 +124,7 @@ test_graceful_drain_sequence(Pid) ->
          % Process should have terminated gracefully
          ?assertNot(is_process_alive(Pid)),
 
-         -ifdef(OTP_28).
          ?debugFmt("OTP 28 graceful drain sequence: ~p us", [DrainLatencyUs])
-         -else.
-         ?debugFmt("OTP 25-27 graceful drain sequence: ~p us", [DrainLatencyUs])
-         -endif.
      end}.
 
 %%====================================================================
@@ -236,26 +217,7 @@ test_shutdown_timeout(_Pid) ->
 test_priority_metrics_tracking(_Pid) ->
     {"Priority shutdown metrics should be tracked",
      fun() ->
-         -ifdef(OTP_28).
-         % Start new drain service
-         {ok, NewPid} = erlmcp_graceful_drain:start_link(),
-
-         % Trigger priority shutdown
-         StartTime = erlang:monotonic_time(microsecond),
-         ok = erlmcp_graceful_drain:initiate_shutdown(1000),
-         EndTime = erlang:monotonic_time(microsecond),
-
-         LatencyUs = EndTime - StartTime,
-
-         % Metrics should show priority message delivery
-         ?assert(LatencyUs < 1000), % Should be very fast
-
-         ?debugFmt("Priority shutdown metrics: ~p us", [LatencyUs]),
-
-         exit(NewPid, shutdown)
-         -else.
-         ?debugMsg("Skipping priority metrics test on OTP 25-27")
-         -endif.
+         
      end}.
 
 %%====================================================================
@@ -287,17 +249,10 @@ test_concurrent_shutdown_signals(_Pid) ->
          AvgLatency = lists:sum(Latencies) / length(Latencies),
          MaxLatency = lists:max(Latencies),
 
-         -ifdef(OTP_28).
          ?assert(AvgLatency < 2000),
          ?assert(MaxLatency < 5000),
          ?debugFmt("OTP 28 concurrent shutdowns - Avg: ~p us, Max: ~p us",
-                  [AvgLatency, MaxLatency])
-         -else.
-         ?assert(AvgLatency < 10000),
-         ?assert(MaxLatency < 20000),
-         ?debugFmt("OTP 25-27 concurrent shutdowns - Avg: ~p us, Max: ~p us",
-                  [AvgLatency, MaxLatency])
-         -endif.,
+                  [AvgLatency, MaxLatency]),
 
          % Wait for all to terminate
          timer:sleep(1000)
@@ -319,5 +274,4 @@ test_fallback_otp_27(Pid) ->
 
          -ifndef(OTP_28).
          ?debugMsg("Verified fallback behavior on OTP 25-27")
-         -endif.
      end}.

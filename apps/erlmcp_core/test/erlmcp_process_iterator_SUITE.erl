@@ -1,17 +1,17 @@
 %%%-------------------------------------------------------------------
 %%% @doc
-%%% OTP 28 Process Iterator Test Suite
+%%% OTP 28.3.1+ Process Iterator Test Suite
 %%%
-%%% Tests the new process iterator API introduced in OTP 28:
+%%% Tests for OTP 28.3.1+ native functionality:
 %%% - erlang:processes_iterator/0 - O(1) memory usage
 %%% - erlang:process_next/1 - iterator advancement
-%%% - Backward compatibility with OTP 25-27
+%%% - No backward compatibility testing
 %%%
 %%% Chicago School TDD:
 %%% - Real process spawning (100+ processes)
 %%% - Observable behavior: memory usage, completeness, ordering
 %%% - No mocks or fakes
-%%% - Graceful fallback for OTP 25-27
+%%% - OTP 28.3.1+ only
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -31,7 +31,6 @@
     test_iterator_completeness/1,
     test_iterator_ordering/1,
     test_process_next_termination/1,
-    test_fallback_available_otp27/1,
     test_concurrent_iteration/1
 ]).
 
@@ -46,7 +45,6 @@
 all() ->
     [
         {group, otp28_features},
-        {group, compatibility},
         {group, stress_tests}
     ].
 
@@ -59,9 +57,6 @@ groups() ->
             test_iterator_ordering,
             test_process_next_termination
         ]},
-        {compatibility, [sequence], [
-            test_fallback_available_otp27
-        ]},
         {stress_tests, [sequence], [
             test_concurrent_iteration
         ]}
@@ -69,18 +64,8 @@ groups() ->
 
 init_per_suite(Config) ->
     ct:pal("Starting OTP 28 Process Iterator Test Suite"),
-
-    % Detect OTP version
-    OTPRelease = erlang:system_info(otp_release),
-    OTPVersion = list_to_integer(OTPRelease),
-
-    ct:pal("OTP Release: ~s (Version: ~p)", [OTPRelease, OTPVersion]),
-
-    % Check if iterator API is available (OTP 28+)
-    HasIterator = has_process_iterator_api(),
-    ct:pal("Process iterator API available: ~p", [HasIterator]),
-
-    [{otp_version, OTPVersion}, {has_iterator, HasIterator} | Config].
+    ct:pal("OTP 28.3.1+ only - no backward compatibility"),
+    Config.
 
 end_per_suite(_Config) ->
     ct:pal("Process Iterator Test Suite completed"),
@@ -110,221 +95,140 @@ end_per_testcase(TestCase, Config) ->
 %%====================================================================
 
 %% @doc Test that process iterator API is available on OTP 28+
-test_iterator_api_available(Config) ->
-    HasIterator = proplists:get_value(has_iterator, Config),
-    OTPVersion = proplists:get_value(otp_version, Config),
+test_iterator_api_available(_Config) ->
+    ct:pal("Testing iterator API availability (OTP 28.3.1+)"),
 
-    ct:pal("Testing iterator API availability (OTP ~p)", [OTPVersion]),
+    % Verify we can create an iterator
+    Iterator = erlang:processes_iterator(),
+    ?assert(is_reference(Iterator) orelse Iterator =:= done),
 
-    if
-        OTPVersion >= 28 ->
-            % OTP 28+: iterator must be available
-            ?assert(HasIterator),
-
-            % Verify we can create an iterator
-            Iterator = erlang:processes_iterator(),
-            ?assert(is_reference(Iterator) orelse Iterator =:= done),
-
-            ct:pal("Iterator created successfully: ~p", [Iterator]);
-
-        true ->
-            % OTP 25-27: iterator should not be available
-            ?assertNot(HasIterator),
-            ct:pal("Iterator API not available (expected for OTP <28)")
-    end.
+    ct:pal("Iterator created successfully: ~p", [Iterator]).
 
 %% @doc Test that iterator uses O(1) memory vs O(N) for processes/0
-test_iterator_memory_constant(Config) ->
-    HasIterator = proplists:get_value(has_iterator, Config),
+test_iterator_memory_constant(_Config) ->
+    ct:pal("Testing iterator memory usage vs processes/0"),
 
-    case HasIterator of
-        false ->
-            {skip, "Process iterator not available (OTP <28)"};
+    % Spawn many processes to amplify memory difference
+    LargeProcessSet = spawn_test_processes(?LARGE_PROCESS_COUNT),
 
-        true ->
-            ct:pal("Testing iterator memory usage vs processes/0"),
+    try
+        % Measure memory for processes/0 (O(N) - creates full list)
+        MemBefore1 = erlang:memory(total),
+        _AllProcs = erlang:processes(),  % Creates list of all processes
+        MemAfter1 = erlang:memory(total),
+        ProcessesMemory = MemAfter1 - MemBefore1,
 
-            % Spawn many processes to amplify memory difference
-            LargeProcessSet = spawn_test_processes(?LARGE_PROCESS_COUNT),
+        % Force garbage collection to clear the list
+        erlang:garbage_collect(),
+        timer:sleep(100),
 
-            try
-                % Measure memory for processes/0 (O(N) - creates full list)
-                MemBefore1 = erlang:memory(total),
-                _AllProcs = erlang:processes(),  % Creates list of all processes
-                MemAfter1 = erlang:memory(total),
-                ProcessesMemory = MemAfter1 - MemBefore1,
+        % Measure memory for iterator (O(1) - just iterator reference)
+        MemBefore2 = erlang:memory(total),
+        _Iterator = erlang:processes_iterator(),  % Just creates iterator
+        MemAfter2 = erlang:memory(total),
+        IteratorMemory = MemAfter2 - MemBefore2,
 
-                % Force garbage collection to clear the list
-                erlang:garbage_collect(),
-                timer:sleep(100),
+        ct:pal("Memory usage comparison:"),
+        ct:pal("  processes/0: ~p bytes (O(N))", [ProcessesMemory]),
+        ct:pal("  iterator: ~p bytes (O(1))", [IteratorMemory]),
 
-                % Measure memory for iterator (O(1) - just iterator reference)
-                MemBefore2 = erlang:memory(total),
-                _Iterator = erlang:processes_iterator(),  % Just creates iterator
-                MemAfter2 = erlang:memory(total),
-                IteratorMemory = MemAfter2 - MemBefore2,
+        % Iterator should use significantly less memory
+        % (processes/0 creates list of PIDs, iterator is just a reference)
+        ?assert(IteratorMemory < ProcessesMemory),
 
-                ct:pal("Memory usage comparison:"),
-                ct:pal("  processes/0: ~p bytes (O(N))", [ProcessesMemory]),
-                ct:pal("  iterator: ~p bytes (O(1))", [IteratorMemory]),
+        % Iterator memory should be roughly constant (just reference size)
+        % Should be < 1KB regardless of process count
+        ?assert(IteratorMemory < 1024)
 
-                % Iterator should use significantly less memory
-                % (processes/0 creates list of PIDs, iterator is just a reference)
-                ?assert(IteratorMemory < ProcessesMemory),
-
-                % Iterator memory should be roughly constant (just reference size)
-                % Should be < 1KB regardless of process count
-                ?assert(IteratorMemory < 1024)
-
-            after
-                cleanup_processes(LargeProcessSet)
-            end
+    after
+        cleanup_processes(LargeProcessSet)
     end.
 
 %% @doc Test that iterator returns all processes
 test_iterator_completeness(Config) ->
-    HasIterator = proplists:get_value(has_iterator, Config),
     TestProcesses = proplists:get_value(test_processes, Config),
 
-    case HasIterator of
-        false ->
-            {skip, "Process iterator not available (OTP <28)"};
+    ct:pal("Testing iterator completeness"),
 
-        true ->
-            ct:pal("Testing iterator completeness"),
+    % Get all processes using iterator
+    IteratedPids = collect_all_processes_via_iterator(),
 
-            % Get all processes using iterator
-            IteratedPids = collect_all_processes_via_iterator(),
+    % Get all processes using processes/0
+    AllPids = erlang:processes(),
 
-            % Get all processes using processes/0
-            AllPids = erlang:processes(),
+    ct:pal("Iterator found ~p processes", [length(IteratedPids)]),
+    ct:pal("processes/0 found ~p processes", [length(AllPids)]),
 
-            ct:pal("Iterator found ~p processes", [length(IteratedPids)]),
-            ct:pal("processes/0 found ~p processes", [length(AllPids)]),
+    % Both methods should find same count
+    ?assertEqual(length(AllPids), length(IteratedPids)),
 
-            % Both methods should find same count
-            ?assertEqual(length(AllPids), length(IteratedPids)),
-
-            % All test processes should be in the iterated list
-            lists:foreach(fun(Pid) ->
-                ?assert(lists:member(Pid, IteratedPids))
-            end, TestProcesses)
-    end.
-
-%% @doc Test that iterator ordering is consistent
-test_iterator_ordering(Config) ->
-    HasIterator = proplists:get_value(has_iterator, Config),
-
-    case HasIterator of
-        false ->
-            {skip, "Process iterator not available (OTP <28)"};
-
-        true ->
-            ct:pal("Testing iterator ordering consistency"),
-
-            % Iterate multiple times
-            Iteration1 = collect_all_processes_via_iterator(),
-            Iteration2 = collect_all_processes_via_iterator(),
-
-            % Order should be consistent across iterations
-            % (if no processes spawn/die between iterations)
-            ?assertEqual(Iteration1, Iteration2)
-    end.
-
-%% @doc Test that process_next/1 properly terminates with 'done'
-test_process_next_termination(Config) ->
-    HasIterator = proplists:get_value(has_iterator, Config),
-
-    case HasIterator of
-        false ->
-            {skip, "Process iterator not available (OTP <28)"};
-
-        true ->
-            ct:pal("Testing iterator termination"),
-
-            % Create iterator
-            Iterator = erlang:processes_iterator(),
-
-            % Iterate until done
-            Result = iterate_until_done(Iterator, 0),
-
-            ct:pal("Iterator terminated after ~p processes", [Result]),
-
-            % Should have counted some processes
-            ?assert(Result > 0)
-    end.
-
-%% @doc Test that fallback to processes/0 works on OTP 25-27
-test_fallback_available_otp27(Config) ->
-    ct:pal("Testing fallback mechanism"),
-
-    % Use our helper that works on all OTP versions
-    AllPids = get_all_processes_compat(),
-
-    ct:pal("Found ~p processes using compat function", [length(AllPids)]),
-
-    % Should return a list
-    ?assert(is_list(AllPids)),
-
-    % Should contain at least our test processes
-    TestProcesses = proplists:get_value(test_processes, Config),
+    % All test processes should be in the iterated list
     lists:foreach(fun(Pid) ->
-        ?assert(lists:member(Pid, AllPids))
+        ?assert(lists:member(Pid, IteratedPids))
     end, TestProcesses).
 
+%% @doc Test that iterator ordering is consistent
+test_iterator_ordering(_Config) ->
+    ct:pal("Testing iterator ordering consistency"),
+
+    % Iterate multiple times
+    Iteration1 = collect_all_processes_via_iterator(),
+    Iteration2 = collect_all_processes_via_iterator(),
+
+    % Order should be consistent across iterations
+    % (if no processes spawn/die between iterations)
+    ?assertEqual(Iteration1, Iteration2).
+
+%% @doc Test that process_next/1 properly terminates with 'done'
+test_process_next_termination(_Config) ->
+    ct:pal("Testing iterator termination"),
+
+    % Create iterator
+    Iterator = erlang:processes_iterator(),
+
+    % Iterate until done
+    Result = iterate_until_done(Iterator, 0),
+
+    ct:pal("Iterator terminated after ~p processes", [Result]),
+
+    % Should have counted some processes
+    ?assert(Result > 0).
+
+
 %% @doc Test concurrent iteration from multiple processes
-test_concurrent_iteration(Config) ->
-    HasIterator = proplists:get_value(has_iterator, Config),
+test_concurrent_iteration(_Config) ->
+    ct:pal("Testing concurrent iteration"),
 
-    case HasIterator of
-        false ->
-            {skip, "Process iterator not available (OTP <28)"};
+    % Spawn 10 concurrent iterators
+    Self = self(),
+    IteratorProcs = [spawn_link(fun() ->
+        Pids = collect_all_processes_via_iterator(),
+        Self ! {iterator_done, N, length(Pids)}
+    end) || N <- lists:seq(1, 10)],
 
-        true ->
-            ct:pal("Testing concurrent iteration"),
+    % Collect results
+    Results = [receive
+        {iterator_done, N, Count} -> {N, Count}
+    after 5000 ->
+        timeout
+    end || _ <- IteratorProcs],
 
-            % Spawn 10 concurrent iterators
-            Self = self(),
-            IteratorProcs = [spawn_link(fun() ->
-                Pids = collect_all_processes_via_iterator(),
-                Self ! {iterator_done, N, length(Pids)}
-            end) || N <- lists:seq(1, 10)],
+    ct:pal("Concurrent iteration results: ~p", [Results]),
 
-            % Collect results
-            Results = [receive
-                {iterator_done, N, Count} -> {N, Count}
-            after 5000 ->
-                timeout
-            end || _ <- IteratorProcs],
+    % All should have completed (no timeouts)
+    ?assertEqual(10, length([R || R = {_, _} <- Results])),
 
-            ct:pal("Concurrent iteration results: ~p", [Results]),
+    % All should have found roughly the same number of processes
+    Counts = [Count || {_, Count} <- Results],
+    MaxCount = lists:max(Counts),
+    MinCount = lists:min(Counts),
 
-            % All should have completed (no timeouts)
-            ?assertEqual(10, length([R || R = {_, _} <- Results])),
-
-            % All should have found roughly the same number of processes
-            Counts = [Count || {_, Count} <- Results],
-            MaxCount = lists:max(Counts),
-            MinCount = lists:min(Counts),
-
-            % Allow small variance due to processes spawning/dying
-            ?assert(MaxCount - MinCount < 100)
-    end.
+    % Allow small variance due to processes spawning/dying
+    ?assert(MaxCount - MinCount < 100).
 
 %%====================================================================
 %% Helper Functions
 %%====================================================================
-
-%% @doc Check if process iterator API is available
-has_process_iterator_api() ->
-    % Try to call processes_iterator/0
-    try
-        erlang:processes_iterator(),
-        true
-    catch
-        error:undef -> false;
-        _:_ -> true  % API exists but might have failed for other reason
-    end.
 
 %% @doc Spawn test processes that wait for shutdown signal
 spawn_test_processes(Count) ->
@@ -370,15 +274,4 @@ iterate_until_done(Iterator, Count) ->
             iterate_until_done(NewIterator, Count + 1);
         done ->
             Count
-    end.
-
-%% @doc Get all processes with compatibility for OTP 25-27
-get_all_processes_compat() ->
-    case has_process_iterator_api() of
-        true ->
-            % OTP 28+: use iterator
-            collect_all_processes_via_iterator();
-        false ->
-            % OTP 25-27: use processes/0
-            erlang:processes()
     end.
