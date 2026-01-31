@@ -1,6 +1,0 @@
-Quality Report - 20260130_233647
-=============================
-Modules: 0
-0
-Tests: Passed: 177
-XREF: 89 warnings
