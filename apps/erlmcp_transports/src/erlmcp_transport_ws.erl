@@ -1,6 +1,7 @@
 -module(erlmcp_transport_ws).
 
 -include("erlmcp.hrl").
+-include("otp_compat.hrl").
 -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 %% Note: This module does NOT implement erlmcp_transport_behavior
