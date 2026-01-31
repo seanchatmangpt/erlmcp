@@ -66,37 +66,37 @@ start_link(Config) ->
 %% @doc Get secret by key.
 -spec get_secret(secret_key()) -> {ok, secret_value()} | {error, term()}.
 get_secret(Key) ->
-    gen_server:call(?MODULE, {get_secret, Key}).
+    gen_server:call(?MODULE, {get_secret, Key}, 10000).
 
 %% @doc Set secret (store in backend).
 -spec set_secret(secret_key(), secret_value()) -> ok | {error, term()}.
 set_secret(Key, Value) ->
-    gen_server:call(?MODULE, {set_secret, Key, Value}).
+    gen_server:call(?MODULE, {set_secret, Key, Value}, 10000).
 
 %% @doc Delete secret from backend.
 -spec delete_secret(secret_key()) -> ok | {error, term()}.
 delete_secret(Key) ->
-    gen_server:call(?MODULE, {delete_secret, Key}).
+    gen_server:call(?MODULE, {delete_secret, Key}, 10000).
 
 %% @doc Rotate secret (generate new value, update backend).
 -spec rotate_secret(secret_key()) -> {ok, secret_value()} | {error, term()}.
 rotate_secret(Key) ->
-    gen_server:call(?MODULE, {rotate_secret, Key}).
+    gen_server:call(?MODULE, {rotate_secret, Key}, 10000).
 
 %% @doc List all secret keys.
 -spec list_secrets() -> {ok, [secret_key()]} | {error, term()}.
 list_secrets() ->
-    gen_server:call(?MODULE, list_secrets).
+    gen_server:call(?MODULE, list_secrets, 10000).
 
 %% @doc Configure HashiCorp Vault backend.
 -spec configure_vault(map()) -> ok.
 configure_vault(Config) ->
-    gen_server:call(?MODULE, {configure_backend, vault, Config}).
+    gen_server:call(?MODULE, {configure_backend, vault, Config}, 10000).
 
 %% @doc Configure AWS Secrets Manager backend.
 -spec configure_aws(map()) -> ok.
 configure_aws(Config) ->
-    gen_server:call(?MODULE, {configure_backend, aws_secrets_manager, Config}).
+    gen_server:call(?MODULE, {configure_backend, aws_secrets_manager, Config}, 10000).
 
 %% @doc Stop secrets manager.
 -spec stop() -> ok.
@@ -195,6 +195,14 @@ handle_info(cleanup_cache, State) ->
         Acc
     end, ok, State#state.cache),
     erlang:send_after(60000, self(), cleanup_cache),
+    {noreply, State};
+
+handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
+    % Handle gun connection process death
+    % These are temporary monitors created during HTTP requests to Vault/AWS
+    % The actual request will fail with timeout/error, so we just log this
+    logger:warning("Gun connection process ~p died during request: ~p (monitor: ~p)",
+                   [Pid, Reason, MonitorRef]),
     {noreply, State};
 
 handle_info(_Info, State) ->

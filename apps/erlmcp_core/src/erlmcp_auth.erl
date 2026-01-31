@@ -338,6 +338,14 @@ handle_info(cleanup_expired, State) ->
     erlang:send_after(60000, self(), cleanup_expired),
     {noreply, State};
 
+handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
+    % Handle gun connection process death during OAuth2 introspection
+    % These are temporary monitors created during HTTP requests
+    % The actual request will fail with timeout/error, so we just log this
+    logger:warning("Gun connection process ~p died during OAuth2 introspection: ~p (monitor: ~p)",
+                   [Pid, Reason, MonitorRef]),
+    {noreply, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 

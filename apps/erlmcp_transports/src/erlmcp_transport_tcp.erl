@@ -1,4 +1,5 @@
 -module(erlmcp_transport_tcp).
+-behaviour(erlmcp_transport_behavior).
 -behaviour(gen_server).
 -behaviour(ranch_protocol).
 
@@ -6,11 +7,11 @@
 -include("erlmcp_refusal.hrl").
 -include("erlmcp_transport_tcp.hrl").
 
-%% Note: We implement erlmcp_transport behavior but use different naming
-%% to avoid conflicts with gen_server callbacks
+%% Transport behavior callbacks
+-export([init/1, send/2, close/1, get_info/1, handle_transport_call/2]).
 
-%% Transport API (erlmcp_transport-like interface)
--export([send/2, close/1, transport_init/1, get_max_message_size/0]).
+%% Transport API (internal interface)
+-export([transport_init/1, get_max_message_size/0]).
 
 %% Public API
 -export([start_link/1, start_server/1, start_client/1, connect/2]).
@@ -72,7 +73,61 @@
 -define(CONNECTION_LEASE_TIMEOUT, 30000). %% 30 seconds max for handler init
 
 %%====================================================================
-%% Transport API (erlmcp_transport-like interface)
+%% Transport Behavior Implementation
+%%====================================================================
+
+%% @doc Initialize transport (starts underlying gen_server)
+-spec init(map()) -> {ok, pid()} | {error, term()}.
+init(Config) when is_map(Config) ->
+    Mode = maps:get(mode, Config, client),
+    case Mode of
+        server -> start_server(Config);
+        client -> start_client(Config)
+    end.
+
+%% @doc Get transport information
+-spec get_info(state() | pid()) -> #{atom() => term()}.
+get_info(Pid) when is_pid(Pid) ->
+    case gen_server:call(Pid, get_state, 5000) of
+        {ok, State} when is_record(State, state) ->
+            get_info(State);
+        _ ->
+            #{
+                transport_id => undefined,
+                type => tcp,
+                status => error
+            }
+    end;
+get_info(#state{} = State) ->
+    #{
+        transport_id => State#state.transport_id,
+        type => tcp,
+        mode => State#state.mode,
+        status => case State#state.connected of
+            true -> connected;
+            false -> disconnected
+        end,
+        host => State#state.host,
+        port => State#state.port,
+        bytes_sent => State#state.bytes_sent,
+        bytes_received => State#state.bytes_received,
+        reconnect_attempts => State#state.reconnect_attempts
+    };
+get_info(_) ->
+    #{
+        transport_id => undefined,
+        type => tcp,
+        status => unknown
+    }.
+
+%% @doc Handle transport-specific calls
+-spec handle_transport_call(term(), state() | pid()) ->
+    {reply, term(), state() | pid()} | {error, term()}.
+handle_transport_call(_Request, State) ->
+    {error, unknown_request}.
+
+%%====================================================================
+%% Transport API (internal interface)
 %%====================================================================
 
 %% @doc Initialize transport state (used when started via external transport interface)

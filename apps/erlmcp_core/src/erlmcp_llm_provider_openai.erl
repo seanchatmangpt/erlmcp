@@ -129,6 +129,14 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
+    % Handle gun connection process death during API requests
+    % These are temporary monitors created during HTTP requests to OpenAI API
+    % The actual request will fail with timeout/error, so we just log this
+    logger:warning("Gun connection process ~p died during OpenAI API request: ~p (monitor: ~p)",
+                   [Pid, Reason, MonitorRef]),
+    {noreply, State};
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
