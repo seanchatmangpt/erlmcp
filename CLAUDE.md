@@ -37,17 +37,17 @@ erlmcp_bench_integration:run(<<"mcp_tool_sequence">>).  # MCP e2e
 
 | Application | Purpose | Modules | Tests | Version |
 |-------------|---------|---------|-------|---------|
-| erlmcp_core | Protocol implementation | 92 | 84 EUnit | 2.2.0 |
-| erlmcp_transports | Transport layer | 28 | + CT suites | 2.1.0 |
-| erlmcp_observability | Monitoring & metrics | 21 | + CT suites | 0.1.0 |
-| erlmcp_validation | Compliance & validation | 5 | + CT suites | 0.1.0 |
+| erlmcp_core | Protocol implementation | 97 | 84 EUnit | 2.1.0 |
+| erlmcp_transports | Transport layer | 23 | + CT suites | 2.1.0 |
+| erlmcp_observability | Monitoring & metrics | 31 | + CT suites | 2.1.0 |
+| erlmcp_validation | Compliance & validation | 13 | + CT suites | 2.1.0 |
 
 ## Directory Layout
 
 ```
 apps/
 ├── erlmcp_core/              # Protocol implementation
-│   ├── src/                  # 92 modules: Client, Server, Registry, JSON-RPC, Sessions, Secrets
+│   ├── src/                  # 97 modules: Client, Server, Registry, JSON-RPC, Sessions, Secrets
 │   │   ├── erlmcp_client.erl         # Request-response correlation
 │   │   ├── erlmcp_server.erl         # Resources/tools/prompts/subscriptions
 │   │   ├── erlmcp_registry.erl       # Central message routing
@@ -59,53 +59,86 @@ apps/
 │   │   ├── erlmcp_session_mnesia.erl # Mnesia session backend (cluster)
 │   │   ├── erlmcp_session_manager.erl # Session lifecycle manager
 │   │   ├── erlmcp_auth.erl           # Authentication
+│   │   ├── erlmcp_auth_mtls.erl      # Mutual TLS authentication
 │   │   ├── erlmcp_secrets.erl        # Secrets management (Vault/AWS/local)
 │   │   ├── erlmcp_circuit_breaker.erl # Circuit breakers
 │   │   ├── erlmcp_rate_limiter.erl   # Rate limiting
-│   │   ├── erlmcp_otel.erl           # OpenTelemetry integration
+│   │   ├── erlmcp_llm_provider_anthropic.erl # Anthropic LLM integration
+│   │   ├── erlmcp_llm_provider_openai.erl    # OpenAI LLM integration
+│   │   ├── erlmcp_llm_provider_local.erl     # Local LLM support
 │   │   └── ...
 │   └── test/                 # 84 EUnit test modules
 │
 ├── erlmcp_transports/         # Transport implementations
-│   ├── src/                  # 28 modules: stdio, tcp, http, websocket, sse
+│   ├── src/                  # 23 modules: stdio, tcp, http, websocket, sse
 │   │   ├── erlmcp_transport_behavior.erl   # Transport behavior
 │   │   ├── erlmcp_transport_stdio.erl      # STDIO transport
 │   │   ├── erlmcp_transport_tcp.erl        # TCP (ranch)
 │   │   ├── erlmcp_transport_http.erl       # HTTP (gun/cowboy)
+│   │   ├── erlmcp_transport_http_server.erl # HTTP server
 │   │   ├── erlmcp_transport_ws.erl         # WebSocket
 │   │   ├── erlmcp_transport_sse.erl        # Server-Sent Events
+│   │   ├── erlmcp_transport_sse_manager.erl # SSE connection manager
 │   │   ├── erlmcp_transport_pool.erl       # Connection pooling
+│   │   ├── erlmcp_transport_discovery.erl  # Service discovery (Kubernetes)
 │   │   └── ...
 │   └── test/                 # Transport tests + CT suites
 │
 ├── erlmcp_observability/      # Monitoring & observability
-│   ├── src/                  # 21 modules
+│   ├── src/                  # 31 modules
 │   │   ├── erlmcp_dashboard_server.erl    # Web dashboard
 │   │   ├── erlmcp_metrics.erl             # Metrics collection
 │   │   ├── erlmcp_metrics_server.erl      # Metrics server
+│   │   ├── erlmcp_metrics_aggregator.erl  # Metrics aggregation
 │   │   ├── erlmcp_tracing.erl             # Distributed tracing
+│   │   ├── erlmcp_trace_analyzer.erl      # Trace analysis
 │   │   ├── erlmcp_health_monitor.erl      # Health monitoring
+│   │   ├── erlmcp_otel.erl                # OpenTelemetry integration
+│   │   ├── erlmcp_otel_datadog.erl        # Datadog exporter
+│   │   ├── erlmcp_otel_honeycomb.erl      # Honeycomb exporter
+│   │   ├── erlmcp_otel_jaeger.erl         # Jaeger exporter
 │   │   ├── erlmcp_chaos.erl               # Chaos engineering
 │   │   ├── erlmcp_chaos_network.erl       # Network chaos
 │   │   ├── erlmcp_chaos_process.erl       # Process chaos
+│   │   ├── erlmcp_chaos_resource.erl      # Resource chaos
 │   │   ├── erlmcp_recovery_manager.erl    # Recovery orchestration
 │   │   ├── erlmcp_debugger.erl            # Debugging tools
 │   │   ├── erlmcp_profiler.erl            # Performance profiling
 │   │   ├── erlmcp_memory_analyzer.erl     # Memory analysis
+│   │   ├── erlmcp_metrology_validator.erl # Metrics validation
 │   │   └── ...
 │   └── test/                 # Observability tests + CT suites
 │
 ├── erlmcp_validation/         # Compliance & validation
-│   ├── src/                  # 5 modules
-│   │   ├── erlmcp_compliance_report.erl   # Compliance reporting
-│   │   ├── erlmcp_test_client.erl         # Test client for validation
-│   │   ├── erlmcp_memory_manager.erl      # Memory management validation
+│   ├── src/                  # 13 modules
+│   │   ├── erlmcp_compliance_report.erl      # Compliance reporting
+│   │   ├── erlmcp_compliance_report_html.erl # HTML report generation
+│   │   ├── erlmcp_compliance_report_json.erl # JSON report generation
+│   │   ├── erlmcp_test_client.erl            # Test client for validation
+│   │   ├── erlmcp_protocol_validator.erl     # Protocol compliance
+│   │   ├── erlmcp_transport_validator.erl    # Transport compliance
+│   │   ├── erlmcp_security_validator.erl     # Security compliance
+│   │   ├── erlmcp_performance_validator.erl  # Performance validation
+│   │   ├── erlmcp_spec_parser.erl            # MCP spec parser
+│   │   ├── erlmcp_uri_validator.erl          # URI validation
+│   │   ├── erlmcp_validate_cli.erl           # CLI validation tool
+│   │   ├── erlmcp_memory_manager.erl         # Memory management validation
 │   │   └── ...
 │   └── test/                 # Validation tests + CT suites
 │
-docs/                         # 60+ documentation files
-scripts/                      # 65+ automation scripts
-examples/                     # 20+ example implementations
+.claude/                      # Claude Code integration
+├── agents/                   # Specialized agent definitions
+├── commands/                 # TCPS command implementations
+├── hooks/                    # Git hooks and validators
+├── scripts/                  # Automation scripts
+├── templates/                # Code generation templates
+├── AGENT_INDEX.md            # Agent registry
+├── COMMAND_INDEX.md          # Command reference
+└── ERLANG_OTP_AGENT_GUIDE.md # OTP development guide
+
+docs/                         # 850+ documentation files
+scripts/                      # 85+ automation scripts
+examples/                     # 40+ example implementations
 ```
 
 ## Architecture Fundamentals
@@ -481,10 +514,12 @@ Message 3: Task("Agent 3", ...)
 
 ## Core Modules
 
-### Protocol (erlmcp_core)
+### Protocol (erlmcp_core) - 97 Modules
 - `erlmcp_client.erl` - Request-response correlation via #state.pending map
 - `erlmcp_server.erl` - Resources/tools/prompts/subscriptions management with handler functions
 - `erlmcp_registry.erl` - Central message routing (gproc-based)
+- `erlmcp_registry_dist.erl` - Distributed registry coordination
+- `erlmcp_registry_utils.erl` - Registry utility functions
 - `erlmcp_json_rpc.erl` - JSON-RPC 2.0 encode/decode
 - `erlmcp_session.erl` - Session management and state
 - `erlmcp_session_backend.erl` - Session persistence behavior interface
@@ -492,45 +527,107 @@ Message 3: Task("Agent 3", ...)
 - `erlmcp_session_dets.erl` - DETS session backend (disk persistence)
 - `erlmcp_session_mnesia.erl` - Mnesia session backend (distributed cluster)
 - `erlmcp_session_manager.erl` - Session lifecycle and failover management
+- `erlmcp_session_failover.erl` - Session failover coordination
+- `erlmcp_session_replicator.erl` - Session replication
 - `erlmcp_auth.erl` - Authentication and authorization
+- `erlmcp_auth_mtls.erl` - Mutual TLS authentication
+- `erlmcp_auth_rate_limiter.erl` - Auth-specific rate limiting
 - `erlmcp_secrets.erl` - Secrets management (Vault/AWS/local encrypted)
 - `erlmcp_capabilities.erl` - Capability negotiation
 - `erlmcp_resources.erl` - Resource management
-- `erlmcp_tools.erl` - Tool management
-- `erlmcp_prompts.erl` - Prompt template management
+- `erlmcp_resource.erl` - Individual resource handling
+- `erlmcp_resource_subscriptions.erl` - Resource subscription management
+- `erlmcp_tool.erl` - Individual tool handling
+- `erlmcp_prompt_template.erl` - Prompt template management
+- `erlmcp_prompt_list_change_notifier.erl` - Prompt change notifications
 - `erlmcp_progress.erl` - Progress token support
 - `erlmcp_sampling.erl` - Sampling strategies
 - `erlmcp_completion.erl` - Completion request handling
 - `erlmcp_tasks.erl` - Background task management
 - `erlmcp_circuit_breaker.erl` - Circuit breaker pattern
 - `erlmcp_rate_limiter.erl` - Rate limiting
+- `erlmcp_rate_limit_middleware.erl` - Rate limit middleware
 - `erlmcp_connection_monitor.erl` - Connection health monitoring
+- `erlmcp_connection_limiter.erl` - Connection limiting
 - `erlmcp_cache.erl` - Caching layer
+- `erlmcp_cache_warmer.erl` - Cache pre-warming
+- `erlmcp_icon_cache.erl` - Icon caching
+- `erlmcp_llm_provider_anthropic.erl` - Anthropic Claude integration
+- `erlmcp_llm_provider_openai.erl` - OpenAI GPT integration
+- `erlmcp_llm_provider_local.erl` - Local LLM support
+- `erlmcp_mock_llm.erl` - Mock LLM for testing
+- `erlmcp_elicitation.erl` - Elicitation strategies
+- `erlmcp_batch.erl` - Batch request handling
+- `erlmcp_cancellation.erl` - Request cancellation
+- `erlmcp_message_handler.erl` - Message routing
+- `erlmcp_message_parser.erl` - Message parsing
+- `erlmcp_message_size.erl` - Message size validation
+- `erlmcp_notification_handler.erl` - Notification handling
+- `erlmcp_change_notifier.erl` - Change notifications
+- `erlmcp_subscription.erl` - Subscription management
+- `erlmcp_sse_event_store.erl` - Server-Sent Events storage
+- `erlmcp_pagination.erl` - Pagination support
+- `erlmcp_path_canonicalizer.erl` - Path canonicalization
+- `erlmcp_request_id.erl` - Request ID generation
+- `erlmcp_refusal.erl` - Refusal code management
+- `erlmcp_errors.erl` - Error handling
+- `erlmcp_logging.erl` - Structured logging
+- `erlmcp_health.erl` - Health checks
+- `erlmcp_hooks.erl` - Hook system
+- `erlmcp_schema_registry.erl` - Schema management
+- `erlmcp_memory_guard.erl` - Memory protection
+- `erlmcp_memory_monitor.erl` - Memory monitoring
+- `erlmcp_cpu_guard.erl` - CPU protection
+- `erlmcp_cpu_quota.erl` - CPU quota management
+- `erlmcp_graceful_drain.erl` - Graceful shutdown
+- `erlmcp_code_reload.erl` - Hot code reloading
+- `erlmcp_node_monitor.erl` - Node monitoring
+- `erlmcp_split_brain_detector.erl` - Split-brain detection
+- `erlmcp_failover_worker.erl` - Failover worker
+- `erlmcp_test_sync.erl` - Test synchronization
+- `tcps_quality_gates.erl` - TCPS quality gates
 
-### Transports (erlmcp_transports)
+### Transports (erlmcp_transports) - 23 Modules
 - `erlmcp_transport_behavior.erl` - Transport behavior interface
+- `erlmcp_transport_adapter.erl` - Transport adapter pattern
 - `erlmcp_transport_stdio.erl` - STDIO transport (I/O)
 - `erlmcp_transport_tcp.erl` - TCP transport (ranch)
-- `erlmcp_transport_http.erl` - HTTP transport (gun/cowboy)
+- `erlmcp_transport_http.erl` - HTTP client transport (gun)
+- `erlmcp_transport_http_server.erl` - HTTP server transport (cowboy)
 - `erlmcp_transport_ws.erl` - WebSocket transport
 - `erlmcp_transport_sse.erl` - Server-Sent Events transport
+- `erlmcp_transport_sse_manager.erl` - SSE connection manager
 - `erlmcp_transport_pool.erl` - Connection pooling
+- `erlmcp_transport_pipeline.erl` - Transport pipeline
 - `erlmcp_transport_registry.erl` - Transport registration
 - `erlmcp_transport_health.erl` - Transport health checks
 - `erlmcp_transport_validation.erl` - Transport compliance validation
+- `erlmcp_transport_discovery.erl` - Service discovery (Kubernetes, Consul)
 - `erlmcp_pool_manager.erl` - Pool strategy manager
+- `erlmcp_pool_strategy.erl` - Pooling strategies
 - `erlmcp_http_header_validator.erl` - HTTP header validation
 - `erlmcp_origin_validator.erl` - CORS origin validation
+- `erlmcp_security_headers.erl` - Security header management
+- `erlmcp_tls_validation.erl` - TLS certificate validation
+- `erlmcp_transports_app.erl` - Application callback
+- `erlmcp_transport_sup.erl` - Transport supervisor
 
-### Observability (erlmcp_observability)
+### Observability (erlmcp_observability) - 31 Modules
 - `erlmcp_otel.erl` - OpenTelemetry integration
+- `erlmcp_otel_middleware.erl` - OTEL middleware
+- `erlmcp_otel_datadog.erl` - Datadog exporter
+- `erlmcp_otel_honeycomb.erl` - Honeycomb exporter
+- `erlmcp_otel_jaeger.erl` - Jaeger exporter
 - `erlmcp_tracing.erl` - Distributed tracing
+- `erlmcp_trace_analyzer.erl` - Trace analysis
 - `erlmcp_metrics.erl` - Metrics collection
 - `erlmcp_metrics_server.erl` - Metrics HTTP server
 - `erlmcp_metrics_aggregator.erl` - Metrics aggregation
+- `erlmcp_metrology_validator.erl` - Metrics validation
 - `erlmcp_dashboard_server.erl` - Web dashboard
 - `erlmcp_dashboard_http_handler.erl` - Dashboard HTTP handler
 - `erlmcp_health_monitor.erl` - Health monitoring
+- `erlmcp_process_monitor.erl` - Process monitoring
 - `erlmcp_debugger.erl` - Debugging tools
 - `erlmcp_profiler.erl` - Performance profiling
 - `erlmcp_memory_analyzer.erl` - Memory analysis
@@ -538,16 +635,30 @@ Message 3: Task("Agent 3", ...)
 - `erlmcp_chaos_network.erl` - Network chaos (latency, packet loss)
 - `erlmcp_chaos_process.erl` - Process chaos (kill, spawn)
 - `erlmcp_chaos_resource.erl` - Resource chaos (memory, CPU)
+- `erlmcp_chaos_worker.erl` - Chaos worker
+- `erlmcp_chaos_worker_sup.erl` - Chaos worker supervisor
 - `erlmcp_recovery_manager.erl` - Recovery orchestration
 - `erlmcp_audit_log.erl` - Audit logging
 - `erlmcp_receipt_chain.erl` - Immutable receipt chain
 - `erlmcp_evidence_path.erl` - Evidence path tracking
+- `erlmcp_bench_rate_limit.erl` - Rate limit benchmarking
+- `erlmcp_observability_app.erl` - Application callback
+- `erlmcp_observability_sup.erl` - Observability supervisor
 
-### Validation (erlmcp_validation)
+### Validation (erlmcp_validation) - 13 Modules
 - `erlmcp_compliance_report.erl` - Compliance reporting
+- `erlmcp_compliance_report_html.erl` - HTML report generation
+- `erlmcp_compliance_report_json.erl` - JSON report generation
 - `erlmcp_test_client.erl` - Test client for validation
+- `erlmcp_protocol_validator.erl` - Protocol compliance validation
+- `erlmcp_transport_validator.erl` - Transport compliance validation
+- `erlmcp_security_validator.erl` - Security compliance validation
+- `erlmcp_performance_validator.erl` - Performance validation
+- `erlmcp_spec_parser.erl` - MCP specification parser
+- `erlmcp_uri_validator.erl` - URI validation
 - `erlmcp_memory_manager.erl` - Memory management validation
 - `erlmcp_validate_cli.erl` - Validation CLI
+- `erlmcp_validation_app.erl` - Application callback
 
 ## Quality Gates (MANDATORY)
 
@@ -610,28 +721,34 @@ Message 3: Task("Agent 3", ...)
 ## Dependencies (v2.1.0)
 
 ### Core Dependencies
-- **jsx** - JSON encoding/decoding
-- **jesse** - JSON Schema validation
+- **jsx 3.1.0** - JSON encoding/decoding
+- **jesse 1.8.1** - JSON Schema validation
 - **gproc 0.9.0** - Process registry
 - **gun 2.0.1** - HTTP client
 - **ranch 2.1.0** - TCP acceptor pool
 - **poolboy 1.5.2** - Pool management
-- **cowboy** - HTTP server
+- **cowboy 2.10.0** - HTTP server
+- **bbmustache 1.12.2** - Template engine
+- **jose 1.11.1** - JWT validation (CRITICAL security dependency)
 
 ### Observability Dependencies
-- **opentelemetry** - OTEL SDK
-- **opentelemetry_api** - OTEL API
+- **opentelemetry_api 1.5.0** - OTEL API
+- **opentelemetry 1.7.0** - OTEL SDK
+- **opentelemetry_exporter 1.10.0** - OTEL exporters
 
 ### Test Dependencies
-- **proper** - Property-based testing
-- **meck** - Mocking library
-- **coveralls** - Coverage reporting
+- **proper 1.4.0** - Property-based testing
+- **meck 0.9.2** - Mocking library (use sparingly - Chicago School TDD)
+- **coveralls 2.2.0** - Coverage reporting
 
 ### Dev Dependencies
-- **recon** - Runtime debugging
-- **observer_cli** - CLI observer
+- **recon 2.5.3** - Runtime debugging
+- **observer_cli 1.7.4** - CLI observer
 - **rebar3_format** - Code formatting
-- **rebar3_lint** - Linting
+- **rebar3_lint 3.0.1** - Linting
+- **rebar3_proper 0.12.1** - Property-based testing plugin
+- **rebar3_hex** - Hex.pm publishing
+- **rebar3_auto** - Auto-compilation
 
 ## Benchmarks (v1.5.0)
 
@@ -668,11 +785,12 @@ Validated by erlmcp_metrology_validator before write. Zero ambiguities. See `doc
 
 | Application | Version | Status |
 |-------------|---------|--------|
-| erlmcp_core | 2.2.0 | Stable |
+| erlmcp_core | 2.1.0 | Stable |
 | erlmcp_transports | 2.1.0 | Stable |
-| erlmcp_observability | 0.1.0 | Beta |
-| erlmcp_validation | 0.1.0 | Beta |
+| erlmcp_observability | 2.1.0 | Stable |
+| erlmcp_validation | 2.1.0 | Stable |
 | **Erlang** | OTP 25-28 | Supported |
+| **Release** | 2.1.0 | Production Ready |
 
 ## Critical Rules
 
@@ -695,9 +813,19 @@ Validated by erlmcp_metrology_validator before write. Zero ambiguities. See `doc
 - Metrology: `docs/metrology/METRICS_GLOSSARY.md`
 
 ### Agents & Commands
-- **Agents**: `.claude/AGENT_INDEX.md` (10 core agents)
-- **Commands**: `.claude/COMMAND_INDEX.md` (30 TCPS commands)
+- **Agents**: `.claude/AGENT_INDEX.md` (10+ specialized erlmcp agents)
+- **Commands**: `.claude/COMMAND_INDEX.md` (30+ TCPS commands)
 - **TCPS Methodology**: `docs/tcps/TCPS.md`
+- **Agent Guide**: `.claude/ERLANG_OTP_AGENT_GUIDE.md`
+- **System Guide**: `.claude/SYSTEM_GUIDE.md`
+
+### Claude Code Integration (.claude/)
+- **agents/** - Specialized agent definitions for erlmcp development
+- **commands/** - TCPS command implementations
+- **hooks/** - Git hooks and quality gate validators
+- **scripts/** - Automation scripts
+- **templates/** - Code generation templates
+- **helpers/** - Utility scripts
 
 ### Testing
 - Test patterns: `apps/*/test/` for examples
