@@ -1,8 +1,23 @@
+%%%-------------------------------------------------------------------
+%%% @doc Compliance Report Tests
+%%%
+%%% Tests compliance report generation and calculation:
+%%% - Compliance calculation
+%%% - Report generation (Markdown, JSON, HTML)
+%%% - Traceability matrix
+%%% - Gap analysis
+%%%
+%%% == Chicago School TDD ==
+%%% Tests observable behavior through API calls only.
+%%% Uses real erlmcp_compliance_report module through API.
+%%% NO internal state inspection or implementation detail testing.
+%%% @end
+%%%-------------------------------------------------------------------
 -module(erlmcp_compliance_report_tests).
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
-%%% Test Data Setup
+%%% Test Fixtures - Sample Data for Observable Behavior Testing
 %%%====================================================================
 
 %% Sample compliance data for testing
@@ -262,10 +277,10 @@ classifies_gaps_by_severity_test() ->
     Data = sample_compliance_data(),
     Gaps = erlmcp_compliance_report:identify_gaps(Data),
 
-    %% Check severity classifications (severity is atom, not binary)
+    %% Check severity classifications (severity is binary)
     lists:foreach(fun(Gap) ->
         Severity = maps:get(<<"severity">>, Gap),
-        ?assert(lists:member(Severity, [critical, high, medium, low]))
+        ?assert(lists:member(Severity, [<<"critical">>, <<"high">>, <<"medium">>, <<"low">>]))
     end, Gaps).
 
 %%%====================================================================

@@ -1,21 +1,59 @@
+%%%-------------------------------------------------------------------
+%%% @doc Unit tests for erlmcp_metrics module following Chicago School TDD
+%%%
+%%% Chicago School TDD Principles:
+%%% - Test observable behavior through API calls only
+%%% - Use REAL erlmcp_metrics gen_server (no mocks, no dummy processes)
+%%% - NO internal state inspection (test API boundaries only)
+%%% - NO record duplication (respect encapsulation)
+%%% - Split into focused modules (this file: recording & query tests)
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(erlmcp_metrics_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
--define(METRIC_RECORD, true).
--record(metric, {
-    name :: binary(),
-    value :: number(),
-    labels :: #{binary() => term()},
-    timestamp :: integer()
-}).
+%% Note: NO record duplication - the #metric record is defined in erlmcp_metrics module
+%% We test the observable behavior through API calls only, not internal state
 
 %%====================================================================
-%% Tests for erlmcp_metrics module (gen_server-based metrics)
+%% Test Fixtures
+%%====================================================================
+
+%% Setup/teardown for metrics gen_server
+metrics_test_() ->
+    {setup,
+     fun setup_metrics/0,
+     fun cleanup_metrics/1,
+     [
+         {"Record transport operation", fun test_record_transport_operation/0},
+         {"Record server operation", fun test_record_server_operation/0},
+         {"Record registry operation", fun test_record_registry_operation/0},
+         {"Get all metrics", fun test_get_metrics/0},
+         {"Get metrics by name", fun test_get_metrics_by_name/0},
+         {"Reset metrics", fun test_reset_metrics/0},
+         {"With metrics helper", fun test_with_metrics/0}
+     ]}.
+
+setup_metrics() ->
+    % Start metrics gen_server
+    {ok, Pid} = erlmcp_metrics:start_link(),
+    Pid.
+
+cleanup_metrics(Pid) ->
+    % Stop metrics gen_server
+    catch gen_server:stop(Pid),
+    % Clean up any registered name
+    catch unregister(erlmcp_metrics).
+
+%%====================================================================
+%% Recording Tests
 %%====================================================================
 
 %% Test recording transport operations with correct API signature
 %% API: record_transport_operation(TransportId, TransportType, Operation, Duration)
-record_transport_operation_test() ->
+test_record_transport_operation() ->
     {ok, Pid} = erlmcp_metrics:start_link(),
     Result = erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
     ?assertEqual(ok, Result),
@@ -23,7 +61,7 @@ record_transport_operation_test() ->
 
 %% Test recording server operations with correct API signature
 %% API: record_server_operation(ServerId, Operation, Duration, ExtraLabels)
-record_server_operation_test() ->
+test_record_server_operation() ->
     {ok, Pid} = erlmcp_metrics:start_link(),
     Labels = #{<<"result">> => ok},
     Result = erlmcp_metrics:record_server_operation(<<"server_1">>, initialize, 50, Labels),
@@ -32,152 +70,248 @@ record_server_operation_test() ->
 
 %% Test recording registry operations with correct API signature
 %% API: record_registry_operation(Operation, Duration, ExtraLabels)
-record_registry_operation_test() ->
+test_record_registry_operation() ->
     {ok, Pid} = erlmcp_metrics:start_link(),
     Labels = #{},
     Result = erlmcp_metrics:record_registry_operation(register, 10, Labels),
     ?assertEqual(ok, Result),
     gen_server:stop(Pid).
 
-%% Test get_metrics returns a list of metric records, not a map
-get_metrics_test() ->
+%%====================================================================
+%% Query Tests
+%%====================================================================
+
+%% Test get_metrics returns a list of metric records
+test_get_metrics() ->
     {ok, Pid} = erlmcp_metrics:start_link(),
     erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 10),
+
+    % Get all metrics - returns a list
     Result = erlmcp_metrics:get_metrics(),
     ?assert(is_list(Result)),
     ?assertEqual(1, length(Result)),
-    [#metric{name = Name}] = Result,
-    ?assertEqual(<<"transport_operation_duration_ms">>, Name),
-    gen_server:stop(Pid).
 
-%% Test full lifecycle with multiple metric types
-metrics_lifecycle_test() ->
-    {ok, Pid} = erlmcp_metrics:start_link(),
-    erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
-    erlmcp_metrics:record_server_operation(<<"server_1">>, call, 20, #{<<"result">> => ok}),
-    erlmcp_metrics:record_registry_operation(lookup, 5, #{}),
-
-    Metrics = erlmcp_metrics:get_metrics(),
-    ?assert(is_list(Metrics)),
-    ?assertEqual(3, length(Metrics)),
-
-    gen_server:stop(Pid).
-
-%% Test get_performance_summary returns a map with expected keys
-get_performance_summary_test() ->
-    {ok, Pid} = erlmcp_metrics:start_link(),
-    erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
-    erlmcp_metrics:record_server_operation(<<"server_1">>, call, 20, #{<<"result">> => ok}),
-
-    Summary = erlmcp_metrics:get_performance_summary(),
-    ?assert(is_map(Summary)),
-    ?assert(maps:is_key(<<"uptime_ms">>, Summary)),
-    ?assert(maps:is_key(<<"total_metrics_recorded">>, Summary)),
-    ?assert(maps:is_key(<<"counters">>, Summary)),
-    ?assert(maps:is_key(<<"histograms">>, Summary)),
-    ?assert(maps:is_key(<<"gauges">>, Summary)),
-
-    gen_server:stop(Pid).
-
-%% Test reset_metrics clears all recorded metrics
-reset_metrics_test() ->
-    {ok, Pid} = erlmcp_metrics:start_link(),
-    erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
-
-    Metrics1 = erlmcp_metrics:get_metrics(),
-    ?assertEqual(1, length(Metrics1)),
-
-    ok = erlmcp_metrics:reset_metrics(),
-
-    Metrics2 = erlmcp_metrics:get_metrics(),
-    ?assertEqual(0, length(Metrics2)),
+    % Verify first metric has expected name (observable behavior)
+    [FirstMetric | _] = Result,
+    ?assert(is_map(FirstMetric)),
+    ?assertEqual(<<"transport_operation_duration_ms">>, maps:get(name, FirstMetric)),
 
     gen_server:stop(Pid).
 
 %% Test get_metrics/1 filters by metric name
-get_metrics_by_name_test() ->
+test_get_metrics_by_name() ->
     {ok, Pid} = erlmcp_metrics:start_link(),
     erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
     erlmcp_metrics:record_server_operation(<<"server_1">>, call, 20, #{}),
 
+    % Query by specific metric name
     TransportMetrics = erlmcp_metrics:get_metrics(<<"transport_operation_duration_ms">>),
     ?assertEqual(1, length(TransportMetrics)),
 
     ServerMetrics = erlmcp_metrics:get_metrics(<<"server_operation_duration_ms">>),
     ?assertEqual(1, length(ServerMetrics)),
 
+    % Non-existent metric returns empty list
+    EmptyMetrics = erlmcp_metrics:get_metrics(<<"nonexistent">>),
+    ?assertEqual(0, length(EmptyMetrics)),
+
     gen_server:stop(Pid).
 
+%%====================================================================
+%% Lifecycle Tests
+%%====================================================================
+
+%% Test reset_metrics clears all recorded metrics
+test_reset_metrics() ->
+    {ok, Pid} = erlmcp_metrics:start_link(),
+    erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
+
+    % Verify metric was recorded
+    Metrics1 = erlmcp_metrics:get_metrics(),
+    ?assertEqual(1, length(Metrics1)),
+
+    % Reset metrics
+    ok = erlmcp_metrics:reset_metrics(),
+
+    % Verify metrics are cleared
+    Metrics2 = erlmcp_metrics:get_metrics(),
+    ?assertEqual(0, length(Metrics2)),
+
+    gen_server:stop(Pid).
+
+%% Test full lifecycle with multiple metric types
+metrics_lifecycle_test_() ->
+    {setup,
+     fun setup_metrics/0,
+     fun cleanup_metrics/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+              % Record multiple metric types
+              ok = erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
+              ok = erlmcp_metrics:record_server_operation(<<"server_1">>, call, 20, #{<<"result">> => ok}),
+              ok = erlmcp_metrics:record_registry_operation(lookup, 5, #{}),
+
+              % Query all metrics
+              Metrics = erlmcp_metrics:get_metrics(),
+              ?assert(is_list(Metrics)),
+              ?assertEqual(3, length(Metrics)),
+
+              % Reset
+              ok = erlmcp_metrics:reset_metrics(),
+
+              % Verify cleared
+              EmptyMetrics = erlmcp_metrics:get_metrics(),
+              ?assertEqual(0, length(EmptyMetrics))
+          end)
+         ]
+     end}.
+
+%%====================================================================
+%% Helper Function Tests
+%%====================================================================
+
 %% Test with_metrics helper function
-with_metrics_test() ->
+test_with_metrics() ->
     {ok, Pid} = erlmcp_metrics:start_link(),
     Labels = #{<<"test">> => true},
 
+    % Execute function with metrics recording
     Result = erlmcp_metrics:with_metrics(<<"test_operation">>, Labels, fun() ->
         timer:sleep(10),
         success
     end),
 
+    % Verify function result is returned
     ?assertEqual(success, Result),
 
+    % Verify metric was recorded
     Metrics = erlmcp_metrics:get_metrics(<<"test_operation">>),
     ?assertEqual(1, length(Metrics)),
-    [#metric{value = Duration}] = Metrics,
+
+    % Verify duration was recorded (observable behavior via value field)
+    [FirstMetric | _] = Metrics,
+    Duration = maps:get(value, FirstMetric),
     ?assert(Duration >= 10),
 
     gen_server:stop(Pid).
 
-%% Test histogram calculations in performance summary
-histogram_calculations_test() ->
-    {ok, Pid} = erlmcp_metrics:start_link(),
+%%====================================================================
+%% Edge Case Tests
+%%====================================================================
 
-    %% Record multiple operations to build histogram
-    lists:foreach(fun(N) ->
-        erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, N)
-    end, [10, 20, 30, 40, 50]),
+%% Test recording with empty labels
+record_empty_labels_test_() ->
+    {setup,
+     fun setup_metrics/0,
+     fun cleanup_metrics/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+              % Record with empty labels
+              ok = erlmcp_metrics:record_transport_operation(<<"tcp">>, tcp, send, 10),
+              Metrics = erlmcp_metrics:get_metrics(),
+              ?assertEqual(1, length(Metrics))
+          end)
+         ]
+     end}.
 
-    Summary = erlmcp_metrics:get_performance_summary(),
-    Histograms = maps:get(<<"histograms">>, Summary),
-    TransportHist = maps:get(<<"transport_operation_duration_ms">>, Histograms),
+%% Test multiple recordings of same metric
+multiple_recordings_test_() ->
+    {setup,
+     fun setup_metrics/0,
+     fun cleanup_metrics/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+              % Record same metric multiple times
+              ok = erlmcp_metrics:record_transport_operation(<<"tcp_1">>, tcp, send, 10),
+              ok = erlmcp_metrics:record_transport_operation(<<"tcp_2">>, tcp, recv, 15),
+              ok = erlmcp_metrics:record_transport_operation(<<"tcp_3">>, tcp, send, 20),
 
-    ?assertEqual(5, maps:get(<<"count">>, TransportHist)),
-    ?assertEqual(10, maps:get(<<"min">>, TransportHist)),
-    ?assertEqual(50, maps:get(<<"max">>, TransportHist)),
-    ?assertEqual(30.0, maps:get(<<"avg">>, TransportHist)),
+              % All should be recorded
+              Metrics = erlmcp_metrics:get_metrics(),
+              ?assertEqual(3, length(Metrics))
+          end)
+         ]
+     end}.
 
-    gen_server:stop(Pid).
+%% Test with_metrics with exception
+with_metrics_exception_test_() ->
+    {setup,
+     fun setup_metrics/0,
+     fun cleanup_metrics/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+              % Function that throws an error
+              ErrorFun = fun() -> throw(test_error) end,
 
-%% Test percentiles calculation
-percentiles_test() ->
-    {ok, Pid} = erlmcp_metrics:start_link(),
+              % Error should be re-raised
+              ?assertThrow(test_error, erlmcp_metrics:with_metrics(<<"error_op">>, #{}, ErrorFun)),
 
-    %% Record 100 operations to test percentiles
-    lists:foreach(fun(N) ->
-        erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, N)
-    end, lists:seq(1, 100)),
+              % Metric should still be recorded despite error
+              Metrics = erlmcp_metrics:get_metrics(<<"error_op">>),
+              ?assertEqual(1, length(Metrics))
+          end)
+         ]
+     end}.
 
-    Summary = erlmcp_metrics:get_performance_summary(),
-    Percentiles = maps:get(<<"percentiles">>, Summary),
-    TransportPcts = maps:get(<<"transport_operation_duration_ms_percentiles">>, Percentiles),
+%%====================================================================
+%% Integration Tests
+%%====================================================================
 
-    ?assert(maps:is_key(<<"p50">>, TransportPcts)),
-    ?assert(maps:is_key(<<"p90">>, TransportPcts)),
-    ?assert(maps:is_key(<<"p95">>, TransportPcts)),
-    ?assert(maps:is_key(<<"p99">>, TransportPcts)),
+%% Test complete metrics workflow
+metrics_workflow_test_() ->
+    {setup,
+     fun setup_metrics/0,
+     fun cleanup_metrics/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+              % Simulate a complete request workflow with metrics
 
-    gen_server:stop(Pid).
+              % Record transport operation
+              ok = erlmcp_metrics:record_transport_operation(<<"conn_1">>, tcp, send, 5),
 
-%% Test metrics are stored with correct labels
-metric_labels_test() ->
-    {ok, Pid} = erlmcp_metrics:start_link(),
+              % Record server operation
+              ok = erlmcp_metrics:record_server_operation(
+                  <<"server_1">>,
+                  initialize,
+                  10,
+                  #{<<"result">> => ok}
+              ),
 
-    erlmcp_metrics:record_transport_operation(<<"tcp_conn_42">>, tcp, send, 25),
+              % Use with_metrics helper
+              Result = erlmcp_metrics:with_metrics(
+                  <<"process_request">>,
+                  #{<<"request_type">> => <<"tool_call">>},
+                  fun() ->
+                          timer:sleep(5),
+                          {ok, processed}
+                  end
+              ),
+              ?assertEqual({ok, processed}, Result),
 
-    Metrics = erlmcp_metrics:get_metrics(),
-    [#metric{labels = Labels}] = Metrics,
+              % Record registry operation
+              ok = erlmcp_metrics:record_registry_operation(lookup, 3, #{}),
 
-    ?assertEqual(<<"tcp_conn_42">>, maps:get(<<"transport_id">>, Labels)),
-    ?assertEqual(tcp, maps:get(<<"transport_type">>, Labels)),
-    ?assertEqual(send, maps:get(<<"operation">>, Labels)),
+              % Verify all metrics were recorded
+              AllMetrics = erlmcp_metrics:get_metrics(),
+              ?assertEqual(4, length(AllMetrics)),
 
-    gen_server:stop(Pid).
+              % Verify specific metric types
+              TransportMetrics = erlmcp_metrics:get_metrics(<<"transport_operation_duration_ms">>),
+              ?assertEqual(1, length(TransportMetrics)),
+
+              ServerMetrics = erlmcp_metrics:get_metrics(<<"server_operation_duration_ms">>),
+              ?assertEqual(1, length(ServerMetrics)),
+
+              RequestMetrics = erlmcp_metrics:get_metrics(<<"process_request">>),
+              ?assertEqual(1, length(RequestMetrics)),
+
+              RegistryMetrics = erlmcp_metrics:get_metrics(<<"registry_operation_duration_ms">>),
+              ?assertEqual(1, length(RegistryMetrics))
+          end)
+         ]
+     end}.

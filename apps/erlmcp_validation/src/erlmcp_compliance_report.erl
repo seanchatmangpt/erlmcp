@@ -262,6 +262,7 @@ generate_report_direct(Format, Data) ->
         Report = #{
             spec_version => maps:get(spec_version, Data, <<"unknown">>),
             timestamp => maps:get(timestamp, Data, iso8601_timestamp()),
+            status => determine_status(Compliance),
             overall => Compliance,
             by_section => maps:get(by_section, Details),
             evidence => extract_evidence(Data),
@@ -306,6 +307,7 @@ handle_call({generate_report, Format, Data}, _From, State) ->
         Report = #{
             spec_version => maps:get(spec_version, Data, <<"unknown">>),
             timestamp => maps:get(timestamp, Data, iso8601_timestamp()),
+            status => determine_status(Compliance),
             overall => Compliance,
             by_section => maps:get(by_section, Details),
             evidence => extract_evidence(Data),
@@ -407,12 +409,17 @@ get_latest_test_date(Tests) ->
     end.
 
 %% @private Determine severity based on section
-determine_severity(<<"Lifecycle">>) -> critical;
-determine_severity(<<"Tools">>) -> critical;
-determine_severity(<<"Resources">>) -> high;
-determine_severity(<<"Prompts">>) -> high;
-determine_severity(<<"Transports">>) -> critical;
-determine_severity(_) -> medium.
+determine_severity(<<"Lifecycle">>) -> <<"critical">>;
+determine_severity(<<"Tools">>) -> <<"critical">>;
+determine_severity(<<"Resources">>) -> <<"high">>;
+determine_severity(<<"Prompts">>) -> <<"high">>;
+determine_severity(<<"Transports">>) -> <<"critical">>;
+determine_severity(_) -> <<"medium">>.
+
+%% @private Determine status based on compliance percentage
+determine_status(Compliance) when Compliance >= 80.0 -> <<"passed">>;
+determine_status(Compliance) when Compliance >= 50.0 -> <<"warning">>;
+determine_status(_Compliance) -> <<"failed">>.
 
 %% @private Extract evidence from test results
 extract_evidence(Data) ->
@@ -606,11 +613,11 @@ format_markdown_gaps(Report) ->
              "| Requirement | Status | Severity | Recommendation |\n",
              "|-------------|--------|----------|----------------|\n",
              lists:map(fun(G) ->
-                 Req = maps:get(requirement, G, #{}),
+                 Req = maps:get(<<"requirement">>, G, #{}),
                  ReqName = maps:get(name, Req, <<"unknown">>),
-                 Status = maps:get(status, G),
-                 Severity = maps:get(severity, G),
-                 Rec = maps:get(recommendation, G),
+                 Status = maps:get(<<"status">>, G),
+                 Severity = maps:get(<<"severity">>, G),
+                 Rec = maps:get(<<"recommendation">>, G),
                  io_lib:format("| ~s | ~s | ~s | ~s |\n",
                               [ReqName, Status, Severity, Rec])
              end, Gaps),
@@ -633,10 +640,10 @@ format_markdown_traceability(Report) ->
      "| Spec Requirement | Test | Status | Last Tested |\n",
      "|------------------|------|--------|-------------|\n",
      maps:fold(fun(_ReqId, ReqData, Acc) ->
-         ReqName = maps:get(requirement, ReqData),
-         Tests = maps:get(tests, ReqData, []),
-         Status = maps:get(status, ReqData),
-         LastTested = maps:get(last_tested, ReqData),
+         ReqName = maps:get(<<"requirement">>, ReqData),
+         Tests = maps:get(<<"tests">>, ReqData, []),
+         Status = maps:get(<<"status">>, ReqData),
+         LastTested = maps:get(<<"last_tested">>, ReqData),
          TestsStr = string:join([binary_to_list(T) || T <- Tests], ", "),
          [io_lib:format("| ~s | ~s | ~s | ~s |\n",
                         [ReqName, TestsStr, Status, LastTested]) | Acc]

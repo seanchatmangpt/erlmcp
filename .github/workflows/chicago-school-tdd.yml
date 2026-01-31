@@ -1,0 +1,564 @@
+name: Chicago School TDD Compliance
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'task/**', 'epic/**', 'release/**']
+  pull_request:
+    branches: [main, develop, 'feature/**', 'task/**', 'epic/**', 'release/**']
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  OTP_VERSION: 26
+  REBAR_VERSION: 3.25
+
+jobs:
+  chicago-school-tdd-validation:
+    name: Chicago School TDD Validation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-chicago-tdd-${{ hashFiles('rebar.lock', 'apps/*/rebar.config') }}
+          restore-keys: |
+            ${{ runner.os }}-chicago-tdd-
+            ${{ runner.os }}-
+
+      # ========================================================================
+      # PHASE 1: ANTI-PATTERN DETECTION SCAN
+      # ========================================================================
+      - name: Anti-Pattern Detection Scan
+        id: anti_pattern_scan
+        run: |
+          echo "::group::Chicago School Anti-Pattern Detection"
+          echo "Scanning for TDD anti-patterns..."
+          echo ""
+
+          VIOLATIONS_FOUND=0
+          VIOLATION_SUMMARY=""
+
+          # Initialize summary
+          echo "# Chicago School TDD Anti-Pattern Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Generated:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ============================================================================
+          # VIOLATION 1: Dummy Process Pattern
+          # ============================================================================
+          echo "## 1. Dummy Process Pattern" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          DUMMY_PATTERN="spawn\(.*fun.*receive.*stop.*ok\|spawn_link.*fun.*receive.*stop.*ok"
+          DUMMY_VIOLATIONS=$(find apps/*/test/ test/ -name "*.erl" -exec grep -l -E "$DUMMY_PATTERN" {} \; 2>/dev/null || echo "")
+
+          if [ -n "$DUMMY_VIOLATIONS" ]; then
+            echo "❌ **VIOLATION DETECTED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule:** NO dummy processes (spawn/fun/receive/stop pattern)" >> $GITHUB_STEP_SUMMARY
+            echo "**Rationale:** Tests must use REAL erlmcp gen_server processes, not dummy placeholders" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Violating files:**" >> $GITHUB_STEP_SUMMARY
+
+            for file in $DUMMY_VIOLATIONS; do
+              LINE_NUMBERS=$(grep -n -E "$DUMMY_PATTERN" "$file" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
+              echo "- \`$file\` (lines: $LINE_NUMBERS)" >> $GITHUB_STEP_SUMMARY
+
+              # Show code snippet
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```erlang' >> $GITHUB_STEP_SUMMARY
+              grep -A 5 -B 2 -E "$DUMMY_PATTERN" "$file" | head -20 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            done
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "::error file=$file::Dummy process pattern detected - Use real erlmcp processes"
+            VIOLATIONS_FOUND=$((VIOLATIONS_FOUND + 1))
+            VIOLATION_SUMMARY="${VIOLATION_SUMMARY}- Dummy process pattern\n"
+          else
+            echo "✅ **PASSED** - No dummy process patterns found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ============================================================================
+          # VIOLATION 2: State Inspection via sys:get_status
+          # ============================================================================
+          echo "## 2. State Inspection (sys:get_status)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          STATE_PATTERN="sys:get_status|sys:get_state"
+          STATE_VIOLATIONS=$(find apps/*/test/ test/ -name "*.erl" -exec grep -l -E "$STATE_PATTERN" {} \; 2>/dev/null || echo "")
+
+          if [ -n "$STATE_VIOLATIONS" ]; then
+            echo "❌ **VIOLATION DETECTED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule:** NO state inspection via sys:get_status or sys:get_state" >> $GITHUB_STEP_SUMMARY
+            echo "**Rationale:** Tests must verify OBSERVABLE behavior, not internal state" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Violating files:**" >> $GITHUB_STEP_SUMMARY
+
+            for file in $STATE_VIOLATIONS; do
+              LINE_NUMBERS=$(grep -n -E "$STATE_PATTERN" "$file" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
+              echo "- \`$file\` (lines: $LINE_NUMBERS)" >> $GITHUB_STEP_SUMMARY
+
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```erlang' >> $GITHUB_STEP_SUMMARY
+              grep -A 3 -B 1 -E "$STATE_PATTERN" "$file" | head -20 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            done
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "::error file=$file::State inspection detected - Test observable behavior only"
+            VIOLATIONS_FOUND=$((VIOLATIONS_FOUND + 1))
+            VIOLATION_SUMMARY="${VIOLATION_SUMMARY}- State inspection\n"
+          else
+            echo "✅ **PASSED** - No state inspection found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ============================================================================
+          # VIOLATION 3: Record Duplication (test-specific state records)
+          # ============================================================================
+          echo "## 3. Record Duplication" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          RECORD_PATTERN="^-record\(state,"
+          RECORD_VIOLATIONS=$(find apps/*/test/ test/ -name "*.erl" -exec grep -l "$RECORD_PATTERN" {} \; 2>/dev/null || echo "")
+
+          if [ -n "$RECORD_VIOLATIONS" ]; then
+            echo "❌ **VIOLATION DETECTED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule:** NO test-specific state records" >> $GITHUB_STEP_SUMMARY
+            echo "**Rationale:** Tests must use PRODUCTION records, not define test-specific state" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Violating files:**" >> $GITHUB_STEP_SUMMARY
+
+            for file in $RECORD_VIOLATIONS; do
+              echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
+
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```erlang' >> $GITHUB_STEP_SUMMARY
+              grep -A 2 "$RECORD_PATTERN" "$file" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            done
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "::error file=$file::Record duplication - Use production records in tests"
+            VIOLATIONS_FOUND=$((VIOLATIONS_FOUND + 1))
+            VIOLATION_SUMMARY="${VIOLATION_SUMMARY}- Record duplication\n"
+          else
+            echo "✅ **PASSED** - No record duplication found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ============================================================================
+          # VIOLATION 4: Mock Framework Usage (meck)
+          # ============================================================================
+          echo "## 4. Mock Framework Usage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          MOCK_PATTERN="meck:(new|expect|unload|passthrough)"
+          MOCK_VIOLATIONS=$(find apps/*/test/ test/ -name "*.erl" -exec grep -l -E "$MOCK_PATTERN" {} \; 2>/dev/null || echo "")
+
+          if [ -n "$MOCK_VIOLATIONS" ]; then
+            echo "❌ **VIOLATION DETECTED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule:** NO mock framework usage (meck, mock, stub, fake)" >> $GITHUB_STEP_SUMMARY
+            echo "**Rationale:** Tests must use REAL erlmcp processes, not mocks/stubs/fakes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Violating files:**" >> $GITHUB_STEP_SUMMARY
+
+            for file in $MOCK_VIOLATIONS; do
+              LINE_NUMBERS=$(grep -n -E "$MOCK_PATTERN" "$file" | cut -d: -f1 | tr '\n' ',' | sed 's/,$//')
+              echo "- \`$file\` (lines: $LINE_NUMBERS)" >> $GITHUB_STEP_SUMMARY
+
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```erlang' >> $GITHUB_STEP_SUMMARY
+              grep -A 3 -B 1 -E "$MOCK_PATTERN" "$file" | head -20 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            done
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "::error file=$file::Mock framework usage - Use real erlmcp processes"
+            VIOLATIONS_FOUND=$((VIOLATIONS_FOUND + 1))
+            VIOLATION_SUMMARY="${VIOLATION_SUMMARY}- Mock usage\n"
+          else
+            echo "✅ **PASSED** - No mock framework usage found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ============================================================================
+          # VIOLATION 5: Stub/Fake Detection
+          # ============================================================================
+          echo "## 5. Stub/Fake Pattern Detection" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          STUB_PATTERNS="fake|stub|dummy.*server|mock.*server"
+          STUB_VIOLATIONS=$(find apps/*/test/ test/ -name "*.erl" -exec grep -i -l -E "(module|behavior).*${STUB_PATTERNS}" {} \; 2>/dev/null || echo "")
+
+          if [ -n "$STUB_VIOLATIONS" ]; then
+            echo "⚠️ **WARNING DETECTED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule:** NO stub/fake modules" >> $GITHUB_STEP_SUMMARY
+            echo "**Rationale:** Tests must use REAL erlmcp processes" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Potentially violating files:**" >> $GITHUB_STEP_SUMMARY
+
+            for file in $STUB_VIOLATIONS; do
+              echo "- \`$file\`" >> $GITHUB_STEP_SUMMARY
+            done
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "::warning file=$file::Possible stub/fake pattern detected"
+            # Non-blocking warning
+          else
+            echo "✅ **PASSED** - No stub/fake patterns found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Save violations count
+          echo "violations_found=$VIOLATIONS_FOUND" >> $GITHUB_OUTPUT
+          echo "::endgroup::"
+
+          # Fail if violations found
+          if [ $VIOLATIONS_FOUND -gt 0 ]; then
+            echo "::error::Chicago School TDD: $VIOLATIONS_FOUND violation(s) detected"
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## ❌ SUMMARY: VIOLATIONS DETECTED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "$VIOLATION_SUMMARY" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Total Violations:** $VIOLATIONS_FOUND" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Action Required:** Fix all violations before merging." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ SUMMARY: NO VIOLATIONS DETECTED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All tests comply with Chicago School TDD principles." >> $GITHUB_STEP_SUMMARY
+          echo "anti_pattern_scan=passed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # PHASE 2: FILE SIZE VALIDATION
+      # ========================================================================
+      - name: File Size Validation
+        id: file_size_validation
+        run: |
+          echo "::group::File Size Validation"
+          echo "Checking test file sizes (must be < 500 lines)..."
+          echo ""
+
+          OVERSIZED_FILES=""
+          FILE_COUNT=0
+          TOTAL_LINES=0
+
+          while IFS= read -r test_file; do
+            if [ -f "$test_file" ]; then
+              LINE_COUNT=$(wc -l < "$test_file" 2>/dev/null || echo 0)
+              FILE_COUNT=$((FILE_COUNT + 1))
+              TOTAL_LINES=$((TOTAL_LINES + LINE_COUNT))
+
+              if [ "$LINE_COUNT" -gt 500 ]; then
+                OVERSIZED_FILES="${OVERSIZED_FILES}${test_file}:${LINE_COUNT}\n"
+              fi
+            fi
+          done < <(find apps/*/test/ test/ -name "*_tests.erl" 2>/dev/null)
+
+          echo "## File Size Validation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total test files:** $FILE_COUNT" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total lines of test code:** $TOTAL_LINES" >> $GITHUB_STEP_SUMMARY
+          echo "- **Average lines per file:** $((TOTAL_LINES / FILE_COUNT))" >> $GITHUB_STEP_SUMMARY
+          echo "- **Max allowed:** 500 lines per file" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "$OVERSIZED_FILES" ]; then
+            echo "❌ **VIOLATION DETECTED**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Rule:** Test files MUST be < 500 lines" >> $GITHUB_STEP_SUMMARY
+            echo "**Rationale:** Large test files indicate tight coupling - split into focused modules" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Oversized files:**" >> $GITHUB_STEP_SUMMARY
+
+            echo -e "$OVERSIZED_FILES" | while IFS=: read -r file lines; do
+              OVERAGE=$((lines - 500))
+              echo "- \`$file\`: **${lines} lines** (${OVERAGE} over limit)" >> $GITHUB_STEP_SUMMARY
+              echo "::error file=$file::Test file has $lines lines (max: 500)"
+            done
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Recommendations:**" >> $GITHUB_STEP_SUMMARY
+            echo "1. Split test module by functionality" >> $GITHUB_STEP_SUMMARY
+            echo "2. Extract common test utilities to separate helper module" >> $GITHUB_STEP_SUMMARY
+            echo "3. Use test generators for data-driven tests" >> $GITHUB_STEP_SUMMARY
+            echo "::endgroup::"
+            exit 1
+          fi
+
+          echo "✅ **PASSED** - All test files under 500 lines" >> $GITHUB_STEP_SUMMARY
+          echo "::endgroup::"
+          echo "file_size_validation=passed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # PHASE 3: PROCESS USAGE VERIFICATION
+      # ========================================================================
+      - name: Process Usage Verification
+        id: process_usage_verification
+        run: |
+          echo "::group::Process Usage Verification"
+          echo "Verifying tests use REAL erlmcp processes..."
+          echo ""
+
+          echo "## Process Usage Verification Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check 1: Real erlmcp process usage
+          echo "### Check 1: Real erlmcp Process Usage" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          REAL_PROCESS_COUNT=0
+          for pattern in "erlmcp_server:start_link" "erlmcp_client:start_link" "erlmcp_registry:" "erlmcp_sup:"; do
+            COUNT=$(grep -r "$pattern" apps/*/test/ test/ 2>/dev/null | wc -l)
+            REAL_PROCESS_COUNT=$((REAL_PROCESS_COUNT + COUNT))
+          done
+
+          if [ "$REAL_PROCESS_COUNT" -gt 0 ]; then
+            echo "✅ **PASSED** - Tests use real erlmcp processes ($REAL_PROCESS_COUNT instances)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **WARNING** - No real erlmcp process usage detected" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::Tests may not be using real erlmcp processes"
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check 2: Public API usage (not internal implementation)
+          echo "### Check 2: Public API Testing" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          API_COUNT=0
+          for api_call in "erlmcp_client:call" "erlmcp_server:add" "erlmcp_registry:register" "erlmcp_auth:authenticate"; do
+            COUNT=$(grep -r "$api_call" apps/*/test/ test/ 2>/dev/null | wc -l)
+            API_COUNT=$((API_COUNT + COUNT))
+          done
+
+          if [ "$API_COUNT" -gt 0 ]; then
+            echo "✅ **PASSED** - Tests use public API ($API_COUNT calls)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **WARNING** - Limited public API testing" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Check 3: Transport layer testing
+          echo "### Check 3: Transport Layer Testing" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          TRANSPORT_COUNT=$(grep -r "erlmcp_transport" apps/*/test/ test/ 2>/dev/null | wc -l)
+          if [ "$TRANSPORT_COUNT" -gt 0 ]; then
+            echo "✅ **PASSED** - Tests include transport layer ($TRANSPORT_COUNT instances)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ **INFO** - No transport layer testing detected" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "::endgroup::"
+          echo "process_usage_verification=completed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # PHASE 4: COVERAGE VERIFICATION
+      # ========================================================================
+      - name: Coverage Verification
+        id: coverage_verification
+        run: |
+          echo "::group::Coverage Verification"
+          echo "Verifying ≥80% coverage threshold..."
+          echo ""
+
+          # Compile and run tests with coverage
+          TERM=dumb rebar3 as test compile
+          rebar3 as test eunit --cover
+          rebar3 cover --verbose
+
+          if [ -f scripts/check_coverage_threshold.sh ]; then
+            chmod +x scripts/check_coverage_threshold.sh
+            ./scripts/check_coverage_threshold.sh 80
+            COVERAGE_EXIT=$?
+
+            # Extract coverage data
+            if [ -f _build/test/cover/cover.log ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              grep -A 100 "module.*coverage" _build/test/cover/cover.log | head -50 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+
+              COVERAGE=$(grep "total" _build/test/cover/cover.log | tail -1 | awk -F'|' '{print $3}' | tr -d ' %|' || echo "0")
+
+              echo "### Coverage Summary" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "- **Overall Coverage:** ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+              echo "- **Threshold:** ≥80%" >> $GITHUB_STEP_SUMMARY
+              echo "- **Status:** $( [ $COVERAGE_EXIT -eq 0 ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            echo "::endgroup::"
+
+            if [ $COVERAGE_EXIT -ne 0 ]; then
+              echo "::error::Coverage below 80% threshold"
+              echo "coverage_verification=failed" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            echo "coverage_verification=passed" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Coverage script not found - using fallback check"
+            # Fallback: parse cover.log directly
+            if [ -f _build/test/cover/cover.log ]; then
+              COVERAGE=$(grep "total" _build/test/cover/cover.log | tail -1 | awk -F'|' '{print $3}' | tr -d ' %|' || echo "0")
+              echo "Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+              if [ $(echo "$COVERAGE < 80" | bc -l) -eq 1 ]; then
+                echo "::error::Coverage ${COVERAGE}% below 80% threshold"
+                exit 1
+              fi
+            fi
+            echo "coverage_verification=passed" >> $GITHUB_OUTPUT
+          fi
+
+      # ========================================================================
+      # FINAL SUMMARY
+      # ========================================================================
+      - name: Chicago School TDD Compliance Summary
+        if: always()
+        run: |
+          echo "# Chicago School TDD Compliance Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          ANTI_PATTERN="${{ steps.anti_pattern_scan.outputs.anti_pattern_scan }}"
+          FILE_SIZE="${{ steps.file_size_validation.outputs.file_size_validation }}"
+          PROCESS="${{ steps.process_usage_verification.outputs.process_usage_verification }}"
+          COVERAGE="${{ steps.coverage_verification.outputs.coverage_verification }}"
+
+          echo "## Compliance Gates" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Gate | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$ANTI_PATTERN" = "passed" ]; then
+            echo "| Anti-Pattern Detection | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Anti-Pattern Detection | ❌ FAILED |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$FILE_SIZE" = "passed" ]; then
+            echo "| File Size Validation | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| File Size Validation | ❌ FAILED |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$PROCESS" = "completed" ]; then
+            echo "| Process Usage Verification | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Process Usage Verification | ⚠️ SKIPPED |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "$COVERAGE" = "passed" ]; then
+            echo "| Coverage (≥80%) | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Coverage (≥80%) | ❌ FAILED |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Final verdict
+          if [ "$ANTI_PATTERN" = "passed" ] && [ "$FILE_SIZE" = "passed" ] && \
+             [ "$COVERAGE" = "passed" ]; then
+            echo "## ✅ CHICAGO SCHOOL TDD COMPLIANT" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All tests follow Chicago School TDD principles:" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ No mocks, fakes, or placeholder implementations" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ No dummy processes (spawn/fun/receive/stop)" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ No state inspection (sys:get_status)" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ No record duplication (test-specific state records)" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Test files under 500 lines" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Tests use real erlmcp processes" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Coverage ≥80%" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "## ❌ CHICAGO SCHOOL TDD VIOLATIONS DETECTED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Action Required:** Fix violations before merging." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Chicago School TDD Rules:**" >> $GITHUB_STEP_SUMMARY
+            echo "- NO mocks, fake, or placeholder implementations" >> $GITHUB_STEP_SUMMARY
+            echo "- NO dummy processes (spawn/fun/receive/stop)" >> $GITHUB_STEP_SUMMARY
+            echo "- NO state inspection (sys:get_status)" >> $GITHUB_STEP_SUMMARY
+            echo "- NO record duplication (test-specific state records)" >> $GITHUB_STEP_SUMMARY
+            echo "- Test files MUST be < 500 lines" >> $GITHUB_STEP_SUMMARY
+            echo "- Tests MUST use real erlmcp processes" >> $GITHUB_STEP_SUMMARY
+            echo "- Coverage MUST be ≥80%" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Upload compliance report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: chicago-school-tdd-report
+          path: |
+            _build/test/cover/
+          retention-days: 30
+
+      - name: Comment on PR with results
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+            let summary = '';
+
+            try {
+              summary = fs.readFileSync(summaryPath, 'utf8');
+            } catch (e) {
+              summary = 'Unable to read summary';
+            }
+
+            const comment = `## Chicago School TDD Compliance Report ❌
+
+            Your PR has Chicago School TDD violations that must be fixed before merging.
+
+            ${summary}
+
+            **Next Steps:**
+            1. Review the violations above
+            2. Fix all anti-patterns (no mocks, fakes, or dummy processes)
+            3. Ensure test files are < 500 lines
+            4. Verify ≥80% code coverage
+            5. Re-run CI checks
+
+            **Documentation:** See [CLAUDE.md](../CLAUDE.md) for Chicago School TDD guidelines.`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

@@ -2,8 +2,8 @@
 %%% @doc
 %%% Transport Layer Integration Tests
 %%%
-%%% This test suite validates that all transport implementations properly
-%%% integrate with the core erlmcp system (client and server).
+%%% Tests that all transport implementations properly integrate with the
+%%% core erlmcp system (client and server) through API calls only.
 %%%
 %%% Tests:
 %%% - Transport initialization through client
@@ -11,6 +11,12 @@
 %%% - Transport lifecycle (start, stop, reconnect)
 %%% - Registry integration
 %%% - Error handling and recovery
+%%%
+%%% Chicago School TDD Principles:
+%%% - Test observable behavior through API calls only
+%%% - Use REAL erlmcp processes (no mocked/stubbed versions)
+%%% - NO state inspection
+%%% - NO record duplication
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -74,10 +80,10 @@ stdio_transport_init_test_() ->
            Opts = {stdio, #{}},
            {ok, Client} = erlmcp_client:start_link(Opts),
            try
-               %% Verify client started successfully
+               %% Verify client started successfully through API
                ?assert(is_pid(Client)),
                ?assert(erlang:is_process_alive(Client)),
-               %% Verify client can be stopped
+               %% Verify client can be stopped through API
                ok = erlmcp_client:stop(Client),
                ?assertNot(erlang:is_process_alive(Client))
            after
@@ -96,7 +102,7 @@ stdio_transport_send_test_() ->
            Opts = {stdio, #{}},
            {ok, Client} = erlmcp_client:start_link(Opts),
            try
-               %% Try to send a message (should not crash)
+               %% Try to send a message through API (should not crash)
                %% In test mode, stdio won't actually send
                ok = erlmcp_client:stop(Client),
                ?assertNot(erlang:is_process_alive(Client))
@@ -125,7 +131,7 @@ tcp_transport_init_test_() ->
            }},
            {ok, Client} = erlmcp_client:start_link(Opts),
            try
-               %% Verify client started
+               %% Verify client started through API
                ?assert(is_pid(Client)),
                %% Client may not be connected (server not running)
                %% but should not crash
@@ -157,7 +163,7 @@ tcp_transport_server_test_() ->
                    {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
                    ?assert(is_pid(ServerPid)),
                    ?assert(erlang:is_process_alive(ServerPid)),
-                   %% Stop the server
+                   %% Stop the server through API
                    erlmcp_transport_tcp:close(ServerPid),
                    timer:sleep(100),
                    ?assertNot(erlang:is_process_alive(ServerPid));
@@ -188,7 +194,7 @@ http_transport_init_test_() ->
                    %% HTTP transport available, test initialization
                    {ok, TransportPid} = erlmcp_transport_http_server:start_link(Opts),
                    ?assert(is_pid(TransportPid)),
-                   %% Clean up
+                   %% Clean up through API
                    erlmcp_transport_http:close(TransportPid);
                _ ->
                    %% HTTP transport not available, skip test
@@ -217,13 +223,13 @@ registry_registration_test_() ->
                    TransportId = test_transport_registry,
                    TransportPid = self(),
                    Config = #{type => stdio},
-                   %% Register transport
+                   %% Register transport through API
                    ok = erlmcp_registry:register_transport(TransportId, TransportPid, Config),
-                   %% Verify registration
+                   %% Verify registration through API
                    {ok, {FoundPid, FoundConfig}} = erlmcp_registry:find_transport(TransportId),
                    ?assertEqual(TransportPid, FoundPid),
                    ?assertEqual(stdio, maps:get(type, FoundConfig)),
-                   %% Unregister
+                   %% Unregister through API
                    ok = erlmcp_registry:unregister_transport(TransportId)
            end
        end}
@@ -249,18 +255,18 @@ message_routing_test_() ->
                    ServerPid = self(),
                    TransportPid = self(),
 
-                   %% Register server and transport
+                   %% Register server and transport through API
                    ok = erlmcp_registry:register_server(ServerId, ServerPid, #{}),
                    ok = erlmcp_registry:register_transport(TransportId, TransportPid, #{}),
 
-                   %% Bind them
+                   %% Bind them through API
                    ok = erlmcp_registry:bind_transport_to_server(TransportId, ServerId),
 
-                   %% Route a message
+                   %% Route a message through API
                    TestMessage = #{<<"test">> => <<"data">>},
                    ok = erlmcp_registry:route_to_transport(TransportId, ServerId, TestMessage),
 
-                   %% Clean up
+                   %% Clean up through API
                    ok = erlmcp_registry:unbind_transport(TransportId),
                    ok = erlmcp_registry:unregister_transport(TransportId),
                    ok = erlmcp_registry:unregister_server(ServerId)

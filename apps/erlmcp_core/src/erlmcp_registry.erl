@@ -8,6 +8,7 @@
     start_link/0,
     register_server/3, register_server/4, register_transport/3, register_transport/4,
     unregister_server/1, unregister_server/2, unregister_transport/1, unregister_transport/2,
+    update_server/2,
     route_to_server/3, route_to_transport/3,
     find_server/1, find_server/2, find_transport/1, find_transport/2,
     list_servers/0, list_servers/1, list_transports/0, list_transports/1,
@@ -95,6 +96,14 @@ unregister_transport(local, TransportId) ->
     gen_server:call(?MODULE, {unregister_transport, TransportId});
 unregister_transport(global, TransportId) ->
     erlmcp_registry_dist:unregister_global({transport, TransportId}).
+
+%%--------------------------------------------------------------------
+%% @doc Update server configuration in the registry.
+%% @end
+%%--------------------------------------------------------------------
+-spec update_server(server_id(), server_config()) -> ok | {error, term()}.
+update_server(ServerId, Config) ->
+    gen_server:call(?MODULE, {update_server, ServerId, Config}).
 
 -spec route_to_server(server_id(), transport_id(), term()) -> ok | {error, term()}.
 route_to_server(ServerId, TransportId, Message) ->
@@ -299,6 +308,24 @@ handle_call({register_transport, TransportId, TransportPid, Config}, _From, Stat
             logger:warning("Transport ~p already registered with different pid ~p (our pid: ~p)",
                           [TransportId, ExistingPid, TransportPid]),
             {reply, {error, already_registered}, State}
+    end;
+
+handle_call({update_server, ServerId, Config}, _From, State) ->
+    Key = {n, l, {mcp, server, ServerId}},
+    case gproc:where(Key) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        Pid ->
+            % Update by unregistering and re-registering with new config
+            try
+                gproc:unreg_other(Key, Pid),
+                gproc:reg_other(Key, Pid, Config),
+                logger:info("Updated server ~p config", [ServerId]),
+                {reply, ok, State}
+            catch
+                error:badarg ->
+                    {reply, {error, update_failed}, State}
+            end
     end;
 
 handle_call({unregister_server, ServerId}, _From, State) ->

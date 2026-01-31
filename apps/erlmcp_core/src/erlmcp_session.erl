@@ -9,6 +9,7 @@
     get_session_id/1,
     set_metadata/3,
     get_metadata/2,
+    get_created_at/1,
     list_sessions/0
 ]).
 
@@ -50,6 +51,10 @@ set_metadata(Session = #{metadata := Meta}, Key, Value) ->
 -spec get_metadata(session(), atom() | binary()) -> term() | undefined.
 get_metadata(#{metadata := Meta}, Key) ->
     maps:get(Key, Meta, undefined).
+
+-spec get_created_at(session()) -> integer().
+get_created_at(#{created_at := CreatedAt}) ->
+    CreatedAt.
 
 -spec list_sessions() -> [session()].
 list_sessions() ->

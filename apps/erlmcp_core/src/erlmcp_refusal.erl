@@ -13,7 +13,8 @@
     get_message/1,
     get_metadata/1,
     format_refusal/1,
-    format_refusal/2
+    format_refusal/2,
+    is_valid_code/1
 ]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -66,3 +67,11 @@ format_refusal(Code, Details) ->
          jsx:encode(Details)]
     ),
     <<Base/binary, DetailStr/binary>>.
+
+%% @doc Check if code is a valid refusal code (1001-1089)
+%% Refusal codes are defined in the MCP specification for error responses
+-spec is_valid_code(integer()) -> boolean().
+is_valid_code(Code) when is_integer(Code), Code >= 1001, Code =< 1089 ->
+    true;
+is_valid_code(_Code) ->
+    false.

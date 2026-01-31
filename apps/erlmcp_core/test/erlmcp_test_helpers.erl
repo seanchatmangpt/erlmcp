@@ -45,9 +45,14 @@
     stop_test_client/1,
     stop_test_client/2,
     with_test_server/1,
-    with_test_server/2,
+    with_test_server/3,
     with_test_client/1,
-    with_test_client/2
+    with_test_client/2,
+    start_test_cache/0,
+    start_test_cache/1,
+    stop_test_cache/0,
+    with_test_cache/1,
+    with_test_cache/2
 ]).
 
 %% gen_server callbacks (for test coordinator process)
@@ -60,15 +65,20 @@
 %% Types
 %%====================================================================
 
--type server_id() :: binary().
 -type server_config() :: #{
     capabilities => #mcp_server_capabilities{},
-    server_id => server_id(),
+    server_id => erlmcp_registry:server_id(),
     timeout => timeout()
 }.
 -type client_config() :: #{
     transport => {stdio, list()} | {tcp, map()} | {http, map()},
     timeout => timeout()
+}.
+-type cache_config() :: #{
+    max_l1_size => pos_integer(),
+    max_l2_size => pos_integer(),
+    default_ttl_seconds => pos_integer(),
+    cleanup_interval_ms => pos_integer()
 }.
 -type test_result() :: term().
 -type timeout_ms() :: pos_integer().
@@ -104,7 +114,7 @@ start_test_server() ->
 %% Chicago School: Uses REAL erlmcp_server process (no mocks).
 %% @end
 %%--------------------------------------------------------------------
--spec start_test_server(server_id()) -> {ok, pid()} | {error, term()}.
+-spec start_test_server(erlmcp_registry:server_id()) -> {ok, pid()} | {error, term()}.
 start_test_server(ServerId) when is_binary(ServerId) ->
     DefaultCaps = #mcp_server_capabilities{
         resources = #mcp_capability{enabled = true},
@@ -125,7 +135,7 @@ start_test_server(ServerId) when is_binary(ServerId) ->
 %% Chicago School: Uses REAL erlmcp_server process (no mocks).
 %% @end
 %%--------------------------------------------------------------------
--spec start_test_server(server_id(), #mcp_server_capabilities{}) ->
+-spec start_test_server(erlmcp_registry:server_id(), #mcp_server_capabilities{}) ->
     {ok, pid()} | {error, term()}.
 start_test_server(ServerId, Capabilities) when is_binary(ServerId) ->
     case erlmcp_server:start_link(ServerId, Capabilities) of
@@ -334,7 +344,7 @@ with_test_server(TestFun) when is_function(TestFun, 1) ->
 %% Chicago School: Automatic cleanup prevents resource leaks.
 %% @end
 %%--------------------------------------------------------------------
--spec with_test_server(server_id(), #mcp_server_capabilities{},
+-spec with_test_server(erlmcp_registry:server_id(), #mcp_server_capabilities{},
                        fun((pid()) -> test_result())) -> test_result().
 with_test_server(ServerId, Capabilities, TestFun)
   when is_binary(ServerId), is_function(TestFun, 1) ->
@@ -403,6 +413,177 @@ with_test_client(Config, TestFun) when is_map(Config), is_function(TestFun, 1) -
         TestFun(ClientPid)
     after
         stop_test_client(ClientPid)
+    end.
+
+%%====================================================================
+%% Cache Test Helpers
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% @doc Start a test erlmcp_cache with default configuration.
+%%
+%% Creates a real erlmcp_cache gen_server process with Mnesia backend.
+%% Handles Mnesia schema creation and startup automatically.
+%%
+%% Returns {ok, CachePid} on success, {error, Reason} on failure.
+%%
+%% Chicago School: Uses REAL erlmcp_cache process (no mocks).
+%% @end
+%%--------------------------------------------------------------------
+-spec start_test_cache() -> {ok, pid()} | {error, term()}.
+start_test_cache() ->
+    start_test_cache(#{}).
+
+%%--------------------------------------------------------------------
+%% @doc Start a test erlmcp_cache with specific configuration.
+%%
+%% Configuration map options:
+%%   - max_l1_size: Maximum L1 cache size (default: 10000)
+%%   - max_l2_size: Maximum L2 cache size (default: 100000)
+%%   - default_ttl_seconds: Default TTL in seconds (default: 300)
+%%   - cleanup_interval_ms: Cleanup interval in ms (default: 60000)
+%%
+%% Returns {ok, CachePid} on success, {error, Reason} on failure.
+%%
+%% Chicago School: Uses REAL erlmcp_cache process (no mocks).
+%% @end
+%%--------------------------------------------------------------------
+-spec start_test_cache(cache_config()) -> {ok, pid()} | {error, term()}.
+start_test_cache(Config) when is_map(Config) ->
+    %% Stop cache if running to ensure clean state
+    case whereis(erlmcp_cache) of
+        undefined -> ok;
+        _Pid -> gen_server:stop(erlmcp_cache)
+    end,
+
+    %% Stop Mnesia if running to ensure clean state
+    case mnesia:system_info(is_running) of
+        yes ->
+            application:stop(mnesia),
+            timer:sleep(100);
+        _ -> ok
+    end,
+
+    %% Delete old schema to start fresh
+    case mnesia:system_info(is_running) of
+        yes -> ok;
+        _ ->
+            catch mnesia:delete_schema([node()]),
+            timer:sleep(50)
+    end,
+
+    %% Create schema
+    case mnesia:create_schema([node()]) of
+        ok -> ok;
+        {error, {already_exists, _}} -> ok
+    end,
+
+    %% Start Mnesia
+    case application:start(mnesia) of
+        ok -> ok;
+        {error, {already_started, mnesia}} -> ok
+    end,
+
+    %% Wait for Mnesia to be fully running
+    ok = mnesia:wait_for_tables([schema], 5000),
+
+    %% Merge with test defaults
+    TestConfig = maps:merge(#{
+        max_l1_size => 10000,
+        max_l2_size => 100000,
+        default_ttl_seconds => 300,
+        cleanup_interval_ms => 60000
+    }, Config),
+
+    case erlmcp_cache:start_link(TestConfig) of
+        {ok, Pid} -> {ok, Pid};
+        {error, {already_started, Pid}} -> {ok, Pid}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc Stop the test erlmcp_cache.
+%%
+%% Gracefully terminates the cache process and stops Mnesia.
+%%
+%% Returns ok on success.
+%%
+%% Chicago School: Clean shutdown processes (no lingering processes).
+%% @end
+%%--------------------------------------------------------------------
+-spec stop_test_cache() -> ok.
+stop_test_cache() ->
+    case whereis(erlmcp_cache) of
+        undefined -> ok;
+        Pid when is_pid(Pid) ->
+            erlmcp_cache:clear(),
+            gen_server:stop(Pid),
+            timer:sleep(50)
+    end,
+
+    %% Stop Mnesia
+    case mnesia:system_info(is_running) of
+        yes -> application:stop(mnesia);
+        _ -> ok
+    end,
+    ok.
+
+%%--------------------------------------------------------------------
+%% @doc Setup/cleanup wrapper for test cache with defaults.
+%%
+%% Automatically starts a test cache, executes the test function,
+%% and ensures cleanup even if the test fails.
+%%
+%% Test function receives no arguments (cache is accessed via API).
+%%
+%% Example:
+%%   Result = erlmcp_test_helpers:with_test_cache(fun() ->
+%%       ok = erlmcp_cache:put(<<"key">>, <<"value">>),
+%%       {ok, <<"value">>} = erlmcp_cache:get(<<"key">>)
+%%   end).
+%%
+%% Returns the result of the test function.
+%%
+%% Chicago School: Automatic cleanup prevents resource leaks.
+%% @end
+%%--------------------------------------------------------------------
+-spec with_test_cache(fun(() -> test_result())) -> test_result().
+with_test_cache(TestFun) when is_function(TestFun, 0) ->
+    {ok, _Pid} = start_test_cache(),
+    try
+        TestFun()
+    after
+        stop_test_cache()
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc Setup/cleanup wrapper for test cache with configuration.
+%%
+%% Automatically starts a test cache with specific configuration,
+%% executes the test function, and ensures cleanup even if the test fails.
+%%
+%% Parameters:
+%%   - Config: Cache configuration map
+%%   - TestFun: Function receiving no arguments
+%%
+%% Example:
+%%   Config = #{max_l1_size => 100},
+%%   Result = erlmcp_test_helpers:with_test_cache(Config, fun() ->
+%%       ok = erlmcp_cache:put(<<"key">>, <<"value">>),
+%%       {ok, <<"value">>} = erlmcp_cache:get(<<"key">>)
+%%   end).
+%%
+%% Returns the result of the test function.
+%%
+%% Chicago School: Automatic cleanup prevents resource leaks.
+%% @end
+%%--------------------------------------------------------------------
+-spec with_test_cache(cache_config(), fun(() -> test_result())) -> test_result().
+with_test_cache(Config, TestFun) when is_map(Config), is_function(TestFun, 0) ->
+    {ok, _Pid} = start_test_cache(Config),
+    try
+        TestFun()
+    after
+        stop_test_cache()
     end.
 
 %%====================================================================

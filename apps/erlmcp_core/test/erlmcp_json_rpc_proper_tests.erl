@@ -56,9 +56,16 @@ simple_value() ->
         proper_types:boolean()
     ]).
 
-%% Generate error codes
+%% Generate error codes (only valid codes from ?VALID_ERROR_CODES)
 error_code() ->
-    proper_types:integer(-32768, 32000).
+    proper_types:oneof([
+        %% JSON-RPC 2.0 standard errors
+        proper_types:integer(-32700, -32600),
+        %% MCP server errors
+        proper_types:integer(-32099, -32000),
+        %% MCP completion errors
+        proper_types:integer(-32113, -32110)
+    ]).
 
 %% Generate error messages
 error_message() ->
