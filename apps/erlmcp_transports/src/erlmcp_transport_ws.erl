@@ -1,17 +1,14 @@
 -module(erlmcp_transport_ws).
+%% -behaviour(erlmcp_transport_behavior).  % Conflicts with gen_server init/1
 
 -include("erlmcp.hrl").
 -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
-%% Note: This module does NOT implement erlmcp_transport_behavior
-%% It is a Cowboy WebSocket handler with its own init/2 interface
+%% Transport behavior callbacks
+-export([init/1, send/2, close/1, get_info/1, handle_transport_call/2]).
 
-%% WebSocket-specific exports (NOT erlmcp_transport_behavior callbacks)
--export([
-    init/2,
-    send/2,
-    close/1
-]).
+%% WebSocket-specific exports (internal)
+-export([init_ws/2]).
 
 %% WebSocket handler exports
 -export([
@@ -90,8 +87,33 @@
 %% Transport Behavior Implementation
 %%====================================================================
 
--spec init(binary(), map()) -> {ok, pid()} | {error, term()}.
-init(TransportId, Config) ->
+%% @doc Initialize transport (starts Cowboy WebSocket listener)
+-spec init(map()) -> {ok, pid()} | {error, term()}.
+init(Config) when is_map(Config) ->
+    TransportId = maps:get(transport_id, Config, <<"ws_default">>),
+    init_ws(TransportId, Config).
+
+%% @doc Get transport information
+-spec get_info(pid() | term()) -> #{atom() => term()}.
+get_info(_State) ->
+    #{
+        transport_id => undefined,
+        type => websocket,
+        status => running
+    }.
+
+%% @doc Handle transport-specific calls
+-spec handle_transport_call(term(), term()) ->
+    {reply, term(), term()} | {error, term()}.
+handle_transport_call(_Request, State) ->
+    {error, unknown_request}.
+
+%%====================================================================
+%% WebSocket-Specific Implementation
+%%====================================================================
+
+-spec init_ws(binary(), map()) -> {ok, pid()} | {error, term()}.
+init_ws(TransportId, Config) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.init">>),
     try
         Port = maps:get(port, Config, 8080),

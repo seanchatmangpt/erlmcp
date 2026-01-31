@@ -1,9 +1,9 @@
 Error: {badmatch,
            {error,xref_base,
                {module_clash,
-                   {erlmcp_performance_validator,
-                       "/Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_performance_validator.beam",
-                       "/Users/sac/erlmcp/_build/default/lib/erlmcp_validation/ebin/erlmcp_performance_validator.beam"}}}}
+                   {erlmcp_uri_validator,
+                       "/Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_uri_validator.beam",
+                       "/Users/sac/erlmcp/_build/default/lib/erlmcp_validation/ebin/erlmcp_uri_validator.beam"}}}}
 [{rebar_prv_xref,'-prepare/1-lc$^1/1-1-',2,
                  [{file,"/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_prv_xref.erl"},
                   {line,100}]},

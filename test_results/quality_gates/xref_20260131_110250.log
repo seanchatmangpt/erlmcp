@@ -1,0 +1,45 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_server.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 707 │              erlang:raise(Class, [1;31mReason[0m, Stacktrace)[0m
+     │                                  [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 766 │              erlang:raise(Class, [1;31mReason[0m, Stacktrace)[0m
+     │                                  [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 818 │              erlang:raise(Class, [1;31mReason[0m, Stacktrace)[0m
+     │                                  [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1142 │              logger:error("Sampling request crashed: ~p:~p~n~p", [Class, [1;31mReason[0m, Stacktrace]),[0m
+      │                                                                          [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1192 │              logger:error("Logging set_level request crashed: ~p:~p~n~p", [Class, [1;31mReason[0m, Stacktrace]),[0m
+      │                                                                                   [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1285 │              logger:error("Elicitation request crashed: ~p:~p~n~p", [Class, [1;31mReason[0m, Stacktrace]),[0m
+      │                                                                             [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 1209, column 5)
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1431 │              logger:error("Completion request crashed: ~p:~p~n~p", [Class, [1;31mReason[0m, Stacktrace]),[0m
+      │                                                                            [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 1349, column 5)
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1957 │              erlang:raise(Class, [1;31mReason[0m, Stacktrace)[0m
+      │                                  [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+

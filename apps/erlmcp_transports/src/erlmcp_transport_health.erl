@@ -240,48 +240,243 @@ perform_health_check(TransportId, State) ->
 check_transport_status(TransportId, _Health) ->
     % Determine transport type and perform appropriate check
     TransportType = get_transport_type(TransportId),
-    case TransportType of
+    Result = case TransportType of
         tcp -> check_tcp_transport(TransportId);
         stdio -> check_stdio_transport(TransportId);
         sse -> check_sse_transport(TransportId);
-        _ -> {ok, unknown}
+        http -> check_http_transport(TransportId);
+        websocket -> check_ws_transport(TransportId);
+        _ -> {ok, #{status => unknown}}
+    end,
+
+    % Convert result to health_status
+    case Result of
+        {ok, #{status := Status}} ->
+            {ok, Status};
+        {ok, Status} when is_atom(Status) ->
+            {ok, Status};
+        {error, _Reason} ->
+            {ok, unhealthy}
     end.
 
 %% @doc Get transport type from transport ID
 -spec get_transport_type(transport_id()) -> atom().
 get_transport_type(TransportId) ->
+    % First try to get type from registry
+    case erlmcp_transport_registry:get_transport(TransportId) of
+        {ok, TransportInfo} ->
+            maps:get(type, TransportInfo, unknown);
+        {error, _} ->
+            % Fallback to name-based detection
+            get_transport_type_from_name(TransportId)
+    end.
+
+%% @doc Get transport type from transport ID name (fallback)
+-spec get_transport_type_from_name(transport_id()) -> atom().
+get_transport_type_from_name(TransportId) ->
     TransportIdStr = atom_to_list(TransportId),
-    case string:find(TransportIdStr, "tcp") of
+    case string:find(TransportIdStr, "ws") of
         nomatch ->
-            case string:find(TransportIdStr, "stdio") of
+            case string:find(TransportIdStr, "http") of
                 nomatch ->
-                    case string:find(TransportIdStr, "sse") of
-                        nomatch -> unknown;
-                        _ -> sse
+                    case string:find(TransportIdStr, "tcp") of
+                        nomatch ->
+                            case string:find(TransportIdStr, "stdio") of
+                                nomatch ->
+                                    case string:find(TransportIdStr, "sse") of
+                                        nomatch -> unknown;
+                                        _ -> sse
+                                    end;
+                                _ -> stdio
+                            end;
+                        _ -> tcp
                     end;
-                _ -> stdio
+                _ -> http
             end;
-        _ -> tcp
+        _ -> websocket
     end.
 
 %% @doc Check TCP transport health
--spec check_tcp_transport(transport_id()) -> {ok, health_status()}.
-check_tcp_transport(_TransportId) ->
-    % For TCP, we would check socket state, connection status, etc.
-    % This is a simplified version
-    {ok, healthy}.
+-spec check_tcp_transport(transport_id()) -> {ok, health_status()} | {error, term()}.
+check_tcp_transport(TransportId) ->
+    case erlmcp_transport_registry:get_transport(TransportId) of
+        {ok, TransportInfo} ->
+            Config = maps:get(config, TransportInfo, #{}),
+            Host = maps:get(host, Config, "localhost"),
+            Port = maps:get(port, Config, undefined),
+            case Port of
+                undefined ->
+                    {error, no_port_configured};
+                _ ->
+                    % Attempt connection to verify endpoint is reachable
+                    StartTime = erlang:monotonic_time(microsecond),
+                    case gen_tcp:connect(Host, Port, [binary, {active, false}], ?HEALTH_CHECK_TIMEOUT) of
+                        {ok, Socket} ->
+                            EndTime = erlang:monotonic_time(microsecond),
+                            LatencyUs = EndTime - StartTime,
+                            LatencyMs = LatencyUs / 1000,
+                            gen_tcp:close(Socket),
+                            {ok, #{status => healthy, latency_ms => LatencyMs}};
+                        {error, Reason} ->
+                            {error, {tcp_connect_failed, Reason}}
+                    end
+            end;
+        {error, not_found} ->
+            {error, transport_not_registered}
+    end.
 
 %% @doc Check stdio transport health
--spec check_stdio_transport(transport_id()) -> {ok, health_status()}.
-check_stdio_transport(_TransportId) ->
-    % Stdio is always healthy if process is alive
-    {ok, healthy}.
+-spec check_stdio_transport(transport_id()) -> {ok, health_status()} | {error, term()}.
+check_stdio_transport(TransportId) ->
+    % For stdio, check that file descriptors are accessible
+    % We can verify stdout is writable by checking standard_io process
+    try
+        % Check if standard_io process is alive (manages stdin/stdout)
+        case whereis(standard_io) of
+            undefined ->
+                {error, standard_io_not_available};
+            StdIoPid when is_pid(StdIoPid) ->
+                % Verify the process is responsive
+                case is_process_alive(StdIoPid) of
+                    true ->
+                        % Try a simple io operation to verify stdout is writable
+                        % We use io:format with a null device to avoid side effects
+                        case catch io:format("") of
+                            ok ->
+                                {ok, #{status => healthy}};
+                            _ ->
+                                {error, stdout_not_writable}
+                        end;
+                    false ->
+                        {error, standard_io_dead}
+                end
+        end
+    catch
+        _:Error ->
+            {error, {stdio_check_failed, Error}}
+    end.
 
 %% @doc Check SSE transport health
--spec check_sse_transport(transport_id()) -> {ok, health_status()}.
-check_sse_transport(_TransportId) ->
-    % For SSE, check active streams and connection state
-    {ok, healthy}.
+-spec check_sse_transport(transport_id()) -> {ok, health_status()} | {error, term()}.
+check_sse_transport(TransportId) ->
+    case erlmcp_transport_registry:get_transport(TransportId) of
+        {ok, TransportInfo} ->
+            Config = maps:get(config, TransportInfo, #{}),
+            % Build URL from config
+            Host = maps:get(host, Config, "localhost"),
+            Port = maps:get(port, Config, 8080),
+            Path = maps:get(path, Config, "/mcp/sse"),
+            Scheme = case maps:get(ssl, Config, false) of
+                true -> "https";
+                false -> "http"
+            end,
+            URL = lists:flatten(io_lib:format("~s://~s:~p~s", [Scheme, Host, Port, Path])),
+            % Make HTTP HEAD request to verify endpoint is responding
+            check_http_endpoint(URL);
+        {error, not_found} ->
+            {error, transport_not_registered}
+    end.
+
+%% @doc Check HTTP transport health
+-spec check_http_transport(transport_id()) -> {ok, health_status()} | {error, term()}.
+check_http_transport(TransportId) ->
+    case erlmcp_transport_registry:get_transport(TransportId) of
+        {ok, TransportInfo} ->
+            Config = maps:get(config, TransportInfo, #{}),
+            % Build URL from config
+            Host = maps:get(host, Config, "localhost"),
+            Port = maps:get(port, Config, 8080),
+            Path = maps:get(path, Config, "/mcp"),
+            Scheme = case maps:get(ssl, Config, false) of
+                true -> "https";
+                false -> "http"
+            end,
+            URL = lists:flatten(io_lib:format("~s://~s:~p~s", [Scheme, Host, Port, Path])),
+            % Make HTTP HEAD request to verify endpoint is responding
+            check_http_endpoint(URL);
+        {error, not_found} ->
+            {error, transport_not_registered}
+    end.
+
+%% @doc Check WebSocket transport health
+-spec check_ws_transport(transport_id()) -> {ok, health_status()} | {error, term()}.
+check_ws_transport(TransportId) ->
+    case erlmcp_transport_registry:get_transport(TransportId) of
+        {ok, TransportInfo} ->
+            Pid = maps:get(pid, TransportInfo, undefined),
+            case Pid of
+                undefined ->
+                    {error, no_transport_pid};
+                _ ->
+                    % Check if transport process is alive
+                    case is_process_alive(Pid) of
+                        true ->
+                            % For WebSocket, we consider it healthy if the process is alive
+                            % Real ping/pong would require protocol-specific handling
+                            % which is better done within the websocket handler itself
+                            {ok, #{status => healthy}};
+                        false ->
+                            {error, transport_process_dead}
+                    end
+            end;
+        {error, not_found} ->
+            {error, transport_not_registered}
+    end.
+
+%% @doc Helper function to check HTTP endpoint health
+-spec check_http_endpoint(string()) -> {ok, health_status()} | {error, term()}.
+check_http_endpoint(URL) ->
+    % Use gun for HTTP client
+    StartTime = erlang:monotonic_time(microsecond),
+
+    % Parse URL
+    URIMap = uri_string:parse(URL),
+    Scheme = case maps:get(scheme, URIMap, "http") of
+        "https" -> https;
+        _ -> http
+    end,
+    Host = maps:get(host, URIMap, "localhost"),
+    Port = maps:get(port, URIMap, case Scheme of https -> 443; _ -> 80 end),
+    Path = maps:get(path, URIMap, "/"),
+
+    % Open connection with gun
+    Opts = #{
+        protocols => [http],
+        retry => 0,
+        connect_timeout => ?HEALTH_CHECK_TIMEOUT
+    },
+
+    case gun:open(Host, Port, Opts) of
+        {ok, ConnPid} ->
+            case gun:await_up(ConnPid, ?HEALTH_CHECK_TIMEOUT) of
+                {ok, _Protocol} ->
+                    % Send HEAD request
+                    StreamRef = gun:head(ConnPid, Path),
+                    case gun:await(ConnPid, StreamRef, ?HEALTH_CHECK_TIMEOUT) of
+                        {response, _IsFin, Status, _Headers} ->
+                            EndTime = erlang:monotonic_time(microsecond),
+                            LatencyUs = EndTime - StartTime,
+                            LatencyMs = LatencyUs / 1000,
+                            gun:close(ConnPid),
+                            % Accept 2xx, 3xx, 4xx as healthy (server is responding)
+                            % Only 5xx or connection failure is unhealthy
+                            if
+                                Status >= 200, Status < 500 ->
+                                    {ok, #{status => healthy, latency_ms => LatencyMs}};
+                                true ->
+                                    {error, {http_status, Status}}
+                            end;
+                        {error, Reason} ->
+                            gun:close(ConnPid),
+                            {error, {http_request_failed, Reason}}
+                    end;
+                {error, Reason} ->
+                    gun:close(ConnPid),
+                    {error, {connection_failed, Reason}}
+            end;
+        {error, Reason} ->
+            {error, {gun_open_failed, Reason}}
+    end.
 
 %% @doc Perform health checks on all registered transports
 -spec perform_all_health_checks(#state{}) -> #state{}.

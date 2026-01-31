@@ -1,0 +1,75 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_server.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 706 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+     │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 765 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+     │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 817 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+     │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 873 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+     │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 905 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+     │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 944 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+     │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 983 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+     │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1024 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+      │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1141 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+      │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1191 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+      │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1284 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+      │                                                              [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 1209, column 5)
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1339 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+      │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1430 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+      │                                                              [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 1349, column 5)
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1956 │              erlmcp_tracing:record_exception(SpanCtx, Class, [1;31mReason[0m, Stacktrace),[0m
+      │                                                              [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+

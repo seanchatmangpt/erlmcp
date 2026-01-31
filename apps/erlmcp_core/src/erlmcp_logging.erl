@@ -225,9 +225,6 @@ handle_cast({delete_buffer, ClientPid}, #state{client_buffers = Buffers, client_
             {noreply, State}
     end;
 
-handle_cast({'DOWN', _MRef, process, ClientPid, _Reason}, State) ->
-    handle_cast({delete_buffer, ClientPid}, State);
-
 handle_cast({clear_buffer, ClientPid}, State) ->
     Buffers = State#state.client_buffers,
     case maps:is_key(ClientPid, Buffers) of
@@ -243,6 +240,25 @@ handle_cast(_Msg, State) ->
 
 %% @private
 -spec handle_info(term(), term()) -> {noreply, tuple()}.
+handle_info({'DOWN', MonitorRef, process, ClientPid, Reason}, #state{client_buffers = Buffers, client_monitors = Monitors} = State) ->
+    logger:info("Monitored client ~p died: ~p", [ClientPid, Reason]),
+    % Cleanup: remove buffer, level config, and monitor
+    case maps:get(ClientPid, Monitors, undefined) of
+        MonitorRef ->
+            % This is our monitor, clean up
+            NewBuffers = maps:remove(ClientPid, Buffers),
+            NewLevels = maps:remove(ClientPid, State#state.client_levels),
+            NewMonitors = maps:remove(ClientPid, Monitors),
+            {noreply, State#state{
+                client_buffers = NewBuffers,
+                client_levels = NewLevels,
+                client_monitors = NewMonitors
+            }};
+        _ ->
+            % Not our monitor, ignore
+            {noreply, State}
+    end;
+
 handle_info(_Info, State) ->
     {noreply, State}.
 
