@@ -166,6 +166,7 @@ test_jwt_algorithm_confusion_attack() ->
     {_PublicKey, _PrivateKey} = generate_rsa_key_pair(),
 
     % Create JWT with "none" algorithm (no signature)
+    % The kid is present but doesn't exist in registry, so we get unknown_key_id
     Header = jsx:encode(#{<<"alg">> => <<"none">>, <<"typ">> => <<"JWT">>, <<"kid">> => <<"none_attack_kid">>}),
     Payload = jsx:encode(#{
         <<"sub">> => <<"attacker">>,
@@ -174,10 +175,10 @@ test_jwt_algorithm_confusion_attack() ->
 
     HeaderB64 = base64:encode(Header),
     PayloadB64 = base64:encode(Payload),
-    NoneToken = <<HeaderB64/binary, ".", PayloadB64, ".">>,
+    NoneToken = <<HeaderB64/binary, ".", PayloadB64/binary, ".">>,
 
-    % "none" algorithm or unknown kid should be rejected
-    {error, _} = erlmcp_auth:validate_jwt(NoneToken),
+    % "none" algorithm with unknown kid should be rejected with unknown_key_id
+    {error, unknown_key_id} = erlmcp_auth:validate_jwt(NoneToken),
 
     ok.
 
@@ -371,14 +372,16 @@ test_jwt_missing_expiration() ->
     ok.
 
 test_jwt_invalid_base64() ->
-    % JWT with invalid base64 in payload (but has kid)
+    % JWT with invalid base64 in payload (but has valid kid in header)
+    % The header decodes successfully and finds the kid, which doesn't exist
+    % So we get unknown_key_id (the payload decode error happens later)
     Header = base64:encode(jsx:encode(#{<<"alg">> => <<"HS256">>, <<"kid">> => <<"invalid_base64_kid">>})),
     InvalidPayload = <<"not_valid_base64!!!">>,
     Signature = base64:encode(<<"sig">>),
     Token = <<Header/binary, ".", InvalidPayload/binary, ".", Signature/binary>>,
 
-    % Invalid base64 returns error (kid check happens first, but payload decode fails)
-    {error, invalid_jwt} = erlmcp_auth:validate_jwt(Token),
+    % Unknown key ID is returned (header decoded, kid not found in registry)
+    {error, unknown_key_id} = erlmcp_auth:validate_jwt(Token),
 
     ok.
 

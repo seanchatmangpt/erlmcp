@@ -479,13 +479,20 @@ determine_check_interval(Component) ->
 maybe_trigger_recovery(Component) ->
     case Component#component_health.status of
         unhealthy ->
-            % Trigger recovery through recovery manager
+            % Trigger recovery through recovery manager (async to avoid deadlock)
             case Component#component_health.consecutive_failures >= 3 of
                 true ->
                     ?LOG_WARNING("Component ~p is unhealthy, triggering recovery",
                                  [Component#component_health.id]),
-                    erlmcp_recovery_manager:trigger_recovery(Component#component_health.id,
-                                                             health_check_failure);
+                    % Use safe call to avoid circular dependency deadlock
+                    case whereis(erlmcp_recovery_manager) of
+                        undefined ->
+                            ?LOG_WARNING("Recovery manager not available, skipping recovery trigger"),
+                            ok;
+                        _Pid ->
+                            erlmcp_recovery_manager:trigger_recovery(Component#component_health.id,
+                                                                     health_check_failure)
+                    end;
                 false ->
                     ok
             end;
@@ -506,8 +513,14 @@ handle_component_process_death(ComponentId, Reason, State) ->
 
             NewComponents = maps:put(ComponentId, UpdatedComponent, State#state.components),
 
-            % Trigger recovery
-            erlmcp_recovery_manager:trigger_recovery(ComponentId, {process_death, Reason}),
+            % Trigger recovery (async to avoid deadlock)
+            case whereis(erlmcp_recovery_manager) of
+                undefined ->
+                    ?LOG_WARNING("Recovery manager not available for component ~p death", [ComponentId]),
+                    ok;
+                _Pid ->
+                    erlmcp_recovery_manager:trigger_recovery(ComponentId, {process_death, Reason})
+            end,
 
             State#state{components = NewComponents};
         error ->

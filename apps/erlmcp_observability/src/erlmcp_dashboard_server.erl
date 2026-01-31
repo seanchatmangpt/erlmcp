@@ -178,13 +178,25 @@ handle_cast(_Request, State) ->
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 
 handle_info(broadcast_metrics, State) ->
-    % Fetch current metrics from aggregator
-    case erlmcp_metrics_aggregator:get_current_metrics() of
-        {ok, Metrics} ->
-            gen_server:cast(?MODULE, {broadcast_metrics, Metrics});
-        {error, Reason} ->
-            ?LOG_WARNING("Failed to fetch metrics: ~p", [Reason])
+    % Fetch current metrics from aggregator (safe call pattern)
+    Metrics = case whereis(erlmcp_metrics_aggregator) of
+        undefined ->
+            ?LOG_WARNING("Metrics aggregator not available"),
+            #{error => <<"aggregator_not_started">>, timestamp => erlang:system_time(millisecond)};
+        _Pid ->
+            try erlmcp_metrics_aggregator:get_current_metrics() of
+                {ok, M} -> M;
+                {error, Reason} ->
+                    ?LOG_WARNING("Failed to fetch metrics: ~p", [Reason]),
+                    #{error => iolist_to_binary(io_lib:format("metrics_error:~p", [Reason])),
+                      timestamp => erlang:system_time(millisecond)}
+            catch
+                Class:Reason:Stacktrace ->
+                    ?LOG_ERROR("Metrics aggregator crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
+                    #{error => <<"aggregator_crashed">>, timestamp => erlang:system_time(millisecond)}
+            end
     end,
+    gen_server:cast(?MODULE, {broadcast_metrics, Metrics}),
     {noreply, State};
 
 handle_info({'DOWN', _Ref, process, WsPid, _Reason}, State) ->

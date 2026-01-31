@@ -1,7 +1,7 @@
 -module(erlmcp_message_parser_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp.hrl").
+-include("erlmcp.hrl").
 
 %%====================================================================
 %% Test Suite for erlmcp_message_parser Module

@@ -6,6 +6,7 @@
     start_link/0,
     generate_report/2,
     calculate_compliance/1,
+    format_text/1,
     format_markdown/1,
     format_json/1,
     format_html/1,
@@ -272,6 +273,7 @@ generate_report_direct(Format, Data) ->
 
         %% Format report
         Formatted = case Format of
+            text -> format_text(Report);
             markdown -> format_markdown(Report);
             json -> format_json(Report);
             html -> format_html(Report)
@@ -315,6 +317,7 @@ handle_call({generate_report, Format, Data}, _From, State) ->
 
         %% Format report
         Formatted = case Format of
+            text -> format_text(Report);
             markdown -> format_markdown(Report);
             json -> format_json(Report);
             html -> format_html(Report)
@@ -436,18 +439,113 @@ generate_recommendations(Gaps, Compliance) ->
     end,
 
     Recs2 = lists:map(fun(Gap) ->
-        Status = maps:get(status, Gap),
+        Status = maps:get(<<"status">>, Gap, <<"unknown">>),
         case Status of
-            missing ->
+            <<"missing">> ->
                 <<"Add test coverage for missing requirements">>;
-            failed ->
+            <<"failed">> ->
                 <<"Fix failing tests">>;
-            incomplete ->
-                <<"Complete partial implementations">>
+            <<"incomplete">> ->
+                <<"Complete partial implementations">>;
+            _ ->
+                <<"Review this requirement">>
         end
     end, Gaps),
 
     lists:usort(Recs1 ++ Recs2).
+
+%% @private Format report as plain text
+format_text(Report) when is_map(Report) ->
+    Text = [
+        "================================================================================\n",
+        "MCP COMPLIANCE REPORT\n",
+        "================================================================================\n\n",
+        format_text_summary(Report),
+        format_text_sections(Report),
+        format_text_evidence(Report),
+        format_text_gaps(Report),
+        format_text_recommendations(Report),
+        "\n================================================================================\n"
+    ],
+    iolist_to_binary(Text).
+
+%% @private Format text summary
+format_text_summary(Report) ->
+    Overall = maps:get(overall, Report, 0.0),
+    BySection = maps:get(by_section, Report, #{}),
+    [
+        "SUMMARY\n",
+        "-------\n",
+        io_lib:format("Overall Compliance: ~.2f%~n~n", [Overall]),
+        "By Section:\n",
+        lists:map(fun({Section, Compliance}) ->
+            io_lib:format("  ~s: ~.2f%~n", [Section, Compliance])
+        end, maps:to_list(BySection)),
+        "\n"
+    ].
+
+%% @private Format text sections
+format_text_sections(Report) ->
+    BySection = maps:get(by_section, Report, #{}),
+    [
+        "COMPLIANCE BY SECTION\n",
+        "---------------------\n",
+        lists:map(fun({Section, Compliance}) ->
+            io_lib:format("~s\n  Compliance: ~.2f%~n~n", [Section, Compliance])
+        end, maps:to_list(BySection))
+    ].
+
+%% @private Format text evidence
+format_text_evidence(Report) ->
+    Evidence = maps:get(evidence, Report, []),
+    [
+        "EVIDENCE\n",
+        "--------\n",
+        lists:map(fun(E) ->
+            Test = maps:get(<<"test">>, E, <<"unknown">>),
+            Status = maps:get(<<"status">>, E, <<"unknown">>),
+            Ev = maps:get(<<"evidence">>, E, <<"No evidence">>),
+            [
+                io_lib:format("~s~n", [Test]),
+                io_lib:format("  Status: ~s~n", [Status]),
+                io_lib:format("  Evidence: ~s~n~n", [Ev])
+            ]
+        end, Evidence)
+    ].
+
+%% @private Format text gaps
+format_text_gaps(Report) ->
+    Gaps = maps:get(gaps, Report, []),
+    case Gaps of
+        [] -> ["NO GAPS IDENTIFIED\n\n"];
+        _ ->
+            [
+                "GAPS\n",
+                "----\n",
+                lists:map(fun(Gap) ->
+                    Req = maps:get(<<"requirement">>, Gap, #{}),
+                    Status = maps:get(<<"status">>, Gap, <<"unknown">>),
+                    Rec = maps:get(<<"recommendation">>, Gap, <<"No recommendation">>),
+                    ReqName = maps:get(name, Req, <<"unknown">>),
+                    [
+                        io_lib:format("~s [~s]~n", [ReqName, Status]),
+                        io_lib:format("  Recommendation: ~s~n~n", [Rec])
+                    ]
+                end, Gaps)
+            ]
+    end.
+
+%% @private Format text recommendations
+format_text_recommendations(Report) ->
+    Recs = maps:get(recommendations, Report, []),
+    [
+        "RECOMMENDATIONS\n",
+        "---------------\n",
+        lists:map(fun(Rec) ->
+            io_lib:format("  - ~s~n", [Rec])
+        end, Recs),
+        "\n"
+    ].
 
 %% @private Format Markdown header
 format_markdown_header(Timestamp) ->

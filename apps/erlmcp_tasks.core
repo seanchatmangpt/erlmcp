@@ -1,0 +1,4283 @@
+module 'erlmcp_tasks' ['cancel'/3,
+		       'cancel_task'/2,
+		       'cancel_task'/3,
+		       'cleanup_expired'/0,
+		       'cleanup_expired'/1,
+		       'code_change'/3,
+		       'complete'/3,
+		       'complete_task'/2,
+		       'create'/3,
+		       'create'/4,
+		       'create_task'/3,
+		       'create_task'/4,
+		       'fail_task'/2,
+		       'get'/2,
+		       'get_max_concurrent'/0,
+		       'get_result'/2,
+		       'get_task'/2,
+		       'get_task_result'/2,
+		       'handle_call'/3,
+		       'handle_cast'/2,
+		       'handle_info'/2,
+		       'init'/1,
+		       'list_tasks'/2,
+		       'list_tasks'/3,
+		       'module_info'/0,
+		       'module_info'/1,
+		       'set_task_progress'/2,
+		       'start_link'/0,
+		       'start_task_execution'/2,
+		       'stop'/1,
+		       'terminate'/2,
+		       'update_progress'/3,
+		       'update_status'/3,
+		       'update_task'/3]
+    attributes [%% Line 1
+		'file' =
+		    %% Line 1
+		    [{[101|[114|[108|[109|[99|[112|[95|[99|[111|[114|[101|[47|[115|[114|[99|[47|[101|[114|[108|[109|[99|[112|[95|[116|[97|[115|[107|[115|[46|[101|[114|[108]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]],1}],
+		%% Line 19
+		'behaviour' =
+		    %% Line 19
+		    ['gen_server'],
+		%% Line 1
+		'file' =
+		    %% Line 1
+		    [{[47|[85|[115|[101|[114|[115|[47|[115|[97|[99|[47|[101|[114|[108|[109|[99|[112|[47|[105|[110|[99|[108|[117|[100|[101|[47|[101|[114|[108|[109|[99|[112|[46|[104|[114|[108]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]],1}],
+		%% Line 476
+		'type' =
+		    %% Line 476
+		    [{'mcp_server_phase',{'type',{476,29},'union',[{'atom',{476,29},'initialization'}|[{'atom',{476,46},'initialized'}|[{'atom',{476,60},'disconnected'}|[{'atom',{476,75},'closed'}]]]]},[]}],
+		%% Line 477
+		'type' =
+		    %% Line 477
+		    [{'mcp_client_phase',{'type',{477,29},'union',[{'atom',{477,29},'pre_initialization'}|[{'atom',{477,50},'initializing'}|[{'atom',{477,65},'initialized'}|[{'atom',{477,79},'error'}|[{'atom',{477,87},'closed'}]]]]]},[]}],
+		%% Line 630
+		'type' =
+		    %% Line 630
+		    [{'log_level',{'type',{630,22},'union',[{'atom',{630,22},'debug'}|[{'atom',{630,30},'info'}|[{'atom',{630,37},'notice'}|[{'atom',{630,46},'warning'}|[{'atom',{630,56},'error'}|[{'atom',{630,64},'critical'}|[{'atom',{630,75},'alert'}|[{'atom',{630,83},'emergency'}]]]]]]]]},[]}],
+		%% Line 684
+		'type' =
+		    %% Line 684
+		    [{'json_rpc_id',{'type',{684,24},'union',[{'atom',{684,24},'null'}|[{'type',{684,31},'binary',[]}|[{'type',{684,42},'integer',[]}]]]},[]}],
+		%% Line 685
+		'type' =
+		    %% Line 685
+		    [{'json_rpc_params',{'type',{685,28},'union',[{'type',{685,28},'map','any'}|[{'type',{685,36},'list',[]}|[{'atom',{685,45},'undefined'}]]]},[]}],
+		%% Line 688
+		'record' =
+		    %% Line 688
+		    [{'json_rpc_request',[{'typed_record_field',{'record_field',{689,5},{'atom',{689,5},'id'}},{'user_type',{689,11},'json_rpc_id',[]}}|[{'typed_record_field',{'record_field',{690,5},{'atom',{690,5},'method'}},{'type',{690,15},'binary',[]}}|[{'typed_record_field',{'record_field',{691,5},{'atom',{691,5},'params'}},{'user_type',{691,15},'json_rpc_params',[]}}]]]}],
+		%% Line 694
+		'record' =
+		    %% Line 694
+		    [{'json_rpc_response',[{'typed_record_field',{'record_field',{695,5},{'atom',{695,5},'id'}},{'user_type',{695,11},'json_rpc_id',[]}}|[{'typed_record_field',{'record_field',{696,5},{'atom',{696,5},'result'}},{'type',{696,15},'union',[{'type',{696,15},'term',[]}|[{'atom',{696,24},'undefined'}]]}}|[{'typed_record_field',{'record_field',{697,5},{'atom',{697,5},'error'}},{'type',{697,14},'union',[{'type',{697,14},'map','any'}|[{'atom',{697,22},'undefined'}]]}}]]]}],
+		%% Line 700
+		'record' =
+		    %% Line 700
+		    [{'json_rpc_notification',[{'typed_record_field',{'record_field',{701,5},{'atom',{701,5},'method'}},{'type',{701,15},'binary',[]}}|[{'typed_record_field',{'record_field',{702,5},{'atom',{702,5},'params'}},{'user_type',{702,15},'json_rpc_params',[]}}]]}],
+		%% Line 707
+		'record' =
+		    %% Line 707
+		    [{'mcp_capability',[{'typed_record_field',{'record_field',{708,5},{'atom',{708,5},'enabled'},{'atom',{708,15},'false'}},{'type',{708,24},'boolean',[]}}]}],
+		%% Line 712
+		'record' =
+		    %% Line 712
+		    [{'mcp_resources_capability',[{'typed_record_field',{'record_field',{713,5},{'atom',{713,5},'subscribe'},{'atom',{713,17},'false'}},{'type',{713,26},'boolean',[]}}|[{'typed_record_field',{'record_field',{714,5},{'atom',{714,5},'listChanged'},{'atom',{714,19},'false'}},{'type',{714,28},'boolean',[]}}]]}],
+		%% Line 718
+		'record' =
+		    %% Line 718
+		    [{'mcp_tools_capability',[{'typed_record_field',{'record_field',{719,5},{'atom',{719,5},'listChanged'},{'atom',{719,19},'false'}},{'type',{719,28},'boolean',[]}}]}],
+		%% Line 723
+		'record' =
+		    %% Line 723
+		    [{'mcp_prompts_capability',[{'typed_record_field',{'record_field',{724,5},{'atom',{724,5},'listChanged'},{'atom',{724,19},'false'}},{'type',{724,28},'boolean',[]}}]}],
+		%% Line 728
+		'record' =
+		    %% Line 728
+		    [{'mcp_logging_capability',[]}],
+		%% Line 732
+		'record' =
+		    %% Line 732
+		    [{'mcp_sampling_capability',[{'typed_record_field',{'record_field',{733,5},{'atom',{733,5},'modelPreferences'},{'atom',{733,24},'undefined'}},{'type',{733,37},'union',[{'type',{733,37},'map','any'}|[{'atom',{733,45},'undefined'}]]}}]}],
+		%% Line 737
+		'record' =
+		    %% Line 737
+		    [{'mcp_roots_capability',[]}],
+		%% Line 741
+		'record' =
+		    %% Line 741
+		    [{'mcp_client_capabilities',[{'typed_record_field',{'record_field',{742,5},{'atom',{742,5},'roots'},{'atom',{742,13},'undefined'}},{'type',{742,26},'union',[{'type',{742,26},'map','any'}|[{'atom',{742,34},'undefined'}]]}}|[{'typed_record_field',{'record_field',{743,5},{'atom',{743,5},'sampling'},{'atom',{743,16},'undefined'}},{'type',{743,29},'union',[{'type',{743,29},'record',[{'atom',{743,30},'mcp_sampling_capability'}]}|[{'atom',{743,58},'undefined'}]]}}|[{'typed_record_field',{'record_field',{744,5},{'atom',{744,5},'experimental'},{'atom',{744,20},'undefined'}},{'type',{744,33},'union',[{'type',{744,33},'map','any'}|[{'atom',{744,41},'undefined'}]]}}|[{'typed_record_field',{'record_field',{745,5},{'atom',{745,5},'tools'},{'record',{745,13},'mcp_tools_capability',[]}},{'type',{745,40},'record',[{'atom',{745,41},'mcp_tools_capability'}]}}]]]]}],
+		%% Line 749
+		'record' =
+		    %% Line 749
+		    [{'mcp_server_capabilities',[{'typed_record_field',{'record_field',{750,5},{'atom',{750,5},'resources'},{'record',{750,17},'mcp_resources_capability',[]}},{'type',{750,48},'record',[{'atom',{750,49},'mcp_resources_capability'}]}}|[{'typed_record_field',{'record_field',{751,5},{'atom',{751,5},'tools'},{'record',{751,13},'mcp_tools_capability',[]}},{'type',{751,40},'record',[{'atom',{751,41},'mcp_tools_capability'}]}}|[{'typed_record_field',{'record_field',{752,5},{'atom',{752,5},'prompts'},{'record',{752,15},'mcp_prompts_capability',[]}},{'type',{752,44},'record',[{'atom',{752,45},'mcp_prompts_capability'}]}}|[{'typed_record_field',{'record_field',{753,5},{'atom',{753,5},'logging'},{'record',{753,15},'mcp_logging_capability',[]}},{'type',{753,44},'record',[{'atom',{753,45},'mcp_logging_capability'}]}}|[{'typed_record_field',{'record_field',{754,5},{'atom',{754,5},'sampling'},{'record',{754,16},'mcp_sampling_capability',[]}},{'type',{754,46},'record',[{'atom',{754,47},'mcp_sampling_capability'}]}}|[{'typed_record_field',{'record_field',{755,5},{'atom',{755,5},'roots'},{'record',{755,13},'mcp_roots_capability',[]}},{'type',{755,40},'record',[{'atom',{755,41},'mcp_roots_capability'}]}}|[{'typed_record_field',{'record_field',{756,5},{'atom',{756,5},'completions'},{'atom',{756,19},'undefined'}},{'type',{756,32},'union',[{'type',{756,32},'record',[{'atom',{756,33},'mcp_capability'}]}|[{'atom',{756,52},'undefined'}]]}}|[{'typed_record_field',{'record_field',{757,5},{'atom',{757,5},'experimental'},{'atom',{757,20},'undefined'}},{'type',{757,33},'union',[{'type',{757,33},'map','any'}|[{'atom',{757,41},'undefined'}]]}}]]]]]]]]}],
+		%% Line 764
+		'record' =
+		    %% Line 764
+		    [{'mcp_annotation',[{'typed_record_field',{'record_field',{765,5},{'atom',{765,5},'name'}},{'type',{765,13},'binary',[]}}|[{'typed_record_field',{'record_field',{766,5},{'atom',{766,5},'value'}},{'type',{766,14},'union',[{'type',{766,14},'binary',[]}|[{'type',{766,25},'number',[]}|[{'type',{766,36},'boolean',[]}|[{'type',{766,48},'map','any'}|[{'atom',{766,56},'undefined'}]]]]]}}]]}],
+		%% Line 771
+		'record' =
+		    %% Line 771
+		    [{'mcp_resource_link',[{'typed_record_field',{'record_field',{772,5},{'atom',{772,5},'uri'}},{'type',{772,12},'binary',[]}}|[{'typed_record_field',{'record_field',{773,5},{'atom',{773,5},'name'}},{'type',{773,13},'union',[{'type',{773,13},'binary',[]}|[{'atom',{773,24},'undefined'}]]}}|[{'typed_record_field',{'record_field',{774,5},{'atom',{774,5},'mime_type'}},{'type',{774,18},'union',[{'type',{774,18},'binary',[]}|[{'atom',{774,29},'undefined'}]]}}|[{'typed_record_field',{'record_field',{775,5},{'atom',{775,5},'size'}},{'type',{775,13},'union',[{'type',{775,13},'integer',[]}|[{'atom',{775,25},'undefined'}]]}}]]]]}],
+		%% Line 778
+		'record' =
+		    %% Line 778
+		    [{'mcp_content',[{'typed_record_field',{'record_field',{779,5},{'atom',{779,5},'type'}},{'type',{779,13},'binary',[]}}|[{'typed_record_field',{'record_field',{780,5},{'atom',{780,5},'text'}},{'type',{780,13},'union',[{'type',{780,13},'binary',[]}|[{'atom',{780,24},'undefined'}]]}}|[{'typed_record_field',{'record_field',{781,5},{'atom',{781,5},'data'}},{'type',{781,13},'union',[{'type',{781,13},'binary',[]}|[{'atom',{781,24},'undefined'}]]}}|[{'typed_record_field',{'record_field',{782,5},{'atom',{782,5},'mime_type'}},{'type',{782,18},'union',[{'type',{782,18},'binary',[]}|[{'atom',{782,29},'undefined'}]]}}|[{'typed_record_field',{'record_field',{783,5},{'atom',{783,5},'annotations'},{'nil',{783,19}}},{'type',{783,25},'list',[{'type',{783,26},'record',[{'atom',{783,27},'mcp_annotation'}]}]}}|[{'typed_record_field',{'record_field',{784,5},{'atom',{784,5},'resource_link'},{'atom',{784,21},'undefined'}},{'type',{784,34},'union',[{'type',{784,34},'record',[{'atom',{784,35},'mcp_resource_link'}]}|[{'atom',{784,57},'undefined'}]]}}]]]]]]}],
+		%% Line 787
+		'record' =
+		    %% Line 787
+		    [{'mcp_resource',[{'typed_record_field',{'record_field',{788,5},{'atom',{788,5},'uri'}},{'type',{788,12},'binary',[]}}|[{'typed_record_field',{'record_field',{789,5},{'atom',{789,5},'name'}},{'type',{789,13},'binary',[]}}|[{'typed_record_field',{'record_field',{790,5},{'atom',{790,5},'description'}},{'type',{790,20},'union',[{'type',{790,20},'binary',[]}|[{'atom',{790,31},'undefined'}]]}}|[{'typed_record_field',{'record_field',{791,5},{'atom',{791,5},'mime_type'}},{'type',{791,18},'union',[{'type',{791,18},'binary',[]}|[{'atom',{791,29},'undefined'}]]}}|[{'typed_record_field',{'record_field',{792,5},{'atom',{792,5},'metadata'}},{'type',{792,17},'union',[{'type',{792,17},'map','any'}|[{'atom',{792,25},'undefined'}]]}}|[{'typed_record_field',{'record_field',{793,5},{'atom',{793,5},'audience'}},{'type',{793,17},'union',[{'type',{793,17},'binary',[]}|[{'atom',{793,28},'undefined'}]]}}|[{'typed_record_field',{'record_field',{794,5},{'atom',{794,5},'priority'}},{'type',{794,17},'union',[{'type',{794,17},'integer',[]}|[{'atom',{794,29},'undefined'}]]}}|[{'typed_record_field',{'record_field',{795,5},{'atom',{795,5},'last_modified'}},{'type',{795,22},'union',[{'type',{795,22},'integer',[]}|[{'atom',{795,34},'undefined'}]]}}|[{'typed_record_field',{'record_field',{796,5},{'atom',{796,5},'annotations'}},{'type',{796,20},'union',[{'type',{796,20},'map','any'}|[{'atom',{796,28},'undefined'}]]}}|[{'typed_record_field',{'record_field',{797,5},{'atom',{797,5},'size'}},{'type',{797,13},'union',[{'type',{797,13},'integer',[]}|[{'atom',{797,25},'undefined'}]]}}]]]]]]]]]]}],
+		%% Line 800
+		'record' =
+		    %% Line 800
+		    [{'mcp_resource_template',[{'typed_record_field',{'record_field',{801,5},{'atom',{801,5},'uri_template'}},{'type',{801,21},'binary',[]}}|[{'typed_record_field',{'record_field',{802,5},{'atom',{802,5},'name'}},{'type',{802,13},'binary',[]}}|[{'typed_record_field',{'record_field',{803,5},{'atom',{803,5},'description'}},{'type',{803,20},'union',[{'type',{803,20},'binary',[]}|[{'atom',{803,31},'undefined'}]]}}|[{'typed_record_field',{'record_field',{804,5},{'atom',{804,5},'mime_type'}},{'type',{804,18},'union',[{'type',{804,18},'binary',[]}|[{'atom',{804,29},'undefined'}]]}}]]]]}],
+		%% Line 807
+		'record' =
+		    %% Line 807
+		    [{'mcp_tool',[{'typed_record_field',{'record_field',{808,5},{'atom',{808,5},'name'}},{'type',{808,13},'binary',[]}}|[{'typed_record_field',{'record_field',{809,5},{'atom',{809,5},'description'}},{'type',{809,20},'binary',[]}}|[{'typed_record_field',{'record_field',{810,5},{'atom',{810,5},'input_schema'}},{'type',{810,21},'union',[{'type',{810,21},'map','any'}|[{'atom',{810,29},'undefined'}]]}}|[{'typed_record_field',{'record_field',{811,5},{'atom',{811,5},'metadata'}},{'type',{811,17},'union',[{'type',{811,17},'map','any'}|[{'atom',{811,25},'undefined'}]]}}|[{'typed_record_field',{'record_field',{812,5},{'atom',{812,5},'experimental'},{'atom',{812,20},'undefined'}},{'type',{812,33},'union',[{'type',{812,33},'map','any'}|[{'atom',{812,41},'undefined'}]]}}|[{'typed_record_field',{'record_field',{813,5},{'atom',{813,5},'version'}},{'type',{813,16},'union',[{'type',{813,16},'binary',[]}|[{'atom',{813,27},'undefined'}]]}}|[{'typed_record_field',{'record_field',{814,5},{'atom',{814,5},'deprecated'},{'atom',{814,18},'false'}},{'type',{814,27},'boolean',[]}}]]]]]]]}],
+		%% Line 817
+		'record' =
+		    %% Line 817
+		    [{'mcp_prompt_argument',[{'typed_record_field',{'record_field',{818,5},{'atom',{818,5},'name'}},{'type',{818,13},'binary',[]}}|[{'typed_record_field',{'record_field',{819,5},{'atom',{819,5},'description'}},{'type',{819,20},'union',[{'type',{819,20},'binary',[]}|[{'atom',{819,31},'undefined'}]]}}|[{'typed_record_field',{'record_field',{820,5},{'atom',{820,5},'required'}},{'type',{820,17},'boolean',[]}}]]]}],
+		%% Line 823
+		'record' =
+		    %% Line 823
+		    [{'mcp_prompt',[{'typed_record_field',{'record_field',{824,5},{'atom',{824,5},'name'}},{'type',{824,13},'binary',[]}}|[{'typed_record_field',{'record_field',{825,5},{'atom',{825,5},'description'}},{'type',{825,20},'union',[{'type',{825,20},'binary',[]}|[{'atom',{825,31},'undefined'}]]}}|[{'typed_record_field',{'record_field',{826,5},{'atom',{826,5},'arguments'}},{'type',{826,18},'union',[{'type',{826,18},'list',[{'type',{826,19},'record',[{'atom',{826,20},'mcp_prompt_argument'}]}]}|[{'atom',{826,45},'undefined'}]]}}|[{'typed_record_field',{'record_field',{827,5},{'atom',{827,5},'input_schema'}},{'type',{827,21},'union',[{'type',{827,21},'map','any'}|[{'atom',{827,29},'undefined'}]]}}]]]]}],
+		%% Line 830
+		'record' =
+		    %% Line 830
+		    [{'mcp_root',[{'typed_record_field',{'record_field',{831,5},{'atom',{831,5},'uri'}},{'type',{831,12},'binary',[]}}|[{'typed_record_field',{'record_field',{832,5},{'atom',{832,5},'name'}},{'type',{832,13},'union',[{'type',{832,13},'binary',[]}|[{'atom',{832,24},'undefined'}]]}}]]}],
+		%% Line 835
+		'record' =
+		    %% Line 835
+		    [{'mcp_progress_token',[{'typed_record_field',{'record_field',{836,5},{'atom',{836,5},'token'}},{'type',{836,14},'union',[{'type',{836,14},'binary',[]}|[{'type',{836,25},'integer',[]}]]}}]}],
+		%% Line 839
+		'record' =
+		    %% Line 839
+		    [{'mcp_progress_notification',[{'typed_record_field',{'record_field',{840,5},{'atom',{840,5},'progress_token'}},{'type',{840,23},'record',[{'atom',{840,24},'mcp_progress_token'}]}}|[{'typed_record_field',{'record_field',{841,5},{'atom',{841,5},'progress'}},{'type',{841,17},'float',[]}}|[{'typed_record_field',{'record_field',{842,5},{'atom',{842,5},'total'}},{'type',{842,14},'float',[]}}]]]}],
+		%% Line 845
+		'record' =
+		    %% Line 845
+		    [{'mcp_error',[{'typed_record_field',{'record_field',{846,5},{'atom',{846,5},'code'}},{'type',{846,13},'integer',[]}}|[{'typed_record_field',{'record_field',{847,5},{'atom',{847,5},'message'}},{'type',{847,16},'binary',[]}}|[{'typed_record_field',{'record_field',{848,5},{'atom',{848,5},'data'}},{'type',{848,13},'union',[{'type',{848,13},'term',[]}|[{'atom',{848,22},'undefined'}]]}}]]]}],
+		%% Line 852
+		'export_type' =
+		    %% Line 852
+		    [{'json_rpc_id',0}|[{'json_rpc_params',0}|[{'log_level',0}]]],
+		%% Line 858
+		'record' =
+		    %% Line 858
+		    [{'mcp_model_preferences',[{'typed_record_field',{'record_field',{859,5},{'atom',{859,5},'cost_priority'}},{'type',{859,22},'union',[{'type',{859,22},'float',[]}|[{'atom',{859,32},'undefined'}]]}}|[{'typed_record_field',{'record_field',{860,5},{'atom',{860,5},'speed_priority'}},{'type',{860,23},'union',[{'type',{860,23},'float',[]}|[{'atom',{860,33},'undefined'}]]}}|[{'typed_record_field',{'record_field',{861,5},{'atom',{861,5},'intelligence_priority'}},{'type',{861,30},'union',[{'type',{861,30},'float',[]}|[{'atom',{861,40},'undefined'}]]}}|[{'typed_record_field',{'record_field',{862,5},{'atom',{862,5},'temperature'}},{'type',{862,20},'union',[{'type',{862,20},'float',[]}|[{'atom',{862,30},'undefined'}]]}}|[{'typed_record_field',{'record_field',{863,5},{'atom',{863,5},'max_tokens'}},{'type',{863,19},'union',[{'type',{863,19},'integer',[]}|[{'atom',{863,31},'undefined'}]]}}|[{'typed_record_field',{'record_field',{864,5},{'atom',{864,5},'stop_sequences'}},{'type',{864,23},'union',[{'type',{864,23},'list',[{'type',{864,24},'binary',[]}]}|[{'atom',{864,36},'undefined'}]]}}]]]]]]}],
+		%% Line 868
+		'type' =
+		    %% Line 868
+		    [{'app_id',{'type',{868,19},'binary',[]},[]}],
+		%% Line 869
+		'type' =
+		    %% Line 869
+		    [{'app_name',{'type',{869,21},'binary',[]},[]}],
+		%% Line 870
+		'type' =
+		    %% Line 870
+		    [{'app_version',{'type',{870,24},'binary',[]},[]}],
+		%% Line 871
+		'type' =
+		    %% Line 871
+		    [{'app_status',{'type',{871,23},'union',[{'atom',{871,23},'initialized'}|[{'atom',{871,37},'running'}|[{'atom',{871,47},'stopped'}|[{'atom',{871,57},'error'}]]]]},[]}],
+		%% Line 872
+		'type' =
+		    %% Line 872
+		    [{'permission',{'type',{872,23},'atom',[]},[]}],
+		%% Line 873
+		'type' =
+		    %% Line 873
+		    [{'app_state',{'type',{873,22},'map','any'},[]}],
+		%% Line 875
+		'record' =
+		    %% Line 875
+		    [{'mcp_app',[{'typed_record_field',{'record_field',{876,5},{'atom',{876,5},'id'}},{'user_type',{876,11},'app_id',[]}}|[{'typed_record_field',{'record_field',{877,5},{'atom',{877,5},'name'}},{'user_type',{877,13},'app_name',[]}}|[{'typed_record_field',{'record_field',{878,5},{'atom',{878,5},'version'}},{'user_type',{878,16},'app_version',[]}}|[{'typed_record_field',{'record_field',{879,5},{'atom',{879,5},'description'}},{'type',{879,20},'binary',[]}}|[{'typed_record_field',{'record_field',{880,5},{'atom',{880,5},'status'},{'atom',{880,14},'initialized'}},{'user_type',{880,29},'app_status',[]}}|[{'typed_record_field',{'record_field',{881,5},{'atom',{881,5},'uri'}},{'type',{881,12},'union',[{'type',{881,12},'binary',[]}|[{'atom',{881,23},'undefined'}]]}}|[{'typed_record_field',{'record_field',{882,5},{'atom',{882,5},'manifest'}},{'type',{882,17},'union',[{'type',{882,17},'map','any'}|[{'atom',{882,25},'undefined'}]]}}|[{'typed_record_field',{'record_field',{883,5},{'atom',{883,5},'permissions'},{'call',{883,19},{'remote',{883,23},{'atom',{883,19},'sets'},{'atom',{883,24},'new'}},[]}},{'remote_type',{883,33},[{'atom',{883,33},'sets'}|[{'atom',{883,38},'set'}|[[{'user_type',{883,42},'permission',[]}]]]]}}|[{'typed_record_field',{'record_field',{884,5},{'atom',{884,5},'state'},{'map',{884,13},[]}},{'user_type',{884,20},'app_state',[]}}|[{'typed_record_field',{'record_field',{885,5},{'atom',{885,5},'created_at'}},{'type',{885,19},'integer',[]}}|[{'typed_record_field',{'record_field',{886,5},{'atom',{886,5},'activated_at'}},{'type',{886,21},'union',[{'type',{886,21},'integer',[]}|[{'atom',{886,33},'undefined'}]]}}|[{'typed_record_field',{'record_field',{887,5},{'atom',{887,5},'resources'},{'nil',{887,17}}},{'type',{887,23},'list',[{'type',{887,24},'binary',[]}]}}|[{'typed_record_field',{'record_field',{888,5},{'atom',{888,5},'error'}},{'type',{888,14},'union',[{'type',{888,14},'binary',[]}|[{'atom',{888,25},'undefined'}]]}}]]]]]]]]]]]]]}],
+		%% Line 892
+		'type' =
+		    %% Line 892
+		    [{'server_id',{'type',{892,22},'atom',[]},[]}],
+		%% Line 893
+		'type' =
+		    %% Line 893
+		    [{'resource_handler',{'type',{893,33},'fun',[{'type',{893,33},'product',[{'type',{893,34},'binary',[]}]}|[{'type',{893,47},'union',[{'type',{893,47},'binary',[]}|[{'type',{893,58},'record',[{'atom',{893,59},'mcp_content'}]}]]}]]},[]}],
+		%% Line 894
+		'type' =
+		    %% Line 894
+		    [{'tool_handler',{'type',{894,29},'fun',[{'type',{894,29},'product',[{'type',{894,30},'map','any'}]}|[{'type',{894,40},'union',[{'type',{894,40},'binary',[]}|[{'type',{894,51},'record',[{'atom',{894,52},'mcp_content'}]}|[{'type',{894,68},'list',[{'type',{894,69},'record',[{'atom',{894,70},'mcp_content'}]}]}]]]}]]},[]}],
+		%% Line 895
+		'type' =
+		    %% Line 895
+		    [{'prompt_handler',{'type',{895,31},'fun',[{'type',{895,31},'product',[{'type',{895,32},'map','any'}]}|[{'type',{895,42},'union',[{'type',{895,42},'binary',[]}|[{'type',{895,53},'list',[{'type',{895,54},'map','any'}]}]]}]]},[]}],
+		%% Line 897
+		'record' =
+		    %% Line 897
+		    [{'mcp_server_state',[{'typed_record_field',{'record_field',{898,5},{'atom',{898,5},'server_id'}},{'user_type',{898,18},'server_id',[]}}|[{'typed_record_field',{'record_field',{899,5},{'atom',{899,5},'phase'},{'atom',{899,13},'initialization'}},{'user_type',{899,31},'mcp_server_phase',[]}}|[{'typed_record_field',{'record_field',{900,5},{'atom',{900,5},'init_timeout_ref'}},{'type',{900,25},'union',[{'type',{900,25},'reference',[]}|[{'atom',{900,39},'undefined'}]]}}|[{'typed_record_field',{'record_field',{901,5},{'atom',{901,5},'init_timeout_ms'},{'integer',{901,23},5000}},{'type',{901,31},'pos_integer',[]}}|[{'typed_record_field',{'record_field',{902,5},{'atom',{902,5},'capabilities'}},{'type',{902,21},'record',[{'atom',{902,22},'mcp_server_capabilities'}]}}|[{'typed_record_field',{'record_field',{903,5},{'atom',{903,5},'client_capabilities'}},{'type',{903,28},'union',[{'type',{903,28},'record',[{'atom',{903,29},'mcp_client_capabilities'}]}|[{'atom',{903,57},'undefined'}]]}}|[{'typed_record_field',{'record_field',{904,5},{'atom',{904,5},'protocol_version'}},{'type',{904,25},'union',[{'type',{904,25},'binary',[]}|[{'atom',{904,36},'undefined'}]]}}|[{'typed_record_field',{'record_field',{905,5},{'atom',{905,5},'resources'},{'map',{905,17},[]}},{'type',{905,24},'map',[{'type',{905,35},'map_field_assoc',[{'type',{905,26},'binary',[]}|[{'type',{905,38},'tuple',[{'type',{905,39},'record',[{'atom',{905,40},'mcp_resource'}]}|[{'user_type',{905,56},'resource_handler',[]}]]}]]}]}}|[{'typed_record_field',{'record_field',{906,5},{'atom',{906,5},'resource_templates'},{'map',{906,26},[]}},{'type',{906,33},'map',[{'type',{906,44},'map_field_assoc',[{'type',{906,35},'binary',[]}|[{'type',{906,47},'tuple',[{'type',{906,48},'record',[{'atom',{906,49},'mcp_resource_template'}]}|[{'user_type',{906,74},'resource_handler',[]}]]}]]}]}}|[{'typed_record_field',{'record_field',{907,5},{'atom',{907,5},'tools'},{'map',{907,13},[]}},{'type',{907,20},'map',[{'type',{907,31},'map_field_assoc',[{'type',{907,22},'binary',[]}|[{'type',{907,34},'tuple',[{'type',{907,35},'record',[{'atom',{907,36},'mcp_tool'}]}|[{'user_type',{907,48},'tool_handler',[]}|[{'type',{907,64},'union',[{'type',{907,64},'map','any'}|[{'atom',{907,72},'undefined'}]]}]]]}]]}]}}|[{'typed_record_field',{'record_field',{908,5},{'atom',{908,5},'prompts'},{'map',{908,15},[]}},{'type',{908,22},'map',[{'type',{908,33},'map_field_assoc',[{'type',{908,24},'binary',[]}|[{'type',{908,36},'tuple',[{'type',{908,37},'record',[{'atom',{908,38},'mcp_prompt'}]}|[{'user_type',{908,52},'prompt_handler',[]}]]}]]}]}}|[{'typed_record_field',{'record_field',{909,5},{'atom',{909,5},'subscriptions'},{'map',{909,21},[]}},{'type',{909,28},'map',[{'type',{909,39},'map_field_assoc',[{'type',{909,30},'binary',[]}|[{'remote_type',{909,42},[{'atom',{909,42},'sets'}|[{'atom',{909,47},'set'}|[[{'type',{909,51},'pid',[]}]]]]}]]}]}}|[{'typed_record_field',{'record_field',{910,5},{'atom',{910,5},'progress_tokens'},{'map',{910,23},[]}},{'type',{910,30},'map',[{'type',{910,53},'map_field_assoc',[{'type',{910,32},'union',[{'type',{910,32},'binary',[]}|[{'type',{910,43},'integer',[]}]]}|[{'type',{910,56},'record',[{'atom',{910,57},'mcp_progress_notification'}]}]]}]}}|[{'typed_record_field',{'record_field',{911,5},{'atom',{911,5},'notifier_pid'}},{'type',{911,21},'union',[{'type',{911,21},'pid',[]}|[{'atom',{911,29},'undefined'}]]}}|[{'typed_record_field',{'record_field',{912,5},{'atom',{912,5},'initialized'},{'atom',{912,19},'false'}},{'type',{912,28},'boolean',[]}}]]]]]]]]]]]]]]]}],
+		%% Line 916
+		'record' =
+		    %% Line 916
+		    [{'trace_analysis',[{'typed_record_field',{'record_field',{917,5},{'atom',{917,5},'trace_id'}},{'type',{917,17},'binary',[]}}|[{'typed_record_field',{'record_field',{918,5},{'atom',{918,5},'bottlenecks'},{'nil',{918,19}}},{'type',{918,25},'list',[{'type',{918,26},'map','any'}]}}|[{'typed_record_field',{'record_field',{919,5},{'atom',{919,5},'performance_score'},{'integer',{919,25},0}},{'type',{919,30},'number',[]}}|[{'typed_record_field',{'record_field',{920,5},{'atom',{920,5},'avg_duration'},{'integer',{920,20},0}},{'type',{920,25},'number',[]}}|[{'typed_record_field',{'record_field',{921,5},{'atom',{921,5},'error_rate'},{'float',{921,18},0.00000000000000000000e+00}},{'type',{921,25},'float',[]}}|[{'typed_record_field',{'record_field',{922,5},{'atom',{922,5},'recommendations'},{'nil',{922,23}}},{'type',{922,29},'list',[{'type',{922,30},'binary',[]}]}}|[{'typed_record_field',{'record_field',{923,5},{'atom',{923,5},'analyzed_at'}},{'type',{923,20},'integer',[]}}]]]]]]]}],
+		%% Line 927
+		'record' =
+		    %% Line 927
+		    [{'mcp_task',[{'typed_record_field',{'record_field',{928,5},{'atom',{928,5},'id'}},{'type',{928,11},'binary',[]}}|[{'typed_record_field',{'record_field',{929,5},{'atom',{929,5},'status'}},{'type',{929,15},'union',[{'atom',{929,15},'pending'}|[{'atom',{929,25},'processing'}|[{'atom',{929,38},'completed'}|[{'atom',{929,50},'failed'}|[{'atom',{929,59},'cancelled'}]]]]]}}|[{'typed_record_field',{'record_field',{930,5},{'atom',{930,5},'action'}},{'type',{930,15},'map','any'}}|[{'typed_record_field',{'record_field',{931,5},{'atom',{931,5},'metadata'}},{'type',{931,17},'map','any'}}|[{'typed_record_field',{'record_field',{932,5},{'atom',{932,5},'result'}},{'type',{932,15},'union',[{'type',{932,15},'term',[]}|[{'atom',{932,24},'undefined'}]]}}|[{'typed_record_field',{'record_field',{933,5},{'atom',{933,5},'error'}},{'type',{933,14},'union',[{'type',{933,14},'record',[{'atom',{933,15},'mcp_error'}]}|[{'atom',{933,29},'undefined'}]]}}|[{'typed_record_field',{'record_field',{934,5},{'atom',{934,5},'created_at'}},{'type',{934,19},'integer',[]}}|[{'typed_record_field',{'record_field',{935,5},{'atom',{935,5},'updated_at'}},{'type',{935,19},'integer',[]}}|[{'typed_record_field',{'record_field',{936,5},{'atom',{936,5},'expires_at'}},{'type',{936,19},'union',[{'type',{936,19},'integer',[]}|[{'atom',{936,31},'undefined'}]]}}|[{'typed_record_field',{'record_field',{937,5},{'atom',{937,5},'client_pid'}},{'type',{937,19},'union',[{'type',{937,19},'pid',[]}|[{'atom',{937,27},'undefined'}]]}}|[{'typed_record_field',{'record_field',{938,5},{'atom',{938,5},'worker_pid'}},{'type',{938,19},'union',[{'type',{938,19},'pid',[]}|[{'atom',{938,27},'undefined'}]]}}|[{'typed_record_field',{'record_field',{939,5},{'atom',{939,5},'worker_monitor'}},{'type',{939,23},'union',[{'type',{939,23},'reference',[]}|[{'atom',{939,37},'undefined'}]]}}|[{'typed_record_field',{'record_field',{940,5},{'atom',{940,5},'progress_token'}},{'type',{940,23},'union',[{'type',{940,23},'reference',[]}|[{'atom',{940,37},'undefined'}]]}}|[{'typed_record_field',{'record_field',{941,5},{'atom',{941,5},'progress'}},{'type',{941,17},'union',[{'type',{941,17},'number',[]}|[{'atom',{941,28},'undefined'}]]}}|[{'typed_record_field',{'record_field',{942,5},{'atom',{942,5},'total'}},{'type',{942,14},'union',[{'type',{942,14},'number',[]}|[{'atom',{942,25},'undefined'}]]}}|[{'typed_record_field',{'record_field',{943,5},{'atom',{943,5},'timeout_ms'}},{'type',{943,19},'integer',[]}}|[{'typed_record_field',{'record_field',{944,5},{'atom',{944,5},'timer_ref'}},{'type',{944,18},'union',[{'type',{944,18},'reference',[]}|[{'atom',{944,32},'undefined'}]]}}]]]]]]]]]]]]]]]]]}],
+		%% Line 1104
+		'record' =
+		    %% Line 1104
+		    [{'jesse_validation_error',[{'typed_record_field',{'record_field',{1105,5},{'atom',{1105,5},'path'},{'nil',{1105,12}}},{'type',{1105,18},'list',[]}}|[{'typed_record_field',{'record_field',{1106,5},{'atom',{1106,5},'message'}},{'type',{1106,16},'binary',[]}}|[{'typed_record_field',{'record_field',{1107,5},{'atom',{1107,5},'expected'}},{'type',{1107,17},'term',[]}}|[{'typed_record_field',{'record_field',{1108,5},{'atom',{1108,5},'actual'}},{'type',{1108,15},'term',[]}}]]]]}],
+		%% Line 1192
+		'type' =
+		    %% Line 1192
+		    [{'error_reason',{'type',{1192,25},'union',[{'atom',{1192,25},'not_found'}|[{'atom',{1192,37},'already_exists'}|[{'atom',{1192,54},'timeout'}|[{'atom',{1192,64},'invalid_state'}|[{'atom',{1193,26},'invalid_argument'}|[{'atom',{1193,45},'invalid_request'}|[{'atom',{1193,63},'circuit_breaker_open'}|[{'atom',{1194,26},'rate_limited'}|[{'atom',{1194,41},'validation_failed'}|[{'atom',{1194,61},'access_denied'}|[{'atom',{1195,26},'authentication_failed'}|[{'atom',{1195,50},'authorization_failed'}|[{'atom',{1196,26},'transport_closed'}|[{'atom',{1196,45},'process_dead'}|[{'atom',{1197,26},'breaker_not_found'}|[{'atom',{1197,46},'batch_not_found'}|[{'atom',{1198,26},'session_not_found'}|[{'atom',{1198,46},'session_expired'}|[{'atom',{1199,26},'resource_not_found'}|[{'atom',{1199,47},'tool_not_found'}|[{'atom',{1200,26},'prompt_not_found'}|[{'type',{1200,45},'term',[]}]]]]]]]]]]]]]]]]]]]]]]},[]}],
+		%% Line 41
+		'file' =
+		    %% Line 41
+		    [{[101|[114|[108|[109|[99|[112|[95|[99|[111|[114|[101|[47|[115|[114|[99|[47|[101|[114|[108|[109|[99|[112|[95|[116|[97|[115|[107|[115|[46|[101|[114|[108]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]],41}],
+		%% Line 56
+		'type' =
+		    %% Line 56
+		    [{'task_id',{'type',{56,20},'binary',[]},[]}],
+		%% Line 57
+		'type' =
+		    %% Line 57
+		    [{'task_status',{'type',{57,24},'union',[{'atom',{57,24},'pending'}|[{'atom',{57,34},'processing'}|[{'atom',{57,47},'completed'}|[{'atom',{57,59},'failed'}|[{'atom',{57,68},'cancelled'}]]]]]},[]}],
+		%% Line 58
+		'type' =
+		    %% Line 58
+		    [{'task',{'type',{58,17},'record',[{'atom',{58,18},'mcp_task'}]},[]}],
+		%% Line 59
+		'type' =
+		    %% Line 59
+		    [{'task_list_result',{'type',{59,29},'map',[{'type',{60,11},'map_field_exact',[{'atom',{60,5},'tasks'}|[{'type',{60,14},'list',[{'type',{60,15},'map','any'}]}]]}|[{'type',{61,12},'map_field_assoc',[{'atom',{61,5},'cursor'}|[{'type',{61,15},'binary',[]}]]}]]},[]}],
+		%% Line 63
+		'type' =
+		    %% Line 63
+		    [{'update_function',{'type',{63,32},'fun',[{'type',{63,32},'product',[{'type',{63,33},'map','any'}]}|[{'type',{63,43},'map','any'}]]},[]}],
+		%% Line 65
+		'record' =
+		    %% Line 65
+		    [{'state',[{'typed_record_field',{'record_field',{66,5},{'atom',{66,5},'task_count'},{'integer',{66,18},0}},{'type',{66,23},'non_neg_integer',[]}}|[{'typed_record_field',{'record_field',{67,5},{'atom',{67,5},'pending_cleanup'},{'nil',{67,23}}},{'type',{67,29},'list',[{'user_type',{67,30},'task_id',[]}]}}]]}],
+		%% Line 75
+		'spec' =
+		    %% Line 75
+		    [{{'start_link',0},[{'type',{75,17},'fun',[{'type',{75,17},'product',[]}|[{'type',{75,23},'union',[{'type',{75,23},'tuple',[{'atom',{75,24},'ok'}|[{'type',{75,28},'pid',[]}]]}|[{'type',{75,37},'tuple',[{'atom',{75,38},'error'}|[{'type',{75,45},'term',[]}]]}]]}]]}]}],
+		%% Line 82
+		'spec' =
+		    %% Line 82
+		    [{{'create_task',3},[{'type',{82,18},'fun',[{'type',{82,18},'product',[{'type',{82,19},'union',[{'type',{82,19},'pid',[]}|[{'atom',{82,27},'undefined'}]]}|[{'type',{82,38},'map','any'}|[{'type',{82,45},'map','any'}]]]}|[{'type',{83,5},'union',[{'type',{83,5},'tuple',[{'atom',{83,6},'ok'}|[{'user_type',{83,10},'task_id',[]}]]}|[{'type',{83,23},'tuple',[{'atom',{83,24},'error'}|[{'type',{83,31},'term',[]}]]}]]}]]}]}],
+		%% Line 88
+		'spec' =
+		    %% Line 88
+		    [{{'list_tasks',3},[{'type',{88,17},'fun',[{'type',{88,17},'product',[{'type',{88,18},'union',[{'type',{88,18},'pid',[]}|[{'atom',{88,26},'undefined'}]]}|[{'type',{88,37},'union',[{'type',{88,37},'binary',[]}|[{'atom',{88,48},'undefined'}]]}|[{'type',{88,59},'pos_integer',[]}]]]}|[{'type',{89,5},'union',[{'type',{89,5},'tuple',[{'atom',{89,6},'ok'}|[{'user_type',{89,10},'task_list_result',[]}]]}|[{'type',{89,32},'tuple',[{'atom',{89,33},'error'}|[{'type',{89,40},'term',[]}]]}]]}]]}]}],
+		%% Line 94
+		'spec' =
+		    %% Line 94
+		    [{{'get_task',2},[{'type',{94,15},'fun',[{'type',{94,15},'product',[{'type',{94,16},'union',[{'type',{94,16},'pid',[]}|[{'atom',{94,24},'undefined'}]]}|[{'user_type',{94,35},'task_id',[]}]]}|[{'type',{95,5},'union',[{'type',{95,5},'tuple',[{'atom',{95,6},'ok'}|[{'user_type',{95,10},'task',[]}]]}|[{'type',{95,20},'tuple',[{'atom',{95,21},'error'}|[{'type',{95,28},'term',[]}]]}]]}]]}]}],
+		%% Line 100
+		'spec' =
+		    %% Line 100
+		    [{{'cancel_task',3},[{'type',{100,18},'fun',[{'type',{100,18},'product',[{'type',{100,19},'union',[{'type',{100,19},'pid',[]}|[{'atom',{100,27},'undefined'}]]}|[{'user_type',{100,38},'task_id',[]}|[{'type',{100,49},'binary',[]}]]]}|[{'type',{101,5},'union',[{'type',{101,5},'tuple',[{'atom',{101,6},'ok'}|[{'atom',{101,10},'cancelled'}]]}|[{'type',{101,23},'tuple',[{'atom',{101,24},'error'}|[{'type',{101,31},'term',[]}]]}]]}]]}]}],
+		%% Line 106
+		'spec' =
+		    %% Line 106
+		    [{{'get_task_result',2},[{'type',{106,22},'fun',[{'type',{106,22},'product',[{'type',{106,23},'union',[{'type',{106,23},'pid',[]}|[{'atom',{106,31},'undefined'}]]}|[{'user_type',{106,42},'task_id',[]}]]}|[{'type',{107,5},'union',[{'type',{107,5},'tuple',[{'atom',{107,6},'ok'}|[{'type',{107,10},'term',[]}]]}|[{'type',{107,20},'tuple',[{'atom',{107,21},'error'}|[{'type',{107,28},'term',[]}]]}]]}]]}]}],
+		%% Line 112
+		'spec' =
+		    %% Line 112
+		    [{{'create',3},[{'type',{112,13},'fun',[{'type',{112,13},'product',[{'type',{112,14},'union',[{'type',{112,14},'pid',[]}|[{'atom',{112,22},'undefined'}]]}|[{'type',{112,33},'map','any'}|[{'type',{112,40},'map','any'}]]]}|[{'type',{113,5},'union',[{'type',{113,5},'tuple',[{'atom',{113,6},'ok'}|[{'user_type',{113,10},'task_id',[]}]]}|[{'type',{113,23},'tuple',[{'atom',{113,24},'error'}|[{'type',{113,31},'term',[]}]]}]]}]]}]}],
+		%% Line 118
+		'spec' =
+		    %% Line 118
+		    [{{'create',4},[{'type',{118,13},'fun',[{'type',{118,13},'product',[{'type',{118,14},'union',[{'type',{118,14},'pid',[]}|[{'atom',{118,22},'undefined'}]]}|[{'type',{118,33},'map','any'}|[{'type',{118,40},'map','any'}|[{'type',{118,47},'map','any'}]]]]}|[{'type',{119,5},'union',[{'type',{119,5},'tuple',[{'atom',{119,6},'ok'}|[{'user_type',{119,10},'task_id',[]}]]}|[{'type',{119,23},'tuple',[{'atom',{119,24},'error'}|[{'type',{119,31},'term',[]}]]}]]}]]}]}],
+		%% Line 124
+		'spec' =
+		    %% Line 124
+		    [{{'create_task',4},[{'type',{124,18},'fun',[{'type',{124,18},'product',[{'type',{124,19},'union',[{'type',{124,19},'pid',[]}|[{'atom',{124,27},'undefined'}]]}|[{'type',{124,38},'map','any'}|[{'type',{124,45},'map','any'}|[{'type',{124,52},'map','any'}]]]]}|[{'type',{125,5},'union',[{'type',{125,5},'tuple',[{'atom',{125,6},'ok'}|[{'user_type',{125,10},'task_id',[]}]]}|[{'type',{125,23},'tuple',[{'atom',{125,24},'error'}|[{'type',{125,31},'term',[]}]]}]]}]]}]}],
+		%% Line 130
+		'spec' =
+		    %% Line 130
+		    [{{'list_tasks',1},[{'type',{130,17},'fun',[{'type',{130,17},'product',[{'type',{130,18},'union',[{'type',{130,18},'pid',[]}|[{'atom',{130,26},'undefined'}]]}]}|[{'type',{131,5},'union',[{'type',{131,5},'tuple',[{'atom',{131,6},'ok'}|[{'user_type',{131,10},'task_list_result',[]}]]}|[{'type',{131,32},'tuple',[{'atom',{131,33},'error'}|[{'type',{131,40},'term',[]}]]}]]}]]}]}],
+		%% Line 136
+		'spec' =
+		    %% Line 136
+		    [{{'list_tasks',2},[{'type',{136,17},'fun',[{'type',{136,17},'product',[{'type',{136,18},'union',[{'type',{136,18},'pid',[]}|[{'atom',{136,26},'undefined'}]]}|[{'type',{136,37},'pos_integer',[]}]]}|[{'type',{137,5},'union',[{'type',{137,5},'tuple',[{'atom',{137,6},'ok'}|[{'user_type',{137,10},'task_list_result',[]}]]}|[{'type',{137,32},'tuple',[{'atom',{137,33},'error'}|[{'type',{137,40},'term',[]}]]}]]}]]}]}],
+		%% Line 142
+		'spec' =
+		    %% Line 142
+		    [{{'get',2},[{'type',{142,10},'fun',[{'type',{142,10},'product',[{'type',{142,11},'union',[{'type',{142,11},'pid',[]}|[{'atom',{142,19},'undefined'}]]}|[{'user_type',{142,30},'task_id',[]}]]}|[{'type',{143,5},'union',[{'type',{143,5},'tuple',[{'atom',{143,6},'ok'}|[{'user_type',{143,10},'task',[]}]]}|[{'type',{143,20},'tuple',[{'atom',{143,21},'error'}|[{'type',{143,28},'term',[]}]]}]]}]]}]}],
+		%% Line 148
+		'spec' =
+		    %% Line 148
+		    [{{'get_result',2},[{'type',{148,17},'fun',[{'type',{148,17},'product',[{'type',{148,18},'union',[{'type',{148,18},'pid',[]}|[{'atom',{148,26},'undefined'}]]}|[{'user_type',{148,37},'task_id',[]}]]}|[{'type',{149,5},'union',[{'type',{149,5},'tuple',[{'atom',{149,6},'ok'}|[{'type',{149,10},'term',[]}]]}|[{'type',{149,20},'tuple',[{'atom',{149,21},'error'}|[{'type',{149,28},'term',[]}]]}]]}]]}]}],
+		%% Line 154
+		'spec' =
+		    %% Line 154
+		    [{{'cancel_task',2},[{'type',{154,18},'fun',[{'type',{154,18},'product',[{'type',{154,19},'union',[{'type',{154,19},'pid',[]}|[{'atom',{154,27},'undefined'}]]}|[{'user_type',{154,38},'task_id',[]}]]}|[{'type',{155,5},'union',[{'type',{155,5},'tuple',[{'atom',{155,6},'ok'}|[{'atom',{155,10},'cancelled'}]]}|[{'type',{155,23},'tuple',[{'atom',{155,24},'error'}|[{'type',{155,31},'term',[]}]]}]]}]]}]}],
+		%% Line 160
+		'spec' =
+		    %% Line 160
+		    [{{'cancel',3},[{'type',{160,13},'fun',[{'type',{160,13},'product',[{'type',{160,14},'union',[{'type',{160,14},'pid',[]}|[{'atom',{160,22},'undefined'}]]}|[{'user_type',{160,33},'task_id',[]}|[{'type',{160,44},'binary',[]}]]]}|[{'type',{161,5},'union',[{'type',{161,5},'tuple',[{'atom',{161,6},'ok'}|[{'atom',{161,10},'cancelled'}]]}|[{'type',{161,23},'tuple',[{'atom',{161,24},'error'}|[{'type',{161,31},'term',[]}]]}]]}]]}]}],
+		%% Line 166
+		'spec' =
+		    %% Line 166
+		    [{{'complete',3},[{'type',{166,15},'fun',[{'type',{166,15},'product',[{'type',{166,16},'union',[{'type',{166,16},'pid',[]}|[{'atom',{166,24},'undefined'}]]}|[{'user_type',{166,35},'task_id',[]}|[{'type',{166,46},'term',[]}]]]}|[{'type',{166,57},'union',[{'atom',{166,57},'ok'}|[{'type',{166,62},'tuple',[{'atom',{166,63},'error'}|[{'type',{166,70},'term',[]}]]}]]}]]}]}],
+		%% Line 172
+		'spec' =
+		    %% Line 172
+		    [{{'update_task',3},[{'type',{172,18},'fun',[{'type',{172,18},'product',[{'type',{172,19},'union',[{'type',{172,19},'pid',[]}|[{'atom',{172,27},'undefined'}]]}|[{'user_type',{172,38},'task_id',[]}|[{'type',{172,53},'fun',[{'type',{172,53},'product',[{'type',{172,54},'map','any'}]}|[{'type',{172,64},'map','any'}]]}]]]}|[{'type',{173,5},'union',[{'atom',{173,5},'ok'}|[{'type',{173,10},'tuple',[{'atom',{173,11},'error'}|[{'type',{173,18},'term',[]}]]}]]}]]}]}],
+		%% Line 178
+		'spec' =
+		    %% Line 178
+		    [{{'update_status',3},[{'type',{178,20},'fun',[{'type',{178,20},'product',[{'type',{178,21},'union',[{'type',{178,21},'pid',[]}|[{'atom',{178,29},'undefined'}]]}|[{'user_type',{178,40},'task_id',[]}|[{'type',{178,51},'binary',[]}]]]}|[{'type',{179,5},'union',[{'atom',{179,5},'ok'}|[{'type',{179,10},'tuple',[{'atom',{179,11},'error'}|[{'type',{179,18},'term',[]}]]}]]}]]}]}],
+		%% Line 184
+		'spec' =
+		    %% Line 184
+		    [{{'update_progress',3},[{'type',{184,22},'fun',[{'type',{184,22},'product',[{'type',{184,23},'union',[{'type',{184,23},'pid',[]}|[{'atom',{184,31},'undefined'}]]}|[{'user_type',{184,42},'task_id',[]}|[{'type',{184,53},'map','any'}]]]}|[{'type',{184,63},'union',[{'atom',{184,63},'ok'}|[{'type',{184,68},'tuple',[{'atom',{184,69},'error'}|[{'type',{184,76},'term',[]}]]}]]}]]}]}],
+		%% Line 196
+		'spec' =
+		    %% Line 196
+		    [{{'cleanup_expired',0},[{'type',{196,22},'fun',[{'type',{196,22},'product',[]}|[{'type',{196,28},'tuple',[{'atom',{196,29},'ok'}|[{'type',{196,33},'non_neg_integer',[]}]]}]]}]}],
+		%% Line 201
+		'spec' =
+		    %% Line 201
+		    [{{'cleanup_expired',1},[{'type',{201,22},'fun',[{'type',{201,22},'product',[{'type',{201,23},'pid',[]}]}|[{'type',{201,33},'tuple',[{'atom',{201,34},'ok'}|[{'type',{201,38},'non_neg_integer',[]}]]}]]}]}],
+		%% Line 206
+		'spec' =
+		    %% Line 206
+		    [{{'get_max_concurrent',0},[{'type',{206,25},'fun',[{'type',{206,25},'product',[]}|[{'type',{206,31},'pos_integer',[]}]]}]}],
+		%% Line 211
+		'spec' =
+		    %% Line 211
+		    [{{'stop',1},[{'type',{211,11},'fun',[{'type',{211,11},'product',[{'type',{211,12},'pid',[]}]}|[{'atom',{211,22},'ok'}]]}]}],
+		%% Line 220
+		'spec' =
+		    %% Line 220
+		    [{{'start_task_execution',2},[{'type',{220,27},'fun',[{'type',{220,27},'product',[{'user_type',{220,28},'task_id',[]}|[{'type',{220,39},'pid',[]}]]}|[{'type',{220,49},'union',[{'atom',{220,49},'ok'}|[{'type',{220,54},'tuple',[{'atom',{220,55},'error'}|[{'type',{220,62},'term',[]}]]}]]}]]}]}],
+		%% Line 225
+		'spec' =
+		    %% Line 225
+		    [{{'complete_task',2},[{'type',{225,20},'fun',[{'type',{225,20},'product',[{'user_type',{225,21},'task_id',[]}|[{'type',{225,32},'term',[]}]]}|[{'type',{225,43},'union',[{'atom',{225,43},'ok'}|[{'type',{225,48},'tuple',[{'atom',{225,49},'error'}|[{'type',{225,56},'term',[]}]]}]]}]]}]}],
+		%% Line 230
+		'spec' =
+		    %% Line 230
+		    [{{'fail_task',2},[{'type',{230,16},'fun',[{'type',{230,16},'product',[{'user_type',{230,17},'task_id',[]}|[{'type',{230,28},'term',[]}]]}|[{'type',{230,39},'union',[{'atom',{230,39},'ok'}|[{'type',{230,44},'tuple',[{'atom',{230,45},'error'}|[{'type',{230,52},'term',[]}]]}]]}]]}]}],
+		%% Line 235
+		'spec' =
+		    %% Line 235
+		    [{{'set_task_progress',2},[{'type',{235,24},'fun',[{'type',{235,24},'product',[{'user_type',{235,25},'task_id',[]}|[{'type',{235,36},'union',[{'type',{235,36},'number',[]}|[{'type',{235,47},'tuple',[{'type',{235,48},'number',[]}|[{'type',{235,58},'number',[]}]]}]]}]]}|[{'type',{236,5},'union',[{'atom',{236,5},'ok'}|[{'type',{236,10},'tuple',[{'atom',{236,11},'error'}|[{'type',{236,18},'term',[]}]]}]]}]]}]}],
+		%% Line 245
+		'spec' =
+		    %% Line 245
+		    [{{'init',1},[{'type',{245,11},'fun',[{'type',{245,11},'product',[{'type',{245,12},'nil',[]}]}|[{'type',{245,19},'tuple',[{'atom',{245,20},'ok'}|[{'type',{245,24},'record',[{'atom',{245,25},'state'}]}]]}]]}]}],
+		%% Line 273
+		'spec' =
+		    %% Line 273
+		    [{{'handle_call',3},[{'type',{273,18},'fun',[{'type',{273,18},'product',[{'type',{273,19},'term',[]}|[{'type',{273,27},'tuple',[{'type',{273,28},'pid',[]}|[{'type',{273,35},'term',[]}]]}|[{'type',{273,44},'record',[{'atom',{273,45},'state'}]}]]]}|[{'type',{274,5},'tuple',[{'atom',{274,6},'reply'}|[{'type',{274,13},'term',[]}|[{'type',{274,21},'record',[{'atom',{274,22},'state'}]}]]]}]]}]}],
+		%% Line 337
+		'spec' =
+		    %% Line 337
+		    [{{'handle_cast',2},[{'type',{337,18},'fun',[{'type',{337,18},'product',[{'type',{337,19},'term',[]}|[{'type',{337,27},'record',[{'atom',{337,28},'state'}]}]]}|[{'type',{337,40},'tuple',[{'atom',{337,41},'noreply'}|[{'type',{337,50},'record',[{'atom',{337,51},'state'}]}]]}]]}]}],
+		%% Line 346
+		'spec' =
+		    %% Line 346
+		    [{{'handle_info',2},[{'type',{346,18},'fun',[{'type',{346,18},'product',[{'type',{346,19},'term',[]}|[{'type',{346,27},'record',[{'atom',{346,28},'state'}]}]]}|[{'type',{346,40},'tuple',[{'atom',{346,41},'noreply'}|[{'type',{346,50},'record',[{'atom',{346,51},'state'}]}]]}]]}]}],
+		%% Line 364
+		'spec' =
+		    %% Line 364
+		    [{{'terminate',2},[{'type',{364,16},'fun',[{'type',{364,16},'product',[{'type',{364,17},'term',[]}|[{'type',{364,25},'record',[{'atom',{364,26},'state'}]}]]}|[{'atom',{364,38},'ok'}]]}]}],
+		%% Line 370
+		'spec' =
+		    %% Line 370
+		    [{{'code_change',3},[{'type',{370,18},'fun',[{'type',{370,18},'product',[{'type',{370,19},'term',[]}|[{'type',{370,27},'record',[{'atom',{370,28},'state'}]}|[{'type',{370,37},'term',[]}]]]}|[{'type',{370,48},'tuple',[{'atom',{370,49},'ok'}|[{'type',{370,53},'record',[{'atom',{370,54},'state'}]}]]}]]}]}]]
+'start_link'/0 =
+    %% Line 76
+    ( fun () ->
+	  %% Line 77
+	  call 'gen_server':'start_link'
+	      ({'local','erlmcp_tasks'}, 'erlmcp_tasks', [], [])
+      -| [{'function',{'start_link',0}}] )
+'create_task'/3 =
+    %% Line 84
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <ClientPid,Action,Metadata>
+		  when let <_3> =
+			call 'erlang':'is_map'
+			    (Action)
+		    in  let <_4> =
+			    call 'erlang':'is_map'
+				(Metadata)
+			in  call 'erlang':'and'
+				(_3, _4) ->
+		  %% Line 85
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'create_task',ClientPid,Action,Metadata})
+	      ( <_7,_6,_5> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_7,_6,_5}
+			     -| [{'function',{'create_task',3}}] ))
+		      -| [{'function',{'create_task',3}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'create_task',3}}] )
+      -| [{'function',{'create_task',3}}] )
+'list_tasks'/3 =
+    %% Line 90
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <ClientPid,Cursor,Limit>
+		  when let <_3> =
+			call 'erlang':'is_integer'
+			    (Limit)
+		    in  let <_4> =
+			    call 'erlang':'>'
+				(Limit, 0)
+			in  call 'erlang':'and'
+				(_3, _4) ->
+		  %% Line 91
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'list_tasks',ClientPid,Cursor,Limit})
+	      ( <_7,_6,_5> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_7,_6,_5}
+			     -| [{'function',{'list_tasks',3}}] ))
+		      -| [{'function',{'list_tasks',3}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'list_tasks',3}}] )
+      -| [{'function',{'list_tasks',3}}] )
+'get_task'/2 =
+    %% Line 96
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <ClientPid,TaskId>
+		  when call 'erlang':'is_binary'
+			(TaskId) ->
+		  %% Line 97
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'get_task',ClientPid,TaskId})
+	      ( <_3,_2> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_3,_2}
+			     -| [{'function',{'get_task',2}}] ))
+		      -| [{'function',{'get_task',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'get_task',2}}] )
+      -| [{'function',{'get_task',2}}] )
+'cancel_task'/3 =
+    %% Line 102
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <ClientPid,TaskId,Reason>
+		  when let <_3> =
+			call 'erlang':'is_binary'
+			    (TaskId)
+		    in  let <_4> =
+			    call 'erlang':'is_binary'
+				(Reason)
+			in  call 'erlang':'and'
+				(_3, _4) ->
+		  %% Line 103
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'cancel_task',ClientPid,TaskId,Reason})
+	      ( <_7,_6,_5> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_7,_6,_5}
+			     -| [{'function',{'cancel_task',3}}] ))
+		      -| [{'function',{'cancel_task',3}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'cancel_task',3}}] )
+      -| [{'function',{'cancel_task',3}}] )
+'get_task_result'/2 =
+    %% Line 108
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <ClientPid,TaskId>
+		  when call 'erlang':'is_binary'
+			(TaskId) ->
+		  %% Line 109
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'get_task_result',ClientPid,TaskId})
+	      ( <_3,_2> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_3,_2}
+			     -| [{'function',{'get_task_result',2}}] ))
+		      -| [{'function',{'get_task_result',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'get_task_result',2}}] )
+      -| [{'function',{'get_task_result',2}}] )
+'create'/3 =
+    %% Line 114
+    ( fun (_0,_1,_2) ->
+	  %% Line 115
+	  apply 'create_task'/3
+	      (_0, _1, _2)
+      -| [{'function',{'create',3}}] )
+'create'/4 =
+    %% Line 120
+    ( fun (_0,_1,_2,_3) ->
+	  ( case <_0,_1,_2,_3> of
+	      <ClientPid,Action,Metadata,Options>
+		  when try
+			let <_4> =
+			    call 'erlang':'is_map'
+				(Action)
+			in  let <_5> =
+				call 'erlang':'is_map'
+				    (Metadata)
+			    in  let <_6> =
+				    call 'erlang':'is_map'
+					(Options)
+				in  let <_7> =
+					call 'erlang':'and'
+					    (_5, _6)
+				    in  call 'erlang':'and'
+					    (_4, _7)
+		    of <Try> ->
+			Try
+		    catch <T,R> ->
+			'false' ->
+		  %% Line 121
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'create_task',ClientPid,Action,Metadata,Options})
+	      ( <_11,_10,_9,_8> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_11,_10,_9,_8}
+			     -| [{'function',{'create',4}}] ))
+		      -| [{'function',{'create',4}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'create',4}}] )
+      -| [{'function',{'create',4}}] )
+'create_task'/4 =
+    %% Line 126
+    ( fun (_0,_1,_2,_3) ->
+	  %% Line 127
+	  apply 'create'/4
+	      (_0, _1, _2, _3)
+      -| [{'function',{'create_task',4}}] )
+'list_tasks'/1 =
+    %% Line 132
+    ( fun (_0) ->
+	  %% Line 133
+	  apply 'list_tasks'/3
+	      (( _0
+		 -| [{'function',{'list_tasks',1}}] ), 'undefined', 100)
+      -| [{'function',{'list_tasks',1}}] )
+'list_tasks'/2 =
+    %% Line 138
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <ClientPid,Limit>
+		  when let <_2> =
+			call 'erlang':'is_integer'
+			    (Limit)
+		    in  let <_3> =
+			    call 'erlang':'>'
+				(Limit, 0)
+			in  call 'erlang':'and'
+				(_2, _3) ->
+		  %% Line 139
+		  apply 'list_tasks'/3
+		      (ClientPid, 'undefined', Limit)
+	      ( <_5,_4> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_5,_4}
+			     -| [{'function',{'list_tasks',2}}] ))
+		      -| [{'function',{'list_tasks',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'list_tasks',2}}] )
+      -| [{'function',{'list_tasks',2}}] )
+'get'/2 =
+    %% Line 144
+    ( fun (_0,_1) ->
+	  %% Line 145
+	  apply 'get_task'/2
+	      (_0, _1)
+      -| [{'function',{'get',2}}] )
+'get_result'/2 =
+    %% Line 150
+    ( fun (_0,_1) ->
+	  %% Line 151
+	  apply 'get_task_result'/2
+	      (_0, _1)
+      -| [{'function',{'get_result',2}}] )
+'cancel_task'/2 =
+    %% Line 156
+    ( fun (_0,_1) ->
+	  %% Line 157
+	  apply 'cancel_task'/3
+	      (_0, _1, #{#<67>(8,1,'integer',['unsigned'|['big']]),
+			 #<97>(8,1,'integer',['unsigned'|['big']]),
+			 #<110>(8,1,'integer',['unsigned'|['big']]),
+			 #<99>(8,1,'integer',['unsigned'|['big']]),
+			 #<101>(8,1,'integer',['unsigned'|['big']]),
+			 #<108>(8,1,'integer',['unsigned'|['big']]),
+			 #<108>(8,1,'integer',['unsigned'|['big']]),
+			 #<101>(8,1,'integer',['unsigned'|['big']]),
+			 #<100>(8,1,'integer',['unsigned'|['big']]),
+			 #<32>(8,1,'integer',['unsigned'|['big']]),
+			 #<98>(8,1,'integer',['unsigned'|['big']]),
+			 #<121>(8,1,'integer',['unsigned'|['big']]),
+			 #<32>(8,1,'integer',['unsigned'|['big']]),
+			 #<114>(8,1,'integer',['unsigned'|['big']]),
+			 #<101>(8,1,'integer',['unsigned'|['big']]),
+			 #<113>(8,1,'integer',['unsigned'|['big']]),
+			 #<117>(8,1,'integer',['unsigned'|['big']]),
+			 #<101>(8,1,'integer',['unsigned'|['big']]),
+			 #<115>(8,1,'integer',['unsigned'|['big']]),
+			 #<116>(8,1,'integer',['unsigned'|['big']])}#)
+      -| [{'function',{'cancel_task',2}}] )
+'cancel'/3 =
+    %% Line 162
+    ( fun (_0,_1,_2) ->
+	  %% Line 163
+	  apply 'cancel_task'/3
+	      (_0, _1, _2)
+      -| [{'function',{'cancel',3}}] )
+'complete'/3 =
+    %% Line 167
+    ( fun (_0,_1,_2) ->
+	  %% Line 168
+	  apply 'complete_task'/2
+	      (_1, _2)
+      -| [{'function',{'complete',3}}] )
+'update_task'/3 =
+    %% Line 174
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <ClientPid,TaskId,UpdateFun>
+		  when try
+			let <_3> =
+			    call 'erlang':'is_function'
+				(UpdateFun, 1)
+			in  ( call 'erlang':'=:='
+				  (_3, 'true')
+			      -| ['compiler_generated'] )
+		    of <Try> ->
+			Try
+		    catch <T,R> ->
+			'false' ->
+		  %% Line 175
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'update_task',ClientPid,TaskId,UpdateFun})
+	      ( <_6,_5,_4> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_6,_5,_4}
+			     -| [{'function',{'update_task',3}}] ))
+		      -| [{'function',{'update_task',3}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'update_task',3}}] )
+      -| [{'function',{'update_task',3}}] )
+'update_status'/3 =
+    %% Line 180
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <ClientPid,TaskId,Status>
+		  when call 'erlang':'is_binary'
+			(Status) ->
+		  %% Line 181
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'update_status',ClientPid,TaskId,Status})
+	      ( <_5,_4,_3> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_5,_4,_3}
+			     -| [{'function',{'update_status',3}}] ))
+		      -| [{'function',{'update_status',3}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'update_status',3}}] )
+      -| [{'function',{'update_status',3}}] )
+'update_progress'/3 =
+    %% Line 185
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <_X_ClientPid,TaskId,Update>
+		  when call 'erlang':'is_map'
+			(Update) ->
+		  %% Line 186
+		  case ( case Update of
+			   ( <~{( #{#<112>(8,1,'integer',['unsigned'|['big']]),
+				    #<114>(8,1,'integer',['unsigned'|['big']]),
+				    #<111>(8,1,'integer',['unsigned'|['big']]),
+				    #<103>(8,1,'integer',['unsigned'|['big']]),
+				    #<114>(8,1,'integer',['unsigned'|['big']]),
+				    #<101>(8,1,'integer',['unsigned'|['big']]),
+				    #<115>(8,1,'integer',['unsigned'|['big']]),
+				    #<115>(8,1,'integer',['unsigned'|['big']]),
+				    #<84>(8,1,'integer',['unsigned'|['big']]),
+				    #<111>(8,1,'integer',['unsigned'|['big']]),
+				    #<107>(8,1,'integer',['unsigned'|['big']]),
+				    #<101>(8,1,'integer',['unsigned'|['big']]),
+				    #<110>(8,1,'integer',['unsigned'|['big']])}#
+				  -| ['compiler_generated'] ):=( _10
+							      -| ['compiler_generated'] )}~> when 'true' ->
+				 ( _10
+				   -| ['compiler_generated'] )
+			     -| ['compiler_generated'] )
+			   ( <~{}~> when 'true' ->
+				 'undefined'
+			     -| ['compiler_generated'] )
+			   ( <( _11
+				-| ['compiler_generated'] )> when 'true' ->
+				 primop 'match_fail'
+				     ({'badmap',( _11
+						  -| ['compiler_generated'] )})
+			     -| ['compiler_generated'] )
+			 end
+			 -| ['compiler_generated'] ) of
+		    %% Line 187
+		    <'undefined'> when 'true' ->
+			%% Line 188
+			{'error',#{#<73>(8,1,'integer',['unsigned'|['big']]),
+				   #<110>(8,1,'integer',['unsigned'|['big']]),
+				   #<118>(8,1,'integer',['unsigned'|['big']]),
+				   #<97>(8,1,'integer',['unsigned'|['big']]),
+				   #<108>(8,1,'integer',['unsigned'|['big']]),
+				   #<105>(8,1,'integer',['unsigned'|['big']]),
+				   #<100>(8,1,'integer',['unsigned'|['big']]),
+				   #<32>(8,1,'integer',['unsigned'|['big']]),
+				   #<112>(8,1,'integer',['unsigned'|['big']]),
+				   #<114>(8,1,'integer',['unsigned'|['big']]),
+				   #<111>(8,1,'integer',['unsigned'|['big']]),
+				   #<103>(8,1,'integer',['unsigned'|['big']]),
+				   #<114>(8,1,'integer',['unsigned'|['big']]),
+				   #<101>(8,1,'integer',['unsigned'|['big']]),
+				   #<115>(8,1,'integer',['unsigned'|['big']]),
+				   #<115>(8,1,'integer',['unsigned'|['big']]),
+				   #<32>(8,1,'integer',['unsigned'|['big']]),
+				   #<116>(8,1,'integer',['unsigned'|['big']]),
+				   #<111>(8,1,'integer',['unsigned'|['big']]),
+				   #<107>(8,1,'integer',['unsigned'|['big']]),
+				   #<101>(8,1,'integer',['unsigned'|['big']]),
+				   #<110>(8,1,'integer',['unsigned'|['big']])}#}
+		    %% Line 189
+		    <Token> when 'true' ->
+			let <_X_Progress> =
+			    case %% Line 190
+				 Update of
+			      %% Line 190
+			      ( <~{( #{#<112>(8,1,'integer',['unsigned'|['big']]),
+				       #<114>(8,1,'integer',['unsigned'|['big']]),
+				       #<111>(8,1,'integer',['unsigned'|['big']]),
+				       #<103>(8,1,'integer',['unsigned'|['big']]),
+				       #<114>(8,1,'integer',['unsigned'|['big']]),
+				       #<101>(8,1,'integer',['unsigned'|['big']]),
+				       #<115>(8,1,'integer',['unsigned'|['big']]),
+				       #<115>(8,1,'integer',['unsigned'|['big']])}#
+				     -| ['compiler_generated','result_not_wanted'] ):=( _13
+										     -| ['compiler_generated','result_not_wanted'] )}~> when 'true' ->
+				    ( _13
+				      -| ['compiler_generated','result_not_wanted'] )
+				-| ['compiler_generated','result_not_wanted'] )
+			      %% Line 190
+			      ( <~{}~> when 'true' ->
+				    ( 0.00000000000000000000e+00
+				      -| ['result_not_wanted'] )
+				-| ['compiler_generated','result_not_wanted'] )
+			      %% Line 190
+			      ( <( _14
+				   -| ['compiler_generated','result_not_wanted'] )> when 'true' ->
+				    primop 'match_fail'
+					({'badmap',( _14
+						     -| ['compiler_generated','result_not_wanted'] )})
+				-| ['compiler_generated','result_not_wanted'] )
+			    end
+			in  let <Total> =
+				case %% Line 191
+				     Update of
+				  %% Line 191
+				  ( <~{( #{#<116>(8,1,'integer',['unsigned'|['big']]),
+					   #<111>(8,1,'integer',['unsigned'|['big']]),
+					   #<116>(8,1,'integer',['unsigned'|['big']]),
+					   #<97>(8,1,'integer',['unsigned'|['big']]),
+					   #<108>(8,1,'integer',['unsigned'|['big']])}#
+					 -| ['compiler_generated'] ):=( _16
+								     -| ['compiler_generated'] )}~> when 'true' ->
+					( _16
+					  -| ['compiler_generated'] )
+				    -| ['compiler_generated'] )
+				  %% Line 191
+				  ( <~{}~> when 'true' ->
+					'undefined'
+				    -| ['compiler_generated'] )
+				  %% Line 191
+				  ( <( _17
+				       -| ['compiler_generated'] )> when 'true' ->
+					primop 'match_fail'
+					    ({'badmap',( _17
+							 -| ['compiler_generated'] )})
+				    -| ['compiler_generated'] )
+				end
+			    in  %% Line 192
+				apply 'set_task_progress'/2
+				    (TaskId, {_X_Progress,Total})
+		  end
+	      ( <_8,_7,_6> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_8,_7,_6}
+			     -| [{'function',{'update_progress',3}}] ))
+		      -| [{'function',{'update_progress',3}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'update_progress',3}}] )
+      -| [{'function',{'update_progress',3}}] )
+'cleanup_expired'/0 =
+    %% Line 197
+    ( fun () ->
+	  %% Line 198
+	  call 'gen_server':'call'
+	      ('erlmcp_tasks', 'cleanup_expired')
+      -| [{'function',{'cleanup_expired',0}}] )
+'cleanup_expired'/1 =
+    %% Line 202
+    ( fun (_0) ->
+	  %% Line 203
+	  apply 'cleanup_expired'/0
+	      ()
+      -| [{'function',{'cleanup_expired',1}}] )
+'get_max_concurrent'/0 =
+    %% Line 207
+    ( fun () ->
+	  %% Line 208
+	  1000
+      -| [{'function',{'get_max_concurrent',0}}] )
+'stop'/1 =
+    %% Line 212
+    ( fun (_0) ->
+	  ( case ( _0
+		   -| [{'function',{'stop',1}}] ) of
+	      <Pid>
+		  when call 'erlang':'is_pid'
+			(( _0
+			   -| [{'function',{'stop',1}}] )) ->
+		  %% Line 213
+		  call 'gen_server':'stop'
+		      (Pid)
+	      ( <_1> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_1}
+			     -| [{'function',{'stop',1}}] ))
+		      -| [{'function',{'stop',1}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'stop',1}}] )
+      -| [{'function',{'stop',1}}] )
+'start_task_execution'/2 =
+    %% Line 221
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <TaskId,WorkerPid>
+		  when let <_2> =
+			call 'erlang':'is_binary'
+			    (TaskId)
+		    in  let <_3> =
+			    call 'erlang':'is_pid'
+				(WorkerPid)
+			in  call 'erlang':'and'
+				(_2, _3) ->
+		  %% Line 222
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'start_task_execution',TaskId,WorkerPid})
+	      ( <_5,_4> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_5,_4}
+			     -| [{'function',{'start_task_execution',2}}] ))
+		      -| [{'function',{'start_task_execution',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'start_task_execution',2}}] )
+      -| [{'function',{'start_task_execution',2}}] )
+'complete_task'/2 =
+    %% Line 226
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <TaskId,Result>
+		  when call 'erlang':'is_binary'
+			(TaskId) ->
+		  %% Line 227
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'complete_task',TaskId,Result})
+	      ( <_3,_2> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_3,_2}
+			     -| [{'function',{'complete_task',2}}] ))
+		      -| [{'function',{'complete_task',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'complete_task',2}}] )
+      -| [{'function',{'complete_task',2}}] )
+'fail_task'/2 =
+    %% Line 231
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <TaskId,Error>
+		  when call 'erlang':'is_binary'
+			(TaskId) ->
+		  %% Line 232
+		  call 'gen_server':'call'
+		      ('erlmcp_tasks', {'fail_task',TaskId,Error})
+	      ( <_3,_2> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_3,_2}
+			     -| [{'function',{'fail_task',2}}] ))
+		      -| [{'function',{'fail_task',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'fail_task',2}}] )
+      -| [{'function',{'fail_task',2}}] )
+'set_task_progress'/2 =
+    %% Line 237
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <TaskId,Progress>
+		  when call 'erlang':'is_binary'
+			(TaskId) ->
+		  %% Line 238
+		  call 'gen_server':'cast'
+		      ('erlmcp_tasks', {'set_task_progress',TaskId,Progress})
+	      ( <_3,_2> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_3,_2}
+			     -| [{'function',{'set_task_progress',2}}] ))
+		      -| [{'function',{'set_task_progress',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'set_task_progress',2}}] )
+      -| [{'function',{'set_task_progress',2}}] )
+'init'/1 =
+    %% Line 246
+    ( fun (_0) ->
+	  ( case ( _0
+		   -| [{'function',{'init',1}}] ) of
+	      <[]> when 'true' ->
+		  do  %% Line 247
+		      call 'logger':'info'
+			  ([83|[116|[97|[114|[116|[105|[110|[103|[32|[77|[67|[80|[32|[84|[97|[115|[107|[115|[32|[109|[97|[110|[97|[103|[101|[114]]]]]]]]]]]]]]]]]]]]]]]]]])
+		      do  %% Line 250
+			  case call 'ets':'info'
+				   ('erlmcp_tasks') of
+			    %% Line 251
+			    <'undefined'> when 'true' ->
+				%% Line 252
+				call 'ets':'new'
+				    ('erlmcp_tasks', ['named_table'|['public'|['set'|[{'keypos',2}|[{'read_concurrency','true'}|[{'write_concurrency','true'}]]]]]])
+			    %% Line 260
+			    <_3> when 'true' ->
+				'ok'
+			  end
+			  do  %% Line 265
+			      apply 'schedule_cleanup'/0
+				  ()
+			      %% Line 267
+			      {'ok',{'state',0,[]}}
+	      ( <_2> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_2}
+			     -| [{'function',{'init',1}}] ))
+		      -| [{'function',{'init',1}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'init',1}}] )
+      -| [{'function',{'init',1}}] )
+'handle_call'/3 =
+    %% Line 275
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <{'create_task',ClientPid,Action,Metadata},_X_From,State> when 'true' ->
+		  let <_4> =
+		      case %% Line 276
+			   State of
+			%% Line 276
+			( <( {'state',_rec0,_26}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec0
+			  -| ['compiler_generated'] )
+			%% Line 276
+			( <_rec0> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec0}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  %% Line 276
+		      case call 'erlang':'>='
+			       (_4, 1000) of
+			%% Line 277
+			<'true'> when 'true' ->
+			    %% Line 278
+			    {'reply',{'error',-32087},State}
+			%% Line 279
+			<'false'> when 'true' ->
+			    %% Line 280
+			    case apply 'do_create_task'/4
+				     (ClientPid, Action, Metadata, State) of
+			      <{Reply,NewState}> when 'true' ->
+				  %% Line 281
+				  {'reply',Reply,NewState}
+			      ( <_6> when 'true' ->
+				    primop 'match_fail'
+					({'badmatch',_6})
+				-| ['compiler_generated'] )
+			    end
+		      end
+	      %% Line 284
+	      <{'list_tasks',ClientPid,Cursor,Limit},_X_From,State> when 'true' ->
+		  let <Reply> =
+		      apply %% Line 285
+			    'do_list_tasks'/3
+			  (%% Line 285
+			   ClientPid, %% Line 285
+				      Cursor, %% Line 285
+					      Limit)
+		  in  %% Line 286
+		      {'reply',Reply,State}
+	      %% Line 288
+	      <{'get_task',ClientPid,TaskId},_X_From,State> when 'true' ->
+		  let <Reply> =
+		      apply %% Line 289
+			    'do_get_task'/2
+			  (%% Line 289
+			   ClientPid, %% Line 289
+				      TaskId)
+		  in  %% Line 290
+		      {'reply',Reply,State}
+	      %% Line 292
+	      <{'cancel_task',ClientPid,TaskId,Reason},_X_From,State> when 'true' ->
+		  %% Line 293
+		  case apply 'do_cancel_task'/4
+			   (ClientPid, TaskId, Reason, State) of
+		    <{Reply,NewState}> when 'true' ->
+			%% Line 294
+			{'reply',Reply,NewState}
+		    ( <_10> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmatch',_10})
+		      -| ['compiler_generated'] )
+		  end
+	      %% Line 296
+	      <{'get_task_result',ClientPid,TaskId},_X_From,State> when 'true' ->
+		  let <Reply> =
+		      apply %% Line 297
+			    'do_get_task_result'/2
+			  (%% Line 297
+			   ClientPid, %% Line 297
+				      TaskId)
+		  in  %% Line 298
+		      {'reply',Reply,State}
+	      %% Line 300
+	      <{'start_task_execution',TaskId,WorkerPid},_X_From,State> when 'true' ->
+		  %% Line 301
+		  case apply 'do_start_task_execution'/3
+			   (TaskId, WorkerPid, State) of
+		    <{Reply,NewState}> when 'true' ->
+			%% Line 302
+			{'reply',Reply,NewState}
+		    ( <_12> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmatch',_12})
+		      -| ['compiler_generated'] )
+		  end
+	      %% Line 304
+	      <{'complete_task',TaskId,Result},_X_From,State> when 'true' ->
+		  %% Line 305
+		  case apply 'do_complete_task'/3
+			   (TaskId, Result, State) of
+		    <{Reply,NewState}> when 'true' ->
+			%% Line 306
+			{'reply',Reply,NewState}
+		    ( <_13> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmatch',_13})
+		      -| ['compiler_generated'] )
+		  end
+	      %% Line 308
+	      <{'fail_task',TaskId,Error},_X_From,State> when 'true' ->
+		  %% Line 309
+		  case apply 'do_fail_task'/3
+			   (TaskId, Error, State) of
+		    <{Reply,NewState}> when 'true' ->
+			%% Line 310
+			{'reply',Reply,NewState}
+		    ( <_14> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmatch',_14})
+		      -| ['compiler_generated'] )
+		  end
+	      %% Line 312
+	      <{'create_task',ClientPid,Action,Metadata,Options},_X_From,State> when 'true' ->
+		  let <_16> =
+		      case %% Line 313
+			   State of
+			%% Line 313
+			( <( {'state',_rec1,_27}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec1
+			  -| ['compiler_generated'] )
+			%% Line 313
+			( <_rec1> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec1}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  %% Line 313
+		      case call 'erlang':'>='
+			       (_16, 1000) of
+			%% Line 314
+			<'true'> when 'true' ->
+			    %% Line 315
+			    {'reply',{'error',-32087},State}
+			%% Line 316
+			<'false'> when 'true' ->
+			    %% Line 317
+			    case apply 'do_create_task_with_options'/5
+				     (ClientPid, Action, Metadata, Options, State) of
+			      <{Reply,NewState}> when 'true' ->
+				  %% Line 318
+				  {'reply',Reply,NewState}
+			      ( <_18> when 'true' ->
+				    primop 'match_fail'
+					({'badmatch',_18})
+				-| ['compiler_generated'] )
+			    end
+		      end
+	      %% Line 321
+	      <{'update_task',ClientPid,TaskId,UpdateFun},_X_From,State> when 'true' ->
+		  let <Reply> =
+		      apply %% Line 322
+			    'do_update_task'/3
+			  (%% Line 322
+			   ClientPid, %% Line 322
+				      TaskId, %% Line 322
+					      UpdateFun)
+		  in  %% Line 323
+		      {'reply',Reply,State}
+	      %% Line 325
+	      <{'update_status',ClientPid,TaskId,Status},_X_From,State> when 'true' ->
+		  let <Reply> =
+		      apply %% Line 326
+			    'do_update_status'/3
+			  (%% Line 326
+			   ClientPid, %% Line 326
+				      TaskId, %% Line 326
+					      Status)
+		  in  %% Line 327
+		      {'reply',Reply,State}
+	      %% Line 329
+	      <'cleanup_expired',_X_From,State> when 'true' ->
+		  %% Line 330
+		  case apply 'do_cleanup_expired_tasks_with_count'/1
+			   (State) of
+		    <{Reply,NewState}> when 'true' ->
+			%% Line 331
+			{'reply',Reply,NewState}
+		    ( <_22> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmatch',_22})
+		      -| ['compiler_generated'] )
+		  end
+	      %% Line 333
+	      <_X_Request,_X_From,State> when 'true' ->
+		  %% Line 334
+		  {'reply',{'error','unknown_request'},State}
+	    end
+	    -| [{'function',{'handle_call',3}}] )
+      -| [{'function',{'handle_call',3}}] )
+'handle_cast'/2 =
+    %% Line 338
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <{'set_task_progress',TaskId,Progress},State> when 'true' ->
+		  let <NewState> =
+		      apply %% Line 339
+			    'do_set_task_progress'/3
+			  (%% Line 339
+			   TaskId, %% Line 339
+				   Progress, %% Line 339
+					     State)
+		  in  %% Line 340
+		      {'noreply',NewState}
+	      %% Line 342
+	      <_X_Msg,State> when 'true' ->
+		  %% Line 343
+		  {'noreply',State}
+	    end
+	    -| [{'function',{'handle_cast',2}}] )
+      -| [{'function',{'handle_cast',2}}] )
+'handle_info'/2 =
+    %% Line 347
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <{'task_timeout',TaskId},State> when 'true' ->
+		  let <NewState> =
+		      apply %% Line 348
+			    'do_handle_task_timeout'/2
+			  (%% Line 348
+			   TaskId, %% Line 348
+				   State)
+		  in  %% Line 349
+		      {'noreply',NewState}
+	      %% Line 351
+	      <{'DOWN',MonitorRef,'process',_X_Pid,_X_Reason},State> when 'true' ->
+		  let <NewState> =
+		      apply %% Line 352
+			    'do_handle_worker_down'/2
+			  (%% Line 352
+			   MonitorRef, %% Line 352
+				       State)
+		  in  %% Line 353
+		      {'noreply',NewState}
+	      %% Line 355
+	      <'cleanup_expired_tasks',State> when 'true' ->
+		  let <NewState> =
+		      apply %% Line 356
+			    'do_cleanup_expired_tasks'/1
+			  (%% Line 356
+			   State)
+		  in  do  %% Line 357
+			  apply 'schedule_cleanup'/0
+			      ()
+			  %% Line 358
+			  {'noreply',NewState}
+	      %% Line 360
+	      <_X_Info,State> when 'true' ->
+		  %% Line 361
+		  {'noreply',State}
+	    end
+	    -| [{'function',{'handle_info',2}}] )
+      -| [{'function',{'handle_info',2}}] )
+'terminate'/2 =
+    %% Line 365
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <_X_Reason,{'state',Count,_4}> when 'true' ->
+		  do  %% Line 366
+		      call 'logger':'info'
+			  ([84|[97|[115|[107|[115|[32|[109|[97|[110|[97|[103|[101|[114|[32|[116|[101|[114|[109|[105|[110|[97|[116|[105|[110|[103|[32|[119|[105|[116|[104|[32|[126|[112|[32|[97|[99|[116|[105|[118|[101|[32|[116|[97|[115|[107|[115]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [Count|[]])
+		      %% Line 367
+		      'ok'
+	      ( <_3,_2> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_3,_2}
+			     -| [{'function',{'terminate',2}}] ))
+		      -| [{'function',{'terminate',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'terminate',2}}] )
+      -| [{'function',{'terminate',2}}] )
+'code_change'/3 =
+    %% Line 371
+    ( fun (_0,_1,_2) ->
+	  %% Line 372
+	  {'ok',_1}
+      -| [{'function',{'code_change',3}}] )
+'do_create_task'/4 =
+    %% Line 379
+    ( fun (_0,_1,_2,_3) ->
+	  let <TaskId> =
+	      apply %% Line 380
+		    'generate_task_id'/0
+		  ()
+	  in  let <TimeoutMs> =
+		  case _2 of
+		    %% Line 381
+		    ( <~{( #{#<116>(8,1,'integer',['unsigned'|['big']]),
+			     #<105>(8,1,'integer',['unsigned'|['big']]),
+			     #<109>(8,1,'integer',['unsigned'|['big']]),
+			     #<101>(8,1,'integer',['unsigned'|['big']]),
+			     #<111>(8,1,'integer',['unsigned'|['big']]),
+			     #<117>(8,1,'integer',['unsigned'|['big']]),
+			     #<116>(8,1,'integer',['unsigned'|['big']])}#
+			   -| ['compiler_generated'] ):=( _56
+						       -| ['compiler_generated'] )}~> when 'true' ->
+			  ( _56
+			    -| ['compiler_generated'] )
+		      -| ['compiler_generated'] )
+		    %% Line 381
+		    ( <~{}~> when 'true' ->
+			  300000
+		      -| ['compiler_generated'] )
+		    %% Line 381
+		    ( <( _57
+			 -| ['compiler_generated'] )> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmap',( _57
+					   -| ['compiler_generated'] )})
+		      -| ['compiler_generated'] )
+		  end
+	      in  let <_7> =
+		      call %% Line 382
+			   'erlang':%% Line 382
+				    'system_time'
+			  (%% Line 382
+			   'millisecond')
+		  in  let <_6> =
+			  case _2 of
+			    %% Line 383
+			    ( <~{( #{#<101>(8,1,'integer',['unsigned'|['big']]),
+				     #<120>(8,1,'integer',['unsigned'|['big']]),
+				     #<112>(8,1,'integer',['unsigned'|['big']]),
+				     #<105>(8,1,'integer',['unsigned'|['big']]),
+				     #<114>(8,1,'integer',['unsigned'|['big']]),
+				     #<101>(8,1,'integer',['unsigned'|['big']]),
+				     #<115>(8,1,'integer',['unsigned'|['big']]),
+				     #<65>(8,1,'integer',['unsigned'|['big']]),
+				     #<102>(8,1,'integer',['unsigned'|['big']]),
+				     #<116>(8,1,'integer',['unsigned'|['big']]),
+				     #<101>(8,1,'integer',['unsigned'|['big']]),
+				     #<114>(8,1,'integer',['unsigned'|['big']])}#
+				   -| ['compiler_generated'] ):=( _59
+							       -| ['compiler_generated'] )}~> when 'true' ->
+				  ( _59
+				    -| ['compiler_generated'] )
+			      -| ['compiler_generated'] )
+			    %% Line 383
+			    ( <~{}~> when 'true' ->
+				  3600000
+			      -| ['compiler_generated'] )
+			    %% Line 383
+			    ( <( _60
+				 -| ['compiler_generated'] )> when 'true' ->
+				  primop 'match_fail'
+				      ({'badmap',( _60
+						   -| ['compiler_generated'] )})
+			      -| ['compiler_generated'] )
+			  end
+		      in  let <ExpiresAt> =
+			      call %% Line 382
+				   'erlang':%% Line 382
+					    '+'
+				  (%% Line 382
+				   _7, %% Line 383
+				       _6)
+			  in  let <_10> =
+				  case %% Line 385
+				       ( case _2 of
+					   ( <~{( #{#<112>(8,1,'integer',['unsigned'|['big']]),
+						    #<114>(8,1,'integer',['unsigned'|['big']]),
+						    #<111>(8,1,'integer',['unsigned'|['big']]),
+						    #<103>(8,1,'integer',['unsigned'|['big']]),
+						    #<114>(8,1,'integer',['unsigned'|['big']]),
+						    #<101>(8,1,'integer',['unsigned'|['big']]),
+						    #<115>(8,1,'integer',['unsigned'|['big']]),
+						    #<115>(8,1,'integer',['unsigned'|['big']]),
+						    #<84>(8,1,'integer',['unsigned'|['big']]),
+						    #<111>(8,1,'integer',['unsigned'|['big']]),
+						    #<107>(8,1,'integer',['unsigned'|['big']]),
+						    #<101>(8,1,'integer',['unsigned'|['big']]),
+						    #<110>(8,1,'integer',['unsigned'|['big']])}#
+						  -| ['compiler_generated'] ):=( _62
+									      -| ['compiler_generated'] )}~> when 'true' ->
+						 ( _62
+						   -| ['compiler_generated'] )
+					     -| ['compiler_generated'] )
+					   ( <~{}~> when 'true' ->
+						 'undefined'
+					     -| ['compiler_generated'] )
+					   ( <( _63
+						-| ['compiler_generated'] )> when 'true' ->
+						 primop 'match_fail'
+						     ({'badmap',( _63
+								  -| ['compiler_generated'] )})
+					     -| ['compiler_generated'] )
+					 end
+					 -| ['compiler_generated'] ) of
+				    %% Line 386
+				    <'undefined'> when 'true' ->
+					'undefined'
+				    %% Line 387
+				    <_32> when 'true' ->
+					call 'erlmcp_progress':'generate_token'
+					    ()
+				  end
+			      in  let <Now> =
+				      call %% Line 390
+					   'erlang':%% Line 390
+						    'system_time'
+					  (%% Line 390
+					   'millisecond')
+				  in  let <Task> =
+					  {%% Line 392
+					   'mcp_task',%% Line 393
+						      TaskId,%% Line 394
+							     'pending',_1,_2,%% Line 397
+									     'undefined',%% Line 398
+											 'undefined',%% Line 399
+												     Now,%% Line 400
+													 Now,%% Line 401
+													     ExpiresAt,_0,%% Line 403
+															  'undefined',%% Line 404
+																      'undefined',%% Line 385
+																		  _10,%% Line 406
+																		      'undefined',%% Line 407
+																				  'undefined',%% Line 408
+																					      TimeoutMs,%% Line 409
+																							'undefined'}
+				      in  do  %% Line 412
+					      call 'ets':'insert'
+						  ('erlmcp_tasks', Task)
+					      let <_14> =
+						  call %% Line 414
+						       'erlang':%% Line 414
+								'self'
+						      ()
+					      in  let <TimerRef> =
+						      call %% Line 414
+							   'erlang':%% Line 414
+								    'send_after'
+							  (%% Line 414
+							   TimeoutMs, %% Line 414
+								      _14, %% Line 414
+									   {'task_timeout',TaskId})
+						  in  let <_18> =
+							  call %% Line 415
+							       'erlang':%% Line 415
+									'setelement'
+							      (%% Line 415
+							       18, %% Line 415
+								   Task, %% Line 415
+									 TimerRef)
+						      in  do  %% Line 416
+							      call 'ets':'insert'
+								  ('erlmcp_tasks', _18)
+							      do  %% Line 418
+								  case _10 of
+								    %% Line 419
+								    <'undefined'> when 'true' ->
+									'ok'
+								    %% Line 420
+								    <_X_Token> when 'true' ->
+									let <_20> =
+									    #{%% Line 421
+									      #<1711443258754766308023339323767328>(112,1,'integer',['unsigned'|['big']]),
+									      %% Line 421
+									      ( #<TaskId>(( 'all'
+											    -| ['compiler_generated'] ),8,'binary',['unsigned'|['big']])
+										-| [{'segment',2}] )}#
+									in  %% Line 421
+									    call 'erlmcp_progress':'create'
+										(_0, _20)
+								  end
+								  do  %% Line 424
+								      call 'logger':'debug'
+									  ([67|[114|[101|[97|[116|[101|[100|[32|[116|[97|[115|[107|[32|[126|[112|[32|[102|[111|[114|[32|[99|[108|[105|[101|[110|[116|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [TaskId|[_0|[]]])
+								      do  %% Line 425
+									  apply 'send_task_notification'/2
+									      (_0, TaskId)
+									  let <_23> =
+									      case _3 of
+										%% Line 427
+										( <( {'state',_rec5,_51}
+										     -| ['compiler_generated'] )> when 'true' ->
+										      _rec5
+										  -| ['compiler_generated'] )
+										%% Line 427
+										( <_rec5> when 'true' ->
+										      ( primop 'match_fail'
+											    (( {( 'badrecord'
+												  -| ['compiler_generated'] ),_rec5}
+											       -| ['compiler_generated'] ))
+											-| ['compiler_generated'] )
+										  -| ['compiler_generated'] )
+									      end
+									  in  let <_rec3> =
+										  call %% Line 427
+										       'erlang':%% Line 427
+												'+'
+										      (%% Line 427
+										       _23, %% Line 427
+											    1)
+									      in  let <_27> =
+										      case _3 of
+											%% Line 427
+											<{'state',_52,_53}> when 'true' ->
+											    call 'erlang':'setelement'
+												(2, _3, _rec3)
+											%% Line 427
+											( <( _54
+											     -| ['compiler_generated'] )> when 'true' ->
+											      ( primop 'match_fail'
+												    (( {( 'badrecord'
+													  -| ['compiler_generated'] ),_3}
+												       -| ['compiler_generated'] ))
+												-| ['compiler_generated'] )
+											  -| ['compiler_generated'] )
+										      end
+										  in  %% Line 427
+										      {{'ok',TaskId},_27}
+      -| [{'function',{'do_create_task',4}}] )
+'do_list_tasks'/3 =
+    %% Line 430
+    ( fun (_0,_1,_2) ->
+	  let <_8> =
+	      fun (_5,_4) ->
+		  %% Line 432
+		  case <_5,_4> of
+		    <Task = {'mcp_task',_53,_54,_55,_56,_57,_58,_59,_60,_61,Pid,_62,_63,_64,_65,_66,_67,_68},Acc> when 'true' ->
+			%% Line 433
+			case call 'erlang':'=:='
+				 (Pid, _0) of
+			  %% Line 434
+			  <'true'> when 'true' ->
+			      [Task|Acc]
+			  %% Line 435
+			  <'false'> when 'true' ->
+			      Acc
+			end
+		    ( <_7,_6> when 'true' ->
+			  primop 'match_fail'
+			      ({'function_clause',_7,_6})
+		      -| ['compiler_generated'] )
+		  end
+	  in  let <AllTasks> =
+		  call %% Line 431
+		       'ets':%% Line 431
+			     'foldl'
+		      (%% Line 432
+		       _8, %% Line 438
+			   [], %% Line 439
+			       'erlmcp_tasks')
+	      in  let <_18> =
+		      fun (_15,_14) ->
+			  let <_13> =
+			      case _15 of
+				%% Line 444
+				( <( {'mcp_task',_69,_70,_71,_72,_73,_74,_rec6,_75,_76,_77,_78,_79,_80,_81,_82,_83,_84}
+				     -| ['compiler_generated'] )> when 'true' ->
+				      _rec6
+				  -| ['compiler_generated'] )
+				%% Line 444
+				( <_rec6> when 'true' ->
+				      ( primop 'match_fail'
+					    (( {( 'badrecord'
+						  -| ['compiler_generated'] ),_rec6}
+					       -| ['compiler_generated'] ))
+					-| ['compiler_generated'] )
+				  -| ['compiler_generated'] )
+			      end
+			  in  let <_11> =
+				  case _14 of
+				    %% Line 444
+				    ( <( {'mcp_task',_85,_86,_87,_88,_89,_90,_rec7,_91,_92,_93,_94,_95,_96,_97,_98,_99,_100}
+					 -| ['compiler_generated'] )> when 'true' ->
+					  _rec7
+				      -| ['compiler_generated'] )
+				    %% Line 444
+				    ( <_rec7> when 'true' ->
+					  ( primop 'match_fail'
+						(( {( 'badrecord'
+						      -| ['compiler_generated'] ),_rec7}
+						   -| ['compiler_generated'] ))
+					    -| ['compiler_generated'] )
+				      -| ['compiler_generated'] )
+				  end
+			      in  %% Line 444
+				  call 'erlang':'>='
+				      (_13, _11)
+		  in  let <SortedTasks> =
+			  call %% Line 442
+			       'lists':%% Line 442
+				       'sort'
+			      (%% Line 443
+			       _18, %% Line 446
+				    AllTasks)
+		      in  let <_29> =
+			      case _1 of
+				%% Line 450
+				<'undefined'> when 'true' ->
+				    SortedTasks
+				%% Line 451
+				<_101> when 'true' ->
+				    %% Line 452
+				    case call 'lists':'keyfind'
+					     (_1, 2, SortedTasks) of
+				      %% Line 453
+				      <'false'> when 'true' ->
+					  []
+				      %% Line 454
+				      <_X_CursorTask> when 'true' ->
+					  let <_24> =
+					      fun (_22) ->
+						  let <_21> =
+						      case %% Line 456
+							   _22 of
+							%% Line 456
+							( <( {'mcp_task',_rec8,_102,_103,_104,_105,_106,_107,_108,_109,_110,_111,_112,_113,_114,_115,_116,_117}
+							     -| ['compiler_generated'] )> when 'true' ->
+							      _rec8
+							  -| ['compiler_generated'] )
+							%% Line 456
+							( <_rec8> when 'true' ->
+							      ( primop 'match_fail'
+								    (( {( 'badrecord'
+									  -| ['compiler_generated'] ),_rec8}
+								       -| ['compiler_generated'] ))
+								-| ['compiler_generated'] )
+							  -| ['compiler_generated'] )
+						      end
+						  in  %% Line 456
+						      call 'erlang':'=/='
+							  (_21, _1)
+					  in  %% Line 455
+					      case call 'lists':'splitwith'
+						       (%% Line 456
+							_24, %% Line 457
+							     SortedTasks) of
+						<{_X_Before,After}> when 'true' ->
+						    %% Line 459
+						    case After of
+						      %% Line 460
+						      <[]> when 'true' ->
+							  []
+						      %% Line 461
+						      <[_118|Rest]> when 'true' ->
+							  Rest
+						      ( <_26> when 'true' ->
+							    primop 'match_fail'
+								({'case_clause',_26})
+							-| ['compiler_generated'] )
+						    end
+						( <_25> when 'true' ->
+						      primop 'match_fail'
+							  ({'badmatch',_25})
+						  -| ['compiler_generated'] )
+					      end
+				    end
+			      end
+			  in  let <FilteredLength> =
+				  call %% Line 466
+				       'erlang':%% Line 466
+						'length'
+				      (%% Line 449
+				       _29)
+			      in  let <_139,_140> =
+				      case %% Line 467
+					   call 'erlang':'>'
+					       (FilteredLength, _2) of
+					%% Line 468
+					<'true'> when 'true' ->
+					    let <_33> =
+						call %% Line 469
+						     'lists':%% Line 469
+							     'sublist'
+						    (_29, _2)
+					    in  let <_32> =
+						    call %% Line 469
+							 'lists':%% Line 469
+								 'nthtail'
+							(_2, _29)
+						in  %% Line 469
+						    <_33,_32>
+					%% Line 470
+					<'false'> when 'true' ->
+					    %% Line 471
+					    <_29,[]>
+				      end
+				  in  let <_39> =
+					  case ( _140
+						 -| ['compiler_generated'] ) of
+					    %% Line 475
+					    <[]> when 'true' ->
+						'undefined'
+					    %% Line 476
+					    <[NextTask|_119]> when 'true' ->
+						case NextTask of
+						  ( <( {'mcp_task',_rec9,_120,_121,_122,_123,_124,_125,_126,_127,_128,_129,_130,_131,_132,_133,_134,_135}
+						       -| ['compiler_generated'] )> when 'true' ->
+							_rec9
+						    -| ['compiler_generated'] )
+						  ( <_rec9> when 'true' ->
+							( primop 'match_fail'
+							      (( {( 'badrecord'
+								    -| ['compiler_generated'] ),_rec9}
+								 -| ['compiler_generated'] ))
+							  -| ['compiler_generated'] )
+						    -| ['compiler_generated'] )
+						end
+					    ( <_38> when 'true' ->
+						  %% Line 474
+						  primop 'match_fail'
+						      ({'case_clause',_38})
+					      -| ['compiler_generated'] )
+					  end
+				      in  let <_47> =
+					      letrec
+						  'lc$^3'/1 =
+						      %% Line 479
+						      fun (_43) ->
+							  case _43 of
+							    <[T|_42]> when 'true' ->
+								let <_45> =
+								    apply 'format_task_for_api'/1
+									(T)
+								in  let <_46> =
+									apply 'lc$^3'/1
+									    (_42)
+								    in  ( [_45|_46]
+									  -| ['compiler_generated'] )
+							    ( <[_41|_42]> when 'true' ->
+								  apply 'lc$^3'/1
+								      (_42)
+							      -| ['compiler_generated'] )
+							    <[]> when 'true' ->
+								[]
+							    ( <_44> when 'true' ->
+								  call 'erlang':'error'
+								      ({'bad_generator',_44})
+							      -| ['compiler_generated'] )
+							  end
+					      in  %% Line 479
+						  apply 'lc$^3'/1
+						      (( _139
+							 -| ['compiler_generated'] ))
+					  in  let <_49> =
+						  ~{%% Line 482
+						   'tasks'=>( _47
+							    -| ['list_comprehension'] ),%% Line 483
+											'cursor'=>_39}~
+					      in  %% Line 481
+						  {'ok',_49}
+      -| [{'function',{'do_list_tasks',3}}] )
+'do_get_task'/2 =
+    %% Line 487
+    ( fun (_0,_1) ->
+	  %% Line 488
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _1) of
+	    %% Line 489
+	    <[Task = {'mcp_task',_7,_8,_9,_10,_11,_12,_13,_14,_15,Pid,_16,_17,_18,_19,_20,_21,_22}|[]]>
+		when call 'erlang':'=:='
+		      (Pid,
+		       _0) ->
+		let <_2> =
+		    apply %% Line 490
+			  'format_task_for_api'/1
+			(%% Line 490
+			 Task)
+		in  %% Line 490
+		    {'ok',_2}
+	    %% Line 491
+	    <[{'mcp_task',_23,_24,_25,_26,_27,_28,_29,_30,_31,_32,_33,_34,_35,_36,_37,_38,_39}|[]]> when 'true' ->
+		%% Line 492
+		{'error',#{#<84>(8,1,'integer',['unsigned'|['big']]),
+			   #<97>(8,1,'integer',['unsigned'|['big']]),
+			   #<115>(8,1,'integer',['unsigned'|['big']]),
+			   #<107>(8,1,'integer',['unsigned'|['big']]),
+			   #<32>(8,1,'integer',['unsigned'|['big']]),
+			   #<110>(8,1,'integer',['unsigned'|['big']]),
+			   #<111>(8,1,'integer',['unsigned'|['big']]),
+			   #<116>(8,1,'integer',['unsigned'|['big']]),
+			   #<32>(8,1,'integer',['unsigned'|['big']]),
+			   #<102>(8,1,'integer',['unsigned'|['big']]),
+			   #<111>(8,1,'integer',['unsigned'|['big']]),
+			   #<117>(8,1,'integer',['unsigned'|['big']]),
+			   #<110>(8,1,'integer',['unsigned'|['big']]),
+			   #<100>(8,1,'integer',['unsigned'|['big']])}#}
+	    %% Line 493
+	    <[]> when 'true' ->
+		%% Line 494
+		{'error',-32081}
+	    ( <_4> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_4})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_get_task',2}}] )
+'do_cancel_task'/4 =
+    %% Line 498
+    ( fun (_0,_1,_2,_3) ->
+	  %% Line 499
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _1) of
+	    %% Line 500
+	    <[Task = {'mcp_task',_29,Status,_30,_31,_32,_33,_34,_35,_36,Pid,_37,_38,_39,_40,_41,_42,_43}|[]]>
+		when call 'erlang':'=:='
+		      (Pid,
+		       _0) ->
+		%% Line 501
+		case Status of
+		  %% Line 502
+		  <'completed'> when 'true' ->
+		      %% Line 503
+		      {{'error',-32090},_3}
+		  %% Line 504
+		  <'cancelled'> when 'true' ->
+		      %% Line 505
+		      {{'error',-32086},_3}
+		  %% Line 506
+		  <_44> when 'true' ->
+		      do  %% Line 507
+			  apply 'cancel_task_timer'/1
+			      (Task)
+			  let <_rec10> =
+			      call %% Line 511
+				   'erlang':%% Line 511
+					    'system_time'
+				  (%% Line 511
+				   'millisecond')
+			  in  let <_7> =
+				  ~{%% Line 515
+				   'reason'=>_2}~
+			      in  let <_rec11> =
+				      {%% Line 512
+				       'mcp_error',%% Line 513
+						   -32084,%% Line 514
+							  #{#<84>(8,1,'integer',['unsigned'|['big']]),
+							    #<97>(8,1,'integer',['unsigned'|['big']]),
+							    #<115>(8,1,'integer',['unsigned'|['big']]),
+							    #<107>(8,1,'integer',['unsigned'|['big']]),
+							    #<32>(8,1,'integer',['unsigned'|['big']]),
+							    #<99>(8,1,'integer',['unsigned'|['big']]),
+							    #<97>(8,1,'integer',['unsigned'|['big']]),
+							    #<110>(8,1,'integer',['unsigned'|['big']]),
+							    #<99>(8,1,'integer',['unsigned'|['big']]),
+							    #<101>(8,1,'integer',['unsigned'|['big']]),
+							    #<108>(8,1,'integer',['unsigned'|['big']]),
+							    #<108>(8,1,'integer',['unsigned'|['big']]),
+							    #<101>(8,1,'integer',['unsigned'|['big']]),
+							    #<100>(8,1,'integer',['unsigned'|['big']])}#,%% Line 515
+													 _7}
+				  in  let <_14> =
+					  case %% Line 509
+					       Task of
+					    %% Line 510
+					    <{'mcp_task',_45,_46,_47,_48,_49,_50,_51,_52,_53,_54,_55,_56,_57,_58,_59,_60,_61}> when 'true' ->
+						let <_11> =
+						    call %% Line 511
+							 'erlang':%% Line 511
+								  'setelement'
+							(%% Line 511
+							 9, Task, %% Line 511
+								  _rec10)
+						in  let <_12> =
+							call %% Line 512
+							     'erlang':%% Line 512
+								      'setelement'
+							    (%% Line 512
+							     7, %% Line 511
+								_11, %% Line 512
+								     _rec11)
+						    in  call 'erlang':'setelement'
+							    (3, %% Line 512
+								_12, 'cancelled')
+					    %% Line 510
+					    ( <( _62
+						 -| ['compiler_generated'] )> when 'true' ->
+						  ( primop 'match_fail'
+							(( {( 'badrecord'
+							      -| ['compiler_generated'] ),Task}
+							   -| ['compiler_generated'] ))
+						    -| ['compiler_generated'] )
+					      -| ['compiler_generated'] )
+					  end
+				      in  do  %% Line 518
+					      call 'ets':'insert'
+						  ('erlmcp_tasks', _14)
+					      let <_17> =
+						  case %% Line 520
+						       Task of
+						    %% Line 520
+						    ( <( {'mcp_task',_63,_64,_65,_66,_67,_68,_69,_70,_71,_72,_rec13,_73,_74,_75,_76,_77,_78}
+							 -| ['compiler_generated'] )> when 'true' ->
+							  _rec13
+						      -| ['compiler_generated'] )
+						    %% Line 520
+						    ( <_rec13> when 'true' ->
+							  ( primop 'match_fail'
+								(( {( 'badrecord'
+								      -| ['compiler_generated'] ),_rec13}
+								   -| ['compiler_generated'] ))
+							    -| ['compiler_generated'] )
+						      -| ['compiler_generated'] )
+						  end
+					      in  do  %% Line 520
+						      case _17 of
+							%% Line 521
+							<'undefined'> when 'true' ->
+							    'ok'
+							%% Line 522
+							<WorkerPid>
+							    when call 'erlang':'is_pid'
+								  (_17) ->
+							    %% Line 523
+							    call 'erlang':'exit'
+								(WorkerPid, {'task_cancelled',_2})
+							( <_18> when 'true' ->
+							      primop 'match_fail'
+								  ({'case_clause',_18})
+							  -| ['compiler_generated'] )
+						      end
+						      let <_20> =
+							  case %% Line 526
+							       Task of
+							    %% Line 526
+							    ( <( {'mcp_task',_79,_80,_81,_82,_83,_84,_85,_86,_87,_88,_89,_90,_rec14,_91,_92,_93,_94}
+								 -| ['compiler_generated'] )> when 'true' ->
+								  _rec14
+							      -| ['compiler_generated'] )
+							    %% Line 526
+							    ( <_rec14> when 'true' ->
+								  ( primop 'match_fail'
+									(( {( 'badrecord'
+									      -| ['compiler_generated'] ),_rec14}
+									   -| ['compiler_generated'] ))
+								    -| ['compiler_generated'] )
+							      -| ['compiler_generated'] )
+							  end
+						      in  do  %% Line 526
+							      case _20 of
+								%% Line 527
+								<'undefined'> when 'true' ->
+								    'ok'
+								%% Line 528
+								<Token> when 'true' ->
+								    call 'erlmcp_progress':'complete'
+									(Token)
+							      end
+							      do  %% Line 531
+								  call 'logger':'info'
+								      ([67|[97|[110|[99|[101|[108|[108|[101|[100|[32|[116|[97|[115|[107|[32|[126|[112|[58|[32|[126|[115]]]]]]]]]]]]]]]]]]]]], [_1|[_2|[]]])
+								  do  %% Line 532
+								      apply 'send_task_notification'/2
+									  (_0, _1)
+								      %% Line 534
+								      {{'ok','cancelled'},_3}
+		end
+	    %% Line 536
+	    <[{'mcp_task',_95,_96,_97,_98,_99,_100,_101,_102,_103,_104,_105,_106,_107,_108,_109,_110,_111}|[]]> when 'true' ->
+		%% Line 537
+		{{'error',#{#<84>(8,1,'integer',['unsigned'|['big']]),
+			    #<97>(8,1,'integer',['unsigned'|['big']]),
+			    #<115>(8,1,'integer',['unsigned'|['big']]),
+			    #<107>(8,1,'integer',['unsigned'|['big']]),
+			    #<32>(8,1,'integer',['unsigned'|['big']]),
+			    #<110>(8,1,'integer',['unsigned'|['big']]),
+			    #<111>(8,1,'integer',['unsigned'|['big']]),
+			    #<116>(8,1,'integer',['unsigned'|['big']]),
+			    #<32>(8,1,'integer',['unsigned'|['big']]),
+			    #<102>(8,1,'integer',['unsigned'|['big']]),
+			    #<111>(8,1,'integer',['unsigned'|['big']]),
+			    #<117>(8,1,'integer',['unsigned'|['big']]),
+			    #<110>(8,1,'integer',['unsigned'|['big']]),
+			    #<100>(8,1,'integer',['unsigned'|['big']])}#},_3}
+	    %% Line 538
+	    <[]> when 'true' ->
+		%% Line 539
+		{{'error',-32081},_3}
+	    ( <_24> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_24})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_cancel_task',4}}] )
+'do_get_task_result'/2 =
+    %% Line 543
+    ( fun (_0,_1) ->
+	  %% Line 544
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _1) of
+	    %% Line 545
+	    <[{'mcp_task',_11,Status,_12,_13,Result,_14,_15,_16,_17,Pid,_18,_19,_20,_21,_22,_23,_24}|[]]>
+		when call 'erlang':'=:='
+		      (Pid,
+		       _0) ->
+		%% Line 546
+		case Status of
+		  %% Line 547
+		  <'completed'> when 'true' ->
+		      {'ok',Result}
+		  %% Line 548
+		  <'failed'> when 'true' ->
+		      {'error',-32083}
+		  %% Line 549
+		  <'pending'> when 'true' ->
+		      {'error',-32089}
+		  %% Line 550
+		  <'processing'> when 'true' ->
+		      {'error',-32089}
+		  %% Line 551
+		  <'cancelled'> when 'true' ->
+		      {'error',-32084}
+		  ( <_6> when 'true' ->
+			primop 'match_fail'
+			    ({'case_clause',_6})
+		    -| ['compiler_generated'] )
+		end
+	    %% Line 553
+	    <[{'mcp_task',_25,_26,_27,_28,_29,_30,_31,_32,_33,_34,_35,_36,_37,_38,_39,_40,_41}|[]]> when 'true' ->
+		%% Line 554
+		{'error',#{#<84>(8,1,'integer',['unsigned'|['big']]),
+			   #<97>(8,1,'integer',['unsigned'|['big']]),
+			   #<115>(8,1,'integer',['unsigned'|['big']]),
+			   #<107>(8,1,'integer',['unsigned'|['big']]),
+			   #<32>(8,1,'integer',['unsigned'|['big']]),
+			   #<110>(8,1,'integer',['unsigned'|['big']]),
+			   #<111>(8,1,'integer',['unsigned'|['big']]),
+			   #<116>(8,1,'integer',['unsigned'|['big']]),
+			   #<32>(8,1,'integer',['unsigned'|['big']]),
+			   #<102>(8,1,'integer',['unsigned'|['big']]),
+			   #<111>(8,1,'integer',['unsigned'|['big']]),
+			   #<117>(8,1,'integer',['unsigned'|['big']]),
+			   #<110>(8,1,'integer',['unsigned'|['big']]),
+			   #<100>(8,1,'integer',['unsigned'|['big']])}#}
+	    %% Line 555
+	    <[]> when 'true' ->
+		%% Line 556
+		{'error',-32081}
+	    ( <_8> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_8})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_get_task_result',2}}] )
+'do_start_task_execution'/3 =
+    %% Line 560
+    ( fun (_0,_1,_2) ->
+	  %% Line 561
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _0) of
+	    %% Line 562
+	    <[Task = {'mcp_task',_18,'pending',_19,_20,_21,_22,_23,_24,_25,_26,_27,_28,_29,_30,_31,_32,_33}|[]]> when 'true' ->
+		let <MonitorRef> =
+		    call %% Line 563
+			 'erlang':%% Line 563
+				  'monitor'
+			(%% Line 563
+			 'process', _1)
+		in  let <_rec15> =
+			call %% Line 569
+			     'erlang':%% Line 569
+				      'system_time'
+			    (%% Line 569
+			     'millisecond')
+		    in  let <_10> =
+			    case %% Line 565
+				 Task of
+			      %% Line 566
+			      <{'mcp_task',_34,_35,_36,_37,_38,_39,_40,_41,_42,_43,_44,_45,_46,_47,_48,_49,_50}> when 'true' ->
+				  let <_6> =
+				      call %% Line 568
+					   'erlang':%% Line 568
+						    'setelement'
+					  (%% Line 568
+					   13, Task, %% Line 568
+						     MonitorRef)
+				  in  let <_7> =
+					  call %% Line 567
+					       'erlang':%% Line 567
+							'setelement'
+					      (%% Line 567
+					       12, %% Line 568
+						   _6, _1)
+				      in  let <_8> =
+					      call %% Line 569
+						   'erlang':%% Line 569
+							    'setelement'
+						  (%% Line 569
+						   9, %% Line 567
+						      _7, %% Line 569
+							  _rec15)
+					  in  call 'erlang':'setelement'
+						  (3, %% Line 569
+						      _8, 'processing')
+			      %% Line 566
+			      ( <( _51
+				   -| ['compiler_generated'] )> when 'true' ->
+				    ( primop 'match_fail'
+					  (( {( 'badrecord'
+						-| ['compiler_generated'] ),Task}
+					     -| ['compiler_generated'] ))
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			    end
+			in  do  %% Line 571
+				call 'ets':'insert'
+				    ('erlmcp_tasks', _10)
+				do  %% Line 573
+				    call 'logger':'debug'
+					([84|[97|[115|[107|[32|[126|[112|[32|[115|[116|[97|[114|[116|[101|[100|[32|[101|[120|[101|[99|[117|[116|[105|[111|[110|[32|[98|[121|[32|[119|[111|[114|[107|[101|[114|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[_1|[]]])
+				    %% Line 575
+				    {'ok',_2}
+	    %% Line 576
+	    <[{'mcp_task',_52,Status,_53,_54,_55,_56,_57,_58,_59,_60,_61,_62,_63,_64,_65,_66,_67}|[]]> when 'true' ->
+		do  %% Line 577
+		    call 'logger':'warning'
+			([67|[97|[110|[110|[111|[116|[32|[115|[116|[97|[114|[116|[32|[116|[97|[115|[107|[32|[126|[112|[32|[105|[110|[32|[115|[116|[97|[116|[117|[115|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[Status|[]]])
+		    %% Line 578
+		    {{'error',-32086},_2}
+	    %% Line 579
+	    <[]> when 'true' ->
+		%% Line 580
+		{{'error',-32081},_2}
+	    ( <_14> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_14})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_start_task_execution',3}}] )
+'do_complete_task'/3 =
+    %% Line 584
+    ( fun (_0,_1,_2) ->
+	  %% Line 585
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _0) of
+	    %% Line 586
+	    <[Task = {'mcp_task',_27,'processing',_28,_29,_30,_31,_32,_33,_34,_35,_36,_37,ProgressToken,_38,_39,_40,TimerRef}|[]]> when 'true' ->
+		do  %% Line 587
+		    apply 'cancel_timer'/1
+			(TimerRef)
+		    let <_rec17> =
+			call %% Line 592
+			     'erlang':%% Line 592
+				      'system_time'
+			    (%% Line 592
+			     'millisecond')
+		    in  let <_9> =
+			    case %% Line 589
+				 Task of
+			      %% Line 590
+			      <{'mcp_task',_41,_42,_43,_44,_45,_46,_47,_48,_49,_50,_51,_52,_53,_54,_55,_56,_57}> when 'true' ->
+				  let <_5> =
+				      call %% Line 593
+					   'erlang':%% Line 593
+						    'setelement'
+					  (%% Line 593
+					   18, Task, %% Line 593
+						     'undefined')
+				  in  let <_6> =
+					  call %% Line 592
+					       'erlang':%% Line 592
+							'setelement'
+					      (%% Line 592
+					       9, %% Line 593
+						  _5, %% Line 592
+						      _rec17)
+				      in  let <_7> =
+					      call %% Line 591
+						   'erlang':%% Line 591
+							    'setelement'
+						  (%% Line 591
+						   6, %% Line 592
+						      _6, _1)
+					  in  call 'erlang':'setelement'
+						  (3, %% Line 591
+						      _7, 'completed')
+			      %% Line 590
+			      ( <( _58
+				   -| ['compiler_generated'] )> when 'true' ->
+				    ( primop 'match_fail'
+					  (( {( 'badrecord'
+						-| ['compiler_generated'] ),Task}
+					     -| ['compiler_generated'] ))
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			    end
+			in  do  %% Line 595
+				call 'ets':'insert'
+				    ('erlmcp_tasks', _9)
+				do  %% Line 597
+				    case ProgressToken of
+				      %% Line 598
+				      <'undefined'> when 'true' ->
+					  'ok'
+				      %% Line 599
+				      <Token> when 'true' ->
+					  call 'erlmcp_progress':'complete'
+					      (Token)
+				    end
+				    do  %% Line 602
+					call 'logger':'info'
+					    ([84|[97|[115|[107|[32|[126|[112|[32|[99|[111|[109|[112|[108|[101|[116|[101|[100|[32|[115|[117|[99|[99|[101|[115|[115|[102|[117|[108|[108|[121]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[]])
+					let <_13> =
+					    case %% Line 603
+						 Task of
+					      %% Line 603
+					      ( <( {'mcp_task',_59,_60,_61,_62,_63,_64,_65,_66,_67,_rec19,_68,_69,_70,_71,_72,_73,_74}
+						   -| ['compiler_generated'] )> when 'true' ->
+						    _rec19
+						-| ['compiler_generated'] )
+					      %% Line 603
+					      ( <_rec19> when 'true' ->
+						    ( primop 'match_fail'
+							  (( {( 'badrecord'
+								-| ['compiler_generated'] ),_rec19}
+							     -| ['compiler_generated'] ))
+						      -| ['compiler_generated'] )
+						-| ['compiler_generated'] )
+					    end
+					in  do  %% Line 603
+						apply 'send_task_notification'/2
+						    (_13, _0)
+						let <_15> =
+						    case _2 of
+						      %% Line 605
+						      ( <( {'state',_rec22,_75}
+							   -| ['compiler_generated'] )> when 'true' ->
+							    _rec22
+							-| ['compiler_generated'] )
+						      %% Line 605
+						      ( <_rec22> when 'true' ->
+							    ( primop 'match_fail'
+								  (( {( 'badrecord'
+									-| ['compiler_generated'] ),_rec22}
+								     -| ['compiler_generated'] ))
+							      -| ['compiler_generated'] )
+							-| ['compiler_generated'] )
+						    end
+						in  let <_16> =
+							call %% Line 605
+							     'erlang':%% Line 605
+								      '-'
+							    (%% Line 605
+							     _15, %% Line 605
+								  1)
+						    in  let <_rec20> =
+							    call %% Line 605
+								 'erlang':%% Line 605
+									  'max'
+								(%% Line 605
+								 0, %% Line 605
+								    _16)
+							in  let <_20> =
+								case _2 of
+								  %% Line 605
+								  <{'state',_76,_77}> when 'true' ->
+								      call 'erlang':'setelement'
+									  (2, _2, _rec20)
+								  %% Line 605
+								  ( <( _78
+								       -| ['compiler_generated'] )> when 'true' ->
+									( primop 'match_fail'
+									      (( {( 'badrecord'
+										    -| ['compiler_generated'] ),_2}
+										 -| ['compiler_generated'] ))
+									  -| ['compiler_generated'] )
+								    -| ['compiler_generated'] )
+								end
+							    in  %% Line 605
+								{'ok',_20}
+	    %% Line 606
+	    <[{'mcp_task',_79,Status,_80,_81,_82,_83,_84,_85,_86,_87,_88,_89,_90,_91,_92,_93,_94}|[]]> when 'true' ->
+		do  %% Line 607
+		    call 'logger':'warning'
+			([67|[97|[110|[110|[111|[116|[32|[99|[111|[109|[112|[108|[101|[116|[101|[32|[116|[97|[115|[107|[32|[126|[112|[32|[105|[110|[32|[115|[116|[97|[116|[117|[115|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[Status|[]]])
+		    %% Line 608
+		    {{'error',-32086},_2}
+	    %% Line 609
+	    <[]> when 'true' ->
+		%% Line 610
+		{{'error',-32081},_2}
+	    ( <_23> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_23})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_complete_task',3}}] )
+'do_fail_task'/3 =
+    %% Line 614
+    ( fun (_0,_1,_2) ->
+	  %% Line 615
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _0) of
+	    %% Line 616
+	    <[Task = {'mcp_task',_34,Status,_35,_36,_37,_38,_39,_40,_41,_42,_43,_44,ProgressToken,_45,_46,_47,TimerRef}|[]]>
+		when let <_3> =
+		      call %% Line 617
+			   'erlang':%% Line 617
+				    '=:='
+			  (%% Line 617
+			   Status, %% Line 617
+				   'processing')
+		  in  let <_4> =
+			  call %% Line 617
+			       'erlang':%% Line 617
+					'=:='
+			      (%% Line 617
+			       Status, %% Line 617
+				       'pending')
+		      in  %% Line 617
+			  call 'erlang':'or'
+			      (_3, _4) ->
+		do  %% Line 618
+		    apply 'cancel_timer'/1
+			(TimerRef)
+		    let <_8> =
+			case _1 of
+			  %% Line 621
+			  <{'mcp_error',_48,_49,_50}> when 'true' ->
+			      _1
+			  %% Line 622
+			  <_51>
+			      when call 'erlang':'is_binary'
+				    (_1) ->
+			      %% Line 623
+			      {'mcp_error',%% Line 624
+					   -32083,_1,%% Line 626
+						     'undefined'}
+			  %% Line 628
+			  <_52> when 'true' ->
+			      %% Line 629
+			      {'mcp_error',%% Line 630
+					   -32083,%% Line 631
+						  #{#<84>(8,1,'integer',['unsigned'|['big']]),
+						    #<97>(8,1,'integer',['unsigned'|['big']]),
+						    #<115>(8,1,'integer',['unsigned'|['big']]),
+						    #<107>(8,1,'integer',['unsigned'|['big']]),
+						    #<32>(8,1,'integer',['unsigned'|['big']]),
+						    #<102>(8,1,'integer',['unsigned'|['big']]),
+						    #<97>(8,1,'integer',['unsigned'|['big']]),
+						    #<105>(8,1,'integer',['unsigned'|['big']]),
+						    #<108>(8,1,'integer',['unsigned'|['big']]),
+						    #<101>(8,1,'integer',['unsigned'|['big']]),
+						    #<100>(8,1,'integer',['unsigned'|['big']])}#,_1}
+			end
+		    in  let <_rec23> =
+			    call %% Line 639
+				 'erlang':%% Line 639
+					  'system_time'
+				(%% Line 639
+				 'millisecond')
+			in  let <_16> =
+				case %% Line 636
+				     Task of
+				  %% Line 637
+				  <{'mcp_task',_53,_54,_55,_56,_57,_58,_59,_60,_61,_62,_63,_64,_65,_66,_67,_68,_69}> when 'true' ->
+				      let <_12> =
+					  call %% Line 640
+					       'erlang':%% Line 640
+							'setelement'
+					      (%% Line 640
+					       18, Task, %% Line 640
+							 'undefined')
+				      in  let <_13> =
+					      call %% Line 639
+						   'erlang':%% Line 639
+							    'setelement'
+						  (%% Line 639
+						   9, %% Line 640
+						      _12, %% Line 639
+							   _rec23)
+					  in  let <_14> =
+						  call %% Line 638
+						       'erlang':%% Line 638
+								'setelement'
+						      (%% Line 638
+						       7, %% Line 639
+							  _13, _8)
+					      in  call 'erlang':'setelement'
+						      (3, %% Line 638
+							  _14, 'failed')
+				  %% Line 637
+				  ( <( _70
+				       -| ['compiler_generated'] )> when 'true' ->
+					( primop 'match_fail'
+					      (( {( 'badrecord'
+						    -| ['compiler_generated'] ),Task}
+						 -| ['compiler_generated'] ))
+					  -| ['compiler_generated'] )
+				    -| ['compiler_generated'] )
+				end
+			    in  do  %% Line 642
+				    call 'ets':'insert'
+					('erlmcp_tasks', _16)
+				    do  %% Line 644
+					case ProgressToken of
+					  %% Line 645
+					  <'undefined'> when 'true' ->
+					      'ok'
+					  %% Line 646
+					  <Token> when 'true' ->
+					      call 'erlmcp_progress':'complete'
+						  (Token)
+					end
+					do  %% Line 649
+					    call 'logger':'error'
+						([84|[97|[115|[107|[32|[126|[112|[32|[102|[97|[105|[108|[101|[100|[58|[32|[126|[112]]]]]]]]]]]]]]]]]], [_0|[_1|[]]])
+					    let <_20> =
+						case %% Line 650
+						     Task of
+						  %% Line 650
+						  ( <( {'mcp_task',_71,_72,_73,_74,_75,_76,_77,_78,_79,_rec25,_80,_81,_82,_83,_84,_85,_86}
+						       -| ['compiler_generated'] )> when 'true' ->
+							_rec25
+						    -| ['compiler_generated'] )
+						  %% Line 650
+						  ( <_rec25> when 'true' ->
+							( primop 'match_fail'
+							      (( {( 'badrecord'
+								    -| ['compiler_generated'] ),_rec25}
+								 -| ['compiler_generated'] ))
+							  -| ['compiler_generated'] )
+						    -| ['compiler_generated'] )
+						end
+					    in  do  %% Line 650
+						    apply 'send_task_notification'/2
+							(_20, _0)
+						    let <_22> =
+							case _2 of
+							  %% Line 652
+							  ( <( {'state',_rec28,_87}
+							       -| ['compiler_generated'] )> when 'true' ->
+								_rec28
+							    -| ['compiler_generated'] )
+							  %% Line 652
+							  ( <_rec28> when 'true' ->
+								( primop 'match_fail'
+								      (( {( 'badrecord'
+									    -| ['compiler_generated'] ),_rec28}
+									 -| ['compiler_generated'] ))
+								  -| ['compiler_generated'] )
+							    -| ['compiler_generated'] )
+							end
+						    in  let <_23> =
+							    call %% Line 652
+								 'erlang':%% Line 652
+									  '-'
+								(%% Line 652
+								 _22, %% Line 652
+								      1)
+							in  let <_rec26> =
+								call %% Line 652
+								     'erlang':%% Line 652
+									      'max'
+								    (%% Line 652
+								     0, %% Line 652
+									_23)
+							    in  let <_27> =
+								    case _2 of
+								      %% Line 652
+								      <{'state',_88,_89}> when 'true' ->
+									  call 'erlang':'setelement'
+									      (2, _2, _rec26)
+								      %% Line 652
+								      ( <( _90
+									   -| ['compiler_generated'] )> when 'true' ->
+									    ( primop 'match_fail'
+										  (( {( 'badrecord'
+											-| ['compiler_generated'] ),_2}
+										     -| ['compiler_generated'] ))
+									      -| ['compiler_generated'] )
+									-| ['compiler_generated'] )
+								    end
+								in  %% Line 652
+								    {'ok',_27}
+	    %% Line 653
+	    <[{'mcp_task',_91,Status,_92,_93,_94,_95,_96,_97,_98,_99,_100,_101,_102,_103,_104,_105,_106}|[]]> when 'true' ->
+		do  %% Line 654
+		    call 'logger':'warning'
+			([67|[97|[110|[110|[111|[116|[32|[102|[97|[105|[108|[32|[116|[97|[115|[107|[32|[126|[112|[32|[105|[110|[32|[115|[116|[97|[116|[117|[115|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[Status|[]]])
+		    %% Line 655
+		    {{'error',-32086},_2}
+	    %% Line 656
+	    <[]> when 'true' ->
+		%% Line 657
+		{{'error',-32081},_2}
+	    ( <_30> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_30})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_fail_task',3}}] )
+'do_set_task_progress'/3 =
+    %% Line 661
+    ( fun (_0,_1,_2) ->
+	  %% Line 662
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _0) of
+	    %% Line 663
+	    <[Task = {'mcp_task',_21,'processing',_22,_23,_24,_25,_26,_27,_28,_29,_30,_31,ProgressToken,_32,_33,_34,_35}|[]]> when 'true' ->
+		let <_87,_88> =
+		    case _1 of
+		      %% Line 665
+		      <{Cur,Tot}> when 'true' ->
+			  <Cur,Tot>
+		      %% Line 666
+		      <Cur>
+			  when call 'erlang':'is_number'
+				(_1) ->
+			  let <_4> =
+			      case Task of
+				( <( {'mcp_task',_36,_37,_38,_39,_40,_41,_42,_43,_44,_45,_46,_47,_48,_49,_rec29,_50,_51}
+				     -| ['compiler_generated'] )> when 'true' ->
+				      _rec29
+				  -| ['compiler_generated'] )
+				( <_rec29> when 'true' ->
+				      ( primop 'match_fail'
+					    (( {( 'badrecord'
+						  -| ['compiler_generated'] ),_rec29}
+					       -| ['compiler_generated'] ))
+					-| ['compiler_generated'] )
+				  -| ['compiler_generated'] )
+			      end
+			  in  <Cur,_4>
+		      ( <_5> when 'true' ->
+			    %% Line 664
+			    primop 'match_fail'
+				({'case_clause',_5})
+			-| ['compiler_generated'] )
+		    end
+		in  let <_rec30> =
+			call %% Line 672
+			     'erlang':%% Line 672
+				      'system_time'
+			    (%% Line 672
+			     'millisecond')
+		    in  let <_13> =
+			    case %% Line 669
+				 Task of
+			      %% Line 672
+			      <{'mcp_task',_52,_53,_54,_55,_56,_57,_58,_59,_60,_61,_62,_63,_64,_65,_66,_67,_68}> when 'true' ->
+				  let <_10> =
+				      call 'erlang':'setelement'
+					  (16, Task, ( _88
+						       -| ['compiler_generated'] ))
+				  in  let <_11> =
+					  call 'erlang':'setelement'
+					      (15, _10, ( _87
+							  -| ['compiler_generated'] ))
+				      in  call 'erlang':'setelement'
+					      (9, _11, _rec30)
+			      %% Line 672
+			      ( <( _69
+				   -| ['compiler_generated'] )> when 'true' ->
+				    ( primop 'match_fail'
+					  (( {( 'badrecord'
+						-| ['compiler_generated'] ),Task}
+					     -| ['compiler_generated'] ))
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			    end
+			in  do  %% Line 674
+				call 'ets':'insert'
+				    ('erlmcp_tasks', _13)
+				do  %% Line 676
+				    case ProgressToken of
+				      %% Line 677
+				      <'undefined'> when 'true' ->
+					  'ok'
+				      %% Line 678
+				      <Token> when 'true' ->
+					  let <Update> =
+					      ~{%% Line 680
+					       'current'=>( _87
+							  -| ['compiler_generated'] ),%% Line 681
+										      'total'=>( _88
+											       -| ['compiler_generated'] )}~
+					  in  %% Line 683
+					      call 'erlmcp_progress':'update'
+						  (Token, Update)
+				    end
+				    _2
+	    %% Line 687
+	    <[{'mcp_task',_70,_71,_72,_73,_74,_75,_76,_77,_78,_79,_80,_81,_82,_83,_84,_85,_86}|[]]> when 'true' ->
+		do  %% Line 688
+		    call 'logger':'warning'
+			([67|[97|[110|[110|[111|[116|[32|[115|[101|[116|[32|[112|[114|[111|[103|[114|[101|[115|[115|[32|[111|[110|[32|[110|[111|[110|[45|[112|[114|[111|[99|[101|[115|[115|[105|[110|[103|[32|[116|[97|[115|[107|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[]])
+		    _2
+	    %% Line 690
+	    <[]> when 'true' ->
+		do  %% Line 691
+		    call 'logger':'warning'
+			([84|[97|[115|[107|[32|[126|[112|[32|[110|[111|[116|[32|[102|[111|[117|[110|[100|[32|[102|[111|[114|[32|[112|[114|[111|[103|[114|[101|[115|[115|[32|[117|[112|[100|[97|[116|[101]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[]])
+		    _2
+	    ( <_17> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_17})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_set_task_progress',3}}] )
+'do_handle_task_timeout'/2 =
+    %% Line 696
+    ( fun (_0,_1) ->
+	  %% Line 697
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _0) of
+	    %% Line 698
+	    <[Task = {'mcp_task',_31,Status,_32,_33,_34,_35,_36,_37,_38,_39,_40,_41,_42,_43,_44,_45,_46}|[]]>
+		when let <_2> =
+		      call 'erlang':'=:='
+			  (Status, 'pending')
+		  in  let <_3> =
+			  call 'erlang':'=:='
+			      (Status, 'processing')
+		      in  call 'erlang':'or'
+			      (_2, _3) ->
+		let <_5> =
+		    case %% Line 704
+			 Task of
+		      %% Line 704
+		      ( <( {'mcp_task',_47,_48,_49,_50,_51,_52,_53,_54,_55,_56,_57,_58,_59,_60,_61,_rec35,_62}
+			   -| ['compiler_generated'] )> when 'true' ->
+			    _rec35
+			-| ['compiler_generated'] )
+		      %% Line 704
+		      ( <_rec35> when 'true' ->
+			    ( primop 'match_fail'
+				  (( {( 'badrecord'
+					-| ['compiler_generated'] ),_rec35}
+				     -| ['compiler_generated'] ))
+			      -| ['compiler_generated'] )
+			-| ['compiler_generated'] )
+		    end
+		in  let <_6> =
+			~{%% Line 704
+			 'timeout'=>_5}~
+		    in  let <_rec32> =
+			    {%% Line 701
+			     'mcp_error',%% Line 702
+					 -32085,%% Line 703
+						#{#<84>(8,1,'integer',['unsigned'|['big']]),
+						  #<97>(8,1,'integer',['unsigned'|['big']]),
+						  #<115>(8,1,'integer',['unsigned'|['big']]),
+						  #<107>(8,1,'integer',['unsigned'|['big']]),
+						  #<32>(8,1,'integer',['unsigned'|['big']]),
+						  #<116>(8,1,'integer',['unsigned'|['big']]),
+						  #<105>(8,1,'integer',['unsigned'|['big']]),
+						  #<109>(8,1,'integer',['unsigned'|['big']]),
+						  #<101>(8,1,'integer',['unsigned'|['big']]),
+						  #<111>(8,1,'integer',['unsigned'|['big']]),
+						  #<117>(8,1,'integer',['unsigned'|['big']]),
+						  #<116>(8,1,'integer',['unsigned'|['big']])}#,%% Line 704
+											       _6}
+			in  let <_rec33> =
+				call %% Line 706
+				     'erlang':%% Line 706
+					      'system_time'
+				    (%% Line 706
+				     'millisecond')
+			    in  let <_15> =
+				    case %% Line 699
+					 Task of
+				      %% Line 700
+				      <{'mcp_task',_63,_64,_65,_66,_67,_68,_69,_70,_71,_72,_73,_74,_75,_76,_77,_78,_79}> when 'true' ->
+					  let <_11> =
+					      call %% Line 707
+						   'erlang':%% Line 707
+							    'setelement'
+						  (%% Line 707
+						   18, Task, %% Line 707
+							     'undefined')
+					  in  let <_12> =
+						  call %% Line 706
+						       'erlang':%% Line 706
+								'setelement'
+						      (%% Line 706
+						       9, %% Line 707
+							  _11, %% Line 706
+							       _rec33)
+					      in  let <_13> =
+						      call %% Line 701
+							   'erlang':%% Line 701
+								    'setelement'
+							  (%% Line 701
+							   7, %% Line 706
+							      _12, %% Line 701
+								   _rec32)
+						  in  call 'erlang':'setelement'
+							  (3, %% Line 701
+							      _13, 'failed')
+				      %% Line 700
+				      ( <( _80
+					   -| ['compiler_generated'] )> when 'true' ->
+					    ( primop 'match_fail'
+						  (( {( 'badrecord'
+							-| ['compiler_generated'] ),Task}
+						     -| ['compiler_generated'] ))
+					      -| ['compiler_generated'] )
+					-| ['compiler_generated'] )
+				    end
+				in  do  %% Line 709
+					call 'ets':'insert'
+					    ('erlmcp_tasks', _15)
+					let <_18> =
+					    case %% Line 711
+						 Task of
+					      %% Line 711
+					      ( <( {'mcp_task',_81,_82,_83,_84,_85,_86,_87,_88,_89,_90,_91,_92,_93,_94,_95,_rec36,_96}
+						   -| ['compiler_generated'] )> when 'true' ->
+						    _rec36
+						-| ['compiler_generated'] )
+					      %% Line 711
+					      ( <_rec36> when 'true' ->
+						    ( primop 'match_fail'
+							  (( {( 'badrecord'
+								-| ['compiler_generated'] ),_rec36}
+							     -| ['compiler_generated'] ))
+						      -| ['compiler_generated'] )
+						-| ['compiler_generated'] )
+					    end
+					in  do  %% Line 711
+						call 'logger':'warning'
+						    ([84|[97|[115|[107|[32|[126|[112|[32|[116|[105|[109|[101|[100|[32|[111|[117|[116|[32|[97|[102|[116|[101|[114|[32|[126|[112|[32|[109|[115]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[_18|[]]])
+						let <_20> =
+						    case %% Line 713
+							 Task of
+						      %% Line 713
+						      ( <( {'mcp_task',_97,_98,_99,_100,_101,_102,_103,_104,_105,_106,_rec37,_107,_108,_109,_110,_111,_112}
+							   -| ['compiler_generated'] )> when 'true' ->
+							    _rec37
+							-| ['compiler_generated'] )
+						      %% Line 713
+						      ( <_rec37> when 'true' ->
+							    ( primop 'match_fail'
+								  (( {( 'badrecord'
+									-| ['compiler_generated'] ),_rec37}
+								     -| ['compiler_generated'] ))
+							      -| ['compiler_generated'] )
+							-| ['compiler_generated'] )
+						    end
+						in  do  %% Line 713
+							case _20 of
+							  %% Line 714
+							  <'undefined'> when 'true' ->
+							      'ok'
+							  %% Line 715
+							  <WorkerPid> when 'true' ->
+							      call 'erlang':'exit'
+								  (WorkerPid, 'task_timeout')
+							end
+							let <_23> =
+							    case _1 of
+							      %% Line 718
+							      ( <( {'state',_rec40,_113}
+								   -| ['compiler_generated'] )> when 'true' ->
+								    _rec40
+								-| ['compiler_generated'] )
+							      %% Line 718
+							      ( <_rec40> when 'true' ->
+								    ( primop 'match_fail'
+									  (( {( 'badrecord'
+										-| ['compiler_generated'] ),_rec40}
+									     -| ['compiler_generated'] ))
+								      -| ['compiler_generated'] )
+								-| ['compiler_generated'] )
+							    end
+							in  let <_24> =
+								call %% Line 718
+								     'erlang':%% Line 718
+									      '-'
+								    (%% Line 718
+								     _23, %% Line 718
+									  1)
+							    in  let <_rec38> =
+								    call %% Line 718
+									 'erlang':%% Line 718
+										  'max'
+									(%% Line 718
+									 0, %% Line 718
+									    _24)
+								in  %% Line 718
+								    case _1 of
+								      <{'state',_114,_115}> when 'true' ->
+									  call 'erlang':'setelement'
+									      (2, _1, _rec38)
+								      ( <( _116
+									   -| ['compiler_generated'] )> when 'true' ->
+									    ( primop 'match_fail'
+										  (( {( 'badrecord'
+											-| ['compiler_generated'] ),_1}
+										     -| ['compiler_generated'] ))
+									      -| ['compiler_generated'] )
+									-| ['compiler_generated'] )
+								    end
+	    %% Line 719
+	    <[{'mcp_task',_117,_118,_119,_120,_121,_122,_123,_124,_125,_126,_127,_128,_129,_130,_131,_132,_133}|[]]> when 'true' ->
+		_1
+	    %% Line 721
+	    <[]> when 'true' ->
+		do  %% Line 722
+		    call 'logger':'warning'
+			([84|[105|[109|[101|[111|[117|[116|[32|[102|[111|[114|[32|[117|[110|[107|[110|[111|[119|[110|[32|[116|[97|[115|[107|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[]])
+		    _1
+	    ( <_28> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_28})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_handle_task_timeout',2}}] )
+'do_handle_worker_down'/2 =
+    %% Line 727
+    ( fun (_0,_1) ->
+	  let <_6> =
+	      fun (_3,_2) ->
+		  %% Line 729
+		  case <_3,_2> of
+		    <Task = {'mcp_task',_25,'processing',_26,_27,_28,_29,_30,_31,_32,_33,_34,Mon,_35,_36,_37,_38,_39},Acc>
+			when call 'erlang':'=:='
+			      (Mon,
+			       _0) ->
+			%% Line 730
+			[Task|Acc]
+		    %% Line 731
+		    <_40,Acc> when 'true' ->
+			%% Line 732
+			Acc
+		  end
+	  in  %% Line 728
+	      case call 'ets':'foldl'
+		       (%% Line 729
+			_6, %% Line 734
+			    [], %% Line 735
+				'erlmcp_tasks') of
+		%% Line 737
+		<[Task = {'mcp_task',TaskId,_41,_42,_43,_44,_45,_46,_47,_48,_49,_50,_51,_52,_53,_54,_55,_56}|[]]> when 'true' ->
+		    let <_rec42> =
+			call %% Line 745
+			     'erlang':%% Line 745
+				      'system_time'
+			    (%% Line 745
+			     'millisecond')
+		    in  let <_14> =
+			    case %% Line 738
+				 Task of
+			      %% Line 739
+			      <{'mcp_task',_57,_58,_59,_60,_61,_62,_63,_64,_65,_66,_67,_68,_69,_70,_71,_72,_73}> when 'true' ->
+				  let <_11> =
+				      call %% Line 745
+					   'erlang':%% Line 745
+						    'setelement'
+					  (%% Line 745
+					   9, Task, %% Line 745
+						    _rec42)
+				  in  let <_12> =
+					  call %% Line 740
+					       'erlang':%% Line 740
+							'setelement'
+					      (%% Line 740
+					       7, %% Line 745
+						  _11, %% Line 740
+						       {'mcp_error',-32083,#{#<87>(8,1,'integer',['unsigned'|['big']]),
+									     #<111>(8,1,'integer',['unsigned'|['big']]),
+									     #<114>(8,1,'integer',['unsigned'|['big']]),
+									     #<107>(8,1,'integer',['unsigned'|['big']]),
+									     #<101>(8,1,'integer',['unsigned'|['big']]),
+									     #<114>(8,1,'integer',['unsigned'|['big']]),
+									     #<32>(8,1,'integer',['unsigned'|['big']]),
+									     #<112>(8,1,'integer',['unsigned'|['big']]),
+									     #<114>(8,1,'integer',['unsigned'|['big']]),
+									     #<111>(8,1,'integer',['unsigned'|['big']]),
+									     #<99>(8,1,'integer',['unsigned'|['big']]),
+									     #<101>(8,1,'integer',['unsigned'|['big']]),
+									     #<115>(8,1,'integer',['unsigned'|['big']]),
+									     #<115>(8,1,'integer',['unsigned'|['big']]),
+									     #<32>(8,1,'integer',['unsigned'|['big']]),
+									     #<100>(8,1,'integer',['unsigned'|['big']]),
+									     #<105>(8,1,'integer',['unsigned'|['big']]),
+									     #<101>(8,1,'integer',['unsigned'|['big']]),
+									     #<100>(8,1,'integer',['unsigned'|['big']]),
+									     #<32>(8,1,'integer',['unsigned'|['big']]),
+									     #<117>(8,1,'integer',['unsigned'|['big']]),
+									     #<110>(8,1,'integer',['unsigned'|['big']]),
+									     #<101>(8,1,'integer',['unsigned'|['big']]),
+									     #<120>(8,1,'integer',['unsigned'|['big']]),
+									     #<112>(8,1,'integer',['unsigned'|['big']]),
+									     #<101>(8,1,'integer',['unsigned'|['big']]),
+									     #<99>(8,1,'integer',['unsigned'|['big']]),
+									     #<116>(8,1,'integer',['unsigned'|['big']]),
+									     #<101>(8,1,'integer',['unsigned'|['big']]),
+									     #<100>(8,1,'integer',['unsigned'|['big']]),
+									     #<108>(8,1,'integer',['unsigned'|['big']]),
+									     #<121>(8,1,'integer',['unsigned'|['big']])}#,~{}~})
+				      in  call 'erlang':'setelement'
+					      (3, %% Line 740
+						  _12, 'failed')
+			      %% Line 739
+			      ( <( _74
+				   -| ['compiler_generated'] )> when 'true' ->
+				    ( primop 'match_fail'
+					  (( {( 'badrecord'
+						-| ['compiler_generated'] ),Task}
+					     -| ['compiler_generated'] ))
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			    end
+			in  do  %% Line 747
+				call 'ets':'insert'
+				    ('erlmcp_tasks', _14)
+				do  %% Line 749
+				    call 'logger':'error'
+					([84|[97|[115|[107|[32|[126|[112|[32|[102|[97|[105|[108|[101|[100|[32|[100|[117|[101|[32|[116|[111|[32|[119|[111|[114|[107|[101|[114|[32|[100|[101|[97|[116|[104]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [TaskId|[]])
+				    let <_17> =
+					case _1 of
+					  %% Line 751
+					  ( <( {'state',_rec46,_75}
+					       -| ['compiler_generated'] )> when 'true' ->
+						_rec46
+					    -| ['compiler_generated'] )
+					  %% Line 751
+					  ( <_rec46> when 'true' ->
+						( primop 'match_fail'
+						      (( {( 'badrecord'
+							    -| ['compiler_generated'] ),_rec46}
+							 -| ['compiler_generated'] ))
+						  -| ['compiler_generated'] )
+					    -| ['compiler_generated'] )
+					end
+				    in  let <_18> =
+					    call %% Line 751
+						 'erlang':%% Line 751
+							  '-'
+						(%% Line 751
+						 _17, %% Line 751
+						      1)
+					in  let <_rec44> =
+						call %% Line 751
+						     'erlang':%% Line 751
+							      'max'
+						    (%% Line 751
+						     0, %% Line 751
+							_18)
+					    in  %% Line 751
+						case _1 of
+						  <{'state',_76,_77}> when 'true' ->
+						      call 'erlang':'setelement'
+							  (2, _1, _rec44)
+						  ( <( _78
+						       -| ['compiler_generated'] )> when 'true' ->
+							( primop 'match_fail'
+							      (( {( 'badrecord'
+								    -| ['compiler_generated'] ),_1}
+								 -| ['compiler_generated'] ))
+							  -| ['compiler_generated'] )
+						    -| ['compiler_generated'] )
+						end
+		%% Line 752
+		<[]> when 'true' ->
+		    _1
+		( <_22> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_22})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'do_handle_worker_down',2}}] )
+'do_cleanup_expired_tasks'/1 =
+    %% Line 757
+    ( fun (_0) ->
+	  let <Now> =
+	      call %% Line 758
+		   'erlang':%% Line 758
+			    'system_time'
+		  (%% Line 758
+		   'millisecond')
+	  in  let <_8> =
+		  fun (_5,_4) ->
+		      %% Line 761
+		      case <_5,_4> of
+			<{'mcp_task',Id,Status,_21,_22,_23,_24,_25,_26,Expires,_27,_28,_29,_30,_31,_32,_33,_34},Acc> when 'true' ->
+			    %% Line 762
+			    case Status of
+			      %% Line 763
+			      <'completed'> when 'true' ->
+				  %% Line 764
+				  case call 'erlang':'=<'
+					   (Expires, Now) of
+				    %% Line 765
+				    <'true'> when 'true' ->
+					[Id|Acc]
+				    %% Line 766
+				    <'false'> when 'true' ->
+					Acc
+				  end
+			      %% Line 768
+			      <_35> when 'true' ->
+				  %% Line 769
+				  Acc
+			    end
+			( <_7,_6> when 'true' ->
+			      primop 'match_fail'
+				  ({'function_clause',_7,_6})
+			  -| ['compiler_generated'] )
+		      end
+	      in  let <ExpiredTasks> =
+		      call %% Line 760
+			   'ets':%% Line 760
+				 'foldl'
+			  (%% Line 761
+			   _8, %% Line 772
+			       [], %% Line 773
+				   'erlmcp_tasks')
+		  in  let <_12> =
+			  fun (_10) ->
+			      do  %% Line 778
+				  call 'ets':'delete'
+				      ('erlmcp_tasks', _10)
+				  %% Line 779
+				  call 'logger':'debug'
+				      ([67|[108|[101|[97|[110|[101|[100|[32|[117|[112|[32|[101|[120|[112|[105|[114|[101|[100|[32|[116|[97|[115|[107|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]], [_10|[]])
+		      in  do  %% Line 776
+			      call 'lists':'foreach'
+				  (%% Line 777
+				   _12, %% Line 781
+					ExpiredTasks)
+			      let <_15> =
+				  case ( _0
+					 -| [{'function',{'do_cleanup_expired_tasks',1}}] ) of
+				    %% Line 784
+				    ( <( {'state',_rec49,_36}
+					 -| ['compiler_generated'] )> when 'true' ->
+					  _rec49
+				      -| ['compiler_generated'] )
+				    %% Line 784
+				    ( <_rec49> when 'true' ->
+					  ( primop 'match_fail'
+						(( {( 'badrecord'
+						      -| ['compiler_generated'] ),_rec49}
+						   -| ['compiler_generated'] ))
+					    -| ['compiler_generated'] )
+				      -| ['compiler_generated'] )
+				  end
+			      in  let <_13> =
+				      call %% Line 784
+					   'erlang':%% Line 784
+						    'length'
+					  (%% Line 784
+					   ExpiredTasks)
+				  in  let <_16> =
+					  call %% Line 784
+					       'erlang':%% Line 784
+							'-'
+					      (%% Line 784
+					       _15, %% Line 784
+						    _13)
+				      in  let <_rec47> =
+					      call %% Line 784
+						   'erlang':%% Line 784
+							    'max'
+						  (%% Line 784
+						   0, %% Line 784
+						      _16)
+					  in  %% Line 784
+					      case ( _0
+						     -| [{'function',{'do_cleanup_expired_tasks',1}}] ) of
+						<{'state',_37,_38}> when 'true' ->
+						    call 'erlang':'setelement'
+							(2, ( _0
+							      -| [{'function',{'do_cleanup_expired_tasks',1}}] ), _rec47)
+						( <( _39
+						     -| ['compiler_generated'] )> when 'true' ->
+						      ( primop 'match_fail'
+							    (( {( 'badrecord'
+								  -| ['compiler_generated'] ),( _0
+												-| [{'function',{'do_cleanup_expired_tasks',1}}] )}
+							       -| ['compiler_generated'] ))
+							-| ['compiler_generated'] )
+						  -| ['compiler_generated'] )
+					      end
+      -| [{'function',{'do_cleanup_expired_tasks',1}}] )
+'generate_task_id'/0 =
+    %% Line 787
+    ( fun () ->
+	  let <Unique> =
+	      call %% Line 788
+		   'erlang':%% Line 788
+			    'unique_integer'
+		  (%% Line 788
+		   ['positive'|['monotonic']])
+	  in  let <Time> =
+		  call %% Line 789
+		       'erlang':%% Line 789
+				'system_time'
+		      (%% Line 789
+		       'microsecond')
+	      in  %% Line 790
+		  #{( #<Unique>(64,1,'integer',['unsigned'|['big']])
+		      -| [{'segment',1}] ),
+		    ( #<Time>(64,1,'integer',['unsigned'|['big']])
+		      -| [{'segment',2}] )}#
+      -| [{'function',{'generate_task_id',0}}] )
+'format_task_for_api'/1 =
+    %% Line 793
+    ( fun (_0) ->
+	  ( case ( _0
+		   -| [{'function',{'format_task_for_api',1}}] ) of
+	      <{'mcp_task',%% Line 794
+			   Id,%% Line 795
+			      Status,%% Line 796
+				     Action,%% Line 797
+					    Metadata,_20,%% Line 798
+							 Error,%% Line 799
+							       CreatedAt,%% Line 800
+									 UpdatedAt,%% Line 801
+										   ExpiresAt,_21,_22,_23,_24,%% Line 802
+													     Progress,%% Line 803
+														      Total,_25,_26}> when 'true' ->
+		  let <_1> =
+		      apply %% Line 807
+			    'status_to_binary'/1
+			  (%% Line 807
+			   Status)
+		  in  let <Base> =
+			  ~{%% Line 806
+			   #{#<116>(8,1,'integer',['unsigned'|['big']]),
+			      #<97>(8,1,'integer',['unsigned'|['big']]),
+			      #<115>(8,1,'integer',['unsigned'|['big']]),
+			      #<107>(8,1,'integer',['unsigned'|['big']]),
+			      #<73>(8,1,'integer',['unsigned'|['big']]),
+			      #<100>(8,1,'integer',['unsigned'|['big']])}#=>Id,%% Line 807
+									       #{#<115>(8,1,'integer',['unsigned'|['big']]),
+										  #<116>(8,1,'integer',['unsigned'|['big']]),
+										  #<97>(8,1,'integer',['unsigned'|['big']]),
+										  #<116>(8,1,'integer',['unsigned'|['big']]),
+										  #<117>(8,1,'integer',['unsigned'|['big']]),
+										  #<115>(8,1,'integer',['unsigned'|['big']])}#=>_1,%% Line 808
+																   #{#<97>(8,1,'integer',['unsigned'|['big']]),
+																      #<99>(8,1,'integer',['unsigned'|['big']]),
+																      #<116>(8,1,'integer',['unsigned'|['big']]),
+																      #<105>(8,1,'integer',['unsigned'|['big']]),
+																      #<111>(8,1,'integer',['unsigned'|['big']]),
+																      #<110>(8,1,'integer',['unsigned'|['big']])}#=>Action,%% Line 809
+																							   #{#<99>(8,1,'integer',['unsigned'|['big']]),
+																							      #<114>(8,1,'integer',['unsigned'|['big']]),
+																							      #<101>(8,1,'integer',['unsigned'|['big']]),
+																							      #<97>(8,1,'integer',['unsigned'|['big']]),
+																							      #<116>(8,1,'integer',['unsigned'|['big']]),
+																							      #<101>(8,1,'integer',['unsigned'|['big']]),
+																							      #<100>(8,1,'integer',['unsigned'|['big']]),
+																							      #<65>(8,1,'integer',['unsigned'|['big']]),
+																							      #<116>(8,1,'integer',['unsigned'|['big']])}#=>CreatedAt,%% Line 810
+																														      #{#<117>(8,1,'integer',['unsigned'|['big']]),
+																															 #<112>(8,1,'integer',['unsigned'|['big']]),
+																															 #<100>(8,1,'integer',['unsigned'|['big']]),
+																															 #<97>(8,1,'integer',['unsigned'|['big']]),
+																															 #<116>(8,1,'integer',['unsigned'|['big']]),
+																															 #<101>(8,1,'integer',['unsigned'|['big']]),
+																															 #<100>(8,1,'integer',['unsigned'|['big']]),
+																															 #<65>(8,1,'integer',['unsigned'|['big']]),
+																															 #<116>(8,1,'integer',['unsigned'|['big']])}#=>UpdatedAt}~
+		      in  let <_4> =
+			      case %% Line 813
+				   Progress of
+				%% Line 814
+				<'undefined'> when 'true' ->
+				    Base
+				%% Line 815
+				<_27> when 'true' ->
+				    case <> of
+				      ( <>
+					    when call 'erlang':'is_map'
+						  (Base) ->
+					    ~{#{#<112>(8,1,'integer',['unsigned'|['big']]),
+						#<114>(8,1,'integer',['unsigned'|['big']]),
+						#<111>(8,1,'integer',['unsigned'|['big']]),
+						#<103>(8,1,'integer',['unsigned'|['big']]),
+						#<114>(8,1,'integer',['unsigned'|['big']]),
+						#<101>(8,1,'integer',['unsigned'|['big']]),
+						#<115>(8,1,'integer',['unsigned'|['big']]),
+						#<115>(8,1,'integer',['unsigned'|['big']])}#=>Progress|Base}~
+					-| ['compiler_generated'] )
+				      ( <> when 'true' ->
+					    ( primop 'match_fail'
+						  ({'badmap',Base})
+					      -| [{'eval_failure','badmap'}] )
+					-| ['compiler_generated'] )
+				    end
+			      end
+			  in  let <_7> =
+				  case %% Line 818
+				       Total of
+				    %% Line 819
+				    <'undefined'> when 'true' ->
+					_4
+				    %% Line 820
+				    <_28> when 'true' ->
+					case <> of
+					  ( <>
+						when call 'erlang':'is_map'
+						      (_4) ->
+						~{#{#<116>(8,1,'integer',['unsigned'|['big']]),
+						    #<111>(8,1,'integer',['unsigned'|['big']]),
+						    #<116>(8,1,'integer',['unsigned'|['big']]),
+						    #<97>(8,1,'integer',['unsigned'|['big']]),
+						    #<108>(8,1,'integer',['unsigned'|['big']])}#=>Total|_4}~
+					    -| ['compiler_generated'] )
+					  ( <> when 'true' ->
+						( primop 'match_fail'
+						      ({'badmap',_4})
+						  -| [{'eval_failure','badmap'}] )
+					    -| ['compiler_generated'] )
+					end
+				  end
+			      in  let <_10> =
+				      case %% Line 823
+					   ExpiresAt of
+					%% Line 824
+					<'undefined'> when 'true' ->
+					    _7
+					%% Line 825
+					<_29> when 'true' ->
+					    case <> of
+					      ( <>
+						    when call 'erlang':'is_map'
+							  (_7) ->
+						    ~{#{#<101>(8,1,'integer',['unsigned'|['big']]),
+							#<120>(8,1,'integer',['unsigned'|['big']]),
+							#<112>(8,1,'integer',['unsigned'|['big']]),
+							#<105>(8,1,'integer',['unsigned'|['big']]),
+							#<114>(8,1,'integer',['unsigned'|['big']]),
+							#<101>(8,1,'integer',['unsigned'|['big']]),
+							#<115>(8,1,'integer',['unsigned'|['big']]),
+							#<65>(8,1,'integer',['unsigned'|['big']]),
+							#<116>(8,1,'integer',['unsigned'|['big']])}#=>ExpiresAt|_7}~
+						-| ['compiler_generated'] )
+					      ( <> when 'true' ->
+						    ( primop 'match_fail'
+							  ({'badmap',_7})
+						      -| [{'eval_failure','badmap'}] )
+						-| ['compiler_generated'] )
+					    end
+				      end
+				  in  let <_13> =
+					  case %% Line 828
+					       call 'erlang':'map_size'
+						   (Metadata) of
+					    %% Line 829
+					    <0> when 'true' ->
+						_10
+					    %% Line 830
+					    <_30> when 'true' ->
+						case <> of
+						  ( <>
+							when call 'erlang':'is_map'
+							      (_10) ->
+							~{#{#<109>(8,1,'integer',['unsigned'|['big']]),
+							    #<101>(8,1,'integer',['unsigned'|['big']]),
+							    #<116>(8,1,'integer',['unsigned'|['big']]),
+							    #<97>(8,1,'integer',['unsigned'|['big']]),
+							    #<100>(8,1,'integer',['unsigned'|['big']]),
+							    #<97>(8,1,'integer',['unsigned'|['big']]),
+							    #<116>(8,1,'integer',['unsigned'|['big']]),
+							    #<97>(8,1,'integer',['unsigned'|['big']])}#=>Metadata|_10}~
+						    -| ['compiler_generated'] )
+						  ( <> when 'true' ->
+							( primop 'match_fail'
+							      ({'badmap',_10})
+							  -| [{'eval_failure','badmap'}] )
+						    -| ['compiler_generated'] )
+						end
+					  end
+				      in  %% Line 833
+					  case Error of
+					    %% Line 834
+					    <'undefined'> when 'true' ->
+						_13
+					    %% Line 835
+					    <{'mcp_error',Code,Msg,Data}> when 'true' ->
+						let <_15> =
+						    ~{%% Line 837
+						     #{#<99>(8,1,'integer',['unsigned'|['big']]),
+							#<111>(8,1,'integer',['unsigned'|['big']]),
+							#<100>(8,1,'integer',['unsigned'|['big']]),
+							#<101>(8,1,'integer',['unsigned'|['big']])}#=>Code,%% Line 838
+													   #{#<109>(8,1,'integer',['unsigned'|['big']]),
+													      #<101>(8,1,'integer',['unsigned'|['big']]),
+													      #<115>(8,1,'integer',['unsigned'|['big']]),
+													      #<115>(8,1,'integer',['unsigned'|['big']]),
+													      #<97>(8,1,'integer',['unsigned'|['big']]),
+													      #<103>(8,1,'integer',['unsigned'|['big']]),
+													      #<101>(8,1,'integer',['unsigned'|['big']])}#=>Msg,%% Line 839
+																				#{#<100>(8,1,'integer',['unsigned'|['big']]),
+																				   #<97>(8,1,'integer',['unsigned'|['big']]),
+																				   #<116>(8,1,'integer',['unsigned'|['big']]),
+																				   #<97>(8,1,'integer',['unsigned'|['big']])}#=>Data}~
+						in  %% Line 836
+						    case <> of
+						      ( <>
+							    when call 'erlang':'is_map'
+								  (_13) ->
+							    ~{#{#<101>(8,1,'integer',['unsigned'|['big']]),
+								#<114>(8,1,'integer',['unsigned'|['big']]),
+								#<114>(8,1,'integer',['unsigned'|['big']]),
+								#<111>(8,1,'integer',['unsigned'|['big']]),
+								#<114>(8,1,'integer',['unsigned'|['big']])}#=>_15|_13}~
+							-| ['compiler_generated'] )
+						      ( <> when 'true' ->
+							    ( primop 'match_fail'
+								  ({'badmap',_13})
+							      -| [{'eval_failure','badmap'}] )
+							-| ['compiler_generated'] )
+						    end
+					    ( <_16> when 'true' ->
+						  primop 'match_fail'
+						      ({'case_clause',_16})
+					      -| ['compiler_generated'] )
+					  end
+	      ( <_19> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_19}
+			     -| [{'function',{'format_task_for_api',1}}] ))
+		      -| [{'function',{'format_task_for_api',1}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'format_task_for_api',1}}] )
+      -| [{'function',{'format_task_for_api',1}}] )
+'status_to_binary'/1 =
+    %% Line 846
+    ( fun (_0) ->
+	  ( case ( _0
+		   -| [{'function',{'status_to_binary',1}}] ) of
+	      <'pending'> when 'true' ->
+		  #{#<112>(8,1,'integer',['unsigned'|['big']]),
+		    #<101>(8,1,'integer',['unsigned'|['big']]),
+		    #<110>(8,1,'integer',['unsigned'|['big']]),
+		    #<100>(8,1,'integer',['unsigned'|['big']]),
+		    #<105>(8,1,'integer',['unsigned'|['big']]),
+		    #<110>(8,1,'integer',['unsigned'|['big']]),
+		    #<103>(8,1,'integer',['unsigned'|['big']])}#
+	      %% Line 847
+	      <'processing'> when 'true' ->
+		  #{#<112>(8,1,'integer',['unsigned'|['big']]),
+		    #<114>(8,1,'integer',['unsigned'|['big']]),
+		    #<111>(8,1,'integer',['unsigned'|['big']]),
+		    #<99>(8,1,'integer',['unsigned'|['big']]),
+		    #<101>(8,1,'integer',['unsigned'|['big']]),
+		    #<115>(8,1,'integer',['unsigned'|['big']]),
+		    #<115>(8,1,'integer',['unsigned'|['big']]),
+		    #<105>(8,1,'integer',['unsigned'|['big']]),
+		    #<110>(8,1,'integer',['unsigned'|['big']]),
+		    #<103>(8,1,'integer',['unsigned'|['big']])}#
+	      %% Line 848
+	      <'completed'> when 'true' ->
+		  #{#<99>(8,1,'integer',['unsigned'|['big']]),
+		    #<111>(8,1,'integer',['unsigned'|['big']]),
+		    #<109>(8,1,'integer',['unsigned'|['big']]),
+		    #<112>(8,1,'integer',['unsigned'|['big']]),
+		    #<108>(8,1,'integer',['unsigned'|['big']]),
+		    #<101>(8,1,'integer',['unsigned'|['big']]),
+		    #<116>(8,1,'integer',['unsigned'|['big']]),
+		    #<101>(8,1,'integer',['unsigned'|['big']]),
+		    #<100>(8,1,'integer',['unsigned'|['big']])}#
+	      %% Line 849
+	      <'failed'> when 'true' ->
+		  #{#<102>(8,1,'integer',['unsigned'|['big']]),
+		    #<97>(8,1,'integer',['unsigned'|['big']]),
+		    #<105>(8,1,'integer',['unsigned'|['big']]),
+		    #<108>(8,1,'integer',['unsigned'|['big']]),
+		    #<101>(8,1,'integer',['unsigned'|['big']]),
+		    #<100>(8,1,'integer',['unsigned'|['big']])}#
+	      %% Line 850
+	      <'cancelled'> when 'true' ->
+		  #{#<99>(8,1,'integer',['unsigned'|['big']]),
+		    #<97>(8,1,'integer',['unsigned'|['big']]),
+		    #<110>(8,1,'integer',['unsigned'|['big']]),
+		    #<99>(8,1,'integer',['unsigned'|['big']]),
+		    #<101>(8,1,'integer',['unsigned'|['big']]),
+		    #<108>(8,1,'integer',['unsigned'|['big']]),
+		    #<108>(8,1,'integer',['unsigned'|['big']]),
+		    #<101>(8,1,'integer',['unsigned'|['big']]),
+		    #<100>(8,1,'integer',['unsigned'|['big']])}#
+	      ( <_1> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_1}
+			     -| [{'function',{'status_to_binary',1}}] ))
+		      -| [{'function',{'status_to_binary',1}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'status_to_binary',1}}] )
+      -| [{'function',{'status_to_binary',1}}] )
+'cancel_task_timer'/1 =
+    %% Line 853
+    ( fun (_0) ->
+	  ( case ( _0
+		   -| [{'function',{'cancel_task_timer',1}}] ) of
+	      <{'mcp_task',_2,_3,_4,_5,_6,_7,_8,_9,_10,_11,_12,_13,_14,_15,_16,_17,'undefined'}> when 'true' ->
+		  'ok'
+	      %% Line 854
+	      <{'mcp_task',_18,_19,_20,_21,_22,_23,_24,_25,_26,_27,_28,_29,_30,_31,_32,_33,TimerRef}> when 'true' ->
+		  do  %% Line 855
+		      call 'erlang':'cancel_timer'
+			  (TimerRef)
+		      ( letrec
+			    'recv$^0'/0 =
+				fun () ->
+				    let <_37,_35> =
+					primop 'recv_peek_message'
+					    ()
+				    in  case _37 of
+					  <'true'> when 'true' ->
+					      %% Line 856
+					      case _35 of
+						%% Line 857
+						<{'task_timeout',_34}> when 'true' ->
+						    do  primop 'remove_message'
+							    ()
+							'ok'
+						( <Other> when 'true' ->
+						      do  primop 'recv_next'
+							      ()
+							  ( apply 'recv$^0'/0
+								()
+							    -| ['dialyzer_ignore'] )
+						  -| ['compiler_generated','dialyzer_ignore'] )
+					      end
+					  <'false'> when 'true' ->
+					      let <_36> =
+						  primop 'recv_wait_timeout'
+						      (%% Line 858
+						       0)
+					      in  case _36 of
+						    <'true'> when 'true' ->
+							%% Line 859
+							'ok'
+						    ( <'false'> when 'true' ->
+							  ( apply 'recv$^0'/0
+								()
+							    -| ['dialyzer_ignore'] )
+						      -| ['dialyzer_ignore'] )
+						  end
+					end
+			in  ( apply 'recv$^0'/0
+				  ()
+			      -| ['dialyzer_ignore'] )
+			-| ['letrec_goto','no_inline'] )
+	      ( <_1> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_1}
+			     -| [{'function',{'cancel_task_timer',1}}] ))
+		      -| [{'function',{'cancel_task_timer',1}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'cancel_task_timer',1}}] )
+      -| [{'function',{'cancel_task_timer',1}}] )
+'cancel_timer'/1 =
+    %% Line 863
+    ( fun (_0) ->
+	  ( case ( _0
+		   -| [{'function',{'cancel_timer',1}}] ) of
+	      <'undefined'> when 'true' ->
+		  'ok'
+	      %% Line 864
+	      <TimerRef>
+		  when call 'erlang':'is_reference'
+			(( _0
+			   -| [{'function',{'cancel_timer',1}}] )) ->
+		  do  %% Line 865
+		      call 'erlang':'cancel_timer'
+			  (TimerRef)
+		      ( letrec
+			    'recv$^0'/0 =
+				fun () ->
+				    let <_5,_3> =
+					primop 'recv_peek_message'
+					    ()
+				    in  case _5 of
+					  <'true'> when 'true' ->
+					      %% Line 866
+					      case _3 of
+						%% Line 867
+						<{'task_timeout',_2}> when 'true' ->
+						    do  primop 'remove_message'
+							    ()
+							'ok'
+						( <Other> when 'true' ->
+						      do  primop 'recv_next'
+							      ()
+							  ( apply 'recv$^0'/0
+								()
+							    -| ['dialyzer_ignore'] )
+						  -| ['compiler_generated','dialyzer_ignore'] )
+					      end
+					  <'false'> when 'true' ->
+					      let <_4> =
+						  primop 'recv_wait_timeout'
+						      (%% Line 868
+						       0)
+					      in  case _4 of
+						    <'true'> when 'true' ->
+							%% Line 869
+							'ok'
+						    ( <'false'> when 'true' ->
+							  ( apply 'recv$^0'/0
+								()
+							    -| ['dialyzer_ignore'] )
+						      -| ['dialyzer_ignore'] )
+						  end
+					end
+			in  ( apply 'recv$^0'/0
+				  ()
+			      -| ['dialyzer_ignore'] )
+			-| ['letrec_goto','no_inline'] )
+	      ( <_1> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_1}
+			     -| [{'function',{'cancel_timer',1}}] ))
+		      -| [{'function',{'cancel_timer',1}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'cancel_timer',1}}] )
+      -| [{'function',{'cancel_timer',1}}] )
+'send_task_notification'/2 =
+    %% Line 873
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <'undefined',_X_TaskId> when 'true' ->
+		  'ok'
+	      %% Line 874
+	      <ClientPid,TaskId>
+		  when call 'erlang':'is_pid'
+			(ClientPid) ->
+		  %% Line 875
+		  case call 'ets':'lookup'
+			   ('erlmcp_tasks', TaskId) of
+		    %% Line 876
+		    <[Task = {'mcp_task',_8,_9,_10,_11,_12,_13,_14,_15,_16,_17,_18,_19,_20,_21,_22,_23,_24}|[]]> when 'true' ->
+			let <_2> =
+			    apply %% Line 881
+				  'format_task_for_api'/1
+				(%% Line 881
+				 Task)
+			in  let <_3> =
+				~{%% Line 881
+				 #{#<116>(8,1,'integer',['unsigned'|['big']]),
+				    #<97>(8,1,'integer',['unsigned'|['big']]),
+				    #<115>(8,1,'integer',['unsigned'|['big']]),
+				    #<107>(8,1,'integer',['unsigned'|['big']])}#=>_2}~
+			    in  let <Notification> =
+				    ~{%% Line 878
+				     #{#<106>(8,1,'integer',['unsigned'|['big']]),
+					#<115>(8,1,'integer',['unsigned'|['big']]),
+					#<111>(8,1,'integer',['unsigned'|['big']]),
+					#<110>(8,1,'integer',['unsigned'|['big']]),
+					#<114>(8,1,'integer',['unsigned'|['big']]),
+					#<112>(8,1,'integer',['unsigned'|['big']]),
+					#<99>(8,1,'integer',['unsigned'|['big']])}#=>#{#<50>(8,1,'integer',['unsigned'|['big']]),
+										    #<46>(8,1,'integer',['unsigned'|['big']]),
+										    #<48>(8,1,'integer',['unsigned'|['big']])}#,%% Line 879
+																#{#<109>(8,1,'integer',['unsigned'|['big']]),
+																   #<101>(8,1,'integer',['unsigned'|['big']]),
+																   #<116>(8,1,'integer',['unsigned'|['big']]),
+																   #<104>(8,1,'integer',['unsigned'|['big']]),
+																   #<111>(8,1,'integer',['unsigned'|['big']]),
+																   #<100>(8,1,'integer',['unsigned'|['big']])}#=>#{#<110>(8,1,'integer',['unsigned'|['big']]),
+																						#<111>(8,1,'integer',['unsigned'|['big']]),
+																						#<116>(8,1,'integer',['unsigned'|['big']]),
+																						#<105>(8,1,'integer',['unsigned'|['big']]),
+																						#<102>(8,1,'integer',['unsigned'|['big']]),
+																						#<105>(8,1,'integer',['unsigned'|['big']]),
+																						#<99>(8,1,'integer',['unsigned'|['big']]),
+																						#<97>(8,1,'integer',['unsigned'|['big']]),
+																						#<116>(8,1,'integer',['unsigned'|['big']]),
+																						#<105>(8,1,'integer',['unsigned'|['big']]),
+																						#<111>(8,1,'integer',['unsigned'|['big']]),
+																						#<110>(8,1,'integer',['unsigned'|['big']]),
+																						#<115>(8,1,'integer',['unsigned'|['big']]),
+																						#<47>(8,1,'integer',['unsigned'|['big']]),
+																						#<116>(8,1,'integer',['unsigned'|['big']]),
+																						#<97>(8,1,'integer',['unsigned'|['big']]),
+																						#<115>(8,1,'integer',['unsigned'|['big']]),
+																						#<107>(8,1,'integer',['unsigned'|['big']]),
+																						#<115>(8,1,'integer',['unsigned'|['big']]),
+																						#<47>(8,1,'integer',['unsigned'|['big']]),
+																						#<115>(8,1,'integer',['unsigned'|['big']]),
+																						#<116>(8,1,'integer',['unsigned'|['big']]),
+																						#<97>(8,1,'integer',['unsigned'|['big']]),
+																						#<116>(8,1,'integer',['unsigned'|['big']]),
+																						#<117>(8,1,'integer',['unsigned'|['big']]),
+																						#<115>(8,1,'integer',['unsigned'|['big']])}#,%% Line 880
+																											     #{#<112>(8,1,'integer',['unsigned'|['big']]),
+																												#<97>(8,1,'integer',['unsigned'|['big']]),
+																												#<114>(8,1,'integer',['unsigned'|['big']]),
+																												#<97>(8,1,'integer',['unsigned'|['big']]),
+																												#<109>(8,1,'integer',['unsigned'|['big']]),
+																												#<115>(8,1,'integer',['unsigned'|['big']])}#=>_3}~
+				in  do  %% Line 884
+					call 'erlang':'!'
+					    (ClientPid, {'mcp_notification',Notification})
+					%% Line 885
+					'ok'
+		    %% Line 886
+		    <[]> when 'true' ->
+			%% Line 887
+			'ok'
+		    ( <_5> when 'true' ->
+			  primop 'match_fail'
+			      ({'case_clause',_5})
+		      -| ['compiler_generated'] )
+		  end
+	      ( <_7,_6> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_7,_6}
+			     -| [{'function',{'send_task_notification',2}}] ))
+		      -| [{'function',{'send_task_notification',2}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'send_task_notification',2}}] )
+      -| [{'function',{'send_task_notification',2}}] )
+'schedule_cleanup'/0 =
+    %% Line 891
+    ( fun () ->
+	  let <_0> =
+	      call %% Line 892
+		   'erlang':%% Line 892
+			    'self'
+		  ()
+	  in  %% Line 892
+	      call 'erlang':'send_after'
+		  (300000, _0, 'cleanup_expired_tasks')
+      -| [{'function',{'schedule_cleanup',0}}] )
+'do_create_task_with_options'/5 =
+    %% Line 895
+    ( fun (_0,_1,_2,_3,_4) ->
+	  let <TaskId> =
+	      apply %% Line 896
+		    'generate_task_id'/0
+		  ()
+	  in  let <TimeoutMs> =
+		  case _2 of
+		    %% Line 897
+		    ( <~{( #{#<116>(8,1,'integer',['unsigned'|['big']]),
+			     #<105>(8,1,'integer',['unsigned'|['big']]),
+			     #<109>(8,1,'integer',['unsigned'|['big']]),
+			     #<101>(8,1,'integer',['unsigned'|['big']]),
+			     #<111>(8,1,'integer',['unsigned'|['big']]),
+			     #<117>(8,1,'integer',['unsigned'|['big']]),
+			     #<116>(8,1,'integer',['unsigned'|['big']])}#
+			   -| ['compiler_generated'] ):=( _59
+						       -| ['compiler_generated'] )}~> when 'true' ->
+			  ( _59
+			    -| ['compiler_generated'] )
+		      -| ['compiler_generated'] )
+		    %% Line 897
+		    ( <~{}~> when 'true' ->
+			  300000
+		      -| ['compiler_generated'] )
+		    %% Line 897
+		    ( <( _60
+			 -| ['compiler_generated'] )> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmap',( _60
+					   -| ['compiler_generated'] )})
+		      -| ['compiler_generated'] )
+		  end
+	      in  let <_7> =
+		      case _2 of
+			%% Line 900
+			( <~{( #{#<101>(8,1,'integer',['unsigned'|['big']]),
+				 #<120>(8,1,'integer',['unsigned'|['big']]),
+				 #<112>(8,1,'integer',['unsigned'|['big']]),
+				 #<105>(8,1,'integer',['unsigned'|['big']]),
+				 #<114>(8,1,'integer',['unsigned'|['big']]),
+				 #<101>(8,1,'integer',['unsigned'|['big']]),
+				 #<115>(8,1,'integer',['unsigned'|['big']]),
+				 #<65>(8,1,'integer',['unsigned'|['big']]),
+				 #<102>(8,1,'integer',['unsigned'|['big']]),
+				 #<116>(8,1,'integer',['unsigned'|['big']]),
+				 #<101>(8,1,'integer',['unsigned'|['big']]),
+				 #<114>(8,1,'integer',['unsigned'|['big']])}#
+			       -| ['compiler_generated'] ):=( _62
+							   -| ['compiler_generated'] )}~> when 'true' ->
+			      ( _62
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+			%% Line 900
+			( <~{}~> when 'true' ->
+			      3600000
+			  -| ['compiler_generated'] )
+			%% Line 900
+			( <( _63
+			     -| ['compiler_generated'] )> when 'true' ->
+			      primop 'match_fail'
+				  ({'badmap',( _63
+					       -| ['compiler_generated'] )})
+			  -| ['compiler_generated'] )
+		      end
+		  in  let <TTL> =
+			  case _3 of
+			    %% Line 900
+			    ( <~{( 'ttl_ms'
+				   -| ['compiler_generated'] ):=( _65
+							       -| ['compiler_generated'] )}~> when 'true' ->
+				  ( _65
+				    -| ['compiler_generated'] )
+			      -| ['compiler_generated'] )
+			    %% Line 900
+			    ( <~{}~> when 'true' ->
+				  _7
+			      -| ['compiler_generated'] )
+			    %% Line 900
+			    ( <( _66
+				 -| ['compiler_generated'] )> when 'true' ->
+				  primop 'match_fail'
+				      ({'badmap',( _66
+						   -| ['compiler_generated'] )})
+			      -| ['compiler_generated'] )
+			  end
+		      in  let <_9> =
+			      call %% Line 901
+				   'erlang':%% Line 901
+					    'system_time'
+				  (%% Line 901
+				   'millisecond')
+			  in  let <ExpiresAt> =
+				  call %% Line 901
+				       'erlang':%% Line 901
+						'+'
+				      (%% Line 901
+				       _9, %% Line 901
+					   TTL)
+			      in  let <_12> =
+				      case %% Line 903
+					   ( case _2 of
+					       ( <~{( #{#<112>(8,1,'integer',['unsigned'|['big']]),
+							#<114>(8,1,'integer',['unsigned'|['big']]),
+							#<111>(8,1,'integer',['unsigned'|['big']]),
+							#<103>(8,1,'integer',['unsigned'|['big']]),
+							#<114>(8,1,'integer',['unsigned'|['big']]),
+							#<101>(8,1,'integer',['unsigned'|['big']]),
+							#<115>(8,1,'integer',['unsigned'|['big']]),
+							#<115>(8,1,'integer',['unsigned'|['big']]),
+							#<84>(8,1,'integer',['unsigned'|['big']]),
+							#<111>(8,1,'integer',['unsigned'|['big']]),
+							#<107>(8,1,'integer',['unsigned'|['big']]),
+							#<101>(8,1,'integer',['unsigned'|['big']]),
+							#<110>(8,1,'integer',['unsigned'|['big']])}#
+						      -| ['compiler_generated'] ):=( _68
+										  -| ['compiler_generated'] )}~> when 'true' ->
+						     ( _68
+						       -| ['compiler_generated'] )
+						 -| ['compiler_generated'] )
+					       ( <~{}~> when 'true' ->
+						     'undefined'
+						 -| ['compiler_generated'] )
+					       ( <( _69
+						    -| ['compiler_generated'] )> when 'true' ->
+						     primop 'match_fail'
+							 ({'badmap',( _69
+								      -| ['compiler_generated'] )})
+						 -| ['compiler_generated'] )
+					     end
+					     -| ['compiler_generated'] ) of
+					%% Line 904
+					<'undefined'> when 'true' ->
+					    'undefined'
+					%% Line 905
+					<_35> when 'true' ->
+					    call 'erlmcp_progress':'generate_token'
+						()
+				      end
+				  in  let <Now> =
+					  call %% Line 908
+					       'erlang':%% Line 908
+							'system_time'
+					      (%% Line 908
+					       'millisecond')
+				      in  let <Task> =
+					      {%% Line 910
+					       'mcp_task',%% Line 911
+							  TaskId,%% Line 912
+								 'pending',_1,_2,%% Line 915
+										 'undefined',%% Line 916
+											     'undefined',%% Line 917
+													 Now,%% Line 918
+													     Now,%% Line 919
+														 ExpiresAt,_0,%% Line 921
+															      'undefined',%% Line 922
+																	  'undefined',%% Line 903
+																		      _12,%% Line 924
+																			  'undefined',%% Line 925
+																				      'undefined',%% Line 926
+																						  TimeoutMs,%% Line 927
+																							    'undefined'}
+					  in  do  %% Line 930
+						  call 'ets':'insert'
+						      ('erlmcp_tasks', Task)
+						  let <_16> =
+						      call %% Line 932
+							   'erlang':%% Line 932
+								    'self'
+							  ()
+						  in  let <TimerRef> =
+							  call %% Line 932
+							       'erlang':%% Line 932
+									'send_after'
+							      (%% Line 932
+							       TimeoutMs, %% Line 932
+									  _16, %% Line 932
+									       {'task_timeout',TaskId})
+						      in  let <_20> =
+							      call %% Line 933
+								   'erlang':%% Line 933
+									    'setelement'
+								  (%% Line 933
+								   18, %% Line 933
+								       Task, %% Line 933
+									     TimerRef)
+							  in  do  %% Line 934
+								  call 'ets':'insert'
+								      ('erlmcp_tasks', _20)
+								  do  %% Line 936
+								      case _12 of
+									%% Line 937
+									<'undefined'> when 'true' ->
+									    'ok'
+									%% Line 938
+									<_X_Token> when 'true' ->
+									    let <_22> =
+										#{%% Line 939
+										  #<1711443258754766308023339323767328>(112,1,'integer',['unsigned'|['big']]),
+										  %% Line 939
+										  ( #<TaskId>(( 'all'
+												-| ['compiler_generated'] ),8,'binary',['unsigned'|['big']])
+										    -| [{'segment',2}] )}#
+									    in  %% Line 939
+										call 'erlmcp_progress':'create'
+										    (_0, _22)
+								      end
+								      do  %% Line 942
+									  call 'logger':'debug'
+									      ([67|[114|[101|[97|[116|[101|[100|[32|[116|[97|[115|[107|[32|[126|[112|[32|[102|[111|[114|[32|[99|[108|[105|[101|[110|[116|[32|[126|[112|[32|[119|[105|[116|[104|[32|[84|[84|[76|[32|[126|[112|[32|[109|[115]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [TaskId|[_0|[TTL|[]]]])
+									  do  %% Line 943
+									      apply 'send_task_notification'/2
+										  (_0, TaskId)
+									      let <_25> =
+										  case _4 of
+										    %% Line 945
+										    ( <( {'state',_rec53,_54}
+											 -| ['compiler_generated'] )> when 'true' ->
+											  _rec53
+										      -| ['compiler_generated'] )
+										    %% Line 945
+										    ( <_rec53> when 'true' ->
+											  ( primop 'match_fail'
+												(( {( 'badrecord'
+												      -| ['compiler_generated'] ),_rec53}
+												   -| ['compiler_generated'] ))
+											    -| ['compiler_generated'] )
+										      -| ['compiler_generated'] )
+										  end
+									      in  let <_rec51> =
+										      call %% Line 945
+											   'erlang':%% Line 945
+												    '+'
+											  (%% Line 945
+											   _25, %% Line 945
+												1)
+										  in  let <_29> =
+											  case _4 of
+											    %% Line 945
+											    <{'state',_55,_56}> when 'true' ->
+												call 'erlang':'setelement'
+												    (2, _4, _rec51)
+											    %% Line 945
+											    ( <( _57
+												 -| ['compiler_generated'] )> when 'true' ->
+												  ( primop 'match_fail'
+													(( {( 'badrecord'
+													      -| ['compiler_generated'] ),_4}
+													   -| ['compiler_generated'] ))
+												    -| ['compiler_generated'] )
+											      -| ['compiler_generated'] )
+											  end
+										      in  %% Line 945
+											  {{'ok',TaskId},_29}
+      -| [{'function',{'do_create_task_with_options',5}}] )
+'do_update_task'/3 =
+    %% Line 948
+    ( fun (_0,_1,_2) ->
+	  %% Line 949
+	  case call 'ets':'lookup'
+		   ('erlmcp_tasks', _1) of
+	    %% Line 950
+	    <[Task = {'mcp_task',_25,_26,_27,_28,_29,_30,_31,_32,_33,Pid,_34,_35,_36,_37,_38,_39,_40}|[]]>
+		when let <_3> =
+		      call 'erlang':'=:='
+			  (Pid, _0)
+		  in  let <_4> =
+			  call 'erlang':'=:='
+			      (Pid, 'undefined')
+		      in  call 'erlang':'or'
+			      (_3, _4) ->
+		%% Line 951
+		try
+		    let <TaskMap> =
+			apply %% Line 952
+			      'format_task_for_api'/1
+			    (%% Line 952
+			     Task)
+		    in  let <UpdatedTaskMap> =
+			    apply _2
+				(%% Line 953
+				 TaskMap)
+			in  let <_8> =
+				case %% Line 956
+				     Task of
+				  %% Line 956
+				  ( <( {'mcp_task',_41,_42,_43,_rec54,_44,_45,_46,_47,_48,_49,_50,_51,_52,_53,_54,_55,_56}
+				       -| ['compiler_generated'] )> when 'true' ->
+					_rec54
+				    -| ['compiler_generated'] )
+				  %% Line 956
+				  ( <_rec54> when 'true' ->
+					( primop 'match_fail'
+					      (( {( 'badrecord'
+						    -| ['compiler_generated'] ),_rec54}
+						 -| ['compiler_generated'] ))
+					  -| ['compiler_generated'] )
+				    -| ['compiler_generated'] )
+				end
+			    in  let <NewMetadata> =
+				    case %% Line 956
+					 UpdatedTaskMap of
+				      %% Line 956
+				      ( <~{( #{#<109>(8,1,'integer',['unsigned'|['big']]),
+					       #<101>(8,1,'integer',['unsigned'|['big']]),
+					       #<116>(8,1,'integer',['unsigned'|['big']]),
+					       #<97>(8,1,'integer',['unsigned'|['big']]),
+					       #<100>(8,1,'integer',['unsigned'|['big']]),
+					       #<97>(8,1,'integer',['unsigned'|['big']]),
+					       #<116>(8,1,'integer',['unsigned'|['big']]),
+					       #<97>(8,1,'integer',['unsigned'|['big']])}#
+					     -| ['compiler_generated'] ):=( _95
+									 -| ['compiler_generated'] )}~> when 'true' ->
+					    ( _95
+					      -| ['compiler_generated'] )
+					-| ['compiler_generated'] )
+				      %% Line 956
+				      ( <~{}~> when 'true' ->
+					    _8
+					-| ['compiler_generated'] )
+				      %% Line 956
+				      ( <( _96
+					   -| ['compiler_generated'] )> when 'true' ->
+					    primop 'match_fail'
+						({'badmap',( _96
+							     -| ['compiler_generated'] )})
+					-| ['compiler_generated'] )
+				    end
+				in  let <_rec55> =
+					call %% Line 960
+					     'erlang':%% Line 960
+						      'system_time'
+					    (%% Line 960
+					     'millisecond')
+				    in  let <_14> =
+					    case %% Line 958
+						 Task of
+					      %% Line 959
+					      <{'mcp_task',_57,_58,_59,_60,_61,_62,_63,_64,_65,_66,_67,_68,_69,_70,_71,_72,_73}> when 'true' ->
+						  let <_12> =
+						      call %% Line 960
+							   'erlang':%% Line 960
+								    'setelement'
+							  (%% Line 960
+							   9, Task, %% Line 960
+								    _rec55)
+						  in  call 'erlang':'setelement'
+							  (5, %% Line 960
+							      _12, NewMetadata)
+					      %% Line 959
+					      ( <( _74
+						   -| ['compiler_generated'] )> when 'true' ->
+						    ( primop 'match_fail'
+							  (( {( 'badrecord'
+								-| ['compiler_generated'] ),Task}
+							     -| ['compiler_generated'] ))
+						      -| ['compiler_generated'] )
+						-| ['compiler_generated'] )
+					    end
+					in  do  %% Line 962
+						call 'ets':'insert'
+						    ('erlmcp_tasks', _14)
+						%% Line 963
+						'ok'
+		of <_16> ->
+		    _16
+		catch <_19,_18,_17> ->
+		    do  %% Line 966
+			call 'logger':'error'
+			    ([85|[112|[100|[97|[116|[101|[32|[102|[117|[110|[99|[116|[105|[111|[110|[32|[102|[97|[105|[108|[101|[100|[32|[102|[111|[114|[32|[116|[97|[115|[107|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_1|[_18|[]]])
+			%% Line 967
+			{'error','invalid_update_function'}
+	    %% Line 969
+	    <[{'mcp_task',_77,_78,_79,_80,_81,_82,_83,_84,_85,_86,_87,_88,_89,_90,_91,_92,_93}|[]]> when 'true' ->
+		%% Line 970
+		{'error',#{#<84>(8,1,'integer',['unsigned'|['big']]),
+			   #<97>(8,1,'integer',['unsigned'|['big']]),
+			   #<115>(8,1,'integer',['unsigned'|['big']]),
+			   #<107>(8,1,'integer',['unsigned'|['big']]),
+			   #<32>(8,1,'integer',['unsigned'|['big']]),
+			   #<110>(8,1,'integer',['unsigned'|['big']]),
+			   #<111>(8,1,'integer',['unsigned'|['big']]),
+			   #<116>(8,1,'integer',['unsigned'|['big']]),
+			   #<32>(8,1,'integer',['unsigned'|['big']]),
+			   #<102>(8,1,'integer',['unsigned'|['big']]),
+			   #<111>(8,1,'integer',['unsigned'|['big']]),
+			   #<117>(8,1,'integer',['unsigned'|['big']]),
+			   #<110>(8,1,'integer',['unsigned'|['big']]),
+			   #<100>(8,1,'integer',['unsigned'|['big']])}#}
+	    %% Line 971
+	    <[]> when 'true' ->
+		%% Line 972
+		{'error',-32081}
+	    ( <_21> when 'true' ->
+		  primop 'match_fail'
+		      ({'case_clause',_21})
+	      -| ['compiler_generated'] )
+	  end
+      -| [{'function',{'do_update_task',3}}] )
+'do_update_status'/3 =
+    %% Line 976
+    ( fun (_0,_1,_2) ->
+	  let <_4> =
+	      case _2 of
+		%% Line 978
+		<#{#<31636722197032551>(56,1,'integer',['unsigned'|['big']])}#> when 'true' ->
+		    'pending'
+		%% Line 979
+		<#{#<531016001276310589107815>(80,1,'integer',['unsigned'|['big']])}#> when 'true' ->
+		    'processing'
+		%% Line 980
+		<#{#<1834256860618777978212>(72,1,'integer',['unsigned'|['big']])}#> when 'true' ->
+		    'completed'
+		%% Line 981
+		<#{#<112568566572388>(48,1,'integer',['unsigned'|['big']])}#> when 'true' ->
+		    'failed'
+		%% Line 982
+		<#{#<1833248321453624681828>(72,1,'integer',['unsigned'|['big']])}#> when 'true' ->
+		    'cancelled'
+		%% Line 983
+		<_21> when 'true' ->
+		    'undefined'
+	      end
+	  in  %% Line 986
+	      case _4 of
+		%% Line 987
+		<'undefined'> when 'true' ->
+		    %% Line 988
+		    {'error',-32086}
+		%% Line 989
+		<_22> when 'true' ->
+		    %% Line 990
+		    case call 'ets':'lookup'
+			     ('erlmcp_tasks', _1) of
+		      %% Line 991
+		      <[Task = {'mcp_task',_23,_24,_25,_26,_27,_28,_29,_30,_31,Pid,_32,_33,_34,_35,_36,_37,_38}|[]]>
+			  when let <_7> =
+				call 'erlang':'=:='
+				    (Pid, _0)
+			    in  let <_8> =
+				    call 'erlang':'=:='
+					(Pid, 'undefined')
+				in  call 'erlang':'or'
+					(_7, _8) ->
+			  let <_rec57> =
+			      call %% Line 994
+				   'erlang':%% Line 994
+					    'system_time'
+				  (%% Line 994
+				   'millisecond')
+			  in  let <_13> =
+				  case %% Line 992
+				       Task of
+				    %% Line 993
+				    <{'mcp_task',_39,_40,_41,_42,_43,_44,_45,_46,_47,_48,_49,_50,_51,_52,_53,_54,_55}> when 'true' ->
+					let <_11> =
+					    call %% Line 994
+						 'erlang':%% Line 994
+							  'setelement'
+						(%% Line 994
+						 9, Task, %% Line 994
+							  _rec57)
+					in  call 'erlang':'setelement'
+						(3, %% Line 994
+						    _11, _4)
+				    %% Line 993
+				    ( <( _56
+					 -| ['compiler_generated'] )> when 'true' ->
+					  ( primop 'match_fail'
+						(( {( 'badrecord'
+						      -| ['compiler_generated'] ),Task}
+						   -| ['compiler_generated'] ))
+					    -| ['compiler_generated'] )
+				      -| ['compiler_generated'] )
+				  end
+			      in  do  %% Line 996
+				      call 'ets':'insert'
+					  ('erlmcp_tasks', _13)
+				      do  %% Line 997
+					  apply 'send_task_notification'/2
+					      (_0, _1)
+					  %% Line 998
+					  'ok'
+		      %% Line 999
+		      <[{'mcp_task',_57,_58,_59,_60,_61,_62,_63,_64,_65,_66,_67,_68,_69,_70,_71,_72,_73}|[]]> when 'true' ->
+			  %% Line 1000
+			  {'error',#{#<84>(8,1,'integer',['unsigned'|['big']]),
+				     #<97>(8,1,'integer',['unsigned'|['big']]),
+				     #<115>(8,1,'integer',['unsigned'|['big']]),
+				     #<107>(8,1,'integer',['unsigned'|['big']]),
+				     #<32>(8,1,'integer',['unsigned'|['big']]),
+				     #<110>(8,1,'integer',['unsigned'|['big']]),
+				     #<111>(8,1,'integer',['unsigned'|['big']]),
+				     #<116>(8,1,'integer',['unsigned'|['big']]),
+				     #<32>(8,1,'integer',['unsigned'|['big']]),
+				     #<102>(8,1,'integer',['unsigned'|['big']]),
+				     #<111>(8,1,'integer',['unsigned'|['big']]),
+				     #<117>(8,1,'integer',['unsigned'|['big']]),
+				     #<110>(8,1,'integer',['unsigned'|['big']]),
+				     #<100>(8,1,'integer',['unsigned'|['big']])}#}
+		      %% Line 1001
+		      <[]> when 'true' ->
+			  %% Line 1002
+			  {'error',-32081}
+		      ( <_16> when 'true' ->
+			    primop 'match_fail'
+				({'case_clause',_16})
+			-| ['compiler_generated'] )
+		    end
+	      end
+      -| [{'function',{'do_update_status',3}}] )
+'do_cleanup_expired_tasks_with_count'/1 =
+    %% Line 1007
+    ( fun (_0) ->
+	  let <Now> =
+	      call %% Line 1008
+		   'erlang':%% Line 1008
+			    'system_time'
+		  (%% Line 1008
+		   'millisecond')
+	  in  let <_9> =
+		  fun (_6,_5) ->
+		      %% Line 1011
+		      case <_6,_5> of
+			<{'mcp_task',Id,Status,_23,_24,_25,_26,_27,_28,Expires,_29,_30,_31,_32,_33,_34,_35,_36},Acc> when 'true' ->
+			    %% Line 1012
+			    case Status of
+			      %% Line 1013
+			      <'completed'> when 'true' ->
+				  %% Line 1014
+				  case call 'erlang':'=<'
+					   (Expires, Now) of
+				    %% Line 1015
+				    <'true'> when 'true' ->
+					[Id|Acc]
+				    %% Line 1016
+				    <'false'> when 'true' ->
+					Acc
+				  end
+			      %% Line 1018
+			      <'failed'> when 'true' ->
+				  %% Line 1019
+				  case call 'erlang':'=<'
+					   (Expires, Now) of
+				    %% Line 1020
+				    <'true'> when 'true' ->
+					[Id|Acc]
+				    %% Line 1021
+				    <'false'> when 'true' ->
+					Acc
+				  end
+			      %% Line 1023
+			      <_37> when 'true' ->
+				  %% Line 1024
+				  Acc
+			    end
+			( <_8,_7> when 'true' ->
+			      primop 'match_fail'
+				  ({'function_clause',_8,_7})
+			  -| ['compiler_generated'] )
+		      end
+	      in  let <ExpiredTasks> =
+		      call %% Line 1010
+			   'ets':%% Line 1010
+				 'foldl'
+			  (%% Line 1011
+			   _9, %% Line 1027
+			       [], %% Line 1028
+				   'erlmcp_tasks')
+		  in  let <_13> =
+			  fun (_11) ->
+			      do  %% Line 1033
+				  call 'ets':'delete'
+				      ('erlmcp_tasks', _11)
+				  %% Line 1034
+				  call 'logger':'debug'
+				      ([67|[108|[101|[97|[110|[101|[100|[32|[117|[112|[32|[101|[120|[112|[105|[114|[101|[100|[32|[116|[97|[115|[107|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]], [_11|[]])
+		      in  do  %% Line 1031
+			      call 'lists':'foreach'
+				  (%% Line 1032
+				   _13, %% Line 1036
+					ExpiredTasks)
+			      let <Count> =
+				  call %% Line 1039
+				       'erlang':%% Line 1039
+						'length'
+				      (%% Line 1039
+				       ExpiredTasks)
+			      in  let <_16> =
+				      case ( _0
+					     -| [{'function',{'do_cleanup_expired_tasks_with_count',1}}] ) of
+					%% Line 1040
+					( <( {'state',_rec61,_38}
+					     -| ['compiler_generated'] )> when 'true' ->
+					      _rec61
+					  -| ['compiler_generated'] )
+					%% Line 1040
+					( <_rec61> when 'true' ->
+					      ( primop 'match_fail'
+						    (( {( 'badrecord'
+							  -| ['compiler_generated'] ),_rec61}
+						       -| ['compiler_generated'] ))
+						-| ['compiler_generated'] )
+					  -| ['compiler_generated'] )
+				      end
+				  in  let <_17> =
+					  call %% Line 1040
+					       'erlang':%% Line 1040
+							'-'
+					      (%% Line 1040
+					       _16, %% Line 1040
+						    Count)
+				      in  let <_rec59> =
+					      call %% Line 1040
+						   'erlang':%% Line 1040
+							    'max'
+						  (%% Line 1040
+						   0, %% Line 1040
+						      _17)
+					  in  let <_21> =
+						  case ( _0
+							 -| [{'function',{'do_cleanup_expired_tasks_with_count',1}}] ) of
+						    %% Line 1040
+						    <{'state',_39,_40}> when 'true' ->
+							call 'erlang':'setelement'
+							    (2, ( _0
+								  -| [{'function',{'do_cleanup_expired_tasks_with_count',1}}] ), _rec59)
+						    %% Line 1040
+						    ( <( _41
+							 -| ['compiler_generated'] )> when 'true' ->
+							  ( primop 'match_fail'
+								(( {( 'badrecord'
+								      -| ['compiler_generated'] ),( _0
+												    -| [{'function',{'do_cleanup_expired_tasks_with_count',1}}] )}
+								   -| ['compiler_generated'] ))
+							    -| ['compiler_generated'] )
+						      -| ['compiler_generated'] )
+						  end
+					      in  %% Line 1040
+						  {'ok',Count,_21}
+      -| [{'function',{'do_cleanup_expired_tasks_with_count',1}}] )
+'module_info'/0 =
+    ( fun () ->
+	  call 'erlang':'get_module_info'
+	      ('erlmcp_tasks')
+      -| [{'function',{'module_info',0}}] )
+'module_info'/1 =
+    ( fun (_0) ->
+	  call 'erlang':'get_module_info'
+	      ('erlmcp_tasks', ( _0
+				 -| [{'function',{'module_info',1}}] ))
+      -| [{'function',{'module_info',1}}] )
+end

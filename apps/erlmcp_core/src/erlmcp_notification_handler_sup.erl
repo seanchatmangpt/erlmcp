@@ -37,10 +37,13 @@ init([]) ->
         period => 60
     },
 
+    %% CRITICAL FIX: For simple_one_for_one, start args MUST be a list.
+    %% The args passed to start_handler/3 are appended to this list.
+    %% We provide placeholder args that will be replaced.
     ChildSpecs = [
         #{
             id => notification_handler,
-            start => {erlmcp_notification_handler, start_link, []},
+            start => {erlmcp_notification_handler, start_link, [undefined, undefined, #{}]},
             restart => transient,
             shutdown => 5000,
             type => worker,

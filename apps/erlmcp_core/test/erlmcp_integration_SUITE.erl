@@ -17,7 +17,7 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp.hrl").
+-include("erlmcp.hrl").
 -include_lib("erlmcp_core/include/erlmcp_test_constants.hrl").
 
 %% Suite callbacks

@@ -1,0 +1,22 @@
+{application, erlmcp_observability,
+ [{description, "Observability layer for erlmcp - Metrics, Tracing, Monitoring"},
+  {vsn, "2.1.0"},
+  {registered, []},
+  {mod, {erlmcp_observability_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    sasl,
+    crypto,
+    inets,
+    opentelemetry_api,
+    opentelemetry,
+    opentelemetry_exporter,
+    cowboy,
+    erlmcp_core
+   ]},
+  {env,[]},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, []}
+ ]}.

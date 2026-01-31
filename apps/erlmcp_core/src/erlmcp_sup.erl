@@ -24,11 +24,17 @@ start_link() ->
 -spec start_server(atom(), #{}) -> {ok, pid()} | {error, term()}.
 start_server(ServerId, Config) ->
     case supervisor:start_child(erlmcp_server_sup, [ServerId, Config]) of
-        {ok, ServerPid} ->
+        {ok, ServerPid} when is_pid(ServerPid) ->
             % Register with registry
-            ok = erlmcp_registry:register_server(ServerId, ServerPid, Config),
-            {ok, ServerPid};
-        {error, _} = Error ->
+            case erlmcp_registry:register_server(ServerId, ServerPid, Config) of
+                ok ->
+                    {ok, ServerPid};
+                {error, Reason} ->
+                    % Registry failed - clean up server
+                    _ = supervisor:terminate_child(erlmcp_server_sup, ServerPid),
+                    {error, {registry_failed, Reason}}
+            end;
+        {error, Reason} = Error ->
             Error
     end.
 
@@ -37,7 +43,11 @@ stop_server(ServerId) ->
     case erlmcp_registry:find_server(ServerId) of
         {ok, {ServerPid, _Config}} ->
             ok = erlmcp_registry:unregister_server(ServerId),
-            supervisor:terminate_child(erlmcp_server_sup, ServerPid);
+            case supervisor:terminate_child(erlmcp_server_sup, ServerPid) of
+                ok -> ok;
+                {error, not_found} -> ok;  % Already terminated
+                {error, Reason} -> {error, Reason}
+            end;
         {error, not_found} ->
             ok
     end.
@@ -65,10 +75,10 @@ init([]) ->
     %% - TIER 3: Observability (isolated - failures don't affect core)
     %%
     %% Changes from v1.3.0:
-    %% - Merged erlmcp_registry_sup + erlmcp_infrastructure_sup → erlmcp_core_sup
+    %% - Merged erlmcp_registry_sup + erlmcp_infrastructure_sup -> erlmcp_core_sup
     %% - Removed erlmcp_transport_sup (moved to erlmcp_transports app)
-    %% - Renamed erlmcp_monitoring_sup → erlmcp_observability_sup
-    %% - Changed strategy: rest_for_one → one_for_one (no cascades)
+    %% - Renamed erlmcp_monitoring_sup -> erlmcp_observability_sup
+    %% - Changed strategy: rest_for_one -> one_for_one (no cascades)
 
     SupFlags = #{
         strategy => one_for_one,  % Each subsystem fails independently

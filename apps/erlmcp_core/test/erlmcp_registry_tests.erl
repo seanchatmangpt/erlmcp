@@ -1,6 +1,6 @@
 -module(erlmcp_registry_tests).
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp.hrl").
+-include("erlmcp.hrl").
 
 % Define the registry state record for testing
 -record(registry_state, {

@@ -228,7 +228,7 @@ calculate_memory_stats(State) ->
     SystemMem = erlang:memory(),
     Total = proplists:get_value(total, SystemMem, 0),
     CacheMemory = lists:foldl(
-        fun(_SpecId, Entry, Acc) -> Acc + maps:get(size_bytes, Entry, 0) end,
+        fun({_SpecId, Entry}, Acc) -> Acc + maps:get(size_bytes, Entry, 0) end,
         0, maps:to_list(State#state.spec_cache)
     ),
     UsedPercent = case State#state.memory_limit of

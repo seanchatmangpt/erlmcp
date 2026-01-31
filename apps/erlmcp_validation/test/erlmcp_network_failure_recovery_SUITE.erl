@@ -1178,7 +1178,7 @@ start_chaos_framework() ->
     case whereis(erlmcp_chaos) of
         undefined ->
             try
-                application:start(erlmcp_observability),
+                application:ensure_all_started(erlmcp_observability),
                 case erlmcp_chaos:start_link() of
                     {ok, Pid} -> {ok, Pid};
                     {error, {already_started, Pid}} -> {ok, Pid}
@@ -1204,7 +1204,7 @@ start_recovery_manager() ->
     case whereis(erlmcp_recovery_manager) of
         undefined ->
             try
-                application:start(erlmcp_observability),
+                application:ensure_all_started(erlmcp_observability),
                 case erlmcp_recovery_manager:start_link() of
                     {ok, Pid} -> {ok, Pid};
                     {error, {already_started, Pid}} -> {ok, Pid}

@@ -1,0 +1,15 @@
+%% Script to run batch4 database operations test
+cd("/Users/sac/erlmcp"),
+code:add_patha("_build/default/lib/erlmcp_core/ebin"),
+code:add_patha("_build/default/lib/erlmcp_observability/ebin"),
+code:add_patha("_build/default/lib/erlmcp_transports/ebin"),
+code:add_patha("_build/default/lib/jsx/ebin"),
+code:add_patha("_build/default/lib/jesse/ebin"),
+code:add_patha("_build/default/lib/gproc/ebin"),
+code:add_patha("_build/default/lib/opentelemetry_api/ebin"),
+code:add_patha("_build/default/lib/opentelemetry/ebin"),
+code:add_patha("_build/default/lib/ranch/ebin"),
+code:add_patha("_build/default/lib/cowboy/ebin"),
+c("apps/erlmcp_core/src/erlmcp_batch4_db_ops_test", [{i, "apps/erlmcp_core/include"}]),
+erlmcp_batch4_db_ops_test:run(),
+init:stop().

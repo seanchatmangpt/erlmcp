@@ -867,14 +867,19 @@ find_source_files(Module) when is_atom(Module) ->
     case code:where_is_file(filename:join(ModuleStr, ModuleStr ++ ".erl")) of
         non_existing ->
             %% Try to find the app source directory
-            case code:lib_dir(Module, src) of
-                {error, _} -> [];
-                SrcDir ->
-                    filelib:wildcard(filename:join(SrcDir, "*.erl"))
+            try
+                SrcDir = code:lib_dir(Module),
+                AppDir = filename:dirname(SrcDir),
+                SrcFile = filename:join([AppDir, "src", "*.erl"]),
+                filelib:wildcard(SrcFile)
+            catch
+                _:_ -> []
             end;
         Path ->
             [filename:dirname(Path)]
     end.
+
+-compile({nowarn_deprecated_function, [{code, lib_dir, 2}]}).
 
 %% @private Scan a file for security patterns
 scan_file_for_patterns(File, Patterns) when is_list(Patterns) ->
