@@ -404,17 +404,15 @@ handle_call(_Request, _From, State) ->
 
 %% Probabilistic cache warming
 handle_cast({warm_cache, Key, ValueFun}, State) ->
-    %% Async compute and cache (don't block)
-    spawn(fun() ->
-        try
-            Value = ValueFun(),
-            put(Key, Value, {ttl, State#state.default_ttl_seconds})
-        catch
-            Class:Reason:Stack ->
-                ?LOG_WARNING("Cache warm failed for ~p: ~p:~p~n~p",
-                            [Key, Class, Reason, Stack])
-        end
-    end),
+    %% Async compute and cache using supervised worker (replaces unsupervised spawn/1)
+    case erlmcp_cache_warmer_sup:start_warmer(Key, ValueFun, State#state.default_ttl_seconds) of
+        {ok, _Pid} ->
+            ?LOG_DEBUG("Started cache warmer for key ~p", [Key]),
+            ok;
+        {error, Reason} ->
+            ?LOG_WARNING("Failed to start cache warmer for ~p: ~p", [Key, Reason]),
+            ok
+    end,
     {noreply, State};
 
 handle_cast(_Msg, State) ->
