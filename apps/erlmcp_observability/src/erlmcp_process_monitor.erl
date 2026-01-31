@@ -30,7 +30,9 @@
          set_alert_thresholds/2,
          get_alert_thresholds/0,
          enable_auto_scaling/0,
-         disable_auto_scaling/0]).
+         disable_auto_scaling/0,
+         enumerate_processes/0,
+         categorize_processes/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -319,6 +321,152 @@ calculate_capacity_estimate(State) ->
             <<"Realistic single-node capacity is 40-50K concurrent connections. "
               "100K+ requires clustering + connection pooling.">>
     }.
+
+%%--------------------------------------------------------------------
+%% @doc Enumerate all processes with categorization (OTP 28 optimized)
+%%
+%% On OTP 28+: Uses erlang:processes_iterator/0 for O(1) memory allocation
+%% instead of O(N) list construction. This prevents heap exhaustion when
+%% enumerating systems with >100K processes.
+%%
+%% On OTP 25-27: Falls back to erlang:processes() with list construction.
+%%
+%% Returns {ok, Count} to reflect streaming nature on OTP 28.
+%% @end
+%%--------------------------------------------------------------------
+-spec enumerate_processes() -> {ok, non_neg_integer()}.
+
+-ifdef(OTP_28).
+%% OTP 28+ implementation using scalable process iterator
+%% Memory: O(1) instead of O(N) - no list allocation
+enumerate_processes() ->
+    Iterator = erlang:processes_iterator(),
+    enumerate_processes_iterator(Iterator, 0).
+
+%% @private Recursive helper for process iterator traversal
+%% Iterates through all processes without building a list in memory.
+%% Each call to process_next/1 returns next PID and updated iterator.
+-spec enumerate_processes_iterator(term(), non_neg_integer()) -> {ok, non_neg_integer()}.
+enumerate_processes_iterator(Iterator, Count) ->
+    case erlang:process_next(Iterator) of
+        {_Pid, NewIterator} ->
+            %% Process found, continue iteration
+            enumerate_processes_iterator(NewIterator, Count + 1);
+        none ->
+            %% No more processes, return total count
+            {ok, Count}
+    end.
+
+-else.
+%% OTP 25-27 fallback implementation
+%% Memory: O(N) - constructs full process list
+enumerate_processes() ->
+    Processes = erlang:processes(),
+    {ok, length(Processes)}.
+-endif.
+
+%%--------------------------------------------------------------------
+%% @doc Categorize processes by type (OTP 28 optimized)
+%%
+%% Categorizes all processes into erlmcp vs system processes.
+%% Uses iterator on OTP 28+ for memory efficiency.
+%%
+%% Returns: {ok, #{erlmcp_count => N, system_count => M}}
+%% @end
+%%--------------------------------------------------------------------
+-spec categorize_processes() -> {ok, map()}.
+
+-ifdef(OTP_28).
+%% OTP 28+ implementation using process iterator
+categorize_processes() ->
+    Iterator = erlang:processes_iterator(),
+    categorize_processes_iterator(Iterator, #{erlmcp_count => 0, system_count => 0}).
+
+%% @private Recursive iterator for process categorization
+-spec categorize_processes_iterator(term(), map()) -> {ok, map()}.
+categorize_processes_iterator(Iterator, Acc) ->
+    case erlang:process_next(Iterator) of
+        {Pid, NewIterator} ->
+            %% Categorize process based on registered name or initial call
+            Category = case process_info(Pid, [registered_name, initial_call]) of
+                undefined ->
+                    system;
+                Info ->
+                    case proplists:get_value(registered_name, Info) of
+                        Name when is_atom(Name) ->
+                            NameStr = atom_to_list(Name),
+                            case lists:prefix("erlmcp_", NameStr) of
+                                true -> erlmcp;
+                                false -> system
+                            end;
+                        undefined ->
+                            case proplists:get_value(initial_call, Info) of
+                                {Module, _, _} ->
+                                    ModStr = atom_to_list(Module),
+                                    case lists:prefix("erlmcp_", ModStr) of
+                                        true -> erlmcp;
+                                        false -> system
+                                    end;
+                                _ ->
+                                    system
+                            end
+                    end
+            end,
+
+            %% Update counter
+            NewAcc = case Category of
+                erlmcp ->
+                    maps:update_with(erlmcp_count, fun(N) -> N + 1 end, 1, Acc);
+                system ->
+                    maps:update_with(system_count, fun(N) -> N + 1 end, 1, Acc)
+            end,
+
+            categorize_processes_iterator(NewIterator, NewAcc);
+        none ->
+            {ok, Acc}
+    end.
+
+-else.
+%% OTP 25-27 fallback implementation
+categorize_processes() ->
+    Processes = erlang:processes(),
+
+    Result = lists:foldl(fun(Pid, Acc) ->
+        Category = case process_info(Pid, [registered_name, initial_call]) of
+            undefined ->
+                system;
+            Info ->
+                case proplists:get_value(registered_name, Info) of
+                    Name when is_atom(Name) ->
+                        NameStr = atom_to_list(Name),
+                        case lists:prefix("erlmcp_", NameStr) of
+                            true -> erlmcp;
+                            false -> system
+                        end;
+                    undefined ->
+                        case proplists:get_value(initial_call, Info) of
+                            {Module, _, _} ->
+                                ModStr = atom_to_list(Module),
+                                case lists:prefix("erlmcp_", ModStr) of
+                                    true -> erlmcp;
+                                    false -> system
+                                end;
+                            _ ->
+                                system
+                        end
+                end
+        end,
+
+        case Category of
+            erlmcp ->
+                maps:update_with(erlmcp_count, fun(N) -> N + 1 end, 1, Acc);
+            system ->
+                maps:update_with(system_count, fun(N) -> N + 1 end, 1, Acc)
+        end
+    end, #{erlmcp_count => 0, system_count => 0}, Processes),
+
+    {ok, Result}.
+-endif.
 
 %% @doc Generate recommendations based on current state
 -spec generate_recommendations(#state{}, non_neg_integer(), non_neg_integer()) -> list(binary()).

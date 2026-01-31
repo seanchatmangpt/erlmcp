@@ -35,6 +35,8 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_connection_monitor).
 
+-include("otp_compat.hrl").
+
 -behaviour(gen_statem).
 
 %% API
@@ -537,8 +539,76 @@ cleanup_connection(Pid, MonitorRef) ->
             ok
     end.
 
-%% @private Cleanup all orphaned connections
+%%--------------------------------------------------------------------
+%% @private Cleanup all orphaned connections (OTP 28 optimized)
+%%
+%% On OTP 28+: Builds a set of alive PIDs using process iterator (O(1) memory)
+%% then checks each connection against that set. Avoids N×is_process_alive/1 calls.
+%%
+%% On OTP 25-27: Falls back to checking is_process_alive/1 for each connection.
+%%
+%% Returns: Count of cleaned up connections
+%% @end
+%%--------------------------------------------------------------------
 -spec do_cleanup_connections() -> non_neg_integer().
+
+-ifdef(OTP_28).
+%% OTP 28+ implementation using process iterator
+do_cleanup_connections() ->
+    Now = erlang:monotonic_time(millisecond),
+    OrphanedThreshold = 5 * 60 * 1000,  % 5 minutes
+
+    %% Build set of alive PIDs using iterator (O(1) memory allocation)
+    AlivePids = build_alive_pids_set(),
+
+    %% Find orphaned connections by checking against alive set
+    Orphaned = ets:foldl(fun({Pid, Info}, Acc) ->
+        case sets:is_element(Pid, AlivePids) of
+            false ->
+                %% Process not alive
+                [Pid | Acc];
+            true ->
+                %% Process alive, check activity
+                LastActivity = maps:get(last_activity, Info, Now),
+                case (Now - LastActivity) > OrphanedThreshold of
+                    true -> [Pid | Acc];
+                    false -> Acc
+                end
+        end
+    end, [], ?ETS_TABLE),
+
+    %% Cleanup orphaned connections
+    lists:foreach(fun(Pid) ->
+        cleanup_connection(Pid, undefined)
+    end, Orphaned),
+
+    case length(Orphaned) of
+        0 -> ok;
+        Count -> logger:warning("Cleaned up ~p orphaned connections", [Count])
+    end,
+
+    length(Orphaned).
+
+%% @private Build set of all alive process IDs using iterator
+%% Memory: O(N) for set, but O(1) for iteration (no intermediate list)
+-spec build_alive_pids_set() -> sets:set(pid()).
+build_alive_pids_set() ->
+    Iterator = erlang:processes_iterator(),
+    build_alive_pids_set_iterator(Iterator, sets:new()).
+
+-spec build_alive_pids_set_iterator(term(), sets:set(pid())) -> sets:set(pid()).
+build_alive_pids_set_iterator(Iterator, Set) ->
+    case erlang:process_next(Iterator) of
+        {Pid, NewIterator} ->
+            %% Add PID to set and continue
+            build_alive_pids_set_iterator(NewIterator, sets:add_element(Pid, Set));
+        none ->
+            %% Iterator exhausted, return set
+            Set
+    end.
+
+-else.
+%% OTP 25-27 fallback implementation
 do_cleanup_connections() ->
     Now = erlang:monotonic_time(millisecond),
     OrphanedThreshold = 5 * 60 * 1000,  % 5 minutes
@@ -568,6 +638,7 @@ do_cleanup_connections() ->
     end,
 
     length(Orphaned).
+-endif.
 
 %% @private Check for connection leaks
 -spec do_check_leak(#data{}) -> {ok, #data{}} | {leak_detected, #data{}}.
