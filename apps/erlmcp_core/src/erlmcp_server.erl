@@ -59,7 +59,8 @@
     subscriptions = #{} :: #{binary() => sets:set(pid())},
     progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
     notifier_pid :: pid() | undefined,
-    initialized = false :: boolean(),
+    initialized = false :: boolean(),  % MCP protocol INITIALIZE state
+    async_init_done = false :: boolean(),  % Async notifier startup completion
     last_tools_notification :: integer() | undefined,  % Rate limiting: timestamp of last tools/list_changed notification
     roots = #{} :: map(),  % Track roots state for change detection
     notification_handlers = #{} :: #{binary() => {pid(), reference()}}  % Notification method -> {HandlerPid, MonitorRef}
@@ -204,14 +205,9 @@ stop(Server) ->
 init([ServerId, Capabilities]) ->
     process_flag(trap_exit, true),
 
-    % Start or get change notifier
-    NotifierPid = case erlmcp_change_notifier:start_link() of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
-    end,
-
-    % Monitor the notifier process
-    MonitorRef = erlang:monitor(process, NotifierPid),
+    % OTP Pattern: NEVER block init/1 - use async cast initialization
+    % Trigger async initialization via cast to avoid blocking supervisor
+    gen_server:cast(self(), async_init),
 
     % Start periodic GC for each server (Gap #10)
     start_periodic_gc(),
@@ -219,10 +215,12 @@ init([ServerId, Capabilities]) ->
     State = #state{
         server_id = ServerId,
         capabilities = Capabilities,
-        notifier_pid = NotifierPid
+        notifier_pid = undefined,  % Will be set in async_init
+        async_init_done = false,   % Will be set to true after async_init completes
+        initialized = false        % MCP protocol INITIALIZE state (separate from async init)
     },
 
-    logger:info("Starting MCP server ~p with capabilities: ~p", [ServerId, Capabilities]),
+    logger:info("Starting MCP server ~p with capabilities: ~p (async init pending)", [ServerId, Capabilities]),
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -502,6 +500,38 @@ handle_cast(notify_resources_changed, State) ->
 handle_cast(notify_tools_changed, State) ->
     NewState = maybe_send_tools_list_changed(State),
     {noreply, NewState};
+
+%% @doc Async initialization handler - performs blocking operations after init/1 returns.
+%% OTP Pattern: This prevents blocking the supervisor tree during process startup.
+%% Called via gen_server:cast(self(), async_init) from init/1.
+handle_cast(async_init, #state{server_id = ServerId, async_init_done = false} = State) ->
+    logger:debug("MCP server ~p: Starting async initialization", [ServerId]),
+
+    % Start or get change notifier (this is the blocking operation moved from init/1)
+    NotifierPid = case erlmcp_change_notifier:start_link() of
+        {ok, Pid} ->
+            logger:debug("MCP server ~p: Started new change notifier ~p", [ServerId, Pid]),
+            Pid;
+        {error, {already_started, Pid}} ->
+            logger:debug("MCP server ~p: Using existing change notifier ~p", [ServerId, Pid]),
+            Pid
+    end,
+
+    % Monitor the notifier process
+    _MonitorRef = erlang:monitor(process, NotifierPid),
+
+    NewState = State#state{
+        notifier_pid = NotifierPid,
+        async_init_done = true
+    },
+
+    logger:info("MCP server ~p: Async initialization complete, notifier_pid=~p", [ServerId, NotifierPid]),
+    {noreply, NewState};
+
+%% @doc Ignore duplicate async_init if already initialized (defensive programming)
+handle_cast(async_init, #state{async_init_done = true} = State) ->
+    logger:warning("MCP server ~p: Ignoring duplicate async_init (already initialized)", [State#state.server_id]),
+    {noreply, State};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.

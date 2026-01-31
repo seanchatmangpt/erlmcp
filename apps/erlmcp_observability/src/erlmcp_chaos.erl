@@ -394,59 +394,34 @@ start_experiment(ExperimentId, Config, State) ->
         state = running,
         start_time = erlang:timestamp()
     },
-    
-    % Start experiment worker
-    Parent = self(),
-    WorkerPid = spawn_link(fun() ->
-        run_experiment_worker(Parent, ExperimentId, ExperimentType, Config)
-    end),
-    
-    % Monitor worker
-    erlang:monitor(process, WorkerPid),
-    
-    % Set completion timer
-    TimerRef = erlang:send_after(Duration, self(), {experiment_complete, ExperimentId}),
-    
-    UpdatedExperiment = Experiment#experiment{
-        worker_pid = WorkerPid,
-        timer_ref = TimerRef
-    },
-    
-    NewExperiments = maps:put(ExperimentId, UpdatedExperiment, State#state.experiments),
-    
-    ?LOG_INFO("Started chaos experiment ~p: ~p", [ExperimentId, ExperimentType]),
-    
-    {ok, State#state{experiments = NewExperiments}}.
 
--spec run_experiment_worker(pid(), experiment_id(), experiment_type(), map()) -> ok.
-run_experiment_worker(Parent, ExperimentId, Type, Config) ->
-    try
-        case Type of
-            network_latency ->
-                erlmcp_chaos_network:inject_latency(Config);
-            network_partition ->
-                erlmcp_chaos_network:inject_partition(Config);
-            packet_loss ->
-                erlmcp_chaos_network:inject_packet_loss(Config);
-            kill_servers ->
-                erlmcp_chaos_process:kill_servers(Config);
-            kill_random ->
-                erlmcp_chaos_process:kill_random(Config);
-            resource_memory ->
-                erlmcp_chaos_resource:exhaust_memory(Config);
-            resource_cpu ->
-                erlmcp_chaos_resource:saturate_cpu(Config);
-            resource_disk ->
-                erlmcp_chaos_resource:fill_disk(Config);
-            clock_skew ->
-                erlmcp_chaos_process:inject_clock_skew(Config)
-        end
-    catch
-        Class:Reason:Stacktrace ->
-            ?LOG_ERROR("Experiment ~p failed: ~p:~p~n~p", 
-                      [ExperimentId, Class, Reason, Stacktrace]),
-            Parent ! {experiment_failed, ExperimentId, {Class, Reason}}
+    % Start experiment worker using supervised worker (replaces unsupervised spawn_link/1)
+    Parent = self(),
+    case erlmcp_chaos_worker_sup:start_worker(Parent, ExperimentId, ExperimentType, Config) of
+        {ok, WorkerPid} ->
+            % Monitor worker
+            erlang:monitor(process, WorkerPid),
+
+            % Set completion timer
+            TimerRef = erlang:send_after(Duration, self(), {experiment_complete, ExperimentId}),
+
+            UpdatedExperiment = Experiment#experiment{
+                worker_pid = WorkerPid,
+                timer_ref = TimerRef
+            },
+
+            NewExperiments = maps:put(ExperimentId, UpdatedExperiment, State#state.experiments),
+
+            ?LOG_INFO("Started chaos experiment ~p: ~p", [ExperimentId, ExperimentType]),
+
+            {ok, State#state{experiments = NewExperiments}};
+        {error, Reason} ->
+            ?LOG_ERROR("Failed to start chaos worker for ~p: ~p", [ExperimentId, Reason]),
+            {error, {worker_start_failed, Reason}}
     end.
+
+%% @doc Run experiment worker (moved to erlmcp_chaos_worker for proper supervision)
+%% This function is removed - chaos workers are now supervised via erlmcp_chaos_worker_sup
 
 -spec stop_experiment_internal(#experiment{}, #state{}) -> #state{}.
 stop_experiment_internal(Experiment, State) ->

@@ -125,6 +125,16 @@ init(_Opts) ->
             modules => [erlmcp_chaos]
         },
 
+        %% Chaos Worker Supervisor - Supervises chaos experiment workers
+        #{
+            id => erlmcp_chaos_worker_sup,
+            start => {erlmcp_chaos_worker_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_chaos_worker_sup]
+        },
+
         %% Process Monitor - Process count monitoring and capacity planning
         #{
             id => erlmcp_process_monitor,
