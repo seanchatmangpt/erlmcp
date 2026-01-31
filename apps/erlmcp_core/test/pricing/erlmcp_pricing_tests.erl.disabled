@@ -1,0 +1,356 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp_pricing_tests - Comprehensive pricing upgrade tests
+%%%
+%%% Chicago School TDD: Test observable behavior, not implementation
+%%% Tests use real erlmcp_pricing processes, never mocks
+%%%
+%%% Coverage: All public APIs, error paths, edge cases
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_pricing_tests).
+-include_lib("eunit/include/eunit.hrl").
+
+%%%-------------------------------------------------------------------
+%%% Test Fixtures
+%%%-------------------------------------------------------------------
+
+%% Setup before each test
+setup() ->
+    %% Clean ETS table before each test
+    catch ets:delete(erlmcp_pricing_subscription),
+    ok.
+
+%% Cleanup after each test
+cleanup(_) ->
+    %% Clean ETS table after each test
+    catch ets:delete(erlmcp_pricing_subscription),
+    ok.
+
+%%%-------------------------------------------------------------------
+%%% Test Generators
+%%%-------------------------------------------------------------------
+
+%% Wrapper for setup/cleanup
+pricing_test(TestFun) ->
+    fun() ->
+        setup(),
+        try
+            TestFun(),
+            cleanup(ok)
+        catch
+            Error:Reason ->
+                cleanup(ok),
+                erlang:error({Error, Reason})
+        end
+    end.
+
+%%%-------------------------------------------------------------------
+%%% get_tier/1 Tests
+%%%-------------------------------------------------------------------
+
+get_tier_free_test_() ->
+    pricing_test(fun() ->
+        Tier = erlmcp_pricing:get_tier(0),
+        ?assertEqual(0, maps:get(id, Tier)),
+        ?assertEqual(<<"Free">>, maps:get(name, Tier)),
+        ?assertEqual(0, maps:get(monthly_price, Tier)),
+        ?assertEqual(1000, maps:get(api_quota, Tier)),
+        ?assertEqual(100, maps:get(storage_quota, Tier)),
+        ?assert(lists:member(<<"1K API requests/month">>, maps:get(features, Tier)))
+    end).
+
+get_tier_pro_test_() ->
+    pricing_test(fun() ->
+        Tier = erlmcp_pricing:get_tier(1),
+        ?assertEqual(1, maps:get(id, Tier)),
+        ?assertEqual(<<"Pro">>, maps:get(name, Tier)),
+        ?assertEqual(2900, maps:get(monthly_price, Tier)),
+        ?assertEqual(100000, maps:get(api_quota, Tier)),
+        ?assertEqual(10000, maps:get(storage_quota, Tier)),
+        ?assert(lists:member(<<"10 GB storage">>, maps:get(features, Tier)))
+    end).
+
+get_tier_enterprise_test_() ->
+    pricing_test(fun() ->
+        Tier = erlmcp_pricing:get_tier(2),
+        ?assertEqual(2, maps:get(id, Tier)),
+        ?assertEqual(<<"Enterprise">>, maps:get(name, Tier)),
+        ?assertEqual(29900, maps:get(monthly_price, Tier)),
+        ?assertEqual(-1, maps:get(api_quota, Tier)),  %% unlimited
+        ?assertEqual(-1, maps:get(storage_quota, Tier)),  %% unlimited
+        ?assert(lists:member(<<"Unlimited storage">>, maps:get(features, Tier)))
+    end).
+
+%%%-------------------------------------------------------------------
+%%% can_upgrade/2 Tests
+%%%-------------------------------------------------------------------
+
+can_upgrade_free_to_pro_test_() ->
+    pricing_test(fun() ->
+        ?assert(erlmcp_pricing:can_upgrade(0, 1))
+    end).
+
+can_upgrade_free_to_enterprise_test_() ->
+    pricing_test(fun() ->
+        ?assert(erlmcp_pricing:can_upgrade(0, 2))
+    end).
+
+can_upgrade_pro_to_enterprise_test_() ->
+    pricing_test(fun() ->
+        ?assert(erlmcp_pricing:can_upgrade(1, 2))
+    end).
+
+can_upgrade_same_tier_test_() ->
+    pricing_test(fun() ->
+        ?assertNot(erlmcp_pricing:can_upgrade(0, 0)),
+        ?assertNot(erlmcp_pricing:can_upgrade(1, 1)),
+        ?assertNot(erlmcp_pricing:can_upgrade(2, 2))
+    end).
+
+can_upgrade_downgrade_forbidden_test_() ->
+    pricing_test(fun() ->
+        ?assertNot(erlmcp_pricing:can_upgrade(1, 0)),  %% pro to free
+        ?assertNot(erlmcp_pricing:can_upgrade(2, 1)),  %% enterprise to pro
+        ?assertNot(erlmcp_pricing:can_upgrade(2, 0))   %% enterprise to free
+    end).
+
+can_upgrade_invalid_tier_test_() ->
+    pricing_test(fun() ->
+        ?assertNot(erlmcp_pricing:can_upgrade(0, 3)),  %% invalid tier
+        ?assertNot(erlmcp_pricing:can_upgrade(1, 5)),
+        ?assertNot(erlmcp_pricing:can_upgrade(2, 10))
+    end).
+
+%%%-------------------------------------------------------------------
+%%% get_user_tier/1 Tests
+%%%-------------------------------------------------------------------
+
+get_user_tier_default_free_test_() ->
+    pricing_test(fun() ->
+        User = <<"new_user">>,
+        Tier = erlmcp_pricing:get_user_tier(User),
+        ?assertEqual(0, Tier)  %% Default FREE tier
+    end).
+
+get_user_tier_after_upgrade_test_() ->
+    pricing_test(fun() ->
+        User = <<"upgrade_user">>,
+        %% Upgrade to PRO
+        {ok, _} = erlmcp_pricing:upgrade(User, 1),
+        Tier = erlmcp_pricing:get_user_tier(User),
+        ?assertEqual(1, Tier)
+    end).
+
+%%%-------------------------------------------------------------------
+%%% validate_upgrade/2 Tests
+%%%-------------------------------------------------------------------
+
+validate_upgrade_valid_test_() ->
+    pricing_test(fun() ->
+        User = <<"validate_user">>,
+        ?assertEqual(ok, erlmcp_pricing:validate_upgrade(User, 1)),
+        ?assertEqual(ok, erlmcp_pricing:validate_upgrade(User, 2))
+    end).
+
+validate_upgrade_already_on_tier_test_() ->
+    pricing_test(fun() ->
+        User = <<"same_tier_user">>,
+        %% First upgrade succeeds
+        {ok, _} = erlmcp_pricing:upgrade(User, 1),
+        %% Second upgrade to same tier fails
+        ?assertEqual({error, already_on_tier}, erlmcp_pricing:validate_upgrade(User, 1))
+    end).
+
+validate_upgrade_downgrade_forbidden_test_() ->
+    pricing_test(fun() ->
+        User = <<"downgrade_user">>,
+        %% Upgrade to PRO first
+        {ok, _} = erlmcp_pricing:upgrade(User, 1),
+        %% Try to downgrade to FREE
+        ?assertEqual({error, invalid_tier_upgrade}, erlmcp_pricing:validate_upgrade(User, 0))
+    end).
+
+%%%-------------------------------------------------------------------
+%%% upgrade/2 Tests - Happy Path
+%%%-------------------------------------------------------------------
+
+upgrade_free_to_pro_test_() ->
+    pricing_test(fun() ->
+        User = <<"free_to_pro">>,
+        Result = erlmcp_pricing:upgrade(User, 1),
+        ?assertMatch({ok, _}, Result),
+        {ok, UpgradeInfo} = Result,
+        ?assertEqual(User, maps:get(user_id, UpgradeInfo)),
+        ?assertEqual(1, maps:get(tier_id, UpgradeInfo)),
+        ?assertEqual(<<"Pro">>, maps:get(tier_name, UpgradeInfo)),
+        Payment = maps:get(payment, UpgradeInfo),
+        ?assertEqual(paid, maps:get(status, Payment)),
+        ?assert(maps:get(upgraded_at, UpgradeInfo) > 0)
+    end).
+
+upgrade_free_to_enterprise_test_() ->
+    pricing_test(fun() ->
+        User = <<"free_to_ent">>,
+        Result = erlmcp_pricing:upgrade(User, 2),
+        ?assertMatch({ok, _}, Result),
+        {ok, UpgradeInfo} = Result,
+        ?assertEqual(2, maps:get(tier_id, UpgradeInfo)),
+        ?assertEqual(<<"Enterprise">>, maps:get(tier_name, UpgradeInfo)),
+        Payment = maps:get(payment, UpgradeInfo),
+        ?assertEqual(29900, maps:get(amount, Payment))
+    end).
+
+upgrade_pro_to_enterprise_test_() ->
+    pricing_test(fun() ->
+        User = <<"pro_to_ent">>,
+        %% First upgrade to PRO
+        {ok, _} = erlmcp_pricing:upgrade(User, 1),
+        %% Then upgrade to ENTERPRISE
+        Result = erlmcp_pricing:upgrade(User, 2),
+        ?assertMatch({ok, _}, Result),
+        {ok, UpgradeInfo} = Result,
+        ?assertEqual(2, maps:get(tier_id, UpgradeInfo)),
+        ?assertEqual(<<"Enterprise">>, maps:get(tier_name, UpgradeInfo))
+    end).
+
+upgrade_payment_details_test_() ->
+    pricing_test(fun() ->
+        User = <<"payment_user">>,
+        {ok, UpgradeInfo} = erlmcp_pricing:upgrade(User, 1),
+        Payment = maps:get(payment, UpgradeInfo),
+        ?assertEqual(2900, maps:get(amount, Payment)),
+        ?assertEqual(<<"USD">>, maps:get(currency, Payment)),
+        ?assertEqual(User, maps:get(user_id, Payment)),
+        ?assertEqual(1, maps:get(tier_id, Payment)),
+        ?assertMatch(<<"tx_", _/binary>>, maps:get(transaction_id, Payment)),
+        ?assertEqual(paid, maps:get(status, Payment))
+    end).
+
+%%%-------------------------------------------------------------------
+%%% upgrade/2 Tests - Error Paths
+%%%-------------------------------------------------------------------
+
+upgrade_already_on_tier_test_() ->
+    pricing_test(fun() ->
+        User = <<"already_pro">>,
+        %% First upgrade succeeds
+        {ok, _} = erlmcp_pricing:upgrade(User, 1),
+        %% Second upgrade to same tier fails
+        Result = erlmcp_pricing:upgrade(User, 1),
+        ?assertEqual({error, already_on_tier}, Result)
+    end).
+
+upgrade_invalid_downgrade_test_() ->
+    pricing_test(fun() ->
+        User = <<"downgrade_fail">>,
+        %% Upgrade to PRO first
+        {ok, _} = erlmcp_pricing:upgrade(User, 1),
+        %% Try to downgrade to FREE
+        Result = erlmcp_pricing:upgrade(User, 0),
+        ?assertEqual({error, invalid_tier_upgrade}, Result)
+    end).
+
+upgrade_invalid_tier_test_() ->
+    pricing_test(fun() ->
+        User = <<"invalid_tier">>,
+        Result = erlmcp_pricing:upgrade(User, 5),  %% Invalid tier
+        ?assertEqual({error, invalid_tier_upgrade}, Result)
+    end).
+
+%%%-------------------------------------------------------------------
+%%% list_tiers/0 Tests
+%%%-------------------------------------------------------------------
+
+list_tiers_test_() ->
+    pricing_test(fun() ->
+        Tiers = erlmcp_pricing:list_tiers(),
+        ?assertEqual(3, length(Tiers)),
+        [Free, Pro, Ent] = Tiers,
+        ?assertEqual(0, maps:get(id, Free)),
+        ?assertEqual(1, maps:get(id, Pro)),
+        ?assertEqual(2, maps:get(id, Ent))
+    end).
+
+%%%-------------------------------------------------------------------
+%%% State Persistence Tests
+%%%-------------------------------------------------------------------
+
+upgrade_state_persists_test_() ->
+    pricing_test(fun() ->
+        User = <<"persist_user">>,
+        %% Upgrade user
+        {ok, _} = erlmcp_pricing:upgrade(User, 2),
+        %% Verify state persists across calls
+        Tier1 = erlmcp_pricing:get_user_tier(User),
+        ?assertEqual(2, Tier1),
+        %% Try to upgrade again - should fail (already on tier)
+        ?assertEqual({error, already_on_tier}, erlmcp_pricing:upgrade(User, 2))
+    end).
+
+multiple_users_state_isolated_test_() ->
+    pricing_test(fun() ->
+        User1 = <<"user1">>,
+        User2 = <<"user2">>,
+        %% Upgrade User1 to PRO
+        {ok, _} = erlmcp_pricing:upgrade(User1, 1),
+        %% Upgrade User2 to ENTERPRISE
+        {ok, _} = erlmcp_pricing:upgrade(User2, 2),
+        %% Verify isolation
+        ?assertEqual(1, erlmcp_pricing:get_user_tier(User1)),
+        ?assertEqual(2, erlmcp_pricing:get_user_tier(User2))
+    end).
+
+%%%-------------------------------------------------------------------
+%%% Concurrency Tests (Basic)
+%%%-------------------------------------------------------------------
+
+concurrent_upgrade_different_users_test_() ->
+    pricing_test(fun() ->
+        Users = [<<"concurrent1">>, <<"concurrent2">>, <<"concurrent3">>],
+        %% Launch concurrent upgrades
+        Self = self(),
+        Pids = [spawn_monitor(fun() ->
+            Result = erlmcp_pricing:upgrade(User, 1),
+            Self ! {result, User, Result}
+        end) || User <- Users],
+        %% Wait for all to complete
+        Results = [receive
+            {result, _U, R} -> R
+        end || _ <- Pids],
+        ?assertEqual(3, length(Results)),
+        %% Wait a bit for ETS updates to propagate
+        timer:sleep(100),
+        %% Verify all users upgraded
+        ?assertEqual([1, 1, 1], [erlmcp_pricing:get_user_tier(U) || U <- Users])
+    end).
+
+%%%-------------------------------------------------------------------
+%%% CLI Integration Tests
+%%%-------------------------------------------------------------------
+
+cli_upgrade_test_() ->
+    pricing_test(fun() ->
+        User = <<"cli_user">>,
+        Result = erlmcp_pricing_cli:upgrade(User, pro),
+        ?assertEqual(ok, Result)
+    end).
+
+cli_list_plans_test_() ->
+    pricing_test(fun() ->
+        Result = erlmcp_pricing_cli:list_plans(),
+        ?assertEqual(ok, Result)
+    end).
+
+%%%-------------------------------------------------------------------
+%%% HTTP Integration Tests
+%%%-------------------------------------------------------------------
+
+http_upgrade_endpoint_test_() ->
+    pricing_test(fun() ->
+        Result = erlmcp_pricing_http:handle_request(<<"POST">>, <<"/api/pricing/upgrade">>),
+        ?assertMatch({ok, _}, Result),
+        {ok, Response} = Result,
+        ?assertEqual(<<"success">>, maps:get(<<"status">>, Response)),
+        Upgrade = maps:get(<<"upgrade">>, Response),
+        ?assertMatch(#{<<"tier_name">> := <<"Pro">>}, Upgrade)
+    end).

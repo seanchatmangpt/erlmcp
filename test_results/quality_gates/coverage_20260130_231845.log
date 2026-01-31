@@ -1,0 +1,27 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/tcps_quality_gates.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/tcps_quality_gates.erl:
+     │
+ 168 │      {ok, #state{}}[1;31m}.[0m[0m
+     │                    [1;31m╰──[0m[0m syntax error before: '}'
+
+
+    ┌─ apps/erlmcp_core/src/tcps_quality_gates.erl:
+    │
+ 50 │  -[1;31mexport[0m([[0m
+    │   [1;31m╰──[0m[0m function init/1 undefined
+
+
+    ┌─ apps/erlmcp_core/src/tcps_quality_gates.erl:
+    │
+ 22 │  -[1;31mbehaviour[0m(gen_server).[0m
+    │   [1;31m╰──[0m[0m Warning: undefined callback function init/1 (behaviour 'gen_server')
+
+    ┌─ apps/erlmcp_core/src/tcps_quality_gates.erl:
+    │
+ 78 │  -[1;31mrecord[0m(state, {[0m
+    │   [1;31m╰──[0m[0m Warning: record state is unused
+
+

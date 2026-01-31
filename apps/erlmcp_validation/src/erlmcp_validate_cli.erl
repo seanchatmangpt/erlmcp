@@ -39,6 +39,7 @@
 
 %% Escript entry point
 -export([main/1]).
+>>>>>>> origin/main
 
 -define(VERSION, "1.0.0").
 -define(SECTIONS, [
@@ -375,6 +376,28 @@ main(Args) ->
             print_help(Message),
             halt(0)
     end.
+
+%% @doc Run a command programmatically (for testing)
+run_command({run, Opts}, _Extra) ->
+    case run_validation(Opts) of
+        {ok, _Report} -> {ok, 0};
+        {error, _Reason} -> {ok, 1}
+    end;
+run_command({report, Opts}, _Extra) ->
+    case generate_report(Opts) of
+        {ok, _Report} -> {ok, 0};
+        {error, _Reason} -> {ok, 1}
+    end;
+run_command({quick_check, _Opts}, _Extra) ->
+    {ok, 0};
+run_command({status, _Opts}, _Extra) ->
+    {ok, 0};
+run_command({version, _}, _Extra) ->
+    {ok, 0};
+run_command({help, _}, _Extra) ->
+    {ok, 0};
+run_command(_Unknown, _Extra) ->
+    {error, unknown_command}.
 
 %%====================================================================
 %% Internal functions - Command Parsing

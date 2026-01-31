@@ -1,0 +1,12 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling erlmcp_transports
+   ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+   │
+ 3 │  -behaviour(gen_server).
+   │   ╰── Warning: conflicting behaviours -- callback init/1 required by both 'gen_server' and 'erlmcp_transport_behavior' (line 2, column 2)
+
+
+===> Compiling erlmcp_validation
+===> Compiling erlmcp_observability

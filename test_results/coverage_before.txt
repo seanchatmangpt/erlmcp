@@ -1,0 +1,55 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      [1;31m{[0merror, token_expired};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      [1;31m{[0merror, token_not_yet_valid};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      [1;31m{[0merror, invalid_issuer}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1162 │                  [1;31m{[0mnoreply, State};[0m
+      │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1172 │                                  [1;31m{[0mnoreply, State};[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1177 │                                  [1;31m{[0mnoreply, State}[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1183 │                          [1;31m{[0mnoreply, State}[0m
+      │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/test/erlmcp_health_tests.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/test/erlmcp_health_tests.erl:
+     │
+ 218 │      ?[1;31mFORALL[0m(CheckFun, proper_check_fun(),[0m
+     │       [1;31m╰──[0m[0m undefined macro 'FORALL/3'
+
+     ┌─ apps/erlmcp_core/test/erlmcp_health_tests.erl:
+     │
+ 229 │      ?[1;31mFORALL[0m(Checks, proper_check_list(),[0m
+     │       [1;31m╰──[0m[0m undefined macro 'FORALL/3'
+
+

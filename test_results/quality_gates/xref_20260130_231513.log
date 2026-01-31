@@ -1,0 +1,24 @@
+[0;32m===> Fetching fs v8.6.1
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling pc
+[0m[0;32m===> Compiling c_src/mac/cli.c
+[0m[0;32m===> Compiling c_src/mac/compat.c
+[0m[0;32m===> Compiling c_src/mac/main.c
+[0m[0;32m===> Linking /Users/sac/erlmcp/_build/default/plugins/fs/priv/mac_listener
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;31m===> [1mCompiling _build/default/plugins/fs/src/sys/kqueue.erl failed
+[0m[0m_build/default/plugins/fs/ebin/kqueue.beam:none: failed to rename /Users/sac/erlmcp/_build/default/plugins/fs/ebin/kqueue.bea# to /Users/sac/erlmcp/_build/default/plugins/fs/ebin/kqueue.beam: no such file or directory
+
+[0;35m===> Errors loading plugin rebar3_auto. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling coveralls
+[0m[0;31m===> [1mCompiling _build/default/plugins/fs/src/fs_event_bridge.erl failed
+[0m[0m_build/default/plugins/fs/ebin/fs_event_bridge.beam:none: failed to rename /Users/sac/erlmcp/_build/default/plugins/fs/ebin/fs_event_bridge.bea# to /Users/sac/erlmcp/_build/default/plugins/fs/ebin/fs_event_bridge.beam: no such file or directory
+
+[0;35m===> Errors loading plugin {coveralls,"2.2.0"}. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Verifying dependencies...
+[0m[0;32m===> Fetching bbmustache v1.12.2
+[0m[0;31m===> [1mDependency failure: source for bbmustache does not contain a recognizable project and can not be built
+[0m[0m
