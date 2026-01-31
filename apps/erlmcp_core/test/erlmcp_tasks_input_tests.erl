@@ -186,7 +186,7 @@ test_input_required_invalid_transitions(_Pid) ->
         Action2 = #{<<"type">> => <<"invalid_transition_2">>},
         {ok, TaskId2} = erlmcp_tasks:create(erlmcp_tasks, Action2, #{}),
 
-        WorkerPid2 = spawn(fun() -> receive after 5000 -> ok end),
+        WorkerPid2 = spawn(fun() -> receive after 5000 -> ok end end),
         ok = erlmcp_tasks:start_task_execution(TaskId2, WorkerPid2),
         {ok, input_required} = erlmcp_tasks:request_input(TaskId2, #{}),
 
