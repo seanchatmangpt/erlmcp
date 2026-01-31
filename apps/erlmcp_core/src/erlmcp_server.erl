@@ -59,7 +59,8 @@
     subscriptions = #{} :: #{binary() => sets:set(pid())},
     progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
     notifier_pid :: pid() | undefined,
-    initialized = false :: boolean(),
+    initialized = false :: boolean(),  % MCP protocol INITIALIZE state
+    async_init_done = false :: boolean(),  % Async notifier startup completion
     last_tools_notification :: integer() | undefined,  % Rate limiting: timestamp of last tools/list_changed notification
     roots = #{} :: map(),  % Track roots state for change detection
     notification_handlers = #{} :: #{binary() => {pid(), reference()}}  % Notification method -> {HandlerPid, MonitorRef}
@@ -215,7 +216,8 @@ init([ServerId, Capabilities]) ->
         server_id = ServerId,
         capabilities = Capabilities,
         notifier_pid = undefined,  % Will be set in async_init
-        initialized = false        % Will be set to true after async_init completes
+        async_init_done = false,   % Will be set to true after async_init completes
+        initialized = false        % MCP protocol INITIALIZE state (separate from async init)
     },
 
     logger:info("Starting MCP server ~p with capabilities: ~p (async init pending)", [ServerId, Capabilities]),
@@ -502,7 +504,7 @@ handle_cast(notify_tools_changed, State) ->
 %% @doc Async initialization handler - performs blocking operations after init/1 returns.
 %% OTP Pattern: This prevents blocking the supervisor tree during process startup.
 %% Called via gen_server:cast(self(), async_init) from init/1.
-handle_cast(async_init, #state{server_id = ServerId, initialized = false} = State) ->
+handle_cast(async_init, #state{server_id = ServerId, async_init_done = false} = State) ->
     logger:debug("MCP server ~p: Starting async initialization", [ServerId]),
 
     % Start or get change notifier (this is the blocking operation moved from init/1)
@@ -520,14 +522,14 @@ handle_cast(async_init, #state{server_id = ServerId, initialized = false} = Stat
 
     NewState = State#state{
         notifier_pid = NotifierPid,
-        initialized = true
+        async_init_done = true
     },
 
     logger:info("MCP server ~p: Async initialization complete, notifier_pid=~p", [ServerId, NotifierPid]),
     {noreply, NewState};
 
 %% @doc Ignore duplicate async_init if already initialized (defensive programming)
-handle_cast(async_init, #state{initialized = true} = State) ->
+handle_cast(async_init, #state{async_init_done = true} = State) ->
     logger:warning("MCP server ~p: Ignoring duplicate async_init (already initialized)", [State#state.server_id]),
     {noreply, State};
 

@@ -372,8 +372,22 @@ replicate_session(SessionId, FailoverState, BackupNode) ->
     %% Delegate to supervised worker instead of executing directly
     Work = {replicate, SessionId, FailoverState, BackupNode},
     case erlmcp_failover_worker_sup:start_worker(Work) of
-        {ok, _Pid} -> ok;
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            %% Wait for worker completion by monitoring it
+            MonitorRef = erlang:monitor(process, Pid),
+            receive
+                {'DOWN', MonitorRef, process, Pid, normal} ->
+                    ok;
+                {'DOWN', MonitorRef, process, Pid, {error, Reason}} ->
+                    {error, Reason};
+                {'DOWN', MonitorRef, process, Pid, Reason} ->
+                    {error, Reason}
+            after 30000 ->
+                erlang:demonitor(MonitorRef),
+                {error, timeout}
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Replicate session to multiple backup nodes
