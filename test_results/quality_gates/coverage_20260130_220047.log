@@ -1,0 +1,18 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_observability/src/erlmcp_recovery_manager.erl failed
+[0m[0m     ┌─ apps/erlmcp_observability/src/erlmcp_recovery_manager.erl:
+     │
+ 261 │                      case [1;31mdo_restart_component[0m(SupPid, ComponentId) of[0m
+     │                           [1;31m╰──[0m[0m function do_restart_component/2 undefined
+
+     ┌─ apps/erlmcp_observability/src/erlmcp_recovery_manager.erl:
+     │
+ 274 │              case [1;31mdo_restart_component[0m(SupPid, ComponentId) of[0m
+     │                   [1;31m╰──[0m[0m function do_restart_component/2 undefined
+
+

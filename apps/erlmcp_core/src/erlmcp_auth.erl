@@ -514,8 +514,8 @@ verify_jwt_with_key(Token, PublicKeyPem) ->
             {false, _, _} ->
                 logger:warning("JWT signature verification failed"),
                 {error, invalid_signature};
-            {error, Reason} ->
-                logger:warning("JWT verification error: ~p", [Reason]),
+            {error, BodyError} ->
+                logger:warning("JWT verification error: ~p", [BodyError]),
                 {error, verification_failed}
         end
     catch
@@ -659,31 +659,31 @@ introspect_oauth2_token(Token, Config, State) ->
                                     {ok, BodyResp} ->
                                         gun:close(GunPid),
                                         handle_introspect_response(Status, HeadersResp, BodyResp, Token, State);
-                                    {error, Reason} ->
+                                    {error, BodyError} ->
                                         gun:close(GunPid),
-                                        logger:error("OAuth2 introspection body error: ~p", [Reason]),
+                                        logger:error("OAuth2 introspection body error: ~p", [BodyError]),
                                         {error, introspection_failed}
                                 end;
 
-                            {error, Reason} ->
+                            {error, BodyError} ->
                                 gun:close(GunPid),
-                                logger:error("OAuth2 introspection await error: ~p", [Reason]),
+                                logger:error("OAuth2 introspection await error: ~p", [BodyError]),
                                 {error, introspection_timeout}
                         end;
 
-                    {error, Reason} ->
+                    {error, BodyError} ->
                         gun:close(GunPid),
-                        logger:error("OAuth2 introspection connection failed: ~p", [Reason]),
+                        logger:error("OAuth2 introspection connection failed: ~p", [BodyError]),
                         {error, connection_failed}
                 end;
 
-            {error, Reason} ->
-                logger:error("OAuth2 introspection gun:open failed: ~p", [Reason]),
+            {error, BodyError} ->
+                logger:error("OAuth2 introspection gun:open failed: ~p", [BodyError]),
                 {error, connection_failed}
         end
     catch
-        error:Reason ->
-            logger:error("OAuth2 introspection error: ~p", [Reason]),
+        error:ErrorReason ->
+            logger:error("OAuth2 introspection error: ~p", [ErrorReason]),
             {error, introspection_failed}
     end.
 
@@ -719,7 +719,7 @@ handle_introspect_response(Status, _Headers, Body, Token, State) ->
     end.
 
 %% @private Validate RFC 7662 introspection response fields
-validate_introspection_response(TokenInfo) ->
+validate_introspection_response(TokenInfo, Token, State) ->
     % Check 'active' claim (RFC 7662 REQUIRED)
     case maps:get(<<"active">>, TokenInfo, false) of
         false ->
@@ -767,20 +767,20 @@ validate_introspection_response(TokenInfo) ->
             % Cache the token info (with TTL from 'exp' claim or default 5 minutes)
             CacheTTL = case maps:get(<<"exp">>, TokenInfo, undefined) of
                 undefined -> 300;  % Default 5 minutes
-                Exp -> Exp - Now
+                ExpValue when is_integer(ExpValue) -> ExpValue - Now
             end,
 
             % Only cache if TTL is positive
             case CacheTTL > 0 of
                 true ->
                     CacheExpiresAt = Now + min(CacheTTL, 300),  % Cap at 5 minutes
-                    % Cache for caller - note: we don't have State here, so caller must cache
-                    ok;
+                    EnrichedTokenInfo = TokenInfo#{<<"user_id">> => UserId},
+                    ets:insert(State#state.oauth2_cache, {Token, {EnrichedTokenInfo, CacheExpiresAt}}),
+                    logger:debug("OAuth2 token cached with TTL: ~p seconds", [min(CacheTTL, 300)]),
+                    {ok, EnrichedTokenInfo};
                 false ->
-                    ok
-            end,
-
-            {ok, TokenInfo#{<<"user_id">> => UserId}}
+                    {ok, TokenInfo#{<<"user_id">> => UserId}}
+            end
     end.
 
 %% @private Parse HTTP URL into components

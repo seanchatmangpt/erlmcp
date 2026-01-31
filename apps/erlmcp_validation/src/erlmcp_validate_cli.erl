@@ -621,7 +621,7 @@ convert_value(V) -> V.
 
 %% @doc Convert details map
 convert_details(Details) when is_map(Details) ->
-    maps:map(fun(K, V) ->
+    maps:map(fun(_K, V) ->
         convert_value(V)
     end, Details);
 convert_details(Details) ->
@@ -629,7 +629,7 @@ convert_details(Details) ->
 
 %% @doc Convert summary map
 convert_summary(Summary) ->
-    maps:map(fun(K, V) ->
+    maps:map(fun(_K, V) ->
         convert_value(V)
     end, Summary).
 

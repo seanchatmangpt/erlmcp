@@ -1,0 +1,270 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp_test_aws_http_server - Real AWS-like HTTP test server
+%%%
+%%% This module implements a REAL Cowboy HTTP server that simulates
+%%% AWS Secrets Manager API responses for testing. This follows
+%%% Chicago School TDD principles by using REAL processes instead
+%%% of mocks or fakes.
+%%%
+%%% The server responds to AWS Secrets Manager API calls with
+%%% realistic JSON responses, handling various scenarios including
+%%% success cases, errors, timeouts, and invalid responses.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_test_aws_http_server).
+-behaviour(gen_server).
+
+%% API
+-export([start_link/0, start_link/1, stop/0, get_port/0]).
+-export([set_response_mode/1, get_call_count/0, reset_call_count/0]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
+
+%% Cowboy handler
+-export([init/2]).
+
+-define(SERVER, ?MODULE).
+-define(DEFAULT_PORT, 0).  % OS-assigned port
+
+-record(state, {
+    port :: inet:port_number(),
+    listener_ref :: ranch:ref(),
+    response_mode :: success | error_400 | error_500 | timeout | invalid_json | empty,
+    call_count :: non_neg_integer()
+}).
+
+-type state() :: #state{}.
+-type response_mode() :: success | error_400 | error_500 | timeout | invalid_json | empty.
+
+%%%===================================================================
+%%% API Functions
+%%%===================================================================
+
+%% @doc Start the test HTTP server on a random port
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    start_link(?DEFAULT_PORT).
+
+%% @doc Start the test HTTP server on a specific port
+-spec start_link(inet:port_number()) -> {ok, pid()} | {error, term()}.
+start_link(Port) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [Port], []).
+
+%% @doc Stop the test HTTP server
+-spec stop() -> ok.
+stop() ->
+    gen_server:stop(?SERVER).
+
+%% @doc Get the port number the server is listening on
+-spec get_port() -> inet:port_number().
+get_port() ->
+    gen_server:call(?SERVER, get_port).
+
+%% @doc Set the response mode for the server
+-spec set_response_mode(response_mode()) -> ok.
+set_response_mode(Mode) ->
+    gen_server:call(?SERVER, {set_response_mode, Mode}).
+
+%% @doc Get the number of HTTP calls received
+-spec get_call_count() -> non_neg_integer().
+get_call_count() ->
+    gen_server:call(?SERVER, get_call_count).
+
+%% @doc Reset the call counter
+-spec reset_call_count() -> ok.
+reset_call_count() ->
+    gen_server:call(?SERVER, reset_call_count).
+
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
+
+init([Port]) ->
+    % Start Cowboy listener
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            {"/", ?MODULE, []}
+        ]}
+    ]),
+
+    % Start ranch listener for Cowboy
+    {ok, _} = ranch:start_listener(
+        ?MODULE,
+        ranch_tcp,
+        #{num_acceptors => 1, socket_opts => [{port, Port}]},
+        cowboy_clear,
+        #{env => #{dispatch => Dispatch}}
+    ),
+
+    % Get the actual port assigned
+    {ok, AssignedPort} = ranch:get_addr(?MODULE, tcp),
+
+    logger:info("AWS test HTTP server started on port ~p", [AssignedPort]),
+    {ok, #state{
+        port = AssignedPort,
+        listener_ref = ?MODULE,
+        response_mode = success,
+        call_count = 0
+    }}.
+
+handle_call(get_port, _From, State) ->
+    {reply, State#state.port, State};
+
+handle_call({set_response_mode, Mode}, _From, State) ->
+    logger:info("AWS test server response mode: ~p", [Mode]),
+    {reply, ok, State#state{response_mode = Mode}};
+
+handle_call(get_call_count, _From, State) ->
+    {reply, State#state.call_count, State};
+
+handle_call(reset_call_count, _From, State) ->
+    {reply, ok, State#state{call_count = 0}};
+
+handle_call(get_response_mode, _From, State) ->
+    {reply, State#state.response_mode, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+handle_cast(increment_call_count, State) ->
+    {noreply, State#state{call_count = State#state.call_count + 1}};
+handle_cast(_Request, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, #state{listener_ref = Ref}) ->
+    % Stop Cowboy listener
+    ranch:stop_listener(Ref),
+    logger:info("AWS test HTTP server stopped"),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%%===================================================================
+%%% Cowboy Handler Callbacks
+%%%===================================================================
+
+init(Req0, State) ->
+    % Get response mode from server state
+    Mode = gen_server:call(?SERVER, get_response_mode),
+
+    % Increment call counter
+    ok = gen_server:cast(?SERVER, increment_call_count),
+
+    % Log request for debugging
+    Method = cowboy_req:method(Req0),
+    Path = cowboy_req:path(Req0),
+    logger:info("AWS test server received: ~s ~s (mode: ~p)", [Method, Path, Mode]),
+
+    % Handle request based on response mode
+    {ok, Req} = handle_request(Req0, Mode),
+    {ok, Req, State}.
+
+%%%===================================================================
+%%% Internal Functions
+%%%===================================================================
+
+%% @private Handle request based on response mode
+handle_request(Req0, Mode) ->
+    {ok, Body, Req1} = cowboy_req:read_body(Req0),
+
+    % Log the body for debugging
+    case Body of
+        <<>> -> ok;
+        _ -> logger:debug("Request body: ~s", [Body])
+    end,
+
+    Response = case Mode of
+        success -> handle_success(Body);
+        error_400 -> handle_error_400();
+        error_500 -> handle_error_500();
+        timeout -> handle_timeout(Req1);
+        invalid_json -> handle_invalid_json();
+        empty -> handle_empty()
+    end,
+
+    case Response of
+        {respond, StatusCode, Headers, ResponseBody} ->
+            Req2 = cowboy_req:reply(StatusCode, Headers, ResponseBody, Req1),
+            {ok, Req2};
+        {timeout_req, Req} ->
+            % Don't reply - simulate timeout
+            {ok, Req}
+    end.
+
+%% @private Handle successful AWS Secrets Manager response
+handle_success(Body) ->
+    try
+        % Parse request to determine which AWS API was called
+        Decoded = jsx:decode(Body, [return_maps]),
+
+        % Check X-Amz-Target header to determine the API action
+        case maps:get(<<"SecretId">>, Decoded, undefined) of
+            undefined ->
+                % Might be a ListSecrets or CreateSecret call
+                case maps:get(<<"Name">>, Decoded, undefined) of
+                    undefined ->
+                        % ListSecrets response
+                        {respond, 200, #{<<"content-type">> => <<"application/json">>},
+                         jsx:encode(#{
+                             <<"SecretList">> => [
+                                 #{<<"Name">> => <<"secret1">>, <<"ARN">> => <<"arn:aws:secretsmanager:us-east-1:123456789012:secret:secret1">>},
+                                 #{<<"Name">> => <<"secret2">>, <<"ARN">> => <<"arn:aws:secretsmanager:us-east-1:123456789012:secret:secret2">>},
+                                 #{<<"Name">> => <<"secret3">>, <<"ARN">> => <<"arn:aws:secretsmanager:us-east-1:123456789012:secret:secret3">>}
+                             ]
+                         })};
+                    SecretName ->
+                        % CreateSecret or UpdateSecret response
+                        {respond, 200, #{<<"content-type">> => <<"application/json">>},
+                         jsx:encode(#{
+                             <<"ARN">> => <<"arn:aws:secretsmanager:us-east-1:123456789012:secret:", SecretName/binary>>,
+                             <<"Name">> => SecretName
+                         })}
+                end;
+            SecretId ->
+                % GetSecretValue response
+                {respond, 200, #{<<"content-type">> => <<"application/json">>},
+                 jsx:encode(#{
+                     <<"SecretString">> => <<"secret-value-for-", SecretId/binary>>
+                 })}
+        end
+    catch
+        _:_ ->
+            % If we can't parse the body, return a default success response
+            {respond, 200, #{<<"content-type">> => <<"application/json">>},
+             jsx:encode(#{<<"result">> => <<"ok">>}))}
+    end.
+
+%% @private Handle 400 error response
+handle_error_400() ->
+    {respond, 400, #{<<"content-type">> => <<"application/json">>},
+     jsx:encode(#{
+         <<"Message">> => <<"Secrets Manager can't find the specified secret.">>
+     })}.
+
+%% @private Handle 500 error response
+handle_error_500() ->
+    {respond, 500, #{<<"content-type">> => <<"application/json">>},
+     jsx:encode(#{
+         <<"Message">> => <<"Internal Server Error">>
+     })}.
+
+%% @private Handle timeout (don't send response)
+handle_timeout(Req) ->
+    % Simulate timeout by not responding
+    {timeout_req, Req}.
+
+%% @private Handle invalid JSON response
+handle_invalid_json() ->
+    {respond, 200, #{<<"content-type">> => <<"application/json">>},
+     <<"{invalid json}">>}.
+
+%% @private Handle empty response
+handle_empty() ->
+    {respond, 204, #{}, <<>>}.

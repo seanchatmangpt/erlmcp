@@ -62,7 +62,7 @@ test_create_inline_elicitation() ->
 
     ?assert(is_binary(ElicitationId)),
     ?assertMatch(#{id := _, mode := inline, status := pending}, Response),
-    ?assert(maps:get(<<"mode">>, Response) =:= inline),
+    ?assert(maps:get(mode, Response) =:= inline),
     ?assert(maps:get(status, Response) =:= pending),
 
     %% Verify we can get the status
@@ -211,23 +211,27 @@ rate_limiting_test_() ->
 
 test_rate_limit_allows_within_threshold() ->
     %% Should allow 10 requests in a minute
+    %% Use a different client PID to avoid conflicts with other tests
+    ClientPid = spawn(fun() -> receive die -> ok end end),
     Config = #{<<"mode">> => <<"inline">>},
     lists:foreach(fun(_) ->
-        {ok, _, _} = erlmcp_elicitation:create_elicitation(Config, self())
-    end, lists:seq(1, 9)),
+        {ok, _, _} = erlmcp_elicitation:create_elicitation(Config, ClientPid)
+    end, lists:seq(1, 10)),
     ?assert(true).
 
 test_rate_limit_blocks_when_exceeded() ->
     %% Should block the 11th request
+    %% Use a different client PID to ensure clean state
+    ClientPid = spawn(fun() -> receive die -> ok end end),
     Config = #{<<"mode">> => <<"inline">>},
 
     %% Make 10 requests (should succeed)
     lists:foreach(fun(_) ->
-        {ok, _, _} = erlmcp_elicitation:create_elicitation(Config, self())
+        {ok, _, _} = erlmcp_elicitation:create_elicitation(Config, ClientPid)
     end, lists:seq(1, 10)),
 
     %% 11th request should be rate limited
-    Result = erlmcp_elicitation:create_elicitation(Config, self()),
+    Result = erlmcp_elicitation:create_elicitation(Config, ClientPid),
     ?assertMatch({error, rate_limited}, Result).
 
 %%====================================================================

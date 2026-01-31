@@ -47,7 +47,8 @@
     components = #{} :: #{component_id() => #component{}},
     default_policy :: recovery_policy(),
     metrics = #{} :: #{atom() => term()},
-    recovery_timer :: undefined | timer:tref()
+    recovery_timer :: undefined | timer:tref(),
+    restart_cooldowns = #{} :: #{component_id() => erlang:timestamp()}
 }).
 
 -define(DEFAULT_POLICY, #{
@@ -60,6 +61,7 @@
 }).
 
 -define(RECOVERY_CHECK_INTERVAL, 5000). % 5 seconds
+-define(RESTART_COOLDOWN, 10000). % 10 seconds cooldown between restarts
 
 %%====================================================================
 %% API Functions
@@ -242,6 +244,43 @@ handle_call({get_recovery_policy, ComponentId}, _From, State) ->
             {reply, {ok, Component#component.policy}, State};
         error ->
             {reply, {error, not_found}, State}
+    end;
+
+handle_call({restart_with_cooldown, SupPid, ComponentId}, _From, State) ->
+    case maps:find(ComponentId, State#state.restart_cooldowns) of
+        {ok, LastRestart} ->
+            TimeSinceLastRestart = timer:now_diff(erlang:timestamp(), LastRestart) div 1000,
+            case TimeSinceLastRestart < ?RESTART_COOLDOWN of
+                true ->
+                    RemainingTime = ?RESTART_COOLDOWN - TimeSinceLastRestart,
+                    ?LOG_WARNING("Component ~p is in cooldown, ~p ms remaining",
+                                [ComponentId, RemainingTime]),
+                    {reply, {error, {cooldown, RemainingTime}}, State};
+                false ->
+                    % Cooldown expired, proceed with restart
+                    case do_restart_component(SupPid, ComponentId) of
+                        {ok, NewPid} ->
+                            NewCooldowns = maps:put(ComponentId, erlang:timestamp(), State#state.restart_cooldowns),
+                            NewMetrics = update_metric(total_recoveries, 1, State#state.metrics),
+                            NewMetrics2 = update_metric(successful_recoveries, 1, NewMetrics),
+                            {reply, {ok, NewPid}, State#state{restart_cooldowns = NewCooldowns, metrics = NewMetrics2}};
+                        {error, Reason} ->
+                            NewMetrics = update_metric(failed_recoveries, 1, State#state.metrics),
+                            {reply, {error, Reason}, State#state{metrics = NewMetrics}}
+                    end
+            end;
+        error ->
+            % No previous restart, proceed
+            case do_restart_component(SupPid, ComponentId) of
+                {ok, NewPid} ->
+                    NewCooldowns = maps:put(ComponentId, erlang:timestamp(), State#state.restart_cooldowns),
+                    NewMetrics = update_metric(total_recoveries, 1, State#state.metrics),
+                    NewMetrics2 = update_metric(successful_recoveries, 1, NewMetrics),
+                    {reply, {ok, NewPid}, State#state{restart_cooldowns = NewCooldowns, metrics = NewMetrics2}};
+                {error, Reason} ->
+                    NewMetrics = update_metric(failed_recoveries, 1, State#state.metrics),
+                    {reply, {error, Reason}, State#state{metrics = NewMetrics}}
+            end
     end;
 
 handle_call(_Request, _From, State) ->
@@ -519,9 +558,180 @@ restart_transport(TransportId) ->
         {error, Reason} -> {error, Reason}
     end.
 
+%% @doc Restart a generic component via its supervisor
+%% Implements Joe Armstrong's supervision tree principle:
+%% "Let it crash" means supervisors restart it
+-spec restart_generic_component(component_id()) -> ok | {error, term()}.
 restart_generic_component(ComponentId) ->
-    ?LOG_WARNING("Generic restart attempted for ~p", [ComponentId]),
-    {error, {not_implemented, ComponentId}}.
+    ?LOG_INFO("Generic component restart requested for ~p", [ComponentId]),
+    case find_component_supervisor(ComponentId) of
+        {ok, Sup} ->
+            restart_with_cooldown(Sup, ComponentId);
+        {error, Reason} ->
+            ?LOG_ERROR("Cannot find supervisor for ~p: ~p", [ComponentId, Reason]),
+            {error, Reason}
+    end.
+
+%% @doc Find which supervisor owns a component
+%% Maps component IDs to their supervisor processes
+-spec find_component_supervisor(component_id()) -> {ok, pid()} | {error, term()}.
+find_component_supervisor(ComponentId) ->
+    % Map component IDs to their supervisors
+    % This follows the 3-tier supervision tree architecture
+    SupervisorMap = #{
+        % Tier 1: Core (erlmcp_core_sup)
+        erlmcp_registry => erlmcp_core_sup,
+        erlmcp_session_manager => erlmcp_core_sup,
+
+        % Tier 2: Protocol (erlmcp_server_sup - simple_one_for_one)
+        % For dynamic server instances, we check if they're registered
+        erlmcp_server => erlmcp_server_sup,
+
+        % Tier 3: Observability (erlmcp_observability_sup)
+        erlmcp_metrics => erlmcp_observability_sup,
+        erlmcp_metrics_server => erlmcp_observability_sup,
+        erlmcp_metrics_aggregator => erlmcp_observability_sup,
+        erlmcp_dashboard_server => erlmcp_observability_sup,
+        erlmcp_health_monitor => erlmcp_observability_sup,
+        erlmcp_recovery_manager => erlmcp_observability_sup,
+        erlmcp_chaos => erlmcp_observability_sup,
+        erlmcp_process_monitor => erlmcp_observability_sup
+    },
+
+    case maps:find(ComponentId, SupervisorMap) of
+        {ok, SupName} ->
+            % Find the supervisor PID
+            case whereis(SupName) of
+                undefined -> {error, supervisor_not_running};
+                SupPid when is_pid(SupPid) -> {ok, SupPid}
+            end;
+        error ->
+            % Not in static map - try to find in dynamic supervisors
+            find_component_in_dynamic_supervisors(ComponentId)
+    end.
+
+%% @doc Find component in dynamic supervisors (simple_one_for_one)
+-spec find_component_in_dynamic_supervisors(component_id()) -> {ok, pid()} | {error, term()}.
+find_component_in_dynamic_supervisors(ComponentId) ->
+    % Check erlmcp_server_sup for dynamic server instances
+    case whereis(erlmcp_server_sup) of
+        undefined ->
+            {error, supervisor_not_found};
+        SupPid ->
+            % For simple_one_for_one, we need to find the child PID
+            % and then restart it via the supervisor
+            case supervisor:which_children(SupPid) of
+                [] ->
+                    {error, no_children};
+                Children ->
+                    % Look for our component in the children list
+                    case lists:keyfind(ComponentId, 1, Children) of
+                        {_, ChildPid, _, _} when is_pid(ChildPid) ->
+                            % Found it - return supervisor for restart
+                            {ok, SupPid};
+                        {_, undefined, _, _} ->
+                            % Child exists but not running - can restart
+                            {ok, SupPid};
+                        false ->
+                            % Try to find by process registry
+                            try_find_via_registry(ComponentId)
+                    end
+            end
+    end.
+
+%% @doc Try to find component via gproc registry
+-spec try_find_via_registry(component_id()) -> {ok, pid()} | {error, term()}.
+try_find_via_registry(ComponentId) ->
+    try
+        % Check if component is registered via gproc
+        case gproc:where({n, l, ComponentId}) of
+            undefined ->
+                {error, component_not_found};
+            Pid when is_pid(Pid) ->
+                % Found it - now find its supervisor via supervision tree
+                find_supervisor_for_pid(Pid)
+        end
+    catch
+        error:_ ->
+            {error, registry_not_available}
+    end.
+
+%% @doc Find supervisor for a given PID by walking supervision tree
+-spec find_supervisor_for_pid(pid()) -> {ok, pid()} | {error, term()}.
+find_supervisor_for_pid(Pid) ->
+    case get_parent_pid(Pid) of
+        {ok, ParentPid} ->
+            case is_supervisor(ParentPid) of
+                true -> {ok, ParentPid};
+                false -> find_supervisor_for_pid(ParentPid) % Walk up the tree
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Get parent PID using supervisor module
+-spec get_parent_pid(pid()) -> {ok, pid()} | {error, term()}.
+get_parent_pid(Pid) ->
+    try
+        % Use supervisor:get_childspec/2 to find parent
+        % This works if the child is under a supervisor
+        case supervisor:which_children(erlmcp_sup) of
+            Children ->
+                % Check if any of our top-level supervisors match
+                find_matching_supervisor(Children, Pid)
+        end
+    catch
+        error:_ ->
+            {error, parent_not_found}
+    end.
+
+%% @doc Find matching supervisor from children list
+-spec find_matching_supervisor([{atom(), pid() | undefined, term(), term()}], pid()) ->
+    {ok, pid()} | {error, term()}.
+find_matching_supervisor([{SupId, SupPid, supervisor, _} | _Rest], _ChildPid) when is_pid(SupPid) ->
+    % Check if this supervisor manages our child
+    case is_child_under_supervisor(SupPid, _ChildPid) of
+        true -> {ok, SupPid};
+        false -> {error, not_under_this_supervisor}
+    end;
+find_matching_supervisor([_ | Rest], ChildPid) ->
+    find_matching_supervisor(Rest, ChildPid);
+find_matching_supervisor([], _ChildPid) ->
+    {error, supervisor_not_found}.
+
+%% @doc Check if PID is a supervisor
+-spec is_supervisor(pid()) -> boolean().
+is_supervisor(Pid) ->
+    try
+        % Check if process is a supervisor by looking at its module
+        {dictionary, Dict} = process_info(Pid, dictionary),
+        case proplists:get_value("$initial_call", Dict) of
+            {Module, _, _} ->
+                % Check if module implements supervisor behavior
+                Exports = Module:module_info(exports),
+                lists:keymember(init, 1, Exports) andalso
+                lists:keymember(handle_call, 1, Exports) =:= false;
+            _ ->
+                false
+        end
+    catch
+        _:_ -> false
+    end.
+
+%% @doc Check if child is under supervisor
+-spec is_child_under_supervisor(pid(), pid()) -> boolean().
+is_child_under_supervisor(SupPid, ChildPid) ->
+    try
+        Children = supervisor:which_children(SupPid),
+        lists:any(fun({_, Pid, _, _}) -> Pid =:= ChildPid end, Children)
+    catch
+        _:_ -> false
+    end.
+
+%% @doc Restart component with cooldown to prevent thrashing
+-spec restart_with_cooldown(pid(), component_id()) -> ok | {error, term()}.
+restart_with_cooldown(SupPid, ComponentId) ->
+    gen_server:call(?MODULE, {restart_with_cooldown, SupPid, ComponentId}).
 
 -spec find_component_by_pid(pid(), #{component_id() => #component{}}) -> 
     {ok, component_id()} | error.
@@ -581,3 +791,96 @@ is_component_healthy(Component) ->
 update_metric(Key, Delta, Metrics) ->
     CurrentValue = maps:get(Key, Metrics, 0),
     maps:put(Key, CurrentValue + Delta, Metrics).
+
+%% @doc Actually restart the component via its supervisor
+%% Implements supervisor restart strategies:
+%% - For temporary workers: use restart_child/2
+%% - For permanent workers: terminate and let supervisor restart
+-spec do_restart_component(pid(), component_id()) -> {ok, pid()} | {error, term()}.
+do_restart_component(SupPid, ComponentId) ->
+    try
+        case supervisor:get_childspec(SupPid, ComponentId) of
+            {ok, ChildSpec} ->
+                RestartType = maps:get(restart, ChildSpec, permanent),
+                case RestartType of
+                    temporary ->
+                        % Temporary workers can be restarted manually
+                        ?LOG_INFO("Restarting temporary component ~p", [ComponentId]),
+                        case supervisor:terminate_child(SupPid, ComponentId) of
+                            ok ->
+                                case supervisor:restart_child(SupPid, ComponentId) of
+                                    {ok, Pid} -> {ok, Pid};
+                                    {error, Reason} -> {error, {restart_failed, Reason}}
+                                end;
+                            {error, Reason} ->
+                                {error, {terminate_failed, Reason}}
+                        end;
+                    transient ->
+                        % Transient workers restart only on abnormal termination
+                        ?LOG_INFO("Restarting transient component ~p", [ComponentId]),
+                        case supervisor:terminate_child(SupPid, ComponentId) of
+                            ok ->
+                                case supervisor:restart_child(SupPid, ComponentId) of
+                                    {ok, Pid} -> {ok, Pid};
+                                    {error, Reason} -> {error, {restart_failed, Reason}}
+                                end;
+                            {error, Reason} ->
+                                {error, {terminate_failed, Reason}}
+                        end;
+                    permanent ->
+                        % Permanent workers: terminate and let supervisor auto-restart
+                        ?LOG_INFO("Terminating permanent component ~p for auto-restart", [ComponentId]),
+                        case supervisor:terminate_child(SupPid, ComponentId) of
+                            ok ->
+                                % Wait a bit for supervisor to restart it
+                                timer:sleep(100),
+                                case supervisor:which_children(SupPid) of
+                                    Children ->
+                                        case lists:keyfind(ComponentId, 1, Children) of
+                                            {_, Pid, _, _} when is_pid(Pid) ->
+                                                {ok, Pid};
+                                            {_, undefined, _, _} ->
+                                                % Not restarted yet, try to manually restart
+                                                case supervisor:restart_child(SupPid, ComponentId) of
+                                                    {ok, Pid} -> {ok, Pid};
+                                                    {error, Reason} -> {error, {restart_failed, Reason}}
+                                                end;
+                                            false ->
+                                                {error, child_not_found}
+                                        end
+                                end;
+                            {error, Reason} ->
+                                {error, {terminate_failed, Reason}}
+                        end
+                end;
+            {error, not_found} ->
+                % Child spec not found - might be a dynamic child
+                ?LOG_WARNING("Child spec not found for ~p, trying dynamic restart", [ComponentId]),
+                restart_dynamic_component(SupPid, ComponentId)
+        end
+    catch
+        error:ErrorReason ->
+            ?LOG_ERROR("Exception during component restart: ~p", [ErrorReason]),
+            {error, {restart_exception, ErrorReason}}
+    end.
+
+%% @doc Restart a dynamic component (simple_one_for_one supervisor)
+-spec restart_dynamic_component(pid(), component_id()) -> {ok, pid()} | {error, term()}.
+restart_dynamic_component(SupPid, ComponentId) ->
+    case supervisor:which_children(SupPid) of
+        Children ->
+            case lists:keyfind(ComponentId, 1, Children) of
+                {_, OldPid, worker, _} when is_pid(OldPid) ->
+                    % Terminate old instance
+                    exit(OldPid, kill),
+                    timer:sleep(100),
+                    % For simple_one_for_one, we can't restart - we start a new child
+                    % This requires knowing the start arguments
+                    {error, {cannot_restart_dynamic, need_start_args}};
+                {_, undefined, worker, _} ->
+                    % Already terminated, try to restart
+                    {error, {cannot_restart_dynamic, need_start_args}};
+                false ->
+                    {error, child_not_found}
+            end
+    end.
