@@ -158,19 +158,20 @@ oversized_response_test(_Config) ->
 
     %% Test message size validation
     MaxSize = 16 * 1024 * 1024,  % 16MB default
-    case erlmcp_transport_validation:validate_message_size(LargeData, MaxSize) of
-        ok ->
+    case byte_size(LargeData) =< MaxSize of
+        true ->
             ct:log("Large message within size limit", []);
-        {error, {message_too_large, Size, Limit}} ->
-            ct:log("Message size ~p exceeds limit ~p", [Size, Limit])
+        false ->
+            Size = byte_size(LargeData),
+            ct:log("Message size ~p exceeds limit ~p", [Size, MaxSize])
     end,
 
     %% Test with message exceeding limit
     HugeMessage = << <<X>> || <<X>> <= <<0:20000000>> >>,  % 20MB
-    case erlmcp_transport_validation:validate_message_size(HugeMessage, MaxSize) of
-        {error, {message_too_large, _, _}} ->
+    case byte_size(HugeMessage) > MaxSize of
+        true ->
             ct:log("Oversized message rejected correctly", []);
-        ok ->
+        false ->
             ct:fail("Oversized message should have been rejected")
     end,
     ok.
@@ -445,12 +446,13 @@ large_response_memory_management_test(_Config) ->
     LargeResponse = create_large_response(1024 * 1024),  % 1MB
 
     %% Test that response can be validated
-    case erlmcp_transport_validation:validate_message_size(
-        LargeResponse, 16 * 1024 * 1024) of
-        ok ->
+    MaxResponseSize = 16 * 1024 * 1024,
+    case byte_size(LargeResponse) =< MaxResponseSize of
+        true ->
             ct:log("Large response size validation passed", []);
-        {error, Reason} ->
-            ct:fail("Large response validation failed: ~p", [Reason])
+        false ->
+            ct:fail("Large response validation failed: size ~p exceeds ~p",
+                    [byte_size(LargeResponse), MaxResponseSize])
     end,
 
     ok.

@@ -39,6 +39,20 @@ subscriptions_test_() ->
          ]
      end}.
 
+pg_pubsub_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          {"Multiple subscribers receive broadcast", fun test_pg_multiple_subscribers/0},
+          {"Fan-out to multiple processes", fun test_pg_fanout/0},
+          {"Subscribers isolated by URI", fun test_pg_topic_isolation/0},
+          {"Auto cleanup on subscriber death", fun test_pg_auto_cleanup/0},
+          {"Notification broadcast to subscribers", fun test_pg_notification_broadcast/0}
+         ]
+     end}.
+
 notifications_test_() ->
     {setup,
      fun setup/0,
@@ -434,6 +448,196 @@ test_multiple_progress() ->
     ok = erlmcp_server:stop(Server).
 
 %%%====================================================================
+%%% pg-based PubSub Tests
+%%% Test OTP built-in pg for resource subscription fan-out
+%%%====================================================================
+
+test_pg_multiple_subscribers() ->
+    Server = start_server(),
+    Uri = <<"test://pubsub/resource">>,
+
+    %% Create 5 subscriber processes
+    Subscribers = [spawn(fun() -> subscriber_loop([]) end) || _ <- lists:seq(1, 5)],
+
+    %% Subscribe all to the same resource
+    [erlmcp_server:subscribe_resource(Server, Uri, Sub) || Sub <- Subscribers],
+
+    %% Notify resource updated
+    Metadata = #{<<"version">> => 1, <<"timestamp">> => erlang:system_time(second)},
+    erlmcp_server:notify_resource_updated(Server, Uri, Metadata),
+
+    %% Allow notifications to propagate
+    timer:sleep(50),
+
+    %% All subscribers should have received the notification
+    [begin
+        Sub ! {get_count, self()},
+        receive
+            {count, Count} ->
+                ?assertEqual(1, Count, "Each subscriber should receive exactly 1 notification")
+        after 1000 ->
+            ?assert(false, "Timeout waiting for subscriber count")
+        end
+    end || Sub <- Subscribers],
+
+    %% Cleanup
+    [Sub ! stop || Sub <- Subscribers],
+    timer:sleep(50),
+    ok = erlmcp_server:stop(Server).
+
+test_pg_fanout() ->
+    Server = start_server(),
+    Uri = <<"test://fanout/resource">>,
+
+    %% Create 10 subscribers
+    Subscribers = [spawn(fun() -> subscriber_loop([]) end) || _ <- lists:seq(1, 10)],
+
+    %% Subscribe all
+    [erlmcp_server:subscribe_resource(Server, Uri, Sub) || Sub <- Subscribers],
+
+    %% Send 3 notifications
+    [begin
+        Metadata = #{<<"update">> => N},
+        erlmcp_server:notify_resource_updated(Server, Uri, Metadata)
+    end || N <- lists:seq(1, 3)],
+
+    %% Allow notifications to propagate
+    timer:sleep(100),
+
+    %% Each subscriber should have received all 3 notifications
+    [begin
+        Sub ! {get_count, self()},
+        receive
+            {count, Count} ->
+                ?assertEqual(3, Count, "Each subscriber should receive 3 notifications")
+        after 1000 ->
+            ?assert(false, "Timeout waiting for subscriber count")
+        end
+    end || Sub <- Subscribers],
+
+    %% Cleanup
+    [Sub ! stop || Sub <- Subscribers],
+    timer:sleep(50),
+    ok = erlmcp_server:stop(Server).
+
+test_pg_topic_isolation() ->
+    Server = start_server(),
+    Uri1 = <<"test://isolation/resource1">>,
+    Uri2 = <<"test://isolation/resource2">>,
+
+    %% Create 2 groups of subscribers
+    Group1 = [spawn(fun() -> subscriber_loop([]) end) || _ <- lists:seq(1, 3)],
+    Group2 = [spawn(fun() -> subscriber_loop([]) end) || _ <- lists:seq(1, 3)],
+
+    %% Group1 subscribes to Uri1, Group2 to Uri2
+    [erlmcp_server:subscribe_resource(Server, Uri1, Sub) || Sub <- Group1],
+    [erlmcp_server:subscribe_resource(Server, Uri2, Sub) || Sub <- Group2],
+
+    %% Notify Uri1
+    erlmcp_server:notify_resource_updated(Server, Uri1, #{<<"data">> => <<"uri1">>}),
+    timer:sleep(50),
+
+    %% Group1 should receive, Group2 should not
+    [begin
+        Sub ! {get_count, self()},
+        receive
+            {count, Count} ->
+                ?assertEqual(1, Count, "Uri1 subscribers should receive 1 notification")
+        after 1000 ->
+            ?assert(false, "Timeout")
+        end
+    end || Sub <- Group1],
+
+    [begin
+        Sub ! {get_count, self()},
+        receive
+            {count, Count} ->
+                ?assertEqual(0, Count, "Uri2 subscribers should receive 0 notifications")
+        after 1000 ->
+            ?assert(false, "Timeout")
+        end
+    end || Sub <- Group2],
+
+    %% Cleanup
+    [Sub ! stop || Sub <- Group1 ++ Group2],
+    timer:sleep(50),
+    ok = erlmcp_server:stop(Server).
+
+test_pg_auto_cleanup() ->
+    Server = start_server(),
+    Uri = <<"test://cleanup/resource">>,
+
+    %% Create subscriber and subscribe
+    Subscriber = spawn(fun() -> subscriber_loop([]) end),
+    erlmcp_server:subscribe_resource(Server, Uri, Subscriber),
+
+    %% Kill the subscriber (pg should auto-cleanup)
+    exit(Subscriber, kill),
+    timer:sleep(100),  % Allow pg to clean up
+
+    %% Create new subscriber
+    NewSubscriber = spawn(fun() -> subscriber_loop([]) end),
+    erlmcp_server:subscribe_resource(Server, Uri, NewSubscriber),
+
+    %% Notify - only new subscriber should receive
+    erlmcp_server:notify_resource_updated(Server, Uri, #{<<"data">> => <<"test">>}),
+    timer:sleep(50),
+
+    NewSubscriber ! {get_count, self()},
+    receive
+        {count, Count} ->
+            ?assertEqual(1, Count, "New subscriber should receive notification")
+    after 1000 ->
+        ?assert(false, "Timeout")
+    end,
+
+    %% Cleanup
+    NewSubscriber ! stop,
+    timer:sleep(50),
+    ok = erlmcp_server:stop(Server).
+
+test_pg_notification_broadcast() ->
+    Server = start_server(),
+    Uri = <<"test://broadcast/resource">>,
+
+    %% Subscribe self
+    erlmcp_server:subscribe_resource(Server, Uri, self()),
+
+    %% Notify with metadata
+    Metadata = #{
+        <<"version">> => 2,
+        <<"timestamp">> => 1234567890,
+        <<"author">> => <<"test_user">>
+    },
+    erlmcp_server:notify_resource_updated(Server, Uri, Metadata),
+
+    %% Should receive notification message
+    receive
+        {resource_updated, RecvUri, RecvMetadata} ->
+            ?assertEqual(Uri, RecvUri),
+            ?assertEqual(Metadata, RecvMetadata)
+    after 1000 ->
+        ?assert(false, "Did not receive resource_updated notification")
+    end,
+
+    %% Unsubscribe
+    erlmcp_server:unsubscribe_resource(Server, Uri),
+
+    %% Send another notification
+    erlmcp_server:notify_resource_updated(Server, Uri, #{<<"version">> => 3}),
+    timer:sleep(50),
+
+    %% Should NOT receive this one
+    receive
+        {resource_updated, _, _} ->
+            ?assert(false, "Should not receive notification after unsubscribe")
+    after 100 ->
+        ok  % Expected - no message
+    end,
+
+    ok = erlmcp_server:stop(Server).
+
+%%%====================================================================
 %%% Helper Functions
 %%%====================================================================
 
@@ -445,3 +649,20 @@ start_server() ->
     },
     {ok, Pid} = erlmcp_server:start_link(ServerId, Capabilities),
     Pid.
+
+%% @doc Simple subscriber loop for tests (Chicago School - real process)
+subscriber_loop(Messages) ->
+    receive
+        {resource_updated, _Uri, _Metadata} = Msg ->
+            subscriber_loop([Msg | Messages]);
+
+        {get_count, From} ->
+            From ! {count, length(Messages)},
+            subscriber_loop(Messages);
+
+        stop ->
+            ok;
+
+        _Other ->
+            subscriber_loop(Messages)
+    end.

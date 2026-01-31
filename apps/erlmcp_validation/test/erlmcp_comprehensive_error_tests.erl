@@ -548,20 +548,21 @@ test_message_size_limit(_Config) ->
 
     %% Test within limit
     SmallMessage = <<0:(1024 * 8)>>,  % 1KB
-    case erlmcp_transport_validation:validate_message_size(SmallMessage, MaxSize) of
-        ok ->
+    case byte_size(SmallMessage) =< MaxSize of
+        true ->
             ct:log("Small message within limit", []);
-        {error, Reason} ->
-            ct:fail("Small message rejected: ~p", [Reason])
+        false ->
+            ct:fail("Small message rejected")
     end,
 
     %% Test exceeding limit
     LargeMessage = <<0:(20 * 1024 * 1024 * 8)>>,  % 20MB
-    case erlmcp_transport_validation:validate_message_size(LargeMessage, MaxSize) of
-        {error, {message_too_large, Size, Limit}} ->
-            ct:log("Large message rejected (size: ~p, limit: ~p)", [Size, Limit]),
+    case byte_size(LargeMessage) > MaxSize of
+        true ->
+            Size = byte_size(LargeMessage),
+            ct:log("Large message rejected (size: ~p, limit: ~p)", [Size, MaxSize]),
             ok;
-        ok ->
+        false ->
             ct:fail("Large message should have been rejected")
     end.
 

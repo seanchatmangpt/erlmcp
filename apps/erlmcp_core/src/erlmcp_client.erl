@@ -203,6 +203,8 @@ remove_sampling_handler(Client) ->
 -spec init([transport_opts() | client_opts()]) -> {ok, state()}.
 init([TransportOpts, Options]) ->
     process_flag(trap_exit, true),
+    StartTime = erlang:monotonic_time(microsecond),
+
     %% Initialize ETS table for persistent correlation storage
     CorrelationTable = case ets:info(erlmcp_correlation_table) of
         undefined ->
@@ -228,8 +230,36 @@ init([TransportOpts, Options]) ->
             },
             %% Recover pending correlations from ETS table on initialization
             State2 = recover_correlations(State),
+
+            %% Emit telemetry event for successful connection
+            Duration = erlang:monotonic_time(microsecond) - StartTime,
+            telemetry:execute(
+                [erlmcp, client, connection, open],
+                #{
+                    count => 1,
+                    duration_us => Duration
+                },
+                #{
+                    transport => Transport,
+                    strict_mode => State#state.strict_mode,
+                    timeout => State#state.timeout,
+                    recovered_correlations => maps:size(State2#state.pending_requests)
+                }
+            ),
+
             {ok, State2};
         {error, Reason} ->
+            %% Emit telemetry event for connection failure
+            telemetry:execute(
+                [erlmcp, client, error],
+                #{count => 1},
+                #{
+                    error_type => connection_failed,
+                    error_reason => Reason,
+                    transport => element(1, TransportOpts)
+                }
+            ),
+
             {stop, Reason}
     end.
 
@@ -504,7 +534,22 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, State) ->
+terminate(Reason, State) ->
+    %% Emit telemetry event for disconnect
+    telemetry:execute(
+        [erlmcp, client, connection, close],
+        #{
+            count => 1,
+            pending_requests => maps:size(State#state.pending_requests)
+        },
+        #{
+            reason => Reason,
+            transport => State#state.transport,
+            phase => State#state.phase,
+            subscriptions => sets:size(State#state.subscriptions)
+        }
+    ),
+
     close_transport(State),
     %% Clean up stale correlations on termination
     cleanup_stale_correlations(),
@@ -545,6 +590,7 @@ close_transport(#state{transport = Transport, transport_state = TransportState})
 send_request(State, Method, Params, RequestInfo) ->
     RequestId = State#state.request_id,
     {_, FromPid} = RequestInfo,
+    StartTime = erlang:monotonic_time(microsecond),
 
     %% P0 SECURITY: Safe request ID handling with overflow detection
     %% Check ID space usage before increment to prevent overflow
@@ -552,6 +598,19 @@ send_request(State, Method, Params, RequestInfo) ->
         {error, overflow} ->
             %% ID space exhausted - reply once and return error
             logger:error("Request ID space exhausted at ID ~w. Reconnection required.", [RequestId]),
+
+            %% Emit telemetry event for error
+            telemetry:execute(
+                [erlmcp, client, request, exception],
+                #{count => 1},
+                #{
+                    error_type => request_id_overflow,
+                    method => Method,
+                    request_id => RequestId,
+                    transport => State#state.transport
+                }
+            ),
+
             gen_server:reply(FromPid, {error, {request_id_overflow,
                 <<"Request ID space exhausted. Reconnection required.">>}}),
             {error, request_id_exhausted};
@@ -572,6 +631,19 @@ send_request(State, Method, Params, RequestInfo) ->
             case maps:is_key(RequestId, State#state.pending_requests) of
                 true ->
                     logger:error("CRITICAL: Request ID collision detected for ID ~w", [RequestId]),
+
+                    %% Emit telemetry event for error
+                    telemetry:execute(
+                        [erlmcp, client, request, exception],
+                        #{count => 1},
+                        #{
+                            error_type => request_id_collision,
+                            method => Method,
+                            request_id => RequestId,
+                            transport => State#state.transport
+                        }
+                    ),
+
                     gen_server:reply(FromPid, {error, {request_id_collision,
                         <<"Internal error: request ID collision">>}}),
                     {error, request_id_collision};
@@ -581,12 +653,43 @@ send_request(State, Method, Params, RequestInfo) ->
                         ok ->
                             %% Store correlation in ETS for persistence across reconnection
                             store_correlation(State#state.correlation_table, RequestId, RequestInfo, Method),
+
+                            %% Emit telemetry event for successful request
+                            Duration = erlang:monotonic_time(microsecond) - StartTime,
+                            telemetry:execute(
+                                [erlmcp, client, request, start],
+                                #{
+                                    count => 1,
+                                    duration_us => Duration,
+                                    bytes => byte_size(Json)
+                                },
+                                #{
+                                    method => Method,
+                                    request_id => RequestId,
+                                    transport => State#state.transport,
+                                    phase => State#state.phase
+                                }
+                            ),
+
                             NewState = State#state{
                                 request_id = SafeNextId,
                                 pending_requests = maps:put(RequestId, RequestInfo, State#state.pending_requests)
                             },
                             {ok, NewState};
                         {error, Reason} ->
+                            %% Emit telemetry event for send error
+                            telemetry:execute(
+                                [erlmcp, client, request, exception],
+                                #{count => 1},
+                                #{
+                                    error_type => send_failed,
+                                    error_reason => Reason,
+                                    method => Method,
+                                    request_id => RequestId,
+                                    transport => State#state.transport
+                                }
+                            ),
+
                             gen_server:reply(FromPid, {error, Reason}),
                             {error, Reason}
                     end
@@ -684,11 +787,32 @@ check_capability_enabled(_) ->
 -spec handle_response(request_id(), {ok, map()} | {error, map()}, state()) ->
     {noreply, state()}.
 handle_response(Id, Result, State) ->
+    ResponseTime = erlang:monotonic_time(microsecond),
+
     case maps:take(Id, State#state.pending_requests) of
         {{initialize, From}, NewPending} ->
             gen_server:reply(From, Result),
             %% Remove from persistent ETS storage
             delete_correlation(State#state.correlation_table, Id),
+
+            %% Emit telemetry event for initialize response
+            telemetry:execute(
+                [erlmcp, client, request, stop],
+                #{
+                    count => 1
+                },
+                #{
+                    method => <<"initialize">>,
+                    request_id => Id,
+                    status => case Result of
+                        {ok, _} -> ok;
+                        {error, _} -> error
+                    end,
+                    transport => State#state.transport,
+                    phase => State#state.phase
+                }
+            ),
+
             case Result of
                 {ok, InitResult} ->
                     ServerCapabilities = extract_server_capabilities(InitResult),
@@ -711,13 +835,45 @@ handle_response(Id, Result, State) ->
                     },
                     {noreply, NewState}
             end;
-        {{_RequestType, From}, NewPending} ->
+        {{RequestType, From}, NewPending} ->
             gen_server:reply(From, Result),
             %% Remove from persistent ETS storage
             delete_correlation(State#state.correlation_table, Id),
+
+            %% Emit telemetry event for response
+            telemetry:execute(
+                [erlmcp, client, request, stop],
+                #{
+                    count => 1
+                },
+                #{
+                    method => atom_to_binary(RequestType),
+                    request_id => Id,
+                    status => case Result of
+                        {ok, _} -> ok;
+                        {error, _} -> error
+                    end,
+                    transport => State#state.transport,
+                    phase => State#state.phase
+                }
+            ),
+
             {noreply, State#state{pending_requests = NewPending}};
         error ->
             logger:warning("Received response for unknown request ID: ~p", [Id]),
+
+            %% Emit telemetry event for unexpected response
+            telemetry:execute(
+                [erlmcp, client, request, exception],
+                #{count => 1},
+                #{
+                    error_type => unknown_request_id,
+                    request_id => Id,
+                    transport => State#state.transport,
+                    phase => State#state.phase
+                }
+            ),
+
             {noreply, State}
     end.
 

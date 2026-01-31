@@ -37,6 +37,9 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+%% pg scope for resource subscriptions (OTP built-in pubsub)
+-define(PG_SCOPE, erlmcp_pubsub).
+
 %% Types
 -type server() :: pid().
 
@@ -204,6 +207,11 @@ stop(Server) ->
 init([ServerId, Capabilities]) ->
     process_flag(trap_exit, true),
 
+    % Ensure pg scope exists for resource subscriptions
+    % pg is automatically started by kernel application in OTP 23+
+    % pg:start/1 is idempotent - safe to call multiple times
+    ok = pg:start(?PG_SCOPE),
+
     % Start or get change notifier
     NotifierPid = case erlmcp_change_notifier:start_link() of
         {ok, Pid} -> Pid;
@@ -222,7 +230,7 @@ init([ServerId, Capabilities]) ->
         notifier_pid = NotifierPid
     },
 
-    logger:info("Starting MCP server ~p with capabilities: ~p", [ServerId, Capabilities]),
+    logger:info("Starting MCP server ~p with capabilities: ~p (pg-based pubsub enabled)", [ServerId, Capabilities]),
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -384,48 +392,18 @@ handle_call({delete_prompt, Name}, _From, State) ->
     end;
 
 handle_call({subscribe_resource, Uri, Subscriber}, _From, State) ->
-    % Subscribe via resource subscriptions manager if available
-    % Otherwise fall back to local tracking
-    case erlang:whereis(erlmcp_resource_subscriptions) of
-        undefined ->
-            % Resource subscriptions manager not running - use local tracking only
-            logger:debug("Resource subscriptions manager not available, using local tracking"),
-            NewSubscriptions = add_subscription(Uri, Subscriber, State#state.subscriptions),
-            {reply, ok, State#state{subscriptions = NewSubscriptions}};
-        _Pid ->
-            % Resource subscriptions manager running - use it
-            case erlmcp_resource_subscriptions:subscribe_to_resource(Uri, Subscriber, #{}) of
-                ok ->
-                    % Track subscription count in server state for cleanup
-                    NewSubscriptions = add_subscription(Uri, Subscriber, State#state.subscriptions),
-                    {reply, ok, State#state{subscriptions = NewSubscriptions}};
-                {error, Reason} ->
-                    logger:warning("Failed to subscribe to resource ~p: ~p", [Uri, Reason]),
-                    {reply, {error, Reason}, State}
-            end
-    end;
+    % Use pg (OTP built-in process groups) for distributed pubsub
+    % Topic format: {resource, Uri}
+    ok = pg:join(?PG_SCOPE, {resource, Uri}, Subscriber),
+    logger:debug("Subscribed ~p to resource ~p via pg", [Subscriber, Uri]),
+    {reply, ok, State};
 
 handle_call({unsubscribe_resource, Uri}, From, State) ->
-    % Remove the caller's subscription
+    % Remove the caller's subscription using pg
     CallerPid = element(1, From),
-
-    % Unsubscribe via resource subscriptions manager if available
-    case erlang:whereis(erlmcp_resource_subscriptions) of
-        undefined ->
-            % Resource subscriptions manager not running - clean local state only
-            NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
-            {reply, ok, State#state{subscriptions = NewSubscriptions}};
-        _Pid ->
-            case erlmcp_resource_subscriptions:unsubscribe_from_resource(Uri, CallerPid) of
-                ok ->
-                    NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
-                    {reply, ok, State#state{subscriptions = NewSubscriptions}};
-                {error, not_found} ->
-                    % Already unsubscribed or never subscribed - still clean local state
-                    NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
-                    {reply, ok, State#state{subscriptions = NewSubscriptions}}
-            end
-    end;
+    ok = pg:leave(?PG_SCOPE, {resource, Uri}, CallerPid),
+    logger:debug("Unsubscribed ~p from resource ~p via pg", [CallerPid, Uri]),
+    {reply, ok, State};
 
 handle_call({register_notification_handler, Method, HandlerPid}, _From, State) ->
     % Monitor the handler process for automatic cleanup
@@ -482,16 +460,8 @@ handle_cast({report_progress, Token, Progress, Total}, State) ->
     {noreply, State#state{progress_tokens = NewTokens}};
 
 handle_cast({notify_resource_updated, Uri, Metadata}, State) ->
-    % Notify via resource subscriptions manager if available
-    case erlang:whereis(erlmcp_resource_subscriptions) of
-        undefined ->
-            % Resource subscriptions manager not running - use local notification only
-            logger:debug("Resource subscriptions manager not available, using local notification"),
-            notify_subscribers(Uri, Metadata, State);
-        _Pid ->
-            erlmcp_resource_subscriptions:notify_resource_changed(Uri, Metadata),
-            % Also notify local subscribers for backward compatibility
-            notify_subscribers(Uri, Metadata, State)
+    % Notify all subscribers via pg-based pubsub
+    notify_subscribers(Uri, Metadata, State)
     end,
     {noreply, State};
 
@@ -511,20 +481,39 @@ handle_cast(_Msg, State) ->
 % Handle messages routed from registry - this is the key change!
 handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_mcp_message">>, ServerId),
+    StartTime = erlang:monotonic_time(microsecond),
     try
         DataSize = byte_size(Data),
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"transport_id">> => TransportId,
             <<"data.size">> => DataSize
         }),
-        
+
         DecodeSpanCtx = erlmcp_tracing:start_span(<<"json_rpc.decode">>),
         try
             case erlmcp_json_rpc:decode_message(Data) of
                 {ok, #json_rpc_request{id = Id, method = Method, params = Params}} ->
                     erlmcp_tracing:set_status(DecodeSpanCtx, ok),
                     erlmcp_tracing:record_message_metrics(SpanCtx, Method, DataSize),
-                    handle_request(Id, Method, Params, TransportId, State);
+
+                    %% Emit telemetry event for request start
+                    telemetry:execute(
+                        [erlmcp, server, request, start],
+                        #{count => 1, bytes => DataSize},
+                        #{method => Method, server_id => ServerId, transport_id => TransportId}
+                    ),
+
+                    Result = handle_request(Id, Method, Params, TransportId, State),
+
+                    %% Emit telemetry event for request stop
+                    Duration = erlang:monotonic_time(microsecond) - StartTime,
+                    telemetry:execute(
+                        [erlmcp, server, request, stop],
+                        #{duration_us => Duration, count => 1},
+                        #{method => Method, server_id => ServerId, transport_id => TransportId, status => ok}
+                    ),
+
+                    Result;
                 {ok, #json_rpc_notification{method = Method, params = Params}} ->
                     erlmcp_tracing:set_status(DecodeSpanCtx, ok),
                     erlmcp_tracing:record_message_metrics(SpanCtx, Method, DataSize),
@@ -532,6 +521,15 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
                 {error, Reason} ->
                     erlmcp_tracing:record_error_details(DecodeSpanCtx, decode_failed, Reason),
                     logger:error("Failed to decode message: ~p", [Reason]),
+
+                    %% Emit telemetry event for decode error
+                    Duration = erlang:monotonic_time(microsecond) - StartTime,
+                    telemetry:execute(
+                        [erlmcp, server, request, exception],
+                        #{duration_us => Duration, count => 1},
+                        #{error_type => decode_failed, error_reason => Reason, server_id => ServerId}
+                    ),
+
                     {noreply, State}
             end
         after
@@ -540,6 +538,15 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
     catch
         Class:ExceptionReason:Stacktrace ->
             erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
+
+            %% Emit telemetry event for exception
+            Duration = erlang:monotonic_time(microsecond) - StartTime,
+            telemetry:execute(
+                [erlmcp, server, request, exception],
+                #{duration_us => Duration, count => 1},
+                #{error_type => Class, error_reason => ExceptionReason, server_id => ServerId}
+            ),
+
             erlang:raise(Class, ExceptionReason, Stacktrace)
     after
         erlmcp_tracing:end_span(SpanCtx)
@@ -786,13 +793,18 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
                 erlmcp_tracing:record_error_details(SpanCtx, missing_tool_name, undefined),
                 send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
             {ToolName, Arguments} ->
-                %% Check for async task execution (MCP 2025-11-25)
+                %% Check execution mode: streaming, async task, or synchronous
+                StreamOpts = maps:get(<<"stream">>, Params, undefined),
                 TaskParams = maps:get(<<"task">>, Params, undefined),
-                case TaskParams of
-                    undefined ->
-                        %% Synchronous execution
+
+                case {StreamOpts, TaskParams} of
+                    {undefined, undefined} ->
+                        %% Synchronous execution (default)
                         handle_tool_call(Id, ToolName, Arguments, TransportId, State);
-                    _ when is_map(TaskParams) ->
+                    {StreamOpts, _} when is_map(StreamOpts); StreamOpts =:= true ->
+                        %% Streaming execution - progressive chunks
+                        handle_tool_call_streaming(Id, ToolName, Arguments, StreamOpts, TransportId, State, SpanCtx);
+                    {undefined, TaskParams} when is_map(TaskParams) ->
                         %% Async task execution
                         handle_tool_call_async(Id, ToolName, Arguments, TaskParams, TransportId, State, SpanCtx)
                 end
@@ -1031,9 +1043,10 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_SUBSCRIBE, Params, TransportId, State) 
         undefined ->
             send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
-            NewSubscriptions = add_subscription(Uri, self(), State#state.subscriptions),
+            % Subscribe via pg (OTP built-in process groups)
+            ok = pg:join(?PG_SCOPE, {resource, Uri}, self()),
             send_response_via_registry(State, TransportId, Id, #{}),
-            {noreply, State#state{subscriptions = NewSubscriptions}}
+            {noreply, State}
     end;
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, TransportId, State) ->
@@ -1041,10 +1054,10 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, TransportId, State
         undefined ->
             send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_URI_PARAMETER);
         Uri ->
-            % Remove only this transport's subscription for the URI
-            NewSubscriptions = remove_subscription(Uri, self(), State#state.subscriptions),
+            % Unsubscribe via pg
+            ok = pg:leave(?PG_SCOPE, {resource, Uri}, self()),
             send_response_via_registry(State, TransportId, Id, #{}),
-            {noreply, State#state{subscriptions = NewSubscriptions}}
+            {noreply, State}
     end;
 
 handle_request(Id, ?MCP_METHOD_PROMPTS_LIST, Params, TransportId, State) ->
@@ -1357,6 +1370,7 @@ list_all_prompts(State) ->
 -spec handle_read_resource(json_rpc_id(), binary(), atom(), state()) -> ok.
 handle_read_resource(Id, Uri, TransportId, #state{server_id = ServerId} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.read_resource">>, ServerId),
+    StartTime = erlang:monotonic_time(microsecond),
     try
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"request_id">> => Id,
@@ -1384,6 +1398,26 @@ handle_read_resource(Id, Uri, TransportId, #state{server_id = ServerId} = State)
                                 <<"content.size">> => ContentSize
                             }),
                             erlmcp_tracing:set_status(HandlerSpanCtx, ok),
+
+                            %% Emit telemetry event for successful resource read
+                            Duration = erlang:monotonic_time(microsecond) - StartTime,
+                            telemetry:execute(
+                                [erlmcp, server, resource, read],
+                                #{
+                                    duration_us => Duration,
+                                    count => 1,
+                                    bytes => case ContentSize of
+                                        B when is_integer(B) -> B;
+                                        _ -> 0
+                                    end
+                                },
+                                #{
+                                    resource_uri => CanonicalUri,
+                                    status => ok,
+                                    server_id => ServerId
+                                }
+                            ),
+
                             send_response_safe(State, TransportId, Id, #{?MCP_PARAM_CONTENTS => [ContentItem]}),
                             erlmcp_tracing:set_status(SpanCtx, ok)
                         catch
@@ -1395,13 +1429,27 @@ handle_read_resource(Id, Uri, TransportId, #state{server_id = ServerId} = State)
                             erlmcp_tracing:end_span(HandlerSpanCtx)
                         end;
                     {error, not_found} ->
+                        Duration = erlang:monotonic_time(microsecond) - StartTime,
                         erlmcp_tracing:record_error_details(SpanCtx, resource_not_found, CanonicalUri),
+                        %% Emit telemetry event for resource not found
+                        telemetry:execute(
+                            [erlmcp, server, resource, read],
+                            #{duration_us => Duration, count => 1, bytes => 0},
+                            #{resource_uri => CanonicalUri, status => error, error_type => not_found, server_id => ServerId}
+                        ),
                         send_error_safe(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND)
                 end;
             {error, SecurityReason} ->
                 %% Gap #36: Security violation - path outside allowed directories or traversal attempt
+                Duration = erlang:monotonic_time(microsecond) - StartTime,
                 erlmcp_tracing:record_error_details(SpanCtx, path_validation_failed, SecurityReason),
                 logger:warning("Resource access denied due to security validation: ~p", [SecurityReason]),
+                %% Emit telemetry event for security violation
+                telemetry:execute(
+                    [erlmcp, server, resource, read],
+                    #{duration_us => Duration, count => 1, bytes => 0},
+                    #{resource_uri => Uri, status => error, error_type => security_violation, server_id => ServerId}
+                ),
                 send_error_safe(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
                     <<"Resource path validation failed - access denied">>)
         end
@@ -1457,11 +1505,13 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                         undefined -> 5000  % Default 5 second timeout
                     end,
 
+                    StartTime = erlang:monotonic_time(microsecond),
                     case erlmcp_cpu_guard:execute_with_protection(
                         ClientId, tool_call, Handler, [Arguments], TimeoutMs
                     ) of
                         {ok, Result, CpuTime} ->
                             % Tool executed successfully
+                            Duration = erlang:monotonic_time(microsecond) - StartTime,
                             erlmcp_tracing:set_attributes(HandlerSpanCtx, #{
                                 <<"cpu_time_ms">> => CpuTime
                             }),
@@ -1477,6 +1527,22 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                             }),
                             erlmcp_tracing:set_status(HandlerSpanCtx, ok),
 
+                            %% Emit telemetry event for successful tool execution
+                            telemetry:execute(
+                                [erlmcp, server, tool, execute],
+                                #{
+                                    duration_us => Duration,
+                                    count => 1,
+                                    cpu_time_ms => CpuTime
+                                },
+                                #{
+                                    tool_name => Name,
+                                    status => ok,
+                                    server_id => ServerId,
+                                    arguments_count => maps:size(Arguments)
+                                }
+                            ),
+
                             % Include progress token in response metadata
                             Response = #{
                                 ?MCP_PARAM_CONTENT => ContentList,
@@ -1489,18 +1555,39 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
                             erlmcp_tracing:set_status(SpanCtx, ok);
                         {error, quota_exceeded, cpu_time} ->
                             % CPU time quota exceeded
+                            Duration = erlang:monotonic_time(microsecond) - StartTime,
                             erlmcp_tracing:record_error_details(HandlerSpanCtx, cpu_quota_exceeded, cpu_time),
                             logger:warning("CPU quota exceeded for tool ~p", [Name]),
+                            %% Emit telemetry event for quota exceeded
+                            telemetry:execute(
+                                [erlmcp, server, tool, execute],
+                                #{duration_us => Duration, count => 1},
+                                #{tool_name => Name, status => error, error_type => quota_exceeded, server_id => ServerId}
+                            ),
                             send_error_safe(State, TransportId, Id, -32603,
                                 <<"CPU quota exceeded. Please retry later.">>);
                         {error, quota_exceeded, operations} ->
                             % Operations count quota exceeded
+                            Duration = erlang:monotonic_time(microsecond) - StartTime,
                             erlmcp_tracing:record_error_details(HandlerSpanCtx, ops_quota_exceeded, operations),
                             logger:warning("Operations quota exceeded for tool ~p", [Name]),
+                            %% Emit telemetry event for quota exceeded
+                            telemetry:execute(
+                                [erlmcp, server, tool, execute],
+                                #{duration_us => Duration, count => 1},
+                                #{tool_name => Name, status => error, error_type => quota_exceeded, server_id => ServerId}
+                            ),
                             send_error_safe(State, TransportId, Id, -32603,
                                 <<"Operation rate limit exceeded. Please retry later.">>);
                         {error, timeout} ->
                             % Tool execution timeout
+                            Duration = erlang:monotonic_time(microsecond) - StartTime,
+                            %% Emit telemetry event for timeout
+                            telemetry:execute(
+                                [erlmcp, server, tool, execute],
+                                #{duration_us => Duration, count => 1},
+                                #{tool_name => Name, status => error, error_type => timeout, server_id => ServerId}
+                            ),
                             erlmcp_tracing:record_error_details(HandlerSpanCtx, timeout, TimeoutMs),
                             logger:error("Tool ~p timed out after ~pms", [Name, TimeoutMs]),
                             send_error_safe(State, TransportId, Id, -32603,
@@ -1657,6 +1744,90 @@ execute_tool_async_task(TaskId, ClientPid, Name, Handler, Arguments, TimeoutMs) 
         {error, _} ->
             %% Task already started or failed
             ok
+    end.
+
+%% @doc Handle streaming tool call execution using erlmcp_streaming
+%% Progressively sends chunks back to client as tool executes
+-spec handle_tool_call_streaming(
+    json_rpc_id(),
+    binary(),
+    map(),
+    map() | true,
+    atom(),
+    state(),
+    term()
+) -> ok.
+handle_tool_call_streaming(Id, Name, Arguments, StreamOpts, TransportId, State, _ParentSpanCtx) ->
+    %% Verify the tool exists
+    case maps:get(Name, State#state.tools, undefined) of
+        undefined ->
+            erlmcp_tracing:record_error_details(_ParentSpanCtx, tool_not_found, Name),
+            send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
+        {_Tool, Handler, _Schema} ->
+            %% Generate unique stream ID
+            StreamId = make_ref(),
+
+            %% Generate progress token for MCP compliance
+            ProgressToken = erlmcp_progress:generate_token(),
+            _ = erlmcp_progress:create(self(), <<"Streaming tool execution: ", Name/binary>>),
+
+            %% Start streaming via erlmcp_streaming gen_server
+            case erlmcp_streaming:start_stream(StreamId, [TransportId], #{
+                tool_name => Name,
+                progress_token => ProgressToken
+            }) of
+                ok ->
+                    %% Send initial response with stream ID
+                    InitialResponse = #{
+                        <<"streamId">> => StreamId,
+                        <<"_meta">> => #{
+                            ?MCP_PARAM_PROGRESS_TOKEN => ProgressToken,
+                            <<"streaming">> => true
+                        }
+                    },
+                    send_response_via_registry(State, TransportId, Id, InitialResponse),
+
+                    %% Spawn worker to execute tool and stream results
+                    ServerPid = self(),
+                    spawn_link(fun() ->
+                        execute_streaming_tool(StreamId, ProgressToken, ServerPid, Name, Handler, Arguments, StreamOpts)
+                    end),
+                    ok;
+                {error, Reason} ->
+                    send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                        list_to_binary(io_lib:format("Failed to start streaming: ~p", [Reason])))
+            end
+    end.
+
+%% @doc Execute tool and stream results via erlmcp_streaming
+-spec execute_streaming_tool(reference(), reference(), pid(), binary(), fun((map()) -> term()), map(), map() | true) -> ok | error.
+execute_streaming_tool(StreamId, ProgressToken, _ServerPid, ToolName, Handler, Arguments, _StreamOpts) ->
+    try
+        %% Execute tool - handler should return {chunks, List} or a list
+        Result = Handler(Arguments),
+        Chunks = case Result of
+            {chunks, ChunkList} when is_list(ChunkList) -> ChunkList;
+            ChunkList when is_list(ChunkList) -> ChunkList;
+            SingleChunk -> [SingleChunk]
+        end,
+
+        %% Send each chunk
+        TotalChunks = length(Chunks),
+        lists:foldl(fun(Chunk, ChunkNum) ->
+            erlmcp_streaming:send_chunk(StreamId, #{chunk_num => ChunkNum, total => TotalChunks, data => Chunk}),
+            erlmcp_progress:update(ProgressToken, #{current => ChunkNum, total => TotalChunks}),
+            ChunkNum + 1
+        end, 1, Chunks),
+
+        %% Complete
+        erlmcp_streaming:complete_stream(StreamId, #{total_chunks => TotalChunks}),
+        erlmcp_progress:complete(ProgressToken),
+        ok
+    catch Class:Reason:Stack ->
+        logger:error("Streaming tool ~p failed: ~p:~p~n~p", [ToolName, Class, Reason, Stack]),
+        erlmcp_streaming:error_stream(StreamId, #{error => Reason}),
+        erlmcp_progress:cancel(ProgressToken),
+        error
     end.
 
 -spec handle_get_prompt(json_rpc_id(), binary(), map(), atom(), state()) -> ok.
@@ -2080,18 +2251,23 @@ remove_subscription(Uri, Subscriber, Subscriptions) ->
 
 -spec notify_subscribers(binary(), map(), state()) -> ok.
 notify_subscribers(Uri, Metadata, State) ->
-    case maps:get(Uri, State#state.subscriptions, undefined) of
-        undefined ->
+    % Get all subscribers from pg (includes local + remote nodes)
+    Subscribers = pg:get_members(?PG_SCOPE, {resource, Uri}),
+
+    case Subscribers of
+        [] ->
             ok;
-        Subscribers ->
+        _ ->
+            % Broadcast to all subscribers
+            lists:foreach(fun(Pid) ->
+                Pid ! {resource_updated, Uri, Metadata}
+            end, Subscribers),
+
+            % Send MCP notification
             Params = #{
                 ?MCP_PARAM_URI => Uri,
                 ?MCP_PARAM_METADATA => Metadata
             },
-            sets:fold(fun(Subscriber, _) ->
-                _ = Subscriber ! {resource_updated, Uri, Metadata},
-                ok
-            end, ok, Subscribers),
             send_notification_safe(State, ?MCP_METHOD_NOTIFICATIONS_RESOURCES_UPDATED, Params)
     end.
 
