@@ -1,0 +1,66 @@
+{
+  "scope":  "per_node",
+  "timestamp":  1769824317,
+  "precision":  "microsecond",
+  "operations":  40000,
+  "benchmark":  "core_operations",
+  "components":  {
+    "session":  {
+      "operations":  10000,
+      "latency_p50_us":  0.0,
+      "latency_p95_us":  1.0,
+      "latency_p99_us":  2.0,
+      "component":  "session",
+      "latency_avg_us":  0.7,
+      "latency_max_us":  637.0,
+      "latency_min_us":  0.0
+    },
+    "registry":  {
+      "operations":  10000,
+      "latency_p50_us":  52.0,
+      "latency_p95_us":  97.0,
+      "latency_p99_us":  100.0,
+      "component":  "registry",
+      "latency_avg_us":  51.4,
+      "latency_max_us":  101.0,
+      "latency_min_us":  2.0
+    },
+    "pool":  {
+      "operations":  10000,
+      "latency_p50_us":  0.0,
+      "latency_p95_us":  1.0,
+      "latency_p99_us":  1.0,
+      "component":  "pool",
+      "latency_avg_us":  0.5,
+      "latency_max_us":  1152.0,
+      "latency_min_us":  0.0
+    },
+    "queue":  {
+      "operations":  10000,
+      "latency_p50_us":  0.0,
+      "latency_p95_us":  1.0,
+      "latency_p99_us":  1.0,
+      "component":  "queue",
+      "latency_avg_us":  0.1,
+      "latency_max_us":  9.0,
+      "latency_min_us":  0.0
+    }
+  },
+  "cpu_percent_avg":  46.0,
+  "duration_s":  0.01,
+  "environment":  {
+    "os_version":  "25.2.0",
+    "os":  "darwin",
+    "hostname":  "Seans-MacBook-Pro",
+    "erlang_erts_version":  "15.2.7.1",
+    "erlang_version":  "OTP-27"
+  },
+  "latency_p50_us":  0.0,
+  "latency_p95_us":  82.0,
+  "latency_p99_us":  98.0,
+  "memory_delta_mib":  1.7,
+  "memory_end_mib":  36.9,
+  "memory_start_mib":  35.2,
+  "throughput_msg_per_s":  2741603.84,
+  "workload_id":  "core_ops_10k"
+}

@@ -1,0 +1,23 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_cache_tests.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_rate_limiting_tests.beam"}
+[0m[0;32m===> Performing cover analysis...
+[0m=ERROR REPORT==== 30-Jan-2026::17:50:13.171726 ===
+Error in process <0.1398.0> with exit value:
+{{badmatch,eof},
+ [{cover,get_term,1,[{file,"cover.erl"},{line,2985}]},
+  {cover,do_import_to_table,4,[{file,"cover.erl"},{line,2960}]},
+  {cover,main_process_loop,1,[{file,"cover.erl"},{line,1271}]}]}
+
+[0;31m===> [1mUncaught error in rebar_core. Run with DIAGNOSTIC=1 to see stacktrace or consult rebar3.crashdump
+[0m[0m[0;32m===> When submitting a bug report, please include the output of `rebar3 report "your command"`
+[0m

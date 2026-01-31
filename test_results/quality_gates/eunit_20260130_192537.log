@@ -1,0 +1,45 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 887 │                  [1;31m{[0mnoreply, State};[0m
+     │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 897 │                                  [1;31m{[0mnoreply, State};[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 902 │                                  [1;31m{[0mnoreply, State}[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 908 │                          [1;31m{[0mnoreply, State}[0m
+     │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_transports/test/erlmcp_tcp_integration_tests.erl failed
+[0m[0m     ┌─ apps/erlmcp_transports/test/erlmcp_tcp_integration_tests.erl:
+     │
+ 272 │  [1;31m=== [0mConcurrent Stress Tests[0m
+     │  [1;31m╰──[0m[0m syntax error before: '=='
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_tcp_integration_tests.erl:
+     │
+ 314 │  [1;31m=== [0mProtocol Compliance Tests[0m
+     │  [1;31m╰──[0m[0m syntax error before: '=='
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_tcp_integration_tests.erl:
+     │
+ 201 │           NewHandler = receive {transport_connected, [1;31mH[0m} -> H after 3000 -> error("No new handler") end,[0m
+     │                                                      [1;31m╰──[0m[0m variable 'H' unsafe in 'receive' (line 184, column 26)
+
+

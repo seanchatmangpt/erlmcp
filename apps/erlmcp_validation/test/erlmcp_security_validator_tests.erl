@@ -9,6 +9,10 @@
 %%% - 3 Rate limiting checks
 %%% - 3 CORS checks
 %%%
+%%% == Chicago School TDD ==
+%%% Uses REAL erlmcp processes from erlmcp_test_helpers.
+%%% Tests observable behavior through API calls only.
+%%% NO internal state inspection or mocks.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_security_validator_tests).
@@ -41,6 +45,7 @@ authentication_test_() ->
      ]}.
 
 test_auth_mechanism(_Pid) ->
+    %% Test auth mechanism via observable behavior
     Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     AuthCheck = lists:keyfind(auth_mechanism, 1, Checks),
@@ -48,18 +53,21 @@ test_auth_mechanism(_Pid) ->
     ?assert(maps:get(status, AuthCheck) =:= passed orelse maps:get(status, AuthCheck) =:= warning).
 
 test_token_handling(_Pid) ->
+    %% Test token handling via API
     Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     TokenCheck = lists:keyfind(token_handling, 1, Checks),
     ?assertNotEqual(false, TokenCheck).
 
 test_session_management(_Pid) ->
+    %% Test session management via API
     Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     SessionCheck = lists:keyfind(session_management, 1, Checks),
     ?assertNotEqual(false, SessionCheck).
 
 test_authorization(_Pid) ->
+    %% Test authorization via API
     Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     AuthzCheck = lists:keyfind(authorization, 1, Checks),
@@ -82,30 +90,35 @@ input_validation_test_() ->
      ]}.
 
 test_json_schema_validation(_Pid) ->
+    %% Test JSON schema validation via API
     Result = erlmcp_security_validator:validate_input_validation(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     SchemaCheck = lists:keyfind(json_schema_validation, 1, Checks),
     ?assertNotEqual(false, SchemaCheck).
 
 test_parameter_sanitization(_Pid) ->
+    %% Test parameter sanitization via API
     Result = erlmcp_security_validator:validate_input_validation(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     SanitizeCheck = lists:keyfind(parameter_sanitization, 1, Checks),
     ?assertNotEqual(false, SanitizeCheck).
 
 test_sql_injection_prevention(_Pid) ->
+    %% Test SQL injection prevention via API
     Result = erlmcp_security_validator:validate_input_validation(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     SqlCheck = lists:keyfind(sql_injection_prevention, 1, Checks),
     ?assertNotEqual(false, SqlCheck).
 
 test_xss_prevention(_Pid) ->
+    %% Test XSS prevention via API
     Result = erlmcp_security_validator:validate_input_validation(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     XssCheck = lists:keyfind(xss_prevention, 1, Checks),
     ?assertNotEqual(false, XssCheck).
 
 test_path_traversal_prevention(_Pid) ->
+    %% Test path traversal prevention via API
     Result = erlmcp_security_validator:validate_input_validation(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     PathCheck = lists:keyfind(path_traversal_prevention, 1, Checks),
@@ -127,6 +140,7 @@ secret_management_test_() ->
      ]}.
 
 test_no_hardcoded_secrets(_Pid) ->
+    %% Test no hardcoded secrets via observable behavior
     Result = erlmcp_security_validator:validate_secret_management(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     SecretsCheck = lists:keyfind(no_hardcoded_secrets, 1, Checks),
@@ -135,18 +149,21 @@ test_no_hardcoded_secrets(_Pid) ->
     ?assertMatch(passed, Status).
 
 test_env_variable_usage(_Pid) ->
+    %% Test env variable usage via API
     Result = erlmcp_security_validator:validate_secret_management(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     EnvCheck = lists:keyfind(env_variable_usage, 1, Checks),
     ?assertNotEqual(false, EnvCheck).
 
 test_secret_encryption(_Pid) ->
+    %% Test secret encryption via API
     Result = erlmcp_security_validator:validate_secret_management(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     EncryptCheck = lists:keyfind(secret_encryption, 1, Checks),
     ?assertNotEqual(false, EncryptCheck).
 
 test_key_rotation(_Pid) ->
+    %% Test key rotation via API
     Result = erlmcp_security_validator:validate_secret_management(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     RotationCheck = lists:keyfind(key_rotation, 1, Checks),
@@ -168,24 +185,28 @@ jwt_test_() ->
      ]}.
 
 test_jwt_structure(_Pid) ->
+    %% Test JWT structure via API
     Result = erlmcp_security_validator:validate_jwt(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     StructureCheck = lists:keyfind(jwt_structure, 1, Checks),
     ?assertNotEqual(false, StructureCheck).
 
 test_jwt_signature(_Pid) ->
+    %% Test JWT signature via API
     Result = erlmcp_security_validator:validate_jwt(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     SigCheck = lists:keyfind(jwt_signature, 1, Checks),
     ?assertNotEqual(false, SigCheck).
 
 test_jwt_validation(_Pid) ->
+    %% Test JWT validation via API
     Result = erlmcp_security_validator:validate_jwt(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     ValidationCheck = lists:keyfind(jwt_validation, 1, Checks),
     ?assertNotEqual(false, ValidationCheck).
 
 test_jwt_expiration(_Pid) ->
+    %% Test JWT expiration via API
     Result = erlmcp_security_validator:validate_jwt(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     ExpCheck = lists:keyfind(jwt_expiration, 1, Checks),
@@ -206,18 +227,21 @@ rate_limiting_test_() ->
      ]}.
 
 test_rate_limit_configured(_Pid) ->
+    %% Test rate limiting configured via API
     Result = erlmcp_security_validator:validate_rate_limiting(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     ConfigCheck = lists:keyfind(rate_limit_configured, 1, Checks),
     ?assertNotEqual(false, ConfigCheck).
 
 test_rate_limit_enforcement(_Pid) ->
+    %% Test rate limiting enforcement via API
     Result = erlmcp_security_validator:validate_rate_limiting(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     EnforceCheck = lists:keyfind(rate_limit_enforcement, 1, Checks),
     ?assertNotEqual(false, EnforceCheck).
 
 test_rate_limit_bypass(_Pid) ->
+    %% Test rate limiting bypass protection via API
     Result = erlmcp_security_validator:validate_rate_limiting(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     BypassCheck = lists:keyfind(rate_limit_bypass, 1, Checks),
@@ -238,18 +262,21 @@ cors_test_() ->
      ]}.
 
 test_cors_headers(_Pid) ->
+    %% Test CORS headers via API
     Result = erlmcp_security_validator:validate_cors(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     HeadersCheck = lists:keyfind(cors_headers, 1, Checks),
     ?assertNotEqual(false, HeadersCheck).
 
 test_origin_validation(_Pid) ->
+    %% Test origin validation via API
     Result = erlmcp_security_validator:validate_cors(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     OriginCheck = lists:keyfind(origin_validation, 1, Checks),
     ?assertNotEqual(false, OriginCheck).
 
 test_cors_policies(_Pid) ->
+    %% Test CORS policies via API
     Result = erlmcp_security_validator:validate_cors(erlmcp_transport_stdio),
     Checks = maps:get(checks, Result),
     PoliciesCheck = lists:keyfind(cors_policies, 1, Checks),
@@ -270,17 +297,19 @@ integration_test_() ->
      ]}.
 
 test_run_validation(Pid) ->
+    %% Test full validation run via API
     {ok, Summary} = erlmcp_security_validator:run(erlmcp_transport_stdio),
     ?assertMatch(#{transport := erlmcp_transport_stdio}, Summary),
     ?assert(maps:is_key(compliance, Summary)),
     ?assert(maps:is_key(total_checks, Summary)).
 
 test_generate_report(Pid) ->
+    %% Test report generation via API
     {ok, _} = erlmcp_security_validator:generate_report(),
     ?assert(true).
 
 test_all_22_checks_present(_Pid) ->
-    % Run all validations and verify all 22 checks are present
+    %% Test all 22 security checks are present via API
     AuthResult = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
     ?assertEqual(4, length(maps:get(checks, AuthResult))),
 
@@ -299,5 +328,5 @@ test_all_22_checks_present(_Pid) ->
     CorsResult = erlmcp_security_validator:validate_cors(erlmcp_transport_stdio),
     ?assertEqual(3, length(maps:get(checks, CorsResult))),
 
-    % Total: 4 + 5 + 4 + 4 + 3 + 3 = 22 checks
+    %% Total: 4 + 5 + 4 + 4 + 3 + 3 = 22 checks
     ?assert(true).

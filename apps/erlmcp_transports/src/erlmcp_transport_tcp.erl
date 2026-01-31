@@ -309,6 +309,9 @@ handle_call({connect, _NewOpts}, _From, State) ->
 handle_call(get_state, _From, State) ->
     {reply, {ok, State}, State};
 
+handle_call(get_ranch_ref, _From, #state{ranch_ref = RanchRef} = State) ->
+    {reply, RanchRef, State};
+
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 

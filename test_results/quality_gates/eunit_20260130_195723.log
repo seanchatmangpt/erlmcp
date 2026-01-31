@@ -1,0 +1,85 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 108 │          Value = maps:get(value, Arg, [1;31m<<>>),[0m[0m
+     │                                       [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 501 │          Value = maps:get(value, Arg, [1;31m<<>>),[0m[0m
+     │                                       [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mCompiling apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl failed
+[0m[0m     ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+     │
+ 198 │      ?assert(is_list(erlmcp_auth:module_info()))[1;31m).[0m[0m
+     │                                                 [1;31m╰──[0m[0m syntax error before: ')'
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+     │
+ 243 │      ?assertMatch(ok, logger:set_application_level(erlmcp, notice))[1;31m).[0m[0m
+     │                                                                    [1;31m╰──[0m[0m syntax error before: ')'
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+     │
+ 327 │      ?assertNot(nomatch =:= binary:match(Reason, <<"\\"[1;31m"[0m>>)),[0m
+     │                                                        [1;31m╰──[0m[0m adjacent string literals without intervening white space
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+     │
+ 343 │          <<"[1;31m' [0mAND 1=1--">>[0m
+     │             [1;31m╰──[0m[0m illegal atom
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+     │
+ 364 │          <<"javascript:alert('XSS'[1;31m)[0m">>[0m
+     │                                   [1;31m╰──[0m[0m unterminated atom starting with ')">>\n    ],\n\n   '
+
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 71 │           ?_test([1;31mcheck_a06_vulnerable_components[0m()),[0m
+    │                  [1;31m╰──[0m[0m function check_a06_vulnerable_components/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 74 │           ?_test([1;31mcheck_a09_logging_failures[0m()),[0m
+    │                  [1;31m╰──[0m[0m function check_a09_logging_failures/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 80 │           ?_test([1;31midentify_information_disclosure[0m())[0m
+    │                  [1;31m╰──[0m[0m function identify_information_disclosure/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 83 │           ?_test([1;31mscan_for_sql_injection_vectors[0m()),[0m
+    │                  [1;31m╰──[0m[0m function scan_for_sql_injection_vectors/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 84 │           ?_test([1;31mscan_for_xss_vectors[0m()),[0m
+    │                  [1;31m╰──[0m[0m function scan_for_xss_vectors/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 85 │           ?_test([1;31mscan_for_path_traversal_vectors[0m()),[0m
+    │                  [1;31m╰──[0m[0m function scan_for_path_traversal_vectors/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 86 │           ?_test([1;31mscan_for_command_injection_vectors[0m()),[0m
+    │                  [1;31m╰──[0m[0m function scan_for_command_injection_vectors/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_vuln_scan_owasp_tests.erl:
+    │
+ 87 │           ?_test([1;31mscan_for_ssrf_vectors[0m())[0m
+    │                  [1;31m╰──[0m[0m function scan_for_ssrf_vectors/0 undefined
+
+

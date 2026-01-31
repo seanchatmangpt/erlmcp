@@ -1,0 +1,19 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_transports/test/erlmcp_transport_sse_connection_tests.erl failed
+[0m[0m     ┌─ apps/erlmcp_transports/test/erlmcp_transport_sse_connection_tests.erl:
+     │
+ 144 │          [1;31mend[0m,[0m
+     │          [1;31m╰──[0m[0m syntax error before: 'end'
+
+
+    ┌─ apps/erlmcp_transports/test/erlmcp_transport_sse_connection_tests.erl:
+    │
+ 42 │                  ?_test([1;31mtest_concurrent_streams[0m())[0m
+    │                         [1;31m╰──[0m[0m function test_concurrent_streams/0 undefined
+
+

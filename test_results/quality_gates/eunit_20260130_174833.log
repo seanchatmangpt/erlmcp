@@ -1,0 +1,1583 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_cache_tests.beam"}
+[0m[0;35m===> Cover compilation failed: {no_abstract_code,
+                                       "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_rate_limiting_tests.beam"}
+[0m[0;32m===> Performing EUnit tests...
+[0m======================== EUnit ========================
+file "erlmcp_validation.app"
+  application 'erlmcp_validation'
+    module 'erlmcp_compliance_report'
+      module 'erlmcp_compliance_report_tests'
+        erlmcp_compliance_report_tests: calculate_overall_compliance_test...ok
+        erlmcp_compliance_report_tests: calculate_section_compliance_test...ok
+        erlmcp_compliance_report_tests: handle_empty_test_results_test...ok
+        erlmcp_compliance_report_tests: handle_missing_requirements_test...ok
+        erlmcp_compliance_report_tests: generate_markdown_report_test...*failed*
+in function erlmcp_compliance_report_tests:generate_markdown_report_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 146)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{badmatch,{error,{report_generation_failed,{badkey,status}}}}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: generate_json_report_test...*failed*
+in function erlmcp_compliance_report_tests:generate_json_report_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 172)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{badmatch,#{<<"by_section">> =>
+                #{<<"Lifecycle">> => 100.0,<<"Prompts">> => 0.0,
+                  <<"Resources">> => 0.0,<<"Tools">> => 100.0,
+                  <<"Transports">> => 100.0},
+            <<"details">> =>
+                #{<<"by_section">> =>
+                      #{<<"Lifecycle">> => 100.0,<<"Prompts">> => 0.0,
+                        <<"Resources">> => 0.0,<<"Tools">> => 100.0,
+                        <<"Transports">> => 100.0},
+                  <<"passed_tests">> => 3,<<"total_requirements">> => 5},
+            <<"evidence">> =>
+                [#{<<"evidence">> =>
+                       <<"Request before initialize returned error">>,
+                   <<"requirement">> => <<"initialize_required">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"initialize_must_be_first_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:00:00Z">>},
+                 #{<<"evidence">> =>
+                       <<"tools/list returned array of 3 tools">>,
+                   <<"requirement">> => <<"tools_list_array">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"tools_list_returns_array_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:01:00Z">>},
+                 #{<<"evidence">> => <<"Messages properly delimited">>,
+                   <<"requirement">> => <<"stdio_format">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"stdio_newline_delimited_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:03:00Z">>}],
+            <<"gaps">> =>
+                [#{<<"recommendation">> =>
+                       <<"Create tests to validate this requirement">>,
+                   <<"requirement">> =>
+                       #{<<"description">> =>
+                             <<"prompts/get retrieves prompt by name">>,
+                         <<"id">> => <<"req-005">>,
+                         <<"name">> => <<"prompts_get">>,
+                         <<"section">> => <<"Prompts">>},
+                   <<"severity">> => <<"high">>,<<"status">> => <<"missing">>},
+                 #{<<"recommendation">> =>
+                       <<"Fix failing tests for this requirement">>,
+                   <<"requirement">> =>
+                       #{<<"description">> =>
+                             <<"Server must support resource subscriptions">>,
+                         <<"id">> => <<"req-003">>,
+                         <<"name">> => <<"resources_subscribe">>,
+                         <<"section">> => <<"Resources">>},
+                   <<"severity">> => <<"high">>,<<"status">> => <<"failed">>}],
+            <<"overall">> => 60.0,
+            <<"recommendations">> =>
+                [<<"Review this requirement">>,
+                 <<"Warning: Compliance below 80%. Review and fix gaps.">>],
+            <<"spec_version">> => <<"2025-11-25">>,
+            <<"timestamp">> => <<"2026-01-30T12:00:00Z">>,
+            <<"traceability">> =>
+                #{<<"req-001">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:00:00Z">>,
+                        <<"requirement">> => <<"initialize_required">>,
+                        <<"section">> => <<"Lifecycle">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"initialize_must_be_first_test">>]},
+                  <<"req-002">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:01:00Z">>,
+                        <<"requirement">> => <<"tools_list_array">>,
+                        <<"section">> => <<"Tools">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"tools_list_returns_array_test">>]},
+                  <<"req-003">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:02:00Z">>,
+                        <<"requirement">> => <<"resources_subscribe">>,
+                        <<"section">> => <<"Resources">>,
+                        <<"status">> => <<"failed">>,
+                        <<"tests">> => [<<"resources_subscribe_test">>]},
+                  <<"req-004">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:03:00Z">>,
+                        <<"requirement">> => <<"stdio_format">>,
+                        <<"section">> => <<"Transports">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"stdio_newline_delimited_test">>]},
+                  <<"req-005">> =>
+                      #{<<"last_tested">> => <<"never">>,
+                        <<"requirement">> => <<"prompts_get">>,
+                        <<"section">> => <<"Prompts">>,
+                        <<"status">> => <<"untested">>,<<"tests">> => []}}}}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: generate_html_report_test...*failed*
+in function erlmcp_compliance_report_tests:generate_html_report_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 191)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{badmatch,{error,{report_generation_failed,{badkey,status}}}}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: matrix_maps_requirements_to_tests_test...ok
+        erlmcp_compliance_report_tests: matrix_includes_status_test...ok
+        erlmcp_compliance_report_tests: handles_untested_requirements_test...ok
+        erlmcp_compliance_report_tests: identifies_missing_tests_test...*failed*
+in function erlmcp_compliance_report_tests:identifies_missing_tests_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 251)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{assert,[{module,erlmcp_compliance_report_tests},
+         {line,251},
+         {expression,"length ( MissingGaps ) > 0"},
+         {expected,true},
+         {value,false}]}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: identifies_failed_tests_test...*failed*
+in function erlmcp_compliance_report_tests:identifies_failed_tests_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 259)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{assert,[{module,erlmcp_compliance_report_tests},
+         {line,259},
+         {expression,"length ( FailedGaps ) > 0"},
+         {expected,true},
+         {value,false}]}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: classifies_gaps_by_severity_test...ok
+        erlmcp_compliance_report_tests: summary_includes_overall_compliance_test...*failed*
+in function erlmcp_compliance_report_tests:summary_includes_overall_compliance_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 278)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{badmatch,#{<<"by_section">> =>
+                #{<<"Lifecycle">> => 100.0,<<"Prompts">> => 0.0,
+                  <<"Resources">> => 0.0,<<"Tools">> => 100.0,
+                  <<"Transports">> => 100.0},
+            <<"details">> =>
+                #{<<"by_section">> =>
+                      #{<<"Lifecycle">> => 100.0,<<"Prompts">> => 0.0,
+                        <<"Resources">> => 0.0,<<"Tools">> => 100.0,
+                        <<"Transports">> => 100.0},
+                  <<"passed_tests">> => 3,<<"total_requirements">> => 5},
+            <<"evidence">> =>
+                [#{<<"evidence">> =>
+                       <<"Request before initialize returned error">>,
+                   <<"requirement">> => <<"initialize_required">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"initialize_must_be_first_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:00:00Z">>},
+                 #{<<"evidence">> =>
+                       <<"tools/list returned array of 3 tools">>,
+                   <<"requirement">> => <<"tools_list_array">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"tools_list_returns_array_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:01:00Z">>},
+                 #{<<"evidence">> => <<"Messages properly delimited">>,
+                   <<"requirement">> => <<"stdio_format">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"stdio_newline_delimited_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:03:00Z">>}],
+            <<"gaps">> =>
+                [#{<<"recommendation">> =>
+                       <<"Create tests to validate this requirement">>,
+                   <<"requirement">> =>
+                       #{<<"description">> =>
+                             <<"prompts/get retrieves prompt by name">>,
+                         <<"id">> => <<"req-005">>,
+                         <<"name">> => <<"prompts_get">>,
+                         <<"section">> => <<"Prompts">>},
+                   <<"severity">> => <<"high">>,<<"status">> => <<"missing">>},
+                 #{<<"recommendation">> =>
+                       <<"Fix failing tests for this requirement">>,
+                   <<"requirement">> =>
+                       #{<<"description">> =>
+                             <<"Server must support resource subscriptions">>,
+                         <<"id">> => <<"req-003">>,
+                         <<"name">> => <<"resources_subscribe">>,
+                         <<"section">> => <<"Resources">>},
+                   <<"severity">> => <<"high">>,<<"status">> => <<"failed">>}],
+            <<"overall">> => 60.0,
+            <<"recommendations">> =>
+                [<<"Review this requirement">>,
+                 <<"Warning: Compliance below 80%. Review and fix gaps.">>],
+            <<"spec_version">> => <<"2025-11-25">>,
+            <<"timestamp">> => <<"2026-01-30T12:00:00Z">>,
+            <<"traceability">> =>
+                #{<<"req-001">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:00:00Z">>,
+                        <<"requirement">> => <<"initialize_required">>,
+                        <<"section">> => <<"Lifecycle">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"initialize_must_be_first_test">>]},
+                  <<"req-002">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:01:00Z">>,
+                        <<"requirement">> => <<"tools_list_array">>,
+                        <<"section">> => <<"Tools">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"tools_list_returns_array_test">>]},
+                  <<"req-003">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:02:00Z">>,
+                        <<"requirement">> => <<"resources_subscribe">>,
+                        <<"section">> => <<"Resources">>,
+                        <<"status">> => <<"failed">>,
+                        <<"tests">> => [<<"resources_subscribe_test">>]},
+                  <<"req-004">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:03:00Z">>,
+                        <<"requirement">> => <<"stdio_format">>,
+                        <<"section">> => <<"Transports">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"stdio_newline_delimited_test">>]},
+                  <<"req-005">> =>
+                      #{<<"last_tested">> => <<"never">>,
+                        <<"requirement">> => <<"prompts_get">>,
+                        <<"section">> => <<"Prompts">>,
+                        <<"status">> => <<"untested">>,<<"tests">> => []}}}}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: summary_counts_sections_test...*failed*
+in function erlmcp_compliance_report_tests:summary_counts_sections_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 288)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{badmatch,#{<<"by_section">> =>
+                #{<<"Lifecycle">> => 100.0,<<"Prompts">> => 0.0,
+                  <<"Resources">> => 0.0,<<"Tools">> => 100.0,
+                  <<"Transports">> => 100.0},
+            <<"details">> =>
+                #{<<"by_section">> =>
+                      #{<<"Lifecycle">> => 100.0,<<"Prompts">> => 0.0,
+                        <<"Resources">> => 0.0,<<"Tools">> => 100.0,
+                        <<"Transports">> => 100.0},
+                  <<"passed_tests">> => 3,<<"total_requirements">> => 5},
+            <<"evidence">> =>
+                [#{<<"evidence">> =>
+                       <<"Request before initialize returned error">>,
+                   <<"requirement">> => <<"initialize_required">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"initialize_must_be_first_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:00:00Z">>},
+                 #{<<"evidence">> =>
+                       <<"tools/list returned array of 3 tools">>,
+                   <<"requirement">> => <<"tools_list_array">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"tools_list_returns_array_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:01:00Z">>},
+                 #{<<"evidence">> => <<"Messages properly delimited">>,
+                   <<"requirement">> => <<"stdio_format">>,
+                   <<"status">> => <<"passed">>,
+                   <<"test">> => <<"stdio_newline_delimited_test">>,
+                   <<"timestamp">> => <<"2026-01-30T12:03:00Z">>}],
+            <<"gaps">> =>
+                [#{<<"recommendation">> =>
+                       <<"Create tests to validate this requirement">>,
+                   <<"requirement">> =>
+                       #{<<"description">> =>
+                             <<"prompts/get retrieves prompt by name">>,
+                         <<"id">> => <<"req-005">>,
+                         <<"name">> => <<"prompts_get">>,
+                         <<"section">> => <<"Prompts">>},
+                   <<"severity">> => <<"high">>,<<"status">> => <<"missing">>},
+                 #{<<"recommendation">> =>
+                       <<"Fix failing tests for this requirement">>,
+                   <<"requirement">> =>
+                       #{<<"description">> =>
+                             <<"Server must support resource subscriptions">>,
+                         <<"id">> => <<"req-003">>,
+                         <<"name">> => <<"resources_subscribe">>,
+                         <<"section">> => <<"Resources">>},
+                   <<"severity">> => <<"high">>,<<"status">> => <<"failed">>}],
+            <<"overall">> => 60.0,
+            <<"recommendations">> =>
+                [<<"Review this requirement">>,
+                 <<"Warning: Compliance below 80%. Review and fix gaps.">>],
+            <<"spec_version">> => <<"2025-11-25">>,
+            <<"timestamp">> => <<"2026-01-30T12:00:00Z">>,
+            <<"traceability">> =>
+                #{<<"req-001">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:00:00Z">>,
+                        <<"requirement">> => <<"initialize_required">>,
+                        <<"section">> => <<"Lifecycle">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"initialize_must_be_first_test">>]},
+                  <<"req-002">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:01:00Z">>,
+                        <<"requirement">> => <<"tools_list_array">>,
+                        <<"section">> => <<"Tools">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"tools_list_returns_array_test">>]},
+                  <<"req-003">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:02:00Z">>,
+                        <<"requirement">> => <<"resources_subscribe">>,
+                        <<"section">> => <<"Resources">>,
+                        <<"status">> => <<"failed">>,
+                        <<"tests">> => [<<"resources_subscribe_test">>]},
+                  <<"req-004">> =>
+                      #{<<"last_tested">> => <<"2026-01-30T12:03:00Z">>,
+                        <<"requirement">> => <<"stdio_format">>,
+                        <<"section">> => <<"Transports">>,
+                        <<"status">> => <<"passed">>,
+                        <<"tests">> => [<<"stdio_newline_delimited_test">>]},
+                  <<"req-005">> =>
+                      #{<<"last_tested">> => <<"never">>,
+                        <<"requirement">> => <<"prompts_get">>,
+                        <<"section">> => <<"Prompts">>,
+                        <<"status">> => <<"untested">>,<<"tests">> => []}}}}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: full_report_generation_workflow_test...*failed*
+in function erlmcp_compliance_report_tests:full_report_generation_workflow_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 303)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{badmatch,{error,{report_generation_failed,{badkey,status}}}}
+  output:<<"">>
+
+        erlmcp_compliance_report_tests: all_formats_consistent_test...*failed*
+in function erlmcp_compliance_report_tests:all_formats_consistent_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl, line 319)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{badmatch,{error,{report_generation_failed,{badkey,status}}}}
+  output:<<"">>
+
+        [done in 0.071 s]
+      [done in 0.071 s]
+    module 'erlmcp_memory_manager'
+      module 'erlmcp_memory_manager_tests'
+        erlmcp_memory_manager_tests:25: -cache_basic_test_/0-fun-1-...*failed*
+in function erlmcp_memory_manager_tests:'-cache_basic_test_/0-fun-1-'/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_memory_manager_tests.erl, line 27)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_memory_manager_tests},
+              {line,27},
+              {expression,"erlmcp_memory_manager : cache_spec ( Spec )"},
+              {pattern,"{ ok , _ }"},
+              {value,ok}]}
+  output:<<"">>
+
+        erlmcp_memory_manager_tests:37: -memory_usage_test_/0-fun-2-...ok
+        erlmcp_memory_manager_tests:50: -pressure_check_test_/0-fun-1-...ok
+        [done in 0.017 s]
+      [done in 0.017 s]
+    module 'erlmcp_performance_validator'
+      module 'erlmcp_performance_validator_tests'
+        erlmcp_performance_validator_tests: percentile_calculation_test...ok
+        erlmcp_performance_validator_tests: percentile_empty_list_test...ok
+        erlmcp_performance_validator_tests: percentile_single_value_test...ok
+        erlmcp_performance_validator_tests: percentile_large_dataset_test...ok
+        erlmcp_performance_validator_tests: validate_latency_pass_test...ok
+        erlmcp_performance_validator_tests: validate_latency_fail_p50_test...*failed*
+in function erlmcp_performance_validator_tests:validate_latency_fail_p50_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_performance_validator_tests.erl, line 196)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{assertEqual,[{module,erlmcp_performance_validator_tests},
+              {line,196},
+              {expression,"maps : get ( status , Result )"},
+              {expected,fail},
+              {value,warning}]}
+  output:<<"">>
+
+        erlmcp_performance_validator_tests: validate_latency_fail_p99_test...ok
+        erlmcp_performance_validator_tests: validate_latency_targets_test...ok
+        erlmcp_performance_validator_tests: validate_throughput_pass_test...ok
+        erlmcp_performance_validator_tests: validate_throughput_fail_test...ok
+        erlmcp_performance_validator_tests: validate_throughput_boundary_test...ok
+        erlmcp_performance_validator_tests: validate_memory_pass_test...ok
+        erlmcp_performance_validator_tests: validate_memory_fail_test...ok
+        erlmcp_performance_validator_tests: validate_memory_boundary_test...ok
+        erlmcp_performance_validator_tests: validate_connection_setup_pass_test...ok
+        erlmcp_performance_validator_tests: validate_connection_setup_fail_test...ok
+        erlmcp_performance_validator_tests: validate_concurrent_connections_pass_test...ok
+        erlmcp_performance_validator_tests: validate_concurrent_connections_fail_rate_test...ok
+        erlmcp_performance_validator_tests: validate_concurrent_connections_fail_count_test...ok
+        erlmcp_performance_validator_tests: validate_concurrent_connections_partial_success_test...*failed*
+in function erlmcp_performance_validator_tests:validate_concurrent_connections_partial_success_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_performance_validator_tests.erl, line 359)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:{assert,[{module,erlmcp_performance_validator_tests},
+         {line,359},
+         {expression,"maps : get ( passed , Result )"},
+         {expected,true},
+         {value,false}]}
+  output:<<"">>
+
+        erlmcp_performance_validator_tests: format_report_test...*failed*
+in function io_lib:format/2 (io_lib.erl, line 297)
+  called as format("  Throughput: ~.2f req/s~n",[1500])
+in call from erlmcp_performance_validator:format_section/2 (/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl, line 752)
+in call from erlmcp_performance_validator:format_report/1 (/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl, line 702)
+in call from erlmcp_performance_validator_tests:format_report_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_performance_validator_tests.erl, line 387)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+**error:badarg
+  output:<<"">>
+
+        erlmcp_performance_validator_tests: format_report_failed_test...*failed*
+in function io_lib:format/2 (io_lib.erl, line 297)
+  called as format("  Throughput: ~.2f req/s~n",[500])
+in call from erlmcp_performance_validator:format_section/2 (/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl, line 752)
+in call from erlmcp_performance_validator:format_report/1 (/Users/sac/erlmcp/apps/erlmcp_validation/src/erlmcp_performance_validator.erl, line 702)
+in call from erlmcp_performance_validator_tests:format_report_failed_test/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_performance_validator_tests.erl, line 423)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 274)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+**error:badarg
+  output:<<"">>
+
+        erlmcp_performance_validator_tests: -integration_test_placeholder_measurement_test_/0-fun-0-...ok
+        erlmcp_performance_validator_tests: -integration_test_placeholder_concurrent_test_/0-fun-0-...ok
+        erlmcp_performance_validator_tests: verify_performance_targets_test...ok
+        [done in 0.076 s]
+      [done in 0.076 s]
+    module 'erlmcp_protocol_validator'
+      module 'erlmcp_protocol_validator_tests'
+        erlmcp_protocol_validator_tests: -jsonrpc_version_test_/0-fun-2- (Valid JSON-RPC 2.0 version)...ok
+        erlmcp_protocol_validator_tests: -request_format_test_/0-fun-1- (Valid request with all required fields)...ok
+        erlmcp_protocol_validator_tests: -response_format_test_/0-fun-1- (Valid success response)...ok
+        erlmcp_protocol_validator_tests: -notification_format_test_/0-fun-1- (Valid notification without id)...ok
+        erlmcp_protocol_validator_tests: -batch_requests_test_/0-fun-2- (Valid batch request array)...ok
+        erlmcp_protocol_validator_tests: -initialize_params_test_/0-fun-1- (Valid initialize params)...ok
+        erlmcp_protocol_validator_tests: -initialize_response_test_/0-fun-1- (Valid initialize response)...ok
+        erlmcp_protocol_validator_tests: -tools_list_params_test_/0-fun-1- (Valid tools/list params)...ok
+        erlmcp_protocol_validator_tests: -tools_list_response_test_/0-fun-2- (Valid tools/list response)...ok
+        erlmcp_protocol_validator_tests: -resources_list_params_test_/0-fun-1- (Valid resources/list params)...ok
+        erlmcp_protocol_validator_tests: -resources_list_response_test_/0-fun-2- (Valid resources/list response)...ok
+        erlmcp_protocol_validator_tests: -result_exclusivity_test_/0-fun-1- (Result and error are mutually exclusive)...ok
+        erlmcp_protocol_validator_tests: -error_object_test_/0-fun-2- (Valid error object with code and message)...ok
+        erlmcp_protocol_validator_tests: -response_id_test_/0-fun-1- (Valid response ID types)...ok
+        erlmcp_protocol_validator_tests: -response_jsonrpc_test_/0-fun-1- (Response has jsonrpc version)...ok
+        erlmcp_protocol_validator_tests: -mcp_refusal_codes_test_/0-fun-2- (MCP error codes in valid range)...ok
+        erlmcp_protocol_validator_tests: -jsonrpc_error_codes_test_/0-fun-2- (JSON-RPC error codes valid)...ok
+        erlmcp_protocol_validator_tests: -custom_error_codes_test_/0-fun-1- (Custom error codes handled properly)...ok
+        erlmcp_protocol_validator_tests: -protocol_version_2025_11_25_test_/0-fun-1- (MCP 2025-11-25 version supported)...ok
+        erlmcp_protocol_validator_tests: -version_compatibility_test_/0-fun-1- (Version compatibility check)...ok
+        erlmcp_protocol_validator_tests: -validation_summary_test_/0-fun-20- (All 19 validations implemented)...ok
+        [done in 0.063 s]
+      [done in 0.063 s]
+    module 'erlmcp_security_validator'
+      module 'erlmcp_security_validator_tests'
+        undefined
+        *** instantiation of subtests failed ***
+**in function erlmcp_security_validator_tests:test_auth_mechanism/1 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 47)
+**error:{assertNotEqual,[{module,erlmcp_security_validator_tests},
+                 {line,47},
+                 {expression,"AuthCheck"},
+                 {value,false}]}
+
+
+      undefined
+      *** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+    undefined
+    *** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+  undefined
+  *** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+undefined
+*** context setup failed ***
+**in function erlmcp_security_validator_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_security_validator_tests.erl, line 22)
+**error:{badmatch,{error,{already_started,<0.1967.0>}}}
+
+
+[done in 0.012 s]
+[done in 0.012 s]
+module 'erlmcp_spec_parser'
+module 'erlmcp_spec_parser_tests'
+Spec Parsing Tests
+erlmcp_spec_parser_tests: -spec_parser_test_/0-fun-31-...ok
+[done in 0.003 s]
+Method Requirements Tests
+erlmcp_spec_parser_tests: -spec_parser_test_/0-fun-25-...ok
+[done in 0.003 s]
+Error Code Requirements Tests
+erlmcp_spec_parser_tests: -spec_parser_test_/0-fun-19-...ok
+[done in 0.003 s]
+Validation Tests
+erlmcp_spec_parser_tests: -spec_parser_test_/0-fun-13-...ok
+[done in 0.003 s]
+Transport Requirements Tests
+erlmcp_spec_parser_tests: -spec_parser_test_/0-fun-7-...ok
+[done in 0.003 s]
+Capability Requirements Tests
+erlmcp_spec_parser_tests: -spec_parser_test_/0-fun-3-...ok
+[done in 0.003 s]
+erlmcp_spec_parser_tests:400: -list_operations_test_/0-fun-15-...ok
+erlmcp_spec_parser_tests:407: -list_operations_test_/0-fun-10-...ok
+erlmcp_spec_parser_tests:413: -list_operations_test_/0-fun-6-...ok
+erlmcp_spec_parser_tests:418: -list_operations_test_/0-fun-3-...ok
+erlmcp_spec_parser_tests:432: -not_found_errors_test_/0-fun-7-...ok
+erlmcp_spec_parser_tests:434: -not_found_errors_test_/0-fun-5-...ok
+erlmcp_spec_parser_tests:436: -not_found_errors_test_/0-fun-3-...ok
+erlmcp_spec_parser_tests:438: -not_found_errors_test_/0-fun-1-...ok
+erlmcp_spec_parser_tests:448: -method_result_spec_test_/0-fun-5-...ok
+erlmcp_spec_parser_tests:454: -method_result_spec_test_/0-fun-2-...ok
+erlmcp_spec_parser_tests:468: -error_retry_strategy_test_/0-fun-5-...ok
+erlmcp_spec_parser_tests:472: -error_retry_strategy_test_/0-fun-3-...ok
+erlmcp_spec_parser_tests:476: -error_retry_strategy_test_/0-fun-1-...ok
+erlmcp_spec_parser_tests:488: -transport_multiplexing_test_/0-fun-3-...ok
+erlmcp_spec_parser_tests:492: -transport_multiplexing_test_/0-fun-1-...ok
+erlmcp_spec_parser_tests:504: -capability_dependencies_test_/0-fun-3-...ok
+erlmcp_spec_parser_tests:508: -capability_dependencies_test_/0-fun-1-...ok
+erlmcp_spec_parser_tests:520: -method_deprecation_test_/0-fun-3-...ok
+erlmcp_spec_parser_tests:524: -method_deprecation_test_/0-fun-1-...ok
+[done in 0.075 s]
+[done in 0.075 s]
+module 'erlmcp_transport_validator'
+module 'erlmcp_transport_validator_tests'
+erlmcp_transport_validator_tests:45: -callback_validation_test_/0-fun-4-...*failed*
+in function erlmcp_transport_validator_tests:test_stdio_callback_validation/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 56)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_transport_validator_tests},
+              {line,56},
+              {expression,"Result"},
+              {pattern,"# { module := erlmcp_transport_stdio , category := callbacks , status := passed }"},
+              {value,#{module => erlmcp_transport_stdio,status => failed,
+                       timestamp => 1769824120887,category => callbacks,
+                       failed => 1,
+                       checks =>
+                           [#{message => <<"init/1 is exported">>,
+                              name => init_exported,status => passed},
+                            #{message => <<"send/2 is exported">>,
+                              name => send_exported,status => passed},
+                            #{message => <<"close/1 is exported">>,
+                              name => close_exported,status => passed},
+                            #{message => <<"init/1 has corre"...>>,
+                              name => init_arity,status => passed},
+                            #{message => <<"send/2 has c"...>>,
+                              name => send_arity,status => passed},
+                            #{message => <<"close/1 "...>>,
+                              name => close_arity,status => passed},
+                            #{message => <<"gen_"...>>,
+                              name => gen_server_behavior,...}],
+                       passed => 6}}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:46: -callback_validation_test_/0-fun-3-...*failed*
+in function erlmcp_transport_validator_tests:test_tcp_callback_validation/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 65)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_transport_validator_tests},
+              {line,65},
+              {expression,"Result"},
+              {pattern,"# { module := erlmcp_transport_tcp , category := callbacks , status := passed }"},
+              {value,#{module => erlmcp_transport_tcp,status => failed,
+                       timestamp => 1769824120890,category => callbacks,
+                       failed => 1,
+                       checks =>
+                           [#{message => <<"init/1 is exported">>,
+                              name => init_exported,status => passed},
+                            #{message => <<"send/2 is exported">>,
+                              name => send_exported,status => passed},
+                            #{message => <<"close/1 is exported">>,
+                              name => close_exported,status => passed},
+                            #{message => <<"init/1 has corre"...>>,
+                              name => init_arity,status => passed},
+                            #{message => <<"send/2 has c"...>>,
+                              name => send_arity,status => passed},
+                            #{message => <<"close/1 "...>>,
+                              name => close_arity,status => passed},
+                            #{message => <<"gen_"...>>,
+                              name => gen_server_behavior,...}],
+                       passed => 6}}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:47: -callback_validation_test_/0-fun-2-...*failed*
+in function erlmcp_transport_validator_tests:test_http_callback_validation/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 75)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assert,[{module,erlmcp_transport_validator_tests},
+         {line,75},
+         {expression,"lists : member ( Status , [ passed , warning ] )"},
+         {expected,true},
+         {value,false}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:48: -callback_validation_test_/0-fun-1-...*failed*
+in function erlmcp_transport_validator_tests:test_websocket_callback_validation/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 82)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assert,[{module,erlmcp_transport_validator_tests},
+         {line,82},
+         {expression,"lists : member ( Status , [ passed , warning ] )"},
+         {expected,true},
+         {value,false}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:49: -callback_validation_test_/0-fun-0-...*failed*
+in function erlmcp_transport_validator_tests:test_gen_server_behavior_check/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 89)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_transport_validator_tests},
+              {line,89},
+              {expression,"GenServerCheck"},
+              {pattern,"{ gen_server_behavior , # { status := passed } }"},
+              {value,false}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:100: -framing_validation_test_/0-fun-3-...*failed*
+in function erlmcp_transport_validator_tests:test_stdio_framing/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 116)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_transport_validator_tests},
+              {line,116},
+              {expression,"NewlineCheck"},
+              {pattern,"{ stdio_newline_delimited , # { status := _Status } }"},
+              {value,false}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:101: -framing_validation_test_/0-fun-2-...ok
+erlmcp_transport_validator_tests:102: -framing_validation_test_/0-fun-1-...ok
+erlmcp_transport_validator_tests:103: -framing_validation_test_/0-fun-0-...ok
+erlmcp_transport_validator_tests:162: -registry_validation_test_/0-fun-2-...ok
+erlmcp_transport_validator_tests:163: -registry_validation_test_/0-fun-1-...ok
+erlmcp_transport_validator_tests:164: -registry_validation_test_/0-fun-0-...*failed*
+in function erlmcp_transport_validator_tests:test_registry_integration/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 188)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_transport_validator_tests},
+              {line,188},
+              {expression,"GprocCheck"},
+              {pattern,"{ gproc_dependency , # { status := _ } }"},
+              {value,false}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:199: -lifecycle_validation_test_/0-fun-3-...ok
+erlmcp_transport_validator_tests:200: -lifecycle_validation_test_/0-fun-2-...ok
+erlmcp_transport_validator_tests:201: -lifecycle_validation_test_/0-fun-1-...*failed*
+in function erlmcp_transport_validator_tests:test_owner_monitoring/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 223)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_transport_validator_tests},
+              {line,223},
+              {expression,"OwnerCheck"},
+              {pattern,"{ owner_monitoring , # { status := _ } }"},
+              {value,false}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:202: -lifecycle_validation_test_/0-fun-0-...*failed*
+in function erlmcp_transport_validator_tests:test_terminate_cleanup/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 233)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertMatch,[{module,erlmcp_transport_validator_tests},
+              {line,233},
+              {expression,"TerminateCheck"},
+              {pattern,"{ terminate_cleanup , # { status := passed } }"},
+              {value,false}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:244: -full_validation_test_/0-fun-3-...ok
+erlmcp_transport_validator_tests:245: -full_validation_test_/0-fun-2-...ok
+erlmcp_transport_validator_tests:246: -full_validation_test_/0-fun-1-...ok
+erlmcp_transport_validator_tests:247: -full_validation_test_/0-fun-0-...ok
+erlmcp_transport_validator_tests:291: -report_generation_test_/0-fun-1-...ok
+erlmcp_transport_validator_tests:292: -report_generation_test_/0-fun-0-...ok
+erlmcp_transport_validator_tests:319: -code_inspection_test_/0-fun-1-...ok
+erlmcp_transport_validator_tests:320: -code_inspection_test_/0-fun-0-...ok
+erlmcp_transport_validator_tests:350: -edge_case_test_/0-fun-2-...ok
+erlmcp_transport_validator_tests:351: -edge_case_test_/0-fun-1-...ok
+erlmcp_transport_validator_tests:352: -edge_case_test_/0-fun-0-...*failed*
+in function erlmcp_transport_validator_tests:test_non_existent_module/0 (/Users/sac/erlmcp/apps/erlmcp_validation/test/erlmcp_transport_validator_tests.erl, line 374)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+in call from eunit_proc:run_group/2 (eunit_proc.erl, line 583)
+**error:{assertException,[{module,erlmcp_transport_validator_tests},
+                  {line,374},
+                  {expression,"erlmcp_transport_validator : validate_callbacks ( non_existent_module_xyz )"},
+                  {pattern,"{ error , _ , [...] }"},
+                  {unexpected_success,#{module => non_existent_module_xyz,
+                                        status => failed,
+                                        timestamp => 1769824120965,
+                                        category => callbacks,failed => 5,
+                                        checks =>
+                                            [#{message =>
+                                                   <<"init/1 is not exported">>,
+                                               name => init_exported,
+                                               status => failed},
+                                             #{message =>
+                                                   <<"send/2 is not exported">>,
+                                               name => send_exported,
+                                               status => failed},
+                                             #{message =>
+                                                   <<"close/1 is not expor"...>>,
+                                               name => close_exported,
+                                               status => failed},
+                                             #{message =>
+                                                   <<"init/1 does not "...>>,
+                                               name => init_arity,
+                                               status => failed},
+                                             #{message =>
+                                                   <<"send/2 not f"...>>,
+                                               name => send_arity,
+                                               status => warning},
+                                             #{message => <<"close/1 "...>>,
+                                               name => close_arity,
+                                               status => warning},
+                                             #{message => <<"Coul"...>>,
+                                               name => gen_server_behavior,...}],
+                                        passed => 0}}]}
+  output:<<"">>
+
+erlmcp_transport_validator_tests:385: -performance_test_/0-fun-1-...ok
+erlmcp_transport_validator_tests:386: -performance_test_/0-fun-0-...ok
+[done in 0.095 s]
+[done in 0.095 s]
+module 'erlmcp_validate_cli'
+module 'erlmcp_validation_app'
+[done in 0.437 s]
+[done in 0.437 s]
+file "erlmcp_transports.app"
+application 'erlmcp_transports'
+module 'erlmcp_http_header_validator'
+module 'erlmcp_origin_validator'
+module 'erlmcp_pool_manager'
+module 'erlmcp_pool_manager_tests'
+erlmcp_pool_manager_tests: pool_creation_test...[0.001 s] ok
+erlmcp_pool_manager_tests: checkout_checkin_test...ok
+erlmcp_pool_manager_tests: multiple_checkouts_test...ok
+erlmcp_pool_manager_tests: round_robin_strategy_test...ok
+erlmcp_pool_manager_tests: least_loaded_strategy_test...ok
+erlmcp_pool_manager_tests: random_strategy_test...ok
+erlmcp_pool_manager_tests: pool_resize_grow_test...ok
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063496 ===
+Connection <0.2212.0> died: shutdown
+erlmcp_pool_manager_tests: pool_resize_shrink_test...=WARNING REPORT==== 30-Jan-2026::17:48:41.063550 ===
+Connection <0.2213.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063590 ===
+Connection <0.2214.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063614 ===
+Connection <0.2215.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063633 ===
+Connection <0.2216.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063666 ===
+Connection <0.2217.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063698 ===
+Connection <0.2218.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063716 ===
+Connection <0.2219.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063733 ===
+Connection <0.2220.0> died: shutdown
+=WARNING REPORT==== 30-Jan-2026::17:48:41.063747 ===
+Connection <0.2221.0> died: shutdown
+ok
+erlmcp_pool_manager_tests: pool_resize_bounds_test...ok
+erlmcp_pool_manager_tests: metrics_tracking_test...ok
+erlmcp_pool_manager_tests: utilization_calculation_test...ok
+erlmcp_pool_manager_tests: -health_check_test_/0-fun-1-...[1.007 s] ok
+erlmcp_pool_manager_tests: connection_recovery_test...=WARNING REPORT==== 30-Jan-2026::17:48:42.085798 ===
+Connection <0.2262.0> died: killed
+[0.101 s] ok
+erlmcp_pool_manager_tests: -concurrent_checkouts_test_/0-fun-5-...[0.011 s] ok
+erlmcp_pool_manager_tests: -high_concurrency_stress_test_/0-fun-7-...[0.007 s] ok
+erlmcp_pool_manager_tests: pool_exhaustion_test...ok
+erlmcp_pool_manager_tests: no_connections_available_test...ok
+erlmcp_pool_manager_tests: invalid_checkin_test...=WARNING REPORT==== 30-Jan-2026::17:48:42.220850 ===
+Checkin of unknown connection: <0.2590.0>
+ok
+erlmcp_pool_manager_tests: pool_lifecycle_test...[0.200 s] ok
+[done in 1.385 s]
+[done in 1.385 s]
+module 'erlmcp_pool_strategy'
+module 'erlmcp_security_headers'
+module 'erlmcp_transport_adapter'
+module 'erlmcp_transport_behavior'
+module 'erlmcp_transport_discovery'
+module 'erlmcp_transport_discovery_tests'
+erlmcp_transport_discovery_tests:64: -test_start_stop/1-fun-3-...ok
+erlmcp_transport_discovery_tests:65: -test_start_stop/1-fun-1-...ok
+erlmcp_transport_discovery_tests:76: -test_env_discovery/1-fun-5-...ok
+erlmcp_transport_discovery_tests:77: -test_env_discovery/1-fun-3-...ok
+erlmcp_transport_discovery_tests:78: -test_env_discovery/1-fun-1-...ok
+erlmcp_transport_discovery_tests:94: -test_protocol_enable_disable/1-fun-9-...ok
+erlmcp_transport_discovery_tests:95: -test_protocol_enable_disable/1-fun-7-...ok
+erlmcp_transport_discovery_tests:96: -test_protocol_enable_disable/1-fun-5-...ok
+erlmcp_transport_discovery_tests:97: -test_protocol_enable_disable/1-fun-3-...ok
+erlmcp_transport_discovery_tests:98: -test_protocol_enable_disable/1-fun-1-...ok
+erlmcp_transport_discovery_tests:115: -test_watcher_registration/1-fun-4-...ok
+erlmcp_transport_discovery_tests:116: -test_watcher_registration/1-fun-2-...ok
+erlmcp_transport_discovery_tests:144: -test_discovery_events/1-fun-5-...ok
+erlmcp_transport_discovery_tests:145: -test_discovery_events/1-fun-3-...ok
+erlmcp_transport_discovery_tests:162: -test_scan_now/1-fun-3-...ok
+erlmcp_transport_discovery_tests:163: -test_scan_now/1-fun-1-...ok
+erlmcp_transport_discovery_tests: parse_env_key_test...ok
+erlmcp_transport_discovery_tests: convert_env_types_test...ok
+erlmcp_transport_discovery_tests: valid_protocols_test...ok
+[done in 0.864 s]
+[done in 0.864 s]
+module 'erlmcp_transport_health'
+module 'erlmcp_transport_http'
+module 'erlmcp_transport_http_tests'
+erlmcp_transport_http_tests: test_parse_http_url (Parse HTTP URL)...ok
+erlmcp_transport_http_tests: test_parse_https_url (Parse HTTPS URL)...ok
+erlmcp_transport_http_tests: test_parse_url_with_port (Parse URL with port)...ok
+erlmcp_transport_http_tests: test_parse_url_with_path (Parse URL with path)...ok
+erlmcp_transport_http_tests: test_normalize_headers (Normalize headers)...ok
+erlmcp_transport_http_tests: test_transport_init (Transport init)...=ERROR REPORT==== 30-Jan-2026::17:48:44.339653 ===
+Gun connection timeout
+[1.013 s] ok
+[done in 1.031 s]
+[done in 1.039 s]
+module 'erlmcp_transport_http_server'
+module 'erlmcp_transport_pipeline'
+module 'erlmcp_transport_pool'
+module 'erlmcp_transport_registry'
+module 'erlmcp_transport_registry_tests'
+erlmcp_transport_registry_tests:65: -test_start_stop/1-fun-1-...ok
+erlmcp_transport_registry_tests:101: -test_register_unregister/1-fun-7-...ok
+erlmcp_transport_registry_tests:102: -test_register_unregister/1-fun-5-...ok
+erlmcp_transport_registry_tests:103: -test_register_unregister/1-fun-3-...ok
+erlmcp_transport_registry_tests:122: -test_get_transport/1-fun-4-...ok
+erlmcp_transport_registry_tests:123: -test_get_transport/1-fun-2-...ok
+=WARNING REPORT==== 30-Jan-2026::17:48:44.796230 ===
+    transport_id: test_health
+    what: transport_health_status_changed
+    old_status: up
+    new_status: degraded
+=WARNING REPORT==== 30-Jan-2026::17:48:44.796320 ===
+    transport_id: test_health
+    what: transport_health_status_changed
+    old_status: degraded
+    new_status: down
+erlmcp_transport_registry_tests:150: -test_health_status/1-fun-6-...ok
+erlmcp_transport_registry_tests:151: -test_health_status/1-fun-4-...ok
+erlmcp_transport_registry_tests:152: -test_health_status/1-fun-2-...ok
+=WARNING REPORT==== 30-Jan-2026::17:48:44.957079 ===
+    reason: timeout
+    total_failures: 1
+    transport_id: test_stats
+    what: transport_failure_recorded
+=WARNING REPORT==== 30-Jan-2026::17:48:44.957160 ===
+    reason: timeout
+    total_failures: 2
+    transport_id: test_stats
+    what: transport_failure_recorded
+=WARNING REPORT==== 30-Jan-2026::17:48:44.957197 ===
+    reason: timeout
+    total_failures: 3
+    transport_id: test_stats
+    what: transport_failure_recorded
+erlmcp_transport_registry_tests:184: -test_record_success_failure/1-fun-6-...ok
+erlmcp_transport_registry_tests:185: -test_record_success_failure/1-fun-4-...ok
+erlmcp_transport_registry_tests:220: -test_select_transport/1-fun-5-...ok
+=WARNING REPORT==== 30-Jan-2026::17:48:45.725708 ===
+    reason: network_error
+    total_failures: 1
+    transport_id: test_detailed_stats
+    what: transport_failure_recorded
+erlmcp_transport_registry_tests:248: -test_statistics/1-fun-8-...ok
+erlmcp_transport_registry_tests:249: -test_statistics/1-fun-6-...ok
+erlmcp_transport_registry_tests:250: -test_statistics/1-fun-4-...ok
+erlmcp_transport_registry_tests:251: -test_statistics/1-fun-2-...ok
+=WARNING REPORT==== 30-Jan-2026::17:48:45.942357 ===
+    pid: <0.2709.0>
+    reason: normal
+    transport_id: test_monitor
+    what: transport_process_died
+erlmcp_transport_registry_tests:281: -test_process_monitoring/1-fun-4-...ok
+erlmcp_transport_registry_tests:282: -test_process_monitoring/1-fun-2-...ok
+erlmcp_transport_registry_tests: health_evaluation_test...ok
+erlmcp_transport_registry_tests: success_rate_test...ok
+erlmcp_transport_registry_tests: get_all_transports_test...=WARNING REPORT==== 30-Jan-2026::17:48:46.358773 ===
+    transport_id: t2
+    what: transport_health_status_changed
+    old_status: up
+    new_status: down
+[0.102 s] ok
+[done in 2.112 s]
+[done in 2.112 s]
+module 'erlmcp_transport_sse'
+module 'erlmcp_transport_sse_tests'
+erlmcp_hooks starting...
+=ERROR REPORT==== 30-Jan-2026::17:48:46.774729 ===
+Failed to start Ranch listener erlmcp_dashboard_listener_9090 in ranch_tcp:listen(#{socket_opts => [{cacerts,'...'},{key,'...'},{cert,'...'},{port,9090}],connection_type => supervisor}) for reason eaddrinuse (address already in use)
+
+=CRASH REPORT==== 30-Jan-2026::17:48:46.774818 ===
+  crasher:
+    initial call: supervisor:ranch_acceptors_sup/1
+    pid: <0.2816.0>
+    registered_name: []
+    exception exit: {listen_error,erlmcp_dashboard_listener_9090,eaddrinuse}
+      in function  ranch_acceptors_sup:listen_error/5 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 96)
+      in call from ranch_acceptors_sup:start_listen_sockets/5 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 54)
+      in call from ranch_acceptors_sup:init/1 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 34)
+      in call from supervisor:init/1 (supervisor.erl, line 869)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [<0.2804.0>,ranch_sup,<0.2722.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.2804.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 2586
+    stack_size: 29
+    reductions: 6162
+  neighbours:
+
+=SUPERVISOR REPORT==== 30-Jan-2026::17:48:46.779593 ===
+    supervisor: {<0.2804.0>,ranch_listener_sup}
+    errorContext: start_error
+    reason: {listen_error,erlmcp_dashboard_listener_9090,eaddrinuse}
+    offender: [{pid,undefined},
+               {id,ranch_acceptors_sup},
+               {mfargs,
+                   {ranch_acceptors_sup,start_link,
+                       [erlmcp_dashboard_listener_9090,ranch_tcp,logger]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,infinity},
+               {child_type,supervisor}]
+
+=CRASH REPORT==== 30-Jan-2026::17:48:46.779809 ===
+  crasher:
+    initial call: erlmcp_dashboard_server:init/1
+    pid: <0.2801.0>
+    registered_name: []
+    exception error: no case clause matching {error,eaddrinuse}
+      in function  erlmcp_dashboard_server:init/1 (/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_dashboard_server.erl, line 125)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [erlmcp_observability_sup,erlmcp_sup,<0.2736.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.2795.0>]
+    dictionary: []
+    trap_exit: false
+    status: running
+    heap_size: 987
+    stack_size: 29
+    reductions: 491
+  neighbours:
+
+=SUPERVISOR REPORT==== 30-Jan-2026::17:48:46.779932 ===
+    supervisor: {local,erlmcp_observability_sup}
+    errorContext: start_error
+    reason: {{case_clause,{error,eaddrinuse}},
+             [{erlmcp_dashboard_server,init,1,
+                  [{file,
+                       "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_dashboard_server.erl"},
+                   {line,125}]},
+              {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+              {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+              {proc_lib,init_p_do_apply,3,
+                  [{file,"proc_lib.erl"},{line,329}]}]}
+    offender: [{pid,undefined},
+               {id,erlmcp_dashboard_server},
+               {mfargs,{erlmcp_dashboard_server,start_link,[]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,worker}]
+
+=SUPERVISOR REPORT==== 30-Jan-2026::17:48:46.780066 ===
+    supervisor: {local,erlmcp_sup}
+    errorContext: start_error
+    reason: {shutdown,
+                {failed_to_start_child,erlmcp_dashboard_server,
+                    {{case_clause,{error,eaddrinuse}},
+                     [{erlmcp_dashboard_server,init,1,
+                          [{file,
+                               "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_dashboard_server.erl"},
+                           {line,125}]},
+                      {gen_server,init_it,2,
+                          [{file,"gen_server.erl"},{line,2229}]},
+                      {gen_server,init_it,6,
+                          [{file,"gen_server.erl"},{line,2184}]},
+                      {proc_lib,init_p_do_apply,3,
+                          [{file,"proc_lib.erl"},{line,329}]}]}}}
+    offender: [{pid,undefined},
+               {id,erlmcp_observability_sup},
+               {mfargs,{erlmcp_observability_sup,start_link,[]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,infinity},
+               {child_type,supervisor}]
+
+=INFO REPORT==== 30-Jan-2026::17:48:46.780338 ===
+    application: erlmcp_core
+    exited: {{shutdown,
+              {failed_to_start_child,erlmcp_observability_sup,
+               {shutdown,
+                {failed_to_start_child,erlmcp_dashboard_server,
+                 {{case_clause,{error,eaddrinuse}},
+                  [{erlmcp_dashboard_server,init,1,
+                    [{file,
+                      "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_dashboard_server.erl"},
+                     {line,125}]},
+                   {gen_server,init_it,2,
+                    [{file,"gen_server.erl"},{line,2229}]},
+                   {gen_server,init_it,6,
+                    [{file,"gen_server.erl"},{line,2184}]},
+                   {proc_lib,init_p_do_apply,3,
+                    [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+             {erlmcp_app,start,[normal,[]]}}
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::17:48:46.780442 ===
+    application: bbmustache
+    exited: stopped
+    type: temporary
+
+=CRASH REPORT==== 30-Jan-2026::17:48:46.780395 ===
+  crasher:
+    initial call: application_master:init/3
+    pid: <0.2735.0>
+    registered_name: []
+    exception exit: {{shutdown,
+                      {failed_to_start_child,erlmcp_observability_sup,
+                       {shutdown,
+                        {failed_to_start_child,erlmcp_dashboard_server,
+                         {{case_clause,{error,eaddrinuse}},
+                          [{erlmcp_dashboard_server,init,1,
+                            [{file,
+                              "/Users/sac/erlmcp/apps/erlmcp_observability/src/erlmcp_dashboard_server.erl"},
+                             {line,125}]},
+                           {gen_server,init_it,2,
+                            [{file,"gen_server.erl"},{line,2229}]},
+                           {gen_server,init_it,6,
+                            [{file,"gen_server.erl"},{line,2184}]},
+                           {proc_lib,init_p_do_apply,3,
+                            [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+                     {erlmcp_app,start,[normal,[]]}}
+      in function  application_master:init/3 (application_master.erl, line 143)
+    ancestors: [application_controller,<0.10.0>]
+    message_queue_len: 1
+    messages: [{'EXIT',<0.2736.0>,normal}]
+    links: [<0.45.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 610
+    stack_size: 29
+    reductions: 152
+  neighbours:
+
+=INFO REPORT==== 30-Jan-2026::17:48:46.781071 ===
+    application: jose
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::17:48:46.781105 ===
+    application: jesse
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::17:48:46.781128 ===
+    application: jsx
+    exited: stopped
+    type: temporary
+
+*** context setup failed ***
+**in function erlmcp_transport_sse_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl, line 13)
+**error:{badmatch,
+    {error,
+        {erlmcp_core,
+            {{shutdown,
+                 {failed_to_start_child,erlmcp_observability_sup,
+                     {shutdown,
+                         {failed_to_start_child,erlmcp_dashboard_server,
+                             {{case_clause,...},[...]}}}}},
+             {erlmcp_app,start,[normal,[]]}}}}}
+
+
+[done in 0.316 s]
+module 'erlmcp_transport_stdio'
+module 'erlmcp_transport_stdio_tests'
+erlmcp_transport_stdio_tests: test_stdio_init (Basic stdio transport initialization)...ok
+erlmcp_transport_stdio_tests: test_stdio_send (Stdio transport send operation)...ok
+erlmcp_transport_stdio_tests: test_stdio_close (Stdio transport close operation)...[0.101 s] ok
+erlmcp_transport_stdio_tests: test_stdio_test_mode (Stdio test mode detection)...ok
+erlmcp_transport_stdio_tests: test_stdio_reader_lifecycle (Stdio reader process lifecycle)...ok
+erlmcp_transport_stdio_tests: test_stdio_message_framing (Stdio message framing)...ok
+erlmcp_transport_stdio_tests: test_stdio_line_trimming (Stdio line trimming)...ok
+erlmcp_transport_stdio_tests: test_stdio_empty_line_handling (Stdio empty line handling)...ok
+erlmcp_transport_stdio_tests: test_stdio_buffer_management (Stdio buffer management)...ok
+erlmcp_transport_stdio_tests: test_stdio_owner_monitoring (Stdio owner monitoring)...=ERROR REPORT==== 30-Jan-2026::17:48:46.911743 ===
+** Generic server <0.2839.0> terminating 
+** Last message in was {'DOWN',#Ref<0.3941802842.2147483651.3559>,process,
+                               <0.2838.0>,killed}
+** When Server state == {state,<0.2838.0>,#Ref<0.3941802842.2147483651.3559>,
+                               undefined,<<>>,true,16777216,undefined}
+** Reason for termination ==
+** {owner_died,killed}
+
+=CRASH REPORT==== 30-Jan-2026::17:48:46.911900 ===
+  crasher:
+    initial call: erlmcp_transport_stdio:init/1
+    pid: <0.2839.0>
+    registered_name: []
+    exception exit: {owner_died,killed}
+      in function  gen_server:handle_common_reply/8 (gen_server.erl, line 2476)
+    ancestors: [<0.2818.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.2818.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 2586
+    stack_size: 29
+    reductions: 4011
+  neighbours:
+    neighbour:
+      pid: <0.2837.0>
+      registered_name: []
+      initial_call: {eunit_proc,group_leader_process,1}
+      current_function: {eunit_proc,group_leader_loop,3}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.2818.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 233
+      stack_size: 5
+      reductions: 23
+      current_stacktrace: [{eunit_proc,group_leader_loop,3,
+                              [{file,"eunit_proc.erl"},{line,617}]}]
+    neighbour:
+      pid: <0.2818.0>
+      registered_name: []
+      initial_call: {erlang,apply,2}
+      current_function: {timer,sleep,1}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.2837.0>,<0.2839.0>,<0.2817.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 987
+      stack_size: 38
+      reductions: 2525
+      current_stacktrace: [{timer,sleep,1,[{file,"timer.erl"},{line,548}]},
+                  {erlmcp_transport_stdio_tests,test_stdio_owner_monitoring,
+                      0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_stdio_tests.erl"},
+                       {line,347}]},
+                  {eunit_test,run_testfun,1,
+                      [{file,"eunit_test.erl"},{line,72}]},
+                  {eunit_proc,run_test,1,[{file,"eunit_proc.erl"},{line,544}]},
+                  {eunit_proc,with_timeout,3,
+                      [{file,"eunit_proc.erl"},{line,369}]},
+                  {eunit_proc,handle_test,2,
+                      [{file,"eunit_proc.erl"},{line,527}]},
+                  {eunit_proc,tests_inorder,3,
+                      [{file,"eunit_proc.erl"},{line,469}]},
+                  {eunit_proc,with_timeout,3,
+                      [{file,"eunit_proc.erl"},{line,359}]}]
+*skipped*
+undefined
+*unexpected termination of test process*
+::{owner_died,killed}
+
+erlmcp_transport_stdio_tests: test_full_stdio_integration (Full stdio integration)...ok
+erlmcp_transport_stdio_tests: test_stdio_with_registry (Stdio with registry)...=WARNING REPORT==== 30-Jan-2026::17:48:47.016062 ===
+Transport stdio_test_transport unregistered (process died)
+ok
+erlmcp_transport_stdio_tests: test_stdio_concurrent_messages (Stdio concurrent messages)...[0.603 s] ok
+erlmcp_transport_stdio_tests: test_stdio_load_testing (Stdio load testing)...[0.501 s] ok
+[done in 1.447 s]
+[done in 1.447 s]
+module 'erlmcp_transport_sup'
+module 'erlmcp_transport_sup_tests'
+erlmcp_transport_sup_tests: test_supervisor_start (Supervisor starts successfully)...ok
+erlmcp_transport_sup_tests: test_supervisor_strategy (Supervisor strategy is one_for_one)...*failed*
+in function supervisor:get_childspec/1
+  called as get_childspec(erlmcp_transport_sup)
+in call from erlmcp_transport_sup_tests:test_supervisor_strategy/0 (/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_sup_tests.erl, line 68)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+**error:undef
+  output:<<"">>
+
+erlmcp_transport_sup_tests: test_start_stdio_child (Can start stdio transport child)...ok
+erlmcp_transport_sup_tests: test_start_tcp_child (Can start TCP transport child)...=WARNING REPORT==== 30-Jan-2026::17:48:48.241870 ===
+Transport option binary unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:48.241925 ===
+Transport option {active,false} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:48.241959 ===
+Transport option {packet,line} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:48.241978 ===
+Transport option {reuseaddr,true} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:48.246208 ===
+TCP handler terminating before init complete: shutdown
+[0.004 s] ok
+erlmcp_transport_sup_tests: test_start_http_child (Can start HTTP transport child)...=ERROR REPORT==== 30-Jan-2026::17:48:49.249578 ===
+Gun connection timeout
+[1.001 s] ok
+erlmcp_transport_sup_tests: test_start_ws_child (Can start WebSocket transport child)...=CRASH REPORT==== 30-Jan-2026::17:48:49.253023 ===
+  crasher:
+    initial call: supervisor:ranch_acceptors_sup/1
+    pid: <0.3049.0>
+    registered_name: []
+    exception exit: badarg
+      in function  inet_tcp:listen/2 (inet_tcp.erl, line 187)
+      in call from ranch_acceptors_sup:start_listen_socket/4 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 73)
+      in call from ranch_acceptors_sup:start_listen_sockets/5 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 54)
+      in call from ranch_acceptors_sup:init/1 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 34)
+      in call from supervisor:init/1 (supervisor.erl, line 869)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [<0.3037.0>,ranch_sup,<0.2722.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.3037.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 376
+    stack_size: 29
+    reductions: 533
+  neighbours:
+
+=SUPERVISOR REPORT==== 30-Jan-2026::17:48:49.253207 ===
+    supervisor: {<0.3037.0>,ranch_listener_sup}
+    errorContext: start_error
+    reason: badarg
+    offender: [{pid,undefined},
+               {id,ranch_acceptors_sup},
+               {mfargs,
+                   {ranch_acceptors_sup,start_link,
+                       [erlmcp_ws_listener,ranch_tcp,logger]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,infinity},
+               {child_type,supervisor}]
+
+/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_sup_tests.erl:194:<0.3003.0>: WS child start failed: {{error,
+                         {badmatch,
+                          {error,
+                           {{shutdown,
+                             {failed_to_start_child,ranch_acceptors_sup,
+                              badarg}},
+                            {child,undefined,
+                             {ranch_listener_sup,erlmcp_ws_listener},
+                             {ranch_listener_sup,start_link,
+                              [erlmcp_ws_listener,ranch_tcp,
+                               #{socket_opts =>
+                                  [{port,0},
+                                   {max_connections,1000},
+                                   {connection_type,supervisor},
+                                   {connection_timeout,5000}],
+                                 connection_type => supervisor},
+                               cowboy_clear,
+                               #{env =>
+                                  #{dispatch =>
+                                     [{'_',[],
+                                       [{[<<"mcp">>,<<"ws">>],
+                                         [],erlmcp_transport_ws,
+                                         [<<"ws_sup_test">>,
+                                          #{port => 0,path => "/mcp/ws"}]}]}]},
+                                 connection_type => supervisor}]},
+                             permanent,false,infinity,supervisor,
+                             [ranch_listener_sup]}}}}},
+                        {child,undefined,ws_test,
+                         {erlmcp_transport_ws,init,
+                          [<<"ws_sup_test">>,#{port => 0,path => "/mcp/ws"}]},
+                         temporary,false,5000,worker,
+                         [erlmcp_transport_ws]}}
+[0.001 s] ok
+erlmcp_transport_sup_tests: test_start_sse_child (Can start SSE transport child).../Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_sup_tests.erl:223:<0.3003.0>: SSE child start failed: {{error,badarg},
+                         {child,undefined,sse_test,
+                             {erlmcp_transport_sse,init,
+                                 [<<"sse_sup_test">>,
+                                  #{port => 0,path => "/mcp/sse"}]},
+                             temporary,false,5000,worker,
+                             [erlmcp_transport_sse]}}
+ok
+erlmcp_transport_sup_tests: test_gproc_registration (Transport registers to gproc)...[0.101 s] ok
+erlmcp_transport_sup_tests: test_child_restart (Supervisor restarts crashed child)...=SUPERVISOR REPORT==== 30-Jan-2026::17:48:49.364088 ===
+    supervisor: {local,erlmcp_transport_sup}
+    errorContext: child_terminated
+    reason: killed
+    offender: [{pid,<0.3054.0>},
+               {id,restart_test},
+               {mfargs,{erlmcp_transport_stdio,start_link,[<0.3003.0>]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,worker}]
+
+[0.201 s] ok
+erlmcp_transport_sup_tests: test_child_termination (Supervisor handles child termination)...[0.101 s] ok
+erlmcp_transport_sup_tests: test_multiple_transports (Multiple transports can coexist)...=WARNING REPORT==== 30-Jan-2026::17:48:49.672331 ===
+Transport option binary unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:49.672391 ===
+Transport option {active,false} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:49.672425 ===
+Transport option {packet,line} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:49.672445 ===
+Transport option {reuseaddr,true} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::17:48:49.672766 ===
+TCP handler terminating before init complete: shutdown
+[0.001 s] ok
+undefined
+*unexpected termination of test process*
+::shutdown
+
+=======================================================
+  Failed: 25.  Skipped: 0.  Passed: 184.
+One or more tests were cancelled.
+[0;31m===> [1mError running tests
+[0m[0m
