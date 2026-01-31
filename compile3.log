@@ -1,0 +1,76 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/erlmcp_security_validator.erl failed
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 222 │                  {error, #{reason => invalid_jwt_format, expected => 3_parts}}
+     │                                                                       ╰── syntax error before: _parts
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 242 │          ?SECRET_PATTERNS
+     │           ╰── syntax error before: '>>'
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 430 │      case any_match(Input, ?COMMAND_INJECTION_PATTERNS) of
+     │                             ╰── syntax error before: '>>'
+
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 17 │  -export([
+    │   ╰── function check_command_injection/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 17 │  -export([
+    │   ╰── function detect_secrets_in_input/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 17 │  -export([
+    │   ╰── function validate_auth_token/1 undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 191 │  -spec validate_auth_token(binary()) -> validation_result().
+     │   ╰── spec for undefined function validate_auth_token/1
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 233 │  -spec detect_secrets_in_input(binary()) -> validation_result().
+     │   ╰── spec for undefined function detect_secrets_in_input/1
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 291 │                      {error, _} = Error -> throw(Error)
+     │                                   ╰── variable 'Error' unsafe in 'case' (line 274, column 9)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 308 │          throw:{error, _} = Error ->
+     │                             ╰── variable 'Error' unsafe in 'try' (line 268, column 5)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 387 │                      {error, _} = Error -> throw(Error)
+     │                                   ╰── variable 'Error' unsafe in 'case' (line 379, column 17)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 392 │                  throw:{error, _} = Error -> Error;
+     │                                     ╰── variable 'Error' unsafe in 'try' (line 377, column 13)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 428 │  -spec check_command_injection(binary()) -> validation_result().
+     │   ╰── spec for undefined function check_command_injection/1
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 755 │              case validate_auth_token(Token) of
+     │                   ╰── function validate_auth_token/1 undefined
+
+

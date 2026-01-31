@@ -64,6 +64,20 @@ spec_parser_test_() ->
           ?_test(get_capability_requirements_returns_all_capabilities()),
           ?_test(get_capability_requirements_returns_specific_capability()),
           ?_test(resources_capability_has_correct_features())
+      ] end}},
+      {"Schema and Metadata Functions Tests", {spawn, fun() -> [
+          ?_test(protocol_version_returns_2_0()),
+          ?_test(supported_capabilities_returns_map()),
+          ?_test(supported_transports_returns_list()),
+          ?_test(required_error_codes_returns_range()),
+          ?_test(message_schema_request_returns_valid_schema()),
+          ?_test(message_schema_response_returns_valid_schema()),
+          ?_test(message_schema_error_returns_valid_schema()),
+          ?_test(message_schema_notification_returns_valid_schema()),
+          ?_test(message_schema_unknown_type_returns_error()),
+          ?_test(resource_schema_returns_valid_structure()),
+          ?_test(tool_schema_returns_valid_structure()),
+          ?_test(prompt_schema_returns_valid_structure())
       ] end}}
      ]}.
 
@@ -526,3 +540,176 @@ method_deprecation_test_() ->
              ?assertEqual(stable, ToolsCall#method_req.deprecation_status)
          end)
      ] end}.
+
+%%%====================================================================
+%%% 7. Schema and Metadata Functions Tests (12 tests)
+%%%====================================================================
+
+%% @doc Test protocol_version/0 returns "2.0"
+protocol_version_returns_2_0() ->
+    Version = erlmcp_spec_parser:protocol_version(),
+    ?assertEqual(<<"2.0">>, Version).
+
+%% @doc Test supported_capabilities/0 returns map with all capabilities
+supported_capabilities_returns_map() ->
+    Capabilities = erlmcp_spec_parser:supported_capabilities(),
+    ?assert(is_map(Capabilities)),
+    ?assertEqual(true, maps:get(<<"resources">>, Capabilities)),
+    ?assertEqual(true, maps:get(<<"tools">>, Capabilities)),
+    ?assertEqual(true, maps:get(<<"prompts">>, Capabilities)),
+    ?assertEqual(true, maps:get(<<"logging">>, Capabilities)),
+    ?assertEqual(true, maps:get(<<"tasks">>, Capabilities)),
+    ?assertEqual(true, maps:get(<<"sampling">>, Capabilities)),
+    ?assertEqual(6, maps:size(Capabilities)).
+
+%% @doc Test supported_transports/0 returns list of transports
+supported_transports_returns_list() ->
+    Transports = erlmcp_spec_parser:supported_transports(),
+    ?assert(is_list(Transports)),
+    ?assertEqual(5, length(Transports)),
+    ?assert(lists:member(<<"stdio">>, Transports)),
+    ?assert(lists:member(<<"tcp">>, Transports)),
+    ?assert(lists:member(<<"http">>, Transports)),
+    ?assert(lists:member(<<"websocket">>, Transports)),
+    ?assert(lists:member(<<"sse">>, Transports)).
+
+%% @doc Test required_error_codes/0 returns 1001-1089 range
+required_error_codes_returns_range() ->
+    {MinCode, MaxCode} = erlmcp_spec_parser:required_error_codes(),
+    ?assertEqual(1001, MinCode),
+    ?assertEqual(1089, MaxCode),
+    %% Verify range is valid
+    ?assert(MinCode < MaxCode),
+    ?assertEqual(89, MaxCode - MinCode).
+
+%% @doc Test message_schema/1 for request message type
+message_schema_request_returns_valid_schema() ->
+    Schema = erlmcp_spec_parser:message_schema(<<"request">>),
+    ?assert(is_map(Schema)),
+    ?assertEqual(<<"object">>, maps:get(<<"type">>, Schema)),
+    Required = maps:get(<<"required">>, Schema),
+    ?assert(lists:member(<<"jsonrpc">>, Required)),
+    ?assert(lists:member(<<"method">>, Required)),
+    ?assert(lists:member(<<"id">>, Required)),
+    %% Verify properties
+    Props = maps:get(<<"properties">>, Schema),
+    ?assert(maps:is_key(<<"jsonrpc">>, Props)),
+    ?assert(maps:is_key(<<"method">>, Props)),
+    ?assert(maps:is_key(<<"params">>, Props)),
+    ?assert(maps:is_key(<<"id">>, Props)).
+
+%% @doc Test message_schema/1 for response message type
+message_schema_response_returns_valid_schema() ->
+    Schema = erlmcp_spec_parser:message_schema(<<"response">>),
+    ?assert(is_map(Schema)),
+    ?assertEqual(<<"object">>, maps:get(<<"type">>, Schema)),
+    Required = maps:get(<<"required">>, Schema),
+    ?assert(lists:member(<<"jsonrpc">>, Required)),
+    ?assert(lists:member(<<"id">>, Required)),
+    %% Verify properties
+    Props = maps:get(<<"properties">>, Schema),
+    ?assert(maps:is_key(<<"jsonrpc">>, Props)),
+    ?assert(maps:is_key(<<"result">>, Props)),
+    ?assert(maps:is_key(<<"id">>, Props)).
+
+%% @doc Test message_schema/1 for error message type
+message_schema_error_returns_valid_schema() ->
+    Schema = erlmcp_spec_parser:message_schema(<<"error">>),
+    ?assert(is_map(Schema)),
+    ?assertEqual(<<"object">>, maps:get(<<"type">>, Schema)),
+    Required = maps:get(<<"required">>, Schema),
+    ?assert(lists:member(<<"jsonrpc">>, Required)),
+    ?assert(lists:member(<<"error">>, Required)),
+    ?assert(lists:member(<<"id">>, Required)),
+    %% Verify error object structure
+    Props = maps:get(<<"properties">>, Schema),
+    ErrorProp = maps:get(<<"error">>, Props),
+    ?assertEqual(<<"object">>, maps:get(<<"type">>, ErrorProp)),
+    ErrorRequired = maps:get(<<"required">>, ErrorProp),
+    ?assert(lists:member(<<"code">>, ErrorRequired)),
+    ?assert(lists:member(<<"message">>, ErrorRequired)).
+
+%% @doc Test message_schema/1 for notification message type
+message_schema_notification_returns_valid_schema() ->
+    Schema = erlmcp_spec_parser:message_schema(<<"notification">>),
+    ?assert(is_map(Schema)),
+    ?assertEqual(<<"object">>, maps:get(<<"type">>, Schema)),
+    Required = maps:get(<<"required">>, Schema),
+    ?assert(lists:member(<<"jsonrpc">>, Required)),
+    ?assert(lists:member(<<"method">>, Required)),
+    %% Notification must NOT have id in required
+    ?assertNot(lists:member(<<"id">>, Required)),
+    %% Verify properties
+    Props = maps:get(<<"properties">>, Schema),
+    ?assert(maps:is_key(<<"jsonrpc">>, Props)),
+    ?assert(maps:is_key(<<"method">>, Props)),
+    ?assert(maps:is_key(<<"params">>, Props)).
+
+%% @doc Test message_schema/1 for unknown type returns error
+message_schema_unknown_type_returns_error() ->
+    Result = erlmcp_spec_parser:message_schema(<<"unknown_type">>),
+    ?assertEqual({error, unknown_type}, Result).
+
+%% @doc Test resource_schema/0 returns valid resource structure
+resource_schema_returns_valid_structure() ->
+    Schema = erlmcp_spec_parser:resource_schema(),
+    ?assert(is_map(Schema)),
+    %% Verify required fields
+    ?assert(maps:is_key(<<"uri">>, Schema)),
+    ?assert(maps:is_key(<<"name">>, Schema)),
+    ?assert(maps:is_key(<<"description">>, Schema)),
+    ?assert(maps:is_key(<<"mimeType">>, Schema)),
+    %% Verify uri is required
+    UriSpec = maps:get(<<"uri">>, Schema),
+    ?assertEqual(true, maps:get(<<"required">>, UriSpec)),
+    ?assertEqual(<<"string">>, maps:get(<<"type">>, UriSpec)),
+    %% Verify name is required
+    NameSpec = maps:get(<<"name">>, Schema),
+    ?assertEqual(true, maps:get(<<"required">>, NameSpec)),
+    ?assertEqual(<<"string">>, maps:get(<<"type">>, NameSpec)),
+    %% Verify description is optional
+    DescSpec = maps:get(<<"description">>, Schema),
+    ?assertEqual(false, maps:get(<<"required">>, DescSpec)),
+    %% Verify mimeType is optional
+    MimeSpec = maps:get(<<"mimeType">>, Schema),
+    ?assertEqual(false, maps:get(<<"required">>, MimeSpec)).
+
+%% @doc Test tool_schema/0 returns valid tool structure
+tool_schema_returns_valid_structure() ->
+    Schema = erlmcp_spec_parser:tool_schema(),
+    ?assert(is_map(Schema)),
+    %% Verify required fields
+    ?assert(maps:is_key(<<"name">>, Schema)),
+    ?assert(maps:is_key(<<"description">>, Schema)),
+    ?assert(maps:is_key(<<"inputSchema">>, Schema)),
+    %% Verify name is required
+    NameSpec = maps:get(<<"name">>, Schema),
+    ?assertEqual(true, maps:get(<<"required">>, NameSpec)),
+    ?assertEqual(<<"string">>, maps:get(<<"type">>, NameSpec)),
+    %% Verify description is optional
+    DescSpec = maps:get(<<"description">>, Schema),
+    ?assertEqual(false, maps:get(<<"required">>, DescSpec)),
+    %% Verify inputSchema is required
+    InputSpec = maps:get(<<"inputSchema">>, Schema),
+    ?assertEqual(true, maps:get(<<"required">>, InputSpec)),
+    ?assertEqual(<<"object">>, maps:get(<<"type">>, InputSpec)).
+
+%% @doc Test prompt_schema/0 returns valid prompt structure
+prompt_schema_returns_valid_structure() ->
+    Schema = erlmcp_spec_parser:prompt_schema(),
+    ?assert(is_map(Schema)),
+    %% Verify required fields
+    ?assert(maps:is_key(<<"name">>, Schema)),
+    ?assert(maps:is_key(<<"description">>, Schema)),
+    ?assert(maps:is_key(<<"arguments">>, Schema)),
+    %% Verify name is required
+    NameSpec = maps:get(<<"name">>, Schema),
+    ?assertEqual(true, maps:get(<<"required">>, NameSpec)),
+    ?assertEqual(<<"string">>, maps:get(<<"type">>, NameSpec)),
+    %% Verify description is optional
+    DescSpec = maps:get(<<"description">>, Schema),
+    ?assertEqual(false, maps:get(<<"required">>, DescSpec)),
+    %% Verify arguments is optional
+    ArgsSpec = maps:get(<<"arguments">>, Schema),
+    ?assertEqual(false, maps:get(<<"required">>, ArgsSpec)),
+    ?assertEqual(<<"array">>, maps:get(<<"type">>, ArgsSpec)).

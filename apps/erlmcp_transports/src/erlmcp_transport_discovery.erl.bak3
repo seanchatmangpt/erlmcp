@@ -1,0 +1,757 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Transport Auto-Discovery System
+%%%
+%%% Automatically detects and configures MCP transports based on:
+%%% - DNS-SD (Bonjour/Avahi) for local network discovery
+%%% - Consul for service mesh integration
+%%% - Kubernetes service discovery
+%%% - Environment variables (ERLMCP_TRANSPORT_*)
+%%%
+%%% Features:
+%%% - Dynamic transport addition/removal
+%%% - Configuration hot-reload
+%%% - Health monitoring integration
+%%% - Automatic failover to healthy transports
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_discovery).
+-behaviour(gen_server).
+
+-include_lib("kernel/include/logger.hrl").
+
+%% API
+-export([
+    start_link/0,
+    start_link/1,
+    scan_now/0,
+    watch/1,
+    unwatch/1,
+    get_discovered_transports/0,
+    enable_protocol/1,
+    disable_protocol/1,
+    get_enabled_protocols/0
+]).
+
+%% Consul discovery API (exported for testing)
+%% Discovery API (exported for testing)
+-export([
+    parse_consul_services/1,
+    parse_consul_service/1,
+    build_consul_headers/1,
+    ensure_gun_started/0,
+    build_mdns_query/1,
+    parse_mdns_response/1
+]).
+
+%% gen_server callbacks
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
+
+%% Discovery event types
+-type discovery_event() ::
+    {transport_added, TransportId :: atom(), Config :: map()} |
+    {transport_removed, TransportId :: atom()} |
+    {transport_updated, TransportId :: atom(), Config :: map()}.
+
+-export_type([discovery_event/0]).
+
+%% mDNS/DNS-SD constants
+-define(MDNS_ADDRESS, {224,0,0,251}).
+-define(MDNS_PORT, 5353).
+-define(MDNS_SERVICE, "_erlmcp._tcp.local").
+-define(BROADCAST_PORT, 9900).
+
+%% State record
+-record(state, {
+    enabled_protocols = [env] :: [atom()],  % dns_sd | consul | k8s | env
+    scan_interval = 30000 :: non_neg_integer(),  % milliseconds
+    scan_timer :: reference() | undefined,
+    auto_start = true :: boolean(),
+    discovered_transports = #{} :: #{atom() => map()},
+    watchers = [] :: [pid()],
+    last_scan = 0 :: non_neg_integer()
+}).
+
+-type state() :: #state{}.
+
+%% Consul configuration constants
+-define(CONSUL_DEFAULT_HOST, "127.0.0.1").
+-define(CONSUL_DEFAULT_PORT, 8500).
+-define(CONSUL_DEFAULT_TOKEN, undefined).
+-define(CONSUL_SERVICE_NAME, <<"erlmcp">>).
+-define(CONSUL_TIMEOUT, 5000).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Start the discovery service with default configuration
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    start_link(#{}).
+
+%% @doc Start the discovery service with custom configuration
+-spec start_link(map()) -> {ok, pid()} | {error, term()}.
+start_link(Config) when is_map(Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Config, []).
+
+%% @doc Trigger an immediate scan for transports
+-spec scan_now() -> ok.
+scan_now() ->
+    gen_server:cast(?MODULE, scan_now).
+
+%% @doc Register a watcher to receive discovery events
+-spec watch(fun((discovery_event()) -> any())) -> ok.
+watch(WatcherFun) when is_function(WatcherFun, 1) ->
+    gen_server:call(?MODULE, {watch, self(), WatcherFun}).
+
+%% @doc Unregister a watcher
+-spec unwatch(pid()) -> ok.
+unwatch(Pid) when is_pid(Pid) ->
+    gen_server:call(?MODULE, {unwatch, Pid}).
+
+%% @doc Get all currently discovered transports
+-spec get_discovered_transports() -> #{atom() => map()}.
+get_discovered_transports() ->
+    gen_server:call(?MODULE, get_discovered_transports).
+
+%% @doc Enable a discovery protocol
+-spec enable_protocol(atom()) -> ok | {error, term()}.
+enable_protocol(Protocol) when is_atom(Protocol) ->
+    gen_server:call(?MODULE, {enable_protocol, Protocol}).
+
+%% @doc Disable a discovery protocol
+-spec disable_protocol(atom()) -> ok.
+disable_protocol(Protocol) when is_atom(Protocol) ->
+    gen_server:call(?MODULE, {disable_protocol, Protocol}).
+
+%% @doc Get list of enabled discovery protocols
+-spec get_enabled_protocols() -> [atom()].
+get_enabled_protocols() ->
+    gen_server:call(?MODULE, get_enabled_protocols).
+
+%%====================================================================
+%% gen_server Callbacks
+%%====================================================================
+
+%% @doc Initialize the discovery service
+init(Config) ->
+    process_flag(trap_exit, true),
+
+    ?LOG_INFO(#{
+        what => transport_discovery_init,
+        config => Config
+    }),
+
+    % Extract configuration
+    EnabledProtocols = maps:get(protocols, Config, [env]),
+    ScanInterval = maps:get(scan_interval, Config, 30000),
+    AutoStart = maps:get(auto_start, Config, true),
+
+    State = #state{
+        enabled_protocols = EnabledProtocols,
+        scan_interval = ScanInterval,
+        auto_start = AutoStart
+    },
+
+    % Schedule first scan if auto_start is enabled
+    NewState = case AutoStart of
+        true ->
+            Timer = erlang:send_after(1000, self(), scan),  % Initial scan after 1s
+            State#state{scan_timer = Timer};
+        false ->
+            State
+    end,
+
+    {ok, NewState}.
+
+%% @doc Handle synchronous calls
+handle_call({watch, Pid, _WatcherFun}, _From, State) ->
+    % Monitor the watcher process
+    monitor(process, Pid),
+    NewWatchers = [Pid | State#state.watchers],
+    {reply, ok, State#state{watchers = NewWatchers}};
+
+handle_call({unwatch, Pid}, _From, State) ->
+    NewWatchers = lists:delete(Pid, State#state.watchers),
+    {reply, ok, State#state{watchers = NewWatchers}};
+
+handle_call(get_discovered_transports, _From, State) ->
+    {reply, State#state.discovered_transports, State};
+
+handle_call({enable_protocol, Protocol}, _From, State) ->
+    case is_valid_protocol(Protocol) of
+        true ->
+            case lists:member(Protocol, State#state.enabled_protocols) of
+                true ->
+                    {reply, {error, already_enabled}, State};
+                false ->
+                    NewProtocols = [Protocol | State#state.enabled_protocols],
+                    ?LOG_INFO(#{
+                        what => protocol_enabled,
+                        protocol => Protocol
+                    }),
+                    % Trigger immediate scan
+                    self() ! scan,
+                    {reply, ok, State#state{enabled_protocols = NewProtocols}}
+            end;
+        false ->
+            {reply, {error, {invalid_protocol, Protocol}}, State}
+    end;
+
+handle_call({disable_protocol, Protocol}, _From, State) ->
+    NewProtocols = lists:delete(Protocol, State#state.enabled_protocols),
+    ?LOG_INFO(#{
+        what => protocol_disabled,
+        protocol => Protocol
+    }),
+    {reply, ok, State#state{enabled_protocols = NewProtocols}};
+
+handle_call(get_enabled_protocols, _From, State) ->
+    {reply, State#state.enabled_protocols, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+%% @doc Handle asynchronous casts
+handle_cast(scan_now, State) ->
+    self() ! scan,
+    {noreply, State};
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+%% @doc Handle info messages
+handle_info(scan, State) ->
+    % Perform discovery scan
+    NewState = perform_discovery_scan(State),
+
+    % Schedule next scan
+    Timer = erlang:send_after(NewState#state.scan_interval, self(), scan),
+
+    {noreply, NewState#state{
+        scan_timer = Timer,
+        last_scan = erlang:system_time(millisecond)
+    }};
+
+handle_info({'DOWN', _MonitorRef, process, Pid, _Reason}, State) ->
+    % Watcher process died, remove it
+    NewWatchers = lists:delete(Pid, State#state.watchers),
+    {noreply, State#state{watchers = NewWatchers}};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @doc Cleanup on termination
+terminate(_Reason, State) ->
+    % Cancel scan timer
+    case State#state.scan_timer of
+        undefined -> ok;
+        Timer -> erlang:cancel_timer(Timer)
+    end,
+    ok.
+
+%% @doc Handle code upgrades
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions - Discovery
+%%====================================================================
+
+%% @doc Perform a full discovery scan using all enabled protocols
+-spec perform_discovery_scan(state()) -> state().
+perform_discovery_scan(State) ->
+    ?LOG_DEBUG(#{
+        what => discovery_scan_start,
+        protocols => State#state.enabled_protocols
+    }),
+
+    % Discover transports from all enabled protocols
+    NewTransports = discover_from_all_protocols(State#state.enabled_protocols),
+
+    % Compare with existing transports and generate events
+    OldTransports = State#state.discovered_transports,
+    Events = generate_discovery_events(OldTransports, NewTransports),
+
+    % Notify watchers of changes
+    notify_watchers(State#state.watchers, Events),
+
+    % Auto-start transports if enabled
+    case State#state.auto_start of
+        true -> auto_start_transports(Events);
+        false -> ok
+    end,
+
+    ?LOG_DEBUG(#{
+        what => discovery_scan_complete,
+        transports_found => maps:size(NewTransports),
+        events_generated => length(Events)
+    }),
+
+    State#state{discovered_transports = NewTransports}.
+
+%% @doc Discover transports from all enabled protocols
+-spec discover_from_all_protocols([atom()]) -> #{atom() => map()}.
+discover_from_all_protocols(Protocols) ->
+    lists:foldl(fun(Protocol, Acc) ->
+        case discover_from_protocol(Protocol) of
+            {ok, Transports} ->
+                maps:merge(Acc, Transports);
+            {error, Reason} ->
+                ?LOG_WARNING(#{
+                    what => discovery_protocol_failed,
+                    protocol => Protocol,
+                    reason => Reason
+                }),
+                Acc
+        end
+    end, #{}, Protocols).
+
+%% @doc Discover transports from a specific protocol
+-spec discover_from_protocol(atom()) -> {ok, #{atom() => map()}} | {error, term()}.
+discover_from_protocol(env) ->
+    discover_from_env();
+discover_from_protocol(dns_sd) ->
+    discover_from_dns_sd();
+discover_from_protocol(consul) ->
+    discover_from_consul();
+discover_from_protocol(k8s) ->
+    discover_from_k8s();
+discover_from_protocol(Unknown) ->
+    {error, {unknown_protocol, Unknown}}.
+
+%% @doc Discover transports from environment variables
+%% Supports: ERLMCP_TRANSPORT_<NAME>_<PARAM>
+%% Example: ERLMCP_TRANSPORT_TCP1_HOST=localhost
+%%          ERLMCP_TRANSPORT_TCP1_PORT=3000
+%%          ERLMCP_TRANSPORT_TCP1_TYPE=tcp
+-spec discover_from_env() -> {ok, #{atom() => map()}}.
+discover_from_env() ->
+    AllEnv = application:get_all_env(),
+
+    % Extract ERLMCP_TRANSPORT_* from OS environment
+    % os:env() returns [{KeyString, ValueString}, ...]
+    OsEnv = lists:filter(fun({Key, _Value}) ->
+        lists:prefix("ERLMCP_TRANSPORT_", Key)
+    end, os:env()),
+
+    % Parse environment variables into transport configs
+    Transports = parse_env_transports(OsEnv),
+
+    ?LOG_DEBUG(#{
+        what => env_discovery_complete,
+        transports_found => maps:size(Transports)
+    }),
+
+    {ok, Transports}.
+
+%% @doc Discover transports from DNS-SD (Bonjour/Avahi)
+%% Looks for _mcp._tcp.local services
+-spec discover_from_dns_sd() -> {ok, #{atom() => map()}} | {error, term()}.
+discover_from_dns_sd() ->
+    % This is a placeholder - real implementation would use mdns/dnssd
+    ?LOG_INFO(#{
+        what => dns_sd_discovery_not_implemented,
+        note => "DNS-SD support requires mdns application"
+    }),
+    {ok, #{}}.
+
+%% @doc Discover transports from Consul service catalog
+-spec discover_from_consul() -> {ok, #{atom() => map()}} | {error, term()}.
+discover_from_consul() ->
+    case get_consul_config() of
+        {ok, #{host := Host, port := Port} = Config} ->
+            case ensure_gun_started() of
+                ok ->
+                    case gun:open(Host, Port, #{transport => gun_tcp}) of
+                        {ok, ConnPid} ->
+                            try
+                                {ok, _Protocol} = gun:await_up(ConnPid, ?CONSUL_TIMEOUT),
+                                Path = <<"/v1/catalog/service/", (?CONSUL_SERVICE_NAME)/binary>>,
+                                Headers = build_consul_headers(maps:get(token, Config, undefined)),
+                                Ref = gun:get(ConnPid, Path, Headers),
+                                case gun:await(ConnPid, Ref, ?CONSUL_TIMEOUT) of
+                                    {response, fin, 200, _} ->
+                                        {ok, #{}};
+                                    {response, nofin, 200, _} ->
+                                        {ok, Body} = gun:await_body(ConnPid, Ref),
+                                        Services = jsx:decode(Body, [return_maps]),
+                                        Transports = parse_consul_services(Services),
+                                        {ok, Transports};
+                                    {response, _, Status, _} ->
+                                        {error, {http_error, Status}}
+                                end
+                            catch
+                                Type:Error:Stacktrace ->
+                                    ?LOG_ERROR(#{
+                                        what => consul_query_failed,
+                                        error => Error,
+                                        type => Type,
+                                        stacktrace => Stacktrace
+                                    }),
+                                    {error, {query_failed, {Type, Error}}}
+                            after
+                                gun:close(ConnPid)
+                            end;
+                        {error, Reason} ->
+                            {error, {connection_failed, Reason}}
+                    end;
+                {error, Reason} ->
+                    {error, {gun_start_failed, Reason}}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Discover transports from Kubernetes service discovery
+-spec discover_from_k8s() -> {ok, #{atom() => map()}} | {error, term()}.
+discover_from_k8s() ->
+    % Placeholder - real implementation would query K8s API
+    ?LOG_INFO(#{
+        what => k8s_discovery_not_implemented,
+        note => "K8s support requires kubernetes client"
+    }),
+    {ok, #{}}.
+
+%%====================================================================
+%% Internal Functions - Environment Parsing
+%%====================================================================
+
+%% @doc Parse environment variables into transport configurations
+-spec parse_env_transports([{string(), string()}]) -> #{atom() => map()}.
+parse_env_transports(EnvVars) ->
+    % Group variables by transport name
+    Grouped = lists:foldl(fun({Key, Value}, Acc) ->
+        case parse_env_key(Key) of
+            {ok, TransportName, Param} ->
+                TransportAtom = list_to_atom(TransportName),
+                Existing = maps:get(TransportAtom, Acc, #{}),
+                Updated = maps:put(Param, Value, Existing),
+                maps:put(TransportAtom, Updated, Acc);
+            error ->
+                Acc
+        end
+    end, #{}, EnvVars),
+
+    % Convert to proper transport configs
+    maps:fold(fun(Name, Config, Acc) ->
+        case build_transport_config(Name, Config) of
+            {ok, TransportConfig} ->
+                maps:put(Name, TransportConfig, Acc);
+            {error, Reason} ->
+                ?LOG_WARNING(#{
+                    what => invalid_transport_config,
+                    transport => Name,
+                    reason => Reason
+                }),
+                Acc
+        end
+    end, #{}, Grouped).
+
+%% @doc Parse environment variable key
+%% ERLMCP_TRANSPORT_TCP1_HOST -> {ok, "tcp1", host}
+-spec parse_env_key(string()) -> {ok, string(), atom()} | error.
+parse_env_key(Key) ->
+    case string:tokens(Key, "_") of
+        ["ERLMCP", "TRANSPORT", Name | Rest] when length(Rest) > 0 ->
+            Param = string:join(Rest, "_"),
+            ParamAtom = list_to_atom(string:to_lower(Param)),
+            {ok, string:to_lower(Name), ParamAtom};
+        _ ->
+            error
+    end.
+
+%% @doc Build transport configuration from parsed environment
+-spec build_transport_config(atom(), map()) -> {ok, map()} | {error, term()}.
+build_transport_config(Name, Config) ->
+    % Ensure required fields
+    % Note: Config has atom keys (from parse_env_key), not string keys
+    case maps:is_key(type, Config) of
+        true ->
+            Type = list_to_atom(maps:get(type, Config)),
+            FinalConfig = #{
+                transport_id => Name,
+                type => Type,
+                discovered_via => env,
+                discovered_at => erlang:system_time(millisecond)
+            },
+            % Add all other config parameters
+            FullConfig = maps:merge(FinalConfig, convert_env_types(Config)),
+            {ok, FullConfig};
+        false ->
+            {error, missing_type}
+    end.
+
+%% @doc Convert string environment values to appropriate types
+-spec convert_env_types(map()) -> map().
+convert_env_types(Config) ->
+    % Note: Config has atom keys (from parse_env_key), not string keys
+    maps:fold(fun
+        (port, Value, Acc) when is_list(Value) ->
+            maps:put(port, list_to_integer(Value), Acc);
+        (connect_timeout, Value, Acc) when is_list(Value) ->
+            maps:put(connect_timeout, list_to_integer(Value), Acc);
+        (keepalive, "true", Acc) ->
+            maps:put(keepalive, true, Acc);
+        (keepalive, "false", Acc) ->
+            maps:put(keepalive, false, Acc);
+        (Key, Value, Acc) when is_atom(Key) ->
+            maps:put(Key, Value, Acc)
+    end, #{}, Config).
+
+%%====================================================================
+%% Internal Functions - Consul Discovery
+%%====================================================================
+
+%% @doc Get Consul configuration from application environment
+-spec get_consul_config() -> {ok, map()} | {error, term()}.
+get_consul_config() ->
+    Host = application:get_env(erlmcp_transports, consul_host, ?CONSUL_DEFAULT_HOST),
+    Port = application:get_env(erlmcp_transports, consul_port, ?CONSUL_DEFAULT_PORT),
+    Token = application:get_env(erlmcp_transports, consul_token, ?CONSUL_DEFAULT_TOKEN),
+    {ok, #{host => Host, port => Port, token => Token}}.
+
+%% @doc Ensure gun application is started
+-spec ensure_gun_started() -> ok | {error, term()}.
+ensure_gun_started() ->
+    case application:ensure_all_started(gun) of
+        {ok, _} -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Build HTTP headers for Consul API request
+-spec build_consul_headers(binary() | undefined) -> [{binary(), binary()}].
+build_consul_headers(undefined) ->
+    [{<<"accept">>, <<"application/json">>}];
+build_consul_headers(Token) when is_binary(Token) ->
+    [
+        {<<"accept">>, <<"application/json">>},
+        {<<"x-consul-token">>, Token}
+    ].
+
+%% @doc Parse Consul service list into transport map
+-spec parse_consul_services([map()]) -> {ok, #{atom() => map()}}.
+parse_consul_services(Services) when is_list(Services) ->
+    Transports = lists:foldl(fun(Service, Acc) ->
+        case parse_consul_service(Service) of
+            {ok, ServiceId, Config} ->
+                maps:put(ServiceId, Config, Acc);
+            {error, Reason} ->
+                ?LOG_WARNING(#{
+                    what => failed_to_parse_consul_service,
+                    reason => Reason
+                }),
+                Acc
+        end
+    end, #{}, Services),
+    {ok, Transports}.
+
+%% @doc Parse a single Consul service entry
+-spec parse_consul_service(map()) -> {ok, atom(), map()} | {error, term()}.
+parse_consul_service(Service) ->
+    % Extract required fields
+    case {maps:get(<<"ServiceID">>, Service, undefined),
+          maps:get(<<"ServicePort">>, Service, undefined)} of
+        {undefined, _} ->
+            {error, {missing_field, <<"ServiceID">>}};
+        {_, undefined} ->
+            {error, {missing_field, <<"ServicePort">>}};
+        {ServiceId, ServicePort} ->
+            % Extract address (fallback to node address if ServiceAddress is empty/missing)
+            Address = case maps:get(<<"ServiceAddress">>, Service, <<"">>) of
+                <<"">> -> maps:get(<<"Address">>, Service, <<"127.0.0.1">>);
+                Addr -> Addr
+            end,
+
+            % Extract transport type from tags
+            Tags = maps:get(<<"ServiceTags">>, Service, []),
+            TransportType = extract_transport_from_tags(Tags, tcp),
+
+            % Build transport ID (convert to valid Erlang atom)
+            TransportId = binary_to_atom(ServiceId, utf8),
+
+            % Build transport configuration
+            Config = #{
+                transport_id => TransportId,
+                type => TransportType,
+                host => binary_to_list(Address),
+                port => ServicePort,
+                discovered_via => consul,
+                discovered_at => erlang:system_time(millisecond),
+                consul_service_id => ServiceId
+            },
+
+            {ok, TransportId, Config}
+    end.
+
+%% @doc Extract transport type from Consul service tags
+%% Tags like "erlmcp:tcp", "erlmcp:http", "erlmcp:ws" specify the type
+-spec extract_transport_from_tags([binary()], atom()) -> atom().
+extract_transport_from_tags([], Default) ->
+    Default;
+extract_transport_from_tags(Tags, Default) ->
+    case lists:search(fun(Tag) ->
+        case binary:split(Tag, <<":">>) of
+            [<<"erlmcp">>, Type] ->
+                true;
+            _ ->
+                false
+        end
+    end, Tags) of
+        {value, Tag} ->
+            [<<"erlmcp">>, Type] = binary:split(Tag, <<":">>),
+            binary_to_existing_atom(Type, utf8);
+        false ->
+            Default
+    end.
+
+%%====================================================================
+%% Internal Functions - Events
+%%====================================================================
+
+%% @doc Generate discovery events by comparing old and new transport maps
+-spec generate_discovery_events(#{atom() => map()}, #{atom() => map()}) -> [discovery_event()].
+generate_discovery_events(OldTransports, NewTransports) ->
+    OldKeys = maps:keys(OldTransports),
+    NewKeys = maps:keys(NewTransports),
+
+    % Added transports
+    Added = [{transport_added, Id, maps:get(Id, NewTransports)}
+             || Id <- NewKeys -- OldKeys],
+
+    % Removed transports
+    Removed = [{transport_removed, Id} || Id <- OldKeys -- NewKeys],
+
+    % Updated transports (same ID but different config)
+    Updated = lists:filtermap(fun(Id) ->
+        OldConfig = maps:get(Id, OldTransports),
+        NewConfig = maps:get(Id, NewTransports),
+        case OldConfig =/= NewConfig of
+            true -> {true, {transport_updated, Id, NewConfig}};
+            false -> false
+        end
+    end, [Id || Id <- NewKeys, lists:member(Id, OldKeys)]),
+
+    Added ++ Removed ++ Updated.
+
+%% @doc Notify all watchers of discovery events
+-spec notify_watchers([pid()], [discovery_event()]) -> ok.
+notify_watchers(_Watchers, []) ->
+    ok;
+notify_watchers(Watchers, Events) ->
+    lists:foreach(fun(Watcher) ->
+        lists:foreach(fun(Event) ->
+            Watcher ! {discovery_event, Event}
+        end, Events)
+    end, Watchers).
+
+%%====================================================================
+%% Internal Functions - Auto-start
+%%====================================================================
+
+%% @doc Automatically start discovered transports
+-spec auto_start_transports([discovery_event()]) -> ok.
+auto_start_transports(Events) ->
+    lists:foreach(fun
+        ({transport_added, Id, Config}) ->
+            start_discovered_transport(Id, Config);
+        ({transport_updated, Id, Config}) ->
+            % Reload transport with new config
+            reload_transport(Id, Config);
+        ({transport_removed, Id}) ->
+            % Stop transport
+            stop_transport(Id);
+        (_) ->
+            ok
+    end, Events).
+
+%% @doc Start a discovered transport
+-spec start_discovered_transport(atom(), map()) -> ok.
+start_discovered_transport(TransportId, Config) ->
+    Type = maps:get(type, Config, custom),
+
+    ?LOG_INFO(#{
+        what => auto_starting_transport,
+        transport_id => TransportId,
+        type => Type
+    }),
+
+    case erlmcp_transport_sup:start_child(TransportId, Type, Config) of
+        {ok, _Pid} ->
+            ?LOG_INFO(#{
+                what => transport_auto_started,
+                transport_id => TransportId
+            }),
+            ok;
+        {error, {already_started, _}} ->
+            ?LOG_DEBUG(#{
+                what => transport_already_started,
+                transport_id => TransportId
+            }),
+            ok;
+        {error, Reason} ->
+            ?LOG_ERROR(#{
+                what => transport_auto_start_failed,
+                transport_id => TransportId,
+                reason => Reason
+            }),
+            ok
+    end.
+
+%% @doc Reload transport with new configuration
+-spec reload_transport(atom(), map()) -> ok.
+reload_transport(TransportId, Config) ->
+    ?LOG_INFO(#{
+        what => reloading_transport,
+        transport_id => TransportId
+    }),
+
+    % Stop existing transport
+    stop_transport(TransportId),
+
+    % Start with new config
+    start_discovered_transport(TransportId, Config).
+
+%% @doc Stop a transport
+-spec stop_transport(atom()) -> ok.
+stop_transport(TransportId) ->
+    ?LOG_INFO(#{
+        what => stopping_transport,
+        transport_id => TransportId
+    }),
+
+    case supervisor:terminate_child(erlmcp_transport_sup, TransportId) of
+        ok ->
+            supervisor:delete_child(erlmcp_transport_sup, TransportId),
+            ok;
+        {error, not_found} ->
+            ok;
+        {error, Reason} ->
+            ?LOG_WARNING(#{
+                what => transport_stop_failed,
+                transport_id => TransportId,
+                reason => Reason
+            }),
+            ok
+    end.
+
+%%====================================================================
+%% Internal Functions - Validation
+%%====================================================================
+
+%% @doc Check if protocol is valid
+-spec is_valid_protocol(atom()) -> boolean().
+is_valid_protocol(env) -> true;
+is_valid_protocol(dns_sd) -> true;
+is_valid_protocol(consul) -> true;
+is_valid_protocol(k8s) -> true;
+is_valid_protocol(_) -> false.

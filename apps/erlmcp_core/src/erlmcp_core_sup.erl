@@ -42,8 +42,18 @@ init([]) ->
             modules => [erlmcp_registry]
         },
 
-        %% NOTE: erlmcp_registry_health_check removed - module was never implemented
-        %% TODO: Implement health check module or remove from architecture
+        %% ================================================================
+        %% HEALTH CHECKS: Simple health check aggregator for orchestration
+        %% Follows Joe Armstrong's principle: "Health checks are for orchestration"
+        %% ================================================================
+        #{
+            id => erlmcp_health,
+            start => {erlmcp_health, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_health]
+        },
 
         %% ================================================================
         %% INFRASTRUCTURE: Hot reload, sessions, tasks, resources
@@ -116,6 +126,16 @@ init([]) ->
             modules => [erlmcp_cache]
         },
 
+        %% Cache Warmer Supervisor - Supervises async cache warming workers
+        #{
+            id => erlmcp_cache_warmer_sup,
+            start => {erlmcp_cache_warmer_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_cache_warmer_sup]
+        },
+
         #{
             id => erlmcp_session_replicator,
             start => {erlmcp_session_replicator, start_link, []},
@@ -132,6 +152,16 @@ init([]) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_session_failover]
+        },
+
+        %% Failover Worker Supervisor - Supervises async failover operations
+        #{
+            id => erlmcp_failover_worker_sup,
+            start => {erlmcp_failover_worker_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_failover_worker_sup]
         },
 
         %% ================================================================

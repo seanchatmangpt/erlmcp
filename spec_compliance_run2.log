@@ -1,0 +1,313 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 356 │              [1;31m{[0merror, CreateReason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      [1;31m{[0merror, token_expired};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      [1;31m{[0merror, token_not_yet_valid};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      [1;31m{[0merror, invalid_issuer}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1152 │                  [1;31m{[0mnoreply, State};[0m
+      │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1162 │                                  [1;31m{[0mnoreply, State};[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1167 │                                  [1;31m{[0mnoreply, State}[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1173 │                          [1;31m{[0mnoreply, State}[0m
+      │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m   ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+   │
+ 3 │  -[1;31mbehaviour[0m(gen_server).[0m
+   │   [1;31m╰──[0m[0m Warning: conflicting behaviours -- callback init/1 required by both 'gen_server' and 'erlmcp_transport_behavior' (line 2, column 2)
+
+
+[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+    │
+ 11 │      ?assertEqual(1001, ?[1;31mREFUSAL_QUEUE_CAPACITY_EXCEEDED[0m),[0m
+    │                          [1;31m╰──[0m[0m undefined macro 'REFUSAL_QUEUE_CAPACITY_EXCEEDED'
+
+    ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+    │
+ 65 │      ?assertEqual(<<"Queue capacity exceeded">>, ?[1;31mREFUSAL_MSG_QUEUE_CAPACITY_EXCEEDED[0m),[0m
+    │                                                   [1;31m╰──[0m[0m undefined macro 'REFUSAL_MSG_QUEUE_CAPACITY_EXCEEDED'
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 326 │  get_message_for_code(1001) -> ?[1;31mREFUSAL_MSG_QUEUE_CAPACITY_EXCEEDED[0m;[0m
+     │                                 [1;31m╰──[0m[0m undefined macro 'REFUSAL_MSG_QUEUE_CAPACITY_EXCEEDED'
+
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 229 │      ?assertEqual(<<"Queue capacity exceeded">>, [1;31mget_message_for_code[0m(1001)),[0m
+     │                                                  [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 230 │      ?assertEqual(<<"Byte capacity exceeded">>, [1;31mget_message_for_code[0m(1002)),[0m
+     │                                                 [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 231 │      ?assertEqual(<<"Tenant quota exceeded">>, [1;31mget_message_for_code[0m(1003)),[0m
+     │                                                [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 232 │      ?assertEqual(<<"Buffer overflow">>, [1;31mget_message_for_code[0m(1004)),[0m
+     │                                          [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 233 │      ?assertEqual(<<"Backpressure active">>, [1;31mget_message_for_code[0m(1005)).[0m
+     │                                              [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 237 │      ?assertEqual(<<"Authentication failed">>, [1;31mget_message_for_code[0m(1011)),[0m
+     │                                                [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 238 │      ?assertEqual(<<"Authentication expired">>, [1;31mget_message_for_code[0m(1012)),[0m
+     │                                                 [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 239 │      ?assertEqual(<<"Invalid credentials">>, [1;31mget_message_for_code[0m(1013)),[0m
+     │                                              [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 240 │      ?assertEqual(<<"Authorization denied">>, [1;31mget_message_for_code[0m(1014)),[0m
+     │                                               [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 241 │      ?assertEqual(<<"Missing authentication">>, [1;31mget_message_for_code[0m(1015)),[0m
+     │                                                 [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 242 │      ?assertEqual(<<"Invalid session ID">>, [1;31mget_message_for_code[0m(1016)).[0m
+     │                                             [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 246 │      ?assertEqual(<<"Invalid parameters">>, [1;31mget_message_for_code[0m(1021)),[0m
+     │                                             [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 247 │      ?assertEqual(<<"JSON schema validation failed">>, [1;31mget_message_for_code[0m(1022)),[0m
+     │                                                        [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 248 │      ?assertEqual(<<"Invalid URI format">>, [1;31mget_message_for_code[0m(1023)),[0m
+     │                                             [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 249 │      ?assertEqual(<<"Invalid Content-Type">>, [1;31mget_message_for_code[0m(1024)),[0m
+     │                                               [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 250 │      ?assertEqual(<<"Required header missing or invalid">>, [1;31mget_message_for_code[0m(1025)).[0m
+     │                                                             [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 254 │      ?assertEqual(<<"Path traversal detected">>, [1;31mget_message_for_code[0m(1036)),[0m
+     │                                                  [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 255 │      ?assertEqual(<<"Invalid path format">>, [1;31mget_message_for_code[0m(1037)),[0m
+     │                                              [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 256 │      ?assertEqual(<<"Symlink traversal detected">>, [1;31mget_message_for_code[0m(1038)),[0m
+     │                                                     [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 257 │      ?assertEqual(<<"URI out of bounds">>, [1;31mget_message_for_code[0m(1039)),[0m
+     │                                            [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 258 │      ?assertEqual(<<"Canonical path violation">>, [1;31mget_message_for_code[0m(1040)).[0m
+     │                                                   [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 262 │      ?assertEqual(<<"Resource not found">>, [1;31mget_message_for_code[0m(1046)),[0m
+     │                                             [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 263 │      ?assertEqual(<<"Resource already exists">>, [1;31mget_message_for_code[0m(1047)),[0m
+     │                                                  [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 264 │      ?assertEqual(<<"Tool not found">>, [1;31mget_message_for_code[0m(1048)),[0m
+     │                                         [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 265 │      ?assertEqual(<<"Tool already registered">>, [1;31mget_message_for_code[0m(1049)),[0m
+     │                                                  [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 266 │      ?assertEqual(<<"Prompt not found">>, [1;31mget_message_for_code[0m(1050)),[0m
+     │                                           [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 267 │      ?assertEqual(<<"Prompt already exists">>, [1;31mget_message_for_code[0m(1051)),[0m
+     │                                                [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 268 │      ?assertEqual(<<"Entity already exists">>, [1;31mget_message_for_code[0m(1052)).[0m
+     │                                                [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 272 │      ?assertEqual(<<"Rate limit exceeded">>, [1;31mget_message_for_code[0m(1056)),[0m
+     │                                              [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 273 │      ?assertEqual(<<"Per-second rate limit exceeded">>, [1;31mget_message_for_code[0m(1057)),[0m
+     │                                                         [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 274 │      ?assertEqual(<<"Per-minute rate limit exceeded">>, [1;31mget_message_for_code[0m(1058)),[0m
+     │                                                         [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 275 │      ?assertEqual(<<"Quota exceeded">>, [1;31mget_message_for_code[0m(1059)),[0m
+     │                                         [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 276 │      ?assertEqual(<<"Concurrent connection limit exceeded">>, [1;31mget_message_for_code[0m(1060)).[0m
+     │                                                               [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 280 │      ?assertEqual(<<"Protocol error">>, [1;31mget_message_for_code[0m(1066)),[0m
+     │                                         [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 281 │      ?assertEqual(<<"Transport error">>, [1;31mget_message_for_code[0m(1067)),[0m
+     │                                          [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 282 │      ?assertEqual(<<"Message too large">>, [1;31mget_message_for_code[0m(1068)),[0m
+     │                                            [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 283 │      ?assertEqual(<<"Operation timeout">>, [1;31mget_message_for_code[0m(1069)),[0m
+     │                                            [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 284 │      ?assertEqual(<<"Encoding not supported">>, [1;31mget_message_for_code[0m(1070)).[0m
+     │                                                 [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 288 │      ?assertEqual(<<"Server not initialized">>, [1;31mget_message_for_code[0m(1076)),[0m
+     │                                                 [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 289 │      ?assertEqual(<<"Server shutting down">>, [1;31mget_message_for_code[0m(1077)),[0m
+     │                                               [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 290 │      ?assertEqual(<<"Service unavailable">>, [1;31mget_message_for_code[0m(1078)),[0m
+     │                                              [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 291 │      ?assertEqual(<<"Internal error">>, [1;31mget_message_for_code[0m(1079)),[0m
+     │                                         [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 292 │      ?assertEqual(<<"Dependency unavailable">>, [1;31mget_message_for_code[0m(1080)).[0m
+     │                                                 [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 296 │      ?assertEqual(<<"Circuit breaker open">>, [1;31mget_message_for_code[0m(1086)),[0m
+     │                                               [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 297 │      ?assertEqual(<<"Health check failed">>, [1;31mget_message_for_code[0m(1087)),[0m
+     │                                              [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 298 │      ?assertEqual(<<"Service degraded">>, [1;31mget_message_for_code[0m(1088)),[0m
+     │                                           [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 299 │      ?assertEqual(<<"Resource exhausted">>, [1;31mget_message_for_code[0m(1089)).[0m
+     │                                             [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_refusal_codes_tests.erl:
+     │
+ 303 │      ?assertEqual(<<"Unknown refusal">>, [1;31mget_message_for_code[0m(999)).[0m
+     │                                          [1;31m╰──[0m[0m function get_message_for_code/1 undefined
+
+

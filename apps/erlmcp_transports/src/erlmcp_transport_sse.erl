@@ -90,7 +90,17 @@ init_sse(TransportId, Config) ->
             ]}
         ]),
 
-        {ok, _} = cowboy:start_clear(erlmcp_sse_listener,
+        %% Generate unique listener name per transport ID to avoid conflicts
+        %% Handle both atom and binary TransportId
+        TransportIdBin = case is_binary(TransportId) of
+            true -> TransportId;
+            false when is_atom(TransportId) -> atom_to_binary(TransportId, utf8);
+            false when is_list(TransportId) -> list_to_binary(TransportId)
+        end,
+        ListenerName = binary_to_atom(<<"erlmcp_sse_", TransportIdBin/binary>>, utf8),
+
+        %% Cowboy 2.10 + Ranch 2.1 simple configuration
+        {ok, _} = cowboy:start_clear(ListenerName,
             [{port, Port}],
             #{env => #{dispatch => Dispatch}}),
 

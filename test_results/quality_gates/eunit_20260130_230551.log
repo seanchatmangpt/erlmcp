@@ -1,0 +1,135 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_memory_guard.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 32 │  -define([1;31mREFUSAL_BUFFER_OVERFLOW[0m, 1004).             % Internal buffer overflow[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_BUFFER_OVERFLOW'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 33 │  -define([1;31mREFUSAL_BACKPRESSURE_ACTIVE[0m, 1005).         % Backpressure signal active[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_BACKPRESSURE_ACTIVE'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 36 │  -define([1;31mREFUSAL_AUTH_FAILED[0m, 1011).                 % Authentication failed[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_AUTH_FAILED'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 37 │  -define([1;31mREFUSAL_AUTH_EXPIRED[0m, 1012).                % Auth token expired[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_AUTH_EXPIRED'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 44 │  -define([1;31mREFUSAL_INVALID_PARAMS[0m, 1021).              % Invalid request parameters[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_INVALID_PARAMS'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 47 │  -define([1;31mREFUSAL_INVALID_CONTENT_TYPE[0m, 1024).        % Content-Type not supported[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_INVALID_CONTENT_TYPE'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 49 │  -define([1;31mREFUSAL_INVALID_SESSION_ID[0m, 1026).          % Session ID format invalid[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_INVALID_SESSION_ID'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 52 │  -define([1;31mREFUSAL_FIELD_TYPE_MISMATCH[0m, 1029).         % Field type doesn't match schema[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_FIELD_TYPE_MISMATCH'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 55 │  -define([1;31mREFUSAL_PATH_TRAVERSAL_DETECTED[0m, 1036).     % Path traversal attack[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_PATH_TRAVERSAL_DETECTED'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 57 │  -define([1;31mREFUSAL_SYMLINK_TRAVERSAL_DETECTED[0m, 1038).  % Symlink traversal attack[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_SYMLINK_TRAVERSAL_DETECTED'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 58 │  -define([1;31mREFUSAL_URI_OUT_OF_BOUNDS[0m, 1039).           % URI outside allowed roots[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_URI_OUT_OF_BOUNDS'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 59 │  -define([1;31mREFUSAL_CANONICAL_PATH_VIOLATION[0m, 1040).    % Canonical path validation failed[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_CANONICAL_PATH_VIOLATION'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 62 │  -define([1;31mREFUSAL_RESOURCE_NOT_FOUND[0m, 1046).          % Resource does not exist[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_RESOURCE_NOT_FOUND'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 64 │  -define([1;31mREFUSAL_TOOL_NOT_FOUND[0m, 1048).              % Tool does not exist[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_TOOL_NOT_FOUND'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 66 │  -define([1;31mREFUSAL_PROMPT_NOT_FOUND[0m, 1050).            % Prompt does not exist[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_PROMPT_NOT_FOUND'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 71 │  -define([1;31mREFUSAL_RATE_LIMIT_EXCEEDED[0m, 1056).         % Rate limit exceeded[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_RATE_LIMIT_EXCEEDED'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 74 │  -define([1;31mREFUSAL_QUOTA_EXCEEDED[0m, 1059).              % Quota limit exceeded[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_QUOTA_EXCEEDED'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 78 │  -define([1;31mREFUSAL_PROTOCOL_ERROR[0m, 1066).              % Protocol-level error[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_PROTOCOL_ERROR'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 79 │  -define([1;31mREFUSAL_TRANSPORT_ERROR[0m, 1067).             % Transport I/O error[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_TRANSPORT_ERROR'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 80 │  -define([1;31mREFUSAL_MESSAGE_TOO_LARGE[0m, 1068).           % Message size exceeds limit[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_MESSAGE_TOO_LARGE'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 86 │  -define([1;31mREFUSAL_SERVER_SHUTTING_DOWN[0m, 1077).        % Server shutting down[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_SERVER_SHUTTING_DOWN'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 87 │  -define([1;31mREFUSAL_SERVICE_UNAVAILABLE[0m, 1078).         % Service temporarily unavailable[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_SERVICE_UNAVAILABLE'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 89 │  -define([1;31mREFUSAL_DEPENDENCY_UNAVAILABLE[0m, 1080).      % External dependency unavailable[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_DEPENDENCY_UNAVAILABLE'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 92 │  -define([1;31mREFUSAL_CIRCUIT_BREAKER_OPEN[0m, 1086).        % Circuit breaker open[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_CIRCUIT_BREAKER_OPEN'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 93 │  -define([1;31mREFUSAL_HEALTH_CHECK_FAILED[0m, 1087).         % Health check failed[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_HEALTH_CHECK_FAILED'
+
+    ┌─ apps/erlmcp_core/include/erlmcp_refusal.hrl:
+    │
+ 95 │  -define([1;31mREFUSAL_RESOURCE_EXHAUSTED[0m, 1089).          % Resource exhausted[0m
+    │          [1;31m╰──[0m[0m redefining macro 'REFUSAL_RESOURCE_EXHAUSTED'
+
+

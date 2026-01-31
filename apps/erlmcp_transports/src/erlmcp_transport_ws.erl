@@ -122,7 +122,6 @@ init_ws(TransportId, Config) ->
         StrictDelimiterCheck = maps:get(strict_delimiter_check, Config, true),
         ValidateUtf8 = maps:get(validate_utf8, Config, true),
         MaxConnections = maps:get(max_connections, Config, 1000),
-        ConnectTimeout = maps:get(connect_timeout, Config, 5000),
 
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"transport_id">> => TransportId,
@@ -140,16 +139,20 @@ init_ws(TransportId, Config) ->
             ]}
         ]),
 
-        %% Cowboy listener configuration with connection limits
-        ListenerOpts = [
-            {port, Port},
-            {max_connections, MaxConnections},
-            {connection_type, supervisor},
-            {connection_timeout, ConnectTimeout}
-        ],
+        %% Cowboy listener configuration
+        %% Generate unique listener name per transport ID to avoid conflicts
+        %% Handle both atom and binary TransportId
+        TransportIdBin = case is_binary(TransportId) of
+            true -> TransportId;
+            false when is_atom(TransportId) -> atom_to_binary(TransportId, utf8);
+            false when is_list(TransportId) -> list_to_binary(TransportId)
+        end,
+        ListenerName = binary_to_atom(<<"erlmcp_ws_", TransportIdBin/binary>>, utf8),
 
-        {ok, _} = cowboy:start_clear(erlmcp_ws_listener,
-            ListenerOpts,
+        %% Ranch 2.x options: port, num_acceptors, max_connections, socket_opts
+        %% For Cowboy 2.10, pass socket opts separately from ranch opts
+        {ok, _} = cowboy:start_clear(ListenerName,
+            [{port, Port}, {num_acceptors, 100}],
             #{env => #{dispatch => Dispatch}}),
 
         erlmcp_tracing:set_status(SpanCtx, ok),
