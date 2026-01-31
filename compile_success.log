@@ -1,7 +1,0 @@
-===> Verifying dependencies...
-===> Analyzing applications...
-===> Compiling erlmcp_core
-===> Compiling erlmcp_transports
-===> Compiling apps/erlmcp_transports/src/erlmcp_transport_sse_manager.erl failed
-_build/default/lib/erlmcp_transports/ebin/erlmcp_transport_sse_manager.beam:none: failed to rename /Users/sac/erlmcp/_build/default/lib/erlmcp_transports/ebin/erlmcp_transport_sse_manager.bea# to /Users/sac/erlmcp/_build/default/lib/erlmcp_transports/ebin/erlmcp_transport_sse_manager.beam: no such file or directory
-

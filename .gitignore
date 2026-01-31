@@ -40,9 +40,18 @@ release/
 
 # Testing
 ct_logs/
+ct_run.*/
 cover/
 .cover/
 erl_crash.dump
+*.log
+test_results/**/*.txt
+test_results/**/*_report.md
+test_results/**/*_summary.md
+bench/results/**/*_202*.md
+bench/results/**/*_REPORT.md
+bench/results/**/*_STATUS.md
+bench/results/**/*_ANALYSIS.md
 
 # IDE
 .erlang.cookie
@@ -52,3 +61,22 @@ Mnesia.*/
 
 # Generated artifacts (ggen)
 /generated/
+
+# Temporary output files
+*_DELIVERABLES.txt
+*_SUMMARY.txt
+*_REPORT.txt
+*_VERIFICATION.txt
+*_VALIDATION.txt
+*_STATUS.txt
+*_MANIFEST.txt
+*_FINDINGS.txt
+*_INDEX.txt
+AGENT_*.txt
+FINAL_*.txt
+BATCH*.txt
+compile*.txt
+coverage*.txt
+test*.txt
+eunit*.txt
+dialyzer*.txt
