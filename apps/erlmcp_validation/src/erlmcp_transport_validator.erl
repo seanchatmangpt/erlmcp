@@ -888,7 +888,7 @@ validate_round_trip(Module, State, NumMessages)
     TotalDuration = EndTime - StartTime,
     AvgLatency = TotalDuration / NumMessages / 1000.0, % Convert to ms
 
-    SuccessCount = length([R || {ok, _} <- SendResults]),
+    SuccessCount = length([ok || {ok, _} <- SendResults]),
 
     case SuccessCount =:= NumMessages of
         true ->
@@ -932,7 +932,7 @@ validate_concurrent_connections(Module, BaseOpts, NumConnections)
     EndTime = erlang:monotonic_time(millisecond),
     Duration = EndTime - StartTime,
 
-    SuccessCount = length([R || {ok, _} <- Results]),
+    SuccessCount = length([ok || {ok, _} <- Results]),
 
     case SuccessCount =:= NumConnections of
         true ->

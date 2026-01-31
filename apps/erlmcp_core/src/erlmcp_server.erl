@@ -1226,6 +1226,21 @@ handle_request(Id, ?MCP_METHOD_LOGGING_SET_LEVEL, Params, TransportId, #state{se
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
+%% @doc Handle ping request (MCP 2025-11-25)
+%% Ping MUST return empty object per spec
+handle_request(Id, ?MCP_METHOD_PING, _Params, TransportId, State) ->
+    Response = #{},
+    send_response_via_registry(State, TransportId, Id, Response),
+    {noreply, State};
+
+%% @doc Handle shutdown request (MCP 2025-11-25)
+%% Shutdown should clean up resources and stop the server
+handle_request(Id, ?MCP_METHOD_SHUTDOWN, _Params, TransportId, State) ->
+    Response = #{},
+    send_response_via_registry(State, TransportId, Id, Response),
+    %% Initiate graceful shutdown
+    {stop, normal, State};
+
 handle_request(Id, _Method, _Params, TransportId, State) ->
     send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
     {noreply, State}.

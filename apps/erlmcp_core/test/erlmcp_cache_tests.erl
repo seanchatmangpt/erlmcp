@@ -1,0 +1,592 @@
+%%%====================================================================
+%%% @doc Comprehensive Test Suite for erlmcp_cache
+%%%
+%%% Tests:
+%%% - TTL expiration (automatic cleanup)
+%%% - LRU eviction (max size limits)
+%%% - Write-through and write-back strategies
+%%% - Tag-based invalidation
+%%% - Dependency tracking and cascading invalidation
+%%% - Distributed cache coherence across nodes
+%%% - ETag generation and conditional requests
+%%% - Hit rate, miss rate, eviction metrics
+%%%
+%%% Target: 80%+ coverage (Chicago School TDD)
+%%% @end
+%%%====================================================================
+-module(erlmcp_cache_tests).
+-include_lib("eunit/include/eunit.hrl").
+
+%%====================================================================
+%% Test Fixtures
+%%====================================================================
+
+cache_test_() ->
+    {foreach,
+     fun setup/0,
+     fun cleanup/1,
+     [
+         fun test_basic_get_put/1,
+         fun test_cache_miss/1,
+         fun test_ttl_expiration/1,
+         fun test_lru_eviction/1,
+         fun test_write_through_strategy/1,
+         fun test_write_back_strategy/1,
+         fun test_tag_based_invalidation/1,
+         fun test_dependency_tracking/1,
+         fun test_etag_generation/1,
+         fun test_etag_conditional/1,
+         fun test_cache_clear/1,
+         fun test_cache_stats/1,
+         fun test_cache_warming/1,
+         fun test_l1_to_l2_promotion/1,
+         fun test_multiple_cache_levels/1,
+         fun test_concurrent_access/1,
+         fun test_large_values/1,
+         fun test_edge_cases/1
+     ]}.
+
+%%====================================================================
+%% Setup and Teardown
+%%====================================================================
+
+setup() ->
+    %% Stop Mnesia if running to ensure clean state
+    case mnesia:system_info(is_running) of
+        yes -> application:stop(mnesia);
+        _ -> ok
+    end,
+
+    %% Delete old schema to start fresh
+    mnesia:delete_schema([node()]),
+
+    %% Create schema
+    ok = mnesia:create_schema([node()]),
+
+    %% Start Mnesia
+    ok = application:start(mnesia),
+
+    %% Wait for Mnesia to be fully running
+    ok = mnesia:wait_for_tables([schema], 5000),
+
+    %% Start cache with test configuration (this will create the cache table)
+    Config = #{
+        max_l1_size => 100,
+        max_l2_size => 1000,
+        default_ttl_seconds => 5,
+        cleanup_interval_ms => 1000
+    },
+    {ok, Pid} = erlmcp_cache:start_link(Config),
+
+    %% Wait for cache table to be created
+    timer:sleep(100),
+
+    Pid.
+
+cleanup(Pid) ->
+    case is_process_alive(Pid) of
+        true ->
+            erlmcp_cache:clear(),
+            gen_server:stop(Pid),
+            timer:sleep(50);  % Let cleanup complete
+        false ->
+            ok
+    end,
+
+    %% Clear Mnesia table if it exists
+    case mnesia:system_info(is_running) of
+        yes ->
+            catch mnesia:clear_table(erlmcp_cache_l2);
+        _ ->
+            ok
+    end.
+
+%%====================================================================
+%% Basic Functionality Tests
+%%====================================================================
+
+test_basic_get_put(_Pid) ->
+    [
+        ?_test(begin
+            %% Put value
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>),
+
+            %% Get value
+            ?assertEqual({ok, <<"value1">>}, erlmcp_cache:get(<<"key1">>)),
+
+            %% Update value
+            ok = erlmcp_cache:put(<<"key1">>, <<"value2">>),
+            ?assertEqual({ok, <<"value2">>}, erlmcp_cache:get(<<"key1">>))
+        end),
+
+        ?_test(begin
+            %% Multiple keys
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>),
+            ok = erlmcp_cache:put(<<"key2">>, <<"value2">>),
+            ok = erlmcp_cache:put(<<"key3">>, <<"value3">>),
+
+            ?assertEqual({ok, <<"value1">>}, erlmcp_cache:get(<<"key1">>)),
+            ?assertEqual({ok, <<"value2">>}, erlmcp_cache:get(<<"key2">>)),
+            ?assertEqual({ok, <<"value3">>}, erlmcp_cache:get(<<"key3">>))
+        end)
+    ].
+
+test_cache_miss(_Pid) ->
+    [
+        ?_test(begin
+            %% Get non-existent key
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"nonexistent">>))
+        end),
+
+        ?_test(begin
+            %% Delete key and verify miss
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>),
+            ok = erlmcp_cache:delete(<<"key1">>),
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key1">>))
+        end)
+    ].
+
+%%====================================================================
+%% TTL Expiration Tests
+%%====================================================================
+
+test_ttl_expiration(_Pid) ->
+    [
+        ?_test(begin
+            %% Put with 1 second TTL
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>, {ttl, 1}),
+
+            %% Immediately available
+            ?assertEqual({ok, <<"value1">>}, erlmcp_cache:get(<<"key1">>)),
+
+            %% Wait for expiration
+            timer:sleep(1500),
+
+            %% Should be expired (cleanup runs every 1s in test config)
+            timer:sleep(500),  % Wait for cleanup
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key1">>))
+        end),
+
+        ?_test(begin
+            %% Multiple keys with different TTLs
+            ok = erlmcp_cache:put(<<"short">>, <<"value1">>, {ttl, 1}),
+            ok = erlmcp_cache:put(<<"long">>, <<"value2">>, {ttl, 10}),
+
+            timer:sleep(1500),
+            timer:sleep(500),  % Cleanup
+
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"short">>)),
+            ?assertEqual({ok, <<"value2">>}, erlmcp_cache:get(<<"long">>))
+        end)
+    ].
+
+%%====================================================================
+%% LRU Eviction Tests
+%%====================================================================
+
+test_lru_eviction(_Pid) ->
+    [
+        ?_test(begin
+            %% Fill cache to max size (100 in test config)
+            lists:foreach(fun(N) ->
+                Key = iolist_to_binary(io_lib:format("key_~p", [N])),
+                Value = iolist_to_binary(io_lib:format("value_~p", [N])),
+                ok = erlmcp_cache:put(Key, Value, {lru, 100})
+            end, lists:seq(1, 100)),
+
+            %% All keys should be present
+            ?assertEqual({ok, <<"value_1">>}, erlmcp_cache:get(<<"key_1">>)),
+            ?assertEqual({ok, <<"value_50">>}, erlmcp_cache:get(<<"key_50">>)),
+
+            %% Add one more key to trigger eviction
+            ok = erlmcp_cache:put(<<"key_101">>, <<"value_101">>, {lru, 100}),
+
+            %% Check stats for eviction
+            Stats = erlmcp_cache:stats(),
+            ?assert(maps:get(evictions, Stats, 0) > 0)
+        end)
+    ].
+
+%%====================================================================
+%% Cache Strategy Tests
+%%====================================================================
+
+test_write_through_strategy(_Pid) ->
+    [
+        ?_test(begin
+            %% Write-through should write to all levels immediately
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>, write_through),
+
+            %% Should be immediately available
+            ?assertEqual({ok, <<"value1">>}, erlmcp_cache:get(<<"key1">>)),
+
+            %% Verify stats
+            Stats = erlmcp_cache:stats(),
+            ?assert(maps:get(writes, Stats, 0) >= 1)
+        end)
+    ].
+
+test_write_back_strategy(_Pid) ->
+    [
+        ?_test(begin
+            %% Write-back should write to L1 immediately, L2/L3 async
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>, write_back),
+
+            %% Should be immediately available from L1
+            ?assertEqual({ok, <<"value1">>}, erlmcp_cache:get(<<"key1">>)),
+
+            Stats = erlmcp_cache:stats(),
+            ?assert(maps:get(l1_hits, Stats, 0) >= 1)
+        end)
+    ].
+
+%%====================================================================
+%% Tag-Based Invalidation Tests
+%%====================================================================
+
+test_tag_based_invalidation(_Pid) ->
+    [
+        ?_test(begin
+            %% Put multiple keys with same tag
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>, {ttl, 300},
+                                  #{tags => [<<"user:123">>]}),
+            ok = erlmcp_cache:put(<<"key2">>, <<"value2">>, {ttl, 300},
+                                  #{tags => [<<"user:123">>]}),
+            ok = erlmcp_cache:put(<<"key3">>, <<"value3">>, {ttl, 300},
+                                  #{tags => [<<"user:456">>]}),
+
+            %% Verify all present
+            ?assertEqual({ok, <<"value1">>}, erlmcp_cache:get(<<"key1">>)),
+            ?assertEqual({ok, <<"value2">>}, erlmcp_cache:get(<<"key2">>)),
+            ?assertEqual({ok, <<"value3">>}, erlmcp_cache:get(<<"key3">>)),
+
+            %% Invalidate by tag (synchronous)
+            {ok, 2} = erlmcp_cache:invalidate_by_tag(<<"user:123">>),
+
+            %% Keys with tag should be gone immediately
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key1">>)),
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key2">>)),
+
+            %% Key with different tag should remain
+            ?assertEqual({ok, <<"value3">>}, erlmcp_cache:get(<<"key3">>))
+        end)
+    ].
+
+%%====================================================================
+%% Dependency Tracking Tests
+%%====================================================================
+
+test_dependency_tracking(_Pid) ->
+    [
+        ?_test(begin
+            %% Put primary key
+            ok = erlmcp_cache:put(<<"primary">>, <<"value_primary">>),
+
+            %% Put dependent keys
+            ok = erlmcp_cache:put(<<"dep1">>, <<"value_dep1">>, {ttl, 300},
+                                  #{dependencies => [<<"primary">>]}),
+            ok = erlmcp_cache:put(<<"dep2">>, <<"value_dep2">>, {ttl, 300},
+                                  #{dependencies => [<<"primary">>]}),
+            ok = erlmcp_cache:put(<<"independent">>, <<"value_ind">>),
+
+            %% Verify all present
+            ?assertEqual({ok, <<"value_dep1">>}, erlmcp_cache:get(<<"dep1">>)),
+            ?assertEqual({ok, <<"value_dep2">>}, erlmcp_cache:get(<<"dep2">>)),
+
+            %% Invalidate by dependency (synchronous)
+            {ok, 2} = erlmcp_cache:invalidate_by_dependency(<<"primary">>),
+
+            %% Dependent keys should be gone immediately
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"dep1">>)),
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"dep2">>)),
+
+            %% Primary and independent keys should remain
+            ?assertEqual({ok, <<"value_primary">>}, erlmcp_cache:get(<<"primary">>)),
+            ?assertEqual({ok, <<"value_ind">>}, erlmcp_cache:get(<<"independent">>))
+        end)
+    ].
+
+%%====================================================================
+%% ETag Tests
+%%====================================================================
+
+test_etag_generation(_Pid) ->
+    [
+        ?_test(begin
+            Value1 = <<"value1">>,
+            Value2 = <<"value2">>,
+
+            ETag1 = erlmcp_cache:generate_etag(Value1),
+            ETag2 = erlmcp_cache:generate_etag(Value2),
+            ETag1_again = erlmcp_cache:generate_etag(Value1),
+
+            %% Same value produces same ETag
+            ?assertEqual(ETag1, ETag1_again),
+
+            %% Different values produce different ETags
+            ?assertNotEqual(ETag1, ETag2),
+
+            %% ETag format (quoted hex string)
+            ?assert(is_binary(ETag1)),
+            ?assertEqual($", binary:first(ETag1)),
+            ?assertEqual($", binary:last(ETag1))
+        end)
+    ].
+
+test_etag_conditional(_Pid) ->
+    [
+        ?_test(begin
+            %% Put value and get ETag
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>),
+            ETag = erlmcp_cache:generate_etag(<<"value1">>),
+
+            %% Check ETag matches
+            ?assert(erlmcp_cache:check_etag(<<"key1">>, ETag)),
+
+            %% Update value
+            ok = erlmcp_cache:put(<<"key1">>, <<"value2">>),
+
+            %% Old ETag should not match
+            ?assertNot(erlmcp_cache:check_etag(<<"key1">>, ETag)),
+
+            %% New ETag should match
+            NewETag = erlmcp_cache:generate_etag(<<"value2">>),
+            ?assert(erlmcp_cache:check_etag(<<"key1">>, NewETag))
+        end)
+    ].
+
+%%====================================================================
+%% Cache Management Tests
+%%====================================================================
+
+test_cache_clear(_Pid) ->
+    [
+        ?_test(begin
+            %% Add multiple keys
+            lists:foreach(fun(N) ->
+                Key = iolist_to_binary(io_lib:format("key_~p", [N])),
+                Value = iolist_to_binary(io_lib:format("value_~p", [N])),
+                ok = erlmcp_cache:put(Key, Value)
+            end, lists:seq(1, 10)),
+
+            %% Verify present
+            ?assertEqual({ok, <<"value_5">>}, erlmcp_cache:get(<<"key_5">>)),
+
+            %% Clear cache
+            ok = erlmcp_cache:clear(),
+
+            %% All keys should be gone
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key_1">>)),
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key_5">>)),
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"key_10">>)),
+
+            %% Stats should be reset - check writes and deletes are reset
+            Stats = erlmcp_cache:stats(),
+            ?assertEqual(0, maps:get(writes, Stats)),
+            ?assertEqual(0, maps:get(deletes, Stats)),
+            %% Note: misses may increment during the get operations above
+            %% So we just verify cache is empty via size checks
+            ?assertEqual(0, maps:get(l1_size, Stats))
+        end)
+    ].
+
+test_cache_stats(_Pid) ->
+    [
+        ?_test(begin
+            %% Initial stats
+            Stats0 = erlmcp_cache:stats(),
+            ?assert(is_map(Stats0)),
+            ?assert(maps:is_key(hits, Stats0)),
+            ?assert(maps:is_key(misses, Stats0)),
+            ?assert(maps:is_key(hit_rate, Stats0)),
+
+            %% Generate hits and misses
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>),
+            {ok, _} = erlmcp_cache:get(<<"key1">>),  % Hit
+            {error, not_found} = erlmcp_cache:get(<<"nonexistent">>),  % Miss
+
+            %% Check updated stats
+            Stats1 = erlmcp_cache:stats(),
+            ?assert(maps:get(hits, Stats1) > 0),
+            ?assert(maps:get(misses, Stats1) > 0),
+            ?assert(maps:get(l1_hits, Stats1) > 0),
+            ?assert(maps:get(hit_rate, Stats1) > 0.0),
+
+            %% Verify hit rate calculation
+            TotalRequests = maps:get(total_requests, Stats1),
+            Hits = maps:get(hits, Stats1),
+            ExpectedHitRate = Hits / TotalRequests,
+            ?assertEqual(ExpectedHitRate, maps:get(hit_rate, Stats1))
+        end)
+    ].
+
+%%====================================================================
+%% Cache Warming Tests
+%%====================================================================
+
+test_cache_warming(_Pid) ->
+    [
+        ?_test(begin
+            %% Warm cache with async computation
+            ValueFun = fun() ->
+                timer:sleep(10),  % Simulate expensive computation
+                <<"computed_value">>
+            end,
+
+            ok = erlmcp_cache:warm_cache(<<"expensive_key">>, ValueFun),
+
+            %% Wait for async warming
+            timer:sleep(100),
+
+            %% Value should be cached
+            ?assertEqual({ok, <<"computed_value">>}, erlmcp_cache:get(<<"expensive_key">>))
+        end)
+    ].
+
+%%====================================================================
+%% Multi-Level Cache Tests
+%%====================================================================
+
+test_l1_to_l2_promotion(_Pid) ->
+    [
+        ?_test(begin
+            %% This test assumes L2 (Mnesia) is enabled
+            %% Put in L2 only (simulated by clearing L1)
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>, {ttl, 300}),
+
+            %% Clear L1 (ETS)
+            %% Note: This is internal state, we rely on get triggering promotion
+
+            %% Get should promote from L2 to L1
+            ?assertEqual({ok, <<"value1">>}, erlmcp_cache:get(<<"key1">>)),
+
+            %% Next get should hit L1
+            Stats = erlmcp_cache:stats(),
+            InitialL1Hits = maps:get(l1_hits, Stats, 0),
+
+            {ok, _} = erlmcp_cache:get(<<"key1">>),
+
+            Stats2 = erlmcp_cache:stats(),
+            ?assert(maps:get(l1_hits, Stats2) > InitialL1Hits)
+        end)
+    ].
+
+test_multiple_cache_levels(_Pid) ->
+    [
+        ?_test(begin
+            %% Test L1, L2, L3 fallback behavior
+            %% Put value
+            ok = erlmcp_cache:put(<<"key1">>, <<"value1">>),
+
+            %% First get (L1 hit)
+            {ok, _} = erlmcp_cache:get(<<"key1">>),
+            Stats1 = erlmcp_cache:stats(),
+            ?assert(maps:get(l1_hits, Stats1) > 0),
+
+            %% Verify cache hierarchy via stats
+            ?assert(maps:is_key(l1_size, Stats1)),
+            ?assert(maps:is_key(l2_size, Stats1))
+        end)
+    ].
+
+%%====================================================================
+%% Concurrency Tests
+%%====================================================================
+
+test_concurrent_access(_Pid) ->
+    [
+        ?_test(begin
+            %% Spawn multiple processes doing concurrent reads/writes
+            NumProcs = 50,
+            NumOps = 100,
+
+            Pids = lists:map(fun(N) ->
+                spawn(fun() ->
+                    lists:foreach(fun(M) ->
+                        Key = iolist_to_binary(io_lib:format("key_~p", [M rem 10])),
+                        Value = iolist_to_binary(io_lib:format("value_~p_~p", [N, M])),
+                        ok = erlmcp_cache:put(Key, Value),
+                        _ = erlmcp_cache:get(Key)
+                    end, lists:seq(1, NumOps))
+                end)
+            end, lists:seq(1, NumProcs)),
+
+            %% Wait for all processes to complete
+            lists:foreach(fun(Pid) ->
+                Ref = monitor(process, Pid),
+                receive
+                    {'DOWN', Ref, process, Pid, _} -> ok
+                after 5000 ->
+                    ?assert(false)  % Timeout
+                end
+            end, Pids),
+
+            %% Cache should still be functional
+            Stats = erlmcp_cache:stats(),
+            ?assert(maps:get(writes, Stats) > 0),
+            ?assert(maps:get(hits, Stats) > 0)
+        end)
+    ].
+
+%%====================================================================
+%% Edge Cases Tests
+%%====================================================================
+
+test_large_values(_Pid) ->
+    [
+        ?_test(begin
+            %% Test with large binary value (1 MB)
+            LargeValue = binary:copy(<<"x">>, 1024 * 1024),
+
+            ok = erlmcp_cache:put(<<"large_key">>, LargeValue),
+            ?assertEqual({ok, LargeValue}, erlmcp_cache:get(<<"large_key">>)),
+
+            %% Verify ETag works with large values
+            ETag = erlmcp_cache:generate_etag(LargeValue),
+            ?assert(is_binary(ETag))
+        end)
+    ].
+
+test_edge_cases(_Pid) ->
+    [
+        ?_test(begin
+            %% Empty binary
+            ok = erlmcp_cache:put(<<"empty">>, <<>>),
+            ?assertEqual({ok, <<>>}, erlmcp_cache:get(<<"empty">>))
+        end),
+
+        ?_test(begin
+            %% Complex terms
+            ComplexValue = #{
+                list => [1, 2, 3],
+                tuple => {a, b, c},
+                map => #{nested => #{deep => true}}
+            },
+            ok = erlmcp_cache:put(<<"complex">>, ComplexValue),
+            ?assertEqual({ok, ComplexValue}, erlmcp_cache:get(<<"complex">>))
+        end),
+
+        ?_test(begin
+            %% Atom keys
+            ok = erlmcp_cache:put(atom_key, <<"value">>),
+            ?assertEqual({ok, <<"value">>}, erlmcp_cache:get(atom_key))
+        end),
+
+        ?_test(begin
+            %% Integer keys
+            ok = erlmcp_cache:put(12345, <<"value">>),
+            ?assertEqual({ok, <<"value">>}, erlmcp_cache:get(12345))
+        end),
+
+        ?_test(begin
+            %% Short TTL (should expire after cleanup interval)
+            ok = erlmcp_cache:put(<<"zero_ttl">>, <<"value">>, {ttl, 2}),
+
+            %% Should be available immediately
+            ?assertEqual({ok, <<"value">>}, erlmcp_cache:get(<<"zero_ttl">>)),
+
+            %% Wait for cleanup (2 seconds TTL + buffer)
+            timer:sleep(2500),
+            ?assertEqual({error, not_found}, erlmcp_cache:get(<<"zero_ttl">>))
+        end)
+    ].

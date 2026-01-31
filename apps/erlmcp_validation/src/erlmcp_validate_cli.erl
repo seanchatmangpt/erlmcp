@@ -39,7 +39,6 @@
 
 %% Escript entry point
 -export([main/1]).
->>>>>>> origin/main
 
 -define(VERSION, "1.0.0").
 -define(SECTIONS, [
@@ -86,11 +85,7 @@ validate_spec() ->
         %% Start spec parser if not running
         case whereis(erlmcp_spec_parser) of
             undefined ->
-                case erlmcp_spec_parser:start_link() of
-                    {ok, _Pid} -> ok;
-                    {error, {already_started, _}} -> ok;
-                    {error, Reason} -> throw({spec_parser_start_failed, Reason})
-                end;
+                ok = erlmcp_spec_parser:start_link();
             _Pid -> ok
         end,
 
@@ -135,8 +130,6 @@ validate_spec() ->
             }
         }}
     catch
-        throw:{spec_parser_start_failed, Reason} ->
-            {error, {spec_parser_failed, Reason}};
         _:Error:Stack ->
             {error, {validation_error, Error, Stack}}
     end.

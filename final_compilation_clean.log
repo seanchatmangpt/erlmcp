@@ -1,0 +1,66 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 356 │              {error, CreateReason}
+     │              ╰── Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      {error, token_expired};
+     │                      ╰── Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      {error, token_not_yet_valid};
+     │                      ╰── Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      {error, invalid_issuer}
+     │                      ╰── Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1152 │                  {noreply, State};
+      │                  ╰── Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1162 │                                  {noreply, State};
+      │                                  ╰── Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1167 │                                  {noreply, State}
+      │                                  ╰── Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1173 │                          {noreply, State}
+      │                          ╰── Warning: a term is constructed, but never used
+
+
+===> Compiling erlmcp_transports
+   ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+   │
+ 3 │  -behaviour(gen_server).
+   │   ╰── Warning: conflicting behaviours -- callback init/1 required by both 'gen_server' and 'erlmcp_transport_behavior' (line 2, column 2)
+
+
+===> Compiling erlmcp_validation
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 503 │                          {error, #{reason => module_not_loaded,
+     │                          ╰── Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_validation/src/erlmcp_protocol_validator.erl:
+     │
+ 503 │                          {error, #{reason => module_not_loaded,
+     │                                  ╰── Warning: a term is constructed, but never used
+
+
+===> Compiling erlmcp_observability
