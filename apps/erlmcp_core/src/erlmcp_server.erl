@@ -2,6 +2,7 @@
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
+-include("otp_compat.hrl").
 %% TODO: Add opentelemetry_api dependency when telemetry is enabled
 %% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
