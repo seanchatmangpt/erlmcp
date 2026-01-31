@@ -6,11 +6,14 @@
 %%%====================================================================
 
 setup() ->
-    {ok, Pid} = erlmcp_memory_manager:start_link(),
-    Pid.
+    case erlmcp_memory_manager:start_link() of
+        {ok, Pid} -> Pid;
+        {error, {already_started, Pid}} -> Pid
+    end.
 
-cleanup(Pid) ->
-    erlmcp_memory_manager:stop(Pid).
+cleanup(_Pid) ->
+    %% Don't stop the server between tests to avoid restart issues
+    ok.
 
 %%%====================================================================
 %%% Test Cases

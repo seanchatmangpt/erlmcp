@@ -1,0 +1,10 @@
+@@ -193,7 +193,7 @@
+                         end;
+                     {error, InnerReason} ->
+-                        {error, Reason}
++                        {error, InnerReason}
+                     end;
+             {error, ParseReason} ->
+-                logger:error("Failed to parse certificate: ~p", [Reason]),
++                logger:error("Failed to parse certificate: ~p", [ParseReason]),
+                 {error, invalid_certificate}

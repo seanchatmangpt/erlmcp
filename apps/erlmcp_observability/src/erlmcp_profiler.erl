@@ -27,6 +27,7 @@
 %%%-----------------------------------------------------------------------------
 -module(erlmcp_profiler).
 
+
 %% API - CPU Profiling
 -export([
     profile/3,

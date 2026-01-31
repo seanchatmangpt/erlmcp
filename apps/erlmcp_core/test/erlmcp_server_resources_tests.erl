@@ -126,6 +126,9 @@ setup() ->
         {ok, _} -> ok;
         {error, {already_started, _}} -> ok
     end,
+    % Ensure validation modules are loaded
+    {module, erlmcp_uri_validator} = code:ensure_loaded(erlmcp_uri_validator),
+    {module, erlmcp_security_validator} = code:ensure_loaded(erlmcp_security_validator),
     ok.
 
 cleanup(_) ->
