@@ -1047,6 +1047,19 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, TransportId, State
             {noreply, State#state{subscriptions = NewSubscriptions}}
     end;
 
+%% Roots/list - MCP 2025-11-25 spec
+%% "List roots, then read" - two-phase resource access
+handle_request(Id, ?MCP_METHOD_ROOTS_LIST, _Params, TransportId, State) ->
+    case erlmcp_resources:list_roots(State) of
+        {ok, Roots} ->
+            Response = #{?MCP_PARAM_ROOTS => Roots},
+            send_response_via_registry(State, TransportId, Id, Response),
+            {noreply, State};
+        {error, Reason} ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, Reason),
+            {noreply, State}
+    end;
+
 handle_request(Id, ?MCP_METHOD_PROMPTS_LIST, Params, TransportId, State) ->
     Prompts = list_all_prompts(State),
     case handle_paginated_list_with_key(Prompts, Params, ?MCP_PARAM_PROMPTS) of

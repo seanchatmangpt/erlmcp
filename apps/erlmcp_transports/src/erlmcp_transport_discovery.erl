@@ -34,6 +34,14 @@
     get_enabled_protocols/0
 ]).
 
+%% Consul discovery API (exported for testing)
+-export([
+    parse_consul_services/1,
+    parse_consul_service/1,
+    build_consul_headers/1,
+    ensure_gun_started/0
+]).
+
 %% gen_server callbacks
 -export([
     init/1,
@@ -64,6 +72,13 @@
 }).
 
 -type state() :: #state{}.
+
+%% Consul configuration constants
+-define(CONSUL_DEFAULT_HOST, "127.0.0.1").
+-define(CONSUL_DEFAULT_PORT, 8500).
+-define(CONSUL_DEFAULT_TOKEN, undefined).
+-define(CONSUL_SERVICE_NAME, <<"erlmcp">>).
+-define(CONSUL_TIMEOUT, 5000).
 
 %%====================================================================
 %% API Functions
@@ -344,12 +359,49 @@ discover_from_dns_sd() ->
 %% @doc Discover transports from Consul service catalog
 -spec discover_from_consul() -> {ok, #{atom() => map()}} | {error, term()}.
 discover_from_consul() ->
-    % Placeholder - real implementation would query Consul API
-    ?LOG_INFO(#{
-        what => consul_discovery_not_implemented,
-        note => "Consul support requires HTTP API integration"
-    }),
-    {ok, #{}}.
+    case get_consul_config() of
+        {ok, #{host := Host, port := Port} = Config} ->
+            case ensure_gun_started() of
+                ok ->
+                    case gun:open(Host, Port, #{transport => gun_tcp}) of
+                        {ok, ConnPid} ->
+                            try
+                                {ok, _Protocol} = gun:await_up(ConnPid, ?CONSUL_TIMEOUT),
+                                Path = <<"/v1/catalog/service/", (?CONSUL_SERVICE_NAME)/binary>>,
+                                Headers = build_consul_headers(maps:get(token, Config, undefined)),
+                                Ref = gun:get(ConnPid, Path, Headers),
+                                case gun:await(ConnPid, Ref, ?CONSUL_TIMEOUT) of
+                                    {response, fin, 200, _} ->
+                                        {ok, #{}};
+                                    {response, nofin, 200, _} ->
+                                        {ok, Body} = gun:await_body(ConnPid, Ref),
+                                        Services = jsx:decode(Body, [return_maps]),
+                                        Transports = parse_consul_services(Services),
+                                        {ok, Transports};
+                                    {response, _, Status, _} ->
+                                        {error, {http_error, Status}}
+                                end
+                            catch
+                                Type:Error:Stacktrace ->
+                                    ?LOG_ERROR(#{
+                                        what => consul_query_failed,
+                                        error => Error,
+                                        type => Type,
+                                        stacktrace => Stacktrace
+                                    }),
+                                    {error, {query_failed, {Type, Error}}}
+                            after
+                                gun:close(ConnPid)
+                            end;
+                        {error, Reason} ->
+                            {error, {connection_failed, Reason}}
+                    end;
+                {error, Reason} ->
+                    {error, {gun_start_failed, Reason}}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% @doc Discover transports from Kubernetes service discovery
 -spec discover_from_k8s() -> {ok, #{atom() => map()}} | {error, term()}.
@@ -446,6 +498,112 @@ convert_env_types(Config) ->
         (Key, Value, Acc) when is_atom(Key) ->
             maps:put(Key, Value, Acc)
     end, #{}, Config).
+
+%%====================================================================
+%% Internal Functions - Consul Discovery
+%%====================================================================
+
+%% @doc Get Consul configuration from application environment
+-spec get_consul_config() -> {ok, map()} | {error, term()}.
+get_consul_config() ->
+    Host = application:get_env(erlmcp_transports, consul_host, ?CONSUL_DEFAULT_HOST),
+    Port = application:get_env(erlmcp_transports, consul_port, ?CONSUL_DEFAULT_PORT),
+    Token = application:get_env(erlmcp_transports, consul_token, ?CONSUL_DEFAULT_TOKEN),
+    {ok, #{host => Host, port => Port, token => Token}}.
+
+%% @doc Ensure gun application is started
+-spec ensure_gun_started() -> ok | {error, term()}.
+ensure_gun_started() ->
+    case application:ensure_all_started(gun) of
+        {ok, _} -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Build HTTP headers for Consul API request
+-spec build_consul_headers(binary() | undefined) -> [{binary(), binary()}].
+build_consul_headers(undefined) ->
+    [{<<"accept">>, <<"application/json">>}];
+build_consul_headers(Token) when is_binary(Token) ->
+    [
+        {<<"accept">>, <<"application/json">>},
+        {<<"x-consul-token">>, Token}
+    ].
+
+%% @doc Parse Consul service list into transport map
+-spec parse_consul_services([map()]) -> {ok, #{atom() => map()}}.
+parse_consul_services(Services) when is_list(Services) ->
+    Transports = lists:foldl(fun(Service, Acc) ->
+        case parse_consul_service(Service) of
+            {ok, ServiceId, Config} ->
+                maps:put(ServiceId, Config, Acc);
+            {error, Reason} ->
+                ?LOG_WARNING(#{
+                    what => failed_to_parse_consul_service,
+                    reason => Reason
+                }),
+                Acc
+        end
+    end, #{}, Services),
+    {ok, Transports}.
+
+%% @doc Parse a single Consul service entry
+-spec parse_consul_service(map()) -> {ok, atom(), map()} | {error, term()}.
+parse_consul_service(Service) ->
+    % Extract required fields
+    case {maps:get(<<"ServiceID">>, Service, undefined),
+          maps:get(<<"ServicePort">>, Service, undefined)} of
+        {undefined, _} ->
+            {error, {missing_field, <<"ServiceID">>}};
+        {_, undefined} ->
+            {error, {missing_field, <<"ServicePort">>}};
+        {ServiceId, ServicePort} ->
+            % Extract address (fallback to node address if ServiceAddress is empty/missing)
+            Address = case maps:get(<<"ServiceAddress">>, Service, <<"">>) of
+                <<"">> -> maps:get(<<"Address">>, Service, <<"127.0.0.1">>);
+                Addr -> Addr
+            end,
+
+            % Extract transport type from tags
+            Tags = maps:get(<<"ServiceTags">>, Service, []),
+            TransportType = extract_transport_from_tags(Tags, tcp),
+
+            % Build transport ID (convert to valid Erlang atom)
+            TransportId = binary_to_atom(ServiceId, utf8),
+
+            % Build transport configuration
+            Config = #{
+                transport_id => TransportId,
+                type => TransportType,
+                host => binary_to_list(Address),
+                port => ServicePort,
+                discovered_via => consul,
+                discovered_at => erlang:system_time(millisecond),
+                consul_service_id => ServiceId
+            },
+
+            {ok, TransportId, Config}
+    end.
+
+%% @doc Extract transport type from Consul service tags
+%% Tags like "erlmcp:tcp", "erlmcp:http", "erlmcp:ws" specify the type
+-spec extract_transport_from_tags([binary()], atom()) -> atom().
+extract_transport_from_tags([], Default) ->
+    Default;
+extract_transport_from_tags(Tags, Default) ->
+    case lists:search(fun(Tag) ->
+        case binary:split(Tag, <<":">>) of
+            [<<"erlmcp">>, Type] ->
+                true;
+            _ ->
+                false
+        end
+    end, Tags) of
+        {value, Tag} ->
+            [<<"erlmcp">>, Type] = binary:split(Tag, <<":">>),
+            binary_to_existing_atom(Type, utf8);
+        false ->
+            Default
+    end.
 
 %%====================================================================
 %% Internal Functions - Events
