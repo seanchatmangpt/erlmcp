@@ -1,0 +1,137 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m    ┌─ apps/erlmcp_core/test/erlmcp_subscription_rate_limiter_tests.erl:
+    │
+ 29 │  -[1;31mrecord[0m(test_state, {[0m
+    │   [1;31m╰──[0m[0m Warning: record test_state is unused
+
+
+   ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+   │
+ 6 │  -[1;31mrecord[0m(state, {[0m
+   │   [1;31m╰──[0m[0m Warning: record state is unused
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1103 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1103 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1121 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1121 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1145 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1145 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1163 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1163 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1182 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1182 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1200 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1200 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1219 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1219 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/test/erlmcp_json_rpc_tests.erl:
+      │
+ 1733 │      ?assertEqual(99, length(ValidCodes[1;31m)),[0m[0m
+      │                                        [1;31m╰──[0m[0m Warning: this clause cannot match because its guard evaluates to 'false'
+
+
+    ┌─ apps/erlmcp_core/test/erlmcp_logging_tests.erl:
+    │
+ 66 │          [1;31m_Pid[0m -> gen_server:stop(erlmcp_logging)[0m
+    │          [1;31m╰──[0m[0m Warning: variable '_Pid' is already bound. If you mean to ignore this
+value, use '_' or a different underscore-prefixed name
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_message_tests.erl:
+     │
+ 112 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl:
+     │
+ 640 │  -[1;31mrecord[0m(mock_state, {[0m
+     │   [1;31m╰──[0m[0m Warning: record mock_state is unused
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl:
+     │
+ 370 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mCompiling apps/erlmcp_validation/test/erlmcp_transport_validator_tests_enhanced.erl failed
+[0m[0m     ┌─ apps/erlmcp_validation/test/erlmcp_transport_validator_tests_enhanced.erl:
+     │
+ 198 │  test_tcp_connection_oriented() [1;31m->[0m[0m
+     │                                 [1;31m╰──[0m[0m syntax error before: '->'
+
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_transport_validator_tests_enhanced.erl:
+    │
+ 51 │        {"TCP Partial Messages", [1;31mfun[0m test_tcp_partial_messages/0},[0m
+    │                                 [1;31m╰──[0m[0m function test_tcp_partial_messages/0 undefined
+
+    ┌─ apps/erlmcp_validation/test/erlmcp_transport_validator_tests_enhanced.erl:
+    │
+ 52 │        {"TCP Connection Oriented", [1;31mfun[0m test_tcp_connection_oriented/0},[0m
+    │                                    [1;31m╰──[0m[0m function test_tcp_connection_oriented/0 undefined
+
+

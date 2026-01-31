@@ -110,13 +110,13 @@ stop() ->
 %% Registers the connection and sets up process monitoring
 -spec monitor_connection(pid(), connection_info()) -> ok.
 monitor_connection(ConnectionPid, Info) when is_pid(ConnectionPid), is_map(Info) ->
-    gen_server:call(?MODULE, {monitor_connection, ConnectionPid, Info}).
+    gen_server:call(?MODULE, {monitor_connection, ConnectionPid, Info}, 1000).
 
 %% @doc Unmonitor a connection
 %% Removes the connection from tracking
 -spec unmonitor_connection(connection_id()) -> ok.
 unmonitor_connection(ConnectionId) ->
-    gen_server:call(?MODULE, {unmonitor_connection, ConnectionId}).
+    gen_server:call(?MODULE, {unmonitor_connection, ConnectionId}, 1000).
 
 %% @doc Get current connection count
 -spec get_connection_count() -> non_neg_integer().
@@ -129,17 +129,17 @@ get_connection_count() ->
 %% @doc Get connection statistics
 -spec get_connection_stats() -> connection_stats().
 get_connection_stats() ->
-    gen_server:call(?MODULE, get_connection_stats).
+    gen_server:call(?MODULE, get_connection_stats, 1000).
 
 %% @doc Force cleanup of orphaned connections
 -spec force_cleanup() -> {ok, non_neg_integer()}.
 force_cleanup() ->
-    gen_server:call(?MODULE, force_cleanup).
+    gen_server:call(?MODULE, force_cleanup, 1000).
 
 %% @doc Check if a leak has been detected
 -spec is_leak_detected() -> boolean().
 is_leak_detected() ->
-    gen_server:call(?MODULE, is_leak_detected).
+    gen_server:call(?MODULE, is_leak_detected, 1000).
 
 %%====================================================================
 %% gen_server Callbacks

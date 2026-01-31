@@ -125,6 +125,16 @@ init(_Opts) ->
             modules => [erlmcp_chaos]
         },
 
+        %% Chaos Worker Supervisor - Supervises chaos experiment workers
+        #{
+            id => erlmcp_chaos_worker_sup,
+            start => {erlmcp_chaos_worker_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_chaos_worker_sup]
+        },
+
         %% Process Monitor - Process count monitoring and capacity planning
         #{
             id => erlmcp_process_monitor,
@@ -133,6 +143,17 @@ init(_Opts) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_process_monitor]
+        },
+
+        %% Audit Log - Tamper-proof audit trail with hash chain
+        %% Critical: Maintains compliance trail for GDPR, SOC2, HIPAA
+        #{
+            id => erlmcp_audit_log,
+            start => {erlmcp_audit_log, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_audit_log]
         }
 
         %% Note: Receipt chain (erlmcp_receipt_chain) is ETS-based with no process

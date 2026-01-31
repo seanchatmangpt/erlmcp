@@ -1,9 +1,0 @@
-[0;32m===> Verifying dependencies...
-[0m[0;32m===> Upgrading fs v0.9.2
-[0m[0;32m===> Fetching parse_trans v3.4.0
-[0m[0;32m===> Analyzing applications...
-[0m[0;32m===> Compiling setup
-[0m[0;32m===> Compiling parse_trans
-[0m[0;31m===> [1mCompiling _build/default/lib/parse_trans/src/exprecs.erl failed
-[0m[0m_build/default/lib/parse_trans/src/exprecs.erl:none: undefined parse transform 'parse_trans_codegen'
-

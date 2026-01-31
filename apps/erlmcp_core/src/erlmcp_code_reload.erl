@@ -28,8 +28,12 @@
 %% Reload result
 -type reload_result() :: {ok, OldVsn :: term(), NewVsn :: term()} | {error, term()}.
 
+%% State version
+-define(STATE_VERSION, 1).
+
 %% State record
 -record(state, {
+    version = ?STATE_VERSION :: integer(),
     reload_history = [] :: [reload_entry()],
     rollback_timers = #{} :: #{module() => reference()},
     draining = false :: boolean()
@@ -44,6 +48,12 @@
 }.
 
 -type state() :: #state{}.
+-type module_name() :: module().
+-type module_info() :: #{
+    version => term(),
+    loaded_at => erlang:timestamp(),
+    exports => [{function(), arity()}]
+}.
 
 %%====================================================================
 %% API Functions
@@ -85,8 +95,64 @@ validate_module(Module) ->
 -spec init([]) -> {ok, state()}.
 init([]) ->
     process_flag(trap_exit, true),
-    logger:info("Code reload manager started"),
-    {ok, #state{}}.
+    logger:info("Code reload manager started with state version ~p", [?STATE_VERSION]),
+    {ok, init_state()}.
+
+%% @doc Initialize state with current version
+-spec init_state() -> state().
+init_state() ->
+    #state{
+        version = ?STATE_VERSION,
+        reload_history = [],
+        rollback_timers = #{},
+        draining = false
+    }.
+
+%% @doc Get all loaded modules with their info
+-spec get_all_modules() -> #{module_name() => module_info()}.
+get_all_modules() ->
+    Modules = [M || M <- registered_modules(), is_valid_module(M)],
+    lists:foldl(fun(Module, Acc) ->
+        case get_module_info(Module) of
+            {ok, Info} -> maps:put(Module, Info, Acc);
+            {error, _} -> Acc
+        end
+    end, #{}, Modules).
+
+%% @doc Check if module is valid for reload
+-spec is_valid_module(module()) -> boolean().
+is_valid_module(Module) when is_atom(Module) ->
+    case code:is_loaded(Module) of
+        {file, _} -> true;
+        _ -> false
+    end;
+is_valid_module(_) -> false.
+
+%% @doc Get module info for tracking
+-spec get_module_info(module()) -> {ok, module_info()} | {error, term()}.
+get_module_info(Module) ->
+    case code:is_loaded(Module) of
+        {file, _} ->
+            Version = get_module_version(Module),
+            Exports = case beam_lib:chunks(code:which(Module), [exports]) of
+                {ok, {Module, [{exports, Exp}]}} -> Exp;
+                _ -> []
+            end,
+            {ok, #{
+                version => Version,
+                loaded_at => erlang:timestamp(),
+                exports => Exports
+            }};
+        _ ->
+            {error, module_not_loaded}
+    end.
+
+%% @doc Get modules registered in the system
+-spec registered_modules() -> [module()].
+registered_modules() ->
+    % Get all loaded modules from code module
+    Loaded = code:all_loaded(),
+    [Module || {Module, _} <- Loaded].
 
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
 
@@ -162,8 +228,73 @@ terminate(_Reason, _State) ->
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(OldVsn, State, Extra) ->
+    % Extract version from OldVsn
+    Version = case OldVsn of
+        {down, V} -> V;
+        _ when is_integer(OldVsn) -> OldVsn;
+        undefined -> 0;  % No version info means v0
+        _ -> 0  % Fallback to v0
+    end,
+    logger:info("Code change from version ~p to ~p", [Version, ?STATE_VERSION]),
+    case migrate_state(State, Version) of
+        {ok, NewState} ->
+            {ok, NewState};
+        {error, Reason} ->
+            % Migration failed - crash and let supervisor restart
+            logger:error("State migration failed: ~p", [Reason]),
+            exit({code_change_failed, Reason})
+    end.
+
+%%====================================================================
+%% Internal functions - State Migration
+%%====================================================================
+
+%% @doc Migrate state from old version to current
+-spec migrate_state(term(), integer()) -> {ok, state()} | {error, term()}.
+migrate_state(State, OldVersion) when OldVersion < ?STATE_VERSION ->
+    logger:info("Migrating state from version ~p to ~p", [OldVersion, ?STATE_VERSION]),
+    case OldVersion of
+        0 ->
+            % Migrate from version 0 (no version field)
+            migrate_state_v0_to_v1(State);
+        _ ->
+            {error, {unknown_version, OldVersion}}
+    end;
+migrate_state(CurrentState, ?STATE_VERSION) ->
+    logger:info("State already at current version ~p", [?STATE_VERSION]),
+    {ok, CurrentState}.
+
+%% @private Migrate v0 to v1
+%% v0 state: Old record without version field
+%% v1 state: New record with version field and enhanced tracking
+-spec migrate_state_v0_to_v1(term()) -> {ok, state()}.
+migrate_state_v0_to_v1(V0State) when is_record(V0State, state) ->
+    % Check if v0 state already has version (forward compatibility)
+    case V0State#state.version of
+        undefined ->
+            % This is actual v0 state - add version field
+            V1State = V0State#state{version = ?STATE_VERSION},
+            logger:info("Migrated v0 state to v1 (added version field)"),
+            {ok, V1State};
+        _ ->
+            % Already has version, ensure it's current
+            V1State = V0State#state{version = ?STATE_VERSION},
+            {ok, V1State}
+    end;
+migrate_state_v0_to_v1(V0State) when is_map(V0State) ->
+    % Convert old map-based state to record format
+    V1State = #state{
+        version = ?STATE_VERSION,
+        reload_history = maps:get(reload_history, V0State, []),
+        rollback_timers = maps:get(rollback_timers, V0State, #{}),
+        draining = maps:get(draining, V0State, false)
+    },
+    logger:info("Converted map-based state to v1 record format"),
+    {ok, V1State};
+migrate_state_v0_to_v1(OldState) ->
+    % Unknown state format - fail fast
+    {error, {invalid_state_format, OldState}}.
 
 %%====================================================================
 %% Internal functions - Reload Logic
@@ -570,3 +701,5 @@ get_module_version(Module) ->
                     undefined
             end
     end.
+
+%%====================================================================

@@ -1,0 +1,318 @@
+%%%-------------------------------------------------------------------
+%%% @doc Runtime Verification Suite for erlmcp
+%%%
+%%% JOE ARMSTRONG PHILOSOPHY:
+%%% "If you can't test it, it doesn't exist."
+%%%
+%%% This suite verifies ACTUAL runtime behavior with:
+%%% - REAL processes (no mocks, no fakes, no placeholders)
+%%% - REAL messages (actual protocol messages)
+%%% - ACTUAL system state (not mocked or stubbed)
+%%%
+%%% Tests FAIL if system is broken
+%%% Tests CRASH if components are missing
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(RUNTIME_VERIFICATION_SUITE).
+-compile(export_all).
+-include_lib("common_test/include/ct.hrl").
+-include_lib("kernel/include/file.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%%====================================================================
+%%% Common Test Callbacks
+%%%====================================================================
+
+all() ->
+    [
+     runtime_verification_test_1,
+     runtime_verification_test_2,
+     runtime_verification_test_3,
+     runtime_verification_test_4,
+     runtime_verification_test_5
+    ].
+
+init_per_suite(Config) ->
+    %% Start REAL application (not mocked)
+    {ok, _} = application:ensure_all_started(erlmcp_core),
+    Config.
+
+end_per_suite(_Config) ->
+    application:stop(erlmcp_core),
+    ok.
+
+%%%====================================================================
+%%% Test 1: Start Server (runtime_verification_test_1)
+%%%====================================================================
+
+runtime_verification_test_1(_Config) ->
+    %% ACTUALLY START an erlmcp_server (REAL gen_server)
+    ServerId = <<"runtime_test_server_1">>,
+    Capabilities = #mcp_server_capabilities{
+        resources = #mcp_capability{enabled = true},
+        tools = #mcp_capability{enabled = true},
+        prompts = #mcp_capability{enabled = true}
+    },
+
+    %% Start REAL server process
+    {ok, Server} = erlmcp_server:start_link(ServerId, Capabilities),
+
+    %% Verify it's alive (Chicago School: observable state)
+    ?assert(erlang:is_process_alive(Server)),
+
+    %% Verify it accepts connections (pid is valid)
+    ?assert(is_pid(Server)),
+
+    %% Verify server is registered (can find it)
+    ?assertEqual({ok, {Server, _}}, erlmcp_registry:find_server(ServerId)),
+
+    %% Clean up (REAL stop)
+    ok = erlmcp_server:stop(Server),
+    timer:sleep(100),  %% Let process terminate
+
+    %% Verify process is DEAD (Chicago School: state change observable)
+    ?assertNot(erlang:is_process_alive(Server)),
+
+    %% Verify server is unregistered
+    ?assertEqual({error, not_found}, erlmcp_registry:find_server(ServerId)),
+
+    {comment, "Server starts and stops correctly"}.
+
+%%%====================================================================
+%%% Test 2: Resource Subscription (runtime_verification_test_2)
+%%%====================================================================
+
+runtime_verification_test_2(_Config) ->
+    %% Start REAL server
+    ServerId = <<"runtime_test_server_2">>,
+    {ok, Server} = erlmcp_server:start_link(
+        ServerId,
+        #mcp_server_capabilities{
+            resources = #mcp_capability{enabled = true}
+        }
+    ),
+
+    %% Add REAL resource
+    Uri = <<"test://runtime/resource.txt">>,
+    Handler = fun(_Uri) -> #{contents => <<"data">>} end,
+    ok = erlmcp_server:add_resource(Server, Uri, Handler),
+
+    %% Subscribe (REAL subscription)
+    ok = erlmcp_server:subscribe_resource(Server, Uri, self()),
+
+    %% Trigger change (REAL notification)
+    ok = erlmcp_server:notify_resource_updated(Server, Uri, #{}),
+
+    %% Verify notification received (Chicago School: actual message received)
+    receive
+        #{jsonrpc := <<"2.0">>, method := <<"resources/updated">>} = Notification ->
+            %% Verify notification structure
+            ?assert(maps:is_key(<<"params">>, Notification)),
+            Params = maps:get(<<"params">>, Notification),
+            ?assert(maps:is_key(<<"uri">>, Params)),
+            ?assertEqual(Uri, maps:get(<<"uri">>, Params))
+    after 1000 ->
+            error({notification_not_received, timeout})
+    end,
+
+    %% Clean up
+    ok = erlmcp_server:stop(Server),
+
+    {comment, "Resource subscription works end-to-end"}.
+
+%%%====================================================================
+%%% Test 3: Secret Storage (runtime_verification_test_3)
+%%%====================================================================
+
+runtime_verification_test_3(_Config) ->
+    %% Start REAL secrets manager
+    {ok, SecretsPid} = erlmcp_secrets:start_link(#{
+        backend => local_encrypted,
+        storage_path => "/tmp/runtime_test_secrets.enc"
+    }),
+
+    %% Store secret (REAL encryption)
+    Key = <<"runtime_test_key">>,
+    Value = <<"runtime_test_value">>,
+    ok = erlmcp_secrets:set_secret(Key, Value),
+
+    %% Retrieve secret (REAL decryption)
+    {ok, Value} = erlmcp_secrets:get_secret(Key),
+
+    %% Verify persistence (reload from disk)
+    ok = erlmcp_secrets:stop(SecretsPid),
+    timer:sleep(100),
+
+    {ok, SecretsPid2} = erlmcp_secrets:start_link(#{
+        backend => local_encrypted,
+        storage_path => "/tmp/runtime_test_secrets.enc"
+    }),
+
+    %% Secret should persist across restarts
+    {ok, Value} = erlmcp_secrets:get_secret(Key),
+
+    %% Delete secret (REAL deletion)
+    ok = erlmcp_secrets:delete_secret(Key),
+
+    %% Verify deletion
+    ?assertEqual({error, not_found}, erlmcp_secrets:get_secret(Key)),
+
+    %% Clean up
+    ok = erlmcp_secrets:stop(SecretsPid2),
+    file:delete("/tmp/runtime_test_secrets.enc"),
+
+    {comment, "Secret storage works with encryption"}.
+
+%%%====================================================================
+%%% Test 4: Session Persistence (runtime_verification_test_4)
+%%%====================================================================
+
+runtime_verification_test_4(_Config) ->
+    %% Start REAL session manager
+    {ok, SessionManager} = erlmcp_session_manager:start_link(#{
+        backend => dets,
+        file => "/tmp/runtime_test_sessions.dets"
+    }),
+
+    %% Create session with REAL persistence (DETS backend)
+    Metadata = #{<<"user_id">> => <<"test_user">>},
+    TTL = 60000,  % 1 minute
+    {ok, SessionId} = erlmcp_session:create(Metadata, TTL),
+
+    %% Retrieve session (REAL query from DETS)
+    {ok, Session} = erlmcp_session:retrieve(SessionId),
+
+    %% Verify persistence (Chicago School: observable state)
+    ?assertMatch(#{id := SessionId}, Session),
+    ?assertEqual(SessionId, maps:get(id, Session)),
+
+    %% Update session
+    NewMetadata = #{<<"user_id">> => <<"updated_user">>},
+    ok = erlmcp_session:update(SessionId, fun(S) -> S#{metadata => NewMetadata} end),
+
+    %% Verify update persisted
+    {ok, UpdatedSession} = erlmcp_session:retrieve(SessionId),
+    ?assertEqual(NewMetadata, maps:get(metadata, UpdatedSession)),
+
+    %% Clean up
+    ok = erlmcp_session:delete(SessionId),
+
+    %% Verify deletion
+    ?assertEqual({error, not_found}, erlmcp_session:retrieve(SessionId)),
+
+    %% Stop session manager
+    gen_server:stop(SessionManager),
+    file:delete("/tmp/runtime_test_sessions.dets"),
+
+    {comment, "Session persistence works with DETS"}.
+
+%%%====================================================================
+%%% Test 5: Full MCP Flow (runtime_verification_test_5)
+%%%====================================================================
+
+runtime_verification_test_5(_Config) ->
+    %% Start REAL server
+    ServerId = <<"runtime_test_server_5">>,
+    {ok, Server} = erlmcp_server:start_link(
+        ServerId,
+        #mcp_server_capabilities{
+            resources = #mcp_capability{enabled = true},
+            tools = #mcp_capability{enabled = true},
+            prompts = #mcp_capability{enabled = true}
+        }
+    ),
+
+    %% Send REAL initialize message (actual MCP protocol)
+    Request = #{
+        jsonrpc => <<"2.0">>,
+        id => 1,
+        method => <<"initialize">>,
+        params => #{
+            protocolVersion => <<"2025-11-25">>,
+            capabilities => #{
+                roots => #{listChanged => true},
+                sampling => {}
+            },
+            clientInfo => #{
+                name => <<"runtime_test_client">>,
+                version => <<"1.0.0">>
+            }
+        }
+    },
+
+    %% Send via registry (REAL message passing)
+    Server ! {mcp_message, undefined, Request},
+
+    %% Receive response (Chicago School: actual response received)
+    receive
+        {mcp_response, _ServerId, Response} ->
+            %% Verify JSON-RPC 2.0 response structure
+            ?assertMatch(#{jsonrpc := <<"2.0">>}, Response),
+            ?assertMatch(#{result := #{capabilities := #{}}}, Response),
+
+            %% Verify capabilities
+            Result = maps:get(result, Response),
+            CapabilitiesResult = maps:get(capabilities, Result),
+
+            %% Server declares its capabilities
+            ?assert(maps:is_key(<<"resources">>, CapabilitiesResult)),
+            ?assert(maps:is_key(<<"tools">>, CapabilitiesResult)),
+            ?assert(maps:is_key(<<"prompts">>, CapabilitiesResult))
+
+    after 5000 ->
+            error({timeout_waiting_for_initialize, Server})
+    end,
+
+    %% Test tools/list after initialization
+    ToolsListRequest = #{
+        jsonrpc => <<"2.0">>,
+        id => 2,
+        method => <<"tools/list">>,
+        params => #{}
+    },
+
+    Server ! {mcp_message, undefined, ToolsListRequest},
+
+    receive
+        {mcp_response, _ServerId2, ToolsResponse} ->
+            ?assertMatch(#{jsonrpc := <<"2.0">>}, ToolsResponse),
+            ?assertMatch(#{result := #{tools := []}}, ToolsResponse)
+    after 5000 ->
+            error({timeout_waiting_for_tools_list})
+    end,
+
+    %% Add a tool and verify it appears in list
+    ToolHandler = fun(Args) -> #{result => Args} end,
+    ok = erlmcp_server:add_tool(Server, <<"test_tool">>, ToolHandler),
+
+    Server ! {mcp_message, undefined, ToolsListRequest},
+
+    receive
+        {mcp_response, _ServerId3, ToolsResponse2} ->
+            ?assertMatch(#{jsonrpc := <<"2.0">>}, ToolsResponse2),
+            Result2 = maps:get(result, ToolsResponse2),
+            Tools = maps:get(<<"tools">>, Result2),
+            ?assertEqual(1, length(Tools)),
+            ?assertEqual(<<"test_tool">>, maps:get(<<"name">>, hd(Tools)))
+    after 5000 ->
+            error({timeout_waiting_for_tools_list_after_add})
+    end,
+
+    %% Clean up
+    ok = erlmcp_server:stop(Server),
+
+    {comment, "Full MCP flow works end-to-end"}.
+
+%%%====================================================================
+%%% Helper Functions
+%%%====================================================================
+
+%% @doc Wait for message with timeout
+wait_for_message(Pattern, Timeout) ->
+    receive
+        Pattern -> {ok, Pattern}
+    after Timeout ->
+        {error, timeout}
+    end.

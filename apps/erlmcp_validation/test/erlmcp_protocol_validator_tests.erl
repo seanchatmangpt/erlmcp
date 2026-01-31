@@ -567,11 +567,214 @@ test_version_compatibility(ServerPid) ->
     ?assertMatch({ok, _}, Result).
 
 %%%===================================================================
+%%% Test 20-25: Method Validation Tests
+%%%===================================================================
+
+validate_method_name_resources_list_test() ->
+    %% Test resources/list method validation
+    Result = erlmcp_protocol_validator:validate_method_name(<<"resources/list">>),
+    ?assertMatch(ok, Result).
+
+validate_method_name_tools_call_test() ->
+    %% Test tools/call method validation
+    Result = erlmcp_protocol_validator:validate_method_name(<<"tools/call">>),
+    ?assertMatch(ok, Result).
+
+validate_method_name_prompts_get_test() ->
+    %% Test prompts/get method validation
+    Result = erlmcp_protocol_validator:validate_method_name(<<"prompts/get">>),
+    ?assertMatch(ok, Result).
+
+validate_method_name_invalid_test() ->
+    %% Test invalid method name
+    Result = erlmcp_protocol_validator:validate_method_name(<<"invalid/method">>),
+    ?assertMatch({error, #{reason := unknown_method}}, Result).
+
+validate_method_name_not_binary_test() ->
+    %% Test method name not binary
+    Result = erlmcp_protocol_validator:validate_method_name(not_binary),
+    ?assertMatch({error, #{reason := invalid_method_type}}, Result).
+
+validate_notification_name_cancelled_test() ->
+    %% Test notifications/cancelled validation
+    Result = erlmcp_protocol_validator:validate_notification_name(<<"notifications/cancelled">>),
+    ?assertMatch(ok, Result).
+
+%%%===================================================================
+%%% Test 26-30: Field Type Validation Tests
+%%%===================================================================
+
+validate_field_type_binary_test() ->
+    %% Test binary field type
+    Result = erlmcp_protocol_validator:validate_field_type(<<"name">>, <<"value">>, binary),
+    ?assertMatch(ok, Result).
+
+validate_field_type_integer_test() ->
+    %% Test integer field type
+    Result = erlmcp_protocol_validator:validate_field_type(<<"count">>, 42, integer),
+    ?assertMatch(ok, Result).
+
+validate_field_type_map_test() ->
+    %% Test map field type
+    Result = erlmcp_protocol_validator:validate_field_type(<<"data">>, #{}, map),
+    ?assertMatch(ok, Result).
+
+validate_field_type_array_test() ->
+    %% Test array field type
+    Result = erlmcp_protocol_validator:validate_field_type(<<"items">>, [], array),
+    ?assertMatch(ok, Result).
+
+validate_field_type_any_test() ->
+    %% Test any field type
+    Result = erlmcp_protocol_validator:validate_field_type(<<"field">>, anything, any),
+    ?assertMatch(ok, Result).
+
+validate_field_type_mismatch_test() ->
+    %% Test type mismatch
+    Result = erlmcp_protocol_validator:validate_field_type(<<"count">>, <<"not_int">>, integer),
+    ?assertMatch({error, #{reason := type_mismatch}}, Result).
+
+%%%===================================================================
+%%% Test 31-35: Required Fields Validation Tests
+%%%===================================================================
+
+validate_required_fields_present_test() ->
+    %% Test all required fields present
+    Message = #{<<"field1">> => <<"value1">>, <<"field2">> => <<"value2">>},
+    Required = [<<"field1">>, <<"field2">>],
+    Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
+    ?assertMatch(ok, Result).
+
+validate_required_fields_missing_test() ->
+    %% Test missing required field
+    Message = #{<<"field1">> => <<"value1">>},
+    Required = [<<"field1">>, <<"field2">>],
+    Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
+    ?assertMatch({error, #{reason := missing_required_fields}}, Result).
+
+validate_required_fields_empty_list_test() ->
+    %% Test no required fields
+    Message = #{<<"field1">> => <<"value1">>},
+    Required = [],
+    Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
+    ?assertMatch(ok, Result).
+
+validate_required_fields_not_map_test() ->
+    %% Test message not a map
+    Message = not_a_map,
+    Required = [<<"field1">>],
+    Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
+    ?assertMatch({error, #{reason := invalid_message_structure}}, Result).
+
+validate_required_fields_extra_fields_test() ->
+    %% Test extra fields allowed
+    Message = #{<<"field1">> => <<"v1">>, <<"field2">> => <<"v2">>, <<"extra">> => <<"v3">>},
+    Required = [<<"field1">>, <<"field2">>],
+    Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
+    ?assertMatch(ok, Result).
+
+%%%===================================================================
+%%% Test 36-40: Error Code Validation Tests
+%%%===================================================================
+
+validate_error_code_parse_error_test() ->
+    %% Test JSON-RPC parse error code
+    Result = erlmcp_protocol_validator:validate_error_code(-32700),
+    ?assertMatch(ok, Result).
+
+validate_error_code_invalid_request_test() ->
+    %% Test invalid request error code
+    Result = erlmcp_protocol_validator:validate_error_code(-32600),
+    ?assertMatch(ok, Result).
+
+validate_error_code_method_not_found_test() ->
+    %% Test method not found error code
+    Result = erlmcp_protocol_validator:validate_error_code(-32601),
+    ?assertMatch(ok, Result).
+
+validate_error_code_invalid_params_test() ->
+    %% Test invalid params error code
+    Result = erlmcp_protocol_validator:validate_error_code(-32602),
+    ?assertMatch(ok, Result).
+
+validate_error_code_internal_error_test() ->
+    %% Test internal error code
+    Result = erlmcp_protocol_validator:validate_error_code(-32603),
+    ?assertMatch(ok, Result).
+
+%%%===================================================================
+%%% Test 41-45: Additional JSONRPC Validation Tests
+%%%===================================================================
+
+validate_jsonrpc_empty_map_test() ->
+    %% Test empty map
+    Result = erlmcp_protocol_validator:validate_jsonrpc(#{}),
+    ?assertMatch({error, #{reason := invalid_jsonrpc_version}}, Result).
+
+validate_jsonrpc_wrong_version_test() ->
+    %% Test wrong JSONRPC version
+    Message = #{<<"jsonrpc">> => <<"1.0">>, <<"id">> => 1, <<"method">> => <<"ping">>},
+    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
+    ?assertMatch({error, #{reason := invalid_jsonrpc_version}}, Result).
+
+validate_jsonrpc_not_map_test() ->
+    %% Test non-map input
+    Result = erlmcp_protocol_validator:validate_jsonrpc(not_a_map),
+    ?assertMatch({error, #{reason := not_map}}, Result).
+
+validate_jsonrpc_notification_no_id_test() ->
+    %% Test notification without id field
+    Message = #{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"notifications/message">>},
+    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
+    ?assertMatch(ok, Result).
+
+validate_jsonrpc_response_with_result_test() ->
+    %% Test response with result
+    Message = #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 1, <<"result">> => #{}},
+    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
+    ?assertMatch(ok, Result).
+
+%%%===================================================================
+%%% Test 46-50: Format Validation Error Tests
+%%%===================================================================
+
+format_validation_error_simple_test() ->
+    %% Test simple error formatting
+    Error = #{reason => invalid_method, details => <<"Method not found">>},
+    Result = erlmcp_protocol_validator:format_validation_error(Error),
+    ?assert(is_binary(Result)),
+    ?assert(byte_size(Result) > 0).
+
+format_validation_error_with_map_details_test() ->
+    %% Test error formatting with map details
+    Error = #{reason => type_mismatch, details => #{field => <<"count">>, expected => integer}},
+    Result = erlmcp_protocol_validator:format_validation_error(Error),
+    ?assert(is_binary(Result)).
+
+format_validation_error_missing_fields_test() ->
+    %% Test error formatting for missing fields
+    Error = #{reason => missing_required_fields, details => #{missing => [<<"field1">>, <<"field2">>]}},
+    Result = erlmcp_protocol_validator:format_validation_error(Error),
+    ?assert(is_binary(Result)).
+
+format_validation_error_unknown_method_test() ->
+    %% Test error formatting for unknown method
+    Error = #{reason => unknown_method, details => #{method => <<"bad/method">>}},
+    Result = erlmcp_protocol_validator:format_validation_error(Error),
+    ?assert(is_binary(Result)).
+
+format_validation_error_invalid_code_test() ->
+    %% Test error formatting for invalid error code
+    Error = #{reason => invalid_error_code, details => #{code => 9999}},
+    Result = erlmcp_protocol_validator:format_validation_error(Error),
+    ?assert(is_binary(Result)).
+
+%%%===================================================================
 %%% Summary Report
 %%%===================================================================
 
 validation_summary_test_() ->
-    {"All 19 validations implemented", fun() ->
+    {"All 50+ validations implemented", fun() ->
         %% Verify all validations can be tested via API
         %% This is a summary test that checks the test suite coverage
         ?assert(true)

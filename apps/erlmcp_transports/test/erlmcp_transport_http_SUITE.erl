@@ -646,8 +646,8 @@ start_mock_http_server() ->
     %% Define routes
     Dispatch = cowboy_router:compile([
         {'_', [
-            {"/mcp", mock_http_mcp_handler, []},
-            {"/mcp/[...]", mock_http_mcp_handler, []}
+            {"/mcp", test_http_mcp_handler, []},
+            {"/mcp/[...]", test_http_mcp_handler, []}
         ]}
     ]),
 

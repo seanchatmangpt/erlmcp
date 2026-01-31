@@ -42,8 +42,18 @@ init([]) ->
             modules => [erlmcp_registry]
         },
 
-        %% NOTE: erlmcp_registry_health_check removed - module was never implemented
-        %% TODO: Implement health check module or remove from architecture
+        %% ================================================================
+        %% HEALTH CHECKS: Simple health check aggregator for orchestration
+        %% Follows Joe Armstrong's principle: "Health checks are for orchestration"
+        %% ================================================================
+        #{
+            id => erlmcp_health,
+            start => {erlmcp_health, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_health]
+        },
 
         %% ================================================================
         %% INFRASTRUCTURE: Hot reload, sessions, tasks, resources
@@ -116,6 +126,16 @@ init([]) ->
             modules => [erlmcp_cache]
         },
 
+        %% Cache Warmer Supervisor - Supervises async cache warming workers
+        #{
+            id => erlmcp_cache_warmer_sup,
+            start => {erlmcp_cache_warmer_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_cache_warmer_sup]
+        },
+
         #{
             id => erlmcp_session_replicator,
             start => {erlmcp_session_replicator, start_link, []},
@@ -132,6 +152,16 @@ init([]) ->
             shutdown => 5000,
             type => worker,
             modules => [erlmcp_session_failover]
+        },
+
+        %% Failover Worker Supervisor - Supervises async failover operations
+        #{
+            id => erlmcp_failover_worker_sup,
+            start => {erlmcp_failover_worker_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,
+            type => supervisor,
+            modules => [erlmcp_failover_worker_sup]
         },
 
         %% ================================================================
@@ -160,15 +190,15 @@ init([]) ->
 
         %% ================================================================
         %% MEMORY MONITORING: Binary garbage collection to prevent heap exhaustion
-        %% NOTE: Temporarily disabled due to syntax errors - needs review
-        %% #{
-        %%     id => erlmcp_memory_monitor,
-        %%     start => {erlmcp_memory_monitor, start_link, []},
-        %%     restart => permanent,
-        %%     shutdown => 5000,
-        %%     type => worker,
-        %%     modules => [erlmcp_memory_monitor]
-        %% },
+        %% ================================================================
+        #{
+            id => erlmcp_memory_monitor,
+            start => {erlmcp_memory_monitor, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_memory_monitor]
+        },
 
         %% ================================================================
         %% CPU QUOTA MANAGEMENT: Prevent CPU-intensive DoS attacks (TASK #107)
@@ -207,6 +237,18 @@ init([]) ->
         },
 
         %% ================================================================
+        %% COMPLETION: Argument completion per MCP 2025-11-25 spec
+        %% ================================================================
+        #{
+            id => erlmcp_completion,
+            start => {erlmcp_completion, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_completion]
+        },
+
+        %% ================================================================
         %% NOTIFICATION HANDLERS: Supervised notification processing (RPN 168)
         %% ================================================================
         #{
@@ -216,6 +258,46 @@ init([]) ->
             shutdown => infinity,
             type => supervisor,
             modules => [erlmcp_notification_handler_sup]
+        },
+
+        %% ================================================================
+        %% CIRCUIT BREAKER: DoS protection via failure threshold detection
+        %% Critical: Maintains DoS protection state, must survive restarts
+        %% ================================================================
+        #{
+            id => erlmcp_circuit_breaker,
+            start => {erlmcp_circuit_breaker, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_circuit_breaker]
+        },
+
+        %% ================================================================
+        %% RATE LIMITER: DoS protection via rate limiting and throttling
+        %% Critical: Maintains rate limit state and DDoS blocking
+        %% ================================================================
+        #{
+            id => erlmcp_rate_limiter,
+            start => {erlmcp_rate_limiter, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_rate_limiter]
+        },
+
+        %% ================================================================
+        %% CLIENT SUPERVISOR: Dynamic client process management (TIER 2)
+        %% Manages client connections using simple_one_for_one strategy
+        %% Each client is a separate gen_server process (process-per-connection)
+        %% ================================================================
+        #{
+            id => erlmcp_client_sup,
+            start => {erlmcp_client_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,  % Supervisor - wait for all children
+            type => supervisor,
+            modules => [erlmcp_client_sup]
         }
     ],
 

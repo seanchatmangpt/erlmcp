@@ -456,7 +456,9 @@ configure_exporter(Type, _Config) ->
 %% @doc Set sampling rate
 -spec set_sampling_rate(float()) -> ok.
 set_sampling_rate(Rate) when Rate >= 0.0, Rate =< 1.0 ->
-    % Implementation depends on OpenTelemetry library
+    %% Configure trace_id_ratio_based sampler
+    Sampler = otel_sampler:trace_id_ratio_based(Rate),
+    application:set_env(opentelemetry, sampler, Sampler),
     ok;
 set_sampling_rate(_) ->
     {error, invalid_sampling_rate}.
@@ -464,8 +466,11 @@ set_sampling_rate(_) ->
 %% @doc Get tracer provider
 -spec get_tracer_provider() -> term().
 get_tracer_provider() ->
-    % Implementation depends on OpenTelemetry library
-    undefined.
+    try
+        opentelemetry:get_tracer_provider()
+    catch
+        _:_ -> undefined
+    end.
 
 %% @doc Shutdown OpenTelemetry and flush spans
 -spec shutdown() -> ok.
@@ -505,15 +510,34 @@ get_resource_attributes(Config) ->
 %% @private
 %% Configure OpenTelemetry resource
 -spec configure_resource(#{binary() => term()}) -> ok.
-configure_resource(_Attributes) ->
-    % Implementation depends on OpenTelemetry library
+configure_resource(Attributes) ->
+    %% Convert binary keys to atoms for OTel resource
+    ResourceAttrs = maps:fold(fun(K, V, Acc) ->
+        AtomKey = case is_binary(K) of
+            true -> binary_to_atom(K, utf8);
+            false -> K
+        end,
+        [{AtomKey, V} | Acc]
+    end, [], Attributes),
+
+    %% Set resource attributes via opentelemetry application environment
+    application:set_env(opentelemetry, resource_attributes, ResourceAttrs),
     ok.
 
 %% @private
 %% Setup tracer provider
 -spec setup_tracer_provider(otel_config()) -> ok.
-setup_tracer_provider(_Config) ->
-    % Implementation depends on OpenTelemetry library
+setup_tracer_provider(Config) ->
+    %% Ensure opentelemetry application is started
+    case application:ensure_all_started(opentelemetry) of
+        {ok, _Started} -> ok;
+        {error, _Reason} -> ok  %% May already be started
+    end,
+
+    %% Get service name for tracer
+    ServiceName = maps:get(service_name, Config, <<"erlmcp">>),
+    application:set_env(opentelemetry, service_name, ServiceName),
+
     ok.
 
 %% @private
@@ -531,28 +555,63 @@ setup_exporters(Config) ->
 -spec setup_sampling(otel_config()) -> ok.
 setup_sampling(Config) ->
     Sampling = maps:get(sampling, Config, always_on),
-    case Sampling of
-        always_on -> ok;
-        always_off -> ok;
+    Sampler = case Sampling of
+        always_on ->
+            otel_sampler:always_on();
+        always_off ->
+            otel_sampler:always_off();
         trace_id_ratio ->
             Rate = maps:get(sampling_rate, Config, 0.1),
-            set_sampling_rate(Rate);
-        parent_based -> ok
-    end.
+            otel_sampler:trace_id_ratio_based(Rate);
+        parent_based ->
+            %% Parent-based with trace_id_ratio fallback
+            Rate = maps:get(sampling_rate, Config, 0.1),
+            Root = otel_sampler:trace_id_ratio_based(Rate),
+            otel_sampler:parent_based(Root);
+        head_based ->
+            %% Same as trace_id_ratio for now
+            Rate = maps:get(sampling_rate, Config, 0.1),
+            otel_sampler:trace_id_ratio_based(Rate);
+        tail_based ->
+            %% Tail-based sampling requires custom implementation
+            %% For now, use always_on and filter later
+            otel_sampler:always_on();
+        _ ->
+            otel_sampler:always_on()
+    end,
+
+    %% Set the sampler
+    application:set_env(opentelemetry, sampler, Sampler),
+    ok.
 
 %% @private
 %% Start batch span processor
 -spec start_batch_processor(otel_config()) -> ok.
-start_batch_processor(_Config) ->
-    % Implementation depends on OpenTelemetry library
+start_batch_processor(Config) ->
+    %% Configure batch processor settings
+    BatchTimeout = maps:get(batch_timeout, Config, 5000),
+    MaxQueueSize = maps:get(max_queue_size, Config, 2048),
+    MaxExportBatchSize = maps:get(max_export_batch_size, Config, 512),
+
+    %% Set batch processor configuration
+    application:set_env(opentelemetry, batch_timeout, BatchTimeout),
+    application:set_env(opentelemetry, max_queue_size, MaxQueueSize),
+    application:set_env(opentelemetry, max_export_batch_size, MaxExportBatchSize),
+
     ok.
 
 %% @private
 %% Set global tracer
 -spec set_global_tracer() -> ok.
 set_global_tracer() ->
-    % Implementation depends on OpenTelemetry library
-    ok.
+    %% The default tracer is automatically set by the opentelemetry application
+    %% Just ensure the tracer is accessible
+    try
+        _Tracer = opentelemetry:get_tracer(erlmcp),
+        ok
+    catch
+        _:_ -> ok
+    end.
 
 %% @private
 %% Store configuration for runtime access
@@ -563,36 +622,90 @@ store_config(Config) ->
 
 %% @private
 %% Create OpenTelemetry span
-create_otel_span(_Name, _TraceId, _SpanId, _ParentSpanId, _StartTime) ->
-    % Implementation depends on OpenTelemetry library
-    make_ref().
+create_otel_span(Name, _TraceId, _SpanId, ParentSpanId, _StartTime) ->
+    %% Get tracer
+    Tracer = opentelemetry:get_tracer(erlmcp),
+
+    %% Create span context options
+    Opts = case ParentSpanId of
+        undefined -> #{};
+        _ -> #{parent => get_otel_parent_ctx()}
+    end,
+
+    %% Start span with OpenTelemetry library
+    SpanCtx = otel_tracer:start_span(Tracer, Name, Opts),
+
+    %% Return span context (which includes the actual OTel span)
+    SpanCtx.
 
 %% @private
 %% Set span attributes
 -spec set_span_attributes(term(), #{binary() => term()}) -> ok.
-set_span_attributes(_OtelSpan, _Attributes) ->
-    % Implementation depends on OpenTelemetry library
+set_span_attributes(OtelSpan, Attributes) when is_map(Attributes) ->
+    %% Convert to OTel attribute format (list of tuples with atom keys)
+    AttrList = maps:fold(fun(K, V, Acc) ->
+        AtomKey = case is_binary(K) of
+            true ->
+                try binary_to_existing_atom(K, utf8)
+                catch _:_ -> binary_to_atom(K, utf8)
+                end;
+            false -> K
+        end,
+        [{AtomKey, format_attribute_value(V)} | Acc]
+    end, [], Attributes),
+
+    %% Set attributes on span
+    otel_span:set_attributes(OtelSpan, AttrList),
+    ok;
+set_span_attributes(_, _) ->
     ok.
 
 %% @private
 %% Set span status
 -spec set_span_status(term(), atom()) -> ok.
-set_span_status(_OtelSpan, _Status) ->
-    % Implementation depends on OpenTelemetry library
+set_span_status(OtelSpan, Status) ->
+    %% Map our status to OpenTelemetry status codes
+    OtelStatus = case Status of
+        ok -> 'ok';
+        error -> 'error';
+        timeout -> 'error';
+        _ -> 'unset'
+    end,
+
+    %% Set status on span
+    otel_span:set_status(OtelSpan, OtelStatus),
     ok.
 
 %% @private
 %% End OpenTelemetry span
 -spec end_otel_span(term(), integer()) -> ok.
-end_otel_span(_OtelSpan, _EndTime) ->
-    % Implementation depends on OpenTelemetry library
+end_otel_span(OtelSpan, EndTime) ->
+    %% End the span with timestamp
+    otel_span:end_span(OtelSpan, EndTime),
     ok.
 
 %% @private
 %% Add event to span
 -spec add_span_event(term(), otel_event()) -> ok.
-add_span_event(_OtelSpan, _Event) ->
-    % Implementation depends on OpenTelemetry library
+add_span_event(OtelSpan, Event) ->
+    EventName = maps:get(name, Event, <<"event">>),
+    Timestamp = maps:get(timestamp, Event, erlang:system_time(nanosecond)),
+    Attributes = maps:get(attributes, Event, #{}),
+
+    %% Convert attributes to OTel format
+    AttrList = maps:fold(fun(K, V, Acc) ->
+        AtomKey = case is_binary(K) of
+            true ->
+                try binary_to_existing_atom(K, utf8)
+                catch _:_ -> binary_to_atom(K, utf8)
+                end;
+            false -> K
+        end,
+        [{AtomKey, format_attribute_value(V)} | Acc]
+    end, [], Attributes),
+
+    %% Add event with timestamp and attributes
+    otel_span:add_event(OtelSpan, EventName, AttrList, Timestamp),
     ok.
 
 %% @private
@@ -735,50 +848,125 @@ extract_error_attributes({Class, Reason, Stacktrace}) ->
 %% @private
 %% Setup Jaeger exporter
 -spec setup_jaeger_exporter(map()) -> ok.
-setup_jaeger_exporter(_Config) ->
-    % Implementation depends on OpenTelemetry library
+setup_jaeger_exporter(Config) ->
+    %% Get Jaeger configuration
+    Host = maps:get(host, Config, "localhost"),
+    Port = maps:get(port, Config, 14250),
+    ServiceName = maps:get(service_name, Config, <<"erlmcp">>),
+
+    %% Configure Jaeger exporter
+    ExporterConfig = #{
+        endpoint => {Host, Port},
+        service_name => ServiceName,
+        protocol => grpc
+    },
+
+    %% Set exporter configuration in application environment
+    application:set_env(opentelemetry_exporter, exporter, jaeger),
+    application:set_env(opentelemetry_exporter, endpoint, {Host, Port}),
+
+    %% Ensure exporter application is started
+    case application:ensure_all_started(opentelemetry_exporter) of
+        {ok, _} -> ok;
+        {error, _} -> ok
+    end,
+
     ok.
 
 %% @private
 %% Setup Zipkin exporter
 -spec setup_zipkin_exporter(map()) -> ok.
-setup_zipkin_exporter(_Config) ->
-    % Implementation depends on OpenTelemetry library
+setup_zipkin_exporter(Config) ->
+    %% Get Zipkin configuration
+    Endpoint = maps:get(endpoint, Config, "http://localhost:9411/api/v2/spans"),
+
+    %% Configure Zipkin exporter
+    application:set_env(opentelemetry_exporter, exporter, zipkin),
+    application:set_env(opentelemetry_exporter, zipkin_endpoint, Endpoint),
+
+    %% Ensure exporter application is started
+    case application:ensure_all_started(opentelemetry_exporter) of
+        {ok, _} -> ok;
+        {error, _} -> ok
+    end,
+
     ok.
 
 %% @private
 %% Setup Prometheus exporter
 -spec setup_prometheus_exporter(map()) -> ok.
-setup_prometheus_exporter(_Config) ->
-    % Implementation depends on OpenTelemetry library
+setup_prometheus_exporter(Config) ->
+    %% Prometheus exporter for metrics (not traces)
+    %% This is primarily for metrics, but we configure it for compatibility
+    Port = maps:get(port, Config, 9464),
+
+    application:set_env(opentelemetry_exporter, prometheus_port, Port),
+
     ok.
 
 %% @private
 %% Setup OTLP exporter
 -spec setup_otlp_exporter(map()) -> ok.
-setup_otlp_exporter(_Config) ->
-    % Implementation depends on OpenTelemetry library
+setup_otlp_exporter(Config) ->
+    %% Get OTLP configuration
+    Endpoint = maps:get(endpoint, Config, "http://localhost:4318"),
+    Headers = maps:get(headers, Config, #{}),
+    Protocol = maps:get(protocol, Config, http_protobuf),
+
+    %% Convert headers to list format
+    HeaderList = maps:fold(fun(K, V, Acc) ->
+        [{binary_to_list(K), binary_to_list(V)} | Acc]
+    end, [], Headers),
+
+    %% Configure OTLP exporter
+    application:set_env(opentelemetry_exporter, otlp_endpoint, Endpoint),
+    application:set_env(opentelemetry_exporter, otlp_protocol, Protocol),
+    application:set_env(opentelemetry_exporter, otlp_headers, HeaderList),
+
+    %% Ensure exporter application is started
+    case application:ensure_all_started(opentelemetry_exporter) of
+        {ok, _} -> ok;
+        {error, _} -> ok
+    end,
+
     ok.
 
 %% @private
 %% Setup console exporter
 -spec setup_console_exporter(map()) -> ok.
 setup_console_exporter(_Config) ->
-    % Implementation depends on OpenTelemetry library
+    %% Configure console exporter for debugging
+    application:set_env(opentelemetry, traces_exporter, console),
+
     ok.
 
 %% @private
 %% Flush all pending spans
 -spec flush_spans() -> ok.
 flush_spans() ->
-    % Implementation depends on OpenTelemetry library
-    ok.
+    %% Force flush of batch span processor
+    try
+        otel_batch_processor:force_flush(),
+        ok
+    catch
+        _:_ -> ok
+    end.
 
 %% @private
 %% Shutdown tracer provider
 -spec shutdown_tracer_provider() -> ok.
 shutdown_tracer_provider() ->
-    % Implementation depends on OpenTelemetry library
+    %% Shutdown batch processor
+    try
+        otel_batch_processor:shutdown(),
+        ok
+    catch
+        _:_ -> ok
+    end,
+
+    %% Stop opentelemetry application
+    application:stop(opentelemetry_exporter),
+    application:stop(opentelemetry),
     ok.
 
 %% =============================================================================
@@ -969,6 +1157,35 @@ tail_sample_decision(#{start_time := StartTime, status := Status, attributes := 
     IsHighLatency orelse IsRareError;
 tail_sample_decision(_) ->
     false.
+
+%% =============================================================================
+%% OpenTelemetry Helper Functions
+%% =============================================================================
+
+%% @private
+%% Get parent context from OpenTelemetry
+-spec get_otel_parent_ctx() -> term().
+get_otel_parent_ctx() ->
+    try
+        otel_tracer:current_span_ctx()
+    catch
+        _:_ -> undefined
+    end.
+
+%% @private
+%% Format attribute value for OpenTelemetry
+-spec format_attribute_value(term()) -> term().
+format_attribute_value(V) when is_binary(V) -> V;
+format_attribute_value(V) when is_integer(V) -> V;
+format_attribute_value(V) when is_float(V) -> V;
+format_attribute_value(V) when is_boolean(V) -> V;
+format_attribute_value(V) when is_atom(V) -> atom_to_binary(V, utf8);
+format_attribute_value(V) when is_list(V) ->
+    try list_to_binary(V)
+    catch _:_ -> list_to_binary(io_lib:format("~p", [V]))
+    end;
+format_attribute_value(V) ->
+    list_to_binary(io_lib:format("~p", [V])).
 
 %% =============================================================================
 %% Private Helper Functions for Enhanced Tracing

@@ -12,7 +12,15 @@
     format_html/1,
     create_traceability_matrix/1,
     identify_gaps/1,
-    get_report_summary/1
+    get_report_summary/1,
+    %% Evidence collection API
+    collect_evidence/2,
+    store_evidence_bundle/2,
+    generate_evidence_report/1,
+    hash_evidence/1,
+    verify_evidence_integrity/2,
+    create_evidence_bundle/1,
+    link_receipt_chain/2
 ]).
 
 %% gen_server callbacks
@@ -46,6 +54,23 @@
     status => missing | incomplete | failed,
     severity => critical | high | medium | low,
     recommendation => binary()
+}.
+
+%% Evidence types
+-type evidence_type() :: test_result | coverage_metrics | security_scan |
+                         performance_benchmark | compliance_validation.
+-type evidence() :: #{
+    evidence_id => binary(),
+    evidence_type => binary(),
+    content => map(),
+    hash => binary(),
+    timestamp => binary()
+}.
+-type evidence_bundle() :: #{
+    bundle_id => binary(),
+    evidence_count => integer(),
+    timestamp => binary(),
+    evidence_items => [evidence()]
 }.
 
 -record(state, {
@@ -245,6 +270,190 @@ get_report_summary(Report) when is_map(Report) ->
         total_gaps => length(maps:get(gaps, Report, [])),
         timestamp => maps:get(timestamp, Report)
     }.
+
+%%%====================================================================
+%%% Evidence Collection API
+%%%====================================================================
+
+%% @doc Collect evidence for a specific validation type
+-spec collect_evidence(evidence_type(), map()) -> {ok, evidence()} | {error, term()}.
+collect_evidence(EvidenceType, Data) when is_map(Data) ->
+    try
+        %% Validate evidence type
+        ValidTypes = [test_result, coverage_metrics, security_scan,
+                      performance_benchmark, compliance_validation],
+        case lists:member(EvidenceType, ValidTypes) of
+            false ->
+                {error, {unknown_evidence_type, EvidenceType}};
+            true ->
+                %% Generate unique evidence ID
+                EvidenceId = generate_evidence_id(EvidenceType),
+
+                %% Extract content based on type
+                Content = extract_evidence_content(EvidenceType, Data),
+
+                %% Generate hash of content
+                {ok, Hash} = hash_evidence(Content),
+
+                %% Get timestamp
+                Timestamp = maps:get(timestamp, Data, iso8601_timestamp()),
+
+                %% Build evidence record
+                Evidence = #{
+                    evidence_id => EvidenceId,
+                    evidence_type => atom_to_binary(EvidenceType, utf8),
+                    content => Content,
+                    hash => Hash,
+                    timestamp => Timestamp
+                },
+
+                {ok, Evidence}
+        end
+    catch
+        _:Error -> {error, {evidence_collection_failed, Error}}
+    end.
+
+%% @doc Store evidence bundle to filesystem with SHA-256 hashes
+-spec store_evidence_bundle(file:filename(), [evidence()]) -> {ok, file:filename()} | {error, term()}.
+store_evidence_bundle(BundlePath, EvidenceItems) when is_list(EvidenceItems) ->
+    try
+        %% Ensure bundle directory exists
+        ok = filelib:ensure_dir(BundlePath),
+
+        %% Create evidence subdirectory
+        EvidenceDir = filename:join([BundlePath, "evidence"]),
+        ok = filelib:ensure_dir(filename:join([EvidenceDir, ".gitkeep"])),
+
+        %% Create metadata subdirectory
+        MetadataDir = filename:join([BundlePath, "metadata"]),
+        ok = filelib:ensure_dir(filename:join([MetadataDir, ".gitkeep"])),
+
+        %% Store each evidence item as separate JSON file
+        lists:foreach(fun(Evidence) ->
+            EvidenceId = maps:get(evidence_id, Evidence),
+            Filename = binary_to_list(EvidenceId) ++ ".json",
+            FilePath = filename:join([EvidenceDir, Filename]),
+
+            %% Encode evidence as JSON
+            JSON = jsx:encode(Evidence, [space]),
+
+            %% Write to file
+            ok = file:write_file(FilePath, JSON)
+        end, EvidenceItems),
+
+        %% Create bundle manifest
+        Manifest = #{
+            bundle_id => list_to_binary(filename:basename(BundlePath)),
+            evidence_count => length(EvidenceItems),
+            timestamp => iso8601_timestamp(),
+            evidence_types => lists:usort([maps:get(evidence_type, E) || E <- EvidenceItems])
+        },
+
+        ManifestPath = filename:join([BundlePath, "bundle_manifest.json"]),
+        ManifestJSON = jsx:encode(Manifest, [space]),
+        ok = file:write_file(ManifestPath, ManifestJSON),
+
+        {ok, BundlePath}
+    catch
+        _:Error -> {error, {bundle_storage_failed, Error}}
+    end.
+
+%% @doc Generate evidence report with all evidence
+-spec generate_evidence_report([evidence()]) -> map().
+generate_evidence_report(EvidenceItems) when is_list(EvidenceItems) ->
+    #{
+        report_id => generate_evidence_id(report),
+        timestamp => iso8601_timestamp(),
+        evidence_count => length(EvidenceItems),
+        evidence_items => EvidenceItems,
+        summary => generate_evidence_summary(EvidenceItems)
+    }.
+
+%% @doc Generate SHA-256 hash of evidence content
+-spec hash_evidence(map() | binary()) -> {ok, binary()} | {error, term()}.
+hash_evidence(Content) when is_map(Content) orelse is_binary(Content) ->
+    try
+        %% Convert content to binary for hashing
+        Binary = case Content of
+            _ when is_map(Content) -> jsx:encode(Content);
+            _ when is_binary(Content) -> Content
+        end,
+
+        %% Generate SHA-256 hash using crypto
+        Hash = crypto:hash(sha256, Binary),
+
+        %% Convert to hex string
+        HashHex = binary:encode_hex(Hash),
+
+        {ok, HashHex}
+    catch
+        _:Error -> {error, {hashing_failed, Error}}
+    end.
+
+%% @doc Verify evidence hasn't been tampered
+-spec verify_evidence_integrity(map() | binary(), binary()) -> {ok, boolean()}.
+verify_evidence_integrity(Content, ExpectedHash) ->
+    case hash_evidence(Content) of
+        {ok, ExpectedHash} -> {ok, true};
+        {ok, _OtherHash} -> {ok, false};
+        {error, Reason} -> {error, Reason}
+    end.
+
+%% @doc Create evidence bundle directory structure
+-spec create_evidence_bundle(file:filename()) -> {ok, file:filename()} | {error, term()}.
+create_evidence_bundle(BasePath) ->
+    try
+        %% Create main bundle directory
+        ok = filelib:ensure_dir(BasePath),
+
+        %% Create evidence subdirectory
+        EvidenceDir = filename:join([BasePath, "evidence"]),
+        ok = filelib:ensure_dir(filename:join([EvidenceDir, ".gitkeep"])),
+
+        %% Create metadata subdirectory
+        MetadataDir = filename:join([BasePath, "metadata"]),
+        ok = filelib:ensure_dir(filename:join([MetadataDir, ".gitkeep"])),
+
+        %% Create empty manifest
+        EmptyManifest = #{
+            bundle_id => list_to_binary(filename:basename(BasePath)),
+            evidence_count => 0,
+            timestamp => iso8601_timestamp(),
+            status => <<"initialized">>
+        },
+
+        ManifestPath = filename:join([BasePath, "bundle_manifest.json"]),
+        ManifestJSON = jsx:encode(EmptyManifest, [space]),
+        ok = file:write_file(ManifestPath, ManifestJSON),
+
+        {ok, BasePath}
+    catch
+        _:Error -> {error, {bundle_creation_failed, Error}}
+    end.
+
+%% @doc Link evidence to receipt chain
+-spec link_receipt_chain(file:filename(), map()) -> {ok, file:filename()} | {error, term()}.
+link_receipt_chain(BundlePath, ReceiptChain) when is_map(ReceiptChain) ->
+    try
+        %% Ensure bundle directory exists
+        ok = filelib:ensure_dir(BundlePath),
+
+        %% Create receipt chain file
+        ReceiptPath = filename:join([BundlePath, "receipt_chain.json"]),
+
+        %% Add timestamp to receipt chain
+        ReceiptWithTimestamp = maps:put(<<"linked_at">>, iso8601_timestamp(), ReceiptChain),
+
+        %% Encode as JSON
+        ReceiptJSON = jsx:encode(ReceiptWithTimestamp, [space]),
+
+        %% Write to file
+        ok = file:write_file(ReceiptPath, ReceiptJSON),
+
+        {ok, ReceiptPath}
+    catch
+        _:Error -> {error, {receipt_linking_failed, Error}}
+    end.
 
 %% @private Generate report directly without gen_server
 generate_report_direct(Format, Data) ->
@@ -585,8 +794,8 @@ format_markdown_sections(Report) ->
      "\n"].
 
 format_section_details(Sections) ->
-    maps:fold(fun(Section, Compliance, Acc) ->
-        [io_lib:format("### ~s\n\nCompliance: ~.2f%\n\n", [Section, Compliance]) | Acc]
+    maps:fold(fun(_Section, Compliance, Acc) ->
+        [io_lib:format("### ~s\n\nCompliance: ~.2f%\n\n", [_Section, Compliance]) | Acc]
     end, [], Sections).
 
 %% @private Format Markdown evidence
@@ -804,5 +1013,66 @@ format_html_traceability(_Report) ->
 %% @private Generate ISO 8601 timestamp
 iso8601_timestamp() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:universal_time(),
-    io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
-                  [Year, Month, Day, Hour, Min, Sec]).
+    iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
+                                   [Year, Month, Day, Hour, Min, Sec])).
+
+%%%====================================================================
+%%% Evidence Collection Internal Functions
+%%%====================================================================
+
+%% @private Generate unique evidence ID
+generate_evidence_id(Type) when is_atom(Type) ->
+    Timestamp = erlang:system_time(microsecond),
+    Random = rand:uniform(16#ffffffff),
+    TypeBin = atom_to_binary(Type, utf8),
+    <<TypeBin/binary, "_", (integer_to_binary(Timestamp))/binary, "_",
+      (integer_to_binary(Random, 16))/binary>>.
+
+%% @private Extract evidence content based on type
+extract_evidence_content(test_result, Data) ->
+    #{
+        module => maps:get(module, Data, unknown),
+        function => maps:get(function, Data, unknown),
+        status => maps:get(status, Data, unknown),
+        runtime_ms => maps:get(runtime_ms, Data, 0)
+    };
+extract_evidence_content(coverage_metrics, Data) ->
+    #{
+        module => maps:get(module, Data, unknown),
+        coverage_percentage => maps:get(coverage_percentage, Data, 0.0),
+        lines_covered => maps:get(lines_covered, Data, 0),
+        lines_total => maps:get(lines_total, Data, 0)
+    };
+extract_evidence_content(security_scan, Data) ->
+    #{
+        scanner => maps:get(scanner, Data, unknown),
+        issues_found => maps:get(issues_found, Data, 0),
+        scan_report => maps:get(scan_report, Data, #{})
+    };
+extract_evidence_content(performance_benchmark, Data) ->
+    #{
+        benchmark_name => maps:get(benchmark_name, Data, unknown),
+        throughput_ops_per_sec => maps:get(throughput_ops_per_sec, Data, 0),
+        latency_p50_us => maps:get(latency_p50_us, Data, 0),
+        latency_p95_us => maps:get(latency_p95_us, Data, 0),
+        latency_p99_us => maps:get(latency_p99_us, Data, 0)
+    };
+extract_evidence_content(compliance_validation, Data) ->
+    #{
+        spec_version => maps:get(spec_version, Data, "unknown"),
+        overall_compliance => maps:get(overall_compliance, Data, 0.0),
+        requirements_checked => maps:get(requirements_checked, Data, 0),
+        requirements_passed => maps:get(requirements_passed, Data, 0)
+    }.
+
+%% @private Generate evidence summary
+generate_evidence_summary(EvidenceItems) ->
+    TypeCounts = lists:foldl(fun(Evidence, Acc) ->
+        Type = maps:get(evidence_type, Evidence),
+        maps:update_with(Type, fun(V) -> V + 1 end, 1, Acc)
+    end, #{}, EvidenceItems),
+
+    #{
+        total_evidence => length(EvidenceItems),
+        by_type => TypeCounts
+    }.

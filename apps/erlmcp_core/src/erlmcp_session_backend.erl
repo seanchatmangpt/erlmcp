@@ -68,23 +68,23 @@ start_link(Opts) ->
 
 -spec store(session_id(), session()) -> ok | {error, term()}.
 store(SessionId, Session) ->
-    gen_server:call(?MODULE, {store, SessionId, Session}).
+    gen_server:call(?MODULE, {store, SessionId, Session}, 5000).
 
 -spec fetch(session_id()) -> {ok, session()} | {error, not_found | term()}.
 fetch(SessionId) ->
-    gen_server:call(?MODULE, {fetch, SessionId}).
+    gen_server:call(?MODULE, {fetch, SessionId}, 5000).
 
 -spec delete(session_id()) -> ok | {error, term()}.
 delete(SessionId) ->
-    gen_server:call(?MODULE, {delete, SessionId}).
+    gen_server:call(?MODULE, {delete, SessionId}, 5000).
 
 -spec list() -> {ok, [session_id()]}.
 list() ->
-    gen_server:call(?MODULE, list).
+    gen_server:call(?MODULE, list, 5000).
 
 -spec cleanup_expired() -> {ok, non_neg_integer()}.
 cleanup_expired() ->
-    gen_server:call(?MODULE, cleanup_expired).
+    gen_server:call(?MODULE, cleanup_expired, 5000).
 
 %%====================================================================
 %% gen_server callbacks

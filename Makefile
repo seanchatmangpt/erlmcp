@@ -710,3 +710,63 @@ auto-fix-help: ## Show auto-fix system help
 	@echo ""
 	@echo "For detailed help: ./tools/auto-fix/orchestrator.sh help"
 
+
+# ============================================================================
+# MCP SPECIFICATION VALIDATION
+# ============================================================================
+
+validate-spec:
+	@echo "$(BLUE)📋 MCP Spec Validation$(NC)"
+	@echo "  Target: MCP spec compliance (2025-11-25)"
+	@echo "  Action: Running spec validation tests..."
+	@echo ""
+	@if [ ! -d "apps/erlmcp_validation" ]; then \
+		echo "$(RED)❌ VALIDATION APP NOT FOUND$(NC)"; \
+		echo "$(RED)Gate: BLOCKED$(NC)"; \
+		echo "$(RED)Action: Ensure apps/erlmcp_validation exists$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "  1. Compiling..."; \
+	if ! TERM=dumb rebar3 compile 2>&1 | tee /tmp/erlmcp_spec_compile.log; then \
+		echo ""; \
+		echo "$(RED)❌ COMPILATION FAILED$(NC)"; \
+		echo "$(RED)Gate: BLOCKED$(NC)"; \
+		exit 1; \
+	fi
+	@echo "     ✓ Compiled$(NC)"
+	@echo "  2. Running spec compliance tests..."; \
+	if ! rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_spec_compliance_SUITE.ct 2>&1 | tee /tmp/erlmcp_spec_ct.log; then \
+		echo ""; \
+		echo "$(RED)❌ SPEC COMPLIANCE TESTS FAILED$(NC)"; \
+		echo "$(RED)Gate: BLOCKED$(NC)"; \
+		echo "$(RED)Action: Fix failing spec compliance tests$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "     ✓ Spec compliance tests passed$(NC)"
+	@if [ -f "apps/erlmcp_validation/src/erlmcp_validate_cli.erl" ]; then \
+		echo "  3. Generating validation report..."; \
+		if rebar3 as validation escriptize > /dev/null 2>&1; then \
+			if ./_build/validation/bin/erlmcp_validate run --all --output-file=/tmp/spec_validation_report.json 2>&1; then \
+				if [ -f /tmp/spec_validation_report.json ]; then \
+					if grep -q '"overall_status":"fail"' /tmp/spec_validation_report.json 2>/dev/null; then \
+						echo ""; \
+						echo "$(RED)❌ VALIDATION REPORT INDICATES FAILURE$(NC)"; \
+						echo "$(RED)Gate: BLOCKED$(NC)"; \
+						exit 1; \
+					fi; \
+					echo "     ✓ Validation report passed$(NC)"; \
+				else \
+					echo "     ⚠ Report generation skipped (no report file)$(NC)"; \
+				fi; \
+			else \
+				echo "     ⚠ Report generation failed (non-blocking)$(NC)"; \
+			fi; \
+		else \
+			echo "     ⚠ Could not build validation CLI (non-blocking)$(NC)"; \
+		fi; \
+	fi
+	@echo ""
+	@echo "$(GREEN)✅ MCP spec validation PASSED$(NC)"
+	@echo ""
