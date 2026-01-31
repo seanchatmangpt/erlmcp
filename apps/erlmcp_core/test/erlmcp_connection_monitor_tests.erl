@@ -65,14 +65,14 @@ test_start_stop() ->
 
 %% @doc Test monitoring a connection
 test_monitor_connection() ->
-    %% Create a mock connection process
-    {ok, ConnPid} = start_mock_connection(),
+    %% Create a REAL erlmcp_server connection process (Chicago School TDD)
+    {ok, ConnPid} = start_real_connection(),
 
     %% Monitor the connection
     ConnectionInfo = #{
         socket => undefined,
         server_id => test_server,
-        transport_id => tcp_transport,
+        transport_id => stdio_transport,
         bytes_sent => 0,
         bytes_received => 0
     },
@@ -84,17 +84,17 @@ test_monitor_connection() ->
 
     %% Cleanup
     erlmcp_connection_monitor:unmonitor_connection(ConnPid),
-    stop_mock_connection(ConnPid).
+    stop_real_connection(ConnPid).
 
 %% @doc Test unmonitoring a connection
 test_unmonitor_connection() ->
-    %% Create and monitor a connection
-    {ok, ConnPid} = start_mock_connection(),
+    %% Create and monitor a REAL connection (Chicago School TDD)
+    {ok, ConnPid} = start_real_connection(),
 
     ConnectionInfo = #{
         socket => undefined,
         server_id => test_server,
-        transport_id => tcp_transport
+        transport_id => stdio_transport
     },
     ok = erlmcp_connection_monitor:monitor_connection(ConnPid, ConnectionInfo),
 
@@ -108,25 +108,24 @@ test_unmonitor_connection() ->
     ?assertEqual(CountBefore - 1, CountAfter),
 
     %% Cleanup
-    stop_mock_connection(ConnPid).
+    stop_real_connection(ConnPid).
 
 %% @doc Test that process death triggers automatic cleanup
 test_process_death_cleanup() ->
-    %% Create and monitor a connection
-    {ok, ConnPid} = start_mock_connection(),
+    %% Create and monitor a REAL connection (Chicago School TDD)
+    {ok, ConnPid} = start_real_connection(),
 
     ConnectionInfo = #{
         socket => undefined,
         server_id => test_server,
-        transport_id => tcp_transport
+        transport_id => stdio_transport
     },
     ok = erlmcp_connection_monitor:monitor_connection(ConnPid, ConnectionInfo),
 
     CountBefore = erlmcp_connection_monitor:get_connection_count(),
 
-    %% Unlink before killing to avoid killing test process
-    unlink(ConnPid),
-    exit(ConnPid, kill),
+    %% Stop the real server process
+    stop_real_connection(ConnPid),
     timer:sleep(200),  % Allow time for DOWN message processing
 
     %% Verify connection was cleaned up
@@ -138,13 +137,14 @@ test_leak_detection() ->
     %% Clear existing connections
     erlmcp_connection_monitor:force_cleanup(),
 
-    %% Create many connections rapidly to trigger leak detection
-    ConnectionPids = lists:map(fun(_I) ->
-        {ok, Pid} = start_mock_connection(),
+    %% Create many REAL connections rapidly to trigger leak detection (Chicago School TDD)
+    ConnectionPids = lists:map(fun(I) ->
+        ServerId = <<"leak_test_server_", (integer_to_binary(I))/binary>>,
+        {ok, Pid} = start_real_connection(ServerId),
         ConnectionInfo = #{
             socket => undefined,
-            server_id => test_server,
-            transport_id => tcp_transport
+            server_id => ServerId,
+            transport_id => stdio_transport
         },
         ok = erlmcp_connection_monitor:monitor_connection(Pid, ConnectionInfo),
         Pid
@@ -157,29 +157,29 @@ test_leak_detection() ->
     %% Cleanup all connections
     lists:foreach(fun(Pid) ->
         erlmcp_connection_monitor:unmonitor_connection(Pid),
-        stop_mock_connection(Pid)
+        stop_real_connection(Pid)
     end, ConnectionPids).
 
 %% @doc Test orphaned connection cleanup
 test_orphaned_cleanup() ->
-    %% Create connections that will become orphaned
-    ConnectionPids = lists:map(fun(_I) ->
-        {ok, Pid} = start_mock_connection(),
+    %% Create REAL connections that will become orphaned (Chicago School TDD)
+    ConnectionPids = lists:map(fun(I) ->
+        ServerId = <<"orphan_test_server_", (integer_to_binary(I))/binary>>,
+        {ok, Pid} = start_real_connection(ServerId),
         ConnectionInfo = #{
             socket => undefined,
-            server_id => test_server,
-            transport_id => tcp_transport,
+            server_id => ServerId,
+            transport_id => stdio_transport,
             last_activity => erlang:monotonic_time(millisecond) - (10 * 60 * 1000)  % 10 minutes ago
         },
         ok = erlmcp_connection_monitor:monitor_connection(Pid, ConnectionInfo),
         Pid
     end, lists:seq(1, 10)),
 
-    %% Kill half the processes to create orphans
+    %% Stop half the processes to create orphans
     OrphanedPids = lists:sublist(ConnectionPids, 5),
     lists:foreach(fun(Pid) ->
-        unlink(Pid),
-        exit(Pid, kill)
+        stop_real_connection(Pid)
     end, OrphanedPids),
 
     timer:sleep(200),  % Allow time for cleanup
@@ -193,7 +193,7 @@ test_orphaned_cleanup() ->
     %% Cleanup remaining
     lists:foreach(fun(Pid) ->
         catch erlmcp_connection_monitor:unmonitor_connection(Pid),
-        catch stop_mock_connection(Pid)
+        catch stop_real_connection(Pid)
     end, ConnectionPids).
 
 %% @doc Test connection statistics
@@ -201,13 +201,14 @@ test_connection_stats() ->
     %% Clear existing connections
     erlmcp_connection_monitor:force_cleanup(),
 
-    %% Create some connections
-    ConnectionPids = lists:map(fun(_I) ->
-        {ok, Pid} = start_mock_connection(),
+    %% Create some REAL connections (Chicago School TDD)
+    ConnectionPids = lists:map(fun(I) ->
+        ServerId = <<"stats_test_server_", (integer_to_binary(I))/binary>>,
+        {ok, Pid} = start_real_connection(ServerId),
         ConnectionInfo = #{
             socket => undefined,
-            server_id => test_server,
-            transport_id => tcp_transport
+            server_id => ServerId,
+            transport_id => stdio_transport
         },
         ok = erlmcp_connection_monitor:monitor_connection(Pid, ConnectionInfo),
         Pid
@@ -220,27 +221,27 @@ test_connection_stats() ->
     %% Cleanup
     lists:foreach(fun(Pid) ->
         erlmcp_connection_monitor:unmonitor_connection(Pid),
-        stop_mock_connection(Pid)
+        stop_real_connection(Pid)
     end, ConnectionPids).
 
 %% @doc Test force cleanup
 test_force_cleanup() ->
-    %% Create connections
-    ConnectionPids = lists:map(fun(_I) ->
-        {ok, Pid} = start_mock_connection(),
+    %% Create REAL connections (Chicago School TDD)
+    ConnectionPids = lists:map(fun(I) ->
+        ServerId = <<"force_cleanup_server_", (integer_to_binary(I))/binary>>,
+        {ok, Pid} = start_real_connection(ServerId),
         ConnectionInfo = #{
             socket => undefined,
-            server_id => test_server,
-            transport_id => tcp_transport
+            server_id => ServerId,
+            transport_id => stdio_transport
         },
         ok = erlmcp_connection_monitor:monitor_connection(Pid, ConnectionInfo),
         Pid
     end, lists:seq(1, 10)),
 
-    %% Kill some to create orphans
+    %% Stop some to create orphans
     lists:foreach(fun(Pid) ->
-        unlink(Pid),
-        exit(Pid, kill)
+        stop_real_connection(Pid)
     end, lists:sublist(ConnectionPids, 3)),
 
     timer:sleep(200),
@@ -254,20 +255,21 @@ test_force_cleanup() ->
     %% Cleanup remaining
     lists:foreach(fun(Pid) ->
         catch erlmcp_connection_monitor:unmonitor_connection(Pid),
-        catch stop_mock_connection(Pid)
+        catch stop_real_connection(Pid)
     end, lists:sublist(ConnectionPids, 4, 10)).
 
 %% @doc Test multiple concurrent connections
 test_multiple_connections() ->
-    %% Create many connections concurrently
+    %% Create many REAL connections concurrently (Chicago School TDD)
     NumConnections = 100,
 
-    ConnectionPids = lists:map(fun(_I) ->
-        {ok, Pid} = start_mock_connection(),
+    ConnectionPids = lists:map(fun(I) ->
+        ServerId = <<"multi_conn_server_", (integer_to_binary(I))/binary>>,
+        {ok, Pid} = start_real_connection(ServerId),
         ConnectionInfo = #{
             socket => undefined,
-            server_id => test_server,
-            transport_id => tcp_transport,
+            server_id => ServerId,
+            transport_id => stdio_transport,
             bytes_sent => rand:uniform(10000),
             bytes_received => rand:uniform(10000)
         },
@@ -282,7 +284,7 @@ test_multiple_connections() ->
     %% Cleanup all
     lists:foreach(fun(Pid) ->
         erlmcp_connection_monitor:unmonitor_connection(Pid),
-        stop_mock_connection(Pid)
+        stop_real_connection(Pid)
     end, ConnectionPids),
 
     %% Verify all removed
@@ -293,22 +295,20 @@ test_multiple_connections() ->
 %% Helper Functions
 %%====================================================================
 
-%% @doc Start a mock connection process
-start_mock_connection() ->
-    Pid = spawn_link(fun() ->
-        receive
-            stop -> ok
-        after
-            10000 -> timeout
-        end
-    end),
-    {ok, Pid}.
+%% @doc Start a REAL erlmcp_server connection process (Chicago School TDD)
+%% Uses real gen_server process, not a mock spawn
+start_real_connection() ->
+    start_real_connection(<<"test_server_default">>).
 
-%% @doc Stop a mock connection process
-stop_mock_connection(Pid) when is_pid(Pid) ->
-    case is_process_alive(Pid) of
-        true -> exit(Pid, normal);  % Use 'normal' to not kill linked test process
-        false -> ok
-    end;
-stop_mock_connection(_) ->
-    ok.
+%% @doc Start a REAL erlmcp_server with specific server ID
+start_real_connection(ServerId) ->
+    DefaultCaps = #mcp_server_capabilities{
+        resources = #mcp_capability{enabled = true},
+        tools = #mcp_capability{enabled = true},
+        prompts = #mcp_capability{enabled = true}
+    },
+    erlmcp_test_helpers:start_test_server(ServerId, DefaultCaps).
+
+%% @doc Stop a REAL erlmcp_server connection process
+stop_real_connection(ServerPid) ->
+    erlmcp_test_helpers:stop_test_server(ServerPid).

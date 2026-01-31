@@ -115,14 +115,3 @@ test_server_state_transition() ->
 %%%====================================================================
 %%% Helper Functions
 %%%====================================================================
-
-%% Mock transport for testing notification delivery
-start_mock_transport() ->
-    spawn(fun() ->
-        receive
-            {data, _Json} ->
-                ok
-        after 5000 ->
-            timeout
-        end
-    end).

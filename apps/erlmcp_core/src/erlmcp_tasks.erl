@@ -490,8 +490,8 @@ do_list_tasks(ClientPid, Cursor, Limit) ->
     TaskList = [format_task_for_api(T) || T <- PageTasks],
 
     {ok, #{
-        tasks => TaskList,
-        cursor => NextCursor
+        <<"tasks">> => TaskList,
+        <<"cursor">> => NextCursor
     }}.
 
 %% @private
@@ -855,10 +855,15 @@ format_task_for_api(#mcp_task{
     Base6 = case Error of
         undefined -> Base5;
         #mcp_error{code = Code, message = Msg, data = Data} ->
+            %% Convert data map keys to binary for JSON compatibility
+            DataBin = maps:map(
+                fun(_K, V) -> V end,
+                maps:fold(fun(K, V, Acc) -> Acc#{atom_to_binary(K) => V} end, #{}, Data)
+            ),
             Base5#{?MCP_PARAM_ERROR => #{
                 <<"code">> => Code,
                 <<"message">> => Msg,
-                <<"data">> => Data
+                <<"data">> => DataBin
             }}
     end,
 
@@ -945,7 +950,13 @@ match_client_pids(_, _) -> false.
 %% @private
 do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
     TaskId = generate_task_id(),
-    TimeoutMs = maps:get(<<"timeout">>, Metadata, ?DEFAULT_TASK_TIMEOUT_MS),
+    %% Check both Metadata (binary key) and Options (atom key) for timeout
+    TimeoutMs = case maps:get(<<"timeout">>, Metadata, undefined) of
+        undefined ->
+            maps:get(timeout_ms, Options, ?DEFAULT_TASK_TIMEOUT_MS);
+        Val ->
+            Val
+    end,
 
     % Calculate expiry time based on ttl_ms option or default
     TTL = maps:get(ttl_ms, Options, maps:get(<<"expiresAfter">>, Metadata, ?DEFAULT_EXPIRY_MS)),

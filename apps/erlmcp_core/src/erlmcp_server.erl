@@ -384,14 +384,48 @@ handle_call({delete_prompt, Name}, _From, State) ->
     end;
 
 handle_call({subscribe_resource, Uri, Subscriber}, _From, State) ->
-    NewSubscriptions = add_subscription(Uri, Subscriber, State#state.subscriptions),
-    {reply, ok, State#state{subscriptions = NewSubscriptions}};
+    % Subscribe via resource subscriptions manager if available
+    % Otherwise fall back to local tracking
+    case erlang:whereis(erlmcp_resource_subscriptions) of
+        undefined ->
+            % Resource subscriptions manager not running - use local tracking only
+            logger:debug("Resource subscriptions manager not available, using local tracking"),
+            NewSubscriptions = add_subscription(Uri, Subscriber, State#state.subscriptions),
+            {reply, ok, State#state{subscriptions = NewSubscriptions}};
+        _Pid ->
+            % Resource subscriptions manager running - use it
+            case erlmcp_resource_subscriptions:subscribe_to_resource(Uri, Subscriber, #{}) of
+                ok ->
+                    % Track subscription count in server state for cleanup
+                    NewSubscriptions = add_subscription(Uri, Subscriber, State#state.subscriptions),
+                    {reply, ok, State#state{subscriptions = NewSubscriptions}};
+                {error, Reason} ->
+                    logger:warning("Failed to subscribe to resource ~p: ~p", [Uri, Reason]),
+                    {reply, {error, Reason}, State}
+            end
+    end;
 
 handle_call({unsubscribe_resource, Uri}, From, State) ->
     % Remove the caller's subscription
     CallerPid = element(1, From),
-    NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
-    {reply, ok, State#state{subscriptions = NewSubscriptions}};
+
+    % Unsubscribe via resource subscriptions manager if available
+    case erlang:whereis(erlmcp_resource_subscriptions) of
+        undefined ->
+            % Resource subscriptions manager not running - clean local state only
+            NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
+            {reply, ok, State#state{subscriptions = NewSubscriptions}};
+        _Pid ->
+            case erlmcp_resource_subscriptions:unsubscribe_from_resource(Uri, CallerPid) of
+                ok ->
+                    NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
+                    {reply, ok, State#state{subscriptions = NewSubscriptions}};
+                {error, not_found} ->
+                    % Already unsubscribed or never subscribed - still clean local state
+                    NewSubscriptions = remove_subscription(Uri, CallerPid, State#state.subscriptions),
+                    {reply, ok, State#state{subscriptions = NewSubscriptions}}
+            end
+    end;
 
 handle_call({register_notification_handler, Method, HandlerPid}, _From, State) ->
     % Monitor the handler process for automatic cleanup
@@ -448,7 +482,17 @@ handle_cast({report_progress, Token, Progress, Total}, State) ->
     {noreply, State#state{progress_tokens = NewTokens}};
 
 handle_cast({notify_resource_updated, Uri, Metadata}, State) ->
-    notify_subscribers(Uri, Metadata, State),
+    % Notify via resource subscriptions manager if available
+    case erlang:whereis(erlmcp_resource_subscriptions) of
+        undefined ->
+            % Resource subscriptions manager not running - use local notification only
+            logger:debug("Resource subscriptions manager not available, using local notification"),
+            notify_subscribers(Uri, Metadata, State);
+        _Pid ->
+            erlmcp_resource_subscriptions:notify_resource_changed(Uri, Metadata),
+            % Also notify local subscribers for backward compatibility
+            notify_subscribers(Uri, Metadata, State)
+    end,
     {noreply, State};
 
 handle_cast(notify_resources_changed, State) ->
@@ -542,8 +586,27 @@ handle_info(_Info, State) ->
 %%====================================================================
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, #state{server_id = ServerId}) ->
+terminate(_Reason, #state{server_id = ServerId, subscriptions = Subscriptions}) ->
     logger:info("MCP server ~p (refactored) terminating", [ServerId]),
+
+    % Cleanup all resource subscriptions for this server
+    % The resource_subscriptions manager monitors subscriber processes
+    % and will automatically cleanup when the server process dies
+    case erlang:whereis(erlmcp_resource_subscriptions) of
+        undefined ->
+            % Resource subscriptions manager not running - no cleanup needed
+            ok;
+        _Pid ->
+            maps:foreach(fun(Uri, Subscriber) ->
+                logger:debug("Server ~p: Cleaning up subscription to ~p for ~p", [ServerId, Uri, Subscriber]),
+                % Best effort cleanup - ignore errors since process is terminating
+                case erlmcp_resource_subscriptions:unsubscribe_from_resource(Uri, Subscriber) of
+                    ok -> ok;
+                    {error, not_found} -> ok  % Already cleaned up
+                end
+            end, Subscriptions)
+    end,
+
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.

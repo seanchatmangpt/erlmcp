@@ -220,8 +220,13 @@ generate_spec_id(Spec) ->
     binary_to_atom(<<"spec_", (integer_to_binary(Hash))/binary>>, utf8).
 
 calculate_term_size(Term) ->
-    try erts_debug:size_of(Term) * erlang:system_info(wordsize)
-    catch _:_ -> byte_size(term_to_binary(Term))
+    try
+        %% Try external_size first (available in all OTP versions)
+        erlang:external_size(Term)
+    catch
+        _:_ ->
+            %% Fallback to binary encoding size
+            byte_size(term_to_binary(Term))
     end.
 
 calculate_memory_stats(State) ->

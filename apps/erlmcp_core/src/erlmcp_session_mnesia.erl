@@ -77,7 +77,7 @@ store(SessionId, Session, State) ->
         last_accessed = erlang:system_time(millisecond)
     },
 
-    Transaction = fun() -> mnesia:write(State.table_name, Record, write) end,
+    Transaction = fun() -> mnesia:write(maps:get(table_name, State), Record, write) end,
 
     case mnesia:transaction(Transaction) of
         {atomic, ok} -> {ok, State};
@@ -88,7 +88,7 @@ store(SessionId, Session, State) ->
     {ok, session(), state()} | {error, not_found | term(), state()}.
 fetch(SessionId, State) ->
     Transaction = fun() ->
-        case mnesia:read(State.table_name, SessionId) of
+        case mnesia:read(maps:get(table_name, State), SessionId) of
             [#erlmcp_session{session_data = Session}] ->
                 %% Update last accessed time
                 Now = erlang:system_time(millisecond),
@@ -98,7 +98,7 @@ fetch(SessionId, State) ->
                     session_data = UpdatedSession,
                     last_accessed = Now
                 },
-                mnesia:write(State.table_name, Record, write),
+                mnesia:write(maps:get(table_name, State), Record, write),
                 {ok, UpdatedSession};
             [] ->
                 {error, not_found}
@@ -114,7 +114,7 @@ fetch(SessionId, State) ->
 -spec delete(session_id(), state()) ->
     {ok, state()} | {error, term(), state()}.
 delete(SessionId, State) ->
-    Transaction = fun() -> mnesia:delete(State.table_name, SessionId, write) end,
+    Transaction = fun() -> mnesia:delete(maps:get(table_name, State), SessionId, write) end,
 
     case mnesia:transaction(Transaction) of
         {atomic, ok} -> {ok, State};
@@ -125,7 +125,7 @@ delete(SessionId, State) ->
     {ok, [session_id()], state()}.
 list(State) ->
     Transaction = fun() ->
-        mnesia:all_keys(State.table_name)
+        mnesia:all_keys(maps:get(table_name, State))
     end,
 
     case mnesia:transaction(Transaction) of
@@ -140,11 +140,11 @@ cleanup_expired(State) ->
 
     Transaction = fun() ->
         %% Get all session IDs
-        SessionIds = mnesia:all_keys(State.table_name),
+        SessionIds = mnesia:all_keys(maps:get(table_name, State)),
 
         %% Find expired sessions
         ExpiredSessions = lists:filter(fun(SessionId) ->
-            case mnesia:read(State.table_name, SessionId) of
+            case mnesia:read(maps:get(table_name, State), SessionId) of
                 [#erlmcp_session{session_data = Session}] ->
                     is_expired(Session, Now);
                 [] ->
@@ -154,7 +154,7 @@ cleanup_expired(State) ->
 
         %% Delete expired sessions
         lists:foreach(fun(SessionId) ->
-            mnesia:delete(State.table_name, SessionId, write)
+            mnesia:delete(maps:get(table_name, State), SessionId, write)
         end, ExpiredSessions),
 
         length(ExpiredSessions)

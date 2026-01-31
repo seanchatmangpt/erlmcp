@@ -101,8 +101,8 @@ The Model Context Protocol (MCP) enables structured communication between AI ass
 
 ### Static Resources
 ```erlang
-erlmcp_server:add_resource(Server, <<"doc://readme">>, 
-    fun(_Uri) -> 
+erlmcp_server:add_resource(Server, <<"doc://readme">>,
+    fun(_Uri) ->
         {ok, Content} = file:read_file("README.md"),
         Content
     end).
@@ -110,7 +110,7 @@ erlmcp_server:add_resource(Server, <<"doc://readme">>,
 
 ### Dynamic Resources (Templates)
 ```erlang
-erlmcp_server:add_resource_template(Server, 
+erlmcp_server:add_resource_template(Server,
     <<"user://{username}/profile">>,
     <<"User Profile">>,
     fun(Uri) ->
@@ -121,6 +121,82 @@ erlmcp_server:add_resource_template(Server,
         }
     end).
 ```
+
+## Resource Subscriptions
+
+### Overview
+Resource subscriptions allow clients to receive real-time notifications when resources change. The server tracks subscribers and sends `resources/updated` notifications when a resource is modified.
+
+### Subscribe to Resource
+```erlang
+%% Client subscribes to resource updates
+Request = #{
+    <<"jsonrpc">> => <<"2.0">>,
+    <<"id">> => 1,
+    <<"method">> => <<"resources/subscribe">>,
+    <<"params">> => #{
+        <<"uri">> => <<"weather://city">>
+    }
+},
+
+%% Server handles subscription
+%% Server tracks subscriber PIDs and sends notifications on changes
+```
+
+### Unsubscribe from Resource
+```erlang
+%% Client unsubscribes from resource updates
+Request = #{
+    <<"jsonrpc">> => <<"2.0">>,
+    <<"id">> => 2,
+    <<"method">> => <<"resources/unsubscribe">>,
+    <<"params">> => #{
+        <<"uri">> => <<"weather://city">>
+    }
+},
+```
+
+### Resource Updated Notification
+```erlang
+%% Server sends notification when resource changes
+Notification = #{
+    <<"jsonrpc">> => <<"2.0">>,
+    <<"method">> => <<"resources/updated">>,
+    <<"params">> => #{
+        <<"uri">> => <<"weather://city">>,
+        <<"metadata">> => #{
+            <<"updated_at">> => 1640995200000,
+            <<"version">> => <<"2024-01-01">>
+        }
+    }
+}.
+```
+
+### Server-Side Subscription Management
+```erlang
+%% Server subscribes a client to a resource
+{ok, Server} = erlmcp_server:start_link(my_server, Capabilities),
+ok = erlmcp_server:add_resource(Server, <<"weather://city">>,
+    fun(_Uri) -> fetch_weather() end),
+
+%% Subscribe client (ClientPid) to resource
+ok = erlmcp_server:subscribe_resource(Server, <<"weather://city">>, ClientPid).
+
+%% Notify all subscribers when resource changes
+ok = erlmcp_server:notify_resource_updated(Server,
+    <<"weather://city">>,
+    #{updated_at => erlang:system_time(millisecond)}).
+
+%% Unsubscribe client
+ok = erlmcp_server:unsubscribe_resource(Server, <<"weather://city">>, ClientPid).
+```
+
+### Subscription Lifecycle
+1. **Client sends `resources/subscribe`** → Server adds client to subscriber list
+2. **Resource changes** → Server calls `notify_resource_updated/3`
+3. **Server broadcasts `resources/updated`** → All subscribers receive notification
+4. **Client sends `resources/unsubscribe`** → Server removes client from subscriber list
+5. **Client disconnects** → Server automatically cleans up subscriptions
 
 ## Tool System
 
