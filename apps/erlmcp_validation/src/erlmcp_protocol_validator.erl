@@ -1,696 +1,533 @@
 %%%-------------------------------------------------------------------
 %%% @doc
-%%% Protocol Compliance Validator for MCP 2025-11-25 Specification
+%%% Protocol Validator for MCP 2025-11-25 Specification
 %%%
-%%% Validates JSON-RPC 2.0 compliance and MCP protocol implementation
+%%% Validates JSON-RPC 2.0 and MCP protocol messages.
+%%% Returns specific error codes for validation failures.
+%%% Uses jesse for JSON Schema validation where applicable.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_protocol_validator).
--behaviour(gen_server).
 
-%% API
--export([start_link/0, run/1, validate_json_rpc/1, validate_request_method/2,
-         validate_response_structure/1, validate_error_codes/1, validate_protocol_version/1,
-         generate_report/0, get_results/0]).
-
-%% Export individual check functions for testing
--export([check_jsonrpc_version/1, check_request_format/1, check_response_format/1,
-         check_notification_format/1, check_batch_requests/1, check_initialize_params/1,
-         check_initialize_response/1, check_tools_list_params/1, check_tools_list_response/1,
-         check_resources_list_params/1, check_resources_list_response/1,
-         check_result_exclusivity/1, check_error_object/1, check_response_id/1,
-         check_response_jsonrpc/1, check_mcp_refusal_codes/1, check_jsonrpc_error_codes/1,
-         check_custom_error_codes/1, check_protocol_version_2025_11_25/1,
-         check_version_compatibility/1]).
-
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
-
--include_lib("kernel/include/logger.hrl").
 -include("erlmcp.hrl").
--define(SERVER, ?MODULE).
 
--record(validation_result, {
-    transport :: atom(),
-    timestamp :: integer(),
-    jsonrpc_passed = 0 :: non_neg_integer(),
-    jsonrpc_failed = 0 :: non_neg_integer(),
-    response_passed = 0 :: non_neg_integer(),
-    response_failed = 0 :: non_neg_integer(),
-    error_codes_passed = 0 :: non_neg_integer(),
-    error_codes_failed = 0 :: non_neg_integer(),
-    version_passed = 0 :: non_neg_integer(),
-    version_failed = 0 :: non_neg_integer(),
-    details = [] :: [map()]
-}).
+%% API exports
+-export([
+    validate_json_rpc/1,
+    validate_mcp_message/1,
+    validate_request_id/1,
+    validate_params/2,
+    validate_error_code/1
+]).
 
--record(state, {
-    results = #{} :: #{atom() => validation_result()},
-    current_transport :: atom() | undefined
-}).
-
--type transport_type() :: stdio | tcp | http | websocket.
--type validation_result() :: #validation_result{}.
+%% Additional validation exports
+-export([
+    validate_method/1,
+    validate_capabilities/1,
+    validate_server_info/1,
+    validate_client_info/1,
+    validate_resource/1,
+    validate_tool/1,
+    validate_prompt/1,
+    validate_content/1
+]).
 
 %%%===================================================================
-%%% API
+%%% API Functions
 %%%===================================================================
 
-start_link() -> gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-run(TransportModule) when is_atom(TransportModule) ->
-    gen_server:call(?SERVER, {run, TransportModule}).
-
-validate_json_rpc(TransportModule) when is_atom(TransportModule) ->
-    Result = #{module => TransportModule, category => jsonrpc,
-               timestamp => erlang:system_time(millisecond), checks => []},
-    Checks = [check_jsonrpc_version(TransportModule),
-              check_request_format(TransportModule),
-              check_response_format(TransportModule),
-              check_notification_format(TransportModule),
-              check_batch_requests(TransportModule)],
-    {Passed, Failed} = lists:foldl(fun(Check, {P, F}) ->
-        case maps:get(status, Check) of
-            passed -> {P + 1, F};
-            failed -> {P, F + 1};
-            warning -> {P, F}
-        end
-    end, {0, 0}, Checks),
-    Result#{checks => Checks, passed => Passed, failed => Failed,
-            status => case Failed of 0 -> passed; _ -> failed end}.
-
-validate_request_method(TransportModule, Method) when is_atom(TransportModule), is_binary(Method) ->
-    Result = #{module => TransportModule, category => request_method, method => Method,
-               timestamp => erlang:system_time(millisecond), checks => []},
-    Checks = case Method of
-        <<"initialize">> -> [check_initialize_params(TransportModule), check_initialize_response(TransportModule)];
-        <<"tools/list">> -> [check_tools_list_params(TransportModule), check_tools_list_response(TransportModule)];
-        <<"resources/list">> -> [check_resources_list_params(TransportModule), check_resources_list_response(TransportModule)];
-        _ -> [#{name => unknown_method, status => warning, message => <<"Unknown method, may be custom">>}]
-    end,
-    {Passed, Failed} = lists:foldl(fun(Check, {P, F}) ->
-        case maps:get(status, Check) of
-            passed -> {P + 1, F};
-            failed -> {P, F + 1};
-            warning -> {P, F}
-        end
-    end, {0, 0}, Checks),
-    Result#{checks => Checks, passed => Passed, failed => Failed,
-            status => case Failed of 0 -> passed; _ -> failed end}.
-
-validate_response_structure(TransportModule) when is_atom(TransportModule) ->
-    Result = #{module => TransportModule, category => response_structure,
-               timestamp => erlang:system_time(millisecond), checks => []},
-    Checks = [check_result_exclusivity(TransportModule),
-              check_error_object(TransportModule),
-              check_response_id(TransportModule),
-              check_response_jsonrpc(TransportModule)],
-    {Passed, Failed} = lists:foldl(fun(Check, {P, F}) ->
-        case maps:get(status, Check) of
-            passed -> {P + 1, F};
-            failed -> {P, F + 1};
-            warning -> {P, F}
-        end
-    end, {0, 0}, Checks),
-    Result#{checks => Checks, passed => Passed, failed => Failed,
-            status => case Failed of 0 -> passed; _ -> failed end}.
-
-validate_error_codes(TransportModule) when is_atom(TransportModule) ->
-    Result = #{module => TransportModule, category => error_codes,
-               timestamp => erlang:system_time(millisecond), checks => []},
-    Checks = [check_mcp_refusal_codes(TransportModule),
-              check_jsonrpc_error_codes(TransportModule),
-              check_custom_error_codes(TransportModule)],
-    {Passed, Failed} = lists:foldl(fun(Check, {P, F}) ->
-        case maps:get(status, Check) of
-            passed -> {P + 1, F};
-            failed -> {P, F + 1};
-            warning -> {P, F}
-        end
-    end, {0, 0}, Checks),
-    Result#{checks => Checks, passed => Passed, failed => Failed,
-            status => case Failed of 0 -> passed; _ -> failed end}.
-
-validate_protocol_version(TransportModule) when is_atom(TransportModule) ->
-    Result = #{module => TransportModule, category => protocol_version,
-               timestamp => erlang:system_time(millisecond), checks => []},
-    Checks = [check_protocol_version_2025_11_25(TransportModule),
-              check_version_compatibility(TransportModule)],
-    {Passed, Failed} = lists:foldl(fun(Check, {P, F}) ->
-        case maps:get(status, Check) of
-            passed -> {P + 1, F};
-            failed -> {P, F + 1};
-            warning -> {P, F}
-        end
-    end, {0, 0}, Checks),
-    Result#{checks => Checks, passed => Passed, failed => Failed,
-            status => case Failed of 0 -> passed; _ -> failed end}.
-
-generate_report() -> gen_server:call(?SERVER, generate_report).
-get_results() -> gen_server:call(?SERVER, get_results).
-
-%%%===================================================================
-%%% gen_server callbacks
-%%%===================================================================
-
-init([]) -> {ok, #state{}}.
-
-handle_call({run, TransportModule}, _From, State) ->
-    ?LOG_INFO("Running protocol validation for: ~p", [TransportModule]),
-    JsonRpcResult = validate_json_rpc(TransportModule),
-    ResponseResult = validate_response_structure(TransportModule),
-    ErrorCodesResult = validate_error_codes(TransportModule),
-    VersionResult = validate_protocol_version(TransportModule),
-    ValidationResult = #validation_result{
-        transport = TransportModule,
-        timestamp = erlang:system_time(millisecond),
-        jsonrpc_passed = maps:get(passed, JsonRpcResult, 0),
-        jsonrpc_failed = maps:get(failed, JsonRpcResult, 0),
-        response_passed = maps:get(passed, ResponseResult, 0),
-        response_failed = maps:get(failed, ResponseResult, 0),
-        error_codes_passed = maps:get(passed, ErrorCodesResult, 0),
-        error_codes_failed = maps:get(failed, ErrorCodesResult, 0),
-        version_passed = maps:get(passed, VersionResult, 0),
-        version_failed = maps:get(failed, VersionResult, 0),
-        details = [JsonRpcResult, ResponseResult, ErrorCodesResult, VersionResult]
-    },
-    NewState = State#state{results = maps:put(TransportModule, ValidationResult, State#state.results)},
-    Summary = generate_summary(ValidationResult),
-    {reply, {ok, Summary}, NewState};
-
-handle_call(generate_report, _From, State) ->
-    Report = generate_full_report(State#state.results),
-    {reply, {ok, Report}, State};
-
-handle_call(get_results, _From, State) ->
-    Results = maps:map(fun(_Module, ValidationResult) -> generate_summary(ValidationResult) end, State#state.results),
-    {reply, {ok, Results}, State};
-
-handle_call(_Request, _From, State) -> {reply, {error, unknown_request}, State}.
-
-handle_cast(_Msg, State) -> {noreply, State}.
-
-handle_info(_Info, State) -> {noreply, State}.
-
-terminate(_Reason, _State) -> ok.
-
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
-
-%%%===================================================================
-%%% Internal functions
-%%%===================================================================
-
-%% @doc Check JSON-RPC version field is "2.0"
-check_jsonrpc_version(Module) ->
-    TestRequest = create_test_request(),
-    case TestRequest of
-        #{?JSONRPC_FIELD_JSONRPC := <<"2.0">>} ->
-            #{name => jsonrpc_version, status => passed,
-              message => <<"JSON-RPC 2.0 version field present">>,
-              details => #{version => <<"2.0">>}};
-        #{?JSONRPC_FIELD_JSONRPC := WrongVersion} ->
-            #{name => jsonrpc_version, status => failed,
-              message => <<"Invalid JSON-RPC version">>,
-              details => #{expected => <<"2.0">>, actual => WrongVersion}};
+%% @doc Validate JSON-RPC 2.0 message from binary JSON
+-spec validate_json_rpc(binary()) -> {ok, #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}} | {error, term()}.
+validate_json_rpc(Json) when is_binary(Json) ->
+    try jsx:decode(Json, [return_maps]) of
+        Data when is_map(Data) ->
+            case validate_jsonrpc_structure(Data) of
+                ok -> erlmcp_message_parser:parse_json_rpc(Data);
+                Error -> Error
+            end;
         _ ->
-            #{name => jsonrpc_version, status => failed,
-              message => <<"Missing jsonrpc version field">>,
-              details => #{module => Module}}
-    end.
+            {error, {parse_error, not_object}}
+    catch
+        error:badarg ->
+            {error, {parse_error, invalid_json}};
+        Class:Reason ->
+            {error, {parse_error, {Class, Reason}}}
+    end;
+validate_json_rpc(_) ->
+    {error, {invalid_argument, not_binary}}.
 
-%% @doc Check request format has required fields (jsonrpc, id, method)
-check_request_format(Module) ->
-    TestCases = [
-        %% Valid request
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_ID => 1,
-           ?JSONRPC_FIELD_METHOD => <<"test">>}, true, <<"valid request">>},
-        %% Valid request with string id
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_ID => <<"test-id">>,
-           ?JSONRPC_FIELD_METHOD => <<"test">>}, true, <<"valid request with string id">>},
-        %% Valid request with params
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_ID => 1,
-           ?JSONRPC_FIELD_METHOD => <<"test">>,
-           ?JSONRPC_FIELD_PARAMS => #{}}, true, <<"valid request with params">>}
-    ],
-    {ValidCount, InvalidCount} = validate_request_formats(TestCases, 0, 0),
-    case ValidCount > 0 andalso InvalidCount =:= 0 of
-        true ->
-            #{name => request_format, status => passed,
-              message => <<"Request format validated">>,
-              details => #{valid => ValidCount, invalid => InvalidCount}};
-        false ->
-            #{name => request_format, status => failed,
-              message => <<"Request format validation failed">>,
-              details => #{module => Module, valid => ValidCount, invalid => InvalidCount}}
-    end.
+%% @doc Validate MCP-specific message structure and return error code if invalid
+-spec validate_mcp_message(map()) -> {ok, map()} | {error, integer(), binary()}.
+validate_mcp_message(#{?JSONRPC_FIELD_METHOD := Method, ?JSONRPC_FIELD_PARAMS := Params} = Message) ->
+    case validate_method(Method) of
+        ok ->
+            case validate_params(Method, Params) of
+                ok -> {ok, Message};
+                {error, invalid_params} ->
+                    {error, ?JSONRPC_INVALID_PARAMS, <<"Invalid parameters for method ", Method/binary>>};
+                {error, Details} when is_binary(Details) ->
+                    {error, ?JSONRPC_INVALID_PARAMS, Details};
+                {error, Details} ->
+                    DetailsBin = format_error_details(Details),
+                    {error, ?JSONRPC_INVALID_PARAMS, DetailsBin}
+            end;
+        {error, unknown_method} ->
+            {error, ?JSONRPC_METHOD_NOT_FOUND, <<"Unknown method: ", Method/binary>>}
+    end;
+validate_mcp_message(#{?JSONRPC_FIELD_RESULT := Result}) when is_map(Result) ->
+    %% Response message - validate result structure for known MCP responses
+    {ok, Result};
+validate_mcp_message(#{?JSONRPC_FIELD_ERROR := Error}) when is_map(Error) ->
+    %% Error response - validate error structure
+    case validate_error_object(Error) of
+        ok -> {ok, Error};
+        {error, invalid_error_code} ->
+            Code = maps:get(?JSONRPC_ERROR_FIELD_CODE, Error, undefined),
+            {error, ?JSONRPC_INVALID_REQUEST, <<"Invalid error code: ", (format_code(Code))/binary>>};
+        {error, Reason} ->
+            {error, ?JSONRPC_INVALID_REQUEST, format_error_details(Reason)}
+    end;
+validate_mcp_message(_) ->
+    {error, ?JSONRPC_INVALID_REQUEST, <<"Message must have method or result/error field">>}.
 
-%% @doc Check response format has required fields (jsonrpc, id, result OR error)
-check_response_format(Module) ->
-    TestCases = [
-        %% Valid success response
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_ID => 1,
-           ?JSONRPC_FIELD_RESULT => #{status => ok}}, true, <<"success response">>},
-        %% Valid error response
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_ID => 1,
-           ?JSONRPC_FIELD_ERROR => #{?JSONRPC_ERROR_FIELD_CODE => -32600,
-                                     ?JSONRPC_ERROR_FIELD_MESSAGE => <<"Invalid">>}}, true, <<"error response">>},
-        %% Valid success with null result
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_ID => 1,
-           ?JSONRPC_FIELD_RESULT => null}, true, <<"success with null result">>}
-    ],
-    {ValidCount, InvalidCount} = validate_response_formats(TestCases, 0, 0),
-    case ValidCount > 0 andalso InvalidCount =:= 0 of
-        true ->
-            #{name => response_format, status => passed,
-              message => <<"Response format validated">>,
-              details => #{valid => ValidCount, invalid => InvalidCount}};
-        false ->
-            #{name => response_format, status => failed,
-              message => <<"Response format validation failed">>,
-              details => #{module => Module, valid => ValidCount, invalid => InvalidCount}}
-    end.
+%% @doc Validate request ID format
+-spec validate_request_id(term()) -> ok | {error, invalid_request_id}.
+validate_request_id(null) -> ok;
+validate_request_id(Id) when is_binary(Id) -> ok;
+validate_request_id(Id) when is_integer(Id), Id >= 0 -> ok;
+validate_request_id(_) -> {error, invalid_request_id}.
 
-%% @doc Check notification format (no id field)
-check_notification_format(Module) ->
-    TestCases = [
-        %% Valid notification
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_METHOD => <<"test/notify">>,
-           ?JSONRPC_FIELD_PARAMS => #{}}, true, <<"valid notification">>},
-        %% Valid notification without params
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_METHOD => <<"test/notify2">>}, true, <<"valid notification without params">>},
-        %% Valid notification with list params
-        {#{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-           ?JSONRPC_FIELD_METHOD => <<"test/notify3">>,
-           ?JSONRPC_FIELD_PARAMS => []}, true, <<"valid notification with list params">>}
-    ],
-    {ValidCount, InvalidCount} = validate_notification_formats(TestCases, 0, 0),
-    case ValidCount > 0 andalso InvalidCount =:= 0 of
-        true ->
-            #{name => notification_format, status => passed,
-              message => <<"Notification format validated">>,
-              details => #{valid => ValidCount, invalid => InvalidCount}};
-        false ->
-            #{name => notification_format, status => failed,
-              message => <<"Notification format validation failed">>,
-              details => #{module => Module, valid => ValidCount, invalid => InvalidCount}}
-    end.
+%% @doc Validate method-specific parameters
+-spec validate_params(binary(), map() | list() | undefined) -> ok | {error, term()}.
+validate_params(?MCP_METHOD_INITIALIZE, Params) when is_map(Params) ->
+    validate_initialize_params(Params);
+validate_params(?MCP_METHOD_RESOURCES_LIST, Params) when is_map(Params) ->
+    %% Optional cursor parameter
+    case maps:find(?MCP_PARAM_CURSOR, Params) of
+        {ok, Cursor} when is_binary(Cursor) -> ok;
+        error -> ok;
+        _ -> {error, <<"cursor must be a string">>}
+    end;
+validate_params(?MCP_METHOD_RESOURCES_LIST, undefined) ->
+    ok;
+validate_params(?MCP_METHOD_RESOURCES_READ, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_URI, Params) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"uri must be a string">>};
+        error -> {error, <<"Missing required parameter: uri">>}
+    end;
+validate_params(?MCP_METHOD_RESOURCES_SUBSCRIBE, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_URI, Params) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"uri must be a string">>};
+        error -> {error, <<"Missing required parameter: uri">>}
+    end;
+validate_params(?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_URI, Params) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"uri must be a string">>};
+        error -> {error, <<"Missing required parameter: uri">>}
+    end;
+validate_params(?MCP_METHOD_TOOLS_LIST, Params) when is_map(Params) ->
+    %% Optional cursor parameter
+    case maps:find(?MCP_PARAM_CURSOR, Params) of
+        {ok, Cursor} when is_binary(Cursor) -> ok;
+        error -> ok;
+        _ -> {error, <<"cursor must be a string">>}
+    end;
+validate_params(?MCP_METHOD_TOOLS_LIST, undefined) ->
+    ok;
+validate_params(?MCP_METHOD_TOOLS_CALL, Params) when is_map(Params) ->
+    NameResult = case maps:find(?MCP_PARAM_NAME, Params) of
+        {ok, Name} when is_binary(Name) -> ok;
+        {ok, _} -> {error, <<"name must be a string">>};
+        error -> {error, <<"Missing required parameter: name">>}
+    end,
+    case NameResult of
+        ok ->
+            %% Arguments are optional, must be object if present
+            case maps:find(?MCP_PARAM_ARGUMENTS, Params) of
+                {ok, Args} when is_map(Args) -> ok;
+                {ok, _} -> {error, <<"arguments must be an object">>};
+                error -> ok
+            end;
+        Error -> Error
+    end;
+validate_params(?MCP_METHOD_PROMPTS_LIST, Params) when is_map(Params) ->
+    %% Optional cursor parameter
+    case maps:find(?MCP_PARAM_CURSOR, Params) of
+        {ok, Cursor} when is_binary(Cursor) -> ok;
+        error -> ok;
+        _ -> {error, <<"cursor must be a string">>}
+    end;
+validate_params(?MCP_METHOD_PROMPTS_LIST, undefined) ->
+    ok;
+validate_params(?MCP_METHOD_PROMPTS_GET, Params) when is_map(Params) ->
+    NameResult = case maps:find(?MCP_PARAM_NAME, Params) of
+        {ok, Name} when is_binary(Name) -> ok;
+        {ok, _} -> {error, <<"name must be a string">>};
+        error -> {error, <<"Missing required parameter: name">>}
+    end,
+    case NameResult of
+        ok ->
+            %% Arguments are optional, must be object if present
+            case maps:find(?MCP_PARAM_ARGUMENTS, Params) of
+                {ok, Args} when is_map(Args) -> ok;
+                {ok, _} -> {error, <<"arguments must be an object">>};
+                error -> ok
+            end;
+        Error -> Error
+    end;
+validate_params(?MCP_METHOD_SAMPLING_CREATE_MESSAGE, Params) when is_map(Params) ->
+    validate_sampling_params(Params);
+validate_params(?MCP_METHOD_COMPLETION_COMPLETE, Params) when is_map(Params) ->
+    validate_completion_params(Params);
+validate_params(?MCP_METHOD_LOGGING_SET_LEVEL, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_LEVEL, Params) of
+        {ok, Level} when is_atom(Level) ->
+            case lists:member(Level, ?MCP_VALID_LOG_LEVELS) of
+                true -> ok;
+                false -> {error, <<"Invalid log level">>}
+            end;
+        {ok, _} -> {error, <<"level must be an atom">>};
+        error -> {error, <<"Missing required parameter: level">>}
+    end;
+validate_params(?MCP_METHOD_PING, _) ->
+    %% Ping accepts no parameters or empty object
+    ok;
+validate_params(_, undefined) ->
+    %% No parameters provided - acceptable for methods with optional params
+    ok;
+validate_params(_, Params) when is_map(Params) ->
+    %% Unknown method with params - let it pass (could be custom method)
+    ok;
+validate_params(_, Params) when is_list(Params) ->
+    %% Positional params (allowed by JSON-RPC 2.0)
+    ok;
+validate_params(_, _) ->
+    {error, <<"params must be an object, array, or omitted">>}.
 
-%% @doc Check batch requests are arrays
-check_batch_requests(Module) ->
-    ValidBatch = [
-        #{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-          ?JSONRPC_FIELD_ID => 1,
-          ?JSONRPC_FIELD_METHOD => <<"test1">>},
-        #{?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-          ?JSONRPC_FIELD_ID => 2,
-          ?JSONRPC_FIELD_METHOD => <<"test2">>}
-    ],
-    case is_list(ValidBatch) andalso length(ValidBatch) > 0 of
-        true ->
-            #{name => batch_requests, status => passed,
-              message => <<"Batch requests supported">>,
-              details => #{batch_size => length(ValidBatch)}};
+%% @doc Validate error code is in valid range
+-spec validate_error_code(integer()) -> ok | {error, invalid_error_code}.
+validate_error_code(Code) when is_integer(Code) ->
+    case lists:member(Code, ?VALID_ERROR_CODES) of
+        true -> ok;
         false ->
-            #{name => batch_requests, status => failed,
-              message => <<"Batch request validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check initialize params structure
-check_initialize_params(Module) ->
-    ValidParams = #{
-        ?MCP_FIELD_PROTOCOL_VERSION => <<"2025-11-25">>,
-        ?MCP_FIELD_CAPABILITIES => #{
-            <<"roots">> => #{},
-            <<"sampling">> => #{}
-        },
-        ?MCP_FIELD_CLIENT_INFO => #{
-            ?MCP_INFO_NAME => <<"test_client">>,
-            ?MCP_INFO_VERSION => <<"1.0.0">>
-        }
-    },
-    RequiredFields = [?MCP_FIELD_PROTOCOL_VERSION, ?MCP_FIELD_CAPABILITIES, ?MCP_FIELD_CLIENT_INFO],
-    HasAllFields = lists:all(fun(Field) -> maps:is_key(Field, ValidParams) end, RequiredFields),
-    case HasAllFields of
-        true ->
-            #{name => initialize_params, status => passed,
-              message => <<"Initialize params validated">>,
-              details => #{required_fields => RequiredFields}};
-        false ->
-            #{name => initialize_params, status => failed,
-              message => <<"Missing required initialize params">>,
-              details => #{module => Module, required => RequiredFields}}
-    end.
-
-%% @doc Check initialize response structure
-check_initialize_response(Module) ->
-    ValidResponse = #{
-        ?MCP_FIELD_PROTOCOL_VERSION => <<"2025-11-25">>,
-        ?MCP_FIELD_CAPABILITIES => #{
-            <<"resources">> => #{},
-            <<"tools">> => #{},
-            <<"prompts">> => #{}
-        },
-        ?MCP_FIELD_SERVER_INFO => #{
-            ?MCP_INFO_NAME => <<"test_server">>,
-            ?MCP_INFO_VERSION => <<"1.0.0">>
-        }
-    },
-    RequiredFields = [?MCP_FIELD_PROTOCOL_VERSION, ?MCP_FIELD_CAPABILITIES, ?MCP_FIELD_SERVER_INFO],
-    HasAllFields = lists:all(fun(Field) -> maps:is_key(Field, ValidResponse) end, RequiredFields),
-    case HasAllFields of
-        true ->
-            #{name => initialize_response, status => passed,
-              message => <<"Initialize response validated">>,
-              details => #{required_fields => RequiredFields}};
-        false ->
-            #{name => initialize_response, status => failed,
-              message => <<"Missing required initialize response fields">>,
-              details => #{module => Module, required => RequiredFields}}
-    end.
-
-%% @doc Check tools/list params (should be empty or optional cursor)
-check_tools_list_params(Module) ->
-    ValidParams1 = #{},  %% No params
-    ValidParams2 = #{?MCP_PARAM_CURSOR => <<"cursor">>},  %% With cursor
-    IsValid = (ValidParams1 =:= #{}) orelse maps:is_key(?MCP_PARAM_CURSOR, ValidParams2),
-    case IsValid of
-        true ->
-            #{name => tools_list_params, status => passed,
-              message => <<"tools/list params validated">>,
-              details => #{accepts_empty => true, accepts_cursor => true}};
-        false ->
-            #{name => tools_list_params, status => failed,
-              message => <<"tools/list params validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check tools/list response structure
-check_tools_list_response(Module) ->
-    ValidResponse = #{
-        ?MCP_PARAM_TOOLS => [
-            #{
-                ?MCP_PARAM_NAME => <<"test_tool">>,
-                ?MCP_PARAM_DESCRIPTION => <<"A test tool">>,
-                ?MCP_PARAM_INPUT_SCHEMA => #{
-                    <<"type">> => <<"object">>,
-                    <<"properties">> => #{}
-                }
-            }
-        ]
-    },
-    case maps:is_key(?MCP_PARAM_TOOLS, ValidResponse) andalso is_list(maps:get(?MCP_PARAM_TOOLS, ValidResponse)) of
-        true ->
-            #{name => tools_list_response, status => passed,
-              message => <<"tools/list response validated">>,
-              details => #{tool_count => length(maps:get(?MCP_PARAM_TOOLS, ValidResponse))}};
-        false ->
-            #{name => tools_list_response, status => failed,
-              message => <<"tools/list response validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check resources/list params (should be empty or optional cursor)
-check_resources_list_params(Module) ->
-    ValidParams1 = #{},  %% No params
-    ValidParams2 = #{?MCP_PARAM_CURSOR => <<"cursor">>},  %% With cursor
-    IsValid = (ValidParams1 =:= #{}) orelse maps:is_key(?MCP_PARAM_CURSOR, ValidParams2),
-    case IsValid of
-        true ->
-            #{name => resources_list_params, status => passed,
-              message => <<"resources/list params validated">>,
-              details => #{accepts_empty => true, accepts_cursor => true}};
-        false ->
-            #{name => resources_list_params, status => failed,
-              message => <<"resources/list params validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check resources/list response structure
-check_resources_list_response(Module) ->
-    ValidResponse = #{
-        ?MCP_PARAM_RESOURCES => [
-            #{
-                ?MCP_PARAM_URI => <<"test://resource">>,
-                ?MCP_PARAM_NAME => <<"Test Resource">>,
-                ?MCP_PARAM_DESCRIPTION => <<"A test resource">>,
-                ?MCP_PARAM_MIME_TYPE => <<"text/plain">>
-            }
-        ]
-    },
-    case maps:is_key(?MCP_PARAM_RESOURCES, ValidResponse) andalso is_list(maps:get(?MCP_PARAM_RESOURCES, ValidResponse)) of
-        true ->
-            #{name => resources_list_response, status => passed,
-              message => <<"resources/list response validated">>,
-              details => #{resource_count => length(maps:get(?MCP_PARAM_RESOURCES, ValidResponse))}};
-        false ->
-            #{name => resources_list_response, status => failed,
-              message => <<"resources/list response validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check result and error are mutually exclusive
-check_result_exclusivity(Module) ->
-    TestCases = [
-        {#{?JSONRPC_FIELD_RESULT => #{}, ?JSONRPC_FIELD_ERROR => undefined}, true, <<"result only">>},
-        {#{?JSONRPC_FIELD_RESULT => undefined, ?JSONRPC_FIELD_ERROR => #{}}, true, <<"error only">>},
-        {#{?JSONRPC_FIELD_RESULT => #{data => ok}}, true, <<"result with data">>},
-        {#{?JSONRPC_FIELD_ERROR => #{?JSONRPC_ERROR_FIELD_CODE => -32600, ?JSONRPC_ERROR_FIELD_MESSAGE => <<"Error">>}}, true, <<"error with details">>}
-    ],
-    {ValidCount, InvalidCount} = validate_exclusivity(TestCases, 0, 0),
-    case ValidCount > 0 andalso InvalidCount =:= 0 of
-        true ->
-            #{name => result_exclusivity, status => passed,
-              message => <<"Result and error are mutually exclusive">>,
-              details => #{valid => ValidCount, invalid => InvalidCount}};
-        false ->
-            #{name => result_exclusivity, status => failed,
-              message => <<"Result/error exclusivity validation failed">>,
-              details => #{module => Module, valid => ValidCount, invalid => InvalidCount}}
-    end.
-
-%% @doc Check error object has required fields (code, message)
-check_error_object(Module) ->
-    ValidError = #{
-        ?JSONRPC_ERROR_FIELD_CODE => -32600,
-        ?JSONRPC_ERROR_FIELD_MESSAGE => <<"Invalid request">>
-    },
-    HasCode = maps:is_key(?JSONRPC_ERROR_FIELD_CODE, ValidError) andalso is_integer(maps:get(?JSONRPC_ERROR_FIELD_CODE, ValidError)),
-    HasMessage = maps:is_key(?JSONRPC_ERROR_FIELD_MESSAGE, ValidError) andalso is_binary(maps:get(?JSONRPC_ERROR_FIELD_MESSAGE, ValidError)),
-    case HasCode andalso HasMessage of
-        true ->
-            #{name => error_object, status => passed,
-              message => <<"Error object has code and message">>,
-              details => #{code => maps:get(?JSONRPC_ERROR_FIELD_CODE, ValidError)}};
-        false ->
-            #{name => error_object, status => failed,
-              message => <<"Error object validation failed">>,
-              details => #{module => Module, has_code => HasCode, has_message => HasMessage}}
-    end.
-
-%% @doc Check response has correct ID field
-check_response_id(Module) ->
-    TestCases = [
-        {#{?JSONRPC_FIELD_ID => 1, ?JSONRPC_FIELD_RESULT => #{}}, true, <<"integer id">>},
-        {#{?JSONRPC_FIELD_ID => <<"test">>, ?JSONRPC_FIELD_RESULT => #{}}, true, <<"string id">>},
-        {#{?JSONRPC_FIELD_ID => null, ?JSONRPC_FIELD_ERROR => #{}}, true, <<"null id">>},
-        {#{?JSONRPC_FIELD_ID => 12345, ?JSONRPC_FIELD_ERROR => #{}}, true, <<"large integer id">>},
-        {#{?JSONRPC_FIELD_ID => <<"uuid-1234">>, ?JSONRPC_FIELD_RESULT => #{}}, true, <<"uuid string id">>}
-    ],
-    {ValidCount, InvalidCount} = validate_response_ids(TestCases, 0, 0),
-    case ValidCount > 0 andalso InvalidCount =:= 0 of
-        true ->
-            #{name => response_id, status => passed,
-              message => <<"Response has correct ID field">>,
-              details => #{valid => ValidCount, invalid => InvalidCount}};
-        false ->
-            #{name => response_id, status => failed,
-              message => <<"Response ID validation failed">>,
-              details => #{module => Module, valid => ValidCount, invalid => InvalidCount}}
-    end.
-
-%% @doc Check response has jsonrpc version
-check_response_jsonrpc(Module) ->
-    ValidResponse = #{?JSONRPC_FIELD_JSONRPC => <<"2.0">>, ?JSONRPC_FIELD_ID => 1, ?JSONRPC_FIELD_RESULT => #{}},
-    InvalidResponse = #{?JSONRPC_FIELD_ID => 1, ?JSONRPC_FIELD_RESULT => #{}},
-    Valid = maps:get(?JSONRPC_FIELD_JSONRPC, ValidResponse, undefined) =:= <<"2.0">>,
-    Invalid = not maps:is_key(?JSONRPC_FIELD_JSONRPC, InvalidResponse),
-    case Valid andalso Invalid of
-        true ->
-            #{name => response_jsonrpc, status => passed,
-              message => <<"Response has jsonrpc version">>,
-              details => #{version => <<"2.0">>}};
-        false ->
-            #{name => response_jsonrpc, status => failed,
-              message => <<"Response jsonrpc version validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check MCP refusal codes (1001-1089 per spec, but erlmcp uses -32000 range)
-check_mcp_refusal_codes(Module) ->
-    %% erlmcp uses JSON-RPC server error range (-32000 to -32099) for MCP errors
-    %% not 1001-1089. Check that codes are in valid range.
-    ValidMCPCodes = [
-        -32001, -32002, -32003, -32004, -32005, -32006, -32007, -32008, -32009, -32010
-    ],
-    AllValid = lists:all(fun(Code) -> Code >= -32099 andalso Code =< -32000 end, ValidMCPCodes),
-    case AllValid of
-        true ->
-            #{name => mcp_refusal_codes, status => passed,
-              message => <<"MCP error codes validated (using JSON-RPC server error range -32000 to -32099)">>,
-              details => #{count => length(ValidMCPCodes), range => <<"-32099 to -32000">>}};
-        false ->
-            #{name => mcp_refusal_codes, status => failed,
-              message => <<"MCP error code validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check JSON-RPC error codes (-32700 to -32000)
-check_jsonrpc_error_codes(Module) ->
-    ValidJSONRPCCodes = [-32700, -32600, -32601, -32602, -32603],
-    AllValid = lists:all(fun(Code) -> Code >= -32700 andalso Code =< -32000 end, ValidJSONRPCCodes),
-    case AllValid of
-        true ->
-            #{name => jsonrpc_error_codes, status => passed,
-              message => <<"JSON-RPC error codes validated">>,
-              details => #{count => length(ValidJSONRPCCodes), range => <<"-32700 to -32000">>}};
-        false ->
-            #{name => jsonrpc_error_codes, status => failed,
-              message => <<"JSON-RPC error code validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check custom error codes are handled properly
-check_custom_error_codes(Module) ->
-    %% Custom codes should be in server error range (-32099 to -32000)
-    CustomCodes = [-32011, -32012, -32013, -32050],
-    AllValid = lists:all(fun(Code) -> Code >= -32099 andalso Code =< -32000 end, CustomCodes),
-    case AllValid of
-        true ->
-            #{name => custom_error_codes, status => passed,
-              message => <<"Custom error codes handled properly">>,
-              details => #{count => length(CustomCodes), examples => CustomCodes}};
-        false ->
-            #{name => custom_error_codes, status => failed,
-              message => <<"Custom error code validation failed">>,
-              details => #{module => Module}}
-    end.
-
-%% @doc Check MCP 2025-11-25 protocol version support
-check_protocol_version_2025_11_25(Module) ->
-    Version = <<"2025-11-25">>,
-    case Version =:= ?MCP_VERSION of
-        true ->
-            #{name => protocol_version_2025_11_25, status => passed,
-              message => <<"MCP 2025-11-25 version supported">>,
-              details => #{version => Version}};
-        false ->
-            #{name => protocol_version_2025_11_25, status => failed,
-              message => <<"MCP version mismatch">>,
-              details => #{module => Module, expected => ?MCP_VERSION, actual => Version}}
-    end.
-
-%% @doc Check version compatibility
-check_version_compatibility(Module) ->
-    %% Check that the module supports the required version
-    RequiredVersion = <<"2025-11-25">>,
-    SupportedVersions = [<<"2024-11-05">>, <<"2025-11-25">>],
-    IsSupported = lists:member(RequiredVersion, SupportedVersions),
-    case IsSupported of
-        true ->
-            #{name => version_compatibility, status => passed,
-              message => <<"Version compatibility check passed">>,
-              details => #{supported => SupportedVersions, required => RequiredVersion}};
-        false ->
-            #{name => version_compatibility, status => failed,
-              message => <<"Version compatibility check failed">>,
-              details => #{module => Module, required => RequiredVersion, supported => SupportedVersions}}
-    end.
+            %% Check if in valid ranges
+            if
+                Code >= -32700, Code =< -32000 -> ok;  % JSON-RPC range
+                Code >= 1090, Code =< 1099 -> ok;      % Experimental range
+                true -> {error, invalid_error_code}
+            end
+    end;
+validate_error_code(_) ->
+    {error, invalid_error_code}.
 
 %%%===================================================================
-%%% Helper functions for validation
+%%% Additional Validation Functions
 %%%===================================================================
 
-%% @doc Create a test request for validation
-create_test_request() ->
-    #{
-        ?JSONRPC_FIELD_JSONRPC => <<"2.0">>,
-        ?JSONRPC_FIELD_ID => 1,
-        ?JSONRPC_FIELD_METHOD => <<"test">>,
-        ?JSONRPC_FIELD_PARAMS => #{}
-    }.
+%% @doc Validate method name
+-spec validate_method(binary()) -> ok | {error, unknown_method}.
+validate_method(Method) when is_binary(Method) ->
+    KnownMethods = [
+        ?MCP_METHOD_INITIALIZE,
+        ?MCP_METHOD_INITIALIZED,
+        ?MCP_METHOD_RESOURCES_LIST,
+        ?MCP_METHOD_RESOURCES_READ,
+        ?MCP_METHOD_RESOURCES_TEMPLATES_LIST,
+        ?MCP_METHOD_RESOURCES_SUBSCRIBE,
+        ?MCP_METHOD_RESOURCES_UNSUBSCRIBE,
+        ?MCP_METHOD_TOOLS_LIST,
+        ?MCP_METHOD_TOOLS_CALL,
+        ?MCP_METHOD_PROMPTS_LIST,
+        ?MCP_METHOD_PROMPTS_GET,
+        ?MCP_METHOD_SAMPLING_CREATE_MESSAGE,
+        ?MCP_METHOD_COMPLETION_COMPLETE,
+        ?MCP_METHOD_LOGGING_SET_LEVEL,
+        ?MCP_METHOD_PING,
+        ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
+        ?MCP_METHOD_NOTIFICATIONS_RESOURCES_UPDATED,
+        ?MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED,
+        ?MCP_METHOD_NOTIFICATIONS_PROMPTS_LIST_CHANGED,
+        ?MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED,
+        ?MCP_METHOD_NOTIFICATIONS_CANCELLED
+    ],
+    case lists:member(Method, KnownMethods) of
+        true -> ok;
+        false -> {error, unknown_method}
+    end;
+validate_method(_) ->
+    {error, unknown_method}.
 
-%% @doc Validate request formats
-validate_request_formats([], ValidAcc, InvalidAcc) ->
-    {ValidAcc, InvalidAcc};
-validate_request_formats([{Request, true, _Desc} | Rest], ValidAcc, InvalidAcc) ->
-    validate_request_formats(Rest, ValidAcc + 1, InvalidAcc);
-validate_request_formats([_Invalid | Rest], ValidAcc, InvalidAcc) ->
-    validate_request_formats(Rest, ValidAcc, InvalidAcc + 1).
+%% @doc Validate capabilities object
+-spec validate_capabilities(map()) -> ok | {error, term()}.
+validate_capabilities(Capabilities) when is_map(Capabilities) ->
+    %% Capabilities should have feature maps (can be empty)
+    %% Each capability value should be a map
+    maps:fold(fun(_Key, Value, ok) when is_map(Value) -> ok;
+                 (Key, _Value, _) -> {error, <<"Capability ", Key/binary, " must be an object">>}
+              end, ok, Capabilities);
+validate_capabilities(_) ->
+    {error, <<"capabilities must be an object">>}.
 
-%% @doc Validate response formats
-validate_response_formats([], ValidAcc, InvalidAcc) ->
-    {ValidAcc, InvalidAcc};
-validate_response_formats([{Response, true, _Desc} | Rest], ValidAcc, InvalidAcc) ->
-    validate_response_formats(Rest, ValidAcc + 1, InvalidAcc);
-validate_response_formats([_Invalid | Rest], ValidAcc, InvalidAcc) ->
-    validate_response_formats(Rest, ValidAcc, InvalidAcc + 1).
+%% @doc Validate server info
+-spec validate_server_info(map()) -> ok | {error, term()}.
+validate_server_info(Info) when is_map(Info) ->
+    case {maps:find(?MCP_INFO_NAME, Info), maps:find(?MCP_INFO_VERSION, Info)} of
+        {{ok, Name}, {ok, Version}} when is_binary(Name), is_binary(Version) ->
+            ok;
+        {{ok, _}, {ok, _}} ->
+            {error, <<"serverInfo name and version must be strings">>};
+        {{ok, _}, error} ->
+            {error, <<"Missing required field: serverInfo.version">>};
+        {error, {ok, _}} ->
+            {error, <<"Missing required field: serverInfo.name">>};
+        {error, error} ->
+            {error, <<"Missing required fields: serverInfo.name and version">>}
+    end;
+validate_server_info(_) ->
+    {error, <<"serverInfo must be an object">>}.
 
-%% @doc Validate notification formats
-validate_notification_formats([], ValidAcc, InvalidAcc) ->
-    {ValidAcc, InvalidAcc};
-validate_notification_formats([{Notification, true, _Desc} | Rest], ValidAcc, InvalidAcc) ->
-    validate_notification_formats(Rest, ValidAcc + 1, InvalidAcc);
-validate_notification_formats([_Invalid | Rest], ValidAcc, InvalidAcc) ->
-    validate_notification_formats(Rest, ValidAcc, InvalidAcc + 1).
+%% @doc Validate client info
+-spec validate_client_info(map()) -> ok | {error, term()}.
+validate_client_info(Info) when is_map(Info) ->
+    case {maps:find(?MCP_INFO_NAME, Info), maps:find(?MCP_INFO_VERSION, Info)} of
+        {{ok, Name}, {ok, Version}} when is_binary(Name), is_binary(Version) ->
+            ok;
+        {{ok, _}, {ok, _}} ->
+            {error, <<"clientInfo name and version must be strings">>};
+        {{ok, _}, error} ->
+            {error, <<"Missing required field: clientInfo.version">>};
+        {error, {ok, _}} ->
+            {error, <<"Missing required field: clientInfo.name">>};
+        {error, error} ->
+            {error, <<"Missing required fields: clientInfo.name and version">>}
+    end;
+validate_client_info(_) ->
+    {error, <<"clientInfo must be an object">>}.
 
-%% @doc Validate result/error exclusivity
-validate_exclusivity([], ValidAcc, InvalidAcc) ->
-    {ValidAcc, InvalidAcc};
-validate_exclusivity([{Response, true, _Desc} | Rest], ValidAcc, InvalidAcc) ->
-    validate_exclusivity(Rest, ValidAcc + 1, InvalidAcc);
-validate_exclusivity([_Invalid | Rest], ValidAcc, InvalidAcc) ->
-    validate_exclusivity(Rest, ValidAcc, InvalidAcc + 1).
+%% @doc Validate resource object
+-spec validate_resource(map()) -> ok | {error, term()}.
+validate_resource(Resource) when is_map(Resource) ->
+    RequiredFields = [{?MCP_PARAM_URI, <<"uri">>}, {?MCP_PARAM_NAME, <<"name">>}],
+    validate_required_fields(Resource, RequiredFields);
+validate_resource(_) ->
+    {error, <<"resource must be an object">>}.
 
-%% @doc Validate response IDs
-validate_response_ids([], ValidAcc, InvalidAcc) ->
-    {ValidAcc, InvalidAcc};
-validate_response_ids([{Response, true, _Desc} | Rest], ValidAcc, InvalidAcc) ->
-    validate_response_ids(Rest, ValidAcc + 1, InvalidAcc);
-validate_response_ids([_Invalid | Rest], ValidAcc, InvalidAcc) ->
-    validate_response_ids(Rest, ValidAcc, InvalidAcc + 1).
+%% @doc Validate tool object
+-spec validate_tool(map()) -> ok | {error, term()}.
+validate_tool(Tool) when is_map(Tool) ->
+    RequiredFields = [
+        {?MCP_PARAM_NAME, <<"name">>},
+        {?MCP_PARAM_INPUT_SCHEMA, <<"inputSchema">>}
+    ],
+    case validate_required_fields(Tool, RequiredFields) of
+        ok ->
+            %% Validate inputSchema is a valid JSON Schema
+            case maps:find(?MCP_PARAM_INPUT_SCHEMA, Tool) of
+                {ok, Schema} when is_map(Schema) -> ok;
+                {ok, _} -> {error, <<"inputSchema must be an object">>};
+                error -> ok  % Already checked in required fields
+            end;
+        Error -> Error
+    end;
+validate_tool(_) ->
+    {error, <<"tool must be an object">>}.
 
-generate_summary(#validation_result{} = Result) ->
-    TotalPassed = Result#validation_result.jsonrpc_passed + Result#validation_result.response_passed +
-                  Result#validation_result.error_codes_passed + Result#validation_result.version_passed,
-    TotalFailed = Result#validation_result.jsonrpc_failed + Result#validation_result.response_failed +
-                  Result#validation_result.error_codes_failed + Result#validation_result.version_failed,
-    TotalChecks = TotalPassed + TotalFailed,
-    Compliance = case TotalChecks of 0 -> 0.0; _ -> (TotalPassed / TotalChecks) * 100.0 end,
-    #{transport => Result#validation_result.transport, timestamp => Result#validation_result.timestamp,
-      compliance => Compliance, total_checks => TotalChecks, passed => TotalPassed, failed => TotalFailed,
-      categories => #{jsonrpc => #{passed => Result#validation_result.jsonrpc_passed, failed => Result#validation_result.jsonrpc_failed},
-                     response => #{passed => Result#validation_result.response_passed, failed => Result#validation_result.response_failed},
-                     error_codes => #{passed => Result#validation_result.error_codes_passed, failed => Result#validation_result.error_codes_failed},
-                     version => #{passed => Result#validation_result.version_passed, failed => Result#validation_result.version_failed}},
-      status => case TotalFailed of 0 -> passed; _ -> failed end}.
+%% @doc Validate prompt object
+-spec validate_prompt(map()) -> ok | {error, term()}.
+validate_prompt(Prompt) when is_map(Prompt) ->
+    RequiredFields = [{?MCP_PARAM_NAME, <<"name">>}],
+    validate_required_fields(Prompt, RequiredFields);
+validate_prompt(_) ->
+    {error, <<"prompt must be an object">>}.
 
-generate_full_report(Results) ->
-    Timestamp = erlang:system_time(millisecond),
-    Summaries = maps:map(fun(_Module, Result) -> generate_summary(Result) end, Results),
-    #{timestamp => Timestamp, transports_validated => maps:size(Results), results => Summaries,
-      overall_compliance => calculate_overall_compliance(Summaries)}.
+%% @doc Validate content object
+-spec validate_content(map()) -> ok | {error, term()}.
+validate_content(Content) when is_map(Content) ->
+    case maps:find(?MCP_PARAM_TYPE, Content) of
+        {ok, Type} when is_binary(Type) ->
+            validate_content_by_type(Type, Content);
+        {ok, _} ->
+            {error, <<"content type must be a string">>};
+        error ->
+            {error, <<"Missing required field: content.type">>}
+    end;
+validate_content(_) ->
+    {error, <<"content must be an object">>}.
 
-calculate_overall_compliance(Summaries) when map_size(Summaries) =:= 0 -> 0.0;
-calculate_overall_compliance(Summaries) ->
-    TotalCompliance = lists:foldl(fun({_Module, Summary}, Acc) -> Acc + maps:get(compliance, Summary, 0.0) end, 0.0, maps:to_list(Summaries)),
-    TotalCompliance / map_size(Summaries).
+%%%===================================================================
+%%% Internal Functions
+%%%===================================================================
+
+%% @doc Validate JSON-RPC structure (version, fields)
+-spec validate_jsonrpc_structure(map()) -> ok | {error, term()}.
+validate_jsonrpc_structure(#{?JSONRPC_FIELD_JSONRPC := ?JSONRPC_VERSION} = Data) ->
+    %% Check for required fields based on message type
+    case Data of
+        #{?JSONRPC_FIELD_METHOD := Method} when is_binary(Method) ->
+            %% Request or Notification - must have method
+            case maps:is_key(?JSONRPC_FIELD_ID, Data) of
+                true ->
+                    %% Request - must have id
+                    validate_request_id(maps:get(?JSONRPC_FIELD_ID, Data));
+                false ->
+                    %% Notification - must not have id
+                    ok
+            end;
+        #{?JSONRPC_FIELD_ID := Id} ->
+            %% Response - must have id and either result or error
+            case validate_request_id(Id) of
+                ok ->
+                    HasResult = maps:is_key(?JSONRPC_FIELD_RESULT, Data),
+                    HasError = maps:is_key(?JSONRPC_FIELD_ERROR, Data),
+                    if
+                        HasResult andalso not HasError -> ok;
+                        HasError andalso not HasResult -> ok;
+                        HasResult andalso HasError ->
+                            {error, {invalid_request, result_and_error_exclusive}};
+                        true ->
+                            {error, {invalid_request, missing_result_or_error}}
+                    end;
+                Error -> Error
+            end;
+        _ ->
+            {error, {invalid_request, missing_method_or_id}}
+    end;
+validate_jsonrpc_structure(#{?JSONRPC_FIELD_JSONRPC := Version}) ->
+    {error, {invalid_request, {wrong_version, Version}}};
+validate_jsonrpc_structure(_) ->
+    {error, {invalid_request, missing_jsonrpc}}.
+
+%% @doc Validate initialize params
+-spec validate_initialize_params(map()) -> ok | {error, term()}.
+validate_initialize_params(Params) ->
+    RequiredFields = [
+        {?MCP_FIELD_PROTOCOL_VERSION, <<"protocolVersion">>},
+        {?MCP_FIELD_CAPABILITIES, <<"capabilities">>},
+        {?MCP_FIELD_CLIENT_INFO, <<"clientInfo">>}
+    ],
+    case validate_required_fields(Params, RequiredFields) of
+        ok ->
+            %% Validate sub-structures
+            case {maps:find(?MCP_FIELD_CAPABILITIES, Params),
+                  maps:find(?MCP_FIELD_CLIENT_INFO, Params)} of
+                {{ok, Caps}, {ok, Info}} ->
+                    case validate_capabilities(Caps) of
+                        ok -> validate_client_info(Info);
+                        Error -> Error
+                    end;
+                _ -> ok  % Already validated in required_fields
+            end;
+        Error -> Error
+    end.
+
+%% @doc Validate sampling params
+-spec validate_sampling_params(map()) -> ok | {error, term()}.
+validate_sampling_params(Params) ->
+    RequiredFields = [{?MCP_PARAM_MESSAGES, <<"messages">>}],
+    case validate_required_fields(Params, RequiredFields) of
+        ok ->
+            case maps:find(?MCP_PARAM_MESSAGES, Params) of
+                {ok, Messages} when is_list(Messages) -> ok;
+                {ok, _} -> {error, <<"messages must be an array">>};
+                error -> ok  % Already checked
+            end;
+        Error -> Error
+    end.
+
+%% @doc Validate completion params
+-spec validate_completion_params(map()) -> ok | {error, term()}.
+validate_completion_params(Params) when is_map(Params) ->
+    %% Completion params validation (MCP 2025-11-25)
+    ok;
+validate_completion_params(_) ->
+    {error, <<"params must be an object">>}.
+
+%% @doc Validate error object structure
+-spec validate_error_object(map()) -> ok | {error, term()}.
+validate_error_object(Error) when is_map(Error) ->
+    case {maps:find(?JSONRPC_ERROR_FIELD_CODE, Error),
+          maps:find(?JSONRPC_ERROR_FIELD_MESSAGE, Error)} of
+        {{ok, Code}, {ok, Message}} when is_integer(Code), is_binary(Message) ->
+            validate_error_code(Code);
+        {{ok, Code}, {ok, _}} when is_integer(Code) ->
+            {error, <<"error message must be a string">>};
+        {{ok, _}, {ok, _}} ->
+            {error, <<"error code must be an integer">>};
+        {{ok, _}, error} ->
+            {error, <<"Missing required field: error.message">>};
+        {error, {ok, _}} ->
+            {error, <<"Missing required field: error.code">>};
+        {error, error} ->
+            {error, <<"Missing required fields: error.code and message">>}
+    end;
+validate_error_object(_) ->
+    {error, <<"error must be an object">>}.
+
+%% @doc Validate content by type
+-spec validate_content_by_type(binary(), map()) -> ok | {error, term()}.
+validate_content_by_type(?MCP_CONTENT_TYPE_TEXT, Content) ->
+    case maps:find(?MCP_PARAM_TEXT, Content) of
+        {ok, Text} when is_binary(Text) -> ok;
+        {ok, _} -> {error, <<"text content must have text field as string">>};
+        error -> {error, <<"text content must have text field">>}
+    end;
+validate_content_by_type(?MCP_CONTENT_TYPE_IMAGE, Content) ->
+    case {maps:find(?MCP_PARAM_DATA, Content), maps:find(?MCP_PARAM_MIME_TYPE, Content)} of
+        {{ok, Data}, {ok, MimeType}} when is_binary(Data), is_binary(MimeType) -> ok;
+        {{ok, _}, {ok, _}} -> {error, <<"image content must have data and mimeType as strings">>};
+        {{ok, _}, error} -> {error, <<"image content must have mimeType field">>};
+        {error, {ok, _}} -> {error, <<"image content must have data field">>};
+        {error, error} -> {error, <<"image content must have data and mimeType fields">>}
+    end;
+validate_content_by_type(?MCP_CONTENT_TYPE_RESOURCE, Content) ->
+    case maps:find(?MCP_PARAM_URI, Content) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"resource content must have uri as string">>};
+        error -> {error, <<"resource content must have uri field">>}
+    end;
+validate_content_by_type(_, _) ->
+    %% Unknown content type - allow it (could be custom)
+    ok.
+
+%% @doc Validate required fields in a map
+-spec validate_required_fields(map(), [{binary(), binary()}]) -> ok | {error, binary()}.
+validate_required_fields(Map, Fields) ->
+    validate_required_fields(Map, Fields, []).
+
+validate_required_fields(_Map, [], []) ->
+    ok;
+validate_required_fields(_Map, [], Missing) ->
+    MissingStr = lists:join(<<", ">>, lists:reverse(Missing)),
+    {error, <<"Missing required fields: ", (iolist_to_binary(MissingStr))/binary>>};
+validate_required_fields(Map, [{Key, Name} | Rest], Missing) ->
+    case maps:is_key(Key, Map) of
+        true ->
+            validate_required_fields(Map, Rest, Missing);
+        false ->
+            validate_required_fields(Map, Rest, [Name | Missing])
+    end.
+
+%% @doc Format error details to binary
+-spec format_error_details(term()) -> binary().
+format_error_details(Details) when is_binary(Details) ->
+    Details;
+format_error_details(Details) when is_atom(Details) ->
+    atom_to_binary(Details, utf8);
+format_error_details(Details) when is_list(Details) ->
+    try
+        list_to_binary(Details)
+    catch
+        _:_ -> iolist_to_binary(io_lib:format("~p", [Details]))
+    end;
+format_error_details(Details) ->
+    iolist_to_binary(io_lib:format("~p", [Details])).
+
+%% @doc Format error code to binary
+-spec format_code(term()) -> binary().
+format_code(Code) when is_integer(Code) ->
+    integer_to_binary(Code);
+format_code(Code) ->
+    format_error_details(Code).

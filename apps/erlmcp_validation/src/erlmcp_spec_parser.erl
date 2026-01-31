@@ -47,6 +47,14 @@
 
     %% Helper functions for spec metadata
     spec_version/0,
+    protocol_version/0,
+    supported_capabilities/0,
+    supported_transports/0,
+    required_error_codes/0,
+    message_schema/1,
+    resource_schema/0,
+    tool_schema/0,
+    prompt_schema/0,
     is_valid_error_code/1,
     is_valid_request_type/1,
     is_valid_notification_type/1,
@@ -1569,6 +1577,115 @@ do_check_capability_support(CapabilityName, Features) ->
 -spec spec_version() -> binary().
 spec_version() ->
     ?MCP_2025_11_25_VERSION.
+
+%% @doc Get the JSON-RPC protocol version
+-spec protocol_version() -> binary().
+protocol_version() ->
+    ?JSON_RPC_VERSION.
+
+%% @doc Get supported capabilities as a simple map
+-spec supported_capabilities() -> #{binary() => boolean()}.
+supported_capabilities() ->
+    #{
+        <<"resources">> => true,
+        <<"tools">> => true,
+        <<"prompts">> => true,
+        <<"logging">> => true,
+        <<"tasks">> => true,
+        <<"sampling">> => true
+    }.
+
+%% @doc Get supported transports as a simple list
+-spec supported_transports() -> [binary()].
+supported_transports() ->
+    [<<"stdio">>, <<"tcp">>, <<"http">>, <<"websocket">>, <<"sse">>].
+
+%% @doc Get required error codes in the 1001-1089 refusal range
+-spec required_error_codes() -> {integer(), integer()}.
+required_error_codes() ->
+    {1001, 1089}.
+
+%% @doc Get JSON Schema for a specific message type
+-spec message_schema(binary()) -> map() | {error, unknown_type}.
+message_schema(<<"request">>) ->
+    #{
+        <<"type">> => <<"object">>,
+        <<"required">> => [<<"jsonrpc">>, <<"method">>, <<"id">>],
+        <<"properties">> => #{
+            <<"jsonrpc">> => #{<<"type">> => <<"string">>, <<"const">> => <<"2.0">>},
+            <<"method">> => #{<<"type">> => <<"string">>},
+            <<"params">> => #{<<"type">> => [<<"object">>, <<"array">>]},
+            <<"id">> => #{<<"type">> => [<<"string">>, <<"number">>, <<"null">>]}
+        }
+    };
+message_schema(<<"response">>) ->
+    #{
+        <<"type">> => <<"object">>,
+        <<"required">> => [<<"jsonrpc">>, <<"id">>],
+        <<"properties">> => #{
+            <<"jsonrpc">> => #{<<"type">> => <<"string">>, <<"const">> => <<"2.0">>},
+            <<"result">> => #{},
+            <<"id">> => #{<<"type">> => [<<"string">>, <<"number">>, <<"null">>]}
+        }
+    };
+message_schema(<<"error">>) ->
+    #{
+        <<"type">> => <<"object">>,
+        <<"required">> => [<<"jsonrpc">>, <<"error">>, <<"id">>],
+        <<"properties">> => #{
+            <<"jsonrpc">> => #{<<"type">> => <<"string">>, <<"const">> => <<"2.0">>},
+            <<"error">> => #{
+                <<"type">> => <<"object">>,
+                <<"required">> => [<<"code">>, <<"message">>],
+                <<"properties">> => #{
+                    <<"code">> => #{<<"type">> => <<"integer">>},
+                    <<"message">> => #{<<"type">> => <<"string">>},
+                    <<"data">> => #{}
+                }
+            },
+            <<"id">> => #{<<"type">> => [<<"string">>, <<"number">>, <<"null">>]}
+        }
+    };
+message_schema(<<"notification">>) ->
+    #{
+        <<"type">> => <<"object">>,
+        <<"required">> => [<<"jsonrpc">>, <<"method">>],
+        <<"properties">> => #{
+            <<"jsonrpc">> => #{<<"type">> => <<"string">>, <<"const">> => <<"2.0">>},
+            <<"method">> => #{<<"type">> => <<"string">>},
+            <<"params">> => #{<<"type">> => [<<"object">>, <<"array">>]}
+        }
+    };
+message_schema(_) ->
+    {error, unknown_type}.
+
+%% @doc Get resource schema structure
+-spec resource_schema() -> map().
+resource_schema() ->
+    #{
+        <<"uri">> => #{<<"type">> => <<"string">>, <<"required">> => true},
+        <<"name">> => #{<<"type">> => <<"string">>, <<"required">> => true},
+        <<"description">> => #{<<"type">> => <<"string">>, <<"required">> => false},
+        <<"mimeType">> => #{<<"type">> => <<"string">>, <<"required">> => false}
+    }.
+
+%% @doc Get tool schema structure
+-spec tool_schema() -> map().
+tool_schema() ->
+    #{
+        <<"name">> => #{<<"type">> => <<"string">>, <<"required">> => true},
+        <<"description">> => #{<<"type">> => <<"string">>, <<"required">> => false},
+        <<"inputSchema">> => #{<<"type">> => <<"object">>, <<"required">> => true}
+    }.
+
+%% @doc Get prompt schema structure
+-spec prompt_schema() -> map().
+prompt_schema() ->
+    #{
+        <<"name">> => #{<<"type">> => <<"string">>, <<"required">> => true},
+        <<"description">> => #{<<"type">> => <<"string">>, <<"required">> => false},
+        <<"arguments">> => #{<<"type">> => <<"array">>, <<"required">> => false}
+    }.
 
 %% @doc Check if an error code is valid according to MCP 2025-11-25 spec
 -spec is_valid_error_code(integer()) -> boolean().
