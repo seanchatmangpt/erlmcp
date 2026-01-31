@@ -4,8 +4,9 @@ This document provides a guide to all archived markdown and text files removed f
 
 ## Archival Overview
 
-**Total Files Archived**: 350+
-**Directories Created**: 8 archive subdirectories
+**Total Files in Archives**: 150 (after deletion of interim/transient reports)
+**Files Deleted**: 220 (interim reports, one-time fixes, temporary guides)
+**Directories Created**: 7 archive subdirectories (old-versions removed)
 **Root-Level Files Retained**: 10 (core operational documents)
 
 ### Files Retained at Root Level
@@ -25,140 +26,145 @@ These are the essential files for ongoing project development:
 
 ## Archive Directory Structure
 
-### 1. archive/phase-reports/ (45+ files)
-**Contents**: Agent completion reports, phase deliverables, implementation summaries
+### 1. archive/phase-reports/ (44 files)
+**Contents**: Critical implementation documentation, release evidence, feature deliverables
 
-**Rationale**: Historical documentation of development phases and agent work
+**Retained Items**: Final implementations with technical reference value
 **Key Files**:
-- AGENT_*_COMPLETION_REPORT.md (11 files)
-- PHASE_*_COMPLETION_REPORT.md (6 files)
-- IMPLEMENTATION_SUMMARY*.md (8 files)
-- REGISTRY_*.md (3 files)
-- RELEASE_v2.1.0_EVIDENCE.md
-- TCPS_*_COMPLETE.md (3 files)
-- DELIVERABLES*.md (3 files)
+- `RELEASE_v2.1.0_EVIDENCE.md` ✅ **CRITICAL** - v2.1.0 release evidence
+- `AGENT_TEAM_FINAL_STATUS.md` ✅ **CRITICAL** - Latest final status (2026-01-31)
+- Feature implementations: Backpressure, Hibernation, Memory Accounting, Distributed Registry, Async Init
+- Framework deliverables: Rate Limiting, Profiling, CI/CD, K8S Integration
+- Architecture changes: Transport Adapter Removal, Registry Refactor, Supervision Extraction
+- TCPS documentation: Implementation Complete, Wave 3 Completion
+- Comprehensive summaries: Implementation Summary, Deliverables Inventory
 
-**Archival Date**: 2026-01-31
-**Reason**: Completed work phases - retain for audit trail but not needed for active development
+**Deleted Items** (25 files): Interim per-GAP summaries, phase completion snapshots, duplicate reports
+**Deletion Date**: 2026-01-31
+**Reason**: Retained final implementations and release evidence; deleted interim phase reports that are superseded by AGENT_TEAM_FINAL_STATUS
 
-### 2. archive/quality-reports/ (35+ files)
-**Contents**: Test execution results, coverage reports, quality gate assessments
+### 2. archive/quality-reports/ (23 files)
+**Contents**: Comprehensive quality assessments, coverage analysis, testing strategies
 
-**Rationale**: Point-in-time quality snapshots from specific test runs
+**Retained Items**: Versioned quality gates and comprehensive test analysis
 **Key Files**:
-- TEST_SUITE_COMPLETION_REPORT.md
-- CT_ROUND2_*.md (3 files)
-- EUNIT_TEST_EXECUTION_REPORT.md
-- COVERAGE_*.md (3 files)
-- QUALITY_GATE_REPORT*.md (4 variations)
-- *_REFACTORING_SUMMARY.md (5 files)
+- `QUALITY_GATE_REPORT_v2.1.0.md` ✅ **CRITICAL** - v2.1.0 quality gates (versioned audit)
+- Test strategy: TEST_STRATEGY.md, TEST_UPDATES_SUMMARY.md, TEST_SUITE_COMPLETION_REPORT.md
+- Coverage analysis: COVERAGE_REPORT.md, COVERAGE_RISK_ASSESSMENT.md, multiple gap/enhancement reports
+- Quality assessment: TEST_ASSESSMENT_EXECUTIVE_SUMMARY.md, QUALITY_GATES_IMPLEMENTATION.md
+- Test analysis: CT_INTEGRATION_TEST_ANALYSIS.md, CT_FIXES_SUMMARY.md, SSE_NOTIFICATION_REFACTORING_SUMMARY.md
+- Redundancy and duplicate analysis: TEST_REDUNDANCY_ANALYSIS.md, TEST_DUPLICATE_ANALYSIS.md
 
-**Archival Date**: 2026-01-31
-**Reason**: Historical test snapshots; current test status documented in active systems
+**Deleted Items** (12 files): Old test runs (Round 2, EUnit, CT), interim refactoring summaries
+**Deletion Date**: 2026-01-31
+**Reason**: Retained comprehensive quality assessments and final test suite status; deleted older test run snapshots
 
-### 3. archive/benchmarks/ (26+ files)
-**Contents**: Performance benchmark results, stress test reports, capacity analysis
+### 3. archive/benchmarks/ (16 files)
+**Contents**: Final performance results, test execution guides, verification reports
 
-**Rationale**: Historical performance measurements from specific test runs
+**Retained Items**: Final benchmark results, execution guides, and performance validation
 **Key Files**:
-- BENCHMARK_*.md (9 files)
-- PERFORMANCE_ANALYSIS*.md (6 files)
-- STRESS_TEST_*.md (4 files)
-- OTP_28_BENCHMARK_SUMMARY.md
-- CHAOS_TESTS_REPORT.md
+- `OTP_28_BENCHMARK_SUMMARY.md` (latest, 2026-01-31) - OTP 28 results
+- Benchmark execution: BENCHMARK_EXECUTION_GUIDE.md
+- Performance reports: PERFORMANCE_VALIDATOR_REPORT.md, PERFORMANCE_ANALYSIS_REPORT.md, PERFORMANCE_VALIDATION_SUMMARY.md
+- MCP/Transport: MCP_FEATURES_BENCHMARK_COMPLETE.md, TRANSPORT_BENCHMARKS_DELIVERABLE.md, TRANSPORT_BENCHMARKS_VERIFICATION.md
+- Stress testing: STRESS_TEST_CHECKLIST.md, STRESS_TEST_QUICKSTART.md, STRESS_TEST_RETEST_FINAL_REPORT.md
+- Chaos testing: CHAOS_TESTS_REPORT.md
+- Performance tracking: PERFORMANCE_REGRESSION_CI_CD_SUMMARY.md, IMPLEMENTATION_COMPLETE_BENCHMARKS.md
 
-**Archival Date**: 2026-01-31
-**Reason**: Specific test run results; baseline stored in CLAUDE.md; current benchmarks in separate measurement system
+**Deleted Items** (11 files): Planning documents, older runs (v2, 100K), interim implementation reports
+**Deletion Date**: 2026-01-31
+**Reason**: Retained final results and execution guides; deleted benchmarking roadmaps and implementation plans
 
-### 4. archive/troubleshooting/ (29+ files)
-**Contents**: Bug fix reports, issue resolutions, error handling documentation
+### 4. archive/troubleshooting/ (7 files)
+**Contents**: Security fixes, critical blocker resolutions, automated fix reports
 
-**Rationale**: Documentation of resolved issues and technical solutions
+**Retained Items**: Security-related fixes with ongoing policy implications
 **Key Files**:
-- ETS_RACE_CONDITION_FIX_REPORT.md
-- REQUEST_ID_OVERFLOW_FIX_SUMMARY.md
-- SUPERVISOR_COLLAPSE_FIX_REPORT.md
-- JWT_SECURITY_FIX_COMPLETE.md
-- AUTHORIZATION_FIX_REPORT.md
-- BLOCKER_FIXES_APPLIED.md
-- And 22+ additional fix/debug reports
+- `AUTHORIZATION_FIX_REPORT.md` - Authorization security fix
+- `AGENT_4_JWT_SECURITY_FIX_COMPLETE.md` - JWT security implementation
+- `BLOCKER_FIXES_APPLIED.md` - Summary of critical fixes applied
+- `DELIVERY_REPORT_AUTO_FIX.md` - Automated fixes report
+- Additional: REBAR3_EUNIT_FIX_GUIDE.md, TESTING_ERROR_HANDLING.md, DELIVERABLES_ERROR_HANDLING.md
 
-**Archival Date**: 2026-01-31
-**Reason**: Resolved issues; reference for troubleshooting similar problems in future
+**Deleted Items** (22 files): One-time specific bug fixes, implementation-level resolutions
+**Deletion Date**: 2026-01-31
+**Reason**: Retained security fixes with policy implications and fix summaries; deleted specific implementation bug fixes (race conditions, overflows, supervisor issues, transport fixes) once integrated into codebase
 
-### 5. archive/strategy/ (9+ files)
-**Contents**: Business strategy, product positioning, marketing documents
+### 5. archive/strategy/ (1 file)
+**Contents**: Release strategy documentation
 
-**Rationale**: Non-technical strategic planning documents
+**Retained Item**: Release engineering strategy only
 **Key Files**:
-- MARKETPLACE_STRATEGY.md
-- MARKETPLACE_POSITIONING.md
-- INFINITE_MANUFACTURING_STRATEGY.md
-- COMBINATORIAL_STRATEGY.md
-- 25_GREATEST_BLUE_OCEANS.md
-- UPSELL_LADDER.md
-- ACTUAL_COSTS.md
-- REAL_COSTS.md
+- `RELEASE_STRATEGY.md` - Overall release strategy and approach
 
-**Archival Date**: 2026-01-31
-**Reason**: Business planning documents; not required for technical development
+**Deleted Items** (9 files): All business/product strategy documents (marketplace positioning, cost analysis, manufacturing strategy, upsell ladder, etc.)
+**Deletion Date**: 2026-01-31
+**Reason**: Business strategy documents have no technical reference value; retained only release strategy for engineering purposes
 
-### 6. archive/tasks/ (8+ files)
-**Contents**: Work item tracking, deployment guides, environment setup
+### 6. archive/tasks/ (13 files)
+**Contents**: Production deployment guides, cluster documentation, reference materials
 
-**Rationale**: Specific task and deployment documentation
+**Retained Items**: Reference deployment guides and production readiness documentation
 **Key Files**:
-- BACKLOG.md
-- TASK_108_COMPLETION_REPORT.md
-- TASK_109_COMPLETION_REPORT.md
-- DEPLOYMENT_*.md (3 files)
-- PRODUCTION_DEPLOYMENT_CHECKLIST.md
-- PRODUCTION_HARDENING_CHECKLIST.md
-- GETTING_STARTED_WORKSPACE.md
-- WORKSPACE.md
+- Deployment guides: DEPLOYMENT_GUIDE_100X.md, DEPLOYMENT_INDEX.md, PRODUCTION_DEPLOYMENT_CHECKLIST.md
+- Cluster setup: CLUSTER_SETUP.md, CLUSTER_QUICK_START.md, CLUSTER_FILES_MANIFEST.md
+- Vault integration: VAULT_QUICKSTART.md
+- Dashboard setup: DASHBOARD_QUICKSTART.md
+- Infrastructure: DOCKER_GUIDE.md
+- Production readiness: PRODUCTION_READINESS_SCORE.md, PRODUCTION_READINESS_DASHBOARD.md
+- References: WORKSPACE.md, BACKLOG.md
 
-**Archival Date**: 2026-01-31
-**Reason**: Specific task documentation; superseded by current deployment systems
+**Deleted Items** (16 files): Quick-start guides, environment-specific setup (Colima, Staging), temporary checklists, task completion reports
+**Deletion Date**: 2026-01-31
+**Reason**: Retained reference deployment guides and production readiness; deleted temporary setup guides and environment-specific documentation
 
-### 7. archive/misc/ (80+ files)
-**Contents**: Miscellaneous reports, analyses, and documentation
+### 7. archive/misc/ (46 files)
+**Contents**: Comprehensive reference documentation and critical APIs
 
-**Rationale**: Various reports and documentation that don't fit other categories
+**Retained Items**: Official API references, architectural guides, implementation documentation
 **Key Files**:
-- AUDIT_*.md (multiple audit reports)
-- *_ASSESSMENT*.md (multiple assessments)
-- *_ANALYSIS*.md (multiple analyses)
-- CODE_REVIEW_REPORT.md
-- COMPREHENSIVE_TEST_REDUNDANCY_REPORT.md
-- MERGE_*.md (conflict resolution docs)
-- TRUST_*.md (trust metrics)
-- And 60+ additional miscellaneous files
+- `MCP_ENDPOINTS_AND_CAPABILITIES_GUIDE.md` ✅ **CRITICAL** - Comprehensive MCP API reference
+- `GGEN_INTEGRATION_PLAN.md` ✅ **CRITICAL** - Large integration planning with unique architecture details
+- `RELEASE_STRATEGY.md` (duplicated from strategy/) - Release approach
+- Quality references: QUALITY_GATE_REPORT_v2.1.0.md, QUALITY_GATES_IMPLEMENTATION.md
+- Security/compliance: AGENT_4_JWT_SECURITY_FIX_COMPLETE.md, AUTHORIZATION_FIX_REPORT.md, BLOCKER_FIXES_APPLIED.md
+- Test analysis: TEST_ASSESSMENT_EXECUTIVE_SUMMARY.md, TEST_FIXES_SUMMARY.md, TEST_VERIFICATION_REPORT.md, etc.
+- Other references: SSE_NOTIFICATION_REFACTORING_SUMMARY.md, and various implementation documentation
 
-**Archival Date**: 2026-01-31
-**Reason**: Point-in-time analyses and reports; not needed for current operations
-
-### 8. archive/old-versions/ (6+ files)
-**Contents**: Documentation from superseded versions
-
-**Rationale**: Outdated version-specific documentation
-**Key Files**:
-- V0.6.0-*.md (5 files)
-- V1_5_0_DOCUMENTATION_RESET_COMPLETE.md
-- CODE_QUALITY_REPORT_V2.0.md
-
-**Archival Date**: 2026-01-31
-**Reason**: Superseded by v2.1.0; maintained for reference but not active
+**Deleted Items** (120 files): Interim final reports, audit/analysis documents, setup receipts, verification reports, status snapshots, feature-specific summaries, refactoring reports, index/navigation files, compliance assessments
+**Deletion Date**: 2026-01-31
+**Reason**: Retained critical API references and quality documentation; deleted point-in-time analyses, interim status reports, setup receipts, and one-time audit documents
 
 ## Text Files Consolidation
 
-**14 text files** in `/docs/` directory identified for consolidation:
+**14 text files** in `/docs/` directory identified for future consolidation:
 - AUDIT_SUMMARY.txt
 - BOTTLENECK_VISUAL_SUMMARY.txt
 - CT_FAILURE_SUMMARY.txt
-- And 11 others
+- GIT_WORKFLOW_FILE_STRUCTURE.txt
+- JIDOKA_EXECUTIVE_SUMMARY.txt
+- LOAD_BALANCER_IMPLEMENTATION_SUMMARY.txt
+- MASTER_SYNTHESIS_COMPLETE.txt
+- MCP_COMPLIANCE_REPORT.txt
+- OTP_AUDIT_EXECUTIVE_SUMMARY.txt
+- SECURITY_AUDIT_SUMMARY.txt
+- SYNTHETIC_ADVERSARIAL_REVIEW_EXECUTIVE_SUMMARY.txt
+- V2_PRODUCTION_READINESS_SUMMARY.txt
+- stress-test-16-summary.txt
 
-**Status**: Identified for future consolidation into proper markdown documentation
-**Action**: Convert to markdown and integrate into appropriate docs/ subdirectories
+**Status**: Retained in `/docs/` for now; identified for future consolidation into proper markdown documentation
+**Action**: Phase 2 - Convert to markdown and integrate into appropriate docs/ subdirectories
+
+## Critical Files to Preserve (Tier 1)
+
+These are official release/audit artifacts that must **NEVER be deleted**:
+
+1. `/home/user/erlmcp/archive/phase-reports/RELEASE_v2.1.0_EVIDENCE.md` - v2.1.0 release evidence
+2. `/home/user/erlmcp/archive/phase-reports/AGENT_TEAM_FINAL_STATUS.md` - Latest project status (2026-01-31)
+3. `/home/user/erlmcp/archive/quality-reports/QUALITY_GATE_REPORT_v2.1.0.md` - v2.1.0 quality gates
+4. `/home/user/erlmcp/archive/misc/MCP_ENDPOINTS_AND_CAPABILITIES_GUIDE.md` - API reference
+5. `/home/user/erlmcp/archive/misc/GGEN_INTEGRATION_PLAN.md` - Integration architecture
 
 ## Archive Access
 
@@ -174,32 +180,33 @@ grep -r "search_term" archive/
 # List specific category
 ls -la archive/phase-reports/
 
-# Extract specific archive section
-tar -czf archived_reports.tar.gz archive/
+# Find critical files
+find archive -name "RELEASE_v2.1.0_EVIDENCE.md"
+find archive -name "AGENT_TEAM_FINAL_STATUS.md"
+find archive -name "MCP_ENDPOINTS_AND_CAPABILITIES_GUIDE.md"
 ```
 
 ## Future Maintenance
 
-### No Further Archival Needed
-The following directories already contain properly archived content:
+### Already Properly Archived
+The following directories contain organized archived content:
 - `.claude/agents-archive/` - Archived agent specifications
 - `.claude/commands-archive/` - Archived command specifications
 
-These were left in place as they are already properly organized.
-
-### Possible Future Actions
+### Possible Future Actions (Phase 2+)
 
 1. **TCPS File Consolidation** (Medium Priority)
    - `.claude/` has 5 similar TCPS reference files
    - Consider consolidating to single definitive reference
 
-2. **Text File Integration** (Low Priority)
-   - 14 `.txt` files in `/docs/` could be converted to markdown
+2. **Text File Integration** (Low Priority, Phase 2)
+   - 14 `.txt` files in `/docs/` can be converted to markdown
    - Would improve documentation consistency
 
-3. **Old Version Removal** (Very Low Priority)
-   - `archive/old-versions/` can be purged after v3.0 is stable
-   - Keep for now for historical reference
+3. **Nothing Else to Remove** (Current)
+   - `archive/old-versions/` already deleted (v0.6.0, v1.5.0, v2.0)
+   - All interim/transient reports already removed
+   - Remaining 150 files have reference or policy value
 
 ## Quality Impact
 
@@ -222,13 +229,23 @@ These were left in place as they are already properly organized.
 
 | Metric | Count |
 |--------|-------|
-| Files Archived | 350+ |
-| Archive Subdirectories | 8 |
-| Remaining Root Files | 10 |
-| Text Files for Consolidation | 14 |
-| Directories Examined | 238 |
-| Total Markdown Files (all) | 1,800+ |
+| Files Initially Archived | 372 |
+| Files Retained in Archives | 150 |
+| Files Deleted (interim/transient) | 222 |
+| Archive Subdirectories | 7 (old-versions removed) |
+| Root-Level Files Retained | 10 |
+| Text Files for Future Consolidation | 14 |
+| Total Repository Markdown Files | 1,800+ |
 | Total in /docs/ | 917 |
+
+**Deletion Breakdown by Category:**
+- Old versions: 7 files deleted
+- Business strategy: 9 files deleted
+- Interim fix reports: 22 files deleted
+- Test/quality interim reports: 12 files deleted
+- Temporary deployment guides: 16 files deleted
+- Interim implementations/analyses: 120+ files deleted
+- **Total**: 222 files removed (54% of initial 410 file total)
 
 ## Generated By
 
