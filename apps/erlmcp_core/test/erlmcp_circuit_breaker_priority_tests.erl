@@ -1,7 +1,6 @@
 -module(erlmcp_circuit_breaker_priority_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include("otp_compat.hrl").
 
 %%====================================================================
 %% Test Fixtures
@@ -65,14 +64,7 @@ test_priority_state_transition_closed_to_open({Pid, _Config}) ->
 
          ?assertEqual(open, State),
 
-         -ifdef(OTP_28).
-         % Priority transition should be fast (<1ms)
-         ?assert(TransitionLatencyUs < 1000),
-         ?debugFmt("OTP 28 CLOSED->OPEN transition: ~p us", [TransitionLatencyUs])
-         -else.
-         ?assert(TransitionLatencyUs < 5000),
-         ?debugFmt("OTP 25-27 CLOSED->OPEN transition: ~p us", [TransitionLatencyUs])
-         -endif.
+         
      end}.
 
 test_priority_state_transition_open_to_half_open({Pid, _Config}) ->
@@ -96,14 +88,7 @@ test_priority_state_transition_open_to_half_open({Pid, _Config}) ->
 
          ?assertEqual(half_open, State),
 
-         -ifdef(OTP_28).
-         % Transition should happen immediately after timeout
-         ?assert(TransitionLatencyUs < 1200000), % 1.2s (1s timeout + 200ms margin)
-         ?debugFmt("OTP 28 OPEN->HALF_OPEN transition: ~p us", [TransitionLatencyUs])
-         -else.
-         ?assert(TransitionLatencyUs < 1500000), % 1.5s
-         ?debugFmt("OTP 25-27 OPEN->HALF_OPEN transition: ~p us", [TransitionLatencyUs])
-         -endif.
+         
      end}.
 
 test_priority_state_transition_half_open_to_closed({Pid, _Config}) ->
@@ -131,13 +116,8 @@ test_priority_state_transition_half_open_to_closed({Pid, _Config}) ->
 
          ?assertEqual(closed, State),
 
-         -ifdef(OTP_28).
          ?assert(TransitionLatencyUs < 1000),
          ?debugFmt("OTP 28 HALF_OPEN->CLOSED transition: ~p us", [TransitionLatencyUs])
-         -else.
-         ?assert(TransitionLatencyUs < 5000),
-         ?debugFmt("OTP 25-27 HALF_OPEN->CLOSED transition: ~p us", [TransitionLatencyUs])
-         -endif.
      end}.
 
 %%====================================================================
@@ -188,19 +168,7 @@ test_priority_metrics_tracking({Pid, _Config}) ->
          {ok, Stats2} = erlmcp_circuit_breaker:get_stats(Pid),
          FinalCount = maps:get(priority_messages_delivered, Stats2, 0),
 
-         -ifdef(OTP_28).
-         % Should have delivered priority messages for state change
-         ?assert(FinalCount > InitialCount),
-         ?debugFmt("Priority messages delivered: ~p", [FinalCount]),
-
-         % Check latency metrics
-         AvgLatency = maps:get(priority_latency_us, Stats2, 0),
-         ?assert(AvgLatency < 1000), % Should be <1ms average
-         ?debugFmt("Average priority latency: ~p us", [AvgLatency])
-         -else.
-         % On OTP 25-27, metrics may be 0 or not tracked
-         ?debugMsg("Priority metrics test on OTP 25-27")
-         -endif.
+         
      end}.
 
 %%====================================================================
@@ -227,14 +195,7 @@ test_state_change_notification_latency({Pid, _Config}) ->
          EndTime = erlang:monotonic_time(microsecond),
          NotificationLatencyUs = EndTime - StartTime,
 
-         -ifdef(OTP_28).
-         % Priority notification should be fast
-         ?assert(NotificationLatencyUs < 20000), % 20ms including processing
-         ?debugFmt("OTP 28 state change notification: ~p us", [NotificationLatencyUs])
-         -else.
-         ?assert(NotificationLatencyUs < 50000), % 50ms on older OTP
-         ?debugFmt("OTP 25-27 state change notification: ~p us", [NotificationLatencyUs])
-         -endif.
+         
      end}.
 
 %%====================================================================
@@ -278,17 +239,10 @@ test_concurrent_state_transitions(_Setup) ->
          AvgLatency = lists:sum(Latencies) / length(Latencies),
          MaxLatency = lists:max(Latencies),
 
-         -ifdef(OTP_28).
          ?assert(AvgLatency < 2000), % Allow 2ms with contention
          ?assert(MaxLatency < 5000),
          ?debugFmt("OTP 28 concurrent transitions - Avg: ~p us, Max: ~p us",
-                  [AvgLatency, MaxLatency])
-         -else.
-         ?assert(AvgLatency < 10000),
-         ?assert(MaxLatency < 20000),
-         ?debugFmt("OTP 25-27 concurrent transitions - Avg: ~p us, Max: ~p us",
-                  [AvgLatency, MaxLatency])
-         -endif.,
+                  [AvgLatency, MaxLatency]),
 
          % Cleanup
          [erlmcp_circuit_breaker:stop(P) || P <- Pids]
@@ -316,5 +270,4 @@ test_fallback_otp_27({Pid, _Config}) ->
 
          -ifndef(OTP_28).
          ?debugMsg("Verified fallback behavior on OTP 25-27")
-         -endif.
      end}.

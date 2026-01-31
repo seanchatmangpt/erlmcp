@@ -2,7 +2,6 @@
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
--include("otp_compat.hrl").
 
 %% API exports
 -export([

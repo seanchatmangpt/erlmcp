@@ -20,7 +20,6 @@
 
 -behaviour(gen_server).
 
--include("otp_compat.hrl").
 
 %% API
 -export([

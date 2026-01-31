@@ -1,7 +1,6 @@
 -module(erlmcp_graceful_drain).
 -behaviour(gen_server).
 
--include("otp_compat.hrl").
 
 %% API
 -export([
@@ -67,14 +66,10 @@ get_drain_status() ->
 %% @doc Initiate graceful shutdown (priority signal on OTP 28)
 -spec initiate_shutdown(pos_integer()) -> ok.
 initiate_shutdown(TimeoutMs) ->
-    -ifdef(OTP_28).
-    % Send priority message for immediate shutdown processing
+    % Send priority message for immediate shutdown processing (OTP 28)
     erlang:send(?MODULE, {priority_shutdown, TimeoutMs}, [nosuspend]),
-    ok;
-    -else.
-    gen_server:cast(?MODULE, {shutdown, TimeoutMs}),
     ok.
-    -endif.
+
 
 %% @doc Get number of active connections
 -spec get_active_connections() -> non_neg_integer().
@@ -100,13 +95,9 @@ init([]) ->
     process_flag(trap_exit, true),
 
     % Enable priority messages on OTP 28+ for critical shutdown signals
-    -ifdef(OTP_28).
     process_flag(message_queue_data, off_heap),
     process_flag(priority, high),
     logger:info("Graceful drain service started with OTP 28 priority messages"),
-    -else.
-    logger:info("Graceful drain service started (OTP 25-27, no priority messages)"),
-    -endif.
 
     {ok, #state{}}.
 
@@ -219,7 +210,6 @@ handle_cast(_Msg, State) ->
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
 
--ifdef(OTP_28).
 % Priority shutdown message (OTP 28 only)
 handle_info({priority_shutdown, TimeoutMs}, State) ->
     StartTime = erlang:monotonic_time(microsecond),
@@ -240,7 +230,6 @@ handle_info({priority_shutdown, TimeoutMs}, State) ->
     },
 
     {noreply, FinalState};
--endif.
 
 handle_info({drain_timeout, Module}, State) ->
     logger:info("Drain timeout reached for module ~p", [Module]),
