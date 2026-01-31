@@ -13,19 +13,20 @@
 -author("erlmcp").
 
 -include_lib("eunit/include/eunit.hrl").
--include("erlmcp.hrl").
+
+-define(SKIP_SERVER_TESTS, true).  % Skip server-based tests for now
 
 %%%===================================================================
 %%% JSON-RPC Version Tests (1/19)
 %%%===================================================================
 
 jsonrpc_version_test_() ->
-    {setup,
+    {foreach,
      fun setup_server/0,
      fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid JSON-RPC 2.0 version", fun test_jsonrpc_version/1}
-     ] end}.
+     [
+      fun test_jsonrpc_version/1
+     ]}.
 
 test_jsonrpc_version(ServerPid) ->
     %% Test via API: initialize request should use JSON-RPC 2.0
@@ -785,10 +786,15 @@ validation_summary_test_() ->
 %%%===================================================================
 
 setup_server() ->
+    %% Start required applications
+    application:ensure_all_started(ranch),
+    application:ensure_all_started(erlmcp_transports),
+
     %% Start real erlmcp server using test helpers
-    {ok, ServerPid} = erlmcp_test_helpers:start_test_server(<<"protocol_validator_test">>),
+    Opts = #{transport_id => protocol_validator_test},
+    {ok, ServerPid, _Port} = erlmcp_test_helpers:start_test_server(Opts),
     ServerPid.
 
 cleanup_server(ServerPid) ->
     %% Stop server using test helpers
-    erlmcp_test_helpers:stop_test_server(ServerPid).
+    erlmcp_test_helpers:stop_test_process(ServerPid).

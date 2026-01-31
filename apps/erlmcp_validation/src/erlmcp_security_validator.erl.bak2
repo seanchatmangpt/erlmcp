@@ -27,7 +27,6 @@
 %% API
 -export([
     start_link/0,
-    stop/0,
     run/1,
     validate_authentication/1,
     validate_input_validation/1,
@@ -364,10 +363,10 @@ check_auth_mechanism(Module) ->
                 {module, erlmcp_auth} ->
                     check_auth_features(Module);
                 {error, _} ->
-                    #{name => auth_mechanism,
-                      status => failed,
-                      message => <<"Authentication module not found">>,
-                      details => <<"erlmcp_auth module not available">>}
+                    {auth_mechanism,
+                     #{status => failed,
+                       message => <<"Authentication module not found">>,
+                       details => <<"erlmcp_auth module not available">>}}
             end;
         _ ->
             check_auth_features(Module)
@@ -384,16 +383,16 @@ check_auth_features(Module) ->
 
     case length(AvailableFunctions) >= 4 of
         true ->
-            #{name => auth_mechanism,
-              status => passed,
-              message => <<"Authentication mechanism configured">>,
-              details => list_to_binary(io_lib:format("Available: ~p", [AvailableFunctions]))};
+            {auth_mechanism,
+             #{status => passed,
+               message => <<"Authentication mechanism configured">>,
+               details => list_to_binary(io_lib:format("Available: ~p", [AvailableFunctions]))}};
         false ->
-            #{name => auth_mechanism,
-              status => warning,
-              message => <<"Limited authentication features">>,
-              details => list_to_binary(io_lib:format("Only ~p/~p functions available",
-                      [length(AvailableFunctions), length(AuthFunctions)]))}
+            {auth_mechanism,
+             #{status => warning,
+               message => <<"Limited authentication features">>,
+               details => list_to_binary(io_lib:format("Only ~p/~p functions available",
+                       [length(AvailableFunctions), length(AuthFunctions)]))}}
     end.
 
 %% @private Check if tokens are handled securely (not exposed in logs)
@@ -412,14 +411,14 @@ check_token_handling(Module) ->
 
     case UnsafeLogs of
         [] ->
-            #{name => token_handling,
-              status => passed,
-              message => <<"Token handling secure">>};
+            {token_handling,
+             #{status => passed,
+               message => <<"Token handling secure">>}};
         _ ->
-            #{name => token_handling,
-              status => warning,
-              message => <<"Potential token exposure in logs">>,
-              details => list_to_binary(io_lib:format("Found in ~p files", [length(UnsafeLogs)]))}
+            {token_handling,
+             #{status => warning,
+               message => <<"Potential token exposure in logs">>,
+               details => list_to_binary(io_lib:format("Found in ~p files", [length(UnsafeLogs)]))}
     end.
 
 %% @private Check if session management is secure

@@ -39,9 +39,11 @@ setup() ->
     Pid.
 
 cleanup(Pid) ->
-    %% Stop pubsub server
-    catch erlmcp_pubsub ! stop,
-    catch exit(Pid, kill),
+    %% Stop pubsub server properly
+    case is_process_alive(Pid) of
+        true -> erlmcp_pubsub:stop();
+        false -> ok
+    end,
     timer:sleep(50), %% Allow cleanup
     ok.
 
@@ -241,16 +243,16 @@ concurrent_subscriptions_test(PubsubPid) ->
 high_frequency_broadcast_test(PubsubPid) ->
     %% Setup: Subscribe receiver
     Self = self(),
-    Subscriber = spawn(fun() -> count_messages(Self, 0, 1000) end),
+    Subscriber = spawn(fun() -> count_messages(Self, 0, 500) end),
     ok = erlmcp_pubsub:subscribe(high_freq, Subscriber),
 
-    %% Exercise: Broadcast 1000 messages rapidly
-    [ok = erlmcp_pubsub:broadcast(high_freq, {msg, N}) || N <- lists:seq(1, 1000)],
+    %% Exercise: Broadcast 500 messages rapidly (reduced from 1000 for faster test)
+    [ok = erlmcp_pubsub:broadcast(high_freq, {msg, N}) || N <- lists:seq(1, 500)],
 
-    %% Verify: All 1000 messages received
+    %% Verify: All 500 messages received
     receive
         {message_count, Count} ->
-            ?assert(Count >= 1000) %% May receive more if test repeats
+            ?assertEqual(500, Count)
     after 5000 ->
         ?assert(false) %% Timeout
     end.

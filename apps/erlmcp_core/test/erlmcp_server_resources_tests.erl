@@ -119,7 +119,13 @@ progress_tokens_test_() ->
 %%%====================================================================
 
 setup() ->
-    application:ensure_all_started(erlmcp_core),
+    % Start minimal dependencies without full application
+    % This avoids session_failover distributed node issues
+    {ok, _} = application:ensure_all_started(gproc),
+    case pg:start(erlmcp_pubsub) of
+        {ok, _} -> ok;
+        {error, {already_started, _}} -> ok
+    end,
     ok.
 
 cleanup(_) ->
@@ -289,7 +295,8 @@ test_invalid_uris() ->
         %% We expect either ok (if validator is lenient) or error tuple
         case Result of
             ok -> ok;
-            {error, {_Code, _Msg, _Data}} -> ok
+            {error, {_Code, _Msg, _Data}} -> ok;
+            {error, _Reason} -> ok  % Simple error tuple from validator
         end
     end || Uri <- InvalidUris],
 
@@ -641,11 +648,14 @@ test_pg_notification_broadcast() ->
 %%% Helper Functions
 %%%====================================================================
 
-%% @doc Start server with default capabilities
+%% @doc Start server with default capabilities (unique ID per test)
 start_server() ->
-    ServerId = <<"resources_test_server_">>,
+    ServerId = <<"resources_test_server_", (integer_to_binary(erlang:unique_integer([positive])))/binary>>,
     Capabilities = #mcp_server_capabilities{
-        resources = #mcp_capability{enabled = true}
+        resources = #mcp_resources_capability{subscribe = true, listChanged = true},
+        tools = #mcp_tools_capability{},
+        prompts = #mcp_prompts_capability{},
+        logging = #mcp_logging_capability{}
     },
     {ok, Pid} = erlmcp_server:start_link(ServerId, Capabilities),
     Pid.

@@ -65,13 +65,10 @@ start_link(Opts) ->
 stop(Pid) ->
     gen_server:stop(Pid).
 
-%% @doc Start a streaming execution with a single subscriber
--spec start_stream(execution_id(), pid()) -> ok | {error, term()}.
-start_stream(ExecutionId, Subscriber) ->
-    start_stream(ExecutionId, [Subscriber]).
-
-%% @doc Start a streaming execution with multiple subscribers
--spec start_stream(execution_id(), [pid()]) -> ok | {error, term()}.
+%% @doc Start a streaming execution (single pid or list of pids)
+-spec start_stream(execution_id(), pid() | [pid()]) -> ok | {error, term()}.
+start_stream(ExecutionId, Subscriber) when is_pid(Subscriber) ->
+    start_stream(ExecutionId, [Subscriber], #{});
 start_stream(ExecutionId, Subscribers) when is_list(Subscribers) ->
     gen_server:call(?MODULE, {start_stream, ExecutionId, Subscribers, #{}}).
 
@@ -185,8 +182,9 @@ handle_call({cancel_stream, ExecutionId}, _From, State = #state{streams = Stream
                 end,
                 Stream#stream.subscribers
             ),
-            %% Cleanup
-            cleanup_stream(ExecutionId, Stream, State);
+            %% Cleanup and reply
+            {noreply, NewState} = cleanup_stream(ExecutionId, Stream, State),
+            {reply, ok, NewState};
         error ->
             {reply, {error, not_found}, State}
     end;

@@ -1174,12 +1174,12 @@ cleanup_stale_correlations() ->
             0;
         _ ->
             Now = erlang:system_time(millisecond),
-            DeletedCount = ets:select_delete(erlmcp_correlation_table,
-                fun({_RequestId, #{timestamp := TS}}) when Now - TS > 300000 ->
-                    true;
-                   (_) ->
-                    false
-                end),
+            MatchSpec = [{
+                {'$1', #{timestamp => '$2'}},
+                [{'>', {'-', Now, '$2'}, 300000}],
+                [true]
+            }],
+            DeletedCount = ets:select_delete(erlmcp_correlation_table, MatchSpec),
             logger:info("Cleaned up ~p stale correlations", [DeletedCount]),
             DeletedCount
     end.

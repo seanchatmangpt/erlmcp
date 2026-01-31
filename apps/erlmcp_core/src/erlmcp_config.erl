@@ -129,14 +129,9 @@ handle_call({update, Updates}, _From, State) ->
     logger:info("Bulk config update: ~w keys", [maps:size(Updates)]),
     {reply, ok, State};
 handle_call({delete, Key}, _From, State) ->
-    try
-        persistent_term:erase(?KEY(Key)),
-        logger:debug("Config key ~p deleted", [Key]),
-        {reply, ok, State}
-    catch
-        error:badarg ->
-            {reply, {error, not_found}, State}
-    end;
+    persistent_term:erase(?KEY(Key)),
+    logger:debug("Config key ~p deleted", [Key]),
+    {reply, ok, State};
 handle_call(reload, _From, State) ->
     load_config(State#state.defaults),
     logger:info("Config reloaded from application environment", []),
@@ -146,8 +141,8 @@ handle_call(clear_cache, _From, State) ->
     AllTerms = persistent_term:get(),
     lists:foreach(
         fun
-            ({{erlmcp_config, _}, _}) ->
-                ok;
+            ({Key, _}) when element(1, Key) =:= erlmcp_config ->
+                persistent_term:erase(Key);
             (_) ->
                 ok
         end,

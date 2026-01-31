@@ -1,17 +1,14 @@
 -module(erlmcp_transport_ws).
+%% -behaviour(erlmcp_transport_behavior).  % Conflicts with gen_server init/1
 
 -include("erlmcp.hrl").
 -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
-%% Note: This module does NOT implement erlmcp_transport_behavior
-%% It is a Cowboy WebSocket handler with its own init/2 interface
+%% Transport behavior callbacks
+-export([init/1, init/2, send/2, close/1, get_info/1, handle_transport_call/2]).
 
-%% WebSocket-specific exports (NOT erlmcp_transport_behavior callbacks)
--export([
-    init/2,
-    send/2,
-    close/1
-]).
+%% WebSocket-specific exports (internal)
+-export([init_ws/2]).
 
 %% WebSocket handler exports
 -export([
@@ -90,8 +87,37 @@
 %% Transport Behavior Implementation
 %%====================================================================
 
--spec init(binary(), map()) -> {ok, pid()} | {error, term()}.
-init(TransportId, Config) ->
+%% @doc Initialize transport (starts Cowboy WebSocket listener)
+%% Supports both init(TransportId, Config) and init(Config) with transport_id in map
+-spec init(binary(), map()) -> {ok, pid()} | {error, term()};
+          (map()) -> {ok, pid()} | {error, term()}.
+init(TransportId, Config) when is_binary(TransportId), is_map(Config) ->
+    init_ws(TransportId, Config);
+init(Config) when is_map(Config) ->
+    TransportId = maps:get(transport_id, Config, <<"ws_default">>),
+    init_ws(TransportId, Config).
+
+%% @doc Get transport information
+-spec get_info(pid() | term()) -> #{atom() => term()}.
+get_info(_State) ->
+    #{
+        transport_id => undefined,
+        type => websocket,
+        status => running
+    }.
+
+%% @doc Handle transport-specific calls
+-spec handle_transport_call(term(), term()) ->
+    {reply, term(), term()} | {error, term()}.
+handle_transport_call(_Request, State) ->
+    {error, unknown_request}.
+
+%%====================================================================
+%% WebSocket-Specific Implementation
+%%====================================================================
+
+-spec init_ws(binary(), map()) -> {ok, pid()} | {error, term()}.
+init_ws(TransportId, Config) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.init">>),
     try
         Port = maps:get(port, Config, 8080),
@@ -100,7 +126,6 @@ init(TransportId, Config) ->
         StrictDelimiterCheck = maps:get(strict_delimiter_check, Config, true),
         ValidateUtf8 = maps:get(validate_utf8, Config, true),
         MaxConnections = maps:get(max_connections, Config, 1000),
-        ConnectTimeout = maps:get(connect_timeout, Config, 5000),
 
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"transport_id">> => TransportId,
@@ -118,16 +143,20 @@ init(TransportId, Config) ->
             ]}
         ]),
 
-        %% Cowboy listener configuration with connection limits
-        ListenerOpts = [
-            {port, Port},
-            {max_connections, MaxConnections},
-            {connection_type, supervisor},
-            {connection_timeout, ConnectTimeout}
-        ],
+        %% Cowboy listener configuration
+        %% Generate unique listener name per transport ID to avoid conflicts
+        %% Handle both atom and binary TransportId
+        TransportIdBin = case is_binary(TransportId) of
+            true -> TransportId;
+            false when is_atom(TransportId) -> atom_to_binary(TransportId, utf8);
+            false when is_list(TransportId) -> list_to_binary(TransportId)
+        end,
+        ListenerName = binary_to_atom(<<"erlmcp_ws_", TransportIdBin/binary>>, utf8),
 
-        {ok, _} = cowboy:start_clear(erlmcp_ws_listener,
-            ListenerOpts,
+        %% Ranch 2.x options: port, num_acceptors, max_connections, socket_opts
+        %% For Cowboy 2.10, pass socket opts separately from ranch opts
+        {ok, _} = cowboy:start_clear(ListenerName,
+            [{port, Port}, {num_acceptors, 100}],
             #{env => #{dispatch => Dispatch}}),
 
         erlmcp_tracing:set_status(SpanCtx, ok),

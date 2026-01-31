@@ -76,17 +76,16 @@ handle_call({call, Fun}, _From, State = #state{circuit_state = open}) ->
     {reply, {error, circuit_open}, State};
 
 handle_call({call, Fun}, _From, State = #state{circuit_state = CircuitState}) ->
-    try
-        Result = Fun(),
-        NewState = handle_success(State),
-        {reply, {ok, Result}, NewState}
-    catch
-        _:Error ->
+    case catch Fun() of
+        {'EXIT', Error} ->
             NewState = handle_failure(State),
             case NewState#state.circuit_state of
                 open -> {reply, {error, circuit_open}, NewState};
                 _ -> {reply, {error, Error}, NewState}
-            end
+            end;
+        Result ->
+            NewState = handle_success(State),
+            {reply, {ok, Result}, NewState}
     end;
 
 handle_call(get_state, _From, State = #state{circuit_state = CircuitState}) ->

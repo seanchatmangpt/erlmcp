@@ -25,6 +25,12 @@
 
 -include("erlmcp.hrl").
 
+%% Types from behavior
+-type entity_type() :: server | transport.
+-type entity_id() :: term().
+-type entity_config() :: map().
+-type transport_id() :: atom() | binary().
+
 %% API exports
 -export([
     start_link/0,
@@ -41,6 +47,9 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% Export types
+-export_type([entity_type/0, entity_id/0, entity_config/0, transport_id/0]).
 
 %% Process groups
 -define(PG_SCOPE, erlmcp_registry).
@@ -74,6 +83,9 @@ register(Type, Id, Pid, Config) when is_atom(Type), is_pid(Pid), is_map(Config) 
     GlobalName = make_global_name(Type, Id),
     case global:register_name(GlobalName, Pid) of
         yes ->
+            %% Store config before joining groups
+            put_entity_config(Type, Id, Config),
+
             %% Join appropriate groups
             Groups = determine_groups(Type, Config),
             lists:foreach(fun(Group) -> ok = join_group(Group, Pid) end, Groups),
@@ -134,7 +146,20 @@ list(Type) when is_atom(Type) ->
     %% Get all global names matching our pattern
     Pattern = make_global_pattern(Type),
     AllNames = global:registered_names(),
-    MatchingNames = lists:filter(fun(Name) -> matches_pattern(Name, Pattern) end, AllNames),
+
+    %% Filter out any stale entries from previous test runs
+    MatchingNames = lists:filter(fun(Name) ->
+        case matches_pattern(Name, Pattern) of
+            true ->
+                %% Verify the process is actually alive
+                case global:whereis_name(Name) of
+                    undefined -> false;
+                    _Pid -> true
+                end;
+            false ->
+                false
+        end
+    end, AllNames),
 
     %% Build result list
     lists:filtermap(fun(GlobalName) ->
@@ -296,12 +321,9 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Ensure pg scope exists
 -spec ensure_pg_scope() -> ok.
 ensure_pg_scope() ->
-    case whereis(pg) of
-        undefined ->
-            {ok, _} = pg:start_link(?PG_SCOPE),
-            ok;
-        _ ->
-            ok
+    case pg:start(?PG_SCOPE) of
+        {ok, _Pid} -> ok;
+        {error, {already_started, _Pid}} -> ok
     end.
 
 %% @doc Make a global name for an entity

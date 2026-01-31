@@ -136,7 +136,8 @@ init([ClusterNodes]) ->
     logger:info("Session failover manager starting on ~p (cluster: ~p)", [LocalNode, AllNodes]),
 
     %% Connect to cluster nodes
-    lists:foreach(fun(Node) when Node =/= LocalNode ->
+    RemoteNodes = lists:filter(fun(Node) -> Node =/= LocalNode end, AllNodes),
+    lists:foreach(fun(Node) ->
         case net_adm:ping(Node) of
             pong ->
                 logger:info("Connected to cluster node: ~p", [Node]),
@@ -145,7 +146,7 @@ init([ClusterNodes]) ->
                 logger:warning("Cannot connect to cluster node: ~p", [Node]),
                 ok
         end
-    end, AllNodes),
+    end, RemoteNodes),
 
     %% Subscribe to node monitoring events
     ok = net_kernel:monitor_nodes(true, [nodedown_reason]),
