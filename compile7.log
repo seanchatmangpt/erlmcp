@@ -1,0 +1,113 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/erlmcp_security_validator.erl failed
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 236 │          ?SECRET_PATTERNS
+     │           ╰── undefined macro 'SECRET_PATTERNS'
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 424 │      case any_match(Input, ?COMMAND_INJECTION_PATTERNS) of
+     │                             ╰── undefined macro 'key'
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 437 │      case any_match(Input, ?LDAP_INJECTION_PATTERNS) of
+     │                             ╰── undefined macro 'LDAP_INJECTION_PATTERNS'
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 450 │      case any_match(Input, ?XPATH_INJECTION_PATTERNS) of
+     │                             ╰── undefined macro 'XPATH_INJECTION_PATTERNS'
+
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 17 │  -export([
+    │   ╰── function check_command_injection/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 17 │  -export([
+    │   ╰── function check_ldap_injection/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 17 │  -export([
+    │   ╰── function check_xpath_injection/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 17 │  -export([
+    │   ╰── function detect_secrets_in_input/1 undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 227 │  -spec detect_secrets_in_input(binary()) -> validation_result().
+     │   ╰── spec for undefined function detect_secrets_in_input/1
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 285 │                      {error, _Reason} = Error -> throw(Error)
+     │                              ╰── variable '_Reason' unsafe in 'case' (line 268, column 9)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 285 │                      {error, _Reason} = Error -> throw(Error)
+     │                                         ╰── variable 'Error' unsafe in 'case' (line 268, column 9)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 302 │          throw:{error, _Reason} = Error ->
+     │                        ╰── variable '_Reason' unsafe in 'try' (line 262, column 5)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 302 │          throw:{error, _Reason} = Error ->
+     │                                   ╰── variable 'Error' unsafe in 'try' (line 262, column 5)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 381 │                      {error, _Reason} = Error -> throw(Error)
+     │                              ╰── variable '_Reason' unsafe in 'case' (line 373, column 17)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 381 │                      {error, _Reason} = Error -> throw(Error)
+     │                                         ╰── variable 'Error' unsafe in 'case' (line 373, column 17)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 386 │                  throw:{error, _Reason} = Error -> Error;
+     │                                ╰── variable '_Reason' unsafe in 'try' (line 371, column 13)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 386 │                  throw:{error, _Reason} = Error -> Error;
+     │                                           ╰── variable 'Error' unsafe in 'try' (line 371, column 13)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 422 │  -spec check_command_injection(binary()) -> validation_result().
+     │   ╰── spec for undefined function check_command_injection/1
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 435 │  -spec check_ldap_injection(binary()) -> validation_result().
+     │   ╰── spec for undefined function check_ldap_injection/1
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 448 │  -spec check_xpath_injection(binary()) -> validation_result().
+     │   ╰── spec for undefined function check_xpath_injection/1
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 296 │                      {error, _Reason} = Error -> throw(Error)
+     │                              ╰── Warning: variable '_Reason' is already bound. If you mean to ignore this
+value, use '_' or a different underscore-prefixed name
+
+

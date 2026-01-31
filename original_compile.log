@@ -1,0 +1,21 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/erlmcp_refusal_codes.erl failed
+    ┌─ apps/erlmcp_core/src/erlmcp_refusal_codes.erl:
+    │
+ 52 │  get_refusal_message_from_code(?REFUSAL_QUEUE_CAPACITY_EXCEEDED) ->
+    │                                 ╰── undefined macro 'REFUSAL_QUEUE_CAPACITY_EXCEEDED'
+
+
+    ┌─ apps/erlmcp_core/src/erlmcp_refusal_codes.erl:
+    │
+ 24 │      get_refusal_message_from_code(Code).
+    │      ╰── function get_refusal_message_from_code/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_refusal_codes.erl:
+    │
+ 51 │  -spec get_refusal_message_from_code(integer()) -> binary().
+    │   ╰── spec for undefined function get_refusal_message_from_code/1
+
+

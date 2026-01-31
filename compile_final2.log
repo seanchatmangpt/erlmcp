@@ -1,0 +1,22 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/tcps_quality_gates.erl failed
+     ┌─ apps/erlmcp_core/src/tcps_quality_gates.erl:
+     │
+ 341 │      {ok, #state{result_cache = #{}}}.
+     │                  ╰── field result_cache undefined in record state
+
+     ┌─ apps/erlmcp_core/src/tcps_quality_gates.erl:
+     │
+ 590 │          {match, [[_, Match] | _]} -> list_to_integer(Match);
+     │                       ╰── variable 'Match' unsafe in 'case' (line 584, column 13)
+
+
+     ┌─ apps/erlmcp_core/src/tcps_quality_gates.erl:
+     │
+ 742 │          0.0 -> 0.0;
+     │          ╰── Warning: matching on the float 0.0 will no longer also match -0.0 in OTP 27.
+If you specifically intend to match 0.0 alone, write +0.0 instead.
+
+

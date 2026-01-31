@@ -1,0 +1,41 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      [1;31m{[0merror, token_expired};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      [1;31m{[0merror, token_not_yet_valid};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      [1;31m{[0merror, invalid_issuer}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_code_reload.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     │
+ 710 │  -[1;31mspec[0m init_state() -> state().[0m
+     │   [1;31m╰──[0m[0m spec for init_state/0 already defined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     │
+ 711 │  [1;31minit_state[0m() ->[0m
+     │  [1;31m╰──[0m[0m function init_state/0 already defined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     │
+ 720 │  -[1;31mspec[0m migrate_state(state(), integer()) -> {ok, state()} | {error, term()}.[0m
+     │   [1;31m╰──[0m[0m spec for migrate_state/2 already defined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     │
+ 721 │  [1;31mmigrate_state[0m(State, FromVersion) when FromVersion =:= ?STATE_VERSION ->[0m
+     │  [1;31m╰──[0m[0m function migrate_state/2 already defined
+
+

@@ -1,0 +1,26 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_security_validator.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 123 │  validate_uri(_) -> {error, #{reason => invalid_uri_type}}[1;31m.[0m[0m
+     │                                                           [1;31m╰──[0m[0m syntax error before: '.'
+
+
+   ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+   │
+ 8 │  -[1;31mexport[0m([start_link/0, start_link/1, validate_input_size/2, detect_injection_patterns/1,[0m
+   │   [1;31m╰──[0m[0m function validate_uri/1 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 91 │                      ok -> ok; {error, [1;31mR[0m} -> throw({error, R})[0m
+    │                                        [1;31m╰──[0m[0m variable 'R' unsafe in 'case' (line 85, column 9)
+
+    ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+    │
+ 95 │      catch throw:{error, [1;31mR[0m} -> {error, R}; _:_ -> {error, #{reason => invalid_cors_headers}}[0m
+    │                          [1;31m╰──[0m[0m variable 'R' unsafe in 'try' (line 84, column 5)
+
+

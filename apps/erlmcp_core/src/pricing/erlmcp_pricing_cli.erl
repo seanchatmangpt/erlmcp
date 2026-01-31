@@ -44,6 +44,33 @@ check_usage(User) ->
 %% @doc Upgrade user to new plan
 -spec upgrade(User :: binary(), NewPlan :: atom()) -> ok | {error, term()}.
 upgrade(User, NewPlan) ->
-    % TODO: Implement pricing upgrade logic
-    io:format("Upgrade not yet implemented: ~s to ~p~n", [User, NewPlan]),
-    {error, not_implemented}.
+    TierId = plan_to_tier_id(NewPlan),
+    case erlmcp_pricing:upgrade(User, TierId) of
+        {ok, Result} ->
+            TierName = maps:get(tier_name, Result),
+            Payment = maps:get(payment, Result),
+            Amount = maps:get(amount, Payment),
+            FormattedPrice = erlmcp_pricing_util:format_price(Amount),
+            io:format("Upgraded ~s to ~s tier~n", [User, TierName]),
+            io:format("  Amount charged: ~s~n", [FormattedPrice]),
+            io:format("  Transaction ID: ~s~n", [maps:get(transaction_id, Payment)]),
+            ok;
+        {error, {payment_failed, _Reason}} ->
+            io:format("Payment failed~n"),
+            {error, payment_failed};
+        {error, already_on_tier} ->
+            io:format("User already on this tier~n"),
+            {error, already_on_tier};
+        {error, invalid_tier_upgrade} ->
+            io:format("Invalid upgrade: can only upgrade to higher tiers~n"),
+            {error, invalid_tier_upgrade};
+        {error, Reason} ->
+            io:format("Upgrade failed: ~p~n", [Reason]),
+            {error, Reason}
+    end.
+
+%% @private
+plan_to_tier_id(free) -> 0;
+plan_to_tier_id(pro) -> 1;
+plan_to_tier_id(enterprise) -> 2;
+plan_to_tier_id(_) -> error(invalid_plan).
