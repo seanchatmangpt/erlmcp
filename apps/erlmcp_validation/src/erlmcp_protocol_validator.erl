@@ -10,6 +10,7 @@
 -module(erlmcp_protocol_validator).
 
 -include("erlmcp.hrl").
+-include("otp_compat.hrl").
 
 %% API exports
 -export([
