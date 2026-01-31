@@ -78,7 +78,7 @@ code_change(_OldVsn, State, _Extra) ->
 execute_replication(SessionId, _FailoverState, BackupNode) ->
     try
         %% Retrieve session data from Mnesia
-        TableName = erlmcp_session_mnesia,
+        TableName = erlmcp_session,
         case mnesia:transaction(fun() ->
             mnesia:read(TableName, SessionId)
         end) of
@@ -89,6 +89,9 @@ execute_replication(SessionId, _FailoverState, BackupNode) ->
                 %% Replicate to backup node via RPC
                 case rpc:call(BackupNode, erlmcp_session_mnesia, store,
                              [SessionId, SessionData, #{table_name => TableName}]) of
+                    {ok, _State} ->
+                        logger:debug("Replicated session ~s to backup ~p", [SessionId, BackupNode]),
+                        ok;
                     ok ->
                         logger:debug("Replicated session ~s to backup ~p", [SessionId, BackupNode]),
                         ok;
