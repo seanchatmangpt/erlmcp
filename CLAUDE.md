@@ -417,7 +417,7 @@ Message 3: Task("Agent 3", ...)
 - Implement `-behaviour(erlmcp_transport)`
 - Callbacks: `init/2`, `send/2`, `close/1`
 - Template: `apps/erlmcp_transports/src/erlmcp_transport_tcp.erl`
-- Auto-registration via `erlmcp_transport_registry`
+- Configuration via `sys.config` (static config, no dynamic discovery)
 - **TEST WITH REAL TRANSPORTS, NEVER MOCKED**
 
 ### Code Style
@@ -505,12 +505,11 @@ Message 3: Task("Agent 3", ...)
 - `erlmcp_transport_ws.erl` - WebSocket transport
 - `erlmcp_transport_sse.erl` - Server-Sent Events transport
 - `erlmcp_transport_pool.erl` - Connection pooling
-- `erlmcp_transport_registry.erl` - Transport registration
 - `erlmcp_transport_health.erl` - Transport health checks
-- `erlmcp_transport_validation.erl` - Transport compliance validation
 - `erlmcp_pool_manager.erl` - Pool strategy manager
 - `erlmcp_http_header_validator.erl` - HTTP header validation
 - `erlmcp_origin_validator.erl` - CORS origin validation
+- Note: Transport discovery/registry/validation removed (80/20 simplification)
 
 ### Observability (erlmcp_observability)
 - `erlmcp_otel.erl` - OpenTelemetry integration
