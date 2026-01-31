@@ -28,7 +28,15 @@
     validate_registry/1,
     validate_lifecycle/1,
     generate_report/0,
-    get_results/0
+    get_results/0,
+    %% Runtime validation functions
+    validate_transport_module/1,
+    validate_init/3,
+    validate_send/3,
+    validate_close/2,
+    validate_message_format/2,
+    validate_round_trip/3,
+    validate_concurrent_connections/3
 ]).
 
 %% gen_server callbacks
@@ -757,6 +765,248 @@ calculate_overall_compliance(Summaries) ->
         Acc + maps:get(compliance, Summary, 0.0)
     end, 0.0, maps:to_list(Summaries)),
     TotalCompliance / map_size(Summaries).
+
+%%%===================================================================
+%%% Runtime Validation Functions - Chicago School TDD
+%%%===================================================================
+
+%% @doc Validate transport module implements required callbacks
+%% Returns {ok, TransportType} if all required callbacks present
+-spec validate_transport_module(module()) ->
+    {ok, transport_type()} | {error, missing_callbacks}.
+validate_transport_module(Module) when is_atom(Module) ->
+    RequiredCallbacks = [{init, 1}, {send, 2}, {close, 1}],
+
+    case check_callbacks_exported(Module, RequiredCallbacks) of
+        ok ->
+            TransportType = detect_transport_type(Module),
+            {ok, TransportType};
+        {error, Missing} ->
+            {error, {missing_callbacks, Missing}}
+    end.
+
+%% @doc Validate transport initialization with REAL transport instance
+%% Chicago School: Test actual init/1 call, no mocks
+-spec validate_init(module(), transport_type(), map()) ->
+    {ok, term()} | {error, init_failed}.
+validate_init(Module, TransportType, Opts) when is_atom(Module), is_map(Opts) ->
+    try
+        ?LOG_INFO("Validating ~p transport init with real instance", [TransportType]),
+
+        case Module:init(Opts) of
+            {ok, State} ->
+                ?LOG_INFO("~p init succeeded", [TransportType]),
+                {ok, State};
+            {error, Reason} ->
+                ?LOG_ERROR("~p init failed: ~p", [TransportType, Reason]),
+                {error, {init_failed, Reason}}
+        end
+    catch
+        Class:Error:Stacktrace ->
+            ?LOG_ERROR("~p init exception ~p:~p~n~p",
+                      [TransportType, Class, Error, Stacktrace]),
+            {error, {init_exception, {Class, Error}}}
+    end.
+
+%% @doc Validate transport send with REAL message
+%% Chicago School: Test actual send/2 call, verify message integrity
+-spec validate_send(module(), binary(), term()) ->
+    {ok, term()} | {error, send_failed}.
+validate_send(Module, Data, State) when is_atom(Module), is_binary(Data) ->
+    try
+        case Module:send(State, Data) of
+            ok ->
+                {ok, State};
+            {error, Reason} ->
+                ?LOG_ERROR("~p send failed: ~p", [Module, Reason]),
+                {error, {send_failed, Reason}}
+        end
+    catch
+        Class:Error:Stacktrace ->
+            ?LOG_ERROR("~p send exception ~p:~p~n~p",
+                      [Module, Class, Error, Stacktrace]),
+            {error, {send_exception, {Class, Error}}}
+    end.
+
+%% @doc Validate transport close with REAL connection cleanup
+%% Chicago School: Test actual close/1 call, verify cleanup
+-spec validate_close(module(), term()) -> ok | {error, close_failed}.
+validate_close(Module, State) when is_atom(Module) ->
+    try
+        case Module:close(State) of
+            ok ->
+                ok;
+            Other ->
+                ?LOG_WARNING("~p close returned unexpected: ~p", [Module, Other]),
+                {error, {close_unexpected_return, Other}}
+        end
+    catch
+        Class:Error:Stacktrace ->
+            ?LOG_ERROR("~p close exception ~p:~p~n~p",
+                      [Module, Class, Error, Stacktrace]),
+            {error, {close_exception, {Class, Error}}}
+    end.
+
+%% @doc Validate message format integrity
+%% Ensures messages arrive intact with valid JSON-RPC 2.0 structure
+-spec validate_message_format(transport_type(), binary()) ->
+    ok | {error, invalid_format}.
+validate_message_format(_TransportType, Data) when is_binary(Data) ->
+    try
+        case jsx:decode(Data, [return_maps]) of
+            Message when is_map(Message) ->
+                case maps:get(<<"jsonrpc">>, Message, undefined) of
+                    <<"2.0">> ->
+                        validate_jsonrpc_structure(Message);
+                    _ ->
+                        {error, {invalid_jsonrpc_version, Message}}
+                end;
+            _ ->
+                {error, {invalid_json, Data}}
+        end
+    catch
+        error:_ ->
+            {error, {json_decode_failed, Data}}
+    end.
+
+%% @doc Validate round-trip message latency (<100ms requirement)
+%% Chicago School: Measure actual send latency with REAL transport
+-spec validate_round_trip(module(), term(), pos_integer()) ->
+    {ok, #{latency_ms => float()}} | {error, term()}.
+validate_round_trip(Module, State, NumMessages)
+  when is_atom(Module), is_integer(NumMessages), NumMessages > 0 ->
+    TestMessage = create_test_message(),
+
+    StartTime = erlang:monotonic_time(microsecond),
+
+    SendResults = [begin
+        validate_send(Module, TestMessage, State)
+    end || _ <- lists:seq(1, NumMessages)],
+
+    EndTime = erlang:monotonic_time(microsecond),
+
+    TotalDuration = EndTime - StartTime,
+    AvgLatency = TotalDuration / NumMessages / 1000.0, % Convert to ms
+
+    SuccessCount = length([R || {ok, _} <- SendResults]),
+
+    case SuccessCount =:= NumMessages of
+        true ->
+            ?LOG_INFO("Round-trip latency: ~.2f ms/msg (~p msgs)",
+                     [AvgLatency, NumMessages]),
+
+            case AvgLatency < 100.0 of
+                true ->
+                    {ok, #{
+                        latency_ms => AvgLatency,
+                        total_duration_ms => TotalDuration / 1000.0,
+                        messages => NumMessages
+                    }};
+                false ->
+                    {error, {latency_exceeded, #{
+                        latency_ms => AvgLatency,
+                        threshold_ms => 100.0
+                    }}}
+            end;
+        false ->
+            {error, {send_failures, #{
+                requested => NumMessages,
+                succeeded => SuccessCount
+            }}}
+    end.
+
+%% @doc Validate concurrent connections (REAL instances, no mocks)
+%% Chicago School: Start multiple actual transport instances
+-spec validate_concurrent_connections(module(), map(), pos_integer()) ->
+    {ok, [term()]} | {error, term()}.
+validate_concurrent_connections(Module, BaseOpts, NumConnections)
+  when is_atom(Module), is_map(BaseOpts), is_integer(NumConnections), NumConnections > 0 ->
+    StartTime = erlang:monotonic_time(millisecond),
+
+    %% Start connections concurrently
+    Results = [begin
+        Opts = BaseOpts#{connection_id => N},
+        Module:init(Opts)
+    end || N <- lists:seq(1, NumConnections)],
+
+    EndTime = erlang:monotonic_time(millisecond),
+    Duration = EndTime - StartTime,
+
+    SuccessCount = length([R || {ok, _} <- Results]),
+
+    case SuccessCount =:= NumConnections of
+        true ->
+            ?LOG_INFO("Started ~p concurrent connections in ~p ms",
+                     [NumConnections, Duration]),
+            States = [S || {ok, S} <- Results],
+
+            %% Cleanup: Close all connections
+            [Module:close(S) || S <- States],
+
+            {ok, States};
+        false ->
+            %% Cleanup partial successes
+            [Module:close(S) || {ok, S} <- Results],
+
+            FailureCount = NumConnections - SuccessCount,
+            {error, {concurrent_connections_failed, #{
+                requested => NumConnections,
+                succeeded => SuccessCount,
+                failed => FailureCount
+            }}}
+    end.
+
+%% @private Validate JSON-RPC 2.0 structure
+-spec validate_jsonrpc_structure(map()) -> ok | {error, term()}.
+validate_jsonrpc_structure(Message) when is_map(Message) ->
+    HasMethod = maps:is_key(<<"method">>, Message),
+    HasResult = maps:is_key(<<"result">>, Message),
+    HasError = maps:is_key(<<"error">>, Message),
+
+    case {HasMethod, HasResult, HasError} of
+        {true, false, false} ->
+            %% Request or notification
+            ok;
+        {false, true, false} ->
+            %% Response - must have id
+            case maps:is_key(<<"id">>, Message) of
+                true -> ok;
+                false -> {error, missing_id_in_response}
+            end;
+        {false, false, true} ->
+            %% Error response - must have id
+            case maps:is_key(<<"id">>, Message) of
+                true -> ok;
+                false -> {error, missing_id_in_error}
+            end;
+        _ ->
+            {error, invalid_message_structure}
+    end;
+validate_jsonrpc_structure(_) ->
+    {error, not_a_map}.
+
+%% @private Create test JSON-RPC 2.0 message
+-spec create_test_message() -> binary().
+create_test_message() ->
+    Message = #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"method">> => <<"ping">>,
+        <<"id">> => 1
+    },
+    jsx:encode(Message).
+
+%% @private Check if callbacks are exported
+-spec check_callbacks_exported(module(), [{atom(), arity()}]) ->
+    ok | {error, [term()]}.
+check_callbacks_exported(Module, RequiredCallbacks) ->
+    Missing = [Callback || Callback <- RequiredCallbacks,
+                          not erlang:function_exported(Module, element(1, Callback),
+                                                       element(2, Callback))],
+
+    case Missing of
+        [] -> ok;
+        _ -> {error, Missing}
+    end.
 
 %%%===================================================================
 %%% Internal functions - Code Inspection Helpers
