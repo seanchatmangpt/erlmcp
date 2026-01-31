@@ -616,17 +616,22 @@ ensure_cache_table() ->
             ?LOG_DEBUG("Mnesia cache table already exists"),
             true;
         false ->
+            %% disc_copies requires a named node (not nonode@nohost)
+            UseDiscCopies = (node() =/= 'nonode@nohost'),
+
             %% Create table with explicit field names (Mnesia needs table name as first field)
             case mnesia:create_table(erlmcp_cache_l2, [
                 {type, set},
                 {attributes, [key, value, level, inserted_at, expires_at,
                               access_count, last_accessed, etag, tags,
                               dependencies, strategy]},
-                {disc_copies, [node()]},
+                {disc_copies, case UseDiscCopies of true -> [node()]; false -> [] end},
+                {ram_copies, case UseDiscCopies of true -> []; false -> [node()] end},
                 {index, [tags, dependencies]}
             ]) of
                 {atomic, ok} ->
-                    ?LOG_INFO("Created Mnesia cache table: erlmcp_cache_l2"),
+                    ?LOG_INFO("Created Mnesia cache table: erlmcp_cache_l2 (storage: ~p)",
+                        [case UseDiscCopies of true -> disc_copies; false -> ram_copies end]),
                     true;
                 {aborted, {already_exists, _}} ->
                     true;

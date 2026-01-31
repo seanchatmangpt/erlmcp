@@ -166,7 +166,6 @@ merge_headers_case_insensitive_test() ->
     Headers = erlmcp_security_headers:add_headers(Existing),
 
     %% Should not duplicate X-Frame-Options (case-insensitive)
-    %% Use binary_to_list + string:to_lower for OTP 25-27 compatibility
     FrameOptions = [K || {K, _V} <- Headers,
                         string:to_lower(binary_to_list(K)) =:= "x-frame-options"],
     ?assert(length(FrameOptions) =:= 1).

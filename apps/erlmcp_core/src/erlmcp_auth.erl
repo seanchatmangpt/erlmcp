@@ -706,88 +706,96 @@ do_validate_oauth2_token(Token, State) ->
 
 %% @private Perform RFC 7662 OAuth2 token introspection.
 introspect_oauth2_token(Token, Config, State) ->
-    IntrospectUrl = maps:get(introspect_url, Config),
-    ClientId = maps:get(client_id, Config),
-    ClientSecret = maps:get(client_secret, Config),
-    Timeout = maps:get(timeout, Config, 5000),
+    case {maps:get(introspection_url, Config, undefined),
+          maps:get(client_id, Config, undefined),
+          maps:get(client_secret, Config, undefined)} of
+        {undefined, _, _} ->
+            {error, oauth2_introspection_url_missing};
+        {_, undefined, _} ->
+            {error, oauth2_client_id_missing};
+        {_, _, undefined} ->
+            {error, oauth2_client_secret_missing};
+        {IntrospectUrl, ClientId, ClientSecret} ->
+            Timeout = maps:get(timeout, Config, 5000),
 
-    % Build form-encoded request body
-    Body = uri_string:compose_query([
-        {<<"token">>, Token},
-        {<<"token_type_hint">>, <<"access_token">>}
-    ]),
+            % Build form-encoded request body
+            Body = uri_string:compose_query([
+                {<<"token">>, Token},
+                {<<"token_type_hint">>, <<"access_token">>}
+            ]),
 
-    % Prepare Basic Auth header
-    AuthHeader = <<"Basic ", (base64:encode(<<ClientId/binary, ":", ClientSecret/binary>>))/binary>>,
+            % Prepare Basic Auth header
+            AuthHeader = <<"Basic ", (base64:encode(<<ClientId/binary, ":", ClientSecret/binary>>))/binary>>,
 
-    % Parse introspection URL
-    try
-        {Scheme, Host, Port, Path, _Query} = parse_http_url(IntrospectUrl),
+            % Parse introspection URL
+            try
+                {Scheme, Host, Port, Path, _Query} = parse_http_url(IntrospectUrl),
 
-        % Open HTTP connection with gun
-        GunOpts = #{
-            transport => scheme_to_transport(Scheme),
-            protocols => [http],
-            retry => 0,
-            retry_timeout => Timeout,
-            connect_timeout => Timeout
-        },
+                % Open HTTP connection with gun
+                GunOpts = #{
+                    transport => scheme_to_transport(Scheme),
+                    protocols => [http],
+                    retry => 0,
+                    retry_timeout => Timeout,
+                    connect_timeout => Timeout
+                },
 
-        case gun:open(Host, Port, GunOpts) of
-            {ok, GunPid} ->
-                MonitorRef = monitor(process, GunPid),
+                case gun:open(Host, Port, GunOpts) of
+                    {ok, GunPid} ->
+                        MonitorRef = monitor(process, GunPid),
 
-                try
-                    % Wait for connection up
-                    case gun:await_up(GunPid, Timeout) of
-                        {ok, _Protocol} ->
-                            % POST to introspection endpoint
-                            Headers = [
-                                {<<"content-type">>, <<"application/x-www-form-urlencoded">>},
-                                {<<"authorization">>, AuthHeader},
-                                {<<"accept">>, <<"application/json">>}
-                            ],
+                        try
+                            % Wait for connection up
+                            case gun:await_up(GunPid, Timeout) of
+                                {ok, _Protocol} ->
+                                    % POST to introspection endpoint
+                                    Headers = [
+                                        {<<"content-type">>, <<"application/x-www-form-urlencoded">>},
+                                        {<<"authorization">>, AuthHeader},
+                                        {<<"accept">>, <<"application/json">>}
+                                    ],
 
-                            StreamRef = gun:post(GunPid, Path, Headers, Body),
+                                    StreamRef = gun:post(GunPid, Path, Headers, Body),
 
-                            % Await response with timeout
-                            ResponseTimeout = maps:get(response_timeout, Config, 10000),
-                            case gun:await(GunPid, StreamRef, ResponseTimeout) of
-                                {response, fin, Status, HeadersResp} ->
-                                    handle_introspect_response(Status, HeadersResp, <<>>, Token, State);
+                                    % Await response with timeout
+                                    ResponseTimeout = maps:get(response_timeout, Config, 10000),
+                                    case gun:await(GunPid, StreamRef, ResponseTimeout) of
+                                        {response, fin, Status, HeadersResp} ->
+                                            handle_introspect_response(Status, HeadersResp, <<>>, Token, State);
 
-                                {response, nofin, Status, HeadersResp} ->
-                                    case gun:await_body(GunPid, StreamRef, ResponseTimeout) of
-                                        {ok, BodyResp} ->
-                                            handle_introspect_response(Status, HeadersResp, BodyResp, Token, State);
-                                        {error, ConnReason} ->
-                                            logger:error("OAuth2 introspection body error: ~p", [ConnReason]),
-                                            {error, introspection_failed}
+                                        {response, nofin, Status, HeadersResp} ->
+                                            case gun:await_body(GunPid, StreamRef, ResponseTimeout) of
+                                                {ok, BodyResp} ->
+                                                    handle_introspect_response(Status, HeadersResp, BodyResp, Token, State);
+                                                {error, ConnReason} ->
+                                                    logger:error("OAuth2 introspection body error: ~p", [ConnReason]),
+                                                    {error, introspection_failed}
+                                            end;
+
+                                        {error, AwaitReason} ->
+                                            logger:error("OAuth2 introspection await error: ~p", [AwaitReason]),
+                                            {error, introspection_timeout}
                                     end;
 
-                                {error, AwaitReason} ->
-                                    logger:error("OAuth2 introspection await error: ~p", [AwaitReason]),
-                                    {error, introspection_timeout}
-                            end;
+                                {error, ConnectFailedReason} ->
+                                    logger:error("OAuth2 introspection connection failed: ~p", [ConnectFailedReason]),
+                                    {error, connection_failed}
+                            end
+                        after
+                            % Always cleanup: demonitor and close connection
+                            demonitor(MonitorRef, [flush]),
+                            gun:close(GunPid)
+                        end;
 
-                        {error, ConnectFailedReason} ->
-                            logger:error("OAuth2 introspection connection failed: ~p", [ConnectFailedReason]),
-                            {error, connection_failed}
-                    end
-                after
-                    % Always cleanup: demonitor and close connection
-                    demonitor(MonitorRef, [flush]),
-                    gun:close(GunPid)
-                end;
-
-            {error, GunOpenReason} ->
-                logger:error("OAuth2 introspection gun:open failed: ~p", [GunOpenReason]),
-                {error, connection_failed}
-        end
-    catch
-        error:Reason3:Stacktrace ->
-            logger:error("OAuth2 introspection error: ~p~nStacktrace: ~p", [Reason3, Stacktrace]),
-            {error, introspection_failed}
+                    {error, GunOpenReason} ->
+                        logger:error("OAuth2 introspection gun:open failed: ~p", [GunOpenReason]),
+                        {error, connection_failed}
+                end
+            catch
+                error:Reason3:Stacktrace ->
+                    logger:error("OAuth2 introspection error: ~p~nStacktrace: ~p", [Reason3, Stacktrace]),
+                    {error, introspection_failed}
+            end
     end.
 
 %% @private Handle introspection response

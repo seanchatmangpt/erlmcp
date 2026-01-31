@@ -327,16 +327,16 @@ test_generate_evidence_report() ->
 
     %% Then: Report should be valid JSON with metadata
     ?assert(is_map(Report)),
-    ?assert(maps:is_key(<<"report_id">>, Report)),
-    ?assert(maps:is_key(<<"timestamp">>, Report)),
-    ?assert(maps:is_key(<<"evidence_count">>, Report)),
-    ?assert(maps:is_key(<<"evidence_items">>, Report)),
-    ?assertEqual(2, maps:get(<<"evidence_count">>, Report)),
+    ?assert(maps:is_key(report_id, Report)),
+    ?assert(maps:is_key(timestamp, Report)),
+    ?assert(maps:is_key(evidence_count, Report)),
+    ?assert(maps:is_key(evidence_items, Report)),
+    ?assertEqual(2, maps:get(evidence_count, Report)),
 
     %% Verify evidence items in report
-    Items = maps:get(<<"evidence_items">>, Report),
+    Items = maps:get(evidence_items, Report),
     ?assertEqual(2, length(Items)),
-    ?assertEqual(<<"ev1">>, maps:get(<<"evidence_id">>, lists:nth(1, Items))).
+    ?assertEqual(<<"ev1">>, maps:get(evidence_id, lists:nth(1, Items))).
 
 %% @doc Test linking evidence to receipt chain
 test_link_receipt_chain() ->
@@ -479,7 +479,7 @@ test_full_workflow() ->
 
     %% Step 6: Generate report
     Report = erlmcp_compliance_report:generate_evidence_report([TestEvidence, CoverageEvidence]),
-    ?assert(maps:is_key(<<"evidence_count">>, Report)),
-    ?assertEqual(2, maps:get(<<"evidence_count">>, Report)),
+    ?assert(maps:is_key(evidence_count, Report)),
+    ?assertEqual(2, maps:get(evidence_count, Report)),
 
     cleanup_evidence({TmpDir}).

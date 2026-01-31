@@ -263,11 +263,26 @@ mnesia_backend_test_() ->
      ] end}.
 
 setup_mnesia() ->
+    %% Stop Mnesia if running and delete any existing schema
     application:stop(mnesia),
-    application:stop(mnesia),
+    case node() of
+        'nonode@nohost' ->
+            %% Single-node mode: delete Mnesia directory if it exists
+            mnesia:delete_schema([node()]);
+        _ ->
+            %% Named node: delete schema properly
+            mnesia:delete_schema([node()])
+    end,
 
-    %% Create schema for testing
-    mnesia:create_schema([node()]),
+    %% Create schema for testing (only if not nonode@nohost)
+    %% disc_copies requires a named node, but we use ram_copies for testing
+    case node() of
+        'nonode@nohost' ->
+            %% Single-node mode: start without schema
+            ok;
+        _ ->
+            mnesia:create_schema([node()])
+    end,
     application:start(mnesia),
 
     {ok, State} = erlmcp_session_mnesia:init(#{
@@ -279,7 +294,11 @@ setup_mnesia() ->
 cleanup_mnesia(_State) ->
     mnesia:delete_table(erlmcp_session_mnesia_test),
     application:stop(mnesia),
-    mnesia:delete_schema([node()]),
+    %% Only delete schema if we created it (i.e., not on nonode@nohost)
+    case node() of
+        'nonode@nohost' -> ok;
+        _ -> mnesia:delete_schema([node()])
+    end,
     ok.
 
 test_mnesia_store_and_fetch() ->

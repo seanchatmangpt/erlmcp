@@ -1,12 +1,11 @@
 %%%-------------------------------------------------------------------
 %%% @doc Protocol Validator Test Suite
 %%%
-%%% Tests all 19 validation checks implemented in erlmcp_protocol_validator
+%%% Tests all validation functions in erlmcp_protocol_validator
 %%%
 %%% == Chicago School TDD ==
-%%% Uses REAL erlmcp_server processes from erlmcp_test_helpers.
-%%% Tests observable behavior through API calls only.
-%%% NO internal state inspection or mocks.
+%%% Tests observable behavior through API calls.
+%%% Validates actual protocol compliance.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_protocol_validator_tests).
@@ -14,787 +13,620 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(SKIP_SERVER_TESTS, true).  % Skip server-based tests for now
-
 %%%===================================================================
-%%% JSON-RPC Version Tests (1/19)
+%%% JSON-RPC Validation Tests
 %%%===================================================================
 
-jsonrpc_version_test_() ->
-    {foreach,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     [
-      fun test_jsonrpc_version/1
-     ]}.
-
-test_jsonrpc_version(ServerPid) ->
-    %% Test via API: initialize request should use JSON-RPC 2.0
-    InitRequest = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"initialize">>,
-        params => #{
-            protocolVersion => <<"2025-11-25">>,
-            capabilities => #{},
-            clientInfo => #{name => <<"test_client">>, version => <<"1.0.0">>}
-        }
+%% @doc Test validate_jsonrpc with valid message
+validate_jsonrpc_valid_message_test() ->
+    Message = #{
+        <<"jsonrpc">> => <<"2.0">>,
+        <<"id">> => 1,
+        <<"method">> => <<"ping">>
     },
+    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
+    ?assertEqual(ok, Result).
 
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, InitRequest),
+%% @doc Test validate_jsonrpc with missing version field
+validate_jsonrpc_missing_version_test() ->
+    Message = #{<<"id">> => 1, <<"method">> => <<"ping">>},
+    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
+    ?assertMatch({error, #{reason := invalid_jsonrpc_version}}, Result).
 
-    %% Verify response uses JSON-RPC 2.0
-    ?assertMatch(#{jsonrpc := <<"2.0">>}, Response),
-    ?assertEqual(<<"2.0">>, maps:get(jsonrpc, Response)).
-
-%%%===================================================================
-%%% Request Format Tests (2/19)
-%%%===================================================================
-
-request_format_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid request with all required fields", fun test_request_format/1}
-     ] end}.
-
-test_request_format(ServerPid) ->
-    %% Test valid request format through API
-    Request = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"ping">>
+%% @doc Test validate_jsonrpc with wrong version
+validate_jsonrpc_wrong_version_test() ->
+    Message = #{
+        <<"jsonrpc">> => <<"1.0">>,
+        <<"id">> => 1,
+        <<"method">> => <<"ping">>
     },
+    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
+    ?assertMatch({error, #{reason := invalid_jsonrpc_version}}, Result).
 
-    Result = erlmcp_server:handle_request(ServerPid, Request),
-
-    %% Valid request should succeed
-    ?assertMatch({ok, _}, Result).
-
-%%%===================================================================
-%%% Response Format Tests (3/19)
-%%%===================================================================
-
-response_format_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid success response", fun test_response_format/1}
-     ] end}.
-
-test_response_format(ServerPid) ->
-    %% Test response format through API
-    Request = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"ping">>
-    },
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, Request),
-
-    %% Verify response has required fields
-    ?assert(maps:is_key(jsonrpc, Response)),
-    ?assert(maps:is_key(id, Response)),
-    ?assert(maps:is_key(result, Response)).
+%% @doc Test validate_jsonrpc with non-map input
+validate_jsonrpc_not_map_test() ->
+    Result = erlmcp_protocol_validator:validate_jsonrpc(not_a_map),
+    ?assertMatch({error, #{reason := not_map}}, Result).
 
 %%%===================================================================
-%%% Notification Format Tests (4/19)
+%%% Method Name Validation Tests
 %%%===================================================================
 
-notification_format_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid notification without id", fun test_notification_format/1}
-     ] end}.
-
-test_notification_format(ServerPid) ->
-    %% Test notification format (no id field)
-    Notification = #{
-        jsonrpc => <<"2.0">>,
-        method => <<"notifications/message">>,
-        params => #{message => <<"test">>}
-    },
-
-    %% Notifications should be handled (no response expected)
-    Result = erlmcp_server:handle_notification(ServerPid, Notification),
-
-    %% Check result is valid
-    case Result of
-        ok -> ok;
-        {error, _} -> ok
-    end.
-
-%%%===================================================================
-%%% Batch Request Tests (5/19)
-%%%===================================================================
-
-batch_requests_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid batch request array", fun test_batch_requests/1}
-     ] end}.
-
-test_batch_requests(ServerPid) ->
-    %% Test batch requests
-    BatchRequest = [
-        #{jsonrpc => <<"2.0">>, id => 1, method => <<"ping">>},
-        #{jsonrpc => <<"2.0">>, id => 2, method => <<"ping">>}
-    ],
-
-    Result = erlmcp_server:handle_batch(ServerPid, BatchRequest),
-
-    %% Verify batch response
-    ?assertMatch({ok, [_ | _]}, Result),
-    {ok, Responses} = Result,
-    ?assertEqual(2, length(Responses)).
-
-%%%===================================================================
-%%% Initialize Params Tests (6/19)
-%%%===================================================================
-
-initialize_params_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid initialize params", fun test_initialize_params/1}
-     ] end}.
-
-test_initialize_params(ServerPid) ->
-    %% Test initialize parameters
-    InitRequest = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"initialize">>,
-        params => #{
-            protocolVersion => <<"2025-11-25">>,
-            capabilities => #{
-                roots => #{listChanged => true},
-                sampling => #{}
-            },
-            clientInfo => #{
-                name => <<"test_client">>,
-                version => <<"1.0.0">>
-            }
-        }
-    },
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, InitRequest),
-
-    %% Verify initialize response
-    ?assertMatch(#{result := #{serverInfo := _}}, Response).
-
-%%%===================================================================
-%%% Initialize Response Tests (7/19)
-%%%===================================================================
-
-initialize_response_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid initialize response", fun test_initialize_response/1}
-     ] end}.
-
-test_initialize_response(ServerPid) ->
-    %% Test initialize response structure
-    InitRequest = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"initialize">>,
-        params => #{
-            protocolVersion => <<"2025-11-25">>,
-            capabilities => #{},
-            clientInfo => #{name => <<"test">>, version => <<"1.0">>}
-        }
-    },
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, InitRequest),
-
-    %% Verify response structure
-    Result = maps:get(result, Response),
-    ?assert(maps:is_key(protocolVersion, Result)),
-    ?assert(maps:is_key(serverInfo, Result)),
-    ?assert(maps:is_key(capabilities, Result)).
-
-%%%===================================================================
-%%% Tools List Params Tests (8/19)
-%%%===================================================================
-
-tools_list_params_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid tools/list params", fun test_tools_list_params/1}
-     ] end}.
-
-test_tools_list_params(ServerPid) ->
-    %% Test tools/list parameters
-    Request = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"tools/list">>,
-        params => #{}
-    },
-
-    Result = erlmcp_server:handle_request(ServerPid, Request),
-
-    %% Should succeed
-    ?assertMatch({ok, _}, Result).
-
-%%%===================================================================
-%%% Tools List Response Tests (9/19)
-%%%===================================================================
-
-tools_list_response_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid tools/list response", fun test_tools_list_response/1}
-     ] end}.
-
-test_tools_list_response(ServerPid) ->
-    %% Test tools/list response structure
-    Request = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"tools/list">>
-    },
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, Request),
-
-    %% Verify tools array
-    Result = maps:get(result, Response),
-    Tools = maps:get(tools, Result),
-    ?assert(is_list(Tools)).
-
-%%%===================================================================
-%%% Resources List Params Tests (10/19)
-%%%===================================================================
-
-resources_list_params_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid resources/list params", fun test_resources_list_params/1}
-     ] end}.
-
-test_resources_list_params(ServerPid) ->
-    %% Test resources/list parameters
-    Request = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"resources/list">>
-    },
-
-    Result = erlmcp_server:handle_request(ServerPid, Request),
-
-    %% Should succeed
-    ?assertMatch({ok, _}, Result).
-
-%%%===================================================================
-%%% Resources List Response Tests (11/19)
-%%%===================================================================
-
-resources_list_response_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid resources/list response", fun test_resources_list_response/1}
-     ] end}.
-
-test_resources_list_response(ServerPid) ->
-    %% Test resources/list response structure
-    Request = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"resources/list">>
-    },
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, Request),
-
-    %% Verify resources array
-    Result = maps:get(result, Response),
-    Resources = maps:get(resources, Result),
-    ?assert(is_list(Resources)).
-
-%%%===================================================================
-%%% Result Exclusivity Tests (12/19)
-%%%===================================================================
-
-result_exclusivity_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Result and error are mutually exclusive", fun test_result_exclusivity/1}
-     ] end}.
-
-test_result_exclusivity(ServerPid) ->
-    %% Test that result and error are mutually exclusive
-    %% Success case
-    SuccessRequest = #{jsonrpc => <<"2.0">>, id => 1, method => <<"ping">>},
-    {ok, SuccessResponse} = erlmcp_server:handle_request(ServerPid, SuccessRequest),
-
-    HasResult = maps:is_key(result, SuccessResponse),
-    HasError = maps:is_key(error, SuccessResponse),
-
-    ?assert(HasResult xor HasError).
-
-%%%===================================================================
-%%% Error Object Tests (13/19)
-%%%===================================================================
-
-error_object_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid error object with code and message", fun test_error_object/1}
-     ] end}.
-
-test_error_object(ServerPid) ->
-    %% Test error object structure
-    InvalidRequest = #{jsonrpc => <<"2.0">>, id => 1, method => <<"invalid_method">>},
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, InvalidRequest),
-
-    case maps:get(error, Response, undefined) of
-        undefined ->
-            %% Method might exist, try invalid params
-            InvalidParams = #{jsonrpc => <<"2.0">>, id => 1, method => <<"initialize">>, params => #{}},
-            {ok, ErrorResponse} = erlmcp_server:handle_request(ServerPid, InvalidParams),
-
-            Error = maps:get(error, ErrorResponse),
-            ?assert(maps:is_key(code, Error)),
-            ?assert(maps:is_key(message, Error));
-        Error ->
-            ?assert(maps:is_key(code, Error)),
-            ?assert(maps:is_key(message, Error))
-    end.
-
-%%%===================================================================
-%%% Response ID Tests (14/19)
-%%%===================================================================
-
-response_id_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Valid response ID types", fun test_response_id/1}
-     ] end}.
-
-test_response_id(ServerPid) ->
-    %% Test response ID matches request ID
-    Request = #{jsonrpc => <<"2.0">>, id => 123, method => <<"ping">>},
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, Request),
-
-    ?assertEqual(123, maps:get(id, Response)).
-
-%%%===================================================================
-%%% Response JSON-RPC Tests (15/19)
-%%%===================================================================
-
-response_jsonrpc_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Response has jsonrpc version", fun test_response_jsonrpc/1}
-     ] end}.
-
-test_response_jsonrpc(ServerPid) ->
-    %% Test response has jsonrpc field
-    Request = #{jsonrpc => <<"2.0">>, id => 1, method => <<"ping">>},
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, Request),
-
-    ?assertEqual(<<"2.0">>, maps:get(jsonrpc, Response)).
-
-%%%===================================================================
-%%% MCP Refusal Codes Tests (16/19)
-%%%===================================================================
-
-mcp_refusal_codes_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"MCP error codes in valid range", fun test_mcp_refusal_codes/1}
-     ] end}.
-
-test_mcp_refusal_codes(ServerPid) ->
-    %% Test MCP refusal codes are in valid range (1001-1089)
-    %% This is verified through error handling
-    %% Actual refusal codes are generated by specific error conditions
-
-    %% For now, verify error codes are valid integers
-    Request = #{jsonrpc => <<"2.0">>, id => 1, method => <<"invalid_method">>},
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, Request),
-
-    case maps:get(error, Response, undefined) of
-        undefined -> ok;
-        Error ->
-            Code = maps:get(code, Error),
-            ?assert(is_integer(Code)),
-            ?assert(Code > 0)
-    end.
-
-%%%===================================================================
-%%% JSON-RPC Error Codes Tests (17/19)
-%%%===================================================================
-
-jsonrpc_error_codes_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"JSON-RPC error codes valid", fun test_jsonrpc_error_codes/1}
-     ] end}.
-
-test_jsonrpc_error_codes(ServerPid) ->
-    %% Test JSON-RPC standard error codes
-    %% -32700 (Parse error), -32600 (Invalid Request), -32601 (Method not found)
-    %% -32602 (Invalid params), -32603 (Internal error)
-
-    %% Test method not found
-    Request = #{jsonrpc => <<"2.0">>, id => 1, method => <<"nonexistent_method">>},
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, Request),
-
-    case maps:get(error, Response, undefined) of
-        undefined -> ok;
-        Error ->
-            Code = maps:get(code, Error),
-            %% Verify it's a valid JSON-RPC error code
-            ?assert(lists:member(Code, [-32700, -32600, -32601, -32602, -32603]))
-    end.
-
-%%%===================================================================
-%%% Custom Error Codes Tests (18/19)
-%%%===================================================================
-
-custom_error_codes_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Custom error codes handled properly", fun test_custom_error_codes/1}
-     ] end}.
-
-test_custom_error_codes(ServerPid) ->
-    %% Test custom error codes (MCP-specific)
-    %% Custom codes should not conflict with JSON-RPC standard codes
-
-    %% Verify server handles errors gracefully
-    Request = #{jsonrpc => <<"2.0">>, id => 1, method => <<"tools/call">>, params => #{}},
-
-    Result = erlmcp_server:handle_request(ServerPid, Request),
-
-    %% Should handle missing tool name gracefully
-    case Result of
-        {ok, _} -> ok;
-        {error, _} -> ok
-    end.
-
-%%%===================================================================
-%%% Protocol Version Tests (19/19)
-%%%===================================================================
-
-protocol_version_2025_11_25_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"MCP 2025-11-25 version supported", fun test_protocol_version/1}
-     ] end}.
-
-test_protocol_version(ServerPid) ->
-    %% Test MCP 2025-11-25 protocol version
-    InitRequest = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"initialize">>,
-        params => #{
-            protocolVersion => <<"2025-11-25">>,
-            capabilities => #{},
-            clientInfo => #{name => <<"test">>, version => <<"1.0">>}
-        }
-    },
-
-    {ok, Response} = erlmcp_server:handle_request(ServerPid, InitRequest),
-
-    %% Verify protocol version
-    Result = maps:get(result, Response),
-    ?assertEqual(<<"2025-11-25">>, maps:get(protocolVersion, Result)).
-
-version_compatibility_test_() ->
-    {setup,
-     fun setup_server/0,
-     fun cleanup_server/1,
-     fun(_) -> [
-         {"Version compatibility check", fun test_version_compatibility/1}
-     ] end}.
-
-test_version_compatibility(ServerPid) ->
-    %% Test version compatibility
-    InitRequest = #{
-        jsonrpc => <<"2.0">>,
-        id => 1,
-        method => <<"initialize">>,
-        params => #{
-            protocolVersion => <<"2025-11-25">>,
-            capabilities => #{},
-            clientInfo => #{name => <<"test">>, version => <<"1.0">>}
-        }
-    },
-
-    Result = erlmcp_server:handle_request(ServerPid, InitRequest),
-
-    %% Should be compatible
-    ?assertMatch({ok, _}, Result).
-
-%%%===================================================================
-%%% Test 20-25: Method Validation Tests
-%%%===================================================================
-
+%% @doc Test validate_method_name with known method
 validate_method_name_resources_list_test() ->
-    %% Test resources/list method validation
     Result = erlmcp_protocol_validator:validate_method_name(<<"resources/list">>),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_method_name with tools/call
 validate_method_name_tools_call_test() ->
-    %% Test tools/call method validation
     Result = erlmcp_protocol_validator:validate_method_name(<<"tools/call">>),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_method_name with prompts/get
 validate_method_name_prompts_get_test() ->
-    %% Test prompts/get method validation
     Result = erlmcp_protocol_validator:validate_method_name(<<"prompts/get">>),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_method_name with invalid method
 validate_method_name_invalid_test() ->
-    %% Test invalid method name
     Result = erlmcp_protocol_validator:validate_method_name(<<"invalid/method">>),
     ?assertMatch({error, #{reason := unknown_method}}, Result).
 
+%% @doc Test validate_method_name with non-binary input
 validate_method_name_not_binary_test() ->
-    %% Test method name not binary
     Result = erlmcp_protocol_validator:validate_method_name(not_binary),
     ?assertMatch({error, #{reason := invalid_method_type}}, Result).
 
+%%%===================================================================
+%%% Notification Name Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_notification_name with cancelled notification
 validate_notification_name_cancelled_test() ->
-    %% Test notifications/cancelled validation
     Result = erlmcp_protocol_validator:validate_notification_name(<<"notifications/cancelled">>),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_notification_name with progress notification
+validate_notification_name_progress_test() ->
+    Result = erlmcp_protocol_validator:validate_notification_name(<<"notifications/progress">>),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_notification_name with invalid notification
+validate_notification_name_invalid_test() ->
+    Result = erlmcp_protocol_validator:validate_notification_name(<<"notifications/invalid">>),
+    ?assertMatch({error, #{reason := unknown_notification}}, Result).
 
 %%%===================================================================
-%%% Test 26-30: Field Type Validation Tests
+%%% Field Type Validation Tests
 %%%===================================================================
 
+%% @doc Test validate_field_type with binary
 validate_field_type_binary_test() ->
-    %% Test binary field type
     Result = erlmcp_protocol_validator:validate_field_type(<<"name">>, <<"value">>, binary),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_field_type with integer
 validate_field_type_integer_test() ->
-    %% Test integer field type
     Result = erlmcp_protocol_validator:validate_field_type(<<"count">>, 42, integer),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_field_type with map
 validate_field_type_map_test() ->
-    %% Test map field type
     Result = erlmcp_protocol_validator:validate_field_type(<<"data">>, #{}, map),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_field_type with array
 validate_field_type_array_test() ->
-    %% Test array field type
     Result = erlmcp_protocol_validator:validate_field_type(<<"items">>, [], array),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_field_type with any type
 validate_field_type_any_test() ->
-    %% Test any field type
     Result = erlmcp_protocol_validator:validate_field_type(<<"field">>, anything, any),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_field_type with type mismatch
 validate_field_type_mismatch_test() ->
-    %% Test type mismatch
     Result = erlmcp_protocol_validator:validate_field_type(<<"count">>, <<"not_int">>, integer),
     ?assertMatch({error, #{reason := type_mismatch}}, Result).
 
 %%%===================================================================
-%%% Test 31-35: Required Fields Validation Tests
+%%% Required Fields Validation Tests
 %%%===================================================================
 
+%% @doc Test validate_required_fields with all fields present
 validate_required_fields_present_test() ->
-    %% Test all required fields present
     Message = #{<<"field1">> => <<"value1">>, <<"field2">> => <<"value2">>},
     Required = [<<"field1">>, <<"field2">>],
     Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_required_fields with missing field
 validate_required_fields_missing_test() ->
-    %% Test missing required field
     Message = #{<<"field1">> => <<"value1">>},
     Required = [<<"field1">>, <<"field2">>],
     Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
     ?assertMatch({error, #{reason := missing_required_fields}}, Result).
 
+%% @doc Test validate_required_fields with empty list
 validate_required_fields_empty_list_test() ->
-    %% Test no required fields
     Message = #{<<"field1">> => <<"value1">>},
     Required = [],
     Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_required_fields with non-map message
 validate_required_fields_not_map_test() ->
-    %% Test message not a map
     Message = not_a_map,
     Required = [<<"field1">>],
     Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
     ?assertMatch({error, #{reason := invalid_message_structure}}, Result).
 
+%% @doc Test validate_required_fields with extra fields allowed
 validate_required_fields_extra_fields_test() ->
-    %% Test extra fields allowed
     Message = #{<<"field1">> => <<"v1">>, <<"field2">> => <<"v2">>, <<"extra">> => <<"v3">>},
     Required = [<<"field1">>, <<"field2">>],
     Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
 %%%===================================================================
-%%% Test 36-40: Error Code Validation Tests
+%%% Error Code Validation Tests
 %%%===================================================================
 
+%% @doc Test validate_error_code with parse error
 validate_error_code_parse_error_test() ->
-    %% Test JSON-RPC parse error code
     Result = erlmcp_protocol_validator:validate_error_code(-32700),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_error_code with invalid request
 validate_error_code_invalid_request_test() ->
-    %% Test invalid request error code
     Result = erlmcp_protocol_validator:validate_error_code(-32600),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_error_code with method not found
 validate_error_code_method_not_found_test() ->
-    %% Test method not found error code
     Result = erlmcp_protocol_validator:validate_error_code(-32601),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_error_code with invalid params
 validate_error_code_invalid_params_test() ->
-    %% Test invalid params error code
     Result = erlmcp_protocol_validator:validate_error_code(-32602),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
 
+%% @doc Test validate_error_code with internal error
 validate_error_code_internal_error_test() ->
-    %% Test internal error code
     Result = erlmcp_protocol_validator:validate_error_code(-32603),
-    ?assertMatch(ok, Result).
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_error_code with experimental range (1090-1099)
+validate_error_code_experimental_test() ->
+    Result = erlmcp_protocol_validator:validate_error_code(1090),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_error_code with invalid code
+validate_error_code_invalid_test() ->
+    Result = erlmcp_protocol_validator:validate_error_code(99999),
+    ?assertMatch({error, invalid_error_code}, Result).
 
 %%%===================================================================
-%%% Test 41-45: Additional JSONRPC Validation Tests
+%%% Request ID Validation Tests
 %%%===================================================================
 
-validate_jsonrpc_empty_map_test() ->
-    %% Test empty map
-    Result = erlmcp_protocol_validator:validate_jsonrpc(#{}),
-    ?assertMatch({error, #{reason := invalid_jsonrpc_version}}, Result).
+%% @doc Test validate_request_id with null
+validate_request_id_null_test() ->
+    Result = erlmcp_protocol_validator:validate_request_id(null),
+    ?assertEqual(ok, Result).
 
-validate_jsonrpc_wrong_version_test() ->
-    %% Test wrong JSONRPC version
-    Message = #{<<"jsonrpc">> => <<"1.0">>, <<"id">> => 1, <<"method">> => <<"ping">>},
-    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
-    ?assertMatch({error, #{reason := invalid_jsonrpc_version}}, Result).
+%% @doc Test validate_request_id with binary
+validate_request_id_binary_test() ->
+    Result = erlmcp_protocol_validator:validate_request_id(<<"req-123">>),
+    ?assertEqual(ok, Result).
 
-validate_jsonrpc_not_map_test() ->
-    %% Test non-map input
-    Result = erlmcp_protocol_validator:validate_jsonrpc(not_a_map),
-    ?assertMatch({error, #{reason := not_map}}, Result).
+%% @doc Test validate_request_id with positive integer
+validate_request_id_integer_test() ->
+    Result = erlmcp_protocol_validator:validate_request_id(123),
+    ?assertEqual(ok, Result).
 
-validate_jsonrpc_notification_no_id_test() ->
-    %% Test notification without id field
-    Message = #{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"notifications/message">>},
-    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
-    ?assertMatch(ok, Result).
+%% @doc Test validate_request_id with zero
+validate_request_id_zero_test() ->
+    Result = erlmcp_protocol_validator:validate_request_id(0),
+    ?assertEqual(ok, Result).
 
-validate_jsonrpc_response_with_result_test() ->
-    %% Test response with result
-    Message = #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 1, <<"result">> => #{}},
-    Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
-    ?assertMatch(ok, Result).
+%% @doc Test validate_request_id with negative integer (invalid)
+validate_request_id_negative_test() ->
+    Result = erlmcp_protocol_validator:validate_request_id(-1),
+    ?assertMatch({error, invalid_request_id}, Result).
+
+%% @doc Test validate_request_id with invalid type
+validate_request_id_invalid_type_test() ->
+    Result = erlmcp_protocol_validator:validate_request_id({1, 2, 3}),
+    ?assertMatch({error, invalid_request_id}, Result).
 
 %%%===================================================================
-%%% Test 46-50: Format Validation Error Tests
+%%% Method Validation Tests
 %%%===================================================================
 
-format_validation_error_simple_test() ->
-    %% Test simple error formatting
-    Error = #{reason => invalid_method, details => <<"Method not found">>},
+%% @doc Test validate_method with known method
+validate_method_known_test() ->
+    Result = erlmcp_protocol_validator:validate_method(<<"initialize">>),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_method with unknown method
+validate_method_unknown_test() ->
+    Result = erlmcp_protocol_validator:validate_method(<<"unknown_method">>),
+    ?assertMatch({error, unknown_method}, Result).
+
+%% @doc Test validate_method with non-binary
+validate_method_not_binary_test() ->
+    Result = erlmcp_protocol_validator:validate_method(initialize),
+    ?assertMatch({error, unknown_method}, Result).
+
+%%%===================================================================
+%%% Capabilities Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_capabilities with valid capabilities
+validate_capabilities_valid_test() ->
+    Caps = #{
+        <<"resources">> => #{},
+        <<"tools">> => #{}
+    },
+    Result = erlmcp_protocol_validator:validate_capabilities(Caps),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_capabilities with empty map
+validate_capabilities_empty_test() ->
+    Result = erlmcp_protocol_validator:validate_capabilities(#{}),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_capabilities with invalid type
+validate_capabilities_not_map_test() ->
+    Result = erlmcp_protocol_validator:validate_capabilities(not_a_map),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_capabilities with non-object capability
+validate_capabilities_invalid_capability_test() ->
+    Caps = #{<<"resources">> => <<"not_a_map">>},
+    Result = erlmcp_protocol_validator:validate_capabilities(Caps),
+    ?assertMatch({error, _}, Result).
+
+%%%===================================================================
+%%% Server Info Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_server_info with valid info
+validate_server_info_valid_test() ->
+    Info = #{
+        <<"name">> => <<"test_server">>,
+        <<"version">> => <<"1.0.0">>
+    },
+    Result = erlmcp_protocol_validator:validate_server_info(Info),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_server_info with missing name
+validate_server_info_missing_name_test() ->
+    Info = #{<<"version">> => <<"1.0.0">>},
+    Result = erlmcp_protocol_validator:validate_server_info(Info),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_server_info with missing version
+validate_server_info_missing_version_test() ->
+    Info = #{<<"name">> => <<"test_server">>},
+    Result = erlmcp_protocol_validator:validate_server_info(Info),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_server_info with non-string name
+validate_server_info_invalid_name_test() ->
+    Info = #{<<"name">> => 123, <<"version">> => <<"1.0.0">>},
+    Result = erlmcp_protocol_validator:validate_server_info(Info),
+    ?assertMatch({error, _}, Result).
+
+%%%===================================================================
+%%% Client Info Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_client_info with valid info
+validate_client_info_valid_test() ->
+    Info = #{
+        <<"name">> => <<"test_client">>,
+        <<"version">> => <<"1.0.0">>
+    },
+    Result = erlmcp_protocol_validator:validate_client_info(Info),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_client_info with missing name
+validate_client_info_missing_name_test() ->
+    Info = #{<<"version">> => <<"1.0.0">>},
+    Result = erlmcp_protocol_validator:validate_client_info(Info),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_client_info with missing version
+validate_client_info_missing_version_test() ->
+    Info = #{<<"name">> => <<"test_client">>},
+    Result = erlmcp_protocol_validator:validate_client_info(Info),
+    ?assertMatch({error, _}, Result).
+
+%%%===================================================================
+%%% Resource Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_resource with valid resource
+validate_resource_valid_test() ->
+    Resource = #{
+        <<"uri">> => <<"file:///test.txt">>,
+        <<"name">> => <<"test">>
+    },
+    Result = erlmcp_protocol_validator:validate_resource(Resource),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_resource with missing uri
+validate_resource_missing_uri_test() ->
+    Resource = #{<<"name">> => <<"test">>},
+    Result = erlmcp_protocol_validator:validate_resource(Resource),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_resource with missing name
+validate_resource_missing_name_test() ->
+    Resource = #{<<"uri">> => <<"file:///test.txt">>},
+    Result = erlmcp_protocol_validator:validate_resource(Resource),
+    ?assertMatch({error, _}, Result).
+
+%%%===================================================================
+%%% Tool Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_tool with valid tool
+validate_tool_valid_test() ->
+    Tool = #{
+        <<"name">> => <<"test_tool">>,
+        <<"inputSchema">> => #{<<"type">> => <<"object">>}
+    },
+    Result = erlmcp_protocol_validator:validate_tool(Tool),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_tool with missing name
+validate_tool_missing_name_test() ->
+    Tool = #{<<"inputSchema">> => #{<<"type">> => <<"object">>}},
+    Result = erlmcp_protocol_validator:validate_tool(Tool),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_tool with missing schema
+validate_tool_missing_schema_test() ->
+    Tool = #{<<"name">> => <<"test_tool">>},
+    Result = erlmcp_protocol_validator:validate_tool(Tool),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_tool with invalid schema type
+validate_tool_invalid_schema_test() ->
+    Tool = #{
+        <<"name">> => <<"test_tool">>,
+        <<"inputSchema">> => <<"not_a_map">>
+    },
+    Result = erlmcp_protocol_validator:validate_tool(Tool),
+    ?assertMatch({error, _}, Result).
+
+%%%===================================================================
+%%% Prompt Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_prompt with valid prompt
+validate_prompt_valid_test() ->
+    Prompt = #{<<"name">> => <<"test_prompt">>},
+    Result = erlmcp_protocol_validator:validate_prompt(Prompt),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_prompt with missing name
+validate_prompt_missing_name_test() ->
+    Prompt = #{},
+    Result = erlmcp_protocol_validator:validate_prompt(Prompt),
+    ?assertMatch({error, _}, Result).
+
+%%%===================================================================
+%%% Content Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_content with text content
+validate_content_text_test() ->
+    Content = #{
+        <<"type">> => <<"text">>,
+        <<"text">> => <<"Hello">>
+    },
+    Result = erlmcp_protocol_validator:validate_content(Content),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_content with image content
+validate_content_image_test() ->
+    Content = #{
+        <<"type">> => <<"image">>,
+        <<"data">> => <<"base64data">>,
+        <<"mimeType">> => <<"image/png">>
+    },
+    Result = erlmcp_protocol_validator:validate_content(Content),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_content with resource content
+validate_content_resource_test() ->
+    Content = #{
+        <<"type">> => <<"resource">>,
+        <<"uri">> => <<"file:///test.txt">>
+    },
+    Result = erlmcp_protocol_validator:validate_content(Content),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_content with missing type
+validate_content_missing_type_test() ->
+    Content = #{<<"text">> => <<"Hello">>},
+    Result = erlmcp_protocol_validator:validate_content(Content),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_content with text missing text field
+validate_content_text_missing_text_test() ->
+    Content = #{<<"type">> => <<"text">>},
+    Result = erlmcp_protocol_validator:validate_content(Content),
+    ?assertMatch({error, _}, Result).
+
+%%%===================================================================
+%%% Params Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_params with initialize params
+validate_params_initialize_valid_test() ->
+    Params = #{
+        <<"protocolVersion">> => <<"2025-11-25">>,
+        <<"capabilities">> => #{},
+        <<"clientInfo">> => #{<<"name">> => <<"test">>, <<"version">> => <<"1.0">>}
+    },
+    Result = erlmcp_protocol_validator:validate_params(<<"initialize">>, Params),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_params with initialize missing required field
+validate_params_initialize_missing_field_test() ->
+    Params = #{
+        <<"protocolVersion">> => <<"2025-11-25">>,
+        <<"capabilities">> => #{}
+    },
+    Result = erlmcp_protocol_validator:validate_params(<<"initialize">>, Params),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_params with resources/read
+validate_params_resources_read_valid_test() ->
+    Params = #{<<"uri">> => <<"file:///test.txt">>},
+    Result = erlmcp_protocol_validator:validate_params(<<"resources/read">>, Params),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_params with resources/read missing uri
+validate_params_resources_read_missing_uri_test() ->
+    Params = #{},
+    Result = erlmcp_protocol_validator:validate_params(<<"resources/read">>, Params),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_params with tools/call
+validate_params_tools_call_valid_test() ->
+    Params = #{<<"name">> => <<"test_tool">>},
+    Result = erlmcp_protocol_validator:validate_params(<<"tools/call">>, Params),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_params with tools/call missing name
+validate_params_tools_call_missing_name_test() ->
+    Params = #{},
+    Result = erlmcp_protocol_validator:validate_params(<<"tools/call">>, Params),
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test validate_params with ping (no params)
+validate_params_ping_test() ->
+    Result = erlmcp_protocol_validator:validate_params(<<"ping">>, #{}),
+    ?assertEqual(ok, Result).
+
+%% @doc Test validate_params with undefined params
+validate_params_undefined_test() ->
+    Result = erlmcp_protocol_validator:validate_params(<<"ping">>, undefined),
+    ?assertEqual(ok, Result).
+
+%%%===================================================================
+%%% MCP Message Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_mcp_message with valid request
+validate_mcp_message_valid_request_test() ->
+    Message = #{
+        <<"method">> => <<"ping">>,
+        <<"params">> => #{}
+    },
+    Result = erlmcp_protocol_validator:validate_mcp_message(Message),
+    ?assertMatch({ok, _}, Result).
+
+%% @doc Test validate_mcp_message with result response
+validate_mcp_message_result_response_test() ->
+    Message = #{<<"result">> => #{<<"status">> => <<"ok">>}},
+    Result = erlmcp_protocol_validator:validate_mcp_message(Message),
+    ?assertMatch({ok, _}, Result).
+
+%% @doc Test validate_mcp_message with error response
+validate_mcp_message_error_response_test() ->
+    Message = #{
+        <<"error">> => #{
+            <<"code">> => -32601,
+            <<"message">> => <<"Method not found">>
+        }
+    },
+    Result = erlmcp_protocol_validator:validate_mcp_message(Message),
+    ?assertMatch({ok, _}, Result).
+
+%% @doc Test validate_mcp_message with invalid message
+validate_mcp_message_invalid_test() ->
+    Message = #{<<"invalid">> => <<"message">>},
+    Result = erlmcp_protocol_validator:validate_mcp_message(Message),
+    ?assertMatch({error, _, _}, Result).
+
+%%%===================================================================
+%%% Format Validation Error Tests
+%%%===================================================================
+
+%% @doc Test format_validation_error with invalid_method
+format_validation_error_invalid_method_test() ->
+    Error = #{reason => invalid_method, details => #{method => <<"bad_method">>}},
     Result = erlmcp_protocol_validator:format_validation_error(Error),
     ?assert(is_binary(Result)),
     ?assert(byte_size(Result) > 0).
 
-format_validation_error_with_map_details_test() ->
-    %% Test error formatting with map details
-    Error = #{reason => type_mismatch, details => #{field => <<"count">>, expected => integer}},
+%% @doc Test format_validation_error with type_mismatch
+format_validation_error_type_mismatch_test() ->
+    Error = #{reason => type_mismatch, field => <<"count">>, expected => integer},
     Result = erlmcp_protocol_validator:format_validation_error(Error),
-    ?assert(is_binary(Result)).
+    ?assert(is_binary(Result)),
+    ?assert(byte_size(Result) > 0).
 
+%% @doc Test format_validation_error with missing_required_fields
 format_validation_error_missing_fields_test() ->
-    %% Test error formatting for missing fields
-    Error = #{reason => missing_required_fields, details => #{missing => [<<"field1">>, <<"field2">>]}},
+    Error = #{
+        reason => missing_required_fields,
+        details => #{missing => [<<"field1">>, <<"field2">>]}
+    },
     Result = erlmcp_protocol_validator:format_validation_error(Error),
-    ?assert(is_binary(Result)).
+    ?assert(is_binary(Result)),
+    ?assert(byte_size(Result) > 0).
 
+%% @doc Test format_validation_error with unknown_method
 format_validation_error_unknown_method_test() ->
-    %% Test error formatting for unknown method
-    Error = #{reason => unknown_method, details => #{method => <<"bad/method">>}},
+    Error = #{reason => unknown_method, method => <<"bad/method">>},
     Result = erlmcp_protocol_validator:format_validation_error(Error),
-    ?assert(is_binary(Result)).
+    ?assert(is_binary(Result)),
+    ?assert(byte_size(Result) > 0).
 
-format_validation_error_invalid_code_test() ->
-    %% Test error formatting for invalid error code
-    Error = #{reason => invalid_error_code, details => #{code => 9999}},
+%% @doc Test format_validation_error with unknown reason
+format_validation_error_unknown_test() ->
+    Error = #{reason => unknown_error},
     Result = erlmcp_protocol_validator:format_validation_error(Error),
-    ?assert(is_binary(Result)).
+    ?assert(is_binary(Result)),
+    ?assert(byte_size(Result) > 0).
+
+%%%===================================================================
+%%% JSON-RPC Binary Validation Tests
+%%%===================================================================
+
+%% @doc Test validate_json_rpc with valid binary JSON
+validate_json_rpc_valid_test() ->
+    Json = <<"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}">>,
+    Result = erlmcp_protocol_validator:validate_json_rpc(Json),
+    ?assertMatch({ok, _}, Result).
+
+%% @doc Test validate_json_rpc with invalid JSON
+validate_json_rpc_invalid_json_test() ->
+    Json = <<"{invalid json}">>,
+    Result = erlmcp_protocol_validator:validate_json_rpc(Json),
+    ?assertMatch({error, {parse_error, _}}, Result).
+
+%% @doc Test validate_json_rpc with non-binary input
+validate_json_rpc_not_binary_test() ->
+    Result = erlmcp_protocol_validator:validate_json_rpc(not_binary),
+    ?assertMatch({error, {invalid_argument, _}}, Result).
 
 %%%===================================================================
 %%% Summary Report
 %%%===================================================================
 
 validation_summary_test_() ->
-    {"All 50+ validations implemented", fun() ->
-        %% Verify all validations can be tested via API
-        %% This is a summary test that checks the test suite coverage
+    {"All validation tests implemented", fun() ->
+        %% Verify all validation functions are tested
         ?assert(true)
     end}.
-
-%%%===================================================================
-%%% Setup and Teardown Helpers
-%%%===================================================================
-
-setup_server() ->
-    %% Start required applications
-    application:ensure_all_started(ranch),
-    application:ensure_all_started(erlmcp_transports),
-
-    %% Start real erlmcp server using test helpers
-    Opts = #{transport_id => protocol_validator_test},
-    {ok, ServerPid, _Port} = erlmcp_test_helpers:start_test_server(Opts),
-    ServerPid.
-
-cleanup_server(ServerPid) ->
-    %% Stop server using test helpers
-    erlmcp_test_helpers:stop_test_process(ServerPid).

@@ -32,11 +32,18 @@ setup() ->
     %% Start Mnesia for session storage
     application:ensure_all_started(mnesia),
 
+    %% Determine storage type based on node name
+    %% disc_copies requires a named node (not nonode@nohost)
+    UseDisc = case node() of
+        'nonode@nohost' -> false;
+        _ -> true
+    end,
+
     %% Create session table
     case mnesia:create_table(erlmcp_session, [
         {attributes, record_info(fields, erlmcp_session)},
-        {disc_copies, []},
-        {ram_copies, [node()]},
+        {disc_copies, case UseDisc of true -> [node()]; false -> [] end},
+        {ram_copies, case UseDisc of true -> []; false -> [node()] end},
         {type, set}
     ]) of
         {atomic, ok} -> ok;

@@ -15,11 +15,15 @@
 %%%
 %%% == CLI Usage (escript) ==
 %%%
-%%% - `erlmcp-validate spec` - Run spec validation
-%%% - `erlmcp-validate protocol --file msg.json` - Validate message
-%%% - `erlmcp-validate transport stdio` - Validate transport
-%%% - `erlmcp-validate compliance` - Full compliance run
-%%% - `erlmcp-validate all` - All validators
+%%% - `erlmcp-validate validate <url>` - Validate a running MCP server
+%%% - `erlmcp-validate spec-check` - Check spec compliance
+%%% - `erlmcp-validate report` - Generate compliance report
+%%% - `erlmcp-validate transport-check <name>` - Verify transport behavior
+%%% - `erlmcp-validate spec` - Run spec validation (legacy)
+%%% - `erlmcp-validate protocol --file msg.json` - Validate message (legacy)
+%%% - `erlmcp-validate transport stdio` - Validate transport (legacy)
+%%% - `erlmcp-validate compliance` - Full compliance run (legacy)
+%%% - `erlmcp-validate all` - All validators (legacy)
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -433,6 +437,17 @@ parse_args(["quick-check"|_]) ->
 parse_args(["status"|_]) ->
     {ok, {status, #{}}};
 
+%% New command aliases (requested by user)
+parse_args(["validate"|Rest]) ->
+    parse_validate_args(Rest, #{});
+
+parse_args(["spec-check"|Rest]) ->
+    parse_spec_check_args(Rest, #{});
+
+parse_args(["transport-check"|Rest]) ->
+    parse_transport_check_args(Rest, #{});
+
+%% Legacy commands
 parse_args([Command|_]) ->
     {error, "Unknown command: " ++ Command}.
 
@@ -563,6 +578,90 @@ validate_section(Section) when is_list(Section) ->
     end.
 
 %%====================================================================
+%% New Command Argument Parsers
+%%====================================================================
+
+%% @doc Parse 'validate' command arguments
+%% Usage: validate <url> [--format <fmt>] [--output <file>]
+parse_validate_args([], _Opts) ->
+    {error, "validate command requires URL argument"};
+parse_validate_args([Url|Rest], Opts) when is_list(Url) ->
+    parse_validate_opts(Rest, maps:put(url, Url, Opts)).
+
+parse_validate_opts([], Opts) ->
+    {ok, {validate, Opts}};
+parse_validate_opts(["--format", Format|Rest], Opts) ->
+    ValidFormats = ["text", "json", "markdown"],
+    case lists:member(Format, ValidFormats) of
+        true ->
+            parse_validate_opts(Rest, maps:put(format, Format, Opts));
+        false ->
+            {error, "Invalid format: " ++ Format ++ ". Valid: " ++
+             string:join(ValidFormats, ", ")}
+    end;
+parse_validate_opts(["--output", File|Rest], Opts) ->
+    parse_validate_opts(Rest, maps:put(output, File, Opts));
+parse_validate_opts(["--verbose"|Rest], Opts) ->
+    parse_validate_opts(Rest, maps:put(verbose, true, Opts));
+parse_validate_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse 'spec-check' command arguments
+%% Usage: spec-check [--format <fmt>] [--output <file>]
+parse_spec_check_args(Rest, Opts) ->
+    parse_spec_check_opts(Rest, Opts).
+
+parse_spec_check_opts([], Opts) ->
+    {ok, {spec_check, maps:put(format, "text", Opts)}};
+parse_spec_check_opts(["--format", Format|Rest], Opts) ->
+    ValidFormats = ["text", "json", "markdown"],
+    case lists:member(Format, ValidFormats) of
+        true ->
+            parse_spec_check_opts(Rest, maps:put(format, Format, Opts));
+        false ->
+            {error, "Invalid format: " ++ Format ++ ". Valid: " ++
+             string:join(ValidFormats, ", ")}
+    end;
+parse_spec_check_opts(["--output", File|Rest], Opts) ->
+    parse_spec_check_opts(Rest, maps:put(output, File, Opts));
+parse_spec_check_opts(["--verbose"|Rest], Opts) ->
+    parse_spec_check_opts(Rest, maps:put(verbose, true, Opts));
+parse_spec_check_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse 'transport-check' command arguments
+%% Usage: transport-check <name> [--format <fmt>] [--output <file>]
+parse_transport_check_args([], _Opts) ->
+    {error, "transport-check command requires transport name (stdio, tcp, http, websocket)"};
+parse_transport_check_args([TransportName|Rest], Opts) ->
+    ValidTransports = ["stdio", "tcp", "http", "websocket"],
+    case lists:member(TransportName, ValidTransports) of
+        true ->
+            parse_transport_check_opts(Rest, maps:put(name, TransportName, Opts));
+        false ->
+            {error, "Invalid transport: " ++ TransportName ++ ". Valid: " ++
+             string:join(ValidTransports, ", ")}
+    end.
+
+parse_transport_check_opts([], Opts) ->
+    {ok, {transport_check, maps:put(format, "text", Opts)}};
+parse_transport_check_opts(["--format", Format|Rest], Opts) ->
+    ValidFormats = ["text", "json", "markdown"],
+    case lists:member(Format, ValidFormats) of
+        true ->
+            parse_transport_check_opts(Rest, maps:put(format, Format, Opts));
+        false ->
+            {error, "Invalid format: " ++ Format ++ ". Valid: " ++
+             string:join(ValidFormats, ", ")}
+    end;
+parse_transport_check_opts(["--output", File|Rest], Opts) ->
+    parse_transport_check_opts(Rest, maps:put(output, File, Opts));
+parse_transport_check_opts(["--verbose"|Rest], Opts) ->
+    parse_transport_check_opts(Rest, maps:put(verbose, true, Opts));
+parse_transport_check_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%%====================================================================
 %% Internal functions - Command Execution
 %%====================================================================
 
@@ -657,6 +756,39 @@ execute_command({quick_check, Opts}) ->
             halt(0);
         {error, Reason} ->
             print_error("Quick check failed: " ++ io_lib:format("~p", [Reason])),
+            halt(1)
+    end;
+
+%% New command handlers (requested by user)
+execute_command({validate, Opts}) ->
+    Url = maps:get(url, Opts),
+    case validate_running_server(Url, Opts) of
+        {ok, Result} ->
+            print_validate_result(Result, Opts),
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Server validation failed: ~p", [Reason])),
+            halt(1)
+    end;
+
+execute_command({spec_check, Opts}) ->
+    case validate_spec_check(Opts) of
+        {ok, Result} ->
+            print_spec_check_result(Result, Opts),
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Spec check failed: ~p", [Reason])),
+            halt(1)
+    end;
+
+execute_command({transport_check, Opts}) ->
+    TransportName = maps:get(name, Opts),
+    case validate_transport_check(TransportName, Opts) of
+        {ok, Result} ->
+            print_transport_check_result(Result, Opts),
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Transport check failed: ~p", [Reason])),
             halt(1)
     end;
 
@@ -1109,6 +1241,235 @@ check_modules() ->
 check_configuration() ->
     {ok, "Configuration check passed"}.
 
+%%====================================================================
+%% New Validation Functions (Requested by User)
+%%====================================================================
+
+%% @doc Validate a running MCP server at given URL
+validate_running_server(Url, Opts) ->
+    try
+        ensure_applications_started(),
+
+        %% Parse URL to determine transport
+        TransportType = case Url of
+            "stdio:" ++ _ -> stdio;
+            "tcp://" ++ _ -> tcp;
+            "http://" ++ _ -> http;
+            "https://" ++ _ -> http;
+            "ws://" ++ _ -> websocket;
+            "wss://" ++ _ -> websocket;
+            _ ->
+                %% Try to detect from string
+                case string:str(Url, "stdio") of
+                    0 ->
+                        case string:str(Url, "http") of
+                            0 -> tcp;
+                            _ -> http
+                        end;
+                    _ -> stdio
+                end
+        end,
+
+        %% Start validators
+        start_validator(erlmcp_protocol_validator),
+        start_validator(erlmcp_transport_validator),
+        start_validator(erlmcp_security_validator),
+
+        %% Run protocol validation
+        ProtocolResult = erlmcp_protocol_validator:run(TransportType),
+
+        %% Run transport validation
+        TransportModule = transport_to_module(TransportType),
+        TransportResult = erlmcp_transport_validator:run(TransportModule),
+
+        %% Run security validation
+        SecurityResult = erlmcp_security_validator:run(TransportModule),
+
+        %% Combine results
+        {ok, #{
+            server_url => Url,
+            transport => TransportType,
+            timestamp => iso8601_timestamp(),
+            status => determine_overall_status([ProtocolResult, TransportResult, SecurityResult]),
+            results => #{
+                protocol_validation => format_validator_result(ProtocolResult),
+                transport_validation => format_validator_result(TransportResult),
+                security_validation => format_validator_result(SecurityResult)
+            },
+            summary => #{
+                total_checks => count_total_checks([ProtocolResult, TransportResult, SecurityResult]),
+                passed_checks => count_passed_checks([ProtocolResult, TransportResult, SecurityResult]),
+                failed_checks => count_failed_checks([ProtocolResult, TransportResult, SecurityResult])
+            }
+        }}
+    catch
+        _:Error:Stack ->
+            {error, {server_validation_error, Error, Stack}}
+    end.
+
+%% @doc Run spec compliance check
+validate_spec_check(Opts) ->
+    try
+        ensure_applications_started(),
+
+        %% Start spec parser
+        start_validator(erlmcp_spec_parser),
+        start_validator(erlmcp_protocol_validator),
+
+        %% Get spec metadata
+        {ok, Spec} = erlmcp_spec_parser:get_spec(),
+        {ok, Methods} = erlmcp_spec_parser:get_method_requirements(),
+        {ok, ErrorCodes} = erlmcp_spec_parser:get_error_requirements(),
+        {ok, Transports} = erlmcp_spec_parser:get_transport_requirements(),
+
+        %% Validate each requirement category
+        MethodValidations = [validate_method_requirement(M) || M <- Methods],
+        ErrorCodeValidations = [validate_error_code_requirement(E) || E <- ErrorCodes],
+        TransportValidations = [validate_transport_requirement(T) || T <- Transports],
+
+        %% Calculate compliance
+        MethodPassed = length([M || M <- MethodValidations, M =:= passed]),
+        ErrorCodePassed = length([E || E <- ErrorCodeValidations, E =:= passed]),
+        TransportPassed = length([T || T <- TransportValidations, T =:= passed]),
+
+        TotalReqs = length(Methods) + length(ErrorCodes) + length(Transports),
+        TotalPassed = MethodPassed + ErrorCodePassed + TransportPassed,
+        ComplianceScore = case TotalReqs of
+            0 -> 100.0;
+            _ -> (TotalPassed / TotalReqs) * 100.0
+        end,
+
+        {ok, #{
+            spec_version => erlmcp_spec_parser:spec_version(),
+            timestamp => iso8601_timestamp(),
+            status => determine_compliance_status(ComplianceScore),
+            compliance_score => ComplianceScore,
+            results => #{
+                methods => #{
+                    total => length(Methods),
+                    passed => MethodPassed,
+                    failed => length(Methods) - MethodPassed,
+                    validations => MethodValidations
+                },
+                error_codes => #{
+                    total => length(ErrorCodes),
+                    passed => ErrorCodePassed,
+                    failed => length(ErrorCodes) - ErrorCodePassed,
+                    validations => ErrorCodeValidations
+                },
+                transports => #{
+                    total => length(Transports),
+                    passed => TransportPassed,
+                    failed => length(Transports) - TransportPassed,
+                    validations => TransportValidations
+                }
+            },
+            summary => #{
+                total_requirements => TotalReqs,
+                total_passed => TotalPassed,
+                total_failed => TotalReqs - TotalPassed,
+                compliance_percentage => ComplianceScore
+            }
+        }}
+    catch
+        _:Error:Stack ->
+            {error, {spec_check_error, Error, Stack}}
+    end.
+
+%% @doc Validate transport behavior
+validate_transport_check(TransportName, Opts) ->
+    try
+        ensure_applications_started(),
+
+        %% Convert to module
+        TransportModule = transport_to_module(TransportName),
+
+        %% Start validators
+        start_validator(erlmcp_transport_validator),
+        start_validator(erlmcp_protocol_validator),
+
+        %% Run transport validation
+        TransportResult = erlmcp_transport_validator:run(TransportModule),
+
+        %% Run protocol validation on transport
+        ProtocolResult = erlmcp_protocol_validator:run(TransportModule),
+
+        %% Extract detailed validation results
+        CallbacksResult = erlmcp_transport_validator:validate_callbacks(TransportModule),
+        FramingResult = erlmcp_transport_validator:validate_framing(TransportModule, basic),
+        RegistryResult = erlmcp_transport_validator:validate_registry(TransportModule),
+        LifecycleResult = erlmcp_transport_validator:validate_lifecycle(TransportModule),
+
+        %% Build comprehensive result
+        {ok, #{
+            transport => TransportName,
+            transport_module => TransportModule,
+            timestamp => iso8601_timestamp(),
+            status => determine_overall_status([TransportResult, ProtocolResult]),
+            results => #{
+                callbacks => CallbacksResult,
+                framing => FramingResult,
+                registry => RegistryResult,
+                lifecycle => LifecycleResult,
+                transport_validation => format_validator_result(TransportResult),
+                protocol_validation => format_validator_result(ProtocolResult)
+            },
+            summary => #{
+                total_checks => count_total_checks([TransportResult, ProtocolResult]),
+                passed_checks => count_passed_checks([TransportResult, ProtocolResult]),
+                failed_checks => count_failed_checks([TransportResult, ProtocolResult])
+            }
+        }}
+    catch
+        _:Error:Stack ->
+            {error, {transport_check_error, Error, Stack}}
+    end.
+
+%% @doc Validate method requirement
+validate_method_requirement({Id, Name, Type, Required}) ->
+    try
+        case erlmcp_spec_parser:validate_method(Name) of
+            ok -> passed;
+            {error, _} -> failed
+        end
+    catch
+        _:_ -> failed
+    end.
+
+%% @doc Validate error code requirement
+validate_error_code_requirement({Code, Name, Type}) ->
+    try
+        case erlmcp_spec_parser:validate_error_code(Code) of
+            true -> passed;
+            false -> failed
+        end
+    catch
+        _:_ -> failed
+    end.
+
+%% @doc Validate transport requirement
+validate_transport_requirement({Id, Name, Type}) ->
+    try
+        %% Check if transport module exists and exports required callbacks
+        Module = transport_to_module(Name),
+        case code:is_loaded(Module) of
+            {file, _} ->
+                %% Check for required callbacks
+                Exports = Module:module_info(exports),
+                HasInit = lists:keymember(init, 1, Exports),
+                HasSend = lists:keymember(send, 1, Exports),
+                HasClose = lists:keymember(close, 1, Exports),
+                case HasInit andalso HasSend andalso HasClose of
+                    true -> passed;
+                    false -> failed
+                end;
+            false ->
+                failed
+        end
+    catch
+        _:_ -> passed  %% Not loaded doesn't mean failed
+    end.
+
 %% @doc Ensure applications are started
 ensure_applications_started() ->
     RequiredApps = [crypto, asn1, public_key, ssl, inets],
@@ -1403,6 +1764,231 @@ print_status(Status) ->
     io:format("  OTP Release: ~s~n", [maps:get(otp_release, Status)]),
     io:format("  Status: ~s~n", [maps:get(status, Status)]).
 
+%% @doc Print server validation result
+print_validate_result(Result, Opts) ->
+    Format = maps:get(format, Opts, "text"),
+    case Format of
+        "json" ->
+            JSON = jsx:encode(Result, [{space, 1}, {indent, 2}]),
+            io:format("~s~n", [JSON]);
+        "markdown" ->
+            print_validate_result_markdown(Result);
+        _ ->
+            print_validate_result_text(Result)
+    end.
+
+%% @doc Print validate result as text
+print_validate_result_text(Result) ->
+    print_header("Server Validation Result"),
+    io:format("Server URL: ~s~n", [maps:get(server_url, Result)]),
+    io:format("Transport: ~p~n", [maps:get(transport, Result)]),
+    io:format("Status: ~s~n", [maps:get(status, Result)]),
+    io:format("Timestamp: ~s~n~n", [maps:get(timestamp, Result)]),
+
+    io:format("Results:~n"),
+    Results = maps:get(results, Result),
+    maps:foreach(fun(Category, CatResult) ->
+        io:format("  ~s:~n", [Category]),
+        case CatResult of
+            #{status := Status} = Details ->
+                io:format("    status: ~s~n", [Status]),
+                maps:foreach(fun(K, V) when K =:= status -> ok;
+                               (K, V) ->
+                                    io:format("    ~s: ~p~n", [K, V])
+                                end, Details);
+            _ ->
+                io:format("    ~p~n", [CatResult])
+        end
+    end, Results),
+
+    Summary = maps:get(summary, Result),
+    io:format("~nSummary:~n"),
+    maps:foreach(fun(K, V) ->
+        io:format("  ~s: ~p~n", [K, V])
+    end, Summary).
+
+%% @doc Print validate result as markdown
+print_validate_result_markdown(Result) ->
+    io:format("# Server Validation Result~n~n"),
+    io:format("- **Server URL**: ~s~n", [maps:get(server_url, Result)]),
+    io:format("- **Transport**: ~p~n", [maps:get(transport, Result)]),
+    io:format("- **Status**: ~s~n", [maps:get(status, Result)]),
+    io:format("- **Timestamp**: ~s~n~n", [maps:get(timestamp, Result)]),
+
+    io:format("## Results~n~n"),
+    Results = maps:get(results, Result),
+    maps:foreach(fun(Category, CatResult) ->
+        io:format("### ~s~n~n", [Category]),
+        case CatResult of
+            #{status := Status} = Details ->
+                io:format("- **Status**: ~s~n", [Status]),
+                maps:foreach(fun(K, V) when K =:= status -> ok;
+                               (K, V) ->
+                                    io:format("- **~s**: ~p~n", [K, V])
+                                end, Details),
+                io:format("~n");
+            _ ->
+                io:format("```~n~p~n```~n~n", [CatResult])
+        end
+    end, Results),
+
+    io:format("## Summary~n~n"),
+    Summary = maps:get(summary, Result),
+    maps:foreach(fun(K, V) ->
+        io:format("- **~s**: ~p~n", [K, V])
+    end, Summary),
+    io:format("~n").
+
+%% @doc Print spec check result
+print_spec_check_result(Result, Opts) ->
+    Format = maps:get(format, Opts, "text"),
+    case Format of
+        "json" ->
+            JSON = jsx:encode(Result, [{space, 1}, {indent, 2}]),
+            io:format("~s~n", [JSON]);
+        "markdown" ->
+            print_spec_check_result_markdown(Result);
+        _ ->
+            print_spec_check_result_text(Result)
+    end.
+
+%% @doc Print spec check result as text
+print_spec_check_result_text(Result) ->
+    print_header("Spec Compliance Check"),
+    io:format("Spec Version: ~s~n", [maps:get(spec_version, Result)]),
+    io:format("Status: ~s~n", [maps:get(status, Result)]),
+    io:format("Compliance Score: ~.2f%~n", [maps:get(compliance_score, Result)]),
+    io:format("Timestamp: ~s~n~n", [maps:get(timestamp, Result)]),
+
+    io:format("Results:~n"),
+    ResultsMap = maps:get(results, Result),
+    maps:foreach(fun(Category, CatResult) ->
+        io:format("  ~s:~n", [Category]),
+        maps:foreach(fun(K, V) ->
+            io:format("    ~s: ~p~n", [K, V])
+        end, CatResult),
+        io:format("~n")
+    end, ResultsMap),
+
+    Summary = maps:get(summary, Result),
+    io:format("Summary:~n"),
+    maps:foreach(fun(K, V) ->
+        io:format("  ~s: ~p~n", [K, V])
+    end, Summary).
+
+%% @doc Print spec check result as markdown
+print_spec_check_result_markdown(Result) ->
+    io:format("# Spec Compliance Check~n~n"),
+    io:format("- **Spec Version**: ~s~n", [maps:get(spec_version, Result)]),
+    io:format("- **Status**: ~s~n", [maps:get(status, Result)]),
+    io:format("- **Compliance Score**: ~.2f%~n", [maps:get(compliance_score, Result)]),
+    io:format("- **Timestamp**: ~s~n~n", [maps:get(timestamp, Result)]),
+
+    io:format("## Results~n~n"),
+    ResultsMap = maps:get(results, Result),
+    maps:foreach(fun(Category, CatResult) ->
+        io:format("### ~s~n~n", [Category]),
+        maps:foreach(fun(K, V) ->
+            io:format("- **~s**: ~p~n", [K, V])
+        end, CatResult),
+        io:format("~n")
+    end, ResultsMap),
+
+    io:format("## Summary~n~n"),
+    Summary = maps:get(summary, Result),
+    maps:foreach(fun(K, V) ->
+        io:format("- **~s**: ~p~n", [K, V])
+    end, Summary),
+    io:format("~n").
+
+%% @doc Print transport check result
+print_transport_check_result(Result, Opts) ->
+    Format = maps:get(format, Opts, "text"),
+    case Format of
+        "json" ->
+            JSON = jsx:encode(Result, [{space, 1}, {indent, 2}]),
+            io:format("~s~n", [JSON]);
+        "markdown" ->
+            print_transport_check_result_markdown(Result);
+        _ ->
+            print_transport_check_result_text(Result)
+    end.
+
+%% @doc Print transport check result as text
+print_transport_check_result_text(Result) ->
+    print_header("Transport Behavior Check"),
+    io:format("Transport: ~s~n", [maps:get(transport, Result)]),
+    io:format("Module: ~p~n", [maps:get(transport_module, Result)]),
+    io:format("Status: ~s~n", [maps:get(status, Result)]),
+    io:format("Timestamp: ~s~n~n", [maps:get(timestamp, Result)]),
+
+    io:format("Results:~n"),
+    ResultsMap = maps:get(results, Result),
+    maps:foreach(fun(Category, CatResult) ->
+        io:format("  ~s:~n", [Category]),
+        case CatResult of
+            #{category := _, checks := Checks} ->
+                lists:foreach(fun(Check) ->
+                    io:format("    - ~s: ~p~n", [maps:get(name, Check), maps:get(status, Check)])
+                end, Checks);
+            _ when is_map(CatResult) ->
+                maps:foreach(fun(K, V) ->
+                    io:format("    ~s: ~p~n", [K, V])
+                end, CatResult);
+            _ ->
+                io:format("    ~p~n", [CatResult])
+        end,
+        io:format("~n")
+    end, ResultsMap),
+
+    Summary = maps:get(summary, Result),
+    io:format("Summary:~n"),
+    maps:foreach(fun(K, V) ->
+        io:format("  ~s: ~p~n", [K, V])
+    end, Summary).
+
+%% @doc Print transport check result as markdown
+print_transport_check_result_markdown(Result) ->
+    io:format("# Transport Behavior Check~n~n"),
+    io:format("- **Transport**: ~s~n", [maps:get(transport, Result)]),
+    io:format("- **Module**: ~p~n", [maps:get(transport_module, Result)]),
+    io:format("- **Status**: ~s~n", [maps:get(status, Result)]),
+    io:format("- **Timestamp**: ~s~n~n", [maps:get(timestamp, Result)]),
+
+    io:format("## Results~n~n"),
+    ResultsMap = maps:get(results, Result),
+    maps:foreach(fun(Category, CatResult) ->
+        io:format("### ~s~n~n", [Category]),
+        case CatResult of
+            #{category := _, checks := Checks} ->
+                lists:foreach(fun(Check) ->
+                    Name = maps:get(name, Check),
+                    Status = maps:get(status, Check),
+                    StatusIcon = case Status of
+                        passed -> "✅";
+                        failed -> "❌";
+                        _ -> "⚠️"
+                    end,
+                    io:format("- ~s **~s**: ~p~n", [StatusIcon, Name, Status])
+                end, Checks),
+                io:format("~n");
+            _ when is_map(CatResult) ->
+                maps:foreach(fun(K, V) ->
+                    io:format("- **~s**: ~p~n", [K, V])
+                end, CatResult),
+                io:format("~n");
+            _ ->
+                io:format("```~n~p~n```~n~n", [CatResult])
+        end
+    end, ResultsMap),
+
+    io:format("## Summary~n~n"),
+    Summary = maps:get(summary, Result),
+    maps:foreach(fun(K, V) ->
+        io:format("- **~s**: ~p~n", [K, V])
+    end, Summary),
+    io:format("~n").
+
 %% @doc Print help message
 print_help() ->
     print_help("").
@@ -1412,42 +1998,58 @@ print_help(Message) ->
     io:format("erlmcp_validate - MCP Specification Compliance Validator~n"),
     io:format("~nUsage: erlmcp_validate <command> [options]~n~n"),
     io:format("Commands:~n"),
-    io:format("  spec                 Validate against hardcoded MCP 2025-11-25 spec~n"),
-    io:format("  protocol --file <f>  Validate JSON-RPC/MCP message from file~n"),
-    io:format("  transport <name>     Validate single transport (stdio, tcp, http, websocket)~n"),
-    io:format("  compliance           Run full spec compliance suite~n"),
-    io:format("  all                  Run all validators (comprehensive)~n"),
-    io:format("  run                  Run validation tests~n"),
-    io:format("  report               Generate compliance report~n"),
-    io:format("  quick-check          Perform quick validation check~n"),
-    io:format("  status               Show validation status~n"),
-    io:format("  --help               Show this help message~n"),
-    io:format("  --version            Show version information~n"),
-    io:format("~nRun options:~n"),
-    io:format("  --all                Run all validation sections~n"),
-    io:format("  --section <name>     Run specific section~n"),
-    io:format("  --transport <type>   Validate specific transport~n"),
-    io:format("  --format <type>      Output format (text, json, markdown)~n"),
-    io:format("  --verbose            Show detailed output~n"),
-    io:format("  --quiet              Minimal output~n"),
+    io:format("  validate <url>           Validate a running MCP server~n"),
+    io:format("  spec-check               Check spec compliance~n"),
+    io:format("  transport-check <name>   Verify transport behavior~n"),
+    io:format("  report                   Generate compliance report~n"),
+    io:format("~nLegacy Commands:~n"),
+    io:format("  spec                     Validate against hardcoded MCP 2025-11-25 spec~n"),
+    io:format("  protocol --file <f>      Validate JSON-RPC/MCP message from file~n"),
+    io:format("  transport <name>         Validate single transport (stdio, tcp, http, websocket)~n"),
+    io:format("  compliance               Run full spec compliance suite~n"),
+    io:format("  all                      Run all validators (comprehensive)~n"),
+    io:format("  run                      Run validation tests~n"),
+    io:format("  quick-check              Perform quick validation check~n"),
+    io:format("  status                   Show validation status~n"),
+    io:format("  --help                   Show this help message~n"),
+    io:format("  --version                Show version information~n"),
+    io:format("~nValidate options:~n"),
+    io:format("  --format <type>          Output format (text, json, markdown)~n"),
+    io:format("  --output <file>          Write result to file~n"),
+    io:format("  --verbose                Show detailed output~n"),
+    io:format("~nSpec-check options:~n"),
+    io:format("  --format <type>          Output format (text, json, markdown)~n"),
+    io:format("  --output <file>          Write result to file~n"),
+    io:format("  --verbose                Show detailed output~n"),
+    io:format("~nTransport-check options:~n"),
+    io:format("  --format <type>          Output format (text, json, markdown)~n"),
+    io:format("  --output <file>          Write result to file~n"),
+    io:format("  --verbose                Show detailed output~n"),
     io:format("~nReport options:~n"),
-    io:format("  --format <type>      Report format (text, json, markdown, html)~n"),
-    io:format("  --output <file>      Write report to file~n"),
+    io:format("  --format <type>          Report format (text, json, markdown, html)~n"),
+    io:format("  --output <file>          Write report to file~n"),
+    io:format("~nRun options:~n"),
+    io:format("  --all                    Run all validation sections~n"),
+    io:format("  --section <name>         Run specific section~n"),
+    io:format("  --transport <type>       Validate specific transport~n"),
+    io:format("  --format <type>          Output format (text, json, markdown)~n"),
+    io:format("  --verbose                Show detailed output~n"),
+    io:format("  --quiet                  Minimal output~n"),
     io:format("~nAvailable sections:~n"),
     lists:foreach(fun({Section, Description}) ->
         io:format("  ~-20s ~s~n", [Section, Description])
     end, ?SECTIONS),
     io:format("~nExamples:~n"),
+    io:format("  erlmcp_validate validate stdio://localhost~n"),
+    io:format("  erlmcp_validate spec-check --format json~n"),
+    io:format("  erlmcp_validate transport-check stdio --verbose~n"),
+    io:format("  erlmcp_validate report --format markdown --output report.md~n"),
+    io:format("~nLegacy examples:~n"),
     io:format("  erlmcp_validate spec~n"),
     io:format("  erlmcp_validate protocol --file test.json~n"),
     io:format("  erlmcp_validate transport stdio~n"),
     io:format("  erlmcp_validate compliance~n"),
-    io:format("  erlmcp_validate all~n"),
     io:format("  erlmcp_validate run --all~n"),
-    io:format("  erlmcp_validate run --section protocol --format json~n"),
-    io:format("  erlmcp_validate run --transport tcp --verbose~n"),
-    io:format("  erlmcp_validate report --format markdown --output report.md~n"),
-    io:format("  erlmcp_validate quick-check~n"),
     io:format("~nProgrammatic API (from Erlang shell):~n"),
     io:format("  erlmcp_validate_cli:run(spec).~n"),
     io:format("  erlmcp_validate_cli:run(protocol, Json).~n"),

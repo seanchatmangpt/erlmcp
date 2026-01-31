@@ -122,5 +122,14 @@
     erlmcp_uri_validator
 ]},
   {licenses, ["Apache-2.0"]},
-  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]}
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
+  %% OTP Version Requirements
+  {notes, [
+      "Supports Erlang/OTP 25-28",
+      "OTP 28+ features: priority messages, improved process iteration, native JSON",
+      "OTP 27+ features: json module, improved monitoring",
+      "OTP 26+ features: process_info improvements",
+      "Minimum: OTP 25 (production ready)",
+      "Recommended: OTP 28+ for best performance"
+  ]}
  ]}.
