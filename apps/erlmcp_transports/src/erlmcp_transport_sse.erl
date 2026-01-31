@@ -1,16 +1,13 @@
 -module(erlmcp_transport_sse).
+%% -behaviour(erlmcp_transport_behavior).  % Conflicts with gen_server init/1
 
 -include("erlmcp.hrl").
 
-%% Note: This module does NOT implement erlmcp_transport_behavior
-%% It is a Cowboy SSE handler with its own init/2 interface
+%% Transport behavior callbacks
+-export([init/1, send/2, close/1, get_info/1, handle_transport_call/2]).
 
-%% SSE-specific exports (NOT erlmcp_transport_behavior callbacks)
--export([
-    init/2,
-    send/2,
-    close/1
-]).
+%% SSE-specific exports (internal)
+-export([init_sse/2]).
 
 %% Cowboy handler
 -export([
@@ -46,8 +43,33 @@
 %% Transport Behavior Implementation
 %%====================================================================
 
--spec init(binary(), map()) -> {ok, pid()} | {error, term()}.
-init(TransportId, Config) ->
+%% @doc Initialize transport (starts Cowboy SSE listener)
+-spec init(map()) -> {ok, pid()} | {error, term()}.
+init(Config) when is_map(Config) ->
+    TransportId = maps:get(transport_id, Config, <<"sse_default">>),
+    init_sse(TransportId, Config).
+
+%% @doc Get transport information
+-spec get_info(pid() | term()) -> #{atom() => term()}.
+get_info(_State) ->
+    #{
+        transport_id => undefined,
+        type => sse,
+        status => running
+    }.
+
+%% @doc Handle transport-specific calls
+-spec handle_transport_call(term(), term()) ->
+    {reply, term(), term()} | {error, term()}.
+handle_transport_call(_Request, State) ->
+    {error, unknown_request}.
+
+%%====================================================================
+%% SSE-Specific Implementation
+%%====================================================================
+
+-spec init_sse(binary(), map()) -> {ok, pid()} | {error, term()}.
+init_sse(TransportId, Config) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.init">>),
     try
         Port = maps:get(port, Config, 8081),
@@ -68,7 +90,17 @@ init(TransportId, Config) ->
             ]}
         ]),
 
-        {ok, _} = cowboy:start_clear(erlmcp_sse_listener,
+        %% Generate unique listener name per transport ID to avoid conflicts
+        %% Handle both atom and binary TransportId
+        TransportIdBin = case is_binary(TransportId) of
+            true -> TransportId;
+            false when is_atom(TransportId) -> atom_to_binary(TransportId, utf8);
+            false when is_list(TransportId) -> list_to_binary(TransportId)
+        end,
+        ListenerName = binary_to_atom(<<"erlmcp_sse_", TransportIdBin/binary>>, utf8),
+
+        %% Cowboy 2.10 + Ranch 2.1 simple configuration
+        {ok, _} = cowboy:start_clear(ListenerName,
             [{port, Port}],
             #{env => #{dispatch => Dispatch}}),
 
@@ -131,11 +163,19 @@ init(_, Req, [TransportId]) ->
 handle(Req, #{transport_id := TransportId} = State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle">>),
 
+    %% Log connection attempt for security audit
+    Method = cowboy_req:method(Req),
+    Path = cowboy_req:path(Req),
+    PeerIP = format_peer_ip(cowboy_req:peer(Req)),
+    log_connection_attempt(Method, Path, PeerIP, TransportId),
+
     try
         %% Validate Origin header (DNS rebinding protection)
         case validate_request_origin(Req, SpanCtx) of
             {error, forbidden} ->
                 erlmcp_tracing:record_error_details(SpanCtx, origin_validation_failed, <<"Invalid origin">>),
+                %% Log security rejection
+                log_security_rejection(<<"origin_forbidden">>, PeerIP, Method, Path),
                 ReqForbidden = cowboy_req:reply(403, #{
                     <<"content-type">> => <<"application/json">>
                 }, jsx:encode(#{
@@ -143,7 +183,9 @@ handle(Req, #{transport_id := TransportId} = State) ->
                     <<"message">> => <<"Origin not allowed">>
                 }), Req),
                 {ok, ReqForbidden, State};
-            {ok, _ValidOrigin} ->
+            {ok, ValidOrigin} ->
+                %% Log successful origin validation
+                log_security_success(<<"origin_validated">>, PeerIP, ValidOrigin),
                 case cowboy_req:method(Req) of
                     <<"GET">> ->
                         handle_sse_stream(Req, TransportId, State);
@@ -152,6 +194,7 @@ handle(Req, #{transport_id := TransportId} = State) ->
                     <<"DELETE">> ->
                         handle_delete_request(Req, TransportId, State);
                     _ ->
+                        log_security_rejection(<<"method_not_allowed">>, PeerIP, Method, Path),
                         ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
                         {ok, ReqReply, State}
                 end
@@ -159,6 +202,7 @@ handle(Req, #{transport_id := TransportId} = State) ->
     catch
         Class:CaughtReason:Stacktrace ->
             erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+            log_security_exception(Class, CaughtReason, PeerIP),
             ReqError = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
             {ok, ReqError, State}
     after
@@ -173,6 +217,9 @@ handle_sse_stream(Req, TransportId, State) ->
     case erlmcp_http_header_validator:validate_request_headers(ReqHeaders, get) of
         {error, {StatusCode, Message, Data}} ->
             erlmcp_tracing:record_error_details(SpanCtx, header_validation_failed, Data),
+            %% Log header validation failure for security audit
+            PeerIP = format_peer_ip(cowboy_req:peer(Req)),
+            log_header_validation_failure(PeerIP, <<"GET">>, Message, Data),
             {_StatusCode2, ResponseHeaders, Body} =
                 erlmcp_http_header_validator:format_error_response(StatusCode, Message, Data),
             Req2 = cowboy_req:reply(StatusCode, maps:from_list(ResponseHeaders), Body, Req),
@@ -262,6 +309,9 @@ handle_post_request(Req, TransportId, State) ->
     case erlmcp_http_header_validator:validate_request_headers(ReqHeaders, post) of
         {error, {StatusCode, Message, Data}} ->
             erlmcp_tracing:record_error_details(SpanCtx, header_validation_failed, Data),
+            %% Log header validation failure for security audit
+            PeerIP = format_peer_ip(cowboy_req:peer(Req)),
+            log_header_validation_failure(PeerIP, <<"POST">>, Message, Data),
             {_StatusCode2, ResponseHeaders, Body} =
                 erlmcp_http_header_validator:format_error_response(StatusCode, Message, Data),
             Req2 = cowboy_req:reply(StatusCode, maps:from_list(ResponseHeaders), Body, Req),
@@ -322,58 +372,79 @@ handle_post_request(Req, TransportId, State) ->
 handle_delete_request(Req, TransportId, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle_delete">>),
 
+    %% Log DELETE request for security audit
+    PeerIP = format_peer_ip(cowboy_req:peer(Req)),
+    log_delete_request(PeerIP, TransportId),
+
     try
-        %% Extract session ID from headers
-        SessionId = cowboy_req:header(<<"mcp-session-id">>, Req, undefined),
+        %% Validate HTTP headers for DELETE request
+        ReqHeaders = maps:to_list(cowboy_req:headers(Req)),
+        case erlmcp_http_header_validator:validate_request_headers(ReqHeaders, delete) of
+            {error, {StatusCode, Message, Data}} ->
+                erlmcp_tracing:record_error_details(SpanCtx, header_validation_failed, Data),
+                log_header_validation_failure(PeerIP, <<"DELETE">>, Message, Data),
+                {_StatusCode2, ResponseHeaders, Body} =
+                    erlmcp_http_header_validator:format_error_response(StatusCode, Message, Data),
+                Req2 = cowboy_req:reply(StatusCode, maps:from_list(ResponseHeaders), Body, Req),
+                {ok, Req2, State};
+            {ok, _ValidatedHeaders} ->
+                %% Extract session ID from headers
+                SessionId = cowboy_req:header(<<"mcp-session-id">>, Req, undefined),
 
-        erlmcp_tracing:set_attributes(SpanCtx, #{
-            <<"transport_id">> => TransportId,
-            <<"session_id">> => case SessionId of
-                undefined -> <<"undefined">>;
-                _ -> SessionId
-            end
-        }),
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"transport_id">> => TransportId,
+                    <<"session_id">> => case SessionId of
+                        undefined -> <<"undefined">>;
+                        _ -> SessionId
+                    end
+                }),
 
-        case SessionId of
-            undefined ->
-                %% No session to close
-                erlmcp_tracing:record_error_details(SpanCtx, delete_no_session, <<"No session ID provided">>),
-                ReqReply = cowboy_req:reply(404, #{
-                    <<"content-type">> => <<"application/json">>
-                }, jsx:encode(#{
-                    <<"error">> => <<"Not Found">>,
-                    <<"message">> => <<"No active SSE session found">>
-                }), Req),
-                {ok, ReqReply, State};
-            _ ->
-                %% Clean up session and event store
-                case cleanup_sse_session(SessionId, TransportId, SpanCtx) of
-                    ok ->
-                        erlmcp_tracing:set_status(SpanCtx, ok),
-
-                        %% Notify registry of disconnection
-                        RegistryPid = erlmcp_registry:get_pid(),
-                        RegistryPid ! {transport_disconnected, TransportId, normal},
-
-                        %% Return 204 No Content on success
-                        ReqReply = cowboy_req:reply(204, #{}, <<>>, Req),
-                        {ok, ReqReply, State};
-                    {error, Reason} ->
-                        erlmcp_tracing:record_error_details(SpanCtx, delete_cleanup_failed, Reason),
-
-                        %% Notify registry of abnormal disconnection
-                        RegistryPid = erlmcp_registry:get_pid(),
-                        RegistryPid ! {transport_disconnected, TransportId, {cleanup_failed, Reason}},
-
-                        %% Return 500 Internal Server Error on cleanup failure
-                        ReqReply = cowboy_req:reply(500, #{
+                case SessionId of
+                    undefined ->
+                        %% No session to close
+                        erlmcp_tracing:record_error_details(SpanCtx, delete_no_session, <<"No session ID provided">>),
+                        log_delete_no_session(PeerIP),
+                        ReqReply = cowboy_req:reply(404, #{
                             <<"content-type">> => <<"application/json">>
                         }, jsx:encode(#{
-                            <<"error">> => <<"Internal Server Error">>,
-                            <<"message">> => <<"Failed to cleanup SSE session">>,
-                            <<"reason">> => format_term(Reason)
+                            <<"error">> => <<"Not Found">>,
+                            <<"message">> => <<"No active SSE session found">>
                         }), Req),
-                        {ok, ReqReply, State}
+                        {ok, ReqReply, State};
+                    _ ->
+                        %% Clean up session and event store
+                        case cleanup_sse_session(SessionId, TransportId, SpanCtx) of
+                            ok ->
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                %% Log successful session cleanup
+                                log_delete_success(PeerIP, SessionId, TransportId),
+
+                                %% Notify registry of disconnection
+                                RegistryPid = erlmcp_registry:get_pid(),
+                                RegistryPid ! {transport_disconnected, TransportId, normal},
+
+                                %% Return 204 No Content on success
+                                ReqReply = cowboy_req:reply(204, #{}, <<>>, Req),
+                                {ok, ReqReply, State};
+                            {error, Reason} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, delete_cleanup_failed, Reason),
+                                %% Log cleanup failure
+                                log_delete_cleanup_failed(PeerIP, SessionId, TransportId, Reason),
+
+                                %% Notify registry of abnormal disconnection
+                                RegistryPid = erlmcp_registry:get_pid(),
+                                RegistryPid ! {transport_disconnected, TransportId, {cleanup_failed, Reason}},
+
+                                %% Return 500 Internal Server Error on cleanup failure
+                                ReqReply = cowboy_req:reply(500, #{
+                                    <<"content-type">> => <<"application/json">>
+                                }, jsx:encode(#{
+                                    <<"error">> => <<"Internal Server Error">>,
+                                    <<"message">> => <<"Failed to cleanup SSE session">>,
+                                    <<"reason">> => format_term(Reason)
+                                }), Req),
+                                {ok, ReqReply, State}
+                        end
                 end
         end
     catch
@@ -732,3 +803,90 @@ get_max_message_size() ->
         _ ->
             ?DEFAULT_MAX_MESSAGE_SIZE
     end.
+
+%%====================================================================
+%% Security Logging Functions
+%%====================================================================
+
+%% @doc Format peer IP address for logging
+%% @private
+-spec format_peer_ip({inet:ip_address(), inet:port_number()}) -> binary().
+format_peer_ip({{A, B, C, D}, Port}) ->
+    iolist_to_binary(io_lib:format("~w.~w.~w.~w:~w", [A, B, C, D, Port]));
+format_peer_ip({{A, B, C, D, E, F, G, H}, Port}) ->
+    iolist_to_binary(io_lib:format("[~4.16.0b:~4.16.0b:~4.16.0b:~4.16.0b:~4.16.0b:~4.16.0b:~4.16.0b:~4.16.0b]:~w",
+        [A, B, C, D, E, F, G, H, Port]));
+format_peer_ip(_) ->
+    <<"unknown">>.
+
+%% @doc Log connection attempt for security audit
+%% @private
+-spec log_connection_attempt(binary(), binary(), binary(), binary()) -> ok.
+log_connection_attempt(Method, Path, PeerIP, TransportId) ->
+    logger:info("SSE connection attempt: ~s ~s from ~s (transport: ~s)",
+        [Method, Path, PeerIP, TransportId]),
+    ok.
+
+%% @doc Log security rejection
+%% @private
+-spec log_security_rejection(binary(), binary(), binary(), binary()) -> ok.
+log_security_rejection(Reason, PeerIP, Method, Path) ->
+    logger:warning("SECURITY REJECTION: ~s - ~s ~s from ~s",
+        [Reason, Method, Path, PeerIP]),
+    ok.
+
+%% @doc Log successful security validation
+%% @private
+-spec log_security_success(binary(), binary(), binary()) -> ok.
+log_security_success(Event, PeerIP, Origin) ->
+    logger:info("SECURITY SUCCESS: ~s from ~s (origin: ~s)",
+        [Event, PeerIP, Origin]),
+    ok.
+
+%% @doc Log security exception
+%% @private
+-spec log_security_exception(atom(), term(), binary()) -> ok.
+log_security_exception(Class, Reason, PeerIP) ->
+    logger:error("SECURITY EXCEPTION: ~p:~p from ~s",
+        [Class, Reason, PeerIP]),
+    ok.
+
+%% @doc Log header validation failure
+%% @private
+-spec log_header_validation_failure(binary(), binary(), binary(), term()) -> ok.
+log_header_validation_failure(PeerIP, Method, Message, Data) ->
+    logger:warning("SECURITY: Header validation failed for ~s from ~s: ~s - ~p",
+        [Method, PeerIP, Message, Data]),
+    ok.
+
+%% @doc Log DELETE request
+%% @private
+-spec log_delete_request(binary(), binary()) -> ok.
+log_delete_request(PeerIP, TransportId) ->
+    logger:info("SSE DELETE request from ~s (transport: ~s)",
+        [PeerIP, TransportId]),
+    ok.
+
+%% @doc Log DELETE with no session
+%% @private
+-spec log_delete_no_session(binary()) -> ok.
+log_delete_no_session(PeerIP) ->
+    logger:warning("SSE DELETE request with no session ID from ~s",
+        [PeerIP]),
+    ok.
+
+%% @doc Log successful DELETE
+%% @private
+-spec log_delete_success(binary(), binary(), binary()) -> ok.
+log_delete_success(PeerIP, SessionId, TransportId) ->
+    logger:info("SSE DELETE success: session ~s closed from ~s (transport: ~s)",
+        [SessionId, PeerIP, TransportId]),
+    ok.
+
+%% @doc Log DELETE cleanup failure
+%% @private
+-spec log_delete_cleanup_failed(binary(), binary(), binary(), term()) -> ok.
+log_delete_cleanup_failed(PeerIP, SessionId, TransportId, Reason) ->
+    logger:error("SSE DELETE cleanup failed: session ~s from ~s (transport: ~s) - reason: ~p",
+        [SessionId, PeerIP, TransportId, Reason]),
+    ok.

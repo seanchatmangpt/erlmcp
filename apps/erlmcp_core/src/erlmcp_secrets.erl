@@ -66,37 +66,37 @@ start_link(Config) ->
 %% @doc Get secret by key.
 -spec get_secret(secret_key()) -> {ok, secret_value()} | {error, term()}.
 get_secret(Key) ->
-    gen_server:call(?MODULE, {get_secret, Key}).
+    gen_server:call(?MODULE, {get_secret, Key}, 10000).
 
 %% @doc Set secret (store in backend).
 -spec set_secret(secret_key(), secret_value()) -> ok | {error, term()}.
 set_secret(Key, Value) ->
-    gen_server:call(?MODULE, {set_secret, Key, Value}).
+    gen_server:call(?MODULE, {set_secret, Key, Value}, 10000).
 
 %% @doc Delete secret from backend.
 -spec delete_secret(secret_key()) -> ok | {error, term()}.
 delete_secret(Key) ->
-    gen_server:call(?MODULE, {delete_secret, Key}).
+    gen_server:call(?MODULE, {delete_secret, Key}, 10000).
 
 %% @doc Rotate secret (generate new value, update backend).
 -spec rotate_secret(secret_key()) -> {ok, secret_value()} | {error, term()}.
 rotate_secret(Key) ->
-    gen_server:call(?MODULE, {rotate_secret, Key}).
+    gen_server:call(?MODULE, {rotate_secret, Key}, 10000).
 
 %% @doc List all secret keys.
 -spec list_secrets() -> {ok, [secret_key()]} | {error, term()}.
 list_secrets() ->
-    gen_server:call(?MODULE, list_secrets).
+    gen_server:call(?MODULE, list_secrets, 10000).
 
 %% @doc Configure HashiCorp Vault backend.
 -spec configure_vault(map()) -> ok.
 configure_vault(Config) ->
-    gen_server:call(?MODULE, {configure_backend, vault, Config}).
+    gen_server:call(?MODULE, {configure_backend, vault, Config}, 10000).
 
 %% @doc Configure AWS Secrets Manager backend.
 -spec configure_aws(map()) -> ok.
 configure_aws(Config) ->
-    gen_server:call(?MODULE, {configure_backend, aws_secrets_manager, Config}).
+    gen_server:call(?MODULE, {configure_backend, aws_secrets_manager, Config}, 10000).
 
 %% @doc Stop secrets manager.
 -spec stop() -> ok.
@@ -116,18 +116,13 @@ init([Config]) ->
     TtlSeconds = maps:get(ttl_seconds, Config, 300),  % 5 minutes default
     StoragePath = maps:get(storage_path, Config, "priv/secrets/secrets.enc"),
 
-    % Generate or load encryption key
-    EncryptionKey = load_or_generate_encryption_key(Config),
-
-    % Ensure storage directory exists
-    StorageDir = filename:dirname(StoragePath),
-    ok = filelib:ensure_dir(StorageDir ++ "/"),
-
+    % SECURITY FIX (P1): Move blocking file I/O to async init to prevent supervisor delays.
+    % Generate or load encryption key asynchronously after init returns.
     State = #state{
         cache = ets:new(secrets_cache, [set, protected]),
         backend = Backend,
         backend_config = BackendConfig,
-        encryption_key = EncryptionKey,
+        encryption_key = undefined,  % Will be set in async init
         ttl_seconds = TtlSeconds,
         storage_path = StoragePath
     },
@@ -135,7 +130,10 @@ init([Config]) ->
     % Start cache cleanup timer
     erlang:send_after(60000, self(), cleanup_cache),
 
-    logger:info("Secrets manager started with backend: ~p", [Backend]),
+    % Trigger async initialization (file I/O happens after init returns)
+    self() ! {init_async, Config},
+
+    logger:info("Secrets manager started with backend: ~p (async init pending)", [Backend]),
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -178,6 +176,15 @@ handle_cast(_Request, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
+handle_info({init_async, Config}, State) ->
+    % SECURITY FIX (P1): Perform blocking file I/O asynchronously after init/1 returns.
+    % This prevents supervisor startup delays while maintaining OTP best practices.
+    EncryptionKey = load_or_generate_encryption_key(Config),
+    StorageDir = filename:dirname(State#state.storage_path),
+    ok = filelib:ensure_dir(StorageDir ++ "/"),
+    logger:info("Async initialization complete, encryption key loaded"),
+    {noreply, State#state{encryption_key = EncryptionKey}};
+
 handle_info(cleanup_cache, State) ->
     Now = erlang:system_time(second),
     ets:foldl(fun({Key, {_Value, ExpiresAt}}, Acc) ->
@@ -188,6 +195,14 @@ handle_info(cleanup_cache, State) ->
         Acc
     end, ok, State#state.cache),
     erlang:send_after(60000, self(), cleanup_cache),
+    {noreply, State};
+
+handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
+    % Handle gun connection process death
+    % These are temporary monitors created during HTTP requests to Vault/AWS
+    % The actual request will fail with timeout/error, so we just log this
+    logger:warning("Gun connection process ~p died during request: ~p (monitor: ~p)",
+                   [Pid, Reason, MonitorRef]),
     {noreply, State};
 
 handle_info(_Info, State) ->
@@ -572,15 +587,32 @@ vault_http_request(Method, Path, Body, #vault_state{url = Url, token = Token, ti
 -spec vault_http_request_raw(get | post | delete, binary(), binary(), binary(), map(), pos_integer()) -> {ok, binary()} | {error, term()}.
 vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
     % Parse URL
-    #{scheme := Scheme, host := Host, port := Port} = uri_string:parse(VaultUrl),
+    UriMap = uri_string:parse(VaultUrl),
+    Scheme = maps:get(scheme, UriMap, <<"http">>),
+    Host = maps:get(host, UriMap),
+
+    % Determine port (use default if not specified)
+    Port = case maps:get(port, UriMap, undefined) of
+        undefined ->
+            case Scheme of
+                <<"https">> -> 443;
+                <<"http">> -> 8200;  % Vault default port
+                _ -> 8200
+            end;
+        P -> P
+    end,
 
     % Open gun connection
     Transport = case Scheme of
         <<"https">> -> tls;
-        <<"http">> -> tcp
+        <<"http">> -> tcp;
+        _ -> tcp
     end,
 
-    case gun:open(Host, Port, #{transport => Transport, protocols => [http]}) of
+    % Convert host to list for gun (gun 2.0.1 accepts both binary and list, but list is safer)
+    HostStr = binary_to_list(Host),
+
+    case gun:open(HostStr, Port, #{transport => Transport, protocols => [http]}) of
         {ok, ConnPid} ->
             MonRef = monitor(process, ConnPid),
 
@@ -603,19 +635,28 @@ vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
                         {response, nofin, Status, _RespHeaders} when Status >= 200, Status < 300 ->
                             % Get body
                             case gun:await_body(ConnPid, StreamRef, Timeout) of
-                                {ok, Body} ->
+                                {ok, ResponseBody} ->
                                     demonitor(MonRef, [flush]),
                                     gun:close(ConnPid),
-                                    {ok, Body};
+                                    {ok, ResponseBody};
                                 {error, Reason} ->
                                     demonitor(MonRef, [flush]),
                                     gun:close(ConnPid),
                                     {error, {body_read_failed, Reason}}
                             end;
-                        {response, fin, Status, RespHeaders} ->
+                        {response, fin, Status, _RespHeaders} ->
                             demonitor(MonRef, [flush]),
                             gun:close(ConnPid),
-                            {error, {http_error, Status, RespHeaders}};
+                            {error, {http_error, Status, <<>>}};
+                        {response, nofin, Status, _RespHeaders} ->
+                            % Get error body for non-2xx responses
+                            ErrorBody = case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                {ok, ErrBody} -> ErrBody;
+                                {error, _} -> <<>>
+                            end,
+                            demonitor(MonRef, [flush]),
+                            gun:close(ConnPid),
+                            {error, {http_error, Status, ErrorBody}};
                         {error, Reason} ->
                             demonitor(MonRef, [flush]),
                             gun:close(ConnPid),
@@ -692,176 +733,137 @@ seconds_to_future_timestamp(Seconds) ->
 %% @private Get secret from AWS Secrets Manager.
 -spec aws_secrets_get(binary(), map()) -> {ok, binary()} | {error, term()}.
 aws_secrets_get(SecretId, Config) ->
-    case maps_get(enabled, Config, false) of
-        false ->
-            {error, aws_not_configured};
-        true ->
-            Region = maps_get(region, Config, <<"us-east-1">>),
-            AuthMethod = maps_get(auth_method, Config, iam_role),
+    Region = maps_get(region, Config, <<"us-east-1">>),
+    AuthMethod = maps_get(auth_method, Config, access_key),
 
-            case get_aws_credentials(AuthMethod, Config) of
-                {ok, Creds} ->
-                    case make_aws_request(Region, <<"secretsmanager">>, Creds,
-                                         post, <<"/">>,
-                                         #{<<"X-Amz-Target">> => <<"secretsmanager.GetSecretValue">>},
-                                         jsx:encode(#{<<"SecretId">> => SecretId}), Config) of
-                        {ok, ResponseBody} ->
-                            try jsx:decode(ResponseBody, [return_maps]) of
-                                #{<<"SecretString">> := SecretString} ->
-                                    {ok, SecretString};
-                                #{<<"SecretBinary">> := SecretBinary} ->
-                                    {ok, SecretBinary};
-                                #{<<"Message">> := ErrorMessage} ->
-                                    logger:error("AWS Secrets Manager error: ~s", [ErrorMessage]),
-                                    {error, {aws_error, ErrorMessage}};
-                                Other ->
-                                    logger:error("Unexpected AWS response: ~p", [Other]),
-                                    {error, unexpected_response}
-                            catch
-                                _:_:Stacktrace ->
-                                    logger:error("Failed to decode AWS response: ~p", [Stacktrace]),
-                                    {error, invalid_json}
-                            end;
-                        {error, Reason} = Error ->
-                            logger:error("AWS Secrets Manager request failed: ~p", [Reason]),
-                            Error
-                    end;
+    logger:info("AWS Secrets Manager: Getting secret ~s from region ~s", [SecretId, Region]),
+
+    case get_aws_credentials(AuthMethod, Config) of
+        {ok, Creds} ->
+            % Build request payload
+            RequestBody = jsx:encode(#{
+                <<"SecretId">> => SecretId,
+                <<"VersionStage">> => <<"AWSCURRENT">>  % Get current version
+            }),
+
+            case do_aws_request(Region, <<"secretsmanager">>, Creds,
+                               <<"secretsmanager.GetSecretValue">>,
+                               RequestBody, Config) of
+                {ok, ResponseBody} ->
+                    parse_get_secret_response(SecretId, ResponseBody);
                 {error, Reason} = Error ->
-                    logger:error("Failed to get AWS credentials: ~p", [Reason]),
+                    logger:error("AWS Secrets Manager GetSecretValue failed for ~s: ~p", [SecretId, Reason]),
                     Error
-            end
+            end;
+        {error, Reason} = Error ->
+            logger:error("Failed to get AWS credentials: ~p", [Reason]),
+            Error
     end.
 
 %% @private Set secret in AWS Secrets Manager.
 -spec aws_secrets_set(binary(), binary(), map()) -> ok | {error, term()}.
 aws_secrets_set(SecretId, SecretValue, Config) ->
-    case maps_get(enabled, Config, false) of
-        false ->
-            {error, aws_not_configured};
-        true ->
-            Region = maps_get(region, Config, <<"us-east-1">>),
-            AuthMethod = maps_get(auth_method, Config, iam_role),
+    Region = maps_get(region, Config, <<"us-east-1">>),
+    AuthMethod = maps_get(auth_method, Config, access_key),
 
-            case get_aws_credentials(AuthMethod, Config) of
-                {ok, Creds} ->
-                    % Try to create secret, fall back to update if it exists
-                    CreateParams = #{
-                        <<"Name">> => SecretId,
-                        <<"SecretString">> => SecretValue
-                    },
+    logger:info("AWS Secrets Manager: Setting secret ~s in region ~s", [SecretId, Region]),
 
-                    case make_aws_request(Region, <<"secretsmanager">>, Creds,
-                                         post, <<"/">>,
-                                         #{<<"X-Amz-Target">> => <<"secretsmanager.CreateSecret">>},
-                                         jsx:encode(CreateParams), Config) of
-                        {ok, _ResponseBody} ->
-                            logger:info("Created secret: ~s", [SecretId]),
-                            ok;
-                        {error, {http_error, 400, _Body}} ->
-                            % Secret might already exist, try updating
-                            UpdateParams = #{
-                                <<"SecretId">> => SecretId,
-                                <<"SecretString">> => SecretValue
-                            },
+    case get_aws_credentials(AuthMethod, Config) of
+        {ok, Creds} ->
+            % Try to create secret first
+            CreateParams = #{
+                <<"Name">> => SecretId,
+                <<"SecretString">> => SecretValue
+            },
 
-                            case make_aws_request(Region, <<"secretsmanager">>, Creds,
-                                                 post, <<"/">>,
-                                                 #{<<"X-Amz-Target">> => <<"secretsmanager.UpdateSecret">>},
-                                                 jsx:encode(UpdateParams), Config) of
-                                {ok, _ResponseBody} ->
-                                    logger:info("Updated secret: ~s", [SecretId]),
-                                    ok;
-                                {error, Reason} = Error ->
-                                    logger:error("Failed to update secret: ~p", [Reason]),
-                                    Error
-                            end;
-                        {error, Reason} = Error ->
-                            logger:error("Failed to create secret: ~p", [Reason]),
-                            Error
-                    end;
+            case do_aws_request(Region, <<"secretsmanager">>, Creds,
+                               <<"secretsmanager.CreateSecret">>,
+                               jsx:encode(CreateParams), Config) of
+                {ok, _ResponseBody} ->
+                    logger:info("AWS Secrets Manager: Created secret ~s", [SecretId]),
+                    ok;
+                {error, {aws_error, <<"ResourceExistsException">>, _Msg}} ->
+                    % Secret exists, try updating
+                    logger:info("AWS Secrets Manager: Secret ~s exists, updating", [SecretId]),
+                    update_aws_secret(SecretId, SecretValue, Region, Creds, Config);
                 {error, Reason} = Error ->
-                    logger:error("Failed to get AWS credentials: ~p", [Reason]),
+                    logger:error("AWS Secrets Manager: Failed to create secret ~s: ~p", [SecretId, Reason]),
                     Error
-            end
+            end;
+        {error, Reason} = Error ->
+            logger:error("Failed to get AWS credentials: ~p", [Reason]),
+            Error
     end.
 
 %% @private Delete secret from AWS Secrets Manager.
 -spec aws_secrets_delete(binary(), map()) -> ok | {error, term()}.
 aws_secrets_delete(SecretId, Config) ->
-    case maps_get(enabled, Config, false) of
-        false ->
-            {error, aws_not_configured};
-        true ->
-            Region = maps_get(region, Config, <<"us-east-1">>),
-            AuthMethod = maps_get(auth_method, Config, iam_role),
+    Region = maps_get(region, Config, <<"us-east-1">>),
+    AuthMethod = maps_get(auth_method, Config, access_key),
+    RecoveryWindow = maps_get(recovery_window, Config, 30),
 
-            case get_aws_credentials(AuthMethod, Config) of
-                {ok, Creds} ->
-                    RecoveryWindow = maps_get(recovery_window, Config, 30),
-                    DeleteParams = #{
-                        <<"SecretId">> => SecretId,
-                        <<"RecoveryWindowInDays">> => RecoveryWindow
-                    },
+    logger:info("AWS Secrets Manager: Deleting secret ~s (recovery window: ~p days)", [SecretId, RecoveryWindow]),
 
-                    case make_aws_request(Region, <<"secretsmanager">>, Creds,
-                                         post, <<"/">>,
-                                         #{<<"X-Amz-Target">> => <<"secretsmanager.DeleteSecret">>},
-                                         jsx:encode(DeleteParams), Config) of
-                        {ok, _ResponseBody} ->
-                            logger:info("Deleted secret: ~s (recovery window: ~p days)", [SecretId, RecoveryWindow]),
-                            ok;
-                        {error, Reason} = Error ->
-                            logger:error("Failed to delete secret: ~p", [Reason]),
-                            Error
-                    end;
+    case get_aws_credentials(AuthMethod, Config) of
+        {ok, Creds} ->
+            DeleteParams = #{
+                <<"SecretId">> => SecretId,
+                <<"RecoveryWindowInDays">> => RecoveryWindow
+            },
+
+            case do_aws_request(Region, <<"secretsmanager">>, Creds,
+                               <<"secretsmanager.DeleteSecret">>,
+                               jsx:encode(DeleteParams), Config) of
+                {ok, _ResponseBody} ->
+                    logger:info("AWS Secrets Manager: Deleted secret ~s", [SecretId]),
+                    ok;
                 {error, Reason} = Error ->
-                    logger:error("Failed to get AWS credentials: ~p", [Reason]),
+                    logger:error("AWS Secrets Manager: Failed to delete secret ~s: ~p", [SecretId, Reason]),
                     Error
-            end
+            end;
+        {error, Reason} = Error ->
+            logger:error("Failed to get AWS credentials: ~p", [Reason]),
+            Error
     end.
 
 %% @private List secrets from AWS Secrets Manager.
 -spec aws_secrets_list(map()) -> {ok, [binary()]} | {error, term()}.
 aws_secrets_list(Config) ->
-    case maps_get(enabled, Config, false) of
-        false ->
-            {error, aws_not_configured};
-        true ->
-            Region = maps_get(region, Config, <<"us-east-1">>),
-            AuthMethod = maps_get(auth_method, Config, iam_role),
+    Region = maps_get(region, Config, <<"us-east-1">>),
+    AuthMethod = maps_get(auth_method, Config, access_key),
 
-            case get_aws_credentials(AuthMethod, Config) of
-                {ok, Creds} ->
-                    list_all_secrets(Region, Creds, Config, []);
-                {error, Reason} = Error ->
-                    logger:error("Failed to get AWS credentials: ~p", [Reason]),
-                    Error
-            end
+    logger:info("AWS Secrets Manager: Listing secrets in region ~s", [Region]),
+
+    case get_aws_credentials(AuthMethod, Config) of
+        {ok, Creds} ->
+            list_all_secrets(Region, Creds, Config, [], undefined);
+        {error, Reason} = Error ->
+            logger:error("Failed to get AWS credentials: ~p", [Reason]),
+            Error
     end.
 
 %% @private List all secrets with pagination.
-list_all_secrets(Region, Creds, Config, Acc) ->
-    ListParams = case Acc of
-        [] -> #{};
-        _ -> #{<<"NextToken">> => lists:last(Acc)}
+list_all_secrets(Region, Creds, Config, Acc, NextToken) ->
+    ListParams = case NextToken of
+        undefined -> #{};
+        _ -> #{<<"NextToken">> => NextToken}
     end,
 
-    case make_aws_request(Region, <<"secretsmanager">>, Creds,
-                         post, <<"/">>,
-                         #{<<"X-Amz-Target">> => <<"secretsmanager.ListSecrets">>},
-                         jsx:encode(ListParams), Config) of
+    case do_aws_request(Region, <<"secretsmanager">>, Creds,
+                       <<"secretsmanager.ListSecrets">>,
+                       jsx:encode(ListParams), Config) of
         {ok, ResponseBody} ->
             try jsx:decode(ResponseBody, [return_maps]) of
                 #{<<"SecretList">> := SecretList} = Response ->
-                    Names = [maps_get(<<"Name">>, S, undefined) || S <- SecretList,
-                           S =/= undefined],
+                    Names = [maps:get(<<"Name">>, S) || S <- SecretList],
                     NewAcc = Acc ++ Names,
 
-                    case maps_get(<<"NextToken">>, Response, undefined) of
+                    case maps:get(<<"NextToken">>, Response, undefined) of
                         undefined ->
+                            logger:info("AWS Secrets Manager: Listed ~p secrets", [length(NewAcc)]),
                             {ok, NewAcc};
-                        NextToken ->
-                            list_all_secrets(Region, Creds, Config, NewAcc ++ [NextToken])
+                        NewNextToken ->
+                            list_all_secrets(Region, Creds, Config, NewAcc, NewNextToken)
                     end;
                 Other ->
                     logger:error("Unexpected AWS list response: ~p", [Other]),
@@ -967,10 +969,8 @@ assume_role(BaseCreds, RoleArn, Config) ->
         <<"DurationSeconds">> => Duration
     },
 
-    case make_aws_request(Region, <<"sts">>, BaseCreds,
-                         post, <<"/">>,
-                         #{<<"X-Amz-Target">> => <<"sts.AssumeRole">>},
-                         jsx:encode(AssumeParams), Config) of
+    case do_aws_request(Region, <<"sts">>, BaseCreds,
+                         <<"sts.AssumeRole">>, jsx:encode(AssumeParams), Config) of
         {ok, ResponseBody} ->
             try jsx:decode(ResponseBody, [return_maps]) of
                 #{<<"Credentials">> := #{
@@ -997,51 +997,88 @@ assume_role(BaseCreds, RoleArn, Config) ->
             {error, {assume_role_failed, Reason}}
     end.
 
-%% @private Make signed HTTP request to AWS.
--spec make_aws_request(binary(), binary(), aws_credentials(),
-                       get | post, binary(), map(), binary(), map()) ->
+%% @private Execute AWS Secrets Manager request using gun HTTP client.
+-spec do_aws_request(binary(), binary(), aws_credentials(), binary(), binary(), map()) ->
     {ok, binary()} | {error, term()}.
-make_aws_request(Region, Service, Creds, Method, Path, Headers, Body, Config) ->
+do_aws_request(Region, Service, Creds, Target, Body, Config) ->
     Timeout = maps_get(timeout, Config, 5000),
 
-    % Build AWS endpoint URL
+    % Build AWS endpoint
     Host = <<Service/binary, ".", Region/binary, ".amazonaws.com">>,
-    Url = <<"https://", Host/binary, Path/binary>>,
+    Port = 443,
+    Path = <<"/">>,
 
     % Get current timestamp
     Now = erlang:universaltime(),
     AmzDate = format_amz_date(Now),
     DateStamp = format_date_stamp(Now),
 
-    % Calculate signature
+    % Build headers for signing
+    BaseHeaders = #{
+        <<"X-Amz-Target">> => Target,
+        <<"Content-Type">> => <<"application/x-amz-json-1.1">>
+    },
+
+    % Calculate AWS Signature v4
     SigV4Headers = calculate_sigv4(
-        Method, Host, Path, Headers, Body,
+        post, Host, Path, BaseHeaders, Body,
         Region, Service, Creds, AmzDate, DateStamp
     ),
 
-    % Combine headers
-    AllHeaders = maps:merge(Headers, SigV4Headers),
+    % Combine all headers
+    AllHeaders = maps:merge(BaseHeaders, SigV4Headers),
 
-    % Convert to httpc header format
-    HttpcHeaders = [{binary_to_list(K), binary_to_list(V)} || {K, V} <- maps:to_list(AllHeaders)],
+    % Open gun connection
+    case gun:open(binary_to_list(Host), Port, #{
+        transport => tls,
+        protocols => [http]
+    }) of
+        {ok, ConnPid} ->
+            MonRef = monitor(process, ConnPid),
 
-    % Make request
-    ContentType = maps_get(<<"Content-Type">>, AllHeaders, <<"application/x-amz-json-1.1">>),
+            % Wait for connection
+            case gun:await_up(ConnPid, Timeout) of
+                {up, _Protocol} ->
+                    % Convert headers to list format for gun
+                    GunHeaders = maps:to_list(AllHeaders),
 
-    Request = case Method of
-        get -> {binary_to_list(Url), HttpcHeaders};
-        post -> {binary_to_list(Url), HttpcHeaders, <<"application/x-amz-json-1.1">>, Body}
-    end,
+                    % Make POST request
+                    StreamRef = gun:post(ConnPid, binary_to_list(Path), GunHeaders, Body),
 
-    case httpc_request(Method, Request, [{timeout, Timeout}], Config) of
-        {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, ResponseBody};
-        {ok, {{_, Code, _}, _, ResponseBody}} when Code >= 400 ->
-            {error, {http_error, Code, ResponseBody}};
-        {ok, {{_, Code, _}, _, _}} ->
-            {error, {http_error, Code, <<"Unexpected status code">>}};
+                    % Wait for response
+                    Result = case gun:await(ConnPid, StreamRef, Timeout) of
+                        {response, fin, Status, _RespHeaders} when Status >= 200, Status < 300 ->
+                            {ok, <<>>};
+                        {response, nofin, Status, RespHeaders} when Status >= 200, Status < 300 ->
+                            case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                {ok, ResponseBody} ->
+                                    {ok, ResponseBody};
+                                {error, Reason} ->
+                                    {error, {body_read_failed, Reason}}
+                            end;
+                        {response, fin, Status, RespHeaders} ->
+                            parse_aws_error(Status, <<>>, RespHeaders);
+                        {response, nofin, Status, RespHeaders} ->
+                            case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                {ok, ErrorBody} ->
+                                    parse_aws_error(Status, ErrorBody, RespHeaders);
+                                {error, Reason} ->
+                                    {error, {error_body_read_failed, Reason}}
+                            end;
+                        {error, Reason} ->
+                            {error, {request_failed, Reason}}
+                    end,
+
+                    demonitor(MonRef, [flush]),
+                    gun:close(ConnPid),
+                    Result;
+                {error, Reason} ->
+                    demonitor(MonRef, [flush]),
+                    gun:close(ConnPid),
+                    {error, {connection_failed, Reason}}
+            end;
         {error, Reason} ->
-            {error, {http_error, Reason}}
+            {error, {gun_open_failed, Reason}}
     end.
 
 %% @private Calculate AWS SigV4 signature.
@@ -1120,6 +1157,94 @@ calculate_sigv4(Method, Host, Path, ExtraHeaders, Body,
         Token -> maps:put(<<"X-Amz-Security-Token">>, Token, Headers)
     end.
 
+%% @private Parse AWS error response.
+-spec parse_aws_error(non_neg_integer(), binary(), list()) -> {error, term()}.
+parse_aws_error(Status, Body, _Headers) ->
+    case Body of
+        <<>> ->
+            {error, {http_error, Status, <<"No response body">>}};
+        _ ->
+            try jsx:decode(Body, [return_maps]) of
+                #{<<"__type">> := ErrorType, <<"message">> := ErrorMsg} ->
+                    % Extract error type (remove prefix if present)
+                    CleanType = case binary:split(ErrorType, <<"#">>) of
+                        [_, Type] -> Type;
+                        [Type] -> Type
+                    end,
+                    logger:error("AWS error ~p: ~s - ~s", [Status, CleanType, ErrorMsg]),
+                    {error, {aws_error, CleanType, ErrorMsg}};
+                #{<<"__type">> := ErrorType} ->
+                    CleanType = case binary:split(ErrorType, <<"#">>) of
+                        [_, Type] -> Type;
+                        [Type] -> Type
+                    end,
+                    logger:error("AWS error ~p: ~s", [Status, CleanType]),
+                    {error, {aws_error, CleanType, <<>>}};
+                #{<<"message">> := ErrorMsg} ->
+                    logger:error("AWS error ~p: ~s", [Status, ErrorMsg]),
+                    {error, {aws_error, <<"Unknown">>, ErrorMsg}};
+                Other ->
+                    logger:error("AWS error ~p: ~p", [Status, Other]),
+                    {error, {http_error, Status, Body}}
+            catch
+                _:_:_ ->
+                    logger:error("AWS error ~p (failed to parse): ~s", [Status, Body]),
+                    {error, {http_error, Status, Body}}
+            end
+    end.
+
+%% @private Parse GetSecretValue response.
+-spec parse_get_secret_response(binary(), binary()) -> {ok, binary()} | {error, term()}.
+parse_get_secret_response(SecretId, ResponseBody) ->
+    try jsx:decode(ResponseBody, [return_maps]) of
+        #{<<"SecretString">> := SecretString} ->
+            logger:info("AWS Secrets Manager: Retrieved SecretString for ~s", [SecretId]),
+            {ok, SecretString};
+        #{<<"SecretBinary">> := SecretBinary} ->
+            logger:info("AWS Secrets Manager: Retrieved SecretBinary for ~s", [SecretId]),
+            % SecretBinary is base64 encoded
+            {ok, base64:decode(SecretBinary)};
+        #{<<"ARN">> := _} = Response ->
+            % Response might not have the secret value
+            case {maps:get(<<"SecretString">>, Response, undefined),
+                  maps:get(<<"SecretBinary">>, Response, undefined)} of
+                {undefined, undefined} ->
+                    logger:error("AWS response missing secret value for ~s", [SecretId]),
+                    {error, secret_value_missing};
+                {SecretString, _} when SecretString =/= undefined ->
+                    {ok, SecretString};
+                {_, SecretBinary} when SecretBinary =/= undefined ->
+                    {ok, base64:decode(SecretBinary)}
+            end;
+        Other ->
+            logger:error("Unexpected AWS GetSecretValue response: ~p", [Other]),
+            {error, unexpected_response}
+    catch
+        _:_:Stacktrace ->
+            logger:error("Failed to decode AWS GetSecretValue response: ~p", [Stacktrace]),
+            {error, invalid_json}
+    end.
+
+%% @private Update existing secret.
+-spec update_aws_secret(binary(), binary(), binary(), aws_credentials(), map()) ->
+    ok | {error, term()}.
+update_aws_secret(SecretId, SecretValue, Region, Creds, Config) ->
+    UpdateParams = #{
+        <<"SecretId">> => SecretId,
+        <<"SecretString">> => SecretValue
+    },
+
+    case do_aws_request(Region, <<"secretsmanager">>, Creds,
+                       <<"secretsmanager.UpdateSecret">>,
+                       jsx:encode(UpdateParams), Config) of
+        {ok, _ResponseBody} ->
+            logger:info("AWS Secrets Manager: Updated secret ~s", [SecretId]),
+            ok;
+        {error, Reason} = Error ->
+            logger:error("AWS Secrets Manager: Failed to update secret ~s: ~p", [SecretId, Reason]),
+            Error
+    end.
+
 %% @private HTTP client wrapper.
 -spec httpc_request(get | post, tuple() | list(), list(), map()) ->
     {ok, tuple()} | {error, term()}.
@@ -1136,7 +1261,18 @@ httpc_request(Method, Request, Options, _Config) ->
         _ -> ok
     end,
 
-    case httpc:request(Method, Request, [{ssl, [{verify, verify_none}]} | Options], []) of
+    % SECURITY FIX (P0): Enable SSL certificate verification to prevent MITM attacks.
+    % Changed from verify_none to verify_peer with proper certificate validation.
+    SslOpts = [
+        {ssl, [
+            {verify, verify_peer},  % Enable peer verification (was verify_none - VULNERABLE)
+            {cacerts, public_key:cacerts_get()},  % Use system CA certificates
+            {depth, 3},  % Maximum certificate chain depth
+            {customize_hostname_check, [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}
+        ]}
+    ],
+
+    case httpc:request(Method, Request, SslOpts ++ Options, []) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->
@@ -1200,50 +1336,74 @@ maps_get(Key, Map, Default) ->
 
 %% @private Get secret from local encrypted storage.
 local_get(Key, State) ->
-    case load_encrypted_storage(State) of
-        {ok, Secrets} ->
-            case maps:get(Key, Secrets, undefined) of
-                undefined -> {error, not_found};
-                Value -> {ok, Value}
-            end;
-        {error, enoent} ->
-            {error, not_found};
-        Error ->
-            Error
+    % SECURITY FIX (P1): Check if async init has completed before accessing encryption key.
+    case State#state.encryption_key of
+        undefined ->
+            {error, initializing};
+        _ ->
+            case load_encrypted_storage(State) of
+                {ok, Secrets} ->
+                    case maps:get(Key, Secrets, undefined) of
+                        undefined -> {error, not_found};
+                        Value -> {ok, Value}
+                    end;
+                {error, enoent} ->
+                    {error, not_found};
+                Error ->
+                    Error
+            end
     end.
 
 %% @private Set secret in local encrypted storage.
 local_set(Key, Value, State) ->
-    Secrets = case load_encrypted_storage(State) of
-        {ok, S} -> S;
-        {error, enoent} -> #{};
-        {error, Reason} -> error({failed_to_load_secrets, Reason})
-    end,
+    % SECURITY FIX (P1): Check if async init has completed before accessing encryption key.
+    case State#state.encryption_key of
+        undefined ->
+            {error, initializing};
+        _ ->
+            Secrets = case load_encrypted_storage(State) of
+                {ok, S} -> S;
+                {error, enoent} -> #{};
+                {error, Reason} -> error({failed_to_load_secrets, Reason})
+            end,
 
-    NewSecrets = maps:put(Key, Value, Secrets),
-    save_encrypted_storage(NewSecrets, State).
+            NewSecrets = maps:put(Key, Value, Secrets),
+            save_encrypted_storage(NewSecrets, State)
+    end.
 
 %% @private Delete secret from local storage.
 local_delete(Key, State) ->
-    case load_encrypted_storage(State) of
-        {ok, Secrets} ->
-            NewSecrets = maps:remove(Key, Secrets),
-            save_encrypted_storage(NewSecrets, State);
-        {error, enoent} ->
-            ok;
-        Error ->
-            Error
+    % SECURITY FIX (P1): Check if async init has completed before accessing encryption key.
+    case State#state.encryption_key of
+        undefined ->
+            {error, initializing};
+        _ ->
+            case load_encrypted_storage(State) of
+                {ok, Secrets} ->
+                    NewSecrets = maps:remove(Key, Secrets),
+                    save_encrypted_storage(NewSecrets, State);
+                {error, enoent} ->
+                    ok;
+                Error ->
+                    Error
+            end
     end.
 
 %% @private List secrets from local storage.
 local_list(State) ->
-    case load_encrypted_storage(State) of
-        {ok, Secrets} ->
-            {ok, maps:keys(Secrets)};
-        {error, enoent} ->
-            {ok, []};
-        Error ->
-            Error
+    % SECURITY FIX (P1): Check if async init has completed before accessing encryption key.
+    case State#state.encryption_key of
+        undefined ->
+            {error, initializing};
+        _ ->
+            case load_encrypted_storage(State) of
+                {ok, Secrets} ->
+                    {ok, maps:keys(Secrets)};
+                {error, enoent} ->
+                    {ok, []};
+                Error ->
+                    Error
+            end
     end.
 
 %% @private Load encrypted storage file.
@@ -1289,8 +1449,14 @@ load_or_generate_encryption_key(Config) ->
             KeyDir = filename:dirname(KeyPath),
             ok = filelib:ensure_dir(KeyDir ++ "/"),
             ok = file:write_file(KeyPath, NewKey),
-            % Set restrictive permissions (Unix only)
-            os:cmd("chmod 600 " ++ KeyPath),
+            % SECURITY FIX (P0): Use file:change_mode/2 instead of os:cmd to prevent command injection.
+            % The previous os:cmd("chmod 600 " ++ KeyPath) was vulnerable to shell injection attacks.
+            % Mode 8#600 = rw------- (owner read/write only).
+            case file:change_mode(KeyPath, 8#600) of
+                ok -> ok;
+                {error, Reason} ->
+                    logger:warning("Failed to set restrictive permissions on ~s: ~p", [KeyPath, Reason])
+            end,
             logger:warning("Generated new encryption key: ~s", [KeyPath]),
             NewKey
     end.

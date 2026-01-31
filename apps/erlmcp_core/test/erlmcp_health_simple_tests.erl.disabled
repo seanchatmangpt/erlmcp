@@ -1,0 +1,139 @@
+-module(erlmcp_health_simple_tests).
+-include_lib("eunit/include/eunit.hrl").
+
+%%%===================================================================
+%%% Simple Test Suite for erlmcp_health
+%%%
+%%% Basic functionality tests without dependencies on other modules.
+%%%===================================================================
+
+%%====================================================================
+%% Test Fixtures
+%%====================================================================
+
+health_simple_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     [
+        fun test_server_starts/0,
+        fun test_register_check/0,
+        fun test_unregister_check/0,
+        fun test_check_returns_map/0,
+        fun test_custom_check_works/0,
+        fun test_multiple_checks/0,
+        fun test_overall_healthy_status/0
+     ]}.
+
+%%====================================================================
+%% Setup and Cleanup
+%%====================================================================
+
+setup() ->
+    {ok, Pid} = erlmcp_health:start_link(),
+    Pid.
+
+cleanup(Pid) ->
+    gen_server:stop(Pid, normal, 5000).
+
+%%====================================================================
+%% Test Cases
+%%====================================================================
+
+%% Test that server starts and is alive
+test_server_starts() ->
+    fun(_Pid) ->
+        ?assert(is_pid(erlang:whereis(erlmcp_health)))
+    end.
+
+%% Test registering a custom check
+test_register_check() ->
+    fun(_Pid) ->
+        %% Register a simple check
+        CheckFun = {erlang, time, []},
+        ok = erlmcp_health:register_check(my_check, CheckFun),
+
+        %% Verify it's in the report
+        Report = erlmcp_health:check(),
+        Checks = maps:get(checks, Report, #{}),
+        ?assert(maps:is_key(my_check, Checks))
+    end.
+
+%% Test unregistering a check
+test_unregister_check() ->
+    fun(_Pid) ->
+        %% Register a check
+        CheckFun = {erlang, date, []},
+        ok = erlmcp_health:register_check(temp_check, CheckFun),
+
+        %% Verify it's registered
+        Report1 = erlmcp_health:check(),
+        Checks1 = maps:get(checks, Report1, #{}),
+        ?assert(maps:is_key(temp_check, Checks1)),
+
+        %% Unregister
+        ok = erlmcp_health:unregister_check(temp_check),
+
+        %% Verify it's gone
+        Report2 = erlmcp_health:check(),
+        Checks2 = maps:get(checks, Report2, #{}),
+        ?assertNot(maps:is_key(temp_check, Checks2))
+    end.
+
+%% Test that check/0 returns a valid map
+test_check_returns_map() ->
+    fun(_Pid) ->
+        Report = erlmcp_health:check(),
+        ?assert(is_map(Report)),
+        ?assert(maps:is_key(healthy, Report)),
+        ?assert(maps:is_key(checks, Report)),
+        ?assert(is_boolean(maps:get(healthy, Report))),
+        ?assert(is_map(maps:get(checks, Report)))
+    end.
+
+%% Test that custom check with known-good function works
+test_custom_check_works() ->
+    fun(_Pid) ->
+        %% Use node() which always returns an atom
+        ok = erlmcp_health:register_check(node_check, {erlang, node, []}),
+
+        Report = erlmcp_health:check(),
+        Checks = maps:get(checks, Report, #{}),
+        Status = maps:get(node_check, Checks),
+
+        %% node() returns an atom, so should be healthy
+        ?assertEqual(healthy, Status)
+    end.
+
+%% Test multiple checks
+test_multiple_checks() ->
+    fun(_Pid) ->
+        %% Register multiple checks
+        ok = erlmcp_health:register_check(check1, {erlang, node, []}),
+        ok = erlmcp_health:register_check(check2, {erlang, timestamp, []}),
+
+        Report = erlmcp_health:check(),
+        Checks = maps:get(checks, Report, #{}),
+
+        ?assert(maps:is_key(check1, Checks)),
+        ?assert(maps:is_key(check2, Checks)),
+        ?assertEqual(healthy, maps:get(check1, Checks)),
+        ?assertEqual(healthy, maps:get(check2, Checks))
+    end.
+
+%% Test that overall healthy status reflects individual checks
+test_overall_healthy_status() ->
+    fun(_Pid) ->
+        %% Register all healthy checks
+        ok = erlmcp_health:register_check(healthy1, {erlang, node, []}),
+        ok = erlmcp_health:register_check(healthy2, {erlang, timestamp, []}),
+
+        Report1 = erlmcp_health:check(),
+        ?assertEqual(true, maps:get(healthy, Report1)),
+
+        %% Add a bad check (non-existent module)
+        ok = erlmcp_health:register_check(unhealthy_check, {bad_module, bad_func, []}),
+
+        Report2 = erlmcp_health:check(),
+        ?assertEqual(false, maps:get(healthy, Report2))
+    end.

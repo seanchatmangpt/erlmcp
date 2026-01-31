@@ -1,0 +1,40 @@
+#!/usr/bin/env escript
+%%! -pa _build/default/lib/erlmcp_core/ebin -pa _build/default/lib/erlmcp_transports/ebin -pa _build/default/lib/erlmcp_validation/ebin -pa _build/default/lib/erlmcp_observability/ebin -pa _build/default/lib/jsx/ebin -pa _build/default/lib/jesse/ebin -pa _build/default/lib/gproc/ebin -pa _build/default/lib/gun/ebin -pa _build/default/lib/ranch/ebin
+
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% erlmcp-validate - MCP Specification Compliance Validator (escript wrapper)
+%%%
+%%% This escript wrapper delegates to erlmcp_validate_cli module.
+%%% @end
+%%%-------------------------------------------------------------------
+
+main(Args) ->
+    %% Add application paths to code path for escript execution
+    ScriptDir = filename:dirname(escript:script_name()),
+    RootDir = filename:dirname(ScriptDir),
+
+    %% Add build paths
+    BuildDir = filename:join(RootDir, "_build/default/lib"),
+
+    Apps = [erlmcp_core, erlmcp_transports, erlmcp_validation, erlmcp_observability,
+            jsx, jesse, gproc, gun, ranch, cowlib, poolboy],
+
+    lists:foreach(fun(App) ->
+        AppDir = filename:join([BuildDir, atom_to_list(App), "ebin"]),
+        case code:add_patha(AppDir) of
+            true -> ok;
+            {error, _} -> ok  % Directory might not exist
+        end
+    end, Apps),
+
+    %% Ensure erlmcp_validate_cli module is loaded
+    case code:ensure_loaded(erlmcp_validate_cli) of
+        {module, erlmcp_validate_cli} ->
+            %% Delegate to the main CLI module
+            erlmcp_validate_cli:main(Args);
+        {error, Reason} ->
+            io:format(standard_error, "Error: Failed to load erlmcp_validate_cli module: ~p~n", [Reason]),
+            io:format(standard_error, "Please ensure the project is compiled: rebar3 compile~n", []),
+            halt(1)
+    end.

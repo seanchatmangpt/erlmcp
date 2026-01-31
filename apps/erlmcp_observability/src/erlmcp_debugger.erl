@@ -53,6 +53,13 @@
     visualize_call_graph/2
 ]).
 
+%% Internal exports (for testing)
+-export([
+    process_info_to_map/1,
+    call_graph_to_dot/1,
+    timestamp/0
+]).
+
 -include_lib("kernel/include/logger.hrl").
 
 %% Note: This module uses internal state management without a record
@@ -316,10 +323,24 @@ visualize_call_graph(Ref, OutputFile) ->
     case get_call_graph_state(Ref) of
         undefined ->
             {error, call_graph_not_found};
-        _ ->
-            %% TODO: Convert call graph to DOT format
-            %% This would generate a GraphViz DOT file
-            {ok, placeholder}
+        #{pid := Pid} ->
+            %% Get process info for metadata
+            ProcInfo = case process_info(Pid) of
+                undefined -> #{};
+                Info -> process_info_to_map(Info)
+            end,
+
+            %% Build DOT graph
+            DOT = call_graph_to_dot(ProcInfo),
+
+            %% Write to file
+            case file:write_file(OutputFile, DOT) of
+                ok ->
+                    ?LOG_INFO("Call graph DOT written to ~p", [OutputFile]),
+                    ok;
+                {error, Reason} ->
+                    {error, {file_write_error, Reason}}
+            end
     end.
 
 %%%=============================================================================
@@ -442,3 +463,58 @@ call_graph_collector(Ref, Acc) ->
         _ ->
             call_graph_collector(Ref, Acc)
     end.
+
+%%%=============================================================================
+%%% INTERNAL FUNCTIONS - DOT GENERATION
+%%%=============================================================================
+
+%% @doc Convert process info to map
+-spec process_info_to_map(proplists:proplist()) -> map().
+process_info_to_map(InfoList) ->
+    List = [{K, V} || {K, V} <- InfoList],
+    maps:from_list(List).
+
+%% @doc Generate DOT format from process call graph
+%% Simple GraphViz DOT format for process visualization
+-spec call_graph_to_dot(map()) -> iolist().
+call_graph_to_dot(ProcInfo) ->
+    Pid = maps:get(pid, ProcInfo, "unknown"),
+    Name = case maps:get(registered_name, ProcInfo, undefined) of
+        undefined -> pid_to_list(Pid);
+        RegName when is_atom(RegName) -> atom_to_list(RegName)
+    end,
+
+    MsgQueueLen = maps:get(message_queue_len, ProcInfo, 0),
+    MemUsage = maps:get(memory, ProcInfo, 0),
+    CurrentFunc = case maps:get(current_function, ProcInfo, undefined) of
+        {Mod, Func, Arity} -> io_lib:format("~s:~s/~p", [Mod, Func, Arity]);
+        _ -> "unknown"
+    end,
+
+    NodeAttrs = io_lib:format(
+        "  \"~s\" [label=\"~s\\nQueue: ~p\\nMemory: ~p\\n~s\" shape=box];",
+        [pid_to_list(Pid), Name, MsgQueueLen, MemUsage, CurrentFunc]
+    ),
+
+    [
+        "digraph ErlangProcesses {\n",
+        "  rankdir=TB;\n",
+        "  node [shape=box, style=rounded];\n",
+        "  edge [fontsize=10];\n",
+        "\n",
+        "  /* Process node */\n",
+        NodeAttrs, "\n",
+        "\n",
+        "  /* Graph metadata */\n",
+        "  label=\"Erlang Process Call Graph\\nGenerated: " ++ timestamp() ++ "\";\n",
+        "  labelloc=t;\n",
+        "  fontsize=12;\n",
+        "}\n"
+    ].
+
+%% @doc Get timestamp string
+-spec timestamp() -> string().
+timestamp() ->
+    {{Y, Month, D}, {H, Min, S}} = calendar:universal_time(),
+    io_lib:format("~4..0B-~2..0B-~2..0B ~2..0B:~2..0B:~2..0B UTC",
+                  [Y, Month, D, H, Min, S]).

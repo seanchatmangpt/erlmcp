@@ -27,6 +27,7 @@
     status :: elicitation_status(),
     config :: map(),
     client_pid :: pid() | undefined,
+    client_monitor :: reference() | undefined,
     result :: term() | undefined,
     created_at :: integer(),
     timeout_at :: integer(),
@@ -222,9 +223,16 @@ handle_info({elicitation_timeout, ElicitationId}, State) ->
             end
     end;
 
+handle_info({'DOWN', MonitorRef, process, _Pid, _Reason}, State) ->
+    %% Clean up elicitations for monitored client
+    NewElicitations = maps:filter(fun(_Id, ES) ->
+        ES#elicitation_state.client_monitor =/= MonitorRef
+    end, State#state.elicitations),
+    {noreply, State#state{elicitations = NewElicitations}};
+
 handle_info({'EXIT', Pid, Reason}, State) ->
     logger:info("Elicitation client ~p exited: ~p", [Pid, Reason]),
-    %% Clean up elicitations for this client
+    %% Clean up elicitations for this client (legacy, for linked processes)
     NewElicitations = maps:filter(fun(_Id, ES) ->
         ES#elicitation_state.client_pid =/= Pid
     end, State#state.elicitations),
@@ -296,26 +304,33 @@ validate_url_safety(Url) ->
             end;
         _ ->
             logger:warning("Invalid URL format: ~p", [Url]),
-            {error, invalid_url_format}
+            {error, {invalid_url, Url}}
     catch
         _:_ ->
             logger:warning("Failed to parse URL ~p", [Url]),
-            {error, invalid_url}
+            {error, {invalid_url, Url}}
     end.
 
 -spec is_safe_host(string()) -> boolean().
 is_safe_host(Host) ->
-    %% Check against private IP ranges
-    case inet:parse_address(Host) of
-        {ok, {_, _, _, _}} = IPAddr ->
-            not is_private_ip(IPAddr);
-        {ok, {A, _, _, _, _, _, _, _}} ->
-            %% For IPv6, block loopback and link-local
-            not (A =:= 0 orelse A =:= 16#fe80);
-        _ ->
-            %% For hostnames, we could do DNS lookups, but for security,
-            %% we'll be conservative and only allow if not obviously private
-            true
+    %% First check for dangerous hostnames
+    LowerHost = string:to_lower(Host),
+    DangerousHosts = ["localhost", "127.0.0.1", "0.0.0.0", "::1"],
+    case lists:member(LowerHost, DangerousHosts) of
+        true -> false;
+        false ->
+            %% Check against private IP ranges
+            case inet:parse_address(Host) of
+                {ok, {_, _, _, _} = IPAddr} ->
+                    not is_private_ip(IPAddr);
+                {ok, {A, _, _, _, _, _, _, _}} ->
+                    %% For IPv6, block loopback and link-local
+                    not (A =:= 0 orelse A =:= 16#fe80);
+                _ ->
+                    %% For hostnames, we could do DNS lookups, but for security,
+                    %% we'll be conservative and only allow if not obviously private
+                    true
+            end
     end.
 
 -spec is_private_ip({integer(), integer(), integer(), integer()}) -> boolean().
@@ -385,12 +400,19 @@ do_create_elicitation(Config, ClientPid, State) ->
     TimeoutAt = CreatedAt + TimeoutMs,
     SizeLimit = maps:get(<<"size_limit">>, Config, State#state.default_size_limit),
 
+    %% Monitor client process if provided
+    ClientMonitor = case ClientPid of
+        undefined -> undefined;
+        _ -> monitor(process, ClientPid)
+    end,
+
     ElicitationState = #elicitation_state{
         id = Id,
         mode = Mode,
         status = pending,
         config = Config,
         client_pid = ClientPid,
+        client_monitor = ClientMonitor,
         created_at = CreatedAt,
         timeout_at = TimeoutAt,
         size_limit = SizeLimit

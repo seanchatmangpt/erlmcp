@@ -71,10 +71,14 @@
 %% API - Validation helpers
 -export([
     validate_latency/1,
+    validate_latency/2,
     validate_throughput/1,
+    validate_throughput/2,
     validate_memory/1,
+    validate_memory/2,
     validate_connection_setup/1,
     validate_concurrent_connections/1,
+    benchmark_comparison/3,
     calculate_percentiles/1,
     format_report/1
 ]).
@@ -577,15 +581,15 @@ validate_latency(#{p50_us := P50, p95_us := P95, p99_us := P99}) ->
     P50Pass = P50 =< ?TARGET_P50_LATENCY_US,
     P95Pass = P95 =< ?TARGET_P95_LATENCY_US,
     P99Pass = P99 =< ?TARGET_P99_LATENCY_US,
-    
+
     Passed = P50Pass andalso P95Pass andalso P99Pass,
-    
+
     Status = case Passed of
         true -> pass;
         false when P99Pass -> warning;
         false -> fail
     end,
-    
+
     #{
         passed => Passed,
         p50 => #{
@@ -606,11 +610,52 @@ validate_latency(#{p50_us := P50, p95_us := P95, p99_us := P99}) ->
         status => Status
     }.
 
+%% @doc Validate latency against custom thresholds
+-spec validate_latency(latency_result(), map()) -> validation_result().
+validate_latency(#{p50_us := P50, p95_us := P95, p99_us := P99}, Thresholds) when is_map(Thresholds) ->
+    TargetP50 = maps:get(<<"latency_p50_us">>, Thresholds, ?TARGET_P50_LATENCY_US),
+    TargetP95 = maps:get(<<"latency_p95_us">>, Thresholds, ?TARGET_P95_LATENCY_US),
+    TargetP99 = maps:get(<<"latency_p99_us">>, Thresholds, ?TARGET_P99_LATENCY_US),
+
+    P50Pass = P50 =< TargetP50,
+    P95Pass = P95 =< TargetP95,
+    P99Pass = P99 =< TargetP99,
+
+    Passed = P50Pass andalso P95Pass andalso P99Pass,
+
+    Status = case Passed of
+        true -> pass;
+        false when P99Pass -> warning;
+        false -> fail
+    end,
+
+    #{
+        passed => Passed,
+        p50 => #{
+            target => TargetP50,
+            actual => P50,
+            status => bool_to_status(P50Pass)
+        },
+        p95 => #{
+            target => TargetP95,
+            actual => P95,
+            status => bool_to_status(P95Pass)
+        },
+        p99 => #{
+            target => TargetP99,
+            actual => P99,
+            status => bool_to_status(P99Pass)
+        },
+        status => Status
+    };
+validate_latency(Result, _Thresholds) ->
+    validate_latency(Result).
+
 %% @doc Validate throughput against targets
 -spec validate_throughput(throughput_result()) -> validation_result().
 validate_throughput(#{requests_per_second := RPS}) ->
     Passed = RPS >= ?TARGET_THROUGHPUT,
-    
+
     #{
         passed => Passed,
         target => ?TARGET_THROUGHPUT,
@@ -618,16 +663,75 @@ validate_throughput(#{requests_per_second := RPS}) ->
         status => bool_to_status(Passed)
     }.
 
+%% @doc Validate throughput against custom target
+-spec validate_throughput(throughput_result(), number() | undefined) -> validation_result().
+validate_throughput(#{requests_per_second := RPS}, Target) when is_number(Target) ->
+    Passed = RPS >= Target,
+    #{
+        passed => Passed,
+        target => Target,
+        actual => RPS,
+        status => bool_to_status(Passed)
+    };
+validate_throughput(Result, undefined) ->
+    validate_throughput(Result).
+
 %% @doc Validate memory against targets
 -spec validate_memory(memory_result()) -> validation_result().
 validate_memory(#{bytes_per_connection := Bytes}) ->
     Passed = Bytes =< ?TARGET_MEMORY_PER_CONN_BYTES,
-    
+
     #{
         passed => Passed,
         target => ?TARGET_MEMORY_PER_CONN_BYTES,
         actual => Bytes,
         status => bool_to_status(Passed)
+    }.
+
+%% @doc Validate memory against custom target
+-spec validate_memory(memory_result(), number() | undefined) -> validation_result().
+validate_memory(#{bytes_per_connection := Bytes}, MaxBytes) when is_number(MaxBytes) ->
+    Passed = Bytes =< MaxBytes,
+    #{
+        passed => Passed,
+        target => MaxBytes,
+        actual => Bytes,
+        status => bool_to_status(Passed)
+    };
+validate_memory(Result, undefined) ->
+    validate_memory(Result).
+
+%% @doc Compare benchmark results against baseline
+-spec benchmark_comparison(map(), map(), number() | undefined) -> validation_result().
+benchmark_comparison(Current, Baseline, Tolerance) when is_map(Current), is_map(Baseline) ->
+    DefaultTolerance = case Tolerance of
+        undefined -> 0.1;  % 10% default tolerance
+        _ -> Tolerance
+    end,
+
+    CurrentThroughput = maps:get(<<"throughput_msg_per_s">>, Current, 0),
+    BaselineThroughput = maps:get(<<"throughput_msg_per_s">>, Baseline, 0),
+
+    %% Check if current is within tolerance of baseline
+    Ratio = case BaselineThroughput of
+        0 -> 0;
+        _ -> CurrentThroughput / BaselineThroughput
+    end,
+
+    Passed = Ratio >= (1.0 - DefaultTolerance),
+
+    #{
+        passed => Passed,
+        current => CurrentThroughput,
+        baseline => BaselineThroughput,
+        ratio => Ratio,
+        tolerance => DefaultTolerance,
+        status => bool_to_status(Passed)
+    };
+benchmark_comparison(_Current, _Baseline, _Tolerance) ->
+    #{
+        passed => false,
+        status => invalid_input
     }.
 
 %% @doc Validate connection setup against targets

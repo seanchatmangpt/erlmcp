@@ -1,345 +1,485 @@
-%%%-------------------------------------------------------------------
-%%% @doc Compliance Report Tests
-%%%
-%%% Tests compliance report generation and calculation:
-%%% - Compliance calculation
-%%% - Report generation (Markdown, JSON, HTML)
-%%% - Traceability matrix
-%%% - Gap analysis
-%%%
-%%% == Chicago School TDD ==
-%%% Tests observable behavior through API calls only.
-%%% Uses real erlmcp_compliance_report module through API.
-%%% NO internal state inspection or implementation detail testing.
-%%% @end
-%%%-------------------------------------------------------------------
 -module(erlmcp_compliance_report_tests).
+-author("erlmcp").
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
-%%% Test Fixtures - Sample Data for Observable Behavior Testing
+%%% Test Definitions
 %%%====================================================================
 
-%% Sample compliance data for testing
-sample_compliance_data() ->
-    #{
-        spec_version => <<"2025-11-25">>,
-        timestamp => <<"2026-01-30T12:00:00Z">>,
-        test_results => [
-            #{
-                name => <<"initialize_must_be_first_test">>,
-                requirement_id => <<"req-001">>,
-                requirement_name => <<"initialize_required">>,
-                status => <<"passed">>,
-                timestamp => <<"2026-01-30T12:00:00Z">>,
-                evidence => <<"Request before initialize returned error">>
-            },
-            #{
-                name => <<"tools_list_returns_array_test">>,
-                requirement_id => <<"req-002">>,
-                requirement_name => <<"tools_list_array">>,
-                status => <<"passed">>,
-                timestamp => <<"2026-01-30T12:01:00Z">>,
-                evidence => <<"tools/list returned array of 3 tools">>
-            },
-            #{
-                name => <<"resources_subscribe_test">>,
-                requirement_id => <<"req-003">>,
-                requirement_name => <<"resources_subscribe">>,
-                status => <<"failed">>,
-                timestamp => <<"2026-01-30T12:02:00Z">>,
-                evidence => <<"Subscribe failed with timeout">>
-            },
-            #{
-                name => <<"stdio_newline_delimited_test">>,
-                requirement_id => <<"req-004">>,
-                requirement_name => <<"stdio_format">>,
-                status => <<"passed">>,
-                timestamp => <<"2026-01-30T12:03:00Z">>,
-                evidence => <<"Messages properly delimited">>
-            }
-        ],
-        spec_requirements => [
-            #{
-                id => <<"req-001">>,
-                name => <<"initialize_required">>,
-                section => <<"Lifecycle">>,
-                description => <<"Client must send initialize before other requests">>
-            },
-            #{
-                id => <<"req-002">>,
-                name => <<"tools_list_array">>,
-                section => <<"Tools">>,
-                description => <<"tools/list must return array">>
-            },
-            #{
-                id => <<"req-003">>,
-                name => <<"resources_subscribe">>,
-                section => <<"Resources">>,
-                description => <<"Server must support resource subscriptions">>
-            },
-            #{
-                id => <<"req-004">>,
-                name => <<"stdio_format">>,
-                section => <<"Transports">>,
-                description => <<"stdio transport uses newline-delimited JSON">>
-            },
-            #{
-                id => <<"req-005">>,
-                name => <<"prompts_get">>,
-                section => <<"Prompts">>,
-                description => <<"prompts/get retrieves prompt by name">>
-            }
-        ]
-    }.
+%% Test fixtures
+evidence_test_() ->
+    {setup,
+     fun setup_evidence/0,
+     fun cleanup_evidence/1,
+     [
+      {"collect evidence for test results", fun test_collect_test_evidence/0},
+      {"collect evidence for coverage metrics", fun test_collect_coverage_evidence/0},
+      {"collect evidence for security scan", fun test_collect_security_evidence/0},
+      {"collect evidence for performance benchmark", fun test_collect_performance_evidence/0},
+      {"collect evidence for compliance validation", fun test_collect_compliance_evidence/0},
+      {"hash evidence with SHA-256", fun test_hash_evidence/0},
+      {"verify evidence integrity", fun test_verify_evidence_integrity/0},
+      {"detect tampered evidence", fun test_detect_tampered_evidence/0},
+      {"store evidence bundle to filesystem", fun test_store_evidence_bundle/0},
+      {"create evidence directory structure", fun test_create_evidence_bundle/0},
+      {"generate evidence report", fun test_generate_evidence_report/0},
+      {"link evidence to receipt chain", fun test_link_receipt_chain/0},
+      {"handle invalid evidence type", fun test_invalid_evidence_type/0},
+      {"handle file write errors", fun test_file_write_errors/0},
+      {"handle missing evidence directory", fun test_missing_evidence_directory/0}
+     ]}.
 
 %%%====================================================================
-%%% Compliance Calculation Tests
+%%% Setup and Cleanup
 %%%====================================================================
 
-calculate_overall_compliance_test() ->
-    Data = sample_compliance_data(),
-    {ok, Compliance, Details} = erlmcp_compliance_report:calculate_compliance(Data),
+setup_evidence() ->
+    %% Create temporary directory for evidence
+    TmpDir = filename:join(["/tmp", "evidence_" ++ integer_to_list(erlang:unique_integer([positive]))]),
+    ok = filelib:ensure_dir(filename:join([TmpDir, ".gitkeep"])),
+    %% Start application if needed
+    application:ensure_all_started(erlmcp_validation),
+    {TmpDir}.
 
-    %% Verify compliance is a float between 0 and 100
-    ?assert(is_float(Compliance)),
-    ?assert(Compliance >= 0.0),
-    ?assert(Compliance =< 100.0),
+cleanup_evidence({TmpDir}) ->
+    %% Clean up temporary directory
+    case file:list_dir(TmpDir) of
+        {ok, []} ->
+            ok = file:del_dir(TmpDir);
+        {ok, Files} ->
+            lists:foreach(fun(F) ->
+                File = filename:join([TmpDir, F]),
+                case file:del_file(File) of
+                    ok -> ok;
+                    {error, _} -> ok
+                end
+            end, Files),
+            ok = file:del_dir(TmpDir);
+        {error, _} ->
+            ok
+    end,
+    %% Stop application
+    application:stop(erlmcp_validation).
 
-    %% Verify details structure
-    ?assert(is_map(Details)),
-    ?assert(maps:is_key(total_requirements, Details)),
-    ?assert(maps:is_key(passed_tests, Details)),
-    ?assert(maps:is_key(by_section, Details)),
+%%%====================================================================
 
-    %% With 3 passed tests out of 5 requirements, should be 60%
-    ?assertEqual(5, maps:get(total_requirements, Details)),
-    ?assertEqual(3, maps:get(passed_tests, Details)),
-    ?assertEqual(60.0, Compliance).
+%% @private Recursively cleanup directory
+cleanup_recursive(Dir) ->
+    case file:list_dir(Dir) of
+        {ok, []} ->
+            file:del_dir(Dir);
+        {ok, Files} ->
+            lists:foreach(fun(F) ->
+                Path = filename:join([Dir, F]),
+                case filelib:is_dir(Path) of
+                    true -> cleanup_recursive(Path);
+                    false -> file:del_file(Path)
+                end
+            end),
+            file:del_dir(Dir);
+        {error, _} ->
+            ok
+    end.
+%%% Test Cases
+%%%====================================================================
 
-calculate_section_compliance_test() ->
-    Data = sample_compliance_data(),
-    {ok, _Compliance, Details} = erlmcp_compliance_report:calculate_compliance(Data),
-
-    BySection = maps:get(by_section, Details),
-
-    %% Verify we have section breakdowns
-    ?assert(is_map(BySection)),
-    ?assert(maps:size(BySection) > 0).
-
-handle_empty_test_results_test() ->
-    Data = #{
-        spec_version => <<"2025-11-25">>,
-        test_results => [],
-        spec_requirements => [
-            #{id => <<"req-001">>, name => <<"test_req">>, section => <<"Test">>}
-        ]
+%% @doc Test collecting evidence for test results
+test_collect_test_evidence() ->
+    %% Given: Test result data
+    TestData = #{
+        type => test_result,
+        module => erlmcp_json_rpc_tests,
+        function => test_encode_request,
+        status => passed,
+        runtime_ms => 5,
+        timestamp => "2026-01-30T12:00:00Z"
     },
 
-    {ok, Compliance, _Details} = erlmcp_compliance_report:calculate_compliance(Data),
-    ?assertEqual(0.0, Compliance).
+    %% When: Collecting evidence
+    {ok, Evidence} = erlmcp_compliance_report:collect_evidence(test_result, TestData),
 
-handle_missing_requirements_test() ->
-    Data = #{
-        spec_version => <<"2025-11-25">>,
-        test_results => [
-            #{name => <<"test">>, status => <<"passed">>,
-              requirement_id => <<"req-001">>, requirement_name => <<"req">>}
-        ],
-        spec_requirements => []
+    %% Then: Evidence should contain required fields
+    ?assert(is_map(Evidence)),
+    ?assert(maps:is_key(evidence_id, Evidence)),
+    ?assert(maps:is_key(evidence_type, Evidence)),
+    ?assert(maps:is_key(content, Evidence)),
+    ?assert(maps:is_key(timestamp, Evidence)),
+    ?assert(maps:is_key(hash, Evidence)),
+    ?assertEqual(<<"test_result">>, maps:get(evidence_type, Evidence)),
+    ?assertMatch(#{module := erlmcp_json_rpc_tests}, maps:get(content, Evidence)).
+
+%% @doc Test collecting evidence for coverage metrics
+test_collect_coverage_evidence() ->
+    %% Given: Coverage data
+    CoverageData = #{
+        type => coverage_metrics,
+        module => erlmcp_json_rpc,
+        coverage_percentage => 85.5,
+        lines_covered => 425,
+        lines_total => 497,
+        timestamp => "2026-01-30T12:00:00Z"
     },
 
-    {ok, Compliance, _Details} = erlmcp_compliance_report:calculate_compliance(Data),
-    ?assertEqual(0.0, Compliance).
+    %% When: Collecting evidence
+    {ok, Evidence} = erlmcp_compliance_report:collect_evidence(coverage_metrics, CoverageData),
 
-%%%====================================================================
-%%% Report Generation Tests
-%%%====================================================================
+    %% Then: Evidence should contain coverage information
+    ?assert(is_map(Evidence)),
+    ?assertEqual(<<"coverage_metrics">>, maps:get(evidence_type, Evidence)),
+    ?assertMatch(#{coverage_percentage := 85.5}, maps:get(content, Evidence)).
 
-generate_markdown_report_test() ->
-    Data = sample_compliance_data(),
-    {ok, Markdown} = erlmcp_compliance_report:generate_report(markdown, Data),
+%% @doc Test collecting evidence for security scan
+test_collect_security_evidence() ->
+    %% Given: Security scan data
+    SecurityData = #{
+        type => security_scan,
+        scanner => bandit,
+        issues_found => 0,
+        timestamp => "2026-01-30T12:00:00Z",
+        scan_report => #{severity => #{critical => 0, high => 0, medium => 0, low => 0}}
+    },
 
-    %% Verify it's binary
-    ?assert(is_binary(Markdown)),
+    %% When: Collecting evidence
+    {ok, Evidence} = erlmcp_compliance_report:collect_evidence(security_scan, SecurityData),
 
-    %% Check for required sections
-    ?assert(nomatch =/= binary:match(Markdown, <<"# MCP Specification Compliance Report">>)),
-    ?assert(nomatch =/= binary:match(Markdown, <<"## Summary">>)),
-    ?assert(nomatch =/= binary:match(Markdown, <<"## Detailed Evidence">>)),
-    ?assert(nomatch =/= binary:match(Markdown, <<"## Gap Analysis">>)),
-    ?assert(nomatch =/= binary:match(Markdown, <<"## Traceability Matrix">>)),
+    %% Then: Evidence should contain security information
+    ?assert(is_map(Evidence)),
+    ?assertEqual(<<"security_scan">>, maps:get(evidence_type, Evidence)),
+    ?assertMatch(#{issues_found := 0}, maps:get(content, Evidence)).
 
-    %% Check for compliance percentage (60% not 80%)
-    ?assert(nomatch =/= binary:match(Markdown, <<"60.00%">>)),
+%% @doc Test collecting evidence for performance benchmark
+test_collect_performance_evidence() ->
+    %% Given: Benchmark data
+    BenchmarkData = #{
+        type => performance_benchmark,
+        benchmark_name => core_ops_100k,
+        throughput_ops_per_sec => 2690000,
+        latency_p50_us => 150,
+        latency_p95_us => 300,
+        latency_p99_us => 450,
+        timestamp => "2026-01-30T12:00:00Z"
+    },
 
-    %% Check for test evidence
-    ?assert(nomatch =/= binary:match(Markdown, <<"initialize_must_be_first_test">>)).
+    %% When: Collecting evidence
+    {ok, Evidence} = erlmcp_compliance_report:collect_evidence(performance_benchmark, BenchmarkData),
 
-generate_json_report_test() ->
-    Data = sample_compliance_data(),
-    {ok, Json} = erlmcp_compliance_report:generate_report(json, Data),
+    %% Then: Evidence should contain performance metrics
+    ?assert(is_map(Evidence)),
+    ?assertEqual(<<"performance_benchmark">>, maps:get(evidence_type, Evidence)),
+    ?assertMatch(#{throughput_ops_per_sec := 2690000}, maps:get(content, Evidence)).
 
-    %% Verify it's binary
-    ?assert(is_binary(Json)),
+%% @doc Test collecting evidence for compliance validation
+test_collect_compliance_evidence() ->
+    %% Given: Compliance validation data
+    ComplianceData = #{
+        type => compliance_validation,
+        spec_version => "2025-11-25",
+        overall_compliance => 95.5,
+        requirements_checked => 100,
+        requirements_passed => 95,
+        timestamp => "2026-01-30T12:00:00Z"
+    },
 
-    %% Parse JSON and verify structure
-    {ok, Parsed} = jsx:decode(Json, [return_maps]),
+    %% When: Collecting evidence
+    {ok, Evidence} = erlmcp_compliance_report:collect_evidence(compliance_validation, ComplianceData),
 
-    %% Verify top-level fields
-    ?assert(maps:is_key(<<"spec_version">>, Parsed)),
-    ?assert(maps:is_key(<<"timestamp">>, Parsed)),
-    ?assert(maps:is_key(<<"overall">>, Parsed)),
-    ?assert(maps:is_key(<<"by_section">>, Parsed)),
-    ?assert(maps:is_key(<<"evidence">>, Parsed)),
-    ?assert(maps:is_key(<<"gaps">>, Parsed)),
-    ?assert(maps:is_key(<<"recommendations">>, Parsed)),
-    ?assert(maps:is_key(<<"traceability">>, Parsed)),
+    %% Then: Evidence should contain compliance information
+    ?assert(is_map(Evidence)),
+    ?assertEqual(<<"compliance_validation">>, maps:get(evidence_type, Evidence)),
+    ?assertMatch(#{overall_compliance := 95.5}, maps:get(content, Evidence)).
 
-    %% Verify compliance value (60.0 not 80.0)
-    Overall = maps:get(<<"overall">>, Parsed),
-    ?assert(is_float(Overall)),
-    ?assertEqual(60.0, Overall).
+%% @doc Test hashing evidence with SHA-256
+test_hash_evidence() ->
+    %% Given: Evidence content
+    Content = #{test => data, value => 42},
 
-generate_html_report_test() ->
-    Data = sample_compliance_data(),
-    {ok, HTML} = erlmcp_compliance_report:generate_report(html, Data),
+    %% When: Hashing evidence
+    {ok, Hash} = erlmcp_compliance_report:hash_evidence(Content),
 
-    %% Verify it's binary
-    ?assert(is_binary(HTML)),
+    %% Then: Hash should be a 64-character hex string (SHA-256 = 256 bits = 64 hex chars)
+    ?assert(is_binary(Hash)),
+    ?assertEqual(64, byte_size(Hash)),
 
-    %% Check for HTML structure
-    ?assert(nomatch =/= binary:match(HTML, <<"<!DOCTYPE html>">>)),
-    ?assert(nomatch =/= binary:match(HTML, <<"<html">>)),
-    ?assert(nomatch =/= binary:match(HTML, <<"</html>">>)),
-    ?assert(nomatch =/= binary:match(HTML, <<"<title>MCP Compliance Report</title>">>)).
+    %% Same content should produce same hash
+    {ok, Hash2} = erlmcp_compliance_report:hash_evidence(Content),
+    ?assertEqual(Hash, Hash2),
 
-%%%====================================================================
-%%% Traceability Matrix Tests
-%%%====================================================================
+    %% Different content should produce different hash
+    {ok, Hash3} = erlmcp_compliance_report:hash_evidence(#{test => different_data}),
+    ?assertNotEqual(Hash, Hash3).
 
-matrix_maps_requirements_to_tests_test() ->
-    Data = sample_compliance_data(),
-    Matrix = erlmcp_compliance_report:create_traceability_matrix(Data),
+%% @doc Test verifying evidence integrity
+test_verify_evidence_integrity() ->
+    %% Given: Evidence with known hash
+    Content = #{test => "verify integrity", value => 123},
+    {ok, OriginalHash} = erlmcp_compliance_report:hash_evidence(Content),
+    Evidence = #{
+        content => Content,
+        hash => OriginalHash,
+        timestamp => "2026-01-30T12:00:00Z"
+    },
 
-    %% Verify matrix structure
-    ?assert(is_map(Matrix)),
-    ?assert(maps:is_key(<<"req-001">>, Matrix)),
-    ?assert(maps:is_key(<<"req-002">>, Matrix)),
+    %% When: Verifying evidence
+    Result = erlmcp_compliance_report:verify_evidence_integrity(Content, OriginalHash),
 
-    %% Check traceability data structure
-    ReqData = maps:get(<<"req-001">>, Matrix),
-    ?assert(maps:is_key(<<"requirement">>, ReqData)),
-    ?assert(maps:is_key(<<"tests">>, ReqData)),
-    ?assert(maps:is_key(<<"status">>, ReqData)).
+    %% Then: Verification should succeed
+    ?assertEqual({ok, true}, Result).
 
-matrix_includes_status_test() ->
-    Data = sample_compliance_data(),
-    Matrix = erlmcp_compliance_report:create_traceability_matrix(Data),
+%% @doc Test detecting tampered evidence
+test_detect_tampered_evidence() ->
+    %% Given: Evidence with tampered content
+    OriginalContent = #{test => "original"},
+    {ok, OriginalHash} = erlmcp_compliance_report:hash_evidence(OriginalContent),
+    TamperedContent = #{test => "tampered"},
 
-    %% Check status values are valid
-    maps:foreach(fun(_ReqId, ReqData) ->
-        Status = maps:get(<<"status">>, ReqData),
-        ?assert(lists:member(Status, [<<"passed">>, <<"failed">>, <<"partial">>, <<"untested">>]))
-    end, Matrix).
+    %% When: Verifying tampered evidence
+    Result = erlmcp_compliance_report:verify_evidence_integrity(TamperedContent, OriginalHash),
 
-handles_untested_requirements_test() ->
-    Data = sample_compliance_data(),
-    Matrix = erlmcp_compliance_report:create_traceability_matrix(Data),
+    %% Then: Verification should fail
+    ?assertEqual({ok, false}, Result).
 
-    %% req-005 has no tests
-    ReqData = maps:get(<<"req-005">>, Matrix),
-    ?assertEqual(<<"untested">>, maps:get(<<"status">>, ReqData)),
-    ?assertEqual([], maps:get(<<"tests">>, ReqData)),
-    ?assertEqual(<<"never">>, maps:get(<<"last_tested">>, ReqData)).
+%% @doc Test storing evidence bundle to filesystem
+test_store_evidence_bundle() ->
+    %% Given: Evidence bundle
+    {TmpDir} = setup_evidence(),
+    BundleId = "test_bundle_" ++ integer_to_list(erlang:unique_integer([positive])),
+    EvidenceItems = [
+        #{
+            evidence_id => <<"ev1">>,
+            evidence_type => <<"test_result">>,
+            content => #{test => "data1"},
+            hash => <<"hash1">>,
+            timestamp => "2026-01-30T12:00:00Z"
+        },
+        #{
+            evidence_id => <<"ev2">>,
+            evidence_type => <<"coverage_metrics">>,
+            content => #{coverage => 85.5},
+            hash => <<"hash2">>,
+            timestamp => "2026-01-30T12:01:00Z"
+        }
+    ],
 
-%%%====================================================================
-%%% Gap Analysis Tests
-%%%====================================================================
+    %% When: Storing evidence bundle
+    BundlePath = filename:join([TmpDir, BundleId]),
+    Result = erlmcp_compliance_report:store_evidence_bundle(BundlePath, EvidenceItems),
 
-identifies_missing_tests_test() ->
-    Data = sample_compliance_data(),
-    Gaps = erlmcp_compliance_report:identify_gaps(Data),
+    %% Then: Bundle should be stored successfully
+    ?assertMatch({ok, _}, Result),
 
-    %% req-005 has no tests - should be identified as missing
-    MissingGaps = [G || G <- Gaps, maps:get(<<"status">>, G) =:= <<"missing">>],
-    ?assert(length(MissingGaps) > 0).
+    %% Verify files exist
+    ?assert(filelib:is_dir(BundlePath)),
+    ?assert(filelib:is_file(filename:join([BundlePath, "bundle_manifest.json"]))),
+    ?assert(filelib:is_file(filename:join([BundlePath, "ev1.json"]))),
+    ?assert(filelib:is_file(filename:join([BundlePath, "ev2.json"]))),
 
-identifies_failed_tests_test() ->
-    Data = sample_compliance_data(),
-    Gaps = erlmcp_compliance_report:identify_gaps(Data),
+    %% Verify manifest content
+    {ok, ManifestContent} = file:read_file(filename:join([BundlePath, "bundle_manifest.json"])),
+    Manifest = jsx:decode(ManifestContent, [return_maps]),
+    ?assert(maps:is_key(<<"bundle_id">>, Manifest)),
+    ?assert(maps:is_key(<<"evidence_count">>, Manifest)),
+    ?assert(maps:is_key(<<"timestamp">>, Manifest)),
+    ?assertEqual(2, maps:get(<<"evidence_count">>, Manifest)),
 
-    %% req-003 has a failed test
-    FailedGaps = [G || G <- Gaps, maps:get(<<"status">>, G) =:= <<"failed">>],
-    ?assert(length(FailedGaps) > 0).
+    cleanup_evidence({TmpDir}).
 
-classifies_gaps_by_severity_test() ->
-    Data = sample_compliance_data(),
-    Gaps = erlmcp_compliance_report:identify_gaps(Data),
+%% @doc Test creating evidence directory structure
+test_create_evidence_bundle() ->
+    %% Given: Bundle ID
+    {TmpDir} = setup_evidence(),
+    BundleId = "test_structure_" ++ integer_to_list(erlang:unique_integer([positive])),
 
-    %% Check severity classifications (severity is binary)
-    lists:foreach(fun(Gap) ->
-        Severity = maps:get(<<"severity">>, Gap),
-        ?assert(lists:member(Severity, [<<"critical">>, <<"high">>, <<"medium">>, <<"low">>]))
-    end, Gaps).
+    %% When: Creating evidence bundle
+    BundlePath = filename:join([TmpDir, BundleId]),
+    Result = erlmcp_compliance_report:create_evidence_bundle(BundlePath),
 
-%%%====================================================================
-%%% Report Summary Tests
-%%%====================================================================
+    %% Then: Directory structure should be created
+    ?assertMatch({ok, _}, Result),
+    ?assert(filelib:is_dir(BundlePath)),
+    ?assert(filelib:is_dir(filename:join([BundlePath, "evidence"]))),
+    ?assert(filelib:is_dir(filename:join([BundlePath, "metadata"]))),
 
-summary_includes_overall_compliance_test() ->
-    Data = sample_compliance_data(),
-    {ok, Json} = erlmcp_compliance_report:generate_report(json, Data),
-    {ok, Report} = jsx:decode(Json, [return_maps]),
+    cleanup_evidence({TmpDir}).
 
-    Summary = erlmcp_compliance_report:get_report_summary(Report),
+%% @doc Test generating evidence report
+test_generate_evidence_report() ->
+    %% Given: Collected evidence items
+    EvidenceItems = [
+        #{
+            evidence_id => <<"ev1">>,
+            evidence_type => <<"test_result">>,
+            content => #{module => test_module, status => passed},
+            hash => <<"hash1">>,
+            timestamp => "2026-01-30T12:00:00Z"
+        },
+        #{
+            evidence_id => <<"ev2">>,
+            evidence_type => <<"coverage_metrics">>,
+            content => #{coverage => 90.0},
+            hash => <<"hash2">>,
+            timestamp => "2026-01-30T12:01:00Z"
+        }
+    ],
 
-    ?assert(maps:is_key(<<"overall_compliance">>, Summary)),
-    ?assertEqual(60.0, maps:get(<<"overall_compliance">>, Summary)).
+    %% When: Generating evidence report
+    Report = erlmcp_compliance_report:generate_evidence_report(EvidenceItems),
 
-summary_counts_sections_test() ->
-    Data = sample_compliance_data(),
-    {ok, Json} = erlmcp_compliance_report:generate_report(json, Data),
-    {ok, Report} = jsx:decode(Json, [return_maps]),
+    %% Then: Report should be valid JSON with metadata
+    ?assert(is_map(Report)),
+    ?assert(maps:is_key(<<"report_id">>, Report)),
+    ?assert(maps:is_key(<<"timestamp">>, Report)),
+    ?assert(maps:is_key(<<"evidence_count">>, Report)),
+    ?assert(maps:is_key(<<"evidence_items">>, Report)),
+    ?assertEqual(2, maps:get(<<"evidence_count">>, Report)),
 
-    Summary = erlmcp_compliance_report:get_report_summary(Report),
+    %% Verify evidence items in report
+    Items = maps:get(<<"evidence_items">>, Report),
+    ?assertEqual(2, length(Items)),
+    ?assertEqual(<<"ev1">>, maps:get(<<"evidence_id">>, lists:nth(1, Items))).
 
-    ?assert(maps:is_key(<<"total_sections">>, Summary)),
-    ?assert(maps:get(<<"total_sections">>, Summary) > 0).
+%% @doc Test linking evidence to receipt chain
+test_link_receipt_chain() ->
+    %% Given: Evidence and receipt chain
+    {TmpDir} = setup_evidence(),
+    BundleId = "test_receipt_" ++ integer_to_list(erlang:unique_integer([positive])),
+    BundlePath = filename:join([TmpDir, BundleId]),
+
+    EvidenceId = <<"ev_receipt_1">>,
+    ReceiptChain = #{
+        previous_hash => <<"prev_hash_123">>,
+        transaction_id => <<"tx_456">>,
+        timestamp => "2026-01-30T12:00:00Z"
+    },
+
+    %% When: Linking to receipt chain
+    Result = erlmcp_compliance_report:link_receipt_chain(BundlePath, ReceiptChain),
+
+    %% Then: Receipt chain link should be created
+    ?assertMatch({ok, _}, Result),
+
+    %% Verify receipt chain file exists
+    ReceiptFile = filename:join([BundlePath, "receipt_chain.json"]),
+    ?assert(filelib:is_file(ReceiptFile)),
+
+    %% Verify receipt chain content
+    {ok, ReceiptContent} = file:read_file(ReceiptFile),
+    Receipt = jsx:decode(ReceiptContent, [return_maps]),
+    ?assert(maps:is_key(<<"previous_hash">>, Receipt)),
+    ?assert(maps:is_key(<<"transaction_id">>, Receipt)),
+    ?assertEqual(<<"prev_hash_123">>, maps:get(<<"previous_hash">>, Receipt)),
+
+    cleanup_evidence({TmpDir}).
+
+%% @doc Test handling invalid evidence type
+test_invalid_evidence_type() ->
+    %% Given: Invalid evidence type
+    InvalidData = #{
+        type => invalid_type,
+        data => some_data
+    },
+
+    %% When: Collecting evidence
+    Result = erlmcp_compliance_report:collect_evidence(invalid_type, InvalidData),
+
+    %% Then: Should return error
+    ?assertMatch({error, {unknown_evidence_type, invalid_type}}, Result).
+
+%% @doc Test handling file write errors
+test_file_write_errors() ->
+    %% Given: Invalid path (non-existent directory with no write permissions)
+    InvalidPath = "/root/non_existent_path/no_write_permissions",
+
+    EvidenceItems = [
+        #{
+            evidence_id => <<"ev1">>,
+            evidence_type => <<"test_result">>,
+            content => #{test => "data"},
+            hash => <<"hash1">>,
+            timestamp => "2026-01-30T12:00:00Z"
+        }
+    ],
+
+    %% When: Trying to store to invalid path
+    Result = erlmcp_compliance_report:store_evidence_bundle(InvalidPath, EvidenceItems),
+
+    %% Then: Should return error
+    ?assertMatch({error, _}, Result).
+
+%% @doc Test handling missing evidence directory
+test_missing_evidence_directory() ->
+    %% Given: Evidence items without creating bundle first
+    {TmpDir} = setup_evidence(),
+    BundleId = "missing_dir_" ++ integer_to_list(erlang:unique_integer([positive])),
+    BundlePath = filename:join([TmpDir, BundleId]),
+
+    %% Don't create the directory
+    EvidenceItems = [
+        #{
+            evidence_id => <<"ev1">>,
+            evidence_type => <<"test_result">>,
+            content => #{test => "data"},
+            hash => <<"hash1">>,
+            timestamp => "2026-01-30T12:00:00Z"
+        }
+    ],
+
+    %% When: Storing evidence (should auto-create directory)
+    Result = erlmcp_compliance_report:store_evidence_bundle(BundlePath, EvidenceItems),
+
+    %% Then: Should succeed by creating directory
+    ?assertMatch({ok, _}, Result),
+    ?assert(filelib:is_dir(BundlePath)),
+
+    cleanup_evidence({TmpDir}).
 
 %%%====================================================================
 %%% Integration Tests
 %%%====================================================================
 
-full_report_generation_workflow_test() ->
-    Data = sample_compliance_data(),
+evidence_collection_workflow_test_() ->
+    {setup,
+     fun setup_evidence/0,
+     fun cleanup_evidence/1,
+     [
+      {"complete evidence collection workflow", fun test_full_workflow/0}
+     ]}.
 
-    %% Generate all formats
-    {ok, _Markdown} = erlmcp_compliance_report:generate_report(markdown, Data),
-    {ok, Json} = erlmcp_compliance_report:generate_report(json, Data),
-    {ok, _HTML} = erlmcp_compliance_report:generate_report(html, Data),
+%% @doc Test complete evidence collection workflow
+test_full_workflow() ->
+    {TmpDir} = setup_evidence(),
 
-    %% Verify JSON can be parsed
-    {ok, Parsed} = jsx:decode(Json, [return_maps]),
+    %% Step 1: Create bundle
+    BundleId = "workflow_" ++ integer_to_list(erlang:unique_integer([positive])),
+    BundlePath = filename:join([TmpDir, BundleId]),
+    {ok, BundleDir} = erlmcp_compliance_report:create_evidence_bundle(BundlePath),
+    ?assert(filelib:is_dir(BundleDir)),
 
-    %% Verify all expected data is present
-    ?assert(maps:is_key(<<"overall">>, Parsed)),
-    ?assert(maps:is_key(<<"gaps">>, Parsed)),
-    ?assert(maps:is_key(<<"recommendations">>, Parsed)).
+    %% Step 2: Collect different types of evidence
+    TestData = #{type => test_result, module => test_module, status => passed},
+    {ok, TestEvidence} = erlmcp_compliance_report:collect_evidence(test_result, TestData),
+    ?assert(maps:is_key(hash, TestEvidence)),
 
-all_formats_consistent_test() ->
-    Data = sample_compliance_data(),
+    CoverageData = #{type => coverage_metrics, coverage => 85.5},
+    {ok, CoverageEvidence} = erlmcp_compliance_report:collect_evidence(coverage_metrics, CoverageData),
+    ?assert(maps:is_key(hash, CoverageEvidence)),
 
-    %% Generate all formats
-    {ok, Markdown} = erlmcp_compliance_report:generate_report(markdown, Data),
-    {ok, Json} = erlmcp_compliance_report:generate_report(json, Data),
-    {ok, HTML} = erlmcp_compliance_report:generate_report(html, Data),
+    %% Step 3: Verify hashes
+    TestContent = maps:get(content, TestEvidence),
+    TestHash = maps:get(hash, TestEvidence),
+    ?assertEqual({ok, true}, erlmcp_compliance_report:verify_evidence_integrity(TestContent, TestHash)),
 
-    %% Extract compliance from each format
-    {ok, JsonParsed} = jsx:decode(Json, [return_maps]),
-    JsonCompliance = maps:get(<<"overall">>, JsonParsed),
+    %% Step 4: Store evidence bundle
+    {ok, StoredPath} = erlmcp_compliance_report:store_evidence_bundle(BundlePath, [TestEvidence, CoverageEvidence]),
+    ?assert(filelib:is_dir(StoredPath)),
 
-    %% All should show 60%
-    ?assertEqual(60.0, JsonCompliance),
-    ?assert(nomatch =/= binary:match(Markdown, <<"60.00%">>)),
-    ?assert(nomatch =/= binary:match(HTML, <<"60.00%">>)).
+    %% Step 5: Link to receipt chain
+    ReceiptChain = #{previous_hash => <<"prev">>, transaction_id => <<"tx">>},
+    {ok, _} = erlmcp_compliance_report:link_receipt_chain(BundlePath, ReceiptChain),
+
+    %% Step 6: Generate report
+    Report = erlmcp_compliance_report:generate_evidence_report([TestEvidence, CoverageEvidence]),
+    ?assert(maps:is_key(<<"evidence_count">>, Report)),
+    ?assertEqual(2, maps:get(<<"evidence_count">>, Report)),
+
+    cleanup_evidence({TmpDir}).

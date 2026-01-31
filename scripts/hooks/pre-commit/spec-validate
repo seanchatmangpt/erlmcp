@@ -1,0 +1,64 @@
+#!/bin/bash
+# Pre-commit hook: MCP Spec Validation
+# AUTOMATION MEANS IT ACTUALLY RUNS. EVERY TIME. - Joe Armstrong
+#
+# This hook runs spec compliance validation before allowing commits.
+# It enforces quality standards by blocking commits if validation fails.
+
+set -e
+
+echo "Running MCP spec validation..."
+echo ""
+
+# Check if validation app exists
+if [ ! -d "apps/erlmcp_validation" ]; then
+    echo "WARNING: erlmcp_validation app not found, skipping spec validation"
+    exit 0
+fi
+
+# Compile the project
+echo "1. Compiling project..."
+if ! TERM=dumb rebar3 compile > /dev/null 2>&1; then
+    echo "ERROR: Compilation failed"
+    echo "Spec validation FAILED"
+    exit 1
+fi
+echo "   ✓ Compilation successful"
+echo ""
+
+# Run spec compliance tests
+echo "2. Running spec compliance tests..."
+if ! rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_spec_compliance_SUITE.ct 2>&1 | tee /tmp/spec_validation_ct.log; then
+    echo ""
+    echo "ERROR: Spec compliance tests FAILED"
+    echo "Spec validation FAILED"
+    echo ""
+    echo "Fix failing tests before committing"
+    exit 1
+fi
+echo "   ✓ Spec compliance tests passed"
+echo ""
+
+# Generate validation report if CLI is available
+if [ -f "apps/erlmcp_validation/src/erlmcp_validate_cli.erl" ]; then
+    echo "3. Generating validation report..."
+    if rebar3 as validation escriptize > /dev/null 2>&1; then
+        if ./_build/validation/bin/erlmcp_validate run --all --output-file=/tmp/validation_report.json 2>&1; then
+            echo "   ✓ Validation report generated"
+            if grep -q '"overall_status":"fail"' /tmp/validation_report.json 2>/dev/null; then
+                echo "ERROR: Validation report indicates failure"
+                echo "Spec validation FAILED"
+                exit 1
+            fi
+        else
+            echo "   ⚠ Validation report generation failed (non-blocking)"
+        fi
+    else
+        echo "   ⚠ Could not build validation CLI (non-blocking)"
+    fi
+    echo ""
+fi
+
+echo "✅ Spec validation PASSED"
+echo ""
+exit 0

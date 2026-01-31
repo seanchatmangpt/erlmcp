@@ -1,0 +1,24 @@
+
+=== ERLMCP PERFORMANCE BENCHMARK ===
+
+Benchmark 1: Process Dictionary (100K ops)
+  Throughput: 16323865 ops/sec
+  Avg latency: 0 us
+
+Benchmark 2: Map Operations (100K ops)
+  Throughput: 41580042 ops/sec
+  Avg latency: 0 us
+
+Benchmark 3: JSON encoding - SKIPPED (jsx not available)
+
+Benchmark 4: Queue Operations (100K ops)
+  Throughput: 41271151 ops/sec
+  Avg latency: 0 us
+
+=== SUMMARY ===
+Process Dictionary: 16323865 ops/sec
+Map Operations: 41580042 ops/sec
+JSON Encoding: 0 ops/sec
+Queue Operations: 41271151 ops/sec
+
+Baseline established for regression detection
