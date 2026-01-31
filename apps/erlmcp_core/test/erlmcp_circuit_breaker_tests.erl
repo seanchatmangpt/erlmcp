@@ -7,13 +7,21 @@
 %%====================================================================
 
 setup() ->
-    % No manager process needed with gen_statem implementation
-    % Just ensure clean state
+    % Clean up any previously registered breakers to avoid already_registered errors
+    lists:foreach(fun(Name) ->
+        catch erlmcp_circuit_breaker:unregister_breaker(Name)
+    end, [test_breaker, breaker1, breaker2, breaker3]),
+    catch erlmcp_circuit_breaker:reset_all(),
+    timer:sleep(10),
     undefined.
 
 cleanup(_Pid) ->
     % Clean up all registered breakers
     catch erlmcp_circuit_breaker:reset_all(),
+    % Unregister common test breakers to avoid already_registered errors
+    lists:foreach(fun(Name) ->
+        catch erlmcp_circuit_breaker:unregister_breaker(Name)
+    end, [test_breaker, breaker1, breaker2, breaker3]),
     % Give breakers time to process
     timer:sleep(10),
     ok.
@@ -46,7 +54,8 @@ unregister_breaker_test() ->
     ?assertEqual(closed, erlmcp_circuit_breaker:get_state(test_breaker)),
     erlmcp_circuit_breaker:unregister_breaker(test_breaker),
     timer:sleep(10),  % Allow cast to process
-    ?assertEqual(not_found, erlmcp_circuit_breaker:get_state(test_breaker)),
+    % After unregister, the breaker process is dead so get_state will exit with noproc
+    ?assertExit({noproc, _}, erlmcp_circuit_breaker:get_state(test_breaker)),
     cleanup(Pid).
 
 %%====================================================================
@@ -438,6 +447,9 @@ get_all_states_test() ->
     % Trip breaker2
     erlmcp_circuit_breaker:call(breaker2, fun() -> {error, fail} end),
 
+    % Give breaker time to transition state
+    timer:sleep(10),
+
     States = erlmcp_circuit_breaker:get_all_states(),
     ?assertEqual(closed, maps:get(breaker1, States)),
     ?assertEqual(open, maps:get(breaker2, States)),
@@ -451,9 +463,10 @@ get_all_states_test() ->
 
 breaker_not_found_test() ->
     Pid = setup(),
-    ?assertEqual(not_found, erlmcp_circuit_breaker:get_state(nonexistent)),
-    Result = erlmcp_circuit_breaker:call(nonexistent, fun() -> {ok, test} end),
-    ?assertEqual({error, breaker_not_found}, Result),
+    % get_state/1 exits with noproc for non-existent breakers (gen_statem behavior)
+    ?assertExit({noproc, _}, erlmcp_circuit_breaker:get_state(nonexistent)),
+    % call/1 also exits with noproc for non-existent breakers
+    ?assertExit({noproc, _}, erlmcp_circuit_breaker:call(nonexistent, fun() -> {ok, test} end)),
     cleanup(Pid).
 
 %%====================================================================

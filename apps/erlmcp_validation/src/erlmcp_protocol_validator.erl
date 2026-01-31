@@ -29,7 +29,13 @@
     validate_resource/1,
     validate_tool/1,
     validate_prompt/1,
-    validate_content/1
+    validate_content/1,
+    validate_method_name/1,
+    validate_notification_name/1,
+    validate_field_type/3,
+    validate_jsonrpc/1,
+    validate_required_fields/2,
+    format_validation_error/1
 ]).
 
 %%%===================================================================
@@ -492,22 +498,34 @@ validate_content_by_type(_, _) ->
     %% Unknown content type - allow it (could be custom)
     ok.
 
-%% @doc Validate required fields in a map
--spec validate_required_fields(map(), [{binary(), binary()}]) -> ok | {error, binary()}.
-validate_required_fields(Map, Fields) ->
-    validate_required_fields(Map, Fields, []).
-
-validate_required_fields(_Map, [], []) ->
+%% @doc Validate required fields in a map (accepts list of binaries or list of tuples)
+-spec validate_required_fields(map(), [binary()] | [{binary(), binary()}]) -> ok | {error, map()}.
+validate_required_fields(Map, []) when is_list([]) ->
     ok;
-validate_required_fields(_Map, [], Missing) ->
-    MissingStr = lists:join(<<", ">>, lists:reverse(Missing)),
-    {error, <<"Missing required fields: ", (iolist_to_binary(MissingStr))/binary>>};
-validate_required_fields(Map, [{Key, Name} | Rest], Missing) ->
+validate_required_fields(Map, FieldList) when is_list(FieldList) ->
+    case is_map(Map) of
+        false ->
+            {error, #{reason => invalid_message_structure}};
+        true ->
+            %% Convert list of binaries to list of tuples if needed
+            Fields = case is_binary(hd(FieldList)) of
+                true -> [{Field, Field} || Field <- FieldList];
+                false -> FieldList
+            end,
+            validate_required_fields_impl(Map, Fields, [])
+    end.
+
+%% @private Implementation of validate_required_fields
+validate_required_fields_impl(_Map, [], []) ->
+    ok;
+validate_required_fields_impl(_Map, [], Missing) ->
+    {error, #{reason => missing_required_fields, details => #{missing => lists:reverse(Missing)}}};
+validate_required_fields_impl(Map, [{Key, Name} | Rest], Missing) ->
     case maps:is_key(Key, Map) of
         true ->
-            validate_required_fields(Map, Rest, Missing);
+            validate_required_fields_impl(Map, Rest, Missing);
         false ->
-            validate_required_fields(Map, Rest, [Name | Missing])
+            validate_required_fields_impl(Map, Rest, [Name | Missing])
     end.
 
 %% @doc Format error details to binary
@@ -531,3 +549,94 @@ format_code(Code) when is_integer(Code) ->
     integer_to_binary(Code);
 format_code(Code) ->
     format_error_details(Code).
+
+%%%===================================================================
+%%% Additional Validation Functions for Tests
+%%%===================================================================
+
+%% @doc Validate method name (for tests)
+-spec validate_method_name(binary() | atom()) -> ok | {error, map()}.
+validate_method_name(Method) when is_binary(Method) ->
+    KnownMethods = [
+        <<"initialize">>, <<"ping">>,
+        <<"resources/list">>, <<"resources/read">>,
+        <<"resources/subscribe">>, <<"resources/unsubscribe">>,
+        <<"tools/list">>, <<"tools/call">>,
+        <<"prompts/list">>, <<"prompts/get">>,
+        <<"sampling/create_message">>,
+        <<"completion/complete">>,
+        <<"logging/set_level">>
+    ],
+    case lists:member(Method, KnownMethods) of
+        true -> ok;
+        false -> {error, #{reason => unknown_method, method => Method}}
+    end;
+validate_method_name(_) ->
+    {error, #{reason => invalid_method_type}}.
+
+%% @doc Validate notification name (for tests)
+-spec validate_notification_name(binary() | atom()) -> ok | {error, map()}.
+validate_notification_name(Notification) when is_binary(Notification) ->
+    KnownNotifications = [
+        <<"notifications/cancelled">>,
+        <<"notifications/progress">>,
+        <<"notifications/roots/list_changed">>,
+        <<"notifications/message">>
+    ],
+    case lists:member(Notification, KnownNotifications) of
+        true -> ok;
+        false -> {error, #{reason => unknown_notification, notification => Notification}}
+    end;
+validate_notification_name(_) ->
+    {error, #{reason => invalid_notification_type}}.
+
+%% @doc Validate field type (for tests)
+-spec validate_field_type(binary(), term(), atom()) -> ok | {error, map()}.
+validate_field_type(_FieldName, Value, binary) when is_binary(Value) -> ok;
+validate_field_type(_FieldName, Value, integer) when is_integer(Value) -> ok;
+validate_field_type(_FieldName, Value, float) when is_float(Value) -> ok;
+validate_field_type(_FieldName, Value, boolean) when is_boolean(Value) -> ok;
+validate_field_type(_FieldName, Value, map) when is_map(Value) -> ok;
+validate_field_type(_FieldName, Value, array) when is_list(Value) -> ok;
+validate_field_type(_FieldName, _Value, any) -> ok;
+validate_field_type(FieldName, _Value, ExpectedType) ->
+    {error, #{reason => type_mismatch, field => FieldName, expected => ExpectedType}}.
+
+%% @doc Validate JSON-RPC message structure (for tests)
+-spec validate_jsonrpc(map() | term()) -> ok | {error, map()}.
+validate_jsonrpc(Message) when is_map(Message) ->
+    case maps:get(<<"jsonrpc">>, Message, undefined) of
+        <<"2.0">> ->
+            %% Valid JSON-RPC version
+            ok;
+        _ ->
+            {error, #{reason => invalid_jsonrpc_version}}
+    end;
+validate_jsonrpc(_) ->
+    {error, #{reason => not_map}}.
+
+%% @doc Format validation error to binary string (for tests)
+-spec format_validation_error(map()) -> binary().
+format_validation_error(Error) ->
+    Reason = maps:get(reason, Error, unknown_error),
+    Details = maps:get(details, Error, #{}),
+    case Reason of
+        invalid_method ->
+            Method = maps:get(method, Details, unknown),
+            <<"Invalid method: ", Method/binary>>;
+        invalid_method_type ->
+            <<"Method must be a binary">>;
+        unknown_method ->
+            Method = maps:get(method, Error, unknown),
+            <<"Unknown method: ", Method/binary>>;
+        type_mismatch ->
+            Field = maps:get(field, Error, unknown),
+            Expected = maps:get(expected, Error, any),
+            <<"Field '", Field/binary, "' must be ", (atom_to_binary(Expected, utf8))/binary>>;
+        missing_required_fields ->
+            Missing = maps:get(missing, Details, []),
+            MissingBin = list_to_binary(lists:join(<<", ">>, Missing)),
+            <<"Missing required fields: ", MissingBin/binary>>;
+        _ ->
+            <<"Validation error: ", (atom_to_binary(Reason, utf8))/binary>>
+    end.

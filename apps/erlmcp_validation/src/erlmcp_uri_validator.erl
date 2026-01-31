@@ -10,7 +10,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_uri_validator).
--dialyzer({nowarn_function, [parse_uri/1]}).  
+-dialyzer({nowarn_function, [parse_uri/1]}).
 
 %% API exports
 -export([
@@ -20,7 +20,9 @@
     is_safe_uri/2,
     parse_uri/1,
     check_ssrf/1,
-    is_private_ip/1
+    is_private_ip/1,
+    validate_resource_uri_on_registration/1,
+    validate_uri_template/1
 ]).
 
 %% Types
@@ -99,6 +101,53 @@ is_safe_uri(Uri, Opts) ->
         ok -> true;
         {error, _} -> false
     end.
+
+%% @doc Validate resource URI during registration
+%% Less strict than general URI validation - allows custom schemes
+%% for testing and MCP-specific URIs (test://, mcp://, etc.)
+-spec validate_resource_uri_on_registration(uri()) -> ok | {error, term()}.
+validate_resource_uri_on_registration(Uri) when is_binary(Uri) ->
+    % Check basic URI structure (scheme://something)
+    case byte_size(Uri) of
+        0 -> {error, empty_uri};
+        _ ->
+            case binary:split(Uri, <<"://">>) of
+                [<<>>, _] -> {error, missing_scheme};
+                [_, <<>>] -> {error, missing_path};
+                [_Scheme, _Rest] -> ok
+            end
+    end;
+validate_resource_uri_on_registration(_Uri) ->
+    {error, not_binary}.
+
+%% @doc Validate URI template (for resource templates with placeholders)
+%% URI templates use {var} syntax for variable substitution
+%% Example: "file:///root/{path}/data"
+-spec validate_uri_template(uri()) -> validation_result().
+validate_uri_template(UriTemplate) when is_binary(UriTemplate) ->
+    case byte_size(UriTemplate) > 4096 of
+        true -> {error, template_too_long};
+        false ->
+            %% Check for valid structure
+            case binary:split(UriTemplate, <<"://">>) of
+                [<<>>, _] -> {error, missing_scheme};
+                [Scheme, Rest] ->
+                    %% Validate scheme
+                    case validate_scheme(Scheme, [<<"http">>, <<"https">>, <<"file">>, <<"test">>]) of
+                        ok ->
+                            %% Check template variables (basic validation)
+                            case validate_template_variables(Rest) of
+                                ok -> ok;
+                                {error, _} = Error -> Error
+                            end;
+                        {error, _} = Error -> Error
+                    end;
+                [_] ->
+                    {error, missing_scheme}
+            end
+    end;
+validate_uri_template(_UriTemplate) ->
+    {error, not_binary}.
 
 %% @doc Parse URI into components
 -spec parse_uri(uri()) -> {ok, uri_parts()} | {error, term()}.
@@ -286,3 +335,25 @@ is_dns_rebinding_pattern(Host) ->
         Part =:= <<"localhost">> orelse
         Part =:= <<"169">>
     end, Parts).
+
+%% @private Validate template variable syntax
+validate_template_variables(Template) ->
+    %% Check for balanced braces and valid variable names
+    case catch validate_variables(Template, 0, false) of
+        ok -> ok;
+        {error, _} = Error -> Error;
+        _ -> {error, invalid_template_syntax}
+    end.
+
+%% @private Recursive variable validation
+validate_variables(<<>>, _Depth, _InVar) -> ok;
+validate_variables(<<"{", Rest/binary>>, Depth, false) ->
+    validate_variables(Rest, Depth + 1, true);
+validate_variables(<<"}", Rest/binary>>, Depth, true) when Depth > 0 ->
+    validate_variables(Rest, Depth - 1, false);
+validate_variables(<<$}, _Rest/binary>>, _Depth, false) ->
+    {error, unmatched_closing_brace};
+validate_variables(<<$,, Rest/binary>>, Depth, false) ->
+    validate_variables(Rest, Depth, false);
+validate_variables(<<_, Rest/binary>>, Depth, InVar) ->
+    validate_variables(Rest, Depth, InVar).

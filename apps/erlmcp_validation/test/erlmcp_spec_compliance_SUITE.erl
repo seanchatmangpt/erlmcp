@@ -19,7 +19,55 @@
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp.hrl").
+
+%% Define macros locally since include might not work
+-define(MCP_VERSION, <<"2025-11-25">>).
+
+%% Define records locally
+-record(mcp_resources_capability, {
+    subscribe = false :: boolean(),
+    listChanged = false :: boolean()
+}).
+
+-record(mcp_tools_capability, {
+    listChanged = false :: boolean()
+}).
+
+-record(mcp_prompts_capability, {
+    listChanged = false :: boolean()
+}).
+
+-record(mcp_logging_capability, {
+}).
+
+-record(mcp_sampling_capability, {
+    modelPreferences = undefined :: map() | undefined
+}).
+
+-record(mcp_roots_capability, {
+}).
+
+-record(mcp_capability, {
+    enabled = false :: boolean()
+}).
+
+-record(mcp_server_capabilities, {
+    resources = #mcp_resources_capability{} :: #mcp_resources_capability{},
+    tools = #mcp_tools_capability{} :: #mcp_tools_capability{},
+    prompts = #mcp_prompts_capability{} :: #mcp_prompts_capability{},
+    logging = #mcp_logging_capability{} :: #mcp_logging_capability{},
+    sampling = #mcp_sampling_capability{} :: #mcp_sampling_capability{},
+    roots = #mcp_roots_capability{} :: #mcp_roots_capability{},
+    completions = undefined :: #mcp_capability{} | undefined,
+    experimental = undefined :: map() | undefined
+}).
+
+-record(mcp_client_capabilities, {
+    roots = undefined :: map() | undefined,
+    sampling = undefined :: #mcp_sampling_capability{} | undefined,
+    experimental = undefined :: map() | undefined,
+    tools = #mcp_tools_capability{} :: #mcp_tools_capability{}
+}).
 
 %%====================================================================
 %% Common Test Callbacks
@@ -121,17 +169,15 @@ init_per_suite(Config) ->
         end
     end, Apps),
 
-    %% Start erlmcp core supervision tree (real supervisors)
-    {ok, CoreSup} = erlmcp_core_sup:start_link(),
-    {ok, ServerSup} = erlmcp_server_sup:start_link(),
+    %% Start erlmcp applications (full supervision tree)
+    {ok, _} = application:ensure_all_started(erlmcp_core),
+    {ok, _} = application:ensure_all_started(erlmcp_transports),
 
-    [{core_sup, CoreSup}, {server_sup, ServerSup} | Config].
+    Config.
 
-end_per_suite(Config) ->
-    CoreSup = ?config(core_sup, Config),
-    ServerSup = ?config(server_sup, Config),
-    supervisor:terminate_child(erlmcp_sup, ServerSup),
-    supervisor:terminate_child(erlmcp_sup, CoreSup),
+end_per_suite(_Config) ->
+    application:stop(erlmcp_transports),
+    application:stop(erlmcp_core),
     ok.
 
 init_per_group(_GroupName, Config) ->
@@ -584,7 +630,8 @@ tool_progress_updates(_Config) ->
 
     %% Add tool with progress reporting
     ProgressHandler = fun(Args) ->
-        ProgressToken = maps:get(<<"_meta">>, Args, #{}) |> maps:get(<<"progressToken">>, undefined),
+        Meta = maps:get(<<"_meta">>, Args, #{}),
+        ProgressToken = maps:get(<<"progressToken">>, Meta, undefined),
         case ProgressToken of
             undefined -> ok;
             Token ->

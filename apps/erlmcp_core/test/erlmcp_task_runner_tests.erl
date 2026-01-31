@@ -397,13 +397,13 @@ test_parent_death_cleanup() ->
     ?assertNot(is_process_alive(TaskPid)).
 
 test_invalid_task_spec() ->
-    % Missing 'fun' field
+    % Missing 'task_fn' field
     Result1 = erlmcp_task_runner:start_link(#{timeout => 1000}),
-    ?assertMatch({error, missing_fun}, Result1),
+    ?assertMatch({error, missing_task_fn}, Result1),
 
-    % Invalid 'fun' field
-    Result2 = erlmcp_task_runner:start_link(#{fun => not_a_function}),
-    ?assertMatch({error, invalid_fun}, Result2).
+    % Invalid 'task_fn' field
+    Result2 = erlmcp_task_runner:start_link(#{task_fn => not_a_function}),
+    ?assertMatch({error, invalid_task_fn}, Result2).
 
 %%%===================================================================
 %%% Debugging Tests

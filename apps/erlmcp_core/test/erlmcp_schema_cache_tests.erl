@@ -257,7 +257,7 @@ test_cache_hit_miss_tracking(_Pid) ->
 
         % Should have hit rate of 3/5 = 0.6
         ?assert(HitRate >= 0.5),
-        ?assert(HitRate <= 1.0)
+        ?assert(HitRate =< 1.0)
     end).
 
 test_validation_counter(_Pid) ->

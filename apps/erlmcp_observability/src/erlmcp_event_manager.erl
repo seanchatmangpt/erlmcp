@@ -83,8 +83,12 @@ notify(Event) ->
         gen_event:sync_notify(?MODULE, Event),
         ok
     catch
-        exit:{noproc, _} ->
+        exit:noproc ->
             %% Event manager not started - log but don't crash
+            logger:warning("Event manager not started, dropping event: ~p", [Event]),
+            {error, noproc};
+        exit:{noproc, _} ->
+            %% Event manager not started - log but don't crash (alternative format)
             logger:warning("Event manager not started, dropping event: ~p", [Event]),
             {error, noproc};
         Class:Reason:Stack ->

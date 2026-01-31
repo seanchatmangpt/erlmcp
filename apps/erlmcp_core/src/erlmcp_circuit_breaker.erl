@@ -3,6 +3,7 @@
 
 %% API
 -export([
+    start_link/0,
     start_link/1,
     start_link/2,
     call/2,
@@ -97,6 +98,12 @@
 %% API Functions
 %%====================================================================
 
+%% @doc Start a circuit breaker with default configuration
+%% Used by supervisor when started as a dependency
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    start_link(default_config()).
+
 %% @doc Start a circuit breaker with default name
 -spec start_link(config()) -> {ok, pid()} | {error, term()}.
 start_link(Config) ->
@@ -170,6 +177,16 @@ force_close(Breaker) ->
 -spec stop(pid() | atom()) -> ok.
 stop(Breaker) ->
     gen_statem:stop(Breaker).
+
+%% @doc Get default configuration for circuit breaker
+-spec default_config() -> config().
+default_config() ->
+    #{
+        threshold => 5,
+        timeout_ms => 60000,
+        reset_timeout_ms => 30000,
+        call_timeout_ms => 5000
+    }.
 
 %%====================================================================
 %% Manager Compatibility API (for existing tests)

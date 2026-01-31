@@ -10,6 +10,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_uri_validator).
+-dialyzer({nowarn_function, [parse_uri/1]}).  
 
 %% API exports
 -export([
@@ -19,7 +20,8 @@
     is_safe_uri/2,
     parse_uri/1,
     check_ssrf/1,
-    is_private_ip/1
+    is_private_ip/1,
+    validate_resource_uri_on_registration/1
 ]).
 
 %% Types
@@ -99,6 +101,24 @@ is_safe_uri(Uri, Opts) ->
         {error, _} -> false
     end.
 
+%% @doc Validate resource URI during registration
+%% Less strict than general URI validation - allows custom schemes
+%% for testing and MCP-specific URIs (test://, mcp://, etc.)
+-spec validate_resource_uri_on_registration(uri()) -> ok | {error, term()}.
+validate_resource_uri_on_registration(Uri) when is_binary(Uri) ->
+    % Check basic URI structure (scheme://something)
+    case byte_size(Uri) of
+        0 -> {error, empty_uri};
+        _ ->
+            case binary:split(Uri, <<"://">>) of
+                [<<>>, _] -> {error, missing_scheme};
+                [_, <<>>] -> {error, missing_path};
+                [_Scheme, _Rest] -> ok
+            end
+    end;
+validate_resource_uri_on_registration(_Uri) ->
+    {error, not_binary}.
+
 %% @doc Parse URI into components
 -spec parse_uri(uri()) -> {ok, uri_parts()} | {error, term()}.
 parse_uri(Uri) when is_binary(Uri) ->
@@ -113,28 +133,22 @@ parse_uri(Uri) when is_binary(Uri) ->
                 end,
 
                 {Host, Port} = case binary:split(HostPort, <<":">>) of
-                    [HostPart] -> {H, undefined};
-                    [HostPart, PortStr] ->
+                    [H] -> {H, undefined};
+                    [H, PortStr] ->
                         try
-                            {HostPart, binary_to_integer(PortStr)}
+                            {H, binary_to_integer(PortStr)}
                         catch
-                            _:_ -> {HostPart, undefined}
+                            _:_ -> {H, undefined}
                         end
                 end,
 
                 {Path, QueryFragment} = case binary:split(PathQueryFragment, <<"?">>) of
-                    [PathPart] -> {PathPart, undefined};
-                    [PathPart, QueryFrag] -> {P, QF}
+                    [PathOnly] -> {PathOnly, undefined};
+                    [PathPart, QF1] -> {PathPart, QF1}
                 end,
 
-                {Query, Fragment} = case QueryFragment of
-                    undefined -> {undefined, undefined};
-                    QF ->
-                        case binary:split(QF, <<"#">>) of
-                            [Q] -> {Q, undefined};
-                            [Q, F] -> {Q, F}
-                        end
-                end,
+                {Query, Fragment} = split_fragment(QueryFragment),
+
 
                 {ok, #{
                     scheme => string:lowercase(Scheme),
@@ -153,6 +167,15 @@ parse_uri(Uri) when is_binary(Uri) ->
     end;
 parse_uri(_Uri) ->
     {error, not_binary}.
+
+%% @doc Split query and fragment
+-spec split_fragment(binary() | undefined) -> {binary() | undefined, binary() | undefined}.
+split_fragment(undefined) -> {undefined, undefined};
+split_fragment(QueryFrag) ->
+    case binary:split(QueryFrag, <<"#">>) of
+        [Q] -> {Q, undefined};
+        [Q, F] -> {Q, F}
+    end.
 
 %% @doc Check for SSRF vulnerabilities
 -spec check_ssrf(uri()) -> validation_result().

@@ -47,9 +47,9 @@
 %%%===================================================================
 
 -type task_id() :: binary().
--type task_fun() :: fun(() -> term()).
+-type task_fn() :: fun(() -> term()).
 -type task_spec() :: #{
-    fun := task_fun(),
+    task_fn := task_fn(),
     timeout => pos_integer(),
     progress_token => reference(),
     task_id => task_id(),
@@ -58,7 +58,7 @@
 }.
 -type task_state() :: #{
     task_id := task_id(),
-    task_fun := task_fun(),
+    task_fn := task_fn(),
     timeout := pos_integer(),
     progress_token => reference(),
     parent := pid(),
@@ -68,7 +68,7 @@
     status := pending | running | completed | failed | cancelled
 }.
 
--export_type([task_id/0, task_fun/0, task_spec/0, task_state/0]).
+-export_type([task_id/0, task_fn/0, task_spec/0, task_state/0]).
 
 %%%===================================================================
 %%% Defaults
@@ -82,13 +82,13 @@
 
 %% @doc Start a task with a simple function and options map.
 %% Returns {ok, TaskId, Pid} on success.
--spec start_task(task_fun(), map()) -> {ok, task_id(), pid()} | {error, term()}.
+-spec start_task(task_fn(), map()) -> {ok, task_id(), pid()} | {error, term()}.
 start_task(Fun, Opts) when is_function(Fun, 0), is_map(Opts) ->
     TaskId = generate_task_id(),
     Parent = self(),
 
     TaskSpec = #{
-        fun => Fun,
+        task_fn => Fun,
         timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
         progress_token => maps:get(progress_token, Opts, undefined),
         task_id => TaskId,
@@ -109,12 +109,12 @@ start_task(Fun, Opts) when is_function(Fun, 0), is_map(Opts) ->
     end.
 
 %% @doc Start a task with function, task_id, and options.
--spec start_task(task_fun(), task_id(), map()) -> {ok, pid()} | {error, term()}.
+-spec start_task(task_fn(), task_id(), map()) -> {ok, pid()} | {error, term()}.
 start_task(Fun, TaskId, Opts) when is_function(Fun, 0), is_binary(TaskId), is_map(Opts) ->
     Parent = self(),
 
     TaskSpec = #{
-        fun => Fun,
+        task_fn => Fun,
         timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
         progress_token => maps:get(progress_token, Opts, undefined),
         task_id => TaskId,
@@ -147,13 +147,13 @@ start_link(TaskSpec) when is_map(TaskSpec) ->
     end.
 
 %% @doc Start a supervised task with function and options.
--spec start_link(task_fun(), map()) -> {ok, pid()} | {error, term()}.
+-spec start_link(task_fn(), map()) -> {ok, pid()} | {error, term()}.
 start_link(Fun, Opts) when is_function(Fun, 0), is_map(Opts) ->
     TaskId = maps:get(task_id, Opts, generate_task_id()),
     Parent = maps:get(parent, Opts, self()),
 
     TaskSpec = #{
-        fun => Fun,
+        task_fn => Fun,
         timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
         progress_token => maps:get(progress_token, Opts, undefined),
         task_id => TaskId,
@@ -205,12 +205,12 @@ init(Parent, TaskSpec) ->
     Timeout = maps:get(timeout, TaskSpec, ?DEFAULT_TIMEOUT_MS),
     ProgressToken = maps:get(progress_token, TaskSpec, undefined),
     Metadata = maps:get(metadata, TaskSpec, #{}),
-    TaskFun = maps:get(fun, TaskSpec),
+    TaskFun = maps:get(task_fn, TaskSpec),
 
     % Initialize state
     State = #{
         task_id => TaskId,
-        task_fun => TaskFun,
+        task_fn => TaskFun,
         timeout => Timeout,
         progress_token => ProgressToken,
         parent => Parent,
@@ -244,7 +244,7 @@ init(Parent, TaskSpec) ->
 
 %% @doc Execute the task function and handle result.
 -spec execute_task(task_state()) -> no_return().
-execute_task(#{task_fun := Fun, progress_token := ProgressToken} = State) ->
+execute_task(#{task_fn := Fun, progress_token := ProgressToken} = State) ->
     Result = try
         Fun()
     of
@@ -346,13 +346,13 @@ generate_task_id() ->
 %% Validate task spec
 -spec validate_task_spec(task_spec()) -> ok | {error, term()}.
 validate_task_spec(Spec) when is_map(Spec) ->
-    case maps:get(fun, Spec, undefined) of
+    case maps:get(task_fn, Spec, undefined) of
         undefined ->
-            {error, missing_fun};
+            {error, missing_task_fn};
         Fun when is_function(Fun, 0) ->
             ok;
         _ ->
-            {error, invalid_fun}
+            {error, invalid_task_fn}
     end;
 validate_task_spec(_) ->
     {error, invalid_task_spec}.

@@ -1,8 +1,11 @@
 -module(erlmcp_debug).
+-compile({no_auto_import,[statistics/1]}).
 
 %% Joe Armstrong's Philosophy: Make systems inspectable
 %% This module provides simple debugging helpers for MCP gen_servers
 %% using Erlang's built-in sys module.
+
+-type server_id() :: term().
 
 -export([
     get_state/1,

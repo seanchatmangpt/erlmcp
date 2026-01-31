@@ -451,8 +451,7 @@ handle_cast({report_progress, Token, Progress, Total}, State) ->
 
 handle_cast({notify_resource_updated, Uri, Metadata}, State) ->
     % Notify all subscribers via pg-based pubsub
-    notify_subscribers(Uri, Metadata, State)
-    end,
+    notify_subscribers(Uri, Metadata, State),
     {noreply, State};
 
 handle_cast(notify_resources_changed, State) ->
@@ -473,7 +472,10 @@ handle_continue(initialize, State) ->
     % Ensure pg scope exists for resource subscriptions
     % pg is automatically started by kernel application in OTP 23+
     % pg:start/1 is idempotent - safe to call multiple times
-    ok = pg:start(?PG_SCOPE),
+    case pg:start(?PG_SCOPE) of
+        {ok, _} -> ok;
+        {error, {already_started, _}} -> ok
+    end,
 
     % Start or get change notifier
     NotifierPid = case erlmcp_change_notifier:start_link() of
@@ -529,10 +531,10 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
                     Result = handle_request(Id, Method, Params, TransportId, State),
 
                     %% Emit telemetry event for request stop
-                    Duration = erlang:monotonic_time(microsecond) - StartTime,
+                    RequestDuration = erlang:monotonic_time(microsecond) - StartTime,
                     telemetry:execute(
                         [erlmcp, server, request, stop],
-                        #{duration_us => Duration, count => 1},
+                        #{duration_us => RequestDuration, count => 1},
                         #{method => Method, server_id => ServerId, transport_id => TransportId, status => ok}
                     ),
 
@@ -546,10 +548,10 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
                     logger:error("Failed to decode message: ~p", [Reason]),
 
                     %% Emit telemetry event for decode error
-                    Duration = erlang:monotonic_time(microsecond) - StartTime,
+                    DecodeDuration = erlang:monotonic_time(microsecond) - StartTime,
                     telemetry:execute(
                         [erlmcp, server, request, exception],
-                        #{duration_us => Duration, count => 1},
+                        #{duration_us => DecodeDuration, count => 1},
                         #{error_type => decode_failed, error_reason => Reason, server_id => ServerId}
                     ),
 
@@ -563,10 +565,10 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
             erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
 
             %% Emit telemetry event for exception
-            Duration = erlang:monotonic_time(microsecond) - StartTime,
+            ExceptionDuration = erlang:monotonic_time(microsecond) - StartTime,
             telemetry:execute(
                 [erlmcp, server, request, exception],
-                #{duration_us => Duration, count => 1},
+                #{duration_us => ExceptionDuration, count => 1},
                 #{error_type => Class, error_reason => ExceptionReason, server_id => ServerId}
             ),
 

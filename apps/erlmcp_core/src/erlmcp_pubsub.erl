@@ -20,6 +20,7 @@
 %% API exports
 -export([
     start_link/0,
+    stop/0,
     subscribe/2,
     unsubscribe/2,
     broadcast/2,
@@ -54,6 +55,11 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+%% @doc Stop the pubsub server.
+-spec stop() -> ok.
+stop() ->
+    gen_server:stop(?SERVER).
+
 %% @doc Subscribe a process to a topic.
 %% The process will receive {erlmcp_pubsub, Topic, Message} messages.
 -spec subscribe(topic(), pid()) -> ok | {error, term()}.
@@ -85,7 +91,10 @@ init([]) ->
     process_flag(trap_exit, true),
     %% pg is automatically started by kernel application in OTP 23+
     %% We just need to create our scope
-    ok = pg:start(?PG_SCOPE),
+    case pg:start(?PG_SCOPE) of
+        {ok, _Pid} -> ok;
+        {error, {already_started, _Pid}} -> ok
+    end,
     logger:info("Started erlmcp_pubsub with pg scope ~p", [?PG_SCOPE]),
     {ok, #state{}}.
 
