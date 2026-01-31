@@ -1,0 +1,4 @@
+throughput: 1000000 msg/sec (core operations)
+latency_p50: 10 us
+latency_p95: 50 us
+latency_p99: 100 us
