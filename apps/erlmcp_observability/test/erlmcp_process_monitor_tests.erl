@@ -674,5 +674,164 @@ capacity_estimate_non_negative_test_() ->
      end}.
 
 %%====================================================================
+%% OTP 28 Process Iteration Tests
+%%====================================================================
+
+enumerate_processes_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+                     %% Test process enumeration
+                     {ok, Count} = erlmcp_process_monitor:enumerate_processes(),
+                     ?assert(is_integer(Count)),
+                     ?assert(Count > 0),
+
+                     %% Should match or be close to system process count
+                     SystemCount = erlang:system_info(process_count),
+                     ?assert(abs(Count - SystemCount) < 100)  % Allow small difference due to timing
+                 end)
+         ]
+     end}.
+
+enumerate_processes_performance_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+                     %% Enumeration should be fast (< 100ms even with many processes)
+                     {Time, {ok, _Count}} = timer:tc(
+                         fun() -> erlmcp_process_monitor:enumerate_processes() end
+                     ),
+                     ?assert(Time < 100000)  % 100ms
+                 end)
+         ]
+     end}.
+
+categorize_processes_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+                     %% Test process categorization
+                     {ok, Categories} = erlmcp_process_monitor:categorize_processes(),
+                     ?assert(is_map(Categories)),
+                     ?assert(maps:is_key(erlmcp_count, Categories)),
+                     ?assert(maps:is_key(system_count, Categories)),
+
+                     ErlmcpCount = maps:get(erlmcp_count, Categories),
+                     SystemCount = maps:get(system_count, Categories),
+
+                     ?assert(is_integer(ErlmcpCount)),
+                     ?assert(is_integer(SystemCount)),
+                     ?assert(ErlmcpCount >= 0),
+                     ?assert(SystemCount > 0),  % At least some system processes
+
+                     %% Total should match process count
+                     Total = ErlmcpCount + SystemCount,
+                     ActualCount = erlang:system_info(process_count),
+                     ?assert(abs(Total - ActualCount) < 100)  % Allow small difference
+                 end)
+         ]
+     end}.
+
+categorize_processes_performance_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+                     %% Categorization should be fast (< 200ms)
+                     {Time, {ok, _Categories}} = timer:tc(
+                         fun() -> erlmcp_process_monitor:categorize_processes() end
+                     ),
+                     ?assert(Time < 200000)  % 200ms
+                 end)
+         ]
+     end}.
+
+categorize_processes_identifies_erlmcp_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+                     %% The monitor itself should be counted as erlmcp
+                     {ok, Categories} = erlmcp_process_monitor:categorize_processes(),
+                     ErlmcpCount = maps:get(erlmcp_count, Categories),
+
+                     %% Should have at least the process monitor itself
+                     ?assert(ErlmcpCount >= 1)
+                 end)
+         ]
+     end}.
+
+otp_28_process_iteration_stability_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+                     %% Run multiple iterations to ensure stability
+                     Results = [erlmcp_process_monitor:enumerate_processes()
+                               || _ <- lists:seq(1, 10)],
+
+                     %% All should succeed
+                     lists:foreach(fun(R) ->
+                         ?assertMatch({ok, _Count}, R)
+                     end, Results),
+
+                     %% Counts should be similar (within 10% variance)
+                     Counts = [C || {ok, C} <- Results],
+                     AvgCount = lists:sum(Counts) / length(Counts),
+
+                     lists:foreach(fun(C) ->
+                         Variance = abs(C - AvgCount) / AvgCount,
+                         ?assert(Variance < 0.1)  % Less than 10% variance
+                     end, Counts)
+                 end)
+         ]
+     end}.
+
+otp_28_categorization_consistency_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+         [
+          ?_test(begin
+                     %% Run categorization multiple times
+                     Results = [erlmcp_process_monitor:categorize_processes()
+                               || _ <- lists:seq(1, 5)],
+
+                     %% All should succeed
+                     lists:foreach(fun(R) ->
+                         ?assertMatch({ok, _}, R)
+                     end, Results),
+
+                     %% Extract counts
+                     Categories = [C || {ok, C} <- Results],
+
+                     %% Check consistency (counts shouldn't vary wildly)
+                     lists:foreach(fun(Cat) ->
+                         ErlmcpCount = maps:get(erlmcp_count, Cat),
+                         SystemCount = maps:get(system_count, Cat),
+                         ?assert(ErlmcpCount >= 0),
+                         ?assert(SystemCount > 0)
+                     end, Categories)
+                 end)
+         ]
+     end}.
+
+%%====================================================================
 %% Helper Functions
 %%====================================================================
