@@ -1,5 +1,6 @@
 -module(erlmcp_health_monitor).
 
+
 -behaviour(gen_server).
 
 %% API
@@ -7,7 +8,8 @@
          unregister_component/1, get_system_health/0, get_component_health/1,
          get_all_component_health/0, set_health_check_config/2, get_health_check_config/1,
          report_circuit_breaker/2, report_degradation/1, reset_health_status/0,
-         trigger_health_check/1, trigger_system_health_check/0]).
+         trigger_health_check/1, trigger_system_health_check/0,
+         enumerate_process_health/0, find_overloaded_processes/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
          code_change/3]).
@@ -43,7 +45,9 @@
          system_health = unknown :: health_status(),
          system_metrics = #{} :: map(),
          health_timer :: undefined | timer:tref(),
-         alerts = [] :: list()}).
+         alerts = [] :: list(),
+         priority_messages_delivered = 0 :: non_neg_integer(),
+         priority_latency_sum_us = 0 :: non_neg_integer()}).
 
 -define(DEFAULT_CONFIG,
         #{check_interval => 30000,          % 30 seconds
@@ -132,6 +136,11 @@ init(Opts) ->
     % Set up process monitoring
     process_flag(trap_exit, true),
 
+    % Enable priority messages on OTP 28+ for critical health checks
+    process_flag(message_queue_data, off_heap),
+    process_flag(priority, high),
+    ?LOG_INFO("OTP 28 priority messages enabled for health monitor"),
+
     DefaultConfig =
         maps:merge(?DEFAULT_CONFIG, proplists:get_value(default_config, Opts, #{})),
 
@@ -145,7 +154,9 @@ init(Opts) ->
                    #{memory_status => ok,
                      process_count => 0,
                      system_load => 0.0,
-                     last_check => erlang:timestamp()}},
+                     last_check => erlang:timestamp(),
+                     priority_messages_delivered => 0,
+                     priority_latency_sum_us => 0}},
 
     ?LOG_INFO("Health monitor initialized"),
     {ok, State}.
@@ -175,16 +186,14 @@ handle_call({register_component, ComponentId, Pid, CheckFun}, _From, State) ->
     schedule_health_check(ComponentId, maps:get(check_interval, State#state.default_config)),
 
     {reply, ok, NewState};
-handle_call(get_system_health, _From, State) ->
-    SystemHealth = generate_system_health_report(State),
-    {reply, SystemHealth, State};
-handle_call({get_component_health, ComponentId}, _From, State) ->
-    case maps:find(ComponentId, State#state.components) of
-        {ok, Component} ->
-            {reply, Component#component_health.status, State};
-        error ->
-            {reply, not_found, State}
-    end;
+handle_call(get_system_health, From, State) ->
+    StartTime = erlang:monotonic_time(microsecond),
+
+    
+handle_call({get_component_health, ComponentId}, From, State) ->
+    StartTime = erlang:monotonic_time(microsecond),
+
+    
 handle_call(get_all_component_health, _From, State) ->
     AllHealth =
         maps:map(fun(_Id, Component) ->
@@ -727,3 +736,50 @@ find_component_by_pid(Pid, Components) ->
 schedule_health_check(ComponentId, Interval) ->
     erlang:send_after(Interval, self(), {health_check, ComponentId}),
     ok.
+
+%%--------------------------------------------------------------------
+%% @doc Enumerate all processes for health monitoring
+%%
+%% Uses erlang:processes_iterator/0 for O(1) memory allocation
+%% to scan all processes and check for potential health issues.
+%%
+%% Returns: {ok, #{healthy => N, unhealthy => M}}
+%% @end
+%%--------------------------------------------------------------------
+-spec enumerate_process_health() -> {ok, map()}.
+
+
+
+%%--------------------------------------------------------------------
+%% @doc Find processes with excessive message queues (OTP 28 optimized)
+%%
+%% Returns list of PIDs with message queue length > Threshold
+%% @end
+%%--------------------------------------------------------------------
+-spec find_overloaded_processes(non_neg_integer()) -> {ok, [#{pid => pid(), queue_length => non_neg_integer()}]}.
+
+find_overloaded_processes(Threshold) ->
+    Iterator = erlang:processes_iterator(),
+    find_overloaded_iterator(Iterator, Threshold, []).
+
+-spec find_overloaded_iterator(term(), non_neg_integer(), list()) -> {ok, list()}.
+find_overloaded_iterator(Iterator, Threshold, Acc) ->
+    case erlang:process_next(Iterator) of
+        {Pid, NewIterator} ->
+            NewAcc = case process_info(Pid, [message_queue_len, registered_name]) of
+                undefined ->
+                    Acc;
+                Info ->
+                    QLen = proplists:get_value(message_queue_len, Info, 0),
+                    case QLen > Threshold of
+                        true ->
+                            RegName = proplists:get_value(registered_name, Info, undefined),
+                            [#{pid => Pid, queue_length => QLen, registered_name => RegName} | Acc];
+                        false ->
+                            Acc
+                    end
+            end,
+            find_overloaded_iterator(NewIterator, Threshold, NewAcc);
+        none ->
+            {ok, lists:reverse(Acc)}
+    end.
