@@ -1,0 +1,227 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+    ┌─ src/erlmcp_completion.erl:
+    │
+ 84 │  -type stream_chunk() :: {chunk, binary()} | {done, completion_result()}.
+    │   ╰── Warning: type stream_chunk() is unused
+
+
+     ┌─ src/erlmcp_elicitation.erl:
+     │
+ 454 │      MonitorRef = case ClientPid of
+     │      ╰── Warning: variable 'MonitorRef' is unused
+
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 483 │  error_tool_description_too_large(Id, ActualSize, MaxSize)
+     │  ╰── Warning: function error_tool_description_too_large/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 494 │  error_invalid_content_type(Id, ContentType) when is_binary(ContentType) ->
+     │  ╰── Warning: function error_invalid_content_type/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 501 │  error_content_too_large(Id, ActualSize, MaxSize)
+     │  ╰── Warning: function error_content_too_large/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 512 │  error_invalid_encoding(Id, Encoding) when is_binary(Encoding) ->
+     │  ╰── Warning: function error_invalid_encoding/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 523 │  error_resource_template_not_found(Id, TemplateUri) when is_binary(TemplateUri) ->
+     │  ╰── Warning: function error_resource_template_not_found/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 530 │  error_invalid_uri(Id, Uri) when is_binary(Uri) ->
+     │  ╰── Warning: function error_invalid_uri/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 536 │  error_uri_syntax_error(Id, Uri, Reason) when is_binary(Uri), is_binary(Reason) ->
+     │  ╰── Warning: function error_uri_syntax_error/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 546 │  error_resource_access_denied(Id, Uri) when is_binary(Uri) ->
+     │  ╰── Warning: function error_resource_access_denied/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 553 │  error_template_render_failed(Id, TemplateUri, Reason)
+     │  ╰── Warning: function error_template_render_failed/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 568 │  error_tool_execution_failed(Id, ToolName, Reason)
+     │  ╰── Warning: function error_tool_execution_failed/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 579 │  error_tool_timeout(Id, ToolName, TimeoutMs)
+     │  ╰── Warning: function error_tool_timeout/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 589 │  error_tool_cancelled(Id, ToolName) when is_binary(ToolName) ->
+     │  ╰── Warning: function error_tool_cancelled/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 595 │  error_invalid_tool_arguments(Id, ToolName, Details)
+     │  ╰── Warning: function error_invalid_tool_arguments/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 610 │  error_prompt_argument_missing(Id, PromptName, ArgName)
+     │  ╰── Warning: function error_prompt_argument_missing/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 621 │  error_prompt_render_failed(Id, PromptName, Reason)
+     │  ╰── Warning: function error_prompt_render_failed/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 632 │  error_invalid_prompt_arguments(Id, PromptName, Details)
+     │  ╰── Warning: function error_invalid_prompt_arguments/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 643 │  error_sampling_failed(Id, Reason) when is_binary(Reason) ->
+     │  ╰── Warning: function error_sampling_failed/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 653 │  error_authentication_failed(Id, Reason) when is_binary(Reason) ->
+     │  ╰── Warning: function error_authentication_failed/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 660 │  error_authorization_failed(Id, Reason) when is_binary(Reason) ->
+     │  ╰── Warning: function error_authorization_failed/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 667 │  error_invalid_credentials(Id) ->
+     │  ╰── Warning: function error_invalid_credentials/1 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 673 │  error_token_expired(Id) ->
+     │  ╰── Warning: function error_token_expired/1 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 678 │  error_access_denied(Id, Resource) when is_binary(Resource) ->
+     │  ╰── Warning: function error_access_denied/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 706 │  error_capability_negotiation_failed(Id, Reason) when is_binary(Reason) ->
+     │  ╰── Warning: function error_capability_negotiation_failed/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 713 │  error_method_not_supported(Id, Method) when is_binary(Method) ->
+     │  ╰── Warning: function error_method_not_supported/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 724 │  error_invalid_cursor(Id, Cursor) when is_binary(Cursor) ->
+     │  ╰── Warning: function error_invalid_cursor/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 730 │  error_cursor_expired(Id, Cursor) when is_binary(Cursor) ->
+     │  ╰── Warning: function error_cursor_expired/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 736 │  error_pagination_not_supported(Id, Method) when is_binary(Method) ->
+     │  ╰── Warning: function error_pagination_not_supported/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 743 │  error_page_size_too_large(Id, ActualSize, MaxSize)
+     │  ╰── Warning: function error_page_size_too_large/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 758 │  error_task_not_found(Id, TaskId) when is_binary(TaskId) ->
+     │  ╰── Warning: function error_task_not_found/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 764 │  error_task_already_exists(Id, TaskId) when is_binary(TaskId) ->
+     │  ╰── Warning: function error_task_already_exists/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 771 │  error_task_failed(Id, TaskId, Reason) when is_binary(TaskId), is_binary(Reason) ->
+     │  ╰── Warning: function error_task_failed/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 780 │  error_task_cancelled(Id, TaskId) when is_binary(TaskId) ->
+     │  ╰── Warning: function error_task_cancelled/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 786 │  error_task_timeout(Id, TaskId, TimeoutMs) when is_binary(TaskId), is_integer(TimeoutMs) ->
+     │  ╰── Warning: function error_task_timeout/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 799 │  error_invalid_progress_token(Id, Token) when is_binary(Token); is_integer(Token) ->
+     │  ╰── Warning: function error_invalid_progress_token/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 806 │  error_progress_token_expired(Id, Token) when is_binary(Token); is_integer(Token) ->
+     │  ╰── Warning: function error_progress_token_expired/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 813 │  error_progress_update_failed(Id, Token, Reason)
+     │  ╰── Warning: function error_progress_update_failed/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 824 │  error_notification_failed(Id, NotificationType, Reason)
+     │  ╰── Warning: function error_notification_failed/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 835 │  error_notification_queue_full(Id, QueueSize) when is_integer(QueueSize) ->
+     │  ╰── Warning: function error_notification_queue_full/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 846 │  error_completion_not_found(Id, CompletionId) when is_binary(CompletionId) ->
+     │  ╰── Warning: function error_completion_not_found/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 853 │  error_invalid_completion_reference(Id, Reference) when is_binary(Reference) ->
+     │  ╰── Warning: function error_invalid_completion_reference/2 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 860 │  error_invalid_completion_argument(Id, Argument, Details)
+     │  ╰── Warning: function error_invalid_completion_argument/3 is unused
+
+     ┌─ src/erlmcp_json_rpc.erl:
+     │
+ 871 │  error_completion_failed(Id, CompletionId, Reason)
+     │  ╰── Warning: function error_completion_failed/3 is unused
+
+
+===> Dialyzer starting, this may take a while...

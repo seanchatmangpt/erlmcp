@@ -24,16 +24,23 @@
 start(_StartType, _StartArgs) ->
     ?LOG_INFO("Starting erlmcp_observability application"),
 
-    %% Initialize OpenTelemetry if configured
-    case application:get_env(erlmcp_observability, otel_enabled, true) of
-        true -> init_otel();
-        false -> ok
-    end,
-
-    %% Start the supervisor
+    %% Start the supervisor FIRST
     case erlmcp_observability_sup:start_link() of
         {ok, Pid} ->
             ?LOG_INFO("erlmcp_observability started successfully"),
+
+            %% Initialize OpenTelemetry ASYNC after supervisor starts
+            %% This avoids blocking application startup if OTEL fails
+            case application:get_env(erlmcp_observability, otel_enabled, true) of
+                true ->
+                    spawn(fun() ->
+                        timer:sleep(100),  % Small delay to let supervisor initialize
+                        init_otel()
+                    end);
+                false ->
+                    ok
+            end,
+
             {ok, Pid};
         {error, Reason} = Error ->
             ?LOG_ERROR("Failed to start erlmcp_observability: ~p", [Reason]),

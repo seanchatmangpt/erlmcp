@@ -1,0 +1,2841 @@
+module 'erlmcp_auth' ['add_permission'/3,
+		      'add_role'/2,
+		      'authenticate'/2,
+		      'check_permission'/3,
+		      'code_change'/3,
+		      'create_session'/2,
+		      'destroy_session'/1,
+		      'get_role_permissions'/1,
+		      'get_user_roles'/1,
+		      'handle_call'/3,
+		      'handle_cast'/2,
+		      'handle_info'/2,
+		      'init'/1,
+		      'is_rate_limiter_enabled'/0,
+		      'module_info'/0,
+		      'module_info'/1,
+		      'remove_permission'/3,
+		      'revoke_token'/1,
+		      'rotate_public_key'/2,
+		      'rotate_token'/1,
+		      'start_link'/0,
+		      'start_link'/1,
+		      'stop'/0,
+		      'terminate'/2,
+		      'validate_api_key'/1,
+		      'validate_jwt'/1,
+		      'validate_mtls'/1,
+		      'validate_oauth2_token'/1]
+    attributes [%% Line 1
+		'file' =
+		    %% Line 1
+		    [{[97|[112|[112|[115|[47|[101|[114|[108|[109|[99|[112|[95|[99|[111|[114|[101|[47|[115|[114|[99|[47|[101|[114|[108|[109|[99|[112|[95|[97|[117|[116|[104|[46|[101|[114|[108]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]],1}],
+		%% Line 17
+		'behaviour' =
+		    %% Line 17
+		    ['gen_server'],
+		%% Line 47
+		'type' =
+		    %% Line 47
+		    [{'auth_method',{'type',{47,24},'union',[{'atom',{47,24},'api_key'}|[{'atom',{47,34},'jwt'}|[{'atom',{47,40},'oauth2'}|[{'atom',{47,49},'mtls'}]]]]},[]}],
+		%% Line 48
+		'type' =
+		    %% Line 48
+		    [{'auth_token',{'type',{48,23},'binary',[]},[]}],
+		%% Line 49
+		'type' =
+		    %% Line 49
+		    [{'user_id',{'type',{49,20},'binary',[]},[]}],
+		%% Line 50
+		'type' =
+		    %% Line 50
+		    [{'session_id',{'type',{50,23},'binary',[]},[]}],
+		%% Line 51
+		'type' =
+		    %% Line 51
+		    [{'role',{'type',{51,17},'binary',[]},[]}],
+		%% Line 52
+		'type' =
+		    %% Line 52
+		    [{'permission',{'type',{52,23},'binary',[]},[]}],
+		%% Line 53
+		'type' =
+		    %% Line 53
+		    [{'resource',{'type',{53,21},'binary',[]},[]}],
+		%% Line 55
+		'export_type' =
+		    %% Line 55
+		    [{'auth_method',0}|[{'auth_token',0}|[{'user_id',0}|[{'session_id',0}|[{'role',0}|[{'permission',0}|[{'resource',0}]]]]]]],
+		%% Line 58
+		'record' =
+		    %% Line 58
+		    [{'state',[{'typed_record_field',{'record_field',{59,5},{'atom',{59,5},'sessions'}},{'remote_type',{59,17},[{'atom',{59,17},'ets'}|[{'atom',{59,21},'tid'}|[[]]]]}}|[{'typed_record_field',{'record_field',{60,5},{'atom',{60,5},'api_keys'}},{'remote_type',{60,17},[{'atom',{60,17},'ets'}|[{'atom',{60,21},'tid'}|[[]]]]}}|[{'typed_record_field',{'record_field',{61,5},{'atom',{61,5},'jwt_keys'}},{'remote_type',{61,17},[{'atom',{61,17},'ets'}|[{'atom',{61,21},'tid'}|[[]]]]}}|[{'typed_record_field',{'record_field',{62,5},{'atom',{62,5},'oauth2_config'}},{'type',{62,22},'map','any'}}|[{'typed_record_field',{'record_field',{63,5},{'atom',{63,5},'mtls_config'}},{'type',{63,20},'map','any'}}|[{'typed_record_field',{'record_field',{64,5},{'atom',{64,5},'rbac_roles'}},{'remote_type',{64,19},[{'atom',{64,19},'ets'}|[{'atom',{64,23},'tid'}|[[]]]]}}|[{'typed_record_field',{'record_field',{65,5},{'atom',{65,5},'user_roles'}},{'remote_type',{65,19},[{'atom',{65,19},'ets'}|[{'atom',{65,23},'tid'}|[[]]]]}}|[{'typed_record_field',{'record_field',{66,5},{'atom',{66,5},'acls'}},{'remote_type',{66,13},[{'atom',{66,13},'ets'}|[{'atom',{66,17},'tid'}|[[]]]]}}|[{'typed_record_field',{'record_field',{67,5},{'atom',{67,5},'revoked_tokens'}},{'remote_type',{67,23},[{'atom',{67,23},'ets'}|[{'atom',{67,27},'tid'}|[[]]]]}}|[{'typed_record_field',{'record_field',{68,5},{'atom',{68,5},'rate_limiter_enabled'}},{'type',{68,29},'boolean',[]}}]]]]]]]]]]}],
+		%% Line 71
+		'type' =
+		    %% Line 71
+		    [{'state',{'type',{71,18},'record',[{'atom',{71,19},'state'}]},[]}],
+		%% Line 74
+		'record' =
+		    %% Line 74
+		    [{'session',[{'typed_record_field',{'record_field',{75,5},{'atom',{75,5},'session_id'}},{'user_type',{75,19},'session_id',[]}}|[{'typed_record_field',{'record_field',{76,5},{'atom',{76,5},'user_id'}},{'user_type',{76,16},'user_id',[]}}|[{'typed_record_field',{'record_field',{77,5},{'atom',{77,5},'roles'}},{'type',{77,14},'list',[{'user_type',{77,15},'role',[]}]}}|[{'typed_record_field',{'record_field',{78,5},{'atom',{78,5},'permissions'}},{'type',{78,20},'list',[{'user_type',{78,21},'permission',[]}]}}|[{'typed_record_field',{'record_field',{79,5},{'atom',{79,5},'auth_method'}},{'user_type',{79,20},'auth_method',[]}}|[{'typed_record_field',{'record_field',{80,5},{'atom',{80,5},'created_at'}},{'type',{80,19},'integer',[]}}|[{'typed_record_field',{'record_field',{81,5},{'atom',{81,5},'expires_at'}},{'type',{81,19},'integer',[]}}|[{'typed_record_field',{'record_field',{82,5},{'atom',{82,5},'metadata'}},{'type',{82,17},'map','any'}}]]]]]]]]}],
+		%% Line 89
+		'spec' =
+		    %% Line 89
+		    [{{'start_link',0},[{'type',{89,17},'fun',[{'type',{89,17},'product',[]}|[{'type',{89,23},'union',[{'type',{89,23},'tuple',[{'atom',{89,24},'ok'}|[{'type',{89,28},'pid',[]}]]}|[{'type',{89,37},'tuple',[{'atom',{89,38},'error'}|[{'type',{89,45},'term',[]}]]}]]}]]}]}],
+		%% Line 93
+		'spec' =
+		    %% Line 93
+		    [{{'start_link',1},[{'type',{93,17},'fun',[{'type',{93,17},'product',[{'type',{93,18},'map','any'}]}|[{'type',{93,28},'union',[{'type',{93,28},'tuple',[{'atom',{93,29},'ok'}|[{'type',{93,33},'pid',[]}]]}|[{'type',{93,42},'tuple',[{'atom',{93,43},'error'}|[{'type',{93,50},'term',[]}]]}]]}]]}]}],
+		%% Line 98
+		'spec' =
+		    %% Line 98
+		    [{{'is_rate_limiter_enabled',0},[{'type',{98,30},'fun',[{'type',{98,30},'product',[]}|[{'type',{98,36},'boolean',[]}]]}]}],
+		%% Line 103
+		'spec' =
+		    %% Line 103
+		    [{{'authenticate',2},[{'type',{103,19},'fun',[{'type',{103,19},'product',[{'user_type',{103,20},'auth_method',[]}|[{'type',{103,35},'map','any'}]]}|[{'type',{104,5},'union',[{'type',{104,5},'tuple',[{'atom',{104,6},'ok'}|[{'user_type',{104,10},'session_id',[]}]]}|[{'type',{104,26},'tuple',[{'atom',{104,27},'error'}|[{'type',{104,34},'term',[]}]]}]]}]]}]}],
+		%% Line 109
+		'spec' =
+		    %% Line 109
+		    [{{'validate_jwt',1},[{'type',{109,19},'fun',[{'type',{109,19},'product',[{'user_type',{109,20},'auth_token',[]}]}|[{'type',{109,37},'union',[{'type',{109,37},'tuple',[{'atom',{109,38},'ok'}|[{'type',{109,42},'map','any'}]]}|[{'type',{109,51},'tuple',[{'atom',{109,52},'error'}|[{'type',{109,59},'term',[]}]]}]]}]]}]}],
+		%% Line 114
+		'spec' =
+		    %% Line 114
+		    [{{'validate_api_key',1},[{'type',{114,23},'fun',[{'type',{114,23},'product',[{'user_type',{114,24},'auth_token',[]}]}|[{'type',{114,41},'union',[{'type',{114,41},'tuple',[{'atom',{114,42},'ok'}|[{'user_type',{114,46},'user_id',[]}]]}|[{'type',{114,59},'tuple',[{'atom',{114,60},'error'}|[{'type',{114,67},'term',[]}]]}]]}]]}]}],
+		%% Line 119
+		'spec' =
+		    %% Line 119
+		    [{{'validate_oauth2_token',1},[{'type',{119,28},'fun',[{'type',{119,28},'product',[{'user_type',{119,29},'auth_token',[]}]}|[{'type',{119,46},'union',[{'type',{119,46},'tuple',[{'atom',{119,47},'ok'}|[{'type',{119,51},'map','any'}]]}|[{'type',{119,60},'tuple',[{'atom',{119,61},'error'}|[{'type',{119,68},'term',[]}]]}]]}]]}]}],
+		%% Line 124
+		'spec' =
+		    %% Line 124
+		    [{{'validate_mtls',1},[{'type',{124,20},'fun',[{'type',{124,20},'product',[{'type',{124,21},'map','any'}]}|[{'type',{124,31},'union',[{'type',{124,31},'tuple',[{'atom',{124,32},'ok'}|[{'user_type',{124,36},'user_id',[]}]]}|[{'type',{124,49},'tuple',[{'atom',{124,50},'error'}|[{'type',{124,57},'term',[]}]]}]]}]]}]}],
+		%% Line 129
+		'spec' =
+		    %% Line 129
+		    [{{'check_permission',3},[{'type',{129,23},'fun',[{'type',{129,23},'product',[{'user_type',{129,24},'session_id',[]}|[{'user_type',{129,38},'resource',[]}|[{'user_type',{129,50},'permission',[]}]]]}|[{'type',{130,5},'union',[{'atom',{130,5},'ok'}|[{'type',{130,10},'tuple',[{'atom',{130,11},'error'}|[{'type',{130,18},'union',[{'atom',{130,18},'forbidden'}|[{'atom',{130,30},'invalid_session'}|[{'atom',{130,48},'user_not_found'}]]]}]]}]]}]]}]}],
+		%% Line 135
+		'spec' =
+		    %% Line 135
+		    [{{'create_session',2},[{'type',{135,21},'fun',[{'type',{135,21},'product',[{'user_type',{135,22},'user_id',[]}|[{'type',{135,33},'map','any'}]]}|[{'type',{135,43},'tuple',[{'atom',{135,44},'ok'}|[{'user_type',{135,48},'session_id',[]}]]}]]}]}],
+		%% Line 140
+		'spec' =
+		    %% Line 140
+		    [{{'destroy_session',1},[{'type',{140,22},'fun',[{'type',{140,22},'product',[{'user_type',{140,23},'session_id',[]}]}|[{'atom',{140,40},'ok'}]]}]}],
+		%% Line 145
+		'spec' =
+		    %% Line 145
+		    [{{'rotate_token',1},[{'type',{145,19},'fun',[{'type',{145,19},'product',[{'user_type',{145,20},'session_id',[]}]}|[{'type',{145,37},'union',[{'type',{145,37},'tuple',[{'atom',{145,38},'ok'}|[{'user_type',{145,42},'auth_token',[]}]]}|[{'type',{145,58},'tuple',[{'atom',{145,59},'error'}|[{'type',{145,66},'term',[]}]]}]]}]]}]}],
+		%% Line 150
+		'spec' =
+		    %% Line 150
+		    [{{'revoke_token',1},[{'type',{150,19},'fun',[{'type',{150,19},'product',[{'user_type',{150,20},'auth_token',[]}]}|[{'atom',{150,37},'ok'}]]}]}],
+		%% Line 155
+		'spec' =
+		    %% Line 155
+		    [{{'rotate_public_key',2},[{'type',{155,24},'fun',[{'type',{155,24},'product',[{'type',{155,25},'binary',[]}|[{'type',{155,35},'binary',[]}]]}|[{'atom',{155,48},'ok'}]]}]}],
+		%% Line 160
+		'spec' =
+		    %% Line 160
+		    [{{'get_user_roles',1},[{'type',{160,21},'fun',[{'type',{160,21},'product',[{'user_type',{160,22},'user_id',[]}]}|[{'type',{160,36},'union',[{'type',{160,36},'tuple',[{'atom',{160,37},'ok'}|[{'type',{160,41},'list',[{'user_type',{160,42},'role',[]}]}]]}|[{'type',{160,53},'tuple',[{'atom',{160,54},'error'}|[{'atom',{160,61},'not_found'}]]}]]}]]}]}],
+		%% Line 165
+		'spec' =
+		    %% Line 165
+		    [{{'get_role_permissions',1},[{'type',{165,27},'fun',[{'type',{165,27},'product',[{'user_type',{165,28},'role',[]}]}|[{'type',{165,39},'union',[{'type',{165,39},'tuple',[{'atom',{165,40},'ok'}|[{'type',{165,44},'list',[{'user_type',{165,45},'permission',[]}]}]]}|[{'type',{165,62},'tuple',[{'atom',{165,63},'error'}|[{'atom',{165,70},'not_found'}]]}]]}]]}]}],
+		%% Line 170
+		'spec' =
+		    %% Line 170
+		    [{{'add_role',2},[{'type',{170,15},'fun',[{'type',{170,15},'product',[{'user_type',{170,16},'user_id',[]}|[{'user_type',{170,27},'role',[]}]]}|[{'atom',{170,38},'ok'}]]}]}],
+		%% Line 175
+		'spec' =
+		    %% Line 175
+		    [{{'add_permission',3},[{'type',{175,21},'fun',[{'type',{175,21},'product',[{'user_type',{175,22},'resource',[]}|[{'user_type',{175,34},'permission',[]}|[{'type',{175,48},'list',[{'user_type',{175,49},'role',[]}]}]]]}|[{'atom',{175,61},'ok'}]]}]}],
+		%% Line 180
+		'spec' =
+		    %% Line 180
+		    [{{'remove_permission',3},[{'type',{180,24},'fun',[{'type',{180,24},'product',[{'user_type',{180,25},'resource',[]}|[{'user_type',{180,37},'permission',[]}|[{'type',{180,51},'list',[{'user_type',{180,52},'role',[]}]}]]]}|[{'atom',{180,64},'ok'}]]}]}],
+		%% Line 185
+		'spec' =
+		    %% Line 185
+		    [{{'stop',0},[{'type',{185,11},'fun',[{'type',{185,11},'product',[]}|[{'atom',{185,17},'ok'}]]}]}],
+		%% Line 193
+		'spec' =
+		    %% Line 193
+		    [{{'init',1},[{'type',{193,11},'fun',[{'type',{193,11},'product',[{'type',{193,12},'list',[{'type',{193,13},'map','any'}]}]}|[{'type',{193,24},'tuple',[{'atom',{193,25},'ok'}|[{'user_type',{193,29},'state',[]}]]}]]}]}],
+		%% Line 228
+		'spec' =
+		    %% Line 228
+		    [{{'handle_call',3},[{'type',{228,18},'fun',[{'type',{228,18},'product',[{'type',{228,19},'term',[]}|[{'type',{228,27},'tuple',[{'type',{228,28},'pid',[]}|[{'type',{228,35},'term',[]}]]}|[{'user_type',{228,44},'state',[]}]]]}|[{'type',{229,5},'union',[{'type',{229,5},'tuple',[{'atom',{229,6},'reply'}|[{'type',{229,13},'term',[]}|[{'user_type',{229,21},'state',[]}]]]}|[{'type',{229,32},'tuple',[{'atom',{229,33},'noreply'}|[{'user_type',{229,42},'state',[]}]]}]]}]]}]}],
+		%% Line 324
+		'spec' =
+		    %% Line 324
+		    [{{'handle_cast',2},[{'type',{324,18},'fun',[{'type',{324,18},'product',[{'type',{324,19},'term',[]}|[{'user_type',{324,27},'state',[]}]]}|[{'type',{324,39},'tuple',[{'atom',{324,40},'noreply'}|[{'user_type',{324,49},'state',[]}]]}]]}]}],
+		%% Line 328
+		'spec' =
+		    %% Line 328
+		    [{{'handle_info',2},[{'type',{328,18},'fun',[{'type',{328,18},'product',[{'type',{328,19},'term',[]}|[{'user_type',{328,27},'state',[]}]]}|[{'type',{328,39},'tuple',[{'atom',{328,40},'noreply'}|[{'user_type',{328,49},'state',[]}]]}]]}]}],
+		%% Line 339
+		'spec' =
+		    %% Line 339
+		    [{{'terminate',2},[{'type',{339,16},'fun',[{'type',{339,16},'product',[{'type',{339,17},'term',[]}|[{'user_type',{339,25},'state',[]}]]}|[{'atom',{339,37},'ok'}]]}]}],
+		%% Line 350
+		'spec' =
+		    %% Line 350
+		    [{{'code_change',3},[{'type',{350,18},'fun',[{'type',{350,18},'product',[{'type',{350,19},'term',[]}|[{'user_type',{350,27},'state',[]}|[{'type',{350,36},'term',[]}]]]}|[{'type',{350,47},'tuple',[{'atom',{350,48},'ok'}|[{'user_type',{350,52},'state',[]}]]}]]}]}]]
+'start_link'/0 =
+    %% Line 90
+    ( fun () ->
+	  %% Line 91
+	  apply 'start_link'/1
+	      (~{}~)
+      -| [{'function',{'start_link',0}}] )
+'start_link'/1 =
+    %% Line 94
+    ( fun (_0) ->
+	  %% Line 95
+	  call 'gen_server':'start_link'
+	      ({'local','erlmcp_auth'}, 'erlmcp_auth', [( _0
+							  -| [{'function',{'start_link',1}}] )|[]], [])
+      -| [{'function',{'start_link',1}}] )
+'is_rate_limiter_enabled'/0 =
+    %% Line 99
+    ( fun () ->
+	  %% Line 100
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', 'is_rate_limiter_enabled')
+      -| [{'function',{'is_rate_limiter_enabled',0}}] )
+'authenticate'/2 =
+    %% Line 105
+    ( fun (_0,_1) ->
+	  %% Line 106
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'authenticate',_0,_1})
+      -| [{'function',{'authenticate',2}}] )
+'validate_jwt'/1 =
+    %% Line 110
+    ( fun (_0) ->
+	  %% Line 111
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'validate_jwt',( _0
+						-| [{'function',{'validate_jwt',1}}] )})
+      -| [{'function',{'validate_jwt',1}}] )
+'validate_api_key'/1 =
+    %% Line 115
+    ( fun (_0) ->
+	  %% Line 116
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'validate_api_key',( _0
+						    -| [{'function',{'validate_api_key',1}}] )})
+      -| [{'function',{'validate_api_key',1}}] )
+'validate_oauth2_token'/1 =
+    %% Line 120
+    ( fun (_0) ->
+	  %% Line 121
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'validate_oauth2_token',( _0
+							 -| [{'function',{'validate_oauth2_token',1}}] )})
+      -| [{'function',{'validate_oauth2_token',1}}] )
+'validate_mtls'/1 =
+    %% Line 125
+    ( fun (_0) ->
+	  %% Line 126
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'validate_mtls',( _0
+						 -| [{'function',{'validate_mtls',1}}] )})
+      -| [{'function',{'validate_mtls',1}}] )
+'check_permission'/3 =
+    %% Line 131
+    ( fun (_0,_1,_2) ->
+	  %% Line 132
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'check_permission',_0,_1,_2})
+      -| [{'function',{'check_permission',3}}] )
+'create_session'/2 =
+    %% Line 136
+    ( fun (_0,_1) ->
+	  %% Line 137
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'create_session',_0,_1})
+      -| [{'function',{'create_session',2}}] )
+'destroy_session'/1 =
+    %% Line 141
+    ( fun (_0) ->
+	  %% Line 142
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'destroy_session',( _0
+						   -| [{'function',{'destroy_session',1}}] )})
+      -| [{'function',{'destroy_session',1}}] )
+'rotate_token'/1 =
+    %% Line 146
+    ( fun (_0) ->
+	  %% Line 147
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'rotate_token',( _0
+						-| [{'function',{'rotate_token',1}}] )})
+      -| [{'function',{'rotate_token',1}}] )
+'revoke_token'/1 =
+    %% Line 151
+    ( fun (_0) ->
+	  %% Line 152
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'revoke_token',( _0
+						-| [{'function',{'revoke_token',1}}] )})
+      -| [{'function',{'revoke_token',1}}] )
+'rotate_public_key'/2 =
+    %% Line 156
+    ( fun (_0,_1) ->
+	  %% Line 157
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'rotate_public_key',_0,_1})
+      -| [{'function',{'rotate_public_key',2}}] )
+'get_user_roles'/1 =
+    %% Line 161
+    ( fun (_0) ->
+	  %% Line 162
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'get_user_roles',( _0
+						  -| [{'function',{'get_user_roles',1}}] )})
+      -| [{'function',{'get_user_roles',1}}] )
+'get_role_permissions'/1 =
+    %% Line 166
+    ( fun (_0) ->
+	  %% Line 167
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'get_role_permissions',( _0
+							-| [{'function',{'get_role_permissions',1}}] )})
+      -| [{'function',{'get_role_permissions',1}}] )
+'add_role'/2 =
+    %% Line 171
+    ( fun (_0,_1) ->
+	  %% Line 172
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'add_role',_0,_1})
+      -| [{'function',{'add_role',2}}] )
+'add_permission'/3 =
+    %% Line 176
+    ( fun (_0,_1,_2) ->
+	  %% Line 177
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'add_permission',_0,_1,_2})
+      -| [{'function',{'add_permission',3}}] )
+'remove_permission'/3 =
+    %% Line 181
+    ( fun (_0,_1,_2) ->
+	  %% Line 182
+	  call 'gen_server':'call'
+	      ('erlmcp_auth', {'remove_permission',_0,_1,_2})
+      -| [{'function',{'remove_permission',3}}] )
+'stop'/0 =
+    %% Line 186
+    ( fun () ->
+	  %% Line 187
+	  call 'gen_server':'stop'
+	      ('erlmcp_auth')
+      -| [{'function',{'stop',0}}] )
+'init'/1 =
+    %% Line 194
+    ( fun (_0) ->
+	  ( case ( _0
+		   -| [{'function',{'init',1}}] ) of
+	      <[Config|[]]> when 'true' ->
+		  do  %% Line 195
+		      call 'erlang':'process_flag'
+			  ('trap_exit', 'true')
+		      let <RateLimiterEnabled> =
+			  case %% Line 198
+			       Config of
+			    %% Line 198
+			    ( <~{( 'rate_limiter_enabled'
+				   -| ['compiler_generated'] ):=( _16
+							       -| ['compiler_generated'] )}~> when 'true' ->
+				  ( _16
+				    -| ['compiler_generated'] )
+			      -| ['compiler_generated'] )
+			    %% Line 198
+			    ( <~{}~> when 'true' ->
+				  'true'
+			      -| ['compiler_generated'] )
+			    %% Line 198
+			    ( <( _17
+				 -| ['compiler_generated'] )> when 'true' ->
+				  primop 'match_fail'
+				      ({'badmap',( _17
+						   -| ['compiler_generated'] )})
+			      -| ['compiler_generated'] )
+			  end
+		      in  let <_10> =
+			      call %% Line 201
+				   'ets':%% Line 201
+					 'new'
+				  (%% Line 201
+				   'auth_sessions', %% Line 201
+						    ['set'|['protected']])
+			  in  let <_9> =
+				  call %% Line 202
+				       'ets':%% Line 202
+					     'new'
+				      (%% Line 202
+				       'auth_api_keys', %% Line 202
+							['set'|['protected']])
+			      in  let <_8> =
+				      call %% Line 203
+					   'ets':%% Line 203
+						 'new'
+					  (%% Line 203
+					   'auth_jwt_keys', %% Line 203
+							    ['set'|['protected']])
+				  in  let <_7> =
+					  case %% Line 204
+					       Config of
+					    %% Line 204
+					    ( <~{( 'oauth2'
+						   -| ['compiler_generated'] ):=( _19
+									       -| ['compiler_generated'] )}~> when 'true' ->
+						  ( _19
+						    -| ['compiler_generated'] )
+					      -| ['compiler_generated'] )
+					    %% Line 204
+					    ( <~{}~> when 'true' ->
+						  ~{}~
+					      -| ['compiler_generated'] )
+					    %% Line 204
+					    ( <( _20
+						 -| ['compiler_generated'] )> when 'true' ->
+						  primop 'match_fail'
+						      ({'badmap',( _20
+								   -| ['compiler_generated'] )})
+					      -| ['compiler_generated'] )
+					  end
+				      in  let <_6> =
+					      case %% Line 205
+						   Config of
+						%% Line 205
+						( <~{( 'mtls'
+						       -| ['compiler_generated'] ):=( _22
+										   -| ['compiler_generated'] )}~> when 'true' ->
+						      ( _22
+							-| ['compiler_generated'] )
+						  -| ['compiler_generated'] )
+						%% Line 205
+						( <~{}~> when 'true' ->
+						      ~{}~
+						  -| ['compiler_generated'] )
+						%% Line 205
+						( <( _23
+						     -| ['compiler_generated'] )> when 'true' ->
+						      primop 'match_fail'
+							  ({'badmap',( _23
+								       -| ['compiler_generated'] )})
+						  -| ['compiler_generated'] )
+					      end
+					  in  let <_5> =
+						  call %% Line 206
+						       'ets':%% Line 206
+							     'new'
+						      (%% Line 206
+						       'auth_rbac_roles', %% Line 206
+									  ['set'|['protected']])
+					      in  let <_4> =
+						      call %% Line 207
+							   'ets':%% Line 207
+								 'new'
+							  (%% Line 207
+							   'auth_user_roles', %% Line 207
+									      ['set'|['protected']])
+						  in  let <_3> =
+							  call %% Line 208
+							       'ets':%% Line 208
+								     'new'
+							      (%% Line 208
+							       'auth_acls', %% Line 208
+									    ['bag'|['protected']])
+						      in  let <_2> =
+							      call %% Line 209
+								   'ets':%% Line 209
+									 'new'
+								  (%% Line 209
+								   'auth_revoked_tokens', %% Line 209
+											  ['set'|['protected']])
+							  in  let <State> =
+								  {%% Line 200
+								   'state',%% Line 201
+									   _10,%% Line 202
+									       _9,%% Line 203
+										  _8,%% Line 204
+										     _7,%% Line 205
+											_6,%% Line 206
+											   _5,%% Line 207
+											      _4,%% Line 208
+												 _3,%% Line 209
+												    _2,%% Line 210
+												       RateLimiterEnabled}
+							      in  do  %% Line 214
+								      apply 'init_default_roles'/1
+									  (State)
+								      do  %% Line 217
+									  apply 'init_api_keys'/2
+									      (State, Config)
+									  do  %% Line 220
+									      apply 'init_jwt_keys'/2
+										  (State, Config)
+									      let <_12> =
+										  call %% Line 223
+										       'erlang':%% Line 223
+												'self'
+										      ()
+									      in  do  %% Line 223
+										      call 'erlang':'send_after'
+											  (60000, _12, 'cleanup_expired')
+										      let <_13> =
+											  call %% Line 225
+											       'maps':%% Line 225
+												      'keys'
+											      (%% Line 225
+											       Config)
+										      in  do  %% Line 225
+											      call 'logger':'info'
+												  ([65|[117|[116|[104|[32|[115|[101|[114|[118|[101|[114|[32|[115|[116|[97|[114|[116|[101|[100|[32|[119|[105|[116|[104|[32|[99|[111|[110|[102|[105|[103|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_13|[]])
+											      %% Line 226
+											      {'ok',State}
+	      ( <_14> when 'true' ->
+		    ( primop 'match_fail'
+			  (( {'function_clause',_14}
+			     -| [{'function',{'init',1}}] ))
+		      -| [{'function',{'init',1}}] )
+		-| ['compiler_generated'] )
+	    end
+	    -| [{'function',{'init',1}}] )
+      -| [{'function',{'init',1}}] )
+'handle_call'/3 =
+    %% Line 230
+    ( fun (_0,_1,_2) ->
+	  ( case <_0,_1,_2> of
+	      <{'authenticate',Method,Credentials},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 231
+			    'do_authenticate'/3
+			  (%% Line 231
+			   Method, %% Line 231
+				   Credentials, %% Line 231
+						State)
+		  in  %% Line 232
+		      {'reply',Result,State}
+	      %% Line 234
+	      <{'validate_jwt',Token},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 235
+			    'do_validate_jwt'/2
+			  (%% Line 235
+			   Token, %% Line 235
+				  State)
+		  in  %% Line 236
+		      {'reply',Result,State}
+	      %% Line 238
+	      <{'validate_api_key',ApiKey},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 239
+			    'do_validate_api_key'/2
+			  (%% Line 239
+			   ApiKey, %% Line 239
+				   State)
+		  in  %% Line 240
+		      {'reply',Result,State}
+	      %% Line 242
+	      <{'validate_oauth2_token',Token},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 243
+			    'do_validate_oauth2_token'/2
+			  (%% Line 243
+			   Token, %% Line 243
+				  State)
+		  in  %% Line 244
+		      {'reply',Result,State}
+	      %% Line 246
+	      <{'validate_mtls',CertInfo},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 247
+			    'do_validate_mtls'/2
+			  (%% Line 247
+			   CertInfo, %% Line 247
+				     State)
+		  in  %% Line 248
+		      {'reply',Result,State}
+	      %% Line 250
+	      <{'check_permission',SessionId,Resource,Permission},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 251
+			    'do_check_permission'/4
+			  (%% Line 251
+			   SessionId, %% Line 251
+				      Resource, %% Line 251
+						Permission, %% Line 251
+							    State)
+		  in  %% Line 252
+		      {'reply',Result,State}
+	      %% Line 254
+	      <{'create_session',UserId,Metadata},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 255
+			    'do_create_session'/3
+			  (%% Line 255
+			   UserId, %% Line 255
+				   Metadata, %% Line 255
+					     State)
+		  in  %% Line 256
+		      {'reply',Result,State}
+	      %% Line 258
+	      <{'destroy_session',SessionId},_X_From,State> when 'true' ->
+		  let <_11> =
+		      case %% Line 259
+			   State of
+			%% Line 259
+			( <( {'state',_rec0,_55,_56,_57,_58,_59,_60,_61,_62,_63}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec0
+			  -| ['compiler_generated'] )
+			%% Line 259
+			( <_rec0> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec0}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  do  %% Line 259
+			  call 'ets':'delete'
+			      (_11, SessionId)
+			  %% Line 260
+			  {'reply','ok',State}
+	      %% Line 262
+	      <{'rotate_token',SessionId},_X_From,State> when 'true' ->
+		  let <Result> =
+		      apply %% Line 263
+			    'do_rotate_token'/2
+			  (%% Line 263
+			   SessionId, %% Line 263
+				      State)
+		  in  %% Line 264
+		      {'reply',Result,State}
+	      %% Line 266
+	      <{'revoke_token',Token},_X_From,State> when 'true' ->
+		  let <_15> =
+		      case %% Line 267
+			   State of
+			%% Line 267
+			( <( {'state',_64,_65,_66,_67,_68,_69,_70,_71,_rec1,_72}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec1
+			  -| ['compiler_generated'] )
+			%% Line 267
+			( <_rec1> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec1}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  let <_13> =
+			  call %% Line 267
+			       'erlang':%% Line 267
+					'system_time'
+			      (%% Line 267
+			       'second')
+		      in  do  %% Line 267
+			      call 'ets':'insert'
+				  (_15, {Token,_13})
+			      do  %% Line 268
+				  call 'logger':'warning'
+				      ([84|[111|[107|[101|[110|[32|[114|[101|[118|[111|[107|[101|[100|[58|[32|[126|[112]]]]]]]]]]]]]]]]], [Token|[]])
+				  %% Line 269
+				  {'reply','ok',State}
+	      %% Line 271
+	      <{'rotate_public_key',KeyId,PublicKeyPem},_X_From,State> when 'true' ->
+		  %% Line 273
+		  try
+		      call 'jose':'jwk_from_pem'
+			  (PublicKeyPem)
+		  of <_16> ->
+		      let <_18> =
+			  case %% Line 275
+			       State of
+			    %% Line 275
+			    ( <( {'state',_73,_74,_rec2,_75,_76,_77,_78,_79,_80,_81}
+				 -| ['compiler_generated'] )> when 'true' ->
+				  _rec2
+			      -| ['compiler_generated'] )
+			    %% Line 275
+			    ( <_rec2> when 'true' ->
+				  ( primop 'match_fail'
+					(( {( 'badrecord'
+					      -| ['compiler_generated'] ),_rec2}
+					   -| ['compiler_generated'] ))
+				    -| ['compiler_generated'] )
+			      -| ['compiler_generated'] )
+			  end
+		      in  do  %% Line 275
+			      call 'ets':'insert'
+				  (_18, {KeyId,PublicKeyPem})
+			      do  %% Line 276
+				  call 'logger':'info'
+				      ([80|[117|[98|[108|[105|[99|[32|[107|[101|[121|[32|[114|[111|[116|[97|[116|[101|[100|[32|[102|[111|[114|[32|[107|[105|[100|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [KeyId|[]])
+				  %% Line 277
+				  {'reply','ok',State}
+		  catch <_22,_21,_20> ->
+		      %% Line 279
+		      case <_22,_21,_20> of
+			<( 'error'
+			   -| ['compiler_generated'] ),_82,_83> when 'true' ->
+			    do  %% Line 280
+				call 'logger':'error'
+				    ([70|[97|[105|[108|[101|[100|[32|[116|[111|[32|[112|[97|[114|[115|[101|[32|[112|[117|[98|[108|[105|[99|[32|[107|[101|[121|[32|[102|[111|[114|[32|[107|[105|[100|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [KeyId|[]])
+				%% Line 281
+				{'reply',{'error','invalid_public_key'},State}
+			( <_151,_152,_153> when 'true' ->
+			      primop 'raise'
+				  (_153, _152)
+			  -| ['compiler_generated'] )
+		      end
+	      %% Line 284
+	      <{'get_user_roles',UserId},_X_From,State> when 'true' ->
+		  let <_24> =
+		      case %% Line 285
+			   State of
+			%% Line 285
+			( <( {'state',_84,_85,_86,_87,_88,_89,_rec3,_90,_91,_92}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec3
+			  -| ['compiler_generated'] )
+			%% Line 285
+			( <_rec3> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec3}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  let <_26> =
+			  case %% Line 285
+			       call 'ets':'lookup'
+				   (_24, UserId) of
+			    %% Line 286
+			    <[{_93,Roles}|[]]> when 'true' ->
+				{'ok',Roles}
+			    %% Line 287
+			    <[]> when 'true' ->
+				{'error','not_found'}
+			    ( <_25> when 'true' ->
+				  %% Line 285
+				  primop 'match_fail'
+				      ({'case_clause',_25})
+			      -| ['compiler_generated'] )
+			  end
+		      in  %% Line 289
+			  {'reply',_26,State}
+	      %% Line 291
+	      <{'get_role_permissions',Role},_X_From,State> when 'true' ->
+		  let <_29> =
+		      case %% Line 292
+			   State of
+			%% Line 292
+			( <( {'state',_94,_95,_96,_97,_98,_rec4,_99,_100,_101,_102}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec4
+			  -| ['compiler_generated'] )
+			%% Line 292
+			( <_rec4> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec4}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  let <_31> =
+			  case %% Line 292
+			       call 'ets':'lookup'
+				   (_29, Role) of
+			    %% Line 293
+			    <[{_103,Permissions}|[]]> when 'true' ->
+				{'ok',Permissions}
+			    %% Line 294
+			    <[]> when 'true' ->
+				{'error','not_found'}
+			    ( <_30> when 'true' ->
+				  %% Line 292
+				  primop 'match_fail'
+				      ({'case_clause',_30})
+			      -| ['compiler_generated'] )
+			  end
+		      in  %% Line 296
+			  {'reply',_31,State}
+	      %% Line 298
+	      <{'add_role',UserId,Role},_X_From,State> when 'true' ->
+		  let <_34> =
+		      case %% Line 299
+			   State of
+			%% Line 299
+			( <( {'state',_104,_105,_106,_107,_108,_109,_rec5,_110,_111,_112}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec5
+			  -| ['compiler_generated'] )
+			%% Line 299
+			( <_rec5> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec5}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  let <_36> =
+			  case %% Line 299
+			       call 'ets':'lookup'
+				   (_34, UserId) of
+			    %% Line 300
+			    <[{_113,ExistingRoles}|[]]> when 'true' ->
+				call 'lists':'usort'
+				    ([Role|ExistingRoles])
+			    %% Line 301
+			    <[]> when 'true' ->
+				[Role|[]]
+			    ( <_35> when 'true' ->
+				  %% Line 299
+				  primop 'match_fail'
+				      ({'case_clause',_35})
+			      -| ['compiler_generated'] )
+			  end
+		      in  let <_39> =
+			      case %% Line 303
+				   State of
+				%% Line 303
+				( <( {'state',_114,_115,_116,_117,_118,_119,_rec6,_120,_121,_122}
+				     -| ['compiler_generated'] )> when 'true' ->
+				      _rec6
+				  -| ['compiler_generated'] )
+				%% Line 303
+				( <_rec6> when 'true' ->
+				      ( primop 'match_fail'
+					    (( {( 'badrecord'
+						  -| ['compiler_generated'] ),_rec6}
+					       -| ['compiler_generated'] ))
+					-| ['compiler_generated'] )
+				  -| ['compiler_generated'] )
+			      end
+			  in  do  %% Line 303
+				  call 'ets':'insert'
+				      (_39, {UserId,_36})
+				  %% Line 304
+				  {'reply','ok',State}
+	      %% Line 306
+	      <{'add_permission',Resource,Permission,Roles},_X_From,State> when 'true' ->
+		  let <_44> =
+		      fun (_42) ->
+			  let <_41> =
+			      case %% Line 308
+				   State of
+				%% Line 308
+				( <( {'state',_123,_124,_125,_126,_127,_128,_129,_rec7,_130,_131}
+				     -| ['compiler_generated'] )> when 'true' ->
+				      _rec7
+				  -| ['compiler_generated'] )
+				%% Line 308
+				( <_rec7> when 'true' ->
+				      ( primop 'match_fail'
+					    (( {( 'badrecord'
+						  -| ['compiler_generated'] ),_rec7}
+					       -| ['compiler_generated'] ))
+					-| ['compiler_generated'] )
+				  -| ['compiler_generated'] )
+			      end
+			  in  %% Line 308
+			      call 'ets':'insert'
+				  (_41, {{Resource,Permission},_42})
+		  in  do  %% Line 307
+			  call 'lists':'foreach'
+			      (_44, %% Line 309
+				    Roles)
+			  %% Line 310
+			  {'reply','ok',State}
+	      %% Line 312
+	      <{'remove_permission',Resource,Permission,Roles},_X_From,State> when 'true' ->
+		  let <_49> =
+		      fun (_47) ->
+			  let <_46> =
+			      case %% Line 314
+				   State of
+				%% Line 314
+				( <( {'state',_132,_133,_134,_135,_136,_137,_138,_rec8,_139,_140}
+				     -| ['compiler_generated'] )> when 'true' ->
+				      _rec8
+				  -| ['compiler_generated'] )
+				%% Line 314
+				( <_rec8> when 'true' ->
+				      ( primop 'match_fail'
+					    (( {( 'badrecord'
+						  -| ['compiler_generated'] ),_rec8}
+					       -| ['compiler_generated'] ))
+					-| ['compiler_generated'] )
+				  -| ['compiler_generated'] )
+			      end
+			  in  %% Line 314
+			      call 'ets':'delete_object'
+				  (_46, {{Resource,Permission},_47})
+		  in  do  %% Line 313
+			  call 'lists':'foreach'
+			      (_49, %% Line 315
+				    Roles)
+			  %% Line 316
+			  {'reply','ok',State}
+	      %% Line 318
+	      <'is_rate_limiter_enabled',_X_From,State> when 'true' ->
+		  let <_51> =
+		      case %% Line 319
+			   State of
+			%% Line 319
+			( <( {'state',_141,_142,_143,_144,_145,_146,_147,_148,_149,_rec9}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec9
+			  -| ['compiler_generated'] )
+			%% Line 319
+			( <_rec9> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec9}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  %% Line 319
+		      {'reply',_51,State}
+	      %% Line 321
+	      <_X_Request,_X_From,State> when 'true' ->
+		  %% Line 322
+		  {'reply',{'error','unknown_request'},State}
+	    end
+	    -| [{'function',{'handle_call',3}}] )
+      -| [{'function',{'handle_call',3}}] )
+'handle_cast'/2 =
+    %% Line 325
+    ( fun (_0,_1) ->
+	  %% Line 326
+	  {'noreply',_1}
+      -| [{'function',{'handle_cast',2}}] )
+'handle_info'/2 =
+    %% Line 329
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <'cleanup_expired',State> when 'true' ->
+		  let <Now> =
+		      call %% Line 330
+			   'erlang':%% Line 330
+				    'system_time'
+			  (%% Line 330
+			   'second')
+		  in  do  %% Line 331
+			  apply 'cleanup_expired_sessions'/2
+			      (State, Now)
+			  do  %% Line 332
+			      apply 'cleanup_revoked_tokens'/2
+				  (State, Now)
+			      let <_3> =
+				  call %% Line 333
+				       'erlang':%% Line 333
+						'self'
+				      ()
+			      in  do  %% Line 333
+				      call 'erlang':'send_after'
+					  (60000, _3, 'cleanup_expired')
+				      %% Line 334
+				      {'noreply',State}
+	      %% Line 336
+	      <_X_Info,State> when 'true' ->
+		  %% Line 337
+		  {'noreply',State}
+	    end
+	    -| [{'function',{'handle_info',2}}] )
+      -| [{'function',{'handle_info',2}}] )
+'terminate'/2 =
+    %% Line 340
+    ( fun (_0,_1) ->
+	  let <_3> =
+	      case _1 of
+		%% Line 341
+		( <( {'state',_rec10,_18,_19,_20,_21,_22,_23,_24,_25,_26}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec10
+		  -| ['compiler_generated'] )
+		%% Line 341
+		( <_rec10> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec10}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  do  %% Line 341
+		  call 'ets':'delete'
+		      (_3)
+		  let <_5> =
+		      case _1 of
+			%% Line 342
+			( <( {'state',_27,_rec11,_28,_29,_30,_31,_32,_33,_34,_35}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec11
+			  -| ['compiler_generated'] )
+			%% Line 342
+			( <_rec11> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec11}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  do  %% Line 342
+			  call 'ets':'delete'
+			      (_5)
+			  let <_7> =
+			      case _1 of
+				%% Line 343
+				( <( {'state',_36,_37,_rec12,_38,_39,_40,_41,_42,_43,_44}
+				     -| ['compiler_generated'] )> when 'true' ->
+				      _rec12
+				  -| ['compiler_generated'] )
+				%% Line 343
+				( <_rec12> when 'true' ->
+				      ( primop 'match_fail'
+					    (( {( 'badrecord'
+						  -| ['compiler_generated'] ),_rec12}
+					       -| ['compiler_generated'] ))
+					-| ['compiler_generated'] )
+				  -| ['compiler_generated'] )
+			      end
+			  in  do  %% Line 343
+				  call 'ets':'delete'
+				      (_7)
+				  let <_9> =
+				      case _1 of
+					%% Line 344
+					( <( {'state',_45,_46,_47,_48,_49,_rec13,_50,_51,_52,_53}
+					     -| ['compiler_generated'] )> when 'true' ->
+					      _rec13
+					  -| ['compiler_generated'] )
+					%% Line 344
+					( <_rec13> when 'true' ->
+					      ( primop 'match_fail'
+						    (( {( 'badrecord'
+							  -| ['compiler_generated'] ),_rec13}
+						       -| ['compiler_generated'] ))
+						-| ['compiler_generated'] )
+					  -| ['compiler_generated'] )
+				      end
+				  in  do  %% Line 344
+					  call 'ets':'delete'
+					      (_9)
+					  let <_11> =
+					      case _1 of
+						%% Line 345
+						( <( {'state',_54,_55,_56,_57,_58,_59,_rec14,_60,_61,_62}
+						     -| ['compiler_generated'] )> when 'true' ->
+						      _rec14
+						  -| ['compiler_generated'] )
+						%% Line 345
+						( <_rec14> when 'true' ->
+						      ( primop 'match_fail'
+							    (( {( 'badrecord'
+								  -| ['compiler_generated'] ),_rec14}
+							       -| ['compiler_generated'] ))
+							-| ['compiler_generated'] )
+						  -| ['compiler_generated'] )
+					      end
+					  in  do  %% Line 345
+						  call 'ets':'delete'
+						      (_11)
+						  let <_13> =
+						      case _1 of
+							%% Line 346
+							( <( {'state',_63,_64,_65,_66,_67,_68,_69,_rec15,_70,_71}
+							     -| ['compiler_generated'] )> when 'true' ->
+							      _rec15
+							  -| ['compiler_generated'] )
+							%% Line 346
+							( <_rec15> when 'true' ->
+							      ( primop 'match_fail'
+								    (( {( 'badrecord'
+									  -| ['compiler_generated'] ),_rec15}
+								       -| ['compiler_generated'] ))
+								-| ['compiler_generated'] )
+							  -| ['compiler_generated'] )
+						      end
+						  in  do  %% Line 346
+							  call 'ets':'delete'
+							      (_13)
+							  let <_15> =
+							      case _1 of
+								%% Line 347
+								( <( {'state',_72,_73,_74,_75,_76,_77,_78,_79,_rec16,_80}
+								     -| ['compiler_generated'] )> when 'true' ->
+								      _rec16
+								  -| ['compiler_generated'] )
+								%% Line 347
+								( <_rec16> when 'true' ->
+								      ( primop 'match_fail'
+									    (( {( 'badrecord'
+										  -| ['compiler_generated'] ),_rec16}
+									       -| ['compiler_generated'] ))
+									-| ['compiler_generated'] )
+								  -| ['compiler_generated'] )
+							      end
+							  in  do  %% Line 347
+								  call 'ets':'delete'
+								      (_15)
+								  %% Line 348
+								  'ok'
+      -| [{'function',{'terminate',2}}] )
+'code_change'/3 =
+    %% Line 351
+    ( fun (_0,_1,_2) ->
+	  %% Line 352
+	  {'ok',_1}
+      -| [{'function',{'code_change',3}}] )
+'init_default_roles'/1 =
+    %% Line 359
+    ( fun (_0) ->
+	  let <_2> =
+	      case ( _0
+		     -| [{'function',{'init_default_roles',1}}] ) of
+		%% Line 361
+		( <( {'state',_8,_9,_10,_11,_12,_rec17,_13,_14,_15,_16}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec17
+		  -| ['compiler_generated'] )
+		%% Line 361
+		( <_rec17> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec17}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  do  %% Line 361
+		  call 'ets':'insert'
+		      (_2, {#{#<97>(8,1,'integer',['unsigned'|['big']]),
+			      #<100>(8,1,'integer',['unsigned'|['big']]),
+			      #<109>(8,1,'integer',['unsigned'|['big']]),
+			      #<105>(8,1,'integer',['unsigned'|['big']]),
+			      #<110>(8,1,'integer',['unsigned'|['big']])}#,[#{#<114>(8,1,'integer',['unsigned'|['big']]),
+									      #<101>(8,1,'integer',['unsigned'|['big']]),
+									      #<97>(8,1,'integer',['unsigned'|['big']]),
+									      #<100>(8,1,'integer',['unsigned'|['big']])}#|[#{#<119>(8,1,'integer',['unsigned'|['big']]),
+															      #<114>(8,1,'integer',['unsigned'|['big']]),
+															      #<105>(8,1,'integer',['unsigned'|['big']]),
+															      #<116>(8,1,'integer',['unsigned'|['big']]),
+															      #<101>(8,1,'integer',['unsigned'|['big']])}#|[#{#<101>(8,1,'integer',['unsigned'|['big']]),
+																					      #<120>(8,1,'integer',['unsigned'|['big']]),
+																					      #<101>(8,1,'integer',['unsigned'|['big']]),
+																					      #<99>(8,1,'integer',['unsigned'|['big']]),
+																					      #<117>(8,1,'integer',['unsigned'|['big']]),
+																					      #<116>(8,1,'integer',['unsigned'|['big']]),
+																					      #<101>(8,1,'integer',['unsigned'|['big']])}#|[#{#<100>(8,1,'integer',['unsigned'|['big']]),
+																											      #<101>(8,1,'integer',['unsigned'|['big']]),
+																											      #<108>(8,1,'integer',['unsigned'|['big']]),
+																											      #<101>(8,1,'integer',['unsigned'|['big']]),
+																											      #<116>(8,1,'integer',['unsigned'|['big']]),
+																											      #<101>(8,1,'integer',['unsigned'|['big']])}#]]]]})
+		  let <_4> =
+		      case ( _0
+			     -| [{'function',{'init_default_roles',1}}] ) of
+			%% Line 363
+			( <( {'state',_17,_18,_19,_20,_21,_rec18,_22,_23,_24,_25}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec18
+			  -| ['compiler_generated'] )
+			%% Line 363
+			( <_rec18> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec18}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  do  %% Line 363
+			  call 'ets':'insert'
+			      (_4, {#{#<117>(8,1,'integer',['unsigned'|['big']]),
+				      #<115>(8,1,'integer',['unsigned'|['big']]),
+				      #<101>(8,1,'integer',['unsigned'|['big']]),
+				      #<114>(8,1,'integer',['unsigned'|['big']])}#,[#{#<114>(8,1,'integer',['unsigned'|['big']]),
+										      #<101>(8,1,'integer',['unsigned'|['big']]),
+										      #<97>(8,1,'integer',['unsigned'|['big']]),
+										      #<100>(8,1,'integer',['unsigned'|['big']])}#|[#{#<119>(8,1,'integer',['unsigned'|['big']]),
+																      #<114>(8,1,'integer',['unsigned'|['big']]),
+																      #<105>(8,1,'integer',['unsigned'|['big']]),
+																      #<116>(8,1,'integer',['unsigned'|['big']]),
+																      #<101>(8,1,'integer',['unsigned'|['big']])}#]]})
+			  let <_6> =
+			      case ( _0
+				     -| [{'function',{'init_default_roles',1}}] ) of
+				%% Line 365
+				( <( {'state',_26,_27,_28,_29,_30,_rec19,_31,_32,_33,_34}
+				     -| ['compiler_generated'] )> when 'true' ->
+				      _rec19
+				  -| ['compiler_generated'] )
+				%% Line 365
+				( <_rec19> when 'true' ->
+				      ( primop 'match_fail'
+					    (( {( 'badrecord'
+						  -| ['compiler_generated'] ),_rec19}
+					       -| ['compiler_generated'] ))
+					-| ['compiler_generated'] )
+				  -| ['compiler_generated'] )
+			      end
+			  in  do  %% Line 365
+				  call 'ets':'insert'
+				      (_6, {#{#<103>(8,1,'integer',['unsigned'|['big']]),
+					      #<117>(8,1,'integer',['unsigned'|['big']]),
+					      #<101>(8,1,'integer',['unsigned'|['big']]),
+					      #<115>(8,1,'integer',['unsigned'|['big']]),
+					      #<116>(8,1,'integer',['unsigned'|['big']])}#,[#{#<114>(8,1,'integer',['unsigned'|['big']]),
+											      #<101>(8,1,'integer',['unsigned'|['big']]),
+											      #<97>(8,1,'integer',['unsigned'|['big']]),
+											      #<100>(8,1,'integer',['unsigned'|['big']])}#]})
+				  %% Line 366
+				  'ok'
+      -| [{'function',{'init_default_roles',1}}] )
+'init_api_keys'/2 =
+    %% Line 369
+    ( fun (_0,_1) ->
+	  let <ApiKeys> =
+	      case _1 of
+		%% Line 370
+		( <~{( 'api_keys'
+		       -| ['compiler_generated'] ):=( _22
+						   -| ['compiler_generated'] )}~> when 'true' ->
+		      ( _22
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+		%% Line 370
+		( <~{}~> when 'true' ->
+		      ~{}~
+		  -| ['compiler_generated'] )
+		%% Line 370
+		( <( _23
+		     -| ['compiler_generated'] )> when 'true' ->
+		      primop 'match_fail'
+			  ({'badmap',( _23
+				       -| ['compiler_generated'] )})
+		  -| ['compiler_generated'] )
+	      end
+	  in  let <_9> =
+		  fun (_6,_5) ->
+		      let <_4> =
+			  case _0 of
+			    %% Line 372
+			    ( <( {'state',_12,_rec20,_13,_14,_15,_16,_17,_18,_19,_20}
+				 -| ['compiler_generated'] )> when 'true' ->
+				  _rec20
+			      -| ['compiler_generated'] )
+			    %% Line 372
+			    ( <_rec20> when 'true' ->
+				  ( primop 'match_fail'
+					(( {( 'badrecord'
+					      -| ['compiler_generated'] ),_rec20}
+					   -| ['compiler_generated'] ))
+				    -| ['compiler_generated'] )
+			      -| ['compiler_generated'] )
+			  end
+		      in  %% Line 372
+			  call 'ets':'insert'
+			      (_4, {_6,_5})
+	      in  do  %% Line 371
+		      call 'maps':'foreach'
+			  (_9, %% Line 373
+			       ApiKeys)
+		      %% Line 374
+		      'ok'
+      -| [{'function',{'init_api_keys',2}}] )
+'init_jwt_keys'/2 =
+    %% Line 377
+    ( fun (_0,_1) ->
+	  let <JwtKeys> =
+	      case _1 of
+		%% Line 378
+		( <~{( 'jwt_keys'
+		       -| ['compiler_generated'] ):=( _22
+						   -| ['compiler_generated'] )}~> when 'true' ->
+		      ( _22
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+		%% Line 378
+		( <~{}~> when 'true' ->
+		      ~{}~
+		  -| ['compiler_generated'] )
+		%% Line 378
+		( <( _23
+		     -| ['compiler_generated'] )> when 'true' ->
+		      primop 'match_fail'
+			  ({'badmap',( _23
+				       -| ['compiler_generated'] )})
+		  -| ['compiler_generated'] )
+	      end
+	  in  let <_9> =
+		  fun (_6,_5) ->
+		      let <_4> =
+			  case _0 of
+			    %% Line 380
+			    ( <( {'state',_12,_13,_rec21,_14,_15,_16,_17,_18,_19,_20}
+				 -| ['compiler_generated'] )> when 'true' ->
+				  _rec21
+			      -| ['compiler_generated'] )
+			    %% Line 380
+			    ( <_rec21> when 'true' ->
+				  ( primop 'match_fail'
+					(( {( 'badrecord'
+					      -| ['compiler_generated'] ),_rec21}
+					   -| ['compiler_generated'] ))
+				    -| ['compiler_generated'] )
+			      -| ['compiler_generated'] )
+			  end
+		      in  %% Line 380
+			  call 'ets':'insert'
+			      (_4, {_6,_5})
+	      in  do  %% Line 379
+		      call 'maps':'foreach'
+			  (_9, %% Line 381
+			       JwtKeys)
+		      %% Line 382
+		      'ok'
+      -| [{'function',{'init_jwt_keys',2}}] )
+'do_authenticate'/3 =
+    %% Line 385
+    ( fun (_0,_1,_2) ->
+	  let <ClientId> =
+	      apply %% Line 387
+		    'get_client_id'/2
+		  (_0, _1)
+	  in  let <IpAddress> =
+		  case _1 of
+		    %% Line 388
+		    ( <~{( 'ip_address'
+			   -| ['compiler_generated'] ):=( _22
+						       -| ['compiler_generated'] )}~> when 'true' ->
+			  ( _22
+			    -| ['compiler_generated'] )
+		      -| ['compiler_generated'] )
+		    %% Line 388
+		    ( <~{}~> when 'true' ->
+			  'undefined'
+		      -| ['compiler_generated'] )
+		    %% Line 388
+		    ( <( _23
+			 -| ['compiler_generated'] )> when 'true' ->
+			  primop 'match_fail'
+			      ({'badmap',( _23
+					   -| ['compiler_generated'] )})
+		      -| ['compiler_generated'] )
+		  end
+	      in  let <_6> =
+		      case _2 of
+			%% Line 391
+			( <( {'state',_12,_13,_14,_15,_16,_17,_18,_19,_20,_rec22}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec22
+			  -| ['compiler_generated'] )
+			%% Line 391
+			( <_rec22> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec22}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  %% Line 391
+		      case _6 of
+			%% Line 392
+			<'true'> when 'true' ->
+			    %% Line 393
+			    case call 'erlmcp_auth_rate_limiter':'check_rate_limit'
+				     (ClientId, IpAddress) of
+			      %% Line 394
+			      <'ok'> when 'true' ->
+				  %% Line 395
+				  apply 'do_authenticate_with_rate_limit'/5
+				      (_0, _1, _2, ClientId, IpAddress)
+			      %% Line 396
+			      <{'error','rate_limited'}> when 'true' ->
+				  do  %% Line 397
+				      call 'logger':'warning'
+					  ([82|[97|[116|[101|[32|[108|[105|[109|[105|[116|[32|[101|[120|[99|[101|[101|[100|[101|[100|[32|[102|[111|[114|[32|[99|[108|[105|[101|[110|[116|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [ClientId|[]])
+				      %% Line 398
+				      {'error','rate_limited'}
+			      %% Line 399
+			      <_@r0 = {'error','blocked',Reason}> when 'true' ->
+				  do  %% Line 400
+				      call 'logger':'warning'
+					  ([67|[108|[105|[101|[110|[116|[32|[98|[108|[111|[99|[107|[101|[100|[58|[32|[126|[112|[44|[32|[114|[101|[97|[115|[111|[110|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [ClientId|[Reason|[]]])
+				      %% Line 401
+				      _@r0
+			      ( <_7> when 'true' ->
+				    primop 'match_fail'
+					({'case_clause',_7})
+				-| ['compiler_generated'] )
+			    end
+			%% Line 403
+			<'false'> when 'true' ->
+			    %% Line 404
+			    apply 'do_authenticate_with_rate_limit'/5
+				(_0, _1, _2, ClientId, IpAddress)
+			( <_8> when 'true' ->
+			      primop 'match_fail'
+				  ({'case_clause',_8})
+			  -| ['compiler_generated'] )
+		      end
+      -| [{'function',{'do_authenticate',3}}] )
+'do_authenticate_with_rate_limit'/5 =
+    %% Line 408
+    ( fun (_0,_1,_2,_3,_4) ->
+	  ( case <_0,_1,_2,_3,_4> of
+	      <'api_key',~{'api_key':=ApiKey}~,State,ClientId,IpAddress> when 'true' ->
+		  %% Line 409
+		  case apply 'do_validate_api_key'/2
+			   (ApiKey, State) of
+		    %% Line 410
+		    <{'ok',UserId}> when 'true' ->
+			do  %% Line 411
+			    call 'erlmcp_auth_rate_limiter':'record_success'
+				(ClientId, IpAddress)
+			    %% Line 412
+			    apply 'do_create_session'/3
+				(UserId, ~{'auth_method'=>'api_key'}~, State)
+		    %% Line 413
+		    <Error> when 'true' ->
+			do  %% Line 414
+			    call 'erlmcp_auth_rate_limiter':'record_failure'
+				(ClientId, IpAddress)
+			    %% Line 415
+			    Error
+		  end
+	      %% Line 417
+	      <'jwt',~{'token':=Token}~,State,ClientId,IpAddress> when 'true' ->
+		  %% Line 418
+		  case apply 'do_validate_jwt'/2
+			   (Token, State) of
+		    %% Line 419
+		    <{'ok',Claims}> when 'true' ->
+			let <UserId> =
+			    case %% Line 420
+				 Claims of
+			      %% Line 420
+			      ( <~{( #{#<115>(8,1,'integer',['unsigned'|['big']]),
+				       #<117>(8,1,'integer',['unsigned'|['big']]),
+				       #<98>(8,1,'integer',['unsigned'|['big']])}#
+				     -| ['compiler_generated'] ):=( _20
+								 -| ['compiler_generated'] )}~> when 'true' ->
+				    ( _20
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			      %% Line 420
+			      ( <~{}~> when 'true' ->
+				    #{#<117>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']]),
+				      #<107>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']]),
+				      #<111>(8,1,'integer',['unsigned'|['big']]),
+				      #<119>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']])}#
+				-| ['compiler_generated'] )
+			      %% Line 420
+			      ( <( _21
+				   -| ['compiler_generated'] )> when 'true' ->
+				    primop 'match_fail'
+					({'badmap',( _21
+						     -| ['compiler_generated'] )})
+				-| ['compiler_generated'] )
+			    end
+			in  do  %% Line 421
+				call 'erlmcp_auth_rate_limiter':'record_success'
+				    (ClientId, IpAddress)
+				let <_7> =
+				    ~{%% Line 422
+				     'auth_method'=>'jwt',%% Line 422
+							  'claims'=>Claims}~
+				in  %% Line 422
+				    apply 'do_create_session'/3
+					(UserId, _7, State)
+		    %% Line 423
+		    <Error> when 'true' ->
+			do  %% Line 424
+			    call 'erlmcp_auth_rate_limiter':'record_failure'
+				(ClientId, IpAddress)
+			    %% Line 425
+			    Error
+		  end
+	      %% Line 427
+	      <'oauth2',~{'token':=Token}~,State,ClientId,IpAddress> when 'true' ->
+		  %% Line 428
+		  case apply 'do_validate_oauth2_token'/2
+			   (Token, State) of
+		    %% Line 429
+		    <{'ok',TokenInfo}> when 'true' ->
+			let <UserId> =
+			    case %% Line 430
+				 TokenInfo of
+			      %% Line 430
+			      ( <~{( #{#<117>(8,1,'integer',['unsigned'|['big']]),
+				       #<115>(8,1,'integer',['unsigned'|['big']]),
+				       #<101>(8,1,'integer',['unsigned'|['big']]),
+				       #<114>(8,1,'integer',['unsigned'|['big']]),
+				       #<95>(8,1,'integer',['unsigned'|['big']]),
+				       #<105>(8,1,'integer',['unsigned'|['big']]),
+				       #<100>(8,1,'integer',['unsigned'|['big']])}#
+				     -| ['compiler_generated'] ):=( _23
+								 -| ['compiler_generated'] )}~> when 'true' ->
+				    ( _23
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			      %% Line 430
+			      ( <~{}~> when 'true' ->
+				    #{#<117>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']]),
+				      #<107>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']]),
+				      #<111>(8,1,'integer',['unsigned'|['big']]),
+				      #<119>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']])}#
+				-| ['compiler_generated'] )
+			      %% Line 430
+			      ( <( _24
+				   -| ['compiler_generated'] )> when 'true' ->
+				    primop 'match_fail'
+					({'badmap',( _24
+						     -| ['compiler_generated'] )})
+				-| ['compiler_generated'] )
+			    end
+			in  do  %% Line 431
+				call 'erlmcp_auth_rate_limiter':'record_success'
+				    (ClientId, IpAddress)
+				let <_10> =
+				    ~{%% Line 432
+				     'auth_method'=>'oauth2',%% Line 432
+							     'token_info'=>TokenInfo}~
+				in  %% Line 432
+				    apply 'do_create_session'/3
+					(UserId, _10, State)
+		    %% Line 433
+		    <Error> when 'true' ->
+			do  %% Line 434
+			    call 'erlmcp_auth_rate_limiter':'record_failure'
+				(ClientId, IpAddress)
+			    %% Line 435
+			    Error
+		  end
+	      %% Line 437
+	      <'mtls',CertInfo,State,ClientId,IpAddress> when 'true' ->
+		  %% Line 438
+		  case apply 'do_validate_mtls'/2
+			   (CertInfo, State) of
+		    %% Line 439
+		    <{'ok',UserId}> when 'true' ->
+			do  %% Line 440
+			    call 'erlmcp_auth_rate_limiter':'record_success'
+				(ClientId, IpAddress)
+			    let <_12> =
+				~{%% Line 441
+				 'auth_method'=>'mtls',%% Line 441
+						       'cert'=>CertInfo}~
+			    in  %% Line 441
+				apply 'do_create_session'/3
+				    (UserId, _12, State)
+		    %% Line 442
+		    <Error> when 'true' ->
+			do  %% Line 443
+			    call 'erlmcp_auth_rate_limiter':'record_failure'
+				(ClientId, IpAddress)
+			    %% Line 444
+			    Error
+		  end
+	      %% Line 446
+	      <_X_Method,_X_Credentials,_X_State,_X_ClientId,_X_IpAddress> when 'true' ->
+		  %% Line 447
+		  {'error','unsupported_auth_method'}
+	    end
+	    -| [{'function',{'do_authenticate_with_rate_limit',5}}] )
+      -| [{'function',{'do_authenticate_with_rate_limit',5}}] )
+'get_client_id'/2 =
+    %% Line 450
+    ( fun (_0,_1) ->
+	  ( case <_0,_1> of
+	      <'api_key',~{'api_key':=ApiKey}~> when 'true' ->
+		  ApiKey
+	      %% Line 451
+	      <'jwt',~{'token':=Token}~> when 'true' ->
+		  Token
+	      %% Line 452
+	      <'oauth2',~{'token':=Token}~> when 'true' ->
+		  Token
+	      %% Line 453
+	      <'mtls',CertInfo> when 'true' ->
+		  ( case CertInfo of
+		      ( <~{( 'cn'
+			     -| ['compiler_generated'] ):=( _7
+							 -| ['compiler_generated'] )}~> when 'true' ->
+			    ( _7
+			      -| ['compiler_generated'] )
+			-| ['compiler_generated'] )
+		      ( <~{}~> when 'true' ->
+			    #{#<117>(8,1,'integer',['unsigned'|['big']]),
+			      #<110>(8,1,'integer',['unsigned'|['big']]),
+			      #<107>(8,1,'integer',['unsigned'|['big']]),
+			      #<110>(8,1,'integer',['unsigned'|['big']]),
+			      #<111>(8,1,'integer',['unsigned'|['big']]),
+			      #<119>(8,1,'integer',['unsigned'|['big']]),
+			      #<110>(8,1,'integer',['unsigned'|['big']])}#
+			-| ['compiler_generated'] )
+		      ( <( _8
+			   -| ['compiler_generated'] )> when 'true' ->
+			    primop 'match_fail'
+				({'badmap',( _8
+					     -| ['compiler_generated'] )})
+			-| ['compiler_generated'] )
+		    end
+		    -| ['compiler_generated'] )
+	      %% Line 454
+	      <_4,_5> when 'true' ->
+		  #{#<117>(8,1,'integer',['unsigned'|['big']]),
+		    #<110>(8,1,'integer',['unsigned'|['big']]),
+		    #<107>(8,1,'integer',['unsigned'|['big']]),
+		    #<110>(8,1,'integer',['unsigned'|['big']]),
+		    #<111>(8,1,'integer',['unsigned'|['big']]),
+		    #<119>(8,1,'integer',['unsigned'|['big']]),
+		    #<110>(8,1,'integer',['unsigned'|['big']])}#
+	    end
+	    -| [{'function',{'get_client_id',2}}] )
+      -| [{'function',{'get_client_id',2}}] )
+'do_validate_jwt'/2 =
+    %% Line 457
+    ( fun (_0,_1) ->
+	  let <_3> =
+	      case _1 of
+		%% Line 459
+		( <( {'state',_7,_8,_9,_10,_11,_12,_13,_14,_rec23,_15}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec23
+		  -| ['compiler_generated'] )
+		%% Line 459
+		( <_rec23> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec23}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  %% Line 459
+	      case call 'ets':'lookup'
+		       (_3, _0) of
+		%% Line 460
+		<[{_16,_17}|[]]> when 'true' ->
+		    {'error','token_revoked'}
+		%% Line 461
+		<[]> when 'true' ->
+		    %% Line 462
+		    apply 'verify_jwt_signature'/2
+			(_0, _1)
+		( <_4> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_4})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'do_validate_jwt',2}}] )
+'verify_jwt_signature'/2 =
+    %% Line 466
+    ( fun (_0,_1) ->
+	  %% Line 467
+	  try
+	      %% Line 469
+	      case call 'binary':'split'
+		       (_0, #{#<46>(8,1,'integer',['unsigned'|['big']])}#, ['global']) of
+		%% Line 470
+		<[HeaderB64|[_X_Payload|[_X_Signature|[]]]]> when 'true' ->
+		    let <HeaderJson> =
+			call %% Line 471
+			     'base64':%% Line 471
+				      'decode'
+			    (%% Line 471
+			     HeaderB64)
+		    in  let <Header> =
+			    call %% Line 472
+				 'jsx':%% Line 472
+				       'decode'
+				(%% Line 472
+				 HeaderJson, %% Line 472
+					     ['return_maps'])
+			in  let <KeyId> =
+				case %% Line 475
+				     Header of
+				  %% Line 475
+				  ( <~{( #{#<107>(8,1,'integer',['unsigned'|['big']]),
+					   #<105>(8,1,'integer',['unsigned'|['big']]),
+					   #<100>(8,1,'integer',['unsigned'|['big']])}#
+					 -| ['compiler_generated'] ):=( _33
+								     -| ['compiler_generated'] )}~> when 'true' ->
+					( _33
+					  -| ['compiler_generated'] )
+				    -| ['compiler_generated'] )
+				  %% Line 475
+				  ( <~{}~> when 'true' ->
+					'undefined'
+				    -| ['compiler_generated'] )
+				  %% Line 475
+				  ( <( _34
+				       -| ['compiler_generated'] )> when 'true' ->
+					primop 'match_fail'
+					    ({'badmap',( _34
+							 -| ['compiler_generated'] )})
+				    -| ['compiler_generated'] )
+				end
+			    in  %% Line 477
+				case KeyId of
+				  %% Line 478
+				  <'undefined'> when 'true' ->
+				      do  %% Line 479
+					  call 'logger':'warning'
+					      ([74|[87|[84|[32|[109|[105|[115|[115|[105|[110|[103|[32|[107|[101|[121|[32|[73|[68|[32|[40|[107|[105|[100|[41|[32|[105|[110|[32|[104|[101|[97|[100|[101|[114]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]])
+					  %% Line 480
+					  {'error','missing_key_id'}
+				  %% Line 481
+				  <_16> when 'true' ->
+				      let <_6> =
+					  case _1 of
+					    %% Line 483
+					    ( <( {'state',_17,_18,_rec24,_19,_20,_21,_22,_23,_24,_25}
+						 -| ['compiler_generated'] )> when 'true' ->
+						  _rec24
+					      -| ['compiler_generated'] )
+					    %% Line 483
+					    ( <_rec24> when 'true' ->
+						  ( primop 'match_fail'
+							(( {( 'badrecord'
+							      -| ['compiler_generated'] ),_rec24}
+							   -| ['compiler_generated'] ))
+						    -| ['compiler_generated'] )
+					      -| ['compiler_generated'] )
+					  end
+				      in  %% Line 483
+					  case call 'ets':'lookup'
+						   (_6, KeyId) of
+					    %% Line 484
+					    <[{_26,PublicKeyPem}|[]]> when 'true' ->
+						%% Line 485
+						apply 'verify_jwt_with_key'/2
+						    (_0, PublicKeyPem)
+					    %% Line 486
+					    <[]> when 'true' ->
+						do  %% Line 487
+						    call 'logger':'warning'
+							([74|[87|[84|[32|[107|[101|[121|[32|[73|[68|[32|[110|[111|[116|[32|[102|[111|[117|[110|[100|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]], [KeyId|[]])
+						    %% Line 488
+						    {'error','unknown_key_id'}
+					    ( <_7> when 'true' ->
+						  primop 'match_fail'
+						      ({'case_clause',_7})
+					      -| ['compiler_generated'] )
+					  end
+				end
+		%% Line 491
+		<_27> when 'true' ->
+		    %% Line 492
+		    {'error','invalid_jwt_format'}
+	      end
+	  of <_10> ->
+	      _10
+	  catch <_13,_12,_11> ->
+	      %% Line 495
+	      case <_13,_12,_11> of
+		<( 'error'
+		   -| ['compiler_generated'] ),( {( 'badmatch'
+						    -| ['compiler_generated'] ),_28}
+						 -| ['compiler_generated'] ),_29> when 'true' ->
+		    {'error','invalid_jwt_format'}
+		%% Line 496
+		<( 'error'
+		   -| ['compiler_generated'] ),_30,_31> when 'true' ->
+		    {'error','invalid_jwt'}
+		( <_35,_36,_37> when 'true' ->
+		      primop 'raise'
+			  (_37, _36)
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'verify_jwt_signature',2}}] )
+'verify_jwt_with_key'/2 =
+    %% Line 500
+    ( fun (_0,_1) ->
+	  %% Line 501
+	  try
+	      let <PublicKey> =
+		  call %% Line 503
+		       'jose':%% Line 503
+			      'jwk_from_pem'
+		      (_1)
+	      in  %% Line 506
+		  case call 'jose':'jwt_verify'
+			   (_0, PublicKey) of
+		    %% Line 507
+		    <{'true',Payload,_11}> when 'true' ->
+			let <Claims> =
+			    call %% Line 508
+				 'jsx':%% Line 508
+				       'decode'
+				(%% Line 508
+				 Payload, %% Line 508
+					  ['return_maps'])
+			in  %% Line 509
+			    apply 'validate_jwt_claims'/1
+				(Claims)
+		    %% Line 510
+		    <{'false',_12,_13}> when 'true' ->
+			do  %% Line 511
+			    call 'logger':'warning'
+				([74|[87|[84|[32|[115|[105|[103|[110|[97|[116|[117|[114|[101|[32|[118|[101|[114|[105|[102|[105|[99|[97|[116|[105|[111|[110|[32|[102|[97|[105|[108|[101|[100]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]])
+			    %% Line 512
+			    {'error','invalid_signature'}
+		    %% Line 513
+		    <{'error',Reason}> when 'true' ->
+			do  %% Line 514
+			    call 'logger':'warning'
+				([74|[87|[84|[32|[118|[101|[114|[105|[102|[105|[99|[97|[116|[105|[111|[110|[32|[101|[114|[114|[111|[114|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]], [Reason|[]])
+			    %% Line 515
+			    {'error','verification_failed'}
+		    ( <_4> when 'true' ->
+			  primop 'match_fail'
+			      ({'case_clause',_4})
+		      -| ['compiler_generated'] )
+		  end
+	  of <_5> ->
+	      _5
+	  catch <_8,_7,_6> ->
+	      %% Line 518
+	      case <_8,_7,_6> of
+		<( 'error'
+		   -| ['compiler_generated'] ),_X_Reason,_14> when 'true' ->
+		    do  %% Line 519
+			call 'logger':'error'
+			    ([70|[97|[105|[108|[101|[100|[32|[116|[111|[32|[112|[97|[114|[115|[101|[32|[112|[117|[98|[108|[105|[99|[32|[107|[101|[121|[32|[111|[114|[32|[118|[101|[114|[105|[102|[121|[32|[74|[87|[84|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_X_Reason|[]])
+			%% Line 520
+			{'error','key_parsing_failed'}
+		( <_15,_16,_17> when 'true' ->
+		      primop 'raise'
+			  (_17, _16)
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'verify_jwt_with_key',2}}] )
+'validate_jwt_claims'/1 =
+    %% Line 524
+    ( fun (_0) ->
+	  let <Now> =
+	      call %% Line 525
+		   'erlang':%% Line 525
+			    'system_time'
+		  (%% Line 525
+		   'second')
+	  in  %% Line 528
+	      case ( case ( _0
+			    -| [{'function',{'validate_jwt_claims',1}}] ) of
+		       ( <~{( #{#<101>(8,1,'integer',['unsigned'|['big']]),
+				#<120>(8,1,'integer',['unsigned'|['big']]),
+				#<112>(8,1,'integer',['unsigned'|['big']])}#
+			      -| ['compiler_generated'] ):=( _5
+							  -| ['compiler_generated'] )}~> when 'true' ->
+			     ( _5
+			       -| ['compiler_generated'] )
+			 -| ['compiler_generated'] )
+		       ( <~{}~> when 'true' ->
+			     'undefined'
+			 -| ['compiler_generated'] )
+		       ( <( _6
+			    -| ['compiler_generated'] )> when 'true' ->
+			     primop 'match_fail'
+				 ({'badmap',( _6
+					      -| ['compiler_generated'] )})
+			 -| ['compiler_generated'] )
+		     end
+		     -| ['compiler_generated'] ) of
+		%% Line 529
+		<'undefined'> when 'true' ->
+		    %% Line 530
+		    {'error','missing_expiration'}
+		%% Line 531
+		<Exp>
+		    when call 'erlang':'=<'
+			  (Exp,
+			   Now) ->
+		    %% Line 532
+		    {'error','token_expired'}
+		%% Line 533
+		<_X_Exp> when 'true' ->
+		    %% Line 535
+		    apply 'validate_nbf_claim'/2
+			(( _0
+			   -| [{'function',{'validate_jwt_claims',1}}] ), Now)
+	      end
+      -| [{'function',{'validate_jwt_claims',1}}] )
+'validate_nbf_claim'/2 =
+    %% Line 539
+    ( fun (_0,_1) ->
+	  %% Line 540
+	  case ( case _0 of
+		   ( <~{( #{#<110>(8,1,'integer',['unsigned'|['big']]),
+			    #<98>(8,1,'integer',['unsigned'|['big']]),
+			    #<102>(8,1,'integer',['unsigned'|['big']])}#
+			  -| ['compiler_generated'] ):=( _6
+						      -| ['compiler_generated'] )}~> when 'true' ->
+			 ( _6
+			   -| ['compiler_generated'] )
+		     -| ['compiler_generated'] )
+		   ( <~{}~> when 'true' ->
+			 'undefined'
+		     -| ['compiler_generated'] )
+		   ( <( _7
+			-| ['compiler_generated'] )> when 'true' ->
+			 primop 'match_fail'
+			     ({'badmap',( _7
+					  -| ['compiler_generated'] )})
+		     -| ['compiler_generated'] )
+		 end
+		 -| ['compiler_generated'] ) of
+	    %% Line 541
+	    <'undefined'> when 'true' ->
+		%% Line 542
+		apply 'validate_issuer_claim'/1
+		    (_0)
+	    %% Line 543
+	    <Nbf>
+		when call 'erlang':'>'
+		      (Nbf,
+		       _1) ->
+		%% Line 544
+		{'error','token_not_yet_valid'}
+	    %% Line 545
+	    <_X_Nbf> when 'true' ->
+		%% Line 546
+		apply 'validate_issuer_claim'/1
+		    (_0)
+	  end
+      -| [{'function',{'validate_nbf_claim',2}}] )
+'validate_issuer_claim'/1 =
+    %% Line 550
+    ( fun (_0) ->
+	  %% Line 551
+	  case ( case ( _0
+			-| [{'function',{'validate_issuer_claim',1}}] ) of
+		   ( <~{( #{#<105>(8,1,'integer',['unsigned'|['big']]),
+			    #<115>(8,1,'integer',['unsigned'|['big']]),
+			    #<115>(8,1,'integer',['unsigned'|['big']])}#
+			  -| ['compiler_generated'] ):=( _7
+						      -| ['compiler_generated'] )}~> when 'true' ->
+			 ( _7
+			   -| ['compiler_generated'] )
+		     -| ['compiler_generated'] )
+		   ( <~{}~> when 'true' ->
+			 'undefined'
+		     -| ['compiler_generated'] )
+		   ( <( _8
+			-| ['compiler_generated'] )> when 'true' ->
+			 primop 'match_fail'
+			     ({'badmap',( _8
+					  -| ['compiler_generated'] )})
+		     -| ['compiler_generated'] )
+		 end
+		 -| ['compiler_generated'] ) of
+	    %% Line 552
+	    <'undefined'> when 'true' ->
+		%% Line 553
+		apply 'validate_subject_claim'/1
+		    (( _0
+		       -| [{'function',{'validate_issuer_claim',1}}] ))
+	    %% Line 554
+	    <Issuer>
+		when try
+		      let <_1> =
+			  call 'erlang':'is_binary'
+			      (Issuer)
+		      in  let <_2> =
+			      call 'erlang':'byte_size'
+				  (Issuer)
+			  in  let <_3> =
+				  call 'erlang':'>'
+				      (_2, 0)
+			      in  call 'erlang':'and'
+				      (_1, _3)
+		  of <Try> ->
+		      Try
+		  catch <T,R> ->
+		      'false' ->
+		%% Line 555
+		apply 'validate_subject_claim'/1
+		    (( _0
+		       -| [{'function',{'validate_issuer_claim',1}}] ))
+	    %% Line 556
+	    <_X_Issuer> when 'true' ->
+		%% Line 557
+		{'error','invalid_issuer'}
+	  end
+      -| [{'function',{'validate_issuer_claim',1}}] )
+'validate_subject_claim'/1 =
+    %% Line 561
+    ( fun (_0) ->
+	  %% Line 562
+	  case ( case ( _0
+			-| [{'function',{'validate_subject_claim',1}}] ) of
+		   ( <~{( #{#<115>(8,1,'integer',['unsigned'|['big']]),
+			    #<117>(8,1,'integer',['unsigned'|['big']]),
+			    #<98>(8,1,'integer',['unsigned'|['big']])}#
+			  -| ['compiler_generated'] ):=( _4
+						      -| ['compiler_generated'] )}~> when 'true' ->
+			 ( _4
+			   -| ['compiler_generated'] )
+		     -| ['compiler_generated'] )
+		   ( <~{}~> when 'true' ->
+			 'undefined'
+		     -| ['compiler_generated'] )
+		   ( <( _5
+			-| ['compiler_generated'] )> when 'true' ->
+			 primop 'match_fail'
+			     ({'badmap',( _5
+					  -| ['compiler_generated'] )})
+		     -| ['compiler_generated'] )
+		 end
+		 -| ['compiler_generated'] ) of
+	    %% Line 563
+	    <'undefined'> when 'true' ->
+		%% Line 564
+		{'error','missing_subject'}
+	    %% Line 565
+	    <_X_Sub> when 'true' ->
+		%% Line 567
+		{'ok',( _0
+			-| [{'function',{'validate_subject_claim',1}}] )}
+	  end
+      -| [{'function',{'validate_subject_claim',1}}] )
+'do_validate_api_key'/2 =
+    %% Line 571
+    ( fun (_0,_1) ->
+	  let <_3> =
+	      case _1 of
+		%% Line 572
+		( <( {'state',_7,_rec25,_8,_9,_10,_11,_12,_13,_14,_15}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec25
+		  -| ['compiler_generated'] )
+		%% Line 572
+		( <_rec25> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec25}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  %% Line 572
+	      case call 'ets':'lookup'
+		       (_3, _0) of
+		%% Line 573
+		<[{_16,UserId}|[]]> when 'true' ->
+		    {'ok',UserId}
+		%% Line 574
+		<[]> when 'true' ->
+		    {'error','invalid_api_key'}
+		( <_4> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_4})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'do_validate_api_key',2}}] )
+'do_validate_oauth2_token'/2 =
+    %% Line 578
+    ( fun (_0,_1) ->
+	  let <_3> =
+	      case _1 of
+		%% Line 581
+		( <( {'state',_8,_9,_10,_rec26,_11,_12,_13,_14,_15,_16}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec26
+		  -| ['compiler_generated'] )
+		%% Line 581
+		( <_rec26> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec26}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  %% Line 582
+	      case ( case _3 of
+		       ( <~{( 'enabled'
+			      -| ['compiler_generated'] ):=( _18
+							  -| ['compiler_generated'] )}~> when 'true' ->
+			     ( _18
+			       -| ['compiler_generated'] )
+			 -| ['compiler_generated'] )
+		       ( <~{}~> when 'true' ->
+			     'false'
+			 -| ['compiler_generated'] )
+		       ( <( _19
+			    -| ['compiler_generated'] )> when 'true' ->
+			     primop 'match_fail'
+				 ({'badmap',( _19
+					      -| ['compiler_generated'] )})
+			 -| ['compiler_generated'] )
+		     end
+		     -| ['compiler_generated'] ) of
+		%% Line 583
+		<'true'> when 'true' ->
+		    %% Line 585
+		    {'ok',~{#{#<115>(8,1,'integer',['unsigned'|['big']]),
+			      #<99>(8,1,'integer',['unsigned'|['big']]),
+			      #<111>(8,1,'integer',['unsigned'|['big']]),
+			      #<112>(8,1,'integer',['unsigned'|['big']]),
+			      #<101>(8,1,'integer',['unsigned'|['big']])}#=>#{#<114>(8,1,'integer',['unsigned'|['big']]),
+									   #<101>(8,1,'integer',['unsigned'|['big']]),
+									   #<97>(8,1,'integer',['unsigned'|['big']]),
+									   #<100>(8,1,'integer',['unsigned'|['big']]),
+									   #<32>(8,1,'integer',['unsigned'|['big']]),
+									   #<119>(8,1,'integer',['unsigned'|['big']]),
+									   #<114>(8,1,'integer',['unsigned'|['big']]),
+									   #<105>(8,1,'integer',['unsigned'|['big']]),
+									   #<116>(8,1,'integer',['unsigned'|['big']]),
+									   #<101>(8,1,'integer',['unsigned'|['big']])}#,#{#<117>(8,1,'integer',['unsigned'|['big']]),
+															   #<115>(8,1,'integer',['unsigned'|['big']]),
+															   #<101>(8,1,'integer',['unsigned'|['big']]),
+															   #<114>(8,1,'integer',['unsigned'|['big']]),
+															   #<95>(8,1,'integer',['unsigned'|['big']]),
+															   #<105>(8,1,'integer',['unsigned'|['big']]),
+															   #<100>(8,1,'integer',['unsigned'|['big']])}#=>#{#<111>(8,1,'integer',['unsigned'|['big']]),
+																					#<97>(8,1,'integer',['unsigned'|['big']]),
+																					#<117>(8,1,'integer',['unsigned'|['big']]),
+																					#<116>(8,1,'integer',['unsigned'|['big']]),
+																					#<104>(8,1,'integer',['unsigned'|['big']]),
+																					#<50>(8,1,'integer',['unsigned'|['big']]),
+																					#<95>(8,1,'integer',['unsigned'|['big']]),
+																					#<117>(8,1,'integer',['unsigned'|['big']]),
+																					#<115>(8,1,'integer',['unsigned'|['big']]),
+																					#<101>(8,1,'integer',['unsigned'|['big']]),
+																					#<114>(8,1,'integer',['unsigned'|['big']])}#}~}
+		%% Line 586
+		<'false'> when 'true' ->
+		    %% Line 587
+		    {'error','oauth2_not_configured'}
+		( <_5> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_5})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'do_validate_oauth2_token',2}}] )
+'do_validate_mtls'/2 =
+    %% Line 591
+    ( fun (_0,_1) ->
+	  let <_3> =
+	      case _1 of
+		%% Line 594
+		( <( {'state',_10,_11,_12,_13,_rec27,_14,_15,_16,_17,_18}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec27
+		  -| ['compiler_generated'] )
+		%% Line 594
+		( <_rec27> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec27}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  %% Line 595
+	      case ( case _3 of
+		       ( <~{( 'enabled'
+			      -| ['compiler_generated'] ):=( _20
+							  -| ['compiler_generated'] )}~> when 'true' ->
+			     ( _20
+			       -| ['compiler_generated'] )
+			 -| ['compiler_generated'] )
+		       ( <~{}~> when 'true' ->
+			     'false'
+			 -| ['compiler_generated'] )
+		       ( <( _21
+			    -| ['compiler_generated'] )> when 'true' ->
+			     primop 'match_fail'
+				 ({'badmap',( _21
+					      -| ['compiler_generated'] )})
+			 -| ['compiler_generated'] )
+		     end
+		     -| ['compiler_generated'] ) of
+		%% Line 596
+		<'true'> when 'true' ->
+		    let <Subject> =
+			case _0 of
+			  %% Line 597
+			  ( <~{( 'subject'
+				 -| ['compiler_generated'] ):=( _23
+							     -| ['compiler_generated'] )}~> when 'true' ->
+				( _23
+				  -| ['compiler_generated'] )
+			    -| ['compiler_generated'] )
+			  %% Line 597
+			  ( <~{}~> when 'true' ->
+				~{}~
+			    -| ['compiler_generated'] )
+			  %% Line 597
+			  ( <( _24
+			       -| ['compiler_generated'] )> when 'true' ->
+				primop 'match_fail'
+				    ({'badmap',( _24
+						 -| ['compiler_generated'] )})
+			    -| ['compiler_generated'] )
+			end
+		    in  let <CN> =
+			    case %% Line 598
+				 Subject of
+			      %% Line 598
+			      ( <~{( 'cn'
+				     -| ['compiler_generated'] ):=( _26
+								 -| ['compiler_generated'] )}~> when 'true' ->
+				    ( _26
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			      %% Line 598
+			      ( <~{}~> when 'true' ->
+				    #{#<117>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']]),
+				      #<107>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']]),
+				      #<111>(8,1,'integer',['unsigned'|['big']]),
+				      #<119>(8,1,'integer',['unsigned'|['big']]),
+				      #<110>(8,1,'integer',['unsigned'|['big']])}#
+				-| ['compiler_generated'] )
+			      %% Line 598
+			      ( <( _27
+				   -| ['compiler_generated'] )> when 'true' ->
+				    primop 'match_fail'
+					({'badmap',( _27
+						     -| ['compiler_generated'] )})
+				-| ['compiler_generated'] )
+			    end
+			in  %% Line 599
+			    {'ok',CN}
+		%% Line 600
+		<'false'> when 'true' ->
+		    %% Line 601
+		    {'error','mtls_not_configured'}
+		( <_7> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_7})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'do_validate_mtls',2}}] )
+'do_check_permission'/4 =
+    %% Line 605
+    ( fun (_0,_1,_2,_3) ->
+	  let <_5> =
+	      case _3 of
+		%% Line 606
+		( <( {'state',_rec28,_13,_14,_15,_16,_17,_18,_19,_20,_21}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec28
+		  -| ['compiler_generated'] )
+		%% Line 606
+		( <_rec28> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec28}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  %% Line 606
+	      case call 'ets':'lookup'
+		       (_5, _0) of
+		%% Line 607
+		<[{_22,Session}|[]]> when 'true' ->
+		    let <_7> =
+			case %% Line 608
+			     Session of
+			  %% Line 608
+			  ( <( {'session',_23,_rec29,_24,_25,_26,_27,_28,_29}
+			       -| ['compiler_generated'] )> when 'true' ->
+				_rec29
+			    -| ['compiler_generated'] )
+			  %% Line 608
+			  ( <_rec29> when 'true' ->
+				( primop 'match_fail'
+				      (( {( 'badrecord'
+					    -| ['compiler_generated'] ),_rec29}
+					 -| ['compiler_generated'] ))
+				  -| ['compiler_generated'] )
+			    -| ['compiler_generated'] )
+			end
+		    in  %% Line 608
+			apply 'check_user_permission'/4
+			    (_7, _1, _2, _3)
+		%% Line 609
+		<[]> when 'true' ->
+		    %% Line 610
+		    {'error','invalid_session'}
+		( <_8> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_8})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'do_check_permission',4}}] )
+'check_user_permission'/4 =
+    %% Line 614
+    ( fun (_0,_1,_2,_3) ->
+	  let <_5> =
+	      case _3 of
+		%% Line 615
+		( <( {'state',_25,_26,_27,_28,_29,_30,_rec30,_31,_32,_33}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec30
+		  -| ['compiler_generated'] )
+		%% Line 615
+		( <_rec30> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec30}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  %% Line 615
+	      case call 'ets':'lookup'
+		       (_5, _0) of
+		%% Line 616
+		<[{_34,Roles}|[]]> when 'true' ->
+		    let <_7> =
+			case _3 of
+			  %% Line 618
+			  ( <( {'state',_35,_36,_37,_38,_39,_40,_41,_rec31,_42,_43}
+			       -| ['compiler_generated'] )> when 'true' ->
+				_rec31
+			    -| ['compiler_generated'] )
+			  %% Line 618
+			  ( <_rec31> when 'true' ->
+				( primop 'match_fail'
+				      (( {( 'badrecord'
+					    -| ['compiler_generated'] ),_rec31}
+					 -| ['compiler_generated'] ))
+				  -| ['compiler_generated'] )
+			    -| ['compiler_generated'] )
+			end
+		    in  let <AllowedRoles> =
+			    call %% Line 618
+				 'ets':%% Line 618
+				       'lookup'
+				(%% Line 618
+				 _7, %% Line 618
+				     {_1,_2})
+			in  let <_14> =
+				letrec
+				    'lc$^0'/1 =
+					%% Line 619
+					fun (_11) ->
+					    case _11 of
+					      <[{_44,Role}|_10]> when 'true' ->
+						  let <_13> =
+						      apply 'lc$^0'/1
+							  (_10)
+						  in  ( [Role|_13]
+							-| ['compiler_generated'] )
+					      ( <[_9|_10]> when 'true' ->
+						    apply 'lc$^0'/1
+							(_10)
+						-| ['compiler_generated'] )
+					      <[]> when 'true' ->
+						  []
+					      ( <_12> when 'true' ->
+						    call 'erlang':'error'
+							({'bad_generator',_12})
+						-| ['compiler_generated'] )
+					    end
+				in  %% Line 619
+				    apply 'lc$^0'/1
+					(AllowedRoles)
+			    in  let <_18> =
+				    fun (_16) ->
+					%% Line 620
+					call 'lists':'member'
+					    (_16, ( _14
+						    -| ['list_comprehension'] ))
+				in  %% Line 620
+				    case call 'lists':'any'
+					     (_18, Roles) of
+				      %% Line 621
+				      <'true'> when 'true' ->
+					  'ok'
+				      %% Line 622
+				      <'false'> when 'true' ->
+					  {'error','forbidden'}
+				      ( <_19> when 'true' ->
+					    primop 'match_fail'
+						({'case_clause',_19})
+					-| ['compiler_generated'] )
+				    end
+		%% Line 624
+		<[]> when 'true' ->
+		    %% Line 625
+		    {'error','user_not_found'}
+		( <_20> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_20})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'check_user_permission',4}}] )
+'do_create_session'/3 =
+    %% Line 629
+    ( fun (_0,_1,_2) ->
+	  let <SessionId> =
+	      apply %% Line 630
+		    'generate_session_id'/0
+		  ()
+	  in  let <Now> =
+		  call %% Line 631
+		       'erlang':%% Line 631
+				'system_time'
+		      (%% Line 631
+		       'second')
+	      in  let <ExpiresAt> =
+		      call %% Line 632
+			   'erlang':%% Line 632
+				    '+'
+			  (%% Line 632
+			   Now, %% Line 632
+				3600)
+		  in  let <_7> =
+			  case _2 of
+			    %% Line 635
+			    ( <( {'state',_26,_27,_28,_29,_30,_31,_rec32,_32,_33,_34}
+				 -| ['compiler_generated'] )> when 'true' ->
+				  _rec32
+			      -| ['compiler_generated'] )
+			    %% Line 635
+			    ( <_rec32> when 'true' ->
+				  ( primop 'match_fail'
+					(( {( 'badrecord'
+					      -| ['compiler_generated'] ),_rec32}
+					   -| ['compiler_generated'] ))
+				    -| ['compiler_generated'] )
+			      -| ['compiler_generated'] )
+			  end
+		      in  let <_9> =
+			      case %% Line 635
+				   call 'ets':'lookup'
+				       (_7, _0) of
+				%% Line 636
+				<[{_35,UserRoles}|[]]> when 'true' ->
+				    UserRoles
+				%% Line 637
+				<[]> when 'true' ->
+				    [#{#<103>(8,1,'integer',['unsigned'|['big']]),
+				       #<117>(8,1,'integer',['unsigned'|['big']]),
+				       #<101>(8,1,'integer',['unsigned'|['big']]),
+				       #<115>(8,1,'integer',['unsigned'|['big']]),
+				       #<116>(8,1,'integer',['unsigned'|['big']])}#]
+				( <_8> when 'true' ->
+				      %% Line 635
+				      primop 'match_fail'
+					  ({'case_clause',_8})
+				  -| ['compiler_generated'] )
+			      end
+			  in  let <_16> =
+				  fun (_14) ->
+				      let <_12> =
+					  case _2 of
+					    %% Line 642
+					    ( <( {'state',_36,_37,_38,_39,_40,_rec33,_41,_42,_43,_44}
+						 -| ['compiler_generated'] )> when 'true' ->
+						  _rec33
+					      -| ['compiler_generated'] )
+					    %% Line 642
+					    ( <_rec33> when 'true' ->
+						  ( primop 'match_fail'
+							(( {( 'badrecord'
+							      -| ['compiler_generated'] ),_rec33}
+							   -| ['compiler_generated'] ))
+						    -| ['compiler_generated'] )
+					      -| ['compiler_generated'] )
+					  end
+				      in  %% Line 642
+					  case call 'ets':'lookup'
+						   (_12, _14) of
+					    %% Line 643
+					    <[{_45,Perms}|[]]> when 'true' ->
+						Perms
+					    %% Line 644
+					    <[]> when 'true' ->
+						[]
+					    ( <_13> when 'true' ->
+						  primop 'match_fail'
+						      ({'case_clause',_13})
+					      -| ['compiler_generated'] )
+					  end
+			      in  let <_17> =
+				      call %% Line 641
+					   'lists':%% Line 641
+						   'flatmap'
+					  (%% Line 641
+					   _16, %% Line 635
+						_9)
+				  in  let <Permissions> =
+					  call %% Line 641
+					       'lists':%% Line 641
+						       'usort'
+					      (%% Line 641
+					       _17)
+				      in  let <_19> =
+					      case _1 of
+						%% Line 653
+						( <~{( 'auth_method'
+						       -| ['compiler_generated'] ):=( _57
+										   -| ['compiler_generated'] )}~> when 'true' ->
+						      ( _57
+							-| ['compiler_generated'] )
+						  -| ['compiler_generated'] )
+						%% Line 653
+						( <~{}~> when 'true' ->
+						      'api_key'
+						  -| ['compiler_generated'] )
+						%% Line 653
+						( <( _58
+						     -| ['compiler_generated'] )> when 'true' ->
+						      primop 'match_fail'
+							  ({'badmap',( _58
+								       -| ['compiler_generated'] )})
+						  -| ['compiler_generated'] )
+					      end
+					  in  let <Session> =
+						  {%% Line 648
+						   'session',%% Line 649
+							     SessionId,_0,%% Line 635
+									  _9,%% Line 652
+									     Permissions,%% Line 653
+											 _19,%% Line 654
+											     Now,%% Line 655
+												 ExpiresAt,_1}
+					      in  let <_22> =
+						      case _2 of
+							%% Line 659
+							( <( {'state',_rec34,_46,_47,_48,_49,_50,_51,_52,_53,_54}
+							     -| ['compiler_generated'] )> when 'true' ->
+							      _rec34
+							  -| ['compiler_generated'] )
+							%% Line 659
+							( <_rec34> when 'true' ->
+							      ( primop 'match_fail'
+								    (( {( 'badrecord'
+									  -| ['compiler_generated'] ),_rec34}
+								       -| ['compiler_generated'] ))
+								-| ['compiler_generated'] )
+							  -| ['compiler_generated'] )
+						      end
+						  in  do  %% Line 659
+							  call 'ets':'insert'
+							      (_22, {SessionId,Session})
+							  do  %% Line 660
+							      call 'logger':'info'
+								  ([83|[101|[115|[115|[105|[111|[110|[32|[99|[114|[101|[97|[116|[101|[100|[32|[102|[111|[114|[32|[117|[115|[101|[114|[32|[126|[112|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]], [_0|[SessionId|[]]])
+							      %% Line 661
+							      {'ok',SessionId}
+      -| [{'function',{'do_create_session',3}}] )
+'do_rotate_token'/2 =
+    %% Line 664
+    ( fun (_0,_1) ->
+	  let <_3> =
+	      case _1 of
+		%% Line 665
+		( <( {'state',_rec35,_18,_19,_20,_21,_22,_23,_24,_25,_26}
+		     -| ['compiler_generated'] )> when 'true' ->
+		      _rec35
+		  -| ['compiler_generated'] )
+		%% Line 665
+		( <_rec35> when 'true' ->
+		      ( primop 'match_fail'
+			    (( {( 'badrecord'
+				  -| ['compiler_generated'] ),_rec35}
+			       -| ['compiler_generated'] ))
+			-| ['compiler_generated'] )
+		  -| ['compiler_generated'] )
+	      end
+	  in  %% Line 665
+	      case call 'ets':'lookup'
+		       (_3, _0) of
+		%% Line 666
+		<[{_27,Session}|[]]> when 'true' ->
+		    let <NewSessionId> =
+			apply %% Line 668
+			      'generate_session_id'/0
+			    ()
+		    in  let <_rec36> =
+			    call %% Line 671
+				 'erlang':%% Line 671
+					  'system_time'
+				(%% Line 671
+				 'second')
+			in  let <_9> =
+				case %% Line 669
+				     Session of
+				  %% Line 670
+				  <{'session',_28,_29,_30,_31,_32,_33,_34,_35}> when 'true' ->
+				      let <_7> =
+					  call %% Line 671
+					       'erlang':%% Line 671
+							'setelement'
+					      (%% Line 671
+					       7, Session, %% Line 671
+							   _rec36)
+				      in  call 'erlang':'setelement'
+					      (2, %% Line 671
+						  _7, NewSessionId)
+				  %% Line 670
+				  ( <( _36
+				       -| ['compiler_generated'] )> when 'true' ->
+					( primop 'match_fail'
+					      (( {( 'badrecord'
+						    -| ['compiler_generated'] ),Session}
+						 -| ['compiler_generated'] ))
+					  -| ['compiler_generated'] )
+				    -| ['compiler_generated'] )
+				end
+			    in  let <_12> =
+				    case _1 of
+				      %% Line 673
+				      ( <( {'state',_rec38,_37,_38,_39,_40,_41,_42,_43,_44,_45}
+					   -| ['compiler_generated'] )> when 'true' ->
+					    _rec38
+					-| ['compiler_generated'] )
+				      %% Line 673
+				      ( <_rec38> when 'true' ->
+					    ( primop 'match_fail'
+						  (( {( 'badrecord'
+							-| ['compiler_generated'] ),_rec38}
+						     -| ['compiler_generated'] ))
+					      -| ['compiler_generated'] )
+					-| ['compiler_generated'] )
+				    end
+				in  do  %% Line 673
+					call 'ets':'insert'
+					    (_12, {NewSessionId,_9})
+					let <_14> =
+					    case _1 of
+					      %% Line 674
+					      ( <( {'state',_rec39,_46,_47,_48,_49,_50,_51,_52,_53,_54}
+						   -| ['compiler_generated'] )> when 'true' ->
+						    _rec39
+						-| ['compiler_generated'] )
+					      %% Line 674
+					      ( <_rec39> when 'true' ->
+						    ( primop 'match_fail'
+							  (( {( 'badrecord'
+								-| ['compiler_generated'] ),_rec39}
+							     -| ['compiler_generated'] ))
+						      -| ['compiler_generated'] )
+						-| ['compiler_generated'] )
+					    end
+					in  do  %% Line 674
+						call 'ets':'delete'
+						    (_14, _0)
+						%% Line 675
+						{'ok',NewSessionId}
+		%% Line 676
+		<[]> when 'true' ->
+		    %% Line 677
+		    {'error','invalid_session'}
+		( <_15> when 'true' ->
+		      primop 'match_fail'
+			  ({'case_clause',_15})
+		  -| ['compiler_generated'] )
+	      end
+      -| [{'function',{'do_rotate_token',2}}] )
+'generate_session_id'/0 =
+    %% Line 681
+    ( fun () ->
+	  let <Rand> =
+	      call %% Line 682
+		   'crypto':%% Line 682
+			    'strong_rand_bytes'
+		  (%% Line 682
+		   32)
+	  in  %% Line 683
+	      call 'base64':'encode'
+		  (Rand)
+      -| [{'function',{'generate_session_id',0}}] )
+'cleanup_expired_sessions'/2 =
+    %% Line 686
+    ( fun (_0,_1) ->
+	  let <_13> =
+	      fun (_10,_9) ->
+		  %% Line 687
+		  case <_10,_9> of
+		    <{SessionId,Session},Acc> when 'true' ->
+			let <_5> =
+			    case %% Line 688
+				 Session of
+			      %% Line 688
+			      ( <( {'session',_16,_17,_18,_19,_20,_21,_rec40,_22}
+				   -| ['compiler_generated'] )> when 'true' ->
+				    _rec40
+				-| ['compiler_generated'] )
+			      %% Line 688
+			      ( <_rec40> when 'true' ->
+				    ( primop 'match_fail'
+					  (( {( 'badrecord'
+						-| ['compiler_generated'] ),_rec40}
+					     -| ['compiler_generated'] ))
+				      -| ['compiler_generated'] )
+				-| ['compiler_generated'] )
+			    end
+			in  do  %% Line 688
+				case call 'erlang':'<'
+					 (_5, _1) of
+				  %% Line 689
+				  <'true'> when 'true' ->
+				      let <_7> =
+					  case _0 of
+					    %% Line 690
+					    ( <( {'state',_rec41,_23,_24,_25,_26,_27,_28,_29,_30,_31}
+						 -| ['compiler_generated'] )> when 'true' ->
+						  _rec41
+					      -| ['compiler_generated'] )
+					    %% Line 690
+					    ( <_rec41> when 'true' ->
+						  ( primop 'match_fail'
+							(( {( 'badrecord'
+							      -| ['compiler_generated'] ),_rec41}
+							   -| ['compiler_generated'] ))
+						    -| ['compiler_generated'] )
+					      -| ['compiler_generated'] )
+					  end
+				      in  do  %% Line 690
+					      call 'ets':'delete'
+						  (_7, SessionId)
+					      %% Line 691
+					      call 'logger':'debug'
+						  ([83|[101|[115|[115|[105|[111|[110|[32|[101|[120|[112|[105|[114|[101|[100|[58|[32|[126|[112]]]]]]]]]]]]]]]]]]], [SessionId|[]])
+				  %% Line 692
+				  <'false'> when 'true' ->
+				      'ok'
+				end
+				%% Line 695
+				Acc
+		    ( <_12,_11> when 'true' ->
+			  primop 'match_fail'
+			      ({'function_clause',_12,_11})
+		      -| ['compiler_generated'] )
+		  end
+	  in  let <_3> =
+		  case _0 of
+		    %% Line 696
+		    ( <( {'state',_rec42,_32,_33,_34,_35,_36,_37,_38,_39,_40}
+			 -| ['compiler_generated'] )> when 'true' ->
+			  _rec42
+		      -| ['compiler_generated'] )
+		    %% Line 696
+		    ( <_rec42> when 'true' ->
+			  ( primop 'match_fail'
+				(( {( 'badrecord'
+				      -| ['compiler_generated'] ),_rec42}
+				   -| ['compiler_generated'] ))
+			    -| ['compiler_generated'] )
+		      -| ['compiler_generated'] )
+		  end
+	      in  %% Line 687
+		  call 'ets':'foldl'
+		      (_13, %% Line 696
+			    'ok', %% Line 696
+				  _3)
+      -| [{'function',{'cleanup_expired_sessions',2}}] )
+'cleanup_revoked_tokens'/2 =
+    %% Line 699
+    ( fun (_0,_1) ->
+	  let <Threshold> =
+	      call %% Line 700
+		   'erlang':%% Line 700
+			    '-'
+		  (_1, %% Line 700
+		       604800)
+	  in  let <_14> =
+		  fun (_11,_10) ->
+		      %% Line 701
+		      case <_11,_10> of
+			<{Token,RevokedAt},Acc> when 'true' ->
+			    do  %% Line 702
+				case call 'erlang':'<'
+					 (RevokedAt, Threshold) of
+				  %% Line 703
+				  <'true'> when 'true' ->
+				      let <_8> =
+					  case _0 of
+					    ( <( {'state',_17,_18,_19,_20,_21,_22,_23,_24,_rec43,_25}
+						 -| ['compiler_generated'] )> when 'true' ->
+						  _rec43
+					      -| ['compiler_generated'] )
+					    ( <_rec43> when 'true' ->
+						  ( primop 'match_fail'
+							(( {( 'badrecord'
+							      -| ['compiler_generated'] ),_rec43}
+							   -| ['compiler_generated'] ))
+						    -| ['compiler_generated'] )
+					      -| ['compiler_generated'] )
+					  end
+				      in  call 'ets':'delete'
+					      (_8, Token)
+				  %% Line 704
+				  <'false'> when 'true' ->
+				      'ok'
+				end
+				%% Line 706
+				Acc
+			( <_13,_12> when 'true' ->
+			      primop 'match_fail'
+				  ({'function_clause',_13,_12})
+			  -| ['compiler_generated'] )
+		      end
+	      in  let <_6> =
+		      case _0 of
+			%% Line 707
+			( <( {'state',_26,_27,_28,_29,_30,_31,_32,_33,_rec44,_34}
+			     -| ['compiler_generated'] )> when 'true' ->
+			      _rec44
+			  -| ['compiler_generated'] )
+			%% Line 707
+			( <_rec44> when 'true' ->
+			      ( primop 'match_fail'
+				    (( {( 'badrecord'
+					  -| ['compiler_generated'] ),_rec44}
+				       -| ['compiler_generated'] ))
+				-| ['compiler_generated'] )
+			  -| ['compiler_generated'] )
+		      end
+		  in  %% Line 701
+		      call 'ets':'foldl'
+			  (_14, %% Line 707
+				'ok', %% Line 707
+				      _6)
+      -| [{'function',{'cleanup_revoked_tokens',2}}] )
+'module_info'/0 =
+    ( fun () ->
+	  call 'erlang':'get_module_info'
+	      ('erlmcp_auth')
+      -| [{'function',{'module_info',0}}] )
+'module_info'/1 =
+    ( fun (_0) ->
+	  call 'erlang':'get_module_info'
+	      ('erlmcp_auth', ( _0
+				-| [{'function',{'module_info',1}}] ))
+      -| [{'function',{'module_info',1}}] )
+end

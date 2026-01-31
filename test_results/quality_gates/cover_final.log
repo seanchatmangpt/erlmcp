@@ -1,0 +1,12 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;31m===> [1mCompiling apps/erlmcp_validation/src/erlmcp_validate_cli.erl failed
+[0m[0m     ┌─ apps/erlmcp_validation/src/erlmcp_validate_cli.erl:
+     │
+ 346 │          _:[1;31mError[0m ->[0m
+     │            [1;31m╰──[0m[0m variable 'Error' unsafe in 'try' (line 330, column 5)
+
+

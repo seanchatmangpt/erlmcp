@@ -1,0 +1,23 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Fetching setup v2.1.0
+[0m[0;32m===> Fetching ctx v0.6.0
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling setup
+[0m[0;32m===> Compiling parse_trans
+[0m[0;32m===> Compiling jobs
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;31m===> [1mCompiling _build/default/lib/chatterbox/src/h2_stream_set.erl failed
+[0m[0m_build/default/lib/chatterbox/ebin/h2_stream_set.bea#:none: error writing file: no such file or directory
+

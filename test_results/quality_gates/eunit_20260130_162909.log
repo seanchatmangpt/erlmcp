@@ -1,0 +1,154 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m[0;32m===> Compiling meck
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 887 │                  [1;31m{[0mnoreply, State};[0m
+     │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 897 │                                  [1;31m{[0mnoreply, State};[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 902 │                                  [1;31m{[0mnoreply, State}[0m
+     │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 908 │                          [1;31m{[0mnoreply, State}[0m
+     │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_json_rpc_tests.erl:
+     │
+ 430 │      ?assertEqual(117, length(ValidCodes[1;31m)),[0m[0m
+     │                                         [1;31m╰──[0m[0m Warning: this clause cannot match because its guard evaluates to 'false'
+
+
+     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+   ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+   │
+ 6 │  -[1;31mrecord[0m(state, {[0m
+   │   [1;31m╰──[0m[0m Warning: record state is unused
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1060 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1060 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1078 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1078 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1102 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1102 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1120 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1120 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1139 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1139 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1157 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1157 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1176 │      [1;31m{[0mtimeout, 5, fun() ->[0m
+      │      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/test/erlmcp_server_tests.erl:
+      │
+ 1176 │      {timeout, 5, [1;31mfun[0m() ->[0m
+      │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mTask failed: {{badmatch,[]},
+                              [{rebar_compiler_format,colorize,2,
+                                [{file,
+                                  "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler_format.erl"},
+                                 {line,74}]},
+                               {rebar_compiler_format,format,5,
+                                [{file,
+                                  "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler_format.erl"},
+                                 {line,25}]},
+                               {rebar_base_compiler,
+                                '-format_errors/4-lc$^1/1-1-',4,
+                                [{file,
+                                  "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                                 {line,278}]},
+                               {rebar_base_compiler,
+                                '-format_errors/4-lc$^0/1-0-',3,
+                                [{file,
+                                  "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                                 {line,278}]},
+                               {rebar_base_compiler,error_tuple,5,
+                                [{file,
+                                  "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_base_compiler.erl"},
+                                 {line,160}]},
+                               {rebar_compiler,compile_worker,2,
+                                [{file,
+                                  "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_compiler.erl"},
+                                 {line,337}]},
+                               {rebar_parallel,worker,3,
+                                [{file,
+                                  "/home/runner/work/rebar3/rebar3/apps/rebar/src/rebar_parallel.erl"},
+                                 {line,260}]}]}
+[0m[0m

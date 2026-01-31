@@ -1,0 +1,19 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling covertool
+[0m[0;32m===> Upgrading fs v0.9.2
+[0m[0;32m===> Fetching ranch v2.1.0
+[0m[0;32m===> Fetching cowlib v2.12.1
+[0m[0;32m===> Fetching ssl_verify_fun v1.1.7
+[0m[0;32m===> Fetching hpack v0.3.0
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling setup
+[0m[0;32m===> Compiling parse_trans
+[0m[0;32m===> Compiling jobs
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;31m===> [1mCompiling _build/default/lib/opentelemetry/src/otel_span_sup.erl failed
+[0m[0m_build/default/lib/opentelemetry/ebin/otel_span_sup.beam:none: failed to rename /Users/sac/erlmcp/_build/default/lib/opentelemetry/ebin/otel_span_sup.bea# to /Users/sac/erlmcp/_build/default/lib/opentelemetry/ebin/otel_span_sup.beam: no such file or directory
+

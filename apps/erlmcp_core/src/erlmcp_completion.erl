@@ -25,7 +25,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Stream process exports
--export([stream_loop/3]).
+-export([stream_loop/7]).
 
 %%====================================================================
 %% Types
@@ -148,18 +148,15 @@ get_cached_completion(Client, Ref, Argument) when is_pid(Client), is_map(Argumen
 add_completion_handler(Server, Ref, Handler) ->
     add_completion_handler(Server, Ref, Handler, <<"general">>).
 
--spec add_completion_handler(pid(), completion_ref(), completion_handler(), binary()) -> ok | {error, term()}.
-add_completion_handler(Server, Ref, Handler, Type) when is_pid(Server), is_binary(Ref), is_binary(Type) ->
-    gen_server:call(Server, {add_completion_handler, Ref, Handler, Type}).
-
-%% Backward compatibility
--spec add_completion_handler(pid(), completion_ref(), completion_handler(), atom() | undefined) -> ok | {error, term()}.
+%% Backward compatibility - converts atom to binary
+-spec add_completion_handler(pid(), completion_ref(), completion_handler(), binary() | atom() | undefined) -> ok | {error, term()}.
 add_completion_handler(Server, Ref, Handler, Type) when is_pid(Server), is_binary(Ref) ->
     TypeBin = case Type of
         undefined -> <<"general">>;
-        Atom when is_atom(Atom) -> atom_to_binary(Atom, utf8)
+        Atom when is_atom(Atom) -> atom_to_binary(Atom, utf8);
+        Binary when is_binary(Binary) -> Binary
     end,
-    add_completion_handler(Server, Ref, Handler, TypeBin).
+    gen_server:call(Server, {add_completion_handler, Ref, Handler, TypeBin}).
 
 -spec add_completion_handler(pid(), completion_ref(), completion_handler(), binary(), completion_context()) ->
     ok | {error, term()}.

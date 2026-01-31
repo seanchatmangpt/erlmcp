@@ -45,7 +45,7 @@ parse_args(["--help"|_]) ->
     {help, ""};
 
 parse_args(["--version"|_]) ->
-    {help, "erlmcp_validate v" ++ ?VERSION};
+    {ok, {version, #{}}};
 
 parse_args(["run"|Rest]) ->
     parse_run_args(Rest, #{});
@@ -163,6 +163,10 @@ execute_command({run, Opts}) ->
             halt(1)
     end;
 
+execute_command({version, _Opts}) ->
+    io:format("erlmcp_validate v~s~n", [?VERSION]),
+    halt(0);
+
 execute_command({report, Opts}) ->
     case generate_report(Opts) of
         {ok, Report} ->
@@ -257,11 +261,11 @@ validate_protocol(Transport) ->
                     compliance => maps:get(compliance, Result, 0.0)
                 }};
             {error, Reason} ->
-                {error, Reason}
+                {error, io_lib:format("~p", [Reason])}
         end
     catch
-        _:Error ->
-            {warning, io_lib:format("Protocol validation error: ~p", [Error])}
+        _:CatchError:_ ->
+            {warning, io_lib:format("Protocol validation error: ~p", [CatchError])}
     end.
 
 %% @doc Validate transport compliance
@@ -276,11 +280,11 @@ validate_transport(Transport) ->
                     compliance => maps:get(compliance, Result, 0.0)
                 }};
             {error, Reason} ->
-                {error, Reason}
+                {error, io_lib:format("~p", [Reason])}
         end
     catch
-        _:Error ->
-            {warning, io_lib:format("Transport validation error: ~p", [Error])}
+        _:CatchError ->
+            {warning, io_lib:format("Transport validation error: ~p", [CatchError])}
     end.
 
 %% @doc Validate security features
@@ -295,11 +299,11 @@ validate_security(Transport) ->
                     compliance => maps:get(compliance, Result, 0.0)
                 }};
             {error, Reason} ->
-                {error, Reason}
+                {error, io_lib:format("~p", [Reason])}
         end
     catch
-        _:Error ->
-            {warning, io_lib:format("Security validation error: ~p", [Error])}
+        _:CatchError ->
+            {warning, io_lib:format("Security validation error: ~p", [CatchError])}
     end.
 
 %% @doc Validate error handling
@@ -317,8 +321,8 @@ validate_error_handling(Transport) ->
                 {warning, "Error code validation returned unexpected format"}
         end
     catch
-        _:Error ->
-            {warning, io_lib:format("Error handling validation error: ~p", [Error])}
+        _:CatchError ->
+            {warning, io_lib:format("Error handling validation error: ~p", [CatchError])}
     end.
 
 %% @doc Validate performance
@@ -334,11 +338,13 @@ validate_performance(Transport) ->
                     throughput => maps:get(throughput, Result, #{})
                 }};
             {error, Reason} ->
-                {error, Reason}
+                {error, io_lib:format("~p", [Reason])};
+            {validation_failed, ValidationError} ->
+                {error, io_lib:format("~p", [ValidationError])}
         end
     catch
-        _:Error ->
-            {warning, io_lib:format("Performance validation error: ~p", [Error])}
+        _:CatchError ->
+            {warning, io_lib:format("Performance validation error: ~p", [CatchError])}
     end.
 
 %% @doc Summarize validation results
@@ -375,19 +381,19 @@ generate_report(Opts) ->
                 test_results => [
                     #{
                         name => "JSON-RPC 2.0 Compliance",
-                        status => "passed",
+                        status => <<"passed">>,
                         requirement_name => "JSON-RPC 2.0",
                         evidence => "Validated jsonrpc version, request/response formats"
                     },
                     #{
                         name => "MCP Protocol Version",
-                        status => "passed",
+                        status => <<"passed">>,
                         requirement_name => "Protocol Version",
                         evidence => "Validated MCP 2025-11-25 version support"
                     },
                     #{
                         name => "Error Codes",
-                        status => "passed",
+                        status => <<"passed">>,
                         requirement_name => "Error Handling",
                         evidence => "Validated MCP refusal codes 1001-1089 and JSON-RPC error codes"
                     }
@@ -459,11 +465,14 @@ show_status(_Opts) ->
 
 %% @doc Check applications
 check_applications() ->
+    %% In escript context, check if modules are loaded instead of starting apps
     RequiredApps = [erlmcp_core, erlmcp_transports, erlmcp_validation],
-    Results = [case application:start(App) of
-        ok -> {App, ok};
-        {error, {already_started, App}} -> {App, ok};
-        Error -> {App, Error}
+    Results = [case application:loaded_applications() of
+        LoadedApps ->
+            case lists:keymember(App, 1, LoadedApps) of
+                true -> {App, ok};
+                false -> {App, {not_loaded, App}}
+            end
     end || App <- RequiredApps],
     {results, Results}.
 
@@ -473,7 +482,10 @@ check_modules() ->
         erlmcp_client, erlmcp_server, erlmcp_registry,
         erlmcp_transport_stdio, erlmcp_transport_tcp, erlmcp_transport_http
     ],
-    Results = [{Mod, code:is_loaded(Mod) =/= false} || Mod <- RequiredModules],
+    Results = [{Mod, case code:is_loaded(Mod) of
+        {file, _} -> true;
+        false -> false
+    end} || Mod <- RequiredModules],
     {results, Results}.
 
 %% @doc Check configuration
@@ -581,6 +593,32 @@ convert_results(Results) ->
         }}
     end, Results).
 
+%% @doc Convert value to JSON-compatible type
+convert_value(V) when is_atom(V) -> atom_to_binary(V, utf8);
+convert_value(V) when is_integer(V) -> V;
+convert_value(V) when is_float(V) -> V;
+convert_value(V) when is_list(V) ->
+    case io_lib:printable_list(V) of
+        true -> list_to_binary(V);
+        false -> list_to_binary(io_lib:format("~p", [V]))
+    end;
+convert_value(V) when is_pid(V) -> list_to_binary(pid_to_list(V));
+convert_value(V) when is_reference(V) -> list_to_binary(ref_to_list(V));
+convert_value(V) when is_port(V) -> list_to_binary(port_to_list(V));
+convert_value(V) when is_tuple(V) ->
+    try
+        list_to_binary(io_lib:format("~p", [V]))
+    catch
+        _:_ -> <<"<<tuple>>">>
+    end;
+convert_value(V) when is_function(V); is_map(V) ->
+    try
+        list_to_binary(io_lib:format("~p", [V]))
+    catch
+        _:_ -> <<"<<complex>>">>
+    end;
+convert_value(V) -> V.
+
 %% @doc Convert details map
 convert_details(Details) when is_map(Details) ->
     maps:map(fun(K, V) ->
@@ -594,13 +632,6 @@ convert_summary(Summary) ->
     maps:map(fun(K, V) ->
         convert_value(V)
     end, Summary).
-
-%% @doc Convert value to JSON-compatible type
-convert_value(V) when is_atom(V) -> atom_to_binary(V, utf8);
-convert_value(V) when is_integer(V) -> V;
-convert_value(V) when is_float(V) -> V;
-convert_value(V) when is_list(V) -> list_to_binary(V);
-convert_value(V) -> V.
 
 %% @doc Convert error message
 convert_error_msg(Msg) when is_list(Msg) -> list_to_binary(Msg);

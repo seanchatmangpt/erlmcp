@@ -1,0 +1,24 @@
+{application, erlmcp_validation,
+ [{description, "Erlang MCP Validation - Compliance, Protocol, Transport, Security, Performance Validators"},
+  {vsn, "2.1.0"},
+  {registered, []},
+  {applications, [
+      kernel,
+      stdlib,
+      jsx,
+      jesse,
+      erlmcp_core,
+      erlmcp_transports
+  ]},
+  {mod, {erlmcp_validation_app, []}},
+  {env, [
+      {validation_defaults, #{
+          max_message_size => 16777216,  % 16MB
+          max_string_length => 1048576,  % 1MB
+          timeout => 5000
+      }}
+  ]},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]}
+ ]}.

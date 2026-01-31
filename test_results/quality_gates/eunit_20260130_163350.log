@@ -1,0 +1,74 @@
+[0;32m===> Fetching rebar3_hex v7.0.11
+[0m[0;32m===> Fetching hex_core v0.10.3
+[0m[0;32m===> Fetching verl v1.1.1
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling verl
+[0m[0;32m===> Compiling hex_core
+[0m[0;31m===> [1mCompiling _build/default/plugins/hex_core/src/safe_erl_term.erl failed
+[0m[0m_build/default/plugins/hex_core/ebin/safe_erl_term.bea#:none: error writing file: no such file or directory
+
+[0;35m===> Errors loading plugin rebar3_hex. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Fetching rebar3_proper v0.12.1
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling rebar3_proper
+[0m[0;31m===> [1mCompiling _build/default/plugins/hex_core/src/hex_pb_versions.erl failed
+[0m[0m_build/default/plugins/hex_core/ebin/hex_pb_versions.bea#:none: error writing file: no such file or directory
+
+[0;35m===> Errors loading plugin {rebar3_proper,"0.12.1"}. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Fetching coveralls v2.2.0
+[0m[0;32m===> Fetching jsx v2.10.0
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling jsx
+[0m[0;31m===> [1mCompiling _build/default/plugins/hex_core/src/hex_pb_names.erl failed
+[0m[0m_build/default/plugins/hex_core/ebin/hex_pb_names.bea#:none: error writing file: no such file or directory
+
+[0;35m===> Errors loading plugin {coveralls,"2.2.0"}. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Verifying dependencies...
+[0m[0;32m===> Fetching coveralls v2.2.0
+[0m[0;32m===> Fetching meck v0.9.2
+[0m[0;32m===> Fetching proper v1.4.0
+[0m[0;32m===> Fetching covertool v2.0.7
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling covertool
+[0m[0;31m===> [1mCompiling _build/default/plugins/hex_core/src/hex_licenses.erl failed
+[0m[0m_build/default/plugins/hex_core/ebin/hex_licenses.bea#:none: error writing file: no such file or directory
+
+[0;35m===> Errors loading plugin covertool. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling covertool
+[0m[0;31m===> [1mCompiling _build/default/plugins/rebar3_proper/src/rebar3_proper.erl failed
+[0m[0m_build/default/plugins/hex_core/ebin/rebar3_proper.bea#:none: error writing file: no such file or directory
+
+[0;35m===> Errors loading plugin covertool. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Fetching bbmustache v1.12.2
+[0m[0;32m===> Fetching cowboy v2.10.0
+[0m[0;32m===> Fetching fs v0.9.2
+[0m[0;32m===> Fetching gproc v0.9.0
+[0m[0;32m===> Fetching gun v2.0.1
+[0m[0;32m===> Fetching jesse v1.8.1
+[0m[0;32m===> Fetching jobs v0.10.0
+[0m[0;32m===> Fetching jose v1.11.1
+[0m[0;32m===> Fetching jsx v3.1.0
+[0m[0;32m===> Fetching opentelemetry v1.7.0
+[0m[0;32m===> Fetching opentelemetry_api v1.5.0
+[0m[0;32m===> Fetching opentelemetry_exporter v1.10.0
+[0m[0;32m===> Fetching poolboy v1.5.2
+[0m[0;32m===> Fetching ranch v2.1.0
+[0m[0;32m===> Fetching cowlib v2.12.1
+[0m[0;32m===> Fetching acceptor_pool v1.0.1
+[0m[0;32m===> Fetching chatterbox v0.15.1
+[0m[0;32m===> Fetching ctx v0.6.0
+[0m[0;32m===> Fetching ssl_verify_fun v1.1.7
+[0m[0;32m===> Fetching hpack v0.3.0
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling setup
+[0m[0;32m===> Compiling parse_trans
+[0m[0;32m===> Compiling jobs
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;31m===> [1mCompiling _build/default/plugins/hex_core/src/hex_pb_package.erl failed
+[0m[0m_build/default/plugins/hex_core/ebin/hex_pb_package.bea#:none: error writing file: no such file or directory
+

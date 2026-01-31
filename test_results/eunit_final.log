@@ -1,0 +1,123 @@
+[0;32m===> Fetching rebar3_auto v0.6.0
+[0m[0;31m===> [1msh(mv /Users/sac/.cache/tmp/.tmp_dir284071941767 /Users/sac/erlmcp/_build/default/plugins/rebar3_auto)
+failed with return code 1 and the following output:
+mv: rename /Users/sac/.cache/tmp/.tmp_dir284071941767 to /Users/sac/erlmcp/_build/default/plugins/rebar3_auto: Directory not empty
+
+[0m[0m[0;35m===> Errors loading plugin rebar3_auto. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Fetching rebar3_hex v7.0.11
+[0m[0;32m===> Fetching hex_core v0.10.3
+[0m[0;31m===> [1msh(mv /Users/sac/.cache/tmp/.tmp_dir13833740139 /Users/sac/erlmcp/_build/default/plugins/hex_core)
+failed with return code 1 and the following output:
+mv: rename /Users/sac/.cache/tmp/.tmp_dir13833740139 to /Users/sac/erlmcp/_build/default/plugins/hex_core: Directory not empty
+
+[0m[0m[0;35m===> Errors loading plugin rebar3_hex. Run rebar3 with DEBUG=1 set to see errors.
+[0m[0;32m===> Fetching rebar3_proper v0.12.1
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling rebar3_proper
+[0m[0;32m===> Fetching coveralls v2.2.0
+[0m[0;32m===> Fetching jsx v2.10.0
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Verifying dependencies...
+[0m[0;32m===> Fetching coveralls v2.2.0
+[0m[0;32m===> Fetching meck v0.9.2
+[0m[0;32m===> Fetching proper v1.4.0
+[0m[0;32m===> Fetching covertool v2.0.7
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling covertool
+[0m[0;32m===> Fetching bbmustache v1.12.2
+[0m[0;32m===> Fetching cowboy v2.10.0
+[0m[0;32m===> Fetching fs v0.9.2
+[0m[0;32m===> Fetching gproc v0.9.0
+[0m[0;32m===> Fetching gun v2.0.1
+[0m[0;32m===> Fetching jesse v1.8.1
+[0m[0;32m===> Fetching jobs v0.10.0
+[0m[0;32m===> Fetching jose v1.11.1
+[0m[0;32m===> Fetching jsx v3.1.0
+[0m[0;32m===> Fetching opentelemetry v1.7.0
+[0m[0;32m===> Fetching opentelemetry_api v1.5.0
+[0m[0;32m===> Fetching opentelemetry_exporter v1.10.0
+[0m[0;32m===> Fetching poolboy v1.5.2
+[0m[0;32m===> Fetching ranch v2.1.0
+[0m[0;32m===> Fetching cowlib v2.12.1
+[0m[0;32m===> Fetching grpcbox v0.17.1
+[0m[0;32m===> Fetching parse_trans v3.4.0
+[0m[0;32m===> Fetching setup v2.1.0
+[0m[0;32m===> Fetching tls_certificate_check v1.31.0
+[0m[0;32m===> Fetching acceptor_pool v1.0.1
+[0m[0;32m===> Fetching chatterbox v0.15.1
+[0m[0;32m===> Fetching ctx v0.6.0
+[0m[0;32m===> Fetching ssl_verify_fun v1.1.7
+[0m[0;32m===> Fetching hpack v0.3.0
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling setup
+[0m[0;32m===> Compiling parse_trans
+[0m[0;32m===> Compiling jobs
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;32m===> Compiling acceptor_pool
+[0m[0;32m===> Compiling grpcbox
+[0m[0;31m===> [1mCompiling _build/default/lib/grpcbox/src/grpcbox_socket.erl failed
+[0m[0m_build/default/lib/grpcbox/ebin/grpcbox_socket.beam:none: failed to rename /Users/sac/erlmcp/_build/default/lib/grpcbox/ebin/grpcbox_socket.bea# to /Users/sac/erlmcp/_build/default/lib/grpcbox/ebin/grpcbox_socket.beam: no such file or directory
+
+[0;32m===> Compiling c_src/mac/cli.c
+[0m[0;32m===> Compiling c_src/mac/compat.c
+[0m[0;32m===> Compiling c_src/mac/main.c
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling fs
+[0m[0;32m===> Compiling rebar3_auto
+[0m[0;32m===> Fetching rebar3_proper v0.12.1
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling rebar3_proper
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Verifying dependencies...
+[0m[0;32m===> Fetching coveralls v2.2.0
+[0m[0;32m===> Fetching meck v0.9.2
+[0m[0;32m===> Fetching proper v1.4.0
+[0m[0;32m===> Fetching covertool v2.0.7
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling covertool
+[0m[0;35m===> Failed to update package index at "/Users/sac/.cache/rebar3/hex/packages.idx": eaccess
+[0m[0;35m===> Failed to update package index at "/Users/sac/.cache/rebar3/hex/packages.idx": eaccess
+[0m[0;32m===> Fetching bbmustache v1.12.2
+[0m[0;32m===> Fetching cowboy v2.10.0
+[0m[0;32m===> Fetching fs v0.9.2
+[0m[0;32m===> Fetching gproc v0.9.0
+[0m[0;32m===> Fetching gun v2.0.1
+[0m[0;32m===> Fetching jesse v1.8.1
+[0m[0;32m===> Fetching jobs v0.10.0
+[0m[0;32m===> Fetching jose v1.11.1
+[0m[0;32m===> Fetching jsx v3.1.0
+[0m[0;32m===> Fetching opentelemetry v1.7.0
+[0m[0;32m===> Fetching opentelemetry_api v1.5.0
+[0m[0;32m===> Fetching opentelemetry_exporter v1.10.0
+[0m[0;32m===> Fetching poolboy v1.5.2
+[0m[0;32m===> Fetching ranch v2.1.0
+[0m[0;32m===> Fetching cowlib v2.12.1
+[0m[0;32m===> Fetching parse_trans v3.4.0
+[0m[0;32m===> Fetching setup v2.1.0
+[0m[0;32m===> Fetching tls_certificate_check v1.31.0
+[0m[0;32m===> Fetching ssl_verify_fun v1.1.7
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling setup
+[0m[0;32m===> Compiling parse_trans
+[0m[0;32m===> Compiling jobs
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;31m===> [1mCompiling _build/default/lib/bbmustache/src/bbmustache.erl failed
+[0m[0m_build/default/lib/bbmustache/ebin/bbmustache.beam:none: failed to rename /Users/sac/erlmcp/_build/default/lib/bbmustache/ebin/bbmustache.bea# to /Users/sac/erlmcp/_build/default/lib/bbmustache/ebin/bbmustache.beam: no such file or directory
+

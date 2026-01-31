@@ -1,0 +1,630 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Dialyzer starting, this may take a while...
+[0m[0;32m===> Updating plt...
+[0m[0;32m===> Resolving project files...
+[0m[0;32m===> Updating base plt...
+[0m[0;32m===> Resolving base files...
+[0m[0;32m===> Checking 218 files in /Users/sac/.cache/rebar3/rebar3_27.3.4.2_plt...
+[0m[0;32m===> Copying /Users/sac/.cache/rebar3/rebar3_27.3.4.2_plt to /Users/sac/erlmcp/_build/default/rebar3_27.3.4.2_plt...
+[0m[0;32m===> Checking 218 files in _build/default/rebar3_27.3.4.2_plt...
+[0m[0;32m===> Adding 493 files to _build/default/rebar3_27.3.4.2_plt...
+[0m[0;32m===> Doing success typing analysis...
+[0m[0;32m===> Resolving project warning files...
+[0m[0;32m===> Analyzing 137 files with _build/default/rebar3_27.3.4.2_plt...
+[0m
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp[0m[4m.erl[0m[0m
+Line [0;36m73[0m Column [0;36m13[0m: [1mThe pattern [0;31m[{Id, Pid, _Config} | _][0m[1m can never match the type [0;32m[{atom(),{_,_}}][0m[0m
+Line [0;36m74[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m[{atom(),{pid(),#{'capabilities'=>{'mcp_server_capabilities',{'mcp_resources_capability',boolean(),boolean()},{'mcp_tools_capability',boolean()},{'mcp_prompts_capability',boolean()},{'mcp_logging_capability'},{'mcp_sampling_capability','undefined' | map()},{'mcp_roots_capability'},'undefined' | {'mcp_capability',boolean()},'undefined' | map()}, 'options'=>map(), _=>_}}}][0m[0m
+Line [0;36m96[0m Column [0;36m5[0m: [1mCall to missing or unexported function [0merlmcp_registry:update_server/2[0m[0m
+Line [0;36m206[0m Column [0;36m13[0m: [1mThe pattern [0;31m[{Id, Pid, _Type, _Config} | _][0m[1m can never match the type [0;32m[{atom() | binary(),{_,_}}][0m[0m
+Line [0;36m207[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m[{atom() | binary(),{pid(),#{'config'=>map(), 'server_id'=>atom(), 'type'=>'http' | 'stdio' | 'tcp', _=>_}}}][0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_auth[0m[4m.erl[0m[0m
+Line [0;36m273[0m Column [0;36m9[0m: [1mUnknown function [0;31mjose:jwk_from_pem/1[0m[0m
+Line [0;36m503[0m Column [0;36m21[0m: [1mUnknown function [0;31mjose:jwk_from_pem/1[0m[0m
+Line [0;36m506[0m Column [0;36m14[0m: [1mUnknown function [0;31mjose:jwt_verify/2[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_batch[0m[4m.erl[0m[0m
+Line [0;36m176[0m Column [0;36m13[0m: [1mRecord construction [0m#adaptive_state{avg_latency::0,load_factor::float()}[1m violates the declared type of field [0mavg_latency::float()[0m[0m
+Line [0;36m298[0m Column [0;36m1[0m: [1mThe pattern [0;31m{'state', _, _, Max, _, _, _, Count, _, _, _}[0m[1m can never match since previous clauses completely covered the type [0;32m#state{strategy::{'adaptive',map()} | {'size',pos_integer()} | {'time',pos_integer()},executor::fun(([any()]) -> [any()]),max_batch_size::pos_integer(),timeout::'infinity' | non_neg_integer(),parallel_workers::pos_integer(),pending_requests::[{_,_,_,_,_},...],batch_count::pos_integer(),timer_ref::'undefined' | reference(),adaptive_state::'undefined' | #adaptive_state{current_size::pos_integer(),min_size::pos_integer(),max_size::pos_integer(),avg_latency::float(),load_factor::float()},stats::#batch_stats{total_requests::non_neg_integer(),total_batches::non_neg_integer(),total_failures::non_neg_integer(),avg_batch_size::float(),avg_latency_us::float(),last_batch_time::'undefined' | {_,_,_}}}[0m[0m
+Line [0;36m348[0m Column [0;36m61[0m: [1mThe call[0m erlmcp_batch:update_adaptive_state(AdaptiveState::#adaptive_state{current_size::pos_integer(),min_size::pos_integer(),max_size::pos_integer(),avg_latency::float(),load_factor::float()}, BatchSize::non_neg_integer(), [0;31mLatencyUs::integer()[0m, Failures::non_neg_integer()) [0m[1mbreaks the contract[0m (adaptive_state(), pos_integer(), [0;32mfloat()[0m, non_neg_integer()) -> adaptive_state()[0m[0m
+Line [0;36m414[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_batch:update_adaptive_state/4.[1m The success typing is[0m (#adaptive_state{current_size::pos_integer(),min_size::pos_integer(),max_size::pos_integer(),avg_latency::float(),load_factor::float()},non_neg_integer(),integer(),non_neg_integer()) -> #adaptive_state{current_size::pos_integer(),min_size::pos_integer(),max_size::pos_integer(),avg_latency::float(),load_factor::float()}[1m but the spec is[0m (adaptive_state(),pos_integer(),float(),non_neg_integer()) -> adaptive_state()[0m[0m
+Line [0;36m459[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_cache[0m[4m.erl[0m[0m
+Line [0;36m261[0m Column [0;36m25[0m: [1mThe pattern [0;31m{'ok', Value, NewState4}[0m[1m can never match the type [0;32m{'error','not_found'}[0m[0m
+Line [0;36m439[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m475[0m Column [0;36m9[0m: [1mThe pattern [0;31m'undefined'[0m[1m can never match the type [0;32m'v1' | 'v2'[0m[0m
+Line [0;36m478[0m Column [0;36m1[0m: [1mMatching of [0mpattern {'state', 'undefined', _, _, _, _, _, _, _, _, _, _, _}[1m tagged with a record name violates the declared type of [0m#state{version::'v1' | 'v2',l1_table::ets:tid(),l2_enabled::boolean(),l3_enabled::boolean(),l3_module::atom(),max_l1_size::pos_integer(),max_l2_size::pos_integer(),default_ttl_seconds::pos_integer(),cleanup_interval_ms::pos_integer(),cleanup_timer::'undefined' | reference(),stats::map()}[0m[0m
+Line [0;36m554[0m Column [0;36m1[0m: [1mFunction [0;31mevict_lru_l1/1 [0m[1mhas no local return[0m[0m
+Line [0;36m556[0m Column [0;36m66[0m: [1mRecord construction [0m#cache_entry{key::'$1',value::'_',level::'_',inserted_at::'_',expires_at::'_',access_count::'_',last_accessed::'$2',etag::'_',tags::'_',dependencies::'_',strategy::'_'}[1m violates the declared type of field [0mlevel::'l1' | 'l2' | 'l3' and inserted_at::integer() and expires_at::'infinity' | integer() and access_count::non_neg_integer() and last_accessed::integer() and etag::'undefined' | binary() and tags::[binary()] and dependencies::[any()] and strategy::'write_back' | 'write_through' | {'lru',pos_integer()} | {'ttl',pos_integer()}[0m[0m
+Line [0;36m663[0m Column [0;36m1[0m: [1mFunction [0;31mput_in_l2/3[0m[1m will never be called[0m[0m
+Line [0;36m716[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'aborted',_} | {'atomic','ok'}[1m, but this value is unmatched[0m[0m
+Line [0;36m736[0m Column [0;36m17[0m: [1mThe pattern [0;31m{'ok', Conn}[0m[1m can never match the type [0;32m{'error','not_implemented'}[0m[0m
+Line [0;36m817[0m Column [0;36m9[0m: [1mThe pattern [0;31m'l3_hit'[0m[1m can never match the type [0;32m'delete' | 'expiration' | 'miss' | 'write'[0m[0m
+Line [0;36m822[0m Column [0;36m9[0m: [1mThe pattern [0;31m'eviction'[0m[1m can never match the type [0;32m'delete' | 'expiration' | 'write'[0m[0m
+Line [0;36m834[0m Column [0;36m1[0m: [1mFunction [0;31mperform_cleanup/1 [0m[1mhas no local return[0m[0m
+Line [0;36m838[0m Column [0;36m63[0m: [1mRecord construction [0m#cache_entry{key::'$1',value::'_',level::'_',inserted_at::'_',expires_at::'$2',access_count::'_',last_accessed::'_',etag::'_',tags::'_',dependencies::'_',strategy::'_'}[1m violates the declared type of field [0mlevel::'l1' | 'l2' | 'l3' and inserted_at::integer() and expires_at::'infinity' | integer() and access_count::non_neg_integer() and last_accessed::integer() and etag::'undefined' | binary() and tags::[binary()] and dependencies::[any()] and strategy::'write_back' | 'write_through' | {'lru',pos_integer()} | {'ttl',pos_integer()}[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_capabilities[0m[4m.erl[0m[0m
+Line [0;36m86[0m Column [0;36m1[0m: [1mFunction [0;31mextract_client_capabilities/1 [0m[1mhas no local return[0m[0m
+Line [0;36m89[0m Column [0;36m17[0m: [1mRecord construction [0m#mcp_client_capabilities{roots::#mcp_capability{enabled::boolean()},sampling::#mcp_capability{enabled::boolean()},tools::#mcp_tools_capability{listChanged::boolean()}}[1m violates the declared type of field [0mroots::'undefined' | map() and sampling::'undefined' | #mcp_sampling_capability{modelPreferences::'undefined' | map()}[0m[0m
+Line [0;36m193[0m Column [0;36m25[0m: [1mRecord construction [0m#mcp_client_capabilities{roots::#mcp_capability{enabled::boolean()},sampling::#mcp_capability{enabled::boolean()},tools::#mcp_tools_capability{listChanged::boolean()}}[1m violates the declared type of field [0mroots::'undefined' | map() and sampling::'undefined' | #mcp_sampling_capability{modelPreferences::'undefined' | map()}[0m[0m
+Line [0;36m217[0m Column [0;36m1[0m: [1mFunction [0;31mnegotiate_capabilities/2 [0m[1mhas no local return[0m[0m
+Line [0;36m240[0m Column [0;36m1[0m: [1mFunction [0;31mnegotiate_experimental/2[0m[1m will never be called[0m[0m
+Line [0;36m272[0m Column [0;36m1[0m: [1mFunction [0;31mnegotiate_experimental_feature/3[0m[1m will never be called[0m[0m
+Line [0;36m292[0m Column [0;36m1[0m: [1mFunction [0;31mapply_graceful_degradation/2 [0m[1mhas no local return[0m[0m
+Line [0;36m295[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'false'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m301[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m346[0m Column [0;36m1[0m: [1mFunction [0;31mget_client_capabilities/0 [0m[1mhas no local return[0m[0m
+Line [0;36m348[0m Column [0;36m17[0m: [1mRecord construction [0m#mcp_client_capabilities{roots::#mcp_capability{enabled::'true'},sampling::#mcp_capability{enabled::'false'},tools::#mcp_tools_capability{listChanged::'false'}}[1m violates the declared type of field [0mroots::'undefined' | map() and sampling::'undefined' | #mcp_sampling_capability{modelPreferences::'undefined' | map()}[0m[0m
+Line [0;36m360[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()}[0m[0m
+Line [0;36m366[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_tools_capability{listChanged::boolean()}[0m[0m
+Line [0;36m371[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_prompts_capability{listChanged::boolean()}[0m[0m
+Line [0;36m376[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_logging_capability{}[0m[0m
+Line [0;36m381[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_sampling_capability{modelPreferences::'undefined' | map()}[0m[0m
+Line [0;36m386[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_roots_capability{}[0m[0m
+Line [0;36m443[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_roots_capability{}[0m[0m
+Line [0;36m512[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()}[0m[0m
+Line [0;36m661[0m Column [0;36m1[0m: [1mFunction [0;31mnegotiate_capability/3[0m[1m will never be called[0m[0m
+Line [0;36m722[0m Column [0;36m1[0m: [1mMatching of [0mpattern {'mcp_capability', 'false'}[1m tagged with a record name violates the declared type of [0m'undefined' | #mcp_logging_capability{} | #mcp_roots_capability{} | #mcp_prompts_capability{listChanged::boolean()} | #mcp_sampling_capability{modelPreferences::'undefined' | map()} | #mcp_tools_capability{listChanged::boolean()} | #mcp_resources_capability{subscribe::boolean(),listChanged::boolean()} | map()[0m[0m
+Line [0;36m730[0m Column [0;36m1[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m'undefined' | #mcp_logging_capability{} | #mcp_roots_capability{} | #mcp_prompts_capability{listChanged::'true'} | #mcp_sampling_capability{modelPreferences::'undefined' | map()} | #mcp_tools_capability{listChanged::'true'} | #mcp_resources_capability{subscribe::boolean(),listChanged::boolean()} | map()[0m[0m
+Line [0;36m743[0m Column [0;36m9[0m: [1mThe pattern [0;31m'false'[0m[1m can never match the type [0;32m'true'[0m[0m
+Line [0;36m748[0m Column [0;36m9[0m: [1mThe pattern [0;31m'false'[0m[1m can never match the type [0;32m'true'[0m[0m
+Line [0;36m784[0m Column [0;36m1[0m: [1mFunction [0;31mvalidate_capability_structures/2 [0m[1mhas no local return[0m[0m
+Line [0;36m793[0m Column [0;36m1[0m: [1mFunction [0;31mvalidate_client_capability_record/1 [0m[1mhas no local return[0m[0m
+Line [0;36m796[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', IsEnabled}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m830[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_tools_capability{listChanged::boolean()}[0m[0m
+Line [0;36m835[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_prompts_capability{listChanged::boolean()}[0m[0m
+Line [0;36m840[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_logging_capability{}[0m[0m
+Line [0;36m848[0m Column [0;36m17[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m850[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_sampling_capability{modelPreferences::'undefined' | map()}[0m[0m
+Line [0;36m855[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_roots_capability{}[0m[0m
+Line [0;36m906[0m Column [0;36m17[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m907[0m Column [0;36m17[0m: [1mMatching of [0mpattern {'mcp_capability', 'false'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m914[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()}[0m[0m
+Line [0;36m931[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m'undefined' | #mcp_sampling_capability{modelPreferences::'undefined' | map()}[0m[0m
+Line [0;36m936[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'false'}[1m tagged with a record name violates the declared type of [0m'undefined' | #mcp_sampling_capability{modelPreferences::'undefined' | map()}[0m[0m
+Line [0;36m943[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m945[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'false'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m974[0m Column [0;36m1[0m: [1mFunction [0;31mapply_graceful_degradation_enhanced/2 [0m[1mhas no local return[0m[0m
+Line [0;36m978[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'false'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m981[0m Column [0;36m9[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m'undefined' | map()[0m[0m
+Line [0;36m1160[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()}[0m[0m
+Line [0;36m1167[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_tools_capability{listChanged::boolean()}[0m[0m
+Line [0;36m1174[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#mcp_prompts_capability{listChanged::boolean()}[0m[0m
+Line [0;36m1287[0m Column [0;36m9[0m: [1mThe pattern [0;31m'undefined'[0m[1m can never match the type [0;32m#mcp_tools_capability{listChanged::boolean()}[0m[0m
+Line [0;36m1304[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1311[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1322[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1329[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1340[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1347[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1358[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1365[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1381[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+Line [0;36m1393[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | map()[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_circuit_breaker[0m[4m.erl[0m[0m
+Line [0;36m531[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m560[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_client[0m[4m.erl[0m[0m
+Line [0;36m232[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok','erlmcp_client_transport',pid() | map()}[0m[0m
+Line [0;36m638[0m Column [0;36m1[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m#mcp_sampling_capability{modelPreferences::'undefined' | map()} | map()[0m[0m
+Line [0;36m648[0m Column [0;36m1[0m: [1mThe pattern [0;31m<Map, _>[0m[1m can never match since previous clauses completely covered the type [0;32m<#{},'undefined' | map()>[0m[0m
+Line [0;36m664[0m Column [0;36m30[0m: [1mThe call[0m erlmcp_client:check_capability_enabled([0;31m#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()}[0m) [0m[1mbreaks the contract[0m ([0;32m#mcp_capability{} | 'undefined'[0m) -> 'ok' | {'error','capability_not_supported'}[0m[0m
+Line [0;36m666[0m Column [0;36m30[0m: [1mThe call[0m erlmcp_client:check_capability_enabled([0;31m#mcp_tools_capability{listChanged::boolean()}[0m) [0m[1mbreaks the contract[0m ([0;32m#mcp_capability{} | 'undefined'[0m) -> 'ok' | {'error','capability_not_supported'}[0m[0m
+Line [0;36m668[0m Column [0;36m30[0m: [1mThe call[0m erlmcp_client:check_capability_enabled([0;31m#mcp_prompts_capability{listChanged::boolean()}[0m) [0m[1mbreaks the contract[0m ([0;32m#mcp_capability{} | 'undefined'[0m) -> 'ok' | {'error','capability_not_supported'}[0m[0m
+Line [0;36m674[0m Column [0;36m1[0m: [1mThe pattern [0;31m<_Caps, _>[0m[1m can never match since previous clauses completely covered the type [0;32m<#mcp_server_capabilities{resources::#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()},tools::#mcp_tools_capability{listChanged::boolean()},prompts::#mcp_prompts_capability{listChanged::boolean()},logging::#mcp_logging_capability{},sampling::#mcp_sampling_capability{modelPreferences::'undefined' | map()},roots::#mcp_roots_capability{},completions::'undefined' | #mcp_capability{enabled::boolean()},experimental::'undefined' | map()},'completions' | 'prompts' | 'resources' | 'tools'>[0m[0m
+Line [0;36m677[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_client:check_capability_enabled/1.[1m The success typing is[0m (#mcp_prompts_capability{listChanged::boolean()} | #mcp_tools_capability{listChanged::boolean()} | #mcp_resources_capability{subscribe::boolean(),listChanged::boolean()}) -> {'error','capability_not_supported'}[1m but the spec is[0m (#mcp_capability{} | 'undefined') -> 'ok' | {'error','capability_not_supported'}[0m[0m
+Line [0;36m679[0m Column [0;36m1[0m: [1mMatching of [0mpattern {'mcp_capability', 'true'}[1m tagged with a record name violates the declared type of [0m#mcp_prompts_capability{listChanged::boolean()} | #mcp_tools_capability{listChanged::boolean()} | #mcp_resources_capability{subscribe::boolean(),listChanged::boolean()}[0m[0m
+Line [0;36m731[0m Column [0;36m29[0m: [1mRecord construction [0m#mcp_server_capabilities{resources::'undefined' | #mcp_capability{enabled::'true'},tools::'undefined' | #mcp_capability{enabled::'true'},prompts::'undefined' | #mcp_capability{enabled::'true'},logging::'undefined' | #mcp_capability{enabled::'true'},sampling::#mcp_sampling_capability{},roots::#mcp_roots_capability{}}[1m violates the declared type of field [0mresources::#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()} and tools::#mcp_tools_capability{listChanged::boolean()} and prompts::#mcp_prompts_capability{listChanged::boolean()} and logging::#mcp_logging_capability{}[0m[0m
+Line [0;36m892[0m Column [0;36m17[0m: [1mThe call[0m ets:select_delete('erlmcp_correlation_table', [0;31mfun((_) -> boolean())[0m) [0m[1mwill never return since the success typing is [0m(atom() | ets:tid(), [0;32m[{atom() | tuple(),[any()],[any()]}][0m) [1m->[0m non_neg_integer() [1mand the contract is [0m(Table, [0;32mMatchSpec[0m) -> NumDeleted when Table :: table(), MatchSpec :: match_spec(), NumDeleted :: non_neg_integer()[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_client_transport[0m[4m.erl[0m[0m
+Line [0;36m269[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error','not_found'}[1m, but this value is unmatched[0m[0m
+Line [0;36m273[0m Column [0;36m40[0m: [1mThe call[0m erlmcp_transport_tcp:close([0;31mPid::pid()[0m) [0m[1mbreaks the contract[0m ([0;32mstate()[0m) -> 'ok'[0m[0m
+Line [0;36m306[0m Column [0;36m31[0m: [1mThe call[0m erlmcp_transport_tcp:send([0;31mPid::pid()[0m, Data::any()) [0m[1mbreaks the contract[0m ([0;32mstate()[0m, iodata()) -> 'ok' | {'error',term()}[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_code_reload[0m[4m.erl[0m[0m
+Line [0;36m229[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', WaitErr}[0m[1m can never match the type [0;32m'ok'[0m[0m
+Line [0;36m317[0m Column [0;36m9[0m: [1mThe variable [0;31mCount[0m[1m can never match since previous clauses completely covered the type [0;32m0[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_completion[0m[4m.erl[0m[0m
+Line [0;36m559[0m Column [0;36m1[0m: [1mFunction [0;31mstream_loop/7 [0m[1monly terminates with explicit exception[0m[0m
+Line [0;36m600[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_completion:rank_completions_with_threshold/3.[1m The success typing is[0m (map(),[any()],_) -> [#{'score':=float(), _=>_}][1m but the spec is[0m (argument(),[completion_item()],float()) -> [completion_item()][0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_connection_limiter[0m[4m.erl[0m[0m
+Line [0;36m333[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | [integer()] | integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m348[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | [integer()] | integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_connection_monitor[0m[4m.erl[0m[0m
+Line [0;36m152[0m Column [0;36m9[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_cpu_quota[0m[4m.erl[0m[0m
+Line [0;36m115[0m Column [0;36m1[0m: [1mFunction [0;31mrecord_operation/2 [0m[1mhas no local return[0m[0m
+Line [0;36m116[0m Column [0;36m32[0m: [1mThe call[0m erlmcp_cpu_quota:record_operation(ClientId::any(), [0;31m'undefined'[0m, CpuTimeMs::any()) [0m[1mbreaks the contract[0m (client_id(), [0;32moperation_type()[0m, cpu_time_ms()) -> 'ok'[0m[0m
+Line [0;36m319[0m Column [0;36m38[0m: [1mRecord construction violates the declared type for [0m#client_stats{}[1m since [0mvariable CpuTimeMs[1m cannot be of type [0mfloat()[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_elicitation[0m[4m.erl[0m[0m
+Line [0;36m311[0m Column [0;36m31[0m: [1mThe call[0m erlmcp_elicitation:is_private_ip([0;31mIPAddr::{'ok',{byte(),byte(),byte(),byte()}}[0m) [0m[1mwill never return since the success typing is [0m([0;32m{_,_,_,_}[0m) [1m->[0m boolean() [1mand the contract is [0m([0;32m{integer(),integer(),integer(),integer()}[0m) -> boolean()[0m[0m
+Line [0;36m322[0m Column [0;36m1[0m: [1mFunction [0;31mis_private_ip/1 [0m[1mhas no local return[0m[0m
+Line [0;36m322[0m Column [0;36m1[0m: [1mThe pattern [0;31m{A, B, C, D}[0m[1m can never match the type [0;32m{'ok',{byte(),byte(),byte(),byte()}}[0m[0m
+Line [0;36m332[0m Column [0;36m1[0m: [1mFunction [0;31mis_in_network/3[0m[1m will never be called[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_graceful_drain[0m[4m.erl[0m[0m
+Line [0;36m93[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_hooks[0m[4m.erl[0m[0m
+Line [0;36m304[0m Column [0;36m26[0m: [1mUnknown function [0;31mtcps_quality_gates:check_all_gates/1[0m[0m
+Line [0;36m424[0m Column [0;36m17[0m: [1mUnknown function [0;31mtcps_quality_gates:get_quality_metrics/0[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_json_rpc[0m[4m.erl[0m[0m
+Line [0;36m481[0m Column [0;36m1[0m: [1mFunction [0;31merror_tool_description_too_large/3[0m[1m will never be called[0m[0m
+Line [0;36m492[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_content_type/2[0m[1m will never be called[0m[0m
+Line [0;36m499[0m Column [0;36m1[0m: [1mFunction [0;31merror_content_too_large/3[0m[1m will never be called[0m[0m
+Line [0;36m510[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_encoding/2[0m[1m will never be called[0m[0m
+Line [0;36m521[0m Column [0;36m1[0m: [1mFunction [0;31merror_resource_template_not_found/2[0m[1m will never be called[0m[0m
+Line [0;36m528[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_uri/2[0m[1m will never be called[0m[0m
+Line [0;36m534[0m Column [0;36m1[0m: [1mFunction [0;31merror_uri_syntax_error/3[0m[1m will never be called[0m[0m
+Line [0;36m544[0m Column [0;36m1[0m: [1mFunction [0;31merror_resource_access_denied/2[0m[1m will never be called[0m[0m
+Line [0;36m551[0m Column [0;36m1[0m: [1mFunction [0;31merror_template_render_failed/3[0m[1m will never be called[0m[0m
+Line [0;36m566[0m Column [0;36m1[0m: [1mFunction [0;31merror_tool_execution_failed/3[0m[1m will never be called[0m[0m
+Line [0;36m577[0m Column [0;36m1[0m: [1mFunction [0;31merror_tool_timeout/3[0m[1m will never be called[0m[0m
+Line [0;36m587[0m Column [0;36m1[0m: [1mFunction [0;31merror_tool_cancelled/2[0m[1m will never be called[0m[0m
+Line [0;36m593[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_tool_arguments/3[0m[1m will never be called[0m[0m
+Line [0;36m608[0m Column [0;36m1[0m: [1mFunction [0;31merror_prompt_argument_missing/3[0m[1m will never be called[0m[0m
+Line [0;36m619[0m Column [0;36m1[0m: [1mFunction [0;31merror_prompt_render_failed/3[0m[1m will never be called[0m[0m
+Line [0;36m630[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_prompt_arguments/3[0m[1m will never be called[0m[0m
+Line [0;36m641[0m Column [0;36m1[0m: [1mFunction [0;31merror_sampling_failed/2[0m[1m will never be called[0m[0m
+Line [0;36m651[0m Column [0;36m1[0m: [1mFunction [0;31merror_authentication_failed/2[0m[1m will never be called[0m[0m
+Line [0;36m658[0m Column [0;36m1[0m: [1mFunction [0;31merror_authorization_failed/2[0m[1m will never be called[0m[0m
+Line [0;36m665[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_credentials/1[0m[1m will never be called[0m[0m
+Line [0;36m671[0m Column [0;36m1[0m: [1mFunction [0;31merror_token_expired/1[0m[1m will never be called[0m[0m
+Line [0;36m676[0m Column [0;36m1[0m: [1mFunction [0;31merror_access_denied/2[0m[1m will never be called[0m[0m
+Line [0;36m686[0m Column [0;36m1[0m: [1mFunction [0;31merror_unsupported_protocol_version/2[0m[1m will never be called[0m[0m
+Line [0;36m693[0m Column [0;36m1[0m: [1mFunction [0;31merror_protocol_version_mismatch/3[0m[1m will never be called[0m[0m
+Line [0;36m704[0m Column [0;36m1[0m: [1mFunction [0;31merror_capability_negotiation_failed/2[0m[1m will never be called[0m[0m
+Line [0;36m711[0m Column [0;36m1[0m: [1mFunction [0;31merror_method_not_supported/2[0m[1m will never be called[0m[0m
+Line [0;36m722[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_cursor/2[0m[1m will never be called[0m[0m
+Line [0;36m728[0m Column [0;36m1[0m: [1mFunction [0;31merror_cursor_expired/2[0m[1m will never be called[0m[0m
+Line [0;36m734[0m Column [0;36m1[0m: [1mFunction [0;31merror_pagination_not_supported/2[0m[1m will never be called[0m[0m
+Line [0;36m741[0m Column [0;36m1[0m: [1mFunction [0;31merror_page_size_too_large/3[0m[1m will never be called[0m[0m
+Line [0;36m756[0m Column [0;36m1[0m: [1mFunction [0;31merror_task_not_found/2[0m[1m will never be called[0m[0m
+Line [0;36m762[0m Column [0;36m1[0m: [1mFunction [0;31merror_task_already_exists/2[0m[1m will never be called[0m[0m
+Line [0;36m769[0m Column [0;36m1[0m: [1mFunction [0;31merror_task_failed/3[0m[1m will never be called[0m[0m
+Line [0;36m778[0m Column [0;36m1[0m: [1mFunction [0;31merror_task_cancelled/2[0m[1m will never be called[0m[0m
+Line [0;36m784[0m Column [0;36m1[0m: [1mFunction [0;31merror_task_timeout/3[0m[1m will never be called[0m[0m
+Line [0;36m797[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_progress_token/2[0m[1m will never be called[0m[0m
+Line [0;36m804[0m Column [0;36m1[0m: [1mFunction [0;31merror_progress_token_expired/2[0m[1m will never be called[0m[0m
+Line [0;36m811[0m Column [0;36m1[0m: [1mFunction [0;31merror_progress_update_failed/3[0m[1m will never be called[0m[0m
+Line [0;36m822[0m Column [0;36m1[0m: [1mFunction [0;31merror_notification_failed/3[0m[1m will never be called[0m[0m
+Line [0;36m833[0m Column [0;36m1[0m: [1mFunction [0;31merror_notification_queue_full/2[0m[1m will never be called[0m[0m
+Line [0;36m844[0m Column [0;36m1[0m: [1mFunction [0;31merror_completion_not_found/2[0m[1m will never be called[0m[0m
+Line [0;36m851[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_completion_reference/2[0m[1m will never be called[0m[0m
+Line [0;36m858[0m Column [0;36m1[0m: [1mFunction [0;31merror_invalid_completion_argument/3[0m[1m will never be called[0m[0m
+Line [0;36m869[0m Column [0;36m1[0m: [1mFunction [0;31merror_completion_failed/3[0m[1m will never be called[0m[0m
+Line [0;36m953[0m Column [0;36m17[0m: [1mThe variable [0;31mError[0m[1m can never match since previous clauses completely covered the type [0;32m{'ok',[#json_rpc_notification{method::binary(),params::'undefined' | [any()] | map()} | #json_rpc_request{id::'null' | binary() | integer(),method::binary(),params::'undefined' | [any()] | map()} | #json_rpc_response{id::'null' | binary() | integer(),error::'undefined' | map()}]}[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_node_monitor[0m[4m.erl[0m[0m
+Line [0;36m142[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m148[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'error' | 'ok' | {'error',_}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_progress[0m[4m.erl[0m[0m
+Line [0;36m324[0m Column [0;36m1[0m: [1mFunction [0;31mformat_progress/1 [0m[1mhas no local return[0m[0m
+Line [0;36m332[0m Column [0;36m28[0m: [1mRecord construction [0m#progress_info{token::'undefined',total::'undefined' | number(),current::number(),start_time::'undefined',metadata::'undefined'}[1m violates the declared type of field [0mtoken::reference() and start_time::integer() and metadata::map()[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_prompt_template[0m[4m.erl[0m[0m
+Line [0;36m316[0m Column [0;36m18[0m: [1mUnknown function [0;31mbbmustache:render/2[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_rate_limit_middleware[0m[4m.erl[0m[0m
+Line [0;36m93[0m Column [0;36m55[0m: [1mUnknown type [0;31merlmcp_rate_limiter:priority/0[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_rate_limiter[0m[4m.erl[0m[0m
+Line [0;36m413[0m Column [0;36m33[0m: [1mThe call[0m gproc:lookup_value([0;31mKey::{'c','l',{'rate_limit',_}}[0m) [0m[1mwill never return since it differs in the[0m [1;34m1[0mst[0m [1margument from the success typing arguments:[0m ([0;32m{'a',_,_} | {'n',_,_} | {'rc',_,_}[0m)[0m[0m
+Line [0;36m503[0m Column [0;36m9[0m: [1mThe pattern [0;31m'undefined'[0m[1m can never match the type [0;32m'v1' | 'v2'[0m[0m
+Line [0;36m506[0m Column [0;36m1[0m: [1mMatching of [0mpattern {'state', 'undefined', _, _, _, _, _}[1m tagged with a record name violates the declared type of [0m#state{version::'v1' | 'v2',config::#{atom()=>_},clients::atom() | ets:tid(),global_bucket::{float(),integer()},violations::atom() | ets:tid(),last_cleanup::integer()}[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_registry_dist[0m[4m.erl[0m[0m
+Line [0;36m215[0m Column [0;36m36[0m: [1mThe call[0m gproc:select([0;31mPattern::{{{'n','g',{'mcp_global','server','$1'}},'$2','$3'},[],[{{'$1',{{'$2','$3'}}}},...]}[0m) [0m[1mwill never return since it differs in the[0m [1;34m1[0mst[0m [1margument from the success typing arguments:[0m ([0;32m[{_,[any()],[any()]},...] | {'gproc',_,_,integer(),ets:compiled_match_spec(),[any()],integer(),integer()}[0m)[0m[0m
+Line [0;36m228[0m Column [0;36m39[0m: [1mThe call[0m gproc:select([0;31mPattern::{{{'n','g',{'mcp_global','transport','$1'}},'$2','$3'},[],[{{'$1',{{'$2','$3'}}}},...]}[0m) [0m[1mwill never return since it differs in the[0m [1;34m1[0mst[0m [1margument from the success typing arguments:[0m ([0;32m[{_,[any()],[any()]},...] | {'gproc',_,_,integer(),ets:compiled_match_spec(),[any()],integer(),integer()}[0m)[0m[0m
+Line [0;36m298[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_registry_utils[0m[4m.erl[0m[0m
+Line [0;36m48[0m Column [0;36m11[0m: [1mFun application will fail since [0mKeyFun [1m::[0m fun(() -> any()) is not a function of arity [0m1[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_sampling[0m[4m.erl[0m[0m
+Line [0;36m79[0m Column [0;36m1[0m: [1mFunction [0;31minit/1 [0m[1mhas no local return[0m[0m
+Line [0;36m81[0m Column [0;36m10[0m: [1mRecord construction [0m#state{default_params::#{<<_:40,_:_*16>>=>_},request_count::0,last_request::'undefined'}[1m violates the declared type of field [0mlast_request::integer()[0m[0m
+Line [0;36m199[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m[any()][0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_schema_validator[0m[4m.erl[0m[0m
+Line [0;36m173[0m Column [0;36m41[0m: [1mGuard test [0mis_list(Data::map())[1m can never succeed[0m[0m
+Line [0;36m196[0m Column [0;36m9[0m: [1mThe pattern [0;31m'undefined'[0m[1m can never match the type [0;32mmap()[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_secrets[0m[4m.erl[0m[0m
+Line [0;36m483[0m Column [0;36m13[0m: [1mExpression produces a value of type [0mstring()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_server[0m[4m.erl[0m[0m
+Line [0;36m489[0m Column [0;36m87[0m: [1mThe call[0m erlmcp_tracing:record_error_details(DecodeSpanCtx::any(), 'decode_failed', [0;31mReason::{'batch_request',non_neg_integer()} | {'invalid_json','not_object'} | {'invalid_request','missing_jsonrpc' | 'unknown_message_type' | {'invalid_method',_} | {'wrong_version',_}} | {'message_too_large',binary()} | {'parse_error','invalid_json' | {_,_}}[0m) [0m[1mwill never return since it differs in the[0m [1;34m3[0mrd[0m [1margument from the success typing arguments:[0m (any(), atom() | binary(), [0;32matom() | binary() | [any()] | number() | map()[0m)[0m[0m
+Line [0;36m640[0m Column [0;36m24[0m: [1mThe call[0m erlmcp_tracing:log([0;31m"PROTOCOL_VIOLATION: Double initialize attempt on already initialized connection"[0m, [{'request_id','null' | binary() | integer()} | {'severity','critical'} | {'violation_type','double_initialize'},...]) [0m[1mbreaks the contract[0m ([0;32mbinary()[0m, [any()]) -> 'ok'[0m[0m
+Line [0;36m652[0m Column [0;36m24[0m: [1mThe call[0m erlmcp_tracing:log([0;31m"PROTOCOL_VIOLATION: RPC before initialization"[0m, [{'method',binary()} | {'request_id','null' | binary() | integer()} | {'severity','critical'} | {'violation_type','pre_init_rpc'},...]) [0m[1mbreaks the contract[0m ([0;32mbinary()[0m, [any()]) -> 'ok'[0m[0m
+Line [0;36m702[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok',#{<<_:40,_:_*8>>=>_}}[0m[0m
+Line [0;36m804[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok',#{<<_:40,_:_*8>>=>_}}[0m[0m
+Line [0;36m883[0m Column [0;36m9[0m: [1mExpression produces a value of type [0m{'noreply',#state{server_id::atom(),phase::'closed' | 'disconnected' | 'initialization' | 'initialized',init_timeout_ref::'undefined' | reference(),init_timeout_ms::pos_integer(),capabilities::#mcp_server_capabilities{resources::#mcp_resources_capability{subscribe::boolean(),listChanged::boolean()},tools::#mcp_tools_capability{listChanged::boolean()},prompts::#mcp_prompts_capability{listChanged::boolean()},logging::#mcp_logging_capability{},sampling::#mcp_sampling_capability{modelPreferences::'undefined' | map()},roots::#mcp_roots_capability{},completions::'undefined' | #mcp_capability{enabled::boolean()},experimental::'undefined' | map()},client_capabilities::'undefined' | #mcp_client_capabilities{roots::'undefined' | map(),sampling::'undefined' | #mcp_sampling_capability{modelPreferences::'undefined' | map()},experimental::'undefined' | map(),tools::#mcp_tools_capability{listChanged::boolean()}},protocol_version::'undefined' | binary(),resources::#{binary()=>{#mcp_resource{uri::binary(),name::binary(),description::'undefined' | binary(),mime_type::'undefined' | binary(),metadata::'undefined' | map(),audience::'undefined' | binary(),priority::'undefined' | integer(),last_modified::'undefined' | integer(),annotations::'undefined' | map(),size::'undefined' | integer()},fun((binary()) -> binary() | #mcp_content{type::binary(),text::'undefined' | binary(),data::'undefined' | binary(),mime_type::'undefined' | binary(),annotations::[#mcp_annotation{name::binary(),value::'false' | 'true' | 'undefined' | binary() | number() | map()}],resource_link::'undefined' | #mcp_resource_link{uri::binary(),name::'undefined' | binary(),mime_type::'undefined' | binary(),size::'undefined' | integer()}})}},resource_templates::#{binary()=>{#mcp_resource_template{uri_template::binary(),name::binary(),description::'undefined' | binary(),mime_type::'undefined' | binary()},fun((binary()) -> binary() | #mcp_content{type::binary(),text::'undefined' | binary(),data::'undefined' | binary(),mime_type::'undefined' | binary(),annotations::[#mcp_annotation{name::binary(),value::'false' | 'true' | 'undefined' | binary() | number() | map()}],resource_link::'undefined' | #mcp_resource_link{uri::binary(),name::'undefined' | binary(),mime_type::'undefined' | binary(),size::'undefined' | integer()}})}},tools::#{binary()=>{#mcp_tool{name::binary(),description::binary(),input_schema::'undefined' | map(),metadata::'undefined' | map(),experimental::'undefined' | map(),version::'undefined' | binary(),deprecated::boolean()},fun((map()) -> binary() | [#mcp_content{type::binary(),text::'undefined' | binary(),data::'undefined' | binary(),mime_type::'undefined' | binary(),annotations::[#mcp_annotation{name::binary(),value::'false' | 'true' | 'undefined' | binary() | number() | map()}],resource_link::'undefined' | #mcp_resource_link{uri::binary(),name::'undefined' | binary(),mime_type::'undefined' | binary(),size::'undefined' | integer()}}] | #mcp_content{type::binary(),text::'undefined' | binary(),data::'undefined' | binary(),mime_type::'undefined' | binary(),annotations::[#mcp_annotation{name::binary(),value::'false' | 'true' | 'undefined' | binary() | number() | map()}],resource_link::'undefined' | #mcp_resource_link{uri::binary(),name::'undefined' | binary(),mime_type::'undefined' | binary(),size::'undefined' | integer()}}),'undefined' | map()}},prompts::#{binary()=>{#mcp_prompt{name::binary(),description::'undefined' | binary(),arguments::'undefined' | [#mcp_prompt_argument{name::binary(),description::'undefined' | binary(),required::boolean()}],input_schema::'undefined' | map()},fun((map()) -> binary() | [map()])}},subscriptions::#{binary()=>sets:set(_)},progress_tokens::#{binary() | integer()=>#mcp_progress_notification{progress_token::#mcp_progress_token{token::binary() | integer()},progress::float(),total::float()}},notifier_pid::'undefined' | pid(),initialized::'true',last_tools_notification::'undefined' | integer(),roots::map(),notification_handlers::#{binary()=>{pid(),reference()}}}}[1m, but this value is unmatched[0m[0m
+Line [0;36m1027[0m Column [0;36m1[0m: [1mFunction [0;31mbuild_initialize_response/1[0m[1m will never be called[0m[0m
+Line [0;36m1195[0m Column [0;36m21[0m: [1mThe pattern [0;31m{_, SessionId}[0m[1m can never match the type [0;32matom()[0m[0m
+Line [0;36m1196[0m Column [0;36m35[0m: [1mGuard test [0mis_binary(ServerId::atom())[1m can never succeed[0m[0m
+Line [0;36m1219[0m Column [0;36m50[0m: [1mGuard test [0mis_binary(R::timer:tref())[1m breaks the opaqueness of its argument[0m[0m
+Line [0;36m1220[0m Column [0;36m48[0m: [1mGuard test [0mis_list(R::timer:tref())[1m breaks the opaqueness of its argument[0m[0m
+Line [0;36m1238[0m Column [0;36m25[0m: [1mThe pattern [0;31m{'error', 'quota_exceeded', 'cpu_time'}[0m[1m can never match the type [0;32m{'error',_}[0m[0m
+Line [0;36m1244[0m Column [0;36m25[0m: [1mThe pattern [0;31m{'error', 'quota_exceeded', 'operations'}[0m[1m can never match the type [0;32m{'error',_}[0m[0m
+Line [0;36m1377[0m Column [0;36m5[0m: [1mUnknown function [0;31merlmcp_prompt_argument_validator:validate_prompt_arguments/3[0m[0m
+Line [0;36m1449[0m Column [0;36m1[0m: [1mThe pattern [0;31m[][0m[1m can never match the type [0;32m[#mcp_annotation{name::binary(),value::'false' | 'true' | 'undefined' | binary() | number() | map()},...][0m[0m
+Line [0;36m1558[0m Column [0;36m52[0m: [1mGuard test [0mis_binary(BinaryResult::timer:tref())[1m breaks the opaqueness of its argument[0m[0m
+Line [0;36m1560[0m Column [0;36m49[0m: [1mGuard test [0mis_list(ContentList::timer:tref())[1m breaks the opaqueness of its argument[0m[0m
+Line [0;36m1563[0m Column [0;36m1[0m: [1mThe attempt to match a term of type [0mtimer:tref()[1m against the[0m pattern {'mcp_content', _, _, _, _, _, _}[1m breaks the opaqueness of [0mthe term[0m[0m
+Line [0;36m1566[0m Column [0;36m1[0m: [1mThe attempt to match a term of type [0mtimer:tref()[1m against the[0m pattern {{'mcp_content', _, _, _, _, _, _}}[1m breaks the opaqueness of [0mthe term[0m[0m
+Line [0;36m1569[0m Column [0;36m47[0m: [1mGuard test [0mis_map(ContentMap::timer:tref())[1m breaks the opaqueness of its argument[0m[0m
+Line [0;36m1925[0m Column [0;36m9[0m: [1mThe pattern [0;31m'undefined'[0m[1m can never match the type [0;32m#mcp_tools_capability{listChanged::boolean()}[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_session_manager[0m[4m.erl[0m[0m
+Line [0;36m311[0m Column [0;36m9[0m: [1mThe pattern [0;31m'undefined'[0m[1m can never match the type [0;32m'v1' | 'v2'[0m[0m
+Line [0;36m314[0m Column [0;36m1[0m: [1mMatching of [0mpattern {'state', 'undefined', _, _, _, _}[1m tagged with a record name violates the declared type of [0m#state{version::'v1' | 'v2',table::ets:tid(),cleanup_timer::'undefined' | reference(),cleanup_interval_ms::pos_integer(),default_timeout_ms::pos_integer()}[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_split_brain_detector[0m[4m.erl[0m[0m
+Line [0;36m110[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m150[0m Column [0;36m13[0m: [1mExpression produces a value of type [0m'ok' | #split_brain_state{strategy::'configured_master' | 'oldest_node' | 'winner_takes_all',master_node::atom(),partition_detected::boolean(),last_check::'undefined' | integer(),check_interval::pos_integer(),check_ref::'undefined' | reference()}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_sse_event_store[0m[4m.erl[0m[0m
+Line [0;36m95[0m Column [0;36m1[0m: [1mFunction [0;31minit/1 [0m[1mhas no local return[0m[0m
+Line [0;36m98[0m Column [0;36m33[0m: [1mRecord construction [0m#state{cleanup_timer::timer:tref()}[1m violates the declared type of field [0mcleanup_timer::'undefined' | reference()[0m[0m
+Line [0;36m114[0m Column [0;36m22[0m: [1mThe call[0m ets:whereis([0;31mTableName::{'erlmcp_sse_event_store',_}[0m) [0m[1mbreaks the contract[0m ([0;32mTableName[0m) -> tid() | 'undefined' when TableName :: atom()[0m[0m
+Line [0;36m131[0m Column [0;36m22[0m: [1mThe call[0m ets:whereis([0;31mTableName::{'erlmcp_sse_event_store',_}[0m) [0m[1mbreaks the contract[0m ([0;32mTableName[0m) -> tid() | 'undefined' when TableName :: atom()[0m[0m
+Line [0;36m141[0m Column [0;36m22[0m: [1mThe call[0m ets:whereis([0;31mTableName::{'erlmcp_sse_event_store',_}[0m) [0m[1mbreaks the contract[0m ([0;32mTableName[0m) -> tid() | 'undefined' when TableName :: atom()[0m[0m
+Line [0;36m175[0m Column [0;36m1[0m: [1mFunction [0;31mterminate/2 [0m[1mhas no local return[0m[0m
+Line [0;36m176[0m Column [0;36m18[0m: [1mThe call [0mtimer:cancel([0;31mRef::'undefined' | reference()[0m) [1mdoes not have[0m [1man opaque term of type[0;32m timer:tref() [1mas [1;34m1[0mst[0m[1m argument[0m[0m[0m
+Line [0;36m197[0m Column [0;36m1[0m: [1mFunction [0;31mget_or_create_table/1 [0m[1mhas no local return[0m[0m
+Line [0;36m199[0m Column [0;36m22[0m: [1mThe call[0m ets:whereis([0;31mTableName::{'erlmcp_sse_event_store',_}[0m) [0m[1mbreaks the contract[0m ([0;32mTableName[0m) -> tid() | 'undefined' when TableName :: atom()[0m[0m
+Line [0;36m216[0m Column [0;36m1[0m: [1mFunction [0;31mgenerate_event_id/2[0m[1m will never be called[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_tasks[0m[4m.erl[0m[0m
+Line [0;36m132[0m Column [0;36m1[0m: [1mFunction [0;31mlist_tasks/1[0m[1m will never be called[0m[0m
+Line [0;36m250[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m330[0m Column [0;36m5[0m: [1mThe pattern [0;31m{Reply, NewState}[0m[1m can never match the type [0;32m{'ok',non_neg_integer(),#state{task_count::non_neg_integer(),pending_cleanup::[any()]}}[0m[0m
+Line [0;36m418[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | reference()[1m, but this value is unmatched[0m[0m
+Line [0;36m855[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m865[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m936[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | reference()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_test_sync[0m[4m.erl[0m[0m
+Line [0;36m113[0m Column [0;36m1[0m: [1mFunction [0;31mwait_for_process_death/2 [0m[1mhas no local return[0m[0m
+Line [0;36m118[0m Column [0;36m1[0m: [1mFunction [0;31mwait_for_process_death/3 [0m[1mhas no local return[0m[0m
+Line [0;36m123[0m Column [0;36m72[0m: [1mThe call[0m erlmcp_test_sync:poll_until(ConditionFun::fun(() -> boolean()), 'process_death', Options::any(), Timeout::any(), [0;31m5[0m) [0m[1mbreaks the contract[0m (condition_fun(), any(), poll_options() | non_neg_integer(), non_neg_integer(), [0;32mmap()[0m) -> {'ok',any()} | {'error','timeout'}[0m[0m
+Line [0;36m162[0m Column [0;36m1[0m: [1mFunction [0;31mwait_for_message/2 [0m[1mhas no local return[0m[0m
+Line [0;36m168[0m Column [0;36m1[0m: [1mFunction [0;31mwait_for_message/3 [0m[1mhas no local return[0m[0m
+Line [0;36m180[0m Column [0;36m63[0m: [1mThe call[0m erlmcp_test_sync:poll_until(ConditionFun::fun(() -> 'false' | {'true',_}), 'message_match', Options::any(), Timeout::any(), [0;31m5[0m) [0m[1mbreaks the contract[0m (condition_fun(), any(), poll_options() | non_neg_integer(), non_neg_integer(), [0;32mmap()[0m) -> {'ok',any()} | {'error','timeout'}[0m[0m
+Line [0;36m189[0m Column [0;36m1[0m: [1mFunction [0;31mwait_for_state/3 [0m[1mhas no local return[0m[0m
+Line [0;36m195[0m Column [0;36m1[0m: [1mFunction [0;31mwait_for_state/4 [0m[1mhas no local return[0m[0m
+Line [0;36m207[0m Column [0;36m61[0m: [1mThe call[0m erlmcp_test_sync:poll_until(ConditionFun::fun(() -> 'false' | {'true',_}), 'state_match', Options::any(), Timeout::any(), [0;31m10[0m) [0m[1mbreaks the contract[0m (condition_fun(), any(), poll_options() | non_neg_integer(), non_neg_integer(), [0;32mmap()[0m) -> {'ok',any()} | {'error','timeout'}[0m[0m
+Line [0;36m214[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_test_sync:wait_for_condition/3.[1m The success typing is[0m (fun(() -> boolean() | {'true',_}),non_neg_integer(),map()) -> {'error','timeout'} | {'ok',_}[1m but the spec is[0m (condition_fun(),non_neg_integer(),non_neg_integer()) -> {'ok',any()} | {'error','timeout'}[0m[0m
+Line [0;36m220[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_test_sync:wait_for_condition/4.[1m The success typing is[0m (fun(() -> boolean() | {'true',_}),non_neg_integer(),map(),non_neg_integer() | #{'interval'=>non_neg_integer(), 'sleep'=>boolean(), 'timeout'=>non_neg_integer()}) -> {'error','timeout'} | {'ok',_}[1m but the spec is[0m (condition_fun(),non_neg_integer(),non_neg_integer(),map()) -> {'ok',any()} | {'error','timeout'}[0m[0m
+
+[4mapps/erlmcp_core/src/[0;36m[4merlmcp_tool[0m[4m.erl[0m[0m
+Line [0;36m91[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m'undefined' | binary()[0m[0m
+
+[4mapps/erlmcp_core/src/pricing/[0;36m[4merlmcp_pricing_cli[0m[4m.erl[0m[0m
+Line [0;36m39[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok',map()}[0m[0m
+
+[4mapps/erlmcp_core/src/pricing/[0;36m[4merlmcp_pricing_http[0m[4m.erl[0m[0m
+Line [0;36m25[0m Column [0;36m9[0m: [1mThe variable [0;31mError[0m[1m can never match since previous clauses completely covered the type [0;32m{'ok',map()}[0m[0m
+
+[4mapps/erlmcp_core/src/pricing/[0;36m[4merlmcp_pricing_loader[0m[4m.erl[0m[0m
+Line [0;36m34[0m Column [0;36m49[0m: [1mThe call[0m erlmcp_pricing_loader:load_plan([0;31mnonempty_maybe_improper_list(atom() | [any()] | char(),atom() | binary() | [])[0m) [0m[1mwill never return since the success typing is [0m([0;32matom()[0m) [1m->[0m {'error','invalid_json' | {'file_error',atom()} | {'validation_failed',[{_,_} | {_,_,_} | {_,_,_,_,_}]}} | {'ok',_} [1mand the contract is [0m([0;32mPlan::atom()[0m) -> {'ok',map()} | {'error',term()}[0m[0m
+
+[4mapps/erlmcp_core/src/pricing/[0;36m[4merlmcp_pricing_plan[0m[4m.erl[0m[0m
+Line [0;36m322[0m Column [0;36m1[0m: [1mThe variable [0;31mValue[0m[1m can never match since previous clauses completely covered the type [0;32mmap()[0m[0m
+Line [0;36m396[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#{'concurrent_connections':=integer(), 'connection_timeout_seconds':=integer(), 'failover_sla_seconds':=integer(), 'p99_latency_ms':=integer(), 'queue_depth_messages':=integer(), 'throughput_req_s':=integer()}[0m[0m
+Line [0;36m411[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32mmap()[0m[0m
+Line [0;36m431[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32mmap()[0m[0m
+Line [0;36m444[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32mmap()[0m[0m
+
+[4mapps/erlmcp_core/src/pricing/[0;36m[4merlmcp_pricing_receipt[0m[4m.erl[0m[0m
+Line [0;36m493[0m Column [0;36m1[0m: [1mFunction [0;31mbuild_audit_fields/1 [0m[1mhas no local return[0m[0m
+Line [0;36m495[0m Column [0;36m5[0m: [1mThe pattern [0;31m{OtpRelease, _}[0m[1m can never match the type [0;32mstring()[0m[0m
+Line [0;36m506[0m Column [0;36m1[0m: [1mFunction [0;31mget_previous_receipt_hash/2[0m[1m will never be called[0m[0m
+
+[4mapps/erlmcp_core/src/pricing/[0;36m[4merlmcp_pricing_state[0m[4m.erl[0m[0m
+Line [0;36m48[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m55[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_pricing_state:set_current_plan/1.[1m The success typing is[0m (_) -> 'true'[1m but the spec is[0m (Plan::'team' | 'enterprise' | 'gov') -> 'ok'[0m[0m
+Line [0;36m57[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m63[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m71[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_pricing_state:set_last_upgrade_time/2.[1m The success typing is[0m (_,_) -> 'true'[1m but the spec is[0m (Plan::'team' | 'enterprise' | 'gov',Time::integer()) -> 'ok'[0m[0m
+Line [0;36m73[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m79[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m87[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_pricing_state:set_certification_valid/2.[1m The success typing is[0m (_,_) -> 'true'[1m but the spec is[0m (Plan::'team' | 'enterprise' | 'gov',Valid::boolean()) -> 'ok'[0m[0m
+Line [0;36m89[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m95[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m102[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_pricing_state:set_upgrade_timestamp/1.[1m The success typing is[0m (_) -> 'true'[1m but the spec is[0m (Timestamp::integer()) -> 'ok'[0m[0m
+Line [0;36m104[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m110[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m157[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m177[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_core/src/pricing/[0;36m[4mtcps_poka_yoke[0m[4m.erl[0m[0m
+Line [0;36m392[0m Column [0;36m14[0m: [1mCall to missing or unexported function [0merlmcp_refusal:is_valid_code/1[0m[0m
+Line [0;36m497[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32mbinary()[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_audit_log[0m[4m.erl[0m[0m
+Line [0;36m263[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m#state{log_file::'undefined' | pid() | {'file_descriptor',atom(),_},log_path::string(),current_hash::binary(),sequence::non_neg_integer(),buffer::[map()],buffer_size::pos_integer(),flush_interval::pos_integer()}[1m, but this value is unmatched[0m[0m
+Line [0;36m265[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error',atom()}[1m, but this value is unmatched[0m[0m
+Line [0;36m280[0m Column [0;36m1[0m: [1mFunction [0;31mcreate_audit_entry/3 [0m[1mhas no local return[0m[0m
+Line [0;36m295[0m Column [0;36m22[0m: [1mRecord construction [0m#audit_entry{sequence::pos_integer(),timestamp::integer(),previous_hash::binary(),entry_hash::'undefined'}[1m violates the declared type of field [0mentry_hash::binary()[0m[0m
+Line [0;36m303[0m Column [0;36m1[0m: [1mFunction [0;31mcompute_entry_hash/1[0m[1m will never be called[0m[0m
+Line [0;36m332[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error',atom()}[1m, but this value is unmatched[0m[0m
+Line [0;36m338[0m Column [0;36m24[0m: [1mMatching of [0mpattern {'audit_entry', _, _, _, _, _, _, _, _, _, _, _}[1m tagged with a record name violates the declared type of [0mmap()[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_bench_rate_limit[0m[4m.erl[0m[0m
+Line [0;36m104[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',{atom(),_}} | {'ok',[atom()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m151[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{[integer()],integer(),integer()}[1m, but this value is unmatched[0m[0m
+Line [0;36m184[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{non_neg_integer(),integer(),float()}[1m, but this value is unmatched[0m[0m
+Line [0;36m211[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',{atom(),_}} | {'ok',[atom()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m252[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',{atom(),_}} | {'ok',[atom()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m289[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',{atom(),_}} | {'ok',[atom()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m290[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',{atom(),_}} | {'ok',[atom()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m328[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',{atom(),_}} | {'ok',[atom()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m366[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',{atom(),_}} | {'ok',[atom()]}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_chaos[0m[4m.erl[0m[0m
+Line [0;36m196[0m Column [0;36m25[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok',#state{experiments::#{atom() | binary()=>#experiment{id::atom() | binary(),type::'clock_skew' | 'kill_random' | 'kill_servers' | 'network_latency' | 'network_partition' | 'packet_loss' | 'resource_cpu' | 'resource_disk' | 'resource_memory',config::#{'experiment':='clock_skew' | 'kill_random' | 'kill_servers' | 'network_latency' | 'network_partition' | 'packet_loss' | 'resource_cpu' | 'resource_disk' | 'resource_memory', 'auto_rollback'=>boolean(), 'dry_run'=>boolean(), 'duration'=>pos_integer(), 'interval'=>pos_integer(), 'latency'=>pos_integer(), 'max_blast_radius'=>float(), 'rate'=>float(), 'safety_checks'=>boolean(), 'sla_threshold'=>map(), 'target'=>atom() | pid()},state::'completed' | 'failed' | 'running' | 'stopped',start_time::{non_neg_integer(),non_neg_integer(),non_neg_integer()},end_time::'undefined' | {non_neg_integer(),non_neg_integer(),non_neg_integer()},timer_ref::'undefined' | reference(),worker_pid::'undefined' | pid(),targets_affected::non_neg_integer(),total_targets::non_neg_integer(),incidents::[any()],metrics::map()}},safety_enabled::boolean(),monitor_integration::boolean(),global_limits::map()}}[0m[0m
+Line [0;36m456[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_chaos_resource[0m[4m.erl[0m[0m
+Line [0;36m60[0m Column [0;36m1[0m: [1mFunction [0;31mallocate_memory_gradually/2[0m[1m will never be called[0m[0m
+Line [0;36m71[0m Column [0;36m1[0m: [1mFunction [0;31mallocate_chunks/4[0m[1m will never be called[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_dashboard_server[0m[4m.erl[0m[0m
+Line [0;36m104[0m Column [0;36m1[0m: [1mFunction [0;31minit/1 [0m[1mhas no local return[0m[0m
+Line [0;36m143[0m Column [0;36m25[0m: [1mRecord construction [0m#state{port::char(),listener_name::atom(),websocket_pids::[],metrics_timer::timer:tref()}[1m violates the declared type of field [0mmetrics_timer::'undefined' | reference()[0m[0m
+Line [0;36m212[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error','not_found'}[1m, but this value is unmatched[0m[0m
+Line [0;36m220[0m Column [0;36m34[0m: [1mThe call [0mtimer:cancel([0;31mTimerRef::reference()[0m) [1mdoes not have[0m [1man opaque term of type[0;32m timer:tref() [1mas [1;34m1[0mst[0m[1m argument[0m[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_evidence_path[0m[4m.erl[0m[0m
+Line [0;36m282[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m{'false',boolean()} | {'true',boolean()}[0m[0m
+Line [0;36m333[0m Column [0;36m29[0m: [1mExpression produces a value of type [0m'ok' | {'error',atom()}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_health_monitor[0m[4m.erl[0m[0m
+Line [0;36m158[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | reference()[1m, but this value is unmatched[0m[0m
+Line [0;36m314[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error',_} | {'ok','cancel'}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_memory_analyzer[0m[4m.erl[0m[0m
+Line [0;36m288[0m Column [0;36m1[0m: [1mThe pattern [0;31m<_, LongQueues, LargeTables>[0m[1m can never match since previous clauses completely covered the type [0;32m<{'ok',[map()]},[any()],[map()]>[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_metrics_aggregator[0m[4m.erl[0m[0m
+Line [0;36m96[0m Column [0;36m1[0m: [1mFunction [0;31minit/1 [0m[1mhas no local return[0m[0m
+Line [0;36m112[0m Column [0;36m24[0m: [1mRecord construction [0m#state{current_bucket::#bucket{timestamp::integer(),throughput::0,latencies::[],errors::0,connections::0,memory_mb::0,cpu_percent::0},buckets_60s::[],buckets_5min::[],buckets_1hr::[],bucket_timer::timer:tref(),alert_thresholds::#{'connections':=10000, 'error_rate_percent':=float(), 'latency_p99_ms':=100, 'memory_mb':=1024}}[1m violates the declared type of field [0mbucket_timer::'undefined' | reference()[0m[0m
+Line [0;36m188[0m Column [0;36m34[0m: [1mThe call [0mtimer:cancel([0;31mTimerRef::reference()[0m) [1mdoes not have[0m [1man opaque term of type[0;32m timer:tref() [1mas [1;34m1[0mst[0m[1m argument[0m[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_metrics_server[0m[4m.erl[0m[0m
+Line [0;36m85[0m Column [0;36m1[0m: [1mFunction [0;31minit/1 [0m[1mhas no local return[0m[0m
+Line [0;36m90[0m Column [0;36m24[0m: [1mRecord construction [0m#state{start_time::integer(),total_messages::0,total_errors::0,concurrent_connections::0,latencies::[],latency_window::0,message_rate_window::0,window_timer::timer:tref(),error_rate_window::0,last_metrics::#{}}[1m violates the declared type of field [0mwindow_timer::'undefined' | reference()[0m[0m
+Line [0;36m110[0m Column [0;36m47[0m: [1mRecord construction [0m#state{start_time::integer(),total_messages::0,total_errors::0,concurrent_connections::0,latencies::[],latency_window::0,message_rate_window::0,window_timer::timer:tref(),error_rate_window::0,last_metrics::map()}[1m violates the declared type of field [0mwindow_timer::'undefined' | reference()[0m[0m
+Line [0;36m167[0m Column [0;36m34[0m: [1mThe call [0mtimer:cancel([0;31mTimerRef::reference()[0m) [1mdoes not have[0m [1man opaque term of type[0;32m timer:tref() [1mas [1;34m1[0mst[0m[1m argument[0m[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_observability_app[0m[4m.erl[0m[0m
+Line [0;36m34[0m Column [0;36m13[0m: [1mExpression produces a value of type [0m'ok' | pid()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_otel[0m[4m.erl[0m[0m
+Line [0;36m490[0m Column [0;36m9[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m{'ok',string()}[0m[0m
+Line [0;36m850[0m Column [0;36m9[0m: [1mThe variable [0;31mError[0m[1m can never match since previous clauses completely covered the type [0;32m'ok'[0m[0m
+Line [0;36m992[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32mmap()[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_otel_datadog[0m[4m.erl[0m[0m
+Line [0;36m109[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m193[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#{'batch_timeout':=pos_integer(), 'endpoint':=binary(), 'env':=binary(), 'max_queue_size':=pos_integer(), 'service':=binary(), 'tags':=#{binary()=>binary()}, 'version':=binary(), 'api_key'=>binary()}[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_otel_honeycomb[0m[4m.erl[0m[0m
+Line [0;36m111[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m149[0m Column [0;36m1[0m: [1mFunction [0;31madd_honeycomb_metadata/2 [0m[1mhas no local return[0m[0m
+Line [0;36m153[0m Column [0;36m53[0m: [1mThe call[0m erlang:list_to_binary([0;31m{'ok',string()}[0m) [0m[1mbreaks the contract[0m ([0;32mIoList[0m) -> binary() when IoList :: iolist()[0m[0m
+Line [0;36m215[0m Column [0;36m1[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#{'api_key':=binary(), 'batch_timeout':=pos_integer(), 'dataset':=binary(), 'endpoint':=binary(), 'max_queue_size':=pos_integer(), 'environment'=>binary(), 'sample_rate'=>pos_integer()}[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_otel_jaeger[0m[4m.erl[0m[0m
+Line [0;36m118[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_process_monitor[0m[4m.erl[0m[0m
+Line [0;36m172[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'critical',[any()]} | {'warning',[any()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m215[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'critical',[any()]} | {'warning',[any()]}[1m, but this value is unmatched[0m[0m
+Line [0;36m226[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error',_} | {'ok','cancel'}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_profiler[0m[4m.erl[0m[0m
+Line [0;36m101[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:trace/1[0m[0m
+Line [0;36m102[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:profile/0[0m[0m
+Line [0;36m103[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:analyse/1[0m[0m
+Line [0;36m106[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:start/0[0m[0m
+Line [0;36m107[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:start_profiling/1[0m[0m
+Line [0;36m109[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:stop_profiling/0[0m[0m
+Line [0;36m110[0m Column [0;36m22[0m: [1mUnknown function [0;31meprof:analyze/2[0m[0m
+Line [0;36m111[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:stop/0[0m[0m
+Line [0;36m114[0m Column [0;36m13[0m: [1mUnknown function [0;31mcprof:start/1[0m[0m
+Line [0;36m116[0m Column [0;36m22[0m: [1mUnknown function [0;31mcprof:analyse/1[0m[0m
+Line [0;36m117[0m Column [0;36m13[0m: [1mUnknown function [0;31mcprof:stop/0[0m[0m
+Line [0;36m132[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:trace/1[0m[0m
+Line [0;36m133[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:profile/0[0m[0m
+Line [0;36m134[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:analyse/1[0m[0m
+Line [0;36m137[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:start/0[0m[0m
+Line [0;36m138[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:start_profiling/1[0m[0m
+Line [0;36m140[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:stop_profiling/0[0m[0m
+Line [0;36m141[0m Column [0;36m22[0m: [1mUnknown function [0;31meprof:analyze/1[0m[0m
+Line [0;36m142[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:stop/0[0m[0m
+Line [0;36m149[0m Column [0;36m11[0m: [1mUnknown function [0;31mfprof:stop/0[0m[0m
+Line [0;36m150[0m Column [0;36m11[0m: [1mUnknown function [0;31meprof:stop/0[0m[0m
+Line [0;36m151[0m Column [0;36m11[0m: [1mUnknown function [0;31mcprof:stop/0[0m[0m
+Line [0;36m385[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:trace/1[0m[0m
+Line [0;36m386[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:profile/0[0m[0m
+Line [0;36m387[0m Column [0;36m13[0m: [1mUnknown function [0;31mfprof:analyse/1[0m[0m
+Line [0;36m405[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:start/0[0m[0m
+Line [0;36m406[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:start_profiling/1[0m[0m
+Line [0;36m408[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:stop_profiling/0[0m[0m
+Line [0;36m409[0m Column [0;36m22[0m: [1mUnknown function [0;31meprof:analyze/2[0m[0m
+Line [0;36m410[0m Column [0;36m13[0m: [1mUnknown function [0;31meprof:stop/0[0m[0m
+Line [0;36m424[0m Column [0;36m5[0m: [1mUnknown function [0;31mcprof:start/1[0m[0m
+Line [0;36m426[0m Column [0;36m14[0m: [1mUnknown function [0;31mcprof:analyse/1[0m[0m
+Line [0;36m427[0m Column [0;36m5[0m: [1mUnknown function [0;31mcprof:stop/0[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_receipt_chain[0m[4m.erl[0m[0m
+Line [0;36m41[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m53[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m65[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m74[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+Line [0;36m82[0m Column [0;36m5[0m: [1mExpression produces a value of type [0matom() | ets:tid()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_recovery_manager[0m[4m.erl[0m[0m
+Line [0;36m304[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error',_} | {'ok','cancel'}[1m, but this value is unmatched[0m[0m
+Line [0;36m517[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'ok', Pid}[0m[1m can never match the type [0;32m{'error','not_implemented'}[0m[0m
+Line [0;36m518[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', {'already_started', Pid}}[0m[1m can never match the type [0;32m{'error','not_implemented'}[0m[0m
+Line [0;36m576[0m Column [0;36m9[0m: [1mThe pattern [0;31m'undefined'[0m[1m can never match the type [0;32mpid()[0m[0m
+
+[4mapps/erlmcp_observability/src/[0;36m[4merlmcp_trace_analyzer[0m[4m.erl[0m[0m
+Line [0;36m218[0m Column [0;36m5[0m: [1mThe pattern [0;31m[{CycleStart, Cycle} | _][0m[1m can never match the type [0;32m[][0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_pool_manager[0m[4m.erl[0m[0m
+Line [0;36m263[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_behavior[0m[4m.erl[0m[0m
+Line [0;36m320[0m Column [0;36m17[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m'ok'[0m[0m
+Line [0;36m334[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_transport_behavior:handle_transport_message/2.[1m The success typing is[0m ({'server',atom()} | {'transport',atom() | binary()},_) -> 'ok' | {'error','no_bound_server' | 'server_not_found' | 'transport_not_found'}[1m but the spec is[0m (atom(),binary()) -> 'ok' | {'error',term()}[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_discovery[0m[4m.erl[0m[0m
+Line [0;36m232[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m567[0m Column [0;36m13[0m: [1mExpression produces a value of type [0m'ok' | {'error','not_found' | 'restarting' | 'running' | 'simple_one_for_one'}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_health[0m[4m.erl[0m[0m
+Line [0;36m208[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_http_server[0m[4m.erl[0m[0m
+Line [0;36m403[0m Column [0;36m26[0m: [1mUnknown function [0;31merlmcp_tls_validation:build_tls_options/2[0m[0m
+Line [0;36m655[0m Column [0;36m1[0m: [1mThe pattern [0;31m<{'gun_error', _}, _Attempts, _State>[0m[1m can never match the type [0;32m<{'error',{'gun_error',_}} | {'invalid_body_format',bitstring()},_,#state{url::string(),owner::pid(),method::'get' | 'post',headers::[{_,_}],timeout::'infinity' | non_neg_integer(),connect_timeout::'infinity' | non_neg_integer(),max_retries::non_neg_integer(),retry_delay::pos_integer(),gun_pid::'undefined' | pid(),gun_monitor::'undefined' | reference(),gun_stream_ref::'undefined' | reference(),pending_requests::#{reference()=>{_,_,_,_}},message_queue::queue:queue(_),pool_size::non_neg_integer(),active_requests::non_neg_integer(),ssl_options::['binary' | 'inet' | 'inet6' | 'list' | 'local' | {_,_} | {_,_,_,_}],host::string(),port::pos_integer(),path::string(),scheme::'http' | 'https'}>[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_registry[0m[4m.erl[0m[0m
+Line [0;36m399[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_sse[0m[4m.erl[0m[0m
+Line [0;36m235[0m Column [0;36m30[0m: [1mRecord construction [0m#sse_state{client_id::binary(),session_id::<<_:64,_:_*8>>,ping_timer::timer:tref(),event_number::0,max_message_size::pos_integer()}[1m violates the declared type of field [0mping_timer::'undefined' | reference()[0m[0m
+Line [0;36m292[0m Column [0;36m29[0m: [1mThe pattern [0;31m{'error', _}[0m[1m can never match the type [0;32matom() | binary() | [any()] | number() | {'incomplete' | {non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},fun(('end_json' | 'end_stream' | binary()) -> any()) | {byte(),byte(),byte()}} | {'with_tail',_,binary()} | #{atom() | binary()=>_}[0m[0m
+Line [0;36m320[0m Column [0;36m1[0m: [1mFunction [0;31msse_event_loop/3[0m[1m will never be called[0m[0m
+Line [0;36m372[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m{'error',_} | {'ok','cancel'}[1m, but this value is unmatched[0m[0m
+Line [0;36m387[0m Column [0;36m1[0m: [1mFunction [0;31mformat_sse_event/2[0m[1m will never be called[0m[0m
+Line [0;36m398[0m Column [0;36m1[0m: [1mFunction [0;31mformat_sse_event_with_id/3[0m[1m will never be called[0m[0m
+Line [0;36m409[0m Column [0;36m1[0m: [1mFunction [0;31mformat_sse_keepalive/0[0m[1m will never be called[0m[0m
+Line [0;36m416[0m Column [0;36m1[0m: [1mFunction [0;31msplit_data_by_newline/1[0m[1m will never be called[0m[0m
+Line [0;36m425[0m Column [0;36m1[0m: [1mFunction [0;31mformat_data_lines/1[0m[1m will never be called[0m[0m
+Line [0;36m434[0m Column [0;36m1[0m: [1mFunction [0;31mformat_data_line/1[0m[1m will never be called[0m[0m
+Line [0;36m461[0m Column [0;36m1[0m: [1mFunction [0;31mhandle_stream_resumption/9[0m[1m will never be called[0m[0m
+Line [0;36m515[0m Column [0;36m1[0m: [1mFunction [0;31mformat_disconnect_reason/1[0m[1m will never be called[0m[0m
+Line [0;36m524[0m Column [0;36m1[0m: [1mFunction [0;31mformat_term/1[0m[1m will never be called[0m[0m
+Line [0;36m581[0m Column [0;36m1[0m: [1mThe variable [0;31mS[0m[1m can never match since previous clauses completely covered the type [0;32mbinary()[0m[0m
+Line [0;36m583[0m Column [0;36m1[0m: [1mThe variable [0;31mA[0m[1m can never match since previous clauses completely covered the type [0;32mbinary()[0m[0m
+Line [0;36m585[0m Column [0;36m1[0m: [1mThe variable [0;31mX[0m[1m can never match since previous clauses completely covered the type [0;32mbinary()[0m[0m
+Line [0;36m625[0m Column [0;36m1[0m: [1mFunction [0;31mformat_close_event_with_retry/1[0m[1m will never be called[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_tcp[0m[4m.erl[0m[0m
+Line [0;36m111[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'ok' | {'error','not_found'}[1m, but this value is unmatched[0m[0m
+Line [0;36m215[0m Column [0;36m9[0m: [1mExpression produces a value of type [0m'false' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m261[0m Column [0;36m13[0m: [1mExpression produces a value of type [0m'false' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m562[0m Column [0;36m18[0m: [1mRecord construction [0m#state{mode::'server',transport_id::atom(),server_id::atom(),ranch_ref::atom(),options::'undefined',buffer::<<>>,connected::'true',reconnect_attempts::0,max_reconnect_attempts::'infinity',bytes_sent::0,bytes_received::0,max_message_size::pos_integer(),initialized::'false'}[1m violates the declared type of field [0moptions::['binary' | 'inet' | 'inet6' | 'list' | 'local' | {atom(),atom() | binary() | string() | integer() | {'false',non_neg_integer()} | {'local',binary() | string()} | {'true',non_neg_integer()} | {byte(),byte(),byte(),byte()} | {char(),char(),char(),char(),char(),char(),char(),char()} | #{'addr':='any' | 'broadcast' | 'loopback' | {byte(),byte(),byte(),byte()} | {char(),char(),char(),char(),char(),char(),char(),char()}, 'family':='inet' | 'inet6', 'port':=char(), 'flowinfo'=>char(), 'scope_id'=>non_neg_integer()}} | {'raw',non_neg_integer(),non_neg_integer(),binary()}][0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_validation[0m[4m.erl[0m[0m
+Line [0;36m268[0m Column [0;36m1[0m: [1mFunction [0;31mparse_url/1 [0m[1mhas no local return[0m[0m
+Line [0;36m269[0m Column [0;36m35[0m: [1mThe call[0m string:split(URL::[any()], "://", [0;31m2[0m) [0m[1mbreaks the contract[0m (String, SearchPattern, [0;32mWhere[0m) -> [unicode:chardata()] when String :: unicode:chardata(), SearchPattern :: unicode:chardata(), Where :: direction() | 'all'[0m[0m
+Line [0;36m278[0m Column [0;36m1[0m: [1mFunction [0;31mparse_scheme_and_rest/2[0m[1m will never be called[0m[0m
+Line [0;36m291[0m Column [0;36m1[0m: [1mFunction [0;31mparse_host_port_path/2[0m[1m will never be called[0m[0m
+Line [0;36m301[0m Column [0;36m1[0m: [1mFunction [0;31mparse_host_port/3[0m[1m will never be called[0m[0m
+
+[4mapps/erlmcp_transports/src/[0;36m[4merlmcp_transport_ws[0m[4m.erl[0m[0m
+Line [0;36m375[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m380[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m467[0m Column [0;36m17[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32matom() | binary() | [any()] | number() | {'incomplete' | {non_neg_integer(),1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12,1..255},fun(('end_json' | 'end_stream' | binary()) -> any()) | {byte(),byte(),byte()}} | {'with_tail',_,binary()} | #{atom() | binary()=>_}[0m[0m
+Line [0;36m659[0m Column [0;36m1[0m: [1mThe pattern [0;31m<_Reason, State>[0m[1m can never match since previous clauses completely covered the type [0;32m<'backpressure_failed' | 'fragment_timeout' | 'invalid_utf8' | 'message_too_big' | 'parse_error',#state{transport_id::binary(),registry_pid::pid(),connection_info::map(),session_id::binary(),ping_timer::'undefined' | reference(),fragment_buffer::'undefined' | binary(),fragment_start_time::'undefined' | integer(),max_message_size::integer(),strict_delimiter_check::boolean(),validate_utf8::boolean(),frame_buffer_size::integer(),frame_buffer_used::integer(),backpressure_state::atom(),backpressure_timer::'undefined' | reference(),messages_pending::non_neg_integer(),bytes_buffered::non_neg_integer(),messages_received::non_neg_integer(),messages_sent::non_neg_integer(),bytes_received::non_neg_integer(),bytes_sent::non_neg_integer(),ping_count::non_neg_integer(),pong_count::non_neg_integer(),connection_start_time::integer()}>[0m[0m
+Line [0;36m713[0m Column [0;36m13[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_validation/src/[0;36m[4merlmcp_compliance_report[0m[4m.erl[0m[0m
+Line [0;36m275[0m Column [0;36m41[0m: [1mThe call[0m erlmcp_compliance_report:format_markdown([0;31mReport::#{'by_section':=map(), 'details':=#{'by_section':=map(), 'passed_tests':=non_neg_integer(), 'total_requirements':=non_neg_integer()}, 'evidence':=[#{<<_:32,_:_*8>>=>_}], 'gaps':=[#{'recommendation'=>binary(), 'requirement'=>map(), 'severity'=>'critical' | 'high' | 'low' | 'medium', 'status'=>'failed' | 'incomplete' | 'missing'}], 'overall':=float(), 'recommendations':=[<<_:64,_:_*8>>,...], 'spec_version':=_, 'timestamp':=_, 'traceability':=map()}[0m) [0m[1mbreaks the contract[0m ([0;32mcompliance_report()[0m) -> binary()[0m[0m
+Line [0;36m276[0m Column [0;36m33[0m: [1mThe call[0m erlmcp_compliance_report:format_json([0;31mReport::#{'by_section':=map(), 'details':=#{'by_section':=map(), 'passed_tests':=non_neg_integer(), 'total_requirements':=non_neg_integer()}, 'evidence':=[#{<<_:32,_:_*8>>=>_}], 'gaps':=[#{'recommendation'=>binary(), 'requirement'=>map(), 'severity'=>'critical' | 'high' | 'low' | 'medium', 'status'=>'failed' | 'incomplete' | 'missing'}], 'overall':=float(), 'recommendations':=[<<_:64,_:_*8>>,...], 'spec_version':=_, 'timestamp':=_, 'traceability':=map()}[0m) [0m[1mbreaks the contract[0m ([0;32mcompliance_report()[0m) -> binary()[0m[0m
+Line [0;36m277[0m Column [0;36m33[0m: [1mThe call[0m erlmcp_compliance_report:format_html([0;31mReport::#{'by_section':=map(), 'details':=#{'by_section':=map(), 'passed_tests':=non_neg_integer(), 'total_requirements':=non_neg_integer()}, 'evidence':=[#{<<_:32,_:_*8>>=>_}], 'gaps':=[#{'recommendation'=>binary(), 'requirement'=>map(), 'severity'=>'critical' | 'high' | 'low' | 'medium', 'status'=>'failed' | 'incomplete' | 'missing'}], 'overall':=float(), 'recommendations':=[<<_:64,_:_*8>>,...], 'spec_version':=_, 'timestamp':=_, 'traceability':=map()}[0m) [0m[1mbreaks the contract[0m ([0;32mcompliance_report()[0m) -> binary()[0m[0m
+Line [0;36m318[0m Column [0;36m41[0m: [1mThe call[0m erlmcp_compliance_report:format_markdown([0;31mReport::#{'by_section':=map(), 'details':=#{'by_section':=map(), 'passed_tests':=non_neg_integer(), 'total_requirements':=non_neg_integer()}, 'evidence':=[#{<<_:32,_:_*8>>=>_}], 'gaps':=[#{'recommendation'=>binary(), 'requirement'=>map(), 'severity'=>'critical' | 'high' | 'low' | 'medium', 'status'=>'failed' | 'incomplete' | 'missing'}], 'overall':=float(), 'recommendations':=[<<_:64,_:_*8>>,...], 'spec_version':=_, 'timestamp':=_, 'traceability':=map()}[0m) [0m[1mbreaks the contract[0m ([0;32mcompliance_report()[0m) -> binary()[0m[0m
+Line [0;36m319[0m Column [0;36m33[0m: [1mThe call[0m erlmcp_compliance_report:format_json([0;31mReport::#{'by_section':=map(), 'details':=#{'by_section':=map(), 'passed_tests':=non_neg_integer(), 'total_requirements':=non_neg_integer()}, 'evidence':=[#{<<_:32,_:_*8>>=>_}], 'gaps':=[#{'recommendation'=>binary(), 'requirement'=>map(), 'severity'=>'critical' | 'high' | 'low' | 'medium', 'status'=>'failed' | 'incomplete' | 'missing'}], 'overall':=float(), 'recommendations':=[<<_:64,_:_*8>>,...], 'spec_version':=_, 'timestamp':=_, 'traceability':=map()}[0m) [0m[1mbreaks the contract[0m ([0;32mcompliance_report()[0m) -> binary()[0m[0m
+Line [0;36m320[0m Column [0;36m33[0m: [1mThe call[0m erlmcp_compliance_report:format_html([0;31mReport::#{'by_section':=map(), 'details':=#{'by_section':=map(), 'passed_tests':=non_neg_integer(), 'total_requirements':=non_neg_integer()}, 'evidence':=[#{<<_:32,_:_*8>>=>_}], 'gaps':=[#{'recommendation'=>binary(), 'requirement'=>map(), 'severity'=>'critical' | 'high' | 'low' | 'medium', 'status'=>'failed' | 'incomplete' | 'missing'}], 'overall':=float(), 'recommendations':=[<<_:64,_:_*8>>,...], 'spec_version':=_, 'timestamp':=_, 'traceability':=map()}[0m) [0m[1mbreaks the contract[0m ([0;32mcompliance_report()[0m) -> binary()[0m[0m
+
+[4mapps/erlmcp_validation/src/[0;36m[4merlmcp_memory_manager[0m[4m.erl[0m[0m
+Line [0;36m202[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m206[0m Column [0;36m5[0m: [1mExpression produces a value of type [0m'false' | 'ok' | non_neg_integer()[1m, but this value is unmatched[0m[0m
+Line [0;36m223[0m Column [0;36m9[0m: [1mCall to missing or unexported function [0merts_debug:size_of/1[0m[0m
+Line [0;36m227[0m Column [0;36m1[0m: [1mFunction [0;31mcalculate_memory_stats/1 [0m[1mhas no local return[0m[0m
+Line [0;36m231[0m Column [0;36m9[0m: [1mThe call[0m lists:foldl([0;31mfun((_,_,_) -> number())[0m, 0, [{_,_}]) [0m[1mwill never return since it differs in the[0m [1;34m1[0mst[0m [1margument from the success typing arguments:[0m ([0;32mfun((_,_) -> any())[0m, any(), [any()])[0m[0m
+Line [0;36m248[0m Column [0;36m1[0m: [1mFunction [0;31mdetermine_pressure_level/1[0m[1m will never be called[0m[0m
+Line [0;36m253[0m Column [0;36m1[0m: [1mFunction [0;31mmonitor_memory_pressure/1 [0m[1mhas no local return[0m[0m
+Line [0;36m272[0m Column [0;36m1[0m: [1mFunction [0;31mpurge_cache_entries/2 [0m[1mhas no local return[0m[0m
+Line [0;36m274[0m Column [0;36m9[0m: [1mThe call[0m lists:sort([0;31mfun((_,_,_,_) -> boolean())[0m, [{_,_}]) [0m[1mwill never return since it differs in the[0m [1;34m1[0mst[0m [1margument from the success typing arguments:[0m ([0;32mfun((_,_) -> boolean())[0m, [any()])[0m[0m
+Line [0;36m336[0m Column [0;36m9[0m: [1mExpression produces a value of type [0m'ok' | {'memory_pressure','critical' | 'high'}[1m, but this value is unmatched[0m[0m
+
+[4mapps/erlmcp_validation/src/[0;36m[4merlmcp_performance_validator[0m[4m.erl[0m[0m
+Line [0;36m175[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'ok', LatencyResult}[0m[1m can never match the type [0;32m{'error',{'measurement_failed',{_,_}}}[0m[0m
+Line [0;36m263[0m Column [0;36m27[0m: [1mUnknown function [0;31merlmcp_test_client:start_test_client/2[0m[0m
+Line [0;36m277[0m Column [0;36m18[0m: [1mUnknown function [0;31merlmcp_test_client:send_request/2[0m[0m
+Line [0;36m288[0m Column [0;36m9[0m: [1mUnknown function [0;31merlmcp_test_client:stop_test_server/1[0m[0m
+Line [0;36m325[0m Column [0;36m27[0m: [1mUnknown function [0;31merlmcp_test_client:start_test_client/2[0m[0m
+Line [0;36m337[0m Column [0;36m17[0m: [1mUnknown function [0;31merlmcp_test_client:send_request/2[0m[0m
+Line [0;36m353[0m Column [0;36m9[0m: [1mUnknown function [0;31merlmcp_test_client:stop_test_server/1[0m[0m
+Line [0;36m392[0m Column [0;36m25[0m: [1mUnknown function [0;31merlmcp_test_client:start_test_client/2[0m[0m
+Line [0;36m419[0m Column [0;36m13[0m: [1mUnknown function [0;31merlmcp_test_client:stop_test_server/1[0m[0m
+Line [0;36m456[0m Column [0;36m18[0m: [1mUnknown function [0;31merlmcp_test_client:start_test_client/2[0m[0m
+Line [0;36m461[0m Column [0;36m21[0m: [1mUnknown function [0;31merlmcp_test_client:stop_test_server/1[0m[0m
+Line [0;36m508[0m Column [0;36m22[0m: [1mUnknown function [0;31merlmcp_test_client:start_test_client/2[0m[0m
+Line [0;36m547[0m Column [0;36m19[0m: [1mUnknown function [0;31merlmcp_test_client:stop_test_server/1[0m[0m
+Line [0;36m575[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_performance_validator:validate_latency/1.[1m The success typing is[0m (#{'p50_us':=_, 'p95_us':=_, 'p99_us':=_, _=>_}) -> #{'p50':=#{'actual':=_, 'status':='fail' | 'pass', 'target':=5000}, 'p95':=#{'actual':=_, 'status':='fail' | 'pass', 'target':=20000}, 'p99':=#{'actual':=_, 'status':='fail' | 'pass', 'target':=50000}, 'passed':=boolean(), 'status':='fail' | 'pass' | 'warning'}[1m but the spec is[0m (latency_result()) -> validation_result()[0m[0m
+Line [0;36m646[0m Column [0;36m2[0m: [1mInvalid type specification for function[0m erlmcp_performance_validator:validate_concurrent_connections/1.[1m The success typing is[0m (#{'success_count':=number(), 'total_connections':=number(), _=>_}) -> #{'actual':=number(), 'passed':=boolean(), 'status':='fail' | 'pass', 'success_rate':=float(), 'target':=10000, 'target_success_rate':=float()}[1m but the spec is[0m (concurrent_result()) -> validation_result()[0m[0m
+Line [0;36m774[0m Column [0;36m44[0m: [1mThe call[0m erlmcp_transport_tcp:start_server([0;31m#{'port'=>0, 'transport_id'=>'perf_test_tcp'}[0m) [0m[1mbreaks the contract[0m ([0;32mtransport_opts()[0m) -> {'ok',pid()} | {'error',term()}[0m[0m
+
+[4mapps/erlmcp_validation/src/[0;36m[4merlmcp_protocol_validator[0m[4m.erl[0m[0m
+Line [0;36m637[0m Column [0;36m1[0m: [1mThe pattern [0;31m<[_Invalid | Rest], ValidAcc, InvalidAcc>[0m[1m can never match since previous clauses completely covered the type [0;32m<[{map(),'true',<<_:104,_:_*24>>}],non_neg_integer(),0>[0m[0m
+Line [0;36m645[0m Column [0;36m1[0m: [1mThe pattern [0;31m<[_Invalid | Rest], ValidAcc, InvalidAcc>[0m[1m can never match since previous clauses completely covered the type [0;32m<[{map(),'true',<<_:112,_:_*16>>}],non_neg_integer(),0>[0m[0m
+Line [0;36m653[0m Column [0;36m1[0m: [1mThe pattern [0;31m<[_Invalid | Rest], ValidAcc, InvalidAcc>[0m[1m can never match since previous clauses completely covered the type [0;32m<[{map(),'true',<<_:64,_:_*8>>}],non_neg_integer(),0>[0m[0m
+Line [0;36m661[0m Column [0;36m1[0m: [1mThe pattern [0;31m<[_Invalid | Rest], ValidAcc, InvalidAcc>[0m[1m can never match since previous clauses completely covered the type [0;32m<[{map(),'true',<<_:64,_:_*8>>}],non_neg_integer(),0>[0m[0m
+Line [0;36m669[0m Column [0;36m1[0m: [1mThe pattern [0;31m<[_Invalid | Rest], ValidAcc, InvalidAcc>[0m[1m can never match since previous clauses completely covered the type [0;32m<[{map(),'true',<<_:56,_:_*8>>}],non_neg_integer(),0>[0m[0m
+
+[4mapps/erlmcp_validation/src/[0;36m[4merlmcp_spec_parser[0m[4m.erl[0m[0m
+Line [0;36m0[0m: [1mUnknown function [0;31meunit:test/1[0m[0m
+Line [0;36m1540[0m Column [0;36m1[0m: [1mThe pattern [0;31m<_, _>[0m[1m can never match since previous clauses completely covered the type [0;32m<_,#{'arguments'=>map(), 'capabilities'=>map(), 'clientInfo'=>map(), 'cursor'=>map(), 'name'=>map(), 'protocolVersion'=>map(), 'uri'=>map(), <<_:16,_:_*8>>=>map()}>[0m[0m
+Line [0;36m1699[0m Column [0;36m17[0m: [1mThe pattern [0;31m'deprecated'[0m[1m can never match the type [0;32m'stable'[0m[0m
+
+[4mapps/erlmcp_validation/src/[0;36m[4merlmcp_transport_validator[0m[4m.erl[0m[0m
+Line [0;36m887[0m Column [0;36m35[0m: [1mThe call[0m erlmcp_transport_validator:extract_strings_from_try_expr([0;31mExpr::{'try',_,_,_,_,_,_}[0m) [0m[1mwill never return since it differs in the[0m [1;34m1[0mst[0m [1margument from the success typing arguments:[0m ([0;32m{'try',_,[any()],[any()],_} | {'try',_,[any()],[any()],_,[any()]}[0m)[0m[0m
+Line [0;36m894[0m Column [0;36m1[0m: [1mFunction [0;31mextract_strings_from_try_expr/1 [0m[1mhas no local return[0m[0m
+Line [0;36m894[0m Column [0;36m1[0m: [1mThe pattern [0;31m{'try', _, Body, [], _, AfterBody}[0m[1m can never match the type [0;32m{'try',_,_,_,_,_,_}[0m[0m
+Line [0;36m897[0m Column [0;36m1[0m: [1mThe pattern [0;31m{'try', _, Body, CatchClauses, _, AfterBody}[0m[1m can never match the type [0;32m{'try',_,_,_,_,_,_}[0m[0m
+Line [0;36m901[0m Column [0;36m1[0m: [1mThe pattern [0;31m{'try', _, Body, CatchClauses, _}[0m[1m can never match the type [0;32m{'try',_,_,_,_,_,_}[0m[0m
+
+[4mapps/erlmcp_validation/src/[0;36m[4merlmcp_validate_cli[0m[4m.erl[0m[0m
+Line [0;36m23[0m Column [0;36m1[0m: [1mFunction [0;31mmain/1 [0m[1mhas no local return[0m[0m
+Line [0;36m156[0m Column [0;36m1[0m: [1mFunction [0;31mexecute_command/1 [0m[1monly terminates with explicit exception[0m[0m
+Line [0;36m161[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok',#{'results':=[any()], 'sections':=[any()], 'summary':=map(), 'timestamp':=integer(), 'transport':=_}}[0m[0m
+Line [0;36m181[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok',#{'checks':=[any()]}}[0m[0m
+Line [0;36m191[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m{'ok',#{'applications':=[{_,_,_}], 'otp_release':=string(), 'status':='ready', 'version':=[46 | 48 | 49,...]}}[0m[0m
+Line [0;36m230[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m'ok'[0m[0m
+Line [0;36m316[0m Column [0;36m13[0m: [1mThe variable [0;31m_[0m[1m can never match since previous clauses completely covered the type [0;32m#{'category':='error_codes', 'checks':=[map(),...], 'failed':=_, 'module':=atom(), 'passed':=_, 'status':='failed' | 'passed', 'timestamp':=integer()}[0m[0m
+Line [0;36m329[0m Column [0;36m13[0m: [1mThe pattern [0;31m{'ok', Result}[0m[1m can never match the type [0;32m{'error',{'validation_failed',{_,_}}}[0m[0m
+Line [0;36m365[0m Column [0;36m1[0m: [1mFunction [0;31mgenerate_report/1 [0m[1mhas no local return[0m[0m
+Line [0;36m404[0m Column [0;36m90[0m: [1mThe call[0m erlmcp_compliance_report:generate_report(atom(), [0;31mComplianceData::#{'spec_requirements':=[#{'id':=[49 | 50 | 51 | 52 | 53 | 101 | 113 | 114,...], 'name':=[1..255,...], 'section':=[1..255,...]},...], 'spec_version':=<<_:80>>, 'test_results':=[#{'evidence':=[1..255,...], 'name':=[1..255,...], 'requirement_name':=[1..255,...], 'status':=[97 | 100 | 101 | 112 | 115,...]},...], 'timestamp':=[[any()] | char()]}[0m) [0m[1mbreaks the contract[0m (report_format(), [0;32mcompliance_data()[0m) -> {'ok',binary()} | {'error',term()}[0m[0m
+Line [0;36m431[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m'ok'[0m[0m
+Line [0;36m447[0m Column [0;36m9[0m: [1mThe pattern [0;31m{'error', Reason}[0m[1m can never match the type [0;32m'ok'[0m[0m
+Line [0;36m606[0m Column [0;36m1[0m: [1mFunction [0;31mconvert_error_msg/1[0m[1m will never be called[0m[0m
+[0;32m===> Warnings written to _build/default/27.3.4.2.dialyzer_warnings
+[0m[0;31m===> [1mWarnings occurred running dialyzer: 453
+[0m[0m

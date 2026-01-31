@@ -1,0 +1,42 @@
+{application, erlmcp_transports,
+ [{description, "Erlang MCP Transports - STDIO, TCP, HTTP, WebSocket"},
+  {vsn, "2.1.0"},
+  {registered, [
+      erlmcp_transport_sup
+  ]},
+  {applications, [
+      kernel,
+      stdlib,
+      ssl,
+      inets,
+      gun,
+      ranch,
+      poolboy,
+      cowboy,
+      erlmcp_core
+  ]},
+  {mod, {erlmcp_transports_app, []}},
+  {env, [
+      {transport_defaults, #{
+          tcp => #{
+              connect_timeout => 5000,
+              keepalive => true,
+              nodelay => true,
+              port => 3000
+          },
+          http => #{
+              connect_timeout => 5000,
+              request_timeout => 30000,
+              max_connections => 100,
+              port => 3001
+          },
+          stdio => #{
+              buffer_size => 65536,
+              read_timeout => infinity
+          }
+      }}
+  ]},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]}
+ ]}.

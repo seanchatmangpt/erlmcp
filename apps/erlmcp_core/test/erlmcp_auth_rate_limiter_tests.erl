@@ -9,7 +9,19 @@
 -module(erlmcp_auth_rate_limiter_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_auth.hrl").
+
+%% Record definitions from erlmcp_auth_rate_limiter
+-record(client_stats, {
+    client_id :: binary() | undefined,
+    ip_address :: inet:ip_address() | undefined,
+    total_attempts :: non_neg_integer(),
+    successful_auths :: non_neg_integer(),
+    failed_auths :: non_neg_integer(),
+    rate_limited_count :: non_neg_integer(),
+    blocked_count :: non_neg_integer(),
+    current_backoff_level :: 0..5,
+    last_attempt_at :: integer() | undefined
+}).
 
 %%====================================================================
 %% Test Fixtures

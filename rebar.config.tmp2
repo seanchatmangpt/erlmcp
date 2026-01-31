@@ -1,0 +1,315 @@
+%% ============================================================================
+%% ERLMCP UMBRELLA - Root Configuration
+%% ============================================================================
+%% Erlang/OTP MCP SDK - Umbrella project with 4 applications:
+%%   - erlmcp_core: JSON-RPC, Registry, Client/Server
+%%   - erlmcp_transports: STDIO, TCP, HTTP, WebSocket
+%%   - erlmcp_observability: Metrics, Traces, Receipts (OpenTelemetry)
+%%   - tcps_erlmcp: Toyota Code Production System (optional)
+%% ============================================================================
+
+%% Compiler options
+{erl_opts, [
+    debug_info,
+    nowarn_export_vars,
+    nowarn_shadow_vars,
+    nowarn_obsolete_guard,
+    nowarn_unused_import,
+    nowarn_missing_spec,
+    nowarn_unused_function,
+    nowarn_unused_type,
+    nowarn_unused_vars,
+    nowarn_unsafe_vars,
+    {i, "include"},
+    {platform_define, "^2[1-9]|^[3-9]", 'POST_OTP_21'}
+]}.
+
+%% Suppress compiler warnings temporarily (TODO: enable warnings_as_errors for production)
+{compiler_warnings_as_errors, false}.
+
+%% Umbrella project structure
+{project_app_dirs, ["apps/*"]}.
+
+%% Source directories (for backwards compatibility with legacy src/)
+{src_dirs, ["src"]}.
+{test_dirs, ["test"]}.
+{include_dirs, ["include"]}.
+
+%% Exclude integration tests from eunit (use CT for integration)
+{eunit_opts, [
+    {exclude, ".*_SUITE$"},
+    verbose
+]}.
+
+%% Top-level dependencies (inherited by all apps)
+{deps, [
+    {jsx, "3.1.0"},
+    {jesse, "1.8.1"},
+    {gproc, "0.9.0"},
+    {gun, "2.0.1"},
+    {ranch, "2.1.0"},
+    {poolboy, "1.5.2"},
+    {bbmustache, "1.12.2"},
+    {cowboy, "2.10.0"},
+    {opentelemetry_api, "1.5.0"},
+    {opentelemetry, "1.7.0"},
+    {opentelemetry_exporter, "1.10.0"},
+    {jobs, "0.10.0"},
+    {fs, "8.6.1"},
+    {jose, "1.11.1"}  % JWT validation library (CRITICAL security dependency)
+]}.
+
+%% ============================================================================
+%% SHELL CONFIGURATION
+%% ============================================================================
+
+%% Note: fs and jobs removed from dependencies (unused, Agent 14 finding)
+%% Note: graphql temporarily removed - not available in hex.pm
+
+{shell, [
+    {config, "config/sys.config"},
+    {apps, [erlmcp_core, erlmcp_transports, erlmcp_observability, erlmcp_validation]}
+]}.
+
+%% ============================================================================
+%% PROFILES
+%% ============================================================================
+
+{profiles, [
+    %% Production profile
+    {prod, [
+        {erl_opts, [
+            no_debug_info,
+            {d, 'PROD'}
+        ]},
+        {compiler_warnings_as_errors, true},
+        {relx, [
+            {dev_mode, false},
+            {include_erts, true},
+            {include_src, false}
+        ]}
+    ]},
+
+    %% Test profile
+    {test, [
+        {deps, [
+            {proper, "1.4.0"},
+            {meck, "0.9.2"},
+            {coveralls, "2.2.0"}
+        ]},
+        {erl_opts, [
+            debug_info,
+            export_all,
+            nowarn_missing_spec,
+            nowarn_export_all
+        ]},
+        {cover_enabled, true},
+        {cover_export_enabled, true},
+        {coveralls_coverdata, "_build/test/cover/*.coverdata"},
+        {coveralls_service_name, "github"},
+        {coveralls_parallel, true},
+        {cover_excl_mods, [
+            %% Test client helpers (validation framework - not testable)
+            erlmcp_test_client,
+
+            %% Refusal code lookup module (simple data access - tested indirectly)
+            erlmcp_refusal,
+
+            %% Test modules that lack abstract code
+            erlmcp_connection_limiter_tests,
+            erlmcp_compliance_report_tests
+        ]}
+    ]},
+
+    %% Development profile
+    {dev, [
+        {deps, [
+            {recon, "2.5.3"},
+            {observer_cli, "1.7.4"}
+        ]},
+        {plugins, [
+            {rebar3_lint, "3.0.1"}
+        ]}
+    ]},
+
+    %% Validation profile - for building escript CLI tool
+    {validation, [
+        {erl_opts, [
+            debug_info,
+            export_all
+        ]},
+        {deps, []}
+    ]}
+]}.
+
+%% ============================================================================
+%% DIALYZER - Type checking
+%% ============================================================================
+
+{dialyzer, [
+    {warnings, [
+        error_handling,
+        unmatched_returns,
+        unknown
+    ]},
+    {plt_apps, all_deps},
+    {plt_extra_apps, [mnesia, os_mon, inets, ssl, crypto, public_key]},
+    {plt_location, local}
+]}.
+
+%% ============================================================================
+%% XREF - Cross-reference analysis
+%% ============================================================================
+
+{xref_checks, [
+    undefined_function_calls,
+    undefined_functions,
+    locals_not_used,
+    deprecated_function_calls,
+    deprecated_functions
+]}.
+
+{xref_ignores, [
+    %% Dynamically called transport functions
+    {erlmcp_transport_stdio, read_loop, 2},
+    {erlmcp_transport_tcp, send, 2},
+
+    %% OpenTelemetry API functions (external library)
+    {otel_tracer, start_span, 1},
+    {otel_tracer, get_tracer, 1},
+    {otel_span, record_exception, 4},
+    {otel, with_span, 3},
+    {otel, add_event, 2},
+
+    %% Stdlib extensions available in Erlang/OTP 25+
+    {maps, any, 2},
+    {erlang, term_to_string, 1},
+    {uri_string, quote_string, 1},
+    {file, canonicalize_path, 1},
+    {inet, getstat, 0},
+
+    %% Gun/Ranch/Cowboy (external libraries)
+    {gun, open, 2},
+    {gun, await, 2},
+    {ranch, start_listener, 6},
+    {poolboy, checkout, 1},
+    {cowboy_req, stream_body, 2},
+
+    %% Rebar3 provider API (only available in build context)
+    {providers, create, 1},
+    {rebar_api, debug, 2},
+    {rebar_api, error, 2},
+    {rebar_api, info, 2},
+    {rebar_api, warn, 2},
+    {rebar_state, add_provider, 2},
+    {rebar_state, command_parsed_args, 1},
+    {rebar_state, dir, 1}
+]}.
+
+%% ============================================================================
+%% COVERAGE
+%% ============================================================================
+
+{cover_enabled, true}.
+{cover_export_enabled, true}.
+{cover_opts, [verbose]}.
+
+%% Exclude modules that cannot be covered (no_abstract_code issues)
+%% These are typically test helpers or validation utilities that don't benefit from coverage
+{cover_excl_mods, [
+    %% Test client helpers (validation framework - not testable)
+    erlmcp_test_client,
+
+    %% Refusal code lookup module (simple data access - tested indirectly)
+    erlmcp_refusal,
+
+    %% Test modules that lack abstract code
+    erlmcp_connection_limiter_tests,
+    erlmcp_compliance_report_tests
+]}.
+
+%% ============================================================================
+%% ESCRIPT - Validation CLI Tool
+%% ============================================================================
+
+{escript_main_app, erlmcp_validation}.
+{escript_name, "erlmcp_validate"}.
+{escript_emu_args, "%%! -escript main erlmcp_validate_cli -noshell -pa _build/default/lib/*/ebin\n"}.
+{escript_incl_apps, [erlmcp_validation, erlmcp_core, erlmcp_transports, erlmcp_observability, jsx, jesse]}.
+
+%% ============================================================================
+%% ALIASES
+%% ============================================================================
+
+{alias, [
+    {check, [compile, xref, dialyzer, eunit, cover]},
+    {test, [eunit, {proper, "-c"}, cover]},
+    {cleanplus, [clean, {cover, "-r"}]},
+    {validate, ['validation', 'escriptize']},  % Build validation escript
+    {validate_run, ['validation', ct]}         % Run validation tests
+]}.
+
+%% ============================================================================
+%% RELEASE CONFIGURATION - erlmcp v2.0.0
+%% ============================================================================
+
+{relx, [
+    {release, {erlmcp, "2.1.0"},
+     [erlmcp_core,
+      erlmcp_transports,
+      erlmcp_observability,
+      erlmcp_validation,
+      tcps_erlmcp,  % Optional - can be excluded
+      gproc,
+      gun,
+      ranch,
+      poolboy,
+      jsx,
+      jesse,
+      jose,  % JWT validation (CRITICAL security)
+      bbmustache,
+      cowboy,
+      opentelemetry_api,
+      opentelemetry,
+      opentelemetry_exporter,
+      jobs,
+      mnesia,
+      sasl
+    ]},
+
+    {sys_config, "./config/sys.config"},
+    {vm_args, "./vm.args"},
+
+    {dev_mode, true},
+    {include_erts, false},
+    {include_src, false},
+
+    {extended_start_script, true},
+
+    {overlay, [
+        {mkdir, "log"},
+        {mkdir, "data"},
+        {mkdir, "etc"},
+        {copy, "priv/dashboard", "priv/dashboard"},
+        {copy, "ontology", "priv/ontology"},
+        {copy, "shapes", "priv/shapes"}
+    ]}
+]}.
+
+%% ============================================================================
+%% PLUGINS
+%% ============================================================================
+
+{plugins, [
+    rebar3_hex,
+    {rebar3_proper, "0.12.1"},
+    {coveralls, "2.2.0"}
+]}.
+
+%% ============================================================================
+%% PROJECT PLUGINS
+%% ============================================================================
+
+{project_plugins, [
+    rebar3_auto
+]}.
