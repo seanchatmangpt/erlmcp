@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - None reported
 
 ### Documentation
+- **Repository Documentation Reorganization**: Major cleanup and restructuring
+  - Archived 372 interim/transient files from root directory to `archive/`
+  - Removed 222 files after comprehensive audit (one-time reports, old versions, interim fixes)
+  - Retained 150 high-value reference files in structured archive
+  - Added `DOCUMENTATION_GUIDE.md` for navigating repository documentation
+  - Updated `ARCHIVE_INDEX.md` with categorized archive inventory
+  - Root-level files reduced from 382 to 10 essential files
+  - Result: Significantly improved repository clarity and easier navigation
 - Release Strategy: RELEASE_STRATEGY.md (new)
 - Release Tools: tools/release.sh, tools/changelog-generator.sh (new)
 
