@@ -100,7 +100,11 @@ generate_report(ValidationResults, Options) ->
     },
 
     %% Encode to JSON - PRETTY FOR HUMAN READABILITY, MACHINE PARSEABLE
-    jsx:encode(Report, [pretty, {space, 1}, {indent, 2}]).
+    JSEncodeOptions = case PrettyPrint of
+        true -> [{space, 1}, {indent, 2}];
+        false -> []
+    end,
+    jsx:encode(Report, JSEncodeOptions).
 
 %% @doc Format individual validator result for JSON
 -spec format_validator_result(atom(), validation_results()) -> map().

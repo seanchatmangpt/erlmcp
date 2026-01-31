@@ -1,0 +1,62 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 356 │              [1;31m{[0merror, CreateReason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      [1;31m{[0merror, token_expired};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      [1;31m{[0merror, token_not_yet_valid};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      [1;31m{[0merror, invalid_issuer}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1139 │                  [1;31m{[0mnoreply, State};[0m
+      │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1149 │                                  [1;31m{[0mnoreply, State};[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1154 │                                  [1;31m{[0mnoreply, State}[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1160 │                          [1;31m{[0mnoreply, State}[0m
+      │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m     ┌─ apps/erlmcp_core/test/erlmcp_sse_event_store_tests.erl:
+     │
+ 380 │      ?assertMatch([1;31m_[0m, ets:whereis(TableName)),[0m
+     │                   [1;31m╰──[0m[0m Warning: this clause cannot match because a previous clause at line 380 always matches
+
+
+[0;31m===> [1mCompiling apps/erlmcp_core/test/oauth2_introspection_handler.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/test/oauth2_introspection_handler.erl:
+    │
+ 52 │              [1;31mReqErr[0m = cowboy_req:reply(400, #{}, <<"Bad Request">>, Req1),[0m
+    │              [1;31m╰──[0m[0m variable 'ReqErr' unsafe in 'case' (line 36, column 5)
+
+

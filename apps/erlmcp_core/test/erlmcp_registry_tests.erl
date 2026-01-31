@@ -80,7 +80,7 @@ test_registry_startup(#{registry := Registry}) ->
     ].
 
 test_server_registration(#{registry := Registry} = State) ->
-    MockServer = spawn_link(fun() ->
+    TestServer = spawn_link(fun() ->
         receive stop -> ok after 5000 -> ok end
     end),
 
@@ -91,10 +91,10 @@ test_server_registration(#{registry := Registry} = State) ->
 
     Tests = [
         % Register server
-        ?_assertEqual(ok, gen_server:call(Registry, {register_server, test_server_1, MockServer, ServerConfig})),
+        ?_assertEqual(ok, gen_server:call(Registry, {register_server, test_server_1, TestServer, ServerConfig})),
 
         % Verify registration
-        ?_assertMatch({ok, {MockServer, ServerConfig}},
+        ?_assertMatch({ok, {TestServer, ServerConfig}},
                      gen_server:call(Registry, {find_server, test_server_1})),
 
         % Check it appears in list
@@ -105,7 +105,7 @@ test_server_registration(#{registry := Registry} = State) ->
 
         % Test duplicate registration by same PID is idempotent (returns ok)
         ?_assertEqual(ok,
-                     gen_server:call(Registry, {register_server, test_server_1, MockServer, ServerConfig})),
+                     gen_server:call(Registry, {register_server, test_server_1, TestServer, ServerConfig})),
 
         % Unregister
         ?_assertEqual(ok, gen_server:call(Registry, {unregister_server, test_server_1})),
@@ -113,11 +113,11 @@ test_server_registration(#{registry := Registry} = State) ->
     ],
 
     % Store pid for cleanup
-    maps:put(test_pids, [MockServer | maps:get(test_pids, State, [])], State),
+    maps:put(test_pids, [TestServer | maps:get(test_pids, State, [])], State),
     Tests.
 
 test_transport_registration(#{registry := Registry} = State) ->
-    MockTransport = spawn_link(fun() ->
+    TestTransport = spawn_link(fun() ->
         receive stop -> ok after 5000 -> ok end
     end),
 
@@ -125,10 +125,10 @@ test_transport_registration(#{registry := Registry} = State) ->
 
     Tests = [
         % Register transport
-        ?_assertEqual(ok, gen_server:call(Registry, {register_transport, test_transport_1, MockTransport, TransportConfig})),
+        ?_assertEqual(ok, gen_server:call(Registry, {register_transport, test_transport_1, TestTransport, TransportConfig})),
 
         % Verify registration
-        ?_assertMatch({ok, {MockTransport, TransportConfig}},
+        ?_assertMatch({ok, {TestTransport, TransportConfig}},
                      gen_server:call(Registry, {find_transport, test_transport_1})),
 
         % Check in list
@@ -142,20 +142,20 @@ test_transport_registration(#{registry := Registry} = State) ->
         ?_assertMatch({error, not_found}, gen_server:call(Registry, {find_transport, test_transport_1}))
     ],
 
-    maps:put(test_pids, [MockTransport | maps:get(test_pids, State, [])], State),
+    maps:put(test_pids, [TestTransport | maps:get(test_pids, State, [])], State),
     Tests.
 
 test_server_transport_binding(#{registry := Registry} = State) ->
-    MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-    MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+    TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+    TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
     % Register both and verify registration before binding
-    ok = gen_server:call(Registry, {register_server, test_server_bind, MockServer, #{}}),
-    ok = gen_server:call(Registry, {register_transport, test_transport_bind, MockTransport, #{type => stdio}}),
+    ok = gen_server:call(Registry, {register_server, test_server_bind, TestServer, #{}}),
+    ok = gen_server:call(Registry, {register_transport, test_transport_bind, TestTransport, #{type => stdio}}),
 
     % Verify registrations succeeded
-    {ok, {MockServer, _}} = gen_server:call(Registry, {find_server, test_server_bind}),
-    {ok, {MockTransport, _}} = gen_server:call(Registry, {find_transport, test_transport_bind}),
+    {ok, {TestServer, _}} = gen_server:call(Registry, {find_server, test_server_bind}),
+    {ok, {TestTransport, _}} = gen_server:call(Registry, {find_transport, test_transport_bind}),
 
     % Verify initial state
     {error, not_found} = gen_server:call(Registry, {get_server_for_transport, test_transport_bind}),
@@ -179,16 +179,22 @@ test_server_transport_binding(#{registry := Registry} = State) ->
         fun() ->
             Result = gen_server:call(Registry, {get_server_for_transport, test_transport_bind}),
             ?assertMatch({error, not_found}, Result)
+        end,
+
+        % Cleanup after successful tests
+        fun() ->
+            gen_server:call(Registry, {unregister_server, test_server_bind}),
+            gen_server:call(Registry, {unregister_transport, test_transport_bind}),
+            ok
         end
     ],
 
-    % Test binding to nonexistent server (after cleanup)
-    gen_server:call(Registry, {unregister_server, test_server_bind}),
-    gen_server:call(Registry, {unregister_transport, test_transport_bind}),
+    % Setup for error case tests (re-use same processes with different names)
+    TestServer2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+    TestTransport2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
-    % Re-register for error case tests
-    ok = gen_server:call(Registry, {register_server, test_server_bind2, MockServer, #{}}),
-    ok = gen_server:call(Registry, {register_transport, test_transport_bind2, MockTransport, #{type => stdio}}),
+    ok = gen_server:call(Registry, {register_server, test_server_bind2, TestServer2, #{}}),
+    ok = gen_server:call(Registry, {register_transport, test_transport_bind2, TestTransport2, #{type => stdio}}),
 
     Tests2 = [
         fun() ->
@@ -200,20 +206,23 @@ test_server_transport_binding(#{registry := Registry} = State) ->
             % Test binding nonexistent transport fails
             Result = gen_server:call(Registry, {bind_transport_to_server, nonexistent, test_server_bind2}),
             ?assertMatch({error, transport_not_found}, Result)
+        end,
+
+        % Cleanup after error tests
+        fun() ->
+            gen_server:call(Registry, {unregister_server, test_server_bind2}),
+            gen_server:call(Registry, {unregister_transport, test_transport_bind2}),
+            ok
         end
     ],
 
-    % Cleanup
-    gen_server:call(Registry, {unregister_server, test_server_bind2}),
-    gen_server:call(Registry, {unregister_transport, test_transport_bind2}),
-
-    maps:put(test_pids, [MockServer, MockTransport | maps:get(test_pids, State, [])], State),
+    maps:put(test_pids, [TestServer, TestTransport, TestServer2, TestTransport2 | maps:get(test_pids, State, [])], State),
     Tests ++ Tests2.
 
 test_message_routing_to_server(#{registry := Registry} = State) ->
     Collector = spawn_link(fun() -> collect_messages([]) end),
 
-    MockServer = spawn_link(fun() ->
+    TestServer = spawn_link(fun() ->
         receive
             {mcp_message, TransportId, Message} ->
                 Collector ! {server_received, TransportId, Message}
@@ -221,11 +230,11 @@ test_message_routing_to_server(#{registry := Registry} = State) ->
         end
     end),
 
-    MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+    TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
     % Register and bind
-    ?assertEqual(ok, gen_server:call(Registry, {register_server, test_server_route, MockServer, #{}})),
-    ?assertEqual(ok, gen_server:call(Registry, {register_transport, test_transport_route, MockTransport, #{type => stdio}})),
+    ?assertEqual(ok, gen_server:call(Registry, {register_server, test_server_route, TestServer, #{}})),
+    ?assertEqual(ok, gen_server:call(Registry, {register_transport, test_transport_route, TestTransport, #{type => stdio}})),
     ?assertEqual(ok, gen_server:call(Registry, {bind_transport_to_server, test_transport_route, test_server_route})),
 
     % Route message
@@ -247,15 +256,15 @@ test_message_routing_to_server(#{registry := Registry} = State) ->
     gen_server:call(Registry, {unregister_server, test_server_route}),
     gen_server:call(Registry, {unregister_transport, test_transport_route}),
 
-    maps:put(test_pids, [Collector, MockServer, MockTransport | maps:get(test_pids, State, [])], State),
+    maps:put(test_pids, [Collector, TestServer, TestTransport | maps:get(test_pids, State, [])], State),
     [Test].
 
 test_message_routing_to_transport(#{registry := Registry} = State) ->
     Collector = spawn_link(fun() -> collect_messages([]) end),
 
-    MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+    TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
-    MockTransport = spawn_link(fun() ->
+    TestTransport = spawn_link(fun() ->
         receive
             {mcp_response, ServerId, Message} ->
                 Collector ! {transport_received, ServerId, Message}
@@ -264,8 +273,8 @@ test_message_routing_to_transport(#{registry := Registry} = State) ->
     end),
 
     % Register and bind
-    ?assertEqual(ok, gen_server:call(Registry, {register_server, test_server_route2, MockServer, #{}})),
-    ?assertEqual(ok, gen_server:call(Registry, {register_transport, test_transport_route2, MockTransport, #{type => stdio}})),
+    ?assertEqual(ok, gen_server:call(Registry, {register_server, test_server_route2, TestServer, #{}})),
+    ?assertEqual(ok, gen_server:call(Registry, {register_transport, test_transport_route2, TestTransport, #{type => stdio}})),
     ?assertEqual(ok, gen_server:call(Registry, {bind_transport_to_server, test_transport_route2, test_server_route2})),
 
     % Route message
@@ -287,26 +296,26 @@ test_message_routing_to_transport(#{registry := Registry} = State) ->
     gen_server:call(Registry, {unregister_server, test_server_route2}),
     gen_server:call(Registry, {unregister_transport, test_transport_route2}),
 
-    maps:put(test_pids, [Collector, MockServer, MockTransport | maps:get(test_pids, State, [])], State),
+    maps:put(test_pids, [Collector, TestServer, TestTransport | maps:get(test_pids, State, [])], State),
     [Test].
 
 test_process_monitoring(#{registry := Registry} = _State) ->
-    MockServer = spawn_link(fun() ->
+    TestServer = spawn_link(fun() ->
         receive die -> exit(normal) after 5000 -> ok end
     end),
 
     % Register server
-    gen_server:call(Registry, {register_server, test_server_monitor, MockServer, #{}}),
+    gen_server:call(Registry, {register_server, test_server_monitor, TestServer, #{}}),
 
     % Verify registration
-    ?assertMatch({ok, {MockServer, _}}, gen_server:call(Registry, {find_server, test_server_monitor})),
+    ?assertMatch({ok, {TestServer, _}}, gen_server:call(Registry, {find_server, test_server_monitor})),
 
     % Kill server process
-    unlink(MockServer),
-    exit(MockServer, kill),
+    unlink(TestServer),
+    exit(TestServer, kill),
 
     % Wait for process death and registry cleanup
-    wait_for_process_death(MockServer, 2000),
+    wait_for_process_death(TestServer, 2000),
     timer:sleep(500),
 
     Tests = [
@@ -320,17 +329,17 @@ test_list_operations(#{registry := Registry} = State) ->
     % Create multiple servers
     Servers = lists:map(fun(N) ->
         ServerId = list_to_atom("list_server_" ++ integer_to_list(N)),
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-        {ServerId, MockServer}
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+        {ServerId, TestServer}
     end, lists:seq(1, 5)),
 
     % Create multiple transports
     Transports = lists:map(fun(N) ->
         TransportId = list_to_atom("list_transport_" ++ integer_to_list(N)),
-        MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
-        {TransportId, MockTransport}
+        TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
+        {TransportId, TestTransport}
     end, lists:seq(1, 5)),
 
     ServerList = gen_server:call(Registry, list_servers),
@@ -342,16 +351,16 @@ test_list_operations(#{registry := Registry} = State) ->
     ],
 
     % Cleanup
-    lists:foreach(fun({ServerId, MockServer}) ->
+    lists:foreach(fun({ServerId, TestServer}) ->
         gen_server:call(Registry, {unregister_server, ServerId}),
-        unlink(MockServer),
-        exit(MockServer, kill)
+        unlink(TestServer),
+        exit(TestServer, kill)
     end, Servers),
 
-    lists:foreach(fun({TransportId, MockTransport}) ->
+    lists:foreach(fun({TransportId, TestTransport}) ->
         gen_server:call(Registry, {unregister_transport, TransportId}),
-        unlink(MockTransport),
-        exit(MockTransport, kill)
+        unlink(TestTransport),
+        exit(TestTransport, kill)
     end, Transports),
 
     AllPids = [P || {_, P} <- Servers ++ Transports],
@@ -400,8 +409,8 @@ test_concurrent_registration(#{registry := Registry} = State) ->
     Parent = self(),
     Pids = lists:map(fun(_) ->
         spawn_link(fun() ->
-            MockServer = self(),
-            Result = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}},
+            TestServer = self(),
+            Result = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}},
                                      2000),
             Parent ! {registration_result, self(), Result}
         end)
@@ -445,8 +454,8 @@ test_duplicate_registration_different_pid_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer1 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockServer2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer1 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         ServerId = dup_server,
         ServerConfig = #{},
@@ -454,11 +463,11 @@ test_duplicate_registration_different_pid_test_() ->
         [
             ?_test(begin
                 % Register first server
-                ?assertEqual(ok, gen_server:call(Registry, {register_server, ServerId, MockServer1, ServerConfig}))
+                ?assertEqual(ok, gen_server:call(Registry, {register_server, ServerId, TestServer1, ServerConfig}))
             end),
             ?_test(begin
                 % Try to register with different PID - should fail
-                Result = gen_server:call(Registry, {register_server, ServerId, MockServer2, ServerConfig}),
+                Result = gen_server:call(Registry, {register_server, ServerId, TestServer2, ServerConfig}),
                 ?assertMatch({error, already_registered}, Result)
             end)
         ]
@@ -470,21 +479,21 @@ test_transport_auto_binding_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         ServerId = auto_bind_server,
         TransportId = auto_bind_transport,
 
         % Register server first
-        ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
+        ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
 
         % Register transport with server_id in config - should auto-bind
         TransportConfig = #{type => stdio, server_id => ServerId},
 
         [
             ?_test(begin
-                ?assertEqual(ok, gen_server:call(Registry, {register_transport, TransportId, MockTransport, TransportConfig}))
+                ?assertEqual(ok, gen_server:call(Registry, {register_transport, TransportId, TestTransport, TransportConfig}))
             end),
             ?_test(begin
                 % Verify auto-binding worked
@@ -499,10 +508,10 @@ test_broadcast_routing_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockTransport1 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockTransport2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockTransport3 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport1 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport3 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         ServerId = broadcast_server,
         Transport1Id = broadcast_transport_1,
@@ -510,10 +519,10 @@ test_broadcast_routing_test_() ->
         Transport3Id = broadcast_transport_3,
 
         % Register server and transports
-        ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-        ok = gen_server:call(Registry, {register_transport, Transport1Id, MockTransport1, #{type => stdio}}),
-        ok = gen_server:call(Registry, {register_transport, Transport2Id, MockTransport2, #{type => stdio}}),
-        ok = gen_server:call(Registry, {register_transport, Transport3Id, MockTransport3, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+        ok = gen_server:call(Registry, {register_transport, Transport1Id, TestTransport1, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_transport, Transport2Id, TestTransport2, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_transport, Transport3Id, TestTransport3, #{type => stdio}}),
 
         % Bind all transports to server
         ok = gen_server:call(Registry, {bind_transport_to_server, Transport1Id, ServerId}),
@@ -573,13 +582,13 @@ test_double_unregister_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
         ServerId = double_unregister_server,
 
         [
             ?_test(begin
-                ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-                ?assertMatch({ok, {MockServer, _}}, gen_server:call(Registry, {find_server, ServerId}))
+                ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+                ?assertMatch({ok, {TestServer, _}}, gen_server:call(Registry, {find_server, ServerId}))
             end),
             ?_test(begin
                 % First unregister
@@ -598,15 +607,15 @@ test_transport_process_death_cleanup_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockTransport = spawn_link(fun() -> receive die -> exit(normal) after 5000 -> ok end end),
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport = spawn_link(fun() -> receive die -> exit(normal) after 5000 -> ok end end),
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         TransportId = death_transport,
         ServerId = death_server,
 
         % Register and bind
-        ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-        ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+        ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
         ok = gen_server:call(Registry, {bind_transport_to_server, TransportId, ServerId}),
 
         [
@@ -616,9 +625,9 @@ test_transport_process_death_cleanup_test_() ->
             end),
             ?_test(begin
                 % Kill transport process
-                unlink(MockTransport),
-                exit(MockTransport, kill),
-                wait_for_process_death(MockTransport, 2000),
+                unlink(TestTransport),
+                exit(TestTransport, kill),
+                wait_for_process_death(TestTransport, 2000),
                 timer:sleep(200),  % Allow gproc monitor cleanup
                 ?assertMatch({error, not_found}, gen_server:call(Registry, {find_transport, TransportId}))
             end),
@@ -635,18 +644,18 @@ test_server_death_cleans_up_bindings_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() -> receive die -> exit(normal) after 5000 -> ok end end),
-        MockTransport1 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockTransport2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer = spawn_link(fun() -> receive die -> exit(normal) after 5000 -> ok end end),
+        TestTransport1 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport2 = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         ServerId = death_cleanup_server,
         Transport1Id = death_cleanup_transport_1,
         Transport2Id = death_cleanup_transport_2,
 
         % Register and bind multiple transports
-        ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-        ok = gen_server:call(Registry, {register_transport, Transport1Id, MockTransport1, #{type => stdio}}),
-        ok = gen_server:call(Registry, {register_transport, Transport2Id, MockTransport2, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+        ok = gen_server:call(Registry, {register_transport, Transport1Id, TestTransport1, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_transport, Transport2Id, TestTransport2, #{type => stdio}}),
         ok = gen_server:call(Registry, {bind_transport_to_server, Transport1Id, ServerId}),
         ok = gen_server:call(Registry, {bind_transport_to_server, Transport2Id, ServerId}),
 
@@ -658,9 +667,9 @@ test_server_death_cleans_up_bindings_test_() ->
             end),
             ?_test(begin
                 % Kill server process
-                unlink(MockServer),
-                exit(MockServer, kill),
-                wait_for_process_death(MockServer, 2000),
+                unlink(TestServer),
+                exit(TestServer, kill),
+                wait_for_process_death(TestServer, 2000),
                 timer:sleep(200),  % Allow gproc monitor cleanup
                 ?assertMatch({error, not_found}, gen_server:call(Registry, {find_server, ServerId}))
             end),
@@ -692,8 +701,8 @@ test_get_all_state_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         [
             ?_test(begin
@@ -702,8 +711,8 @@ test_get_all_state_test_() ->
             end),
             ?_test(begin
                 % Register and bind
-                ok = gen_server:call(Registry, {register_server, state_server, MockServer, #{}}),
-                ok = gen_server:call(Registry, {register_transport, state_transport, MockTransport, #{type => stdio}}),
+                ok = gen_server:call(Registry, {register_server, state_server, TestServer, #{}}),
+                ok = gen_server:call(Registry, {register_transport, state_transport, TestTransport, #{type => stdio}}),
                 ok = gen_server:call(Registry, {bind_transport_to_server, state_transport, state_server}),
 
                 % Get state with bindings
@@ -785,19 +794,19 @@ test_route_message_to_server_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() ->
+        TestServer = spawn_link(fun() ->
             receive
                 {mcp_message, _, _} -> ok
             after 1000 -> ok
             end
         end),
-        MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         ServerId = route_msg_server,
         TransportId = route_msg_transport,
 
-        ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-        ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+        ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
         ok = gen_server:call(Registry, {bind_transport_to_server, TransportId, ServerId}),
 
         TestMessage = #{<<"test">> => <<"route_message">>},
@@ -831,8 +840,8 @@ test_route_message_to_transport_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-        MockTransport = spawn_link(fun() ->
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport = spawn_link(fun() ->
             receive
                 {mcp_response, _, _} -> ok
             after 1000 -> ok
@@ -842,8 +851,8 @@ test_route_message_to_transport_test_() ->
         ServerId = route_msg_transport_server,
         TransportId = route_msg_transport_transport,
 
-        ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-        ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport,
+        ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+        ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport,
                                         #{type => stdio, server_id => ServerId}}),
 
         TestMessage = #{<<"test">> => <<"route_message">>},
@@ -862,11 +871,11 @@ test_route_message_to_transport_no_server_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         TransportId = no_server_transport,
 
-        ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
+        ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
 
         TestMessage = #{<<"test">> => <<"data">>},
 
@@ -900,19 +909,19 @@ test_concurrent_bindings_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(#{registry := Registry} = State) ->
-        MockServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+        TestServer = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
 
         ServerId = concurrent_bind_server,
 
-        ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
+        ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
 
         % Create multiple transports
         TransportCount = 20,
         {Transports, TransportIds} = lists:unzip(lists:map(fun(N) ->
             TransportId = list_to_atom("concurrent_transport_" ++ integer_to_list(N)),
-            MockTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
-            ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
-            {MockTransport, TransportId}
+            TestTransport = spawn_link(fun() -> receive stop -> ok after 5000 -> ok end end),
+            ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
+            {TestTransport, TransportId}
         end, lists:seq(1, TransportCount))),
 
         % Bind all transports concurrently

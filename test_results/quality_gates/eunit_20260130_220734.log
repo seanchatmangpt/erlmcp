@@ -1,0 +1,65 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 349 │              [1;31m{[0merror, CreateReason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      [1;31m{[0merror, token_expired};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      [1;31m{[0merror, token_not_yet_valid};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      [1;31m{[0merror, invalid_issuer}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1146 │                  [1;31m{[0mnoreply, State};[0m
+      │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1156 │                                  [1;31m{[0mnoreply, State};[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1161 │                                  [1;31m{[0mnoreply, State}[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1167 │                          [1;31m{[0mnoreply, State}[0m
+      │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m    ┌─ apps/erlmcp_transports/src/erlmcp_security_headers.erl:
+    │
+ 94 │      ModuleInfo = [1;31m[[0m[0m
+    │                   [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mCompiling apps/erlmcp_transports/src/erlmcp_transport_discovery.erl failed
+[0m[0m     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 555 │          _:_:[1;31mReason[0m ->[0m
+     │              [1;31m╰──[0m[0m stacktrace variable 'Reason' must not be previously bound
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_discovery.erl:
+     │
+ 555 │          _:_:[1;31mReason[0m ->[0m
+     │              [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 511, column 5)
+
+

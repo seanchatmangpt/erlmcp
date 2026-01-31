@@ -1,0 +1,19 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 354 │              [1;31m{[0merror, CreateReason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_observability/src/erlmcp_recovery_manager.erl failed
+[0m[0m     ┌─ apps/erlmcp_observability/src/erlmcp_recovery_manager.erl:
+     │
+ 862 │          error:[1;31mReason[0m ->[0m
+     │                [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 801, column 5)
+
+

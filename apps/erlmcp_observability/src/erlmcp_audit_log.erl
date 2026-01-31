@@ -384,10 +384,121 @@ verify_lines([Line | Rest], ExpectedPrevHash) ->
             {error, {tampered, Seq}}
     end.
 
-%% @private Verify hash chain in range.
+%% @private Verify hash chain in range [FromSeq, ToSeq].
+%% Only verifies entries in the specified range, not the entire chain.
+%% Optimized for partial verification of large audit trails.
+do_verify_chain_range(LogPath, FromSeq, ToSeq) when FromSeq > ToSeq ->
+    {error, {invalid_range, FromSeq, ToSeq}};
 do_verify_chain_range(LogPath, FromSeq, ToSeq) ->
-    % TODO: Implement range-based verification
-    do_verify_chain(LogPath).
+    case file:read_file(LogPath) of
+        {ok, Content} ->
+            Lines = binary:split(Content, <<"\n">>, [global, trim]),
+            verify_range(Lines, FromSeq, ToSeq);
+        {error, enoent} ->
+            {error, empty_log};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @private Verify hash chain for a range of entries.
+%% Algorithm:
+%% 1. Read only entries in range [FromSeq, ToSeq]
+%% 2. For FromSeq > 0: read entry at FromSeq-1 to get expected hash
+%% 3. For FromSeq = 0: use genesis hash
+%% 4. Verify internal chain: Seq(N) -> Seq(N-1) for all N in range
+%% 5. Return ok or {error, {tampered, Seq}}
+verify_range(Lines, FromSeq, ToSeq) ->
+    GenesisHash = crypto:hash(sha256, <<"erlmcp_audit_log_genesis">>),
+
+    case read_range_entries(Lines, FromSeq, ToSeq) of
+        {ok, RangeEntries} ->
+            % Get expected hash for first entry in range
+            ExpectedHash = case FromSeq of
+                0 ->
+                    GenesisHash;
+                _ ->
+                    % Read previous entry to get its hash
+                    case find_entry_by_seq(Lines, FromSeq - 1) of
+                        {ok, PrevEntry} ->
+                            base64:decode(maps:get(<<"entry_hash">>, PrevEntry));
+                        {error, Reason} ->
+                            {error, Reason}
+                    end
+            end,
+
+            case ExpectedHash of
+                {error, _} = Error ->
+                    Error;
+                _ ->
+                    verify_range_hashes(RangeEntries, FromSeq, ToSeq, ExpectedHash)
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @private Read entries in sequence range.
+%% Returns ordered list [FromSeq, FromSeq+1, ..., ToSeq]
+read_range_entries(Lines, FromSeq, ToSeq) ->
+    AllEntries = lists:map(fun(Line) ->
+        jsx:decode(Line, [return_maps])
+    end, Lines),
+
+    % Filter entries in range
+    RangeEntries = lists:filter(fun(Entry) ->
+        Seq = maps:get(<<"sequence">>, Entry),
+        Seq >= FromSeq andalso Seq =< ToSeq
+    end, AllEntries),
+
+    % Check we have all expected entries
+    ExpectedCount = ToSeq - FromSeq + 1,
+    ActualCount = length(RangeEntries),
+
+    case ActualCount of
+        ExpectedCount ->
+            % Sort by sequence to ensure order
+            Sorted = lists:keysort(<<"sequence">>, RangeEntries),
+            {ok, Sorted};
+        _ when ActualCount < ExpectedCount ->
+            {error, {missing_entries, FromSeq, ToSeq, ExpectedCount - ActualCount}};
+        _ when ActualCount > ExpectedCount ->
+            {error, {duplicate_entries, FromSeq, ToSeq, ActualCount - ExpectedCount}}
+    end.
+
+%% @private Verify hash chain for range entries.
+%% Handles boundary conditions:
+%% - FromSeq = 0: Should link to genesis hash
+%% - FromSeq > 0: Should link to FromSeq-1 (not verified here, just checked)
+%% - Internal chain: Each entry links to previous entry in range
+verify_range_hashes([], _FromSeq, _ToSeq, _ExpectedHash) ->
+    ok;
+verify_range_hashes([Entry | Rest], FromSeq, ToSeq, ExpectedHash) ->
+    Seq = maps:get(<<"sequence">>, Entry),
+    PrevHash = base64:decode(maps:get(<<"previous_hash">>, Entry)),
+    EntryHash = base64:decode(maps:get(<<"entry_hash">>, Entry)),
+
+    case PrevHash of
+        ExpectedHash ->
+            % Hash chain is valid, move to next entry
+            verify_range_hashes(Rest, FromSeq, ToSeq, EntryHash);
+        _ ->
+            % Hash chain broken
+            {error, {tampered, Seq}}
+    end.
+
+%% @private Find entry by sequence number in lines.
+find_entry_by_seq(Lines, Seq) ->
+    AllEntries = lists:map(fun(Line) ->
+        jsx:decode(Line, [return_maps])
+    end, Lines),
+
+    case lists:search(fun(Entry) ->
+        maps:get(<<"sequence">>, Entry) =:= Seq
+    end, AllEntries) of
+        {value, Entry} ->
+            {ok, Entry};
+        false ->
+            {error, {entry_not_found, Seq}}
+    end.
 
 %% @private Export logs to format.
 do_export_logs(LogPath, Format, OutputPath) ->

@@ -13,6 +13,7 @@
 -module(erlmcp_connection_monitor_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
 
 %%====================================================================
 %% Test Fixtures
