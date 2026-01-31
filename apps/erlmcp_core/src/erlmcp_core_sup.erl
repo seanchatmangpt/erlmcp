@@ -160,15 +160,15 @@ init([]) ->
 
         %% ================================================================
         %% MEMORY MONITORING: Binary garbage collection to prevent heap exhaustion
-        %% NOTE: Temporarily disabled due to syntax errors - needs review
-        %% #{
-        %%     id => erlmcp_memory_monitor,
-        %%     start => {erlmcp_memory_monitor, start_link, []},
-        %%     restart => permanent,
-        %%     shutdown => 5000,
-        %%     type => worker,
-        %%     modules => [erlmcp_memory_monitor]
-        %% },
+        %% ================================================================
+        #{
+            id => erlmcp_memory_monitor,
+            start => {erlmcp_memory_monitor, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_memory_monitor]
+        },
 
         %% ================================================================
         %% CPU QUOTA MANAGEMENT: Prevent CPU-intensive DoS attacks (TASK #107)
@@ -216,6 +216,46 @@ init([]) ->
             shutdown => infinity,
             type => supervisor,
             modules => [erlmcp_notification_handler_sup]
+        },
+
+        %% ================================================================
+        %% CIRCUIT BREAKER: DoS protection via failure threshold detection
+        %% Critical: Maintains DoS protection state, must survive restarts
+        %% ================================================================
+        #{
+            id => erlmcp_circuit_breaker,
+            start => {erlmcp_circuit_breaker, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_circuit_breaker]
+        },
+
+        %% ================================================================
+        %% RATE LIMITER: DoS protection via rate limiting and throttling
+        %% Critical: Maintains rate limit state and DDoS blocking
+        %% ================================================================
+        #{
+            id => erlmcp_rate_limiter,
+            start => {erlmcp_rate_limiter, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_rate_limiter]
+        },
+
+        %% ================================================================
+        %% CLIENT SUPERVISOR: Dynamic client process management (TIER 2)
+        %% Manages client connections using simple_one_for_one strategy
+        %% Each client is a separate gen_server process (process-per-connection)
+        %% ================================================================
+        #{
+            id => erlmcp_client_sup,
+            start => {erlmcp_client_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,  % Supervisor - wait for all children
+            type => supervisor,
+            modules => [erlmcp_client_sup]
         }
     ],
 
