@@ -22,7 +22,7 @@
 ]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, format_status/2]).
 
 %% Types
 -type transport_id() :: atom() | binary().
@@ -237,12 +237,16 @@ route_message({transport, TransportId}, Message) ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init([]) -> {ok, state()}.
+-spec init([]) -> {ok, state(), {continue, ensure_dependencies}}.
 init([]) ->
     process_flag(trap_exit, true),
-    ok = erlmcp_registry_utils:ensure_gproc_started(),
-    logger:info("Starting MCP registry with gproc"),
-    {ok, #registry_state{}}.
+
+    % Fast init - just set up basic state, no blocking operations
+    State = #registry_state{},
+
+    logger:info("Starting MCP registry (async initialization)"),
+    % Schedule async dependency check - won't block supervisor
+    {ok, State, {continue, ensure_dependencies}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
@@ -474,6 +478,18 @@ handle_cast({route_to_transport, TransportId, ServerId, Message}, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+-spec handle_continue(term(), state()) -> {noreply, state()}.
+
+%% Async dependency initialization - doesn't block supervisor
+handle_continue(ensure_dependencies, State) ->
+    % Ensure gproc is started - can be slow on first boot
+    ok = erlmcp_registry_utils:ensure_gproc_started(),
+    logger:info("MCP registry initialized with gproc"),
+    {noreply, State};
+
+handle_continue(_Continue, State) ->
+    {noreply, State}.
+
 -spec handle_info(term(), state()) ->
     {noreply, state()}.
 
@@ -509,6 +525,48 @@ terminate(_Reason, _State) ->
 -spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% @doc Format process state for sys:get_status/1,2
+%% Sanitizes sensitive data in crash reports and debugging output
+-spec format_status(normal | terminate, [term()]) -> term().
+format_status(Opt, [PDict, State]) ->
+    SanitizedState = sanitize_registry_state(State),
+    case Opt of
+        terminate ->
+            SanitizedState;
+        normal ->
+            [{data, [{"State", SanitizedState}]}]
+    end.
+
+%%====================================================================
+%% Internal functions - State Sanitization
+%%====================================================================
+
+%% @doc Sanitize registry state by hiding sensitive data
+-spec sanitize_registry_state(state()) -> map().
+sanitize_registry_state(#registry_state{
+    server_transport_map = ServerTransportMap
+}) ->
+    #{
+        server_transport_map_count => maps:size(ServerTransportMap),
+        bindings => sanitize_bindings(ServerTransportMap),
+        %% Get gproc registry stats (non-intrusive)
+        gproc_servers_count => length(gproc:select([{{{n, l, {mcp, server, '_'}}, '_', '_'}, [], [true]}])),
+        gproc_transports_count => length(gproc:select([{{{n, l, {mcp, transport, '_'}}, '_', '_'}, [], [true]}]))
+    }.
+
+%% @doc Sanitize bindings to show structure without exposing PIDs or sensitive data
+-spec sanitize_bindings(map()) -> [map()].
+sanitize_bindings(ServerTransportMap) ->
+    lists:map(
+        fun({TransportId, ServerId}) ->
+            #{
+                transport_id => TransportId,
+                server_id => ServerId
+            }
+        end,
+        maps:to_list(ServerTransportMap)
+    ).
 
 %%====================================================================
 %% Internal helper functions

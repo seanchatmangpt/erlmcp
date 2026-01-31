@@ -150,51 +150,20 @@ delete_persistent(SessionId) ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init([]) -> {ok, #state{}}.
+-spec init([]) -> {ok, #state{}, {continue, initialize_storage}}.
 init([]) ->
     process_flag(trap_exit, true),
 
-    %% Create ETS table for session storage (in-memory cache)
-    %% - ordered_set for efficient range queries
-    %% - public for direct reads (optional optimization)
-    %% - {read_concurrency, true} for better read performance
-    Table = ets:new(?TABLE_NAME, [
-        ordered_set,
-        public,
-        named_table,
-        {read_concurrency, true},
-        {keypos, 2}  % Use session id as key (position 2 in tuple {session_data, id, ...})
-    ]),
-
-    %% Create Mnesia table for persistent sessions (Joe Armstrong: "Databases are for persistence")
-    PersistentEnabled = case mnesia:create_table(?PERSISTENT_TABLE_NAME, [
-        {disc_copies, [node()]},
-        {attributes, record_info(fields, persistent_session)},
-        {type, set}
-    ]) of
-        {atomic, ok} ->
-            logger:info("Created Mnesia persistent sessions table: ~p", [?PERSISTENT_TABLE_NAME]),
-            true;
-        {aborted, {already_exists, _}} ->
-            logger:info("Mnesia persistent sessions table already exists: ~p", [?PERSISTENT_TABLE_NAME]),
-            true;
-        {aborted, Reason} ->
-            logger:error("Failed to create Mnesia table: ~p", [Reason]),
-            false
-    end,
-
-    %% Start cleanup timer
-    CleanupTimer = schedule_cleanup(?DEFAULT_CLEANUP_INTERVAL),
-
+    %% Fast init - minimal state setup, no blocking operations
     State = #state{
-        table = Table,
-        cleanup_timer = CleanupTimer,
         cleanup_interval_ms = ?DEFAULT_CLEANUP_INTERVAL,
         default_timeout_ms = ?DEFAULT_SESSION_TIMEOUT,
-        persistent_enabled = PersistentEnabled
+        persistent_enabled = false
     },
 
-    {ok, State}.
+    logger:info("Starting session manager (async initialization)"),
+    % Schedule async initialization - won't block supervisor
+    {ok, State, {continue, initialize_storage}}.
 
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}} | {noreply, #state{}}.
@@ -317,6 +286,56 @@ handle_call(_Request, _From, State) ->
 
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+-spec handle_continue(term(), #state{}) -> {noreply, #state{}}.
+
+%% Async storage initialization - doesn't block supervisor
+handle_continue(initialize_storage, State) ->
+    %% Create ETS table for session storage (in-memory cache)
+    %% - ordered_set for efficient range queries
+    %% - public for direct reads (optional optimization)
+    %% - {read_concurrency, true} for better read performance
+    Table = ets:new(?TABLE_NAME, [
+        ordered_set,
+        public,
+        named_table,
+        {read_concurrency, true},
+        {keypos, 2}  % Use session id as key (position 2 in tuple {session_data, id, ...})
+    ]),
+
+    %% Create Mnesia table for persistent sessions (Joe Armstrong: "Databases are for persistence")
+    %% This can be slow but won't block supervisor startup
+    PersistentEnabled = case mnesia:create_table(?PERSISTENT_TABLE_NAME, [
+        {disc_copies, [node()]},
+        {attributes, record_info(fields, persistent_session)},
+        {type, set}
+    ]) of
+        {atomic, ok} ->
+            logger:info("Created Mnesia persistent sessions table: ~p", [?PERSISTENT_TABLE_NAME]),
+            true;
+        {aborted, {already_exists, _}} ->
+            logger:info("Mnesia persistent sessions table already exists: ~p", [?PERSISTENT_TABLE_NAME]),
+            true;
+        {aborted, Reason} ->
+            logger:error("Failed to create Mnesia table: ~p", [Reason]),
+            false
+    end,
+
+    %% Start cleanup timer
+    CleanupTimer = schedule_cleanup(?DEFAULT_CLEANUP_INTERVAL),
+
+    NewState = State#state{
+        table = Table,
+        cleanup_timer = CleanupTimer,
+        persistent_enabled = PersistentEnabled
+    },
+
+    logger:info("Session manager initialized (ETS: ~p, Mnesia: ~p)",
+               [Table, PersistentEnabled]),
+    {noreply, NewState};
+
+handle_continue(_Continue, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.

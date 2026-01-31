@@ -35,10 +35,14 @@
 ]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, format_status/2]).
 
 %% pg scope for resource subscriptions (OTP built-in pubsub)
 -define(PG_SCOPE, erlmcp_pubsub).
+
+%% Hibernation configuration for idle connections
+%% Reduces memory per idle connection from ~50KB to ~5KB
+-define(HIBERNATE_AFTER_MS, 30000). % 30 seconds of inactivity triggers hibernation
 
 %% Types
 -type server() :: pid().
@@ -79,10 +83,10 @@
 -spec start_link(server_id(), #mcp_server_capabilities{} | map()) ->
     {ok, server()} | {error, term()}.
 start_link(ServerId, Capabilities) when is_record(Capabilities, mcp_server_capabilities) ->
-    gen_server:start_link(?MODULE, [ServerId, Capabilities], []);
+    gen_server:start_link(?MODULE, [ServerId, Capabilities], [{hibernate_after, ?HIBERNATE_AFTER_MS}]);
 start_link(ServerId, Config) when is_map(Config) ->
     Capabilities = maps:get(capabilities, Config, #mcp_server_capabilities{}),
-    gen_server:start_link(?MODULE, [ServerId, Capabilities], []).
+    gen_server:start_link(?MODULE, [ServerId, Capabilities], [{hibernate_after, ?HIBERNATE_AFTER_MS}]).
 
 -spec add_resource(server(), binary(), resource_handler()) -> ok.
 add_resource(Server, Uri, Handler) when is_binary(Uri), is_function(Handler, 1) ->
@@ -205,36 +209,19 @@ stop(Server) ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init([server_id() | #mcp_server_capabilities{}]) -> {ok, state()}.
+-spec init([server_id() | #mcp_server_capabilities{}]) -> {ok, state(), {continue, initialize}}.
 init([ServerId, Capabilities]) ->
     process_flag(trap_exit, true),
 
-    % Ensure pg scope exists for resource subscriptions
-    % pg is automatically started by kernel application in OTP 23+
-    % pg:start/1 is idempotent - safe to call multiple times
-    ok = pg:start(?PG_SCOPE),
-
-    % Start or get change notifier
-    NotifierPid = case erlmcp_change_notifier:start_link() of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
-    end,
-
-    % Monitor the notifier process
-    NotifierMonitorRef = erlang:monitor(process, NotifierPid),
-
-    % Start periodic GC for each server (Gap #10)
-    start_periodic_gc(),
-
+    % Fast init - just set up basic state, no blocking operations
     State = #state{
         server_id = ServerId,
-        capabilities = Capabilities,
-        notifier_pid = NotifierPid,
-        notifier_monitor_ref = NotifierMonitorRef
+        capabilities = Capabilities
     },
 
-    logger:info("Starting MCP server ~p with capabilities: ~p (pg-based pubsub enabled)", [ServerId, Capabilities]),
-    {ok, State}.
+    logger:info("Starting MCP server ~p (async initialization)", [ServerId]),
+    % Schedule async initialization - won't block supervisor
+    {ok, State, {continue, initialize}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
@@ -479,6 +466,39 @@ handle_cast(notify_tools_changed, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+-spec handle_continue(term(), state()) -> {noreply, state()}.
+
+%% Async initialization - doesn't block supervisor
+handle_continue(initialize, State) ->
+    % Ensure pg scope exists for resource subscriptions
+    % pg is automatically started by kernel application in OTP 23+
+    % pg:start/1 is idempotent - safe to call multiple times
+    ok = pg:start(?PG_SCOPE),
+
+    % Start or get change notifier
+    NotifierPid = case erlmcp_change_notifier:start_link() of
+        {ok, Pid} -> Pid;
+        {error, {already_started, Pid}} -> Pid
+    end,
+
+    % Monitor the notifier process
+    NotifierMonitorRef = erlang:monitor(process, NotifierPid),
+
+    % Start periodic GC for each server (Gap #10)
+    start_periodic_gc(),
+
+    NewState = State#state{
+        notifier_pid = NotifierPid,
+        notifier_monitor_ref = NotifierMonitorRef
+    },
+
+    logger:info("MCP server ~p initialized with capabilities: ~p (pg-based pubsub enabled)",
+                [State#state.server_id, State#state.capabilities]),
+    {noreply, NewState};
+
+handle_continue(_Continue, State) ->
+    {noreply, State}.
+
 -spec handle_info(term(), state()) -> {noreply, state()}.
 
 % Handle messages routed from registry - this is the key change!
@@ -631,6 +651,105 @@ terminate(_Reason, #state{server_id = ServerId, subscriptions = Subscriptions}) 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%% @doc Format process state for sys:get_status/1,2
+%% Sanitizes sensitive data in crash reports and debugging output
+-spec format_status(normal | terminate, [term()]) -> term().
+format_status(Opt, [PDict, State]) ->
+    SanitizedState = sanitize_server_state(State),
+    case Opt of
+        terminate ->
+            SanitizedState;
+        normal ->
+            [{data, [{"State", SanitizedState}]}]
+    end.
+
+%%====================================================================
+%% Internal functions - State Sanitization
+%%====================================================================
+
+%% @doc Sanitize server state by hiding sensitive data
+-spec sanitize_server_state(state()) -> map().
+sanitize_server_state(#state{
+    server_id = ServerId,
+    phase = Phase,
+    capabilities = Caps,
+    client_capabilities = ClientCaps,
+    protocol_version = Version,
+    resources = Resources,
+    resource_templates = Templates,
+    tools = Tools,
+    prompts = Prompts,
+    subscriptions = Subs,
+    progress_tokens = Progress,
+    initialized = Initialized,
+    notification_handlers = Handlers,
+    cancellable_requests = Cancellable
+}) ->
+    #{
+        server_id => ServerId,
+        phase => Phase,
+        capabilities => sanitize_capabilities(Caps),
+        client_capabilities => sanitize_capabilities(ClientCaps),
+        protocol_version => Version,
+        resources_count => maps:size(Resources),
+        resource_templates_count => maps:size(Templates),
+        tools_count => maps:size(Tools),
+        prompts_count => maps:size(Prompts),
+        subscriptions_count => maps:size(Subs),
+        progress_tokens_count => maps:size(Progress),
+        initialized => Initialized,
+        notification_handlers_count => maps:size(Handlers),
+        cancellable_requests_count => maps:size(Cancellable),
+        %% Redact actual handler functions and PIDs to avoid exposing internal details
+        resource_uris => maps:keys(Resources),
+        tool_names => maps:keys(Tools),
+        prompt_names => maps:keys(Prompts)
+    }.
+
+%% @doc Sanitize capabilities to show structure but hide sensitive data
+-spec sanitize_capabilities(#mcp_server_capabilities{} | #mcp_client_capabilities{} | undefined) -> map() | undefined.
+sanitize_capabilities(undefined) ->
+    undefined;
+sanitize_capabilities(#mcp_server_capabilities{
+    resources = Res,
+    tools = Tools,
+    prompts = Prompts,
+    logging = Logging
+}) ->
+    #{
+        type => server_capabilities,
+        resources => sanitize_capability(Res),
+        tools => sanitize_capability(Tools),
+        prompts => sanitize_capability(Prompts),
+        logging => sanitize_capability(Logging)
+    };
+sanitize_capabilities(#mcp_client_capabilities{
+    roots = Roots,
+    sampling = Sampling,
+    experimental = Experimental
+}) ->
+    #{
+        type => client_capabilities,
+        roots => sanitize_capability(Roots),
+        sampling => sanitize_capability(Sampling),
+        experimental => case Experimental of
+            undefined -> undefined;
+            Exp when is_map(Exp) -> maps:keys(Exp);
+            _ -> <<"[REDACTED]">>
+        end
+    };
+sanitize_capabilities(_Other) ->
+    <<"[REDACTED]">>.
+
+%% @doc Sanitize individual capability
+-spec sanitize_capability(#mcp_capability{} | undefined) -> map() | undefined.
+sanitize_capability(undefined) ->
+    undefined;
+sanitize_capability(#mcp_capability{enabled = Enabled}) ->
+    #{enabled => Enabled};
+sanitize_capability(_Other) ->
+    <<"[REDACTED]">>.
 
 %%====================================================================
 %% Internal functions - Request Handling

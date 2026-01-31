@@ -7,32 +7,30 @@
 %%====================================================================
 
 setup() ->
-    % Start circuit breaker manager (handle already_started)
-    case erlmcp_circuit_breaker:start_link() of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
-    end.
+    % No manager process needed with gen_statem implementation
+    % Just ensure clean state
+    undefined.
 
-cleanup(Pid) ->
-    % Reset all breakers and unregister for clean state
+cleanup(_Pid) ->
+    % Clean up all registered breakers
     catch erlmcp_circuit_breaker:reset_all(),
-    case is_process_alive(Pid) of
-        true ->
-            unlink(Pid),
-            exit(Pid, kill),
-            ok;
-        false ->
-            ok
-    end.
+    % Give breakers time to process
+    timer:sleep(10),
+    ok.
 
 %%====================================================================
 %% Basic Functionality Tests
 %%====================================================================
 
 start_stop_test() ->
-    Pid = setup(),
+    % Test starting and stopping a single breaker
+    Config = #{},
+    {ok, Pid} = erlmcp_circuit_breaker:start_link(test_breaker, Config),
     ?assert(is_process_alive(Pid)),
-    cleanup(Pid).
+    ?assertEqual(closed, erlmcp_circuit_breaker:get_state(test_breaker)),
+    erlmcp_circuit_breaker:stop(test_breaker),
+    timer:sleep(10),
+    ?assertNot(is_process_alive(Pid)).
 
 register_breaker_test() ->
     Pid = setup(),
