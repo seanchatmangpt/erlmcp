@@ -197,8 +197,14 @@ handle_call({add_backup, SessionId, BackupNode}, _From, State) ->
                             Backups#{last_sync => erlang:system_time(millisecond)}
                     end,
 
-                    %% Replicate session to backup
-                    spawn(fun() -> replicate_session(SessionId, FailoverState, BackupNode) end),
+                    %% Replicate session to backup using supervised worker (replaces unsupervised spawn/1)
+                    Work = {replicate, SessionId, FailoverState, BackupNode},
+                    case erlmcp_failover_worker_sup:start_worker(Work) of
+                        {ok, _Pid} ->
+                            logger:debug("Started replication worker for session ~s to ~p", [SessionId, BackupNode]);
+                        {error, Reason} ->
+                            logger:warning("Failed to start replication worker: ~p", [Reason])
+                    end,
 
                     NewSessions = maps:put(SessionId, FailoverState, Sessions),
                     logger:info("Added backup node ~p for session ~s", [BackupNode, SessionId]),
@@ -230,8 +236,9 @@ handle_call({failover, SessionId}, _From, State) ->
             {reply, {error, session_not_found}, State};
         FailoverState ->
             PrimaryNode = maps:get(primary_node, FailoverState),
+            LocalNode = State#state.local_node,
             case PrimaryNode of
-                State#state.local_node ->
+                LocalNode ->
                     %% Already primary - no failover needed
                     {reply, {error, already_primary}, State};
                 _ ->
@@ -244,17 +251,17 @@ handle_call({failover, SessionId}, _From, State) ->
                         down ->
                             %% Promote this node to primary
                             NewFailoverState = FailoverState#{
-                                primary_node => State#state.local_node,
+                                primary_node => LocalNode,
                                 last_sync => erlang:system_time(millisecond),
                                 status => up
                             },
                             NewSessions = maps:put(SessionId, NewFailoverState, State#state.sessions),
 
                             logger:info("Failed over session ~s from ~p to ~p",
-                                       [SessionId, PrimaryNode, State#state.local_node]),
+                                       [SessionId, PrimaryNode, LocalNode]),
 
                             %% Notify backup nodes
-                            notify_failover(SessionId, State#state.local_node,
+                            notify_failover(SessionId, LocalNode,
                                           maps:get(backup_nodes, FailoverState, [])),
 
                             {reply, ok, State#state{sessions = NewSessions}}
@@ -358,44 +365,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Replicate session data to a backup node
+%% @doc Replicate session data to a backup node (moved to erlmcp_failover_worker)
+%% This function is kept for compatibility but delegates to supervised worker
 -spec replicate_session(session_id(), failover_state(), node()) -> ok | {error, term()}.
 replicate_session(SessionId, FailoverState, BackupNode) ->
-    try
-        %% Retrieve session data from Mnesia
-        TableName = erlmcp_session_mnesia,
-        case mnesia:transaction(fun() ->
-            mnesia:read(TableName, SessionId)
-        end) of
-            {atomic, [#erlmcp_session{session_data = SessionData}]} ->
-                %% Replicate to backup node via RPC
-                case rpc:call(BackupNode, erlmcp_session_mnesia, store,
-                             [SessionId, SessionData, #{table_name => TableName}]) of
-                    ok ->
-                        logger:debug("Replicated session ~s to backup ~p", [SessionId, BackupNode]),
-                        ok;
-                    {error, Reason} ->
-                        logger:error("Failed to replicate session ~s to backup ~p: ~p",
-                                    [SessionId, BackupNode, Reason]),
-                        {error, Reason};
-                    {badrpc, Reason} ->
-                        logger:error("RPC failed replicating session ~s to backup ~p: ~p",
-                                    [SessionId, BackupNode, Reason]),
-                        {error, {badrpc, Reason}}
-                end;
-            {atomic, []} ->
-                logger:warning("Session ~s not found for replication", [SessionId]),
-                {error, session_not_found};
-            {aborted, Reason} ->
-                logger:error("Mnesia transaction failed for session ~s replication: ~p",
-                            [SessionId, Reason]),
-                {error, {mnesia_aborted, Reason}}
-        end
-    catch
-        Type:Error:Stacktrace ->
-            logger:error("Exception replicating session ~s: ~p:~p~n~p",
-                        [SessionId, Type, Error, Stacktrace]),
-            {error, {exception, {Type, Error}}}
+    %% Delegate to supervised worker instead of executing directly
+    Work = {replicate, SessionId, FailoverState, BackupNode},
+    case erlmcp_failover_worker_sup:start_worker(Work) of
+        {ok, _Pid} -> ok;
+        {error, Reason} -> {error, Reason}
     end.
 
 %% @doc Replicate session to multiple backup nodes
@@ -475,20 +453,19 @@ find_available_backup([Node | Rest], NodeStatus) ->
         down -> find_available_backup(Rest, NodeStatus)
     end.
 
-%% @doc Notify backup nodes of failover event
+%% @doc Notify backup nodes of failover event (using supervised workers, replaces unsupervised spawn/1)
 -spec notify_failover(session_id(), node(), [node()]) -> ok.
 notify_failover(_SessionId, _NewPrimary, []) ->
     ok;
 notify_failover(SessionId, NewPrimary, [BackupNode | Rest]) ->
-    spawn(fun() ->
-        case rpc:call(BackupNode, erlmcp_session_failover, notify_failover_local,
-                     [SessionId, NewPrimary]) of
-            ok ->
-                logger:info("Notified backup ~p of failover for session ~s", [BackupNode, SessionId]);
-            {error, Reason} ->
-                logger:error("Failed to notify backup ~p of failover: ~p", [BackupNode, Reason])
-        end
-    end),
+    %% Use supervised worker instead of unsupervised spawn
+    Work = {notify, SessionId, NewPrimary, BackupNode},
+    case erlmcp_failover_worker_sup:start_worker(Work) of
+        {ok, _Pid} ->
+            logger:debug("Started notification worker for session ~s to ~p", [SessionId, BackupNode]);
+        {error, Reason} ->
+            logger:warning("Failed to start notification worker: ~p", [Reason])
+    end,
     notify_failover(SessionId, NewPrimary, Rest).
 
 %% @doc Local notification of failover (called via RPC)
