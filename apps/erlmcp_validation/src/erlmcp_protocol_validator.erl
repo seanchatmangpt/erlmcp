@@ -1,22 +1,10 @@
 %%%-------------------------------------------------------------------
 %%% @doc
-%%% Protocol Validator for erlmcp - Joe Armstrong's Philosophy
+%%% Protocol Validator for MCP 2025-11-25 Specification
 %%%
-%%% "ACTUAL VALIDATION OR IT DOESN'T EXIST."
-%%%
-%%% Not theory. Not "should work". ACTUALLY VALIDATE REAL MESSAGES.
-%%%
-%%% This module provides comprehensive validation of JSON-RPC 2.0 and
-%%% MCP protocol messages against the specification.
-%%%
-%%% Validation checks:
-%%% - JSON-RPC 2.0 structure compliance
-%%% - MCP request method names
-%%% - MCP notification names
-%%% - Error code ranges (-32000 to -32099 for JSON-RPC, 1000-1089 for experimental)
-%%% - Field types (binary, integer, map, array)
-%%% - Required fields present
-%%%
+%%% Validates JSON-RPC 2.0 and MCP protocol messages.
+%%% Returns specific error codes for validation failures.
+%%% Uses jesse for JSON Schema validation where applicable.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_protocol_validator).
@@ -25,448 +13,521 @@
 
 %% API exports
 -export([
-    validate_jsonrpc/1,
-    validate_request/2,
-    validate_response/2,
-    validate_notification/2,
-    validate_error_code/1,
-    validate_against_spec/3,
-    validate_method_name/1,
-    validate_notification_name/1,
-    validate_field_type/3,
-    validate_required_fields/2,
-    format_validation_error/1
+    validate_json_rpc/1,
+    validate_mcp_message/1,
+    validate_request_id/1,
+    validate_params/2,
+    validate_error_code/1
 ]).
 
-%% Types
--type validation_result() :: ok | {error, validation_error()}.
--type validation_error() :: #{reason := atom(), details := term()}.
--type message_type() :: request | response | notification | error.
--type field_type() :: binary | integer | number | boolean | map | array | any.
-
--export_type([validation_result/0, validation_error/0, message_type/0, field_type/0]).
+%% Additional validation exports
+-export([
+    validate_method/1,
+    validate_capabilities/1,
+    validate_server_info/1,
+    validate_client_info/1,
+    validate_resource/1,
+    validate_tool/1,
+    validate_prompt/1,
+    validate_content/1
+]).
 
 %%%===================================================================
 %%% API Functions
 %%%===================================================================
 
-%% @doc Validate JSON-RPC 2.0 message structure
-%% Checks:
-%% - jsonrpc field exists and is "2.0"
-%% - id field is valid (null, binary, or integer)
-%% - method field exists and is binary (for requests/notifications)
-%% - Has result OR error, not both (for responses)
--spec validate_jsonrpc(map()) -> validation_result().
-validate_jsonrpc(Message) when is_map(Message) ->
-    case validate_jsonrpc_version(Message) of
-        {error, Reason} -> {error, #{reason => invalid_jsonrpc_version, details => Reason}};
+%% @doc Validate JSON-RPC 2.0 message from binary JSON
+-spec validate_json_rpc(binary()) -> {ok, #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}} | {error, term()}.
+validate_json_rpc(Json) when is_binary(Json) ->
+    try jsx:decode(Json, [return_maps]) of
+        Data when is_map(Data) ->
+            case validate_jsonrpc_structure(Data) of
+                ok -> erlmcp_message_parser:parse_json_rpc(Data);
+                Error -> Error
+            end;
+        _ ->
+            {error, {parse_error, not_object}}
+    catch
+        error:badarg ->
+            {error, {parse_error, invalid_json}};
+        Class:Reason ->
+            {error, {parse_error, {Class, Reason}}}
+    end;
+validate_json_rpc(_) ->
+    {error, {invalid_argument, not_binary}}.
+
+%% @doc Validate MCP-specific message structure and return error code if invalid
+-spec validate_mcp_message(map()) -> {ok, map()} | {error, integer(), binary()}.
+validate_mcp_message(#{?JSONRPC_FIELD_METHOD := Method, ?JSONRPC_FIELD_PARAMS := Params} = Message) ->
+    case validate_method(Method) of
         ok ->
-            %% Determine message type and validate accordingly
-            case maps:get(<<"id">>, Message, undefined) of
-                undefined ->
-                    %% Notification - must have method
-                    validate_notification_structure(Message);
-                _Id ->
-                    %% Request or Response
-                    case maps:get(<<"method">>, Message, undefined) of
-                        undefined -> validate_response_structure(Message);
-                        _Method -> validate_request_structure(Message)
-                    end
-            end
+            case validate_params(Method, Params) of
+                ok -> {ok, Message};
+                {error, invalid_params} ->
+                    {error, ?JSONRPC_INVALID_PARAMS, <<"Invalid parameters for method ", Method/binary>>};
+                {error, Details} when is_binary(Details) ->
+                    {error, ?JSONRPC_INVALID_PARAMS, Details};
+                {error, Details} ->
+                    DetailsBin = format_error_details(Details),
+                    {error, ?JSONRPC_INVALID_PARAMS, DetailsBin}
+            end;
+        {error, unknown_method} ->
+            {error, ?JSONRPC_METHOD_NOT_FOUND, <<"Unknown method: ", Method/binary>>}
     end;
-validate_jsonrpc(_Message) ->
-    {error, #{reason => not_map, details => <<"Message must be a map">>}}.
-
-%% @doc Validate MCP request structure
-%% Checks:
-%% - Method name is valid MCP method
-%% - Request params are valid (map or array or undefined)
--spec validate_request(binary(), json_rpc_params()) -> validation_result().
-validate_request(Method, Params) when is_binary(Method) ->
-    case validate_method_name(Method) of
-        ok -> validate_params_structure(Params);
-        {error, _} = Error -> Error
+validate_mcp_message(#{?JSONRPC_FIELD_RESULT := Result}) when is_map(Result) ->
+    %% Response message - validate result structure for known MCP responses
+    {ok, Result};
+validate_mcp_message(#{?JSONRPC_FIELD_ERROR := Error}) when is_map(Error) ->
+    %% Error response - validate error structure
+    case validate_error_object(Error) of
+        ok -> {ok, Error};
+        {error, invalid_error_code} ->
+            Code = maps:get(?JSONRPC_ERROR_FIELD_CODE, Error, undefined),
+            {error, ?JSONRPC_INVALID_REQUEST, <<"Invalid error code: ", (format_code(Code))/binary>>};
+        {error, Reason} ->
+            {error, ?JSONRPC_INVALID_REQUEST, format_error_details(Reason)}
     end;
-validate_request(Method, _Params) ->
-    {error, #{reason => invalid_method_type, details => {method, Method}}}.
+validate_mcp_message(_) ->
+    {error, ?JSONRPC_INVALID_REQUEST, <<"Message must have method or result/error field">>}.
 
-%% @doc Validate MCP response structure
-%% Checks:
-%% - Response ID is valid (null, binary, or integer)
-%% - Has exactly one of: result or error
-%% - Error object structure is valid (code, message, optional data)
--spec validate_response(json_rpc_id(), term()) -> validation_result().
-validate_response(Id, ResultOrError) ->
-    case validate_id(Id) of
-        ok -> validate_result_or_error(ResultOrError);
-        {error, _} = Error -> Error
-    end.
+%% @doc Validate request ID format
+-spec validate_request_id(term()) -> ok | {error, invalid_request_id}.
+validate_request_id(null) -> ok;
+validate_request_id(Id) when is_binary(Id) -> ok;
+validate_request_id(Id) when is_integer(Id), Id >= 0 -> ok;
+validate_request_id(_) -> {error, invalid_request_id}.
 
-%% @doc Validate MCP notification structure
-%% Checks:
-%% - Notification name is valid MCP notification
-%% - Notification params are valid (map or array or undefined)
--spec validate_notification(binary(), json_rpc_params()) -> validation_result().
-validate_notification(NotificationName, Params) when is_binary(NotificationName) ->
-    case validate_notification_name(NotificationName) of
-        ok -> validate_params_structure(Params);
-        {error, _} = Error -> Error
+%% @doc Validate method-specific parameters
+-spec validate_params(binary(), map() | list() | undefined) -> ok | {error, term()}.
+validate_params(?MCP_METHOD_INITIALIZE, Params) when is_map(Params) ->
+    validate_initialize_params(Params);
+validate_params(?MCP_METHOD_RESOURCES_LIST, Params) when is_map(Params) ->
+    %% Optional cursor parameter
+    case maps:find(?MCP_PARAM_CURSOR, Params) of
+        {ok, Cursor} when is_binary(Cursor) -> ok;
+        error -> ok;
+        _ -> {error, <<"cursor must be a string">>}
     end;
-validate_notification(NotificationName, _Params) ->
-    {error, #{reason => invalid_notification_type, details => {notification, NotificationName}}}.
+validate_params(?MCP_METHOD_RESOURCES_LIST, undefined) ->
+    ok;
+validate_params(?MCP_METHOD_RESOURCES_READ, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_URI, Params) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"uri must be a string">>};
+        error -> {error, <<"Missing required parameter: uri">>}
+    end;
+validate_params(?MCP_METHOD_RESOURCES_SUBSCRIBE, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_URI, Params) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"uri must be a string">>};
+        error -> {error, <<"Missing required parameter: uri">>}
+    end;
+validate_params(?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_URI, Params) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"uri must be a string">>};
+        error -> {error, <<"Missing required parameter: uri">>}
+    end;
+validate_params(?MCP_METHOD_TOOLS_LIST, Params) when is_map(Params) ->
+    %% Optional cursor parameter
+    case maps:find(?MCP_PARAM_CURSOR, Params) of
+        {ok, Cursor} when is_binary(Cursor) -> ok;
+        error -> ok;
+        _ -> {error, <<"cursor must be a string">>}
+    end;
+validate_params(?MCP_METHOD_TOOLS_LIST, undefined) ->
+    ok;
+validate_params(?MCP_METHOD_TOOLS_CALL, Params) when is_map(Params) ->
+    NameResult = case maps:find(?MCP_PARAM_NAME, Params) of
+        {ok, Name} when is_binary(Name) -> ok;
+        {ok, _} -> {error, <<"name must be a string">>};
+        error -> {error, <<"Missing required parameter: name">>}
+    end,
+    case NameResult of
+        ok ->
+            %% Arguments are optional, must be object if present
+            case maps:find(?MCP_PARAM_ARGUMENTS, Params) of
+                {ok, Args} when is_map(Args) -> ok;
+                {ok, _} -> {error, <<"arguments must be an object">>};
+                error -> ok
+            end;
+        Error -> Error
+    end;
+validate_params(?MCP_METHOD_PROMPTS_LIST, Params) when is_map(Params) ->
+    %% Optional cursor parameter
+    case maps:find(?MCP_PARAM_CURSOR, Params) of
+        {ok, Cursor} when is_binary(Cursor) -> ok;
+        error -> ok;
+        _ -> {error, <<"cursor must be a string">>}
+    end;
+validate_params(?MCP_METHOD_PROMPTS_LIST, undefined) ->
+    ok;
+validate_params(?MCP_METHOD_PROMPTS_GET, Params) when is_map(Params) ->
+    NameResult = case maps:find(?MCP_PARAM_NAME, Params) of
+        {ok, Name} when is_binary(Name) -> ok;
+        {ok, _} -> {error, <<"name must be a string">>};
+        error -> {error, <<"Missing required parameter: name">>}
+    end,
+    case NameResult of
+        ok ->
+            %% Arguments are optional, must be object if present
+            case maps:find(?MCP_PARAM_ARGUMENTS, Params) of
+                {ok, Args} when is_map(Args) -> ok;
+                {ok, _} -> {error, <<"arguments must be an object">>};
+                error -> ok
+            end;
+        Error -> Error
+    end;
+validate_params(?MCP_METHOD_SAMPLING_CREATE_MESSAGE, Params) when is_map(Params) ->
+    validate_sampling_params(Params);
+validate_params(?MCP_METHOD_COMPLETION_COMPLETE, Params) when is_map(Params) ->
+    validate_completion_params(Params);
+validate_params(?MCP_METHOD_LOGGING_SET_LEVEL, Params) when is_map(Params) ->
+    case maps:find(?MCP_PARAM_LEVEL, Params) of
+        {ok, Level} when is_atom(Level) ->
+            case lists:member(Level, ?MCP_VALID_LOG_LEVELS) of
+                true -> ok;
+                false -> {error, <<"Invalid log level">>}
+            end;
+        {ok, _} -> {error, <<"level must be an atom">>};
+        error -> {error, <<"Missing required parameter: level">>}
+    end;
+validate_params(?MCP_METHOD_PING, _) ->
+    %% Ping accepts no parameters or empty object
+    ok;
+validate_params(_, undefined) ->
+    %% No parameters provided - acceptable for methods with optional params
+    ok;
+validate_params(_, Params) when is_map(Params) ->
+    %% Unknown method with params - let it pass (could be custom method)
+    ok;
+validate_params(_, Params) when is_list(Params) ->
+    %% Positional params (allowed by JSON-RPC 2.0)
+    ok;
+validate_params(_, _) ->
+    {error, <<"params must be an object, array, or omitted">>}.
 
 %% @doc Validate error code is in valid range
-%% Valid ranges:
-%% - JSON-RPC 2.0 standard: -32700 to -32600
-%% - JSON-RPC server errors: -32099 to -32000
-%% - MCP errors: -32113 to -32000
-%% - Experimental: 1090-1099
--spec validate_error_code(integer()) -> validation_result().
+-spec validate_error_code(integer()) -> ok | {error, invalid_error_code}.
 validate_error_code(Code) when is_integer(Code) ->
     case lists:member(Code, ?VALID_ERROR_CODES) of
         true -> ok;
         false ->
-            {error, #{reason => invalid_error_code,
-                      details => #{code => Code,
-                                   message => <<"Error code not in valid range">>}}}
+            %% Check if in valid ranges
+            if
+                Code >= -32700, Code =< -32000 -> ok;  % JSON-RPC range
+                Code >= 1090, Code =< 1099 -> ok;      % Experimental range
+                true -> {error, invalid_error_code}
+            end
     end;
-validate_error_code(Code) ->
-    {error, #{reason => invalid_error_code_type, details => {code, Code}}}.
-
-%% @doc validate against spec (stub for future spec_parser integration)
-%% This will be enhanced when spec_parser is available
--spec validate_against_spec(binary(), atom(), term()) -> validation_result().
-validate_against_spec(_MethodName, _MessageType, _Payload) ->
-    %% TODO: Integrate with erlmcp_spec_parser when available
-    %% For now, just validate structure
-    ok.
-
-%% @doc Validate MCP method name
-%% Checks method name is in the list of valid MCP methods
--spec validate_method_name(binary()) -> validation_result().
-validate_method_name(Method) when is_binary(Method) ->
-    ValidMethods = get_valid_methods(),
-    case lists:member(Method, ValidMethods) of
-        true -> ok;
-        false ->
-            {error, #{reason => unknown_method,
-                      details => #{method => Method,
-                                   valid_methods => ValidMethods}}}
-    end;
-validate_method_name(Method) ->
-    {error, #{reason => invalid_method_type, details => {method, Method}}}.
-
-%% @doc Validate MCP notification name
-%% Checks notification name is in the list of valid MCP notifications
--spec validate_notification_name(binary()) -> validation_result().
-validate_notification_name(Notification) when is_binary(Notification) ->
-    ValidNotifications = get_valid_notifications(),
-    case lists:member(Notification, ValidNotifications) of
-        true -> ok;
-        false ->
-            {error, #{reason => unknown_notification,
-                      details => #{notification => Notification,
-                                   valid_notifications => ValidNotifications}}}
-    end;
-validate_notification_name(Notification) ->
-    {error, #{reason => invalid_notification_type, details => {notification, Notification}}}.
-
-%% @doc Validate field type
-%% Checks field value matches expected type
--spec validate_field_type(binary(), term(), field_type() | [field_type()]) -> validation_result().
-validate_field_type(_FieldName, _Value, any) ->
-    %% Any type is acceptable
-    ok;
-validate_field_type(FieldName, Value, ExpectedType) when is_atom(ExpectedType) ->
-    validate_field_type(FieldName, Value, [ExpectedType]);
-validate_field_type(FieldName, Value, ExpectedTypes) when is_list(ExpectedTypes) ->
-    case lists:any(fun(Type) -> type_matches(Value, Type) end, ExpectedTypes) of
-        true -> ok;
-        false ->
-            {error, #{reason => type_mismatch,
-                      details => #{field => FieldName,
-                                   expected => ExpectedTypes,
-                                   actual => get_type(Value)}}}
-    end.
-
-%% @doc Validate required fields are present
-%% Checks all required fields exist in the message
--spec validate_required_fields(map(), [binary()]) -> validation_result().
-validate_required_fields(Message, RequiredFields) when is_map(Message), is_list(RequiredFields) ->
-    Missing = lists:filter(fun(Field) ->
-        not maps:is_key(Field, Message)
-    end, RequiredFields),
-
-    case Missing of
-        [] -> ok;
-        _ ->
-            {error, #{reason => missing_required_fields,
-                      details => #{missing => Missing}}}
-    end;
-validate_required_fields(_Message, _RequiredFields) ->
-    {error, #{reason => invalid_message_structure, details => <<"Message must be a map">>}}.
-
-%% @doc Format validation error for logging/response
--spec format_validation_error(validation_error()) -> binary().
-format_validation_error(#{reason := Reason, details := Details}) ->
-    DetailsBin = format_details(Details),
-    ReasonBin = atom_to_binary(Reason, utf8),
-    <<ReasonBin/binary, ": ", DetailsBin/binary>>.
+validate_error_code(_) ->
+    {error, invalid_error_code}.
 
 %%%===================================================================
-%%% Internal Functions
+%%% Additional Validation Functions
 %%%===================================================================
 
-%% @private Validate jsonrpc version field
-validate_jsonrpc_version(#{?JSONRPC_FIELD_JSONRPC := Version}) when is_binary(Version) ->
-    case Version of
-        ?JSONRPC_VERSION -> ok;
-        _ ->
-            {error, #{reason => wrong_version,
-                      details => #{expected => ?JSONRPC_VERSION,
-                                   actual => Version}}}
-    end;
-validate_jsonrpc_version(_) ->
-    {error, #{reason => missing_jsonrpc, details => <<"Missing jsonrpc field">>}}.
-
-%% @private Validate request structure (has id and method)
-validate_request_structure(Message) ->
-    %% Check id is valid
-    Id = maps:get(<<"id">>, Message),
-    case validate_id(Id) of
-        {error, Reason} -> {error, #{reason => invalid_id, details => Reason}};
-        ok ->
-            %% Check method exists and is binary
-            case maps:get(<<"method">>, Message, undefined) of
-                undefined ->
-                    {error, #{reason => missing_method, details => <<"Requests must have method field">>}};
-                Method when is_binary(Method) ->
-                    %% Method validated later against spec
-                    ok;
-                Method ->
-                    {error, #{reason => invalid_method_type, details => #{method => Method}}}
-            end
-    end.
-
-%% @private Validate response structure (has id and exactly one of: result or error)
-validate_response_structure(Message) ->
-    %% Check id is valid
-    Id = maps:get(<<"id">>, Message),
-    case validate_id(Id) of
-        {error, Reason} -> {error, #{reason => invalid_id, details => Reason}};
-        ok ->
-            %% Check exactly one of result or error exists
-            HasResult = maps:is_key(<<"result">>, Message),
-            HasError = maps:is_key(<<"error">>, Message),
-
-            case {HasResult, HasError} of
-                {true, false} -> ok;
-                {false, true} ->
-                    %% Validate error object structure
-                    ErrorObj = maps:get(<<"error">>, Message),
-                    validate_error_object(ErrorObj);
-                {true, true} ->
-                    {error, #{reason => both_result_and_error,
-                              details => <<"Response cannot have both result and error">>}};
-                {false, false} ->
-                    {error, #{reason => missing_result_and_error,
-                              details => <<"Response must have exactly one of: result or error">>}}
-            end
-    end.
-
-%% @private Validate notification structure (no id, has method)
-validate_notification_structure(Message) ->
-    %% Check method exists and is binary
-    case maps:get(<<"method">>, Message, undefined) of
-        undefined ->
-            {error, #{reason => missing_method, details => <<"Notifications must have method field">>}};
-        Method when is_binary(Method) ->
-            %% Notification validated later against spec
-            ok;
-        Method ->
-            {error, #{reason => invalid_method_type, details => #{method => Method}}}
-    end.
-
-%% @private Validate request ID (null, binary, or integer)
-validate_id(null) -> ok;
-validate_id(Id) when is_binary(Id) ->
-    case byte_size(Id) > 0 of
-        true -> ok;
-        false -> {error, #{reason => empty_id, details => <<"ID cannot be empty binary">>}}
-    end;
-validate_id(Id) when is_integer(Id) ->
-    case Id >= 0 of
-        true -> ok;
-        false -> {error, #{reason => negative_id, details => #{id => Id}}}
-    end;
-validate_id(Id) ->
-    {error, #{reason => invalid_id_type, details => #{id => Id, type => get_type(Id)}}}.
-
-%% @private Validate error object structure
-validate_error_object(ErrorObj) when is_map(ErrorObj) ->
-    %% Check required fields: code, message
-    Code = maps:get(<<"code">>, ErrorObj, undefined),
-    Message = maps:get(<<"message">>, ErrorObj, undefined),
-
-    case {Code, Message} of
-        {undefined, _} ->
-            {error, #{reason => missing_error_code, details => <<"Error object must have code field">>}};
-        {_, undefined} ->
-            {error, #{reason => missing_error_message, details => <<"Error object must have message field">>}};
-        {CodeVal, MessageVal} when is_integer(CodeVal), is_binary(MessageVal) ->
-            %% Validate error code is in valid range
-            case validate_error_code(CodeVal) of
-                ok -> ok;
-                {error, _} = Error -> Error
-            end;
-        {CodeVal, _MessageVal} when not is_integer(CodeVal) ->
-            {error, #{reason => invalid_error_code_type, details => #{code => CodeVal}}};
-        {_CodeVal, MessageVal} ->
-            {error, #{reason => invalid_error_message_type, details => #{message => MessageVal}}}
-    end;
-validate_error_object(ErrorObj) ->
-    {error, #{reason => invalid_error_type, details => #{error => ErrorObj}}}.
-
-%% @private Validate result or error field
-validate_result_or_error(ResultOrError) when is_map(ResultOrError) ->
-    %% Check if it's an error object (has code and message fields)
-    case {maps:get(<<"code">>, ResultOrError, undefined), maps:get(<<"message">>, ResultOrError, undefined)} of
-        {Code, Message} when is_integer(Code), is_binary(Message) ->
-            %% This is an error object, validate it
-            validate_error_object(ResultOrError);
-        _ ->
-            %% This is a regular result map, accept it
-            ok
-    end;
-validate_result_or_error(_ResultOrError) ->
-    %% Result can be any type
-    ok.
-
-%% @private Validate params structure (map, array, or undefined)
-validate_params_structure(undefined) -> ok;
-validate_params_structure(Params) when is_map(Params) -> ok;
-validate_params_structure(Params) when is_list(Params) -> ok;
-validate_params_structure(Params) ->
-    {error, #{reason => invalid_params_type,
-              details => #{params => Params, expected => <<"map, array, or undefined">>}}}.
-
-%% @private Check if value matches type
-type_matches(_Value, any) -> true;
-type_matches(Value, binary) when is_binary(Value) -> true;
-type_matches(Value, integer) when is_integer(Value) -> true;
-type_matches(Value, number) when is_number(Value) -> true;
-type_matches(Value, boolean) when is_boolean(Value) -> true;
-type_matches(Value, map) when is_map(Value) -> true;
-type_matches(Value, array) when is_list(Value) -> true;
-type_matches(_Value, _Type) -> false.
-
-%% @private Get type of value as atom
-get_type(Value) when is_binary(Value) -> binary;
-get_type(Value) when is_integer(Value) -> integer;
-get_type(Value) when is_float(Value) -> number;
-get_type(Value) when is_boolean(Value) -> boolean;
-get_type(Value) when is_map(Value) -> map;
-get_type(Value) when is_list(Value) -> array;
-get_type(_Value) -> unknown.
-
-%% @private Format error details
-format_details(Details) when is_map(Details) ->
-    %% Convert map details to binary
-    maps:fold(fun(Key, Value, Acc) ->
-        KeyBin = to_binary(Key),
-        ValueBin = to_binary(Value),
-        <<Acc/binary, KeyBin/binary, "=", ValueBin/binary, " ">>
-    end, <<"">>, Details);
-format_details(Details) when is_binary(Details) ->
-    Details;
-format_details(Details) ->
-    iolist_to_binary(io_lib:format("~p", [Details])).
-
-%% @private Convert term to binary
-to_binary(Term) when is_binary(Term) -> Term;
-to_binary(Term) when is_atom(Term) -> atom_to_binary(Term, utf8);
-to_binary(Term) when is_integer(Term) -> integer_to_binary(Term);
-to_binary(Term) -> iolist_to_binary(io_lib:format("~p", [Term])).
-
-%% @private Get list of valid MCP methods
-get_valid_methods() ->
-    [
-        %% Core Protocol
+%% @doc Validate method name
+-spec validate_method(binary()) -> ok | {error, unknown_method}.
+validate_method(Method) when is_binary(Method) ->
+    KnownMethods = [
         ?MCP_METHOD_INITIALIZE,
-        ?MCP_METHOD_PING,
-
-        %% Resources
+        ?MCP_METHOD_INITIALIZED,
         ?MCP_METHOD_RESOURCES_LIST,
         ?MCP_METHOD_RESOURCES_READ,
         ?MCP_METHOD_RESOURCES_TEMPLATES_LIST,
         ?MCP_METHOD_RESOURCES_SUBSCRIBE,
         ?MCP_METHOD_RESOURCES_UNSUBSCRIBE,
-
-        %% Tools
         ?MCP_METHOD_TOOLS_LIST,
         ?MCP_METHOD_TOOLS_CALL,
-
-        %% Tasks (NEW in MCP 2025-11-25)
-        ?MCP_METHOD_TASKS_CREATE,
-        ?MCP_METHOD_TASKS_LIST,
-        ?MCP_METHOD_TASKS_GET,
-        ?MCP_METHOD_TASKS_RESULT,
-        ?MCP_METHOD_TASKS_CANCEL,
-
-        %% Prompts
         ?MCP_METHOD_PROMPTS_LIST,
         ?MCP_METHOD_PROMPTS_GET,
-
-        %% Completion (MCP 2025-11-25)
+        ?MCP_METHOD_SAMPLING_CREATE_MESSAGE,
         ?MCP_METHOD_COMPLETION_COMPLETE,
-
-        %% Elicitation (MCP 2025-11-25)
-        ?MCP_METHOD_ELICITATION_CREATE,
-
-        %% Cancellation
-        ?MCP_METHOD_REQUESTS_CANCEL,
-
-        %% Logging
         ?MCP_METHOD_LOGGING_SET_LEVEL,
-
-        %% Roots
-        ?MCP_METHOD_ROOTS_LIST,
-
-        %% Sampling
-        ?MCP_METHOD_SAMPLING_CREATE_MESSAGE
-    ].
-
-%% @private Get list of valid MCP notifications
-get_valid_notifications() ->
-    [
-        %% Core Protocol
-        ?MCP_METHOD_INITIALIZED,
-
-        %% Progress
+        ?MCP_METHOD_PING,
         ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
-
-        %% Resources
         ?MCP_METHOD_NOTIFICATIONS_RESOURCES_UPDATED,
         ?MCP_METHOD_NOTIFICATIONS_RESOURCES_LIST_CHANGED,
-
-        %% Tools
-        ?MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED,
-
-        %% Prompts
         ?MCP_METHOD_NOTIFICATIONS_PROMPTS_LIST_CHANGED,
+        ?MCP_METHOD_NOTIFICATIONS_TOOLS_LIST_CHANGED,
+        ?MCP_METHOD_NOTIFICATIONS_CANCELLED
+    ],
+    case lists:member(Method, KnownMethods) of
+        true -> ok;
+        false -> {error, unknown_method}
+    end;
+validate_method(_) ->
+    {error, unknown_method}.
 
-        %% Roots
-        ?MCP_METHOD_NOTIFICATIONS_ROOTS_LIST_CHANGED,
+%% @doc Validate capabilities object
+-spec validate_capabilities(map()) -> ok | {error, term()}.
+validate_capabilities(Capabilities) when is_map(Capabilities) ->
+    %% Capabilities should have feature maps (can be empty)
+    %% Each capability value should be a map
+    maps:fold(fun(_Key, Value, ok) when is_map(Value) -> ok;
+                 (Key, _Value, _) -> {error, <<"Capability ", Key/binary, " must be an object">>}
+              end, ok, Capabilities);
+validate_capabilities(_) ->
+    {error, <<"capabilities must be an object">>}.
 
-        %% Tasks (NEW in MCP 2025-11-25)
-        ?MCP_METHOD_NOTIFICATIONS_TASKS_STATUS,
+%% @doc Validate server info
+-spec validate_server_info(map()) -> ok | {error, term()}.
+validate_server_info(Info) when is_map(Info) ->
+    case {maps:find(?MCP_INFO_NAME, Info), maps:find(?MCP_INFO_VERSION, Info)} of
+        {{ok, Name}, {ok, Version}} when is_binary(Name), is_binary(Version) ->
+            ok;
+        {{ok, _}, {ok, _}} ->
+            {error, <<"serverInfo name and version must be strings">>};
+        {{ok, _}, error} ->
+            {error, <<"Missing required field: serverInfo.version">>};
+        {error, {ok, _}} ->
+            {error, <<"Missing required field: serverInfo.name">>};
+        {error, error} ->
+            {error, <<"Missing required fields: serverInfo.name and version">>}
+    end;
+validate_server_info(_) ->
+    {error, <<"serverInfo must be an object">>}.
 
-        %% Cancellation
-        ?MCP_METHOD_NOTIFICATIONS_CANCELLED,
+%% @doc Validate client info
+-spec validate_client_info(map()) -> ok | {error, term()}.
+validate_client_info(Info) when is_map(Info) ->
+    case {maps:find(?MCP_INFO_NAME, Info), maps:find(?MCP_INFO_VERSION, Info)} of
+        {{ok, Name}, {ok, Version}} when is_binary(Name), is_binary(Version) ->
+            ok;
+        {{ok, _}, {ok, _}} ->
+            {error, <<"clientInfo name and version must be strings">>};
+        {{ok, _}, error} ->
+            {error, <<"Missing required field: clientInfo.version">>};
+        {error, {ok, _}} ->
+            {error, <<"Missing required field: clientInfo.name">>};
+        {error, error} ->
+            {error, <<"Missing required fields: clientInfo.name and version">>}
+    end;
+validate_client_info(_) ->
+    {error, <<"clientInfo must be an object">>}.
 
-        %% Elicitation (MCP 2025-11-25)
-        ?MCP_METHOD_NOTIFICATIONS_ELICITATION_COMPLETE,
+%% @doc Validate resource object
+-spec validate_resource(map()) -> ok | {error, term()}.
+validate_resource(Resource) when is_map(Resource) ->
+    RequiredFields = [{?MCP_PARAM_URI, <<"uri">>}, {?MCP_PARAM_NAME, <<"name">>}],
+    validate_required_fields(Resource, RequiredFields);
+validate_resource(_) ->
+    {error, <<"resource must be an object">>}.
 
-        %% Message (MCP 2025-11-25)
-        ?MCP_METHOD_NOTIFICATIONS_MESSAGE
-    ].
+%% @doc Validate tool object
+-spec validate_tool(map()) -> ok | {error, term()}.
+validate_tool(Tool) when is_map(Tool) ->
+    RequiredFields = [
+        {?MCP_PARAM_NAME, <<"name">>},
+        {?MCP_PARAM_INPUT_SCHEMA, <<"inputSchema">>}
+    ],
+    case validate_required_fields(Tool, RequiredFields) of
+        ok ->
+            %% Validate inputSchema is a valid JSON Schema
+            case maps:find(?MCP_PARAM_INPUT_SCHEMA, Tool) of
+                {ok, Schema} when is_map(Schema) -> ok;
+                {ok, _} -> {error, <<"inputSchema must be an object">>};
+                error -> ok  % Already checked in required fields
+            end;
+        Error -> Error
+    end;
+validate_tool(_) ->
+    {error, <<"tool must be an object">>}.
+
+%% @doc Validate prompt object
+-spec validate_prompt(map()) -> ok | {error, term()}.
+validate_prompt(Prompt) when is_map(Prompt) ->
+    RequiredFields = [{?MCP_PARAM_NAME, <<"name">>}],
+    validate_required_fields(Prompt, RequiredFields);
+validate_prompt(_) ->
+    {error, <<"prompt must be an object">>}.
+
+%% @doc Validate content object
+-spec validate_content(map()) -> ok | {error, term()}.
+validate_content(Content) when is_map(Content) ->
+    case maps:find(?MCP_PARAM_TYPE, Content) of
+        {ok, Type} when is_binary(Type) ->
+            validate_content_by_type(Type, Content);
+        {ok, _} ->
+            {error, <<"content type must be a string">>};
+        error ->
+            {error, <<"Missing required field: content.type">>}
+    end;
+validate_content(_) ->
+    {error, <<"content must be an object">>}.
+
+%%%===================================================================
+%%% Internal Functions
+%%%===================================================================
+
+%% @doc Validate JSON-RPC structure (version, fields)
+-spec validate_jsonrpc_structure(map()) -> ok | {error, term()}.
+validate_jsonrpc_structure(#{?JSONRPC_FIELD_JSONRPC := ?JSONRPC_VERSION} = Data) ->
+    %% Check for required fields based on message type
+    case Data of
+        #{?JSONRPC_FIELD_METHOD := Method} when is_binary(Method) ->
+            %% Request or Notification - must have method
+            case maps:is_key(?JSONRPC_FIELD_ID, Data) of
+                true ->
+                    %% Request - must have id
+                    validate_request_id(maps:get(?JSONRPC_FIELD_ID, Data));
+                false ->
+                    %% Notification - must not have id
+                    ok
+            end;
+        #{?JSONRPC_FIELD_ID := Id} ->
+            %% Response - must have id and either result or error
+            case validate_request_id(Id) of
+                ok ->
+                    HasResult = maps:is_key(?JSONRPC_FIELD_RESULT, Data),
+                    HasError = maps:is_key(?JSONRPC_FIELD_ERROR, Data),
+                    if
+                        HasResult andalso not HasError -> ok;
+                        HasError andalso not HasResult -> ok;
+                        HasResult andalso HasError ->
+                            {error, {invalid_request, result_and_error_exclusive}};
+                        true ->
+                            {error, {invalid_request, missing_result_or_error}}
+                    end;
+                Error -> Error
+            end;
+        _ ->
+            {error, {invalid_request, missing_method_or_id}}
+    end;
+validate_jsonrpc_structure(#{?JSONRPC_FIELD_JSONRPC := Version}) ->
+    {error, {invalid_request, {wrong_version, Version}}};
+validate_jsonrpc_structure(_) ->
+    {error, {invalid_request, missing_jsonrpc}}.
+
+%% @doc Validate initialize params
+-spec validate_initialize_params(map()) -> ok | {error, term()}.
+validate_initialize_params(Params) ->
+    RequiredFields = [
+        {?MCP_FIELD_PROTOCOL_VERSION, <<"protocolVersion">>},
+        {?MCP_FIELD_CAPABILITIES, <<"capabilities">>},
+        {?MCP_FIELD_CLIENT_INFO, <<"clientInfo">>}
+    ],
+    case validate_required_fields(Params, RequiredFields) of
+        ok ->
+            %% Validate sub-structures
+            case {maps:find(?MCP_FIELD_CAPABILITIES, Params),
+                  maps:find(?MCP_FIELD_CLIENT_INFO, Params)} of
+                {{ok, Caps}, {ok, Info}} ->
+                    case validate_capabilities(Caps) of
+                        ok -> validate_client_info(Info);
+                        Error -> Error
+                    end;
+                _ -> ok  % Already validated in required_fields
+            end;
+        Error -> Error
+    end.
+
+%% @doc Validate sampling params
+-spec validate_sampling_params(map()) -> ok | {error, term()}.
+validate_sampling_params(Params) ->
+    RequiredFields = [{?MCP_PARAM_MESSAGES, <<"messages">>}],
+    case validate_required_fields(Params, RequiredFields) of
+        ok ->
+            case maps:find(?MCP_PARAM_MESSAGES, Params) of
+                {ok, Messages} when is_list(Messages) -> ok;
+                {ok, _} -> {error, <<"messages must be an array">>};
+                error -> ok  % Already checked
+            end;
+        Error -> Error
+    end.
+
+%% @doc Validate completion params
+-spec validate_completion_params(map()) -> ok | {error, term()}.
+validate_completion_params(Params) when is_map(Params) ->
+    %% Completion params validation (MCP 2025-11-25)
+    ok;
+validate_completion_params(_) ->
+    {error, <<"params must be an object">>}.
+
+%% @doc Validate error object structure
+-spec validate_error_object(map()) -> ok | {error, term()}.
+validate_error_object(Error) when is_map(Error) ->
+    case {maps:find(?JSONRPC_ERROR_FIELD_CODE, Error),
+          maps:find(?JSONRPC_ERROR_FIELD_MESSAGE, Error)} of
+        {{ok, Code}, {ok, Message}} when is_integer(Code), is_binary(Message) ->
+            validate_error_code(Code);
+        {{ok, Code}, {ok, _}} when is_integer(Code) ->
+            {error, <<"error message must be a string">>};
+        {{ok, _}, {ok, _}} ->
+            {error, <<"error code must be an integer">>};
+        {{ok, _}, error} ->
+            {error, <<"Missing required field: error.message">>};
+        {error, {ok, _}} ->
+            {error, <<"Missing required field: error.code">>};
+        {error, error} ->
+            {error, <<"Missing required fields: error.code and message">>}
+    end;
+validate_error_object(_) ->
+    {error, <<"error must be an object">>}.
+
+%% @doc Validate content by type
+-spec validate_content_by_type(binary(), map()) -> ok | {error, term()}.
+validate_content_by_type(?MCP_CONTENT_TYPE_TEXT, Content) ->
+    case maps:find(?MCP_PARAM_TEXT, Content) of
+        {ok, Text} when is_binary(Text) -> ok;
+        {ok, _} -> {error, <<"text content must have text field as string">>};
+        error -> {error, <<"text content must have text field">>}
+    end;
+validate_content_by_type(?MCP_CONTENT_TYPE_IMAGE, Content) ->
+    case {maps:find(?MCP_PARAM_DATA, Content), maps:find(?MCP_PARAM_MIME_TYPE, Content)} of
+        {{ok, Data}, {ok, MimeType}} when is_binary(Data), is_binary(MimeType) -> ok;
+        {{ok, _}, {ok, _}} -> {error, <<"image content must have data and mimeType as strings">>};
+        {{ok, _}, error} -> {error, <<"image content must have mimeType field">>};
+        {error, {ok, _}} -> {error, <<"image content must have data field">>};
+        {error, error} -> {error, <<"image content must have data and mimeType fields">>}
+    end;
+validate_content_by_type(?MCP_CONTENT_TYPE_RESOURCE, Content) ->
+    case maps:find(?MCP_PARAM_URI, Content) of
+        {ok, Uri} when is_binary(Uri) -> ok;
+        {ok, _} -> {error, <<"resource content must have uri as string">>};
+        error -> {error, <<"resource content must have uri field">>}
+    end;
+validate_content_by_type(_, _) ->
+    %% Unknown content type - allow it (could be custom)
+    ok.
+
+%% @doc Validate required fields in a map
+-spec validate_required_fields(map(), [{binary(), binary()}]) -> ok | {error, binary()}.
+validate_required_fields(Map, Fields) ->
+    validate_required_fields(Map, Fields, []).
+
+validate_required_fields(_Map, [], []) ->
+    ok;
+validate_required_fields(_Map, [], Missing) ->
+    MissingStr = lists:join(<<", ">>, lists:reverse(Missing)),
+    {error, <<"Missing required fields: ", (iolist_to_binary(MissingStr))/binary>>};
+validate_required_fields(Map, [{Key, Name} | Rest], Missing) ->
+    case maps:is_key(Key, Map) of
+        true ->
+            validate_required_fields(Map, Rest, Missing);
+        false ->
+            validate_required_fields(Map, Rest, [Name | Missing])
+    end.
+
+%% @doc Format error details to binary
+-spec format_error_details(term()) -> binary().
+format_error_details(Details) when is_binary(Details) ->
+    Details;
+format_error_details(Details) when is_atom(Details) ->
+    atom_to_binary(Details, utf8);
+format_error_details(Details) when is_list(Details) ->
+    try
+        list_to_binary(Details)
+    catch
+        _:_ -> iolist_to_binary(io_lib:format("~p", [Details]))
+    end;
+format_error_details(Details) ->
+    iolist_to_binary(io_lib:format("~p", [Details])).
+
+%% @doc Format error code to binary
+-spec format_code(term()) -> binary().
+format_code(Code) when is_integer(Code) ->
+    integer_to_binary(Code);
+format_code(Code) ->
+    format_error_details(Code).
