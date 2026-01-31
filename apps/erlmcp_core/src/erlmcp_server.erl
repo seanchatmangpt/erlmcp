@@ -1171,6 +1171,13 @@ handle_request(Id, ?MCP_METHOD_LOGGING_SET_LEVEL, Params, TransportId, #state{se
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
+%% Ping endpoint - MCP 2025-11-25 spec health check
+handle_request(Id, ?MCP_METHOD_PING, _Params, TransportId, State) ->
+    % Simple health check - return empty object per spec
+    Response = #{},
+    send_response_safe(State, TransportId, Id, Response),
+    {noreply, State};
+
 handle_request(Id, _Method, _Params, TransportId, State) ->
     send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
     {noreply, State}.

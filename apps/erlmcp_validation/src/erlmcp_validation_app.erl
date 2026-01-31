@@ -9,7 +9,7 @@
 %%%====================================================================
 
 start(_StartType, _StartArgs) ->
-    erlmcp_compliance_report:start_link().
+    erlmcp_validation_sup:start_link().
 
 stop(_State) ->
     ok.
