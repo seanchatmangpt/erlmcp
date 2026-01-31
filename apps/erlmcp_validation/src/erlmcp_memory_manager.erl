@@ -6,6 +6,7 @@
 -behaviour(gen_server).
 
 -include_lib("kernel/include/logger.hrl").
+-include("otp_compat.hrl").
 
 %% API
 -export([

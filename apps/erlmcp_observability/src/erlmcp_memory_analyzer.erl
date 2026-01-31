@@ -26,6 +26,7 @@
 ]).
 
 -include_lib("kernel/include/logger.hrl").
+-include("otp_compat.hrl").
 
 -type analysis_opts() :: #{
     top => pos_integer(),
