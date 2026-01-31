@@ -38,5 +38,14 @@
   ]},
   {modules, []},
   {licenses, ["Apache-2.0"]},
-  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]}
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
+  %% OTP Version Requirements
+  {notes, [
+      "Supports Erlang/OTP 25-28",
+      "OTP 28+ features: priority message routing for critical transport events",
+      "OTP 26+ features: improved socket handling",
+      "Dependencies: gun 2.0+, ranch 2.1+, cowboy 2.10+",
+      "Minimum: OTP 25 (all transports functional)",
+      "Recommended: OTP 28+ for priority-based message delivery"
+  ]}
  ]}.

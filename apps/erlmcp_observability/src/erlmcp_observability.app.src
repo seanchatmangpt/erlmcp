@@ -18,5 +18,14 @@
   {env,[]},
   {modules, []},
   {licenses, ["Apache-2.0"]},
-  {links, []}
+  {links, []},
+  %% OTP Version Requirements
+  {notes, [
+      "Supports Erlang/OTP 25-28",
+      "OTP 28+ features: improved process iteration for monitoring, native JSON metrics",
+      "OTP 27+ features: enhanced monitoring capabilities",
+      "Dependencies: opentelemetry_api 1.5+, opentelemetry 1.7+",
+      "Minimum: OTP 25 (full observability support)",
+      "Recommended: OTP 28+ for best metrics performance"
+  ]}
  ]}.
