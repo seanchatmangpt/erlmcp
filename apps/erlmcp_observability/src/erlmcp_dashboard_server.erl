@@ -101,48 +101,18 @@ broadcast_metrics(Metrics) ->
 %% gen_server Callbacks
 %%====================================================================
 
--spec init([inet:port_number()]) -> {ok, #state{}}.
+-spec init([inet:port_number()]) -> {ok, #state{}, {continue, start_http_listener}}.
 init([Port]) ->
-    ?LOG_INFO("Starting dashboard server on port ~p", [Port]),
+    ?LOG_INFO("Starting dashboard server on port ~p (async initialization)", [Port]),
 
-    ListenerName = listener_name(Port),
-
-    % Configure Cowboy routes
-    % IMPORTANT: More specific routes must come before less specific ones
-    % because Cowboy matches routes in order
-    Dispatch = cowboy_router:compile([
-        {'_', [
-            {"/", cowboy_static, {priv_file, erlmcp_observability, "dashboard/index.html"}},
-            {"/static/[...]", cowboy_static, {priv_dir, erlmcp_observability, "dashboard/static"}},
-            {"/ws", ?MODULE, []},
-            {"/api/metrics/historical", erlmcp_dashboard_http_handler, []},
-            {"/api/metrics/export", erlmcp_dashboard_http_handler, []},
-            {"/api/metrics", erlmcp_dashboard_http_handler, []}
-        ]}
-    ]),
-
-    % Start Cowboy HTTP listener with unique name
-    % Handle case where listener might already be started (e.g., in tests)
-    ListenerPid = case cowboy:start_clear(
-        ListenerName,
-        [{port, Port}],
-        #{env => #{dispatch => Dispatch}}
-    ) of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
-    end,
-
-    % Start periodic metrics broadcast timer
-    {ok, TimerRef} = timer:send_interval(?METRICS_INTERVAL, self(), broadcast_metrics),
-
-    ?LOG_INFO("Dashboard server started successfully on http://localhost:~p", [Port]),
-
-    {ok, #state{
+    % Fast init - just set up basic state, no blocking operations
+    State = #state{
         port = Port,
-        listener_name = ListenerName,
-        listener_pid = ListenerPid,
-        metrics_timer = TimerRef
-    }}.
+        listener_name = listener_name(Port)
+    },
+
+    % Schedule async HTTP listener startup - won't block supervisor
+    {ok, State, {continue, start_http_listener}}.
 
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
@@ -174,6 +144,49 @@ handle_cast({unregister_ws, WsPid}, State) ->
     {noreply, State#state{websocket_pids = lists:delete(WsPid, State#state.websocket_pids)}};
 
 handle_cast(_Request, State) ->
+    {noreply, State}.
+
+-spec handle_continue(term(), #state{}) -> {noreply, #state{}}.
+
+%% Async HTTP listener startup - doesn't block supervisor
+handle_continue(start_http_listener, State) ->
+    % Configure Cowboy routes
+    % IMPORTANT: More specific routes must come before less specific ones
+    % because Cowboy matches routes in order
+    Dispatch = cowboy_router:compile([
+        {'_', [
+            {"/", cowboy_static, {priv_file, erlmcp_observability, "dashboard/index.html"}},
+            {"/static/[...]", cowboy_static, {priv_dir, erlmcp_observability, "dashboard/static"}},
+            {"/ws", ?MODULE, []},
+            {"/api/metrics/historical", erlmcp_dashboard_http_handler, []},
+            {"/api/metrics/export", erlmcp_dashboard_http_handler, []},
+            {"/api/metrics", erlmcp_dashboard_http_handler, []}
+        ]}
+    ]),
+
+    % Start Cowboy HTTP listener with unique name
+    % Handle case where listener might already be started (e.g., in tests)
+    ListenerPid = case cowboy:start_clear(
+        State#state.listener_name,
+        [{port, State#state.port}],
+        #{env => #{dispatch => Dispatch}}
+    ) of
+        {ok, Pid} -> Pid;
+        {error, {already_started, Pid}} -> Pid
+    end,
+
+    % Start periodic metrics broadcast timer
+    {ok, TimerRef} = timer:send_interval(?METRICS_INTERVAL, self(), broadcast_metrics),
+
+    NewState = State#state{
+        listener_pid = ListenerPid,
+        metrics_timer = TimerRef
+    },
+
+    ?LOG_INFO("Dashboard server started successfully on http://localhost:~p", [State#state.port]),
+    {noreply, NewState};
+
+handle_continue(_Continue, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.

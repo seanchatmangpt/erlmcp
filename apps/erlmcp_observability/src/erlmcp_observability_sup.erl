@@ -55,6 +55,17 @@ init(_Opts) ->
 
     %% Child specifications
     Children = [
+        %% Event Manager - gen_event based event handling
+        %% Must start before other observability components that emit events
+        #{
+            id => erlmcp_event_manager,
+            start => {erlmcp_event_manager, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_event_manager]
+        },
+
         %% Metrics Server - Core metrics collection
         #{
             id => erlmcp_metrics,

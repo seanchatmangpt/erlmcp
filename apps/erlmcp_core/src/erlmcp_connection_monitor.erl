@@ -1,15 +1,23 @@
 %%%-------------------------------------------------------------------
-%%% @doc Connection Monitor - Detects and Prevents FD Leaks
+%%% @doc Connection Monitor - State Machine for Connection Tracking
 %%%
-%%% This module implements comprehensive connection tracking to prevent
-%%% file descriptor leaks. It provides:
+%%% This module implements comprehensive connection tracking using gen_statem
+%%% to model the monitor's operational states. States represent the monitor
+%%% service health:
 %%%
+%%% - disconnected: Initial state, monitor not active
+%%% - connecting: Setting up ETS tables, timers, configuration
+%%% - connected: Normal operation, actively monitoring connections
+%%% - reconnecting: Degraded mode, recovering from issues (leak detection)
+%%%
+%%% Features:
 %%% - ETS-based tracking of all active connections
 %%% - Process monitoring with automatic cleanup on termination
 %%% - Leak detection (>100 connections/min growth)
 %%% - Per-server connection tracking
 %%% - Connection lifecycle metrics
 %%% - Automatic cleanup of orphaned connections
+%%% - Exponential backoff for recovery
 %%%
 %%% Configuration via sys.config:
 %%% ```erlang
@@ -17,7 +25,8 @@
 %%%     {connection_monitoring, #{
 %%%         enabled => true,
 %%%         leak_threshold => 100,  % connections per minute
-%%%         cleanup_interval => 60000  % 1 minute
+%%%         cleanup_interval => 60000,  % 1 minute
+%%%         max_reconnect_attempts => 5
 %%%     }}
 %%% ]}
 %%% ```
@@ -26,7 +35,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_connection_monitor).
 
--behaviour(gen_server).
+-behaviour(gen_statem).
 
 %% API
 -export([
@@ -37,11 +46,25 @@
     get_connection_count/0,
     get_connection_stats/0,
     force_cleanup/0,
-    is_leak_detected/0
+    is_leak_detected/0,
+    get_state/0
 ]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+%% gen_statem callbacks
+-export([
+    init/1,
+    callback_mode/0,
+    terminate/3,
+    code_change/4
+]).
+
+%% State functions
+-export([
+    disconnected/3,
+    connecting/3,
+    connected/3,
+    reconnecting/3
+]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -50,13 +73,19 @@
 -define(DEFAULT_LEAK_THRESHOLD, 100).  % connections per minute
 -define(DEFAULT_CLEANUP_INTERVAL, 60000).  % 1 minute
 -define(LEAK_WINDOW_MS, 60000).  % 1 minute window
--define(MAX_CLEANUP_ATTEMPTS, 3).
+-define(MAX_RECONNECT_ATTEMPTS, 5).
+-define(INITIAL_BACKOFF_MS, 1000).
+-define(MAX_BACKOFF_MS, 30000).
+
+%% Hibernation configuration for idle monitor
+%% Reduces memory per idle monitor from ~50KB to ~5KB
+-define(HIBERNATE_AFTER_MS, 30000). % 30 seconds of inactivity triggers hibernation
 
 %% Types
 -type connection_id() :: pid() | {pid(), reference()}.
 -type connection_info() :: #{
     pid => pid(),
-    socket => port(),
+    socket => port() | undefined,
     monitor_ref => reference(),
     server_id => atom() | binary(),
     transport_id => atom() | binary(),
@@ -64,12 +93,6 @@
     last_activity => integer(),
     bytes_sent => non_neg_integer(),
     bytes_received => non_neg_integer()
-}.
--type leak_stats() :: #{
-    current_connections => non_neg_integer(),
-    connections_per_min => float(),
-    leak_detected => boolean(),
-    leak_rate => float()
 }.
 -type connection_stats() :: #{
     total_connections => non_neg_integer(),
@@ -79,8 +102,8 @@
     last_cleanup_time => integer() | undefined
 }.
 
-%% Server state
--record(state, {
+%% State data
+-record(data, {
     leak_threshold :: pos_integer(),
     cleanup_interval :: pos_integer(),
     cleanup_timer :: reference() | undefined,
@@ -89,6 +112,7 @@
     last_check_time :: integer() | undefined,
     leak_detected = false :: boolean(),
     cleanup_attempts = 0 :: non_neg_integer(),
+    reconnect_attempts = 0 :: non_neg_integer(),
     stats = #{} :: map()
 }).
 
@@ -99,24 +123,25 @@
 %% @doc Start the connection monitor
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    %% Enable hibernation after 30 seconds of inactivity to reduce memory usage
+    gen_statem:start_link({local, ?MODULE}, ?MODULE, [], [{hibernate_after, ?HIBERNATE_AFTER_MS}]).
 
 %% @doc Stop the connection monitor
 -spec stop() -> ok.
 stop() ->
-    gen_server:stop(?MODULE).
+    gen_statem:stop(?MODULE).
 
 %% @doc Monitor a connection
 %% Registers the connection and sets up process monitoring
 -spec monitor_connection(pid(), connection_info()) -> ok.
 monitor_connection(ConnectionPid, Info) when is_pid(ConnectionPid), is_map(Info) ->
-    gen_server:call(?MODULE, {monitor_connection, ConnectionPid, Info}, 1000).
+    gen_statem:call(?MODULE, {monitor_connection, ConnectionPid, Info}, 1000).
 
 %% @doc Unmonitor a connection
 %% Removes the connection from tracking
 -spec unmonitor_connection(connection_id()) -> ok.
 unmonitor_connection(ConnectionId) ->
-    gen_server:call(?MODULE, {unmonitor_connection, ConnectionId}, 1000).
+    gen_statem:call(?MODULE, {unmonitor_connection, ConnectionId}, 1000).
 
 %% @doc Get current connection count
 -spec get_connection_count() -> non_neg_integer().
@@ -129,26 +154,83 @@ get_connection_count() ->
 %% @doc Get connection statistics
 -spec get_connection_stats() -> connection_stats().
 get_connection_stats() ->
-    gen_server:call(?MODULE, get_connection_stats, 1000).
+    gen_statem:call(?MODULE, get_connection_stats, 1000).
 
 %% @doc Force cleanup of orphaned connections
 -spec force_cleanup() -> {ok, non_neg_integer()}.
 force_cleanup() ->
-    gen_server:call(?MODULE, force_cleanup, 1000).
+    gen_statem:call(?MODULE, force_cleanup, 1000).
 
 %% @doc Check if a leak has been detected
 -spec is_leak_detected() -> boolean().
 is_leak_detected() ->
-    gen_server:call(?MODULE, is_leak_detected, 1000).
+    gen_statem:call(?MODULE, is_leak_detected, 1000).
+
+%% @doc Get current state of the monitor
+-spec get_state() -> atom().
+get_state() ->
+    gen_statem:call(?MODULE, get_state, 1000).
 
 %%====================================================================
-%% gen_server Callbacks
+%% gen_statem Callbacks
 %%====================================================================
 
--spec init([]) -> {ok, #state{}}.
+-spec init([]) -> {ok, disconnected, #data{}}.
 init([]) ->
+    logger:info("Connection monitor initializing"),
+
+    %% Load configuration
+    LeakThreshold = load_config(leak_threshold, ?DEFAULT_LEAK_THRESHOLD),
+    CleanupInterval = load_config(cleanup_interval, ?DEFAULT_CLEANUP_INTERVAL),
+
+    Data = #data{
+        leak_threshold = LeakThreshold,
+        cleanup_interval = CleanupInterval,
+        last_check_time = erlang:monotonic_time(millisecond)
+    },
+
+    %% Trigger transition to connecting state
+    {ok, disconnected, Data, [{next_event, internal, setup}]}.
+
+callback_mode() ->
+    [state_functions, state_enter].
+
+%%====================================================================
+%% State Functions
+%%====================================================================
+
+%% @doc Disconnected state - Monitor not active
+disconnected(enter, _OldState, Data) ->
+    logger:info("Connection monitor entering disconnected state"),
+    {keep_state, Data#data{
+        cleanup_timer = undefined,
+        leak_check_timer = undefined,
+        reconnect_attempts = 0
+    }};
+
+disconnected(internal, setup, Data) ->
+    %% Trigger setup and transition to connecting
+    {next_state, connecting, Data};
+
+disconnected({call, From}, get_state, _Data) ->
+    {keep_state_and_data, [{reply, From, disconnected}]};
+
+disconnected({call, From}, _Request, _Data) ->
+    {keep_state_and_data, [{reply, From, {error, not_connected}}]};
+
+disconnected(_EventType, _EventContent, _Data) ->
+    keep_state_and_data.
+
+%% @doc Connecting state - Setting up monitor infrastructure
+connecting(enter, _OldState, _Data) ->
+    logger:info("Connection monitor entering connecting state"),
+    %% Trigger async setup
+    gen_statem:cast(?MODULE, do_setup),
+    keep_state_and_data;
+
+connecting(cast, do_setup, Data) ->
     %% Create ETS table for connection tracking
-    try
+    SetupResult = try
         ets:new(?ETS_TABLE, [
             named_table,
             set,
@@ -157,107 +239,195 @@ init([]) ->
             {read_concurrency, true},
             {write_concurrency, true}
         ]),
-        logger:info("Connection monitor ETS table created: ~p", [?ETS_TABLE])
+        logger:info("Connection monitor ETS table created: ~p", [?ETS_TABLE]),
+        ok
     catch
         error:badarg ->
             %% Table already exists
+            logger:info("Connection monitor ETS table already exists: ~p", [?ETS_TABLE]),
             ok
     end,
 
-    %% Load configuration
-    LeakThreshold = load_config(leak_threshold, ?DEFAULT_LEAK_THRESHOLD),
-    CleanupInterval = load_config(cleanup_interval, ?DEFAULT_CLEANUP_INTERVAL),
+    case SetupResult of
+        ok ->
+            %% Setup successful, transition to connected
+            {next_state, connected, Data};
+        {error, Reason} ->
+            logger:error("Connection monitor setup failed: ~p", [Reason]),
+            %% Setup failed, transition to reconnecting with backoff
+            {next_state, reconnecting, Data#data{reconnect_attempts = 1}}
+    end;
 
-    %% Start cleanup timer
-    CleanupTimer = erlang:send_after(CleanupInterval, self(), cleanup_connections),
+connecting({call, From}, get_state, _Data) ->
+    {keep_state_and_data, [{reply, From, connecting}]};
 
-    %% Start leak check timer
+connecting({call, From}, _Request, _Data) ->
+    {keep_state_and_data, [{reply, From, {error, connecting}}]};
+
+connecting(_EventType, _EventContent, _Data) ->
+    keep_state_and_data.
+
+%% @doc Connected state - Normal monitoring operation
+connected(enter, _OldState, Data) ->
+    logger:info("Connection monitor entering connected state (leak_threshold=~p conn/min, cleanup_interval=~pms)",
+               [Data#data.leak_threshold, Data#data.cleanup_interval]),
+
+    %% Start timers
+    CleanupTimer = erlang:send_after(Data#data.cleanup_interval, self(), cleanup_connections),
     LeakCheckTimer = erlang:send_after(?LEAK_WINDOW_MS, self(), check_leak),
 
-    logger:info("Connection monitor started: leak_threshold=~p conn/min, cleanup_interval=~pms",
-               [LeakThreshold, CleanupInterval]),
-
-    {ok, #state{
-        leak_threshold = LeakThreshold,
-        cleanup_interval = CleanupInterval,
+    {keep_state, Data#data{
         cleanup_timer = CleanupTimer,
         leak_check_timer = LeakCheckTimer,
-        last_check_time = erlang:monotonic_time(millisecond)
-    }}.
+        reconnect_attempts = 0,
+        leak_detected = false
+    }};
 
-handle_call({monitor_connection, ConnectionPid, Info}, _From, State) ->
+connected({call, From}, {monitor_connection, ConnectionPid, Info}, Data) ->
     Result = do_monitor_connection(ConnectionPid, Info),
-    {reply, Result, State};
+    {keep_state, Data, [{reply, From, Result}]};
 
-handle_call({unmonitor_connection, ConnectionId}, _From, State) ->
+connected({call, From}, {unmonitor_connection, ConnectionId}, Data) ->
     Result = do_unmonitor_connection(ConnectionId),
-    {reply, Result, State};
+    {keep_state, Data, [{reply, From, Result}]};
 
-handle_call(get_connection_stats, _From, State) ->
-    Stats = get_connection_stats_internal(),
-    {reply, Stats, State};
+connected({call, From}, get_connection_stats, Data) ->
+    Stats = get_connection_stats_internal(Data),
+    {keep_state, Data, [{reply, From, Stats}]};
 
-handle_call(force_cleanup, _From, State) ->
+connected({call, From}, force_cleanup, Data) ->
     Cleaned = do_cleanup_connections(),
-    NewState = State#state{
-        cleanup_attempts = State#state.cleanup_attempts + 1,
-        stats = maps:put(last_cleanup_count, Cleaned, State#state.stats)
+    NewData = Data#data{
+        cleanup_attempts = Data#data.cleanup_attempts + 1,
+        stats = maps:put(last_cleanup_count, Cleaned, Data#data.stats)
     },
-    {reply, {ok, Cleaned}, NewState};
+    {keep_state, NewData, [{reply, From, {ok, Cleaned}}]};
 
-handle_call(is_leak_detected, _From, State) ->
-    {reply, State#state.leak_detected, State};
+connected({call, From}, is_leak_detected, Data) ->
+    {keep_state, Data, [{reply, From, Data#data.leak_detected}]};
 
-handle_call(_Request, _From, State) ->
-    {reply, {error, unknown_request}, State}.
+connected({call, From}, get_state, _Data) ->
+    {keep_state_and_data, [{reply, From, connected}]};
 
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info(cleanup_connections, #state{cleanup_timer = _Timer} = State) ->
+connected(info, cleanup_connections, Data) ->
     %% Perform periodic cleanup
     Cleaned = do_cleanup_connections(),
 
     %% Update stats
-    NewStats = maps:merge(State#state.stats, #{
+    NewStats = maps:merge(Data#data.stats, #{
         last_cleanup_count => Cleaned,
         last_cleanup_time => erlang:monotonic_time(millisecond)
     }),
 
     %% Reset cleanup attempts if successful
     NewAttempts = case Cleaned of
-        0 -> State#state.cleanup_attempts;
+        0 -> Data#data.cleanup_attempts;
         _ -> 0
     end,
 
     %% Reschedule cleanup timer
-    NewTimer = erlang:send_after(State#state.cleanup_interval, self(), cleanup_connections),
+    NewTimer = erlang:send_after(Data#data.cleanup_interval, self(), cleanup_connections),
 
-    {noreply, State#state{
+    {keep_state, Data#data{
         cleanup_timer = NewTimer,
         cleanup_attempts = NewAttempts,
         stats = NewStats
     }};
 
-handle_info(check_leak, #state{leak_check_timer = _Timer} = State) ->
+connected(info, check_leak, Data) ->
     %% Check for connection leaks
-    NewState = do_check_leak(State),
+    case do_check_leak(Data) of
+        {ok, NewData} ->
+            %% No leak detected, reschedule check
+            NewTimer = erlang:send_after(?LEAK_WINDOW_MS, self(), check_leak),
+            {keep_state, NewData#data{leak_check_timer = NewTimer}};
+        {leak_detected, NewData} ->
+            %% Leak detected, transition to reconnecting state
+            logger:warning("Connection leak detected, entering reconnecting state"),
+            {next_state, reconnecting, NewData#data{reconnect_attempts = 1}}
+    end;
 
-    %% Reschedule leak check timer
-    NewTimer = erlang:send_after(?LEAK_WINDOW_MS, self(), check_leak),
-
-    {noreply, NewState#state{leak_check_timer = NewTimer}};
-
-handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
+connected(info, {'DOWN', MonitorRef, process, Pid, Reason}, Data) ->
     %% Handle monitored process termination
-    logger:info("Connection process ~p died: ~p", [Pid, Reason]),
+    logger:debug("Connection process ~p died: ~p", [Pid, Reason]),
     cleanup_connection(Pid, MonitorRef),
-    {noreply, State};
+    {keep_state, Data};
 
-handle_info(_Info, State) ->
-    {noreply, State}.
+connected(_EventType, _EventContent, _Data) ->
+    keep_state_and_data.
 
-terminate(_Reason, _State) ->
+%% @doc Reconnecting state - Recovery mode with exponential backoff
+reconnecting(enter, _OldState, #data{reconnect_attempts = Attempts} = Data)
+        when Attempts >= ?MAX_RECONNECT_ATTEMPTS ->
+    logger:error("Connection monitor max reconnect attempts (~p) exceeded, entering disconnected state",
+                [?MAX_RECONNECT_ATTEMPTS]),
+    %% Max attempts reached, give up and transition to disconnected
+    {next_state, disconnected, Data};
+
+reconnecting(enter, _OldState, #data{reconnect_attempts = Attempts} = Data) ->
+    %% Calculate exponential backoff
+    BackoffMs = min(?MAX_BACKOFF_MS, ?INITIAL_BACKOFF_MS * round(math:pow(2, Attempts - 1))),
+    logger:info("Connection monitor entering reconnecting state (attempt ~p/~p, backoff ~pms)",
+               [Attempts, ?MAX_RECONNECT_ATTEMPTS, BackoffMs]),
+
+    %% Cancel existing timers
+    cancel_timer(Data#data.cleanup_timer),
+    cancel_timer(Data#data.leak_check_timer),
+
+    %% Schedule retry
+    {keep_state, Data, [{state_timeout, BackoffMs, retry}]};
+
+reconnecting(state_timeout, retry, Data) ->
+    logger:info("Connection monitor attempting recovery"),
+
+    %% Attempt cleanup to resolve issues
+    Cleaned = do_cleanup_connections(),
+    logger:info("Cleanup during recovery removed ~p connections", [Cleaned]),
+
+    %% Check if leak is still present
+    CurrentCount = get_connection_count(),
+    LeakResolved = case Data#data.previous_count of
+        0 -> true;
+        PrevCount ->
+            GrowthRate = ((CurrentCount - PrevCount) * 60000) / ?LEAK_WINDOW_MS,
+            GrowthRate =< Data#data.leak_threshold
+    end,
+
+    case LeakResolved of
+        true ->
+            %% Recovery successful, transition back to connected
+            logger:info("Connection monitor recovery successful"),
+            {next_state, connected, Data#data{
+                leak_detected = false,
+                previous_count = CurrentCount
+            }};
+        false ->
+            %% Still having issues, increment attempts and retry
+            logger:warning("Connection monitor recovery incomplete, retrying"),
+            {next_state, reconnecting, Data#data{
+                reconnect_attempts = Data#data.reconnect_attempts + 1,
+                previous_count = CurrentCount
+            }}
+    end;
+
+reconnecting({call, From}, get_state, _Data) ->
+    {keep_state_and_data, [{reply, From, reconnecting}]};
+
+reconnecting({call, From}, is_leak_detected, _Data) ->
+    {keep_state_and_data, [{reply, From, true}]};
+
+reconnecting({call, From}, _Request, _Data) ->
+    {keep_state_and_data, [{reply, From, {error, reconnecting}}]};
+
+reconnecting(info, {'DOWN', MonitorRef, process, Pid, _Reason}, Data) ->
+    %% Still clean up connections even during recovery
+    cleanup_connection(Pid, MonitorRef),
+    {keep_state, Data};
+
+reconnecting(_EventType, _EventContent, _Data) ->
+    keep_state_and_data.
+
+terminate(_Reason, _State, _Data) ->
     %% Cleanup all monitored connections
     try
         ets:foldl(fun({Pid, _Info}, _Acc) ->
@@ -280,8 +450,8 @@ terminate(_Reason, _State) ->
     logger:info("Connection monitor terminated"),
     ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+code_change(_OldVsn, State, Data, _Extra) ->
+    {ok, State, Data}.
 
 %%====================================================================
 %% Internal Functions
@@ -302,7 +472,7 @@ do_monitor_connection(ConnectionPid, Info) ->
         server_id => maps:get(server_id, Info, undefined),
         transport_id => maps:get(transport_id, Info, undefined),
         created_at => Now,
-        last_activity => Now,
+        last_activity => maps:get(last_activity, Info, Now),
         bytes_sent => maps:get(bytes_sent, Info, 0),
         bytes_received => maps:get(bytes_received, Info, 0)
     },
@@ -343,12 +513,13 @@ cleanup_connection(Pid, MonitorRef) ->
             Socket = maps:get(socket, Info, undefined),
             case Socket of
                 undefined -> ok;
-                S ->
+                S when is_port(S) ->
                     try
                         gen_tcp:close(S)
                     catch
                         _:_ -> ok
-                    end
+                    end;
+                _ -> ok
             end,
 
             %% Demonitor if ref provided
@@ -399,22 +570,22 @@ do_cleanup_connections() ->
     length(Orphaned).
 
 %% @private Check for connection leaks
--spec do_check_leak(#state{}) -> #state{}.
-do_check_leak(State) ->
+-spec do_check_leak(#data{}) -> {ok, #data{}} | {leak_detected, #data{}}.
+do_check_leak(Data) ->
     CurrentCount = get_connection_count(),
     Now = erlang:monotonic_time(millisecond),
 
-    case State#state.last_check_time of
+    case Data#data.last_check_time of
         undefined ->
             %% First check, just record baseline
-            State#state{
+            {ok, Data#data{
                 previous_count = CurrentCount,
                 last_check_time = Now,
                 leak_detected = false
-            };
+            }};
         LastCheckTime ->
             TimeDelta = Now - LastCheckTime,
-            CountDelta = CurrentCount - State#state.previous_count,
+            CountDelta = CurrentCount - Data#data.previous_count,
 
             %% Calculate connections per minute
             ConnPerMin = case TimeDelta > 0 of
@@ -423,52 +594,52 @@ do_check_leak(State) ->
             end,
 
             %% Check if leak threshold exceeded
-            LeakDetected = ConnPerMin > State#state.leak_threshold,
+            LeakDetected = ConnPerMin > Data#data.leak_threshold,
 
             case LeakDetected of
                 true ->
                     logger:error("Connection leak detected: ~.2f connections/min growth (threshold: ~p conn/min)",
-                               [ConnPerMin, State#state.leak_threshold]),
+                               [ConnPerMin, Data#data.leak_threshold]),
                     logger:error("Connection count: ~p -> ~p (+~p in ~pms)",
-                               [State#state.previous_count, CurrentCount, CountDelta, TimeDelta]),
+                               [Data#data.previous_count, CurrentCount, CountDelta, TimeDelta]),
 
                     %% Force cleanup on leak detection
                     Cleaned = do_cleanup_connections(),
                     logger:info("Forced cleanup removed ~p orphaned connections", [Cleaned]),
 
-                    State#state{
+                    {leak_detected, Data#data{
                         previous_count = CurrentCount,
                         last_check_time = Now,
                         leak_detected = true,
-                        stats = maps:merge(State#state.stats, #{
+                        stats = maps:merge(Data#data.stats, #{
                             leak_rate => ConnPerMin,
                             leak_detected_at => Now
                         })
-                    };
+                    }};
                 false ->
                     %% Log growth rate if significant
                     case ConnPerMin > 10 of
                         true ->
                             logger:info("Connection growth rate: ~.2f conn/min (~p -> ~p)",
-                                       [ConnPerMin, State#state.previous_count, CurrentCount]);
+                                       [ConnPerMin, Data#data.previous_count, CurrentCount]);
                         false ->
                             ok
                     end,
 
-                    State#state{
+                    {ok, Data#data{
                         previous_count = CurrentCount,
                         last_check_time = Now,
                         leak_detected = false,
-                        stats = maps:merge(State#state.stats, #{
+                        stats = maps:merge(Data#data.stats, #{
                             leak_rate => ConnPerMin
                         })
-                    }
+                    }}
             end
     end.
 
 %% @private Get connection statistics
--spec get_connection_stats_internal() -> connection_stats().
-get_connection_stats_internal() ->
+-spec get_connection_stats_internal(#data{}) -> connection_stats().
+get_connection_stats_internal(Data) ->
     Total = get_connection_count(),
 
     %% Count orphaned connections
@@ -483,8 +654,8 @@ get_connection_stats_internal() ->
         total_connections => Total,
         active_connections => Total - Orphaned,
         orphaned_connections => Orphaned,
-        cleanup_attempts => 0,
-        last_cleanup_time => undefined
+        cleanup_attempts => Data#data.cleanup_attempts,
+        last_cleanup_time => maps:get(last_cleanup_time, Data#data.stats, undefined)
     }.
 
 %% @private Load configuration value
@@ -498,3 +669,11 @@ load_config(Key, Default) ->
         _ ->
             Default
     end.
+
+%% @private Cancel a timer if it exists
+-spec cancel_timer(reference() | undefined) -> ok.
+cancel_timer(undefined) ->
+    ok;
+cancel_timer(TimerRef) ->
+    erlang:cancel_timer(TimerRef),
+    ok.

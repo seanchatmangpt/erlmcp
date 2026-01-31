@@ -1,30 +1,44 @@
 -module(erlmcp_circuit_breaker).
--behaviour(gen_server).
+-behaviour(gen_statem).
 
 %% API
 -export([
-    start_link/0,
     start_link/1,
-    register_breaker/2,
-    register_breaker/3,
-    unregister_breaker/1,
+    start_link/2,
     call/2,
     call/3,
     call_with_fallback/3,
     call_with_fallback/4,
     get_state/1,
-    get_all_states/0,
+    get_stats/1,
     reset/1,
-    reset_all/0,
     force_open/1,
     force_close/1,
-    get_stats/1,
-    get_all_stats/0
+    stop/1,
+    % Manager compatibility API
+    register_breaker/2,
+    register_breaker/3,
+    unregister_breaker/1,
+    get_all_states/0,
+    get_all_stats/0,
+    reset_all/0
 ]).
 
-%% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-         code_change/3]).
+%% gen_statem callbacks
+-export([
+    callback_mode/0,
+    init/1,
+    terminate/3,
+    code_change/4,
+    format_status/1
+]).
+
+%% State functions
+-export([
+    closed/3,
+    open/3,
+    half_open/3
+]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -32,569 +46,477 @@
 %% Types
 %%====================================================================
 
--type breaker_name() :: atom() | binary().
--type breaker_state() :: closed | open | half_open.
+-type breaker_name() :: atom() | {global, term()} | {via, module(), term()}.
 -type breaker_result() :: {ok, term()} | {error, term()}.
 -type breaker_fun() :: fun(() -> breaker_result()).
 -type fallback_fun() :: fun(() -> breaker_result()).
 
--type breaker_config() ::
+-type config() ::
     #{failure_threshold => pos_integer(),      % Failures to trip (default: 5)
       success_threshold => pos_integer(),      % Successes in half_open to close (default: 2)
       timeout => pos_integer(),                % Time in ms before half_open attempt (default: 60000)
       window_size => pos_integer(),            % Rolling window for failure rate (default: 10)
-      failure_rate_threshold => float(),       % Percentage 0.0-1.0 (default: 0.5)
-      reset_timeout => pos_integer()}.         % Auto-reset timeout (default: infinity)
+      failure_rate_threshold => float()}.      % Percentage 0.0-1.0 (default: 0.5)
 
--record(breaker, {
-    name :: breaker_name(),
-    state = closed :: breaker_state(),
-    failures = 0 :: non_neg_integer(),
-    successes = 0 :: non_neg_integer(),
+-record(data, {
+    name :: atom(),
+    config :: config(),
+    % Counters
     consecutive_failures = 0 :: non_neg_integer(),
     consecutive_successes = 0 :: non_neg_integer(),
-    config :: breaker_config(),
-    last_failure_time :: undefined | erlang:timestamp(),
-    last_state_change :: erlang:timestamp(),
-    open_until :: undefined | erlang:timestamp(),
-    timeout_ref :: undefined | reference(),
-
-    %% Statistics
     total_calls = 0 :: non_neg_integer(),
     total_successes = 0 :: non_neg_integer(),
     total_failures = 0 :: non_neg_integer(),
     total_rejected = 0 :: non_neg_integer(),
-
-    %% Rolling window for failure rate calculation
-    call_history = [] :: [{erlang:timestamp(), success | failure}],
-
-    %% Bulkhead isolation
-    resource_quotas = #{} :: #{atom() => term()}
+    % Timestamps
+    last_failure_time :: undefined | integer(),
+    last_state_change :: integer(),
+    % Rolling window for failure rate
+    call_history = [] :: [{integer(), success | failure}]
 }).
 
--record(state, {
-    breakers = #{} :: #{breaker_name() => #breaker{}},
-    default_config :: breaker_config(),
-    monitor_refs = #{} :: #{reference() => breaker_name()},
-    health_monitor_pid :: undefined | pid()
-}).
+-type state_name() :: closed | open | half_open.
+-type data() :: #data{}.
 
-%%====================================================================
-%% Default Configuration
-%%====================================================================
 
+%% Hibernation configuration for idle circuit breakers
+%% Reduces memory per idle circuit breaker from ~50KB to ~5KB
+-define(HIBERNATE_AFTER_MS, 30000). % 30 seconds of inactivity triggers hibernation
 -define(DEFAULT_CONFIG, #{
-    failure_threshold => 5,           % 5 consecutive failures
-    success_threshold => 2,           % 2 consecutive successes to close from half_open
-    timeout => 60000,                 % 60 seconds before retry
-    window_size => 10,                % Last 10 calls
-    failure_rate_threshold => 0.5,    % 50% failure rate
-    reset_timeout => infinity         % Never auto-reset
+    failure_threshold => 5,
+    success_threshold => 2,
+    timeout => 60000,
+    window_size => 10,
+    failure_rate_threshold => 0.5
 }).
 
 -define(BREAKER_OPEN_ERROR, circuit_breaker_open).
--define(BREAKER_TIMEOUT_ERROR, circuit_breaker_timeout).
+-define(MANAGER_TABLE, erlmcp_circuit_breaker_registry).
 
 %%====================================================================
 %% API Functions
 %%====================================================================
 
--spec start_link() -> {ok, pid()} | {error, term()}.
-start_link() ->
-    start_link([]).
+%% @doc Start a circuit breaker with default name
+-spec start_link(config()) -> {ok, pid()} | {error, term()}.
+start_link(Config) ->
+    Name = make_ref(),
+    start_link(Name, Config).
 
--spec start_link(list()) -> {ok, pid()} | {error, term()}.
-start_link(Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
-
-%% @doc Register a circuit breaker with default config
--spec register_breaker(breaker_name(), breaker_config()) -> ok | {error, term()}.
-register_breaker(Name, Config) ->
-    register_breaker(Name, Config, undefined).
-
-%% @doc Register a circuit breaker with optional health monitor integration
--spec register_breaker(breaker_name(), breaker_config(), pid() | undefined) ->
-                          ok | {error, term()}.
-register_breaker(Name, Config, MonitorPid) ->
-    gen_server:call(?MODULE, {register_breaker, Name, Config, MonitorPid}).
-
-%% @doc Unregister a circuit breaker
--spec unregister_breaker(breaker_name()) -> ok.
-unregister_breaker(Name) ->
-    gen_server:cast(?MODULE, {unregister_breaker, Name}).
+%% @doc Start a circuit breaker with a name
+-spec start_link(atom(), config()) -> {ok, pid()} | {error, term()}.
+start_link(Name, Config) when is_atom(Name) ->
+    %% Enable hibernation after 30 seconds of inactivity to reduce memory usage
+    gen_statem:start_link({local, Name}, ?MODULE, {Name, Config}, [{hibernate_after, ?HIBERNATE_AFTER_MS}]);
+start_link(Name, Config) ->
+    %% Enable hibernation after 30 seconds of inactivity to reduce memory usage
+    gen_statem:start_link(?MODULE, {Name, Config}, [{hibernate_after, ?HIBERNATE_AFTER_MS}]).
 
 %% @doc Execute a function through the circuit breaker (5 second timeout)
--spec call(breaker_name(), breaker_fun()) -> breaker_result().
-call(Name, Fun) ->
-    call(Name, Fun, 5000).
+-spec call(pid() | atom(), breaker_fun()) -> breaker_result().
+call(Breaker, Fun) ->
+    call(Breaker, Fun, 5000).
 
 %% @doc Execute a function through the circuit breaker with custom timeout
--spec call(breaker_name(), breaker_fun(), timeout()) -> breaker_result().
-call(Name, Fun, Timeout) when is_function(Fun, 0) ->
-    gen_server:call(?MODULE, {call, Name, Fun}, Timeout).
+-spec call(pid() | atom(), breaker_fun(), timeout()) -> breaker_result().
+call(Breaker, Fun, Timeout) when is_function(Fun, 0) ->
+    gen_statem:call(Breaker, {execute, Fun}, Timeout).
 
 %% @doc Execute with fallback on circuit open (5 second timeout)
--spec call_with_fallback(breaker_name(), breaker_fun(), fallback_fun()) ->
+-spec call_with_fallback(pid() | atom(), breaker_fun(), fallback_fun()) ->
                             breaker_result().
-call_with_fallback(Name, Fun, Fallback) ->
-    call_with_fallback(Name, Fun, Fallback, 5000).
+call_with_fallback(Breaker, Fun, Fallback) ->
+    call_with_fallback(Breaker, Fun, Fallback, 5000).
 
 %% @doc Execute with fallback on circuit open, custom timeout
--spec call_with_fallback(breaker_name(), breaker_fun(), fallback_fun(), timeout()) ->
+-spec call_with_fallback(pid() | atom(), breaker_fun(), fallback_fun(), timeout()) ->
                             breaker_result().
-call_with_fallback(Name, Fun, Fallback, Timeout)
+call_with_fallback(Breaker, Fun, Fallback, Timeout)
   when is_function(Fun, 0), is_function(Fallback, 0) ->
-    case call(Name, Fun, Timeout) of
+    case call(Breaker, Fun, Timeout) of
         {error, ?BREAKER_OPEN_ERROR} ->
-            ?LOG_INFO("Circuit breaker ~p open, using fallback", [Name]),
+            ?LOG_INFO("Circuit breaker ~p open, using fallback", [Breaker]),
             Fallback();
         Other ->
             Other
     end.
 
-%% @doc Get current state of a circuit breaker
--spec get_state(breaker_name()) -> breaker_state() | not_found.
-get_state(Name) ->
-    gen_server:call(?MODULE, {get_state, Name}).
+%% @doc Get current state of the circuit breaker
+-spec get_state(pid() | atom()) -> state_name().
+get_state(Breaker) ->
+    gen_statem:call(Breaker, get_state).
+
+%% @doc Get statistics for the circuit breaker
+-spec get_stats(pid() | atom()) -> {ok, map()}.
+get_stats(Breaker) ->
+    gen_statem:call(Breaker, get_stats).
+
+%% @doc Reset circuit breaker to closed state
+-spec reset(pid() | atom()) -> ok.
+reset(Breaker) ->
+    gen_statem:call(Breaker, reset).
+
+%% @doc Force circuit breaker to open state
+-spec force_open(pid() | atom()) -> ok.
+force_open(Breaker) ->
+    gen_statem:call(Breaker, force_open).
+
+%% @doc Force circuit breaker to closed state
+-spec force_close(pid() | atom()) -> ok.
+force_close(Breaker) ->
+    gen_statem:call(Breaker, force_close).
+
+%% @doc Stop the circuit breaker
+-spec stop(pid() | atom()) -> ok.
+stop(Breaker) ->
+    gen_statem:stop(Breaker).
+
+%%====================================================================
+%% Manager Compatibility API (for existing tests)
+%%====================================================================
+
+%% @doc Register a circuit breaker with default config
+-spec register_breaker(atom(), config()) -> ok | {error, term()}.
+register_breaker(Name, Config) ->
+    register_breaker(Name, Config, undefined).
+
+%% @doc Register a circuit breaker (manager compatibility)
+-spec register_breaker(atom(), config(), pid() | undefined) -> ok | {error, term()}.
+register_breaker(Name, Config, _MonitorPid) ->
+    ensure_manager_table(),
+    case ets:lookup(?MANAGER_TABLE, Name) of
+        [{Name, _Pid}] ->
+            {error, already_registered};
+        [] ->
+            case start_link(Name, Config) of
+                {ok, Pid} ->
+                    ets:insert(?MANAGER_TABLE, {Name, Pid}),
+                    ok;
+                Error ->
+                    Error
+            end
+    end.
+
+%% @doc Unregister a circuit breaker
+-spec unregister_breaker(atom()) -> ok.
+unregister_breaker(Name) ->
+    ensure_manager_table(),
+    case ets:lookup(?MANAGER_TABLE, Name) of
+        [{Name, Pid}] ->
+            catch stop(Pid),
+            ets:delete(?MANAGER_TABLE, Name),
+            ok;
+        [] ->
+            ok
+    end.
 
 %% @doc Get all circuit breaker states
--spec get_all_states() -> #{breaker_name() => breaker_state()}.
+-spec get_all_states() -> #{atom() => state_name()}.
 get_all_states() ->
-    gen_server:call(?MODULE, get_all_states).
+    ensure_manager_table(),
+    ets:foldl(
+        fun({Name, Pid}, Acc) ->
+            case is_process_alive(Pid) of
+                true ->
+                    State = get_state(Pid),
+                    maps:put(Name, State, Acc);
+                false ->
+                    ets:delete(?MANAGER_TABLE, Name),
+                    Acc
+            end
+        end,
+        #{},
+        ?MANAGER_TABLE
+    ).
 
-%% @doc Reset a circuit breaker to closed state
--spec reset(breaker_name()) -> ok | {error, term()}.
-reset(Name) ->
-    gen_server:call(?MODULE, {reset, Name}).
+%% @doc Get all circuit breaker stats
+-spec get_all_stats() -> #{atom() => map()}.
+get_all_stats() ->
+    ensure_manager_table(),
+    ets:foldl(
+        fun({Name, Pid}, Acc) ->
+            case is_process_alive(Pid) of
+                true ->
+                    {ok, Stats} = get_stats(Pid),
+                    maps:put(Name, Stats, Acc);
+                false ->
+                    ets:delete(?MANAGER_TABLE, Name),
+                    Acc
+            end
+        end,
+        #{},
+        ?MANAGER_TABLE
+    ).
 
 %% @doc Reset all circuit breakers
 -spec reset_all() -> ok.
 reset_all() ->
-    gen_server:cast(?MODULE, reset_all).
-
-%% @doc Force a circuit breaker to open state
--spec force_open(breaker_name()) -> ok | {error, term()}.
-force_open(Name) ->
-    gen_server:call(?MODULE, {force_state, Name, open}).
-
-%% @doc Force a circuit breaker to closed state
--spec force_close(breaker_name()) -> ok | {error, term()}.
-force_close(Name) ->
-    gen_server:call(?MODULE, {force_state, Name, closed}).
-
-%% @doc Get statistics for a circuit breaker
--spec get_stats(breaker_name()) -> {ok, map()} | {error, not_found}.
-get_stats(Name) ->
-    gen_server:call(?MODULE, {get_stats, Name}).
-
-%% @doc Get statistics for all circuit breakers
--spec get_all_stats() -> #{breaker_name() => map()}.
-get_all_stats() ->
-    gen_server:call(?MODULE, get_all_stats).
-
-%%====================================================================
-%% gen_server callbacks
-%%====================================================================
-
-init(Opts) ->
-    ?LOG_INFO("Starting circuit breaker manager with options: ~p", [Opts]),
-
-    process_flag(trap_exit, true),
-
-    DefaultConfig =
-        maps:merge(?DEFAULT_CONFIG, proplists:get_value(default_config, Opts, #{})),
-
-    % Optional health monitor integration
-    HealthMonitorPid = case whereis(erlmcp_health_monitor) of
-        undefined -> undefined;
-        Pid when is_pid(Pid) -> Pid
-    end,
-
-    State = #state{
-        default_config = DefaultConfig,
-        health_monitor_pid = HealthMonitorPid
-    },
-
-    ?LOG_INFO("Circuit breaker manager initialized"),
-    {ok, State}.
-
-handle_call({register_breaker, Name, Config, _MonitorPid}, _From, State) ->
-    MergedConfig = maps:merge(State#state.default_config, Config),
-
-    Breaker = #breaker{
-        name = Name,
-        state = closed,
-        config = MergedConfig,
-        last_state_change = erlang:timestamp()
-    },
-
-    % Report to health monitor if available
-    case State#state.health_monitor_pid of
-        undefined -> ok;
-        Pid when is_pid(Pid) ->
-            catch erlmcp_health_monitor:report_circuit_breaker(Name, closed)
-    end,
-
-    NewBreakers = maps:put(Name, Breaker, State#state.breakers),
-    NewState = State#state{breakers = NewBreakers},
-
-    ?LOG_INFO("Registered circuit breaker: ~p with config: ~p", [Name, MergedConfig]),
-    {reply, ok, NewState};
-
-handle_call({call, Name, Fun}, _From, State) ->
-    case maps:find(Name, State#state.breakers) of
-        {ok, Breaker} ->
-            {Result, NewBreaker} = execute_call(Fun, Breaker),
-            NewBreakers = maps:put(Name, NewBreaker, State#state.breakers),
-            NewState = State#state{breakers = NewBreakers},
-
-            % Report state changes to health monitor
-            maybe_report_state_change(Breaker, NewBreaker, State#state.health_monitor_pid),
-
-            {reply, Result, NewState};
-        error ->
-            {reply, {error, breaker_not_found}, State}
-    end;
-
-handle_call({get_state, Name}, _From, State) ->
-    Result = case maps:find(Name, State#state.breakers) of
-        {ok, #breaker{state = BreakerState}} -> BreakerState;
-        error -> not_found
-    end,
-    {reply, Result, State};
-
-handle_call(get_all_states, _From, State) ->
-    States = maps:fold(
-        fun(Name, #breaker{state = BreakerState}, Acc) ->
-            maps:put(Name, BreakerState, Acc)
+    ensure_manager_table(),
+    ets:foldl(
+        fun({_Name, Pid}, _Acc) ->
+            catch reset(Pid)
         end,
-        #{},
-        State#state.breakers
+        ok,
+        ?MANAGER_TABLE
     ),
-    {reply, States, State};
-
-handle_call({reset, Name}, _From, State) ->
-    case maps:find(Name, State#state.breakers) of
-        {ok, Breaker} ->
-            NewBreaker = reset_breaker(Breaker),
-            NewBreakers = maps:put(Name, NewBreaker, State#state.breakers),
-            NewState = State#state{breakers = NewBreakers},
-
-            % Report reset to health monitor
-            maybe_report_state_change(Breaker, NewBreaker, State#state.health_monitor_pid),
-
-            ?LOG_INFO("Reset circuit breaker: ~p", [Name]),
-            {reply, ok, NewState};
-        error ->
-            {reply, {error, not_found}, State}
-    end;
-
-handle_call({force_state, Name, NewState}, _From, State) ->
-    case maps:find(Name, State#state.breakers) of
-        {ok, Breaker} ->
-            NewBreaker = Breaker#breaker{
-                state = NewState,
-                last_state_change = erlang:timestamp()
-            },
-            NewBreakers = maps:put(Name, NewBreaker, State#state.breakers),
-            UpdatedState = State#state{breakers = NewBreakers},
-
-            % Report forced state change
-            maybe_report_state_change(Breaker, NewBreaker, State#state.health_monitor_pid),
-
-            ?LOG_WARNING("Forced circuit breaker ~p to state: ~p", [Name, NewState]),
-            {reply, ok, UpdatedState};
-        error ->
-            {reply, {error, not_found}, State}
-    end;
-
-handle_call({get_stats, Name}, _From, State) ->
-    Result = case maps:find(Name, State#state.breakers) of
-        {ok, Breaker} ->
-            {ok, breaker_stats(Breaker)};
-        error ->
-            {error, not_found}
-    end,
-    {reply, Result, State};
-
-handle_call(get_all_stats, _From, State) ->
-    Stats = maps:fold(
-        fun(Name, Breaker, Acc) ->
-            maps:put(Name, breaker_stats(Breaker), Acc)
-        end,
-        #{},
-        State#state.breakers
-    ),
-    {reply, Stats, State};
-
-handle_call(_Request, _From, State) ->
-    {reply, {error, unknown_request}, State}.
-
-handle_cast({unregister_breaker, Name}, State) ->
-    NewBreakers = maps:remove(Name, State#state.breakers),
-    NewState = State#state{breakers = NewBreakers},
-    ?LOG_INFO("Unregistered circuit breaker: ~p", [Name]),
-    {noreply, NewState};
-
-handle_cast(reset_all, State) ->
-    NewBreakers = maps:map(
-        fun(_Name, Breaker) ->
-            reset_breaker(Breaker)
-        end,
-        State#state.breakers
-    ),
-    NewState = State#state{breakers = NewBreakers},
-    ?LOG_INFO("Reset all circuit breakers"),
-    {noreply, NewState};
-
-handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info({timeout, Name}, State) ->
-    % Transition from open to half_open
-    case maps:find(Name, State#state.breakers) of
-        {ok, Breaker = #breaker{state = open}} ->
-            NewBreaker = transition_to_half_open(Breaker),
-            NewBreakers = maps:put(Name, NewBreaker, State#state.breakers),
-            NewState = State#state{breakers = NewBreakers},
-
-            maybe_report_state_change(Breaker, NewBreaker, State#state.health_monitor_pid),
-
-            {noreply, NewState};
-        _ ->
-            {noreply, State}
-    end;
-
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State) ->
-    ?LOG_INFO("Circuit breaker manager terminating"),
     ok.
 
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+%%====================================================================
+%% gen_statem callbacks
+%%====================================================================
+
+callback_mode() ->
+    [state_functions, state_enter].
+
+init({Name, UserConfig}) ->
+    process_flag(trap_exit, true),
+    Config = maps:merge(?DEFAULT_CONFIG, UserConfig),
+    Data = #data{
+        name = Name,
+        config = Config,
+        last_state_change = erlang:monotonic_time(millisecond)
+    },
+    ?LOG_INFO("Circuit breaker ~p starting in closed state with config: ~p", [Name, Config]),
+    {ok, closed, Data}.
+
+terminate(_Reason, _State, #data{name = Name}) ->
+    ?LOG_INFO("Circuit breaker ~p terminating", [Name]),
+    ok.
+
+code_change(_OldVsn, State, Data, _Extra) ->
+    {ok, State, Data}.
+
+format_status(#{state := State, data := Data}) ->
+    #{
+        state => State,
+        name => Data#data.name,
+        consecutive_failures => Data#data.consecutive_failures,
+        consecutive_successes => Data#data.consecutive_successes,
+        total_calls => Data#data.total_calls
+    }.
+
+%%====================================================================
+%% State Functions
+%%====================================================================
+
+%% CLOSED state - Normal operation
+closed(enter, _OldState, Data) ->
+    ?LOG_DEBUG("Circuit breaker ~p entered CLOSED state", [Data#data.name]),
+    NewData = Data#data{
+        consecutive_failures = 0,
+        last_state_change = erlang:monotonic_time(millisecond)
+    },
+    {keep_state, NewData};
+
+closed({call, From}, {execute, Fun}, Data) ->
+    try Fun() of
+        {ok, _} = Result ->
+            NewData = handle_success(Data),
+            {keep_state, NewData, [{reply, From, Result}]};
+        {error, _} = Result ->
+            NewData = handle_failure(Data),
+            case should_trip(NewData) of
+                true ->
+                    ?LOG_WARNING("Circuit breaker ~p tripping to OPEN (failures: ~p)",
+                                [Data#data.name, NewData#data.consecutive_failures]),
+                    {next_state, open, NewData, [{reply, From, Result}]};
+                false ->
+                    {keep_state, NewData, [{reply, From, Result}]}
+            end
+    catch
+        Class:Reason:_Stacktrace ->
+            ?LOG_WARNING("Circuit breaker ~p function failed: ~p:~p",
+                        [Data#data.name, Class, Reason]),
+            Result = {error, {exception, Class, Reason}},
+            NewData = handle_failure(Data),
+            case should_trip(NewData) of
+                true ->
+                    {next_state, open, NewData, [{reply, From, Result}]};
+                false ->
+                    {keep_state, NewData, [{reply, From, Result}]}
+            end
+    end;
+
+closed({call, From}, get_state, _Data) ->
+    {keep_state_and_data, [{reply, From, closed}]};
+
+closed({call, From}, get_stats, Data) ->
+    Stats = build_stats(closed, Data),
+    {keep_state_and_data, [{reply, From, {ok, Stats}}]};
+
+closed({call, From}, reset, Data) ->
+    NewData = reset_data(Data),
+    {keep_state, NewData, [{reply, From, ok}]};
+
+closed({call, From}, force_open, Data) ->
+    ?LOG_WARNING("Circuit breaker ~p forced to OPEN state", [Data#data.name]),
+    {next_state, open, Data, [{reply, From, ok}]};
+
+closed({call, From}, force_close, _Data) ->
+    {keep_state_and_data, [{reply, From, ok}]};
+
+closed(EventType, EventContent, Data) ->
+    handle_common(EventType, EventContent, Data).
+
+%% OPEN state - Failing, reject requests
+open(enter, _OldState, Data) ->
+    ?LOG_WARNING("Circuit breaker ~p entered OPEN state", [Data#data.name]),
+    Config = Data#data.config,
+    Timeout = maps:get(timeout, Config),
+    NewData = Data#data{
+        consecutive_successes = 0,
+        last_state_change = erlang:monotonic_time(millisecond)
+    },
+    {keep_state, NewData, [{state_timeout, Timeout, attempt_recovery}]};
+
+open(state_timeout, attempt_recovery, Data) ->
+    ?LOG_INFO("Circuit breaker ~p timeout expired, transitioning to HALF_OPEN",
+             [Data#data.name]),
+    {next_state, half_open, Data};
+
+open({call, From}, {execute, _Fun}, Data) ->
+    Result = {error, ?BREAKER_OPEN_ERROR},
+    NewData = Data#data{
+        total_calls = Data#data.total_calls + 1,
+        total_rejected = Data#data.total_rejected + 1
+    },
+    {keep_state, NewData, [{reply, From, Result}]};
+
+open({call, From}, get_state, _Data) ->
+    {keep_state_and_data, [{reply, From, open}]};
+
+open({call, From}, get_stats, Data) ->
+    Stats = build_stats(open, Data),
+    {keep_state_and_data, [{reply, From, {ok, Stats}}]};
+
+open({call, From}, reset, Data) ->
+    ?LOG_INFO("Circuit breaker ~p reset from OPEN to CLOSED", [Data#data.name]),
+    NewData = reset_data(Data),
+    {next_state, closed, NewData, [{reply, From, ok}]};
+
+open({call, From}, force_open, _Data) ->
+    {keep_state_and_data, [{reply, From, ok}]};
+
+open({call, From}, force_close, Data) ->
+    ?LOG_WARNING("Circuit breaker ~p forced to CLOSED state", [Data#data.name]),
+    {next_state, closed, Data, [{reply, From, ok}]};
+
+open(EventType, EventContent, Data) ->
+    handle_common(EventType, EventContent, Data).
+
+%% HALF_OPEN state - Testing recovery
+half_open(enter, _OldState, Data) ->
+    ?LOG_INFO("Circuit breaker ~p entered HALF_OPEN state", [Data#data.name]),
+    NewData = Data#data{
+        consecutive_failures = 0,
+        consecutive_successes = 0,
+        last_state_change = erlang:monotonic_time(millisecond)
+    },
+    {keep_state, NewData};
+
+half_open({call, From}, {execute, Fun}, Data) ->
+    try Fun() of
+        {ok, _} = Result ->
+            NewData = handle_success(Data),
+            Config = Data#data.config,
+            SuccessThreshold = maps:get(success_threshold, Config),
+            case NewData#data.consecutive_successes >= SuccessThreshold of
+                true ->
+                    ?LOG_INFO("Circuit breaker ~p closing after ~p successes",
+                             [Data#data.name, NewData#data.consecutive_successes]),
+                    {next_state, closed, NewData, [{reply, From, Result}]};
+                false ->
+                    {keep_state, NewData, [{reply, From, Result}]}
+            end;
+        {error, _} = Result ->
+            ?LOG_WARNING("Circuit breaker ~p re-opening from HALF_OPEN (failure)",
+                        [Data#data.name]),
+            NewData = handle_failure(Data),
+            {next_state, open, NewData, [{reply, From, Result}]}
+    catch
+        Class:Reason:_Stacktrace ->
+            ?LOG_WARNING("Circuit breaker ~p function failed in HALF_OPEN: ~p:~p",
+                        [Data#data.name, Class, Reason]),
+            Result = {error, {exception, Class, Reason}},
+            NewData = handle_failure(Data),
+            {next_state, open, NewData, [{reply, From, Result}]}
+    end;
+
+half_open({call, From}, get_state, _Data) ->
+    {keep_state_and_data, [{reply, From, half_open}]};
+
+half_open({call, From}, get_stats, Data) ->
+    Stats = build_stats(half_open, Data),
+    {keep_state_and_data, [{reply, From, {ok, Stats}}]};
+
+half_open({call, From}, reset, Data) ->
+    ?LOG_INFO("Circuit breaker ~p reset from HALF_OPEN to CLOSED", [Data#data.name]),
+    NewData = reset_data(Data),
+    {next_state, closed, NewData, [{reply, From, ok}]};
+
+half_open({call, From}, force_open, Data) ->
+    ?LOG_WARNING("Circuit breaker ~p forced to OPEN state", [Data#data.name]),
+    {next_state, open, Data, [{reply, From, ok}]};
+
+half_open({call, From}, force_close, Data) ->
+    ?LOG_WARNING("Circuit breaker ~p forced to CLOSED state", [Data#data.name]),
+    {next_state, closed, Data, [{reply, From, ok}]};
+
+half_open(EventType, EventContent, Data) ->
+    handle_common(EventType, EventContent, Data).
 
 %%====================================================================
 %% Internal Functions
 %%====================================================================
 
-%% @private Execute a call through the circuit breaker state machine
--spec execute_call(breaker_fun(), #breaker{}) -> {breaker_result(), #breaker{}}.
-execute_call(Fun, Breaker = #breaker{state = closed}) ->
-    execute_and_track(Fun, Breaker, fun handle_closed_result/2);
+%% @private Handle common events across all states
+handle_common(_EventType, _EventContent, _Data) ->
+    keep_state_and_data.
 
-execute_call(Fun, Breaker = #breaker{state = open}) ->
-    Now = erlang:timestamp(),
-    OpenUntil = Breaker#breaker.open_until,
-
-    case should_attempt_half_open(Now, OpenUntil) of
-        true ->
-            % Transition to half_open and try the call
-            NewBreaker = transition_to_half_open(Breaker),
-            execute_and_track(Fun, NewBreaker, fun handle_half_open_result/2);
-        false ->
-            % Reject the call
-            Result = {error, ?BREAKER_OPEN_ERROR},
-            UpdatedBreaker = Breaker#breaker{
-                total_calls = Breaker#breaker.total_calls + 1,
-                total_rejected = Breaker#breaker.total_rejected + 1
-            },
-            {Result, UpdatedBreaker}
-    end;
-
-execute_call(Fun, Breaker = #breaker{state = half_open}) ->
-    execute_and_track(Fun, Breaker, fun handle_half_open_result/2).
-
-%% @private Execute function and track result
--spec execute_and_track(breaker_fun(), #breaker{}, fun((term(), #breaker{}) -> #breaker{})) ->
-                           {breaker_result(), #breaker{}}.
-execute_and_track(Fun, Breaker, ResultHandler) ->
-    _StartTime = erlang:timestamp(),
-
-    Result = try
-        Fun()
-    catch
-        Class:Reason:Stacktrace ->
-            ?LOG_WARNING("Circuit breaker ~p function failed: ~p:~p",
-                        [Breaker#breaker.name, Class, Reason]),
-            {error, {exception, Class, Reason, Stacktrace}}
-    end,
-
-    EndTime = erlang:timestamp(),
-
-    % Track call in history
-    CallResult = case Result of
-        {ok, _} -> success;
-        _ -> failure
-    end,
-
-    UpdatedBreaker = add_call_to_history(Breaker, EndTime, CallResult),
-    NewBreaker = ResultHandler(Result, UpdatedBreaker),
-
-    {Result, NewBreaker}.
-
-%% @private Handle result when breaker is closed
--spec handle_closed_result(breaker_result(), #breaker{}) -> #breaker{}.
-handle_closed_result({ok, _}, Breaker) ->
-    Breaker#breaker{
+%% @private Handle successful call
+-spec handle_success(data()) -> data().
+handle_success(Data) ->
+    Now = erlang:monotonic_time(millisecond),
+    NewHistory = add_to_history(Data#data.call_history, Now, success, Data#data.config),
+    Data#data{
+        consecutive_successes = Data#data.consecutive_successes + 1,
         consecutive_failures = 0,
-        consecutive_successes = Breaker#breaker.consecutive_successes + 1,
-        total_calls = Breaker#breaker.total_calls + 1,
-        total_successes = Breaker#breaker.total_successes + 1
-    };
-
-handle_closed_result({error, _}, Breaker) ->
-    NewConsecutiveFailures = Breaker#breaker.consecutive_failures + 1,
-
-    UpdatedBreaker = Breaker#breaker{
-        consecutive_failures = NewConsecutiveFailures,
-        consecutive_successes = 0,
-        total_calls = Breaker#breaker.total_calls + 1,
-        total_failures = Breaker#breaker.total_failures + 1,
-        last_failure_time = erlang:timestamp()
-    },
-
-    % Check failure threshold or failure rate
-    ShouldTrip = should_trip_breaker(UpdatedBreaker),
-
-    case ShouldTrip of
-        true ->
-            ?LOG_WARNING("Circuit breaker ~p tripping to OPEN state (failures: ~p)",
-                        [Breaker#breaker.name, NewConsecutiveFailures]),
-            transition_to_open(UpdatedBreaker);
-        false ->
-            UpdatedBreaker
-    end.
-
-%% @private Handle result when breaker is half_open
--spec handle_half_open_result(breaker_result(), #breaker{}) -> #breaker{}.
-handle_half_open_result({ok, _}, Breaker) ->
-    NewConsecutiveSuccesses = Breaker#breaker.consecutive_successes + 1,
-    Config = Breaker#breaker.config,
-    SuccessThreshold = maps:get(success_threshold, Config),
-
-    UpdatedBreaker = Breaker#breaker{
-        consecutive_successes = NewConsecutiveSuccesses,
-        consecutive_failures = 0,
-        total_calls = Breaker#breaker.total_calls + 1,
-        total_successes = Breaker#breaker.total_successes + 1
-    },
-
-    case NewConsecutiveSuccesses >= SuccessThreshold of
-        true ->
-            ?LOG_INFO("Circuit breaker ~p closing (successes: ~p)",
-                     [Breaker#breaker.name, NewConsecutiveSuccesses]),
-            transition_to_closed(UpdatedBreaker);
-        false ->
-            UpdatedBreaker
-    end;
-
-handle_half_open_result({error, _}, Breaker) ->
-    ?LOG_WARNING("Circuit breaker ~p re-opening from half_open (failure)",
-                [Breaker#breaker.name]),
-    UpdatedBreaker = Breaker#breaker{
-        consecutive_failures = Breaker#breaker.consecutive_failures + 1,
-        consecutive_successes = 0,
-        total_calls = Breaker#breaker.total_calls + 1,
-        total_failures = Breaker#breaker.total_failures + 1,
-        last_failure_time = erlang:timestamp()
-    },
-    transition_to_open(UpdatedBreaker).
-
-%% @private Transition breaker to open state
--spec transition_to_open(#breaker{}) -> #breaker{}.
-transition_to_open(Breaker) ->
-    Config = Breaker#breaker.config,
-    Timeout = maps:get(timeout, Config),
-    Now = erlang:timestamp(),
-    OpenUntil = add_milliseconds(Now, Timeout),
-
-    % Schedule transition to half_open
-    TimerRef = erlang:send_after(Timeout, self(), {timeout, Breaker#breaker.name}),
-
-    Breaker#breaker{
-        state = open,
-        last_state_change = Now,
-        open_until = OpenUntil,
-        timeout_ref = TimerRef,
-        consecutive_successes = 0
+        total_calls = Data#data.total_calls + 1,
+        total_successes = Data#data.total_successes + 1,
+        call_history = NewHistory
     }.
 
-%% @private Transition breaker to half_open state
--spec transition_to_half_open(#breaker{}) -> #breaker{}.
-transition_to_half_open(Breaker) ->
-    ?LOG_INFO("Circuit breaker ~p transitioning to HALF_OPEN state",
-             [Breaker#breaker.name]),
-
-    % Cancel timeout if exists
-    case Breaker#breaker.timeout_ref of
-        undefined -> ok;
-        Ref -> erlang:cancel_timer(Ref)
-    end,
-
-    Breaker#breaker{
-        state = half_open,
-        last_state_change = erlang:timestamp(),
-        timeout_ref = undefined,
-        open_until = undefined,
-        consecutive_failures = 0,
-        consecutive_successes = 0
-    }.
-
-%% @private Transition breaker to closed state
--spec transition_to_closed(#breaker{}) -> #breaker{}.
-transition_to_closed(Breaker) ->
-    Breaker#breaker{
-        state = closed,
-        last_state_change = erlang:timestamp(),
-        consecutive_failures = 0,
-        open_until = undefined,
-        timeout_ref = undefined
-    }.
-
-%% @private Reset breaker to initial state
--spec reset_breaker(#breaker{}) -> #breaker{}.
-reset_breaker(Breaker) ->
-    % Cancel timeout if exists
-    case Breaker#breaker.timeout_ref of
-        undefined -> ok;
-        Ref -> erlang:cancel_timer(Ref)
-    end,
-
-    Breaker#breaker{
-        state = closed,
-        failures = 0,
-        successes = 0,
-        consecutive_failures = 0,
+%% @private Handle failed call
+-spec handle_failure(data()) -> data().
+handle_failure(Data) ->
+    Now = erlang:monotonic_time(millisecond),
+    NewHistory = add_to_history(Data#data.call_history, Now, failure, Data#data.config),
+    Data#data{
+        consecutive_failures = Data#data.consecutive_failures + 1,
         consecutive_successes = 0,
-        last_failure_time = undefined,
-        last_state_change = erlang:timestamp(),
-        open_until = undefined,
-        timeout_ref = undefined,
-        call_history = []
+        total_calls = Data#data.total_calls + 1,
+        total_failures = Data#data.total_failures + 1,
+        last_failure_time = Now,
+        call_history = NewHistory
     }.
 
 %% @private Determine if breaker should trip to open
--spec should_trip_breaker(#breaker{}) -> boolean().
-should_trip_breaker(Breaker) ->
-    Config = Breaker#breaker.config,
+-spec should_trip(data()) -> boolean().
+should_trip(Data) ->
+    Config = Data#data.config,
 
     % Check consecutive failures threshold
     FailureThreshold = maps:get(failure_threshold, Config),
-    ConsecutiveFailures = Breaker#breaker.consecutive_failures,
+    ConsecutiveCheck = Data#data.consecutive_failures >= FailureThreshold,
 
-    ConsecutiveCheck = ConsecutiveFailures >= FailureThreshold,
-
-    % Check failure rate in rolling window (only if we have enough samples)
-    FailureRateThreshold = maps:get(failure_rate_threshold, Config),
+    % Check failure rate in rolling window (only if window is full)
     WindowSize = maps:get(window_size, Config),
-    HistorySize = length(Breaker#breaker.call_history),
+    HistorySize = length(Data#data.call_history),
 
-    % Only apply failure rate check if window is full
     FailureRateCheck = case HistorySize >= WindowSize of
         true ->
-            FailureRate = calculate_failure_rate(Breaker),
+            FailureRateThreshold = maps:get(failure_rate_threshold, Config),
+            FailureRate = calculate_failure_rate(Data#data.call_history),
             FailureRate >= FailureRateThreshold;
         false ->
             false
@@ -602,11 +524,11 @@ should_trip_breaker(Breaker) ->
 
     ConsecutiveCheck orelse FailureRateCheck.
 
-%% @private Calculate failure rate from rolling window
--spec calculate_failure_rate(#breaker{}) -> float().
-calculate_failure_rate(#breaker{call_history = []}) ->
+%% @private Calculate failure rate from history
+-spec calculate_failure_rate([{integer(), success | failure}]) -> float().
+calculate_failure_rate([]) ->
     0.0;
-calculate_failure_rate(#breaker{call_history = History}) ->
+calculate_failure_rate(History) ->
     Failures = length([R || {_, R} <- History, R =:= failure]),
     Total = length(History),
     case Total of
@@ -615,71 +537,56 @@ calculate_failure_rate(#breaker{call_history = History}) ->
     end.
 
 %% @private Add call to rolling history window
--spec add_call_to_history(#breaker{}, erlang:timestamp(), success | failure) -> #breaker{}.
-add_call_to_history(Breaker, Timestamp, Result) ->
-    Config = Breaker#breaker.config,
+-spec add_to_history([{integer(), success | failure}], integer(), success | failure, config()) ->
+                        [{integer(), success | failure}].
+add_to_history(History, Timestamp, Result, Config) ->
     WindowSize = maps:get(window_size, Config),
+    NewHistory = [{Timestamp, Result} | History],
+    lists:sublist(NewHistory, WindowSize).
 
-    NewHistory = [{Timestamp, Result} | Breaker#breaker.call_history],
-    TrimmedHistory = lists:sublist(NewHistory, WindowSize),
+%% @private Reset data to initial state
+-spec reset_data(data()) -> data().
+reset_data(Data) ->
+    Data#data{
+        consecutive_failures = 0,
+        consecutive_successes = 0,
+        call_history = [],
+        last_failure_time = undefined,
+        last_state_change = erlang:monotonic_time(millisecond)
+    }.
 
-    Breaker#breaker{call_history = TrimmedHistory}.
-
-%% @private Check if enough time has passed to attempt half_open
--spec should_attempt_half_open(erlang:timestamp(), undefined | erlang:timestamp()) -> boolean().
-should_attempt_half_open(_Now, undefined) ->
-    false;
-should_attempt_half_open(Now, OpenUntil) ->
-    timer:now_diff(Now, OpenUntil) >= 0.
-
-%% @private Add milliseconds to timestamp
--spec add_milliseconds(erlang:timestamp(), pos_integer()) -> erlang:timestamp().
-add_milliseconds({MegaSecs, Secs, MicroSecs}, Milliseconds) ->
-    TotalMicros = MicroSecs + (Milliseconds * 1000),
-    ExtraSecs = TotalMicros div 1000000,
-    NewMicroSecs = TotalMicros rem 1000000,
-
-    TotalSecs = Secs + ExtraSecs,
-    ExtraMegaSecs = TotalSecs div 1000000,
-    NewSecs = TotalSecs rem 1000000,
-
-    {MegaSecs + ExtraMegaSecs, NewSecs, NewMicroSecs}.
-
-%% @private Report state change to health monitor if state changed
--spec maybe_report_state_change(#breaker{}, #breaker{}, pid() | undefined) -> ok.
-maybe_report_state_change(#breaker{state = OldState}, #breaker{state = NewState, name = Name},
-                         HealthMonitorPid)
-  when OldState =/= NewState, is_pid(HealthMonitorPid) ->
-    CircuitState = case NewState of
-        open -> open;
-        _ -> closed
-    end,
-    catch erlmcp_health_monitor:report_circuit_breaker(Name, CircuitState),
-    ok;
-maybe_report_state_change(_, _, _) ->
-    ok.
-
-%% @private Extract statistics from breaker
--spec breaker_stats(#breaker{}) -> map().
-breaker_stats(Breaker) ->
-    FailureRate = calculate_failure_rate(Breaker),
-    SuccessRate = case Breaker#breaker.total_calls of
+%% @private Build statistics map
+-spec build_stats(state_name(), data()) -> map().
+build_stats(State, Data) ->
+    FailureRate = calculate_failure_rate(Data#data.call_history),
+    SuccessRate = case Data#data.total_calls of
         0 -> 0.0;
-        Total -> Breaker#breaker.total_successes / Total
+        Total -> Data#data.total_successes / Total
     end,
 
     #{
-        name => Breaker#breaker.name,
-        state => Breaker#breaker.state,
-        consecutive_failures => Breaker#breaker.consecutive_failures,
-        consecutive_successes => Breaker#breaker.consecutive_successes,
-        total_calls => Breaker#breaker.total_calls,
-        total_successes => Breaker#breaker.total_successes,
-        total_failures => Breaker#breaker.total_failures,
-        total_rejected => Breaker#breaker.total_rejected,
+        name => Data#data.name,
+        state => State,
+        consecutive_failures => Data#data.consecutive_failures,
+        consecutive_successes => Data#data.consecutive_successes,
+        total_calls => Data#data.total_calls,
+        total_successes => Data#data.total_successes,
+        total_failures => Data#data.total_failures,
+        total_rejected => Data#data.total_rejected,
         failure_rate => FailureRate,
         success_rate => SuccessRate,
-        last_failure_time => Breaker#breaker.last_failure_time,
-        last_state_change => Breaker#breaker.last_state_change,
-        config => Breaker#breaker.config
+        last_failure_time => Data#data.last_failure_time,
+        last_state_change => Data#data.last_state_change,
+        config => Data#data.config
     }.
+
+%% @private Ensure manager table exists
+-spec ensure_manager_table() -> ok.
+ensure_manager_table() ->
+    case ets:whereis(?MANAGER_TABLE) of
+        undefined ->
+            ets:new(?MANAGER_TABLE, [named_table, public, set]),
+            ok;
+        _ ->
+            ok
+    end.
