@@ -74,6 +74,7 @@
     erlmcp_prompt_template,
     %% Additional modules
     erlmcp,
+    erlmcp_apps_server,
     erlmcp_auth,
     erlmcp_auth_rate_limiter,
     erlmcp_cancellation,
@@ -107,6 +108,7 @@
     erlmcp_request_id,
     erlmcp_resource,
     erlmcp_resource_subscriptions,
+    erlmcp_roots_server,
     erlmcp_schema_registry,
     erlmcp_schema_validator,
     erlmcp_secrets,
