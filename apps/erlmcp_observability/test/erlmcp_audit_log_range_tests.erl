@@ -37,8 +37,8 @@ setup() ->
 
     Config = #{
         log_path => LogPath,
-        buffer_size => 10,
-        flush_interval_ms => 1000
+        buffer_size => 5,
+        flush_interval_ms => 500
     },
 
     {ok, Pid} = erlmcp_audit_log:start_link(Config),
@@ -63,7 +63,7 @@ test_verify_range_from_root() ->
     end, lists:seq(1, 5)),
 
     % Wait for flush
-    timer:sleep(200),
+    timer:sleep(600),
 
     % Verify range [0, 2] (first 3 entries)
     ok = erlmcp_audit_log:verify_chain(0, 2),
@@ -78,7 +78,7 @@ test_verify_range_middle() ->
     end, lists:seq(1, 5)),
 
     % Wait for flush
-    timer:sleep(200),
+    timer:sleep(600),
 
     % Verify range [2, 4] (middle 3 entries)
     ok = erlmcp_audit_log:verify_chain(2, 4),
@@ -93,7 +93,7 @@ test_verify_range_single() ->
     ok = erlmcp_audit_log:log_auth_success(<<"user3">>, #{}),
 
     % Wait for flush
-    timer:sleep(200),
+    timer:sleep(600),
 
     % Verify range [1, 1] (single entry)
     ok = erlmcp_audit_log:verify_chain(1, 1),
@@ -106,7 +106,7 @@ test_verify_range_invalid() ->
     ok = erlmcp_audit_log:log_auth_success(<<"user1">>, #{}),
 
     % Wait for flush
-    timer:sleep(200),
+    timer:sleep(600),
 
     % Verify invalid range [5, 2]
     {error, {invalid_range, 5, 2}} = erlmcp_audit_log:verify_chain(5, 2),
@@ -120,7 +120,7 @@ test_verify_range_missing_previous() ->
     ok = erlmcp_audit_log:log_auth_success(<<"user2">>, #{}),
 
     % Wait for flush
-    timer:sleep(200),
+    timer:sleep(600),
 
     % Verify range [5, 10] (entries don't exist)
     {error, {missing_entries, 5, 10, _}} = erlmcp_audit_log:verify_chain(5, 10),
@@ -135,7 +135,7 @@ test_verify_range_tampered({_Pid, LogPath, _LogDir}) ->
     end, lists:seq(1, 5)),
 
     % Wait for flush
-    timer:sleep(200),
+    timer:sleep(600),
 
     % Verify range is valid
     ok = erlmcp_audit_log:verify_chain(1, 3),
@@ -177,7 +177,7 @@ test_verify_range_equals_full() ->
     end, lists:seq(1, 10)),
 
     % Wait for flush
-    timer:sleep(200),
+    timer:sleep(600),
 
     % Verify full chain
     ok = erlmcp_audit_log:verify_chain(),
@@ -202,8 +202,8 @@ test_verify_range_performance() ->
         })
     end, lists:seq(1, 100)),
 
-    % Wait for flush
-    timer:sleep(500),
+    % Wait for flush (100 entries with buffer_size 5 = 20 flushes, but also timer)
+    timer:sleep(1000),
 
     % Measure full verification time
     {TFull, ok} = timer:tc(fun() ->
@@ -245,7 +245,7 @@ setup_edge_cases() ->
     application:ensure_all_started(jsx),
     LogDir = "/tmp/erlmcp_audit_edge_test_" ++ integer_to_list(erlang:unique_integer([positive])),
     LogPath = LogDir ++ "/audit_edge.log",
-    Config = #{log_path => LogPath, buffer_size => 5, flush_interval_ms => 500},
+    Config = #{log_path => LogPath, buffer_size => 5, flush_interval_ms => 300},
     {ok, Pid} = erlmcp_audit_log:start_link(Config),
     {Pid, LogPath, LogDir}.
 

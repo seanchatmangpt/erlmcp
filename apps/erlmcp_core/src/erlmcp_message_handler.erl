@@ -12,6 +12,7 @@
     process_message/3,
     handle_initialize/2,
     handle_initialized/2,
+    handle_ping/2,
     handle_resources_list/2,
     handle_tools_list/2,
     handle_prompts_list/2,
@@ -96,6 +97,13 @@ handle_read_resource(_Params, State) ->
     %% Read resource content
     {<<"resource_content">>, State}.
 
+%% @doc Handle ping request (MCP 2025-11-25)
+%% Simplest possible request - returns empty object on success
+-spec handle_ping(map(), state()) -> {ok, state()}.
+handle_ping(_Params, State) ->
+    %% Ping always succeeds, returns empty result
+    {ok, State}.
+
 %%====================================================================
 %% Internal Routing
 %%====================================================================
@@ -105,6 +113,9 @@ handle_read_resource(_Params, State) ->
     {reply, binary(), state()} | {error, term()}.
 handle_request(<<"initialize">>, _Params, Id, _TransportId, State) ->
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"result">> => <<"ok">>}), State};
+handle_request(<<"ping">>, _Params, Id, _TransportId, State) ->
+    %% Ping method (MCP 2025-11-25) - returns empty object
+    {reply, erlmcp_json_rpc:encode_response(Id, #{}), State};
 handle_request(<<"resources/list">>, _Params, Id, _TransportId, State) ->
     Resources = maps:keys(State#mcp_server_state.resources),
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"resources">> => Resources}), State};
