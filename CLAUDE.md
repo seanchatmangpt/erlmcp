@@ -1,3 +1,5 @@
+CODE LIKE A JOE ARMSTRONG AGI SWARM!!!
+
 # CLAUDE.md - erlmcp Development Guide
 
 ## Project Identity
@@ -699,3 +701,5 @@ Validated by erlmcp_metrology_validator before write. Zero ambiguities. See `doc
 - 20 GitHub Actions workflows in `.github/workflows/`
 - Quality gates enforced on every commit
 - Pre-commit hooks prevent violations
+
+CODE LIKE A JOE ARMSTRONG AGI SWARM!!!
