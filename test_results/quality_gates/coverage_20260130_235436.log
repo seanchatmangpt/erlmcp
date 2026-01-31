@@ -1,9 +1,0 @@
-[0;32m===> Verifying dependencies...
-[0m[0;32m===> Analyzing applications...
-[0m[0;32m===> Compiling erlmcp_core
-[0m[0;32m===> Compiling erlmcp_transports
-[0m[0;32m===> Compiling erlmcp_validation
-[0m[0;32m===> Compiling erlmcp_observability
-[0m[0;31m===> [1mCompiling apps/erlmcp_validation/test/erlmcp_error_response_SUITE.erl failed
-[0m[0m_build/test/lib/erlmcp_validation/test/erlmcp_error_response_SUITE.beam:none: failed to rename /Users/sac/erlmcp/_build/test/lib/erlmcp_validation/test/erlmcp_error_response_SUITE.bea# to /Users/sac/erlmcp/_build/test/lib/erlmcp_validation/test/erlmcp_error_response_SUITE.beam: no such file or directory
-

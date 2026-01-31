@@ -1,9 +1,0 @@
-[0;32m===> Verifying dependencies...
-[0m[0;32m===> Analyzing applications...
-[0m[0;32m===> Compiling erlmcp_core
-[0m[0;32m===> Compiling erlmcp_transports
-[0m[0;32m===> Compiling erlmcp_validation
-[0m[0;32m===> Compiling erlmcp_observability
-[0m[0;31m===> [1mCompiling apps/erlmcp_core/test/tcps_quality_gates_tests.erl failed
-[0m[0mapps/erlmcp_core/test/tcps_quality_gates_tests.erl:none: no such file or directory
-
