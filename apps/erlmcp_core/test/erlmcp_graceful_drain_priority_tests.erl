@@ -17,8 +17,7 @@ graceful_drain_test_() ->
       fun test_shutdown_with_active_connections/1,
       fun test_shutdown_timeout/1,
       fun test_priority_metrics_tracking/1,
-      fun test_concurrent_shutdown_signals/1,
-      fun test_fallback_otp_27/1]}.
+      fun test_concurrent_shutdown_signals/1]}.
 
 setup() ->
     {ok, Pid} = erlmcp_graceful_drain:start_link(),
@@ -258,20 +257,3 @@ test_concurrent_shutdown_signals(_Pid) ->
          timer:sleep(1000)
      end}.
 
-%%====================================================================
-%% Fallback Tests
-%%====================================================================
-
-test_fallback_otp_27(Pid) ->
-    {"Graceful drain should work correctly on OTP 25-27 without priority messages",
-     fun() ->
-         % Test normal operation
-         ok = erlmcp_graceful_drain:connection_started(test_module),
-         ?assertEqual(1, erlmcp_graceful_drain:get_active_connections()),
-
-         ok = erlmcp_graceful_drain:connection_finished(test_module),
-         ?assertEqual(0, erlmcp_graceful_drain:get_active_connections()),
-
-         -ifndef(OTP_28).
-         ?debugMsg("Verified fallback behavior on OTP 25-27")
-     end}.

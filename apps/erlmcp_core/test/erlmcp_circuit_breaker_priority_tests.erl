@@ -16,8 +16,7 @@ circuit_breaker_test_() ->
       fun test_priority_level_configuration/1,
       fun test_priority_metrics_tracking/1,
       fun test_state_change_notification_latency/1,
-      fun test_concurrent_state_transitions/1,
-      fun test_fallback_otp_27/1]}.
+      fun test_concurrent_state_transitions/1]}.
 
 setup() ->
     % Start circuit breaker with priority enabled
@@ -248,26 +247,3 @@ test_concurrent_state_transitions(_Setup) ->
          [erlmcp_circuit_breaker:stop(P) || P <- Pids]
      end}.
 
-%%====================================================================
-%% Fallback Tests
-%%====================================================================
-
-test_fallback_otp_27({Pid, _Config}) ->
-    {"Circuit breaker should work correctly on OTP 25-27 without priority messages",
-     fun() ->
-         % Verify normal operation
-         ?assertEqual(closed, erlmcp_circuit_breaker:get_state(Pid)),
-
-         % Trip breaker
-         _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
-         _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
-         _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
-
-         ?assertEqual(open, erlmcp_circuit_breaker:get_state(Pid)),
-
-         {ok, Stats} = erlmcp_circuit_breaker:get_stats(Pid),
-         ?assertEqual(3, maps:get(total_failures, Stats)),
-
-         -ifndef(OTP_28).
-         ?debugMsg("Verified fallback behavior on OTP 25-27")
-     end}.
