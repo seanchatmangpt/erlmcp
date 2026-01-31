@@ -207,6 +207,18 @@ init([]) ->
         },
 
         %% ================================================================
+        %% COMPLETION: Argument completion per MCP 2025-11-25 spec
+        %% ================================================================
+        #{
+            id => erlmcp_completion,
+            start => {erlmcp_completion, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_completion]
+        },
+
+        %% ================================================================
         %% NOTIFICATION HANDLERS: Supervised notification processing (RPN 168)
         %% ================================================================
         #{
