@@ -1,0 +1,301 @@
+-module(erlmcp_registry_error_tests).
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%%===================================================================
+%%% Test Suite for erlmcp_registry Error Handling
+%%%
+%%% Chicago School TDD Principles:
+%%%   - Use REAL erlmcp_server processes (NO dummy spawn processes)
+%%%   - Test observable behavior through ALL interfaces
+%%%   - NO internal state inspection (test API boundaries only)
+%%%   - NO record duplication (respect encapsulation)
+%%%   - Files <500 lines each
+%%%===================================================================
+
+%%====================================================================
+%% Test Fixtures
+%%====================================================================
+
+registry_error_test_() ->
+    {foreach,
+     fun setup/0,
+     fun cleanup/1,
+     [
+        fun test_duplicate_registration_different_pid/1,
+        fun test_bind_nonexistent_server/1,
+        fun test_bind_nonexistent_transport/1,
+        fun test_route_to_nonexistent_server/1,
+        fun test_route_to_nonexistent_transport/1,
+        fun test_transport_process_death_cleanup/1,
+        fun test_server_death_cleans_up_bindings/1,
+        fun test_route_message_to_nonexistent_server/1,
+        fun test_route_message_to_nonexistent_transport/1,
+        fun test_route_message_to_transport_no_server/1,
+        fun test_unknown_handle_call/1,
+        fun test_unknown_handle_cast/1,
+        fun test_unknown_handle_info/1
+     ]}.
+
+%%====================================================================
+%% Setup and Cleanup
+%%====================================================================
+
+setup() ->
+    % Ensure required applications are started
+    application:ensure_all_started(gproc),
+    % Ensure gproc is started using utility function
+    ok = erlmcp_registry_utils:ensure_gproc_started(),
+
+    % Clear any stale test registrations using utility function
+    ok = erlmcp_registry_utils:clear_test_registrations(),
+    timer:sleep(100),
+
+    % Start the registry for testing
+    {ok, RegistryPid} = erlmcp_registry:start_link(),
+    #{registry_pid => RegistryPid, server_pids => []}.
+
+cleanup(#{registry_pid := RegistryPid, server_pids := ServerPids}) ->
+    % Stop all erlmcp_server processes
+    lists:foreach(fun(ServerPid) ->
+        erlmcp_test_helpers:stop_test_server(ServerPid)
+    end, ServerPids),
+
+    % Stop registry gracefully
+    catch gen_server:stop(RegistryPid, shutdown, 5000),
+
+    % Clear test registrations using utility function
+    ok = erlmcp_registry_utils:clear_test_registrations(),
+    timer:sleep(100),
+    ok.
+
+%%====================================================================
+%% Test Cases - Error Handling
+%%====================================================================
+
+test_duplicate_registration_different_pid(#{}) ->
+    ServerId = dup_server,
+    ServerConfig = #{},
+
+    erlmcp_test_helpers:with_test_server(<<"dup_server_1">>, fun(ServerPid1) ->
+        erlmcp_test_helpers:with_test_server(<<"dup_server_2">>, fun(ServerPid2) ->
+
+            [
+                ?_test(begin
+                    % Register first server
+                    ?assertEqual(ok, erlmcp_registry:register_server(ServerId, ServerPid1, ServerConfig))
+                end),
+                ?_test(begin
+                    % Try to register with different PID - should fail
+                    Result = erlmcp_registry:register_server(ServerId, ServerPid2, ServerConfig),
+                    ?assertMatch({error, already_registered}, Result)
+                end)
+            ]
+        end)
+    end).
+
+test_bind_nonexistent_server(#{}) ->
+    TransportId = test_transport_no_server,
+    ServerId = nonexistent_server,
+
+    TransportPid = start_real_transport(),
+    TransportConfig = #{type => stdio},
+    ok = erlmcp_registry:register_transport(TransportId, TransportPid, TransportConfig),
+
+    [
+        ?_test(begin
+            % Test binding to nonexistent server fails
+            Result = erlmcp_registry:bind_transport_to_server(TransportId, ServerId),
+            ?assertMatch({error, server_not_found}, Result)
+        end)
+    ].
+
+test_bind_nonexistent_transport(#{}) ->
+    ServerId = test_server_no_transport,
+    TransportId = nonexistent_transport,
+
+    erlmcp_test_helpers:with_test_server(ServerId, fun(_ServerPid) ->
+        ok = erlmcp_registry:register_server(ServerId, self(), #{}),
+
+        [
+            ?_test(begin
+                % Test binding nonexistent transport fails
+                Result = erlmcp_registry:bind_transport_to_server(TransportId, ServerId),
+                ?assertMatch({error, transport_not_found}, Result)
+            end)
+        ]
+    end).
+
+test_route_to_nonexistent_server(#{}) ->
+    ServerId = nonexistent_server,
+    TransportId = nonexistent_transport,
+    TestMessage = #{<<"test">> => <<"data">>},
+
+    [
+        ?_test(begin
+            % Should not crash, just log warning
+            erlmcp_registry:route_to_server(ServerId, TransportId, TestMessage),
+            timer:sleep(100)
+            % If we got here without crash, test passed
+        end)
+    ].
+
+test_route_to_nonexistent_transport(#{}) ->
+    ServerId = some_server,
+    TransportId = nonexistent_transport,
+    TestMessage = #{<<"test">> => <<"data">>},
+
+    [
+        ?_test(begin
+            % Should not crash, just log warning
+            erlmcp_registry:route_to_transport(TransportId, ServerId, TestMessage),
+            timer:sleep(100)
+            % If we got here without crash, test passed
+        end)
+    ].
+
+test_transport_process_death_cleanup(#{}) ->
+    TransportId = death_transport,
+    ServerId = death_server,
+
+    erlmcp_test_helpers:with_test_server(ServerId, fun(_ServerPid) ->
+        TransportPid = start_real_transport(),
+
+        % Register and bind
+        ok = erlmcp_registry:register_transport(TransportId, TransportPid, #{type => stdio}),
+        ok = erlmcp_registry:bind_transport_to_server(TransportId, ServerId),
+
+        % Verify binding exists
+        {ok, ServerId} = erlmcp_registry:get_server_for_transport(TransportId),
+
+        % Stop transport process
+        stop_real_transport(TransportPid),
+        timer:sleep(200),  % Allow gproc monitor cleanup
+
+        [
+            ?_test(begin
+                % Transport should be unregistered
+                ?assertMatch({error, not_found}, erlmcp_registry:find_transport(TransportId))
+            end),
+            ?_test(begin
+                % Verify binding was cleaned up
+                ?assertMatch({error, not_found}, erlmcp_registry:get_server_for_transport(TransportId))
+            end)
+        ]
+    end).
+
+test_server_death_cleans_up_bindings(#{}) ->
+    ServerId = death_cleanup_server,
+    Transport1Id = death_cleanup_transport_1,
+    Transport2Id = death_cleanup_transport_2,
+
+    {ok, ServerPid} = erlmcp_test_helpers:start_test_server(ServerId),
+    Transport1Pid = start_real_transport(),
+    Transport2Pid = start_real_transport(),
+
+    % Register and bind multiple transports
+    ok = erlmcp_registry:register_server(ServerId, ServerPid, #{}),
+    ok = erlmcp_registry:register_transport(Transport1Id, Transport1Pid, #{type => stdio}),
+    ok = erlmcp_registry:register_transport(Transport2Id, Transport2Pid, #{type => stdio}),
+    ok = erlmcp_registry:bind_transport_to_server(Transport1Id, ServerId),
+    ok = erlmcp_registry:bind_transport_to_server(Transport2Id, ServerId),
+
+    % Verify bindings exist
+    {ok, ServerId} = erlmcp_registry:get_server_for_transport(Transport1Id),
+    {ok, ServerId} = erlmcp_registry:get_server_for_transport(Transport2Id),
+
+    % Kill server process
+    erlmcp_test_helpers:stop_test_server(ServerPid),
+    timer:sleep(200),  % Allow gproc monitor cleanup
+
+    [
+        ?_test(begin
+            % Server should be unregistered
+            ?assertMatch({error, not_found}, erlmcp_registry:find_server(ServerId))
+        end),
+        ?_test(begin
+            % Verify bindings were cleaned up
+            ?assertMatch({error, not_found}, erlmcp_registry:get_server_for_transport(Transport1Id)),
+            ?assertMatch({error, not_found}, erlmcp_registry:get_server_for_transport(Transport2Id))
+        end)
+    ].
+
+test_route_message_to_nonexistent_server(#{}) ->
+    ServerId = nonexistent_server,
+    TestMessage = #{<<"test">> => <<"data">>},
+
+    [
+        ?_test(begin
+            ?assertMatch({error, server_not_found},
+                         erlmcp_registry:route_message({server, ServerId}, TestMessage))
+        end)
+    ].
+
+test_route_message_to_nonexistent_transport(#{}) ->
+    TransportId = nonexistent_transport,
+    TestMessage = #{<<"test">> => <<"data">>},
+
+    [
+        ?_test(begin
+            ?assertMatch({error, transport_not_found},
+                         erlmcp_registry:route_message({transport, TransportId}, TestMessage))
+        end)
+    ].
+
+test_route_message_to_transport_no_server(#{}) ->
+    TransportId = no_server_transport,
+
+    TransportPid = start_real_transport(),
+    ok = erlmcp_registry:register_transport(TransportId, TransportPid, #{type => stdio}),
+
+    TestMessage = #{<<"test">> => <<"data">>},
+
+    [
+        ?_test(begin
+            % Transport without server_id in config
+            ?assertMatch({error, no_bound_server},
+                         erlmcp_registry:route_message({transport, TransportId}, TestMessage))
+        end)
+    ].
+
+test_unknown_handle_call(#{registry_pid := RegistryPid}) ->
+    [
+        ?_test(begin
+            % Unknown request should return error
+            ?assertMatch({error, unknown_request}, gen_server:call(RegistryPid, unknown_request))
+        end)
+    ].
+
+test_unknown_handle_cast(#{registry_pid := RegistryPid}) ->
+    [
+        ?_test(begin
+            % Unknown cast should not crash
+            gen_server:cast(RegistryPid, unknown_cast),
+            timer:sleep(100)
+            % If we got here without crash, test passed
+        end)
+    ].
+
+test_unknown_handle_info(#{registry_pid := RegistryPid}) ->
+    [
+        ?_test(begin
+            % Unknown info should not crash
+            RegistryPid ! unknown_info,
+            timer:sleep(100)
+            % If we got here without crash, test passed
+        end)
+    ].
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+%% @doc Start a REAL erlmcp_client transport process (Chicago School TDD)
+%% Uses real gen_server process, not a mock spawn
+start_real_transport() ->
+    {ok, ClientPid} = erlmcp_test_helpers:start_test_client(#{transport => {stdio, []}}),
+    ClientPid.
+
+%% @doc Stop a REAL erlmcp_client transport process
+stop_real_transport(ClientPid) ->
+    erlmcp_test_helpers:stop_test_client(ClientPid).

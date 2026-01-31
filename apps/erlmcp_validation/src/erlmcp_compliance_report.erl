@@ -362,7 +362,7 @@ store_evidence_bundle(BundlePath, EvidenceItems) when is_list(EvidenceItems) ->
 -spec generate_evidence_report([evidence()]) -> map().
 generate_evidence_report(EvidenceItems) when is_list(EvidenceItems) ->
     #{
-        report_id => generate_evidence_id(<<"report">>),
+        report_id => generate_evidence_id(report),
         timestamp => iso8601_timestamp(),
         evidence_count => length(EvidenceItems),
         evidence_items => EvidenceItems,
@@ -1021,7 +1021,7 @@ iso8601_timestamp() ->
 %%%====================================================================
 
 %% @private Generate unique evidence ID
-generate_evidence_id(Type) ->
+generate_evidence_id(Type) when is_atom(Type) ->
     Timestamp = erlang:system_time(microsecond),
     Random = rand:uniform(16#ffffffff),
     TypeBin = atom_to_binary(Type, utf8),

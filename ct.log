@@ -1,0 +1,116 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 356 │              {error, CreateReason}
+     │              ╰── Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      {error, token_expired};
+     │                      ╰── Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      {error, token_not_yet_valid};
+     │                      ╰── Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      {error, invalid_issuer}
+     │                      ╰── Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1152 │                  {noreply, State};
+      │                  ╰── Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1162 │                                  {noreply, State};
+      │                                  ╰── Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1167 │                                  {noreply, State}
+      │                                  ╰── Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1173 │                          {noreply, State}
+      │                          ╰── Warning: a term is constructed, but never used
+
+
+===> Compiling erlmcp_transports
+   ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+   │
+ 3 │  -behaviour(gen_server).
+   │   ╰── Warning: conflicting behaviours -- callback init/1 required by both 'gen_server' and 'erlmcp_transport_behavior' (line 2, column 2)
+
+
+===> Compiling erlmcp_validation
+===> Compiling erlmcp_observability
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_message_tests.erl:
+     │
+ 112 │      DelimitedMsg = <<Message/binary, "\n">>,
+     │                     ╰── Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl:
+     │
+ 640 │  -record(mock_state, {
+     │   ╰── Warning: record mock_state is unused
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl:
+     │
+ 370 │      DelimitedMsg = <<Message/binary, "\n">>,
+     │                     ╰── Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_comprehensive_error_tests.erl:
+     │
+ 620 │          Request = #{<<"method">> => <<"ping">>, <<"id">> => I},
+     │                    ╰── Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl:
+     │
+ 199 │      Evidence = #{
+     │                 ╰── Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 618 │      Baseline = maps:get(baseline, Config),
+     │                 ╰── Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 641 │      Baseline = maps:get(baseline, Config),
+     │                 ╰── Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 667 │      Baseline = maps:get(baseline, Config),
+     │                 ╰── Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 901 │      Thresholds = maps:get(<<"regression_thresholds">>, Baseline),
+     │                   ╰── Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+===> Couldn't read debug info from "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_capabilities.beam" for reason: {file_error,
+                                                                                                                              "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_capabilities.beam",
+                                                                                                                              enoent}
+===> Couldn't read debug info from "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_prompt_list_change_notifier.beam" for reason: {file_error,
+                                                                                                                                             "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_prompt_list_change_notifier.beam",
+                                                                                                                                             enoent}
+===> Couldn't read debug info from "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_sampling.beam" for reason: {file_error,
+                                                                                                                          "/Users/sac/erlmcp/_build/test/lib/erlmcp_core/ebin/erlmcp_sampling.beam",
+                                                                                                                          enoent}
+===> {missing_module,erlmcp_capabilities}

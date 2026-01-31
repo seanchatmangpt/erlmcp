@@ -1,0 +1,40 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/test/RUNTIME_VERIFICATION_SUITE.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/test/RUNTIME_VERIFICATION_SUITE.erl:
+    │
+ 17 │  -module([1;31mRUNTIME_VERIFICATION_SUITE[0m).[0m
+    │          [1;31m╰──[0m[0m bad module declaration
+
+    ┌─ apps/erlmcp_core/test/RUNTIME_VERIFICATION_SUITE.erl:
+    │
+ 63 │      ?assert(erlang:is_process_alive(Server[1;31m)),[0m[0m
+    │                                            [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+     ┌─ apps/erlmcp_core/test/RUNTIME_VERIFICATION_SUITE.erl:
+     │
+ 112 │              ?assert(maps:is_key(<<"params">>, Notification[1;31m)),[0m[0m
+     │                                                            [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+     ┌─ apps/erlmcp_core/test/RUNTIME_VERIFICATION_SUITE.erl:
+     │
+ 160 │      ?assertEqual({error, not_found}, erlmcp_secrets:get_secret(Key[1;31m)),[0m[0m
+     │                                                                    [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+     ┌─ apps/erlmcp_core/test/RUNTIME_VERIFICATION_SUITE.erl:
+     │
+ 188 │      ?assertMatch(#{id := SessionId[1;31m}, [0mSession),[0m
+     │                                    [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+     ┌─ apps/erlmcp_core/test/RUNTIME_VERIFICATION_SUITE.erl:
+     │
+ 252 │              ?assertMatch(#{jsonrpc := <<"2.0">>[1;31m}, [0mResponse),[0m
+     │                                                 [1;31m╰──[0m[0m undefined macro 'MODULE'
+
+
+.asdf/installs/erlang/27.3.4.2/lib/kernel-10.2.7.2/include/file.hrl:25:2: no module definition
+

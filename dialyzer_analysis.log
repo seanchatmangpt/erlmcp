@@ -1,0 +1,10 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_server.erl failed
+[0m[0m      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1303 │          Class:[1;31mCompleteReason[0m:Stacktrace ->[0m
+      │                [1;31m╰──[0m[0m variable 'CompleteReason' unsafe in 'try' (line 1240, column 5)
+
+
