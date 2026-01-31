@@ -59,11 +59,30 @@ groups() ->
 
 init_per_suite(Config) ->
     %% Start distributed Erlang if not already started
-    case net_kernel:start([erlmcp_test@localhost, shortnames]) of
-        {ok, _Pid} -> ok;
-        {error, {already_started, _Pid}} -> ok;
-        {error, Reason} ->
-            ct:fail("Failed to start distributed Erlang: ~p", [Reason])
+    case net_kernel:longnames() of
+        true ->
+            %% Already started with long names
+            ct:pal("Distributed Erlang already started with longnames"),
+            ok;
+        false ->
+            case net_kernel:shortnames() of
+                true ->
+                    %% Already started with short names
+                    ct:pal("Distributed Erlang already started with shortnames"),
+                    ok;
+                false ->
+                    %% Not started, start it
+                    case net_kernel:start([erlmcp_test@localhost, shortnames]) of
+                        {ok, _Pid} ->
+                            ct:pal("Started distributed Erlang: ~p", [node()]),
+                            ok;
+                        {error, {already_started, _Pid}} ->
+                            ct:pal("Distributed Erlang already started"),
+                            ok;
+                        {error, Reason} ->
+                            ct:fail("Failed to start distributed Erlang: ~p", [Reason])
+                    end
+            end
     end,
 
     %% Set cookie

@@ -242,6 +242,12 @@ handle_call({add_resource, Uri, Handler}, _From, State) ->
             {reply, {error, {?JSONRPC_INVALID_PARAMS, ErrorMsg, #{
                 <<"error_type">> => atom_to_binary(ErrorType, utf8),
                 <<"uri">> => Uri
+            }}}, State};
+        {error, Reason} ->
+            {reply, {error, {?JSONRPC_INVALID_PARAMS,
+                           atom_to_binary(Reason, utf8), #{
+                <<"error_type">> => atom_to_binary(Reason, utf8),
+                <<"uri">> => Uri
             }}}, State}
     end;
 

@@ -341,14 +341,19 @@ code_change(_OldVsn, State, _Extra) ->
 init_mnesia_tables(LocalNode, ReplicaNodes) ->
     AllNodes = [LocalNode | ReplicaNodes],
 
+    %% disc_copies requires a named node (not nonode@nohost)
+    UseDiscCopies = (LocalNode =/= 'nonode@nohost'),
+
     %% Create replica table
     case mnesia:create_table(?REPLICA_TABLE, [
         {attributes, record_info(fields, replica_state)},
-        {disc_copies, AllNodes},
+        {disc_copies, case UseDiscCopies of true -> AllNodes; false -> [] end},
+        {ram_copies, case UseDiscCopies of true -> []; false -> AllNodes end},
         {type, set}
     ]) of
         {atomic, ok} ->
-            ?LOG_INFO("Created replica table: ~p on ~p", [?REPLICA_TABLE, AllNodes]);
+            ?LOG_INFO("Created replica table: ~p on ~p (storage: ~p)", [?REPLICA_TABLE, AllNodes,
+                case UseDiscCopies of true -> disc_copies; false -> ram_copies end]);
         {atomic, {already_exists, ?REPLICA_TABLE}} ->
             ?LOG_INFO("Replica table already exists: ~p", [?REPLICA_TABLE]);
         {aborted, CreateReason} ->
@@ -359,7 +364,8 @@ init_mnesia_tables(LocalNode, ReplicaNodes) ->
     %% Create queue table for pending replications
     case mnesia:create_table(?QUEUE_TABLE, [
         {attributes, [session_id, session, vector_clock, timestamp]},
-        {disc_copies, AllNodes},
+        {disc_copies, case UseDiscCopies of true -> AllNodes; false -> [] end},
+        {ram_copies, case UseDiscCopies of true -> []; false -> AllNodes end},
         {type, bag}
     ]) of
         {atomic, ok} ->
@@ -373,7 +379,8 @@ init_mnesia_tables(LocalNode, ReplicaNodes) ->
     %% Create vector clock table
     case mnesia:create_table(?VECTOR_CLOCK_TABLE, [
         {attributes, [session_id, vector_clock]},
-        {disc_copies, AllNodes},
+        {disc_copies, case UseDiscCopies of true -> AllNodes; false -> [] end},
+        {ram_copies, case UseDiscCopies of true -> []; false -> AllNodes end},
         {type, set}
     ]) of
         {atomic, ok} ->

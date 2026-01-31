@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
 %%% @doc
-%%% Enhanced Test Client for Multi-Transport MCP Validation
+%%% Test Client for Multi-Transport MCP Validation
 %%%
-%%% This module provides a comprehensive test client for validating MCP
-%%% 2025-11-25 specification compliance across all transport types:
+%%% This module provides a test client for validating MCP 2025-11-25
+%%% specification compliance across all transport types:
 %%% stdio, tcp, http, websocket, sse.
 %%%
 %%% == Features ==
@@ -18,16 +18,6 @@
 %%% - Error code verification (MCP refusal codes 1001-1089, JSON-RPC -32700 to -32000)
 %%% - Spec compliance checking
 %%% - Real erlmcp transports (no mocks, fakes, or placeholders per Chicago TDD)
-%%%
-%%% == MCP 2025-11-25 Operations ==
-%%% - initialize/capabilities negotiation
-%%% - resources: list, read, subscribe, unsubscribe, templates/list
-%%% - tools: list, call
-%%% - prompts: list, get
-%%% - completion: complete
-%%% - progress: token support and notifications
-%%% - cancellation: requests with progress tokens
-%%% - roots: list, list_changes notifications
 %%%
 %%% == Usage ==
 %%%
@@ -50,56 +40,6 @@
 %%% }).
 %%% '''
 %%%
-%%% === Complete MCP Workflow ===
-%%% ```erlang
-%%% %% Initialize
-%%% {ok, InitResponse} = erlmcp_test_client:initialize(Client, #{
-%%%     <<"protocolVersion">> => <<"2025-11-25">>,
-%%%     <<"capabilities">> => #{
-%%%         <<"resources">> => #{},
-%%%         <<"tools">> => #{}
-%%%     },
-%%%     <<"clientInfo">> => #{
-%%%         <<"name">> => <<"test-client">>,
-%%%         <<"version">> => <<"1.0.0">>
-%%%     }
-%%% }).
-%%%
-%%% %% List resources
-%%% {ok, Resources} = erlmcp_test_client:resources_list(Client, #{}).
-%%%
-%%% %% Read resource
-%%% {ok, Content} = erlmcp_test_client:resources_read(Client, <<"file://test.txt">>).
-%%%
-%%% %% Subscribe to resource
-%%% ok = erlmcp_test_client:resources_subscribe(Client, <<"file://test.txt">>).
-%%%
-%%% %% List and call tools
-%%% {ok, Tools} = erlmcp_test_client:tools_list(Client, #{}).
-%%% {ok, Result} = erlmcp_test_client:tools_call(Client, <<"echo">>, #{<<"message">> => <<"hello">>}).
-%%%
-%%% %% List prompts
-%%% {ok, Prompts} = erlmcp_test_client:prompts_list(Client, #{}).
-%%%
-%%% %% Completion with progress token
-%%% {ok, Completion} = erlmcp_test_client:completion_complete(Client, #{
-%%%     <<"ref">> => #{<<"type">> => <<"ref/resource">>, <<"uri">> => <<"file://test.txt">>},
-%%%     <<"argument">> => #{<<"name">> => <<"path">>, <<"value">> => <<"/tmp">>}
-%%% }).
-%%% '''
-%%%
-%%% === Validation ===
-%%% ```erlang
-%%% %% Validate spec compliance
-%%% case erlmcp_test_client:validate_response(Response, #{}) of
-%%%     {compliant, Validated} -> ok;
-%%%     {non_compliant, Violations} -> error
-%%% end.
-%%%
-%%% %% Validate error codes
-%%% ok = erlmcp_test_client:validate_error_code(Response, ?MCP_ERROR_RESOURCE_NOT_FOUND).
-%%% '''
-%%%
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_test_client).
@@ -111,9 +51,7 @@
     start_link/2,
     start_test_client/2,
     stop/1,
-    stop_test_server/1,
     close/1,
-    close_test_server/1,
 
     %% MCP Operations
     initialize/2,
@@ -187,7 +125,7 @@
     transport_type :: stdio | tcp | http | websocket | sse,
     transport_config :: map(),
     owner :: pid(),
-    pending_requests = #{} :: #{integer() => {pid(), reference()} | {pid(), reference(), map()}},
+    pending_requests = #{} :: #{integer() => {pid(), reference()}},
     request_counter = 1 :: integer(),
     timeout = ?DEFAULT_TIMEOUT :: timeout(),
     connected = false :: boolean(),
@@ -241,20 +179,10 @@ start_test_client(TransportType, Config) ->
 stop(ServerRef) when is_pid(ServerRef) ->
     gen_server:stop(ServerRef).
 
-%% @doc Alias for stop/1
--spec stop_test_server(pid()) -> ok.
-stop_test_server(ServerRef) when is_pid(ServerRef) ->
-    stop(ServerRef).
-
 %% @doc Close test client connection
 -spec close(pid()) -> ok.
 close(ServerRef) when is_pid(ServerRef) ->
     gen_server:call(ServerRef, close_connection).
-
-%% @doc Alias for close/1
--spec close_test_server(pid()) -> ok.
-close_test_server(ServerRef) when is_pid(ServerRef) ->
-    close(ServerRef).
 
 %%====================================================================
 %% API Functions - MCP Operations
@@ -476,21 +404,11 @@ get_connection_status(ServerRef) when is_pid(ServerRef) ->
 %%====================================================================
 
 %% @doc Send multiple concurrent requests
-%% Concurrency level and timeout are configurable via Options map:
-%%   - concurrency: integer() - number of concurrent workers (default 10)
-%%   - timeout: timeout() - per-request timeout in ms (default 5000)
 -spec send_concurrent_requests(pid(), [request_map()]) -> {ok, [map()]} | {error, term()}.
 send_concurrent_requests(ServerRef, Requests) when is_pid(ServerRef), is_list(Requests) ->
     gen_server:call(ServerRef, {send_concurrent_requests, Requests, #{}}, infinity).
 
 %% @doc Run a stateful sequence of operations
-%% Sequence steps:
-%%   - {initialize, Params}
-%%   - {tools_list, Params}
-%%   - {resources_list, Params}
-%%   - {prompts_list, Params}
-%%   - {tool_call, ToolName, Arguments}
-%%   - {resource_read, Uri}
 -spec run_sequence(pid(), [sequence_step()]) -> {ok, [map()]} | {error, term()}.
 run_sequence(ServerRef, Sequence) when is_pid(ServerRef), is_list(Sequence) ->
     gen_server:call(ServerRef, {run_sequence, Sequence}, infinity).
@@ -828,9 +746,6 @@ handle_call({send_notification, Notification}, _From, State) ->
             {reply, {error, {send_failed, Reason}}, State}
     end;
 
-handle_call(close_test_server, _From, State) ->
-    {stop, normal, ok, State};
-
 handle_call(close_connection, _From, State) ->
     {stop, normal, ok, State};
 
@@ -892,7 +807,7 @@ handle_info({transport_message, Data}, State) when is_binary(Data) ->
             Id = maps:get(<<"id">>, JsonRpc, undefined),
             case maps:is_key(<<"result">>, JsonRpc) of
                 true ->
-                    Result = maps:get(<<"result">>, JsonRpc),
+                    _ = maps:get(<<"result">>, JsonRpc),
                     handle_response(Id, {ok, JsonRpc}, State);
                 false ->
                     case maps:get(<<"error">>, JsonRpc, undefined) of
@@ -922,6 +837,7 @@ handle_info(_Info, State) ->
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, #state{transport_pid = TransportPid}) when is_pid(TransportPid) ->
     %% Close transport gracefully
+    catch erlmcp_transport_stdio:close(TransportPid),
     ok;
 terminate(_Reason, _State) ->
     ok.
@@ -949,7 +865,7 @@ init_transport(stdio, Config) ->
     end;
 
 init_transport(tcp, Config) ->
-    %% For TCP, we use the client mode of erlmcp_transport_tcp
+    %% For TCP, we use erlmcp_transport_tcp in client mode
     Host = maps:get(host, Config, "localhost"),
     Port = maps:get(port, Config, 9999),
     Owner = maps:get(owner, Config, self()),
@@ -962,42 +878,25 @@ init_transport(tcp, Config) ->
         owner => Owner,
         transport_id => TransportId
     },
-    %% Use gen_tcp for simple client connection
-    case gen_tcp:connect(Host, Port, [binary, {active, false}, {packet, 0}]) of
-        {ok, Socket} ->
-            %% Spawn a simple receiver process
-            Pid = spawn_link(fun() -> tcp_receiver_loop(Socket, Owner) end),
+    case erlmcp_transport_tcp:start_client(Opts) of
+        {ok, Pid} ->
+            monitor(process, Pid),
             {ok, Pid};
         {error, Reason} ->
             {error, Reason}
     end;
 
-init_transport(http, _Config) ->
+init_transport(http, Config) ->
     %% HTTP transport support (placeholder for future implementation)
     {error, {not_implemented, http_transport}};
 
-init_transport(websocket, _Config) ->
+init_transport(websocket, Config) ->
     %% WebSocket transport support (placeholder for future implementation)
     {error, {not_implemented, websocket_transport}};
 
-init_transport(sse, _Config) ->
+init_transport(sse, Config) ->
     %% SSE transport support (placeholder for future implementation)
     {error, {not_implemented, sse_transport}}.
-
-%% @doc TCP receiver loop
--spec tcp_receiver_loop(gen_tcp:socket(), pid()) -> no_return().
-tcp_receiver_loop(Socket, Owner) ->
-    case gen_tcp:recv(Socket, 0) of
-        {ok, Data} ->
-            Owner ! {transport_message, Data},
-            tcp_receiver_loop(Socket, Owner);
-        {error, closed} ->
-            Owner ! {transport_closed},
-            ok;
-        {error, Reason} ->
-            Owner ! {transport_error, Reason},
-            ok
-    end.
 
 %% @doc Send data via transport
 -spec send_via_transport(state(), binary()) -> ok | {error, term()}.
@@ -1007,10 +906,8 @@ send_via_transport(#state{transport_pid = Pid, transport_type = stdio}, Data) ->
         {error, Reason} -> {error, Reason}
     end;
 send_via_transport(#state{transport_pid = Pid, transport_type = tcp}, Data) ->
-    %% For TCP, the Pid is the receiver process, we need to get the socket
-    %% For now, just send a message to the receiver to send data
-    Pid ! {send_data, Data},
-    ok;
+    %% Use gen_server call to TCP transport
+    gen_server:call(Pid, {send, Data}, 5000);
 send_via_transport(#state{transport_type = Type}, _Data) ->
     {error, {unsupported_transport, Type}}.
 
