@@ -59,6 +59,7 @@
     subscriptions = #{} :: #{binary() => sets:set(pid())},
     progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
     notifier_pid :: pid() | undefined,
+    notifier_monitor_ref :: reference() | undefined,  % Monitor ref for notifier process cleanup
     initialized = false :: boolean(),
     last_tools_notification :: integer() | undefined,  % Rate limiting: timestamp of last tools/list_changed notification
     roots = #{} :: map(),  % Track roots state for change detection
@@ -180,18 +181,18 @@ notify_resources_changed(Server) ->
 %% HandlerPid is monitored and will be automatically unregistered if it dies.
 -spec register_notification_handler(server(), binary(), pid()) -> ok.
 register_notification_handler(Server, Method, HandlerPid) when is_binary(Method), is_pid(HandlerPid) ->
-    gen_server:call(Server, {register_notification_handler, Method, HandlerPid}).
+    gen_server:call(Server, {register_notification_handler, Method, HandlerPid}, 1000).
 
 %% @doc Unregister a handler for a specific notification method.
 -spec unregister_notification_handler(server(), binary()) -> ok.
 unregister_notification_handler(Server, Method) when is_binary(Method) ->
-    gen_server:call(Server, {unregister_notification_handler, Method}).
+    gen_server:call(Server, {unregister_notification_handler, Method}, 1000).
 
 %% @doc Unregister all notification handlers for the calling process.
 %% Useful for cleanup when a client disconnects.
 -spec unregister_all_handlers(server()) -> ok.
 unregister_all_handlers(Server) ->
-    gen_server:call(Server, unregister_all_handlers).
+    gen_server:call(Server, unregister_all_handlers, 1000).
 
 -spec stop(server()) -> ok.
 stop(Server) ->
@@ -212,7 +213,7 @@ init([ServerId, Capabilities]) ->
     end,
 
     % Monitor the notifier process
-    MonitorRef = erlang:monitor(process, NotifierPid),
+    NotifierMonitorRef = erlang:monitor(process, NotifierPid),
 
     % Start periodic GC for each server (Gap #10)
     start_periodic_gc(),
@@ -220,7 +221,8 @@ init([ServerId, Capabilities]) ->
     State = #state{
         server_id = ServerId,
         capabilities = Capabilities,
-        notifier_pid = NotifierPid
+        notifier_pid = NotifierPid,
+        notifier_monitor_ref = NotifierMonitorRef
     },
 
     logger:info("Starting MCP server ~p with capabilities: ~p", [ServerId, Capabilities]),
@@ -563,20 +565,29 @@ handle_info(force_gc, #state{server_id = ServerId} = State) ->
     start_periodic_gc(),
     {noreply, State};
 
-% Handle handler process death - automatic cleanup
-handle_info({'DOWN', Ref, process, _Pid, _Reason}, State) ->
-    % Find and remove the handler with this monitor reference
-    NewHandlers = maps:filter(fun(_Method, {_HandlerPid, HandlerRef}) ->
-        HandlerRef =/= Ref
-    end, State#state.notification_handlers),
-    case maps:size(State#state.notification_handlers) - maps:size(NewHandlers) of
-        0 ->
-            % No handler was removed (Ref not found)
-            {noreply, State};
+% Handle monitored process death - automatic cleanup
+handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
+    % Check if this is the notifier process
+    case State#state.notifier_monitor_ref of
+        Ref ->
+            % Notifier process died - critical error
+            logger:error("Change notifier process ~p died: ~p", [Pid, Reason]),
+            {stop, {notifier_died, Reason}, State#state{notifier_pid = undefined, notifier_monitor_ref = undefined}};
         _ ->
-            % At least one handler was removed
-            logger:info("Automatically unregistered dead notification handler (ref: ~p)", [Ref]),
-            {noreply, State#state{notification_handlers = NewHandlers}}
+            % Not the notifier, check if it's a notification handler
+            NewHandlers = maps:filter(fun(_Method, {_HandlerPid, HandlerRef}) ->
+                HandlerRef =/= Ref
+            end, State#state.notification_handlers),
+            case maps:size(State#state.notification_handlers) - maps:size(NewHandlers) of
+                0 ->
+                    % No handler was removed (Ref not found) - unknown monitor
+                    logger:warning("Received DOWN for unknown monitor ref ~p (pid: ~p, reason: ~p)", [Ref, Pid, Reason]),
+                    {noreply, State};
+                _ ->
+                    % At least one handler was removed
+                    logger:info("Automatically unregistered dead notification handler (ref: ~p, pid: ~p)", [Ref, Pid]),
+                    {noreply, State#state{notification_handlers = NewHandlers}}
+            end
     end;
 
 handle_info(_Info, State) ->

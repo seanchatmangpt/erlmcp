@@ -17,10 +17,14 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_transport_stdio).
+-behaviour(erlmcp_transport_behavior).
 -behaviour(gen_server).
 
+%% Transport behavior callbacks
+-export([init/1, send/2, close/1, get_info/1, handle_transport_call/2]).
+
 %% API exports
--export([send/2, start_link/1, start_link/2, close/1, validate_message_size/2, get_max_message_size/0]).
+-export([start_link/1, start_link/2, validate_message_size/2, get_max_message_size/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -41,6 +45,48 @@
 
 %% Default maximum message size: 16 MB
 -define(DEFAULT_MAX_MESSAGE_SIZE, 16777216).
+
+%%====================================================================
+%% Transport Behavior Implementation
+%%====================================================================
+
+%% @doc Initialize transport (starts underlying gen_server)
+-spec init(map()) -> {ok, pid()} | {error, term()}.
+init(Config) when is_map(Config) ->
+    Owner = maps:get(owner, Config, self()),
+    start_link(Owner, Config).
+
+%% @doc Get transport information
+-spec get_info(pid() | term()) -> #{atom() => term()}.
+get_info(Pid) when is_pid(Pid) ->
+    case gen_server:call(Pid, get_state, 5000) of
+        {ok, State} ->
+            #{
+                transport_id => State#state.transport_id,
+                type => stdio,
+                status => running,
+                test_mode => State#state.test_mode,
+                max_message_size => State#state.max_message_size
+            };
+        _ ->
+            #{
+                transport_id => undefined,
+                type => stdio,
+                status => error
+            }
+    end;
+get_info(_) ->
+    #{
+        transport_id => undefined,
+        type => stdio,
+        status => unknown
+    }.
+
+%% @doc Handle transport-specific calls
+-spec handle_transport_call(term(), pid() | term()) ->
+    {reply, term(), pid() | term()} | {error, term()}.
+handle_transport_call(_Request, State) ->
+    {error, unknown_request}.
 
 %%====================================================================
 %% API Functions
