@@ -45,12 +45,49 @@ make console
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) - System design and OTP patterns
+### Documentation Structure
+
+The project documentation is organized for easy navigation:
+
+- **Root Level**: Essential operational files (setup, contributing, changelog)
+- **docs/**: Official specifications, API references, deployment guides
+- **archive/**: Reference material (implementation details, performance baselines, quality reports)
+
+For comprehensive navigation and finding specific topics:
+- **[Documentation Guide](DOCUMENTATION_GUIDE.md)** - Complete navigation guide with quick links by topic
+- **[Archive Index](ARCHIVE_INDEX.md)** - Guide to all archived reference materials
+
+### Quick Links
+
+**Getting Started**:
+- [Development Setup](DEVELOPMENT.md) - Environment setup and workflow
+- [Contributing Guidelines](CONTRIBUTING.md) - Code standards and PR process
+- [System Architecture](CLAUDE.md) - Formal specification, OTP patterns, quality gates
+
+**Core Documentation**:
+- [Architecture](docs/architecture.md) - System design and supervision trees
 - [API Reference](docs/api-reference.md) - Complete API documentation
-- [Protocol](docs/protocol.md) - MCP protocol implementation
-- [Examples](examples/) - Example implementations
+- [Protocol Implementation](docs/protocol.md) - MCP protocol details
+- [Examples](examples/) - 40+ example implementations
+
+**Validation & Testing**:
 - [Validator Guide](docs/VALIDATOR_GUIDE.md) - Validation and compliance
-- [Spec Compliance Testing](docs/SPEC_COMPLIANCE_TESTING.md) - Test coverage
+- [Spec Compliance Testing](docs/SPEC_COMPLIANCE_TESTING.md) - Test coverage details
+- [Quality Report](CODE_QUALITY_REPORT_V2.1.md) - Latest quality metrics
+
+**Deployment & Operations**:
+- [Deployment Guide](archive/tasks/DEPLOYMENT_GUIDE_100X.md) - Production deployment procedures
+- [Production Readiness](archive/tasks/PRODUCTION_READINESS_SCORE.md) - Readiness assessment
+- [Cluster Setup](archive/tasks/CLUSTER_SETUP.md) - Multi-node configuration
+
+**Performance & Benchmarks**:
+- [Benchmark Execution Guide](archive/benchmarks/BENCHMARK_EXECUTION_GUIDE.md) - Running benchmarks
+- [OTP 28 Benchmark Summary](archive/benchmarks/OTP_28_BENCHMARK_SUMMARY.md) - Performance baselines
+- [Performance Validator Report](archive/benchmarks/PERFORMANCE_VALIDATOR_REPORT.md) - Validation results
+
+**API & Integration**:
+- [MCP Endpoints Guide](archive/misc/MCP_ENDPOINTS_AND_CAPABILITIES_GUIDE.md) - Comprehensive MCP API reference
+- [Integration Plan](archive/misc/GGEN_INTEGRATION_PLAN.md) - Large-scale integration architecture
 
 ## Validation & Compliance
 
@@ -292,7 +329,7 @@ See [CHANGELOG.md](CHANGELOG.md) for release history and [OTP 28.3.1 Migration G
 
 ## Support
 
-- Documentation: [docs/](docs/)
+- Documentation: [Documentation Guide](DOCUMENTATION_GUIDE.md) - Start here for navigation
 - Issues: [GitHub Issues](https://github.com/yourusername/erlmcp/issues)
 - Discussions: [GitHub Discussions](https://github.com/yourusername/erlmcp/discussions)
 
