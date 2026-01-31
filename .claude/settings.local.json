@@ -4,7 +4,8 @@
       "Bash(./tools/claude-md-enforcer.sh:*)",
       "Bash(TERM=dumb rebar3 compile:*)",
       "Bash(TERM=dumb rebar3 eunit:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(rebar3 eunit:*)"
     ]
   }
 }

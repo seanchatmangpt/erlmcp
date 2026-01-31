@@ -1,0 +1,107 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_session_mnesia.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 80 │      Transaction = fun() -> mnesia:write(State[1;31m.[0mtable_name, Record, write) end,[0m
+    │                                               [1;31m╰──[0m[0m syntax error before: '.'
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 91 │          case mnesia:read(State[1;31m.[0mtable_name, SessionId) of[0m
+    │                                [1;31m╰──[0m[0m syntax error before: '.'
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 117 │      Transaction = fun() -> mnesia:delete(State[1;31m.[0mtable_name, SessionId, write) end,[0m
+     │                                                [1;31m╰──[0m[0m syntax error before: '.'
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 128 │          mnesia:all_keys(State[1;31m.[0mtable_name)[0m
+     │                               [1;31m╰──[0m[0m syntax error before: '.'
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 143 │          SessionIds = mnesia:all_keys(State[1;31m.[0mtable_name),[0m
+     │                                            [1;31m╰──[0m[0m syntax error before: '.'
+
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 5 │  -[1;31mexport[0m([[0m
+   │   [1;31m╰──[0m[0m function cleanup_expired/1 undefined
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 5 │  -[1;31mexport[0m([[0m
+   │   [1;31m╰──[0m[0m function delete/2 undefined
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 5 │  -[1;31mexport[0m([[0m
+   │   [1;31m╰──[0m[0m function fetch/2 undefined
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 5 │  -[1;31mexport[0m([[0m
+   │   [1;31m╰──[0m[0m function list/1 undefined
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 5 │  -[1;31mexport[0m([[0m
+   │   [1;31m╰──[0m[0m function store/3 undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 71 │  -[1;31mspec[0m store(session_id(), session(), state()) ->[0m
+    │   [1;31m╰──[0m[0m spec for undefined function store/3
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 87 │  -[1;31mspec[0m fetch(session_id(), state()) ->[0m
+    │   [1;31m╰──[0m[0m spec for undefined function fetch/2
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 114 │  -[1;31mspec[0m delete(session_id(), state()) ->[0m
+     │   [1;31m╰──[0m[0m spec for undefined function delete/2
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 124 │  -[1;31mspec[0m list(state()) ->[0m
+     │   [1;31m╰──[0m[0m spec for undefined function list/1
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 136 │  -[1;31mspec[0m cleanup_expired(state()) ->[0m
+     │   [1;31m╰──[0m[0m spec for undefined function cleanup_expired/1
+
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 2 │  -[1;31mbehavior[0m(erlmcp_session_backend).[0m
+   │   [1;31m╰──[0m[0m Warning: undefined callback function cleanup_expired/1 (behaviour 'erlmcp_session_backend')
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 2 │  -[1;31mbehavior[0m(erlmcp_session_backend).[0m
+   │   [1;31m╰──[0m[0m Warning: undefined callback function delete/2 (behaviour 'erlmcp_session_backend')
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 2 │  -[1;31mbehavior[0m(erlmcp_session_backend).[0m
+   │   [1;31m╰──[0m[0m Warning: undefined callback function fetch/2 (behaviour 'erlmcp_session_backend')
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 2 │  -[1;31mbehavior[0m(erlmcp_session_backend).[0m
+   │   [1;31m╰──[0m[0m Warning: undefined callback function list/1 (behaviour 'erlmcp_session_backend')
+
+   ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+   │
+ 2 │  -[1;31mbehavior[0m(erlmcp_session_backend).[0m
+   │   [1;31m╰──[0m[0m Warning: undefined callback function store/3 (behaviour 'erlmcp_session_backend')
+
+
