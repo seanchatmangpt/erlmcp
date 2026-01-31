@@ -587,6 +587,188 @@ prop_task_metadata_preservation() ->
 %% Integration Tests
 %%====================================================================
 
+%%====================================================================
+%% _meta Field Tests (Chicago School TDD)
+%%====================================================================
+
+meta_field_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_Pid) ->
+        [
+         fun test_meta_field_preserved/1,
+         fun test_meta_propagation_through_states/1,
+         fun test_meta_in_task_list/1,
+         fun test_meta_in_cancelled_task/1
+        ]
+     end}.
+
+test_meta_field_preserved(_Pid) ->
+    fun() ->
+        %% Setup: Create task with _meta field
+        Action = #{<<"type">> => <<"meta_test">>},
+        Meta = #{
+            <<"_meta">> => #{
+                <<"traceId">> => <<"abc-123-def">>,
+                <<"userId">> => <<"user-456">>,
+                <<"requestId">> => <<"req-789">>
+            }
+        },
+
+        %% Exercise: Create task with metadata containing _meta
+        {ok, TaskId} = erlmcp_tasks:create_task(undefined, Action, Meta),
+
+        %% Verify: _meta field is stored and returned
+        {ok, Task} = erlmcp_tasks:get_task(undefined, TaskId),
+        ?assert(maps:is_key(<<"metadata">>, Task)),
+
+        Metadata = maps:get(<<"metadata">>, Task),
+        ?assert(maps:is_key(<<"_meta">>, Metadata)),
+
+        ExpectedMeta = #{
+            <<"traceId">> => <<"abc-123-def">>,
+            <<"userId">> => <<"user-456">>,
+            <<"requestId">> => <<"req-789">>
+        },
+        ?assertEqual(ExpectedMeta, maps:get(<<"_meta">>, Metadata))
+    end.
+
+test_meta_propagation_through_states(_Pid) ->
+    fun() ->
+        %% Setup: Create task with _meta
+        Action = #{<<"type">> => <<"state_transition">>},
+        Meta = #{
+            <<"_meta">> => #{
+                <<"traceId">> => <<"trace-state-test">>,
+                <<"tag">> => <<"propagation-test">>
+            }
+        },
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, Meta),
+
+        %% Helper function to verify _meta persists
+        VerifyMeta = fun() ->
+            {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+            Metadata = maps:get(<<"metadata">>, Task, #{}),
+            ?assert(maps:is_key(<<"_meta">>, Metadata)),
+            StoredMeta = maps:get(<<"_meta">>, Metadata),
+            ?assertEqual(<<"trace-state-test">>, maps:get(<<"traceId">>, StoredMeta)),
+            ?assertEqual(<<"propagation-test">>, maps:get(<<"tag">>, StoredMeta))
+        end,
+
+        %% Verify: _meta in pending state
+        VerifyMeta(),
+
+        %% Exercise: Transition to processing
+        ok = erlmcp_tasks:start_task_execution(TaskId, self()),
+        VerifyMeta(),
+
+        %% Exercise: Update progress
+        {ok, TaskForProgress} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ProgressToken = maps:get(<<"progressToken">>, TaskForProgress),
+        ok = erlmcp_tasks:update_progress(erlmcp_tasks, TaskId, #{
+            <<"progressToken">> => ProgressToken,
+            <<"progress">> => 0.5,
+            <<"total">> => 1.0
+        }),
+        VerifyMeta(),
+
+        %% Exercise: Complete task
+        Result = #{<<"output">> => <<"done">>},
+        ok = erlmcp_tasks:complete(erlmcp_tasks, TaskId, Result),
+
+        %% Verify: _meta preserved in completed state
+        VerifyMeta(),
+
+        %% Verify: _meta still in completed task
+        {ok, FinalTask} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        FinalMetadata = maps:get(<<"metadata">>, FinalTask),
+        ?assert(maps:is_key(<<"_meta">>, FinalMetadata))
+    end.
+
+test_meta_in_task_list(_Pid) ->
+    fun() ->
+        %% Setup: Create multiple tasks with different _meta
+        TaskIds = lists:map(fun(N) ->
+            Action = #{<<"type">> => <<"list_test">>, <<"index">> => N},
+            Meta = #{
+                <<"_meta">> => #{
+                    <<"batchId">> => <<"batch-2024">>,
+                    <<"index">> => N
+                }
+            },
+            {ok, Id} = erlmcp_tasks:create_task(erlmcp_tasks, Action, Meta),
+            Id
+        end, lists:seq(1, 5)),
+
+        %% Exercise: List all tasks
+        {ok, TaskListResult} = erlmcp_tasks:list_tasks(erlmcp_tasks, undefined, 10),
+        AllTasks = maps:get(<<"tasks">>, TaskListResult),
+
+        %% Verify: All tasks contain _meta
+        lists:foreach(fun(Task) ->
+            ?assert(maps:is_key(<<"metadata">>, Task)),
+            Metadata = maps:get(<<"metadata">>, Task),
+            ?assert(maps:is_key(<<"_meta">>, Metadata)),
+
+            StoredMeta = maps:get(<<"_meta">>, Metadata),
+            ?assertEqual(<<"batch-2024">>, maps:get(<<"batchId">>, StoredMeta)),
+            ?assert(is_integer(maps:get(<<"index">>, StoredMeta)))
+        end, AllTasks),
+
+        %% Verify: All our task IDs are present
+        ListedIds = [maps:get(<<"taskId">>, Task) || Task <- AllTasks],
+        lists:foreach(fun(Id) ->
+            ?assert(lists:member(Id, ListedIds))
+        end, TaskIds)
+    end.
+
+test_meta_in_cancelled_task(_Pid) ->
+    fun() ->
+        %% Setup: Create task with _meta
+        Action = #{<<"type">> => <<"cancellable_meta">>},
+        Meta = #{
+            <<"_meta">> => #{
+                <<"cancellationId">> => <<"cancel-123">>,
+                <<"reason">> => <<"test_cancellation">>
+            }
+        },
+        {ok, TaskId} = erlmcp_tasks:create(erlmcp_tasks, Action, Meta),
+
+        %% Spawn a worker process
+        WorkerPid = spawn(fun() ->
+            receive
+                cancel -> ok
+            after
+                10000 -> ok
+            end
+        end),
+
+        ok = erlmcp_tasks:start_task_execution(TaskId, WorkerPid),
+
+        %% Exercise: Cancel task
+        MonitorRef = monitor(process, WorkerPid),
+        {ok, cancelled} = erlmcp_tasks:cancel_task(erlmcp_tasks, TaskId, <<"Test cancellation">>),
+
+        %% Wait for worker to exit
+        receive
+            {'DOWN', MonitorRef, process, WorkerPid, _} -> ok
+        after
+            1000 -> ?assert(false, worker_should_have_exited)
+        end,
+
+        %% Verify: _meta preserved after cancellation
+        {ok, CancelledTask} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"cancelled">>, maps:get(<<"status">>, CancelledTask)),
+
+        Metadata = maps:get(<<"metadata">>, CancelledTask),
+        ?assert(maps:is_key(<<"_meta">>, Metadata)),
+
+        StoredMeta = maps:get(<<"_meta">>, Metadata),
+        ?assertEqual(<<"cancel-123">>, maps:get(<<"cancellationId">>, StoredMeta)),
+        ?assertEqual(<<"test_cancellation">>, maps:get(<<"reason">>, StoredMeta))
+    end.
+
 integration_task_workflow_test_() ->
     {setup,
      fun setup/0,

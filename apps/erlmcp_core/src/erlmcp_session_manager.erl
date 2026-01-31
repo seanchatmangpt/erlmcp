@@ -8,6 +8,7 @@
     start_link/0,
     create_session/1,
     create_session/2,
+    create_session/3,
     get_session/1,
     update_session/2,
     delete_session/1,
@@ -15,7 +16,11 @@
     list_sessions/1,
     cleanup_expired/0,
     set_timeout/2,
-    touch_session/1
+    touch_session/1,
+    persist_session/1,
+    persist_session/2,
+    load_session/1,
+    delete_persistent/1
 ]).
 
 %% gen_server callbacks
@@ -44,18 +49,30 @@
 %% State version for hot code loading
 -type state_version() :: v1 | v2.
 
+%% Mnesia record for persistent sessions
+-record(persistent_session, {
+    session_id :: binary(),
+    session :: map(),
+    created_at :: integer(),
+    last_accessed :: integer(),
+    ttl :: integer()
+}).
+
 %% State record
 -record(state, {
     version = v1 :: state_version(),  % State version for hot code loading
     table :: ets:tid(),
     cleanup_timer :: reference() | undefined,
     cleanup_interval_ms = 60000 :: pos_integer(),  % 1 minute
-    default_timeout_ms = 3600000 :: pos_integer()  % 1 hour
+    default_timeout_ms = 3600000 :: pos_integer(),  % 1 hour
+    persistent_enabled = false :: boolean()  % Mnesia persistence flag
 }).
 
 -define(TABLE_NAME, erlmcp_sessions).
+-define(PERSISTENT_TABLE_NAME, erlmcp_persistent_sessions).
 -define(DEFAULT_CLEANUP_INTERVAL, 60000).  % 1 minute
 -define(DEFAULT_SESSION_TIMEOUT, 3600000). % 1 hour
+-define(DEFAULT_PERSISTENT_TTL, 3600000). % 1 hour
 
 %%====================================================================
 %% API Functions
@@ -71,7 +88,11 @@ create_session(Metadata) ->
 
 -spec create_session(map(), pos_integer() | infinity) -> {ok, session_id()} | {error, term()}.
 create_session(Metadata, TimeoutMs) ->
-    gen_server:call(?MODULE, {create_session, Metadata, TimeoutMs}).
+    create_session(Metadata, TimeoutMs, #{}).
+
+-spec create_session(map(), pos_integer() | infinity, map()) -> {ok, session_id()} | {error, term()}.
+create_session(Metadata, TimeoutMs, Options) ->
+    gen_server:call(?MODULE, {create_session, Metadata, TimeoutMs, Options}).
 
 -spec get_session(session_id()) -> {ok, session_data()} | {error, not_found}.
 get_session(SessionId) ->
@@ -105,6 +126,26 @@ set_timeout(SessionId, TimeoutMs) ->
 touch_session(SessionId) ->
     gen_server:call(?MODULE, {touch_session, SessionId}).
 
+%% @doc Persist session to Mnesia storage
+-spec persist_session(session_id()) -> ok | {error, term()}.
+persist_session(SessionId) ->
+    persist_session(SessionId, ?DEFAULT_PERSISTENT_TTL).
+
+%% @doc Persist session to Mnesia storage with custom TTL
+-spec persist_session(session_id(), pos_integer()) -> ok | {error, term()}.
+persist_session(SessionId, TTL) ->
+    gen_server:call(?MODULE, {persist_session, SessionId, TTL}).
+
+%% @doc Load session from Mnesia persistent storage
+-spec load_session(session_id()) -> {ok, session_data()} | {error, not_found | term()}.
+load_session(SessionId) ->
+    gen_server:call(?MODULE, {load_session, SessionId}).
+
+%% @doc Delete session from Mnesia persistent storage
+-spec delete_persistent(session_id()) -> ok | {error, term()}.
+delete_persistent(SessionId) ->
+    gen_server:call(?MODULE, {delete_persistent, SessionId}).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -113,7 +154,7 @@ touch_session(SessionId) ->
 init([]) ->
     process_flag(trap_exit, true),
 
-    %% Create ETS table for session storage
+    %% Create ETS table for session storage (in-memory cache)
     %% - ordered_set for efficient range queries
     %% - public for direct reads (optional optimization)
     %% - {read_concurrency, true} for better read performance
@@ -125,6 +166,23 @@ init([]) ->
         {keypos, 2}  % Use session id as key (position 2 in tuple {session_data, id, ...})
     ]),
 
+    %% Create Mnesia table for persistent sessions (Joe Armstrong: "Databases are for persistence")
+    PersistentEnabled = case mnesia:create_table(?PERSISTENT_TABLE_NAME, [
+        {disc_copies, [node()]},
+        {attributes, record_info(fields, persistent_session)},
+        {type, set}
+    ]) of
+        {atomic, ok} ->
+            logger:info("Created Mnesia persistent sessions table: ~p", [?PERSISTENT_TABLE_NAME]),
+            true;
+        {aborted, {already_exists, _}} ->
+            logger:info("Mnesia persistent sessions table already exists: ~p", [?PERSISTENT_TABLE_NAME]),
+            true;
+        {aborted, Reason} ->
+            logger:error("Failed to create Mnesia table: ~p", [Reason]),
+            false
+    end,
+
     %% Start cleanup timer
     CleanupTimer = schedule_cleanup(?DEFAULT_CLEANUP_INTERVAL),
 
@@ -132,7 +190,8 @@ init([]) ->
         table = Table,
         cleanup_timer = CleanupTimer,
         cleanup_interval_ms = ?DEFAULT_CLEANUP_INTERVAL,
-        default_timeout_ms = ?DEFAULT_SESSION_TIMEOUT
+        default_timeout_ms = ?DEFAULT_SESSION_TIMEOUT,
+        persistent_enabled = PersistentEnabled
     },
 
     {ok, State}.

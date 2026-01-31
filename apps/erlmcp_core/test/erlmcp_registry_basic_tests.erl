@@ -199,8 +199,8 @@ test_concurrent_registration() ->
     Pids = lists:map(fun(_) ->
         spawn_link(fun() ->
             % Use the caller's PID as the "server PID" for simulation
-            MockServer = self(),
-            Result = erlmcp_registry:register_server(ServerId, MockServer, #{}),
+            TestServer = self(),
+            Result = erlmcp_registry:register_server(ServerId, TestServer, #{}),
             Parent ! {registration_result, self(), Result}
         end)
     end, lists:seq(1, ConcurrentCount)),

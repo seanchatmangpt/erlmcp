@@ -1,6 +1,18 @@
 -module(erlmcp_session_failover_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("erlmcp_session_mnesia.hrl").
+
+%% Include the internal state record definition for testing
+-record(state, {
+    local_node :: node(),
+    cluster_nodes = [] :: [node()],
+    sessions = #{} :: #{binary() => map()},
+    node_status = #{} :: #{node() => up | down | recovering},
+    replicating = #{} :: #{binary() => [node()]},
+    majority_required = true :: boolean(),
+    monitoring = false :: boolean()
+}).
 
 %%====================================================================
 %% Test Suite for erlmcp_session_failover Module
@@ -28,11 +40,18 @@ setup() ->
         {type, set}
     ]) of
         {atomic, ok} -> ok;
-        {atomic, {already_exists, erlmcp_session}} -> ok
+        {atomic, {already_exists, erlmcp_session}} -> ok;
+        {aborted, {already_exists, erlmcp_session}} -> ok
     end,
 
     %% Start failover manager with empty cluster
-    {ok, Pid} = erlmcp_session_failover:start_link([]),
+    Pid = case whereis(erlmcp_session_failover) of
+        undefined ->
+            {ok, P} = erlmcp_session_failover:start_link([]),
+            P;
+        ExistingPid ->
+            ExistingPid
+    end,
 
     %% Create test session
     SessionId = <<"test_session_failover">>,
