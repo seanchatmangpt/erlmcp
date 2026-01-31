@@ -1,19 +1,19 @@
 -module(erlmcp_transport_tcp).
+-behaviour(erlmcp_transport_behavior).
 -behaviour(gen_server).
 -behaviour(ranch_protocol).
 
 -include("erlmcp.hrl").
--include("erlmcp_refusal.hrl").
 -include("erlmcp_transport_tcp.hrl").
 
-%% Note: We implement erlmcp_transport behavior but use different naming
-%% to avoid conflicts with gen_server callbacks
+%% erlmcp_transport_behavior callbacks
+%% Note: init/1 handled by gen_server - no separate export needed
 
 %% Transport API (erlmcp_transport-like interface)
--export([send/2, close/1, transport_init/1, get_max_message_size/0]).
+-export([send/2, close/1, get_info/1]).
 
 %% Public API
--export([start_link/1, start_server/1, start_client/1, connect/2]).
+-export([start_link/1, start_server/1, start_client/1, connect/2, transport_init/1, get_max_message_size/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -118,6 +118,38 @@ close(#state{socket = Socket, server_id = ServerId}) when Socket =/= undefined -
 close(_State) ->
     ok.
 
+%% @doc Get transport information and statistics
+%% Implements erlmcp_transport_behavior callback
+-spec get_info(state()) -> map().
+get_info(#state{
+    mode = Mode,
+    transport_id = TransportId,
+    server_id = ServerId,
+    connected = Connected,
+    bytes_sent = BytesSent,
+    bytes_received = BytesReceived,
+    last_activity = LastActivity
+} = State) ->
+    #{
+        transport_id => TransportId,
+        type => tcp,
+        mode => Mode,
+        status => case Connected of
+            true -> connected;
+            false -> disconnected
+        end,
+        server_id => ServerId,
+        config => #{
+            host => State#state.host,
+            port => State#state.port
+        },
+        statistics => #{
+            bytes_sent => BytesSent,
+            bytes_received => BytesReceived,
+            last_activity => LastActivity
+        }
+    }.
+
 %%====================================================================
 %% Public API
 %%====================================================================
@@ -149,7 +181,9 @@ connect(Pid, Opts) when is_pid(Pid), is_map(Opts) ->
 %% @doc Start a ranch protocol handler for an accepted connection
 %% CRITICAL: Guaranteed cleanup of connection slot via try...catch/after
 -spec start_link(ranch:ref(), module(), map()) -> {ok, pid()} | {error, term()}.
-start_link(RanchRef, _Transport, ProtocolOpts) ->    ServerId = maps:get(server_id, ProtocolOpts, undefined),    %% Check connection limit BEFORE accepting connection    case erlmcp_connection_limiter:accept_connection(ServerId) of        accept ->            %% CRITICAL FIX: Use try...catch/after to guarantee slot release            %% If init fails for ANY reason, we MUST release the slot            try                case gen_server:start_link(?MODULE, #{                    mode => server,                    ranch_ref => RanchRef,                    protocol_opts => ProtocolOpts,                    server_id => ServerId                }, []) of                    {ok, Pid} = Result ->                        %% Monitor the handler process to detect early crashes                        erlang:monitor(process, Pid),                        Result;                    {error, Reason} = StartError ->                        %% Handler failed to start, release slot immediately                        logger:warning("Handler init failed, releasing slot: ~p", [Reason]),                        erlmcp_connection_limiter:release_connection(ServerId),                        StartError                end            catch                Type:Exception:Stacktrace ->                    %% EXCEPTION during handler start - MUST release slot                    logger:error("Handler start exception ~p:~p, releasing slot~n~p",                               [Type, Exception, Stacktrace]),                    erlmcp_connection_limiter:release_connection(ServerId),                    {error, {handler_start_exception, {Type, Exception}}}            end;        {error, too_many_connections} ->            logger:warning("Rejecting connection: too many connections for server ~p", [ServerId]),            {error, too_many_connections}    end.
+start_link(RanchRef, _Transport, ProtocolOpts) ->
+    ServerId = maps:get(server_id, ProtocolOpts, undefined),
+
     %% Check connection limit BEFORE accepting connection
     case erlmcp_connection_limiter:accept_connection(ServerId) of
         accept ->

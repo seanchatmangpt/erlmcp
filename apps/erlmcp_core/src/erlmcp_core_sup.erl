@@ -42,8 +42,18 @@ init([]) ->
             modules => [erlmcp_registry]
         },
 
-        %% NOTE: erlmcp_registry_health_check removed - module was never implemented
-        %% TODO: Implement health check module or remove from architecture
+        %% ================================================================
+        %% HEALTH CHECKS: Simple health check aggregator for orchestration
+        %% Follows Joe Armstrong's principle: "Health checks are for orchestration"
+        %% ================================================================
+        #{
+            id => erlmcp_health,
+            start => {erlmcp_health, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_health]
+        },
 
         %% ================================================================
         %% INFRASTRUCTURE: Hot reload, sessions, tasks, resources

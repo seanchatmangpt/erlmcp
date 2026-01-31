@@ -1,0 +1,156 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling opentelemetry_api
+===> Compiling jesse
+===> Compiling bbmustache
+===> Compiling opentelemetry
+===> Compiling ranch
+===> Compiling poolboy
+===> Compiling ssl_verify_fun
+===> Compiling tls_certificate_check
+===> Compiling gproc
+===> Compiling ctx
+===> Compiling hpack
+===> Compiling chatterbox
+===> Compiling acceptor_pool
+===> Compiling grpcbox
+===> Compiling opentelemetry_exporter
+===> Compiling jsx
+===> Compiling jose
+===> Compiling cowlib
+===> Compiling gun
+===> Compiling cowboy
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/pricing/tcps_poka_yoke.erl failed
+     ┌─ include/erlmcp.hrl:
+     │
+ 980 │  -define(REFUSAL_BUFFER_OVERFLOW, 1004).
+     │          ╰── redefining macro 'REFUSAL_BUFFER_OVERFLOW'
+
+     ┌─ include/erlmcp.hrl:
+     │
+ 981 │  -define(REFUSAL_BACKPRESSURE_ACTIVE, 1005).
+     │          ╰── redefining macro 'REFUSAL_BACKPRESSURE_ACTIVE'
+
+     ┌─ include/erlmcp.hrl:
+     │
+ 984 │  -define(REFUSAL_AUTH_FAILED, 1011).
+     │          ╰── redefining macro 'REFUSAL_AUTH_FAILED'
+
+     ┌─ include/erlmcp.hrl:
+     │
+ 985 │  -define(REFUSAL_AUTH_EXPIRED, 1012).
+     │          ╰── redefining macro 'REFUSAL_AUTH_EXPIRED'
+
+     ┌─ include/erlmcp.hrl:
+     │
+ 989 │  -define(REFUSAL_INVALID_SESSION_ID, 1016).
+     │          ╰── redefining macro 'REFUSAL_INVALID_SESSION_ID'
+
+     ┌─ include/erlmcp.hrl:
+     │
+ 992 │  -define(REFUSAL_INVALID_PARAMS, 1021).
+     │          ╰── redefining macro 'REFUSAL_INVALID_PARAMS'
+
+     ┌─ include/erlmcp.hrl:
+     │
+ 995 │  -define(REFUSAL_INVALID_CONTENT_TYPE, 1024).
+     │          ╰── redefining macro 'REFUSAL_INVALID_CONTENT_TYPE'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1000 │  -define(REFUSAL_FIELD_TYPE_MISMATCH, 1029).
+      │          ╰── redefining macro 'REFUSAL_FIELD_TYPE_MISMATCH'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1003 │  -define(REFUSAL_PATH_TRAVERSAL_DETECTED, 1036).
+      │          ╰── redefining macro 'REFUSAL_PATH_TRAVERSAL_DETECTED'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1005 │  -define(REFUSAL_SYMLINK_TRAVERSAL_DETECTED, 1038).
+      │          ╰── redefining macro 'REFUSAL_SYMLINK_TRAVERSAL_DETECTED'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1006 │  -define(REFUSAL_URI_OUT_OF_BOUNDS, 1039).
+      │          ╰── redefining macro 'REFUSAL_URI_OUT_OF_BOUNDS'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1007 │  -define(REFUSAL_CANONICAL_PATH_VIOLATION, 1040).
+      │          ╰── redefining macro 'REFUSAL_CANONICAL_PATH_VIOLATION'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1010 │  -define(REFUSAL_RESOURCE_NOT_FOUND, 1046).
+      │          ╰── redefining macro 'REFUSAL_RESOURCE_NOT_FOUND'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1012 │  -define(REFUSAL_TOOL_NOT_FOUND, 1048).
+      │          ╰── redefining macro 'REFUSAL_TOOL_NOT_FOUND'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1014 │  -define(REFUSAL_PROMPT_NOT_FOUND, 1050).
+      │          ╰── redefining macro 'REFUSAL_PROMPT_NOT_FOUND'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1019 │  -define(REFUSAL_RATE_LIMIT_EXCEEDED, 1056).
+      │          ╰── redefining macro 'REFUSAL_RATE_LIMIT_EXCEEDED'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1022 │  -define(REFUSAL_QUOTA_EXCEEDED, 1059).
+      │          ╰── redefining macro 'REFUSAL_QUOTA_EXCEEDED'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1026 │  -define(REFUSAL_PROTOCOL_ERROR, 1066).
+      │          ╰── redefining macro 'REFUSAL_PROTOCOL_ERROR'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1027 │  -define(REFUSAL_TRANSPORT_ERROR, 1067).
+      │          ╰── redefining macro 'REFUSAL_TRANSPORT_ERROR'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1028 │  -define(REFUSAL_MESSAGE_TOO_LARGE, 1068).
+      │          ╰── redefining macro 'REFUSAL_MESSAGE_TOO_LARGE'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1034 │  -define(REFUSAL_SERVER_SHUTTING_DOWN, 1077).
+      │          ╰── redefining macro 'REFUSAL_SERVER_SHUTTING_DOWN'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1035 │  -define(REFUSAL_SERVICE_UNAVAILABLE, 1078).
+      │          ╰── redefining macro 'REFUSAL_SERVICE_UNAVAILABLE'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1037 │  -define(REFUSAL_DEPENDENCY_UNAVAILABLE, 1080).
+      │          ╰── redefining macro 'REFUSAL_DEPENDENCY_UNAVAILABLE'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1040 │  -define(REFUSAL_CIRCUIT_BREAKER_OPEN, 1086).
+      │          ╰── redefining macro 'REFUSAL_CIRCUIT_BREAKER_OPEN'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1041 │  -define(REFUSAL_HEALTH_CHECK_FAILED, 1087).
+      │          ╰── redefining macro 'REFUSAL_HEALTH_CHECK_FAILED'
+
+      ┌─ include/erlmcp.hrl:
+      │
+ 1043 │  -define(REFUSAL_RESOURCE_EXHAUSTED, 1089).
+      │          ╰── redefining macro 'REFUSAL_RESOURCE_EXHAUSTED'
+
+

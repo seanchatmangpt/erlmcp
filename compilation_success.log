@@ -1,0 +1,6 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling erlmcp_transports
+===> Compiling erlmcp_validation
+===> Compiling erlmcp_observability

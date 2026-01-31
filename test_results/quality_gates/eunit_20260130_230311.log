@@ -1,0 +1,74 @@
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Verifying dependencies...
+[0m[0;32m===> Fetching coveralls v2.2.0
+[0m[0;32m===> Fetching meck v0.9.2
+[0m[0;32m===> Fetching proper v1.4.0
+[0m[0;32m===> Fetching covertool v2.0.7
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling covertool
+[0m[0;32m===> Fetching bbmustache v1.12.2
+[0m[0;32m===> Fetching cowboy v2.10.0
+[0m[0;32m===> Fetching gproc v0.9.0
+[0m[0;32m===> Fetching gun v2.0.1
+[0m[0;32m===> Fetching jesse v1.8.1
+[0m[0;32m===> Fetching jose v1.11.1
+[0m[0;32m===> Fetching jsx v3.1.0
+[0m[0;32m===> Fetching opentelemetry v1.7.0
+[0m[0;32m===> Fetching opentelemetry_api v1.5.0
+[0m[0;32m===> Fetching opentelemetry_exporter v1.10.0
+[0m[0;32m===> Fetching poolboy v1.5.2
+[0m[0;32m===> Fetching ranch v2.1.0
+[0m[0;32m===> Fetching cowlib v2.12.1
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;32m===> Compiling acceptor_pool
+[0m[0;32m===> Compiling grpcbox
+[0m[0;32m===> Compiling opentelemetry_exporter
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling jose
+[0m[0;32m===> Compiling cowlib
+[0m[0;32m===> Compiling gun
+[0m[0;32m===> Compiling cowboy
+[0m[0;32m===> Compiling coveralls
+[0m[0;32m===> Compiling proper
+[0m/Users/sac/erlmcp/_build/test/lib/proper/src/proper.erl:2406:10: Warning: slave:start_link/2 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+% 2406|     case slave:start_link(HostName, SlaveName) of
+%     |          ^
+
+/Users/sac/erlmcp/_build/test/lib/proper/src/proper.erl:2478:64: Warning: slave:stop/1 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+% 2478|             StopFun = fun({Node, {already_running, false}}) -> slave:stop(Node);
+%     |                                                                ^
+
+      ┌─ _build/test/lib/proper/src/proper.erl:
+      │
+ 2406 │      case [1;31mslave[0m:start_link(HostName, SlaveName) of[0m
+      │           [1;31m╰──[0m[0m Warning: slave:start_link/2 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+
+      ┌─ _build/test/lib/proper/src/proper.erl:
+      │
+ 2478 │              StopFun = fun({Node, {already_running, false}}) -> [1;31mslave[0m:stop(Node);[0m
+      │                                                                 [1;31m╰──[0m[0m Warning: slave:stop/1 is deprecated and will be removed in OTP 29; use the 'peer' module instead
+
+
+[0;32m===> Compiling meck
+[0mcp: /Users/sac/erlmcp/_build/test/lib/erlmcp_observability/test/erlmcp_metrics_aggregation_tests.erl: No such file or directory
+cp: /Users/sac/erlmcp/_build/test/lib/erlmcp_observability/test/erlmcp_dashboard_tests.erl.broken: No such file or directory
+[0;31m===> [1msh(cp -RpL /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_audit_log_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_otel_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/test_worker.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_debugger_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_profiler_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_tracing_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_memory_analyzer_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_audit_log_range_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_recovery_test_workers.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/include /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_chaos_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_process_monitor_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_observability_SUITE.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_recovery_test_sup.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_health_monitor_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/temporary_test_worker.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_trace_analyzer_tests.erl.bak2 /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_debugger_dot_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_chaos_safety_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_performance_validator_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_dashboard_filter_unit_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_metrics_aggregation_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/transient_test_worker.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_recovery_manager_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_recovery_generic_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_dashboard_tests.erl.broken /Users/sac/erlmcp/apps/erlmcp_observability/test/metrics_worker.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_dashboard_filter_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_trace_analyzer_tests.erl.bak /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_otel_enhanced_tests.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/integration_worker.erl /Users/sac/erlmcp/apps/erlmcp_observability/test/erlmcp_metrics_tests.erl "/Users/sac/erlmcp/_build/test/lib/erlmcp_observability/test")
+failed with return code 1 and the following output:
+cp: /Users/sac/erlmcp/_build/test/lib/erlmcp_observability/test/erlmcp_metrics_aggregation_tests.erl: No such file or directory
+cp: /Users/sac/erlmcp/_build/test/lib/erlmcp_observability/test/erlmcp_dashboard_tests.erl.broken: No such file or directory
+
+[0m[0m

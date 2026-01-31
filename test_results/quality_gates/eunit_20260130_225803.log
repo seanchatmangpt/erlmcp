@@ -1,0 +1,64 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      [1;31m{[0merror, token_expired};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      [1;31m{[0merror, token_not_yet_valid};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      [1;31m{[0merror, invalid_issuer}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1162 │                  [1;31m{[0mnoreply, State};[0m
+      │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1172 │                                  [1;31m{[0mnoreply, State};[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1177 │                                  [1;31m{[0mnoreply, State}[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1183 │                          [1;31m{[0mnoreply, State}[0m
+      │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m[0;31m===> [1mCompiling apps/erlmcp_transports/src/erlmcp_transport_tcp.erl failed
+[0m[0m     ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+     │
+ 142 │              buffer_size => State#state.[1;31mbuffer_size[0m[0m
+     │                                         [1;31m╰──[0m[0m field buffer_size undefined in record state
+
+     ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+     │
+ 231 │  [1;31minit[0m(#{mode := server, ranch_ref := RanchRef, protocol_opts := ProtocolOpts} = InitArgs) ->[0m
+     │  [1;31m╰──[0m[0m function init/1 already defined
+
+
+   ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+   │
+ 3 │  -[1;31mbehaviour[0m(gen_server).[0m
+   │   [1;31m╰──[0m[0m Warning: conflicting behaviours -- callback init/1 required by both 'gen_server' and 'erlmcp_transport_behavior' (line 2, column 2)
+
+    ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+    │
+ 13 │  -[1;31mexport[0m([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).[0m
+    │   [1;31m╰──[0m[0m Warning: function init/1 already exported
+
+
