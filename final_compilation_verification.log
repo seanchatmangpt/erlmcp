@@ -1,0 +1,20 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/erlmcp_server.erl failed
+     ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+     │
+ 245 │      case validate_uri_format(Uri) of
+     │           ╰── function validate_uri_format/1 undefined
+
+
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/erlmcp_auth.erl failed
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 828 │                      try extract_cn_from_cert(CertDer) of
+     │                          ╰── function extract_cn_from_cert/1 undefined
+
+

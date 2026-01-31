@@ -1,0 +1,28 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling opentelemetry_api
+[0m[0;32m===> Compiling jesse
+[0m[0;32m===> Compiling bbmustache
+[0m[0;32m===> Compiling opentelemetry
+[0m[0;32m===> Compiling ranch
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;32m===> Compiling acceptor_pool
+[0m[0;32m===> Compiling grpcbox
+[0m   ┌─ _build/default/lib/grpcbox/src/grpcbox_acceptor.erl:
+   │
+ 3 │  -[1;31mbehaviour[0m(acceptor).[0m
+   │   [1;31m╰──[0m[0m Warning: behaviour acceptor undefined
+
+
+[0;32m===> Compiling opentelemetry_exporter
+[0m[0;32m===> Compiling jsx
+[0m[0;32m===> Compiling jose
+[0m[0;31m===> [1mCompiling _build/default/lib/jose/src/base/jose_base64.erl failed
+[0m[0m_build/default/lib/jose/src/base/jose_base64.erl:none: undefined parse transform 'jose_base'
+

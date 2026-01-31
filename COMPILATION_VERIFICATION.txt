@@ -1,0 +1,10 @@
+Exit code: 0
+Errors: 0
+Warnings: 11
+Applications:
+  - erlmcp_core: ✅ Compiled (8 warnings)
+  - erlmcp_transports: ✅ Compiled (1 warning)
+  - erlmcp_validation: ✅ Compiled (2 warnings)
+  - erlmcp_observability: ✅ Compiled (0 warnings)
+Status: SUCCESS
+Report: COMPILATION_STATUS.md

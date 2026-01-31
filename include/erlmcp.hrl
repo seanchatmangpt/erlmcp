@@ -34,6 +34,23 @@
 %%% MCP-Specific Error Codes (using the server error range -32000 to -32099)
 %%% Per MCP 2025-11-25 specification and JSON-RPC 2.0
 
+%% MCP Refusal Error Codes (1001-1089)
+%% Used when a tool refuses execution (e.g., content moderation, policy violations)
+-define(ERR_REFUSED_MIN, 1001).
+-define(ERR_REFUSED_MAX, 1089).
+
+%% Common refusal reasons (1001-1010)
+-define(ERR_REFUSED_CONTENT_POLICY, 1001).  %% Content violates policy
+-define(ERR_REFUSED_SAFETY_GUIDELINES, 1002).  %% Violates safety guidelines
+-define(ERR_REFUSED_RATE_LIMIT, 1003).  %% Rate limit exceeded
+-define(ERR_REFUSED_RESOURCE_CONSTRAINT, 1004).  %% Resource constraints
+-define(ERR_REFUSED_PERMISSION_DENIED, 1005).  %% Permission denied
+-define(ERR_REFUSED_INVALID_INPUT, 1006).  %% Invalid input
+-define(ERR_REFUSED_UNSUPPORTED_OPERATION, 1007).  %% Unsupported operation
+-define(ERR_REFUSED_TEMPORARY_UNAVAILABLE, 1008).  %% Temporarily unavailable
+-define(ERR_REFUSED_DEPENDENCY_FAILED, 1009).  %% Dependency failed
+-define(ERR_REFUSED_CUSTOM, 1010).  %% Custom refusal reason
+
 %% Core MCP errors (-32001 to -32010)
 -define(MCP_ERROR_RESOURCE_NOT_FOUND, -32001).
 -define(MCP_ERROR_TOOL_NOT_FOUND, -32002).
@@ -517,6 +534,9 @@
 
 %%% Ping Method (MCP 2025-11-25)
 -define(MCP_METHOD_PING, <<"ping">>).
+
+%%% Shutdown Method (MCP 2025-11-25)
+-define(MCP_METHOD_SHUTDOWN, <<"shutdown">>).
 
 %%% Prompt Methods
 -define(MCP_METHOD_PROMPTS_LIST, <<"prompts/list">>).

@@ -111,7 +111,15 @@ force_sync(SessionId) ->
 init([ClusterNodes]) ->
     process_flag(trap_exit, true),
     LocalNode = node(),
-    AllNodes = lists:usort([LocalNode | ClusterNodes]),
+
+    %% Ensure ClusterNodes is a proper list of nodes
+    NodeList = case is_list(ClusterNodes) of
+        true -> ClusterNodes;
+        false when is_atom(ClusterNodes) -> [ClusterNodes];
+        false -> []
+    end,
+
+    AllNodes = lists:usort([LocalNode | lists:filter(fun(N) -> is_atom(N) end, NodeList)]),
     logger:info("Session failover manager starting on ~p (cluster: ~p)", [LocalNode, AllNodes]),
     
     lists:foreach(fun(Node) when Node =/= LocalNode ->

@@ -1,0 +1,15 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling poolboy
+[0m[0;32m===> Compiling ssl_verify_fun
+[0m[0;32m===> Compiling tls_certificate_check
+[0m[0;32m===> Compiling gproc
+[0m[0;32m===> Compiling ctx
+[0m[0;32m===> Compiling hpack
+[0m[0;32m===> Compiling chatterbox
+[0m[0;32m===> Compiling acceptor_pool
+[0m[0;32m===> Compiling grpcbox
+[0m[0;32m===> Compiling opentelemetry_exporter
+[0m[0;31m===> [1mCompiling _build/default/lib/opentelemetry_exporter/src/opentelemetry_exporter_metrics_service_pb.erl failed
+[0m[0m_build/default/lib/opentelemetry_exporter/ebin/opentelemetry_exporter_metrics_service_pb.bea#:none: error writing file: no such file or directory
+

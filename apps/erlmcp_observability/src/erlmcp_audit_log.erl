@@ -32,6 +32,13 @@
     stop/0
 ]).
 
+%% Exported for testing
+-export([
+    read_range_entries/3,
+    verify_range_hashes/4,
+    find_entry_by_seq/2
+]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -387,7 +394,7 @@ verify_lines([Line | Rest], ExpectedPrevHash) ->
 %% @private Verify hash chain in range [FromSeq, ToSeq].
 %% Only verifies entries in the specified range, not the entire chain.
 %% Optimized for partial verification of large audit trails.
-do_verify_chain_range(LogPath, FromSeq, ToSeq) when FromSeq > ToSeq ->
+do_verify_chain_range(_LogPath, FromSeq, ToSeq) when FromSeq > ToSeq ->
     {error, {invalid_range, FromSeq, ToSeq}};
 do_verify_chain_range(LogPath, FromSeq, ToSeq) ->
     case file:read_file(LogPath) of
@@ -414,7 +421,7 @@ verify_range(Lines, FromSeq, ToSeq) ->
         {ok, RangeEntries} ->
             % Get expected hash for first entry in range
             ExpectedHash = case FromSeq of
-                0 ->
+                1 ->
                     GenesisHash;
                 _ ->
                     % Read previous entry to get its hash
@@ -455,8 +462,10 @@ read_range_entries(Lines, FromSeq, ToSeq) ->
 
     case ActualCount of
         ExpectedCount ->
-            % Sort by sequence to ensure order
-            Sorted = lists:keysort(<<"sequence">>, RangeEntries),
+            % Sort by sequence to ensure order (use custom sort for map keys)
+            Sorted = lists:sort(fun(A, B) ->
+                maps:get(<<"sequence">>, A) =< maps:get(<<"sequence">>, B)
+            end, RangeEntries),
             {ok, Sorted};
         _ when ActualCount < ExpectedCount ->
             {error, {missing_entries, FromSeq, ToSeq, ExpectedCount - ActualCount}};

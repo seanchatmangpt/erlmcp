@@ -63,6 +63,24 @@ cleanup_evidence({TmpDir}) ->
     application:stop(erlmcp_validation).
 
 %%%====================================================================
+
+%% @private Recursively cleanup directory
+cleanup_recursive(Dir) ->
+    case file:list_dir(Dir) of
+        {ok, []} ->
+            file:del_dir(Dir);
+        {ok, Files} ->
+            lists:foreach(fun(F) ->
+                Path = filename:join([Dir, F]),
+                case filelib:is_dir(Path) of
+                    true -> cleanup_recursive(Path);
+                    false -> file:del_file(Path)
+                end
+            end),
+            file:del_dir(Dir);
+        {error, _} ->
+            ok
+    end.
 %%% Test Cases
 %%%====================================================================
 

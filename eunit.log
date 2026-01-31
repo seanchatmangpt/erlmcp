@@ -3455,4 +3455,608 @@ Gun connection timeout
 =ERROR REPORT==== 30-Jan-2026::23:36:10.805453 ===
 Gun connection timeout
 [5.001 s] ok
-erlmcp_transport_http_tests: -http_close_behavior_test_/0-fun-5-...
+erlmcp_transport_http_tests: -http_close_behavior_test_/0-fun-5-...=ERROR REPORT==== 30-Jan-2026::23:36:15.809573 ===
+Gun connection timeout
+*timed out*
+in function proc_lib:sync_start/2 (proc_lib.erl, line 434)
+in call from erlmcp_transport_http_tests:'-http_close_behavior_test_/0-fun-5-'/0 (/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_tests.erl, line 201)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+undefined
+erlmcp_transport_http_tests: -http_invalid_url_test_/0-fun-5- (Empty URL)...=ERROR REPORT==== 30-Jan-2026::23:36:20.810832 ===
+Gun connection timeout
+*timed out*
+in function proc_lib:sync_start/2 (proc_lib.erl, line 434)
+in call from erlmcp_transport_http_tests:'-http_invalid_url_test_/0-fun-5-'/0 (/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_tests.erl, line 229)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 72)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 544)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 527)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 469)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 359)
+undefined
+erlmcp_transport_http_tests: -http_connection_timeout_test_/0-fun-2-...=ERROR REPORT==== 30-Jan-2026::23:36:21.813809 ===
+Gun connection timeout
+[1.002 s] ok
+erlmcp_transport_http_tests: -http_retry_configuration_test_/0-fun-4- (Configure max retries)...ok
+erlmcp_transport_http_tests: -http_retry_configuration_test_/0-fun-1- (Zero retries)...ok
+erlmcp_transport_http_tests: -https_url_test_/0-fun-3- (HTTPS with default SSL)...=CRASH REPORT==== 30-Jan-2026::23:36:21.822879 ===
+  crasher:
+    initial call: erlmcp_transport_http_server:init/1
+    pid: <0.2647.0>
+    registered_name: []
+    exception error: no function clause matching 
+                     erlmcp_tls_validation:build_tls_options([],"example.com") (/Users/sac/erlmcp/apps/erlmcp_transports/src/erlmcp_tls_validation.erl, line 186)
+      in function  erlmcp_transport_http_server:build_gun_opts/1 (/Users/sac/erlmcp/apps/erlmcp_transports/src/erlmcp_transport_http_server.erl, line 403)
+      in call from erlmcp_transport_http_server:connect/1 (/Users/sac/erlmcp/apps/erlmcp_transports/src/erlmcp_transport_http_server.erl, line 370)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [<0.2645.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.2645.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 376
+    stack_size: 29
+    reductions: 342
+  neighbours:
+    neighbour:
+      pid: <0.2646.0>
+      registered_name: []
+      initial_call: {eunit_proc,group_leader_process,1}
+      current_function: {eunit_proc,group_leader_loop,3}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.2645.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 233
+      stack_size: 5
+      reductions: 7
+      current_stacktrace: [{eunit_proc,group_leader_loop,3,
+                              [{file,"eunit_proc.erl"},{line,617}]}]
+    neighbour:
+      pid: <0.2645.0>
+      registered_name: []
+      initial_call: {erlang,apply,2}
+      current_function: {proc_lib,sync_start,2}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.2646.0>,<0.2647.0>,<0.2644.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 233
+      stack_size: 40
+      reductions: 190
+      current_stacktrace: [{proc_lib,sync_start,2,[{file,"proc_lib.erl"},{line,434}]},
+                  {erlmcp_transport_http_tests,'-https_url_test_/0-fun-3-',0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_http_tests.erl"},
+                       {line,332}]},
+                  {eunit_test,run_testfun,1,
+                      [{file,"eunit_test.erl"},{line,72}]},
+                  {eunit_proc,run_test,1,[{file,"eunit_proc.erl"},{line,544}]},
+                  {eunit_proc,with_timeout,3,
+                      [{file,"eunit_proc.erl"},{line,369}]},
+                  {eunit_proc,handle_test,2,
+                      [{file,"eunit_proc.erl"},{line,527}]},
+                  {eunit_proc,tests_inorder,3,
+                      [{file,"eunit_proc.erl"},{line,469}]},
+                  {eunit_proc,with_timeout,3,
+                      [{file,"eunit_proc.erl"},{line,369}]}]
+*skipped*
+undefined
+*unexpected termination of test process*
+::{function_clause,
+      [{erlmcp_tls_validation,build_tls_options,
+           [[],"example.com"],
+           [{file,
+                "/Users/sac/erlmcp/apps/erlmcp_transports/src/erlmcp_tls_validation.erl"},
+            {line,186}]},
+       {erlmcp_transport_http_server,build_gun_opts,1,
+           [{file,
+                "/Users/sac/erlmcp/apps/erlmcp_transports/src/erlmcp_transport_http_server.erl"},
+            {line,403}]},
+       {erlmcp_transport_http_server,connect,1,
+           [{file,
+                "/Users/sac/erlmcp/apps/erlmcp_transports/src/erlmcp_transport_http_server.erl"},
+            {line,370}]},
+       {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+       {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+       {proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}
+
+erlmcp_transport_http_tests: -http_pool_configuration_test_/0-fun-3- (Configure pool size)...ok
+erlmcp_transport_http_tests: -http_pool_configuration_test_/0-fun-1- (Default pool size)...ok
+erlmcp_transport_http_tests: -http_method_configuration_test_/0-fun-5- (POST method)...ok
+erlmcp_transport_http_tests: -http_method_configuration_test_/0-fun-3- (GET method)...ok
+erlmcp_transport_http_tests: -http_method_configuration_test_/0-fun-1- (Default method (POST for MCP))...ok
+erlmcp_transport_http_tests: -http_timeout_configuration_test_/0-fun-6- (Request timeout)...ok
+erlmcp_transport_http_tests: -http_timeout_configuration_test_/0-fun-4- (Connect timeout)...ok
+erlmcp_transport_http_tests: -http_timeout_configuration_test_/0-fun-2- (Both timeouts)...ok
+erlmcp_transport_http_tests: -http_json_data_test_/0-fun-6- (Valid JSON data)...ok
+erlmcp_transport_http_tests: -http_json_data_test_/0-fun-3- (JSON array params)...ok
+erlmcp_transport_http_tests: -http_json_data_test_/0-fun-1- (JSON object params)...ok
+[done in 21.089 s]
+[done in 21.089 s]
+module 'erlmcp_transport_http_server'
+module 'erlmcp_transport_pipeline'
+module 'erlmcp_transport_pool'
+module 'erlmcp_transport_registry'
+module 'erlmcp_transport_registry_tests'
+erlmcp_transport_registry_tests:65: -test_start_stop/1-fun-1-...ok
+erlmcp_transport_registry_tests:101: -test_register_unregister/1-fun-7-...ok
+erlmcp_transport_registry_tests:102: -test_register_unregister/1-fun-5-...ok
+erlmcp_transport_registry_tests:103: -test_register_unregister/1-fun-3-...ok
+erlmcp_transport_registry_tests:122: -test_get_transport/1-fun-4-...ok
+erlmcp_transport_registry_tests:123: -test_get_transport/1-fun-2-...ok
+=WARNING REPORT==== 30-Jan-2026::23:36:22.293709 ===
+    what: transport_health_status_changed
+    transport_id: test_health
+    new_status: degraded
+    old_status: up
+=WARNING REPORT==== 30-Jan-2026::23:36:22.293887 ===
+    what: transport_health_status_changed
+    transport_id: test_health
+    new_status: down
+    old_status: degraded
+erlmcp_transport_registry_tests:150: -test_health_status/1-fun-6-...ok
+erlmcp_transport_registry_tests:151: -test_health_status/1-fun-4-...ok
+erlmcp_transport_registry_tests:152: -test_health_status/1-fun-2-...ok
+=WARNING REPORT==== 30-Jan-2026::23:36:22.454715 ===
+    reason: timeout
+    what: transport_failure_recorded
+    transport_id: test_stats
+    total_failures: 1
+=WARNING REPORT==== 30-Jan-2026::23:36:22.454801 ===
+    reason: timeout
+    what: transport_failure_recorded
+    transport_id: test_stats
+    total_failures: 2
+=WARNING REPORT==== 30-Jan-2026::23:36:22.454842 ===
+    reason: timeout
+    what: transport_failure_recorded
+    transport_id: test_stats
+    total_failures: 3
+erlmcp_transport_registry_tests:184: -test_record_success_failure/1-fun-6-...ok
+erlmcp_transport_registry_tests:185: -test_record_success_failure/1-fun-4-...ok
+erlmcp_transport_registry_tests:220: -test_select_transport/1-fun-5-...ok
+=WARNING REPORT==== 30-Jan-2026::23:36:23.220612 ===
+    reason: network_error
+    what: transport_failure_recorded
+    transport_id: test_detailed_stats
+    total_failures: 1
+erlmcp_transport_registry_tests:248: -test_statistics/1-fun-8-...ok
+erlmcp_transport_registry_tests:249: -test_statistics/1-fun-6-...ok
+erlmcp_transport_registry_tests:250: -test_statistics/1-fun-4-...ok
+erlmcp_transport_registry_tests:251: -test_statistics/1-fun-2-...ok
+=WARNING REPORT==== 30-Jan-2026::23:36:23.435805 ===
+    pid: <0.2719.0>
+    reason: normal
+    what: transport_process_died
+    transport_id: test_monitor
+erlmcp_transport_registry_tests:281: -test_process_monitoring/1-fun-4-...ok
+erlmcp_transport_registry_tests:282: -test_process_monitoring/1-fun-2-...ok
+erlmcp_transport_registry_tests: health_evaluation_test...ok
+erlmcp_transport_registry_tests: success_rate_test...ok
+=WARNING REPORT==== 30-Jan-2026::23:36:23.849763 ===
+    what: transport_health_status_changed
+    transport_id: t2
+    new_status: down
+    old_status: up
+erlmcp_transport_registry_tests: get_all_transports_test...[0.101 s] ok
+[done in 2.084 s]
+[done in 2.084 s]
+module 'erlmcp_transport_sse'
+module 'erlmcp_transport_sse_tests'
+erlmcp_hooks starting...
+=ERROR REPORT==== 30-Jan-2026::23:36:23.989484 ===
+Failed to create replica table: {already_exists,erlmcp_session_replica}
+=CRASH REPORT==== 30-Jan-2026::23:36:23.989695 ===
+  crasher:
+    initial call: erlmcp_session_failover:init/1
+    pid: <0.2765.0>
+    registered_name: []
+    exception error: no function clause matching 
+                     lists:usort([nonode@nohost|nonode@nohost]) (lists.erl, line 1805)
+      in function  erlmcp_session_failover:init/1 (/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl, line 114)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [erlmcp_core_sup,erlmcp_sup,<0.2744.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.2746.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 233
+    stack_size: 29
+    reductions: 49
+  neighbours:
+
+=SUPERVISOR REPORT==== 30-Jan-2026::23:36:23.989871 ===
+    supervisor: {local,erlmcp_core_sup}
+    errorContext: start_error
+    reason: {function_clause,
+                [{lists,usort,
+                     [[nonode@nohost|nonode@nohost]],
+                     [{file,"lists.erl"},{line,1805}]},
+                 {erlmcp_session_failover,init,1,
+                     [{file,
+                          "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                      {line,114}]},
+                 {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+                 {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+                 {proc_lib,init_p_do_apply,3,
+                     [{file,"proc_lib.erl"},{line,329}]}]}
+    offender: [{pid,undefined},
+               {id,erlmcp_session_failover},
+               {mfargs,{erlmcp_session_failover,start_link,[nonode@nohost]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,worker}]
+
+=SUPERVISOR REPORT==== 30-Jan-2026::23:36:23.990102 ===
+    supervisor: {local,erlmcp_sup}
+    errorContext: start_error
+    reason: {shutdown,
+                {failed_to_start_child,erlmcp_session_failover,
+                    {function_clause,
+                        [{lists,usort,
+                             [[nonode@nohost|nonode@nohost]],
+                             [{file,"lists.erl"},{line,1805}]},
+                         {erlmcp_session_failover,init,1,
+                             [{file,
+                                  "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                              {line,114}]},
+                         {gen_server,init_it,2,
+                             [{file,"gen_server.erl"},{line,2229}]},
+                         {gen_server,init_it,6,
+                             [{file,"gen_server.erl"},{line,2184}]},
+                         {proc_lib,init_p_do_apply,3,
+                             [{file,"proc_lib.erl"},{line,329}]}]}}}
+    offender: [{pid,undefined},
+               {id,erlmcp_core_sup},
+               {mfargs,{erlmcp_core_sup,start_link,[]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,infinity},
+               {child_type,supervisor}]
+
+=INFO REPORT==== 30-Jan-2026::23:36:23.990214 ===
+    application: erlmcp_core
+    exited: {{shutdown,
+              {failed_to_start_child,erlmcp_core_sup,
+               {shutdown,
+                {failed_to_start_child,erlmcp_session_failover,
+                 {function_clause,
+                  [{lists,usort,
+                    [[nonode@nohost|nonode@nohost]],
+                    [{file,"lists.erl"},{line,1805}]},
+                   {erlmcp_session_failover,init,1,
+                    [{file,
+                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                     {line,114}]},
+                   {gen_server,init_it,2,
+                    [{file,"gen_server.erl"},{line,2229}]},
+                   {gen_server,init_it,6,
+                    [{file,"gen_server.erl"},{line,2184}]},
+                   {proc_lib,init_p_do_apply,3,
+                    [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+             {erlmcp_app,start,[normal,[]]}}
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::23:36:23.990265 ===
+    application: bbmustache
+    exited: stopped
+    type: temporary
+
+=CRASH REPORT==== 30-Jan-2026::23:36:23.990247 ===
+  crasher:
+    initial call: application_master:init/3
+    pid: <0.2743.0>
+    registered_name: []
+    exception exit: {{shutdown,
+                      {failed_to_start_child,erlmcp_core_sup,
+                       {shutdown,
+                        {failed_to_start_child,erlmcp_session_failover,
+                         {function_clause,
+                          [{lists,usort,
+                            [[nonode@nohost|nonode@nohost]],
+                            [{file,"lists.erl"},{line,1805}]},
+                           {erlmcp_session_failover,init,1,
+                            [{file,
+                              "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                             {line,114}]},
+                           {gen_server,init_it,2,
+                            [{file,"gen_server.erl"},{line,2229}]},
+                           {gen_server,init_it,6,
+                            [{file,"gen_server.erl"},{line,2184}]},
+                           {proc_lib,init_p_do_apply,3,
+                            [{file,"proc_lib.erl"},{line,329}]}]}}}}},
+                     {erlmcp_app,start,[normal,[]]}}
+      in function  application_master:init/3 (application_master.erl, line 143)
+    ancestors: [application_controller,<0.10.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.45.0>,<0.2744.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 610
+    stack_size: 29
+    reductions: 153
+  neighbours:
+
+=INFO REPORT==== 30-Jan-2026::23:36:23.991702 ===
+    application: jose
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::23:36:23.991757 ===
+    application: jesse
+    exited: stopped
+    type: temporary
+
+=INFO REPORT==== 30-Jan-2026::23:36:23.991773 ===
+    application: jsx
+    exited: stopped
+    type: temporary
+
+*** context setup failed ***
+**in function erlmcp_transport_sse_tests:setup/0 (/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl, line 13)
+**error:{badmatch,
+    {error,
+        {erlmcp_core,
+            {{shutdown,
+                 {failed_to_start_child,erlmcp_core_sup,
+                     {shutdown,
+                         {failed_to_start_child,erlmcp_session_failover,
+                             {function_clause,[...]}}}}},
+             {erlmcp_app,start,[normal,[]]}}}}}
+
+
+[done in 0.035 s]
+module 'erlmcp_transport_sse_manager'
+module 'erlmcp_transport_stdio'
+module 'erlmcp_transport_stdio_tests'
+erlmcp_transport_stdio_tests: -stdio_start_test_/0-fun-6- (Start stdio transport with owner)...ok
+erlmcp_transport_stdio_tests: -stdio_start_test_/0-fun-3- (Multiple transports with unique IDs)...ok
+erlmcp_transport_stdio_tests: -stdio_send_test_/0-fun-5- (Send binary data)...ok
+erlmcp_transport_stdio_tests: -stdio_send_test_/0-fun-3- (Send iolist data)...ok
+erlmcp_transport_stdio_tests: -stdio_send_test_/0-fun-1- (Send empty data)...ok
+erlmcp_transport_stdio_tests: -stdio_close_test_/0-fun-3- (Close transport stops process)...[0.101 s] ok
+erlmcp_transport_stdio_tests: -stdio_message_delivery_test_/0-fun-3-...ok
+erlmcp_transport_stdio_tests: -stdio_multiple_messages_test_/0-fun-4-...ok
+erlmcp_transport_stdio_tests: -stdio_owner_monitoring_test_/0-fun-3-...=ERROR REPORT==== 30-Jan-2026::23:36:24.626808 ===
+** Generic server <0.2797.0> terminating 
+** Last message in was {'DOWN',#Ref<0.832441834.591134721.167139>,process,
+                               <0.2796.0>,killed}
+** When Server state == {state,<0.2796.0>,#Ref<0.832441834.591134721.167139>,
+                               undefined,<<>>,true,16777216,undefined}
+** Reason for termination ==
+** {owner_died,killed}
+
+=CRASH REPORT==== 30-Jan-2026::23:36:24.626950 ===
+  crasher:
+    initial call: erlmcp_transport_stdio:init/1
+    pid: <0.2797.0>
+    registered_name: []
+    exception exit: {owner_died,killed}
+      in function  gen_server:handle_common_reply/8 (gen_server.erl, line 2476)
+    ancestors: [<0.2794.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.2794.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 2586
+    stack_size: 29
+    reductions: 4011
+  neighbours:
+    neighbour:
+      pid: <0.2795.0>
+      registered_name: []
+      initial_call: {eunit_proc,group_leader_process,1}
+      current_function: {eunit_proc,group_leader_loop,3}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.2794.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 233
+      stack_size: 5
+      reductions: 23
+      current_stacktrace: [{eunit_proc,group_leader_loop,3,
+                              [{file,"eunit_proc.erl"},{line,617}]}]
+    neighbour:
+      pid: <0.2794.0>
+      registered_name: []
+      initial_call: {erlang,apply,2}
+      current_function: {timer,sleep,1}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.2795.0>,<0.2797.0>,<0.2793.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 233
+      stack_size: 37
+      reductions: 178
+      current_stacktrace: [{timer,sleep,1,[{file,"timer.erl"},{line,548}]},
+                  {erlmcp_transport_stdio_tests,
+                      '-stdio_owner_monitoring_test_/0-fun-3-',0,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_stdio_tests.erl"},
+                       {line,203}]},
+                  {eunit_test,run_testfun,1,
+                      [{file,"eunit_test.erl"},{line,72}]},
+                  {eunit_proc,run_test,1,[{file,"eunit_proc.erl"},{line,544}]},
+                  {eunit_proc,with_timeout,3,
+                      [{file,"eunit_proc.erl"},{line,369}]},
+                  {eunit_proc,handle_test,2,
+                      [{file,"eunit_proc.erl"},{line,527}]},
+                  {eunit_proc,tests_inorder,3,
+                      [{file,"eunit_proc.erl"},{line,469}]},
+                  {eunit_proc,with_timeout,3,
+                      [{file,"eunit_proc.erl"},{line,359}]}]
+*skipped*
+undefined
+*unexpected termination of test process*
+::{owner_died,killed}
+
+erlmcp_transport_stdio_tests: -stdio_line_endings_test_/0-fun-8- (Newline termination)...ok
+erlmcp_transport_stdio_tests: -stdio_line_endings_test_/0-fun-5- (Carriage return + newline)...ok
+erlmcp_transport_stdio_tests: -stdio_line_endings_test_/0-fun-2- (Carriage return only)...ok
+erlmcp_transport_stdio_tests: -stdio_empty_line_test_/0-fun-0-...ok
+erlmcp_transport_stdio_tests: -stdio_concurrent_messages_test_/0-fun-3-...[0.602 s] ok
+erlmcp_transport_stdio_tests: -stdio_load_test_/0-fun-4-...[0.501 s] ok
+erlmcp_transport_stdio_tests: -stdio_full_lifecycle_test_/0-fun-4-...ok
+erlmcp_transport_stdio_tests: -stdio_with_registry_test_/0-fun-3-...=WARNING REPORT==== 30-Jan-2026::23:36:26.356850 ===
+Transport stdio_test_transport unregistered (process died)
+ok
+erlmcp_transport_stdio_tests: -stdio_invalid_input_test_/0-fun-1- (Non-binary input)...ok
+[done in 2.568 s]
+[done in 2.568 s]
+module 'erlmcp_transport_sup'
+module 'erlmcp_transport_sup_tests'
+erlmcp_transport_sup_tests: test_supervisor_start (Supervisor starts successfully)...ok
+erlmcp_transport_sup_tests: test_start_stdio_child (Can start stdio transport child)...ok
+erlmcp_transport_sup_tests: test_start_tcp_child (Can start TCP transport child)...=WARNING REPORT==== 30-Jan-2026::23:36:26.594332 ===
+Transport option binary unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:26.594387 ===
+Transport option {active,false} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:26.594424 ===
+Transport option {packet,line} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:26.594502 ===
+Transport option {reuseaddr,true} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:26.602031 ===
+TCP handler terminating before init complete: shutdown
+[0.029 s] ok
+erlmcp_transport_sup_tests: test_start_http_child (Can start HTTP transport child)...=ERROR REPORT==== 30-Jan-2026::23:36:27.607866 ===
+Gun connection timeout
+[1.001 s] ok
+erlmcp_transport_sup_tests: test_start_ws_child (Can start WebSocket transport child)...=CRASH REPORT==== 30-Jan-2026::23:36:27.619035 ===
+  crasher:
+    initial call: supervisor:ranch_acceptors_sup/1
+    pid: <0.3028.0>
+    registered_name: []
+    exception exit: badarg
+      in function  inet_tcp:listen/2 (inet_tcp.erl, line 187)
+      in call from ranch_acceptors_sup:start_listen_socket/4 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 73)
+      in call from ranch_acceptors_sup:start_listen_sockets/5 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 54)
+      in call from ranch_acceptors_sup:init/1 (/Users/sac/erlmcp/_build/default/lib/ranch/src/ranch_acceptors_sup.erl, line 34)
+      in call from supervisor:init/1 (supervisor.erl, line 869)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [<0.3016.0>,ranch_sup,<0.2732.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.3016.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 610
+    stack_size: 29
+    reductions: 475
+  neighbours:
+
+=SUPERVISOR REPORT==== 30-Jan-2026::23:36:27.619222 ===
+    supervisor: {<0.3016.0>,ranch_listener_sup}
+    errorContext: start_error
+    reason: badarg
+    offender: [{pid,undefined},
+               {id,ranch_acceptors_sup},
+               {mfargs,
+                   {ranch_acceptors_sup,start_link,
+                       [erlmcp_ws_ws_sup_test_4546,ranch_tcp,logger]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,infinity},
+               {child_type,supervisor}]
+
+/Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_sup_tests.erl:194:<0.2983.0>: WS child start failed: {{error,
+                         {badmatch,
+                          {error,
+                           {{shutdown,
+                             {failed_to_start_child,ranch_acceptors_sup,
+                              badarg}},
+                            {child,undefined,
+                             {ranch_listener_sup,erlmcp_ws_ws_sup_test_4546},
+                             {ranch_listener_sup,start_link,
+                              [erlmcp_ws_ws_sup_test_4546,ranch_tcp,
+                               #{socket_opts => [{port,0},{num_acceptors,100}],
+                                 connection_type => supervisor},
+                               cowboy_clear,
+                               #{env =>
+                                  #{dispatch =>
+                                     [{'_',[],
+                                       [{[<<"mcp">>,<<"ws">>],
+                                         [],erlmcp_transport_ws,
+                                         [ws_sup_test_4546,
+                                          #{port => 0,path => "/mcp/ws"}]}]}]},
+                                 connection_type => supervisor}]},
+                             permanent,false,infinity,supervisor,
+                             [ranch_listener_sup]}}}}},
+                        {child,undefined,ws_test,
+                         {erlmcp_transport_ws,init,
+                          [ws_sup_test_4546,#{port => 0,path => "/mcp/ws"}]},
+                         temporary,false,5000,worker,
+                         [erlmcp_transport_ws]}}
+[0.008 s] ok
+erlmcp_transport_sup_tests: test_start_sse_child (Can start SSE transport child).../Users/sac/erlmcp/apps/erlmcp_transports/test/erlmcp_transport_sup_tests.erl:224:<0.2983.0>: SSE child start failed: {{error,badarg},
+                         {child,undefined,sse_test,
+                             {erlmcp_transport_sse,init,
+                                 [sse_sup_test_4610,
+                                  #{port => 0,path => "/mcp/sse"}]},
+                             temporary,false,5000,worker,
+                             [erlmcp_transport_sse]}}
+ok
+erlmcp_transport_sup_tests: test_gproc_registration (Transport registers to gproc)...[0.101 s] ok
+erlmcp_transport_sup_tests: test_child_restart (Supervisor restarts crashed child)...=SUPERVISOR REPORT==== 30-Jan-2026::23:36:27.728872 ===
+    supervisor: {local,erlmcp_transport_sup}
+    errorContext: child_terminated
+    reason: killed
+    offender: [{pid,<0.3033.0>},
+               {id,restart_test},
+               {mfargs,{erlmcp_transport_stdio,start_link,[<0.2983.0>]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,worker}]
+
+[0.201 s] ok
+erlmcp_transport_sup_tests: test_child_termination (Supervisor handles child termination)...[0.101 s] ok
+erlmcp_transport_sup_tests: test_multiple_transports (Multiple transports can coexist)...=WARNING REPORT==== 30-Jan-2026::23:36:28.037060 ===
+Transport option binary unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:28.037146 ===
+Transport option {active,false} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:28.037191 ===
+Transport option {packet,line} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:28.037213 ===
+Transport option {reuseaddr,true} unknown or invalid.
+
+=WARNING REPORT==== 30-Jan-2026::23:36:28.037521 ===
+TCP handler terminating before init complete: shutdown
+ok
+undefined
+*unexpected termination of test process*
+::shutdown
+
+=======================================================
+  Failed: 112.  Skipped: 0.  Passed: 177.
+One or more tests were cancelled.
+===> Error running tests
