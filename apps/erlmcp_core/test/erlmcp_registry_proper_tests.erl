@@ -72,15 +72,15 @@ prop_server_registration_idempotent() ->
         begin
             %% Setup real registry
             {ok, Registry} = start_test_registry(),
-            MockServer = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register twice
-            Result1 = gen_server:call(Registry, {register_server, ServerId, MockServer, Config}),
-            Result2 = gen_server:call(Registry, {register_server, ServerId, MockServer, Config}),
+            Result1 = gen_server:call(Registry, {register_server, ServerId, TestServer, Config}),
+            Result2 = gen_server:call(Registry, {register_server, ServerId, TestServer, Config}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockServer, kill),
+            exit(TestServer, kill),
 
             %% Both should succeed (idempotent)
             Result1 =:= ok andalso Result2 =:= ok
@@ -91,20 +91,20 @@ prop_server_lookup_consistency() ->
     ?FORALL({ServerId, Config}, {server_id(), server_config()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer, Config}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer, Config}),
 
             %% Lookup
             LookupResult = gen_server:call(Registry, {find_server, ServerId}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockServer, kill),
+            exit(TestServer, kill),
 
             %% Verify lookup returns correct PID and config
-            LookupResult =:= {ok, {MockServer, Config}}
+            LookupResult =:= {ok, {TestServer, Config}}
         end).
 
 %% Property: Unregistering and re-registering same server ID with different PID works
@@ -112,22 +112,22 @@ prop_server_reregistration_different_pid() ->
     ?FORALL({ServerId, Config}, {server_id(), server_config()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer1 = spawn(fun() -> receive after 5000 -> ok end end),
-            MockServer2 = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer1 = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer2 = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register first server
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer1, Config}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer1, Config}),
 
             %% Unregister
             ok = gen_server:call(Registry, {unregister_server, ServerId}),
 
             %% Register second server with same ID
-            Result = gen_server:call(Registry, {register_server, ServerId, MockServer2, Config}),
+            Result = gen_server:call(Registry, {register_server, ServerId, TestServer2, Config}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockServer1, kill),
-            exit(MockServer2, kill),
+            exit(TestServer1, kill),
+            exit(TestServer2, kill),
 
             %% Should succeed
             Result =:= ok
@@ -138,19 +138,19 @@ prop_server_duplicate_different_pid_fails() ->
     ?FORALL({ServerId, Config}, {server_id(), server_config()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer1 = spawn(fun() -> receive after 5000 -> ok end end),
-            MockServer2 = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer1 = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer2 = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register first server
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer1, Config}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer1, Config}),
 
             %% Try to register second server with same ID
-            Result = gen_server:call(Registry, {register_server, ServerId, MockServer2, Config}),
+            Result = gen_server:call(Registry, {register_server, ServerId, TestServer2, Config}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockServer1, kill),
-            exit(MockServer2, kill),
+            exit(TestServer1, kill),
+            exit(TestServer2, kill),
 
             %% Should fail
             Result =:= {error, already_registered}
@@ -165,15 +165,15 @@ prop_transport_registration_idempotent() ->
     ?FORALL({TransportId, Config}, {transport_id(), transport_config()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockTransport = spawn(fun() -> receive after 5000 -> ok end end),
+            TestTransport = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register twice
-            Result1 = gen_server:call(Registry, {register_transport, TransportId, MockTransport, Config}),
-            Result2 = gen_server:call(Registry, {register_transport, TransportId, MockTransport, Config}),
+            Result1 = gen_server:call(Registry, {register_transport, TransportId, TestTransport, Config}),
+            Result2 = gen_server:call(Registry, {register_transport, TransportId, TestTransport, Config}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockTransport, kill),
+            exit(TestTransport, kill),
 
             %% Both should succeed
             Result1 =:= ok andalso Result2 =:= ok
@@ -184,20 +184,20 @@ prop_transport_lookup_consistency() ->
     ?FORALL({TransportId, Config}, {transport_id(), transport_config()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockTransport = spawn(fun() -> receive after 5000 -> ok end end),
+            TestTransport = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register
-            ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, Config}),
+            ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, Config}),
 
             %% Lookup
             LookupResult = gen_server:call(Registry, {find_transport, TransportId}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockTransport, kill),
+            exit(TestTransport, kill),
 
             %% Verify lookup returns correct PID and config
-            LookupResult =:= {ok, {MockTransport, Config}}
+            LookupResult =:= {ok, {TestTransport, Config}}
         end).
 
 %%%====================================================================
@@ -209,12 +209,12 @@ prop_transport_server_binding_consistency() ->
     ?FORALL({ServerId, TransportId}, {server_id(), transport_id()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer = spawn(fun() -> receive after 5000 -> ok end end),
-            MockTransport = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer = spawn(fun() -> receive after 5000 -> ok end end),
+            TestTransport = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register both
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-            ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+            ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
 
             %% Bind
             ok = gen_server:call(Registry, {bind_transport_to_server, TransportId, ServerId}),
@@ -224,8 +224,8 @@ prop_transport_server_binding_consistency() ->
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockServer, kill),
-            exit(MockTransport, kill),
+            exit(TestServer, kill),
+            exit(TestTransport, kill),
 
             %% Verify binding
             LookupResult =:= {ok, ServerId}
@@ -236,12 +236,12 @@ prop_transport_unbinding_removes_binding() ->
     ?FORALL({ServerId, TransportId}, {server_id(), transport_id()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer = spawn(fun() -> receive after 5000 -> ok end end),
-            MockTransport = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer = spawn(fun() -> receive after 5000 -> ok end end),
+            TestTransport = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register and bind
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-            ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+            ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
             ok = gen_server:call(Registry, {bind_transport_to_server, TransportId, ServerId}),
 
             %% Unbind
@@ -252,8 +252,8 @@ prop_transport_unbinding_removes_binding() ->
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockServer, kill),
-            exit(MockTransport, kill),
+            exit(TestServer, kill),
+            exit(TestTransport, kill),
 
             %% Should not find binding
             LookupResult =:= {error, not_found}
@@ -264,17 +264,17 @@ prop_bind_nonexistent_transport_fails() ->
     ?FORALL({ServerId, TransportId}, {server_id(), transport_id()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register only server
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
 
             %% Try to bind non-existent transport
             Result = gen_server:call(Registry, {bind_transport_to_server, TransportId, ServerId}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockServer, kill),
+            exit(TestServer, kill),
 
             %% Should fail
             Result =:= {error, transport_not_found}
@@ -285,17 +285,17 @@ prop_bind_nonexistent_server_fails() ->
     ?FORALL({ServerId, TransportId}, {server_id(), transport_id()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockTransport = spawn(fun() -> receive after 5000 -> ok end end),
+            TestTransport = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register only transport
-            ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
+            ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
 
             %% Try to bind to non-existent server
             Result = gen_server:call(Registry, {bind_transport_to_server, TransportId, ServerId}),
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockTransport, kill),
+            exit(TestTransport, kill),
 
             %% Should fail
             Result =:= {error, server_not_found}
@@ -310,16 +310,16 @@ prop_server_death_auto_unregisters() ->
     ?FORALL({ServerId, Config}, {server_id(), server_config()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer, Config}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer, Config}),
 
             %% Verify registered
             {ok, _} = gen_server:call(Registry, {find_server, ServerId}),
 
             %% Kill server
-            exit(MockServer, kill),
+            exit(TestServer, kill),
             timer:sleep(200),  % Allow gproc monitor cleanup
 
             %% Try to find
@@ -337,16 +337,16 @@ prop_transport_death_auto_unregisters() ->
     ?FORALL({TransportId, Config}, {transport_id(), transport_config()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockTransport = spawn(fun() -> receive after 5000 -> ok end end),
+            TestTransport = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register
-            ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, Config}),
+            ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, Config}),
 
             %% Verify registered
             {ok, _} = gen_server:call(Registry, {find_transport, TransportId}),
 
             %% Kill transport
-            exit(MockTransport, kill),
+            exit(TestTransport, kill),
             timer:sleep(200),  % Allow gproc monitor cleanup
 
             %% Try to find
@@ -364,19 +364,19 @@ prop_server_death_cleans_up_bindings() ->
     ?FORALL({ServerId, TransportId}, {server_id(), transport_id()},
         begin
             {ok, Registry} = start_test_registry(),
-            MockServer = spawn(fun() -> receive after 5000 -> ok end end),
-            MockTransport = spawn(fun() -> receive after 5000 -> ok end end),
+            TestServer = spawn(fun() -> receive after 5000 -> ok end end),
+            TestTransport = spawn(fun() -> receive after 5000 -> ok end end),
 
             %% Register and bind
-            ok = gen_server:call(Registry, {register_server, ServerId, MockServer, #{}}),
-            ok = gen_server:call(Registry, {register_transport, TransportId, MockTransport, #{type => stdio}}),
+            ok = gen_server:call(Registry, {register_server, ServerId, TestServer, #{}}),
+            ok = gen_server:call(Registry, {register_transport, TransportId, TestTransport, #{type => stdio}}),
             ok = gen_server:call(Registry, {bind_transport_to_server, TransportId, ServerId}),
 
             %% Verify binding
             {ok, ServerId} = gen_server:call(Registry, {get_server_for_transport, TransportId}),
 
             %% Kill server
-            exit(MockServer, kill),
+            exit(TestServer, kill),
             timer:sleep(200),  % Allow cleanup
 
             %% Try to get binding
@@ -384,7 +384,7 @@ prop_server_death_cleans_up_bindings() ->
 
             %% Cleanup
             gen_server:stop(Registry),
-            exit(MockTransport, kill),
+            exit(TestTransport, kill),
 
             %% Binding should be cleaned up
             LookupResult =:= {error, not_found}
@@ -402,18 +402,18 @@ prop_list_servers_consistency() ->
 
             %% Register multiple servers
             ServerIds = [list_to_atom("server_" ++ integer_to_list(N)) || N <- lists:seq(1, Count)],
-            MockServers = [spawn(fun() -> receive after 5000 -> ok end end) || _ <- lists:seq(1, Count)],
+            TestServers = [spawn(fun() -> receive after 5000 -> ok end end) || _ <- lists:seq(1, Count)],
 
             lists:foreach(fun({Id, Pid}) ->
                 gen_server:call(Registry, {register_server, Id, Pid, #{}})
-            end, lists:zip(ServerIds, MockServers)),
+            end, lists:zip(ServerIds, TestServers)),
 
             %% List servers
             ServerList = gen_server:call(Registry, list_servers),
 
             %% Cleanup
             gen_server:stop(Registry),
-            lists:foreach(fun(Pid) -> exit(Pid, kill) end, MockServers),
+            lists:foreach(fun(Pid) -> exit(Pid, kill) end, TestServers),
 
             %% Verify count
             length(ServerList) =:= Count
@@ -427,18 +427,18 @@ prop_list_transports_consistency() ->
 
             %% Register multiple transports
             TransportIds = [list_to_atom("transport_" ++ integer_to_list(N)) || N <- lists:seq(1, Count)],
-            MockTransports = [spawn(fun() -> receive after 5000 -> ok end end) || _ <- lists:seq(1, Count)],
+            TestTransports = [spawn(fun() -> receive after 5000 -> ok end end) || _ <- lists:seq(1, Count)],
 
             lists:foreach(fun({Id, Pid}) ->
                 gen_server:call(Registry, {register_transport, Id, Pid, #{type => stdio}})
-            end, lists:zip(TransportIds, MockTransports)),
+            end, lists:zip(TransportIds, TestTransports)),
 
             %% List transports
             TransportList = gen_server:call(Registry, list_transports),
 
             %% Cleanup
             gen_server:stop(Registry),
-            lists:foreach(fun(Pid) -> exit(Pid, kill) end, MockTransports),
+            lists:foreach(fun(Pid) -> exit(Pid, kill) end, TestTransports),
 
             %% Verify count
             length(TransportList) =:= Count

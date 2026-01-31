@@ -1047,6 +1047,19 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, TransportId, State
             {noreply, State#state{subscriptions = NewSubscriptions}}
     end;
 
+%% Roots/list - MCP 2025-11-25 spec
+%% "List roots, then read" - two-phase resource access
+handle_request(Id, ?MCP_METHOD_ROOTS_LIST, _Params, TransportId, State) ->
+    case erlmcp_resources:list_roots(State) of
+        {ok, Roots} ->
+            Response = #{?MCP_PARAM_ROOTS => Roots},
+            send_response_via_registry(State, TransportId, Id, Response),
+            {noreply, State};
+        {error, Reason} ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, Reason),
+            {noreply, State}
+    end;
+
 handle_request(Id, ?MCP_METHOD_PROMPTS_LIST, Params, TransportId, State) ->
     Prompts = list_all_prompts(State),
     case handle_paginated_list_with_key(Prompts, Params, ?MCP_PARAM_PROMPTS) of
@@ -2473,3 +2486,104 @@ wait_for_task_result_loop(ClientPid, TaskId, Timeout, Start) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+%%====================================================================
+%% Internal functions - Elicitation Support (MCP 2025-11-25)
+%%====================================================================
+
+%% @doc Create elicitations from request parameters.
+%% Converts MCP spec elicitation format to internal erlmcp_elicitation format.
+-spec create_elicitations([map()], pid()) -> {ok, [map()]} | {error, term()}.
+create_elicitations(Elicitations, ClientPid) ->
+    create_elicitations(Elicitations, ClientPid, []).
+
+-spec create_elicitations([map()], pid(), [map()]) -> {ok, [map()]} | {error, term()}.
+create_elicitations([], _ClientPid, Acc) ->
+    {ok, lists:reverse(Acc)};
+create_elicitations([Elicitation | Rest], ClientPid, Acc) ->
+    case maps:get(<<"type">>, Elicitation, undefined) of
+        undefined ->
+            {error, {missing_elicitation_type, Elicitation}};
+        Type ->
+            case create_single_elicitation(Type, Elicitation, ClientPid) of
+                {ok, Created} ->
+                    create_elicitations(Rest, ClientPid, [Created | Acc]);
+                {error, _} = Error ->
+                    Error
+            end
+    end.
+
+%% @doc Create a single elicitation based on type.
+-spec create_single_elicitation(binary(), map(), pid()) -> {ok, map()} | {error, term()}.
+create_single_elicitation(<<"url">>, Elicitation, ClientPid) ->
+    %% URL elicitation: extract URL from elicitation config
+    Name = maps:get(<<"name">>, Elicitation, <<"default">>),
+    Description = maps:get(<<"description">>, Elicitation, <<>>),
+
+    %% Build config for erlmcp_elicitation
+    Config = #{
+        <<"mode">> => <<"url">>,
+        <<"url">> => maps:get(<<"url">>, Elicitation, <<"https://example.com/elicitation/">>),
+        <<"name">> => Name,
+        <<"description">> => Description
+    },
+
+    case erlmcp_elicitation:create_elicitation(Config, ClientPid) of
+        {ok, ElicitationId, _Response} ->
+            %% Return MCP spec format
+            {ok, #{
+                <<"type">> => <<"url">>,
+                <<"name">> => Name,
+                <<"id">> => ElicitationId,
+                <<"url">> => maps:get(<<"url">>, Config)
+            }};
+        {error, _} = Error ->
+            Error
+    end;
+
+create_single_elicitation(<<"inline">>, Elicitation, ClientPid) ->
+    %% Inline elicitation: form-based interaction
+    Name = maps:get(<<"name">>, Elicitation, <<"default">>),
+    Description = maps:get(<<"description">>, Elicitation, <<>>),
+
+    Config = #{
+        <<"mode">> => <<"inline">>,
+        <<"name">> => Name,
+        <<"description">> => Description
+    },
+
+    case erlmcp_elicitation:create_elicitation(Config, ClientPid) of
+        {ok, ElicitationId, _Response} ->
+            {ok, #{
+                <<"type">> => <<"inline">>,
+                <<"name">> => Name,
+                <<"id">> => ElicitationId
+            }};
+        {error, _} = Error ->
+            Error
+    end;
+
+create_single_elicitation(<<"terminal">>, Elicitation, ClientPid) ->
+    %% Terminal elicitation: command-line interaction
+    Name = maps:get(<<"name">>, Elicitation, <<"default">>),
+    Description = maps:get(<<"description">>, Elicitation, <<>>),
+
+    Config = #{
+        <<"mode">> => <<"terminal">>,
+        <<"name">> => Name,
+        <<"description">> => Description
+    },
+
+    case erlmcp_elicitation:create_elicitation(Config, ClientPid) of
+        {ok, ElicitationId, _Response} ->
+            {ok, #{
+                <<"type">> => <<"terminal">>,
+                <<"name">> => Name,
+                <<"id">> => ElicitationId
+            }};
+        {error, _} = Error ->
+            Error
+    end;
+
+create_single_elicitation(Type, _Elicitation, _ClientPid) ->
+    {error, {unknown_elicitation_type, Type}}.

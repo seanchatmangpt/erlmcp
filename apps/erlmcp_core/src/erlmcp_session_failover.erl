@@ -19,6 +19,8 @@
 -module(erlmcp_session_failover).
 -behaviour(gen_server).
 
+-include("erlmcp_session_mnesia.hrl").
+
 %% API
 -export([
     start_link/0,
@@ -49,15 +51,10 @@
 -record(state, {
     local_node :: node(),
     cluster_nodes = [] :: [node()],
-    %% Session failover state: SessionId => failover_state()
     sessions = #{} :: #{session_id() => failover_state()},
-    %% Node status tracking
     node_status = #{} :: #{node() => node_status()},
-    %% Replication in-progress
     replicating = #{} :: #{session_id() => [node()]},
-    %% Split-brain protection
     majority_required = true :: boolean(),
-    %% Monitoring enabled
     monitoring = false :: boolean()
 }).
 
@@ -69,48 +66,39 @@
 %%% API
 %%%===================================================================
 
-%% @doc Start failover manager with default cluster nodes
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     ClusterNodes = application:get_env(erlmcp_core, cluster_nodes, []),
     start_link(ClusterNodes).
 
-%% @doc Start failover manager with specific cluster nodes
 -spec start_link([node()]) -> {ok, pid()} | {error, term()}.
 start_link(ClusterNodes) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [ClusterNodes], []).
 
-%% @doc Add backup node for a session
 -spec add_backup(session_id(), node()) -> ok | {error, term()}.
 add_backup(SessionId, BackupNode) ->
     gen_server:call(?MODULE, {add_backup, SessionId, BackupNode}, 5000).
 
-%% @doc Remove backup node for a session
 -spec remove_backup(session_id(), node()) -> ok | {error, term()}.
 remove_backup(SessionId, BackupNode) ->
     gen_server:call(?MODULE, {remove_backup, SessionId, BackupNode}, 5000).
 
-%% @doc Trigger manual failover for a session
 -spec failover(session_id()) -> ok | {error, term()}.
 failover(SessionId) ->
     gen_server:call(?MODULE, {failover, SessionId}, 10000).
 
-%% @doc Get backup nodes for a session
 -spec get_backup_nodes(session_id()) -> {ok, [node()]} | {error, not_found}.
 get_backup_nodes(SessionId) ->
     gen_server:call(?MODULE, {get_backup_nodes, SessionId}, 5000).
 
-%% @doc Get primary node for a session
 -spec get_primary_node(session_id()) -> {ok, node()} | {error, not_found}.
 get_primary_node(SessionId) ->
     gen_server:call(?MODULE, {get_primary_node, SessionId}, 5000).
 
-%% @doc Check if this node is a backup for the session
 -spec is_backup(session_id(), node()) -> boolean().
 is_backup(SessionId, Node) ->
     gen_server:call(?MODULE, {is_backup, SessionId, Node}, 5000).
 
-%% @doc Force session replication to all backup nodes
 -spec force_sync(session_id()) -> {ok, [node()]} | {error, term()}.
 force_sync(SessionId) ->
     gen_server:call(?MODULE, {force_sync, SessionId}, 15000).
@@ -122,29 +110,21 @@ force_sync(SessionId) ->
 -spec init([node()]) -> {ok, state()}.
 init([ClusterNodes]) ->
     process_flag(trap_exit, true),
-
     LocalNode = node(),
     AllNodes = lists:usort([LocalNode | ClusterNodes]),
-
-    logger:info("Session failover manager starting on ~p (cluster: ~p)",
-                [LocalNode, AllNodes]),
-
-    %% Connect to cluster nodes
+    logger:info("Session failover manager starting on ~p (cluster: ~p)", [LocalNode, AllNodes]),
+    
     lists:foreach(fun(Node) when Node =/= LocalNode ->
         case net_adm:ping(Node) of
-            pong ->
-                logger:info("Connected to cluster node: ~p", [Node]),
-                ok;
-            pang ->
-                logger:warning("Cannot connect to cluster node: ~p", [Node]),
-                ok
-        end
+            pong -> logger:info("Connected to cluster node: ~p", [Node]);
+            pang -> logger:warning("Cannot connect to cluster node: ~p", [Node])
+        end;
+       (_LocalNode) ->
+        ok
     end, AllNodes),
-
-    %% Subscribe to node monitoring events
+    
     ok = net_kernel:monitor_nodes(true, [nodedown_reason]),
-
-    %% Initialize node status
+    
     ConnectedNodes = nodes(),
     NodeStatus = lists:foldl(fun(Node, Acc) ->
         Status = case lists:member(Node, ConnectedNodes) of
@@ -153,20 +133,19 @@ init([ClusterNodes]) ->
         end,
         maps:put(Node, Status, Acc)
     end, #{}, AllNodes),
-
+    
     State = #state{
         local_node = LocalNode,
         cluster_nodes = AllNodes,
         node_status = NodeStatus,
         monitoring = true
     },
-
-    logger:info("Session failover manager ready (monitoring ~p nodes)",
-                [length(AllNodes)]),
+    
+    logger:info("Session failover manager ready (monitoring ~p nodes)", [length(AllNodes)]),
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} | {noreply, state()}.
+    {reply, term(), state()}.
 handle_call({add_backup, SessionId, BackupNode}, _From, State) ->
     case lists:member(BackupNode, State#state.cluster_nodes) of
         false ->
@@ -178,11 +157,9 @@ handle_call({add_backup, SessionId, BackupNode}, _From, State) ->
                 down ->
                     {reply, {error, {backup_node_down, BackupNode}}, State};
                 up ->
-                    %% Add backup to session
                     Sessions = State#state.sessions,
                     FailoverState = case maps:get(SessionId, Sessions, undefined) of
                         undefined ->
-                            %% New session - this node becomes primary
                             #{
                                 session_id => SessionId,
                                 primary_node => State#state.local_node,
@@ -191,15 +168,13 @@ handle_call({add_backup, SessionId, BackupNode}, _From, State) ->
                                 status => up
                             };
                         ExistingState ->
-                            %% Add backup to existing session
                             Backups = ExistingState#{backup_nodes =>
                                 lists:usort([BackupNode | maps:get(backup_nodes, ExistingState)])},
                             Backups#{last_sync => erlang:system_time(millisecond)}
                     end,
-
-                    %% Replicate session to backup
+                    
                     spawn(fun() -> replicate_session(SessionId, FailoverState, BackupNode) end),
-
+                    
                     NewSessions = maps:put(SessionId, FailoverState, Sessions),
                     logger:info("Added backup node ~p for session ~s", [BackupNode, SessionId]),
                     {reply, ok, State#state{sessions = NewSessions}}
@@ -230,33 +205,26 @@ handle_call({failover, SessionId}, _From, State) ->
             {reply, {error, session_not_found}, State};
         FailoverState ->
             PrimaryNode = maps:get(primary_node, FailoverState),
-            case PrimaryNode of
-                State#state.local_node ->
-                    %% Already primary - no failover needed
+            LocalNode = State#state.local_node,
+            if
+                PrimaryNode =:= LocalNode ->
                     {reply, {error, already_primary}, State};
-                _ ->
-                    %% Perform failover to this node
+                true ->
                     case maps:get(PrimaryNode, State#state.node_status, down) of
                         up ->
                             logger:warning("Primary node ~p is still up, refusing failover for session ~s",
                                          [PrimaryNode, SessionId]),
                             {reply, {error, primary_still_alive}, State};
                         down ->
-                            %% Promote this node to primary
                             NewFailoverState = FailoverState#{
-                                primary_node => State#state.local_node,
+                                primary_node => LocalNode,
                                 last_sync => erlang:system_time(millisecond),
                                 status => up
                             },
                             NewSessions = maps:put(SessionId, NewFailoverState, State#state.sessions),
-
                             logger:info("Failed over session ~s from ~p to ~p",
-                                       [SessionId, PrimaryNode, State#state.local_node]),
-
-                            %% Notify backup nodes
-                            notify_failover(SessionId, State#state.local_node,
-                                          maps:get(backup_nodes, FailoverState, [])),
-
+                                       [SessionId, PrimaryNode, LocalNode]),
+                            notify_failover(SessionId, LocalNode, maps:get(backup_nodes, FailoverState, [])),
                             {reply, ok, State#state{sessions = NewSessions}}
                     end
             end
@@ -264,8 +232,7 @@ handle_call({failover, SessionId}, _From, State) ->
 
 handle_call({get_backup_nodes, SessionId}, _From, State) ->
     case maps:get(SessionId, State#state.sessions, undefined) of
-        undefined ->
-            {reply, {error, not_found}, State};
+        undefined -> {reply, {error, not_found}, State};
         FailoverState ->
             Backups = maps:get(backup_nodes, FailoverState, []),
             {reply, {ok, Backups}, State}
@@ -273,8 +240,7 @@ handle_call({get_backup_nodes, SessionId}, _From, State) ->
 
 handle_call({get_primary_node, SessionId}, _From, State) ->
     case maps:get(SessionId, State#state.sessions, undefined) of
-        undefined ->
-            {reply, {error, not_found}, State};
+        undefined -> {reply, {error, not_found}, State};
         FailoverState ->
             Primary = maps:get(primary_node, FailoverState),
             {reply, {ok, Primary}, State}
@@ -282,18 +248,15 @@ handle_call({get_primary_node, SessionId}, _From, State) ->
 
 handle_call({is_backup, SessionId, Node}, _From, State) ->
     case maps:get(SessionId, State#state.sessions, undefined) of
-        undefined ->
-            {reply, false, State};
+        undefined -> {reply, false, State};
         FailoverState ->
             Backups = maps:get(backup_nodes, FailoverState, []),
-            IsBackup = lists:member(Node, Backups),
-            {reply, IsBackup, State}
+            {reply, lists:member(Node, Backups), State}
     end;
 
 handle_call({force_sync, SessionId}, _From, State) ->
     case maps:get(SessionId, State#state.sessions, undefined) of
-        undefined ->
-            {reply, {error, session_not_found}, State};
+        undefined -> {reply, {error, session_not_found}, State};
         FailoverState ->
             Backups = maps:get(backup_nodes, FailoverState, []),
             Results = replicate_session_to_all(SessionId, FailoverState, Backups),
@@ -319,18 +282,15 @@ handle_info({nodedown, Node, InfoList}, State) ->
     Reason = proplists:get_value(nodedown_reason, InfoList, unknown),
     logger:warning("Node down detected: ~p (reason: ~p)", [Node, Reason]),
     NewNodeStatus = maps:put(Node, down, State#state.node_status),
-
-    %% Trigger failover for sessions affected by this node failure
+    
     AffectedSessions = find_sessions_on_node(Node, State#state.sessions),
     NewSessions = lists:foldl(fun(SessionId, AccSessions) ->
         case handle_node_failure(SessionId, Node, AccSessions, State) of
-            {ok, UpdatedSessions} ->
-                UpdatedSessions;
-            {error, _} ->
-                AccSessions
+            {ok, UpdatedSessions} -> UpdatedSessions;
+            {error, _} -> AccSessions
         end
     end, State#state.sessions, AffectedSessions),
-
+    
     {noreply, State#state{node_status = NewNodeStatus, sessions = NewSessions}};
 
 handle_info({'EXIT', _Pid, Reason}, State) ->
@@ -342,7 +302,6 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
-    %% Unsubscribe from node monitoring
     case State#state.monitoring of
         true -> net_kernel:monitor_nodes(false);
         false -> ok
@@ -358,17 +317,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Replicate session data to a backup node
 -spec replicate_session(session_id(), failover_state(), node()) -> ok | {error, term()}.
-replicate_session(SessionId, FailoverState, BackupNode) ->
+replicate_session(SessionId, _FailoverState, BackupNode) ->
     try
-        %% Retrieve session data from Mnesia
-        TableName = erlmcp_session_mnesia,
-        case mnesia:transaction(fun() ->
-            mnesia:read(TableName, SessionId)
-        end) of
+        TableName = erlmcp_session,
+        case mnesia:transaction(fun() -> mnesia:read(TableName, SessionId) end) of
             {atomic, [#erlmcp_session{session_data = SessionData}]} ->
-                %% Replicate to backup node via RPC
                 case rpc:call(BackupNode, erlmcp_session_mnesia, store,
                              [SessionId, SessionData, #{table_name => TableName}]) of
                     ok ->
@@ -398,16 +352,13 @@ replicate_session(SessionId, FailoverState, BackupNode) ->
             {error, {exception, {Type, Error}}}
     end.
 
-%% @doc Replicate session to multiple backup nodes
 -spec replicate_session_to_all(session_id(), failover_state(), [node()]) ->
     [{node(), ok | {error, term()}}].
 replicate_session_to_all(SessionId, FailoverState, BackupNodes) ->
     lists:map(fun(BackupNode) ->
-        Result = replicate_session(SessionId, FailoverState, BackupNode),
-        {BackupNode, Result}
+        {BackupNode, replicate_session(SessionId, FailoverState, BackupNode)}
     end, BackupNodes).
 
-%% @doc Find sessions that have their primary on a specific node
 -spec find_sessions_on_node(node(), #{session_id() => failover_state()}) -> [session_id()].
 find_sessions_on_node(Node, Sessions) ->
     maps:fold(fun(SessionId, FailoverState, Acc) ->
@@ -418,7 +369,6 @@ find_sessions_on_node(Node, Sessions) ->
         end
     end, [], Sessions).
 
-%% @doc Handle node failure - promote backup if available
 -spec handle_node_failure(session_id(), node(), #{session_id() => failover_state()}, state()) ->
     {ok, #{session_id() => failover_state()}} | {error, term()}.
 handle_node_failure(SessionId, FailedNode, Sessions, State) ->
@@ -428,15 +378,13 @@ handle_node_failure(SessionId, FailedNode, Sessions, State) ->
         FailoverState ->
             PrimaryNode = maps:get(primary_node, FailoverState),
             BackupNodes = maps:get(backup_nodes, FailoverState, []),
-
+            
             case FailedNode of
                 PrimaryNode when BackupNodes =:= [] ->
-                    %% Primary failed with no backups - mark session as down
                     logger:error("Session ~s primary ~p failed with no backups", [SessionId, FailedNode]),
                     UpdatedState = FailoverState#{status => down},
                     {ok, maps:put(SessionId, UpdatedState, Sessions)};
                 PrimaryNode ->
-                    %% Primary failed - promote first available backup
                     case find_available_backup(BackupNodes, State#state.node_status) of
                         {ok, NewPrimary} ->
                             logger:warning("Promoting backup ~p to primary for session ~s (failed: ~p)",
@@ -455,16 +403,12 @@ handle_node_failure(SessionId, FailedNode, Sessions, State) ->
                             {ok, maps:put(SessionId, UpdatedState, Sessions)}
                     end;
                 _BackupNode ->
-                    %% Backup failed - just remove from list
                     logger:info("Removing failed backup ~p for session ~s", [FailedNode, SessionId]),
-                    UpdatedState = FailoverState#{
-                        backup_nodes => lists:delete(FailedNode, BackupNodes)
-                    },
+                    UpdatedState = FailoverState#{backup_nodes => lists:delete(FailedNode, BackupNodes)},
                     {ok, maps:put(SessionId, UpdatedState, Sessions)}
             end
     end.
 
-%% @doc Find first available backup node that is up
 -spec find_available_backup([node()], #{node() => node_status()}) ->
     {ok, node()} | {error, no_backup_available}.
 find_available_backup([], _NodeStatus) ->
@@ -475,13 +419,12 @@ find_available_backup([Node | Rest], NodeStatus) ->
         down -> find_available_backup(Rest, NodeStatus)
     end.
 
-%% @doc Notify backup nodes of failover event
 -spec notify_failover(session_id(), node(), [node()]) -> ok.
 notify_failover(_SessionId, _NewPrimary, []) ->
     ok;
 notify_failover(SessionId, NewPrimary, [BackupNode | Rest]) ->
     spawn(fun() ->
-        case rpc:call(BackupNode, erlmcp_session_failover, notify_failover_local,
+        case rpc:call(BackupNode, ?MODULE, notify_failover_local,
                      [SessionId, NewPrimary]) of
             ok ->
                 logger:info("Notified backup ~p of failover for session ~s", [BackupNode, SessionId]);
@@ -491,7 +434,7 @@ notify_failover(SessionId, NewPrimary, [BackupNode | Rest]) ->
     end),
     notify_failover(SessionId, NewPrimary, Rest).
 
-%% @doc Local notification of failover (called via RPC)
+-spec notify_failover_local(session_id(), node()) -> ok.
 notify_failover_local(SessionId, NewPrimary) ->
     logger:info("Failover notification: session ~s primary is now ~p", [SessionId, NewPrimary]),
     ok.

@@ -1,0 +1,51 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 349 │              [1;31m{[0merror, CreateReason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_transport_validator.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 426 │                  {transport_message, [1;31mLine[0m},[0m
+     │                                      [1;31m╰──[0m[0m variable 'Line' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 427 │                  {line, [1;31mLine[0m}[0m
+     │                         [1;31m╰──[0m[0m variable 'Line' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 442 │              messages => [{transport_message, [1;31mMsg[0m}],[0m
+     │                                               [1;31m╰──[0m[0m variable 'Msg' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 443 │              connected_message => {transport_connected, [1;31mPid[0m},[0m
+     │                                                         [1;31m╰──[0m[0m variable 'Pid' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 444 │              disconnected_message => {transport_disconnected, [1;31mPid[0m, Reason}[0m
+     │                                                               [1;31m╰──[0m[0m variable 'Pid' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 444 │              disconnected_message => {transport_disconnected, Pid, [1;31mReason[0m}[0m
+     │                                                                    [1;31m╰──[0m[0m variable 'Reason' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 469 │              messages => [{send_frame, [1;31mData[0m}, {text, Data}],[0m
+     │                                        [1;31m╰──[0m[0m variable 'Data' is unbound
+
+     ┌─ apps/erlmcp_core/src/erlmcp_transport_validator.erl:
+     │
+ 469 │              messages => [{send_frame, Data}, {text, [1;31mData[0m}],[0m
+     │                                                      [1;31m╰──[0m[0m variable 'Data' is unbound
+
+

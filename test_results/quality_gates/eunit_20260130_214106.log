@@ -1,0 +1,31 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_mtls_validator.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_mtls_validator.erl:
+     │
+ 395 │                  <<Prefix:byte_size[1;31m([0mPrefix)/binary, _/binary>> -> true;[0m
+     │                                    [1;31m╰──[0m[0m syntax error before: '('
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_mtls_validator.erl:
+     │
+ 230 │                      {error, [1;31mReason[0m} -> throw({error, Reason})[0m
+     │                              [1;31m╰──[0m[0m variable 'Reason' unsafe in 'case' (line 217, column 9)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_mtls_validator.erl:
+     │
+ 251 │          throw:{error, [1;31mReason[0m} -> {error, Reason};[0m
+     │                        [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 212, column 5)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_mtls_validator.erl:
+     │
+ 253 │          Error:[1;31mReason[0m:Stack ->[0m
+     │                [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 212, column 5)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_mtls_validator.erl:
+     │
+ 379 │      case lists:any(fun(Pattern) -> [1;31mmatch_pattern[0m(CN, Pattern) end, Patterns) of[0m
+     │                                     [1;31m╰──[0m[0m function match_pattern/2 undefined
+
+

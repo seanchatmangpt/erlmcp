@@ -213,9 +213,13 @@ handle_call({put, Type, Uri, Size, Data, TTLMs}, _From, State) ->
 
 %% Invalidate all sizes for a given type/URI
 handle_call({invalidate, Type, Uri}, _From, State) ->
-    %% Find all matching keys (any size)
-    Pattern = ets:fun2ms(fun({{T, U, _S}, _Entry}) when T =:= Type, U =:= Uri -> {T, U, _S} end),
-    KeysToDelete = ets:select(State#state.cache_table, Pattern),
+    %% Find all matching keys (any size) using ets:foldl (no fun2ms at runtime)
+    KeysToDelete = ets:foldl(fun({{T, U, _S} = Key, _Entry}, Acc) ->
+        case T =:= Type andalso U =:= Uri of
+            true -> [Key | Acc];
+            false -> Acc
+        end
+    end, [], State#state.cache_table),
 
     %% Delete entries and update memory usage
     {DeletedBytes, NewState} = lists:foldl(fun(Key, {Bytes, AccState}) ->
