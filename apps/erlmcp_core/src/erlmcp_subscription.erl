@@ -333,14 +333,27 @@ apply_filter(undefined, _Message) -> true;
 apply_filter(Filter, Message) when is_function(Filter, 1) -> Filter(Message).
 
 %% @doc Check rate limit for subscriber.
+%% Uses token bucket algorithm via erlmcp_rate_limiter for efficient,
+%% concurrent access. Each subscriber gets their own rate limit bucket.
 -spec check_rate_limit(subscriber(), subscription_metadata()) -> boolean().
-check_rate_limit(_Subscriber, Metadata) ->
+check_rate_limit(Subscriber, Metadata) ->
     RateLimit = maps:get(rate_limit, Metadata, undefined),
     case RateLimit of
         undefined -> true;
         0 -> true;
         Limit when is_integer(Limit), Limit > 0 ->
-            % Use ets table for rate limiting (simplified: always allow for now)
-            % TODO: Implement proper rate limiting with token bucket or sliding window
-            true
+            % Use token bucket algorithm via erlmcp_rate_limiter
+            % Create a unique client ID for this subscription rate limit
+            ClientId = {subscription_rate_limit, Subscriber},
+
+            % Check subscription rate limit (messages/second per subscriber)
+            TimeNowMs = erlang:system_time(millisecond),
+
+            case erlmcp_rate_limiter:check_subscription_rate(ClientId, TimeNowMs) of
+                {ok, _TokensRemaining} ->
+                    true;
+                {error, rate_limited, _RetryAfterMs} ->
+                    % Rate limit exceeded
+                    false
+            end
     end.

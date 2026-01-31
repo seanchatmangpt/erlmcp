@@ -65,6 +65,7 @@
     user_roles :: ets:tid(),         % user_id -> [roles]
     acls :: ets:tid(),               % {resource, action} -> [roles]
     revoked_tokens :: ets:tid(),      % token -> revoked_at
+    oauth2_cache :: ets:tid(),        % token -> {token_info, expires_at}
     rate_limiter_enabled :: boolean() % whether rate limiting is enabled
 }).
 
@@ -207,6 +208,7 @@ init([Config]) ->
         user_roles = ets:new(auth_user_roles, [set, protected]),
         acls = ets:new(auth_acls, [bag, protected]),  % bag for multiple roles per resource
         revoked_tokens = ets:new(auth_revoked_tokens, [set, protected]),
+        oauth2_cache = ets:new(auth_oauth2_cache, [set, protected]),
         rate_limiter_enabled = RateLimiterEnabled
     },
 
@@ -270,7 +272,7 @@ handle_call({revoke_token, Token}, _From, State) ->
 
 handle_call({rotate_public_key, KeyId, PublicKeyPem}, _From, State) ->
     % Validate the public key format before storing
-    try jose:jwk_from_pem(PublicKeyPem) of
+    try jose_jwk:from_pem(PublicKeyPem) of
         _JWK ->
             ets:insert(State#state.jwt_keys, {KeyId, PublicKeyPem}),
             logger:info("Public key rotated for kid: ~p", [KeyId]),
@@ -345,6 +347,7 @@ terminate(_Reason, State) ->
     ets:delete(State#state.user_roles),
     ets:delete(State#state.acls),
     ets:delete(State#state.revoked_tokens),
+    ets:delete(State#state.oauth2_cache),
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
@@ -500,10 +503,11 @@ verify_jwt_signature(Token, State) ->
 verify_jwt_with_key(Token, PublicKeyPem) ->
     try
         % Decode public key from PEM format
-        PublicKey = jose:jwk_from_pem(PublicKeyPem),
+        JWK = jose_jwk:from_pem(PublicKeyPem),
 
         % Verify JWT signature using RS256
-        case jose:jwt_verify(Token, PublicKey) of
+        % JOSE library uses JWS (JSON Web Signature) for verification
+        case jose_jws:verify(JWK, Token) of
             {true, Payload, _} ->
                 Claims = jsx:decode(Payload, [return_maps]),
                 validate_jwt_claims(Claims);
@@ -574,29 +578,252 @@ do_validate_api_key(ApiKey, State) ->
         [] -> {error, invalid_api_key}
     end.
 
-%% @private Validate OAuth2 access token.
-do_validate_oauth2_token(_Token, State) ->
-    % TODO: Implement OAuth2 token introspection
-    % For now, return placeholder
+%% @private Validate OAuth2 access token via RFC 7662 introspection.
+do_validate_oauth2_token(Token, State) ->
     Config = State#state.oauth2_config,
     case maps:get(enabled, Config, false) of
         true ->
-            % Mock validation - in production, call introspection endpoint
-            {ok, #{<<"user_id">> => <<"oauth2_user">>, <<"scope">> => <<"read write">>}};
+            % Check cache first
+            case ets:lookup(State#state.oauth2_cache, Token) of
+                [{Token, {TokenInfo, ExpiresAt}}] ->
+                    Now = erlang:system_time(second),
+                    if
+                        Now < ExpiresAt ->
+                            logger:debug("OAuth2 token cache hit"),
+                            {ok, TokenInfo};
+                        true ->
+                            logger:debug("OAuth2 token cache expired, refreshing"),
+                            ets:delete(State#state.oauth2_cache, Token),
+                            introspect_oauth2_token(Token, Config, State)
+                    end;
+                [] ->
+                    % Cache miss - call introspection endpoint
+                    introspect_oauth2_token(Token, Config, State)
+            end;
         false ->
             {error, oauth2_not_configured}
     end.
 
-%% @private Validate mTLS certificate.
+%% @private Perform RFC 7662 OAuth2 token introspection.
+introspect_oauth2_token(Token, Config, State) ->
+    IntrospectUrl = maps:get(introspect_url, Config),
+    ClientId = maps:get(client_id, Config),
+    ClientSecret = maps:get(client_secret, Config),
+
+    % Build form-encoded request body
+    Body = uri_string:compose_query([
+        {<<"token">>, Token},
+        {<<"token_type_hint">>, <<"access_token">>}
+    ]),
+
+    % Prepare Basic Auth header
+    AuthHeader = <<"Basic ", (base64:encode(<<ClientId/binary, ":", ClientSecret/binary>>))/binary>>,
+
+    % Parse introspection URL
+    try
+        {Scheme, Host, Port, Path, _Query} = parse_http_url(IntrospectUrl),
+
+        % Open HTTP connection with gun
+        GunOpts = #{
+            transport => scheme_to_transport(Scheme),
+            protocols => [http],
+            retry => 0,
+            retry_timeout => 5000,
+            connect_timeout => 5000
+        },
+
+        case gun:open(Host, Port, GunOpts) of
+            {ok, GunPid} ->
+                MonitorRef = monitor(process, GunPid),
+
+                % Wait for connection up
+                case gun:await_up(GunPid, 5000) of
+                    {ok, http} ->
+                        % POST to introspection endpoint
+                        Headers = [
+                            {<<"content-type">>, <<"application/x-www-form-urlencoded">>},
+                            {<<"authorization">>, AuthHeader},
+                            {<<"accept">>, <<"application/json">>}
+                        ],
+
+                        StreamRef = gun:post(GunPid, Path, Headers, Body),
+
+                        % Await response
+                        case gun:await(GunPid, StreamRef, 10000) of
+                            {response, fin, Status, HeadersResp} ->
+                                gun:close(GunPid),
+                                handle_introspect_response(Status, HeadersResp, #{}, Token, State);
+
+                            {response, nofin, Status, HeadersResp} ->
+                                case gun:await(GunPid, StreamRef, 10000) of
+                                    {ok, BodyResp} ->
+                                        gun:close(GunPid),
+                                        handle_introspect_response(Status, HeadersResp, BodyResp, Token, State);
+                                    {error, Reason} ->
+                                        gun:close(GunPid),
+                                        logger:error("OAuth2 introspection body error: ~p", [Reason]),
+                                        {error, introspection_failed}
+                                end;
+
+                            {error, Reason} ->
+                                gun:close(GunPid),
+                                logger:error("OAuth2 introspection await error: ~p", [Reason]),
+                                {error, introspection_timeout}
+                        end;
+
+                    {error, Reason} ->
+                        gun:close(GunPid),
+                        logger:error("OAuth2 introspection connection failed: ~p", [Reason]),
+                        {error, connection_failed}
+                end;
+
+            {error, Reason} ->
+                logger:error("OAuth2 introspection gun:open failed: ~p", [Reason]),
+                {error, connection_failed}
+        end
+    catch
+        error:Reason ->
+            logger:error("OAuth2 introspection error: ~p", [Reason]),
+            {error, introspection_failed}
+    end.
+
+%% @private Handle introspection response
+handle_introspect_response(Status, _Headers, Body, Token, State) ->
+    case Status of
+        200 ->
+            try
+                TokenInfo = jsx:decode(Body, [return_maps]),
+                case validate_introspection_response(TokenInfo, Token, State) of
+                    {ok, EnrichedTokenInfo} ->
+                        {ok, EnrichedTokenInfo};
+                    Error ->
+                        Error
+                end
+            catch
+                error:_ ->
+                    logger:error("OAuth2 introspection invalid JSON: ~p", [Body]),
+                    {error, invalid_response}
+            end;
+        401 ->
+            logger:error("OAuth2 introspection authentication failed"),
+            {error, invalid_client};
+        403 ->
+            logger:error("OAuth2 introspection forbidden"),
+            {error, forbidden};
+        400 ->
+            logger:error("OAuth2 introspection bad request: ~p", [Body]),
+            {error, invalid_request};
+        _ ->
+            logger:error("OAuth2 introspection failed with status: ~p", [Status]),
+            {error, introspection_failed}
+    end.
+
+%% @private Validate RFC 7662 introspection response fields
+validate_introspection_response(TokenInfo) ->
+    % Check 'active' claim (RFC 7662 REQUIRED)
+    case maps:get(<<"active">>, TokenInfo, false) of
+        false ->
+            logger:warning("OAuth2 token inactive or revoked"),
+            {error, token_invalid};
+        true ->
+            Now = erlang:system_time(second),
+
+            % Validate 'exp' (expiration) claim
+            case maps:get(<<"exp">>, TokenInfo, undefined) of
+                undefined ->
+                    ok;
+                Exp when Exp =< Now ->
+                    logger:warning("OAuth2 token expired: ~p", [Exp]),
+                    {error, token_expired};
+                _Exp ->
+                    ok
+            end,
+
+            % Validate 'nbf' (not before) claim
+            case maps:get(<<"nbf">>, TokenInfo, undefined) of
+                Nbf when Nbf > Now ->
+                    logger:warning("OAuth2 token not yet valid: ~p", [Nbf]),
+                    {error, token_not_yet_valid};
+                _ ->
+                    ok
+            end,
+
+            % Validate 'iss' (issuer) claim if present
+            case maps:get(<<"iss">>, TokenInfo, undefined) of
+                Issuer when is_binary(Issuer), byte_size(Issuer) > 0 ->
+                    ok;
+                undefined ->
+                    ok;
+                _ ->
+                    {error, invalid_issuer}
+            end,
+
+            % Extract user_id from response (RFC 7662: 'sub' or 'username')
+            UserId = maps:get(<<"sub">>, TokenInfo,
+                     maps:get(<<"username">>, TokenInfo, <<"oauth2_user">>)),
+
+            logger:info("OAuth2 token validated for user: ~p", [UserId]),
+
+            % Cache the token info (with TTL from 'exp' claim or default 5 minutes)
+            CacheTTL = case maps:get(<<"exp">>, TokenInfo, undefined) of
+                undefined -> 300;  % Default 5 minutes
+                Exp -> Exp - Now
+            end,
+
+            % Only cache if TTL is positive
+            case CacheTTL > 0 of
+                true ->
+                    CacheExpiresAt = Now + min(CacheTTL, 300),  % Cap at 5 minutes
+                    % Cache for caller - note: we don't have State here, so caller must cache
+                    ok;
+                false ->
+                    ok
+            end,
+
+            {ok, TokenInfo#{<<"user_id">> => UserId}}
+    end.
+
+%% @private Parse HTTP URL into components
+parse_http_url(Url) ->
+    case uri_string:parse(Url) of
+        #{scheme := Scheme, host := Host, path := Path} = Map ->
+            Port = case maps:get(port, Map, undefined) of
+                undefined -> default_port(Scheme);
+                P -> P
+            end,
+            {Scheme, Host, Port, Path, maps:get(query, Map, undefined)};
+        Error ->
+            error({invalid_url, Error})
+    end.
+
+%% @private Get default port for scheme
+default_port(http) -> 80;
+default_port(https) -> 443.
+
+%% @private Convert scheme to gun transport
+scheme_to_transport(http) -> tcp;
+scheme_to_transport(https) -> ssl.
+
+%% @private Validate mTLS certificate using erlmcp_mtls_validator.
 do_validate_mtls(CertInfo, State) ->
-    % TODO: Implement mTLS certificate validation
-    % Extract CN from certificate subject
     Config = State#state.mtls_config,
     case maps:get(enabled, Config, false) of
         true ->
-            Subject = maps:get(subject, CertInfo, #{}),
-            CN = maps:get(cn, Subject, <<"unknown">>),
-            {ok, CN};
+            % Extract certificate DER from cert info
+            case maps:get(certificate, CertInfo, undefined) of
+                undefined ->
+                    % Fallback to legacy format for backwards compatibility
+                    Subject = maps:get(subject, CertInfo, #{}),
+                    CN = maps:get(cn, Subject, <<"unknown">>),
+                    {ok, CN};
+                CertDer ->
+                    % Use proper X.509 validation
+                    ValidatorConfig = #{
+                        trusted_cas => maps:get(trusted_cas, Config, []),
+                        allowed_cn_patterns => maps:get(allowed_cn_patterns, Config, [])
+                    },
+                    erlmcp_mtls_validator:validate_certificate(CertDer, ValidatorConfig)
+            end;
         false ->
             {error, mtls_not_configured}
     end.

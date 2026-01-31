@@ -158,7 +158,7 @@ test_task_cancellation(_Pid) ->
 
         %% Monitor the worker to verify it gets killed by cancellation
         MonitorRef = monitor(process, WorkerPid),
-        ok = erlmcp_tasks:cancel_task(undefined, TaskId, Reason),
+        {ok, cancelled} = erlmcp_tasks:cancel_task(undefined, TaskId, Reason),
 
         %% Verify: Worker process received exit signal (Chicago School: observable behavior)
         receive
@@ -174,7 +174,9 @@ test_task_cancellation(_Pid) ->
         %% Verify cancelled state (state-based verification, Chicago School)
         {ok, Task2} = erlmcp_tasks:get_task(undefined, TaskId),
         ?assertEqual(<<"cancelled">>, maps:get(<<"status">>, Task2)),
-        ?assertEqual(Reason, maps:get(<<"error">>, Task2)),
+        ErrorMap2 = maps:get(<<"error">>, Task2),
+        %% The reason is stored in the data field, not the message
+        ?assertEqual(Reason, maps:get(<<"reason">>, maps:get(<<"data">>, ErrorMap2))),
 
         %% Verify: Cannot modify cancelled task
         Result = #{<<"output">> => <<"too_late">>},
@@ -185,33 +187,30 @@ test_task_timeout(_Pid) ->
     fun() ->
         %% Setup: Create task with short timeout
         Action = #{<<"type">> => <<"timeout_test">>},
-        Options = #{timeout_ms => 100},
-        {ok, TaskId} = erlmcp_tasks:create_task(undefined, Action, #{<<"timeout">> => 100}),
+        Timeout = 100,
+        Options = #{timeout_ms => Timeout},
+        {ok, TaskId} = erlmcp_tasks:create_task(undefined, Action, #{<<"timeout">> => Timeout}, Options),
 
-        ok = erlmcp_tasks:start_task_execution(TaskId, self()),
+        %% Spawn a worker process (NOT self() - timeout will exit the worker)
+        WorkerPid = spawn(fun() ->
+            %% Simulate long-running work that will timeout
+            receive
+                after 5000 -> ok  % Should timeout before this
+            end
+        end),
 
-        %% Exercise: Wait for timeout using poll (check status)
-        {ok, _} = erlmcp_test_sync:poll_until(
-            fun() ->
-                case erlmcp_tasks:get_task(erlmcp_tasks, TaskId) of
-                    {ok, Task} ->
-                        case maps:get(<<"status">>, Task) of
-                            <<"failed">> -> {true, Task};
-                            _ -> false
-                        end;
-                    _ ->
-                        false
-                end
-            end,
-            task_timeout,
-            200,
-            10
-        ),
+        ok = erlmcp_tasks:start_task_execution(TaskId, WorkerPid),
 
-        %% Verify task failed due to timeout
-        {ok, Task} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
-        ?assertEqual(<<"failed">>, maps:get(<<"status">>, Task)),
-        ?assertEqual(<<"Task execution timeout">>, maps:get(<<"error">>, Task))
+        %% Give task time to timeout (100ms timeout)
+        timer:sleep(150),
+
+        %% Check that task has timed out
+        {ok, TimedOutTask} = erlmcp_tasks:get_task(erlmcp_tasks, TaskId),
+        ?assertEqual(<<"failed">>, maps:get(<<"status">>, TimedOutTask)),
+
+        %% Verify error details
+        ErrorMap = maps:get(<<"error">>, TimedOutTask),
+        ?assertEqual(<<"Task timeout">>, maps:get(<<"message">>, ErrorMap))
     end.
 
 %%====================================================================
@@ -469,18 +468,8 @@ test_expired_task_cleanup(_Pid) ->
         ?assertMatch({ok, _}, erlmcp_tasks:get_task(erlmcp_tasks, ShortTaskId)),
         ?assertMatch({ok, _}, erlmcp_tasks:get_task(erlmcp_tasks, LongTaskId)),
 
-        %% Exercise: Wait for short task to expire using poll
-        {ok, _} = erlmcp_test_sync:poll_until(
-            fun() ->
-                case erlmcp_tasks:get_task(erlmcp_tasks, ShortTaskId) of
-                    {error, _} -> true;
-                    _ -> false
-                end
-            end,
-            task_expired,
-            ShortTTL + 500,
-            20
-        ),
+        %% Exercise: Wait for short task to expire
+        timer:sleep(ShortTTL + 50),
 
         %% Trigger cleanup
         {ok, CleanedCount} = erlmcp_tasks:cleanup_expired(erlmcp_tasks),

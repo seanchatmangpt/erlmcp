@@ -337,7 +337,7 @@ match_template_subscribers(Uri, ResourceSubscriptions) ->
     end, maps:keys(ResourceSubscriptions)),
 
     % Collect all unique subscribers
-    lists:usort(lists:fold(fun(TemplateUri, Acc) ->
+    lists:usort(lists:foldl(fun(TemplateUri, Acc) ->
         case maps:get(TemplateUri, ResourceSubscriptions, undefined) of
             undefined -> Acc;
             SubsMap -> maps:keys(SubsMap) ++ Acc

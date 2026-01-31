@@ -35,7 +35,7 @@ erlmcp_bench_integration:run(<<"mcp_tool_sequence">>).  # MCP e2e
 
 | Application | Purpose | Modules | Tests | Version |
 |-------------|---------|---------|-------|---------|
-| erlmcp_core | Protocol implementation | 86 | 78 EUnit | 2.1.0 |
+| erlmcp_core | Protocol implementation | 92 | 84 EUnit | 2.2.0 |
 | erlmcp_transports | Transport layer | 28 | + CT suites | 2.1.0 |
 | erlmcp_observability | Monitoring & metrics | 21 | + CT suites | 0.1.0 |
 | erlmcp_validation | Compliance & validation | 5 | + CT suites | 0.1.0 |
@@ -45,18 +45,24 @@ erlmcp_bench_integration:run(<<"mcp_tool_sequence">>).  # MCP e2e
 ```
 apps/
 ├── erlmcp_core/              # Protocol implementation
-│   ├── src/                  # 86 modules: Client, Server, Registry, JSON-RPC
+│   ├── src/                  # 92 modules: Client, Server, Registry, JSON-RPC, Sessions, Secrets
 │   │   ├── erlmcp_client.erl         # Request-response correlation
-│   │   ├── erlmcp_server.erl         # Resources/tools/prompts
+│   │   ├── erlmcp_server.erl         # Resources/tools/prompts/subscriptions
 │   │   ├── erlmcp_registry.erl       # Central message routing
 │   │   ├── erlmcp_json_rpc.erl       # JSON-RPC 2.0 encode/decode
 │   │   ├── erlmcp_session.erl        # Session management
+│   │   ├── erlmcp_session_backend.erl # Session persistence behavior
+│   │   ├── erlmcp_session_ets.erl    # ETS session backend (in-memory)
+│   │   ├── erlmcp_session_dets.erl   # DETS session backend (disk)
+│   │   ├── erlmcp_session_mnesia.erl # Mnesia session backend (cluster)
+│   │   ├── erlmcp_session_manager.erl # Session lifecycle manager
 │   │   ├── erlmcp_auth.erl           # Authentication
+│   │   ├── erlmcp_secrets.erl        # Secrets management (Vault/AWS/local)
 │   │   ├── erlmcp_circuit_breaker.erl # Circuit breakers
 │   │   ├── erlmcp_rate_limiter.erl   # Rate limiting
 │   │   ├── erlmcp_otel.erl           # OpenTelemetry integration
 │   │   └── ...
-│   └── test/                 # 78 EUnit test modules
+│   └── test/                 # 84 EUnit test modules
 │
 ├── erlmcp_transports/         # Transport implementations
 │   ├── src/                  # 28 modules: stdio, tcp, http, websocket, sse
@@ -154,6 +160,84 @@ TIER 3: OBSERVABILITY (Isolated)
 - Supported capabilities (resources, tools, prompts)
 - Request ID correlation map
 - Pending requests map for async operations
+
+## Configuration Examples
+
+### Session Persistence Configuration
+
+```erlang
+%% ETS Backend (In-Memory, Fastest)
+{erlmcp_session, [
+    {backend, erlmcp_session_ets},
+    {backend_opts, #{
+        table_name => erlmcp_sessions_ets,
+        cleanup_interval => 60000
+    }}
+]}.
+
+%% DETS Backend (Disk Persistence)
+{erlmcp_session, [
+    {backend, erlmcp_session_dets},
+    {backend_opts, #{
+        table_name => erlmcp_sessions_dets,
+        file_path => "data/erlmcp_sessions.dets",
+        auto_save => 60000,
+        cleanup_interval => 60000
+    }}
+]}.
+
+%% Mnesia Backend (Distributed Cluster)
+{erlmcp_session, [
+    {backend, erlmcp_session_mnesia},
+    {backend_opts, #{
+        table_name => erlmcp_session,
+        nodes => [node1@host, node2@host],
+        disc_copies => true,
+        cleanup_interval => 60000
+    }}
+]}.
+```
+
+### Secrets Management Configuration
+
+```erlang
+%% HashiCorp Vault
+{erlmcp_secrets, [
+    {backend, vault},
+    {backend_config, #{
+        address => "https://vault.example.com:8200",
+        auth_method => approle,
+        role_id => "your-role-id",
+        secret_id => "your-secret-id",
+        engine => "kv",
+        mount => "secret"
+    }},
+    {ttl_seconds => 300}
+]}.
+
+%% AWS Secrets Manager
+{erlmcp_secrets, [
+    {backend, aws_secrets_manager},
+    {backend_config, #{
+        region => "us-east-1",
+        access_key_id => "AKIAIOSFODNN7EXAMPLE",
+        secret_access_key => "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+    }},
+    {ttl_seconds => 300}
+]}.
+
+%% Local Encrypted Storage (Fallback)
+{erlmcp_secrets, [
+    {backend, local_encrypted},
+    {encryption_key => {env_var, "ERLMCP_SECRET_KEY"}},
+    {storage_path => "priv/secrets/secrets.enc"},
+    {ttl_seconds => 300}
+]}.
+```
+
+See:
+- `docs/SESSION_PERSISTENCE.md` - Complete session persistence guide
+- `docs/SECRETS_MANAGEMENT.md` - Complete secrets management guide
 
 ## Toyota Production System Integration
 
@@ -372,6 +456,9 @@ Message 3: Task("Agent 3", ...)
 | Task | File | Location |
 |------|------|----------|
 | MCP protocol | docs/protocol.md, erlmcp_json_rpc.erl | core |
+| Resource subscriptions | docs/protocol.md, erlmcp_server.erl:subscribe_resource* | core |
+| Session persistence | docs/SESSION_PERSISTENCE.md, erlmcp_session_backend.erl | core |
+| Secrets management | docs/SECRETS_MANAGEMENT.md, erlmcp_secrets.erl | core |
 | Add server tool | erlmcp_server.erl:add_tool* | core |
 | Call tool from client | erlmcp_client.erl:call_tool | core |
 | New transport | erlmcp_transport_tcp.erl (template) | transports |
@@ -386,11 +473,17 @@ Message 3: Task("Agent 3", ...)
 
 ### Protocol (erlmcp_core)
 - `erlmcp_client.erl` - Request-response correlation via #state.pending map
-- `erlmcp_server.erl` - Resources/tools/prompts management with handler functions
+- `erlmcp_server.erl` - Resources/tools/prompts/subscriptions management with handler functions
 - `erlmcp_registry.erl` - Central message routing (gproc-based)
 - `erlmcp_json_rpc.erl` - JSON-RPC 2.0 encode/decode
 - `erlmcp_session.erl` - Session management and state
+- `erlmcp_session_backend.erl` - Session persistence behavior interface
+- `erlmcp_session_ets.erl` - ETS session backend (in-memory, fast)
+- `erlmcp_session_dets.erl` - DETS session backend (disk persistence)
+- `erlmcp_session_mnesia.erl` - Mnesia session backend (distributed cluster)
+- `erlmcp_session_manager.erl` - Session lifecycle and failover management
 - `erlmcp_auth.erl` - Authentication and authorization
+- `erlmcp_secrets.erl` - Secrets management (Vault/AWS/local encrypted)
 - `erlmcp_capabilities.erl` - Capability negotiation
 - `erlmcp_resources.erl` - Resource management
 - `erlmcp_tools.erl` - Tool management
@@ -565,7 +658,7 @@ Validated by erlmcp_metrology_validator before write. Zero ambiguities. See `doc
 
 | Application | Version | Status |
 |-------------|---------|--------|
-| erlmcp_core | 2.1.0 | Stable |
+| erlmcp_core | 2.2.0 | Stable |
 | erlmcp_transports | 2.1.0 | Stable |
 | erlmcp_observability | 0.1.0 | Beta |
 | erlmcp_validation | 0.1.0 | Beta |
@@ -586,6 +679,8 @@ Validated by erlmcp_metrology_validator before write. Zero ambiguities. See `doc
 - Architecture: `docs/architecture.md`, `docs/otp-patterns.md`
 - API: `docs/api-reference.md` + `examples/`
 - Protocol: `docs/protocol.md`
+- Session Persistence: `docs/SESSION_PERSISTENCE.md`
+- Secrets Management: `docs/SECRETS_MANAGEMENT.md`
 - Metrology: `docs/metrology/METRICS_GLOSSARY.md`
 
 ### Agents & Commands

@@ -1,0 +1,24 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/test/erlmcp_test_aws_http_server.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/test/erlmcp_test_aws_http_server.erl:
+     │
+ 236 │               jsx:encode(#{<<"result">> => <<"ok">>})[1;31m)}[0m[0m
+     │                                                      [1;31m╰──[0m[0m syntax error before: ')'
+
+
+     ┌─ apps/erlmcp_core/test/erlmcp_test_aws_http_server.erl:
+     │
+ 179 │          success -> [1;31mhandle_success[0m(Body);[0m
+     │                     [1;31m╰──[0m[0m function handle_success/1 undefined
+
+     ┌─ apps/erlmcp_core/test/erlmcp_test_aws_http_server.erl:
+     │
+ 268 │  [1;31mhandle_cast[0m(increment_call_count, State) ->[0m
+     │  [1;31m╰──[0m[0m function handle_cast/2 already defined
+
+

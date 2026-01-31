@@ -150,9 +150,7 @@ handle(Req, #{transport_id := TransportId} = State) ->
                     <<"POST">> ->
                         handle_post_request(Req, TransportId, State);
                     <<"DELETE">> ->
-                        % TODO: Implement DELETE handler
-                        ReqReply = cowboy_req:reply(501, #{}, <<"Not implemented">>, Req),
-                        {ok, ReqReply, State};
+                        handle_delete_request(Req, TransportId, State);
                     _ ->
                         ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
                         {ok, ReqReply, State}
@@ -315,6 +313,103 @@ handle_post_request(Req, TransportId, State) ->
                         erlmcp_tracing:end_span(SpanCtx)
                     end
             end
+    end.
+
+%% @doc Handle DELETE request to close SSE connection
+%% Joe Armstrong pattern: Clean up all associated resources gracefully
+%% @private
+-spec handle_delete_request(term(), binary(), map()) -> {ok, term(), map()}.
+handle_delete_request(Req, TransportId, State) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle_delete">>),
+
+    try
+        %% Extract session ID from headers
+        SessionId = cowboy_req:header(<<"mcp-session-id">>, Req, undefined),
+
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"transport_id">> => TransportId,
+            <<"session_id">> => case SessionId of
+                undefined -> <<"undefined">>;
+                _ -> SessionId
+            end
+        }),
+
+        case SessionId of
+            undefined ->
+                %% No session to close
+                erlmcp_tracing:record_error_details(SpanCtx, delete_no_session, <<"No session ID provided">>),
+                ReqReply = cowboy_req:reply(404, #{
+                    <<"content-type">> => <<"application/json">>
+                }, jsx:encode(#{
+                    <<"error">> => <<"Not Found">>,
+                    <<"message">> => <<"No active SSE session found">>
+                }), Req),
+                {ok, ReqReply, State};
+            _ ->
+                %% Clean up session and event store
+                case cleanup_sse_session(SessionId, TransportId, SpanCtx) of
+                    ok ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+
+                        %% Notify registry of disconnection
+                        RegistryPid = erlmcp_registry:get_pid(),
+                        RegistryPid ! {transport_disconnected, TransportId, normal},
+
+                        %% Return 204 No Content on success
+                        ReqReply = cowboy_req:reply(204, #{}, <<>>, Req),
+                        {ok, ReqReply, State};
+                    {error, Reason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, delete_cleanup_failed, Reason),
+
+                        %% Notify registry of abnormal disconnection
+                        RegistryPid = erlmcp_registry:get_pid(),
+                        RegistryPid ! {transport_disconnected, TransportId, {cleanup_failed, Reason}},
+
+                        %% Return 500 Internal Server Error on cleanup failure
+                        ReqReply = cowboy_req:reply(500, #{
+                            <<"content-type">> => <<"application/json">>
+                        }, jsx:encode(#{
+                            <<"error">> => <<"Internal Server Error">>,
+                            <<"message">> => <<"Failed to cleanup SSE session">>,
+                            <<"reason">> => format_term(Reason)
+                        }), Req),
+                        {ok, ReqReply, State}
+                end
+        end
+    catch
+        Class:CaughtReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+            ReqError = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
+            {ok, ReqError, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+%% @doc Clean up SSE session and associated resources
+%% Joe Armstrong pattern: Proper resource cleanup with error handling
+%% @private
+-spec cleanup_sse_session(binary(), binary(), term()) -> ok | {error, term()}.
+cleanup_sse_session(SessionId, TransportId, SpanCtx) ->
+    try
+        %% Clean up event store subscriptions
+        case erlmcp_sse_event_store:delete_session(SessionId) of
+            ok ->
+                logger:info("SSE DELETE: Cleaned up session ~s for transport ~s",
+                    [SessionId, TransportId]),
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"session_cleanup">> => <<"success">>
+                }),
+                ok;
+            {error, Reason} ->
+                logger:error("SSE DELETE: Failed to cleanup session ~s: ~p",
+                    [SessionId, Reason]),
+                erlmcp_tracing:record_error_details(SpanCtx, event_store_cleanup_failed, Reason),
+                {error, {event_store_cleanup, Reason}}
+        end
+    catch
+        Class:CaughtReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+            {error, {cleanup_exception, {Class, CaughtReason}}}
     end.
 
 sse_event_loop(Req, StreamState, State) ->

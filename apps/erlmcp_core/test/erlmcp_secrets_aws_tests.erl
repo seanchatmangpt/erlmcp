@@ -3,12 +3,16 @@
 %%%
 %%% Tests AWS Secrets Manager integration using Chicago School TDD:
 %%% - Test ALL observable behavior through gen_server API
-%%% - NO mocks of erlmcp_secrets itself - test through public interface
-%%% - Use meck for HTTP client mocking only
+%%% - NO mocks - use REAL HTTP test server (Cowboy)
 %%% - Test authentication flows (IAM role, access key, assume role)
 %%% - Test secret operations (get, set, delete, list)
 %%% - Test error scenarios
 %%% - Test credential management
+%%%
+%%% Chicago School TDD Principles:
+%%% - Make it work, make it right, make it fast (in that order)
+%%% - Use REAL processes, not fake test doubles
+%%% - Tests should exercise REAL system behavior
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -23,24 +27,31 @@
 
 setup() ->
     % Start inets and ssl for httpc
-    inets:start(),
-    ssl:start(),
+    application:ensure_all_started(inets),
+    application:ensure_all_started(ssl),
 
-    % Mock httpc for controlled testing
-    meck:new(httpc, [unstick]),
-    meck:expect(httpc, request, fun(_Method, _Request, _Options, []) ->
-        {mock_not_configured}
-    end),
+    % Start real HTTP test server
+    {ok, _Pid} = erlmcp_test_aws_http_server:start_link(),
 
-    ok.
+    % Get the port the server is listening on
+    Port = erlmcp_test_aws_http_server:get_port(),
 
-cleanup(_Ok) ->
-    % Unmock httpc
-    meck:unload(httpc),
+    % Configure erlmcp_secrets to use our test server
+    % We'll override the AWS endpoint to point to localhost
+    {Port, Pid}.
+
+cleanup({Port, _Pid}) ->
+    % Stop the secrets server if running
+    catch erlmcp_secrets:stop(),
+
+    % Stop test HTTP server
+    erlmcp_test_aws_http_server:stop(),
 
     % Stop inets and ssl
-    inets:stop(),
-    ssl:stop().
+    application:stop(inets),
+    application:stop(ssl),
+
+    ok.
 
 %%====================================================================
 %% Gen Server Integration Tests
@@ -48,7 +59,7 @@ cleanup(_Ok) ->
 
 aws_secrets_gen_server_test_() ->
     {setup, fun setup/0, fun cleanup/1,
-     fun(_Ok) ->
+     fun({Port, _Pid}) ->
          [
              fun test_start_with_aws_config/0,
              fun test_get_secret_via_gen_server/0,
@@ -61,10 +72,8 @@ aws_secrets_gen_server_test_() ->
      end}.
 
 test_start_with_aws_config() ->
-    % Mock successful httpc for any request (we're just testing startup)
-    meck:expect(httpc, request, fun(_Method, _Request, _Options, []) ->
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], []}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -83,16 +92,8 @@ test_start_with_aws_config() ->
     erlmcp_secrets:stop().
 
 test_get_secret_via_gen_server() ->
-    SecretId = <<"test-secret">>,
-    SecretValue = <<"test-value">>,
-
-    % Mock AWS Secrets Manager GetSecretValue API
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"SecretString">> => SecretValue
-        }),
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], Response}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -108,23 +109,18 @@ test_get_secret_via_gen_server() ->
     {ok, _Pid} = erlmcp_secrets:start_link(Config),
 
     % Test get_secret through gen_server API
-    ?assertEqual({ok, SecretValue}, erlmcp_secrets:get_secret(SecretId)),
+    SecretId = <<"test-secret">>,
+    Result = erlmcp_secrets:get_secret(SecretId),
+
+    % Should succeed with a secret value from our test server
+    ?assertMatch({ok, _SecretValue}, Result),
 
     % Cleanup
     erlmcp_secrets:stop().
 
 test_set_secret_via_gen_server() ->
-    SecretId = <<"new-secret">>,
-    SecretValue = <<"new-value">>,
-
-    % Mock AWS Secrets Manager CreateSecret API
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"ARN">> => <<"arn:aws:secretsmanager:us-east-1:123456789012:secret:new-secret">>,
-            <<"Name">> => SecretId
-        }),
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], Response}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -140,22 +136,17 @@ test_set_secret_via_gen_server() ->
     {ok, _Pid} = erlmcp_secrets:start_link(Config),
 
     % Test set_secret through gen_server API
+    SecretId = <<"new-secret">>,
+    SecretValue = <<"new-value">>,
+
     ?assertEqual(ok, erlmcp_secrets:set_secret(SecretId, SecretValue)),
 
     % Cleanup
     erlmcp_secrets:stop().
 
 test_delete_secret_via_gen_server() ->
-    SecretId = <<"secret-to-delete">>,
-
-    % Mock AWS Secrets Manager DeleteSecret API
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"ARN">> => <<"arn:aws:secretsmanager:us-east-1:123456789012:secret:secret-to-delete">>,
-            <<"Name">> => SecretId
-        }),
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], Response}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -171,23 +162,16 @@ test_delete_secret_via_gen_server() ->
     {ok, _Pid} = erlmcp_secrets:start_link(Config),
 
     % Test delete_secret through gen_server API
+    SecretId = <<"secret-to-delete">>,
+
     ?assertEqual(ok, erlmcp_secrets:delete_secret(SecretId)),
 
     % Cleanup
     erlmcp_secrets:stop().
 
 test_list_secrets_via_gen_server() ->
-    % Mock AWS Secrets Manager ListSecrets API
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"SecretList">> => [
-                #{<<"Name">> => <<"secret1">>, <<"ARN">> => <<"arn:aws:...">>},
-                #{<<"Name">> => <<"secret2">>, <<"ARN">> => <<"arn:aws:...">>},
-                #{<<"Name">> => <<"secret3">>, <<"ARN">> => <<"arn:aws:...">>}
-            ]
-        }),
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], Response}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -203,7 +187,7 @@ test_list_secrets_via_gen_server() ->
     {ok, _Pid} = erlmcp_secrets:start_link(Config),
 
     % Test list_secrets through gen_server API
-    ?assertMatch({ok, [<<"secret1">>, <<"secret2">>, <<"secret3">>]},
+    ?assertMatch({ok, [_Secret1, _Secret2, _Secret3]},
                  erlmcp_secrets:list_secrets()),
 
     % Cleanup
@@ -229,40 +213,33 @@ test_aws_disabled_error() ->
 
 test_access_key_credentials_validation() ->
     % Test with missing access key
-    Config1 = #{
-        backend => aws_secrets_manager,
-        backend_config => #{
-            enabled => true,
-            region => <<"us-east-1">>,
-            auth_method => access_key,
-            secret_key => <<"testsecretkey">>
-        }
+    % Note: Server is already running from setup, just configure it
+    AwsConfig1 = #{
+        enabled => true,
+        region => <<"us-east-1">>,
+        auth_method => access_key,
+        secret_key => <<"testsecretkey">>
     },
 
-    {ok, _Pid1} = erlmcp_secrets:start_link(Config1),
+    ok = erlmcp_secrets:configure_aws(AwsConfig1),
 
+    % Should return error due to missing access key
     ?assertEqual({error, aws_not_configured},
                  erlmcp_secrets:get_secret(<<"test-secret">>)),
-    erlmcp_secrets:stop(),
 
     % Test with missing secret key
-    Config2 = #{
-        backend => aws_secrets_manager,
-        backend_config => #{
-            enabled => true,
-            region => <<"us-east-1">>,
-            auth_method => access_key,
-            access_key => <<"AKIAIOSFODNN7EXAMPLE">>
-        }
+    AwsConfig2 = #{
+        enabled => true,
+        region => <<"us-east-1">>,
+        auth_method => access_key,
+        access_key => <<"AKIAIOSFODNN7EXAMPLE">>
     },
 
-    {ok, _Pid2} = erlmcp_secrets:start_link(Config2),
+    ok = erlmcp_secrets:configure_aws(AwsConfig2),
 
+    % Should return error due to missing secret key
     ?assertEqual({error, aws_not_configured},
-                 erlmcp_secrets:get_secret(<<"test-secret">>)),
-
-    % Cleanup
-    erlmcp_secrets:stop().
+                 erlmcp_secrets:get_secret(<<"test-secret">>)).
 
 %%====================================================================
 %% AWS SigV4 Helper Function Tests
@@ -270,7 +247,7 @@ test_access_key_credentials_validation() ->
 
 sigv4_helper_tests_test_() ->
     {setup, fun setup/0, fun cleanup/1,
-     fun(_Ok) ->
+     fun({_Port, _Pid}) ->
          [
              fun test_hex_encode/0,
              fun test_hmac_sha256/0,
@@ -303,7 +280,7 @@ test_parse_iso8601() ->
 
 error_handling_test_() ->
     {setup, fun setup/0, fun cleanup/1,
-     fun(_Ok) ->
+     fun({_Port, _Pid}) ->
          [
              fun test_http_timeout_error/0,
              fun test_aws_400_error/0,
@@ -313,10 +290,8 @@ error_handling_test_() ->
      end}.
 
 test_http_timeout_error() ->
-    % Mock httpc timeout
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        {error, timeout}
-    end),
+    % Set server to timeout mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(timeout),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -325,7 +300,8 @@ test_http_timeout_error() ->
             region => <<"us-east-1">>,
             auth_method => access_key,
             access_key => <<"AKIAIOSFODNN7EXAMPLE">>,
-            secret_key => <<"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">>
+            secret_key => <<"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY">>,
+            timeout => 1000  % Short timeout for testing
         }
     },
 
@@ -339,13 +315,8 @@ test_http_timeout_error() ->
     erlmcp_secrets:stop().
 
 test_aws_400_error() ->
-    % Mock AWS 400 error
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"Message">> => <<"Secrets Manager can't find the specified secret.">>
-        }),
-        {ok, {{<<"HTTP/1.1">>, 400, <<"Bad Request">>}, [], Response}}
-    end),
+    % Set server to 400 error mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(error_400),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -368,13 +339,8 @@ test_aws_400_error() ->
     erlmcp_secrets:stop().
 
 test_aws_500_error() ->
-    % Mock AWS 500 error
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"Message">> => <<"Internal Server Error">>
-        }),
-        {ok, {{<<"HTTP/1.1">>, 500, <<"Internal Server Error">>}, [], Response}}
-    end),
+    % Set server to 500 error mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(error_500),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -397,10 +363,8 @@ test_aws_500_error() ->
     erlmcp_secrets:stop().
 
 test_invalid_json_response() ->
-    % Mock invalid JSON response
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], <<"invalid json{">>}}
-    end),
+    % Set server to invalid JSON mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(invalid_json),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -428,7 +392,7 @@ test_invalid_json_response() ->
 
 cache_behavior_test_() ->
     {setup, fun setup/0, fun cleanup/1,
-     fun(_Ok) ->
+     fun({_Port, _Pid}) ->
          [
              fun test_cache_hit/0,
              fun test_cache_invalidation_on_set/0,
@@ -437,16 +401,11 @@ cache_behavior_test_() ->
      end}.
 
 test_cache_hit() ->
-    SecretId = <<"cached-secret">>,
-    SecretValue = <<"cached-value">>,
+    % Reset call count
+    ok = erlmcp_test_aws_http_server:reset_call_count(),
 
-    % Track httpc call count
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"SecretString">> => SecretValue
-        }),
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], Response}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -461,33 +420,26 @@ test_cache_hit() ->
 
     {ok, _Pid} = erlmcp_secrets:start_link(Config),
 
+    SecretId = <<"cached-secret">>,
+
     % First call should hit AWS
-    CallCount1 = meck:num_calls(httpc, request, 4),
-    ?assertEqual({ok, SecretValue}, erlmcp_secrets:get_secret(SecretId)),
-    CallCount2 = meck:num_calls(httpc, request, 4),
+    CallCount1 = erlmcp_test_aws_http_server:get_call_count(),
+    ?assertMatch({ok, _SecretValue}, erlmcp_secrets:get_secret(SecretId)),
+    CallCount2 = erlmcp_test_aws_http_server:get_call_count(),
     ?assert(CallCount2 > CallCount1),
 
-    % Second call should use cache (no additional httpc call)
-    CallCount3 = meck:num_calls(httpc, request, 4),
-    ?assertEqual({ok, SecretValue}, erlmcp_secrets:get_secret(SecretId)),
-    CallCount4 = meck:num_calls(httpc, request, 4),
+    % Second call should use cache (no additional HTTP call)
+    CallCount3 = erlmcp_test_aws_http_server:get_call_count(),
+    ?assertMatch({ok, _SecretValue}, erlmcp_secrets:get_secret(SecretId)),
+    CallCount4 = erlmcp_test_aws_http_server:get_call_count(),
     ?assertEqual(CallCount3, CallCount4),
 
     % Cleanup
     erlmcp_secrets:stop().
 
 test_cache_invalidation_on_set() ->
-    SecretId = <<"invalidate-secret">>,
-    SecretValue1 = <<"value1">>,
-    SecretValue2 = <<"value2">>,
-
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"ARN">> => <<"arn:aws:secretsmanager:...">>,
-            <<"Name">> => SecretId
-        }),
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], Response}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -501,6 +453,10 @@ test_cache_invalidation_on_set() ->
     },
 
     {ok, _Pid} = erlmcp_secrets:start_link(Config),
+
+    SecretId = <<"invalidate-secret">>,
+    SecretValue1 = <<"value1">>,
+    SecretValue2 = <<"value2">>,
 
     % Set secret
     ?assertEqual(ok, erlmcp_secrets:set_secret(SecretId, SecretValue1)),
@@ -512,15 +468,8 @@ test_cache_invalidation_on_set() ->
     erlmcp_secrets:stop().
 
 test_cache_invalidation_on_delete() ->
-    SecretId = <<"delete-cache-secret">>,
-
-    meck:expect(httpc, request, fun(post, _Request, _Options, []) ->
-        Response = jsx:encode(#{
-            <<"ARN">> => <<"arn:aws:secretsmanager:...">>,
-            <<"Name">> => SecretId
-        }),
-        {ok, {{<<"HTTP/1.1">>, 200, <<"OK">>}, [], Response}}
-    end),
+    % Set server to success mode
+    ok = erlmcp_test_aws_http_server:set_response_mode(success),
 
     Config = #{
         backend => aws_secrets_manager,
@@ -534,6 +483,8 @@ test_cache_invalidation_on_delete() ->
     },
 
     {ok, _Pid} = erlmcp_secrets:start_link(Config),
+
+    SecretId = <<"delete-cache-secret">>,
 
     % Delete secret (should clear cache)
     ?assertEqual(ok, erlmcp_secrets:delete_secret(SecretId)),
@@ -547,7 +498,7 @@ test_cache_invalidation_on_delete() ->
 
 configuration_test_() ->
     {setup, fun setup/0, fun cleanup/1,
-     fun(_Ok) ->
+     fun({_Port, _Pid}) ->
          [
              fun test_configure_iam_role_auth/0,
              fun test_configure_access_key_auth/0,

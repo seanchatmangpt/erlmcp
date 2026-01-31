@@ -1052,6 +1052,49 @@ handler_cleanup_on_shutdown_test_() ->
     end}.
 
 %%%====================================================================
+%%% Subscription Integration Tests
+%%%====================================================================
+
+subscription_integration_test_() ->
+    {timeout, 10, fun() ->
+        % Test integration with erlmcp_resource_subscriptions manager
+        ServerId = <<"subscription_integration_test">>,
+        {ok, Server} = erlmcp_server:start_link(ServerId, #mcp_server_capabilities{
+            resources = #mcp_capability{enabled = true}
+        }),
+
+        % Start the resource subscriptions manager
+        {ok, _SubPid} = erlmcp_resource_subscriptions:start_link(),
+
+        try
+            % Subscribe to a resource
+            Uri = <<"test://integration/resource">>,
+            ?assertEqual(ok, erlmcp_server:subscribe_resource(Server, Uri, self())),
+
+            % Verify it's in the subscription manager
+            Subs = erlmcp_resource_subscriptions:list_resource_subscriptions(Uri, false),
+            ?assertEqual(1, length(Subs)),
+            ?assert(lists:member(self(), Subs)),
+
+            % Notify resource update
+            ?assertEqual(ok, erlmcp_server:notify_resource_updated(Server, Uri, #{<<"test">> => true})),
+
+            % Unsubscribe
+            ?assertEqual(ok, erlmcp_server:unsubscribe_resource(Server, Uri)),
+
+            % Verify it's removed from subscription manager
+            SubsAfter = erlmcp_resource_subscriptions:list_resource_subscriptions(Uri, false),
+            ?assertEqual(0, length(SubsAfter)),
+
+            ok
+        after
+            % Cleanup
+            gen_server:stop(erlmcp_resource_subscriptions),
+            stop_server(Server)
+        end
+    end}.
+
+%%%====================================================================
 %%% Authorization Tests (CRITICAL SECURITY)
 %%%====================================================================
 
