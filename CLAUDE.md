@@ -428,6 +428,13 @@ Message 3: Task("Agent 3", ...)
 - xref clean (0 undefined functions)
 - 80%+ minimum test coverage
 
+### File Writing Policy
+- **ONLY WRITE CODE** - Write .erl, .hrl, .app.src, and test files ONLY
+- **NEVER write markdown reports, logs, or summary files** unless explicitly requested
+- **NO temporary .txt, .md, .log files** - These clutter the repository
+- Quality gate results, test outputs, and benchmark results are captured by CI/CD
+- Exception: Official documentation in docs/ when explicitly requested
+
 ### Chaos Engineering
 - Built-in failure injection via `erlmcp_chaos`
 - Test recovery scenarios (network, process, memory)
@@ -452,6 +459,7 @@ Message 3: Task("Agent 3", ...)
 8. **Using mocks in tests** → **VIOLATION** - Chicago School requires real processes
 9. **Testing implementation details** → **VIOLATION** - Test only observable behavior
 10. **Fake/placeholder capabilities** → **VIOLATION** - Use real MCP implementations
+11. **Writing markdown reports/logs** → **VIOLATION** - Only write code (.erl/.hrl) unless explicitly requested
 
 ## Key Files Quick Index
 
@@ -674,6 +682,7 @@ Validated by erlmcp_metrology_validator before write. Zero ambiguities. See `doc
 4. **Quality non-negotiable:** 0 errors, 0 test failures, ≥80% coverage, <10% regression
 5. **Follow OTP patterns:** gen_server, supervision, process isolation, let-it-crash
 6. **Toyota Production System:** Andon, Poka-Yoke, Jidoka, Kaizen principles apply
+7. **ONLY WRITE CODE:** Never write .md/.txt/.log reports unless explicitly requested. Write .erl/.hrl code only
 
 ## Help Resources
 

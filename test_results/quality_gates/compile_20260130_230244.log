@@ -1,6 +1,0 @@
-===> Verifying dependencies...
-===> Analyzing applications...
-===> Compiling erlmcp_core
-===> Compiling apps/erlmcp_core/src/pricing/erlmcp_pricing_loader.erl failed
-_build/default/lib/erlmcp_core/ebin/erlmcp_pricing_loader.beam:none: failed to rename /Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_pricing_loader.bea# to /Users/sac/erlmcp/_build/default/lib/erlmcp_core/ebin/erlmcp_pricing_loader.beam: no such file or directory
-
