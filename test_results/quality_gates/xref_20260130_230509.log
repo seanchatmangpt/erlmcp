@@ -1,0 +1,31 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 356 │              [1;31m{[0merror, CreateReason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_security_validator.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 181 │                      {error, [1;31mReason[0m} -> throw({error, Reason})[0m
+     │                              [1;31m╰──[0m[0m variable 'Reason' unsafe in 'case' (line 168, column 9)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 194 │          throw:{error, [1;31mReason[0m} -> {error, Reason};[0m
+     │                        [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 165, column 5)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 255 │                      {error, [1;31mReason[0m} -> throw({error, Reason})[0m
+     │                              [1;31m╰──[0m[0m variable 'Reason' unsafe in 'case' (line 249, column 17)
+
+     ┌─ apps/erlmcp_core/src/erlmcp_security_validator.erl:
+     │
+ 259 │                  throw:{error, [1;31mReason[0m} -> {error, Reason};[0m
+     │                                [1;31m╰──[0m[0m variable 'Reason' unsafe in 'try' (line 248, column 13)
+
+

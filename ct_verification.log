@@ -1,0 +1,1043 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m     ┌─ apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     │
+ 356 │              [1;31m{[0merror, CreateReason}[0m
+     │              [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 737 │                      [1;31m{[0merror, token_expired};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 746 │                      [1;31m{[0merror, token_not_yet_valid};[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+     ┌─ apps/erlmcp_core/src/erlmcp_auth.erl:
+     │
+ 758 │                      [1;31m{[0merror, invalid_issuer}[0m
+     │                      [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1152 │                  [1;31m{[0mnoreply, State};[0m
+      │                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1162 │                                  [1;31m{[0mnoreply, State};[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1167 │                                  [1;31m{[0mnoreply, State}[0m
+      │                                  [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+      ┌─ apps/erlmcp_core/src/erlmcp_server.erl:
+      │
+ 1173 │                          [1;31m{[0mnoreply, State}[0m
+      │                          [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+[0;32m===> Compiling erlmcp_transports
+[0m   ┌─ apps/erlmcp_transports/src/erlmcp_transport_tcp.erl:
+   │
+ 3 │  -[1;31mbehaviour[0m(gen_server).[0m
+   │   [1;31m╰──[0m[0m Warning: conflicting behaviours -- callback init/1 required by both 'gen_server' and 'erlmcp_transport_behavior' (line 2, column 2)
+
+
+[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_message_tests.erl:
+     │
+ 112 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl:
+     │
+ 640 │  -[1;31mrecord[0m(mock_state, {[0m
+     │   [1;31m╰──[0m[0m Warning: record mock_state is unused
+
+
+     ┌─ apps/erlmcp_transports/test/erlmcp_transport_ws_tests.erl:
+     │
+ 370 │      DelimitedMsg = [1;31m<<[0mMessage/binary, "\n">>,[0m
+     │                     [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_comprehensive_error_tests.erl:
+     │
+ 620 │          Request = [1;31m#[0m{<<"method">> => <<"ping">>, <<"id">> => I},[0m
+     │                    [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_validation/test/erlmcp_compliance_report_tests.erl:
+     │
+ 199 │      Evidence = [1;31m#[0m{[0m
+     │                 [1;31m╰──[0m[0m Warning: a term is constructed, but never used
+
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 618 │      Baseline = [1;31mmaps[0m:get(baseline, Config),[0m
+     │                 [1;31m╰──[0m[0m Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 641 │      Baseline = [1;31mmaps[0m:get(baseline, Config),[0m
+     │                 [1;31m╰──[0m[0m Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 667 │      Baseline = [1;31mmaps[0m:get(baseline, Config),[0m
+     │                 [1;31m╰──[0m[0m Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+     ┌─ apps/erlmcp_observability/test/erlmcp_performance_regression_SUITE.erl:
+     │
+ 901 │      Thresholds = [1;31mmaps[0m:get(<<"regression_thresholds">>, Baseline),[0m
+     │                   [1;31m╰──[0m[0m Warning: the result of calling map_get/2 is ignored (suppress the warning by assigning the expression to the _ variable)
+
+
+[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling extra_test
+[0m[0;32m===> Running Common Test suites...
+[0m%%% erlmcp_integration_SUITE: 
+=ERROR REPORT==== 30-Jan-2026::23:18:03.171849 ===
+Failed to create Mnesia table: {node_not_running,nonode@nohost}
+=ERROR REPORT==== 30-Jan-2026::23:18:03.326651 ===
+Failed to create Mnesia cache table: {bad_type,erlmcp_cache_l2,disc_copies,
+                                      nonode@nohost}
+=ERROR REPORT==== 30-Jan-2026::23:18:03.328965 ===
+Failed to create replica table: {bad_type,erlmcp_session_replica,disc_copies,
+                                    nonode@nohost}
+=CRASH REPORT==== 30-Jan-2026::23:18:03.331009 ===
+  crasher:
+    initial call: erlmcp_session_failover:init/1
+    pid: <0.5584.0>
+    registered_name: []
+    exception error: no function clause matching 
+                     lists:usort([nonode@nohost|nonode@nohost]) (lists.erl, line 1805)
+      in function  erlmcp_session_failover:init/1 (/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl, line 114)
+      in call from gen_server:init_it/2 (gen_server.erl, line 2229)
+      in call from gen_server:init_it/6 (gen_server.erl, line 2184)
+    ancestors: [erlmcp_core_sup,<0.5511.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.5535.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 376
+    stack_size: 29
+    reductions: 61
+  neighbours:
+
+=SUPERVISOR REPORT==== 30-Jan-2026::23:18:03.331036 ===
+    supervisor: {local,erlmcp_core_sup}
+    errorContext: start_error
+    reason: {function_clause,
+                [{lists,usort,
+                     [[nonode@nohost|nonode@nohost]],
+                     [{file,"lists.erl"},{line,1805}]},
+                 {erlmcp_session_failover,init,1,
+                     [{file,
+                          "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                      {line,114}]},
+                 {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+                 {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+                 {proc_lib,init_p_do_apply,3,
+                     [{file,"proc_lib.erl"},{line,329}]}]}
+    offender: [{pid,undefined},
+               {id,erlmcp_session_failover},
+               {mfargs,{erlmcp_session_failover,start_link,[nonode@nohost]}},
+               {restart_type,permanent},
+               {significant,false},
+               {shutdown,5000},
+               {child_type,worker}]
+
+
+%%% erlmcp_integration_SUITE ==> init_per_suite: [0;31mFAILED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;31m{'EXIT',
+    {shutdown,
+        {failed_to_start_child,erlmcp_session_failover,
+            {function_clause,
+                [{lists,usort,
+                     [[nonode@nohost|nonode@nohost]],
+                     [{file,"lists.erl"},{line,1805}]},
+                 {erlmcp_session_failover,init,1,
+                     [{file,
+                          "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                      {line,114}]},
+                 {gen_server,init_it,2,[{file,"gen_server.erl"},{line,2229}]},
+                 {gen_server,init_it,6,[{file,"gen_server.erl"},{line,2184}]},
+                 {proc_lib,init_p_do_apply,3,
+                     [{file,"proc_lib.erl"},{line,329}]}]}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_system_startup_shutdown: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_complete_message_flow: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_multi_transport_coordination: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_server_registry_coordination: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_configuration_loading: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_configuration_hot_reload: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_transport_config_validation: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_failure_recovery_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_transport_failure_recovery: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_server_crash_recovery: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_registry_failure_handling: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_concurrent_connections: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_high_message_throughput: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_resource_management_under_load: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_real_mcp_client_interaction: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_tool_execution_end_to_end: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_resource_access_end_to_end: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_prompt_handling_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_monitoring_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_metrics_collection_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> test_tracing_integration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+
+%%% erlmcp_integration_SUITE ==> end_per_suite: [0;35mSKIPPED[0m[0m
+%%% erlmcp_integration_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_integration_SUITE,init_per_suite,
+            {'EXIT',
+                {shutdown,
+                    {failed_to_start_child,erlmcp_session_failover,
+                        {function_clause,
+                            [{lists,usort,
+                                 [[nonode@nohost|nonode@nohost]],
+                                 [{file,"lists.erl"},{line,1805}]},
+                             {erlmcp_session_failover,init,1,
+                                 [{file,
+                                      "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_session_failover.erl"},
+                                  {line,114}]},
+                             {gen_server,init_it,2,
+                                 [{file,"gen_server.erl"},{line,2229}]},
+                             {gen_server,init_it,6,
+                                 [{file,"gen_server.erl"},{line,2184}]},
+                             {proc_lib,init_p_do_apply,3,
+                                 [{file,"proc_lib.erl"},{line,329}]}]}}}}}}}[0m[0m
+%%% erlmcp_registry_dist_SUITE: [0;32m.[0m[0m
+=ERROR REPORT==== 30-Jan-2026::23:18:03.464136 ===
+** Generic server erlmcp_registry_dist terminating 
+** Last message in was {register_global,server,single_server,<0.5608.0>,#{}}
+** When Server state == {dist_state,true,[],#{},10000,
+                                    #Ref<0.2107305358.3272343553.190888>,
+                                    winner_takes_all}
+** Reason for termination ==
+** {local_only,
+       [{gproc,reg_other,
+            [{n,g,{mcp_global,server,single_server}},<0.5608.0>,#{}],
+            [{file,"/Users/sac/erlmcp/_build/default/lib/gproc/src/gproc.erl"},
+             {line,1091}]},
+        {erlmcp_registry_dist,handle_call,3,
+            [{file,
+                 "/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_registry_dist.erl"},
+             {line,149}]},
+        {gen_server,try_handle_call,4,[{file,"gen_server.erl"},{line,2381}]},
+        {gen_server,handle_msg,6,[{file,"gen_server.erl"},{line,2410}]},
+        {proc_lib,init_p_do_apply,3,[{file,"proc_lib.erl"},{line,329}]}]}
+** Client <0.5605.0> stacktrace
+** [{gen,do_call,4,[{file,"gen.erl"},{line,260}]},
+    {gen_server,call,2,[{file,"gen_server.erl"},{line,1138}]},
+    {erlmcp_registry_dist_SUITE,single_node_enabled,1,
+        [{file,
+             "/Users/sac/erlmcp/apps/erlmcp_core/test/erlmcp_registry_dist_SUITE.erl"},
+         {line,148}]},
+    {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+    {test_server,run_test_case_eval1,6,[{file,"test_server.erl"},{line,1303}]},
+    {test_server,run_test_case_eval,9,[{file,"test_server.erl"},{line,1235}]}]
+
+=CRASH REPORT==== 30-Jan-2026::23:18:03.464463 ===
+  crasher:
+    initial call: erlmcp_registry_dist:init/1
+    pid: <0.5607.0>
+    registered_name: erlmcp_registry_dist
+    exception error: local_only
+      in function  gproc:reg_other/3
+         called as gproc:reg_other({n,g,{mcp_global,server,single_server}},
+                                   <0.5608.0>,#{})
+      in call from erlmcp_registry_dist:handle_call/3 (/Users/sac/erlmcp/apps/erlmcp_core/src/erlmcp_registry_dist.erl, line 149)
+      in call from gen_server:try_handle_call/4 (gen_server.erl, line 2381)
+      in call from gen_server:handle_msg/6 (gen_server.erl, line 2410)
+    ancestors: [<0.5605.0>]
+    message_queue_len: 0
+    messages: []
+    links: [<0.5605.0>]
+    dictionary: []
+    trap_exit: true
+    status: running
+    heap_size: 610
+    stack_size: 29
+    reductions: 463
+  neighbours:
+    neighbour:
+      pid: <0.5606.0>
+      registered_name: []
+      initial_call: {test_server_sup,timetrap,4}
+      current_function: {test_server_sup,timetrap,4}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.5605.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 233
+      stack_size: 5
+      reductions: 6
+      current_stacktrace: [{test_server_sup,timetrap,4,
+                                   [{file,"test_server_sup.erl"},{line,64}]}]
+    neighbour:
+      pid: <0.5605.0>
+      registered_name: []
+      initial_call: {erlang,apply,2}
+      current_function: {gen,do_call,4}
+      ancestors: []
+      message_queue_len: 0
+      links: [<0.5606.0>,<0.5607.0>,<0.5482.0>]
+      trap_exit: false
+      status: waiting
+      heap_size: 2586
+      stack_size: 40
+      reductions: 2328
+      current_stacktrace: [{gen,do_call,4,[{file,"gen.erl"},{line,260}]},
+                  {gen_server,call,2,[{file,"gen_server.erl"},{line,1138}]},
+                  {erlmcp_registry_dist_SUITE,single_node_enabled,1,
+                      [{file,
+                           "/Users/sac/erlmcp/apps/erlmcp_core/test/erlmcp_registry_dist_SUITE.erl"},
+                       {line,148}]},
+                  {test_server,ts_tc,3,[{file,"test_server.erl"},{line,1794}]},
+                  {test_server,run_test_case_eval1,6,
+                      [{file,"test_server.erl"},{line,1303}]},
+                  {test_server,run_test_case_eval,9,
+                      [{file,"test_server.erl"},{line,1235}]}]
+
+%%% erlmcp_registry_dist_SUITE ==> single_node.single_node_enabled: [0;31mFAILED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;31m{'EXIT',{local_only,{gproc,reg_other,
+                           [{n,g,{mcp_global,server,single_server}},
+                            <0.5608.0>,#{}],
+                           [{file,"/Users/sac/erlmcp/_build/default/lib/gproc/src/gproc.erl"},
+                            {line,1091}]}}}[0m[0m
+
+=ERROR REPORT==== 30-Jan-2026::23:18:03.649515 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:04.651304 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:05.652676 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:06.654650 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:07.656332 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:08.658447 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:09.660624 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:10.662750 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:11.664374 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:12.666528 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:13.669791 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:14.673492 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:15.675504 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:16.678077 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:17.681238 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:18.706835 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:19.709092 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:20.710767 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:21.713890 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:22.715732 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:23.717839 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:24.720078 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:25.722762 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:26.725002 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:27.727361 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:28.729268 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:29.730828 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:30.732942 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:31.736015 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+=ERROR REPORT==== 30-Jan-2026::23:18:32.738031 ===
+** System NOT running to use fully qualified hostnames **
+** Hostname Mac.lan is illegal **
+
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.init_per_group: [0;31mFAILED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;31mtimetrap_timeout[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.multi_node_registration: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.multi_node_failover: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.split_brain_detection: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.global_name_conflict: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+
+%%% erlmcp_registry_dist_SUITE ==> multi_node.node_reconnection: [0;35mSKIPPED[0m[0m
+%%% erlmcp_registry_dist_SUITE ==> [0;35m{tc_auto_skip,
+    {failed,
+        {erlmcp_registry_dist_SUITE,init_per_group,{timetrap_timeout,30000}}}}[0m[0m
+Warning: ct_logs not started
+=ERROR REPORT==== 30-Jan-2026::23:18:34.648495 ===
+Error in process <0.5469.0> on node erlmcp_test@localhost with exit value:
+{{badmatch,{error,enoent}},
+ [{filename,absname,1,[{file,"filename.erl"},{line,180}]},
+  {ct_logs,make_last_run_index,2,[{file,"ct_logs.erl"},{line,1283}]},
+  {ct_logs,logger_loop,1,[{file,"ct_logs.erl"},{line,892}]}]}
+
+Warning: ct_logs not started
+=ERROR REPORT==== 30-Jan-2026::23:18:34.648530 ===
+** Generic server test_server_io terminating 
+** Last message in was {'EXIT',<0.5469.0>,
+                           {{badmatch,{error,enoent}},
+                            [{filename,absname,1,
+                                 [{file,"filename.erl"},{line,180}]},
+                             {ct_logs,make_last_run_index,2,
+                                 [{file,"ct_logs.erl"},{line,1283}]},
+                             {ct_logs,logger_loop,1,
+                                 [{file,"ct_logs.erl"},{line,892}]}]}}
+** When Server state == {st,{0,nil},
+                            [],<0.5483.0>,
+                            {0,nil},
+                            {0,nil},
+                            {0,nil},
+                            ["<center>\n<br /><hr /><p>\n","<a href=\"",
+                             "../../../all_runs.html",
+                             "\">Test run history\n</a>  |  ","<a href=\"",
+                             "../../../index.html",
+                             "\">Top level test index\n</a>  |  ",
+                             "<a href=\"","../../../suite.log.latest.html",
+                             "\">Latest test result</a>\n</p>\n",
+                             ["<div class=\"copyright\">","Copyright &copy; ",
+                              "2026"," <a href=\"http://www.erlang.org\">",
+                              "Open Telecom Platform</a><br />\n",
+                              "Updated: <!--date-->",
+                              "Fri Jan 30 2026 23:18:02","<!--/date-->",
+                              "<br />\n</div>\n"],
+                             "</center>\n</body>\n</html>\n"],
+                            undefined,
+                            [{levels,{1,19,10}},
+                             {auto_nl,true},
+                             {reject_io_reqs,false}],
+                            idle,
+                            [{unexpected_io,xxxFrom,
+                                 [[[[10,60,47,112,114,101,62,10,60,100,105,
+                                     118,32,99,108,97,115,115,61,34,115,97,
+                                     115,108,34,62,60,112,114,101,62,60,98,62,
+                                     42,42,42,32,83,121,115,116,101,109,32,
+                                     114,101,112,111,114,116,32,100,117,114,
+                                     105,110,103,32,101,114,108,109,99,112,95,
+                                     114,101,103,105,115,116,114,121,95,100,
+                                     105,115,116,95,83,85,73,84,69,58,105,110,
+                                     105,116,95,112,101,114,95,103,114,111,
+                                     117,112,47,50,32,102,111,114,32,109,117,
+                                     108,116,105,95,110,111,100,101,32,50,48,
+                                     50,54,45,48,49,45,51,48,32,50,51,58,49,
+                                     56,58,51,52,46,54,52,56,32,42,42,42,60,
+                                     47,98,62,[]],
+                                    "\n",
+                                    [[[[61,"ERROR REPORT",61,61,61,61,32,"30",
+                                        45,"Jan",45,"2026",58,58,"23",58,"18",
+                                        58,"34",46,"648008",32,[],61,61,61],
+                                       "\n"],
+                                      [69,114,114,111,114,32,105,110,32,112,
+                                       114,111,99,101,115,115,32,
+                                       ["&lt;",48,46,53,52,56,50,46,48,"&gt;"],
+                                       32,111,110,32,110,111,100,101,32,
+                                       "erlmcp_test@localhost",32,119,105,116,
+                                       104,32,101,120,105,116,32,118,97,108,
+                                       117,101,58,10,
+                                       [123,
+                                        [[123,
+                                          ["badmatch",44,
+                                           [123,
+                                            ["error",44,
+                                             [123,
+                                              ["enoent",44,
+                                               [123,
+                                                ["\"/Users/sac/erlmcp/_build/test/logs/ct_run.nonode@nohost.2026-01-30_23.18.02/lib.erlmcp_core.logs/run.2026-01-30_23.18.02/unexpected_io.log.html\"",
+                                                 44,10,
+                                                 [32,
+                                                  [["  ",32,32],"  ",32,32],
+                                                  [32,"   ",32,32,32],
+                                                  [[32,"  ",32,32],
+                                                   32,"  ",32,32],
+                                                  32],
+                                                 [91,
+                                                  [[123,
+                                                    ["encoding",44,"utf8"],
+                                                    125],
+                                                   44,"append"],
+                                                  93]],
+                                                125]],
+                                              125]],
+                                            125]],
+                                          125],
+                                         44,10," ",
+                                         [91,
+                                          [[123,
+                                            ["test_server_ctrl",44,
+                                             "init_tester",44,"10",44,10,
+                                             [[[32,["  ",32,32],"  ",32,32],
+                                               32,
+                                               ["  ",32,32],
+                                               "  ",32,32],
+                                              32,32],
+                                             [91,
+                                              [[123,
+                                                ["file",44,
+                                                 "\"test_server_ctrl.erl\""],
+                                                125],
+                                               44,
+                                               [123,["line",44,"1168"],125]],
+                                              93]],
+                                            125]],
+                                          93]],
+                                        125],
+                                       10],
+                                      ["\n"]]]],
+                                   "\n","</pre></div>\n<pre>"]]}],
+                            undefined,[]}
+** Reason for termination ==
+** {{badmatch,{error,enoent}},
+    [{filename,absname,1,[{file,"filename.erl"},{line,180}]},
+     {ct_logs,make_last_run_index,2,[{file,"ct_logs.erl"},{line,1283}]},
+     {ct_logs,logger_loop,1,[{file,"ct_logs.erl"},{line,892}]}]}
+
+[0;31m===> [1mUncaught error in rebar_core. Run with DIAGNOSTIC=1 to see stacktrace or consult rebar3.crashdump
+[0m[0m[0;32m===> When submitting a bug report, please include the output of `rebar3 report "your command"`
+[0m

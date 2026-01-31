@@ -703,36 +703,3 @@ get_module_version(Module) ->
     end.
 
 %%====================================================================
-%% Internal functions - State Management
-%%====================================================================
-
-%% @doc Initialize the state for the code reload manager
--spec init_state() -> state().
-init_state() ->
-    #state{
-        version = ?STATE_VERSION,
-        reload_history = [],
-        rollback_timers = #{},
-        draining = false
-    }.
-
-%% @doc Migrate state from an old version to the current version
--spec migrate_state(state(), integer()) -> {ok, state()} | {error, term()}.
-migrate_state(State, FromVersion) when FromVersion =:= ?STATE_VERSION ->
-    %% Already at current version
-    {ok, State};
-migrate_state(State, FromVersion) when FromVersion < ?STATE_VERSION ->
-    %% Migrate from older version
-    logger:info("Migrating state from version ~p to ~p", [FromVersion, ?STATE_VERSION]),
-    MigratedState = case FromVersion of
-        0 ->
-            %% Initial state structure, no migration needed
-            State;
-        _ ->
-            %% Future migrations would go here
-            State
-    end,
-    {ok, MigratedState#state{version = ?STATE_VERSION}};
-migrate_state(_State, FromVersion) ->
-    %% Downgrade not supported
-    {error, {unsupported_version, FromVersion}}.

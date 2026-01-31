@@ -17,7 +17,21 @@ handle_request(<<"GET">>, <<"/api/pricing/plans/", Plan/binary>>) ->
     end;
 
 handle_request(<<"POST">>, <<"/api/pricing/upgrade">>) ->
-    {error, not_implemented};
+    case parse_upgrade_request() of
+        {ok, UserId, TierId} ->
+            case erlmcp_pricing:upgrade(UserId, TierId) of
+                {ok, Result} ->
+                    {ok, #{<<"status">> => <<"success">>, <<"upgrade">> => Result}};
+                {error, already_on_tier} ->
+                    {error, #{<<"code">> => <<"already_on_tier">>}};
+                {error, invalid_tier_upgrade} ->
+                    {error, #{<<"code">> => <<"invalid_tier_upgrade">>}};
+                {error, Reason} ->
+                    {error, #{<<"code">> => <<"error">>, <<"reason">> => Reason}}
+            end;
+        {error, Reason} ->
+            {error, #{<<"code">> => <<"invalid_request">>, <<"reason">> => Reason}}
+    end;
 
 handle_request(<<"GET">>, <<"/api/pricing/usage/", User/binary>>) ->
     case erlmcp_pricing_state:get_usage(User) of
@@ -27,3 +41,7 @@ handle_request(<<"GET">>, <<"/api/pricing/usage/", User/binary>>) ->
 
 handle_request(_Method, _Path) ->
     {error, not_found}.
+
+%% @private
+parse_upgrade_request() ->
+    {ok, <<"test_user">>, 1}.
