@@ -1,0 +1,116 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_session_mnesia.erl failed
+[0m[0m    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 24 │      table_name [1;31m:: [0matom(),[0m
+    │                 [1;31m╰──[0m[0m syntax error before: '::'
+
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 40 │  -spec init(map()) -> {ok, [1;31mstate[0m()} | {error, term()}.[0m
+    │                            [1;31m╰──[0m[0m type state() undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 71 │  -spec store(session_id(), session(), [1;31mstate[0m()) ->[0m
+    │                                       [1;31m╰──[0m[0m type state() undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 72 │      {ok, [1;31mstate[0m()} | {error, term()}.[0m
+    │           [1;31m╰──[0m[0m type state() undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 80 │      Transaction = fun() -> mnesia:write(State[1;31m#state[0m.table_name, Record, write) end,[0m
+    │                                               [1;31m╰──[0m[0m record state undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 87 │  -spec fetch(session_id(), [1;31mstate[0m()) ->[0m
+    │                            [1;31m╰──[0m[0m type state() undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 88 │      {ok, session(), [1;31mstate[0m()} | {error, not_found | term(), state()}.[0m
+    │                      [1;31m╰──[0m[0m type state() undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 88 │      {ok, session(), state()} | {error, not_found | term(), [1;31mstate[0m()}.[0m
+    │                                                             [1;31m╰──[0m[0m type state() undefined
+
+    ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+    │
+ 91 │          case mnesia:read(State[1;31m#state[0m.table_name, SessionId) of[0m
+    │                                [1;31m╰──[0m[0m record state undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 101 │                  mnesia:write(State[1;31m#state[0m.table_name, Record, write),[0m
+     │                                    [1;31m╰──[0m[0m record state undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 114 │  -spec delete(session_id(), [1;31mstate[0m()) ->[0m
+     │                             [1;31m╰──[0m[0m type state() undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 115 │      {ok, [1;31mstate[0m()} | {error, term(), state()}.[0m
+     │           [1;31m╰──[0m[0m type state() undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 115 │      {ok, state()} | {error, term(), [1;31mstate[0m()}.[0m
+     │                                      [1;31m╰──[0m[0m type state() undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 117 │      Transaction = fun() -> mnesia:delete(State[1;31m#state[0m.table_name, SessionId, write) end,[0m
+     │                                                [1;31m╰──[0m[0m record state undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 124 │  -spec list([1;31mstate[0m()) ->[0m
+     │             [1;31m╰──[0m[0m type state() undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 125 │      {ok, [session_id()], [1;31mstate[0m()}.[0m
+     │                           [1;31m╰──[0m[0m type state() undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 128 │          mnesia:all_keys(State[1;31m#state[0m.table_name)[0m
+     │                               [1;31m╰──[0m[0m record state undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 136 │  -spec cleanup_expired([1;31mstate[0m()) ->[0m
+     │                        [1;31m╰──[0m[0m type state() undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 137 │      {ok, non_neg_integer(), [1;31mstate[0m()}.[0m
+     │                              [1;31m╰──[0m[0m type state() undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 143 │          SessionIds = mnesia:all_keys(State[1;31m#state[0m.table_name),[0m
+     │                                            [1;31m╰──[0m[0m record state undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 147 │              case mnesia:read(State[1;31m#state[0m.table_name, SessionId) of[0m
+     │                                    [1;31m╰──[0m[0m record state undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     │
+ 157 │              mnesia:delete(State[1;31m#state[0m.table_name, SessionId, write)[0m
+     │                                 [1;31m╰──[0m[0m record state undefined
+
+

@@ -1,0 +1,21 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/src/erlmcp_resource_subscriptions.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/src/erlmcp_resource_subscriptions.erl:
+     │
+ 371 │              State#state{last_notified [1;31m=> [0mmaps:put(Uri, Now, State#state.last_notified)};[0m
+     │                                        [1;31m╰──[0m[0m syntax error before: '=>'
+
+
+     ┌─ apps/erlmcp_core/src/erlmcp_resource_subscriptions.erl:
+     │
+ 283 │              [1;31msend_resource_notification[0m(Uri, ChangeNotification, InnerState)[0m
+     │              [1;31m╰──[0m[0m function send_resource_notification/3 undefined
+
+     ┌─ apps/erlmcp_core/src/erlmcp_resource_subscriptions.erl:
+     │
+ 355 │  -[1;31mspec[0m send_resource_notification(uri(), change_notification(), state()) -> state().[0m
+     │   [1;31m╰──[0m[0m spec for undefined function send_resource_notification/3
+
+

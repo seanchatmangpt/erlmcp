@@ -709,7 +709,7 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
     try
         Name = maps:get(?MCP_PARAM_NAME, Params, undefined),
         Args = maps:get(?MCP_PARAM_ARGUMENTS, Params, #{}),
-        
+
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"request_id">> => Id,
             <<"transport_id">> => TransportId,
@@ -717,15 +717,24 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
             <<"tool.name">> => Name,
             <<"arguments_count">> => maps:size(Args)
         }),
-        
+
         case {Name, Args} of
             {undefined, _} ->
                 erlmcp_tracing:record_error_details(SpanCtx, missing_tool_name, undefined),
                 send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, ?MCP_MSG_MISSING_TOOL_NAME);
             {ToolName, Arguments} ->
-                handle_tool_call(Id, ToolName, Arguments, TransportId, State)
+                %% Check for async task execution (MCP 2025-11-25)
+                TaskParams = maps:get(<<"task">>, Params, undefined),
+                case TaskParams of
+                    undefined ->
+                        %% Synchronous execution
+                        handle_tool_call(Id, ToolName, Arguments, TransportId, State);
+                    _ when is_map(TaskParams) ->
+                        %% Async task execution
+                        handle_tool_call_async(Id, ToolName, Arguments, TaskParams, TransportId, State, SpanCtx)
+                end
         end,
-        
+
         erlmcp_tracing:set_status(SpanCtx, ok),
         {noreply, State}
     catch
@@ -736,33 +745,213 @@ handle_request(Id, ?MCP_METHOD_TOOLS_CALL, Params, TransportId, #state{server_id
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-%% Task management endpoints - NOT IMPLEMENTED (Optional in MCP spec)
-%% Task manager was replaced by erlmcp_hooks for pre/post task hooks
-%% Return "method not found" for tasks/* endpoints
-handle_request(Id, ?MCP_METHOD_TASKS_CREATE, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+%% Task management endpoints - MCP 2025-11-25 specification
+%% These endpoints allow async task execution with progress tracking
 
-handle_request(Id, ?MCP_METHOD_TASKS_LIST, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+handle_request(Id, ?MCP_METHOD_TASKS_CREATE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tasks_create">>, ServerId),
+    %% Capture server PID before try block for use in task operations
+    ServerPid = self(),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TASKS_CREATE
+        }),
 
-handle_request(Id, ?MCP_METHOD_TASKS_GET, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+        case validate_task_create_params(Params) of
+            {ok, Action, Metadata, Options} ->
+                %% Add server PID to metadata for notifications
+                MetadataWithPid = Metadata#{<<"serverPid">> => ServerPid},
+                case erlmcp_tasks:create(ServerPid, Action, MetadataWithPid, Options) of
+                    {ok, TaskId} ->
+                        %% Get the created task details
+                        case erlmcp_tasks:get(ServerPid, TaskId) of
+                            {ok, TaskMap} ->
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                Response = #{
+                                    ?MCP_PARAM_TASK => TaskMap
+                                },
+                                send_response_via_registry(State, TransportId, Id, Response);
+                            {error, _} ->
+                                %% Return basic task info if get fails
+                                Response = #{
+                                    ?MCP_PARAM_TASK => #{
+                                        ?MCP_PARAM_TASK_ID => TaskId,
+                                        ?MCP_PARAM_STATUS => <<"pending">>
+                                    }
+                                },
+                                send_response_via_registry(State, TransportId, Id, Response)
+                        end;
+                    {error, CreateReason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, task_create_failed, CreateReason),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_FAILED,
+                            io_lib:format("Failed to create task: ~p", [CreateReason]))
+                end;
+            {error, {Code, Message}} ->
+                erlmcp_tracing:record_error_details(SpanCtx, invalid_params, Message),
+                send_error_via_registry(State, TransportId, Id, Code, Message)
+        end,
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
-handle_request(Id, ?MCP_METHOD_TASKS_RESULT, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+handle_request(Id, ?MCP_METHOD_TASKS_LIST, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tasks_list">>, ServerId),
+    ServerPid = self(),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TASKS_LIST
+        }),
 
-handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, _Params, TransportId, State) ->
-    send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-        <<"Task management not implemented. Use tools/call directly.">>),
-    {noreply, State};
+        Cursor = maps:get(?MCP_PARAM_CURSOR, Params, undefined),
+        Limit = maps:get(<<"limit">>, Params, 100),
+
+        case erlmcp_tasks:list_tasks(ServerPid, Cursor, Limit) of
+            {ok, #{tasks := Tasks} = Result} ->
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                send_response_via_registry(State, TransportId, Id, Result);
+            {error, ListReason} ->
+                erlmcp_tracing:record_error_details(SpanCtx, task_list_failed, ListReason),
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_FAILED,
+                    io_lib:format("Failed to list tasks: ~p", [ListReason]))
+        end,
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+handle_request(Id, ?MCP_METHOD_TASKS_GET, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tasks_get">>, ServerId),
+    ServerPid = self(),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TASKS_GET
+        }),
+
+        case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_task_id, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    ?MCP_MSG_TASK_NOT_FOUND);
+            TaskId ->
+                case erlmcp_tasks:get(ServerPid, TaskId) of
+                    {ok, TaskMap} ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        Response = #{
+                            ?MCP_PARAM_TASK => TaskMap
+                        },
+                        send_response_via_registry(State, TransportId, Id, Response);
+                    {error, _GetReason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, task_not_found, TaskId),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_NOT_FOUND,
+                            ?MCP_MSG_TASK_NOT_FOUND)
+                end
+        end,
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+handle_request(Id, ?MCP_METHOD_TASKS_RESULT, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tasks_result">>, ServerId),
+    ServerPid = self(),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TASKS_RESULT
+        }),
+
+        case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_task_id, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    ?MCP_MSG_TASK_NOT_FOUND);
+            TaskId ->
+                case wait_for_task_result(ServerPid, TaskId, 30000) of
+                    {ok, Result} ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        Response = #{
+                            ?MCP_PARAM_RESULT => Result
+                        },
+                        send_response_via_registry(State, TransportId, Id, Response);
+                    {error, ResultReason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, task_result_failed, ResultReason),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_RESULT_NOT_READY,
+                            ?MCP_MSG_TASK_RESULT_NOT_READY)
+                end
+        end,
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+handle_request(Id, ?MCP_METHOD_TASKS_CANCEL, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tasks_cancel">>, ServerId),
+    ServerPid = self(),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TASKS_CANCEL
+        }),
+
+        case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_task_id, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    ?MCP_MSG_TASK_NOT_FOUND);
+            TaskId ->
+                CancelReason = maps:get(?MCP_PARAM_REASON, Params, <<"Cancelled by client">>),
+                case erlmcp_tasks:cancel(ServerPid, TaskId, CancelReason) of
+                    {ok, cancelled} ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        send_response_via_registry(State, TransportId, Id, #{});
+                    {error, task_not_found} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, task_not_found, TaskId),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_NOT_FOUND,
+                            ?MCP_MSG_TASK_NOT_FOUND);
+                    {error, CancelError} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, task_cancel_failed, CancelError),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_STATE_INVALID,
+                            io_lib:format("Failed to cancel task: ~p", [CancelError]))
+                end
+        end,
+        {noreply, State}
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 
 handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, Params, TransportId, State) ->
     Templates = list_all_templates(State),
@@ -770,8 +959,8 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_TEMPLATES_LIST, Params, TransportId, St
         {ok, Response} ->
             send_response_via_registry(State, TransportId, Id, Response),
             {noreply, State};
-        {error, Reason} ->
-            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, Reason),
+        {error, TemplateReason} ->
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS, TemplateReason),
             {noreply, State}
     end;
 handle_request(Id, ?MCP_METHOD_RESOURCES_SUBSCRIBE, Params, TransportId, State) ->
@@ -1279,6 +1468,132 @@ handle_tool_call(Id, Name, Arguments, TransportId, #state{server_id = ServerId} 
             erlang:raise(ClassOuter, ReasonOuter, StackOuter)
     after
         erlmcp_tracing:end_span(SpanCtx)
+    end.
+
+%% @doc Handle async tool call execution (MCP 2025-11-25 Tasks API)
+%% Creates a task and executes the tool asynchronously
+-spec handle_tool_call_async(
+    json_rpc_id(),
+    binary(),
+    map(),
+    map(),
+    atom(),
+    state(),
+    term()
+) -> ok.
+handle_tool_call_async(Id, Name, Arguments, TaskParams, TransportId, State, _ParentSpanCtx) ->
+    %% First, verify the tool exists
+    case maps:get(Name, State#state.tools, undefined) of
+        undefined ->
+            erlmcp_tracing:record_error_details(_ParentSpanCtx, tool_not_found, Name),
+            send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND);
+        {_Tool, Handler, _Schema} ->
+            %% Extract task options
+            TTL = maps:get(<<"ttl">>, TaskParams, 300000),  % 5 minutes default
+            TimeoutMs = maps:get(<<"timeout">>, TaskParams, 30000),  % 30 seconds default
+
+            %% Build action map for task
+            Action = #{
+                <<"type">> => <<"tool_call">>,
+                <<"toolName">> => Name,
+                <<"arguments">> => Arguments
+            },
+
+            %% Build metadata for task
+            Metadata = #{
+                <<"timeout">> => TimeoutMs,
+                <<"transportId">> => TransportId,
+                <<"requestId">> => Id,
+                <<"serverPid">> => self()
+            },
+
+            %% Build options for task
+            Options = #{ttl_ms => TTL},
+
+            ServerPid = self(),
+
+            %% Create the task
+            case erlmcp_tasks:create(ServerPid, Action, Metadata, Options) of
+                {ok, TaskId} ->
+                    %% Get task details for response
+                    case erlmcp_tasks:get(ServerPid, TaskId) of
+                        {ok, TaskMap} ->
+                            %% Start async worker for tool execution
+                            spawn(fun() ->
+                                execute_tool_async_task(
+                                    TaskId, ServerPid, Name, Handler, Arguments, TimeoutMs
+                                )
+                            end),
+
+                            %% Return task info
+                            Response = #{
+                                ?MCP_PARAM_TASK => TaskMap
+                            },
+                            send_response_via_registry(State, TransportId, Id, Response);
+                        {error, _} ->
+                            %% Return minimal task info
+                            Response = #{
+                                ?MCP_PARAM_TASK => #{
+                                    ?MCP_PARAM_TASK_ID => TaskId,
+                                    ?MCP_PARAM_STATUS => <<"pending">>
+                                }
+                            },
+                            send_response_via_registry(State, TransportId, Id, Response)
+                    end;
+                {error, CreateError} ->
+                    send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_TASK_FAILED,
+                        io_lib:format("Failed to create task: ~p", [CreateError]))
+            end
+    end.
+
+%% @doc Execute a tool asynchronously and update task status
+-spec execute_tool_async_task(
+    binary(),
+    pid() | undefined,
+    binary(),
+    tool_handler(),
+    map(),
+    pos_integer()
+) -> ok.
+execute_tool_async_task(TaskId, ClientPid, Name, Handler, Arguments, TimeoutMs) ->
+    %% Start task execution
+    case erlmcp_tasks:start_task_execution(TaskId, self()) of
+        ok ->
+            try
+                %% Execute the tool
+                Result = case TimeoutMs of
+                    undefined ->
+                        Handler(Arguments);
+                    Timeout ->
+                        %% With timeout
+                        case catch timer:apply_after(Timeout, erlang, exit, [normal]) of
+                            {'EXIT', {timeout, _}} ->
+                                {error, timeout};
+                            _ ->
+                                Handler(Arguments)
+                        end
+                end,
+
+                %% Normalize and complete task
+                ContentList = normalize_tool_result(Result),
+                erlmcp_tasks:complete(ClientPid, TaskId, #{
+                    ?MCP_PARAM_CONTENT => ContentList
+                })
+            catch
+                Class:Reason:Stack ->
+                    logger:error("Async tool ~p crashed: ~p:~p~n~p", [Name, Class, Reason, Stack]),
+                    erlmcp_tasks:fail_task(TaskId, #{
+                        code => ?MCP_ERROR_TOOL_EXECUTION_FAILED,
+                        message => list_to_binary(io_lib:format("~p:~p", [Class, Reason])),
+                        data => #{
+                            class => Class,
+                            reason => Reason
+                        }
+                    })
+            end;
+        {error, _} ->
+            %% Task already started or failed
+            ok
     end.
 
 -spec handle_get_prompt(json_rpc_id(), binary(), map(), atom(), state()) -> ok.
@@ -2039,4 +2354,52 @@ validate_log_level_binary(LevelBinary) when is_binary(LevelBinary) ->
     catch
         error:badarg ->
             {error, invalid_level}
+    end.
+
+%%====================================================================
+%% Internal functions - Tasks API Support (MCP 2025-11-25)
+%%====================================================================
+
+%% @doc Validate task creation parameters
+%% Extracts action, metadata, and options from params
+-spec validate_task_create_params(map()) ->
+    {ok, map(), map(), map()} | {error, {integer(), binary()}}.
+validate_task_create_params(Params) ->
+    case maps:get(<<"action">>, Params, undefined) of
+        undefined ->
+            {error, {?JSONRPC_INVALID_PARAMS, <<"Missing required 'action' parameter">>}};
+        Action when is_map(Action) ->
+            Metadata = maps:get(<<"metadata">>, Params, #{}),
+            Options = maps:get(<<"options">>, Params, #{}),
+            {ok, Action, Metadata, Options};
+        _ ->
+            {error, {?JSONRPC_INVALID_PARAMS, <<"Action must be an object">>}}
+    end.
+
+%% @doc Wait for task result with timeout
+%% Polls task status until complete, failed, or timeout
+-spec wait_for_task_result(pid() | undefined, binary(), pos_integer()) ->
+    {ok, term()} | {error, term()}.
+wait_for_task_result(ClientPid, TaskId, Timeout) ->
+    Start = erlang:system_time(millisecond),
+    wait_for_task_result_loop(ClientPid, TaskId, Timeout, Start).
+
+-spec wait_for_task_result_loop(pid() | undefined, binary(), pos_integer(), integer()) ->
+    {ok, term()} | {error, term()}.
+wait_for_task_result_loop(ClientPid, TaskId, Timeout, Start) ->
+    case erlmcp_tasks:get_result(ClientPid, TaskId) of
+        {ok, Result} ->
+            {ok, Result};
+        {error, ?MCP_ERROR_TASK_RESULT_NOT_READY} ->
+            Now = erlang:system_time(millisecond),
+            if
+                Now - Start >= Timeout ->
+                    {error, timeout};
+                true ->
+                    %% Wait before polling again (500ms)
+                    timer:sleep(500),
+                    wait_for_task_result_loop(ClientPid, TaskId, Timeout, Start)
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.

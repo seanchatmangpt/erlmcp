@@ -79,10 +79,14 @@ start_link() ->
 %% @doc Create a new task.
 %% Action is a map describing the operation to perform.
 %% Metadata can include progressToken, timeout, etc.
--spec create_task(pid() | undefined, map(), map()) ->
+-spec create_task(pid() | undefined, map(), map() | undefined) ->
     {ok, task_id()} | {error, term()}.
-create_task(ClientPid, Action, Metadata) when is_map(Action), is_map(Metadata) ->
-    gen_server:call(?SERVER, {create_task, ClientPid, Action, Metadata}).
+create_task(ClientPid, Action, Metadata) when is_map(Action) ->
+    MetadataMap = case Metadata of
+        undefined -> #{};
+        _ when is_map(Metadata) -> Metadata
+    end,
+    gen_server:call(?SERVER, {create_task, ClientPid, Action, MetadataMap}).
 
 %% @doc List tasks with optional cursor-based pagination.
 -spec list_tasks(pid() | undefined, binary() | undefined, pos_integer()) ->
@@ -246,20 +250,21 @@ set_task_progress(TaskId, Progress) when is_binary(TaskId) ->
 init([]) ->
     logger:info("Starting MCP Tasks manager"),
 
-    % Create ETS table for tasks (only if it doesn't exist)
+    % Create ETS table for tasks (always recreate to ensure clean state)
+    % If table exists from previous run, delete it first
     case ets:info(?TASKS_TABLE) of
-        undefined ->
-            ets:new(?TASKS_TABLE, [
-                named_table,
-                public,
-                set,
-                {keypos, #mcp_task.id},
-                {read_concurrency, true},
-                {write_concurrency, true}
-            ]);
-        _ ->
-            ok  % Table already exists
+        undefined -> ok;
+        _ -> ets:delete(?TASKS_TABLE)
     end,
+
+    ets:new(?TASKS_TABLE, [
+        named_table,
+        public,
+        set,
+        {keypos, #mcp_task.id},
+        {read_concurrency, true},
+        {write_concurrency, true}
+    ]),
 
     % Schedule periodic cleanup of expired tasks
     schedule_cleanup(),
@@ -275,9 +280,18 @@ init([]) ->
 handle_call({create_task, ClientPid, Action, Metadata}, _From, State) ->
     case State#state.task_count >= ?MAX_CONCURRENT_TASKS of
         true ->
-            {reply, {error, ?MCP_ERROR_MAX_CONCURRENT_TASKS}, State};
+            {reply, {error, {max_concurrent_tasks, ?MCP_ERROR_MAX_CONCURRENT_TASKS}}, State};
         false ->
             {Reply, NewState} = do_create_task(ClientPid, Action, Metadata, State),
+            {reply, Reply, NewState}
+    end;
+
+handle_call({create_task, ClientPid, Action, Metadata, Options}, _From, State) ->
+    case State#state.task_count >= ?MAX_CONCURRENT_TASKS of
+        true ->
+            {reply, {error, {max_concurrent_tasks, ?MCP_ERROR_MAX_CONCURRENT_TASKS}}, State};
+        false ->
+            {Reply, NewState} = do_create_task_with_options(ClientPid, Action, Metadata, Options, State),
             {reply, Reply, NewState}
     end;
 
@@ -309,15 +323,6 @@ handle_call({fail_task, TaskId, Error}, _From, State) ->
     {Reply, NewState} = do_fail_task(TaskId, Error, State),
     {reply, Reply, NewState};
 
-handle_call({create_task, ClientPid, Action, Metadata, Options}, _From, State) ->
-    case State#state.task_count >= ?MAX_CONCURRENT_TASKS of
-        true ->
-            {reply, {error, ?MCP_ERROR_MAX_CONCURRENT_TASKS}, State};
-        false ->
-            {Reply, NewState} = do_create_task_with_options(ClientPid, Action, Metadata, Options, State),
-            {reply, Reply, NewState}
-    end;
-
 handle_call({update_task, ClientPid, TaskId, UpdateFun}, _From, State) ->
     Reply = do_update_task(ClientPid, TaskId, UpdateFun),
     {reply, Reply, State};
@@ -327,8 +332,8 @@ handle_call({update_status, ClientPid, TaskId, Status}, _From, State) ->
     {reply, Reply, State};
 
 handle_call(cleanup_expired, _From, State) ->
-    {Reply, NewState} = do_cleanup_expired_tasks_with_count(State),
-    {reply, Reply, NewState};
+    {ok, Count, NewState} = do_cleanup_expired_tasks_with_count(State),
+    {reply, {ok, Count}, NewState};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -364,6 +369,8 @@ handle_info(_Info, State) ->
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, #state{task_count = Count}) ->
     logger:info("Tasks manager terminating with ~p active tasks", [Count]),
+    % Clean up ETS table to prevent state leakage
+    catch ets:delete(?TASKS_TABLE),
     ok.
 
 %% @private
@@ -382,10 +389,8 @@ do_create_task(ClientPid, Action, Metadata, State) ->
     ExpiresAt = erlang:system_time(millisecond) +
                  maps:get(<<"expiresAfter">>, Metadata, ?DEFAULT_EXPIRY_MS),
 
-    ProgressToken = case maps:get(<<"progressToken">>, Metadata, undefined) of
-        undefined -> undefined;
-        _ -> erlmcp_progress:generate_token()
-    end,
+    % Always generate a progress token (per MCP spec requirements)
+    ProgressToken = erlmcp_progress:generate_token(),
 
     Now = erlang:system_time(millisecond),
 
@@ -415,11 +420,9 @@ do_create_task(ClientPid, Action, Metadata, State) ->
     Task1 = Task#mcp_task{timer_ref = TimerRef},
     ets:insert(?TASKS_TABLE, Task1),
 
-    case ProgressToken of
-        undefined -> ok;
-        _Token ->
-            erlmcp_progress:create(ClientPid, <<"Task created: ", TaskId/binary>>)
-    end,
+    % Create progress tracking
+    ProgressPid = resolve_client_pid(ClientPid),
+    erlmcp_progress:create(ProgressPid, <<"Task created: ", TaskId/binary>>),
 
     logger:debug("Created task ~p for client ~p", [TaskId, ClientPid]),
     send_task_notification(ClientPid, TaskId),
@@ -428,9 +431,17 @@ do_create_task(ClientPid, Action, Metadata, State) ->
 
 %% @private
 do_list_tasks(ClientPid, Cursor, Limit) ->
+    % Normalize ClientPid for comparison - resolve atoms to their registered pids
+    NormalizedPid = resolve_client_pid(ClientPid),
     AllTasks = ets:foldl(
-        fun(#mcp_task{client_pid = Pid} = Task, Acc) ->
-            case Pid =:= ClientPid of
+        fun(#mcp_task{client_pid = TaskClientPid} = Task, Acc) ->
+            % Match if:
+            % 1. TaskClientPid is undefined (all tasks)
+            % 2. NormalizedPid is undefined (return all)
+            % 3. Both match exactly (both pids or both undefined)
+            % 4. TaskClientPid is an atom that resolves to NormalizedPid
+            TaskNormalized = resolve_client_pid(TaskClientPid),
+            case match_client_pids(NormalizedPid, TaskNormalized) of
                 true -> [Task | Acc];
                 false -> Acc
             end
@@ -485,73 +496,83 @@ do_list_tasks(ClientPid, Cursor, Limit) ->
 
 %% @private
 do_get_task(ClientPid, TaskId) ->
+    NormalizedPid = resolve_client_pid(ClientPid),
     case ets:lookup(?TASKS_TABLE, TaskId) of
-        [#mcp_task{client_pid = Pid} = Task] when Pid =:= ClientPid ->
-            {ok, format_task_for_api(Task)};
-        [#mcp_task{}] ->
-            {error, ?MCP_MSG_TASK_NOT_FOUND};
+        [#mcp_task{client_pid = TaskPid} = Task] ->
+            TaskNormalized = resolve_client_pid(TaskPid),
+            case match_client_pids(NormalizedPid, TaskNormalized) of
+                true -> {ok, format_task_for_api(Task)};
+                false -> {error, ?MCP_MSG_TASK_NOT_FOUND}
+            end;
         [] ->
             {error, ?MCP_ERROR_TASK_NOT_FOUND}
     end.
 
 %% @private
 do_cancel_task(ClientPid, TaskId, Reason, State) ->
+    NormalizedPid = resolve_client_pid(ClientPid),
     case ets:lookup(?TASKS_TABLE, TaskId) of
-        [#mcp_task{client_pid = Pid, status = Status} = Task] when Pid =:= ClientPid ->
-            case Status of
-                completed ->
-                    {{error, ?MCP_ERROR_TASK_ALREADY_COMPLETED}, State};
-                cancelled ->
-                    {{error, ?MCP_ERROR_TASK_STATE_INVALID}, State};
-                _ ->
-                    cancel_task_timer(Task),
+        [#mcp_task{client_pid = TaskPid, status = Status} = Task] ->
+            TaskNormalized = resolve_client_pid(TaskPid),
+            case match_client_pids(NormalizedPid, TaskNormalized) of
+                true ->
+                    case Status of
+                        completed ->
+                            {{error, {task_already_completed, ?MCP_ERROR_TASK_ALREADY_COMPLETED}}, State};
+                        cancelled ->
+                            {{error, {task_state_invalid, ?MCP_ERROR_TASK_STATE_INVALID}}, State};
+                        _ ->
+                            cancel_task_timer(Task),
 
-                    UpdatedTask = Task#mcp_task{
-                        status = cancelled,
-                        updated_at = erlang:system_time(millisecond),
-                        error = #mcp_error{
-                            code = ?MCP_ERROR_TASK_CANCELLED,
-                            message = ?MCP_MSG_TASK_CANCELLED,
-                            data = #{reason => Reason}
-                        }
-                    },
-                    ets:insert(?TASKS_TABLE, UpdatedTask),
+                            UpdatedTask = Task#mcp_task{
+                                status = cancelled,
+                                updated_at = erlang:system_time(millisecond),
+                                error = #mcp_error{
+                                    code = ?MCP_ERROR_TASK_CANCELLED,
+                                    message = ?MCP_MSG_TASK_CANCELLED,
+                                    data = #{reason => Reason}
+                                }
+                            },
+                            ets:insert(?TASKS_TABLE, UpdatedTask),
 
-                    case Task#mcp_task.worker_pid of
-                        undefined -> ok;
-                        WorkerPid when is_pid(WorkerPid) ->
-                            exit(WorkerPid, {task_cancelled, Reason})
-                    end,
+                            case Task#mcp_task.worker_pid of
+                                undefined -> ok;
+                                WorkerPid when is_pid(WorkerPid) ->
+                                    exit(WorkerPid, {task_cancelled, Reason})
+                            end,
 
-                    case Task#mcp_task.progress_token of
-                        undefined -> ok;
-                        Token -> erlmcp_progress:complete(Token)
-                    end,
+                            erlmcp_progress:complete(Task#mcp_task.progress_token),
 
-                    logger:info("Cancelled task ~p: ~s", [TaskId, Reason]),
-                    send_task_notification(ClientPid, TaskId),
+                            logger:info("Cancelled task ~p: ~s", [TaskId, Reason]),
+                            send_task_notification(ClientPid, TaskId),
 
-                    {{ok, cancelled}, State}
+                            {{ok, cancelled}, State}
+                    end;
+                false ->
+                    {{error, {task_not_found, ?MCP_ERROR_TASK_NOT_FOUND}}, State}
             end;
-        [#mcp_task{}] ->
-            {{error, ?MCP_MSG_TASK_NOT_FOUND}, State};
         [] ->
-            {{error, ?MCP_ERROR_TASK_NOT_FOUND}, State}
+            {{error, {task_not_found, ?MCP_ERROR_TASK_NOT_FOUND}}, State}
     end.
 
 %% @private
 do_get_task_result(ClientPid, TaskId) ->
+    NormalizedPid = resolve_client_pid(ClientPid),
     case ets:lookup(?TASKS_TABLE, TaskId) of
-        [#mcp_task{client_pid = Pid, status = Status, result = Result}] when Pid =:= ClientPid ->
-            case Status of
-                completed -> {ok, Result};
-                failed -> {error, ?MCP_ERROR_TASK_FAILED};
-                pending -> {error, ?MCP_ERROR_TASK_RESULT_NOT_READY};
-                processing -> {error, ?MCP_ERROR_TASK_RESULT_NOT_READY};
-                cancelled -> {error, ?MCP_ERROR_TASK_CANCELLED}
+        [#mcp_task{client_pid = TaskPid, status = Status, result = Result}] ->
+            TaskNormalized = resolve_client_pid(TaskPid),
+            case match_client_pids(NormalizedPid, TaskNormalized) of
+                true ->
+                    case Status of
+                        completed -> {ok, Result};
+                        failed -> {error, ?MCP_ERROR_TASK_FAILED};
+                        pending -> {error, ?MCP_ERROR_TASK_RESULT_NOT_READY};
+                        processing -> {error, ?MCP_ERROR_TASK_RESULT_NOT_READY};
+                        cancelled -> {error, ?MCP_ERROR_TASK_CANCELLED}
+                    end;
+                false ->
+                    {error, ?MCP_MSG_TASK_NOT_FOUND}
             end;
-        [#mcp_task{}] ->
-            {error, ?MCP_MSG_TASK_NOT_FOUND};
         [] ->
             {error, ?MCP_ERROR_TASK_NOT_FOUND}
     end.
@@ -575,15 +596,16 @@ do_start_task_execution(TaskId, WorkerPid, State) ->
             {ok, State};
         [#mcp_task{status = Status}] ->
             logger:warning("Cannot start task ~p in status ~p", [TaskId, Status]),
-            {{error, ?MCP_ERROR_TASK_STATE_INVALID}, State};
+            {{error, {task_state_invalid, ?MCP_ERROR_TASK_STATE_INVALID}}, State};
         [] ->
-            {{error, ?MCP_ERROR_TASK_NOT_FOUND}, State}
+            {{error, {task_not_found, ?MCP_ERROR_TASK_NOT_FOUND}}, State}
     end.
 
 %% @private
 do_complete_task(TaskId, Result, State) ->
     case ets:lookup(?TASKS_TABLE, TaskId) of
-        [#mcp_task{status = processing, timer_ref = TimerRef, progress_token = ProgressToken} = Task] ->
+        [#mcp_task{status = Status, timer_ref = TimerRef, progress_token = ProgressToken} = Task]
+          when Status =:= processing; Status =:= pending ->
             cancel_timer(TimerRef),
 
             UpdatedTask = Task#mcp_task{
@@ -594,10 +616,7 @@ do_complete_task(TaskId, Result, State) ->
             },
             ets:insert(?TASKS_TABLE, UpdatedTask),
 
-            case ProgressToken of
-                undefined -> ok;
-                Token -> erlmcp_progress:complete(Token)
-            end,
+            erlmcp_progress:complete(ProgressToken),
 
             logger:info("Task ~p completed successfully", [TaskId]),
             send_task_notification(Task#mcp_task.client_pid, TaskId),
@@ -605,9 +624,9 @@ do_complete_task(TaskId, Result, State) ->
             {ok, State#state{task_count = max(0, State#state.task_count - 1)}};
         [#mcp_task{status = Status}] ->
             logger:warning("Cannot complete task ~p in status ~p", [TaskId, Status]),
-            {{error, ?MCP_ERROR_TASK_STATE_INVALID}, State};
+            {{error, {task_state_invalid, ?MCP_ERROR_TASK_STATE_INVALID}}, State};
         [] ->
-            {{error, ?MCP_ERROR_TASK_NOT_FOUND}, State}
+            {{error, {task_not_found, ?MCP_ERROR_TASK_NOT_FOUND}}, State}
     end.
 
 %% @private
@@ -641,10 +660,7 @@ do_fail_task(TaskId, Error, State) ->
             },
             ets:insert(?TASKS_TABLE, UpdatedTask),
 
-            case ProgressToken of
-                undefined -> ok;
-                Token -> erlmcp_progress:complete(Token)
-            end,
+            erlmcp_progress:complete(ProgressToken),
 
             logger:error("Task ~p failed: ~p", [TaskId, Error]),
             send_task_notification(Task#mcp_task.client_pid, TaskId),
@@ -652,15 +668,16 @@ do_fail_task(TaskId, Error, State) ->
             {ok, State#state{task_count = max(0, State#state.task_count - 1)}};
         [#mcp_task{status = Status}] ->
             logger:warning("Cannot fail task ~p in status ~p", [TaskId, Status]),
-            {{error, ?MCP_ERROR_TASK_STATE_INVALID}, State};
+            {{error, {task_state_invalid, ?MCP_ERROR_TASK_STATE_INVALID}}, State};
         [] ->
-            {{error, ?MCP_ERROR_TASK_NOT_FOUND}, State}
+            {{error, {task_not_found, ?MCP_ERROR_TASK_NOT_FOUND}}, State}
     end.
 
 %% @private
 do_set_task_progress(TaskId, Progress, State) ->
     case ets:lookup(?TASKS_TABLE, TaskId) of
-        [#mcp_task{status = processing, progress_token = ProgressToken} = Task] ->
+        [#mcp_task{status = Status, progress_token = ProgressToken} = Task]
+          when Status =:= processing; Status =:= pending ->
             {Current, Total} = case Progress of
                 {Cur, Tot} -> {Cur, Tot};
                 Cur when is_number(Cur) -> {Cur, Task#mcp_task.total}
@@ -673,19 +690,15 @@ do_set_task_progress(TaskId, Progress, State) ->
             },
             ets:insert(?TASKS_TABLE, UpdatedTask),
 
-            case ProgressToken of
-                undefined -> ok;
-                Token ->
-                    Update = #{
-                        current => Current,
-                        total => Total
-                    },
-                    erlmcp_progress:update(Token, Update)
-            end,
+            Update = #{
+                current => Current,
+                total => Total
+            },
+            erlmcp_progress:update(ProgressToken, Update),
 
             State;
         [#mcp_task{}] ->
-            logger:warning("Cannot set progress on non-processing task ~p", [TaskId]),
+            logger:warning("Cannot set progress on task ~p with completed/failed status", [TaskId]),
             State;
         [] ->
             logger:warning("Task ~p not found for progress update", [TaskId]),
@@ -787,7 +800,8 @@ do_cleanup_expired_tasks(State) ->
 generate_task_id() ->
     Unique = erlang:unique_integer([positive, monotonic]),
     Time = erlang:system_time(microsecond),
-    <<Unique:64, Time:64>>.
+    Random = crypto:strong_rand_bytes(16),
+    <<Unique:64, Time:64, Random/binary>>.
 
 %% @private
 format_task_for_api(#mcp_task{
@@ -795,10 +809,12 @@ format_task_for_api(#mcp_task{
     status = Status,
     action = Action,
     metadata = Metadata,
+    result = Result,
     error = Error,
     created_at = CreatedAt,
     updated_at = UpdatedAt,
     expires_at = ExpiresAt,
+    progress_token = ProgressToken,
     progress = Progress,
     total = Total
 }) ->
@@ -806,6 +822,7 @@ format_task_for_api(#mcp_task{
         ?MCP_PARAM_TASK_ID => Id,
         ?MCP_PARAM_STATUS => status_to_binary(Status),
         <<"action">> => Action,
+        <<"metadata">> => Metadata,
         <<"createdAt">> => CreatedAt,
         <<"updatedAt">> => UpdatedAt
     },
@@ -825,22 +842,27 @@ format_task_for_api(#mcp_task{
         _ -> Base2#{<<"expiresAt">> => ExpiresAt}
     end,
 
-    Base4 = case maps:size(Metadata) of
-        0 -> Base3;
-        _ -> Base3#{?MCP_PARAM_METADATA => Metadata}
+    Base4 = case ProgressToken of
+        undefined -> Base3#{<<"progressToken">> => null};
+        _ -> Base3#{<<"progressToken">> => ProgressToken}
     end,
 
-    Base5 = case Error of
+    Base5 = case Result of
         undefined -> Base4;
+        _ -> Base4#{<<"result">> => Result}
+    end,
+
+    Base6 = case Error of
+        undefined -> Base5;
         #mcp_error{code = Code, message = Msg, data = Data} ->
-            Base4#{?MCP_PARAM_ERROR => #{
+            Base5#{?MCP_PARAM_ERROR => #{
                 <<"code">> => Code,
                 <<"message">> => Msg,
                 <<"data">> => Data
             }}
     end,
 
-    Base5.
+    Base6.
 
 %% @private
 status_to_binary(pending) -> <<"pending">>;
@@ -872,6 +894,16 @@ cancel_timer(TimerRef) when is_reference(TimerRef) ->
 %% @private
 send_task_notification(undefined, _TaskId) -> ok;
 send_task_notification(ClientPid, TaskId) when is_pid(ClientPid) ->
+    send_notification_to_pid(ClientPid, TaskId);
+send_task_notification(ClientPidName, TaskId) when is_atom(ClientPidName) ->
+    % Handle registered process name
+    case whereis(ClientPidName) of
+        undefined -> ok;
+        Pid when is_pid(Pid) -> send_notification_to_pid(Pid, TaskId)
+    end.
+
+%% @private
+send_notification_to_pid(TargetPid, TaskId) ->
     case ets:lookup(?TASKS_TABLE, TaskId) of
         [#mcp_task{} = Task] ->
             Notification = #{
@@ -881,7 +913,7 @@ send_task_notification(ClientPid, TaskId) when is_pid(ClientPid) ->
                     ?MCP_PARAM_TASK => format_task_for_api(Task)
                 }
             },
-            ClientPid ! {mcp_notification, Notification},
+            TargetPid ! {mcp_notification, Notification},
             ok;
         [] ->
             ok
@@ -892,6 +924,25 @@ schedule_cleanup() ->
     erlang:send_after(300000, self(), cleanup_expired_tasks).
 
 %% @private
+%% Resolve client identifier to pid for operations requiring actual pids
+%% Handles: undefined -> undefined, pid() -> pid(), atom() -> look up registered name
+resolve_client_pid(undefined) -> undefined;
+resolve_client_pid(Pid) when is_pid(Pid) -> Pid;
+resolve_client_pid(Name) when is_atom(Name) ->
+    case whereis(Name) of
+        undefined -> undefined;
+        Pid when is_pid(Pid) -> Pid
+    end.
+
+%% @private
+%% Match client pids for task filtering
+%% undefined matches everything (get all tasks)
+match_client_pids(undefined, _TaskPid) -> true;
+match_client_pids(_QueryPid, undefined) -> true;
+match_client_pids(QueryPid, TaskPid) when QueryPid =:= TaskPid -> true;
+match_client_pids(_, _) -> false.
+
+%% @private
 do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
     TaskId = generate_task_id(),
     TimeoutMs = maps:get(<<"timeout">>, Metadata, ?DEFAULT_TASK_TIMEOUT_MS),
@@ -900,10 +951,8 @@ do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
     TTL = maps:get(ttl_ms, Options, maps:get(<<"expiresAfter">>, Metadata, ?DEFAULT_EXPIRY_MS)),
     ExpiresAt = erlang:system_time(millisecond) + TTL,
 
-    ProgressToken = case maps:get(<<"progressToken">>, Metadata, undefined) of
-        undefined -> undefined;
-        _ -> erlmcp_progress:generate_token()
-    end,
+    % Always generate a progress token (per MCP spec requirements)
+    ProgressToken = erlmcp_progress:generate_token(),
 
     Now = erlang:system_time(millisecond),
 
@@ -933,11 +982,9 @@ do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
     Task1 = Task#mcp_task{timer_ref = TimerRef},
     ets:insert(?TASKS_TABLE, Task1),
 
-    case ProgressToken of
-        undefined -> ok;
-        _Token ->
-            erlmcp_progress:create(ClientPid, <<"Task created: ", TaskId/binary>>)
-    end,
+    % Create progress tracking
+    ProgressPid = resolve_client_pid(ClientPid),
+    erlmcp_progress:create(ProgressPid, <<"Task created: ", TaskId/binary>>),
 
     logger:debug("Created task ~p for client ~p with TTL ~p ms", [TaskId, ClientPid, TTL]),
     send_task_notification(ClientPid, TaskId),
@@ -946,28 +993,33 @@ do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
 
 %% @private
 do_update_task(ClientPid, TaskId, UpdateFun) ->
+    NormalizedPid = resolve_client_pid(ClientPid),
     case ets:lookup(?TASKS_TABLE, TaskId) of
-        [#mcp_task{client_pid = Pid} = Task] when Pid =:= ClientPid; Pid =:= undefined ->
-            try
-                TaskMap = format_task_for_api(Task),
-                UpdatedTaskMap = UpdateFun(TaskMap),
+        [#mcp_task{client_pid = TaskPid} = Task] ->
+            TaskNormalized = resolve_client_pid(TaskPid),
+            case match_client_pids(NormalizedPid, TaskNormalized) of
+                true ->
+                    try
+                        TaskMap = format_task_for_api(Task),
+                        UpdatedTaskMap = UpdateFun(TaskMap),
 
-                % Extract updated fields from map
-                NewMetadata = maps:get(<<"metadata">>, UpdatedTaskMap, Task#mcp_task.metadata),
+                        % Extract updated fields from map
+                        NewMetadata = maps:get(<<"metadata">>, UpdatedTaskMap, Task#mcp_task.metadata),
 
-                UpdatedTask = Task#mcp_task{
-                    metadata = NewMetadata,
-                    updated_at = erlang:system_time(millisecond)
-                },
-                ets:insert(?TASKS_TABLE, UpdatedTask),
-                ok
-            catch
-                _:Error ->
-                    logger:error("Update function failed for task ~p: ~p", [TaskId, Error]),
-                    {error, invalid_update_function}
+                        UpdatedTask = Task#mcp_task{
+                            metadata = NewMetadata,
+                            updated_at = erlang:system_time(millisecond)
+                        },
+                        ets:insert(?TASKS_TABLE, UpdatedTask),
+                        ok
+                    catch
+                        _:Error ->
+                            logger:error("Update function failed for task ~p: ~p", [TaskId, Error]),
+                            {error, invalid_update_function}
+                    end;
+                false ->
+                    {error, ?MCP_MSG_TASK_NOT_FOUND}
             end;
-        [#mcp_task{}] ->
-            {error, ?MCP_MSG_TASK_NOT_FOUND};
         [] ->
             {error, ?MCP_ERROR_TASK_NOT_FOUND}
     end.
@@ -985,19 +1037,24 @@ do_update_status(ClientPid, TaskId, StatusBin) ->
 
     case Status of
         undefined ->
-            {error, ?MCP_ERROR_TASK_STATE_INVALID};
+            {error, {task_state_invalid, ?MCP_ERROR_TASK_STATE_INVALID}};
         _ ->
+            NormalizedPid = resolve_client_pid(ClientPid),
             case ets:lookup(?TASKS_TABLE, TaskId) of
-                [#mcp_task{client_pid = Pid} = Task] when Pid =:= ClientPid; Pid =:= undefined ->
-                    UpdatedTask = Task#mcp_task{
-                        status = Status,
-                        updated_at = erlang:system_time(millisecond)
-                    },
-                    ets:insert(?TASKS_TABLE, UpdatedTask),
-                    send_task_notification(ClientPid, TaskId),
-                    ok;
-                [#mcp_task{}] ->
-                    {error, ?MCP_MSG_TASK_NOT_FOUND};
+                [#mcp_task{client_pid = TaskPid} = Task] ->
+                    TaskNormalized = resolve_client_pid(TaskPid),
+                    case match_client_pids(NormalizedPid, TaskNormalized) of
+                        true ->
+                            UpdatedTask = Task#mcp_task{
+                                status = Status,
+                                updated_at = erlang:system_time(millisecond)
+                            },
+                            ets:insert(?TASKS_TABLE, UpdatedTask),
+                            send_task_notification(ClientPid, TaskId),
+                            ok;
+                        false ->
+                            {error, ?MCP_MSG_TASK_NOT_FOUND}
+                    end;
                 [] ->
                     {error, ?MCP_ERROR_TASK_NOT_FOUND}
             end

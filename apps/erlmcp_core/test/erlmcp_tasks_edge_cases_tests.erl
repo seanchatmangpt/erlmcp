@@ -206,15 +206,25 @@ test_task_timeout() ->
     {ok, TaskId} = erlmcp_tasks:create_task(undefined, Action, #{<<"timeout">> => 100}),
 
     %% Start task with short timeout via API
-    ok = erlmcp_tasks:start_task_execution(TaskId, self()),
+    %% Use a separate worker process so test process doesn't get killed
+    WorkerPid = spawn(fun() -> receive stop -> ok end end),
+    ok = erlmcp_tasks:start_task_execution(TaskId, WorkerPid),
 
-    %% Wait for timeout
-    timer:sleep(200),
+    %% Wait for timeout (100ms timeout + buffer)
+    timer:sleep(250),
 
     %% Verify: Task failed due to timeout via API
     {ok, Task} = erlmcp_tasks:get_task(undefined, TaskId),
     ?assertEqual(<<"failed">>, maps:get(<<"status">>, Task)),
-    ?assertEqual(<<"Task execution timeout">>, maps:get(<<"error">>, Task)).
+
+    %% Verify error structure (Chicago School: observable state only)
+    ErrorMap = maps:get(<<"error">>, Task),
+    ?assertEqual(-32085, maps:get(<<"code">>, ErrorMap)),  %% ?MCP_ERROR_TASK_TIMEOUT
+    ?assertEqual(<<"Task timeout">>, maps:get(<<"message">>, ErrorMap)),  %% ?MCP_MSG_TASK_TIMEOUT
+    ?assertEqual(100, maps:get(timeout, maps:get(<<"data">>, ErrorMap))),
+
+    %% Verify worker process was terminated by timeout
+    ?assertNot(is_process_alive(WorkerPid)).
 
 %% @doc Test cleanup of expired tasks
 test_cleanup_expired_tasks() ->
