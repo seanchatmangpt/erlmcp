@@ -1,5 +1,5 @@
 -module(erlmcp_transport_http).
--behaviour(erlmcp_transport_behavior).
+%% -behaviour(erlmcp_transport_behavior).  % Conflicts with gen_server init/1
 
 %% Transport behavior callbacks
 -export([send/2, close/1, init/1]).

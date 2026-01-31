@@ -111,11 +111,11 @@ initialize(Client, Capabilities, Options) ->
 %% Simplest possible request - returns empty object on success
 -spec ping(client()) -> {ok, map()} | {error, term()}.
 ping(Client) ->
-    gen_server:call(Client, ping).
+    gen_server:call(Client, ping, 2000).
 
 -spec list_resources(client()) -> {ok, [map()]} | {error, term()}.
 list_resources(Client) ->
-    gen_server:call(Client, list_resources).
+    gen_server:call(Client, list_resources, 2000).
 
 -spec read_resource(client(), binary()) -> {ok, map()} | {error, term()}.
 read_resource(Client, Uri) when is_binary(Uri) ->
@@ -123,7 +123,7 @@ read_resource(Client, Uri) when is_binary(Uri) ->
 
 -spec list_prompts(client()) -> {ok, [map()]} | {error, term()}.
 list_prompts(Client) ->
-    gen_server:call(Client, list_prompts).
+    gen_server:call(Client, list_prompts, 2000).
 
 -spec get_prompt(client(), binary()) -> {ok, map()} | {error, term()}.
 get_prompt(Client, Name) when is_binary(Name) ->
@@ -135,7 +135,7 @@ get_prompt(Client, Name, Arguments) when is_binary(Name), is_map(Arguments) ->
 
 -spec list_tools(client()) -> {ok, [map()]} | {error, term()}.
 list_tools(Client) ->
-    gen_server:call(Client, list_tools).
+    gen_server:call(Client, list_tools, 2000).
 
 -spec call_tool(client(), binary(), map()) -> {ok, map()} | {error, term()}.
 call_tool(Client, Name, Arguments) when is_binary(Name), is_map(Arguments) ->
@@ -156,7 +156,7 @@ stop(Client) ->
 
 -spec list_resource_templates(client()) -> {ok, [map()]} | {error, term()}.
 list_resource_templates(Client) ->
-    gen_server:call(Client, list_resource_templates).
+    gen_server:call(Client, list_resource_templates, 2000).
 
 -spec subscribe_to_resource(client(), binary()) -> ok | {error, term()}.
 subscribe_to_resource(Client, Uri) when is_binary(Uri) ->
@@ -169,14 +169,14 @@ unsubscribe_from_resource(Client, Uri) when is_binary(Uri) ->
 -spec with_batch(client(), fun((batch_id()) -> Result)) -> Result when Result :: term().
 with_batch(Client, BatchFun) when is_function(BatchFun, 1) ->
     BatchId = make_ref(),
-    ok = gen_server:call(Client, {start_batch, BatchId}),
+    ok = gen_server:call(Client, {start_batch, BatchId}, 2000),
     try
         Result = BatchFun(BatchId),
-        {ok, _Count} = gen_server:call(Client, {execute_batch, BatchId}),
+        {ok, _Count} = gen_server:call(Client, {execute_batch, BatchId}, 2000),
         Result
     catch
         Class:Reason:Stacktrace ->
-            gen_server:call(Client, {cancel_batch, BatchId}),
+            gen_server:call(Client, {cancel_batch, BatchId}, 2000),
             erlang:raise(Class, Reason, Stacktrace)
     end.
 
@@ -188,19 +188,19 @@ send_batch_request(Client, BatchId, Method, Params)
 
 -spec set_notification_handler(client(), binary(), notification_handler()) -> ok.
 set_notification_handler(Client, Method, Handler) when is_binary(Method) ->
-    gen_server:call(Client, {set_notification_handler, Method, Handler}).
+    gen_server:call(Client, {set_notification_handler, Method, Handler}, 2000).
 
 -spec remove_notification_handler(client(), binary()) -> ok.
 remove_notification_handler(Client, Method) when is_binary(Method) ->
-    gen_server:call(Client, {remove_notification_handler, Method}).
+    gen_server:call(Client, {remove_notification_handler, Method}, 2000).
 
 -spec set_sampling_handler(client(), sampling_handler()) -> ok.
 set_sampling_handler(Client, Handler) ->
-    gen_server:call(Client, {set_sampling_handler, Handler}).
+    gen_server:call(Client, {set_sampling_handler, Handler}, 2000).
 
 -spec remove_sampling_handler(client()) -> ok.
 remove_sampling_handler(Client) ->
-    gen_server:call(Client, remove_sampling_handler).
+    gen_server:call(Client, remove_sampling_handler, 2000).
 
 %%====================================================================
 %% gen_server callbacks

@@ -31,7 +31,6 @@
     register_notification_handler/3,
     unregister_notification_handler/2,
     unregister_all_handlers/1,
-    set_completion_handler/2,
     stop/1
 ]).
 
@@ -57,14 +56,15 @@
     resource_templates = #{} :: #{binary() => {#mcp_resource_template{}, resource_handler()}},
     tools = #{} :: #{binary() => {#mcp_tool{}, tool_handler(), map() | undefined}},
     prompts = #{} :: #{binary() => {#mcp_prompt{}, prompt_handler()}},
-    completion_handler :: pid() | undefined,  % Completion server process
     subscriptions = #{} :: #{binary() => sets:set(pid())},
     progress_tokens = #{} :: #{binary() | integer() => #mcp_progress_notification{}},
     notifier_pid :: pid() | undefined,
+    notifier_monitor_ref :: reference() | undefined,  % Monitor ref for notifier process cleanup
     initialized = false :: boolean(),
     last_tools_notification :: integer() | undefined,  % Rate limiting: timestamp of last tools/list_changed notification
     roots = #{} :: map(),  % Track roots state for change detection
-    notification_handlers = #{} :: #{binary() => {pid(), reference()}}  % Notification method -> {HandlerPid, MonitorRef}
+    notification_handlers = #{} :: #{binary() => {pid(), reference()}},  % Notification method -> {HandlerPid, MonitorRef}
+    cancellable_requests = #{} :: #{term() => reference()}  % RequestId -> CancellationToken mapping
 }).
 
 -type state() :: #state{}.
@@ -181,25 +181,18 @@ notify_resources_changed(Server) ->
 %% HandlerPid is monitored and will be automatically unregistered if it dies.
 -spec register_notification_handler(server(), binary(), pid()) -> ok.
 register_notification_handler(Server, Method, HandlerPid) when is_binary(Method), is_pid(HandlerPid) ->
-    gen_server:call(Server, {register_notification_handler, Method, HandlerPid}).
+    gen_server:call(Server, {register_notification_handler, Method, HandlerPid}, 1000).
 
 %% @doc Unregister a handler for a specific notification method.
 -spec unregister_notification_handler(server(), binary()) -> ok.
 unregister_notification_handler(Server, Method) when is_binary(Method) ->
-    gen_server:call(Server, {unregister_notification_handler, Method}).
+    gen_server:call(Server, {unregister_notification_handler, Method}, 1000).
 
 %% @doc Unregister all notification handlers for the calling process.
 %% Useful for cleanup when a client disconnects.
 -spec unregister_all_handlers(server()) -> ok.
 unregister_all_handlers(Server) ->
-    gen_server:call(Server, unregister_all_handlers).
-
-%% @doc Set the completion handler process for this server.
-%% The completion handler manages completion/complete requests.
-%% HandlerPid is monitored and will be automatically cleared if it dies.
--spec set_completion_handler(server(), pid()) -> ok.
-set_completion_handler(Server, HandlerPid) when is_pid(HandlerPid) ->
-    gen_server:call(Server, {set_completion_handler, HandlerPid}).
+    gen_server:call(Server, unregister_all_handlers, 1000).
 
 -spec stop(server()) -> ok.
 stop(Server) ->
@@ -220,7 +213,7 @@ init([ServerId, Capabilities]) ->
     end,
 
     % Monitor the notifier process
-    MonitorRef = erlang:monitor(process, NotifierPid),
+    NotifierMonitorRef = erlang:monitor(process, NotifierPid),
 
     % Start periodic GC for each server (Gap #10)
     start_periodic_gc(),
@@ -228,7 +221,8 @@ init([ServerId, Capabilities]) ->
     State = #state{
         server_id = ServerId,
         capabilities = Capabilities,
-        notifier_pid = NotifierPid
+        notifier_pid = NotifierPid,
+        notifier_monitor_ref = NotifierMonitorRef
     },
 
     logger:info("Starting MCP server ~p with capabilities: ~p", [ServerId, Capabilities]),
@@ -239,10 +233,7 @@ init([ServerId, Capabilities]) ->
 
 handle_call({add_resource, Uri, Handler}, _From, State) ->
     %% Gap #41: Validate URI format before registration
-    %% TODO: Re-enable when erlmcp_uri_validator is implemented
-    % case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
-    %     ok ->
-    case erlmcp_resource:validate_uri(Uri) of
+    case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
         ok ->
             Resource = #mcp_resource{
                 uri = Uri,
@@ -257,21 +248,12 @@ handle_call({add_resource, Uri, Handler}, _From, State) ->
                 <<"error_type">> => atom_to_binary(ErrorType, utf8),
                 <<"uri">> => Uri
             }}}, State}
-    % end;
-    % {error, {ErrorType, ErrorMsg}} ->
-    %     {reply, {error, {?JSONRPC_INVALID_PARAMS, ErrorMsg, #{
-    %         <<"error_type">> => atom_to_binary(ErrorType, utf8),
-    %         <<"uri">> => Uri
-    %     }}}, State}
     end;
 
 handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) ->
     %% Gap #41: Validate URI template format before registration
-    %% TODO: Implement erlmcp_uri_validator module
-    ok = validate_uri_template_placeholder(UriTemplate),
-    % case erlmcp_uri_validator:validate_uri_template(UriTemplate) of
-    case is_binary(UriTemplate) andalso byte_size(UriTemplate) > 0 of
-    Template = #mcp_resource_template{
+    case erlmcp_uri_validator:validate_uri_template(UriTemplate) of
+        ok ->
             Template = #mcp_resource_template{
                 uri_template = UriTemplate,
                 name = Name,
@@ -285,12 +267,6 @@ handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) -
                 <<"error_type">> => atom_to_binary(ErrorType, utf8),
                 <<"uri_template">> => UriTemplate
             }}}, State}
-    % end;
-    % {error, {ErrorType, ErrorMsg}} ->
-    %     {reply, {error, {?JSONRPC_INVALID_PARAMS, ErrorMsg, #{
-    %         <<"error_type">> => atom_to_binary(ErrorType, utf8),
-    %         <<"uri_template">> => UriTemplate
-    %     }}}, State}
     end;
 
 handle_call({add_tool, Name, Handler}, _From, State) ->
@@ -493,18 +469,6 @@ handle_call(unregister_all_handlers, {CallerPid, _Tag}, State) ->
     end, State#state.notification_handlers),
     {reply, ok, State#state{notification_handlers = NewHandlers}};
 
-handle_call({set_completion_handler, HandlerPid}, _From, State) ->
-    % Monitor the handler process and clear if it dies
-    case State#state.completion_handler of
-        undefined ->
-            ok;
-        OldPid when is_pid(OldPid) ->
-            demonitor(OldPid, [flush])
-    end,
-    Ref = monitor(process, HandlerPid),
-    NewNotificationHandlers = maps:put(<<"completion/complete">>, {HandlerPid, Ref}, State#state.notification_handlers),
-    {reply, ok, State#state{completion_handler = HandlerPid, notification_handlers = NewNotificationHandlers}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -601,20 +565,29 @@ handle_info(force_gc, #state{server_id = ServerId} = State) ->
     start_periodic_gc(),
     {noreply, State};
 
-% Handle handler process death - automatic cleanup
-handle_info({'DOWN', Ref, process, _Pid, _Reason}, State) ->
-    % Find and remove the handler with this monitor reference
-    NewHandlers = maps:filter(fun(_Method, {_HandlerPid, HandlerRef}) ->
-        HandlerRef =/= Ref
-    end, State#state.notification_handlers),
-    case maps:size(State#state.notification_handlers) - maps:size(NewHandlers) of
-        0 ->
-            % No handler was removed (Ref not found)
-            {noreply, State};
+% Handle monitored process death - automatic cleanup
+handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
+    % Check if this is the notifier process
+    case State#state.notifier_monitor_ref of
+        Ref ->
+            % Notifier process died - critical error
+            logger:error("Change notifier process ~p died: ~p", [Pid, Reason]),
+            {stop, {notifier_died, Reason}, State#state{notifier_pid = undefined, notifier_monitor_ref = undefined}};
         _ ->
-            % At least one handler was removed
-            logger:info("Automatically unregistered dead notification handler (ref: ~p)", [Ref]),
-            {noreply, State#state{notification_handlers = NewHandlers}}
+            % Not the notifier, check if it's a notification handler
+            NewHandlers = maps:filter(fun(_Method, {_HandlerPid, HandlerRef}) ->
+                HandlerRef =/= Ref
+            end, State#state.notification_handlers),
+            case maps:size(State#state.notification_handlers) - maps:size(NewHandlers) of
+                0 ->
+                    % No handler was removed (Ref not found) - unknown monitor
+                    logger:warning("Received DOWN for unknown monitor ref ~p (pid: ~p, reason: ~p)", [Ref, Pid, Reason]),
+                    {noreply, State};
+                _ ->
+                    % At least one handler was removed
+                    logger:info("Automatically unregistered dead notification handler (ref: ~p, pid: ~p)", [Ref, Pid]),
+                    {noreply, State#state{notification_handlers = NewHandlers}}
+            end
     end;
 
 handle_info(_Info, State) ->
@@ -1223,36 +1196,154 @@ handle_request(Id, ?MCP_METHOD_LOGGING_SET_LEVEL, Params, TransportId, #state{se
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-%% @doc Handle elicitation/create request (MCP 2025-11-25)
-%% Creates elicitations for user input collection (URL, inline, terminal)
-handle_request(Id, ?MCP_METHOD_ELICITATION_CREATE, Params, TransportId, #state{server_id = ServerId} = State) ->
-    SpanCtx = erlmcp_tracing:start_span(?MCP_METHOD_ELICITATION_CREATE, #{server_id => ServerId}),
-    try
-        Elicitations = maps:get(?MCP_PARAM_ELICITATIONS, Params, []),
-        ClientPid = maps:get(client_pid, Params, self()),
+%% Ping endpoint - MCP 2025-11-25 spec health check
+handle_request(Id, ?MCP_METHOD_PING, _Params, TransportId, State) ->
+    % Simple health check - return empty object per spec
+    Response = #{},
+    send_response_safe(State, TransportId, Id, Response),
+    {noreply, State};
 
-        case create_elicitations(Elicitations, ClientPid) of
-            {ok, CreatedElicitations} ->
-                Result = #{
-                    ?MCP_PARAM_ELICITATIONS => CreatedElicitations
-                },
-                send_response_via_registry(State, TransportId, Id, Result),
+%% Elicitation/create endpoint - MCP 2025-11-25 spec elicitation support
+handle_request(Id, ?MCP_METHOD_ELICITATION_CREATE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_elicitation_create">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_ELICITATION_CREATE
+        }),
+
+        %% Extract elicitation mode (inline/url/terminal)
+        Mode = maps:get(<<"mode">>, Params, <<"inline">>),
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"elicitation.mode">> => Mode
+        }),
+
+        %% Get client PID for process association and monitoring
+        ClientPid = self(),
+
+        %% Call elicitation service to create elicitation
+        case erlmcp_elicitation:create_elicitation(Params, ClientPid) of
+            {ok, ElicitationId, ElicitationResponse} ->
+                %% Success - return elicitation details to client
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"elicitation.id">> => ElicitationId
+                }),
+                erlmcp_tracing:set_status(SpanCtx, ok),
+                send_response_via_registry(State, TransportId, Id, ElicitationResponse),
+                {noreply, State};
+            {error, rate_limited} ->
+                %% Rate limit exceeded
+                erlmcp_tracing:record_error_details(SpanCtx, elicitation_rate_limited, rate_limited),
+                logger:warning("Elicitation rate limit exceeded for client ~p", [ClientPid]),
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RATE_LIMITED,
+                    <<"Elicitation rate limit exceeded. Please retry later.">>),
+                {noreply, State};
+            {error, too_many_elicitations} ->
+                %% Concurrent elicitation limit exceeded
+                erlmcp_tracing:record_error_details(SpanCtx, too_many_elicitations, concurrent_limit),
+                logger:warning("Maximum concurrent elicitations reached"),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                    <<"Maximum concurrent elicitations reached. Please try again later.">>),
+                {noreply, State};
+            {error, {invalid_mode, InvalidMode}} ->
+                %% Invalid elicitation mode
+                erlmcp_tracing:record_error_details(SpanCtx, invalid_elicitation_mode, InvalidMode),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"Invalid elicitation mode. Must be 'inline', 'url', or 'terminal'.">>),
+                {noreply, State};
+            {error, url_required} ->
+                %% URL mode requires URL parameter
+                erlmcp_tracing:record_error_details(SpanCtx, url_required, url_mode),
+                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_URL_ELICITATION_REQUIRED,
+                    <<"URL mode requires 'url' parameter">>),
+                {noreply, State};
+            {error, {unsafe_url, Host}} ->
+                %% SSRF protection - unsafe URL detected
+                erlmcp_tracing:record_error_details(SpanCtx, unsafe_url, Host),
+                logger:warning("Blocked unsafe elicitation URL with host: ~p", [Host]),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"URL elicitation blocked: unsafe host detected (SSRF protection)">>),
+                {noreply, State};
+            {error, {invalid_url, Url}} ->
+                %% Invalid URL format
+                erlmcp_tracing:record_error_details(SpanCtx, invalid_url, Url),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"Invalid URL format">>),
                 {noreply, State};
             {error, Reason} ->
+                %% Other errors
+                erlmcp_tracing:record_error_details(SpanCtx, elicitation_failed, Reason),
                 logger:error("Elicitation creation failed: ~p", [Reason]),
-                send_error_via_registry(State, TransportId, Id, ?ELICITATION_FAILED, ?MSG_ELICITATION_FAILED, Reason),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                    <<"Failed to create elicitation">>),
                 {noreply, State}
         end
     catch
-        _Class:_ExcReason:_Stacktrace ->
-            logger:error("Elicitation/create request crashed"),
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            logger:error("Elicitation request crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
             send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
             {noreply, State}
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-%% Completion/complete endpoint (MCP 2025-11-25 Completion API)
+%% Request cancellation endpoint - MCP 2025-11-25 spec
+%% Allows clients to cancel in-flight requests
+handle_request(Id, ?MCP_METHOD_REQUESTS_CANCEL, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_requests_cancel">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_REQUESTS_CANCEL
+        }),
+
+        case maps:get(?MCP_PARAM_REQUEST_ID, Params, undefined) of
+            undefined ->
+                % Missing requestId parameter
+                erlmcp_tracing:record_error_details(SpanCtx, missing_request_id, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"Missing required parameter: requestId">>),
+                {noreply, State};
+            RequestId ->
+                % Look up cancellation token for this request
+                case maps:get(RequestId, State#state.cancellable_requests, undefined) of
+                    undefined ->
+                        % Request not found or not cancellable
+                        erlmcp_tracing:record_error_details(SpanCtx, request_not_found, RequestId),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_REQUEST_ID_INVALID,
+                            <<"Request not found or not cancellable">>),
+                        {noreply, State};
+                    CancellationToken ->
+                        % Cancel the operation via erlmcp_cancellation
+                        case erlmcp_cancellation:cancel(CancellationToken, client_requested) of
+                            ok ->
+                                % Successfully cancelled - remove from tracking
+                                NewCancellableRequests = maps:remove(RequestId, State#state.cancellable_requests),
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                send_response_via_registry(State, TransportId, Id, #{}),
+                                {noreply, State#state{cancellable_requests = NewCancellableRequests}};
+                            {error, not_found} ->
+                                % Operation already completed or cancelled
+                                erlmcp_tracing:record_error_details(SpanCtx, operation_not_found, CancellationToken),
+                                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_REQUEST_ID_INVALID,
+                                    <<"Request already completed or cancelled">>),
+                                {noreply, State}
+                        end
+                end
+        end
+    catch
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Completion/complete endpoint - MCP 2025-11-25 spec argument completion
 handle_request(Id, ?MCP_METHOD_COMPLETION_COMPLETE, Params, TransportId, #state{server_id = ServerId} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_completion_complete">>, ServerId),
     try
@@ -1262,85 +1353,87 @@ handle_request(Id, ?MCP_METHOD_COMPLETION_COMPLETE, Params, TransportId, #state{
             <<"method">> => ?MCP_METHOD_COMPLETION_COMPLETE
         }),
 
-        case State#state.completion_handler of
-            undefined ->
-                erlmcp_tracing:set_status(SpanCtx, {error, <<"no_completion_handler">>}),
-                logger:warning("Completion/complete request but no completion handler set"),
-                send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND,
-                    <<"Completion handler not configured">>),
-                {noreply, State};
-            CompletionHandler ->
-                % Extract completion parameters
-                Ref = maps:get(<<"ref">>, Params, undefined),
-                Argument = maps:get(<<"argument">>, Params, #{}),
-                Context = maps:get(<<"context">>, Params, #{}),
+        %% Extract ref (tool/resource/prompt reference)
+        Ref = maps:get(<<"ref">>, Params, undefined),
 
-                % Validate required parameters
-                case Ref =:= undefined orelse Argument =:= #{} of
-                    true ->
-                        erlmcp_tracing:record_error_details(SpanCtx, invalid_params, missing_required),
-                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
-                            <<"Missing required parameters: ref and argument">>),
+        %% Extract argument structure
+        ArgumentMap = maps:get(<<"argument">>, Params, undefined),
+
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"completion.ref">> => Ref,
+            <<"completion.argument">> => ArgumentMap
+        }),
+
+        case {Ref, ArgumentMap} of
+            {undefined, _} ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_ref, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"Missing required parameter 'ref'">>),
+                {noreply, State};
+            {_, undefined} ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_argument, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"Missing required parameter 'argument'">>),
+                {noreply, State};
+            {RefValue, ArgValue} when is_binary(RefValue), is_map(ArgValue) ->
+                %% Build completion context from server state
+                Context = build_completion_context(RefValue, State),
+
+                %% Call completion service
+                case erlang:whereis(erlmcp_completion) of
+                    undefined ->
+                        erlmcp_tracing:record_error_details(SpanCtx, completion_service_unavailable, undefined),
+                        logger:warning("Completion service not available"),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                            <<"Completion service unavailable">>),
                         {noreply, State};
-                    false ->
-                        % Call completion handler (5 second timeout)
-                        case erlmcp_completion:complete(CompletionHandler, Ref, Argument, Context, 5000) of
+                    CompletionPid ->
+                        case erlmcp_completion:complete(CompletionPid, RefValue, ArgValue, Context) of
                             {ok, Result} ->
+                                %% Transform result to MCP format
+                                Response = format_completion_response(Result),
+                                erlmcp_tracing:set_attributes(SpanCtx, #{
+                                    <<"completion.total">> => maps:get(total, Result, 0),
+                                    <<"completion.hasMore">> => maps:get(hasMore, Result, false)
+                                }),
                                 erlmcp_tracing:set_status(SpanCtx, ok),
-                                send_response_via_registry(State, TransportId, Id, Result);
-                            {error, {completion_ref_not_found, _Code, _Msg}} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, completion_ref_not_found, Ref),
-                                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
-                                    <<"Completion reference not found: ", Ref/binary>>);
-                            {error, {completion_rate_limited, _Code, _Msg}} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, rate_limited, Ref),
-                                send_error_via_registry(State, TransportId, Id, -32101,
-                                    <<"Completion rate limit exceeded">>);
-                            {error, {completion_handler_failed, _Code, _Msg}} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, handler_failed, Ref),
+                                send_response_via_registry(State, TransportId, Id, Response),
+                                {noreply, State};
+                            {error, {completion_ref_not_found, _Code, Message}} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, completion_ref_not_found, RefValue),
+                                send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND, Message),
+                                {noreply, State};
+                            {error, {completion_rate_limited, Code, Message}} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, completion_rate_limited, RefValue),
+                                send_error_via_registry(State, TransportId, Id, Code, Message),
+                                {noreply, State};
+                            {error, {completion_handler_failed, Code, Message}} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, completion_handler_failed, RefValue),
+                                send_error_via_registry(State, TransportId, Id, Code, Message),
+                                {noreply, State};
+                            {error, Reason} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, completion_failed, Reason),
+                                logger:error("Completion failed: ~p", [Reason]),
                                 send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
-                                    <<"Completion handler failed">>);
-                            {error, {completion_handler_invalid_response, _Code, _Msg}} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, invalid_response, Ref),
-                                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
-                                    <<"Completion handler returned invalid response">>);
-                            {error, {completion_handler_crashed, _Code, _Msg}} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, handler_crashed, Ref),
-                                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
-                                    <<"Completion handler crashed">>);
-                            {error, _CompleteReason} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, unknown_error, completion_error),
-                                logger:error("Completion request failed"),
-                                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
-                                    <<"Completion request failed">>)
+                                    <<"Completion request failed">>),
+                                {noreply, State}
                         end
-                end
-        end,
-        {noreply, State}
+                end;
+            _ ->
+                erlmcp_tracing:record_error_details(SpanCtx, invalid_params, {Ref, ArgumentMap}),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    <<"Invalid parameters: 'ref' must be binary, 'argument' must be map">>),
+                {noreply, State}
+        end
     catch
-        _Class:_Reason:_Stacktrace ->
-            erlmcp_tracing:set_status(SpanCtx, {error, <<"completion_crash">>}),
-            logger:error("Completion request crashed"),
+        Class:Reason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
+            logger:error("Completion request crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
             send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
             {noreply, State}
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
-
-%% @doc Handle ping request (MCP 2025-11-25)
-%% Ping MUST return empty object per spec
-handle_request(Id, ?MCP_METHOD_PING, _Params, TransportId, State) ->
-    Response = #{},
-    send_response_via_registry(State, TransportId, Id, Response),
-    {noreply, State};
-
-%% @doc Handle shutdown request (MCP 2025-11-25)
-%% Shutdown should clean up resources and stop the server
-handle_request(Id, ?MCP_METHOD_SHUTDOWN, _Params, TransportId, State) ->
-    Response = #{},
-    send_response_via_registry(State, TransportId, Id, Response),
-    %% Initiate graceful shutdown
-    {stop, normal, State};
 
 handle_request(Id, _Method, _Params, TransportId, State) ->
     send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
@@ -1915,23 +2008,17 @@ handle_prompt_execution(
 
 %% @doc Validate prompt arguments against declared schema.
 %% Gap #42 Implementation
-%% TODO: Re-enable when erlmcp_prompt_argument_validator is implemented
 -spec validate_prompt_arguments(
     map(),
     #mcp_prompt{},
     state()
 ) -> ok | {error, {integer(), binary(), map()}}.
 validate_prompt_arguments(ProvidedArgs, Prompt, _State) ->
-    %% PromptArguments = Prompt#mcp_prompt.arguments,
-    %% InputSchema = Prompt#mcp_prompt.input_schema,
-    %% erlmcp_prompt_argument_validator:validate_prompt_arguments(
-    %%     ProvidedArgs, PromptArguments, InputSchema
-    %% ).
-    %% For now, just check that required arguments are provided
-    case ProvidedArgs of
-        #{<<"name">> := _} -> ok;
-        _ -> {error, {?JSONRPC_INVALID_PARAMS, <<"Missing required argument: name">>, #{}}}
-    end.
+    PromptArguments = Prompt#mcp_prompt.arguments,
+    InputSchema = Prompt#mcp_prompt.input_schema,
+    erlmcp_prompt_argument_validator:validate_prompt_arguments(
+        ProvidedArgs, PromptArguments, InputSchema
+    ).
 
 %% Helper functions - same as original but abbreviated
 -spec find_resource(binary(), state()) -> {ok, {#mcp_resource{}, resource_handler()}} | {error, not_found}.
@@ -2744,3 +2831,64 @@ create_single_elicitation(<<"terminal">>, Elicitation, ClientPid) ->
 
 create_single_elicitation(Type, _Elicitation, _ClientPid) ->
     {error, {unknown_elicitation_type, Type}}.
+
+%%====================================================================
+%% Internal functions - Completion Support (MCP 2025-11-25)
+%%====================================================================
+
+%% @doc Build completion context from server state
+%% Provides context about available tools, resources, prompts for completion
+-spec build_completion_context(binary(), state()) -> map().
+build_completion_context(Ref, State) ->
+    %% Determine the type of reference based on registered items
+    Type = case {maps:is_key(Ref, State#state.tools),
+                 maps:is_key(Ref, State#state.resources),
+                 maps:is_key(Ref, State#state.prompts)} of
+        {true, _, _} -> <<"tool">>;
+        {_, true, _} -> <<"resource">>;
+        {_, _, true} -> <<"prompt">>;
+        _ -> <<"unknown">>
+    end,
+
+    %% Build context with available information
+    #{
+        <<"type">> => Type,
+        <<"tools">> => maps:keys(State#state.tools),
+        <<"resources">> => maps:keys(State#state.resources),
+        <<"prompts">> => maps:keys(State#state.prompts)
+    }.
+
+%% @doc Format completion response to MCP format
+%% Transforms internal completion result to MCP 2025-11-25 spec format
+-spec format_completion_response(map()) -> map().
+format_completion_response(Result) ->
+    Completions = maps:get(completions, Result, []),
+    HasMore = maps:get(hasMore, Result, false),
+    Total = maps:get(total, Result, length(Completions)),
+
+    %% Transform completion items to ensure correct format
+    FormattedCompletions = lists:map(fun format_completion_item/1, Completions),
+
+    #{
+        <<"completion">> => #{
+            <<"values">> => FormattedCompletions,
+            <<"total">> => Total,
+            <<"hasMore">> => HasMore
+        }
+    }.
+
+%% @doc Format individual completion item
+-spec format_completion_item(map()) -> map().
+format_completion_item(Item) ->
+    Value = maps:get(value, Item, maps:get(<<"value">>, Item, <<>>)),
+    Label = case maps:get(label, Item, maps:get(<<"label">>, Item, undefined)) of
+        undefined -> undefined;
+        L -> L
+    end,
+
+    BaseItem = #{<<"value">> => Value},
+
+    case Label of
+        undefined -> BaseItem;
+        _ -> BaseItem#{<<"label">> => Label}
+    end.

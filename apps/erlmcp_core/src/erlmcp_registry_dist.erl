@@ -63,12 +63,12 @@ register_global(Type, EntityId, Config) when is_map(Config) ->
 %% @doc Register an entity globally with explicit pid and config
 -spec register_global(entity_type(), entity_id(), pid(), entity_config()) -> ok | {error, term()}.
 register_global(Type, EntityId, EntityPid, Config) when is_pid(EntityPid) ->
-    gen_server:call(?MODULE, {register_global, Type, EntityId, EntityPid, Config}).
+    gen_server:call(?MODULE, {register_global, Type, EntityId, EntityPid, Config}, 1000).
 
 %% @doc Unregister an entity from global registry
 -spec unregister_global(entity_type() | {entity_type(), entity_id()}) -> ok.
 unregister_global({Type, EntityId}) ->
-    gen_server:call(?MODULE, {unregister_global, Type, EntityId});
+    gen_server:call(?MODULE, {unregister_global, Type, EntityId}, 1000);
 unregister_global(Type) when is_atom(Type) ->
     %% Legacy: Type only - need entity ID
     {error, missing_entity_id}.
@@ -76,27 +76,27 @@ unregister_global(Type) when is_atom(Type) ->
 %% @doc Find the global location of an entity
 -spec whereis_global({entity_type(), entity_id()}) -> {ok, {node(), pid(), entity_config()}} | {error, not_found}.
 whereis_global({Type, EntityId}) ->
-    gen_server:call(?MODULE, {whereis_global, Type, EntityId}).
+    gen_server:call(?MODULE, {whereis_global, Type, EntityId}, 1000).
 
 %% @doc List all globally registered servers
 -spec list_global_servers() -> [{server_id(), {node(), pid(), map()}}].
 list_global_servers() ->
-    gen_server:call(?MODULE, list_global_servers).
+    gen_server:call(?MODULE, list_global_servers, 1000).
 
 %% @doc List all globally registered transports
 -spec list_global_transports() -> [{transport_id(), {node(), pid(), map()}}].
 list_global_transports() ->
-    gen_server:call(?MODULE, list_global_transports).
+    gen_server:call(?MODULE, list_global_transports, 1000).
 
 %% @doc Get list of connected cluster nodes
 -spec get_cluster_nodes() -> [node()].
 get_cluster_nodes() ->
-    gen_server:call(?MODULE, get_cluster_nodes).
+    gen_server:call(?MODULE, get_cluster_nodes, 1000).
 
 %% @doc Check if distributed mode is enabled
 -spec is_distributed() -> boolean().
 is_distributed() ->
-    gen_server:call(?MODULE, is_distributed).
+    gen_server:call(?MODULE, is_distributed, 1000).
 
 %%====================================================================
 %% gen_server callbacks

@@ -28,12 +28,18 @@
 -spec validate_origin(origin(), origins()) -> validation_result().
 validate_origin(undefined, _AllowedOrigins) ->
     %% No origin header - allow for local development
+    logger:debug("Origin validation: no origin header provided, allowing for local development"),
     {ok, <<"undefined">>};
 validate_origin(Origin, AllowedOrigins) when is_binary(Origin), is_list(AllowedOrigins) ->
     case is_origin_allowed(Origin, AllowedOrigins) of
         true ->
+            logger:info("Origin validation SUCCESS: ~s (allowed)", [Origin]),
             {ok, Origin};
         false ->
+            logger:warning("Origin validation DENIED: ~s (DNS rebinding attack vector - not in allowed list: ~p)",
+                [Origin, AllowedOrigins]),
+            %% Log security violation for audit trail
+            log_security_violation(Origin, AllowedOrigins),
             {error, forbidden}
     end.
 
@@ -110,3 +116,30 @@ match_wildcard_origin(Origin, <<"*.", Rest/binary>>) ->
     end;
 match_wildcard_origin(_Origin, _AllowedOrigin) ->
     false.
+
+%%====================================================================
+%% Security Logging Functions
+%%====================================================================
+
+%% @private Log security violation for audit trail
+-spec log_security_violation(binary(), origins()) -> ok.
+log_security_violation(Origin, AllowedOrigins) ->
+    %% Log to error_logger for security audit
+    logger:error("SECURITY VIOLATION - Origin not allowed: ~s~n"
+                 "Allowed origins: ~p~n"
+                 "Attack type: Potential DNS rebinding~n"
+                 "Action: Request rejected with 403 Forbidden~n"
+                 "Timestamp: ~s",
+                 [Origin, AllowedOrigins, format_timestamp()]),
+
+    %% Could also send to external security monitoring system here
+    %% For example: send_to_siem(Origin, AllowedOrigins)
+
+    ok.
+
+%% @private Format timestamp for logging
+-spec format_timestamp() -> binary().
+format_timestamp() ->
+    {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:universal_time(),
+    iolist_to_binary(io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w UTC",
+        [Year, Month, Day, Hour, Minute, Second])).

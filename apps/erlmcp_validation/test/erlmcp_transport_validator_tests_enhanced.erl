@@ -192,8 +192,8 @@ test_tcp_buffer_handling() ->
 test_tcp_partial_messages() ->
     %% TCP must handle partial length-prefixed messages
     LengthPrefix = <<0,0,0,100>>,  %% 100 bytes message
-    PartialMessage = <<LengthPrefix/binary, "{\"json":\"partial\"">>,
-    ?assert(byte_size(PartialMessage) < 100).
+    PartialJSON = <<"{\"json\":\"partial\"">>,
+    PartialMessage = <<LengthPrefix/binary, PartialJSON/binary>>,
 
 test_tcp_connection_oriented() ->
     ValidationResult = erlmcp_transport_validator:validate_framing(

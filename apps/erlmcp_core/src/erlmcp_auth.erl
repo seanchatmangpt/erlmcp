@@ -59,6 +59,7 @@
     sessions :: ets:tid(),           % session_id -> session_data
     api_keys :: ets:tid(),           % api_key -> user_id
     jwt_keys :: ets:tid(),           % kid -> public_key
+    jwt_config :: map(),             % JWT validation configuration
     oauth2_config :: map(),
     mtls_config :: map(),
     rbac_roles :: ets:tid(),         % role -> [permissions]
@@ -202,6 +203,7 @@ init([Config]) ->
         sessions = ets:new(auth_sessions, [set, protected]),
         api_keys = ets:new(auth_api_keys, [set, protected]),
         jwt_keys = ets:new(auth_jwt_keys, [set, protected]),
+        jwt_config = maps:get(jwt, Config, #{}),
         oauth2_config = maps:get(oauth2, Config, #{}),
         mtls_config = maps:get(mtls, Config, #{}),
         rbac_roles = ets:new(auth_rbac_roles, [set, protected]),
@@ -332,7 +334,16 @@ handle_info(cleanup_expired, State) ->
     Now = erlang:system_time(second),
     cleanup_expired_sessions(State, Now),
     cleanup_revoked_tokens(State, Now),
+    cleanup_oauth2_cache(State, Now),
     erlang:send_after(60000, self(), cleanup_expired),
+    {noreply, State};
+
+handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
+    % Handle gun connection process death during OAuth2 introspection
+    % These are temporary monitors created during HTTP requests
+    % The actual request will fail with timeout/error, so we just log this
+    logger:warning("Gun connection process ~p died during OAuth2 introspection: ~p (monitor: ~p)",
+                   [Pid, Reason, MonitorRef]),
     {noreply, State};
 
 handle_info(_Info, State) ->
@@ -468,107 +479,196 @@ do_validate_jwt(Token, State) ->
 %% @private Verify JWT signature using jose library.
 verify_jwt_signature(Token, State) ->
     try
-        % Decode JWT to get header and key ID
-        case binary:split(Token, <<".">>, [global]) of
-            [HeaderB64, _Payload, _Signature] ->
-                HeaderJson = base64:decode(HeaderB64),
-                Header = jsx:decode(HeaderJson, [return_maps]),
+        % Peek at protected header using jose library to extract kid
+        % This properly handles base64url encoding used in JWT
+        ProtectedBin = jose_jws:peek_protected(Token),
+        Protected = jsx:decode(ProtectedBin, [return_maps]),
 
-                % Extract key ID (kid) from header
-                KeyId = maps:get(<<"kid">>, Header, undefined),
+        % Extract key ID (kid) from protected header
+        KeyId = maps:get(<<"kid">>, Protected, undefined),
 
-                case KeyId of
-                    undefined ->
-                        logger:warning("JWT missing key ID (kid) in header"),
-                        {error, missing_key_id};
-                    _ ->
-                        % Lookup public key from ETS
-                        case ets:lookup(State#state.jwt_keys, KeyId) of
-                            [{_, PublicKeyPem}] ->
-                                verify_jwt_with_key(Token, PublicKeyPem);
-                            [] ->
-                                logger:warning("JWT key ID not found: ~p", [KeyId]),
-                                {error, unknown_key_id}
-                        end
-                end;
+        % Determine which key to use
+        PublicKeyPem =
+            case KeyId of
+                undefined ->
+                    % No kid - try default key from configuration
+                    case maps:get(default_key, State#state.jwt_config, undefined) of
+                        undefined ->
+                            logger:warning("JWT missing key ID (kid) and no default key configured"),
+                            undefined;
+                        DefaultKey ->
+                            logger:debug("Using default JWT key (no kid in token)"),
+                            DefaultKey
+                    end;
+                Kid ->
+                    % Lookup key by kid
+                    case ets:lookup(State#state.jwt_keys, Kid) of
+                        [{_, Key}] ->
+                            logger:debug("Found JWT key for kid: ~p", [Kid]),
+                            Key;
+                        [] ->
+                            logger:warning("JWT key ID not found: ~p", [Kid]),
+                            undefined
+                    end
+            end,
+
+        case PublicKeyPem of
+            undefined ->
+                {error, unknown_key_id};
             _ ->
-                {error, invalid_jwt_format}
+                verify_jwt_with_key(Token, PublicKeyPem, State)
         end
     catch
-        error:{badmatch, _} -> {error, invalid_jwt_format};
-        error:_ -> {error, invalid_jwt}
+        error:Reason ->
+            logger:error("JWT header parsing failed: ~p", [Reason]),
+            {error, invalid_jwt_format}
     end.
 
 %% @private Verify JWT with specific public key.
-verify_jwt_with_key(Token, PublicKeyPem) ->
+verify_jwt_with_key(Token, PublicKeyPem, State) ->
     try
         % Decode public key from PEM format
         JWK = jose_jwk:from_pem(PublicKeyPem),
 
-        % Verify JWT signature using RS256
+        % Verify JWT signature
         % JOSE library uses JWS (JSON Web Signature) for verification
+        % Supports RS256, RS384, RS512, ES256, ES384, ES512, HS256, etc.
         case jose_jws:verify(JWK, Token) of
-            {true, Payload, _} ->
+            {true, Payload, _JWS} ->
                 Claims = jsx:decode(Payload, [return_maps]),
-                validate_jwt_claims(Claims);
+                logger:debug("JWT signature verified successfully"),
+                validate_jwt_claims(Claims, State);
             {false, _, _} ->
                 logger:warning("JWT signature verification failed"),
                 {error, invalid_signature};
-            {error, BodyError} ->
-                logger:warning("JWT verification error: ~p", [BodyError]),
+            {error, ConnReason} ->
+                logger:warning("JWT verification error: ~p", [ConnReason]),
                 {error, verification_failed}
         end
     catch
-        error:_Reason ->
-            logger:error("Failed to parse public key or verify JWT: ~p", [_Reason]),
+        error:Reason2 ->
+            logger:error("Failed to parse public key or verify JWT: ~p", [Reason2]),
             {error, key_parsing_failed}
     end.
 
 %% @private Validate JWT claims (expiration, issuer, audience, nbf).
-validate_jwt_claims(Claims) ->
+validate_jwt_claims(Claims, State) ->
     Now = erlang:system_time(second),
 
     % Check expiration (exp) - CRITICAL for security
     case maps:get(<<"exp">>, Claims, undefined) of
         undefined ->
+            logger:warning("JWT missing expiration claim (exp)"),
             {error, missing_expiration};
         Exp when Exp =< Now ->
+            logger:warning("JWT expired: exp=~p, now=~p", [Exp, Now]),
             {error, token_expired};
         _Exp ->
             % Continue validation
-            validate_nbf_claim(Claims, Now)
+            validate_nbf_claim(Claims, Now, State)
     end.
 
 %% @private Validate not-before (nbf) claim
-validate_nbf_claim(Claims, Now) ->
+validate_nbf_claim(Claims, Now, State) ->
     case maps:get(<<"nbf">>, Claims, undefined) of
         undefined ->
-            validate_issuer_claim(Claims);
+            % nbf is optional per JWT spec
+            validate_issuer_claim(Claims, State);
         Nbf when Nbf > Now ->
+            logger:warning("JWT not yet valid: nbf=~p, now=~p", [Nbf, Now]),
             {error, token_not_yet_valid};
         _Nbf ->
-            validate_issuer_claim(Claims)
+            validate_issuer_claim(Claims, State)
     end.
 
-%% @private Validate issuer (iss) claim
-validate_issuer_claim(Claims) ->
-    case maps:get(<<"iss">>, Claims, undefined) of
+%% @private Validate issuer (iss) claim with configuration-based enforcement
+validate_issuer_claim(Claims, State) ->
+    RequiredIssuer = maps:get(required_issuer, State#state.jwt_config, undefined),
+    case RequiredIssuer of
         undefined ->
+            % Issuer not required by configuration - just validate format if present
+            case maps:get(<<"iss">>, Claims, undefined) of
+                undefined ->
+                    % Issuer optional when not configured
+                    validate_audience_claim(Claims, State);
+                Issuer when is_binary(Issuer), byte_size(Issuer) > 0 ->
+                    validate_audience_claim(Claims, State);
+                _InvalidIssuer ->
+                    logger:warning("JWT issuer claim invalid format"),
+                    {error, invalid_issuer}
+            end;
+        ExpectedIssuer ->
+            % Issuer required - validate it matches expected value
+            case maps:get(<<"iss">>, Claims, undefined) of
+                ExpectedIssuer ->
+                    logger:debug("JWT issuer validated: ~p", [ExpectedIssuer]),
+                    validate_audience_claim(Claims, State);
+                ActualIssuer ->
+                    logger:warning("JWT issuer mismatch: expected=~p, actual=~p", [
+                        ExpectedIssuer, ActualIssuer
+                    ]),
+                    {error, invalid_issuer}
+            end
+    end.
+
+%% @private Validate audience (aud) claim with configuration-based enforcement
+validate_audience_claim(Claims, State) ->
+    RequiredAudience = maps:get(required_audience, State#state.jwt_config, undefined),
+    case RequiredAudience of
+        undefined ->
+            % Audience not required by configuration
             validate_subject_claim(Claims);
-        Issuer when is_binary(Issuer), byte_size(Issuer) > 0 ->
-            validate_subject_claim(Claims);
-        _Issuer ->
-            {error, invalid_issuer}
+        ExpectedAudience ->
+            % Audience required - validate it matches expected value
+            case maps:get(<<"aud">>, Claims, undefined) of
+                undefined ->
+                    logger:warning("JWT missing required audience claim"),
+                    {error, missing_audience};
+                Audience when is_binary(Audience) ->
+                    % Single audience value
+                    case Audience of
+                        ExpectedAudience ->
+                            logger:debug("JWT audience validated: ~p", [Audience]),
+                            validate_subject_claim(Claims);
+                        _ ->
+                            logger:warning("JWT audience mismatch: expected=~p, actual=~p", [
+                                ExpectedAudience, Audience
+                            ]),
+                            {error, invalid_audience}
+                    end;
+                AudienceList when is_list(AudienceList) ->
+                    % Multiple audience values (array)
+                    case lists:member(ExpectedAudience, AudienceList) of
+                        true ->
+                            logger:debug("JWT audience validated: ~p in ~p", [
+                                ExpectedAudience, AudienceList
+                            ]),
+                            validate_subject_claim(Claims);
+                        false ->
+                            logger:warning("JWT audience mismatch: expected=~p, actual=~p", [
+                                ExpectedAudience, AudienceList
+                            ]),
+                            {error, invalid_audience}
+                    end;
+                _InvalidAudience ->
+                    logger:warning("JWT audience claim invalid format"),
+                    {error, invalid_audience}
+            end
     end.
 
 %% @private Validate subject (sub) claim - CRITICAL for security
 validate_subject_claim(Claims) ->
     case maps:get(<<"sub">>, Claims, undefined) of
         undefined ->
+            logger:warning("JWT missing subject claim (sub)"),
             {error, missing_subject};
-        _Sub ->
+        Sub when is_binary(Sub), byte_size(Sub) > 0 ->
+            logger:debug("JWT validated successfully for subject: ~p", [Sub]),
             % All validations passed
-            {ok, Claims}
+            {ok, Claims};
+        _InvalidSub ->
+            logger:warning("JWT subject claim invalid format"),
+            {error, invalid_subject}
     end.
 
 %% @private Validate API key.
@@ -609,6 +709,7 @@ introspect_oauth2_token(Token, Config, State) ->
     IntrospectUrl = maps:get(introspect_url, Config),
     ClientId = maps:get(client_id, Config),
     ClientSecret = maps:get(client_secret, Config),
+    Timeout = maps:get(timeout, Config, 5000),
 
     % Build form-encoded request body
     Body = uri_string:compose_query([
@@ -628,62 +729,64 @@ introspect_oauth2_token(Token, Config, State) ->
             transport => scheme_to_transport(Scheme),
             protocols => [http],
             retry => 0,
-            retry_timeout => 5000,
-            connect_timeout => 5000
+            retry_timeout => Timeout,
+            connect_timeout => Timeout
         },
 
         case gun:open(Host, Port, GunOpts) of
             {ok, GunPid} ->
                 MonitorRef = monitor(process, GunPid),
 
-                % Wait for connection up
-                case gun:await_up(GunPid, 5000) of
-                    {ok, http} ->
-                        % POST to introspection endpoint
-                        Headers = [
-                            {<<"content-type">>, <<"application/x-www-form-urlencoded">>},
-                            {<<"authorization">>, AuthHeader},
-                            {<<"accept">>, <<"application/json">>}
-                        ],
+                try
+                    % Wait for connection up
+                    case gun:await_up(GunPid, Timeout) of
+                        {ok, _Protocol} ->
+                            % POST to introspection endpoint
+                            Headers = [
+                                {<<"content-type">>, <<"application/x-www-form-urlencoded">>},
+                                {<<"authorization">>, AuthHeader},
+                                {<<"accept">>, <<"application/json">>}
+                            ],
 
-                        StreamRef = gun:post(GunPid, Path, Headers, Body),
+                            StreamRef = gun:post(GunPid, Path, Headers, Body),
 
-                        % Await response
-                        case gun:await(GunPid, StreamRef, 10000) of
-                            {response, fin, Status, HeadersResp} ->
-                                gun:close(GunPid),
-                                handle_introspect_response(Status, HeadersResp, #{}, Token, State);
+                            % Await response with timeout
+                            ResponseTimeout = maps:get(response_timeout, Config, 10000),
+                            case gun:await(GunPid, StreamRef, ResponseTimeout) of
+                                {response, fin, Status, HeadersResp} ->
+                                    handle_introspect_response(Status, HeadersResp, <<>>, Token, State);
 
-                            {response, nofin, Status, HeadersResp} ->
-                                case gun:await(GunPid, StreamRef, 10000) of
-                                    {ok, BodyResp} ->
-                                        gun:close(GunPid),
-                                        handle_introspect_response(Status, HeadersResp, BodyResp, Token, State);
-                                    {error, BodyError} ->
-                                        gun:close(GunPid),
-                                        logger:error("OAuth2 introspection body error: ~p", [BodyError]),
-                                        {error, introspection_failed}
-                                end;
+                                {response, nofin, Status, HeadersResp} ->
+                                    case gun:await_body(GunPid, StreamRef, ResponseTimeout) of
+                                        {ok, BodyResp} ->
+                                            handle_introspect_response(Status, HeadersResp, BodyResp, Token, State);
+                                        {error, ConnReason} ->
+                                            logger:error("OAuth2 introspection body error: ~p", [ConnReason]),
+                                            {error, introspection_failed}
+                                    end;
 
-                            {error, BodyError} ->
-                                gun:close(GunPid),
-                                logger:error("OAuth2 introspection await error: ~p", [BodyError]),
-                                {error, introspection_timeout}
-                        end;
+                                {error, AwaitReason} ->
+                                    logger:error("OAuth2 introspection await error: ~p", [AwaitReason]),
+                                    {error, introspection_timeout}
+                            end;
 
-                    {error, BodyError} ->
-                        gun:close(GunPid),
-                        logger:error("OAuth2 introspection connection failed: ~p", [BodyError]),
-                        {error, connection_failed}
+                        {error, ConnectFailedReason} ->
+                            logger:error("OAuth2 introspection connection failed: ~p", [ConnectFailedReason]),
+                            {error, connection_failed}
+                    end
+                after
+                    % Always cleanup: demonitor and close connection
+                    demonitor(MonitorRef, [flush]),
+                    gun:close(GunPid)
                 end;
 
-            {error, BodyError} ->
-                logger:error("OAuth2 introspection gun:open failed: ~p", [BodyError]),
+            {error, GunOpenReason} ->
+                logger:error("OAuth2 introspection gun:open failed: ~p", [GunOpenReason]),
                 {error, connection_failed}
         end
     catch
-        error:ErrorReason ->
-            logger:error("OAuth2 introspection error: ~p", [ErrorReason]),
+        error:Reason3:Stacktrace ->
+            logger:error("OAuth2 introspection error: ~p~nStacktrace: ~p", [Reason3, Stacktrace]),
             {error, introspection_failed}
     end.
 
@@ -693,8 +796,10 @@ handle_introspect_response(Status, _Headers, Body, Token, State) ->
         200 ->
             try
                 TokenInfo = jsx:decode(Body, [return_maps]),
-                case validate_introspection_response(TokenInfo, Token, State) of
-                    {ok, EnrichedTokenInfo} ->
+                case validate_introspection_response(TokenInfo) of
+                    {ok, EnrichedTokenInfo, CacheTTL} ->
+                        % Cache the validated token with TTL
+                        cache_oauth2_token(Token, EnrichedTokenInfo, CacheTTL, State),
                         {ok, EnrichedTokenInfo};
                     Error ->
                         Error
@@ -719,7 +824,7 @@ handle_introspect_response(Status, _Headers, Body, Token, State) ->
     end.
 
 %% @private Validate RFC 7662 introspection response fields
-validate_introspection_response(TokenInfo, Token, State) ->
+validate_introspection_response(TokenInfo) ->
     % Check 'active' claim (RFC 7662 REQUIRED)
     case maps:get(<<"active">>, TokenInfo, false) of
         false ->
@@ -729,72 +834,115 @@ validate_introspection_response(TokenInfo, Token, State) ->
             Now = erlang:system_time(second),
 
             % Validate 'exp' (expiration) claim
-            case maps:get(<<"exp">>, TokenInfo, undefined) of
+            ExpResult = case maps:get(<<"exp">>, TokenInfo, undefined) of
                 undefined ->
                     ok;
-                Exp when Exp =< Now ->
+                Exp when is_integer(Exp), Exp =< Now ->
                     logger:warning("OAuth2 token expired: ~p", [Exp]),
                     {error, token_expired};
-                _Exp ->
-                    ok
-            end,
-
-            % Validate 'nbf' (not before) claim
-            case maps:get(<<"nbf">>, TokenInfo, undefined) of
-                Nbf when Nbf > Now ->
-                    logger:warning("OAuth2 token not yet valid: ~p", [Nbf]),
-                    {error, token_not_yet_valid};
-                _ ->
-                    ok
-            end,
-
-            % Validate 'iss' (issuer) claim if present
-            case maps:get(<<"iss">>, TokenInfo, undefined) of
-                Issuer when is_binary(Issuer), byte_size(Issuer) > 0 ->
-                    ok;
-                undefined ->
+                Exp when is_integer(Exp) ->
                     ok;
                 _ ->
-                    {error, invalid_issuer}
+                    {error, invalid_exp_claim}
             end,
 
-            % Extract user_id from response (RFC 7662: 'sub' or 'username')
-            UserId = maps:get(<<"sub">>, TokenInfo,
-                     maps:get(<<"username">>, TokenInfo, <<"oauth2_user">>)),
+            case ExpResult of
+                ok ->
+                    % Validate 'nbf' (not before) claim
+                    NbfResult = case maps:get(<<"nbf">>, TokenInfo, undefined) of
+                        undefined ->
+                            ok;
+                        Nbf when is_integer(Nbf), Nbf > Now ->
+                            logger:warning("OAuth2 token not yet valid: ~p", [Nbf]),
+                            {error, token_not_yet_valid};
+                        Nbf when is_integer(Nbf) ->
+                            ok;
+                        _ ->
+                            {error, invalid_nbf_claim}
+                    end,
 
-            logger:info("OAuth2 token validated for user: ~p", [UserId]),
+                    case NbfResult of
+                        ok ->
+                            % Validate 'iss' (issuer) claim if present
+                            IssResult = case maps:get(<<"iss">>, TokenInfo, undefined) of
+                                undefined ->
+                                    ok;
+                                Issuer when is_binary(Issuer), byte_size(Issuer) > 0 ->
+                                    ok;
+                                _ ->
+                                    {error, invalid_issuer}
+                            end,
 
-            % Cache the token info (with TTL from 'exp' claim or default 5 minutes)
-            CacheTTL = case maps:get(<<"exp">>, TokenInfo, undefined) of
-                undefined -> 300;  % Default 5 minutes
-                ExpValue when is_integer(ExpValue) -> ExpValue - Now
-            end,
-
-            % Only cache if TTL is positive
-            case CacheTTL > 0 of
-                true ->
-                    CacheExpiresAt = Now + min(CacheTTL, 300),  % Cap at 5 minutes
-                    EnrichedTokenInfo = TokenInfo#{<<"user_id">> => UserId},
-                    ets:insert(State#state.oauth2_cache, {Token, {EnrichedTokenInfo, CacheExpiresAt}}),
-                    logger:debug("OAuth2 token cached with TTL: ~p seconds", [min(CacheTTL, 300)]),
-                    {ok, EnrichedTokenInfo};
-                false ->
-                    {ok, TokenInfo#{<<"user_id">> => UserId}}
+                            case IssResult of
+                                ok ->
+                                    finalize_token_validation(TokenInfo, Now);
+                                Error ->
+                                    Error
+                            end;
+                        Error ->
+                            Error
+                    end;
+                Error ->
+                    Error
             end
+    end.
+
+%% @private Finalize token validation and prepare caching
+finalize_token_validation(TokenInfo, Now) ->
+    % Extract user_id from response (RFC 7662: 'sub' or 'username')
+    UserId = maps:get(<<"sub">>, TokenInfo,
+             maps:get(<<"username">>, TokenInfo, <<"oauth2_user">>)),
+
+    % Calculate cache TTL from 'exp' claim or default 5 minutes
+    CacheTTL = case maps:get(<<"exp">>, TokenInfo, undefined) of
+        undefined ->
+            300;  % Default 5 minutes
+        Exp when is_integer(Exp) ->
+            max(0, min(Exp - Now, 300))  % Cap at 5 minutes, min 0
+    end,
+
+    % Enrich token info with user_id
+    EnrichedTokenInfo = TokenInfo#{<<"user_id">> => UserId},
+
+    logger:info("OAuth2 token validated for user: ~p, TTL: ~ps", [UserId, CacheTTL]),
+
+    {ok, EnrichedTokenInfo, CacheTTL}.
+
+%% @private Cache OAuth2 token with TTL
+cache_oauth2_token(Token, TokenInfo, TTL, State) ->
+    case TTL > 0 of
+        true ->
+            Now = erlang:system_time(second),
+            ExpiresAt = Now + TTL,
+            ets:insert(State#state.oauth2_cache, {Token, {TokenInfo, ExpiresAt}}),
+            logger:debug("OAuth2 token cached: ~p, expires in ~ps", [Token, TTL]),
+            ok;
+        false ->
+            logger:debug("OAuth2 token TTL expired, not caching: ~p", [Token]),
+            ok
     end.
 
 %% @private Parse HTTP URL into components
 parse_http_url(Url) ->
     case uri_string:parse(Url) of
         #{scheme := Scheme, host := Host, path := Path} = Map ->
+            % Convert scheme to atom if it's a binary
+            SchemeAtom = scheme_to_atom(Scheme),
             Port = case maps:get(port, Map, undefined) of
-                undefined -> default_port(Scheme);
+                undefined -> default_port(SchemeAtom);
                 P -> P
             end,
-            {Scheme, Host, Port, Path, maps:get(query, Map, undefined)};
+            {SchemeAtom, Host, Port, Path, maps:get(query, Map, undefined)};
         Error ->
             error({invalid_url, Error})
     end.
+
+%% @private Convert scheme to atom
+scheme_to_atom(<<"http">>) -> http;
+scheme_to_atom(<<"https">>) -> https;
+scheme_to_atom(http) -> http;
+scheme_to_atom(https) -> https;
+scheme_to_atom(Other) -> error({unsupported_scheme, Other}).
 
 %% @private Get default port for scheme
 default_port(http) -> 80;
@@ -804,29 +952,17 @@ default_port(https) -> 443.
 scheme_to_transport(http) -> tcp;
 scheme_to_transport(https) -> ssl.
 
-%% @private Validate mTLS certificate using erlmcp_mtls_validator.
+%% @private Validate mTLS certificate with comprehensive validation pipeline.
+%% Delegates to erlmcp_auth_mtls module for:
+%% - Peer certificate extraction from SSL sockets
+%% - X.509 chain validation to trusted CAs
+%% - Certificate expiration validation
+%% - OCSP/CRL revocation checking (optional)
+%% - Subject DN and CN pattern matching
+%% - Certificate depth limit validation
 do_validate_mtls(CertInfo, State) ->
     Config = State#state.mtls_config,
-    case maps:get(enabled, Config, false) of
-        true ->
-            % Extract certificate DER from cert info
-            case maps:get(certificate, CertInfo, undefined) of
-                undefined ->
-                    % Fallback to legacy format for backwards compatibility
-                    Subject = maps:get(subject, CertInfo, #{}),
-                    CN = maps:get(cn, Subject, <<"unknown">>),
-                    {ok, CN};
-                CertDer ->
-                    % Use proper X.509 validation
-                    ValidatorConfig = #{
-                        trusted_cas => maps:get(trusted_cas, Config, []),
-                        allowed_cn_patterns => maps:get(allowed_cn_patterns, Config, [])
-                    },
-                    erlmcp_mtls_validator:validate_certificate(CertDer, ValidatorConfig)
-            end;
-        false ->
-            {error, mtls_not_configured}
-    end.
+    erlmcp_auth_mtls:validate(CertInfo, Config).
 
 %% @private Check permission for session.
 do_check_permission(SessionId, Resource, Permission, State) ->
@@ -932,3 +1068,16 @@ cleanup_revoked_tokens(State, Now) ->
         end,
         Acc
     end, ok, State#state.revoked_tokens).
+
+%% @private Cleanup expired OAuth2 cached tokens.
+cleanup_oauth2_cache(State, Now) ->
+    ets:foldl(fun({Token, {_TokenInfo, ExpiresAt}}, Acc) ->
+        case ExpiresAt < Now of
+            true ->
+                ets:delete(State#state.oauth2_cache, Token),
+                logger:debug("OAuth2 cached token expired: ~p", [Token]);
+            false ->
+                ok
+        end,
+        Acc
+    end, ok, State#state.oauth2_cache).
