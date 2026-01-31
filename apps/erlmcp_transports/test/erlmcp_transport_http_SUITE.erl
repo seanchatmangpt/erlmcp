@@ -651,18 +651,33 @@ start_mock_http_server() ->
         ]}
     ]),
 
-    %% Start listener on random port
-    {ok, ListenerPid} = ranch:start_listener(
+    %% Start listener on random port (port 0 = OS-assigned)
+    case ranch:start_listener(
         mock_http_server,
         ranch_tcp,
         #{socket_opts => [{port, 0}]},
         cowboy_clear,
         #{env => #{dispatch => Dispatch}}
-    ),
+    ) of
+        {ok, ListenerPid} ->
+            %% Get assigned port with retry logic
+            get_listener_port(5);
+        {error, Reason} ->
+            ct:pal("Failed to start mock HTTP server: ~p", [Reason]),
+            {error, Reason}
+    end.
 
-    %% Get assigned port
-    {ok, {_, Port}} = ranch:get_addr(mock_http_server),
-    {ok, Port}.
+%% @private Get the port assigned to the listener with retry
+get_listener_port(Retries) when Retries > 0 ->
+    case ranch:get_addr(mock_http_server) of
+        {ok, {_, Port}} when is_integer(Port) andalso Port > 0 ->
+            {ok, Port};
+        _ ->
+            timer:sleep(100),
+            get_listener_port(Retries - 1)
+    end;
+get_listener_port(0) ->
+    {error, port_not_assigned}.
 
 stop_mock_http_server() ->
     ranch:stop_listener(mock_http_server).

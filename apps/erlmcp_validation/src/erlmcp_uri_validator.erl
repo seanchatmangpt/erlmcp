@@ -114,7 +114,8 @@ validate_resource_uri_on_registration(Uri) when is_binary(Uri) ->
             case binary:split(Uri, <<"://">>) of
                 [<<>>, _] -> {error, missing_scheme};
                 [_, <<>>] -> {error, missing_path};
-                [_Scheme, _Rest] -> ok
+                [_Scheme, _Rest] -> ok;
+                [_] -> {error, missing_scheme}
             end
     end;
 validate_resource_uri_on_registration(_Uri) ->
@@ -172,12 +173,13 @@ parse_uri(Uri) when is_binary(Uri) ->
                         end
                 end,
 
-                {Path, QueryFragment} = case binary:split(PathQueryFragment, <<"?">>) of
-                    [PathOnly] -> {PathOnly, undefined};
-                    [PathPart, QF1] -> {PathPart, QF1}
-                end,
+                %% Fragment can appear in path directly or after query
+                {PathWithoutFragment, Fragment} = split_fragment(PathQueryFragment),
 
-                {Query, Fragment} = split_fragment(QueryFragment),
+                {Path, Query} = case binary:split(PathWithoutFragment, <<"?">>) of
+                    [PathOnly] -> {PathOnly, undefined};
+                    [PathPart, Q] -> {PathPart, Q}
+                end,
 
 
                 {ok, #{

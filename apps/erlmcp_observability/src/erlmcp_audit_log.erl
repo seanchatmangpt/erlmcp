@@ -35,7 +35,7 @@
 %% Exported for testing
 -export([
     read_range_entries/3,
-    verify_range_hashes/4,
+    verify_range_hashes/2,
     find_entry_by_seq/2
 ]).
 
@@ -242,14 +242,18 @@ handle_call(_Request, _From, State) ->
 handle_cast({log, EventType, Data}, State) ->
     Entry = create_audit_entry(EventType, Data, State),
     NewBuffer = [Entry | State#state.buffer],
+    % Increment sequence for next entry
+    NewSequence = State#state.sequence + 1,
+    % Update current_hash to this entry's hash for next entry to reference
+    NewCurrentHash = Entry#audit_entry.entry_hash,
 
     % Auto-flush if buffer full
     case length(NewBuffer) >= State#state.buffer_size of
         true ->
-            NewState = flush_buffer_internal(State#state{buffer = NewBuffer}),
+            NewState = flush_buffer_internal(State#state{buffer = NewBuffer, sequence = NewSequence, current_hash = NewCurrentHash}),
             {noreply, NewState};
         false ->
-            {noreply, State#state{buffer = NewBuffer}}
+            {noreply, State#state{buffer = NewBuffer, sequence = NewSequence, current_hash = NewCurrentHash}}
     end;
 
 handle_cast(_Request, State) ->
@@ -285,7 +289,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @private Create audit entry with hash chain.
 create_audit_entry(EventType, Data, State) ->
-    Sequence = State#state.sequence + 1,
+    Sequence = State#state.sequence,
     Timestamp = erlang:system_time(microsecond),
 
     Entry = #audit_entry{
@@ -338,12 +342,11 @@ flush_buffer_internal(State) ->
     % Sync to disk
     file:sync(State#state.log_file),
 
-    % Update state
+    % Update state (sequence is already correct, incremented in handle_cast)
     LastEntry = lists:last(Entries),
     State#state{
         buffer = [],
-        current_hash = LastEntry#audit_entry.entry_hash,
-        sequence = LastEntry#audit_entry.sequence
+        current_hash = LastEntry#audit_entry.entry_hash
     }.
 
 %% @private Format audit entry as JSON line.
@@ -420,8 +423,9 @@ verify_range(Lines, FromSeq, ToSeq) ->
     case read_range_entries(Lines, FromSeq, ToSeq) of
         {ok, RangeEntries} ->
             % Get expected hash for first entry in range
+            % First entry has sequence 0, so FromSeq = 0 means use genesis hash
             ExpectedHash = case FromSeq of
-                1 ->
+                0 ->
                     GenesisHash;
                 _ ->
                     % Read previous entry to get its hash
@@ -437,7 +441,8 @@ verify_range(Lines, FromSeq, ToSeq) ->
                 {error, _} = Error ->
                     Error;
                 _ ->
-                    verify_range_hashes(RangeEntries, FromSeq, ToSeq, ExpectedHash)
+                    % Verify the range starting from the first entry
+                    verify_range_hashes(RangeEntries, ExpectedHash)
             end;
         {error, Reason} ->
             {error, Reason}
@@ -478,9 +483,9 @@ read_range_entries(Lines, FromSeq, ToSeq) ->
 %% - FromSeq = 0: Should link to genesis hash
 %% - FromSeq > 0: Should link to FromSeq-1 (not verified here, just checked)
 %% - Internal chain: Each entry links to previous entry in range
-verify_range_hashes([], _FromSeq, _ToSeq, _ExpectedHash) ->
+verify_range_hashes([], _ExpectedHash) ->
     ok;
-verify_range_hashes([Entry | Rest], FromSeq, ToSeq, ExpectedHash) ->
+verify_range_hashes([Entry | Rest], ExpectedHash) ->
     Seq = maps:get(<<"sequence">>, Entry),
     PrevHash = base64:decode(maps:get(<<"previous_hash">>, Entry)),
     EntryHash = base64:decode(maps:get(<<"entry_hash">>, Entry)),
@@ -488,7 +493,7 @@ verify_range_hashes([Entry | Rest], FromSeq, ToSeq, ExpectedHash) ->
     case PrevHash of
         ExpectedHash ->
             % Hash chain is valid, move to next entry
-            verify_range_hashes(Rest, FromSeq, ToSeq, EntryHash);
+            verify_range_hashes(Rest, EntryHash);
         _ ->
             % Hash chain broken
             {error, {tampered, Seq}}

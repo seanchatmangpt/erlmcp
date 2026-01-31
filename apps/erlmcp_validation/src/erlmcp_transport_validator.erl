@@ -90,6 +90,27 @@ run(TransportModule) when is_atom(TransportModule) ->
     gen_server:call(?SERVER, {run, TransportModule}).
 
 validate_callbacks(TransportModule) when is_atom(TransportModule) ->
+    % Verify module exists first
+    case code:is_loaded(TransportModule) of
+        false ->
+            % Try to load the module to check if it exists
+            try
+                case code:load_file(TransportModule) of
+                    {module, _} ->
+                        do_validate_callbacks(TransportModule);
+                    {error, _} ->
+                        error({module_not_found, TransportModule})
+                end
+            catch
+                _:_ ->
+                    error({module_not_found, TransportModule})
+            end;
+        _ ->
+            do_validate_callbacks(TransportModule)
+    end.
+
+%% @private Perform the actual callback validation after module existence check
+do_validate_callbacks(TransportModule) ->
     Result = #{
         module => TransportModule,
         category => callbacks,
@@ -97,7 +118,7 @@ validate_callbacks(TransportModule) when is_atom(TransportModule) ->
         checks => []
     },
 
-    Checks = [
+    CheckMaps = [
         check_init_export(TransportModule),
         check_send_export(TransportModule),
         check_close_export(TransportModule),
@@ -107,13 +128,16 @@ validate_callbacks(TransportModule) when is_atom(TransportModule) ->
         check_gen_server_behavior(TransportModule)
     ],
 
+    % Convert maps to {Name, Map} tuples for test compatibility
+    Checks = [{maps:get(name, Check), Check} || Check <- CheckMaps],
+
     {Passed, Failed} = lists:foldl(fun(Check, {P, F}) ->
         case maps:get(status, Check) of
             passed -> {P + 1, F};
             failed -> {P, F + 1};
             warning -> {P, F}
         end
-    end, {0, 0}, Checks),
+    end, {0, 0}, CheckMaps),
 
     Result#{
         checks => Checks,
@@ -131,7 +155,7 @@ validate_framing(TransportModule, Type) when is_atom(TransportModule), is_atom(T
         checks => []
     },
 
-    Checks = case Type of
+    CheckMaps = case Type of
         stdio ->
             [
                 check_stdio_newline_delimited(TransportModule),
@@ -162,13 +186,16 @@ validate_framing(TransportModule, Type) when is_atom(TransportModule), is_atom(T
             }]
     end,
 
+    % Convert maps to {Name, Map} tuples for test compatibility
+    Checks = [{maps:get(name, Check), Check} || Check <- CheckMaps],
+
     {Passed, Failed} = lists:foldl(fun(Check, {P, F}) ->
         case maps:get(status, Check) of
             passed -> {P + 1, F};
             failed -> {P, F + 1};
             warning -> {P, F}
         end
-    end, {0, 0}, Checks),
+    end, {0, 0}, CheckMaps),
 
     Result#{
         checks => Checks,
@@ -312,9 +339,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 check_init_export(Module) ->
-    case erlang:function_exported(Module, init, 1) of
-        true -> #{name => init_exported, status => passed, message => <<"init/1 is exported">>};
-        false -> #{name => init_exported, status => failed, message => <<"init/1 is not exported">>}
+    HasInit = erlang:function_exported(Module, init, 1),
+    HasTransportInit = erlang:function_exported(Module, transport_init, 1),
+    case {HasInit, HasTransportInit} of
+        {true, _} -> #{name => init_exported, status => passed, message => <<"init/1 is exported">>, evidence => <<"Found gen_server init/1">>};
+        {_, true} -> #{name => init_exported, status => passed, message => <<"transport_init/1 is exported">>, evidence => <<"Found transport_init/1 (custom)">>};
+        _ -> #{name => init_exported, status => failed, message => <<"Neither init/1 nor transport_init/1 is exported">>}
     end.
 
 check_send_export(Module) ->
@@ -772,31 +802,62 @@ calculate_overall_compliance(Summaries) ->
 
 %% @doc Validate transport module implements required callbacks
 %% Returns {ok, TransportType} if all required callbacks present
+%% Accepts either init/1 (gen_server) or transport_init/1 (custom)
 -spec validate_transport_module(module()) ->
     {ok, transport_type()} | {error, missing_callbacks}.
 validate_transport_module(Module) when is_atom(Module) ->
-    RequiredCallbacks = [{init, 1}, {send, 2}, {close, 1}],
+    % Check for init functions - accept either gen_server init/1 or custom transport_init/1
+    HasInit = erlang:function_exported(Module, init, 1),
+    HasTransportInit = erlang:function_exported(Module, transport_init, 1),
+    HasSend = erlang:function_exported(Module, send, 2),
+    HasClose = erlang:function_exported(Module, close, 1),
 
-    case check_callbacks_exported(Module, RequiredCallbacks) of
-        ok ->
+    InitOk = HasInit orelse HasTransportInit,
+
+    Missing = [
+        {if HasInit -> init; HasTransportInit -> transport_init; true -> neither end, 1} || not InitOk
+    ] ++ [
+        {send, 2} || not HasSend
+    ] ++ [
+        {close, 1} || not HasClose
+    ],
+
+    case Missing of
+        [] ->
             TransportType = detect_transport_type(Module),
             {ok, TransportType};
-        {error, Missing} ->
+        _ ->
             {error, {missing_callbacks, Missing}}
     end.
 
 %% @doc Validate transport initialization with REAL transport instance
-%% Chicago School: Test actual init/1 call, no mocks
+%% Chicago School: Test actual init call, no mocks
+%% Checks for transport_init/1 (preferred) or falls back to gen_server init
 -spec validate_init(module(), transport_type(), map()) ->
     {ok, term()} | {error, init_failed}.
 validate_init(Module, TransportType, Opts) when is_atom(Module), is_map(Opts) ->
     try
         ?LOG_INFO("Validating ~p transport init with real instance", [TransportType]),
 
-        case Module:init(Opts) of
+        % Try transport_init/1 first (the behavior contract function)
+        HasTransportInit = erlang:function_exported(Module, transport_init, 1),
+
+        Result = case HasTransportInit of
+            true ->
+                Module:transport_init(Opts);
+            false ->
+                % Fall back to gen_server init - pass the options
+                % Note: This won't actually start the gen_server, just tests the init logic
+                Module:init(Opts)
+        end,
+
+        case Result of
             {ok, State} ->
                 ?LOG_INFO("~p init succeeded", [TransportType]),
                 {ok, State};
+            {ok, Pid, State} when is_pid(Pid) ->
+                ?LOG_INFO("~p init succeeded (started gen_server)", [TransportType]),
+                {ok, {Pid, State}};
             {error, Reason} ->
                 ?LOG_ERROR("~p init failed: ~p", [TransportType, Reason]),
                 {error, {init_failed, Reason}}

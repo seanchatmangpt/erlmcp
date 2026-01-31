@@ -78,9 +78,13 @@
     validate_memory/2,
     validate_connection_setup/1,
     validate_concurrent_connections/1,
+    validate_concurrency/2,
     benchmark_comparison/3,
     calculate_percentiles/1,
-    format_report/1
+    format_report/1,
+    generate_performance_report/1,
+    get_metric_value/3,
+    get_threshold_value/4
 ]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -229,11 +233,11 @@ run(Transport, Options) when is_atom(Transport), is_map(Options) ->
         
         %% Cache latest report
         application:set_env(erlmcp_validation, latest_performance_report, Report),
-        
+
         {ok, Report}
     catch
         Class:Reason:Stacktrace ->
-            ?LOG_ERROR("Performance validation failed: ~p:~p~n~p", 
+            ?LOG_ERROR("Performance validation failed: ~p:~p~n~p",
                       [Class, Reason, Stacktrace]),
             {error, {validation_failed, {Class, Reason}}}
     end.
@@ -310,7 +314,7 @@ measure_latency(Transport, Samples) when is_integer(Samples), Samples > 0 ->
         
         {ok, Result}
     catch
-        Class:Reason:Stacktrace ->
+        Class:Reason:_Stacktrace ->
             ?LOG_ERROR("Latency measurement failed: ~p:~p", [Class, Reason]),
             {error, {measurement_failed, {Class, Reason}}}
     end.
@@ -372,7 +376,7 @@ measure_throughput(Transport, TotalRequests) when is_integer(TotalRequests), Tot
         
         {ok, Result}
     catch
-        Class:Reason:Stacktrace ->
+        Class:Reason:_Stacktrace ->
             ?LOG_ERROR("Throughput measurement failed: ~p:~p", [Class, Reason]),
             {error, {measurement_failed, {Class, Reason}}}
     end.
@@ -437,7 +441,7 @@ measure_memory(Transport) ->
         
         {ok, Result}
     catch
-        Class:Reason:Stacktrace ->
+        Class:Reason:_Stacktrace ->
             ?LOG_ERROR("Memory measurement failed: ~p:~p", [Class, Reason]),
             {error, {measurement_failed, {Class, Reason}}}
     end.
@@ -489,7 +493,7 @@ measure_connection_setup(Transport) ->
         
         {ok, Result}
     catch
-        Class:Reason:Stacktrace ->
+        Class:Reason:_Stacktrace ->
             ?LOG_ERROR("Connection setup measurement failed: ~p:~p", [Class, Reason]),
             {error, {measurement_failed, {Class, Reason}}}
     end.
@@ -566,7 +570,7 @@ test_concurrent_connections(Transport, NumConnections) ->
         
         {ok, Result}
     catch
-        Class:Reason:Stacktrace ->
+        Class:Reason:_Stacktrace ->
             ?LOG_ERROR("Concurrent connection test failed: ~p:~p", [Class, Reason]),
             {error, {measurement_failed, {Class, Reason}}}
     end.
@@ -576,163 +580,236 @@ test_concurrent_connections(Transport, NumConnections) ->
 %%====================================================================
 
 %% @doc Validate latency against targets
--spec validate_latency(latency_result()) -> validation_result().
-validate_latency(#{p50_us := P50, p95_us := P95, p99_us := P99}) ->
-    P50Pass = P50 =< ?TARGET_P50_LATENCY_US,
-    P95Pass = P95 =< ?TARGET_P95_LATENCY_US,
-    P99Pass = P99 =< ?TARGET_P99_LATENCY_US,
-
-    Passed = P50Pass andalso P95Pass andalso P99Pass,
-
-    Status = case Passed of
-        true -> pass;
-        false when P99Pass -> warning;
-        false -> fail
-    end,
-
-    #{
-        passed => Passed,
-        p50 => #{
-            target => ?TARGET_P50_LATENCY_US,
-            actual => P50,
-            status => bool_to_status(P50Pass)
-        },
-        p95 => #{
-            target => ?TARGET_P95_LATENCY_US,
-            actual => P95,
-            status => bool_to_status(P95Pass)
-        },
-        p99 => #{
-            target => ?TARGET_P99_LATENCY_US,
-            actual => P99,
-            status => bool_to_status(P99Pass)
-        },
-        status => Status
-    }.
+-spec validate_latency(map()) -> {pass | fail, map()}.
+validate_latency(LatencyMap) ->
+    validate_latency(LatencyMap, #{}).
 
 %% @doc Validate latency against custom thresholds
--spec validate_latency(latency_result(), map()) -> validation_result().
-validate_latency(#{p50_us := P50, p95_us := P95, p99_us := P99}, Thresholds) when is_map(Thresholds) ->
-    TargetP50 = maps:get(<<"latency_p50_us">>, Thresholds, ?TARGET_P50_LATENCY_US),
-    TargetP95 = maps:get(<<"latency_p95_us">>, Thresholds, ?TARGET_P95_LATENCY_US),
-    TargetP99 = maps:get(<<"latency_p99_us">>, Thresholds, ?TARGET_P99_LATENCY_US),
+-spec validate_latency(map(), map()) -> {pass | fail, map()}.
+validate_latency(LatencyMap, Thresholds) when is_map(Thresholds) ->
+    %% Check if all required fields are present
+    HasP50 = maps:is_key(<<"latency_p50_us">>, LatencyMap) orelse maps:is_key(p50_us, LatencyMap),
+    HasP95 = maps:is_key(<<"latency_p95_us">>, LatencyMap) orelse maps:is_key(p95_us, LatencyMap),
+    HasP99 = maps:is_key(<<"latency_p99_us">>, LatencyMap) orelse maps:is_key(p99_us, LatencyMap),
 
-    P50Pass = P50 =< TargetP50,
-    P95Pass = P95 =< TargetP95,
-    P99Pass = P99 =< TargetP99,
+    case {HasP50, HasP95, HasP99} of
+        {false, _, _} -> {fail, #{is_valid => false, is_error => true, error => missing_fields}};
+        {_, false, _} -> {fail, #{is_valid => false, is_error => true, error => missing_fields}};
+        {_, _, false} -> {fail, #{is_valid => false, is_error => true, error => missing_fields}};
+        _ ->
+            try
+                P50 = get_metric_value(latency_p50_us, p50_us, LatencyMap),
+                P95 = get_metric_value(latency_p95_us, p95_us, LatencyMap),
+                P99 = get_metric_value(latency_p99_us, p99_us, LatencyMap),
 
-    Passed = P50Pass andalso P95Pass andalso P99Pass,
+                TargetP50 = get_threshold_value(latency_p50_us, p50_us, Thresholds, 100),
+                TargetP95 = get_threshold_value(latency_p95_us, p95_us, Thresholds, 500),
+                TargetP99 = get_threshold_value(latency_p99_us, p99_us, Thresholds, 1000),
 
-    Status = case Passed of
-        true -> pass;
-        false when P99Pass -> warning;
-        false -> fail
-    end,
+                %% Check for negative values (invalid)
+                case P50 < 0 orelse P95 < 0 orelse P99 < 0 of
+                    true ->
+                        {fail, #{is_valid => false, is_error => true, error => negative_values}};
+                    false ->
+                        %% Build violation list
+                        Violations = [],
+                        Violations1 = case P50 > TargetP50 of
+                            true ->
+                                [#{
+                                    <<"metric">> => <<"latency_p50_us">>,
+                                    <<"threshold_us">> => TargetP50,
+                                    <<"actual_us">> => P50,
+                                    <<"severity">> => <<"critical">>
+                                } | Violations];
+                            false -> Violations
+                        end,
+                        Violations2 = case P95 > TargetP95 of
+                            true ->
+                                [#{
+                                    <<"metric">> => <<"latency_p95_us">>,
+                                    <<"threshold_us">> => TargetP95,
+                                    <<"actual_us">> => P95,
+                                    <<"severity">> => <<"critical">>
+                                } | Violations1];
+                            false -> Violations1
+                        end,
+                        Violations3 = case P99 > TargetP99 of
+                            true ->
+                                [#{
+                                    <<"metric">> => <<"latency_p99_us">>,
+                                    <<"threshold_us">> => TargetP99,
+                                    <<"actual_us">> => P99,
+                                    <<"severity">> => <<"critical">>
+                                } | Violations2];
+                            false -> Violations2
+                        end,
 
-    #{
-        passed => Passed,
-        p50 => #{
-            target => TargetP50,
-            actual => P50,
-            status => bool_to_status(P50Pass)
-        },
-        p95 => #{
-            target => TargetP95,
-            actual => P95,
-            status => bool_to_status(P95Pass)
-        },
-        p99 => #{
-            target => TargetP99,
-            actual => P99,
-            status => bool_to_status(P99Pass)
-        },
-        status => Status
-    };
-validate_latency(Result, _Thresholds) ->
-    validate_latency(Result).
+                        Passed = length(Violations3) =:= 0,
+                        Result = #{
+                            is_valid => Passed,
+                            violations => length(Violations3),
+                            violation_list => lists:reverse(Violations3)
+                        },
+
+                        case Passed of
+                            true -> {pass, Result};
+                            false -> {fail, Result}
+                        end
+                end
+            catch
+                _:_:_ ->
+                    {fail, #{is_valid => false, is_error => true, error => unexpected_error}}
+            end
+    end.
 
 %% @doc Validate throughput against targets
--spec validate_throughput(throughput_result()) -> validation_result().
-validate_throughput(#{requests_per_second := RPS}) ->
-    Passed = RPS >= ?TARGET_THROUGHPUT,
-
-    #{
-        passed => Passed,
-        target => ?TARGET_THROUGHPUT,
-        actual => RPS,
-        status => bool_to_status(Passed)
-    }.
+-spec validate_throughput(map()) -> validation_result().
+validate_throughput(ThroughputMap) ->
+    validate_throughput(ThroughputMap, 100000).
 
 %% @doc Validate throughput against custom target
--spec validate_throughput(throughput_result(), number() | undefined) -> validation_result().
-validate_throughput(#{requests_per_second := RPS}, Target) when is_number(Target) ->
-    Passed = RPS >= Target,
-    #{
-        passed => Passed,
-        target => Target,
-        actual => RPS,
-        status => bool_to_status(Passed)
-    };
-validate_throughput(Result, undefined) ->
-    validate_throughput(Result).
+-spec validate_throughput(map(), number() | undefined) -> {pass | fail, map()}.
+validate_throughput(ThroughputMap, Target) when is_number(Target) ->
+    RPS = get_metric_value(throughput_msg_per_s, requests_per_second, ThroughputMap),
+    %% Check if field exists (RPS will be 0 if not found)
+    FieldExists = maps:is_key(<<"throughput_msg_per_s">>, ThroughputMap) orelse
+                  maps:is_key(requests_per_second, ThroughputMap),
+
+    case {FieldExists, RPS} of
+        {false, _} ->
+            {fail, #{
+                is_valid => false,
+                is_error => true,
+                error => missing_field
+            }};
+        {_, 0} when not FieldExists ->
+            {fail, #{
+                is_valid => false,
+                is_error => true,
+                error => missing_field
+            }};
+        _ ->
+            Passed = RPS >= Target,
+            Severity = case (Target - RPS) / Target of
+                Degradation when Degradation >= 0.5 -> <<"critical">>;
+                Degradation when Degradation >= 0.2 -> <<"warning">>;
+                _ -> <<"info">>
+            end,
+            Result = #{
+                is_valid => Passed,
+                actual_throughput => RPS,
+                min_required => Target,
+                severity => Severity
+            },
+            case Passed of
+                true -> {pass, Result};
+                false -> {fail, Result}
+            end
+    end;
+validate_throughput(ThroughputMap, undefined) ->
+    validate_throughput(ThroughputMap, 100000).
 
 %% @doc Validate memory against targets
--spec validate_memory(memory_result()) -> validation_result().
-validate_memory(#{bytes_per_connection := Bytes}) ->
-    Passed = Bytes =< ?TARGET_MEMORY_PER_CONN_BYTES,
-
-    #{
-        passed => Passed,
-        target => ?TARGET_MEMORY_PER_CONN_BYTES,
-        actual => Bytes,
-        status => bool_to_status(Passed)
-    }.
+-spec validate_memory(map()) -> validation_result().
+validate_memory(MemoryMap) ->
+    validate_memory(MemoryMap, 10).
 
 %% @doc Validate memory against custom target
--spec validate_memory(memory_result(), number() | undefined) -> validation_result().
-validate_memory(#{bytes_per_connection := Bytes}, MaxBytes) when is_number(MaxBytes) ->
-    Passed = Bytes =< MaxBytes,
-    #{
-        passed => Passed,
-        target => MaxBytes,
-        actual => Bytes,
-        status => bool_to_status(Passed)
-    };
-validate_memory(Result, undefined) ->
-    validate_memory(Result).
+-spec validate_memory(map(), number() | undefined) -> {pass | fail, map()}.
+validate_memory(MemoryMap, MaxMemoryMib) when is_number(MaxMemoryMib) ->
+    BytesMib = get_metric_value(memory_per_connection_mib, bytes_per_connection, MemoryMap),
+    Passed = BytesMib =< MaxMemoryMib,
+    Result = #{
+        is_valid => Passed,
+        actual_memory_mib => BytesMib,
+        max_allowed_mib => MaxMemoryMib
+    },
+    case Passed of
+        true -> {pass, Result};
+        false -> {fail, Result}
+    end;
+validate_memory(MemoryMap, undefined) ->
+    validate_memory(MemoryMap, 10).
 
 %% @doc Compare benchmark results against baseline
--spec benchmark_comparison(map(), map(), number() | undefined) -> validation_result().
+-spec benchmark_comparison(map(), map(), number() | undefined) -> {pass | fail, map()}.
 benchmark_comparison(Current, Baseline, Tolerance) when is_map(Current), is_map(Baseline) ->
     DefaultTolerance = case Tolerance of
-        undefined -> 0.1;  % 10% default tolerance
+        undefined -> 10;  % 10% default tolerance (as percentage)
         _ -> Tolerance
     end,
 
     CurrentThroughput = maps:get(<<"throughput_msg_per_s">>, Current, 0),
     BaselineThroughput = maps:get(<<"throughput_msg_per_s">>, Baseline, 0),
+    CurrentLatency = maps:get(<<"latency_p99_us">>, Current, 0),
+    BaselineLatency = maps:get(<<"latency_p99_us">>, Baseline, 0),
 
-    %% Check if current is within tolerance of baseline
-    Ratio = case BaselineThroughput of
+    %% Check throughput ratio
+    ThroughputRatio = case BaselineThroughput of
         0 -> 0;
         _ -> CurrentThroughput / BaselineThroughput
     end,
 
-    Passed = Ratio >= (1.0 - DefaultTolerance),
+    %% Check latency degradation (inverse - higher is worse)
+    LatencyRatio = case BaselineLatency of
+        0 -> 0;
+        _ -> CurrentLatency / BaselineLatency
+    end,
 
-    #{
-        passed => Passed,
-        current => CurrentThroughput,
-        baseline => BaselineThroughput,
-        ratio => Ratio,
-        tolerance => DefaultTolerance,
-        status => bool_to_status(Passed)
-    };
+    %% Count regressions and build regression list
+    ToleranceDecimal = DefaultTolerance / 100,
+    Regressions = [],
+    Regressions1 = case ThroughputRatio < (1.0 - ToleranceDecimal) of
+        true ->
+            [#{
+                <<"metric">> => <<"throughput_msg_per_s">>,
+                <<"baseline">> => BaselineThroughput,
+                <<"current">> => CurrentThroughput,
+                <<"degradation">> => (1.0 - ThroughputRatio) * 100
+            } | Regressions];
+        false -> Regressions
+    end,
+    Regressions2 = case LatencyRatio > (1.0 + ToleranceDecimal) of
+        true ->
+            [#{
+                <<"metric">> => <<"latency_p99_us">>,
+                <<"baseline">> => BaselineLatency,
+                <<"current">> => CurrentLatency,
+                <<"degradation">> => (LatencyRatio - 1.0) * 100
+            } | Regressions1];
+        false -> Regressions1
+    end,
+
+    %% Count improvements
+    Improvements = 0,
+    Improvements1 = case ThroughputRatio > (1.0 + ToleranceDecimal) of
+        true -> Improvements + 1;
+        false -> Improvements
+    end,
+    Improvements2 = case LatencyRatio < (1.0 - ToleranceDecimal) of
+        true -> Improvements1 + 1;
+        false -> Improvements1
+    end,
+
+    Passed = length(Regressions2) =:= 0,
+
+    Result = #{
+        is_valid => Passed,
+        regressions => length(Regressions2),
+        regression_list => lists:reverse(Regressions2),
+        improvements => Improvements2
+    },
+
+    case Passed of
+        true -> {pass, Result};
+        false -> {fail, Result}
+    end;
 benchmark_comparison(_Current, _Baseline, _Tolerance) ->
-    #{
-        passed => false,
-        status => invalid_input
-    }.
+    {fail, #{
+        is_valid => false,
+        is_error => true,
+        error => invalid_input
+    }}.
 
 %% @doc Validate connection setup against targets
 -spec validate_connection_setup(connection_setup_result()) -> validation_result().
@@ -755,9 +832,9 @@ validate_concurrent_connections(#{success_count := Success, total_connections :=
     RatePassed = SuccessRate >= TargetRate,
     %% Also check if we achieved the target number
     CountPassed = Success >= ?TARGET_CONCURRENT_CONNS,
-    
+
     Passed = RatePassed andalso CountPassed,
-    
+
     #{
         passed => Passed,
         target => ?TARGET_CONCURRENT_CONNS,
@@ -766,6 +843,82 @@ validate_concurrent_connections(#{success_count := Success, total_connections :=
         target_success_rate => TargetRate,
         status => bool_to_status(Passed)
     }.
+
+%% @doc validate_concurrency - accepts binary/atom keys for test compatibility
+-spec validate_concurrency(map(), pos_integer()) -> {pass | fail, map()}.
+validate_concurrency(ConcurrencyMap, MaxConnections) ->
+    Connections = get_metric_value(concurrent_connections, success_count, ConcurrencyMap),
+    Passed = Connections =< MaxConnections,
+    Severity = case Connections > MaxConnections of
+        true ->
+            ExcessRatio = (Connections - MaxConnections) / MaxConnections,
+            case ExcessRatio >= 0.5 of
+                true -> <<"critical">>;
+                false -> <<"warning">>
+            end;
+        false -> <<"info">>
+    end,
+    Result = #{
+        is_valid => Passed,
+        actual_connections => Connections,
+        max_allowed => MaxConnections,
+        severity => Severity
+    },
+    case Passed of
+        true -> {pass, Result};
+        false -> {fail, Result}
+    end.
+
+%% @doc Generate comprehensive performance report from metrics map
+-spec generate_performance_report(map()) -> map().
+generate_performance_report(Metrics) ->
+    Timestamp = os:system_time(second),
+
+    %% Check if metrics is empty
+    case maps:size(Metrics) =:= 0 of
+        true ->
+            #{
+                overall_passed => true,
+                total_checks => 0,
+                passed_checks => 0,
+                failed_checks => 0,
+                generated_at => Timestamp
+            };
+        false ->
+            %% Extract metric maps
+            LatencyMap = maps:get(latency, Metrics, #{}),
+            ThroughputMap = maps:get(throughput, Metrics, #{}),
+            MemoryMap = maps:get(memory, Metrics, #{}),
+            ConcurrencyMap = maps:get(concurrency, Metrics, #{}),
+
+            %% Validate each metric category
+            LatencyResult = validate_latency(LatencyMap, #{}),
+            ThroughputResult = validate_throughput(ThroughputMap, undefined),
+            MemoryResult = validate_memory(MemoryMap, undefined),
+            ConcurrencyResult = validate_concurrency(ConcurrencyMap, 50000),
+
+            %% Calculate overall statistics
+            TotalChecks = 4,
+            PassedChecks = count_passed([LatencyResult, ThroughputResult, MemoryResult, ConcurrencyResult]),
+            FailedChecks = TotalChecks - PassedChecks,
+            OverallPassed = FailedChecks =:= 0,
+
+            #{
+                overall_passed => OverallPassed,
+                total_checks => TotalChecks,
+                passed_checks => PassedChecks,
+                failed_checks => FailedChecks,
+                generated_at => Timestamp,
+                latency => LatencyResult,
+                throughput => ThroughputResult,
+                memory => MemoryResult,
+                concurrency => ConcurrencyResult
+            }
+    end.
+
+%% @doc Count how many validation results passed
+count_passed(Results) ->
+    length([R || {pass, _} = R <- Results]).
 
 %% @doc Calculate percentiles from a list of numbers
 -spec calculate_percentiles([number()]) -> #{p50 => number(), p95 => number(), p99 => number()}.
@@ -894,3 +1047,43 @@ stop_test_server(tcp, Pid) when is_pid(Pid) ->
     ok;
 stop_test_server(_Transport, _Pid) ->
     ok.
+
+%%====================================================================
+%% Internal Helper Functions
+%%====================================================================
+
+%% @doc Get metric value from map, trying both canonical (binary) and legacy (atom) keys
+-spec get_metric_value(atom(), atom(), map()) -> number().
+get_metric_value(CanonicalKeyName, LegacyKey, Map) ->
+    %% Convert canonical key name atom to binary
+    CanonicalKey = atom_to_binary(CanonicalKeyName, utf8),
+
+    case maps:find(CanonicalKey, Map) of
+        {ok, Value} when is_number(Value) ->
+            Value;
+        error ->
+            case maps:find(LegacyKey, Map) of
+                {ok, Value} when is_number(Value) ->
+                    Value;
+                error ->
+                    0
+            end
+    end.
+
+%% @doc Get threshold value from custom thresholds map with fallback
+-spec get_threshold_value(atom(), atom(), map(), number()) -> number().
+get_threshold_value(CanonicalKeyName, LegacyKey, Thresholds, Default) ->
+    %% Convert canonical key name atom to binary
+    CanonicalKey = atom_to_binary(CanonicalKeyName, utf8),
+
+    case maps:find(CanonicalKey, Thresholds) of
+        {ok, Value} when is_number(Value) ->
+            Value;
+        error ->
+            case maps:find(LegacyKey, Thresholds) of
+                {ok, Value} when is_number(Value) ->
+                    Value;
+                error ->
+                    Default
+            end
+    end.
