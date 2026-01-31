@@ -249,6 +249,42 @@ init([]) ->
         },
 
         %% ================================================================
+        %% ELICITATION: User input elicitation (inline, url, terminal)
+        %% ================================================================
+        #{
+            id => erlmcp_elicitation,
+            start => {erlmcp_elicitation, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_elicitation]
+        },
+
+        %% ================================================================
+        %% ROOTS: Root directory management for MCP servers
+        %% ================================================================
+        #{
+            id => erlmcp_roots_server,
+            start => {erlmcp_roots_server, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_roots_server]
+        },
+
+        %% ================================================================
+        %% APPS: Application lifecycle management and sandboxing
+        %% ================================================================
+        #{
+            id => erlmcp_apps_server,
+            start => {erlmcp_apps_server, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_apps_server]
+        },
+
+        %% ================================================================
         %% NOTIFICATION HANDLERS: Supervised notification processing (RPN 168)
         %% ================================================================
         #{
