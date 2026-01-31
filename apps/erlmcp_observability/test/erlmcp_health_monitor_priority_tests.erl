@@ -16,8 +16,7 @@ health_monitor_test_() ->
       fun test_priority_metrics_tracking/1,
       fun test_k8s_liveness_probe_priority/1,
       fun test_concurrent_priority_requests/1,
-      fun test_priority_under_load/1,
-      fun test_fallback_otp_27/1]}.
+      fun test_priority_under_load/1]}.
 
 setup() ->
     % Start health monitor
@@ -39,7 +38,7 @@ cleanup(Pid) ->
 %%====================================================================
 
 test_priority_health_check_latency(Pid) ->
-    {"Priority health check should have <1ms latency on OTP 28, <5ms on OTP 27",
+    {"Priority health check should have <1ms latency",
      fun() ->
          % Register a test component
          ok = erlmcp_health_monitor:register_component(test_component, Pid, fun() -> healthy end),
@@ -182,24 +181,6 @@ test_priority_under_load(_Pid) ->
          
      end}.
 
-%%====================================================================
-%% Fallback Tests
-%%====================================================================
-
-test_fallback_otp_27(_Pid) ->
-    {"Health monitor should work correctly on OTP 25-27 without priority messages",
-     fun() ->
-         % This test verifies fallback behavior
-         Result = erlmcp_health_monitor:get_system_health(),
-
-         ?assertMatch(#{overall_status := _,
-                       system_metrics := _,
-                       component_health := _}, Result),
-
-         -ifndef(OTP_28).
-         % On OTP 25-27, priority metrics may not be present
-         ?debugMsg("Verified fallback behavior on OTP 25-27")
-     end}.
 
 %%====================================================================
 %% Helper Functions

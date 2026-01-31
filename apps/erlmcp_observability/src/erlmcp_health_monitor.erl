@@ -738,12 +738,10 @@ schedule_health_check(ComponentId, Interval) ->
     ok.
 
 %%--------------------------------------------------------------------
-%% @doc Enumerate all processes for health monitoring (OTP 28 optimized)
+%% @doc Enumerate all processes for health monitoring
 %%
-%% On OTP 28+: Uses erlang:processes_iterator/0 for O(1) memory allocation
+%% Uses erlang:processes_iterator/0 for O(1) memory allocation
 %% to scan all processes and check for potential health issues.
-%%
-%% On OTP 25-27: Falls back to erlang:processes() with list construction.
 %%
 %% Returns: {ok, #{healthy => N, unhealthy => M}}
 %% @end
