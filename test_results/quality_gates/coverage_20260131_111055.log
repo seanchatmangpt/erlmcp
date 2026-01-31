@@ -1,0 +1,18 @@
+[0;32m===> Verifying dependencies...
+[0m[0;32m===> Analyzing applications...
+[0m[0;32m===> Compiling erlmcp_core
+[0m[0;32m===> Compiling erlmcp_transports
+[0m[0;32m===> Compiling erlmcp_validation
+[0m[0;32m===> Compiling erlmcp_observability
+[0m[0;31m===> [1mCompiling apps/erlmcp_core/test/erlmcp_completion_tests.erl failed
+[0m[0m     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 495 │      Successes = [[1;31mR[0m || {ok, _} <- Results],[0m
+     │                   [1;31m╰──[0m[0m variable 'R' is unbound
+
+     ┌─ apps/erlmcp_core/test/erlmcp_completion_tests.erl:
+     │
+ 499 │      Errors = [[1;31mR[0m || {error, _} <- Results],[0m
+     │                [1;31m╰──[0m[0m variable 'R' is unbound
+
+
