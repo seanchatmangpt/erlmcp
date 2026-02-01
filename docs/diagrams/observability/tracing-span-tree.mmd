@@ -1,0 +1,91 @@
+---
+title: erlmcp Distributed Tracing Span Hierarchy
+---
+flowchart LR
+    subgraph Root["Root Span: MCP Request"]
+        Direction["mcp.request<br/>name=initialize/tools/call"]
+    end
+
+    subgraph Transport["Transport Layer"]
+        Conn["transport.connection<br/>tcp/http/ws"]
+        Parse["message.parse<br/>json_decode"]
+        Validate["message.validate<br/>schema_check"]
+    end
+
+    subgraph Handler["Message Handler"]
+        Route["handler.route<br/>request_type"]
+        Auth["auth.validate<br/>token_check"]
+        RateLimit["rate_limit.check<br/>quota_enforce"]
+    end
+
+    subgraph BusinessLogic["Business Logic"]
+        case TOOL_CALL["Tool Call"]
+            ToolReg["tool.lookup<br/>registry_find"]
+            ToolExec["tool.execute<br/>handler_call"]
+        end
+
+        case RESOURCE_GET["Resource Get"]
+            ResSub["resource.subscribe<br/>watch_create"]
+            ResFetch["resource.fetch<br/>uri_read"]
+        end
+
+        case PROMPT_LIST["Prompt List"]
+            PromptGet["prompt.get_all<br/>template_load"]
+            PromptFilter["prompt.filter<br/>capability_check"]
+        end
+    end
+
+    subgraph Response["Response Layer"]
+        Serialize["response.serialize<br/>json_encode"]
+        TransportSend["transport.send<br/>socket_write"]
+    end
+
+    Direction --> Conn
+    Direction --> Parse
+    Direction --> Validate
+    Direction --> Route
+    Direction --> Auth
+    Direction --> RateLimit
+
+    Route --> TOOL_CALL
+    Route --> RESOURCE_GET
+    Route --> PROMPT_LIST
+
+    TOOL_CALL --> ToolReg
+    TOOL_CALL --> ToolExec
+
+    RESOURCE_GET --> ResSub
+    RESOURCE_GET --> ResFetch
+
+    PROMPT_LIST --> PromptGet
+    PROMPT_LIST --> PromptFilter
+
+    ToolExec --> Serialize
+    ResFetch --> Serialize
+    PromptFilter --> Serialize
+
+    Serialize --> TransportSend
+
+    style Root fill:#e3f2fd
+    style Transport fill:#fff3e0
+    style Handler fill:#f3e5f5
+    style BusinessLogic fill:#e8f5e9
+    style Response fill:#fce4ec
+
+    %% Span attributes (shown as hover in supported viewers)
+    classDef rootSpan fill:#1976d2,stroke:#0d47a1,color:#fff
+    classDef transportSpan fill:#f57c00,stroke:#e65100,color:#fff
+    classDef handlerSpan fill:#7b1fa2,stroke:#4a148c,color:#fff
+    classDef logicSpan fill:#388e3c,stroke:#1b5e20,color:#fff
+    classDef responseSpan fill:#c2185b,stroke:#880e4f,color:#fff
+
+    class Direction rootSpan
+    class Conn,Parse,Validate transportSpan
+    class Route,Auth,RateLimit handlerSpan
+    class ToolReg,ToolExec,ResSub,ResFetch,PromptGet,PromptFilter logicSpan
+    class Serialize,TransportSend responseSpan
+
+    %% Cross-cutting concerns
+    subgraph CrossCutting["Cross-Cutting Concerns"]
+        Note1["trace_id: UUID (correlates all spans)<br/>span_id: UUID (unique per span)<br/>parent_span_id: UUID (parent reference)"]
+    end

@@ -1,0 +1,89 @@
+```mermaid
+sequenceDiagram
+    participant Client as erlmcp_client
+    participant Registry as erlmcp_registry<br/>(gproc)
+    participant Transport as Transport Layer<br/>(stdio/tcp/http)
+    participant Server as erlmcp_server
+    participant Handler as Handler Function
+    participant Observability as erlmcp_observability<br/>(metrics/otel)
+
+    Note over Client,Observability: Client Request Flow
+
+    Client->>Client: API call<br/>(e.g., call_tool/3)
+    activate Client
+
+    Client->>Client: Encode JSON-RPC request<br/>(erlmcp_json_rpc)
+    Client->>Registry: Lookup transport<br/>gproc:lookup_local_name({mcp, transport, Id})
+    activate Registry
+    Registry-->>Client: TransportPid
+    deactivate Registry
+
+    Client->>Transport: Send encoded message<br/>transport:send(Data)
+    activate Transport
+
+    Transport->>Transport: Transport-specific send<br/>(gun/ranch/stdio)
+
+    Note over Transport,Server: Network transmission
+
+    Transport-->>Server: Raw JSON-RPC data
+    deactivate Transport
+
+    Server->>Registry: Lookup server<br/>gproc:lookup_local_name({mcp, server, Id})
+    activate Registry
+    Registry-->>Server: ServerPid
+    deactivate Registry
+
+    Server->>Server: Decode JSON-RPC request<br/>erlmcp_json_rpc:decode()
+    Server->>Server: Route to handler<br/>(resource/tool/prompt)
+
+    Server->>Observability: Start OTEL span<br/>erlmcp_otel:start_span()
+    activate Observability
+    Observability-->>Server: Span context
+    deactivate Observability
+
+    Server->>Handler: Execute handler<br/>(user-provided function)
+    activate Handler
+
+    Handler-->>Server: Result<br/>(#mcp_content{} | binary())
+    deactivate Handler
+
+    Server->>Observability: End OTEL span<br/>erlmcp_otel:end_span()
+    Server->>Server: Encode JSON-RPC response<br/>erlmcp_json_rpc:encode()
+
+    Server->>Transport: Send response<br/>transport:send(Data)
+    activate Transport
+
+    Transport->>Transport: Transport-specific send
+
+    Transport-->>Client: Raw response data
+    deactivate Transport
+
+    Client->>Client: Decode JSON-RPC response<br/>erlmcp_json_rpc:decode()
+    Client->>Client: Match to pending request<br/>(State.pending_requests)
+
+    Client->>Observability: Record metrics<br/>erlmcp_metrics:record_request()
+    activate Observability
+    Observability-->>Client: ok
+    deactivate Observability
+
+    Client-->>Client: Return result to caller
+    deactivate Client
+
+    Note over Client,Observability: Resource Subscription Flow
+
+    Client->>Server: resources/subscribe request
+    activate Server
+    Server->>Server: Add subscriber to resource<br/>State.subscriptions
+    Server-->>Client: Subscribe success
+    deactivate Server
+
+    Note over Server,Client: Resource changes
+
+    Server->>Server: Resource updated
+    Server->>Server: notify_resource_updated/3
+    Server->>Server: Broadcast to subscribers<br/>resources/updated notification
+    Server-->>Client: Notification<br/>(async)
+    activate Client
+    Client->>Client: Invoke notification handler
+    deactivate Client
+```

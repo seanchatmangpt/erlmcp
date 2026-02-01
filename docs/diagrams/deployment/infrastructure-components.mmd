@@ -1,0 +1,280 @@
+erlmcp Infrastructure Component Relationships
+==============================================
+
+graph TB
+    subgraph "Application Layer"
+        subgraph "erlmcp_core Application"
+            CORE[erlmcp_core_app<br/>v2.1.0]
+            CORE_Sup[erlmcp_core_sup<br/>Top-Level Supervisor]
+            Server[erlmcp_server<br/>MCP Protocol Handler]
+            Client[erlmcp_client<br/>MCP Client Initiator]
+            Registry[erlmcp_registry<br/>gproc-based Routing]
+            Session[erlmcp_session_manager<br/>State Coordinator]
+        end
+
+        subgraph "erlmcp_transports Application"
+            TRANS[erlmcp_transports_app<br/>v2.1.0]
+            TRANS_Sup[erlmcp_transport_sup]
+            TCP[erlmcp_transport_tcp<br/>Ranch Acceptors]
+            HTTP[erlmcp_transport_http<br/>Gun Client]
+            WS[erlmcp_transport_ws<br/>WebSocket Handler]
+            SSE[erlmcp_transport_sse<br/>Server-Sent Events]
+        end
+
+        subgraph "erlmcp_observability Application"
+            OBS[erlmcp_observability_app<br/>v2.1.0]
+            OBS_Sup[erlmcp_observability_sup]
+            OTEL[erlmcp_otel<br/>OpenTelemetry SDK]
+            Metrics[erlmcp_metrics_server<br/>HTTP: 9090]
+            Dashboard[erlmcp_dashboard_server<br/>HTTP: 9999]
+            Chaos[erlmcp_chaos<br/>Failure Injection]
+        end
+
+        subgraph "erlmcp_validation Application"
+            VAL[erlmcp_validation_app<br/>v2.1.0]
+            VAL_Sup[erlmcp_validation_sup]
+            ProtoVal[erlmcp_protocol_validator<br/>MCP Compliance]
+            TransVal[erlmcp_transport_validator<br/>Behavior Check]
+            PerfVal[erlmcp_performance_validator<br/>Metrics Gate]
+        end
+    end
+
+    subgraph "Infrastructure Services"
+        subgraph "Load Balancer"
+            LB[HAProxy / NGINX<br/>Port: 27015-27020]
+        end
+
+        subgraph "Service Discovery"
+            SD[Consul / etcd<br/>Service Registration]
+            DNS[DNS Round Robin<br/>A Record Rotation]
+        end
+
+        subgraph "Process Registry"
+            GPROC[gproc<br/>Distributed Registry]
+            EPMD[epmd<br/>Erlang Port Mapper<br/>Port: 4369]
+        end
+    end
+
+    subgraph "Data Storage"
+        subgraph "Distributed Database"
+            Mnesia[Mnesia<br/>Schema: disc_copies<br/>Replication: 3-way]
+        end
+
+        subgraph "Cache Layer"
+            Redis[Redis Sentinel<br/>Session Cache<br/>Pub/Sub Channel]
+        end
+
+        subgraph "Persistent Storage"
+            DETS[DETS Files<br/>Session Backup<br/>Path: data/]
+            Disk[Disk Storage<br/>Audit Logs<br/>Metrics Export]
+        end
+    end
+
+    subgraph "Observability Stack"
+        subgraph "Metrics Collection"
+            PROM[Prometheus<br/>Scrape Interval: 15s<br/>Port: 9090]
+            OTEL_Col[OpenTelemetry Collector<br/>OTLP: 4317/tcp]
+        end
+
+        subgraph "Tracing Backend"
+            Jaeger[Jaeger<br/>Sampling: 1%<br/>Port: 16686]
+            Honeycomb[Honeycomb<br/>Dataset: erlmcp-prod]
+        end
+
+        subgraph "Visualization"
+            Grafana[Grafana<br/>Dashboards: 12+<br/>Port: 3000]
+        end
+
+        subgraph "Logging"
+            Syslog[Syslog Server<br/>Rsyslog / syslog-ng]
+            Fluent[Fluent Bit<br/>Log Forwarder]
+        end
+    end
+
+    subgraph "Security Infrastructure"
+        subgraph "Secrets Management"
+            Vault[HashiCorp Vault<br/>AppRole Auth<br/>Port: 8200]
+            AWS_SM[AWS Secrets Manager<br/>KMS Encryption]
+        end
+
+        subgraph "TLS/TLS"
+            CA[Certificate Authority<br/>Root CA + Intermediate]
+            Cert[Certificate Manager<br/>Auto-Renewal<br/>acme-client]
+        end
+
+        subgraph "Network Security"
+            FW[iptables / nftables<br/>Port Filtering]
+            SG[Security Groups<br/>Cloud Provider]
+        end
+    end
+
+    subgraph "Compute Resources"
+        subgraph "Erlang VM"
+            BEAM[BEAM Instance<br/>Schedulers: 16<br/>Memory: 32GB]
+        end
+
+        subgraph "OS Resources"
+            OS[Linux Kernel<br/>File Descriptors: 1M<br/>TCP Backlog: 4096]
+        end
+
+        subgraph "Container/VM"
+            Container[Docker / LXD<br/>Cgroups Limits<br/>CPU: 16 cores]
+        end
+    end
+
+    subgraph "Deployment Automation"
+        subgraph "CI/CD Pipeline"
+            CI[GitHub Actions<br/>20 Workflows]
+            CD[Rebar3 Release<br/>relup / relup]
+        end
+
+        subgraph "Configuration Management"
+            Sysconfig[sys.config<br/>Application Env]
+            Vars[Environment Variables<br/>Runtime Overrides]
+        end
+    end
+
+    %% Application Layer
+    CORE --> CORE_Sup
+    CORE_Sup --> Server
+    CORE_Sup --> Client
+    CORE_Sup --> Registry
+    CORE_Sup --> Session
+
+    TRANS --> TRANS_Sup
+    TRANS_Sup --> TCP
+    TRANS_Sup --> HTTP
+    TRANS_Sup --> WS
+    TRANS_Sup --> SSE
+
+    OBS --> OBS_Sup
+    OBS_Sup --> OTEL
+    OBS_Sup --> Metrics
+    OBS_Sup --> Dashboard
+    OBS_Sup --> Chaos
+
+    VAL --> VAL_Sup
+    VAL_Sup --> ProtoVal
+    VAL_Sup --> TransVal
+    VAL_Sup --> PerfVal
+
+    %% Infrastructure Integration
+    Server -->|Uses| Registry
+    Server -->|Persists| Session
+    Client -->|Queries| Registry
+
+    TCP -->|Accepts| LB
+    HTTP -->|Receives| LB
+
+    Registry -->|Register| GPROC
+    GPROC -->|Discovery| EPMD
+    EPMD -->|Node Discovery| BEAM
+
+    %% Data Layer
+    Session -->|Primary Store| Mnesia
+    Session -->|Cache Read| Redis
+    Session -->|Backup| DETS
+
+    Mnesia -->|Replicate| Disk
+    Redis -->|Persist| Disk
+
+    %% Observability
+    OTEL -->|Export| OTEL_Col
+    Metrics -->|Scrape| PROM
+    Dashboard -->|Query| PROM
+
+    OTEL_Col --> Jaeger
+    OTEL_Col --> Honeycomb
+    PROM --> Grafana
+
+    Chaos -->|Inject Failure| Server
+    Chaos -->|Inject Failure| Session
+
+    %% Logging
+    Server -->|Log| Syslog
+    Client -->|Log| Syslog
+    Syslog -->|Forward| Fluent
+
+    %% Security
+    Server -->|Fetch Secrets| Vault
+    Client -->|Fetch Secrets| Vault
+    Vault -->|Fallback| AWS_SM
+
+    TCP -->|TLS Handshake| Cert
+    HTTP -->|TLS Handshake| Cert
+    Cert -->|Sign| CA
+
+    LB -->|Firewall| FW
+    FW -->|Allow| SG
+
+    %% Compute
+    Server -->|Runs On| BEAM
+    BEAM -->|Schedulers| OS
+    OS -->|Contain| Container
+
+    %% Deployment
+    CI -->|Build| CD
+    CD -->|Deploy| Container
+    Container -->|Load Config| Sysconfig
+    Sysconfig -->|Override| Vars
+
+    %% Styling
+    classDef appStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef infraStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef dataStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef obsStyle fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef secStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef compStyle fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef deployStyle fill:#fce4ec,stroke:#ad1457,stroke-width:2px
+
+    class CORE,TRANS,OBS,VAL,CORE_Sup,TRANS_Sup,OBS_Sup,VAL_Sup appStyle
+    class Server,Client,Registry,Session,TCP,HTTP,WS,SSE,OTEL,Metrics,Dashboard,Chaos,ProtoVal,TransVal,PerfVal appStyle
+    class LB,SD,DNS,GPROC,EPMD infraStyle
+    class Mnesia,Redis,DETS,Disk dataStyle
+    class PROM,OTEL_Col,Jaeger,Honeycomb,Grafana,Syslog,Fluent obsStyle
+    class Vault,AWS_SM,CA,Cert,FW,SG secStyle
+    class BEAM,OS,Container compStyle
+    class CI,CD,Sysconfig,Vars deployStyle
+
+    %% Component Specifications
+    subgraph "Component Specifications"
+        CS1[
+"""
+erlmcp_server (gen_server):
+- Callbacks: 6/6 implemented
+- State: #state{pending, sessions}
+- Supervision: one_for_one
+- Max Connections: 50K
+"""
+        ]
+
+        CS2[
+"""
+erlmcp_transport_tcp (ranch):
+- Transport Behavior: Compliant
+- Acceptors: 100 per node
+- Max Conns: 50K per node
+- Protocol: JSON-RPC 2.0
+"""
+        ]
+
+        CS3[
+"""
+erlmcp_session_manager (gen_server):
+- Backend: Mnesia (primary)
+- Cache: Redis (secondary)
+- Backup: DETS (tertiary)
+- Cleanup: 60s interval
+"""
+        ]
+
+        CS4[
+"""
+gproc Registry:
+- Lookup: O(log N)
+- Registration: O(log N)
+- Distribution: Automatic
+- Monitoring: Built-in
+"""
+        ]
+    end

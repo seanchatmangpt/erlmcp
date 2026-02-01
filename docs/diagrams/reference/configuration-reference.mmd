@@ -1,0 +1,515 @@
+graph TB
+    subgraph "erlmcp Configuration Parameter Relationships - sys.config"
+        direction TB
+
+        %% ========================================================================
+        /// TOP-LEVEL APPLICATIONS
+        %% ========================================================================
+        subgraph "Application Configuration"
+            direction LR
+
+            ERLMCP_APP["erlmcp<br/>Core application config"]
+            KERNEL_APP["kernel<br/>Logger config"]
+            SASL_APP["sasl<br/>Error reporting"]
+            OTEL_APP["opentelemetry<br/>Telemetry config"]
+            TCPS_APP["tcps_health<br/>Health monitoring"]
+            OAUTH_APP["oauth<br/>OAuth 2.0 config"]
+
+            note_apps["4 main applications<br/>+ monitoring + security"]
+        end
+
+        %% ========================================================================
+        /// SECTION 1: CLIENT & SERVER DEFAULTS
+        %% ========================================================================
+        subgraph "Client & Server Defaults"
+            direction TB
+
+            CLIENT_DEF["client_defaults<br/>#{timeout => 5000<br/>strict_mode => false<br/>max_pending => 100}"]
+            SERVER_DEF["server_defaults<br/>#{max_subscriptions => 1000<br/>max_progress_tokens => 10000}"]
+
+            CLIENT_DEF -.used_by. CLIENT
+            SERVER_DEF -.used_by. SERVER
+        end
+
+        %% ========================================================================
+        /// SECTION 2: MESSAGE SIZE LIMITS
+        %% ========================================================================
+        subgraph "Message Size Limits (DoS Prevention)"
+            direction TB
+
+            MSG_LIMITS["message_size_limits<br/>Transport-specific limits"]
+
+            MSG_DEFAULT["default => 16777216<br/>16 MB default"]
+            MSG_HTTP["http_body => 16777216<br/>HTTP POST limit"]
+            MSG_SSE["sse_event => 16777216<br/>SSE event limit"]
+            MSG_WS["websocket => 16777216<br/>WebSocket message limit"]
+            MSG_TCP["tcp => 16777216<br/>TCP message limit"]
+            MSG_STDIO["stdio => 16777216<br/>Stdio message limit"]
+
+            MSG_LIMITS --> MSG_DEFAULT
+            MSG_LIMITS --> MSG_HTTP
+            MSG_LIMITS --> MSG_SSE
+            MSG_LIMITS --> MSG_WS
+            MSG_LIMITS --> MSG_TCP
+            MSG_LIMITS --> MSG_STDIO
+        end
+
+        %% ========================================================================
+        /// SECTION 3: TRANSPORT DEFAULTS
+        %% ========================================================================
+        subgraph "Transport Defaults"
+            direction TB
+
+            TRANSPORT_DEF["transport_defaults<br/>Per-transport config"]
+
+            TCP_CFG["tcp => #{connect_timeout => 5000<br/>keepalive => true<br/>nodelay => true}"]
+            HTTP_CFG["http => #{connect_timeout => 5000<br/>request_timeout => 30000<br/>max_connections => 100}"]
+
+            TRANSPORT_DEF --> TCP_CFG
+            TRANSPORT_DEF --> HTTP_CFG
+        end
+
+        %% ========================================================================
+        /// SECTION 4: HTTP SECURITY
+        %% ========================================================================
+        subgraph "HTTP Security Configuration"
+            direction TB
+
+            HTTP_SEC["http_security<br/>CORS & Session config"]
+
+            ORIGINS["allowed_origins<br/>[\"http://localhost:*\",<br/>\"https://localhost:*\"]"]
+            SESSION_TIMEOUT["session_timeout => 1800<br/>30 minutes"]
+            REQUIRE_HTTPS["require_https => false<br/>Dev: false, Prod: true"]
+            REDIRECT_HTTP["http_redirect_to_https => true"]
+            BIND_ADDR["http_bind_address => \"127.0.0.1\""]
+            BIND_IPV6["https_bind_address => \"0.0.0.0\""]
+
+            HTTP_SEC --> ORIGINS
+            HTTP_SEC --> SESSION_TIMEOUT
+            HTTP_SEC --> REQUIRE_HTTPS
+            HTTP_SEC --> REDIRECT_HTTP
+            HTTP_SEC --> BIND_ADDR
+            HTTP_SEC --> BIND_IPV6
+        end
+
+        %% ========================================================================
+        /// SECTION 5: LOCALHOST BINDING SECURITY
+        %% ========================================================================
+        subgraph "Localhost Binding (Gap #32)"
+            direction TB
+
+            LOCALHOST["localhost_binding<br/>Enforce localhost-only"]
+
+            ENFORCE_LOCAL["enforce_localhost_only => true<br/>Security best practice"]
+            HTTP_BIND["http_bind_address => \"127.0.0.1\""]
+            IPV6_BIND["http_bind_ipv6 => \"::1\""]
+            SECURITY_POL["security_policy => \"localhost_only\""]
+
+            LOCALHOST --> ENFORCE_LOCAL
+            LOCALHOST --> HTTP_BIND
+            LOCALHOST --> IPV6_BIND
+            LOCALHOST --> SECURITY_POL
+        end
+
+        %% ========================================================================
+        /// SECTION 6: HTTPS/TLS CONFIGURATION
+        %% ========================================================================
+        subgraph "HTTPS/TLS Configuration"
+            direction TB
+
+            HTTPS_CFG["https_config<br/>TLS settings"]
+
+            TLS_ENABLED["enabled => false<br/>Dev: false, Prod: true"]
+            CERT_FILE["certfile => \"priv/cert.pem\"<br/>PEM certificate"]
+            KEY_FILE["keyfile => \"priv/key.pem\"<br/>PEM private key"]
+            CA_FILE["cacertfile => undefined<br/>Optional chain file"]
+            MIN_TLS["min_tls_version => 'tlsv1.2'<br/>Minimum TLS version"]
+            CIPHERS["ciphers => [ECDHE-RSA-AES256...]<br/>Modern cipher suites"]
+            HSTS["enable_hsts => true<br/>HTTP Strict-Transport-Security"]
+            HSTS_MAX["hsts_max_age => 31536000<br/>1 year"]
+            VERIFY_MODE["verify_mode => 'verify_peer'<br/>CRITICAL: verify_peer required"]
+            VERIFY_HOST["verify_hostname => true<br/>Prevent certificate spoofing"]
+            VERIFY_DEPTH["verify_depth => 3<br/>Chain validation depth"]
+            SNI["sni_enabled => true<br/>Server Name Indication"]
+
+            HTTPS_CFG --> TLS_ENABLED
+            HTTPS_CFG --> CERT_FILE
+            HTTPS_CFG --> KEY_FILE
+            HTTPS_CFG --> CA_FILE
+            HTTPS_CFG --> MIN_TLS
+            HTTPS_CFG --> CIPHERS
+            HTTPS_CFG --> HSTS
+            HTTPS_CFG --> HSTS_MAX
+            HTTPS_CFG --> VERIFY_MODE
+            HTTPS_CFG --> VERIFY_HOST
+            HTTPS_CFG --> VERIFY_DEPTH
+            HTTPS_CFG --> SNI
+        end
+
+        %% ========================================================================
+        /// SECTION 7: SESSION MANAGER
+        %% ========================================================================
+        subgraph "Session Manager Configuration"
+            direction TB
+
+            SESSION_MGR["session_manager<br/>Session lifecycle"]
+
+            S_TIMEOUT["timeout => 1800<br/>30 minutes"]
+            CLEANUP["cleanup_interval => 300000<br/>5 minutes"]
+
+            SESSION_MGR --> S_TIMEOUT
+            SESSION_MGR --> CLEANUP
+        end
+
+        %% ========================================================================
+        /// SECTION 8: SESSION REPLICATION
+        %% ========================================================================
+        subgraph "Session Replication (Distributed)"
+            direction TB
+
+            SESSION_REPL["session_replication<br/>Cluster state sync"]
+
+            REPL_ENABLED["enabled => true<br/>Enable replication"]
+            REPL_NODES["replica_nodes => []<br/>Cluster node list"]
+            BATCH_SIZE["batch_size => 100<br/>Ops per batch"]
+            BATCH_TIMEOUT["batch_timeout_ms => 20<br/>Flush timeout"]
+            RPC_TIMEOUT["replication_rpc_timeout_ms => 5000"]
+            HEALTH_INTERVAL["health_check_interval_ms => 5000"]
+            FAILURE_THRESH["failure_threshold => 3<br/>Consecutive failures"]
+            STORAGE_MODE["storage_mode => ets<br/>ets|mnesia|redis"]
+            CLEAN_INTERVAL["cleanup_interval_ms => 30000"]
+            COMPRESSION["enable_compression => false"]
+            MAX_SIZE["max_session_size_bytes => 65536<br/>64KB max"]
+
+            SESSION_REPL --> REPL_ENABLED
+            SESSION_REPL --> REPL_NODES
+            SESSION_REPL --> BATCH_SIZE
+            SESSION_REPL --> BATCH_TIMEOUT
+            SESSION_REPL --> RPC_TIMEOUT
+            SESSION_REPL --> HEALTH_INTERVAL
+            SESSION_REPL --> FAILURE_THRESH
+            SESSION_REPL --> STORAGE_MODE
+            SESSION_REPL --> CLEAN_INTERVAL
+            SESSION_REPL --> COMPRESSION
+            SESSION_REPL --> MAX_SIZE
+        end
+
+        %% ========================================================================
+        /// SECTION 9: WEBSOCKET CONFIGURATION
+        %% ========================================================================
+        subgraph "WebSocket Configuration (Gap #46)"
+            direction TB
+
+            WS_CFG["websocket<br/>WebSocket transport"]
+
+            WS_ENABLED["enabled => true"]
+            WS_PORT["port => 8080"]
+            WS_PATH["path => \"/mcp/ws\""]
+            PING["ping_interval => 30000<br/>30 seconds"]
+            IDLE["idle_timeout => 300000<br/>5 minutes"]
+            MAX_CONN["max_connections => 1000<br/>DoS prevention"]
+            CONN_TIMEOUT["connect_timeout => 5000"]
+            FRAME_BUF["frame_buffer_size => 102400<br/>100KB per connection"]
+            DRAIN_THRESH["buffer_drain_threshold => 0.5<br/>Resume at 50%"]
+            BP_TIMEOUT["backpressure_timeout => 5000"]
+
+            WS_CFG --> WS_ENABLED
+            WS_CFG --> WS_PORT
+            WS_CFG --> WS_PATH
+            WS_CFG --> PING
+            WS_CFG --> IDLE
+            WS_CFG --> MAX_CONN
+            WS_CFG --> CONN_TIMEOUT
+            WS_CFG --> FRAME_BUF
+            WS_CFG --> DRAIN_THRESH
+            WS_CFG --> BP_TIMEOUT
+        end
+
+        %% ========================================================================
+        /// SECTION 10: SSE CONFIGURATION
+        %% ========================================================================
+        subgraph "SSE Configuration"
+            direction TB
+
+            SSE_CFG["sse<br/>Server-Sent Events"]
+
+            SSE_ENABLED["enabled => true"]
+            SSE_PORT["port => 8081"]
+            SSE_PATH["path => \"/mcp/sse\""]
+            KEEPALIVE["keepalive_interval => 30000"]
+            STREAM["stream_timeout => 300000"]
+            RETRY["retry_timeout => 5000<br/>Gap #29: Retry timeout"]
+
+            SSE_CFG --> SSE_ENABLED
+            SSE_CFG --> SSE_PORT
+            SSE_CFG --> SSE_PATH
+            SSE_CFG --> KEEPALIVE
+            SSE_CFG --> STREAM
+            SSE_CFG --> RETRY
+        end
+
+        %% ========================================================================
+        /// SECTION 11: RATE LIMITING (Gap #47)
+        %% ========================================================================
+        subgraph "Rate Limiting Configuration (DoS Protection)"
+            direction TB
+
+            RATE_LIMIT["rate_limiting<br/>Token bucket algorithm"]
+
+            MAX_MSG_SEC["max_messages_per_sec => 100<br/>Per-client rate"]
+            MAX_CONN_SEC["max_connections_per_sec => 10<br/>Connection rate"]
+            GLOBAL_MAX["global_max_messages_per_sec => 10000<br/>System-wide"]
+            MAX_TOOL["max_tool_calls_per_sec => 50<br/>Tool rate"]
+            MAX_SUB["max_subscriptions_per_sec => 20<br/>Subscription rate"]
+            REFILL["bucket_refill_interval_ms => 100"]
+            DDOS_THRESH["ddos_violation_threshold => 100"]
+            DDOS_BLOCK["ddos_block_duration_ms => 300000<br/>5 minutes"]
+            ENABLED["enabled => true"]
+
+            RATE_LIMIT --> MAX_MSG_SEC
+            RATE_LIMIT --> MAX_CONN_SEC
+            RATE_LIMIT --> GLOBAL_MAX
+            RATE_LIMIT --> MAX_TOOL
+            RATE_LIMIT --> MAX_SUB
+            RATE_LIMIT --> REFILL
+            RATE_LIMIT --> DDOS_THRESH
+            RATE_LIMIT --> DDOS_BLOCK
+            RATE_LIMIT --> ENABLED
+        end
+
+        %% ========================================================================
+        /// SECTION 12: CONNECTION POOL (100K Connections)
+        %% ========================================================================
+        subgraph "Connection Pool Configuration"
+            direction TB
+
+            POOL_CFG["connection_pool_config<br/>High-performance pooling"]
+
+            POOL_COUNT["pool_count => 128<br/>Independent pools"]
+            POOL_SIZE["pool_size => 50<br/>Workers per pool"]
+            MAX_OVERFLOW["max_overflow => 20<br/>Overflow workers"]
+            AUTO_CREATE["auto_create_pools => false"]
+            CHECKOUT["checkout_timeout => 5000<br/>5 seconds"]
+            WORKER_TOUT["worker_timeout => 10000<br/>10 seconds"]
+
+            POOL_CFG --> POOL_COUNT
+            POOL_CFG --> POOL_SIZE
+            POOL_CFG --> MAX_OVERFLOW
+            POOL_CFG --> AUTO_CREATE
+            POOL_CFG --> CHECKOUT
+            POOL_CFG --> WORKER_TOUT
+        end
+
+        %% ========================================================================
+        /// SECTION 13: QUEUE LIMITS (v1.3.0)
+        %% ========================================================================
+        subgraph "Queue Limits Configuration"
+            direction TB
+
+            QUEUE_LIMITS["queue_limits<br/>Backpressure bounds"]
+
+            Q_MAX_MSG["max_messages => 1000<br/>Per-connection"]
+            Q_MAX_BYTES["max_bytes => 52428800<br/>50 MB per connection"]
+            Q_ACTION["backpressure_action => refuse<br/>refuse|drop|disconnect"]
+            Q_TENANT["enable_tenant_limits => false<br/>Multi-tenant mode"]
+            Q_CLEANUP["cleanup_interval_ms => 30000"]
+
+            QUEUE_LIMITS --> Q_MAX_MSG
+            QUEUE_LIMITS --> Q_MAX_BYTES
+            QUEUE_LIMITS --> Q_ACTION
+            QUEUE_LIMITS --> Q_TENANT
+            QUEUE_LIMITS --> Q_CLEANUP
+        end
+
+        %% ========================================================================
+        /// SECTION 14: BACKPRESSURE (v1.3.0)
+        %% ========================================================================
+        subgraph "Backpressure Configuration"
+            direction TB
+
+            BP_CFG["backpressure<br/>Adaptive rate limiting"]
+
+            BP_MAX["max_messages_per_sec => 500"]
+            BP_BURST["burst_multiplier => 2.0<br/>Temporary spike"]
+            BP_ADAPTIVE["adaptive_enabled => true"]
+            BP_LATENCY["latency_threshold_ms => 100"]
+            BP_REDUCTION["rate_reduction_percent => 10"]
+            BP_QUEUE["queue_depth_threshold_percent => 80"]
+
+            BP_CFG --> BP_MAX
+            BP_CFG --> BP_BURST
+            BP_CFG --> BP_ADAPTIVE
+            BP_CFG --> BP_LATENCY
+            BP_CFG --> BP_REDUCTION
+            BP_CFG --> BP_QUEUE
+        end
+
+        %% ========================================================================
+        /// SECTION 15: CIRCUIT BREAKER (v1.3.0)
+        %% ========================================================================
+        subgraph "Circuit Breaker Configuration"
+            direction TB
+
+            CB_CFG["circuit_breaker<br/>Failure threshold"]
+
+            CB_ENABLED["enabled => true"]
+            CB_FAILURE["failure_threshold => 5<br/>Failures before open"]
+            CB_COOLDOWN["cool_down_time_ms => 30000<br/>30 seconds"]
+            CB_P95["p95_latency_threshold_ms => 200"]
+            CB_ERROR["error_rate_threshold_percent => 1.0"]
+            CB_CPU["cpu_threshold_percent => 90"]
+            CB_MEM["memory_threshold_percent => 85"]
+            CB_RECOVERY["recovery_timeout_ms => 60000"]
+            CB_HALF_OPEN["half_open_timeout_ms => 30000"]
+
+            CB_CFG --> CB_ENABLED
+            CB_CFG --> CB_FAILURE
+            CB_CFG --> CB_COOLDOWN
+            CB_CFG --> CB_P95
+            CB_CFG --> CB_ERROR
+            CB_CFG --> CB_CPU
+            CB_CFG --> CB_MEM
+            CB_CFG --> CB_RECOVERY
+            CB_CFG --> CB_HALF_OPEN
+        end
+
+        %% ========================================================================
+        /// SECTION 16: LIFECYCLE MANAGEMENT
+        %% ========================================================================
+        subgraph "Lifecycle Management Configuration"
+            direction TB
+
+            LIFECYCLE["lifecycle_management<br/>Resource cleanup"]
+
+            SUB_TTL["subscription_ttl_ms => 3600000<br/>1 hour"]
+            TASK_TTL["task_ttl_ms => 3600000<br/>1 hour"]
+            MAX_SUB["max_subscriptions_per_server => 10000"]
+            LC_CLEANUP["cleanup_interval_ms => 30000"]
+            BATCH_SIZE["cleanup_batch_size => 1000"]
+
+            LIFECYCLE --> SUB_TTL
+            LIFECYCLE --> TASK_TTL
+            LIFECYCLE --> MAX_SUB
+            LIFECYCLE --> LC_CLEANUP
+            LIFECYCLE --> BATCH_SIZE
+        end
+
+        %% ========================================================================
+        /// SECTION 17: LOGGER CONFIGURATION
+        %% ========================================================================
+        subgraph "Logger Configuration (kernel)"
+            direction TB
+
+            LOGGER["logger<br/>OTP 21+ logger"]
+
+            LOG_LEVEL["logger_level => info<br/>debug|info|warning|error"]
+            LOG_HANDLER["handler => default<br/>logger_std_h"]
+            LOG_FORMAT["formatter => logger_formatter<br/>Template formatting"]
+            LOG_TYPE["type => standard_io<br/>Console output"]
+            LOG_FILE["file_log => logger_std_h<br/>File handler"]
+
+            LOGGER --> LOG_LEVEL
+            LOGGER --> LOG_HANDLER
+            LOGGER --> LOG_FORMAT
+            LOGGER --> LOG_TYPE
+            LOGGER --> LOG_FILE
+        end
+
+        %% ========================================================================
+        /// SECTION 18: OPENTELEMETRY
+        %% ========================================================================
+        subgraph "OpenTelemetry Configuration"
+            direction TB
+
+            OTEL_CFG["opentelemetry<br/>Telemetry config"]
+
+            OTEL_PROC["span_processor => batch<br/>Batch processing"]
+            OTEL_EXPORT["traces_exporter => otlp<br/>OTLP protocol"]
+            OTEL_PROTO["otlp_protocol => http_protobuf"]
+            OTEL_ENDPOINT["otlp_endpoint =><br/>\"http://localhost:4318\""]
+
+            OTEL_CFG --> OTEL_PROC
+            OTEL_CFG --> OTEL_EXPORT
+            OTEL_CFG --> OTEL_PROTO
+            OTEL_CFG --> OTEL_ENDPOINT
+        end
+
+        %% ========================================================================
+        /// CROSS-SECTION DEPENDENCIES
+        %% ========================================================================
+        ERLMCP_APP --> CLIENT_DEF
+        ERLMCP_APP --> SERVER_DEF
+        ERLMCP_APP --> MSG_LIMITS
+        ERLMCP_APP --> TRANSPORT_DEF
+        ERLMCP_APP --> HTTP_SEC
+        ERLMCP_APP --> LOCALHOST
+        ERLMCP_APP --> HTTPS_CFG
+        ERLMCP_APP --> SESSION_MGR
+        ERLMCP_APP --> SESSION_REPL
+        ERLMCP_APP --> WS_CFG
+        ERLMCP_APP --> SSE_CFG
+        ERLMCP_APP --> RATE_LIMIT
+        ERLMCP_APP --> POOL_CFG
+        ERLMCP_APP --> QUEUE_LIMITS
+        ERLMCP_APP --> BP_CFG
+        ERLMCP_APP --> CB_CFG
+        ERLMCP_APP --> LIFECYCLE
+
+        KERNEL_APP --> LOGGER
+
+        TCPS_APP --> OTEL_CFG
+
+        OTEL_APP --> OTEL_CFG
+    end
+
+    %% ========================================================================
+    /// LEGEND
+    %% ========================================================================
+    subgraph "Legend"
+        L1["Configuration sections:<br/>1. Client/Server Defaults<br/>2. Message Size Limits<br/>3. Transport Defaults<br/>4. HTTP Security<br/>5. Localhost Binding<br/>6. HTTPS/TLS<br/>7. Session Manager<br/>8. Session Replication<br/>9. WebSocket<br/>10. SSE<br/>11. Rate Limiting<br/>12. Connection Pool<br/>13. Queue Limits<br/>14. Backpressure<br/>15. Circuit Breaker<br/>16. Lifecycle Mgmt<br/>17. Logger<br/>18. OpenTelemetry"]
+        L2["Data types:<br/>• boolean: true|false<br/>• integer: Numeric values<br/>• binary: \"string\"<br/>• atom: 'atom_name'<br/>• list: [item1, item2]<br/>• map: #{key => value}<br/>• tuple: {key, value}"]
+        L3["Security notes:<br/>• verify_mode: 'verify_peer (CRITICAL)<br/>• enforce_localhost_only: true<br/>• require_https: true (prod)<br/>• Rate limiting: enabled (DoS protection)"]
+        L4["Performance tuning:<br/>• pool_count: 128 for 100K connections<br/>• max_messages: 1000 per connection<br/>• bucket_refill: 100ms granularity<br/>• cleanup_interval: 30s default"]
+    end
+
+    classDef appStyle fill:#ffebee,stroke:#c62828,stroke-width:3px
+    classDef clientStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef msgStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef transportStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef httpStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef localStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef tlsStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef sessionStyle fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    classDef replStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef wsStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef sseStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef rateStyle fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    classDef poolStyle fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef queueStyle fill:#fce4ec,stroke:#ad1457,stroke-width:2px
+    classDef bpStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef cbStyle fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    classDef lifeStyle fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    classDef logStyle fill:#f5f5f5,stroke:#616161,stroke-width:2px
+    classDef otelStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef legendStyle fill:#fafafa,stroke:#424242,stroke-width:1px
+
+    class ERLMCP_APP,KERNEL_APP,SASL_APP,OTEL_APP,TCPS_APP,OAUTH_APP appStyle
+    class CLIENT_DEF,SERVER_DEF clientStyle
+    class MSG_LIMITS,MSG_DEFAULT,MSG_HTTP,MSG_SSE,MSG_WS,MSG_TCP,MSG_STDIO msgStyle
+    class TRANSPORT_DEF,TCP_CFG,HTTP_CFG transportStyle
+    class HTTP_SEC,ORIGINS,SESSION_TIMEOUT,REQUIRE_HTTPS,REDIRECT_HTTP,BIND_ADDR,BIND_IPV6 httpStyle
+    class LOCALHOST,ENFORCE_LOCAL,HTTP_BIND,IPV6_BIND,SECURITY_POL localStyle
+    class HTTPS_CFG,TLS_ENABLED,CERT_FILE,KEY_FILE,CA_FILE,MIN_TLS,CIPHERS,HSTS,HSTS_MAX,VERIFY_MODE,VERIFY_HOST,VERIFY_DEPTH,SNI tlsStyle
+    class SESSION_MGR,S_TIMEOUT,CLEANUP sessionStyle
+    class SESSION_REPL,REPL_ENABLED,REPL_NODES,BATCH_SIZE,BATCH_TIMEOUT,RPC_TIMEOUT,HEALTH_INTERVAL,FAILURE_THRESH,STORAGE_MODE,CLEAN_INTERVAL,COMPRESSION,MAX_SIZE replStyle
+    class WS_CFG,WS_ENABLED,WS_PORT,WS_PATH,PING,IDLE,MAX_CONN,CONN_TIMEOUT,FRAME_BUF,DRAIN_THRESH,BP_TIMEOUT wsStyle
+    class SSE_CFG,SSE_ENABLED,SSE_PORT,SSE_PATH,KEEPALIVE,STREAM,RETRY sseStyle
+    class RATE_LIMIT,MAX_MSG_SEC,MAX_CONN_SEC,GLOBAL_MAX,MAX_TOOL,MAX_SUB,REFILL,DDOS_THRESH,DDOS_BLOCK,ENABLED rateStyle
+    class POOL_CFG,POOL_COUNT,POOL_SIZE,MAX_OVERFLOW,AUTO_CREATE,CHECKOUT,WORKER_TOUT poolStyle
+    class QUEUE_LIMITS,Q_MAX_MSG,Q_MAX_BYTES,Q_ACTION,Q_TENANT,Q_CLEANUP queueStyle
+    class BP_CFG,BP_MAX,BP_BURST,BP_ADAPTIVE,BP_LATENCY,BP_REDUCTION,BP_QUEUE bpStyle
+    class CB_CFG,CB_ENABLED,CB_FAILURE,CB_COOLDOWN,CB_P95,CB_ERROR,CB_CPU,CB_MEM,CB_RECOVERY,CB_HALF_OPEN cbStyle
+    class LIFECYCLE,SUB_TTL,TASK_TTL,MAX_SUB,LC_CLEANUP,BATCH_SIZE lifeStyle
+    class LOGGER,LOG_LEVEL,LOG_HANDLER,LOG_FORMAT,LOG_TYPE,LOG_FILE logStyle
+    class OTEL_CFG,OTEL_PROC,OTEL_EXPORT,OTEL_PROTO,OTEL_ENDPOINT otelStyle
+    class L1,L2,L3,L4 legendStyle

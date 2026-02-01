@@ -1,0 +1,175 @@
+stateDiagram-v2
+    [*] --> Initializing: start_link(Options)
+
+    state Initializing {
+        [*] --> LoadConfig
+        LoadConfig --> InitTransport
+        InitTransport --> EstablishConnection
+        EstablishConnection --> SendInitialize
+        SendInitialize --> WaitForInitialized
+        WaitForInitialized --> [*]
+    }
+
+    Initializing --> Connected: initialized received
+
+    state Connected {
+        [*] --> Active
+
+        Active --> ResourceOperations: list/read/subscribe
+        Active --> ToolOperations: call_tool
+        Active --> PromptOperations: list/get
+
+        ResourceOperations --> Active
+        ToolOperations --> Active
+        PromptOperations --> Active
+
+        Active --> Subscribing: subscribe_resource
+        Subscribing --> Active: subscription_confirmed
+    }
+
+    Connected --> Paused: pause_requested
+    Paused --> Connected: resume_requested
+
+    Connected --> Reconnecting: transport_error
+    Reconnecting --> Connected: reconnect_success
+    Reconnecting --> Failed: reconnect_failed(max_retries)
+
+    Connected --> GracefulShutdown: shutdown notification
+    GracefulShutdown --> [*]: cleanup_complete
+
+    Connected --> AbnormalShutdown: critical_error
+    AbnormalShutdown --> [*]: cleanup_complete
+
+    %% Session Backend Transitions
+    note right of Connected
+        Session Persistence:
+        - ETS: In-memory
+        - DETS: Disk-based
+        - Mnesia: Cluster
+    end note
+
+    %% Reconnection Strategy
+    state Reconnecting {
+        [*] --> Backoff
+        Backoff --> ReconnectAttempt
+        ReconnectAttempt --> Success
+        ReconnectAttempt --> Failure
+
+        Success --> [*]
+        Failure --> IncrementRetryCount
+        IncrementRetryCount --> CheckMaxRetries
+
+        CheckMaxRetries --> Backoff: below_max
+        CheckMaxRetries --> [*]: exceeded_max
+    }
+
+    %% State Transition Details
+    Connected --> SessionValidation: periodic_health_check
+    SessionValidation --> Connected: healthy
+    SessionValidation --> Failed: unhealthy(timeout)
+
+    %% Session Restoration (Failover)
+    note right of Reconnecting
+        Failover Modes:
+        - Local: Restart process
+        - Remote: Mnesia replica
+        - Recovery: Load from DETS
+    end note
+
+    %% Subscription Management
+    state Subscribing {
+        [*] --> RegisterSubscription
+        RegisterSubscription --> SetupWatcher
+        SetupWatcher --> ConfirmSubscription
+        ConfirmSubscription --> [*]
+    }
+
+    %% Cleanup on Shutdown
+    state GracefulShutdown {
+        [*] --> UnsubscribeResources
+        UnsubscribeResources --> DrainPendingRequests
+        DrainPendingRequests --> CloseTransport
+        CloseTransport --> PersistSession
+        PersistSession --> TerminateProcess
+        TerminateProcess --> [*]
+    }
+
+    %% Error States
+    state AbnormalShutdown {
+        [*] --> LogError
+        LogError --> PersistCrashDump
+        PersistCrashDump --> NotifyDependents
+        NotifyDependents --> TerminateProcess
+        TerminateProcess --> [*]
+    }
+
+    %% Session State Fields
+    note right of Connected
+        Session State:
+        - session_id: UUID
+        - transport_pid: PID
+        - pending_requests: map(UUID -> Request)
+        - subscriptions: map(URI -> Subscription)
+        - capabilities: #capabilities{}
+        - last_activity: timestamp()
+        - backend: ets | dets | mnesia
+    end note
+
+    %% Activity Monitoring
+    Connected --> IdleTimeout: no_activity(timeout)
+    IdleTimeout --> [*]: session_expired
+
+    %% Rate Limiting
+    Connected --> RateLimited: request_rate_exceeded
+    RateLimited --> Connected: backoff_complete
+    RateLimited --> Failed: rate_limit_persistent
+
+    %% Resource Watcher Lifecycle
+    state ResourceOperations {
+        [*] --> Watching
+        Watching --> NotificationReceived: resource_changed
+        NotificationReceived --> DeliverNotification
+        DeliverNotification --> Watching
+    }
+
+    %% Tool Execution Lifecycle
+    state ToolOperations {
+        [*] --> Executing
+        Executing --> InProgress: long_running_op
+        InProgress --> ProgressUpdate: send_progress
+        ProgressUpdate --> InProgress
+        InProgress --> Complete: finished
+        Complete --> [*]
+    }
+
+    %% Session Backend Selection
+    note left of Initializing
+        Backend Selection:
+        {backend, erlmcp_session_ets}
+        - Fastest: O(1) access
+        - Volatile: Lost on crash
+
+        {backend, erlmcp_session_dets}
+        - Durable: Disk persistence
+        - Slower: I/O overhead
+
+        {backend, erlmcp_session_mnesia}
+        - Distributed: Cluster sync
+        - CAP: Consistency trade-offs
+    end note
+
+    %% Health Check States
+    Connected --> HealthCheck: periodic_timer
+    HealthCheck --> Connected: all_systems_go
+    HealthCheck --> Degraded: subsystem_failure
+    Degraded --> Connected: recovery_complete
+    Degraded --> Failed: recovery_failed
+
+    %% Session Restoration Flow
+    note right of Reconnecting
+        Restoration Priority:
+        1. Restore subscriptions
+        2. Replay pending requests
+        3. Restore capabilities
+        4. Resume monitoring
+    end note

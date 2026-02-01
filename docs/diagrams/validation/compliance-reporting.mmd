@@ -1,0 +1,76 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#4B0082', 'edgeLabelBackground':'#ffffff'}}}%%
+graph TB
+    subgraph "Validation Input Sources"
+        PROTO[erlmcp_protocol_validator<br/>JSON-RPC + MCP Compliance]
+        TRANS[erlmcp_transport_validator<br/>Behavior Compliance]
+        SEC[erlmcp_security_validator<br/>Auth + Secrets + Input Validation]
+        PERF[erlmcp_performance_validator<br/>Latency + Throughput + Memory]
+        SPEC[erlmcp_spec_parser<br/>MCP 2025-11-25 Spec]
+    end
+
+    subgraph "Compliance Report Generation"
+        REPORT[erlmcp_compliance_report<br/>Orchestration Engine]
+        HTML[erlmcp_compliance_report_html<br/>HTML Generation]
+        JSON[erlmcp_compliance_report_json<br/>JSON Export]
+    end
+
+    subgraph "Validation Categories"
+        V1[Protocol Validation<br/>Message Structure<br/>Request/Response<br/>Error Codes]
+        V2[Transport Validation<br/>Behavior Contract<br/>Init/Send/Close<br/>State Management]
+        V3[Security Validation<br/>Authentication<br/>Authorization<br/>Input Sanitization]
+        V4[Performance Validation<br/>Benchmarks<br/>Metrology Units<br/>Regression Analysis]
+    end
+
+    subgraph "Output Artifacts"
+        ARTIFACTS[Evidence Bundle<br/>Receipt Chain<br/>SHA-256 Hashes]
+        CERT[Release Certification<br/>SKU Certificate<br/>Immutable Audit Trail]
+    end
+
+    subgraph "Quality Gates"
+        G1[Gate 1: Compilation<br/>errors = 0]
+        G2[Gate 2: Unit Tests<br/>failures = 0]
+        G3[Gate 3: Coverage<br/>≥80%]
+        G4[Gate 4: Performance<br/>regression <10%]
+    end
+
+    subgraph "TPS Integration"
+        ANDON[Andon: Real-time Alerts<br/>Dashboard Visibility]
+        JIDOKA[Jidoka: Auto-Stop<br/>Build Failure Detection]
+        KAIZEN[Kaizen: Metrics<br/>Continuous Improvement]
+    end
+
+    PROTO --> REPORT
+    TRANS --> REPORT
+    SEC --> REPORT
+    PERF --> REPORT
+    SPEC --> REPORT
+
+    REPORT --> HTML
+    REPORT --> JSON
+
+    REPORT --> V1
+    REPORT --> V2
+    REPORT --> V3
+    REPORT --> V4
+
+    V1 --> ARTIFACTS
+    V2 --> ARTIFACTS
+    V3 --> ARTIFACTS
+    V4 --> ARTIFACTS
+
+    G1 --> REPORT
+    G2 --> REPORT
+    G3 --> REPORT
+    G4 --> REPORT
+
+    REPORT --> ANDON
+    REPORT --> JIDOKA
+    REPORT --> KAIZEN
+
+    ARTIFACTS --> CERT
+
+    style REPORT fill:#DDA0DD,stroke:#4B0082,stroke-width:4px
+    style CERT fill:#FFD700,stroke:#FF8C00,stroke-width:4px
+    style ARTIFACTS fill:#87CEEB,stroke:#0000CD,stroke-width:3px
+    style ANDON fill:#FF6347,stroke:#DC143C,stroke-width:3px
+    style JIDOKA fill:#FF6347,stroke:#DC143C,stroke-width:3px

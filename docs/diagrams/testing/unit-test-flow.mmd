@@ -1,0 +1,120 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#00bfff', 'primaryTextColor':'#fff', 'primaryBorderColor':'#0080ff', 'lineColor':'#0080ff', 'sectionBkgColor':'#e6f3ff', 'altSectionBkgColor':'#cce7ff', 'gridColor':'#99ccff'}}}%%
+flowchart TB
+    subgraph EUnit["EUnit Testing Workflow (Chicago School TDD)"]
+        direction TB
+
+        subgraph Setup["Test Setup Phase"]
+            S1["1. Start Application<br/>application:ensure_all_started(erlmcp)"]
+            S2["2. Start Real Processes<br/>gen_server:start_link(Module, Args)"]
+            S3["3. Initialize State<br/>No mocks, real collaborators only"]
+            S4["4. Setup Fixture<br/>{setup, fun setup/0, fun cleanup/1}"]
+        end
+
+        subgraph Exercise["Exercise Phase"]
+            E1["1. Call Public API<br/>Module:Function(Args)"]
+            E2["2. Execute Real Code<br/>No internal function testing"]
+            E3["3. Generate Input<br/>Test data generators"]
+            E4["4. Trigger Behavior<br/>Real message passing"]
+        end
+
+        subgraph Verify["Verification Phase (State-Based)"]
+            V1["1. Assert on Result<br/>?assertEqual(Expected, Actual)"]
+            V2["2. Check Observable State<br/>sys:get_state(Pid)"]
+            V3["3. Verify Side Effects<br/>ETS table contents<br/>Registry entries"]
+            V4["4. Process Status<br/>is_process_alive(Pid)"]
+        end
+
+        subgraph Teardown["Teardown Phase"]
+            T1["1. Stop Processes<br/>gen_server:stop(Pid)"]
+            T2["2. Cleanup State<br/>ets:delete_all_objects(Table)"]
+            T3["3. Unregister Names<br/>gproc:unregister(Name)"]
+            T4["4. Verify Cleanup<br/>No stale processes"]
+        end
+    end
+
+    subgraph TestPatterns["Common Test Patterns"]
+        direction LR
+
+        subgraph Pattern1["Basic CRUD"]
+            P1S["Setup: Start server"]
+            P1E["Exercise: add_resource(Server, Uri, Handler)"]
+            P1V["Verify: lists:member(Uri, list_resources(Server))"]
+            P1T["Teardown: stop(Server)"]
+        end
+
+        subgraph Pattern2["Process Monitoring"]
+            P2S["Setup: Start monitored process"]
+            P2E["Exercise: exit(Process, kill)"]
+            P2V["Verify: {error, not_found} = find(Name)"]
+            P2T["Teardown: Cleanup monitoring"]
+        end
+
+        subgraph Pattern3["Concurrent Operations"]
+            P3S["Setup: Start server"]
+            P3E["Exercise: Spawn 100 processes<br/>concurrent calls"]
+            P3V["Verify: All operations succeeded<br/>state consistent"]
+            P3T["Teardown: Stop all processes"]
+        end
+
+        subgraph Pattern4["Error Handling"]
+            P4S["Setup: Start server"]
+            P4E["Exercise: Call with invalid input"]
+            P4V["Verify: {error, Reason} response"]
+            P4T["Teardown: Cleanup"]
+        end
+    end
+
+    subgraph TestGenerators["EUnit Test Generators"]
+        direction TB
+        G1["Simple Test<br/>test_name() -><br/>  ?assertEqual(expected, actual)"]
+        G2["Setup/Test/Cleanup<br/>{setup,<br/> fun setup/0,<br/> fun cleanup/1,<br/> fun(_) -> tests end}"]
+        G3["Spawned Tests<br/>{spawn, fun test/0}<br/>Parallel execution"]
+        G4["Timeout Tests<br/>{timeout, Seconds, fun test/0}"]
+    end
+
+    subgraph QualityGates["Quality Gates (Mandatory)"]
+        Q1["All tests pass: 0 failures"]
+        Q2["No compiler warnings"]
+        Q3["Coverage >= 80%<br/>Core modules >= 85%"]
+        Q4["Chicago School compliance<br/>No mocks, real processes"]
+    end
+
+    %% Workflow connections
+    Setup --> Exercise
+    Exercise --> Verify
+    Verify --> Teardown
+    Teardown --> QualityGates
+
+    %% Pattern examples
+    S1 --> Pattern1
+    S2 --> Pattern2
+    S2 --> Pattern3
+    S1 --> Pattern4
+
+    %% Test generators
+    Pattern1 --> G1
+    Pattern2 --> G2
+    Pattern3 --> G3
+    Pattern4 --> G4
+
+    %% Styling
+    classDef phaseStyle fill:#00bfff,stroke:#0080ff,stroke-width:3px,color:#fff
+    classDef patternStyle fill:#32cd32,stroke:#228b22,stroke-width:2px,color:#fff
+    classDef generatorStyle fill:#ffd700,stroke:#ff8c00,stroke-width:2px,color:#000
+    classDef qualityStyle fill:#ff69b4,stroke:#ff1493,stroke-width:3px,color:#fff
+
+    class S1,S2,S3,S4,E1,E2,E3,E4,V1,V2,V3,V4,T1,T2,T3,T4 phaseStyle
+    class P1S,P1E,P1V,P1T,P2S,P2E,P2V,P2T,P3S,P3E,P3V,P3T,P4S,P4E,P4V,P4T patternStyle
+    class G1,G2,G3,G4 generatorStyle
+    class Q1,Q2,Q3,Q4 qualityStyle
+
+    %% Chicago School Principles
+    subgraph Principles["Chicago School TDD Principles"]
+        RP["Real Processes<br/>No mocks or fakes"]
+        SB["State-Based<br/>Assert on observable state"]
+        BO["Black-Box<br/>Test public API only"]
+        IC["Integration-First<br/>Test real collaboration"]
+    end
+
+    Principles --> Setup
+    Principles --> Verify

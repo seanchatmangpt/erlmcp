@@ -1,0 +1,432 @@
+```mermaid
+flowchart TB
+    subgraph APPLICATION["erlmcp Application"]
+        CLIENTS["MCP Clients"]
+        SERVERS["MCP Servers"]
+        SESSION_MGR["Session Manager"]
+        RESOURCE_SUBS["Resource Subscriptions"]
+    end
+
+    subgraph ABSTRACTION["Backend Abstraction"]
+        BEHAVIOR["erlmcp_session_backend<br/>(Behavior Interface)"]
+        ADAPTER["Storage Adapter<br/>(Pluggable)"]
+    end
+
+    subgraph STORAGE_LAYERS["Storage Backends"]
+        subgraph MEMORY["In-Memory Layer"]
+            ETS_CACHE["ETS Tables<br/>(Fastest)"]
+            ETS_CONFIG["Configuration<br/>(read_concurrency: true)<br/>(write_concurrency: true)"]
+        end
+
+        subgraph DISK["Disk Persistence"]
+            DETS["DETS Files<br/>(Single Node)"]
+            DETS_CONFIG["Configuration<br/>(auto_save: 60s)<br/>(repair: true)"]
+        end
+
+        subgraph DISTRIBUTED["Distributed Cluster"]
+            MNESIA["Mnesia Database<br/>(Multi-Node)"]
+            MNESIA_CONFIG["Configuration<br/>(disc_copies: true)<br/>(ram_copies: hot data)"]
+        end
+    end
+
+    subgraph REPLICATION["Replication & Failover"]
+        REPL_MGR["Replication Manager"]
+        FAILOVER["Failover Coordinator"]
+        SYNC["Sync Protocol"]
+    end
+
+    subgraph BACKUP["Backup & Recovery"]
+        SNAPSHOT["Snapshot Manager"]
+        EXPORT["Export/Import"]
+        CLONE["Clone/Copy"]
+    end
+
+    subgraph MONITORING["Storage Monitoring"]
+        HEALTH["Health Check"]
+        METRICS["Storage Metrics"]
+        ALERTS["Alerts"]
+    end
+
+    %% Application to Abstraction
+    CLIENTS -->|"Session Ops"| SESSION_MGR
+    SERVERS -->|"Session Ops"| SESSION_MGR
+    RESOURCE_SUBS -->|"Subscribe"| SESSION_MGR
+
+    SESSION_MGR -->|"Backend API"| BEHAVIOR
+    BEHAVIOR -->|"select_backend"| ADAPTER
+
+    %% Storage Layer Selection
+    ADAPTER -->|"Fast Access"| MEMORY
+    ADAPTER -->|"Persistence"| DISK
+    ADAPTER -->|"Cluster"| DISTRIBUTED
+
+    %% Memory Layer
+    MEMORY --> ETS_CACHE
+    MEMORY --> ETS_CONFIG
+
+    %% Disk Layer
+    DISK --> DETS
+    DISK --> DETS_CONFIG
+
+    %% Distributed Layer
+    DISTRIBUTED --> MNESIA
+    DISTRIBUTED --> MNESIA_CONFIG
+
+    %% Replication Integration
+    MNESIA -->|"Replicate"| REPLICATION
+    REPL_MGR -->|"Manage"| SYNC
+    FAILOVER -->|"Detect Failures"| HEALTH
+
+    %% Backup Integration
+    MNESIA -->|"Snapshot"| SNAPSHOT
+    DETS -->|"Export"| EXPORT
+    ETS_CACHE -->|"Clone"| CLONE
+
+    %% Monitoring
+    ETS_CACHE -->|"Metrics"| METRICS
+    DETS -->|"Health"| HEALTH
+    MNESIA -->|"Alerts"| ALERTS
+
+    style APPLICATION fill:#e1f5fe
+    style ABSTRACTION fill:#fff3e0
+    style STORAGE_LAYERS fill:#e8f5e9
+    style REPLICATION fill:#f3e5f5
+    style BACKUP fill:#ffe0b2
+    style MONITORING fill:#b2dfdb
+```
+
+## Database Integration Strategies
+
+### Backend Comparison Matrix
+
+| Backend | Type | Read Latency | Write Latency | Capacity | Use Case |
+|---------|------|--------------|---------------|----------|----------|
+| **ETS** | In-Memory | 1-5 µs | 1-5 µs | Limited by RAM | Fast cache, dev |
+| **DETS** | Disk | 100-500 µs | 1-5 ms | ~2 GB | Single-node persistence |
+| **Mnesia** | Distributed | 50-200 µs (RAM) | 1-10 ms | Unlimited | Production cluster |
+
+### Backend Behavior Interface
+
+```erlang
+-callback init(Opts :: map()) -> {ok, State} | {error, Reason}.
+
+-callback store(SessionId :: binary(), Session :: map(), State) ->
+    {ok, NewState} | {error, Reason}.
+
+-callback fetch(SessionId :: binary(), State) ->
+    {ok, Session :: map(), NewState} | {error, not_found, NewState}.
+
+-callback delete(SessionId :: binary(), State) ->
+    {ok, NewState} | {error, Reason, NewState}.
+
+-callback list(State) ->
+    {ok, [SessionId :: binary()], NewState}.
+
+-callback cleanup_expired(State) ->
+    {ok, Count :: non_neg_integer(), NewState}.
+```
+
+### 1. ETS Backend (In-Memory)
+
+**Configuration:**
+```erlang
+{erlmcp_session, [
+    {backend, erlmcp_session_ets},
+    {backend_opts, #{
+        table_name => erlmcp_sessions_ets,
+        table_type => set,  % set | ordered_set
+        read_concurrency => true,
+        write_concurrency => true,
+        cleanup_interval => 60000  % 60 seconds
+    }}
+]}.
+```
+
+**Implementation:**
+```erlang
+init(Opts) ->
+    TableName = maps:get(table_name, Opts, erlmcp_sessions_ets),
+    TableOpts = [
+        set,
+        named_table,
+        {read_concurrency, maps:get(read_concurrency, Opts, true)},
+        {write_concurrency, maps:get(write_concurrency, Opts, true)},
+        public
+    ],
+    ets:new(TableName, TableOpts),
+    {ok, #state{table = TableName}}.
+
+store(SessionId, Session, State) ->
+    ets:insert(State#state.table, {SessionId, Session}),
+    {ok, State}.
+
+fetch(SessionId, State) ->
+    case ets:lookup(State#state.table, SessionId) of
+        [{SessionId, Session}] -> {ok, Session, State};
+        [] -> {error, not_found, State}
+    end.
+```
+
+**Performance:**
+- **Read**: 1-5 µs (O(1) hash lookup)
+- **Write**: 1-5 µs (O(1) insert)
+- **Concurrent reads**: Unlimited (lock-free)
+- **Concurrent writes**: ~10-100 concurrent (lock per bucket)
+
+### 2. DETS Backend (Disk Persistence)
+
+**Configuration:**
+```erlang
+{erlmcp_session, [
+    {backend, erlmcp_session_dets},
+    {backend_opts, #{
+        table_name => erlmcp_sessions_dets,
+        file_path => "data/erlmcp_sessions.dets",
+        auto_save => 60000,  % Flush to disk every 60s
+        repair => true,  % Auto-repair on open
+        max_file_size => 17179869184,  % 16 GB
+        cleanup_interval => 60000
+    }}
+]}.
+```
+
+**Implementation:**
+```erlang
+init(Opts) ->
+    FilePath = maps:get(file_path, Opts, "data/sessions.dets"),
+    TableOpts = [
+        {file, FilePath},
+        {auto_save, maps:get(auto_save, Opts, 60000)},
+        {repair, maps:get(repair, Opts, true)}
+    ],
+    case dets:open_file(erlmcp_sessions_dets, TableOpts) of
+        {ok, Table} -> {ok, #state{table = Table}};
+        {error, Reason} -> {error, Reason}
+    end.
+
+store(SessionId, Session, State) ->
+    ok = dets:insert(State#state.table, {SessionId, Session}),
+    {ok, State}.
+
+fetch(SessionId, State) ->
+    case dets:lookup(State#state.table, SessionId) of
+        [{SessionId, Session}] -> {ok, Session, State};
+        [] -> {error, not_found, State}
+    end.
+```
+
+**Performance:**
+- **Read**: 100-500 µs (disk I/O + cache)
+- **Write**: 1-5 ms (flush to disk)
+- **Capacity**: ~2 GB per file
+- **Recovery**: Auto-repair on open
+
+### 3. Mnesia Backend (Distributed Cluster)
+
+**Configuration:**
+```erlang
+{erlmcp_session, [
+    {backend, erlmcp_session_mnesia},
+    {backend_opts, #{
+        table_name => erlmcp_session,
+        nodes => [node1@host, node2@host, node3@host],
+        disc_copies => true,  % Disk + RAM
+        ram_copies => false,  % RAM only for hot data
+        access_mode => read_write,
+        cleanup_interval => 60000
+    }}
+]}.
+```
+
+**Implementation:**
+```erlang
+init(Opts) ->
+    Nodes = maps:get(nodes, Opts, [node()]),
+    DiscCopies = maps:get(disc_copies, Opts, true),
+
+    %% Create distributed table
+    case mnesia:create_table(erlmcp_session, [
+        {disc_copies, Nodes},
+        {attributes, record_info(fields, session)},
+        {type, set}
+    ]) of
+        {atomic, ok} -> {ok, #state{table = erlmcp_session}};
+        {aborted, {already_exists, erlmcp_session}} -> {ok, #state{table = erlmcp_session}};
+        {aborted, Reason} -> {error, Reason}
+    end.
+
+store(SessionId, Session, State) ->
+    Transaction = fun() ->
+        mnesia:write(State#state.table, #session{id = SessionId, data = Session}, write)
+    end,
+    case mnesia:transaction(Transaction) of
+        {atomic, ok} -> {ok, State};
+        {aborted, Reason} -> {error, Reason, State}
+    end.
+
+fetch(SessionId, State) ->
+    Transaction = fun() ->
+        case mnesia:read(State#state.table, SessionId) of
+            [#session{data = Session}] -> Session;
+            [] -> not_found
+        end
+    end,
+    case mnesia:transaction(Transaction) of
+        {atomic, Session} -> {ok, Session, State};
+        {atomic, not_found} -> {error, not_found, State};
+        {aborted, Reason} -> {error, Reason, State}
+    end.
+```
+
+**Cluster Setup:**
+```bash
+# On all nodes
+epmd -daemon
+
+# On node1
+erl -sname node1@host -setcookie erlmcp
+1> mnesia:create_schema([node1@host, node2@host, node3@host]).
+2> mnesia:start().
+3> application:start(erlmcp).
+
+# On node2
+erl -sname node2@host -setcookie erlmcp
+1> mnesia:start().
+2> mnesia:change_config(extra_db_nodes, [node1@host]).
+3> application:start(erlmcp).
+
+# Verify replication
+mnesia:table_info(erlmcp_session, where_to_read).
+%% Returns: [node1@host, node2@host, node3@host]
+```
+
+**Performance:**
+- **Local read (RAM)**: 50-200 µs
+- **Local read (disk)**: 1-5 ms
+- **Remote read**: 5-50 ms (network latency)
+- **Write**: 1-10 ms (transaction commit)
+- **Capacity**: Unlimited (horizontal scaling)
+
+### Replication & Failover
+
+**Replication Strategy:**
+```erlang
+%% Replicate session to all nodes
+replicate_session(SessionId, SessionData) ->
+    Nodes = mnesia:table_info(erlmcp_session, where_to_write),
+    lists:foreach(fun(Node) ->
+        rpc:cast(Node, mnesia, dirty_write, [
+            erlmcp_session,
+            #session{id = SessionId, data = SessionData}
+        ])
+    end, Nodes).
+```
+
+**Failover Detection:**
+```erlang
+%% Monitor node health
+monitor_nodes() ->
+    net_kernel:monitor_nodes(true, [nodedown_reason]).
+
+handle_info({nodedown, Node, Reason}, State) ->
+    logger:error("Node ~p down: ~p", [Node, Reason]),
+    %% Trigger failover
+    erlmcp_session_failover:handle_node_failure(Node),
+    {noreply, State};
+handle_info({nodeup, Node}, State) ->
+    logger:info("Node ~p up", [Node]),
+    %% Sync session data to new node
+    erlmcp_session_replicator:sync_to_node(Node),
+    {noreply, State}.
+```
+
+### Backup & Recovery
+
+**Snapshot (ETS → File):**
+```erlang
+snapshot_ets_to_file(FilePath) ->
+    Sessions = ets:tab2list(erlmcp_sessions_ets),
+    Binary = term_to_binary(Sessions),
+    ok = file:write_file(FilePath, Binary).
+```
+
+**Export (DETS/Mnesia → File):**
+```erlang
+export_sessions_to_file(Backend, FilePath) ->
+    {ok, SessionIds} = erlmcp_session_backend:list(),
+    Sessions = [{Id, erlmcp_session_backend:fetch(Id)} || Id <- SessionIds],
+    ok = file:write_file(FilePath, term_to_binary(Sessions)).
+```
+
+**Import (File → Backend):**
+```erlang
+import_sessions_from_file(FilePath) ->
+    {ok, Binary} = file:read_file(FilePath),
+    Sessions = binary_to_term(Binary),
+    lists:foreach(fun({SessionId, {ok, Session}}) ->
+        erlmcp_session_backend:store(SessionId, Session)
+    end, Sessions).
+```
+
+### Monitoring
+
+**Health Check:**
+```erlang
+check_storage_health() ->
+    CheckFuns = [
+        fun check_ets_health/0,
+        fun check_dets_health/0,
+        fun check_mnesia_health/0
+    ],
+    Results = [{fun_name, catch Fun()} || Fun <- CheckFuns],
+    Health = lists:all(fun({_Name, Status}) -> Status =:= ok end, Results),
+    #{healthy => Health, checks => Results}.
+```
+
+**Storage Metrics:**
+```erlang
+collect_storage_metrics() ->
+    #{
+        ets_size => ets:info(erlmcp_sessions_ets, size),
+        ets_memory => ets:info(erlmcp_sessions_ets, memory) * erlang:system_info(wordsize),
+        dets_file_size => dets:info(erlmcp_sessions_dets, file_size),
+        mnesia_table_size => mnesia:table_info(erlmcp_session, size),
+        mnesia_disc_only => mnesia:table_info(erlmcp_session, disc_only_copies),
+        mnesia_ram_copies => mnesia:table_info(erlmcp_session, ram_copies)
+    }.
+```
+
+### Migration Strategy
+
+**ETS → DETS:**
+```bash
+# 1. Export ETS data
+erlmcp_session_backend:export_to_file("sessions_backup.ets").
+
+# 2. Update config to DETS
+# 3. Restart application
+# 4. Import data
+erlmcp_session_backend:import_from_file("sessions_backup.ets").
+```
+
+**DETS → Mnesia:**
+```bash
+# 1. Set up Mnesia cluster
+# 2. Export DETS data
+# 3. Update config to Mnesia
+# 4. Restart application
+# 5. Import data
+# 6. Verify replication
+mnesia:table_info(erlmcp_session, where_to_read).
+```
+
+### Best Practices
+
+1. **Development**: Use ETS for fastest iteration
+2. **Single-node production**: Use DETS for persistence
+3. **Multi-node production**: Use Mnesia with disc_copies
+4. **High performance**: Use Mnesia with ram_copies + periodic snapshots
+5. **Backup**: Regularly export sessions regardless of backend
+6. **Monitoring**: Track session counts and expiration rates
+7. **Cleanup**: Configure appropriate cleanup intervals (60s default)
+8. **Timeouts**: Set reasonable session timeouts (5-30 minutes)

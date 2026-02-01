@@ -1,0 +1,63 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e1f5fe'}}}}%%
+graph TB
+    subgraph TransportLayer["Transport Layer - erlmcp_transports v2.1.0"]
+        direction TB
+
+        STDIO["<b>STDIO Transport</b><br/>erlmcp_transport_stdio<br/>_________________<br/>• Process I/O (stdin/stdout)<br/>• Line-based framing<br/>• Message size: 16MB<br/>• Test mode detection<br/>• Owner monitoring<br/><b>Use Case:</b> CLI tools, local AI"]
+        TCP["<b>TCP Transport</b><br/>erlmcp_transport_tcp<br/>_________________<br/>• Client/Server modes<br/>• Ranch acceptor pool<br/>• Connection limiting<br/>• Auto-reconnect<br/>• Idle timeout: 5min<br/>• Message size: 16MB<br/><b>Use Case:</b> Network services"]
+        HTTP["<b>HTTP Transport</b><br/>erlmcp_transport_http<br/>_________________<br/>• Gun HTTP client<br/>• REST/JSON-RPC<br/>• Connection pooling<br/>• Retry logic<br/>• SSL/TLS support<br/>• Timeout: 5000ms<br/><b>Use Case:</b> Web APIs"]
+        WS["<b>WebSocket Transport</b><br/>erlmcp_transport_ws<br/>_________________<br/>• Cowboy WS handler<br/>• Full-duplex real-time<br/>• Ping/pong: 30s<br/>• Backpressure handling<br/>• Fragment reassembly<br/>• UTF-8 validation<br/><b>Use Case:</b> Interactive UIs"]
+        SSE["<b>SSE Transport</b><br/>erlmcp_transport_sse<br/>_________________<br/>• Server-Sent Events<br/>• Unidirectional push<br/>• Keep-alive: 30s<br/>• POST + GET hybrid<br/>• Event stream format<br/>• Idle timeout: 5min<br/><b>Use Case:</b> Live updates"]
+    end
+
+    subgraph Behavior["Transport Behavior Contract"]
+        BEHAVIOR["<b>erlmcp_transport_behavior</b><br/>_________________<br/>• init(Config) → State<br/>• send(State, Data) → ok<br/>• close(State) → ok<br/>• get_info(State) → Map<br/>• handle_transport_call/2<br/><br/>Registry Integration:<br/>• register_transport/3<br/>• route_message/2<br/>• unregister_transport/1"]
+    end
+
+    subgraph Capabilities["Transport Capabilities"]
+        CAP_RESOURCES["Resources<br/>• subscribe_resource/2<br/>• unsubscribe_resource/2<br/>• list_resources/1"]
+        CAP_TOOLS["Tools<br/>• call_tool/2<br/>• list_tools/1"]
+        CAP_PROMPTS["Prompts<br/>• get_prompt/2<br/>• list_prompts/1"]
+        CAP_LOGGING["Logging<br/>• log_message/2"]
+        CAP_NOTIFICATIONS["Notifications<br/>• send_notification/2"]
+    end
+
+    %% Transport to Behavior
+    STDIO -.->|implements| BEHAVIOR
+    TCP -.->|implements| BEHAVIOR
+    HTTP -.->|implements| BEHAVIOR
+    WS -.->|implements| BEHAVIOR
+    SSE -.->|implements| BEHAVIOR
+
+    %% Transport to Capabilities
+    STDIO --> CAP_RESOURCES
+    STDIO --> CAP_TOOLS
+    STDIO --> CAP_PROMPTS
+
+    TCP --> CAP_RESOURCES
+    TCP --> CAP_TOOLS
+    TCP --> CAP_PROMPTS
+    TCP --> CAP_NOTIFICATIONS
+
+    HTTP --> CAP_RESOURCES
+    HTTP --> CAP_TOOLS
+    HTTP --> CAP_PROMPTS
+
+    WS --> CAP_RESOURCES
+    WS --> CAP_TOOLS
+    WS --> CAP_PROMPTS
+    WS --> CAP_NOTIFICATIONS
+    WS --> CAP_LOGGING
+
+    SSE --> CAP_NOTIFICATIONS
+    SSE --> CAP_LOGGING
+
+    style TransportLayer fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style Behavior fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style Capabilities fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    classDef transportStyle fill:#ffffff,stroke:#1976d2,stroke-width:2px
+    class STDIO,TCP,HTTP,WS,SSE transportStyle
+
+    classDef capabilityStyle fill:#ffffff,stroke:#7b1fa2,stroke-width:1px
+    class CAP_RESOURCES,CAP_TOOLS,CAP_PROMPTS,CAP_LOGGING,CAP_NOTIFICATIONS capabilityStyle

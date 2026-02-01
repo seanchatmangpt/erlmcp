@@ -1,0 +1,84 @@
+```mermaid
+graph TB
+    subgraph "Request Layer"
+        A[Incoming MCP Request] --> B{Validate Message}
+        B -->|Valid| C[Process Request]
+        B -->|Invalid| D[Schema Validation Error]
+    end
+
+    subgraph "Error Classification"
+        C --> E{Error Type?}
+        E -->|Protocol| F[JSON-RPC Error]
+        E -->|Transport| G[Transport Failure]
+        E -->|Business| H[Application Error]
+        E -->|Resource| I[Resource Error]
+        E -->|Auth| J[Authorization Error]
+    end
+
+    subgraph "Error Handlers"
+        F --> K[erlmcp_errors:protocol_error]
+        G --> L[erlmcp_errors:transport_error]
+        H --> M[erlmcp_errors:app_error]
+        I --> N[erlmcp_errors:resource_error]
+        J --> O[erlmcp_errors:auth_error]
+    end
+
+    subgraph "Recovery Strategies"
+        K --> P{Is Retryable?}
+        L --> P
+        M --> Q{Circuit Open?}
+        N --> Q
+
+        P -->|Yes| R[Apply Retry Logic]
+        P -->|No| S[Return Error to Client]
+
+        Q -->|No| T[Execute Fallback]
+        Q -->|Yes| U[Refuse with Code 1089]
+
+        R --> V{Retry Attempts}
+        V -->|< 3| W[Exponential Backoff]
+        V -->|≥ 3| S
+
+        W --> C
+        T --> X[Return Cached/Default]
+    end
+
+    subgraph "Response Generation"
+        S --> Y[Format JSON-RPC Error]
+        U --> Y
+        X --> Y
+        D --> Y
+        Y --> Z[Send Response]
+    end
+
+    subgraph "Observability"
+        K --> AA[erlmcp_metrics:increment_error]
+        L --> AA
+        M --> AA
+        N --> AA
+        O --> AA
+
+        AA --> AB[Record Error Context]
+        AB --> AC[Update Circuit Breaker State]
+        AC --> AD[Trigger Alert if Threshold]
+    end
+
+    subgraph "Cleanup"
+        Z --> AE[Log Error Event]
+        AE --> AF[Update Health Status]
+        AF --> AG[Return to Ready State]
+    end
+
+    style A fill:#e1f5ff
+    style Z fill:#e1f5ff
+    style K fill:#ffe1e1
+    style L fill:#ffe1e1
+    style M fill:#ffe1e1
+    style N fill:#ffe1e1
+    style O fill:#ffe1e1
+    style U fill:#ffcccc
+    style S fill:#ffcccc
+    style AA fill:#fff4e1
+    style AC fill:#fff4e1
+    style AD fill:#ff9999
+```

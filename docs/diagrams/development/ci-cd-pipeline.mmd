@@ -1,0 +1,122 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#f1f5f9', 'primaryTextColor':'#0f172a', 'primaryBorderColor':'#3b82f6', 'lineColor':'#64748b', 'sectionBkgColor':'#e2e8f0', 'altSectionBkgColor':'#f8fafc'}}}%%
+flowchart LR
+    subgraph Trigger["Pipeline Triggers"]
+        PT["Push to main"]
+        PR["Pull Request"]
+        MA["Manual Dispatch<br/>Release"]
+        SCH["Schedule<br/>Nightly benchmarks"]
+    end
+
+    subgraph PreCommit["Local Pre-Commit Hooks"]
+        direction TB
+        H1["🔒 Sync CLAUDE.md<br/>./tools/claude-md-sync.sh"]
+        H2["🔒 Format Check<br/>rebar3 format --verify"]
+        H3["🔒 Quick Compile<br/>TERM=dumb rebar3 compile"]
+        H4["🔒 Lint Check<br/>rebar3 lint"]
+        H1 --> H2 --> H3 --> H4
+    end
+
+    subgraph CI["GitHub Actions CI - 20 Workflows"]
+        direction TB
+
+        subgraph Build["Build Stage"]
+            B1["📦 Compile All Apps<br/>rebar3 compile"]
+            B2["📦 Dependencies<br/>rebar3 upgrade"]
+            B3["📦 OTP Version Matrix<br/>25, 26, 27, 28"]
+            B1 --> B2 --> B3
+        end
+
+        subgraph Test["Test Stage"]
+            direction LR
+            T1["🧪 Unit Tests<br/>rebar3 eunit<br/>84 modules"]
+            T2["🧪 Integration Tests<br/>rebar3 ct<br/>CT suites"]
+            T3["🧪 Property Tests<br/>rebar3 proper<br/>Generative"]
+            T4["🧪 Chaos Tests<br/>Failure injection<br/>11 scenarios"]
+            T1 --> T2 --> T3 --> T4
+        end
+
+        subgraph Quality["Quality Stage"]
+            direction LR
+            Q1["🔍 Type Check<br/>Dialyzer strict mode"]
+            Q2["🔍 Xref<br/>Undefined functions"]
+            Q3["🔍 Coverage<br/>≥80% blocking"]
+            Q4["🔍 Security<br/>Bandit scan"]
+            Q1 --> Q2 --> Q3 --> Q4
+        end
+
+        subgraph Perf["Performance Stage"]
+            P1["⚡ Quick Benchmarks<br/>make benchmark-quick<br/><5min"]
+            P2["⚡ Regression Check<br/>±10% threshold"]
+            P3["⚡ Stress Test<br/>100K ops sustained"]
+            P1 --> P2 --> P3
+        end
+
+        subgraph Compliance["Compliance Stage"]
+            C1["📋 Protocol Validator<br/>JSON-RPC + MCP"]
+            C2["📋 Transport Validator<br/>Behavior compliance"]
+            C3["📋 Security Validator<br/>Auth + secrets"]
+            C4["📋 Performance Validator<br/>Latency + throughput"]
+            C1 --> C2 --> C3 --> C4
+        end
+
+        Build --> Test --> Quality --> Perf --> Compliance
+    end
+
+    subgraph CD["Continuous Deployment"]
+        direction TB
+
+        subgraph PreRelease["Pre-Release Checks"]
+            direction LR
+            R1["🔐 Full Benchmark Suite<br/>./scripts/bench/run_all_benchmarks.sh"]
+            R2["🔐 Compliance Report<br/>erlmcp_compliance_report"]
+            R3["🔐 Evidence Bundle<br/>Receipt chain validation"]
+            R1 --> R2 --> R3
+        end
+
+        subgraph Release["Release Strategies"]
+            direction LR
+            S1["🎯 SemVer Release<br/>v2.1.0 → Hex.pm"]
+            S2["🎯 Git Tag<br/>Annotated tags"]
+            S3["🎯 Docker Image<br/>Multi-arch build"]
+            S4["🎯 Documentation<br/>Generate & publish"]
+            S1 --> S2 --> S3 --> S4
+        end
+
+        subgraph Deploy["Deployment Targets"]
+            direction LR
+            D1["🚀 Production<br/>Blue-green deployment"]
+            D2["🚀 Staging<br/>Canary testing"]
+            D3["🚀 Development<br/>Rolling updates"]
+            D1 --> D2 --> D3
+        end
+
+        PreRelease --> Release --> Deploy
+    end
+
+    subgraph Notify["Notifications"]
+        N1["✅ Slack: Success"]
+        N2["⚠️ Slack: Failure"]
+        N3["📧 Email: Critical"]
+        N1 & N2 & N3
+    end
+
+    PT & PR & MA & SCH --> PreCommit
+    PreCommit --> CI
+    CI --> CD
+    CD --> Notify
+
+    %% Conditional flows
+    CI -.->|❌ Failures| Notify
+    CD -.->|❌ Compliance| Notify
+
+    style Trigger fill:#f1f5f9,stroke:#64748b,stroke-width:2px
+    style PreCommit fill:#fee2e2,stroke:#ef4444,stroke-width:2px
+    style CI fill:#dbeafe,stroke:#3b82f6,stroke-width:3px
+    style CD fill:#dcfce7,stroke:#22c55e,stroke-width:2px
+    style Notify fill:#fef9c3,stroke:#eab308,stroke-width:2px
+
+    classDef critical fill:#fecaca,stroke:#dc2626,stroke-width:2px
+    classDef optional fill:#e2e8f0,stroke:#94a3b8,stroke-width:1px,stroke-dasharray: 5 5
+
+    class H1,H2,H3,H4 critical
+    class MA,SCH optional

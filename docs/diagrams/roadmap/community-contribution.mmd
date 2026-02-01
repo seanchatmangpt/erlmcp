@@ -1,0 +1,42 @@
+flowchart TD
+    Start([Fork & Clone Repository]) --> Setup[Development Setup]
+    Setup --> SetupSteps[Install Erlang/OTP 28.3.1+<br/>Install rebar3<br/>Run tests]
+
+    SetupSteps --> Check{Existing Issue?}
+    Check -->|Yes| Assign[Request Assignment]
+    Check -->|No| Create[Create Feature Request<br/>or Bug Report]
+
+    Assign --> Branch[Create Feature Branch]
+    Create --> Branch
+
+    Branch --> Dev[Development Phase]
+    Dev --> DevSteps[Write Tests First<br/>(Chicago School TDD)<br/>Implement Feature<br/>Run Quality Gates]
+
+    DevSteps --> Quality{Quality Gates Pass?}
+    Quality -->|No| Fix[Fix Issues]
+    Fix --> Dev
+
+    Quality -->|Yes| Docs[Update Documentation]
+    Docs --> Commit[Commit Changes]
+
+    Commit --> Push[Push to Fork]
+    Push --> PR[Create Pull Request]
+
+    PR --> Review{Review Process}
+    Review --> ReviewSteps[Automated Checks<br/>Code Review<br/>CI/CD Pipeline<br/>Test Coverage]
+
+    ReviewSteps --> ReviewPass{All Checks Pass?}
+    ReviewPass -->|No| Revise[Make Revisions]
+    Revise --> Push
+
+    ReviewPass -->|Yes| Approve[Request Approval]
+    Approve --> Merge[Squash & Merge]
+
+    Merge --> Release[Next Release Cycle]
+    Release --> Credit[Contributors List]
+
+    style Start fill:#90EE90
+    style Release fill:#87CEEB
+    style Quality fill:#FFB6C1
+    style ReviewPass fill:#FFB6C1
+    style Merge fill:#DDA0DD

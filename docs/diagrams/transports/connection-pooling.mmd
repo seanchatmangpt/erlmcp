@@ -1,0 +1,83 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e1f5fe'}}}}%%
+graph TB
+    subgraph Clients["Client Layer"]
+        CLIENT1["Client Process 1"]
+        CLIENT2["Client Process 2"]
+        CLIENT3["Client Process N"]
+    end
+
+    subgraph PoolManager["Transport Pool Manager<br/>erlmcp_transport_pool"]
+        direction TB
+
+        ACQUIRE["<b>acquire/2</b><br/>Checkout connection<br/>Timeout: 5000ms"]
+        RELEASE["<b>release/2</b><br/>Return connection<br/>Async cast"]
+        HEALTH["<b>Health Monitor</b><br/>• Process monitoring<br/>• Auto-cleanup dead<br/>• Stats tracking"]
+        STATS["<b>get_pool_stats/1</b><br/>• Available count<br/>• In-use count<br/>• Total connections"]
+    end
+
+    subgraph ConnectionState["Connection State"]
+        AVAILABLE["<b>Available Queue</b><br/>queue:new()<br/>Ready for checkout"]
+        INUSE["<b>In-Use Map</b><br/>#{Pid => MonitorRef}<br/>Checked out & monitored"]
+    end
+
+    subgraph Connections["Physical Connections"]
+        CONN1["Connection 1<br/>gen_tcp:socket()"]
+        CONN2["Connection 2<br/>gen_tcp:socket()"]
+        CONN3["Connection 3<br/>gen_tcp:socket()"]
+        CONN4["Connection N<br/>gen_tcp:socket()"]
+    end
+
+    subgraph Limiter["Connection Limiter<br/>erlmcp_connection_limiter"]
+        LIMITER_STATE["<b>State</b><br/>• max_connections: 10K<br/>• alert_threshold: 70%<br/>• server_counts: #{}"]
+        GPROC["<b>Gproc Counter</b><br/>{c, l, erlmcp_connection_count}<br/>Distributed tracking"]
+        ALERTS["<b>Alerting</b><br/>• Cooldown: 60s<br/>• 70% threshold<br/>• Logger warnings"]
+    end
+
+    %% Client acquisition flow
+    CLIENT1 -->|"acquire(PoolId, Timeout)"| ACQUIRE
+    CLIENT2 -->|"acquire(PoolId, Timeout)"| ACQUIRE
+    CLIENT3 -->|"acquire(PoolId, Timeout)"| ACQUIRE
+
+    %% Pool to state
+    ACQUIRE -->|"queue:out()"| AVAILABLE
+    ACQUIRE -->|"check limit"| Limiter
+    RELEASE -->|"queue:in()"| AVAILABLE
+    RELEASE -->|"maps:remove()"| INUSE
+    HEALTH -->|"DOWN msg"| INUSE
+
+    %% State to connections
+    AVAILABLE -.->|checkout| CONN1
+    AVAILABLE -.->|checkout| CONN2
+    AVAILABLE -.->|checkout| CONN3
+    AVAILABLE -.->|checkout| CONN4
+    INUSE -->|monitored| CONN1
+    INUSE -->|monitored| CONN2
+    INUSE -->|monitored| CONN3
+    INUSE -->|monitored| CONN4
+
+    %% Limiter integration
+    Limiter -->|"gproc:update_counter"| GPROC
+    Limiter -->|"check_alert_threshold"| ALERTS
+
+    %% Release flow
+    CONN1 -->|"release(PoolId, Conn)"| RELEASE
+    CONN2 -->|"release(PoolId, Conn)"| RELEASE
+    CONN3 -->|"release(PoolId, Conn)"| RELEASE
+    CONN4 -->|"release(PoolId, Conn)"| RELEASE
+
+    %% Stats
+    STATS -->|query| AVAILABLE
+    STATS -->|query| INUSE
+
+    style PoolManager fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style ConnectionState fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style Limiter fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    classDef clientStyle fill:#ffffff,stroke:#424242,stroke-width:1px
+    class CLIENT1,CLIENT2,CLIENT3 clientStyle
+
+    classDef connectionStyle fill:#e8f5e9,stroke:#388e3c,stroke-width:1px
+    class CONN1,CONN2,CONN3,CONN4 connectionStyle
+
+    classDef stateStyle fill:#ffffff,stroke:#f57c00,stroke-width:1px
+    class AVAILABLE,INUSE stateStyle

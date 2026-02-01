@@ -1,0 +1,55 @@
+graph TB
+    subgraph "erlmcp Technology Stack Evolution"
+
+    subgraph "v1.0 - Foundation (Jan 2025)"
+        V1[Erlang/OTP 25]
+        V1_LIBS[jsx JSON Library]
+        V1_TRANS[stdio, TCP]
+        V1_ARCH[Monolithic App]
+    end
+
+    subgraph "v2.0 - Umbrella Architecture (Mar 2025)"
+        V2[Erlang/OTP 25-27]
+        V2_LIBS[gproc, gun, ranch, poolboy]
+        V2_TRANS[stdio, TCP, HTTP, WebSocket]
+        V2_ARCH[4-App Umbrella]
+        V2_OBS[Metrics, OTEL, Receipts]
+    end
+
+    subgraph "v3.0 - Native Performance (Jan 2026)"
+        V3[Erlang/OTP 28.3.1+]
+        V3_LIBS[Native JSON, gproc, gun, ranch]
+        V3_TRANS[stdio, TCP, HTTP, WS, SSE]
+        V3_ARCH[Modular Umbrella]
+        V3_PERF[Priority Messages, Process Iteration]
+        V3_OBS[Full OTEL, Chaos, Dashboard]
+    end
+
+    subgraph "v3.1 - 100K Scale (Q2 2026)"
+        V4[Erlang/OTP 28.3.1+]
+        V4_LIBS[All v3 + Custom]
+        V4_TRANS[All v3 + GraphQL]
+        V4_ARCH[Hierarchical Registry]
+        V4_SCALE[Multi-Node Clustering]
+        V4_OBS[AIOps, Predictive Scaling]
+    end
+
+    subgraph "v4.0 - Enterprise (Q3-Q4 2026)"
+        V5[Erlang/OTP 29+]
+        V5_LIBS[Custom Extensions]
+        V5_TRANS[HTTP/3, gRPC]
+        V5_ARCH[Service Mesh]
+        V5_ENT[K8s Operator, Multi-Region]
+        V5_OBS[ML-Based Anomaly Detection]
+    end
+
+    V1 -->|3 months| V2
+    V2 -->|10 months| V3
+    V3 -->|4 months| V4
+    V4 -->|4 months| V5
+
+    style V1 fill:#f9f,stroke:#333,stroke-width:2px
+    style V2 fill:#bbf,stroke:#333,stroke-width:2px
+    style V3 fill:#bfb,stroke:#333,stroke-width:2px
+    style V4 fill:#ffb,stroke:#333,stroke-width:2px
+    style V5 fill:#fbf,stroke:#333,stroke-width:2px

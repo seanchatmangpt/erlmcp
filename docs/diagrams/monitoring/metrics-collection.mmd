@@ -1,0 +1,133 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff6b6b', 'primaryTextColor':'#fff', 'primaryBorderColor':'#c92a2a', 'lineColor':'#495057', 'sectionBkgColor':'#ffc9c9', 'altSectionBkgColor':'#ffe3e3', 'gridColor':'#adb5bd'}}}%%
+graph TB
+    subgraph "Erlang VM Layer"
+        VM[("Erlang VM<br/>beam.smp")]
+        Scheduler[Scheduler]
+        Memory[Memory Manager]
+        IO[I/O System]
+        Processes[Process Manager]
+    end
+
+    subgraph "erlmcp Core Metrics"
+        CoreMetrics[erlmcp_metrics]
+        Collector[Metrics Collector]
+        Registry[Metric Registry]
+        Buffer[Metrics Buffer]
+    end
+
+    subgraph "Application Metrics"
+        ConnMetrics[Connection Metrics]
+        RequestMetrics[Request Metrics]
+        TransportMetrics[Transport Metrics]
+        SessionMetrics[Session Metrics]
+        ErrorMetrics[Error Metrics]
+    end
+
+    subgraph "Transport-Specific Metrics"
+        StdioMetrics[stdio<br/>Messages/s]
+        TCPMetrics[tcp<br/>Connections/s]
+        HTTPMetrics[http<br/>Requests/s]
+        WSMetrics[websocket<br/>Frames/s]
+        SSEMetrics[sse<br/>Events/s]
+    end
+
+    subgraph "OpenTelemetry Layer"
+        OTELAPI[opentelemetry_api]
+        OTELSDK[opentelemetry_sdk]
+        MeterProvider[Meter Provider]
+        MetricExporter[Metric Exporter]
+    end
+
+    subgraph "Metrics Storage"
+        InfluxDB[(InfluxDB<br/>Time-Series)]
+        Prometheus[(Prometheus<br/>Scrape Target)]
+        Datadog[(Datadog<br/>Metrics)]
+    end
+
+    subgraph "Aggregation & Processing"
+        Aggregator[Metrics Aggregator]
+        Rollup[Rollup Processor]
+        Downsampler[Downsampler]
+    end
+
+    subgraph "Dashboard Layer"
+        MetricsServer[erlmcp_metrics_server<br/>HTTP Endpoint]
+        Grafana[(Grafana<br/>Visualization)]
+        Dashboard[erlmcp_dashboard_server<br/>Real-time View)]
+    end
+
+    %% Erlang VM to Core
+    VM --> Scheduler
+    VM --> Memory
+    VM --> IO
+    VM --> Processes
+
+    %% VM to Metrics Collection
+    Scheduler -->|CPU utilization| Collector
+    Memory -->|Heap sizes| Collector
+    IO -->|I/O counts| Collector
+    Processes -->|Process counts| Collector
+
+    %% Collector Pipeline
+    Collector --> Registry
+    Registry --> Buffer
+    Buffer --> Aggregator
+
+    %% Application Metrics
+    ConnMetrics -->|Connections opened/closed| Collector
+    RequestMetrics -->|Request latency/throughput| Collector
+    TransportMetrics -->|Transport health| Collector
+    SessionMetrics -->|Session lifecycle| Collector
+    ErrorMetrics -->|Error counts/refusals| Collector
+
+    %% Transport Metrics
+    StdioMetrics -->|Message rates| Collector
+    TCPMetrics -->|Connection rates| Collector
+    HTTPMetrics -->|Request rates| Collector
+    WSMetrics -->|Frame rates| Collector
+    SSEMetrics -->|Event rates| Collector
+
+    %% Aggregation to OTEL
+    Aggregator --> Rollup
+    Rollup --> Downsampler
+    Downsampler -->|Canonical metrics| OTELAPI
+
+    %% OTEL Pipeline
+    OTELAPI --> OTELSDK
+    OTELSDK --> MeterProvider
+    MeterProvider --> MetricExporter
+
+    %% Export to Storage
+    MetricExporter -->|OTLP| InfluxDB
+    MetricExporter -->|Prometheus format| Prometheus
+    MetricExporter -->|DogStatsD| Datadog
+
+    %% Real-time Path
+    Buffer -->|/metrics endpoint| MetricsServer
+    Buffer -->|WebSocket updates| Dashboard
+
+    %% Visualization
+    MetricsServer -->|Prometheus scrape| Grafana
+    InfluxDB -->|Query API| Grafana
+    Datadog -->|Datadog UI| Grafana
+
+    %% Styles
+    classDef vmNode fill:#ffe3e3,stroke:#c92a2a,stroke-width:3px
+    classDef metricsNode fill:#d0ebff,stroke:#1971c2,stroke-width:2px
+    classDef transportNode fill:#e7f5ff,stroke:#1c7ed6,stroke-width:2px
+    classDef otelNode fill:#fff3bf,stroke:#f59f00,stroke-width:2px
+    classDef storageNode fill:#c3fae8,stroke:#0ca678,stroke-width:3px
+    classDef dashNode fill:#f3f0ff,stroke:#7950f2,stroke-width:2px
+
+    class VM,Scheduler,Memory,IO,Processes vmNode
+    class CoreMetrics,Collector,Registry,Buffer,Aggregator,Rollup,Downsampler metricsNode
+    class ConnMetrics,RequestMetrics,TransportMetrics,SessionMetrics,ErrorMetrics transportNode
+    class StdioMetrics,TCPMetrics,HTTPMetrics,WSMetrics,SSEMetrics transportNode
+    class OTELAPI,OTELSDK,MeterProvider,MetricExporter otelNode
+    class InfluxDB,Prometheus,Datadog storageNode
+    class MetricsServer,Grafana,Dashboard dashNode
+
+    %% Annotations
+    Collector -.->|5s interval| Aggregator
+    MetricExporter -.->|10s batch| InfluxDB
+    Buffer -.->|Real-time push| Dashboard

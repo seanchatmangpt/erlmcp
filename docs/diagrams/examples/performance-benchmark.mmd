@@ -1,0 +1,202 @@
+graph TB
+    subgraph "Benchmark Setup: erlmcp Performance Test Suite"
+        A[Start Benchmark Runner] --> B{Select Test Scenario}
+    end
+
+    subgraph "Scenario 1: Core Operations (registry/queue/pool/session)"
+        B --> C[erlmcp_bench_core_ops]
+        C --> D[Initialize Test Environment]
+        D --> E[Generate Workload: 100K Operations]
+
+        E --> F["Test 1: Registry Operations<br/>gproc:register/lookup"]
+        F --> G["Execute: 100K registry lookups<br/>O(log N) complexity"]
+        G --> H[Measure: Throughput, Latency, Memory]
+        H --> I{Result Analysis}
+        I -->|553K ops/s| J[✓ PASS: Baseline achieved]
+
+        E --> K["Test 2: Queue Operations<br/>erlmcp_queue:enqueue/dequeue"]
+        K --> L["Execute: 100K queue operations<br/>Lock-free implementation"]
+        L --> M[Measure: Throughput, Contention]
+        M --> N{Result Analysis}
+        N -->|971K ops/s| O[✓ PASS: Baseline achieved]
+
+        E --> P["Test 3: Pool Management<br/>poolboy:checkout/checkin"]
+        P --> Q["Execute: 100K pool operations<br/>10 workers, max_overflow 5"]
+        Q --> R[Measure: Checkout latency, Queue depth]
+        R --> S{Result Analysis}
+        S -->|149K ops/s| T[✓ PASS: Baseline achieved]
+
+        E --> U["Test 4: Session Handling<br/>erlmcp_session:create/lookup/delete"]
+        U --> V["Execute: 100K session operations<br/>ETS backend (O(1))"]
+        V --> W[Measure: CRUD latency, Memory growth]
+        W --> X{Result Analysis}
+        X -->|242K ops/s| Y[✓ PASS: Baseline achieved]
+    end
+
+    subgraph "Scenario 2: Network I/O (TCP/HTTP real sockets)"
+        B --> Z[erlmcp_bench_network_real]
+        Z --> AA[Initialize Transport: TCP]
+        AA --> AB[Establish: 100 Concurrent Connections]
+
+        AB --> AC["Test: TCP Message Throughput<br/>4KB packets, sustained load"]
+        AC --> AD["Execute: 100K messages<br/>100 concurrent connections"]
+        AD --> AE[Measure: msgs/sec, latency_p99, CPU, Memory]
+        AE --> AF{Result Analysis}
+        AF -->|43K msg/s| AG[✓ PASS: Network bound<br/>bottleneck identified]
+
+        AB --> AH["Test: HTTP/2 Multiplexing<br/>gun client, multiple streams"]
+        AH --> AI["Execute: 5K requests<br/>10 concurrent connections"]
+        AI --> AJ[Measure: Request latency, Stream concurrency]
+        AJ --> AK{Result Analysis}
+        AK -->|38K req/s| AL[✓ PASS: HTTP/2 multiplexing<br/>effective]
+
+        AB --> AM["Test: Connection Pooling<br/>poolboy + gun"]
+        AM --> AN["Execute: 10K requests<br/>Pool size: 10, overflow: 5"]
+        AN --> AO[Measure: Pool hit rate, Checkout latency]
+        AO --> AP{Result Analysis}
+        AP -->|95% hit rate| AQ[✓ PASS: Pool reuse<br/>optimal]
+    end
+
+    subgraph "Scenario 3: Sustained Load (stress testing)"
+        B --> AR[erlmcp_bench_stress]
+        AR --> AS[Configure Duration: 5 minutes]
+        AS --> AT[Start Workload Generator]
+
+        AT --> AU["Phase 1: Ramp-up (0-60s)<br/>0 → 300K ops/s"]
+        AU --> AV[Monitor: CPU, Memory, GC]
+        AV --> AW{Stable?}
+        AW -->|Yes| AX["Phase 2: Sustained (60-240s)<br/>300K ops/s constant"]
+
+        AX --> AY[Collect Time-Series Metrics]
+        AY --> AZ["Metrics:<br/>  - Throughput (ops/s)<br/>  - Latency (p50/p95/p99)<br/>  - Memory (heap/rss)<br/>  - GC (frequency/pause)<br/>  - CPU utilization"]
+
+        AZ --> BA{Anomaly Detection}
+        BA -->|No anomalies| BB["Phase 3: Ramp-down (240-300s)<br/>300K → 0 ops/s"]
+
+        BB --> BC[Generate Report]
+        BC --> BD{Result Analysis}
+        BD -->|372K avg ops/s<br/>p99 latency: 4.2ms<br/>Memory stable| BE[✓ PASS: System stable<br/>under sustained load]
+    end
+
+    subgraph "Scenario 4: Chaos Engineering (failure injection)"
+        B --> BF[erlmcp_bench_chaos]
+        BF --> BG[Select Chaos Scenario]
+
+        BG --> BH["Scenario 1: Process Kill<br/>Randomly kill worker processes"]
+        BH --> BI[Inject: 10 process kills/sec]
+        BI --> BJ[Measure: Recovery time, Message loss]
+        BJ --> BK{Recovery < 5s?}
+        BK -->|Yes| BL[✓ PASS: Supervision tree<br/>effective]
+
+        BG --> BM["Scenario 2: Memory Exhaustion<br/>Allocate memory until pressure"]
+        BM --> BN[Inject: Memory allocator]
+        BN --> BO[Trigger: VM memory monitor]
+        BO --> BP[Measure: GC behavior, Swap rate]
+        BP --> BQ{Graceful degradation?}
+        BQ -->|Yes| BR[✓ PASS: Memory guard<br/>effective]
+
+        BG --> BS["Scenario 3: Network Latency<br/>Add 100ms delay to TCP"]
+        BS --> BT[Inject: tc netem delay]
+        BT --> BU[Measure: Timeout rate, Retry attempts]
+        BU --> BV{Circuit breaker?}
+        BV -->|Triggered| BW[✓ PASS: Circuit breaker<br/>protects system]
+
+        BG --> BX["Scenario 4: Connection Storm<br/>Spawn 50K connections"]
+        BX --> BY[Inject: Connection burst]
+        BY --> BZ[Measure: Accept rate, Rejection rate]
+        BZ --> CA{Rate limiting?}
+        CA -->|Active| CB[✓ PASS: Connection limiter<br/>protects system]
+    end
+
+    subgraph "Scenario 5: MCP Integration (end-to-end workflows)"
+        B --> CC[erlmcp_bench_integration]
+        CC --> CD[Select MCP Workflow]
+
+        CD --> CE["Workflow 1: Resource Subscription<br/>subscribe → notify → unsubscribe"]
+        CE --> CF[Execute: 1K subscription cycles]
+        CF --> CG[Measure: Notification latency, Delivery rate]
+        CG --> CH{Result Analysis}
+        CH -->|99.8% delivery| CI[✓ PASS: Subscription system<br/>reliable]
+
+        CD --> CJ["Workflow 2: Tool Invocation<br/>call_tool with progress"]
+        CJ --> CK[Execute: 500 tool calls<br/>with progress notifications]
+        CK --> CL[Measure: Invocation latency, Progress delivery]
+        CL --> CM{Result Analysis}
+        CM -->|avg 2.3ms| CN[✓ PASS: Tool overhead<br/>acceptable]
+
+        CD --> CO["Workflow 3: Prompt Rendering<br/>get_prompt with args"]
+        CO --> CP[Execute: 1K prompt renders<br/>with template variables]
+        CP --> CQ[Measure: Render latency, Template cache hit]
+        CQ --> CR{Result Analysis}
+        CR -->|95% cache hit| CS[✓ PASS: Template caching<br/>effective]
+
+        CD --> CT["Workflow 4: Error Handling<br/>trigger various errors"]
+        CT --> CU[Execute: 200 error scenarios<br/>protocol/validation/transport]
+        CU --> CV[Measure: Error response time, Recovery rate]
+        CV --> CW{Result Analysis}
+        CW -->|98% recovery| CX[✓ PASS: Error handling<br/>robust]
+
+        CD --> CY["Workflow 5: Concurrent Requests<br/>100 parallel tool calls"]
+        CY --> CZ[Execute: Parallel request batch]
+        CZ --> DA[Measure: Total completion time, Request correlation]
+        DA --> DB{Result Analysis}
+        DB -->|No correlation errors| DC[✓ PASS: Request ID system<br/>reliable]
+    end
+
+    subgraph "Report Generation"
+        J --> EEA[Aggregate All Results]
+        O --> EEA
+        T --> EEA
+        Y --> EEA
+        AG --> EEA
+        AL --> EEA
+        AQ --> EEA
+        BE --> EEA
+        BL --> EEA
+        BR --> EEA
+        BW --> EEA
+        CB --> EEA
+        CI --> EEA
+        CN --> EEA
+        CS --> EEA
+        CX --> EEA
+        DC --> EEA
+
+        EEA --> EEBA[Generate Performance Report]
+        EEBA --> EECA["Format: Markdown + JSON<br/>Include: Metrics, Charts, Recommendations"]
+
+        EECA --> EEDA[Compare to Baselines]
+        EEDA --> EEDA{Regression Check}
+        EEDA -->|< 10% regression| EEA[✓ PASS: Performance<br/>within acceptable range]
+        EEDA -->|≥ 10% regression| EEFA[✗ FAIL: Performance<br/>regression detected]
+
+        EEFA --> EEJA[Generate Alert]
+        EEJA --> EEKA[Open Performance Issue]
+    end
+
+    subgraph "Benchmark Results Summary"
+        EEBA --> EELA["Summary Metrics:<br/><br/>Core Operations:<br/>  - Registry: 553K ops/s<br/>  - Queue: 971K ops/s<br/>  - Pool: 149K ops/s<br/>  - Session: 242K ops/s<br/><br/>Network I/O:<br/>  - TCP: 43K msg/s<br/>  - HTTP: 38K req/s<br/>  - Pool hit rate: 95%<br/><br/>Sustained Load:<br/>  - Avg: 372K ops/s<br/>  - p99 latency: 4.2ms<br/><br/>Chaos Recovery:<br/>  - Process kill: < 5s<br/>  - Memory guard: Active<br/>  - Circuit breaker: Effective<br/><br/>MCP Integration:<br/>  - Subscriptions: 99.8%<br/>  - Tool calls: 2.3ms avg<br/>  - Error recovery: 98%"]
+    end
+
+    style A fill:#e1f5ff
+    style EEBA fill:#e1f5ff
+    style EELA fill:#fff4e1
+    style J fill:#d4edda
+    style O fill:#d4edda
+    style T fill:#d4edda
+    style Y fill:#d4edda
+    style AG fill:#d4edda
+    style AL fill:#d4edda
+    style AQ fill:#d4edda
+    style BE fill:#d4edda
+    style BL fill:#d4edda
+    style BR fill:#d4edda
+    style BW fill:#d4edda
+    style CB fill:#d4edda
+    style CI fill:#d4edda
+    style CN fill:#d4edda
+    style CS fill:#d4edda
+    style CX fill:#d4edda
+    style DC fill:#d4edda
+    style EEFA fill:#f8d7da
+    style EEJA fill:#f8d7da

@@ -1,0 +1,501 @@
+graph TB
+    subgraph "erlmcp Troubleshooting Guide - Diagnostic Flowchart"
+        direction TB
+
+        %% ========================================================================
+        /// ROOT PROBLEM CATEGORIES
+        %% ========================================================================
+        ROOT["Problem Symptom Detected"]
+
+        %% ========================================================================
+        /// CATEGORY 1: CONNECTION ISSUES
+        %% ========================================================================
+        subgraph "Connection Problems"
+            direction TB
+
+            CONN_SYMPTOM["❌ Cannot connect to server"]
+
+            CONN_Q1{"Is server running?"}
+
+            CONN_CHECK_1["Check: ps aux | grep beam<br/>or: observer_cli"]
+
+            CONN_NO["NO → Start server<br/>erlmcp_app:startpermanent<br/>rebar3 shell"]
+
+            CONN_YES{"YES → Check binding"}
+
+            CONN_BIND{"Is server bound to correct address?<br/>http_bind_address: 127.0.0.1"}
+
+            CONN_BIND_WRONG["NO → Update config/sys.config<br/>Set: http_bind_address"]
+
+            CONN_BIND_YES{"YES → Check firewall"}
+
+            CONN_FW{"Is port accessible?<br/>telnet localhost 8080<br/>nc -zv 127.0.0.1 8080"}
+
+            CONN_FW_BLOCK["NO → Open firewall or<br/>use different port"]
+
+            CONN_FW_OK{"YES → Check TLS (if HTTPS)"}
+
+            CONN_TLS["TLS enabled?<br/>https_config.enabled"]
+
+            CONN_TLS_YES{"YES → Verify certificates"}
+
+            CONN_TLS_CHECK["Check certfile, keyfile exist<br/>Verify verify_mode = verify_peer"]
+
+            CONN_TLS_NO{"NO → Use HTTP"}
+
+            CONN_SUCCESS["✅ Connection established"]
+
+            CONN_SYMPTOM --> CONN_Q1
+            CONN_Q1 -->|NO| CONN_CHECK_1
+            CONN_CHECK_1 --> CONN_NO
+            CONN_Q1 -->|YES| CONN_YES
+            CONN_YES --> CONN_BIND
+            CONN_BIND -->|NO| CONN_BIND_WRONG
+            CONN_BIND -->|YES| CONN_BIND_YES
+            CONN_BIND_YES --> CONN_FW
+            CONN_FW -->|NO| CONN_FW_BLOCK
+            CONN_FW -->|YES| CONN_FW_OK
+            CONN_FW_OK --> CONN_TLS
+            CONN_TLS -->|YES| CONN_TLS_YES
+            CONN_TLS_YES --> CONN_TLS_CHECK
+            CONN_TLS -->|NO| CONN_TLS_NO
+            CONN_TLS_NO --> CONN_SUCCESS
+            CONN_TLS_CHECK --> CONN_SUCCESS
+        end
+
+        %% ========================================================================
+        /// CATEGORY 2: AUTHENTICATION FAILURES
+        %% ========================================================================
+        subgraph "Authentication Problems"
+            direction TB
+
+            AUTH_SYMPTOM["❌ Authentication failed"]
+
+            AUTH_Q1{"What error code?"}
+
+            AUTH_1011["1011: Auth Failed<br/>1036-1016"]
+
+            AUTH_CHECK_CREDS{"Check credentials"}
+
+            AUTH_CRED_VALID["Are credentials valid?<br/>Verify username/password<br/>Check API key format"]
+
+            AUTH_CRED_INVALID["NO → Update credentials<br/>Check oauth.client_id<br/>Check oauth.client_secret"]
+
+            AUTH_TOKEN{"YES → Check token"}
+
+            AUTH_TOKEN_EXP{"Is token expired?<br/>Check JWT expiration<br/>Refresh if needed"}
+
+            AUTH_1015["1015: Missing Auth<br/>No credentials provided"]
+
+            AUTH_ADD_CREDS["Add credentials:<br/>Authorization: Bearer <token><br/>or MCP-Session-Id header"]
+
+            AUTH_1016["1016: Invalid Session ID<br/>Format error"]
+
+            AUTH_SESSION_FIX["Session ID must be<br/>32+ hex characters<br/>Use: erlmcp_session:create"]
+
+            AUTH_1014["1014: Forbidden<br/>Authorization denied"]
+
+            AUTH_PERM["Check permissions<br/>Contact administrator<br/>Review ACL policies"]
+
+            AUTH_SUCCESS["✅ Authentication working"]
+
+            AUTH_SYMPTOM --> AUTH_Q1
+            AUTH_Q1 -->|1011-1013| AUTH_1011
+            AUTH_1011 --> AUTH_CHECK_CREDS
+            AUTH_CHECK_CREDS -->|NO| AUTH_CRED_INVALID
+            AUTH_CHECK_CREDS -->|YES| AUTH_TOKEN
+            AUTH_TOKEN -->|Expired| AUTH_TOKEN_EXP
+            AUTH_Q1 -->|1015| AUTH_1015
+            AUTH_1015 --> AUTH_ADD_CREDS
+            AUTH_Q1 -->|1016| AUTH_1016
+            AUTH_1016 --> AUTH_SESSION_FIX
+            AUTH_Q1 -->|1014| AUTH_1014
+            AUTH_1014 --> AUTH_PERM
+            AUTH_CRED_INVALID --> AUTH_SUCCESS
+            AUTH_TOKEN_EXP --> AUTH_SUCCESS
+            AUTH_ADD_CREDS --> AUTH_SUCCESS
+            AUTH_SESSION_FIX --> AUTH_SUCCESS
+            AUTH_PERM --> AUTH_SUCCESS
+        end
+
+        %% ========================================================================
+        /// CATEGORY 3: RATE LIMITING
+        %% ========================================================================
+        subgraph "Rate Limiting Issues"
+            direction TB
+
+            RATE_SYMPTOM["❌ Rate limit exceeded<br/>Error 1056-1060"]
+
+            RATE_Q1{"Which type of limit?"}
+
+            RATE_1056["1056: Overall rate limit"]
+
+            RATE_OVERALL{"Reduce request rate<br/>Implement backoff<br/>Wait before retry"]
+
+            RATE_1057["1057: Per-second limit<br/>Max 100 req/s"]
+
+            RATE_1058["1058: Per-minute limit<br/>Max 5000 req/min"]
+
+            RATE_1059["1059: Quota exceeded<br/>Monthly limit"]
+
+            RATE_UPGRADE{"Wait for reset or<br/>Upgrade plan"}
+
+            RATE_1060["1060: Connection limit<br/>Max 100 concurrent"]
+
+            RATE_CLOSE["Close unused connections<br/>Increase max_connections"]
+
+            RATE_CONFIG{"Need higher limits?<br/>Edit config/sys.config<br/>Adjust rate_limiting section"}
+
+            RATE_SUCCESS["✅ Requests flowing"]
+
+            RATE_SYMPTOM --> RATE_Q1
+            RATE_Q1 -->|1056| RATE_1056
+            RATE_1056 --> RATE_OVERALL
+            RATE_Q1 -->|1057| RATE_1057
+            RATE_1057 --> RATE_OVERALL
+            RATE_Q1 -->|1058| RATE_1058
+            RATE_1058 --> RATE_OVERALL
+            RATE_Q1 -->|1059| RATE_1059
+            RATE_1059 --> RATE_UPGRADE
+            RATE_Q1 -->|1060| RATE_1060
+            RATE_1060 --> RATE_CLOSE
+            RATE_OVERALL --> RATE_CONFIG
+            RATE_UPGRADE --> RATE_CONFIG
+            RATE_CLOSE --> RATE_CONFIG
+            RATE_CONFIG --> RATE_SUCCESS
+        end
+
+        %% =================================================================        /// CATEGORY 4: PERFORMANCE ISSUES
+        %% ========================================================================
+        subgraph "Performance Problems"
+            direction TB
+
+            PERF_SYMPTOM["❌ Slow response / High latency"]
+
+            PERF_Q1{"Check metrics"}
+
+            PERF_METRICS["erlmcp_metrics_server<br/>GET /metrics<br/>Review p95, p99 latency"]
+
+            PERF_HIGH_P95{"p95 > 100ms?"}
+
+            PERF_CPU{"Check CPU usage<br/>observer:cpu() or top"}
+
+            PERF_CPU_HIGH{"CPU > 80%?"}
+
+            PERF_CPU_REDUCE["Reduce load<br/>Enable backpressure<br/>Scale horizontally"]
+
+            PERF_MEMORY{"Check memory<br/>erlmcp_memory_monitor<br/>observer:memory()"]
+
+            PERF_MEM_HIGH{"Memory > 85%?"}
+
+            PERF_MEM_TUNE["Enable hibernation<br/>Increase cleanup_interval<br/>Check for leaks"]
+
+            PERF_QUEUE{"Check queue depths<br/>queue_depth_threshold_percent"}
+
+            PERF_QUEUE_HIGH{"Queue > 80%?"}
+
+            PERF_QUEUE_FIX["Backpressure active<br/>Reduce request rate<br/>Increase queue_limits"]
+
+            PERF_CB{"Circuit breaker open?"}
+
+            PERF_CB_YES{"Check error logs<br/>Wait for cooldown (30s)<br/>Verify dependencies"}
+
+            PERF_SUCCESS["✅ Performance optimized"]
+
+            PERF_SYMPTOM --> PERF_Q1
+            PERF_Q1 --> PERF_METRICS
+            PERF_METRICS --> PERF_HIGH_P95
+            PERF_HIGH_P95 -->|YES| PERF_CPU
+            PERF_CPU --> PERF_CPU_HIGH
+            PERF_CPU_HIGH -->|YES| PERF_CPU_REDUCE
+            PERF_HIGH_P95 -->|NO| PERF_MEMORY
+            PERF_MEMORY --> PERF_MEM_HIGH
+            PERF_MEM_HIGH -->|YES| PERF_MEM_TUNE
+            PERF_HIGH_P95 -->|NO| PERF_QUEUE
+            PERF_QUEUE --> PERF_QUEUE_HIGH
+            PERF_QUEUE_HIGH -->|YES| PERF_QUEUE_FIX
+            PERF_HIGH_P95 -->|NO| PERF_CB
+            PERF_CB -->|YES| PERF_CB_YES
+            PERF_CPU_REDUCE --> PERF_SUCCESS
+            PERF_MEM_TUNE --> PERF_SUCCESS
+            PERF_QUEUE_FIX --> PERF_SUCCESS
+            PERF_CB_YES --> PERF_SUCCESS
+        end
+
+        %% ========================================================================
+        /// CATEGORY 5: MESSAGE/PROTOCOL ERRORS
+        %% ========================================================================
+        subgraph "Message/Protocol Problems"
+            direction TB
+
+            MSG_SYMPTOM["❌ Message errors<br/>Error 1021-1070"]
+
+            MSG_Q1{"Which error code?"}
+
+            MSG_1021["1021-1029: Invalid parameters"]
+
+            MSG_VALIDATE{"Validate JSON schema<br/>Check field types<br/>Verify required fields"}
+
+            MSG_1023["1023: Invalid URI"]
+
+            MSG_URI_FIX["Use valid URI format<br/>https://example.com/path<br/>Check URI validator"}
+
+            MSG_1068["1068: Message too large<br/>Max 1MB"]
+
+            MSG_COMPRESS["Compress data<br/>Split into chunks<br/>Check message_size_limits"]
+
+            MSG_1066["1066: Protocol error"]
+
+            MSG_PROTO_CHECK["Validate JSON-RPC format<br/>Check MCP version<br/>Review message_parser logs"]
+
+            MSG_1067["1067: Transport error"]
+
+            MSG_TRANSPORT["Check network stability<br/>Verify transport health<br/>Review transport logs"]
+
+            MSG_SUCCESS["✅ Messages valid"]
+
+            MSG_SYMPTOM --> MSG_Q1
+            MSG_Q1 -->|1021-1029| MSG_1021
+            MSG_1021 --> MSG_VALIDATE
+            MSG_Q1 -->|1023| MSG_1023
+            MSG_1023 --> MSG_URI_FIX
+            MSG_Q1 -->|1068| MSG_1068
+            MSG_1068 --> MSG_COMPRESS
+            MSG_Q1 -->|1066| MSG_1066
+            MSG_1066 --> MSG_PROTO_CHECK
+            MSG_Q1 -->|1067| MSG_1067
+            MSG_1067 --> MSG_TRANSPORT
+            MSG_VALIDATE --> MSG_SUCCESS
+            MSG_URI_FIX --> MSG_SUCCESS
+            MSG_COMPRESS --> MSG_SUCCESS
+            MSG_PROTO_CHECK --> MSG_SUCCESS
+            MSG_TRANSPORT --> MSG_SUCCESS
+        end
+
+        %% ========================================================================
+        /// CATEGORY 6: RESOURCE/SUBSCRIPTION ISSUES
+        %% ========================================================================
+        subgraph "Resource/Subscription Problems"
+            direction TB
+
+            RES_SYMPTOM["❌ Resource errors<br/>Error 1046-1052"]
+
+            RES_Q1{"Which error?"}
+
+            RES_1046["1046-1050: Not found"]
+
+            RES_LIST{"List available resources:<br/>erlmcp_server:list_resources<br/>erlmcp_server:list_tools<br/>erlmcp_server:list_prompts"]
+
+            RES_USE_VALID{"Use valid URI/name<br/>Check spelling<br/>Verify resource exists"}
+
+            RES_1047["1047-1052: Duplicate"]
+
+            RES_DELETE["Delete existing first:<br/>erlmcp_server:delete_resource<br/>erlmcp_server:delete_tool<br/>erlmcp_server:delete_prompt"]
+
+            RES_SUB["Subscription issues"]
+
+            RES_SUB_CHECK{"Check subscription limit:<br/>max_subscriptions_per_server<br/>Current: 10000 default"}
+
+            RES_SUB_LIMIT{"Limit reached?<br/>Unsubscribe old ones<br/>Increase max_subscriptions"}
+
+            RES_NOTIFY["Not receiving notifications?"}
+
+            RES_NOTIFY_FIX{"Check notification handler<br/>Verify resource updated events<br/>Review erlmcp_change_notifier"]
+
+            RES_SUCCESS["✅ Resources working"]
+
+            RES_SYMPTOM --> RES_Q1
+            RES_Q1 -->|1046-1050| RES_1046
+            RES_1046 --> RES_LIST
+            RES_LIST --> RES_USE_VALID
+            RES_Q1 -->|1047-1052| RES_1047
+            RES_1047 --> RES_DELETE
+            RES_Q1 -->|Subscriptions| RES_SUB
+            RES_SUB --> RES_SUB_CHECK
+            RES_SUB_CHECK --> RES_SUB_LIMIT
+            RES_Q1 -->|Notifications| RES_NOTIFY
+            RES_NOTIFY --> RES_NOTIFY_FIX
+            RES_USE_VALID --> RES_SUCCESS
+            RES_DELETE --> RES_SUCCESS
+            RES_SUB_LIMIT --> RES_SUCCESS
+            RES_NOTIFY_FIX --> RES_SUCCESS
+        end
+
+        %% ========================================================================
+        /// CATEGORY 7: CRASHES/RESTARTS
+        %% ========================================================================
+        subgraph "Crash/Restart Problems"
+            direction TB
+
+            CRASH_SYMPTOM["❌ Server crashes or restarts"]
+
+            CRASH_Q1{"Check crash logs"}
+
+            CRASH_LOGS["logs/erlmcp.log<br/>Observer → /home<br/>rb:grep CRASH"]
+
+            CRASH_Q2{"Pattern?"}
+
+            CRASH_BADMATCH{"badmatch or function_clause"}
+
+            CRASH_MATCH_FIX["Type mismatch error<br/>Check function signatures<br/>Verify record definitions<br/>Review data flow"]
+
+            CRASH_CASE_CLAUSE{"case_clause"}
+
+            CRASH_CASE_FIX["Missing case pattern<br/>Add catch-all clause<br/>Review case statements"]
+
+            CRASH_TIMEOUT["timeout"]
+
+            CRASH_TIMEOUT_FIX{"Increase timeout value<br/>Check for blocking calls<br/>Use async: handle_cast"]
+
+            CRASH_NOMATCH{"try_clause error"}
+
+            CRASH_TRY_FIX["Uncaught exception<br/>Add try...catch<br/>Improve error handling"]
+
+            CRASH_SUPERVISOR{"Supervisor restart loop"}
+
+            CRASH_SUP_FIX{"Permanent child crashing<br/>Check init/1 return value<br/>Review child specifications<br/>Temporary: change restart to transient"]
+
+            CRASH_SUCCESS["✅ Crashes resolved"]
+
+            CRASH_SYMPTOM --> CRASH_Q1
+            CRASH_Q1 --> CRASH_LOGS
+            CRASH_LOGS --> CRASH_Q2
+            CRASH_Q2 -->|badmatch| CRASH_BADMATCH
+            CRASH_BADMATCH --> CRASH_MATCH_FIX
+            CRASH_Q2 -->|case_clause| CRASH_CASE_CLAUSE
+            CRASH_CASE_CLASSES --> CRASH_CASE_FIX
+            CRASH_Q2 -->|timeout| CRASH_TIMEOUT
+            CRASH_TIMEOUT --> CRASH_TIMEOUT_FIX
+            CRASH_Q2 -->|try_clause| CRASH_NOMATCH
+            CRASH_NOMATCH --> CRASH_TRY_FIX
+            CRASH_Q2 -->|Supervisor| CRASH_SUPERVISOR
+            CRASH_SUPERVISOR --> CRASH_SUP_FIX
+            CRASH_MATCH_FIX --> CRASH_SUCCESS
+            CRASH_CASE_FIX --> CRASH_SUCCESS
+            CRASH_TIMEOUT_FIX --> CRASH_SUCCESS
+            CRASH_TRY_FIX --> CRASH_SUCCESS
+            CRASH_SUP_FIX --> CRASH_SUCCESS
+        end
+
+        %% ========================================================================
+        /// CATEGORY 8: MEMORY LEAKS
+        %% ========================================================================
+        subgraph "Memory Leak Problems"
+            direction TB
+
+            MEM_SYMPTOM["❌ Memory growing constantly"]
+
+            MEM_Q1{"Monitor memory"}
+
+            MEM_MONITOR["erlmcp_memory_monitor<br/>observer:memory()<br/>recon:allocaters(1000)"]
+
+            MEM_Q2{"Pattern?"}
+
+            MEM_LEAK_PROCESS{"Per-process growth"}
+
+            MEM_PROC_CHECK["Check large processes<br/>recon:proc_count(memory)<br/>Identify top consumers"]
+
+            MEM_LEAK_ETS{"ETS table growth"}
+
+            MEM_ETS_CHECK["ets:i()<br/>Check table sizes<br/>Review ets:tab2list"]
+
+            MEM_LEAK_BINARY{"Binary heap growth"]
+
+            MEM_BIN_CHECK["Check binary references<br/>recon:bin_leak(100)<br/>Force GC: garbage_collect()"]
+
+            MEM_LEAK_PORT{"Port accumulation"}
+
+            MEM_PORT_CHECK["Check open ports<br/>erlang:ports()<br/>Close unused ports"]
+
+            MEM_FIX_HIBERNATE["Enable hibernation<br/>hibernate_after: 30000<br/>Reduces idle memory 10x"]
+
+            MEM_FIX_CLEANUP["Increase cleanup intervals<br/>lifecycle_management.cleanup<br/>Enable TTL on resources"]
+
+            MEM_FIX_LIMIT{"Set memory guards<br/>memory_guard.enable = true<br/>cpu_guard.enable = true"]
+
+            MEM_SUCCESS["✅ Memory stable"]
+
+            MEM_SYMPTOM --> MEM_Q1
+            MEM_Q1 --> MEM_MONITOR
+            MEM_MONITOR --> MEM_Q2
+            MEM_Q2 -->|Process| MEM_LEAK_PROCESS
+            MEM_LEAK_PROCESS --> MEM_PROC_CHECK
+            MEM_Q2 -->|ETS| MEM_LEAK_ETS
+            MEM_LEAK_ETS --> MEM_ETS_CHECK
+            MEM_Q2 -->|Binary| MEM_LEAK_BINARY
+            MEM_LEAK_BINARY --> MEM_BIN_CHECK
+            MEM_Q2 -->|Port| MEM_LEAK_PORT
+            MEM_LEAK_PORT --> MEM_PORT_CHECK
+            MEM_PROC_CHECK --> MEM_FIX_HIBERNATE
+            MEM_ETS_CHECK --> MEM_FIX_CLEANUP
+            MEM_BIN_CHECK --> MEM_FIX_CLEANUP
+            MEM_PORT_CHECK --> MEM_FIX_LIMIT
+            MEM_FIX_HIBERNATE --> MEM_SUCCESS
+            MEM_FIX_CLEANUP --> MEM_SUCCESS
+            MEM_FIX_LIMIT --> MEM_SUCCESS
+        end
+
+        %% ========================================================================
+        /// DIAGNOSTIC TOOLS SUMMARY
+        %% ========================================================================
+        subgraph "Diagnostic Tools Reference"
+            direction LR
+
+            TOOLS_1["🔍 Observer<br/>observer:start()<br/>Visual process inspection"]
+            TOOLS_2["📊 Metrics<br/>GET /metrics<br/>Prometheus-format metrics"]
+            TOOLS_3["📝 Logger<br/>logger:get_config()<br/>Check log levels"]
+            TOOLS_4["🧪 Recon<br/>recon:proc_count<br/>recon:bin_leak<br/>Runtime debugging"]
+            TOOLS_5["🔌 Debugger<br/>debugger:start()<br/>Step-through debugging"]
+            TOOLS_6["📈 Profiler<br/>fprof:start()<br/>Performance profiling"]
+        end
+
+        %% ========================================================================
+        /// QUICK REFERENCE: Common Commands
+        %% ========================================================================
+        subgraph "Quick Reference Commands"
+            direction TB
+
+            CMD_CONN["Check connection:<br/>telnet localhost 8080<br/>nc -zv 127.0.0.1 8080"]
+            CMD_PROC["List processes:<br/>erlang:processes()<br/>recon:proc_count()"]
+            CMD_MEM["Check memory:<br/>erlang:memory()<br/>recon:allocaters(1000)"]
+            CMD_LOG["Tail logs:<br/>tail -f logs/erlmcp.log<br/>logger:get_config()"]
+            CMD_METRICS["View metrics:<br/>curl http://localhost:9090/metrics"]
+            CMD_REGISTRY["Check registry:<br/>erlmcp_registry:list_servers()<br/>erlmcp_registry:list_clients()"]
+        end
+
+        %% Connect to root
+        ROOT --> CONN_SYMPTOM
+        ROOT --> AUTH_SYMPTOM
+        ROOT --> RATE_SYMPTOM
+        ROOT --> PERF_SYMPTOM
+        ROOT --> MSG_SYMPTOM
+        ROOT --> RES_SYMPTOM
+        ROOT --> CRASH_SYMPTOM
+        ROOT --> MEM_SYMPTOM
+    end
+
+    %% ========================================================================
+    /// LEGEND
+    /// ========================================================================
+    subgraph "Legend"
+        L1["❌ Problem symptom"]
+        L2["{ } Decision point"]
+        L3["→ Action to take"]
+        L4["✅ Resolution achieved"]
+        L5["Categories:<br/>1. Connection Issues<br/>2. Authentication<br/>3. Rate Limiting<br/>4. Performance<br/>5. Message/Protocol<br/>6. Resources/Subs<br/>7. Crashes/Restarts<br/>8. Memory Leaks"]
+    end
+
+    classDef symptomStyle fill:#ffebee,stroke:#c62828,stroke-width:3px
+    classDef decisionStyle fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef actionStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef successStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef toolsStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef cmdStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef legendStyle fill:#f5f5f5,stroke:#424242,stroke-width:1px
+
+    class CONN_SYMPTOM,AUTH_SYMPTOM,RATE_SYMPTOM,PERF_SYMPTOM,MSG_SYMPTOM,RES_SYMPTOM,CRASH_SYMPTOM,MEM_SYMPTOM,ROOT symptomStyle
+    class CONN_Q1,CONN_YES,CONN_FW_OK,CONN_TLS,AUTH_Q1,AUTH_CHECK_CREDS,AUTH_TOKEN,RATE_Q1,PERF_Q1,PERF_HIGH_P95,PERF_CPU_HIGH,PERF_MEM_HIGH,PERF_QUEUE_HIGH,PERF_CB,MSG_Q1,RES_Q1,RES_SUB_CHECK,CRASH_Q1,CRASH_Q2,MEM_Q1,MEM_Q2 decisionStyle
+    class CONN_CHECK_1,CONN_NO,CONN_BIND_WRONG,CONN_FW_BLOCK,CONN_TLS_CHECK,CONN_TLS_NO,CONN_SUCCESS,AUTH_CRED_INVALID,AUTH_TOKEN_EXP,AUTH_ADD_CREDS,AUTH_SESSION_FIX,AUTH_PERM,AUTH_SUCCESS,RATE_OVERALL,RATE_UPGRADE,RATE_CLOSE,RATE_CONFIG,RATE_SUCCESS,PERF_METRICS,PERF_CPU_REDUCE,PERF_MEM_TUNE,PERF_QUEUE_FIX,PERF_CB_YES,PERF_SUCCESS,MSG_VALIDATE,MSG_URI_FIX,MSG_COMPRESS,MSG_PROTO_CHECK,MSG_TRANSPORT,MSG_SUCCESS,RES_LIST,RES_USE_VALID,RES_DELETE,RES_SUB_LIMIT,RES_NOTIFY_FIX,RES_SUCCESS,CRASH_MATCH_FIX,CRASH_CASE_FIX,CRASH_TIMEOUT_FIX,CRASH_TRY_FIX,CRASH_SUP_FIX,CRASH_SUCCESS,MEM_PROC_CHECK,MEM_ETS_CHECK,MEM_BIN_CHECK,MEM_PORT_CHECK,MEM_FIX_HIBERNATE,MEM_FIX_CLEANUP,MEM_FIX_LIMIT,MEM_SUCCESS actionStyle
+    class TOOLS_1,TOOLS_2,TOOLS_3,TOOLS_4,TOOLS_5,TOOLS_6 toolsStyle
+    class CMD_CONN,CMD_PROC,CMD_MEM,CMD_LOG,CMD_METRICS,CMD_REGISTRY cmdStyle
+    class L1,L2,L3,L4,L5 legendStyle

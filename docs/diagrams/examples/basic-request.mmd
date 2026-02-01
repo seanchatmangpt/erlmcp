@@ -1,0 +1,117 @@
+sequenceDiagram
+    participant AI as AI Application
+    participant Client as erlmcp_client
+    participant Registry as erlmcp_registry
+    participant Transport as erlmcp_transport_tcp
+    participant Server as erlmcp_server
+    participant Handler as Tool Handler
+
+    Note over AI,Handler: Basic Tool Invocation - File Search Example
+
+    %% System Initialization
+    AI->>Client: erlmcp_client:start_link(tcp, #{host => "localhost", port => 3000})
+    Client->>Registry: gproc:add_local_name({mcp, client, ai_client_1})
+    Registry-->>Client: {ok, registered}
+    Client->>Transport: init(tcp, #{host => "localhost", port => 3000})
+    Transport-->>Client: {ok, TransportState}
+    Client-->>AI: {ok, Pid}
+
+    %% Initialize MCP Connection
+    AI->>Client: erlmcp_client:initialize()
+    Client->>Client: erlmcp_json_rpc:encode_request(initialize, #{
+        protocolVersion => "2025-11-25",
+        capabilities => #{roots => true, sampling => true},
+        clientInfo => #{name => "AI-App", version => "1.0.0"}
+    })
+    Client->>Transport: send(Request)
+    Transport->>Server: TCP stream (JSON-RPC)
+    Server->>Server: erlmcp_json_rpc:decode_request(Request)
+    Server-->>Transport: JSON-RPC Response (initialized)
+    Transport-->>Client: Response data
+    Client-->>AI: {ok, #{}}
+
+    %% List Available Tools
+    AI->>Client: erlmcp_client:list_tools()
+    Client->>Client: Generate request ID: uuid-001
+    Client->>Client: Store in State.pending: uuid-001 => {list_tools, From}
+    Client->>Transport: send(tools/list request)
+    Transport->>Server: tools/list
+    Server->>Server: Retrieve tool definitions
+    Server-->>Transport: {ok, [
+        #{
+            name => "search_files",
+            description => "Search files by pattern",
+            inputSchema => #{
+                type => "object",
+                properties => #{
+                    pattern => #{type => "string"},
+                    directory => #{type => "string"}
+                }
+            }
+        }
+    ]}
+    Transport-->>Client: Response
+    Client->>Client: Match uuid-001 from State.pending
+    Client->>Client: Remove from pending
+    Client-->>AI: {ok, [#tool{}]}
+
+    %% Call Tool: search_files
+    Note over AI,Handler: Tool Execution: search_files
+
+    AI->>Client: erlmcp_client:call_tool(<<"search_files">>, #{
+        pattern => "*.erl",
+        directory => "/Users/sac/erlmcp/src"
+    })
+    Client->>Client: Generate request ID: uuid-002
+    Client->>Client: Store in State.pending
+    Note right of Client: uuid-002 => {<br/>  call_tool,<br/>  "search_files",<br/>  Arguments,<br/>  From<br/>}
+
+    Client->>Transport: send(tools/call request)
+    Note right of Client: {<br/>  "jsonrpc": "2.0",<br/>  "id": "uuid-002",<br/>  "method": "tools/call",<br/>  "params": {<br/>    "name": "search_files",<br/>    "arguments": {<br/>      "pattern": "*.erl",<br/>      "directory": "/Users/sac/erlmcp/src"<br/>    }<br/>  }<br/>}
+
+    Transport->>Server: TCP stream
+    Server->>Server: Decode JSON-RPC
+    Server->>Server: Validate tool name exists
+    Server->>Handler: handle_call_tool(<<"search_files">>, Arguments)
+    Note right of Server: Validate against<br/>JSON Schema
+
+    Handler->>Handler: Execute file search
+    Note right of Handler: filelib:fold_files(<br/>  "/Users/sac/erlmcp/src",<br/>  "*.erl",<br/>  true,<br/>  fun(File, Acc) -> [File | Acc] end<br/>)
+
+    Handler-->>Server: {ok, #{
+        content => [#{
+            type => "text",
+            text => "[\n  \"erlmcp_app.erl\",\n  \"erlmcp_sup.erl\",\n  \"erlmcp_client.erl\",\n  ...\n]"
+        }]
+    }}
+    Server-->>Transport: JSON-RPC Response
+    Note left of Server: {<br/>  "jsonrpc": "2.0",<br/>  "id": "uuid-002",<br/>  "result": {<br/>    "content": [{<br/>      "type": "text",<br/>      "text": "[...]"<br/>    }]<br/>  }<br/>}
+
+    Transport-->>Client: Response data
+    Client->>Client: Match uuid-002 from State.pending
+    Client->>Client: Remove uuid-002 from pending
+    Client-->>AI: {ok, #tool_result{
+        content = [#{
+            type => "text",
+            text => "[...]"
+        }]
+    }}
+
+    %% AI processes result
+    AI->>AI: Parse file list
+    AI->>AI: Display results to user
+
+    %% Metrics recording (async, non-blocking)
+    Client->>Registry: erlmcp_metrics:record_request(#{
+        method => <<"tools/call">>,
+        tool_name => <<"search_files">>,
+        latency_us => 2341,
+        status => success
+    })
+    Note over Registry: Async side effect<br/>Does not block response
+
+    %% Cleanup
+    AI->>Client: stop()
+    Client->>Transport: close()
+    Client->>Registry: gproc:goodbye()
+    Client-->>AI: {ok, stopped}

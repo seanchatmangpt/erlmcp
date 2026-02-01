@@ -1,0 +1,493 @@
+```mermaid
+flowchart TB
+    subgraph ERLMCP["erlmcp System"]
+        subgraph CORE["Core Components"]
+            CLIENT["erlmcp_client"]
+            SERVER["erlmcp_server"]
+            TRANSPORTS["Transports"]
+        end
+
+        subgraph OBSERVABILITY["Observability Stack"]
+            METRICS["erlmcp_metrics"]
+            OTEL["erlmcp_otel"]
+            RECEIPTS["erlmcp_receipt_chain"]
+            HEALTH["erlmcp_health_monitor"]
+            CHAOS["erlmcp_chaos"]
+        end
+
+        subgraph INTERFACES["Monitoring Interfaces"]
+            METRICS_SRV["Metrics Server<br/>/metrics"]
+            DASHBOARD["Dashboard<br/>WebSocket"]
+            HTTP_API["HTTP API<br/>/health"]
+        end
+    end
+
+    subgraph OTEL_BACKENDS["OpenTelemetry Backends"]
+        DATADOG["Datadog<br/>OTLP/HTTP"]
+        HONEYCOMB["Honeycomb<br/>OTLP/HTTP"]
+        JAEGER["Jaeger<br/>OTLP/HTTP"]
+        PROMETHEUS["Prometheus<br/>Scraping"]
+    end
+
+    subgraph ALERTING["Alerting & Notifications"]
+        ANDON["Andon System<br/>(Stop-the-Line)"]
+            EMAIL["Email Alerts"]
+            SLACK["Slack Webhooks"]
+            PAGERDUTY["PagerDuty"]
+    end
+
+    subgraph VISUALIZATION["Visualization"]
+            GRAFANA["Grafana<br/>Dashboards"]
+            KIBANA["Kibana<br/>Logs"]
+            OBSERVER["Observer<br/>CLI Tool"]
+    end
+
+    subgraph STORAGE["Data Storage"]
+        TRACE_STORE["Trace Storage<br/>(Temp)"]
+        METRICS_STORE["Metrics DB<br/>(Prometheus)"]
+        LOG_STORE["Log Storage<br/>(Disk)"]
+        RECEIPT_STORE["Receipt Chain<br/>(SHA-256)"]
+    end
+
+    %% Core to Observability
+    CLIENT -->|"Metrics"| METRICS
+    SERVER -->|"Traces"| OTEL
+    SERVER -->|"Receipts"| RECEIPTS
+    TRANSPORTS -->|"Health"| HEALTH
+
+    %% Observability to Backends
+    OTEL -->|"OTLP Export"| DATADOG
+    OTEL -->|"OTLP Export"| HONEYCOMB
+    OTEL -->|"OTLP Export"| JAEGER
+    METRICS -->|"Scrape"| PROMETHEUS
+
+    %% Metrics to Storage
+    METRICS -->|"Write"| METRICS_STORE
+    OTEL -->|"Write"| TRACE_STORE
+    RECEIPTS -->|"Append"| RECEIPT_STORE
+    HEALTH -->|"Status"| ANDON
+
+    %% Alerting Flow
+    HEALTH -->|"SLA Violation"| ANDON
+    ANDON -->|"Notify"| EMAIL
+    ANDON -->|"Notify"| SLACK
+    ANDON -->|"Escalate"| PAGERDUTY
+
+    %% Interfaces
+    METRICS_SRV -->|"Expose"| PROMETHEUS
+    DASHBOARD -->|"Real-time"| GRAFANA
+    HTTP_API -->|"Health"| HEALTH
+
+    %% Visualization
+    PROMETHEUS -->|"Query"| GRAFANA
+    TRACE_STORE -->|"Read"| GRAFANA
+    LOG_STORE -->|"Search"| KIBANA
+
+    %% Chaos Testing
+    CHAOS -->|"Inject Failure"| CORE
+    CHAOS -->|"Measure"| OBSERVABILITY
+    CHAOS -->|"Verify"| HEALTH
+
+    %% Local Monitoring
+    HEALTH -->|"Connect"| OBSERVER
+
+    style ERLMCP fill:#e1f5fe
+    style OBSERVABILITY fill:#e8f5e9
+    style OTEL_BACKENDS fill:#f3e5f5
+    style ALERTING fill:#ffe0b2
+    style VISUALIZATION fill:#b2dfdb
+    style STORAGE fill:#fff3e0
+```
+
+## Monitoring System Integration
+
+### Observability Components
+
+| Component | Purpose | Protocol | Storage |
+|-----------|---------|----------|---------|
+| **erlmcp_metrics** | Performance metrics | OpenMetrics | Prometheus |
+| **erlmcp_otel** | Distributed tracing | OTLP/HTTP | Datadog/Honeycomb/Jaeger |
+| **erlmcp_receipt_chain** | Audit trail | SHA-256 hash chain | ETS/File |
+| **erlmcp_health_monitor** | Health checks | HTTP JSON | In-memory |
+| **erlmcp_chaos** | Failure injection | Internal | - |
+
+### 1. Metrics Collection
+
+**Core Metrics:**
+```erlang
+%% Throughput metrics
+-define(METRIC_REQUESTS_TOTAL, [erlmcp, requests, total]).
+-define(METRIC_REQUEST_DURATION, [erlmcp, request, duration_seconds]).
+-define(METRIC_ACTIVE_CONNECTIONS, [erlmcp, connections, active]).
+
+%% Record metrics
+record_request(Label, DurationUs, Status) ->
+    prometheus_histogram:observe(
+        ?METRIC_REQUEST_DURATION,
+        DurationUs / 1000000,  % Convert to seconds
+        [Label, Status]
+    ),
+    prometheus_counter:inc(?METRIC_REQUESTS_TOTAL, [Label, Status]).
+
+%% Metric labels: {transport, status}
+%% transport: tcp | http | websocket | stdio
+%% status: success | error | timeout
+```
+
+**Metrics Configuration:**
+```erlang
+{erlmcp_metrics, [
+    {interval, 60000},  % Aggregation interval (60s)
+    {backend, prometheus},
+    {metrics, [
+        {counter, [erlmcp, requests, total], []},
+        {histogram, [erlmcp, request, duration_seconds],
+            [{buckets, [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]}]},
+        {gauge, [erlmcp, connections, active], []},
+        {gauge, [erlmcp, memory, bytes], []}
+    ]}
+]}.
+```
+
+**HTTP Metrics Endpoint:**
+```erlang
+%% /metrics endpoint (OpenMetrics format)
+handle_get_metrics(_Req, State) ->
+    Metrics = prometheus_text_format:format(),
+    {ok, Metrics, State}.
+
+%% Example output:
+# HELP erlmcp_request_duration_seconds Request duration in seconds
+# TYPE erlmcp_request_duration_seconds histogram
+erlmcp_request_duration_seconds_bucket{transport="http",status="success",le="0.1"} 5234
+erlmcp_request_duration_seconds_bucket{transport="http",status="success",le="+Inf"} 5234
+erlmcp_request_duration_seconds_sum{transport="http",status="success"} 234.56
+erlmcp_request_duration_seconds_count{transport="http",status="success"} 5234
+```
+
+### 2. OpenTelemetry Tracing
+
+**Span Creation:**
+```erlang
+%% Start span for MCP operation
+start_span(OperationName, Attributes) ->
+    otel:start_span(OperationName, #{
+        kind => ?SPAN_KIND_SERVER,
+        attributes => Attributes
+    }).
+
+%% Example: Tool call span
+Span = start_span(<<"mcp.tools.call">>, #{
+    tool_name => <<"database_query">>,
+    client_id => <<"client_123">>
+}),
+try
+    Result = execute_tool(ToolName, Args),
+    otel:set_current_span_attribute(<<"tool.result">>, Result),
+    Result
+after
+    otel:end_span(Span)
+end.
+```
+
+**Trace Context Propagation:**
+```erlang
+%% Inject trace context into outgoing request
+inject_trace_context(Request, Headers) ->
+    SpanCtx = otel:get_current_span_context(),
+    otel propagator:inject(SpanCtx, Headers, fun(Key, Value, Acc) ->
+        [{Key, Value} | Acc]
+    end, Request).
+
+%% Extract trace context from incoming request
+extract_trace_context(Headers) ->
+    case otel_propagator:extract(Headers, fun(Key, Headers) ->
+        proplists:get_value(Key, Headers)
+    end) of
+        {SpanCtx, _} -> otel:set_current_span(SpanCtx);
+        {undefined, _} -> ok
+    end.
+```
+
+**OTLP Exporter Configuration:**
+```erlang
+{erlmcp_otel, [
+    {service_name => <<"erlmcp">>},
+    {service_version => <<"2.1.0">>},
+    {exporter, {otlp, #{
+        endpoint => "http://localhost:4318",
+        protocol => http_protobuf,
+        headers => [{"X-Datadog-API-Key", "your-api-key"}]
+    }}},
+    {sampler, {trace_id_ratio_based, 1.0}},  % 100% sampling
+    {batch_size, 512},
+    {batch_timeout, 5000},
+    {max_queue_size, 2048}
+]}.
+```
+
+### 3. Receipt Chain (Audit Trail)
+
+**SHA-256 Hash Chain:**
+```erlang
+%% Append to receipt chain
+append_receipt(Event) ->
+    PrevHash = case get_last_receipt() of
+        undefined -> <<>>;
+        #receipt{hash = Hash} -> Hash
+    end,
+
+    Receipt = #receipt{
+        id = erlmcp_request_id:generate(),
+        event = Event,
+        timestamp = erlang:system_time(microsecond),
+        hash = crypto:hash(sha256, term_to_binary({PrevHash, Event}))
+    },
+
+    ets:insert(receipt_chain, Receipt),
+    {ok, Receipt}.
+
+%% Verify receipt chain integrity
+verify_receipt_chain() ->
+    Receipts = ets:tab2list(receipt_chain),
+    Sorted = lists:keysort(#receipt.timestamp, Receipts),
+    verify_chain(Sorted, <<>>).
+
+verify_chain([], _PrevHash) -> ok;
+verify_chain([#receipt{hash = Hash} = Receipt | Rest], PrevHash) ->
+    ExpectedHash = crypto:hash(sha256, term_to_binary({PrevHash, Receipt#receipt.event})),
+    case ExpectedHash of
+        Hash -> verify_chain(Rest, Hash);
+        _ -> {error, {chain_broken, Receipt}}
+    end.
+```
+
+**Receipt Persistence:**
+```erlang
+%% Persist receipts to disk
+persist_receipts_to_file(FilePath) ->
+    Receipts = ets:tab2list(receipt_chain),
+    Binary = term_to_binary(Receipts, [compressed]),
+    ok = file:write_file(FilePath, Binary).
+
+%% Load receipts from disk
+load_receipts_from_file(FilePath) ->
+    {ok, Binary} = file:read_file(FilePath),
+    Receipts = binary_to_term(Binary),
+    lists:foreach(fun(R) -> ets:insert(receipt_chain, R) end, Receipts).
+```
+
+### 4. Health Monitoring
+
+**Health Check Endpoints:**
+```erlang
+%% /health endpoint
+handle_get_health(_Req, State) ->
+    HealthStatus = #{
+        status => get_overall_status(),
+        uptime => erlang:monotonic_time(second) - State#state.start_time,
+        components => [
+            #{
+                name => registry,
+                status => check_registry_health(),
+                uptime => get_component_uptime(erlmcp_registry)
+            },
+            #{
+                name => transports,
+                status => check_transports_health(),
+                details => list_transports()
+            },
+            #{
+                name => session_manager,
+                status => check_session_manager_health(),
+                active_sessions => get_active_session_count()
+            },
+            #{
+                name => observability,
+                status => check_observability_health()
+            }
+        ]
+    },
+    {ok, jiffy:encode(HealthStatus), State}.
+
+%% Response example:
+{
+  "status": "healthy",
+  "uptime": 3600,
+  "components": [
+    {"name": "registry", "status": "healthy", "uptime": 3600},
+    {"name": "transports", "status": "healthy", "details": ["tcp", "http"]},
+    {"name": "session_manager", "status": "healthy", "active_sessions": 42},
+    {"name": "observability", "status": "healthy"}
+  ]
+}
+```
+
+**Andon (Stop-the-Line) Alerts:**
+```erlang
+%% Trigger Andon on SLA violation
+trigger_andon(ViolationType, Severity, Details) ->
+    AndonEvent = #andon_event{
+        type = ViolationType,
+        severity = Severity,  % critical | warning | info
+        timestamp = erlang:system_time(microsecond),
+        details = Details
+    },
+
+    %% Log event
+    logger:error("Andon triggered: ~p", [AndonEvent]),
+
+    %% Send notifications
+    send_andon_notification(AndonEvent),
+
+    %% Store in receipt chain
+    erlmcp_receipt_chain:append_receipt(AndonEvent).
+
+%% Andon notifications
+send_andon_notification(#andon_event{severity = critical} = Event) ->
+    %% Send to PagerDuty
+    pagerduty:trigger_alert(Event),
+
+    %% Send to Slack
+    slack:send_message("#alerts", format_andon_message(Event)),
+
+    %% Send email
+    email:send_alert("oncall@example.com", Event);
+send_andon_notification(#andon_event{severity = warning} = Event) ->
+    %% Send to Slack only
+    slack:send_message("#alerts", format_andon_message(Event));
+send_andon_notification(#andon_event{severity = info} = Event) ->
+    %% Log only
+    logger:info("Andon info: ~p", [Event]).
+```
+
+### 5. Chaos Engineering
+
+**Failure Injection:**
+```erlang
+%% Inject network latency
+inject_network_latency(Target, LatencyMs) ->
+    erlmcp_chaos:inject_fault(Target, #{
+        fault_type => network_latency,
+        latency_ms => LatencyMs,
+        duration_ms => 10000  % Inject for 10 seconds
+    }).
+
+%% Inject process kill
+inject_process_kill(TargetProcess) ->
+    erlmcp_chaos:inject_fault(TargetProcess, #{
+        fault_type => process_termination,
+        restart_after => 5000  % Restart after 5 seconds
+    }).
+
+%% Inject memory exhaustion
+inject_memory_exhaustion(TargetNode, AllocationMB) ->
+    erlmcp_chaos:inject_fault(TargetNode, #{
+        fault_type => memory_exhaustion,
+        allocation_mb => AllocationMB,
+        duration_ms => 30000
+    }).
+```
+
+**Chaos Scenarios:**
+```erlang
+%% Comprehensive chaos test
+run_chaos_suite() ->
+    Scenarios = [
+        {network_latency, #{latency_ms => 1000}},
+        {packet_loss, #{loss_percentage => 10}},
+        {process_kill, #{target => erlmcp_server}},
+        {memory_exhaustion, #{allocation_mb => 100}},
+        {cpu_saturation, #{load_percentage => 90}}
+    ],
+
+    lists:foreach(fun({Scenario, Config}) ->
+        logger:info("Running chaos scenario: ~p", [Scenario]),
+        erlmcp_chaos:run_scenario(Scenario, Config),
+        %% Verify recovery
+        timer:sleep(15000),
+        ok = erlmcp_health_monitor:check_system_health()
+    end, Scenarios).
+```
+
+### 6. Real-Time Dashboard
+
+**WebSocket Dashboard:**
+```erlang
+%% Dashboard WebSocket handler
+handle_websocket(WebSocket) ->
+    %% Subscribe to metrics updates
+    gproc:reg({p, l, metrics_update}),
+
+    %% Send initial state
+    {ok, InitialState} = get_dashboard_state(),
+    send_dashboard_update(WebSocket, InitialState),
+
+    %% Stream updates
+    dashboard_loop(WebSocket).
+
+dashboard_loop(WebSocket) ->
+    receive
+        {metrics_update, Metrics} ->
+            send_dashboard_update(WebSocket, Metrics),
+            dashboard_loop(WebSocket);
+        {websocket_closed, _} ->
+            gproc:unreg({p, l, metrics_update}),
+            ok
+    after 60000 ->
+        %% Send keepalive
+            websocket:send(WebSocket, ping),
+            dashboard_loop(WebSocket)
+    end.
+
+%% Dashboard state
+get_dashboard_state() ->
+    #{
+        metrics => prometheus_text_format:format(),
+        health => erlmcp_health_monitor:get_status(),
+        transports => erlmcp_transport:list(),
+        sessions => erlmcp_session_manager:list(),
+        uptime => erlang:monotonic_time(second)
+    }.
+```
+
+### Configuration Examples
+
+**Complete Monitoring Stack:**
+```erlang
+{erlmcp_observability, [
+    {metrics, [
+        {enabled, true},
+        {interval, 60000},
+        {exporter, prometheus}
+    ]},
+    {tracing, [
+        {enabled, true},
+        {service_name => <<"erlmcp">>},
+        {exporter, {otlp, #{endpoint => "http://localhost:4318"}}},
+        {sampling_rate => 1.0}
+    ]},
+    {health, [
+        {check_interval, 30000},
+        {andon_on_sla_violation, true},
+        {alerting, #{
+            slack_webhook => "https://hooks.slack.com/...",
+            pagerduty_api_key => "your-api-key"
+        }}
+    ]},
+    {chaos, [
+        {enabled, true},
+        {auto_recovery, true}
+    ]}
+]}.
+```
+
+### Best Practices
+
+1. **采样策略**: Production: 10-30% sampling (performance); Dev: 100% (debugging)
+2. **Metric Retention**: Keep 90 days for capacity planning; 7 days for operations
+3. **Alert Thresholds**: Set based on SLA; use percentiles (P95, P99)
+4. **Dashboard Latency**: Update every 5-10 seconds for real-time view
+5. **Receipt Rotation**: Archive receipts every 24 hours to prevent ETS overflow
+6. **Chaos Testing**: Run daily during off-peak hours; never in production
+7. **Health Checks**: Expose `/health` for Kubernetes probes (liveness/readiness)

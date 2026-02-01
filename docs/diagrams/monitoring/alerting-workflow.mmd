@@ -1,0 +1,151 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#c92a2a', 'primaryTextColor':'#fff', 'primaryBorderColor':'#a61e4d', 'lineColor':'#495057', 'sectionBkgColor':'#ffe3e3', 'altSectionBkgColor':'#ffc9c9', 'gridColor':'#adb5bd'}}}%%
+graph TB
+    subgraph "Metrics & Events"
+        Metrics[Metrics Stream<br/>erlmcp_metrics]
+        HealthChecks[Health Checks<br/>erlmcp_health_monitor]
+        ChaosEvents[Chaos Events<br/>erlmcp_chaos]
+        Traces[Distributed Traces<br/>erlmcp_tracing]
+    end
+
+    subgraph "Threshold Evaluation"
+        Evaluator[Alert Evaluator<br/>Rule Engine]
+        Thresholds[Threshold Registry<br/>Configured Limits]
+        Comparison[Comparison Logic<br/>Value vs Threshold]
+        Window[Time Window<br/>5min moving avg]
+    end
+
+    subgraph "Alert Classification"
+        Severity[Severity Classifier<br/>INFO/WARN/ERROR/CRITICAL]
+        Category[Category Tagger<br/>system/perf/security]
+        Source[Source Tagger<br/>component/transport/node]
+        Context[Context Builder<br/>Relevant metrics/logs]
+    end
+
+    subgraph "Alert State Machine"
+        Normal[Normal State<br/>No alert]
+        Pending[Pending State<br/>Threshold breached<br/>30s grace period]
+        Firing[Firing State<br/>Alert active]
+        Resolved[Resolved State<br/>Condition cleared]
+        Silenced[Silenced State<br/>Manually suppressed]
+    end
+
+    subgraph "Notification Channels"
+        Dashboard[Dashboard Feed<br/>Real-time UI]
+        Email[Email Gateway<br/>SMTP notifications]
+        Slack[Slack Webhook<br/>Channel notifications]
+        PagerDuty[PagerDuty API<br/>On-call rotation]
+        Webhook[Custom Webhook<br/>User-defined endpoint]
+    end
+
+    subgraph "Escalation Policy"
+        Level1[Level 1<br/>Immediate notification<br/>Dashboard + Email]
+        Level2[Level 2<br/>5min unresolved<br/>+ Slack]
+        Level3[Level 3<br/>15min unresolved<br/>+ PagerDuty]
+        Level4[Level 4<br/>30min unresolved<br/>+ Escalation manager]
+    end
+
+    subgraph "Ack & Resolution"
+        Ack[Acknowledge<br/>Owner assignment]
+        Snooze[Snooze<br/>Temporary suppression]
+        Resolve[Resolve<br/>Mark as resolved]
+        Comment[Comment<br/>Add context]
+        RCA[RCA Template<br/>Root cause analysis]
+    end
+
+    subgraph "History & Analytics"
+        AlertHistory[Alert History<br/>PostgreSQL/ETS]
+        Trends[Alert Trends<br/>Pattern analysis]
+        MTTR[MTTR Tracker<br/>Mean time to resolve]
+        Reporting[Reporting<br/>Summary emails]
+    end
+
+    subgraph "Integration Points"
+        HealthMonitor[erlmcp_health_monitor<br/>Health dashboard]
+        ChaosRecovery[erlmcp_recovery_manager<br/>Auto-remediation]
+        CircuitBreaker[erlmcp_circuit_breaker<br/>Auto-shutdown]
+    end
+
+    %% Data flow to evaluation
+    Metrics --> Evaluator
+    HealthChecks --> Evaluator
+    ChaosEvents --> Evaluator
+    Traces --> Evaluator
+
+    %% Evaluation process
+    Evaluator --> Thresholds
+    Thresholds --> Comparison
+    Comparison --> Window
+    Window -->|Threshold breached| Pending
+
+    %% State machine transitions
+    Normal -->|Condition met| Pending
+    Pending -->|Sustained 30s| Firing
+    Pending -->|Condition cleared| Normal
+    Firing -->|Auto-resolve| Resolved
+    Firing -->|Manual silence| Silenced
+    Silenced -->|Unsilence| Firing
+    Resolved -->|Re-fire| Pending
+
+    %% Classification pipeline
+    Firing --> Severity
+    Severity --> Category
+    Category --> Source
+    Source --> Context
+
+    %% Notification routing
+    Context -->|Based on severity| Dashboard
+    Context -->|INFO/WARN| Email
+    Context -->|ERROR| Slack
+    Context -->|CRITICAL| PagerDuty
+    Context -->|Custom rules| Webhook
+
+    %% Escalation flow
+    Firing -->|Start timer| Level1
+    Level1 -->|5min no ACK| Level2
+    Level2 -->|15min no ACK| Level3
+    Level3 -->|30min no ACK| Level4
+
+    %% Ack & Resolution
+    Firing --> Ack
+    Ack --> Snooze
+    Ack --> Resolve
+    Ack --> Comment
+    Resolve --> RCA
+
+    %% History tracking
+    Firing --> AlertHistory
+    Resolved --> AlertHistory
+    AlertHistory --> Trends
+    AlertHistory --> MTTR
+    MTTR --> Reporting
+
+    %% Integration triggers
+    Firing -->|Health degrade| HealthMonitor
+    Firing -->|Auto-remediate| ChaosRecovery
+    Firing -->|Trigger shutdown| CircuitBreaker
+
+    %% Styles
+    classDef sourceNode fill:#ffe3e3,stroke:#c92a2a,stroke-width:2px
+    classDef evalNode fill:#fff3bf,stroke:#f59f00,stroke-width:2px
+    classDef classNode fill:#e7f5ff,stroke:#1971c2,stroke-width:2px
+    classDef stateNode fill:#d3f9d8,stroke:#2f9e44,stroke-width:3px
+    classDef notifyNode fill:#f3f0ff,stroke:#7950f2,stroke-width:2px
+    classDef escalateNode fill:#ffe8cc,stroke:#d9480f,stroke-width:2px
+    classDef ackNode fill:#c3fae8,stroke:#0ca678,stroke-width:2px
+    classDef historyNode fill:#e5dbff,stroke:#7950f2,stroke-width:2px
+    classDef integNode fill:#ffc9c9,stroke:#c92a2a,stroke-width:2px
+
+    class Metrics,HealthChecks,ChaosEvents,Traces sourceNode
+    class Evaluator,Thresholds,Comparison,Window evalNode
+    class Severity,Category,Source,Context classNode
+    class Normal,Pending,Firing,Resolved,Silenced stateNode
+    class Dashboard,Email,Slack,PagerDuty,Webhook notifyNode
+    class Level1,Level2,Level3,Level4 escalateNode
+    class Ack,Snooze,Resolve,Comment,RCA ackNode
+    class AlertHistory,Trends,MTTR,Reporting historyNode
+    class HealthMonitor,ChaosRecovery,CircuitBreaker integNode
+
+    %% Annotations
+    Firing -.->|Severity-based routing| Severity
+    Level1 -.->|Auto-escalate if unacknowledged| Level2
+    AlertHistory -.->|Retention 90 days| Trends

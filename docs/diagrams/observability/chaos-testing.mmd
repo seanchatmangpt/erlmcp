@@ -1,0 +1,90 @@
+---
+title: erlmcp Chaos Engineering Failure Injection
+---
+flowchart TB
+    subgraph Chaos["erlmcp_chaos Coordinator"]
+        Scheduler["Chaos Scheduler<br/>Cron-based trigger"]
+        Config["Chaos Config<br/>Scenarios & intensity"]
+        WorkerSup["chaos_worker_sup<br/>Dynamic supervisor"]
+    end
+
+    subgraph Network["Network Failure Injection"]
+        Latency["chaos_network<br/>inject_latency"]
+        PacketLoss["chaos_network<br/>inject_packet_loss"]
+        Partition["chaos_network<br/>inject_partition"]
+    end
+
+    subgraph Process["Process Failure Injection"]
+        Kill["chaos_process<br/>kill_random_process"]
+        SpawnStorm["chaos_process<br/>spawn_storm"]
+        MsgQueue["chaos_process<br/>message_queue_overflow"]
+    end
+
+    subgraph Resource["Resource Exhaustion"]
+        MemExhaust["chaos_resource<br/>memory_exhaustion"]
+        CPUSat["chaos_resource<br/>cpu_saturation"]
+        DiskFull["chaos_resource<br/>disk_full_simulation"]
+        ETSFill["chaos_resource<br/>ets_table_fill"]
+    end
+
+    subgraph Monitoring["Chaos Monitoring"]
+        Recovery["erlmcp_recovery_manager<br/>Recovery time tracking"]
+        Health["Health Monitor<br/>System state during chaos"]
+        Metrics["Metrics Collector<br/>Performance impact"]
+    end
+
+    subgraph Validation["Validation Criteria"]
+        V1["Recovery Time < 5s<br/>(bounded recovery)"]
+        V2["No Cascade Failures<br/>(isolation verified)"]
+        V3["Circuit Breaker Triggered<br/>(protection active)"]
+        V4["Graceful Degradation<br/>(andon visible)"]
+        V5["Bounded Refusals<br/>(errors < 10%)"]
+    end
+
+    Scheduler -->|"select scenario"| Config
+    Config -->|"spawn worker"| WorkerSup
+
+    WorkerSup -->|"network chaos"| Network
+    WorkerSup -->|"process chaos"| Process
+    WorkerSup -->|"resource chaos"| Resource
+
+    Network -->|"inject failure"| System["erlmcp System<br/>(Under Test)"]
+    Process -->|"inject failure"| System
+    Resource -->|"inject failure"| System
+
+    System -->|"health events"| Health
+    System -->|"recovery events"| Recovery
+    System -->|"metrics stream"| Metrics
+
+    Health -->|"validate"| Validation
+    Recovery -->|"measure recovery_time_s"| Validation
+    Metrics -->|"performance impact"| Validation
+
+    style Chaos fill:#e1f5fe
+    style Network fill:#fff3e0
+    style Process fill:#f3e5f5
+    style Resource fill:#e8f5e9
+    style Monitoring fill:#ffebee
+    style Validation fill:#fff9c4
+
+    classDef coordinator fill:#0277bd,stroke:#01579b,color:#fff
+    classDef network fill:#f57c00,stroke:#e65100,color:#fff
+    classDef process fill:#7b1fa2,stroke:#4a148c,color:#fff
+    classDef resource fill:#388e3c,stroke:#1b5e20,color:#fff
+    classDef monitoring fill:#c62828,stroke:#b71c1c,color:#fff
+    classDef validation fill:#f9a825,stroke:#f57f17,color:#fff
+
+    class Scheduler,Config,WorkerSup coordinator
+    class Latency,PacketLoss,Partition network
+    class Kill,SpawnStorm,MsgQueue process
+    class MemExhaust,CPUSat,DiskFull,ETSFill resource
+    class Recovery,Health,Metrics monitoring
+    class V1,V2,V3,V4,V5 validation
+
+    %% Failure intensity levels
+    subgraph Intensity["Chaos Intensity Levels"]
+        I1["LOW: 10ms latency / 1% packet loss"]
+        I2["MEDIUM: 100ms latency / 5% packet loss"]
+        I3["HIGH: 1s latency / 20% packet loss"]
+        I4["EXTREME: 5s latency / 50% packet loss"]
+    end

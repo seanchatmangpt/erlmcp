@@ -1,0 +1,113 @@
+```mermaid
+graph TB
+    subgraph "Health Monitoring Layer"
+        A[erlmcp_health_monitor] --> B{Health Status}
+        B -->|Healthy| C[All Systems Normal]
+        B -->|Degraded| D[Activate Degradation Mode]
+        B -->|Critical| E[Emergency Mode]
+    end
+
+    subgraph "Degradation Detection"
+        F[Metrics Collection] --> G{Threshold Analysis}
+        G --> H[CPU > 80%]
+        G --> I[Memory > 85%]
+        G --> J[Latency > 500ms]
+        G --> K[Error Rate > 5%]
+        G --> L[Queue Depth > 1000]
+
+        H --> M{Alert Triggered?}
+        I --> M
+        J --> M
+        K --> M
+        L --> M
+
+        M -->|Yes| N[Calculate Degradation Level]
+        M -->|No| C
+    end
+
+    subgraph "Degradation Levels"
+        N --> O{Level}
+        O -->|Level 1: Mild| P[Disable Non-Critical Features]
+        O -->|Level 2: Moderate| Q[Throttle Requests]
+        O -->|Level 3: Severe| R[Reject New Requests]
+        O -->|Level 4: Critical| S[Shutdown Non-Essential Services]
+    end
+
+    subgraph "Level 1: Mild Degradation"
+        P --> P1[Disable: Resource Subscriptions]
+        P --> P2[Disable: Prompt Templates]
+        P --> P3[Disable: Progress Tracking]
+        P --> P4[Reduce: Metrics Sampling Rate]
+        P --> P5[Continue: Core Tools/Resources]
+    end
+
+    subgraph "Level 2: Moderate Degradation"
+        Q --> Q1[Enable: Rate Limiting]
+        Q --> Q2[Queue: Incoming Requests]
+        Q --> Q3[Increase: Timeouts]
+        Q --> Q4[Disable: Complex Operations]
+        Q --> Q5[Prioritize: Health Check Requests]
+    end
+
+    subgraph "Level 3: Severe Degradation"
+        R --> R1[Activate: Circuit Breakers]
+        R --> R2[Return: Cached Responses]
+        R --> R3[Reject: New Connections]
+        R --> R4[Drain: Existing Connections]
+        R --> R5[Return: 503 Service Unavailable]
+    end
+
+    subgraph "Level 4: Critical"
+        S --> S1[Stop: Accepting New Requests]
+        S --> S2[Complete: In-Flight Requests]
+        S --> S3[Flush: All Caches]
+        S --> S4[Close: All Connections]
+        S --> S5[Trigger: Alert to Operations]
+    end
+
+    subgraph "Recovery Monitoring"
+        T[Continuous Monitoring] --> U{Conditions Improved?}
+        U -->|Yes| V[Gradual Recovery]
+        U -->|No| W[Maintain Degradation]
+
+        V --> X[Reduce Degradation Level]
+        X --> Y[Re-enable Features]
+        Y --> Z[Monitor Stability]
+        Z --> U
+    end
+
+    subgraph "Graceful Degradation Features"
+        AA[Service Discovery] --> AB[Health Check Endpoints]
+        AC[Load Balancer] --> AD[Route Away from Degraded]
+        AE[Client Library] --> AF[Handle Degraded Responses]
+        AG[Monitoring] --> AH[Alert on Degradation]
+    end
+
+    subgraph "Prioritization Rules"
+        AI[Priority 1: Health Checks]
+        AJ[Priority 2: Core MCP Protocol]
+        AK[Priority 3: Tool Invocation]
+        AL[Priority 4: Resource Access]
+        AM[Priority 5: Prompts/Templates]
+        AN[Priority 6: Subscriptions]
+        AO[Priority 7: Metrics/Telemetry]
+    end
+
+    subgraph "Degradation Metrics"
+        AP[Request Success Rate]
+        AQ[Response Time Percentiles]
+        AR[Resource Utilization]
+        AS[Queue Depths]
+        AT[Error Rates]
+    end
+
+    style C fill:#ccffcc
+    style D fill:#fff4e1
+    style E fill:#ff9999
+    style P fill:#fff9e6
+    style Q fill:#ffe6cc
+    style R fill:#ffcc99
+    style S fill:#ff9999
+    style V fill:#ccffcc
+    style W fill:#ffe1e1
+```

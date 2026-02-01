@@ -1,0 +1,220 @@
+sequenceDiagram
+    %% Authentication and Authorization Flow for erlmcp
+    %% Shows: API key, JWT, OAuth2, mTLS authentication methods
+    %% Plus: RBAC permission checking with role-based access control
+
+    autonumber
+    actor Client
+    participant Transport as Transport Layer<br/>(STDIO/TCP/HTTP/WS)
+    participant Auth as erlmcp_auth<br/>(gen_server)
+    participant RateLimiter as erlmcp_auth_rate_limiter
+    participant JWT as jose (JWT lib)
+    participant OAuth2 as OAuth2 Provider<br/>(RFC 7662)
+    participant MTLS as erlmcp_auth_mtls<br/>(Certificate validator)
+    participant RBAC as RBAC Engine<br/>(ETS-based)
+    participant Session as Session Manager<br/>(1 hour TTL)
+
+    Note over Client,Session: Authentication Flow
+
+    %% API Key Authentication
+    Client->>Transport: authenticate(api_key, Credentials)
+    Transport->>Auth: authenticate(api_key, #{api_key => Key})
+
+    Auth->>RateLimiter: check_rate_limit(ClientId, IPAddress)
+    RateLimiter-->>Auth: ok (or {error, rate_limited})
+
+    alt Rate Limited
+        Auth-->>Client: {error, rate_limited}
+        Note over Auth,RateLimiter: Blocked after 5 failed attempts<br/>15-minute cooldown
+    else Rate Check Passed
+        Auth->>Auth: do_validate_api_key(Key)
+        Note right of Auth: Lookup in ETS table<br/>auth_api_keys
+
+        alt API Key Invalid
+            Auth->>RateLimiter: record_failure(ClientId, IPAddress)
+            Auth-->>Client: {error, invalid_api_key}
+        else API Key Valid
+            Auth->>RateLimiter: record_success(ClientId, IPAddress)
+            Auth->>Session: create_session(UserId, Metadata)
+
+            Session->>RBAC: get_user_roles(UserId)
+            RBAC-->>Session: [<<"admin">>, <<"user">>]
+
+            Session->>RBAC: Aggregate permissions from roles
+            RBAC-->>Session: [<<"read">>, <<"write">>, <<"execute">>]
+
+            Session-->>Auth: {ok, SessionId}
+            Auth-->>Client: {ok, SessionId}
+
+            Note right of Session: Session expires in 1 hour<br/>Auto-cleanup timer
+        end
+    end
+
+    %% JWT Authentication
+    Client->>Transport: authenticate(jwt, #{token => JWT})
+    Transport->>Auth: authenticate(jwt, #{token => Token})
+
+    Auth->>RateLimiter: check_rate_limit(ClientId, IPAddress)
+    RateLimiter-->>Auth: ok
+
+    Auth->>Auth: do_validate_jwt(Token)
+
+    alt Token Revoked
+        Auth-->>Client: {error, token_revoked}
+        Note right of Auth: Check ETS: auth_revoked_tokens<br/>Cleanup after 7 days
+    else Token Active
+        Auth->>JWT: jose_jws:peek_protected(Token)
+        JWT-->>Auth: #{<<"kid">> => KeyId}
+
+        Auth->>Auth: Lookup public key by kid
+        Note right of Auth: ETS: auth_jwt_keys<br/>Support key rotation
+
+        Auth->>JWT: jose_jws:verify(PublicKeyPem, Token)
+        JWT-->>Auth: {true, Payload, JWS}
+
+        alt Signature Invalid
+            Auth-->>Client: {error, invalid_signature}
+        else Signature Valid
+            Auth->>Auth: validate_jwt_claims(Claims)
+
+            Note right of Auth: CRITICAL SECURITY CHECKS:<br/>✓ exp (expiration) - Required<br/>✓ nbf (not before) - Optional<br/>✓ iss (issuer) - Configurable<br/>✓ aud (audience) - Configurable<br/>✓ sub (subject) - Required
+
+            alt Token Expired
+                Auth-->>Client: {error, token_expired}
+            else Token Not Yet Valid
+                Auth-->>Client: {error, token_not_yet_valid}
+            else Issuer Mismatch
+                Auth-->>Client: {error, invalid_issuer}
+            else Audience Mismatch
+                Auth-->>Client: {error, invalid_audience}
+            else All Claims Valid
+                Auth->>RateLimiter: record_success(ClientId, IPAddress)
+                Auth->>Session: create_session(UserId, Metadata)
+                Session-->>Auth: {ok, SessionId}
+                Auth-->>Client: {ok, SessionId}
+            end
+        end
+    end
+
+    %% OAuth2 Authentication (RFC 7662 Introspection)
+    Client->>Transport: authenticate(oauth2, #{token => AccessToken})
+    Transport->>Auth: authenticate(oauth2, #{token => Token})
+
+    Auth->>RateLimiter: check_rate_limit(ClientId, IPAddress)
+    RateLimiter-->>Auth: ok
+
+    Auth->>Auth: do_validate_oauth2_token(Token)
+
+    alt Cache Hit (TTL not expired)
+        Note right of Auth: ETS: auth_oauth2_cache<br/>Token -> {TokenInfo, ExpiresAt}
+        Auth-->>Client: {ok, TokenInfo}
+    else Cache Miss
+        Auth->>OAuth2: HTTP POST /introspect
+        Note right of Auth: RFC 7662 Introspection<br/>Basic Auth: client_id:secret<br/>Body: token + token_type_hint
+
+        OAuth2-->>Auth: 200 OK + TokenInfo
+
+        Auth->>Auth: validate_introspection_response(TokenInfo)
+
+        Note right of Auth: RFC 7662 REQUIRED fields:<br/>✓ active = true<br/>✓ exp (expiration)<br/>✓ nbf (not before)<br/>✓ iss (issuer)
+
+        alt Token Inactive
+            Auth-->>Client: {error, token_invalid}
+        else Token Expired
+            Auth-->>Client: {error, token_expired}
+        else Token Valid
+            Auth->>Auth: cache_oauth2_token(Token, TokenInfo, TTL)
+            Note right of Auth: Cache for up to 5 minutes<br/>or until exp (whichever is less)
+
+            Auth->>RateLimiter: record_success(ClientId, IPAddress)
+            Auth->>Session: create_session(UserId, TokenInfo)
+            Session-->>Auth: {ok, SessionId}
+            Auth-->>Client: {ok, SessionId}
+        end
+    end
+
+    %% mTLS Authentication
+    Client->>Transport: authenticate(mtls, #{certificate => CertInfo})
+    Transport->>Auth: authenticate(mtls, CertInfo)
+
+    Auth->>RateLimiter: check_rate_limit(ClientId, IPAddress)
+    RateLimiter-->>Auth: ok
+
+    Auth->>MTLS: validate(CertInfo, Config)
+
+    Note right of MTLS: mTLS Validation Pipeline:<br/>1. Extract certificate from socket<br/>2. X.509 chain validation to trusted CAs<br/>3. Certificate expiration check<br/>4. OCSP/CRL revocation check<br/>5. Subject DN and CN pattern matching<br/>6. Certificate depth limit validation
+
+    MTLS-->>Auth: {ok, UserId}
+
+    alt Certificate Invalid
+        Auth->>RateLimiter: record_failure(ClientId, IPAddress)
+        Auth-->>Client: {error, invalid_certificate}
+    else Certificate Valid
+        Auth->>RateLimiter: record_success(ClientId, IPAddress)
+        Auth->>Session: create_session(UserId, #{auth_method => mtls})
+        Session-->>Auth: {ok, SessionId}
+        Auth-->>Client: {ok, SessionId}
+    end
+
+    %% Authorization Flow (RBAC)
+    Note over Client,Session: Authorization Flow
+
+    Client->>Transport: check_permission(SessionId, Resource, Permission)
+    Transport->>Auth: check_permission(SessionId, Resource, Permission)
+
+    Auth->>Session: lookup session
+    Session-->>Auth: #session{user_id => UserId, roles => Roles}
+
+    alt Session Not Found
+        Auth-->>Client: {error, invalid_session}
+    else Session Found
+        Auth->>RBAC: check_user_permission(UserId, Resource, Permission)
+
+        RBAC->>RBAC: Get user roles from ETS
+        Note right of RBAC: auth_user_roles:<br/>UserId -> [Role1, Role2, ...]
+
+        RBAC->>RBAC: Get allowed roles for resource+permission
+        Note right of RBAC: auth_acls:<br/>{Resource, Permission} -> [Role1, ...]
+
+        RBAC->>RBAC: Check intersection
+        Note right of RBAC: lists:any/2<br/>UserRole ∩ AllowedRoles ≠ ∅
+
+        alt Permission Denied
+            RBAC-->>Auth: {error, forbidden}
+            Auth-->>Client: {error, forbidden}
+        else Permission Granted
+            RBAC-->>Auth: ok
+            Auth-->>Client: ok
+        end
+    end
+
+    %% Default RBAC Roles
+    Note over RBAC: Default Roles (configured in init/1):<br/>🔹 admin: [read, write, execute, delete]<br/>🔹 user: [read, write]<br/>🔹 guest: [read]
+
+    %% Token Rotation
+    Note over Client,Session: Token Rotation (Security Best Practice)
+
+    Client->>Auth: rotate_token(SessionId)
+    Auth->>Session: lookup session
+
+    Auth->>Auth: generate new SessionId
+    Note right of Auth: crypto:strong_rand_bytes(32)<br/>base64 encoded
+
+    Auth->>Session: insert new session
+    Auth->>Session: delete old session
+
+    Auth-->>Client: {ok, NewSessionId}
+    Note right of Auth: Old session invalidated immediately<br/>Prevents session hijacking
+
+    %% Token Revocation
+    Note over Client,Session: Token Revocation (Emergency)
+
+    Client->>Auth: revoke_token(Token)
+    Auth->>Auth: insert into auth_revoked_tokens
+    Note right of Auth: Store: Token -> RevokedAt<br/>Auto-cleanup after 7 days
+
+    Auth-->>Client: ok
+    Note over Auth,JWT: Revoked tokens rejected immediately<br/>Even if exp claim valid
+
+    %% Session Cleanup
+    Note over Session: Auto-cleanup every 60 seconds:<br/>• Expired sessions (1 hour TTL)<br/>• Revoked tokens (7 days)<br/>• OAuth2 cache (TTL-based)

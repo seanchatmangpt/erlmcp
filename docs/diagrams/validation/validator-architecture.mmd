@@ -1,0 +1,107 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#000080', 'edgeLabelBackground':'#ffffff'}}}%%
+graph TB
+    subgraph "Validator System Core"
+        CLI[erlmcp_validate_cli<br/>Command-Line Interface]
+        TEST_CLIENT[erlmcp_test_client<br/>Multi-Transport Test Harness]
+    end
+
+    subgraph "Protocol Layer Validators"
+        PV[erlmcp_protocol_validator<br/>JSON-RPC 2.0 + MCP 2025-11-25]
+        PV_FEATURES[Features]
+        PV_TOOLS[Tools API]
+        PV_RESOURCES[Resources API]
+        PV_PROMPTS[Prompts API]
+        PV_ERRORS[Error Codes]
+    end
+
+    subgraph "Transport Layer Validators"
+        TV[erlmcp_transport_validator<br/>Behavior Compliance]
+        TV_STDIO[STDIO Transport]
+        TV_TCP[TCP Transport]
+        TV_HTTP[HTTP Transport]
+        TV_WS[WebSocket Transport]
+        TV_SSE[SSE Transport]
+    end
+
+    subgraph "Security Validators"
+        SV[erlmcp_security_validator<br/>Auth + Secrets + Input]
+        SV_AUTH[Authentication]
+        SV_SECRETS[Secrets Management]
+        SV_INPUT[Input Validation]
+        SV_URI[URI Validation]
+        SV_HEADERS[Header Security]
+    end
+
+    subgraph "Performance Validators"
+        PerV[erlmcp_performance_validator<br/>Metrics + Benchmarks]
+        PerV_LATENCY[Latency Analysis]
+        PerV_THROUGHPUT[Throughput Testing]
+        PerV_MEMORY[Memory Validation]
+        PerV_REGRESSION[Regression Detection]
+    end
+
+    subgraph "Supporting Modules"
+        SPEC[erlmcp_spec_parser<br/>MCP Specification Parser]
+        MEM_MGR[erlmcp_memory_manager<br/>Memory Validation]
+        URI_VAL[erlmcp_uri_validator<br/>URI Security]
+    end
+
+    subgraph "Output & Reporting"
+        COMP_REPORT[erlmcp_compliance_report<br/>Report Generation]
+        HTML_OUT[HTML Report]
+        JSON_OUT[JSON Export]
+        EVIDENCE[Evidence Bundle]
+    end
+
+    CLI --> PV
+    CLI --> TV
+    CLI --> SV
+    CLI --> PerV
+
+    TEST_CLIENT --> PV
+    TEST_CLIENT --> TV
+    TEST_CLIENT --> SV
+    TEST_CLIENT --> PerV
+
+    PV --> PV_FEATURES
+    PV --> PV_TOOLS
+    PV --> PV_RESOURCES
+    PV --> PV_PROMPTS
+    PV --> PV_ERRORS
+
+    TV --> TV_STDIO
+    TV --> TV_TCP
+    TV --> TV_HTTP
+    TV --> TV_WS
+    TV --> TV_SSE
+
+    SV --> SV_AUTH
+    SV --> SV_SECRETS
+    SV --> SV_INPUT
+    SV --> SV_URI
+    SV --> SV_HEADERS
+
+    PerV --> PerV_LATENCY
+    PerV --> PerV_THROUGHPUT
+    PerV --> PerV_MEMORY
+    PerV --> PerV_REGRESSION
+
+    SPEC --> PV
+    MEM_MGR --> PerV
+    URI_VAL --> SV
+
+    PV --> COMP_REPORT
+    TV --> COMP_REPORT
+    SV --> COMP_REPORT
+    PerV --> COMP_REPORT
+
+    COMP_REPORT --> HTML_OUT
+    COMP_REPORT --> JSON_OUT
+    COMP_REPORT --> EVIDENCE
+
+    style CLI fill:#87CEEB,stroke:#0000CD,stroke-width:3px
+    style PV fill:#90EE90,stroke:#006400,stroke-width:3px
+    style TV fill:#FFD700,stroke:#FF8C00,stroke-width:3px
+    style SV fill:#FF6347,stroke:#DC143C,stroke-width:3px
+    style PerV fill:#DDA0DD,stroke:#4B0082,stroke-width:3px
+    style COMP_REPORT fill:#00CED1,stroke:#008B8B,stroke-width:3px

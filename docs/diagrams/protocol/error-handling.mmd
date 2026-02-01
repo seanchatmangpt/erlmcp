@@ -1,0 +1,233 @@
+sequenceDiagram
+    participant Client as erlmcp_client
+    participant Server as erlmcp_server
+    participant Validator as Error Validator
+    participant Circuit as Circuit Breaker
+    participant Monitor as Health Monitor
+    participant Registry as Refusal Registry
+
+    Note over Client,Registry: MCP Error Handling and Refusal Code Flow
+
+    %% JSON-RPC Parse Errors
+    Client->>Server: Malformed JSON (invalid syntax)
+    activate Server
+    Server->>Validator: validate_json(Binary)
+    Validator-->>Server: {error, parse_error}
+    Server-->>Client: Parse Error (-32700)
+    Note left of Server: {<br/>  "jsonrpc": "2.0",<br/>  "id": null,<br/>  "error": {<br/>    "code": -32700,<br/>    "message": "Parse error"<br/>  }<br/>}
+    deactivate Server
+
+    %% JSON-RPC Invalid Request
+    Client->>Server: Invalid JSON-RPC structure
+    activate Server
+    Server->>Validator: validate_json_rpc(Request)
+    Validator-->>Server: {error, invalid_request}
+    Server-->>Client: Invalid Request (-32600)
+    deactivate Server
+
+    %% JSON-RPC Method Not Found
+    Client->>Server: Call unknown method
+    activate Server
+    Server->>Validator: validate_method(Method)
+    Validator-->>Server: {error, method_not_found}
+    Server-->>Client: Method Not Found (-32601)
+    deactivate Server
+
+    %% JSON-RPC Invalid Params
+    Client->>Server: Invalid parameter schema
+    activate Server
+    Server->>Validator: validate_params(Params, Schema)
+    Validator-->>Server: {error, invalid_params}
+    Server-->>Client: Invalid Params (-32602)
+    deactivate Server
+
+    %% JSON-RPC Internal Error
+    Client->>Server: Request triggers unexpected error
+    activate Server
+    Server->>Server: Execute handler logic
+    Server->>Server: Catch exception
+    Server->>Monitor: log_internal_error(Exception)
+    Monitor-->>Server: logged
+    Server-->>Client: Internal Error (-32603)
+    Note left of Server: {<br/>  "error": {<br/>    "code": -32603,<br/>    "message": "Internal error",<br/>    "data": "Stack trace..."<br/>  }<br/>}
+    deactivate Server
+
+    %% MCP Refusal Codes (1001-1089)
+    Note over Client,Registry: MCP-Specific Refusal Codes
+
+    %% Tool Not Found (1001)
+    Client->>Server: tools/call (unknown tool)
+    activate Server
+    Server->>Registry: lookup_tool(ToolId)
+    Registry-->>Server: {error, not_found}
+    Server-->>Client: MCP Error (-32000)
+    Note left of Server: {<br/>  "error": {<br/>    "code": 1001,<br/>    "message": "Tool not found",<br/>    "data": {"toolId": "unknown_tool"}<br/>  }<br/>}
+    deactivate Server
+
+    %% Invalid Arguments (1002)
+    Client->>Server: tools/call (invalid args)
+    activate Server
+    Server->>Validator: validate_tool_arguments(Args, Schema)
+    Validator-->>Server: {error, validation_failed}
+    Server-->>Client: Invalid Arguments (1002)
+    deactivate Server
+
+    %% Resource Not Found (1003)
+    Client->>Server: resources/read (unknown URI)
+    activate Server
+    Server->>Registry: lookup_resource(URI)
+    Registry-->>Server: {error, not_found}
+    Server-->>Client: Resource Not Found (1003)
+    deactivate Server
+
+    %% Unauthorized Access (1004)
+    Client->>Server: Request without auth
+    activate Server
+    Server->>Validator: check_authentication(Request)
+    Validator-->>Server: {error, unauthorized}
+    Server-->>Client: Unauthorized (1004)
+    Note left of Server: {<br/>  401: Missing/invalid auth<br/>  403: Forbidden operation<br/>}
+    deactivate Server
+
+    %% Rate Limited (1005)
+    Client->>Server: High-frequency requests
+    activate Server
+    Server->>Circuit: check_rate_limit(ClientID)
+    activate Circuit
+    Circuit->>Circuit: Calculate request rate
+    Circuit-->>Server: {error, rate_exceeded}
+    deactivate Circuit
+    Server-->>Client: Rate Limited (1005)
+    Note left of Server: {<br/>  Retry-After: 60<br/>  X-RateLimit-Remaining: 0<br/>}
+    deactivate Server
+
+    %% Server Overloaded (1006)
+    Client->>Server: Request during high load
+    activate Server
+    Server->>Monitor: check_system_load()
+    Monitor-->>Server: {error, overload}
+    Server-->>Client: Server Overloaded (1006)
+    Note left of Server: {<br/>  503: Service unavailable<br/>  Retry-After: 30<br/>}
+    deactivate Server
+
+    %% Timeout Errors (1007)
+    Client->>Server: Long-running request
+    activate Server
+    Server->>Server: Start timer (timeout: 30s)
+    Server->>Server: Execute operation
+    Note right of Server: Operation exceeds timeout
+    Server->>Monitor: log_timeout(Operation, Duration)
+    Monitor-->>Server: logged
+    Server-->>Client: Timeout (1007)
+    deactivate Server
+
+    %% Circuit Breaker Pattern
+    Note over Client,Registry: Circuit Breaker Flow
+
+    Client->>Server: Repeated failures (5+)
+    activate Server
+    Server->>Circuit: check_failure_count(Service)
+    activate Circuit
+    Circuit->>Circuit: Count failures > threshold
+    Circuit->>Circuit: Open circuit
+    Circuit-->>Server: {error, circuit_open}
+    deactivate Circuit
+    Server-->>Client: Service Unavailable (1008)
+    Note left of Server: {<br/>  Circuit: OPEN<br/>  Retry after: 60s<br/>  Fallback: cached<br/>}
+    deactivate Server
+
+    %% Circuit Recovery
+    Client->>Server: Request after cooldown
+    activate Server
+    Server->>Circuit: check_circuit_state(Service)
+    activate Circuit
+    Circuit->>Circuit: Check cooldown elapsed
+    Circuit->>Circuit: Transition to HALF_OPEN
+    Circuit-->>Server: {ok, half_open}
+    deactivate Circuit
+    Server->>Server: Attempt request
+    alt Request succeeds
+        Server->>Circuit: record_success(Service)
+        Circuit->>Circuit: Close circuit
+        Server-->>Client: Success
+    else Request fails
+        Server->>Circuit: record_failure(Service)
+        Circuit->>Circuit: Re-open circuit
+        Server-->>Client: Service Unavailable
+    end
+    deactivate Server
+
+    %% Validation Error Flow
+    Note over Client,Registry: Schema Validation Errors
+
+    Client->>Server: Request with complex schema
+    activate Server
+    Server->>Validator: validate_schema(Request, Schema)
+    activate Validator
+    Validator->>Validator: Check required fields
+    Validator->>Validator: Validate field types
+    Validator->>Validator: Check constraints
+    alt Validation fails
+        Validator-->>Server: {error, {validation_failed, Details}}
+        deactivate Validator
+        Server->>Server: Format error details
+        Server-->>Client: Validation Error (1009)
+        Note left of Server: {<br/>  "error": {<br/>    "code": 1009,<br/>    "message": "Validation failed",<br/>    "data": {<br/>      "field": "uri",<br/>      "issue": "Invalid format",<br/>      "expected": "uri"<br/>    }<br/>  }<br/>}
+    else Validation passes
+        Validator-->>Server: {ok, ValidatedRequest}
+        deactivate Validator
+        Server->>Server: Process request
+        Server-->>Client: Success
+    end
+    deactivate Server
+
+    %% Resource Subscription Errors
+    Client->>Server: resources/subscribe (invalid URI)
+    activate Server
+    Server->>Validator: validate_subscription_uri(URI)
+    Validator-->>Server: {error, invalid_uri}
+    Server-->>Client: Invalid URI (1010)
+    deactivate Server
+
+    %% Tool Execution Errors
+    Client->>Server: tools/call (execution failure)
+    activate Server
+    Server->>Server: Execute tool logic
+    Server->>Server: Catch tool error
+    Server->>Monitor: log_tool_error(ToolId, Error)
+    Monitor-->>Server: logged
+    Server-->>Client: Tool Execution Error (1011)
+    Note left of Server: {<br/>  "error": {<br/>    "code": 1011,<br/>    "message": "Tool execution failed",<br/>    "data": {<br/>      "toolId": "failing_tool",<br/>      "error": "Division by zero"<br/>    }<br/>  }<br/>}
+    deactivate Server
+
+    %% Graceful Degradation
+    Note over Client,Registry: Graceful Degradation Flow
+
+    Client->>Server: Request with optional features
+    activate Server
+    Server->>Server: Primary feature unavailable
+    Server->>Server: Attempt fallback
+    alt Fallback succeeds
+        Server-->>Client: Success (with degraded quality)
+        Note left of Server: {<br/>  Warning: Degraded mode<br/>  Feature: Limited results<br/>}
+    else Fallback fails
+        Server-->>Client: Partial Failure (1012)
+        Note left of Server: {<br/>  "error": {<br/>    "code": 1012,<br/>    "message": "Partial failure",<br/>    "data": {<br/>      "succeeded": ["feature1"],<br/>      "failed": ["feature2"]<br/>    }<br/>  }<br/>}
+    end
+    deactivate Server
+
+    %% Error Recovery Notifications
+    Note over Client,Registry: Error Recovery Flow
+
+    Server->>Monitor: Detect degraded state
+    Monitor->>Server: Initiate recovery
+    Server->>Client: Recovery notification
+    Note left of Server: {<br/>  "method": "notifications/recovery",<br/>  "params": {<br/>    "state": "recovering",<br/>    "message": "Restoring service..."<br/>  }<br/>}
+
+    Server->>Server: Execute recovery
+    Server->>Client: Recovery complete notification
+    Note left of Server: {<br/>  "method": "notifications/recovery",<br/>  "params": {<br/>    "state": "ready",<br/>    "message": "Service restored"<br/>  }<br/>}
+
+    %% Refusal Code Summary
+    Note over Client,Registry: Refusal Code Ranges
+    Note right of Registry: -32700 to -32000:<br/>JSON-RPC standard errors<br/><br/>1001-1099: MCP protocol errors<br/>1001: Tool not found<br/>1002: Invalid arguments<br/>1003: Resource not found<br/>1004: Unauthorized<br/>1005: Rate limited<br/>1006: Server overloaded<br/>1007: Timeout<br/>1008: Service unavailable<br/>1009: Validation failed<br/>1010: Invalid URI<br/>1011: Tool execution failed<br/>1012: Partial failure

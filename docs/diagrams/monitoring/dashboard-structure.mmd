@@ -1,0 +1,165 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#7950f2', 'primaryTextColor':'#fff', 'primaryBorderColor':'#5f3dc4', 'lineColor':'#495057', 'sectionBkgColor':'#f3f0ff', 'altSectionBkgColor':'#e5dbff', 'gridColor':'#adb5bd'}}}%%
+graph TB
+    subgraph "Dashboard Server"
+        Dashboard[erlmcp_dashboard_server<br/>Cowboy HTTP Server]
+    end
+
+    subgraph "HTTP Handlers"
+        RootHandler[/ - Main Dashboard]
+        MetricsHandler[/metrics - Metrics Data]
+        HealthHandler[/health - Health Status]
+        ProcessesHandler[/processes - Process View]
+        ConnectionsHandler[/connections - Connection View]
+        AlertsHandler[/alerts - Alert Feed]
+        TracesHandler[/traces - Trace Viewer]
+    end
+
+    subgraph "Main Dashboard Components"
+        Header[Header Component<br/>Version, Status, Time]
+        Overview[Overview Panel<br/>System Health Score]
+        MetricsGrid[Metrics Grid<br/>Key Performance Indicators]
+        Charts[Charts Section<br/>Time-series Visualizations]
+        AlertsPanel[Alerts Panel<br/>Active Notifications]
+    end
+
+    subgraph "Metrics Grid Widgets"
+        Throughput[Throughput<br/>msg/s]
+        Latency[Latency<br/>p50/p95/p99]
+        Connections[Connections<br/>Active/Total]
+        ErrorRate[Error Rate<br/>%/count]
+        Memory[Memory<br/>Heap/RSS]
+        CPU[CPU<br/>Utilization %]
+        QueueDepth[Queue Depth<br/>Pending ops]
+        CacheHit[Cache Hit Rate<br/>%]
+    end
+
+    subgraph "Charts Section"
+        TimeSeries[Time-series Charts<br/>Historical Trends]
+        Histogram[Histograms<br/>Distribution]
+        Heatmap[Heatmaps<br/>Activity Patterns]
+        Gauge[Gauges<br/>Current Values]
+    end
+
+    subgraph "Process View"
+        ProcessTree[Process Tree<br/>Supervision Hierarchy]
+        ProcessList[Process List<br/>PIDs & States]
+        ProcessDetails[Process Details<br/>Memory, Messages, Heap]
+        Reducitions[Reducitons<br/>CPU Usage]
+    end
+
+    subgraph "Connection View"
+        ConnTable[Connection Table<br/>Active Connections]
+        TransportBreakdown[Transport Breakdown<br/>stdio/tcp/http/ws/sse]
+        ConnTimeline[Connection Timeline<br/>Lifecycle Events]
+        RateLimits[Rate Limits<br/>Status & Remaining]
+    end
+
+    subgraph "Alert Feed"
+        AlertList[Alert List<br/>Chronological Feed]
+        AlertDetails[Alert Details<br/>Context & History]
+        Escalation[Escalation Status<br/>Active Escalations]
+        AckActions[Acknowledge Actions<br/>Resolve/Snooze]
+    end
+
+    subgraph "Data Providers"
+        MetricsProvider[erlmcp_metrics<br/>Metrics Data]
+        HealthProvider[erlmcp_health_monitor<br/>Health Checks]
+        ProcessProvider[erlmcp_process_monitor<br/>Process Data]
+        TraceProvider[erlmcp_tracing<br/>Distributed Traces]
+        AlertProvider[erlmcp_chaos<br/>Alert Events]
+    end
+
+    subgraph "External Integrations"
+        Grafana[(Grafana<br/>Embedded Dashboards)]
+        OTELUI[(OTEL UI<br/>Trace Explorer)]
+        Jaeger[(Jaeger<br/>Trace Visualization)]
+        DatadogUI[(Datadog<br/>Monitoring)]
+    end
+
+    %% Dashboard routing
+    Dashboard --> RootHandler
+    Dashboard --> MetricsHandler
+    Dashboard --> HealthHandler
+    Dashboard --> ProcessesHandler
+    Dashboard --> ConnectionsHandler
+    Dashboard --> AlertsHandler
+    Dashboard --> TracesHandler
+
+    %% Main Dashboard components
+    RootHandler --> Header
+    RootHandler --> Overview
+    RootHandler --> MetricsGrid
+    RootHandler --> Charts
+    RootHandler --> AlertsPanel
+
+    %% Metrics Grid breakdown
+    MetricsGrid --> Throughput
+    MetricsGrid --> Latency
+    MetricsGrid --> Connections
+    MetricsGrid --> ErrorRate
+    MetricsGrid --> Memory
+    MetricsGrid --> CPU
+    MetricsGrid --> QueueDepth
+    MetricsGrid --> CacheHit
+
+    %% Charts breakdown
+    Charts --> TimeSeries
+    Charts --> Histogram
+    Charts --> Heatmap
+    Charts --> Gauge
+
+    %% Process view
+    ProcessesHandler --> ProcessTree
+    ProcessesHandler --> ProcessList
+    ProcessesHandler --> ProcessDetails
+    ProcessesHandler --> Reducitions
+
+    %% Connection view
+    ConnectionsHandler --> ConnTable
+    ConnectionsHandler --> TransportBreakdown
+    ConnectionsHandler --> ConnTimeline
+    ConnectionsHandler --> RateLimits
+
+    %% Alert feed
+    AlertsHandler --> AlertList
+    AlertsHandler --> AlertDetails
+    AlertsHandler --> Escalation
+    AlertsHandler --> AckActions
+
+    %% Data providers
+    MetricsHandler --> MetricsProvider
+    HealthHandler --> HealthProvider
+    ProcessesHandler --> ProcessProvider
+    TracesHandler --> TraceProvider
+    AlertsHandler --> AlertProvider
+
+    %% External integrations
+    RootHandler --> Grafana
+    TracesHandler --> OTELUI
+    TracesHandler --> Jaeger
+    RootHandler --> DatadogUI
+
+    %% Styles
+    classDef serverNode fill:#f3f0ff,stroke:#7950f2,stroke-width:3px
+    classDef handlerNode fill:#e5dbff,stroke:#7950f2,stroke-width:2px
+    classDef componentNode fill:#fff9db,stroke:#f59f00,stroke-width:2px
+    classDef widgetNode fill:#e7f5ff,stroke:#1971c2,stroke-width:2px
+    classDef chartNode fill:#d3f9d8,stroke:#2f9e44,stroke-width:2px
+    classDef providerNode fill:#ffe3e3,stroke:#c92a2a,stroke-width:2px
+    classDef externalNode fill:#c3fae8,stroke:#0ca678,stroke-width:3px
+
+    class Dashboard serverNode
+    class RootHandler,MetricsHandler,HealthHandler,ProcessesHandler,ConnectionsHandler,AlertsHandler,TracesHandler handlerNode
+    class Header,Overview,MetricsGrid,Charts,AlertsPanel componentNode
+    class Throughput,Latency,Connections,ErrorRate,Memory,CPU,QueueDepth,CacheHit widgetNode
+    class TimeSeries,Histogram,Heatmap,Gauge chartNode
+    class ProcessTree,ProcessList,ProcessDetails,Reducitions,ConnTable,TransportBreakdown,ConnTimeline,RateLimits,AlertList,AlertDetails,Escalation,AckActions chartNode
+    class MetricsProvider,HealthProvider,ProcessProvider,TraceProvider,AlertProvider providerNode
+    class Grafana,OTELUI,Jaeger,DatadogUI externalNode
+
+    %% Update patterns
+    MetricsProvider -.->|Poll 1s| MetricsHandler
+    HealthProvider -.->|Push events| HealthHandler
+    ProcessProvider -.->|Poll 5s| ProcessesHandler
+    AlertProvider -.->|Push alerts| AlertsHandler
+    TraceProvider -.->|Query on demand| TracesHandler

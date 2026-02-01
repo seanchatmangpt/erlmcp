@@ -1,0 +1,122 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff9900', 'primaryTextColor':'#fff', 'primaryBorderColor':'#8B4500', 'lineColor':'#ff9900', 'sectionBkgColor':'#ffcc00', 'altSectionBkgColor':'#ffe6a6'}}}%%
+flowchart TB
+    subgraph "Feature Flag System Architecture"
+        direction TB
+
+        subgraph Storage["Feature Flag Storage"]
+            direction TB
+            ConfigFile["config/feature_flags.config<br/>(Static flags)"]
+            DBBackend["Database Backend<br/>(Dynamic flags)"]
+            ETSStore["ETS Cache<br/>(Runtime fast-path)"]
+        end
+
+        subgraph API["Feature Flag API"]
+            direction TB
+            EnableFlag["erlmcp_feature_flags:enable/1"]
+            DisableFlag["erlmcp_feature_flags:disable/1"]
+            GetFlag["erlmcp_feature_flags:get/1<br/>(with default)"]
+            ListFlags["erlmcp_feature_flags:list/0"]
+            CheckFlag["erlmcp_feature_flags:is_enabled/1"]
+        end
+
+        subgraph CacheLayer["Cache Management"]
+            direction TB
+            CacheWarmer["Cache Warmer<br/>(startup preload)"]
+            CacheInvalidator["Cache Invalidation<br/>(updates propagate)"]
+            TTLCache["TTL-based Cache<br/>(default: 60s)"]
+        end
+
+        subgraph FlagDefinitions["Feature Flag Categories"]
+            direction TB
+            ExperimentalFlags["Experimental Features<br/>(off by default)"]
+            BetaFlags["Beta Features<br/>(opt-in via env)"]
+            StableFlags["Stable Features<br/>(always on)"]
+            DeprecatedFlags["Deprecated Features<br/>(always off, warn)"]
+        end
+
+        subgraph Examples["Example Flags"]
+            direction LR
+            F1["experimental_transport_http2<br/>default: false"]
+            F2["beta_otel_metrics<br/>default: false"]
+            F3["stable_resource_subscriptions<br/>default: true"]
+            F4["deprecated_legacy_stdio<br/>default: false"]
+        end
+
+        subgraph Integration["Integration Points"]
+            direction TB
+            Server["erlmcp_server<br/>(checks before enable)"]
+            Client["erlmcp_client<br/>(checks before use)"]
+            Transports["erlmcp_transport_*<br/>(conditional load)"]
+        end
+
+        subgraph Observability["Flag Observability"]
+            direction TB
+            Metrics["Metrics: flag_check_total<br/>(label: flag_name, result)"]
+            Logging["Logging: flag_access_log<br/>(audit trail)"]
+            Dashboard["Dashboard: flag_status<br/>(admin UI)"]
+        end
+
+        %% Flow: Storage → API → Cache → Integration
+        ConfigFile --> CacheWarmer
+        DBBackend --> CacheInvalidator
+        ETSStore --> GetFlag
+
+        CacheWarmer --> ETSStore
+        CacheInvalidator --> ETSStore
+        TTLCache --> ETSStore
+
+        ETSStore --> EnableFlag
+        ETSStore --> DisableFlag
+        ETSStore --> CheckFlag
+        CheckFlag --> GetFlag
+        ListFlags --> ETSStore
+
+        EnableFlag --> CacheInvalidator
+        DisableFlag --> CacheInvalidator
+
+        CheckFlag --> ExperimentalFlags
+        CheckFlag --> BetaFlags
+        CheckFlag --> StableFlags
+        CheckFlag --> DeprecatedFlags
+
+        ExperimentalFlags --> F1
+        BetaFlags --> F2
+        StableFlags --> F3
+        DeprecatedFlags --> F4
+
+        CheckFlag --> Server
+        CheckFlag --> Client
+        CheckFlag --> Transports
+
+        CheckFlag --> Metrics
+        CheckFlag --> Logging
+        Metrics --> Dashboard
+
+        %% Legend
+        subgraph Legend["Flag State Transition"]
+            Stopped["stopped (undefined)"]
+            Off["off (false)"]
+            On["on (true)"]
+            Stopped -->|"enable"| On
+            Stopped -->|"disable"| Off
+            Off -->|"enable"| On
+            On -->|"disable"| Off
+        end
+    end
+
+    style ConfigFile fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    style CheckFlag fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    style ETSStore fill:#00ff00,stroke:#006600,stroke-width:2px
+    style Server fill:#00ccff,stroke:#0066cc,stroke-width:3px
+
+    classDef storage fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    classDef api fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    classDef cache fill:#00ff00,stroke:#006600,stroke-width:2px
+    classDef integration fill:#00ccff,stroke:#0066cc,stroke-width:3px
+    classDef obs fill:#ff69b4,stroke:#c71585,stroke-width:2px
+
+    class ConfigFile,DBBackend,ETSStore storage
+    class EnableFlag,DisableFlag,GetFlag,ListFlags,CheckFlag api
+    class CacheWarmer,CacheInvalidator,TTLCache cache
+    class Server,Client,Transports integration
+    class Metrics,Logging,Dashboard obs

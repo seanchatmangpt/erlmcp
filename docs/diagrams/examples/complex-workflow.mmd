@@ -1,0 +1,228 @@
+sequenceDiagram
+    participant AI as AI Application
+    participant Client as erlmcp_client
+    participant Transport as erlmcp_transport_http
+    participant Server as erlmcp_server
+    participant Resources as Resource Manager
+    participant Tools as Tool Manager
+    participant DB as Database
+    participant FS as File System
+    participant OTEL as erlmcp_otel
+
+    Note over AI,OTEL: Complex Multi-Step Workflow: Code Analysis & Refactoring
+
+    %% Initialization with multiple capabilities
+    AI->>Client: start_link(http, #{url => "http://localhost:3001/mcp"})
+    Client->>Transport: init(http, #{protocol => http2})
+    Client->>Server: initialize with capabilities
+    Server-->>Client: Server capabilities negotiated
+    Note right of Server: #{<br/>  resources => true,<br/>  tools => true,<br/>  prompts => true,<br/>  logging => true<br/>}
+
+    %% Step 1: List available resources
+    Note over AI,OTEL: Phase 1: Discover Project Structure
+
+    AI->>Client: list_resources()
+    Client->>Transport: resources/list
+    Transport->>Server: HTTP/2 POST
+    Server->>Resources: handle_list_resources()
+    Resources-->>Server: {ok, [#{
+        uri => "project://structure",
+        name => "Project Structure",
+        description => "Complete project file tree",
+        mimeType => "application/json"
+    }]}
+    Server-->>Client: {ok, ResourceList}
+    Client-->>AI: {ok, [#resource{}]}
+
+    %% Step 2: Read project structure
+    AI->>Client: read_resource(<<"project://structure">>)
+    Client->>Transport: resources/read
+    Transport->>Server: HTTP/2 POST
+    Server->>Resources: handle_read_resource(<<"project://structure">>)
+    Resources->>FS: Scan project directory
+    FS-->>Resources: {ok, FileTree}
+    Resources-->>Server: {ok, #{
+        contents => [#{
+            uri => "project://structure",
+            mimeType => "application/json",
+            text => "{\n  \"src\": [\"app.erl\", \"sup.erl\"],\n  \"test\": [...]\n}"
+        }]
+    }}
+    Server-->>Client: {ok, ResourceContent}
+    Client-->>AI: {ok, #resource_contents{}}
+
+    %% Step 3: Subscribe to resource changes
+    AI->>Client: subscribe_resource(<<"project://structure">>)
+    Client->>Transport: resources/subscribe
+    Transport->>Server: HTTP/2 POST
+    Server->>Resources: subscribe_resource(<<"project://structure">>, ClientPID)
+    Resources->>Resources: Add ClientPID to subscriber list
+    Resources-->>Server: {ok, subscribed}
+    Server-->>Client: {ok, {}}
+    Client-->>AI: {ok, subscribed}
+
+    %% Step 4: Parallel tool execution for code analysis
+    Note over AI,OTEL: Phase 2: Parallel Code Analysis
+
+    par Tool 1: Static Analysis
+        AI->>Client: call_tool(<<"static_analysis">>, #{
+            files => ["src/app.erl", "src/sup.erl"]
+        })
+        Client->>Transport: tools/call (id=uuid-001)
+        Transport->>Server: HTTP/2 stream
+        Server->>Tools: handle_call_tool(<<"static_analysis">>, Args)
+        Tools->>OTEL: start_span("static_analysis")
+        Tools->>FS: Read and parse files
+        FS-->>Tools: File contents
+        Tools->>Tools: Run Dialyzer, Xref analysis
+        Tools-->>Server: {ok, #{
+            content => [#{
+                type => "text",
+                text => "{\n  \"warnings\": 2,\n  \"errors\": 0,\n  \"suggestions\": [...]\n}"
+            }]
+        }}
+        Server->>OTEL: end_span()
+        Server-->>Client: Response for uuid-001
+    and Tool 2: Complexity Metrics
+        AI->>Client: call_tool(<<"complexity_analysis">>, #{
+            files => ["src/app.erl", "src/sup.erl"]
+        })
+        Client->>Transport: tools/call (id=uuid-002)
+        Transport->>Server: HTTP/2 stream
+        Server->>Tools: handle_call_tool(<<"complexity_analysis">>, Args)
+        Tools->>OTEL: start_span("complexity_analysis")
+        Tools->>Tools: Calculate cyclomatic complexity
+        Tools->>Tools: Analyze function lengths
+        Tools-->>Server: {ok, #{
+            content => [#{
+                type => "text",
+                text => "{\n  \"avg_complexity\": 3.2,\n  \"max_complexity\": 8,\n  \"functions\": [...]\n}"
+            }]
+        }}
+        Server->>OTEL: end_span()
+        Server-->>Client: Response for uuid-002
+    and Tool 3: Test Coverage
+        AI->>Client: call_tool(<<"test_coverage">>, #{
+            modules => [app, sup]
+        })
+        Client->>Transport: tools/call (id=uuid-003)
+        Transport->>Server: HTTP/2 stream
+        Server->>Tools: handle_call_tool(<<"test_coverage">>, Args)
+        Tools->>OTEL: start_span("test_coverage")
+        Tools->>DB: Query coverage data
+        DB-->>Tools: Coverage metrics
+        Tools->>Tools: Aggregate coverage by module
+        Tools-->>Server: {ok, #{
+            content => [#{
+                type => "text",
+                text => "{\n  \"app\": {\"coverage\": 85.5},\n  \"sup\": {\"coverage\": 92.0}\n}"
+            }]
+        }}
+        Server->>OTEL: end_span()
+        Server-->>Client: Response for uuid-003
+    end
+
+    Client->>Client: Correlate responses via request IDs
+    Client-->>AI: {ok, [Result1, Result2, Result3]}
+
+    %% Step 5: Get prompt template for refactoring recommendations
+    Note over AI,OTEL: Phase 3: Generate Refactoring Plan
+
+    AI->>Client: list_prompts()
+    Client->>Transport: prompts/list
+    Server-->>Client: {ok, [#{
+        name => "refactor_plan",
+        description => "Generate refactoring recommendations",
+        arguments => [#{
+            name => "analysis_data",
+            description => "Combined analysis results",
+            required => true
+        }]
+    }]}
+
+    AI->>Client: get_prompt(<<"refactor_plan">>, #{
+        analysis_data => #{
+            static_analysis => Result1,
+            complexity => Result2,
+            coverage => Result3
+        }
+    })
+    Client->>Transport: prompts/get
+    Server->>Tools: handle_get_prompt(<<"refactor_plan">>, Args)
+    Tools->>Tools: Render template with analysis data
+    Tools->>Tools: Generate structured recommendations
+    Tools-->>Server: {ok, [
+        #{role => "system", content => "You are a code refactoring expert..."},
+        #{role => "user", content => "Based on analysis:\n- Warnings: 2\n- Avg complexity: 3.2\n- Coverage: 88%\n\nRecommend refactoring..."}
+    ]}
+    Server-->>Client: {ok, [#message{}]}
+    Client-->>AI: {ok, Messages}
+
+    %% Step 6: Resource update notification (async)
+    Note over AI,OTEL: Phase 4: Resource Change Detected
+
+    FS->>Resources: File watcher detects new file
+    Resources->>Resources: Trigger resource update
+    Resources->>Client: resources/updated notification
+    Note left of Resources: {<br/>  "jsonrpc": "2.0",<br/>  "method": "resources/updated",<br/>  "params": {<br/>    "uri": "project://structure",<br/>    "metadata": {<br/>      "updated_at": 1706745600000<br/>    }<br/>  }<br/>}
+
+    Client->>AI: Notify resource updated
+    AI->>AI: Refresh project structure
+    AI->>Client: read_resource(<<"project://structure">>)
+    Client-->>AI: {ok, UpdatedStructure}
+
+    %% Step 7: Execute refactoring with progress tracking
+    Note over AI,OTEL: Phase 5: Execute Refactoring with Progress
+
+    AI->>Client: call_tool(<<"apply_refactoring">>, #{
+        file => "src/app.erl",
+        changes => [
+            #{action => rename_function, from => "old_name", to => "new_name"},
+            #{action => extract_module, functions => ["helper1", "helper2"]}
+        ],
+        progress_token => "progress-uuid-123"
+    })
+    Client->>Transport: tools/call
+    Transport->>Server: HTTP/2 stream
+    Server->>Tools: handle_call_tool(<<"apply_refactoring">>, Args)
+
+    %% Progress notifications during execution
+    loop Execute refactoring steps
+        Tools->>Tools: Apply change 1/N
+        Tools-->>Client: progress notification
+        Note left of Tools: {<br/>  "progress": 0.33,<br/>  "total": 3,<br/>  "message": "Renaming function..."<br/>}
+        Client->>AI: Update progress: 33%
+
+        Tools->>Tools: Apply change 2/N
+        Tools-->>Client: progress notification
+        Note left of Tools: {<br/>  "progress": 0.66,<br/>  "message": "Extracting module..."<br/>}
+        Client->>AI: Update progress: 66%
+
+        Tools->>Tools: Apply change 3/N
+        Tools-->>Client: progress notification
+        Note left of Tools: {<br/>  "progress": 1.0,<br/>  "message": "Completing..."<br/>}
+        Client->>AI: Update progress: 100%
+    end
+
+    Tools->>FS: Write refactored files
+    FS-->>Tools: {ok, written}
+    Tools-->>Server: {ok, #{
+        content => [#{
+            type => "text",
+            text => "{\n  \"files_modified\": [\"src/app.erl\", \"src/new_module.erl\"],\n  \"backup\": \"src/app.erl.bak\"\n}"
+        }]
+    }}
+    Server-->>Client: Final response
+    Client-->>AI: {ok, RefactoringResult}
+
+    %% Step 8: Unsubscribe and cleanup
+    AI->>Client: unsubscribe_resource(<<"project://structure">>)
+    Client->>Transport: resources/unsubscribe
+    Server->>Resources: unsubscribe_resource(<<"project://structure">>, ClientPID)
+    Resources->>Resources: Remove ClientPID from subscribers
+    Resources-->>Server: {ok, unsubscribed}
+    Server-->>Client: {ok, {}}
+    Client-->>AI: {ok, unsubscribed}
+
+    %% OTEL trace context summary
+    Note over OTEL: Distributed Trace Summary<br/>========================<br/>Trace ID: trace-uuid-xyz<br/>Spans:<br/>  - static_analysis (2341us)<br/>  - complexity_analysis (1892us)<br/>  - test_coverage (3102us)<br/>  - apply_refactoring (5421us)<br/>Total: 12.7ms

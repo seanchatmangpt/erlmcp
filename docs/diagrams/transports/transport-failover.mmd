@@ -1,0 +1,98 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e1f5fe'}}}}%%
+sequenceDiagram
+    participant Client as Client Process
+    participant TCP as TCP Transport<br/>(erlmcp_transport_tcp)
+    participant Limiter as Connection Limiter<br/>(erlmcp_connection_limiter)
+    participant Ranch as Ranch Acceptor Pool
+    participant Monitor as Process Monitor
+    participant Registry as Transport Registry<br/>(erlmcp_transport_registry)
+
+    Note over Client,Registry: Connection Establishment Phase
+
+    Client->>+TCP: start_link(#{mode => client, host, port})
+    activate TCP
+    TCP->>TCP: init_client_process(Opts)
+    TCP->>Monitor: monitor(process, Owner)
+    TCP->>TCP: self() ! connect
+    TCP-->>-Client: {ok, Pid}
+
+    Client->>+TCP: connect message
+    TCP->>TCP: attempt_connection(State)
+    TCP->>+Limiter: accept_connection(ServerId)
+    activate Limiter
+    Limiter->>Limiter: increment_counter()
+    Limiter->>Limiter: check_alert_threshold()
+    alt Connection Limit OK
+        Limiter-->>-TCP: accept
+    else Limit Exceeded
+        Limiter-->>-TCP: {error, too_many_connections}
+    end
+    deactivate Limiter
+
+    alt Limit OK
+        TCP->>TCP: gen_tcp:connect(Host, Port, Opts, 5000)
+        alt Connection Successful
+            TCP->>TCP: {ok, Socket}
+            TCP->>Client: {transport_connected, self()}
+            TCP->>TCP: State#state{connected=true, socket=Socket}
+        else Connection Failed
+            TCP->>TCP: schedule_reconnect(State)
+            Note over TCP: Exponential backoff<br/>1s -> 2s -> 4s -> ... -> 60s max
+            TCP->>TCP: erlang:send_after(Delay, self(), reconnect)
+        end
+    end
+    deactivate TCP
+
+    Note over Client,Registry: Operational Phase
+
+    loop Message Exchange
+        Client->>TCP: {send, Data}
+        TCP->>TCP: gen_tcp:send(Socket, [Data, <<"\n">>])
+        TCP-->>Client: ok
+
+        TCP->>TCP: {tcp, Socket, Data}
+        TCP->>TCP: extract_messages(Buffer)
+        TCP->>Client: {transport_message, Message}
+    end
+
+    Note over Client,Registry: Failure Detection & Recovery
+
+    TCP->>TCP: {tcp_closed, Socket}
+    TCP->>TCP: handle_disconnect(State, Reason)
+    TCP->>Client: {transport_disconnected, self(), Reason}
+    TCP->>Limiter: release_connection(ServerId)
+
+    TCP->>TCP: schedule_reconnect(State)
+    Note over TCP: reconnect_attempts += 1
+
+    alt Attempts < MaxReconnect
+        TCP->>TCP: erlang:send_after(Delay, self(), reconnect)
+
+        Note over TCP: Reconnection Attempt
+        TCP->>TCP: attempt_connection(State)
+        TCP->>+Limiter: accept_connection(ServerId)
+
+        alt Success
+            Limiter-->>-TCP: accept
+            TCP->>TCP: gen_tcp:connect()
+            TCP->>Client: {transport_connected, self()}
+            Note over TCP: reconnect_attempts = 0
+        else Failure
+            Limiter-->>-TCP: accept
+            TCP->>TCP: schedule_reconnect(State)
+        end
+    else Max Attempts Reached
+        TCP->>Client: {error, max_reconnect_attempts_exceeded}
+        TCP->>Registry: unregister_transport(TransportId)
+        TCP->>TCP: {stop, max_reconnect_exceeded}
+    end
+
+    Note over Client,Registry: Cleanup Phase
+
+    TCP->>TCP: terminate(Reason, State)
+    TCP->>Monitor: demonitor(OwnerMonitor, [flush])
+    TCP->>Limiter: release_connection(ServerId)
+    TCP->>TCP: gen_tcp:close(Socket)
+    TCP->>TCP: cancel_reconnect_timer(State)
+    TCP->>TCP: cancel_idle_timer(State)
+    TCP->>TCP: cancel_resource_monitor_timer(State)

@@ -1,0 +1,48 @@
+---
+title: erlmcp Metrics Collection Pipeline
+---
+sequenceDiagram
+    participant App as erlmcp Application
+    participant Metrics as erlmcp_metrics
+    participant Aggregator as erlmcp_metrics_aggregator
+    participant OTEL as OpenTelemetry
+    participant Server as metrics_server
+    participant Dashboard as dashboard_server
+    participant Client as Monitoring Client
+
+    App->>Metrics: record_event(EventType, Value, Labels)
+    activate Metrics
+
+    Note over Metrics: Validate canonical units<br/>(metrology_validator)
+
+    Metrics->>Metrics: Increment/Observe/Gauge
+    Metrics->>Aggregator: add_metric(EventType, Value, Timestamp)
+    deactivate Metrics
+
+    activate Aggregator
+    Note over Aggregator: Aggregate by window<br/>(1s, 5s, 60s)
+
+    loop Every aggregation window
+        Aggregator->>Aggregator: Compute statistics<br/>(count, sum, avg, p95, p99)
+        Aggregator->>OTEL: emit_counter/histogram/gauge
+    end
+    deactivate Aggregator
+
+    OTEL->>Server: Export metrics via OTLP
+    activate Server
+
+    Server->>Server: Store in-memory timeseries
+    Server->>Dashboard: Broadcast update
+
+    Note over Dashboard: Real-time visualization<br/>WebSocket push
+
+    Dashboard-->>Client: metrics_update(JSON)
+
+    loop Client polling
+        Client->>Server: GET /metrics?window=60s
+        Server-->>Client: Prometheus text format
+    end
+
+    deactivate Server
+
+    Note over App,Client: <b>Canonical Metrics</b><br/>- throughput_msg_per_s<br/>- latency_p50_us<br/>- memory_heap_mib_per_conn<br/>- connections_total<br/>- errors_total{error_type}

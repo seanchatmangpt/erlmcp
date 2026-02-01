@@ -1,0 +1,86 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e1f5fe'}}}}%%
+graph TB
+    subgraph Incoming["Incoming Message Flow"]
+        direction LR
+
+        RAW["Raw Transport Data<br/>Binary from socket/stream"]
+
+        subgraph Framing["Message Framing Layer"]
+            STDIO_FRAME["<b>STDIO Framing</b><br/>• Line-based (\\n)<br/>• read_loop/3<br/>• trim_line/1"]
+            TCP_FRAME["<b>TCP Framing</b><br/>• Line-based (\\n)<br/>• extract_messages/1<br/>• Binary split optimization"]
+            WS_FRAME["<b>WebSocket Framing</b><br/>• Text frames only<br/>• Fragment reassembly<br/>• 30s fragment timeout"]
+            SSE_FRAME["<b>SSE Framing</b><br/>• Event format<br/>• data: JSON\\n\\n<br/>• POST + GET"]
+        end
+
+        VALIDATION["<b>Message Validation</b><br/>___________________<br/>• Size limit: 16MB<br/>• UTF-8 encoding (WS)<br/>• JSON structure<br/>• JSON-RPC 2.0 spec"]
+
+        PARSER["<b>JSON Parser</b><br/>jsx:decode/2<br/>return_maps option"]
+
+        REGISTRY["<b>Transport Registry</b><br/>erlmcp_registry<br/>___________________<br/>• Route by transport_id<br/>• gproc name lookup<br/>• O(log N) routing"]
+    end
+
+    subgraph Handlers["Protocol Handlers"]
+        direction TB
+
+        RESOURCE["<b>Resource Handler</b><br/>erlmcp_server<br/>___________________<br/>• resources/list<br/>• resources/read<br/>• resources/subscribe<br/>• resources/unsubscribe"]
+        TOOL["<b>Tool Handler</b><br/>erlmcp_server<br/>___________________<br/>• tools/list<br/>• tools/call<br/>• Execution timeout<br/>• Progress tokens"]
+        PROMPT["<b>Prompt Handler</b><br/>erlmcp_server<br/>___________________<br/>• prompts/list<br/>• prompts/get<br/>• Template rendering"]
+        NOTIFICATION["<b>Notification Handler</b><br/>erlmcp_notification_handler<br/>___________________<br/>• notifications/messages<br/>• Progress updates<br/>• Cancel signals"]
+    end
+
+    subgraph Outgoing["Outgoing Message Flow"]
+        direction LR
+
+        ENCODER["<b>JSON Encoder</b><br/>jsx:encode/1"]
+
+        FRAMER["<b>Add Framing</b><br/>___________________<br/>• STDIO: +\\n<br/>• TCP: +\\n<br/>• WS: {text, Data}<br/>• SSE: event: +\\ndata: +\\n\\n"]
+
+        TRANSPORT_SEND["<b>Transport send/2</b><br/>___________________<br/>• gen_tcp:send/2<br/>• io:format/2<br/>• cowboy_req:stream_body/2"]
+    end
+
+    %% Incoming flow
+    RAW --> STDIO_FRAME
+    RAW --> TCP_FRAME
+    RAW --> WS_FRAME
+    RAW --> SSE_FRAME
+
+    STDIO_FRAME --> VALIDATION
+    TCP_FRAME --> VALIDATION
+    WS_FRAME --> VALIDATION
+    SSE_FRAME --> VALIDATION
+
+    VALIDATION -->|"size <= 16MB"| PARSER
+    VALIDATION -->|"size > 16MB"| REJECT["Send JSON-RPC Error<br/>code: -32012<br/>MESSAGE_TOO_LARGE"]
+
+    PARSER -->|"Valid JSON"| REGISTRY
+    PARSER -->|"Invalid JSON"| REJECT
+
+    REGISTRY -->|"method: resources/*"| RESOURCE
+    REGISTRY -->|"method: tools/*"| TOOL
+    REGISTRY -->|"method: prompts/*"| PROMPT
+    REGISTRY -->|"method: notifications/*"| NOTIFICATION
+
+    %% Outgoing flow
+    RESOURCE --> ENCODER
+    TOOL --> ENCODER
+    PROMPT --> ENCODER
+    NOTIFICATION --> ENCODER
+
+    ENCODER --> FRAMER
+    FRAMER --> TRANSPORT_SEND
+
+    %% Rejection path
+    REJECT --> TRANSPORT_SEND
+
+    style Incoming fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style Handlers fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style Outgoing fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+
+    classDef framingStyle fill:#ffffff,stroke:#1976d2,stroke-width:1px
+    class STDIO_FRAME,TCP_FRAME,WS_FRAME,SSE_FRAME framingStyle
+
+    classDef handlerStyle fill:#ffffff,stroke:#f57c00,stroke-width:1px
+    class RESOURCE,TOOL,PROMPT,NOTIFICATION handlerStyle
+
+    classDef rejectStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    class REJECT rejectStyle

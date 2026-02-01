@@ -1,0 +1,159 @@
+```mermaid
+graph TB
+    subgraph "Data Collection Layer"
+        A[erlmcp_metrics] --> B[Metrics Collector]
+        C[erlmcp_tracing] --> D[Span Collector]
+        E[erlmcp_health_monitor] --> F[Health Checks]
+        G[erlmcp_audit_log] --> H[Audit Events]
+    end
+
+    subgraph "Metric Types"
+        B --> I[Counter: error_total]
+        B --> J[Gauge: active_connections]
+        B --> K[Histogram: request_duration_ms]
+        B --> L[Summary: operation_latency]
+    end
+
+    subgraph "Error Metrics"
+        I --> M[error_total{type=protocol}]
+        I --> N[error_total{type=transport}]
+        I --> O[error_total{type=auth}]
+        I --> P[error_total{type=resource}]
+        I --> Q[error_total{type=timeout}]
+    end
+
+    subgraph "Performance Metrics"
+        K --> R[request_duration_ms_bucket]
+        L --> S[operation_latency{quantile=p50}]
+        L --> T[operation_latency{quantile=p95}]
+        L --> U[operation_latency{quantile=p99}]
+    end
+
+    subgraph "Resource Metrics"
+        J --> V[active_connections]
+        J --> W[memory_usage_bytes]
+        J --> X[queue_depth]
+        J --> Y[circuit_breaker_state]
+    end
+
+    subgraph "Alert Evaluation"
+        Z[Metrics Aggregator] --> AA{Alert Rules}
+
+        AA --> AB[Error Rate Alert]
+        AA --> AC[Latency Alert]
+        AA --> AD[Resource Alert]
+        AA --> AE[Availability Alert]
+        AA --> AF[Circuit Breaker Alert]
+    end
+
+    subgraph "Alert Conditions"
+        AB --> AB1[error_rate > 5% for 2min]
+        AC --> AC1[p99_latency > 1s for 5min]
+        AD --> AD1[memory_usage > 90%]
+        AE --> AE1[health_check_fails > 3]
+        AF --> AF1[circuit_state = open]
+    end
+
+    subgraph "Alert Severity Levels"
+        AG[Severity Mapping] --> AH[INFO: Informational]
+        AG --> AI[WARNING: Degradation]
+        AG --> AJ[CRITICAL: Service Impact]
+        AG --> AK[EMERGENCY: Outage]
+
+        AB1 --> AI
+        AC1 --> AI
+        AD1 --> AJ
+        AE1 --> AJ
+        AF1 --> AK
+    end
+
+    subgraph "Notification Channels"
+        AL[Alert Router] --> AM[Dashboard: erlmcp_dashboard]
+        AL --> AN[Logs: erlmcp_audit_log]
+        AL --> AO[Metrics: OpenTelemetry]
+        AL --> AP[Webhook: External Systems]
+        AL --> AQ[Email: On-call Team]
+    end
+
+    subgraph "Dashboard Integration"
+        AM --> AR[Real-time Error Rate Chart]
+        AM --> AS[Latency Heatmap]
+        AM --> AT[Circuit Breaker Status Panel]
+        AM --> AU[Resource Usage Gauges]
+        AM --> AV[Health Check Indicators]
+    end
+
+    subgraph "OpenTelemetry Export"
+        AO --> AW[otlp_grpc Exporter]
+        AO --> AX[Datadog Exporter]
+        AO --> AY[Jaeger Exporter]
+        AO --> AZ[Honeycomb Exporter]
+
+        AW --> BA[Backend: OTEL Collector]
+        AX --> BB[Backend: Datadog]
+        AY --> BC[Backend: Jaeger]
+        AZ --> BD[Backend: Honeycomb]
+    end
+
+    subgraph "Alert Lifecycle"
+        BE[Alert Triggered] --> BF[Notification Sent]
+        BF --> BG[Acknowledged?]
+        BG -->|Yes| BH[In Progress]
+        BG -->|No| BI[Escalate]
+
+        BH --> BJ[Resolved?]
+        BJ -->|Yes| BK[Auto-Resolve]
+        BJ -->|No| BM[Continue Monitoring]
+
+        BI --> BL[Escalate Severity]
+        BL --> BF
+
+        BK --> BN[Alert Cleared]
+        BM --> BJ
+    end
+
+    subgraph "Monitoring Dashboards"
+        BO[Error Monitoring Dashboard]
+        BP[Performance Dashboard]
+        BQ[Health Status Dashboard]
+        BR[Alert History Dashboard]
+
+        BO --> BSO[Error Rate by Type]
+        BO --> BSP[Error Distribution]
+        BO --> BSQ[Recent Error Logs]
+
+        BP --> BSR[Response Time Trends]
+        BP --> BST[Throughput Metrics]
+        BP --> BSU[Resource Utilization]
+
+        BQ --> BSV[Service Health]
+        BQ --> BSW[Dependency Status]
+        BQ --> BSX[Circuit Breaker States]
+    end
+
+    subgraph "Alert Correlation"
+        BY[Correlation Engine] --> BZ{Pattern Matching}
+
+        BZ --> CA[Error Spike + Latency]
+        BZ --> CB[Memory + CPU]
+        BZ --> CC[Circuit + Health]
+        BZ --> CD[Multi-Service Failure]
+
+        CA --> CE[Correlated Alert]
+        CB --> CE
+        CC --> CE
+        CD --> CE
+    end
+
+    style AB1 fill:#fff4e1
+    style AC1 fill:#fff4e1
+    style AD1 fill:#ffcccc
+    style AE1 fill:#ffcccc
+    style AF1 fill:#ff9999
+    style AH fill:#e1f5ff
+    style AI fill:#fff9e6
+    style AJ fill:#ffe6cc
+    style AK fill:#ff9999
+    style BN fill:#ccffcc
+    style CE fill:#ffcc99
+```

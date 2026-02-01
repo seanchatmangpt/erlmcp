@@ -1,0 +1,234 @@
+erlmcp Failover and Redundancy Mechanisms
+==========================================
+
+graph TB
+    subgraph "Failure Detection Layer"
+        subgraph "Node Monitor"
+            NM[erlmcp_node_monitor<br/>Heartbeat: 5s<br/>Timeout: 15s]
+        end
+
+        subgraph "Split Brain Detector"
+            SBD[erlmcp_split_brain_detector<br/>Majority Vote<br/>Partition Tolerance]
+        end
+
+        subgraph "Circuit Breaker"
+            CB[erlmcp_circuit_breaker<br/>Failure Threshold: 5%<br/>Recovery: 30s]
+        end
+    end
+
+    subgraph "Primary Cluster (Active)"
+        subgraph "Node P1: Primary Master"
+            P1[erlmcp_node_p1<br/>Role: Master<br/>State: Active<br/>Connections: 40K]
+            P1_Sess[Mnesia: disc_copies<br/>Session Data: 40K]
+            P1_Resp[Responsibility:<br/>Write Master<br/>Read Replica]
+        end
+
+        subgraph "Node P2: Primary Replica"
+            P2[erlmcp_node_p2<br/>Role: Replica<br/>State: Active<br/>Connections: 35K]
+            P2_Sess[Mnesia: disc_copies<br/>Session Data: 35K]
+            P2_Resp[Responsibility:<br/>Read Replica<br/>Backup Write]
+        end
+
+        subgraph "Node P3: Primary Replica"
+            P3[erlmcp_node_p3<br/>Role: Replica<br/>State: Active<br/>Connections: 30K]
+            P3_Sess[Mnesia: disc_copies<br/>Session Data: 30K]
+            P3_Resp[Responsibility:<br/>Read Replica<br/>Backup Write]
+        end
+    end
+
+    subgraph "Secondary Cluster (Standby - Hot)"
+        subgraph "Node S1: Standby Master"
+            S1[erlmcp_node_s1<br/>Role: Standby<br/>State: Hot Standby<br/>Sync: Real-time]
+            S1_Sess[Mnesia: disc_copies<br/>Replica: Async<br/>Lag: <100ms]
+        end
+
+        subgraph "Node S2: Standby Replica"
+            S2[erlmcp_node_s2<br/>Role: Standby<br/>State: Hot Standby<br/>Sync: Real-time]
+        end
+
+        subgraph "Node S3: Standby Replica"
+            S3[erlmcp_node_s3<br/>Role: Standby<br/>State: Hot Standby<br/>Sync: Real-time]
+        end
+    end
+
+    subgraph "Failover Orchestration"
+        subgraph "Failover Manager"
+            FM[erlmcp_failover_worker<br/>State Machine:<br/>Active → Failing Over → Active]
+        end
+
+        subgraph "Failover Phases"
+            F1[Phase 1: Detection<br/>Timeout: 15s<br/>Trigger: Heartbeat loss]
+            F2[Phase 2: Election<br/>Algorithm: Majority<br/>Duration: 5s]
+            F3[Phase 3: State Transfer<br/>Mnesia sync<br/>Duration: 10s]
+            F4[Phase 4: Service Switch<br/>VIP update<br/>Duration: 2s]
+            F5[Phase 5: Verification<br/>Health checks<br/>Duration: 5s]
+        end
+    end
+
+    subgraph "Data Replication"
+        subgraph "Mnesia Replication"
+            MR[Transaction Log<br/>Replication Factor: 3<br/>Consistency: Eventual]
+        end
+
+        subgraph "Replication Modes"
+            RM_Sync[Synchronous:<br/>Master → 1 Replica<br/>Latency: +2ms]
+            RM_Async[Asynchronous:<br/>Master → All Replicas<br/>Lag: <100ms]
+        end
+    end
+
+    subgraph "Session Failover"
+        subgraph "Session Manager"
+            SM[erlmcp_session_manager<br/>Failover Strategy:<br/>State Transfer]
+        end
+
+        subgraph "Session States"
+            SS_Active[Active Sessions<br/>Persisted: Mnesia<br/>Recovered: Auto]
+            SS_Pending[Pending Requests<br/>Queued: Memory<br/>Retry: Auto]
+        end
+
+        subgraph "Recovery Process"
+            RP[1. Detect Failure<br/>2. Identify Sessions<br/>3. Transfer State<br/>4. Resume Processing<br/>5. Notify Clients]
+        end
+    end
+
+    subgraph "Connection Failover"
+        subgraph "Client Reconnection"
+            CR[Client Behavior:<br/>1. Detect Disconnect<br/>2. Backoff: Exponential<br/>3. Retry: DNS/LB<br/>4. Resume Session]
+        end
+
+        subgraph "Load Balancer Update"
+            LBU[HAProxy Config<br/>Disabled: Failed Node<br/>Enabled: Recovered Node<br/>Health: TCP Check]
+        end
+    end
+
+    subgraph "Recovery Time Objectives"
+        subgraph "RTO: Recovery Time Objective"
+            RTO_Node[Node Failure: <37s<br/>Detection: 15s<br/>Failover: 22s]
+            RTO_Session[Session Recovery: <5s<br/>State Transfer: 2s<br/>Resume: 3s]
+            RTO_Data[Data Consistency: <10s<br/>Mnesia Sync: 8s<br/>Verification: 2s]
+        end
+    end
+
+    %% Failure Detection
+    NM -->|Heartbeat Check| P1
+    NM -->|Heartbeat Check| P2
+    NM -->|Heartbeat Check| P3
+
+    SBD -->|Partition Detect| P1
+    SBD -->|Partition Detect| P2
+    SBD -->|Partition Detect| P3
+
+    CB -->|Failure Rate| P1
+    CB -->|Failure Rate| P2
+    CB -->|Failure Rate| P3
+
+    %% Primary Cluster
+    P1 --> P1_Sess
+    P1 --> P1_Resp
+    P2 --> P2_Sess
+    P2 --> P2_Resp
+    P3 --> P3_Sess
+    P3 --> P3_Resp
+
+    %% Data Replication
+    P1_Sess -->|Sync Write| P2_Sess
+    P1_Sess -->|Sync Write| P3_Sess
+    P1_Sess -->|Async Replication| S1_Sess
+    P2_Sess -->|Async Replication| S2
+    P3_Sess -->|Async Replication| S3
+
+    %% Secondary Cluster (Standby)
+    S1 --> S1_Sess
+    S2 -->|Sync| S1
+    S3 -->|Sync| S1
+
+    %% Failover Orchestration
+    FM --> F1
+    F1 --> F2
+    F2 --> F3
+    F3 --> F4
+    F4 --> F5
+
+    NM -->|Trigger Failover| FM
+    SBD -->|Trigger Failover| FM
+    CB -->|Trigger Failover| FM
+
+    FM -->|Promote Master| S1
+    FM -->|Switch Traffic| LBU
+
+    %% Session Failover
+    SM --> SS_Active
+    SM --> SS_Pending
+    SM --> RP
+
+    %% Connection Failover
+    CR --> LBU
+
+    %% Replication Modes
+    MR --> RM_Sync
+    MR --> RM_Async
+
+    %% Styling
+    classDef monitorStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef primaryStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
+    classDef standbyStyle fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef failoverStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef dataStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef sessionStyle fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef connStyle fill:#fce4ec,stroke:#ad1457,stroke-width:2px
+    classDef rtoStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+
+    class NM,SBD,CB monitorStyle
+    class P1,P2,P3,P1_Sess,P2_Sess,P3_Sess,P1_Resp,P2_Resp,P3_Resp primaryStyle
+    class S1,S2,S3,S1_Sess standbyStyle
+    class FM,F1,F2,F3,F4,F5 failoverStyle
+    class MR,RM_Sync,RM_Async dataStyle
+    class SM,SS_Active,SS_Pending,RP sessionStyle
+    class CR,LBU connStyle
+    class RTO_Node,RTO_Session,RTO_Data rtoStyle
+
+    %% Failover Scenarios
+    subgraph "Scenario 1: Node Failure"
+        SC1[
+"""
+Node P1 Failure:
+1. NM detects heartbeat loss (15s)
+2. FM triggers election (5s)
+3. Node P2 promoted to master
+4. Mnesia resyncs from P2 (10s)
+5. LB updates, disables P1 (2s)
+6. Clients reconnect to P2 (5s)
+Total: 37s
+"""
+        ]
+    end
+
+    subgraph "Scenario 2: Network Partition"
+        SC2[
+"""
+Network Partition:
+1. SBD detects partition (5s)
+2. Majority side continues active
+2. Minority side enters standby
+3. Mnesia pauses replication
+4. Circuit breaker opens
+5. Post-partition: auto-merge
+Total: 10s detection
+"""
+        ]
+    end
+
+    subgraph "Scenario 3: Data Center Failure"
+        SC3[
+"""
+Data Center Loss:
+1. All primary nodes unreachble
+2. FM promotes standby cluster
+3. VIP updates to standby DC
+4. Mnesia resumes from standby
+5. Client traffic reroutes
+6. Zero data loss (async)
+Total: 20s failover
+"""
+        ]
+    end

@@ -1,0 +1,129 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#32cd32', 'primaryTextColor':'#fff', 'primaryBorderColor':'#228b22', 'lineColor':'#228b22', 'sectionBkgColor':'#e6ffe6', 'altSectionBkgColor:'#ccffcc', 'gridColor':'#99ff99'}}}%%
+flowchart TB
+    subgraph CTSuite["Common Test Integration Suites"]
+        direction TB
+
+        subgraph TestSuite["Integration Test Architecture"]
+            direction LR
+
+            subgraph AppLifecycle["Application Lifecycle"]
+                AL1["init_per_suite/1<br/>Start all applications<br/>application:ensure_all_started(erlmcp)"]
+                AL2["init_per_testcase/2<br/>Setup per test case<br/>Start processes, init state"]
+                AL3["end_per_testcase/2<br/>Cleanup per test case<br/>Stop processes, cleanup"]
+                AL4["end_per_suite/1<br/>Stop all applications<br/>application:stop(erlmcp)"]
+            end
+
+            subgraph MultiProcess["Multi-Process Scenarios"]
+                direction TB
+                MP1["Client-Server<br/>erlmcp_client → erlmcp_server"]
+                MP2["Registry Coordination<br/>Multiple servers + registry"]
+                MP3["Transport Integration<br/>stdio, tcp, http, ws"]
+                MP4["Subscription Flow<br/>Resource + notification"]
+                MP5["Supervision Trees<br/>Process failures + restarts"]
+            end
+
+            subgraph EndToEnd["End-to-End Workflows"]
+                direction TB
+                E2E1["Initialize → Capabilities Negotiation"]
+                E2E2["Resource List → Subscribe → Update Notification"]
+                E2E3["Tool Call → Progress Token → Result"]
+                E2E4["Prompt Template → Render → Completion"]
+                E2E5["Session Lifecycle → Persistence → Failover"]
+            end
+
+            subgraph Distributed["Distributed Scenarios"]
+                direction TB
+                D1["Multi-Node Communication<br/>erlmcp_registry_dist"]
+                D2["Session Replication<br/>Mnesia backend"]
+                D3["Failover Testing<br/>Node crash + recovery"]
+                D4["Network Partitions<br/>Split-brain detection"]
+            end
+        end
+    end
+
+    subgraph TestExecution["Test Execution Flow"]
+        direction LR
+        TE1["rebar3 ct --suite=SUITE"]
+        TE2["Compile test modules"]
+        TE3["Start CT master node"]
+        TE4["Execute test cases"]
+        TE5["Collect coverage data"]
+        TE6["Generate HTML reports"]
+    end
+
+    subgraph RealCollaborators["Real Collaborators (No Mocks)"]
+        direction TB
+        RC1["Real gen_servers<br/>Server, Client, Registry"]
+        RC2["Real transports<br/>stdio, tcp, http, ws, sse"]
+        RC3["Real databases<br/>ETS, DETS, Mnesia"]
+        RC4["Real network<br/>TCP sockets, HTTP"]
+        RC5["Real supervision<br/>Supervisor trees"]
+    end
+
+    subgraph TestSuites["Major CT Suites"]
+        direction LR
+        TS1["erlmcp_integration_SUITE<br/>Core integration"]
+        TS2["erlmcp_e2e_SUITE<br/>End-to-end flows"]
+        TS3["erlmcp_registry_dist_SUITE<br/>Distributed registry"]
+        TS4["erlmcp_transport_integration_SUITE<br/>Transport coordination"]
+        TS5["erlmcp_phase2_integration_SUITE<br/>Advanced features"]
+        TS6["erlmcp_authorization_SUITE<br/>Security flows"]
+        TS7["erlmcp_performance_validator_SUITE<br/>Performance tests"]
+        TS8["erlmcp_lifecycle_advanced_SUITE<br/>Lifecycle management"]
+    end
+
+    subgraph CoverageFocus["Integration Coverage Focus"]
+        direction TB
+        CF1["Protocol correctness<br/>JSON-RPC 2.0 + MCP"]
+        CF2["Transport reliability<br/>All transport types"]
+        CF3["Session durability<br/>Persistence backends"]
+        CF4["Error recovery<br/>Supervision + restart"]
+        CF5["Resource cleanup<br/>No stale processes"]
+        CF6["Concurrency safety<br/>Race condition detection"]
+    end
+
+    %% Flow connections
+    TestExecution --> CTSuite
+    CTSuite --> RealCollaborators
+    AppLifecycle --> MultiProcess
+    MultiProcess --> EndToEnd
+    EndToEnd --> Distributed
+
+    %% Test suites
+    MultiProcess --> TS1 & TS2 & TS4
+    Distributed --> TS3
+    EndToEnd --> TS5
+    EndToEnd --> TS6
+    EndToEnd --> TS8
+    EndToEnd --> TS7
+
+    %% Coverage mapping
+    TS1 & TS2 & TS3 & TS4 & TS5 & TS6 & TS7 & TS8 --> CoverageFocus
+
+    %% Styling
+    classDef lifecycleStyle fill:#ff9900,stroke:#ff6600,stroke-width:3px,color:#fff
+    classDef scenarioStyle fill:#00bfff,stroke:#0080ff,stroke-width:2px,color:#fff
+    classDef suiteStyle fill:#32cd32,stroke:#228b22,stroke-width:2px,color:#fff
+    classDef collaboratorStyle fill:#ff69b4,stroke:#ff1493,stroke-width:2px,color:#fff
+    classDef coverageStyle fill:#ffd700,stroke:#ff8c00,stroke-width:2px,color:#000
+    classDef executionStyle fill:#9370db,stroke:#8a2be2,stroke-width:2px,color:#fff
+
+    class AL1,AL2,AL3,AL4 lifecycleStyle
+    class MP1,MP2,MP3,MP4,MP5,E2E1,E2E2,E2E3,E2E4,E2E5,D1,D2,D3,D4 scenarioStyle
+    class TS1,TS2,TS3,TS4,TS5,TS6,TS7,TS8 suiteStyle
+    class RC1,RC2,RC3,RC4,RC5 collaboratorStyle
+    class CF1,CF2,CF3,CF4,CF5,CF6 coverageStyle
+    class TE1,TE2,TE3,TE4,TE5,TE6 executionStyle
+
+    %% Example Test Case
+    subgraph Example["Example: Resource Subscription Flow"]
+        EX1["1. Start server + client<br/>Real gen_servers"]
+        EX2["2. Add resource<br/>server:add_resource(Uri, Handler)"]
+        EX3["3. Client subscribes<br/>client:subscribe_resource(Uri)"]
+        EX4["4. Server updates resource<br/>server:notify_resource_updated(Uri)"]
+        EX5["5. Client receives notification<br/>Verify message in client mailbox"]
+        EX6["6. Unsubscribe + cleanup<br/>No stale subscriptions"]
+    end
+
+    MultiProcess --> Example
+    Example --> CoverageFocus

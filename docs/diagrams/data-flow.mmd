@@ -1,0 +1,174 @@
+sequenceDiagram
+    participant AI as AI Runtime<br/>(Claude/GPT-4/Local)
+    participant TRANSPORT as Transport Layer<br/>(stdio/tcp/http/ws/sse)
+    participant MSG_HANDLER as Message Handler
+    participant MSG_PARSER as Message Parser
+    participant JSON_RPC as JSON-RPC Codec
+    participant REGISTRY as Registry<br/>(gproc)
+    participant SERVER as Server Process
+    participant CLIENT as Client Process
+    participant SESSION as Session Manager
+    participant BACKEND as Session Backend<br/>(ETS/DETS/Mnesia)
+    participant CAPABILITIES as Capabilities<br/>(Resources/Tools/Prompts)
+    participant OTEL as OpenTelemetry
+    participant VALIDATORS as Validators
+    participant CHAOS as Chaos Engine
+
+    %% Request Flow
+    AI->>TRANSPORT: 1. Send JSON-RPC Request
+    Note over TRANSPORT: {transport_data, Binary}
+
+    TRANSPORT->>MSG_HANDLER: 2. Raw Message
+    MSG_HANDLER->>MSG_PARSER: 3. Parse Message
+    MSG_PARSER->>JSON_RPC: 4. Decode JSON-RPC
+    JSON_RPC-->>MSG_PARSER: 5. Parsed Request
+    MSG_PARSER->>VALIDATORS: 6. Validate Schema
+    VALIDATORS-->>MSG_PARSER: 7. Validation Result
+
+    MSG_PARSER->>MSG_HANDLER: 8. Validated Request
+    MSG_HANDLER->>REGISTRY: 9. Route Request
+    Note over REGISTRY: O(log N) Lookup
+
+    REGISTRY->>SERVER: 10. Dispatch to Server
+
+    %% Server Processing
+    SERVER->>OTEL: 11. Start Span
+    SERVER->>SESSION: 12. Load Session State
+    SESSION->>BACKEND: 13. Fetch Session
+    BACKEND-->>SESSION: 14. Session Data
+    SESSION-->>SERVER: 15. State Restored
+
+    alt Tool Invocation
+        SERVER->>CAPABILITIES: 16a. Invoke Tool
+        CAPABILITIES-->>SERVER: 17a. Tool Result
+    else Resource Access
+        SERVER->>CAPABILITIES: 16b. Access Resource
+        CAPABILITIES-->>SERVER: 17b. Resource Data
+    else Prompt Template
+        SERVER->>CAPABILITIES: 16c. Render Prompt
+        CAPABILITIES-->>SERVER: 17c. Rendered Prompt
+    end
+
+    %% Response Flow
+    SERVER->>SESSION: 18. Update Session State
+    SESSION->>BACKEND: 19. Persist State
+    BACKEND-->>SESSION: 20. Persist Confirmation
+
+    SERVER->>JSON_RPC: 21. Encode Response
+    JSON_RPC-->>SERVER: 22. JSON Response
+
+    SERVER->>OTEL: 23. End Span
+    OTEL->>OTEL: 24. Export to Datadog/Honeycomb/Jaeger
+
+    SERVER->>MSG_HANDLER: 25. Send Response
+    MSG_HANDLER->>TRANSPORT: 26. Write to Transport
+    TRANSPORT->>AI: 27. JSON-RPC Response
+
+    %% Subscription Flow (Notification)
+    Note over CAPABILITIES: Resource Change Detected
+    CAPABILITIES->>MSG_HANDLER: 28. Publish Notification
+    MSG_HANDLER->>REGISTRY: 29. Lookup Subscribers
+    REGISTRY-->>MSG_HANDLER: 30. Subscriber List
+
+    loop For Each Subscriber
+        MSG_HANDLER->>SERVER: 31. Push Notification
+        SERVER->>TRANSPORT: 32. Send Event
+        TRANSPORT->>AI: 33. Notification Message
+    end
+
+    %% Chaos Injection (Failure Scenarios)
+    Note over CHAOS: Chaos Test Scenario Triggered
+
+    alt Network Latency
+        CHAOS->>TRANSPORT: 34a. Inject Latency
+        TRANSPORT-->>CHAOS: 35a. Delayed Response
+        Note over CHAOS: Measure Recovery Time
+    else Process Kill
+        CHAOS->>SERVER: 34b. Kill Process
+        SERVER-->>CHAOS: 35b. Process Terminated
+        CHAOS->>REGISTRY: 36b. Detect Failure
+        REGISTRY->>SERVER: 37b. Spawn Replacement
+        Note over CHAOS: Verify Let-It-Crash
+    else Resource Exhaustion
+        CHAOS->>BACKEND: 34c. Exhaust Memory
+        BACKEND-->>CHAOS: 35c. Memory Pressure
+        CHAOS->>SESSION: 36c. Trigger Circuit Breaker
+        SESSION-->>CHAOS: 37c. Circuit Open
+        Note over CHAOS: Validate Bounded Refusals
+    end
+
+    %% Session Failover Flow
+    Note over BACKEND: Backend Failure Detected
+    BACKEND->>SESSION: 38. Failover Event
+    SESSION->>BACKEND: 39. Switch to Replica
+    BACKEND-->>SESSION: 40. Failover Complete
+    SESSION->>SERVER: 41. Resume Processing
+
+    %% Metrics Collection Flow
+    SERVER->>OTEL: 42. Record Metrics
+    Note over OTEL: Latency, Throughput,<br/>Memory, Errors
+
+    OTEL->>OTEL: 43. Aggregate Metrics
+    OTEL->>OTEL: 44. Export to Backend
+
+    %% Health Check Flow
+    Note over SERVER: Periodic Health Check
+    SERVER->>SERVER: 45. Self-Check
+    SERVER->>REGISTRY: 46. Heartbeat
+    SERVER->>BACKEND: 47. Connectivity Check
+
+    alt Health Check Failure
+        SERVER->>CHAOS: 48a. Report Degradation
+        CHAOS->>RECOVERY: 49a. Trigger Recovery
+        RECOVERY->>SERVER: 50a. Restart/Heal
+    else Health Check Success
+        SERVER->>DASHBOARD: 48b. Update Status
+    end
+
+    %% Security Flow
+    AI->>TRANSPORT: 51. Authenticated Request
+    TRANSPORT->>SERVER: 52. Forward with Credentials
+    SERVER->>AUTH: 53. Validate Auth
+    AUTH->>SECRETS: 54. Fetch Keys
+    SECRETS-->>AUTH: 55. Cryptographic Material
+    AUTH-->>SERVER: 56. Auth Result
+
+    alt Auth Success
+        SERVER->>CAPABILITIES: 57a. Process Request
+    else Auth Failure
+        SERVER->>JSON_RPC: 57b. Error Response
+        JSON_RPC->>AI: 58b. Refusal Message
+    end
+
+    %% Rate Limiting Flow
+    SERVER->>RATE_LIMITER: 59. Check Quota
+    RATE_LIMITER-->>SERVER: 60. Limit Status
+
+    alt Within Limit
+        SERVER->>CAPABILITIES: 61a. Process Request
+    else Exceeded Limit
+        SERVER->>JSON_RPC: 61b. Rate Limit Error
+        JSON_RPC->>AI: 62b. Refusal Message
+    end
+
+    %% Validation Compliance Flow
+    MSG_PARSER->>VALIDATORS: 63. Protocol Validation
+    VALIDATORS->>SPEC_PARSER: 64. Load MCP Spec
+    SPEC_PARSER-->>VALIDATORS: 65. Spec Rules
+    VALIDATORS-->>MSG_PARSER: 66. Compliance Result
+
+    MSG_PARSER->>VALIDATORS: 67. Security Validation
+    VALIDATORS->>URI_VALIDATOR: 68. Check URIs
+    URI_VALIDATOR-->>VALIDATORS: 69. Injection Check
+    VALIDATORS-->>MSG_PARSER: 70. Security Result
+
+    MSG_PARSER->>VALIDATORS: 71. Performance Validation
+    VALIDATORS->>PERF_VALIDATOR: 72. Check Metrics
+    PERF_VALIDATOR-->>VALIDATORS: 73. Performance Status
+    VALIDATORS-->>MSG_PARSER: 74. Performance Result
+
+    %% Compliance Reporting
+    VALIDATORS->>COMPLIANCE_REPORT: 75. Generate Report
+    COMPLIANCE_REPORT->>COMPLIANCE_HTML: 76. HTML Report
+    COMPLIANCE_REPORT->>COMPLIANCE_JSON: 77. JSON Report
+    COMPLIANCE_REPORT-->>VALIDATORS: 78. Report Complete

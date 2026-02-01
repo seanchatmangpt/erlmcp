@@ -1,0 +1,348 @@
+graph TD
+    subgraph "erlmcp Module Dependency Graph - 164 Modules"
+        direction TB
+
+        %% Core Layer Dependencies
+        subgraph "Core Protocol Layer"
+            JSON_RPC[erlmcp_json_rpc]
+            MSG_HANDLER[erlmcp_message_handler]
+            MSG_PARSER[erlmcp_message_parser]
+            MSG_SIZE[erlmcp_message_size]
+
+            JSON_RPC --> MSG_PARSER
+            MSG_PARSER --> MSG_SIZE
+            MSG_PARSER --> MSG_HANDLER
+            MSG_HANDLER --> JSON_RPC
+        end
+
+        %% Registry Dependencies
+        subgraph "Registry Layer"
+            REGISTRY[erlmcp_registry]
+            REGISTRY_DIST[erlmcp_registry_dist]
+            REGISTRY_UTILS[erlmcp_registry_utils]
+            REGISTRY_BEHAVIOR[erlmcp_registry_behavior]
+
+            REGISTRY --> REGISTRY_UTILS
+            REGISTRY --> REGISTRY_BEHAVIOR
+            REGISTRY_DIST --> REGISTRY
+            REGISTRY_DIST --> REGISTRY_UTILS
+        end
+
+        %% Server/Client Dependencies
+        subgraph "Server/Client Layer"
+            SERVER[erlmcp_server]
+            CLIENT[erlmcp_client]
+            SERVER_SUP[erlmcp_server_sup]
+            CLIENT_SUP[erlmcp_client_sup]
+
+            SERVER --> REGISTRY
+            SERVER --> MSG_HANDLER
+            SERVER --> MSG_PARSER
+            CLIENT --> REGISTRY
+            CLIENT --> MSG_HANDLER
+            SERVER_SUP --> SERVER
+            CLIENT_SUP --> CLIENT
+        end
+
+        %% Session Dependencies
+        subgraph "Session Layer"
+            SESSION[erlmcp_session]
+            SESSION_MGR[erlmcp_session_manager]
+            SESSION_BACKEND[erlmcp_session_backend]
+            SESSION_ETS[erlmcp_session_ets]
+            SESSION_DETS[erlmcp_session_dets]
+            SESSION_MNESIA[erlmcp_session_mnesia]
+            SESSION_FAILOVER[erlmcp_session_failover]
+            SESSION_REPLICATOR[erlmcp_session_replicator]
+
+            SESSION --> SESSION_BACKEND
+            SESSION_MGR --> SESSION
+            SESSION_ETS --> SESSION_BACKEND
+            SESSION_DETS --> SESSION_BACKEND
+            SESSION_MNESIA --> SESSION_BACKEND
+            SESSION_FAILOVER --> SESSION
+            SESSION_FAILOVER --> SESSION_MGR
+            SESSION_REPLICATOR --> SESSION
+        end
+
+        %% Capabilities Dependencies
+        subgraph "Capabilities Layer"
+            RESOURCES[erlmcp_resources]
+            RESOURCE[erlmcp_resource]
+            TOOL[erlmcp_tool]
+            PROMPT[erlmcp_prompt_template]
+            PROMPT_NOTIFIER[erlmcp_prompt_list_change_notifier]
+            SUBSCRIPTIONS[erlmcp_resource_subscriptions]
+            SAMPLING[erlmcp_sampling]
+            COMPLETION[erlmcp_completion]
+            PROGRESS[erlmcp_progress]
+            CAPABILITIES[erlmcp_capabilities]
+
+            RESOURCE --> RESOURCES
+            TOOL --> SERVER
+            PROMPT --> SERVER
+            PROMPT_NOTIFIER --> PROMPT
+            SUBSCRIPTIONS --> RESOURCES
+            SUBSCRIPTIONS --> REGISTRY
+            SAMPLING --> SERVER
+            COMPLETION --> SERVER
+            PROGRESS --> SERVER
+            CAPABILITIES --> SERVER
+        end
+
+        %% Security Dependencies
+        subgraph "Security Layer"
+            AUTH[erlmcp_auth]
+            AUTH_MTLS[erlmcp_auth_mtls]
+            AUTH_RATE[erlmcp_auth_rate_limiter]
+            SECRETS[erlmcp_secrets]
+
+            AUTH_MTLS --> AUTH
+            AUTH_RATE --> AUTH
+            AUTH_RATE --> RATE_LIMITER
+            SECRETS --> AUTH
+        end
+
+        %% Resilience Dependencies
+        subgraph "Resilience Layer"
+            CIRCUIT[erlmcp_circuit_breaker]
+            RATE_LIMITER[erlmcp_rate_limiter]
+            RATE_LIMIT_MIDDLEWARE[erlmcp_rate_limit_middleware]
+            CONN_MONITOR[erlmcp_connection_monitor]
+            CONN_LIMITER[erlmcp_connection_limiter]
+
+            RATE_LIMIT_MIDDLEWARE --> RATE_LIMITER
+            CONN_LIMITER --> CONN_MONITOR
+        end
+
+        %% LLM Integration Dependencies
+        subgraph "LLM Integration Layer"
+            LLVM_ANTHROPIC[erlmcp_llm_provider_anthropic]
+            LLVM_OPENAI[erlmcp_llm_provider_openai]
+            LLVM_LOCAL[erlmcp_llm_provider_local]
+            MOCK_LLM[erlmcp_mock_llm]
+
+            LLVM_ANTHROPIC --> SERVER
+            LLVM_OPENAI --> SERVER
+            LLVM_LOCAL --> SERVER
+            MOCK_LLM --> SERVER
+        end
+
+        %% Transport Layer Dependencies
+        subgraph "Transport Layer"
+            TRANSPORT_BEHAVIOR[erlmcp_transport_behavior]
+            TRANSPORT_ADAPTER[erlmcp_transport_adapter]
+            TRANSPORT_STDIO[erlmcp_transport_stdio]
+            TRANSPORT_TCP[erlmcp_transport_tcp]
+            TRANSPORT_HTTP[erlmcp_transport_http]
+            TRANSPORT_HTTP_SERVER[erlmcp_transport_http_server]
+            TRANSPORT_WS[erlmcp_transport_ws]
+            TRANSPORT_SSE[erlmcp_transport_sse]
+            TRANSPORT_SSE_MGR[erlmcp_transport_sse_manager]
+            TRANSPORT_POOL[erlmcp_transport_pool]
+            TRANSPORT_REGISTRY[erlmcp_transport_registry]
+            TRANSPORT_HEALTH[erlmcp_transport_health]
+
+            TRANSPORT_STDIO --> TRANSPORT_BEHAVIOR
+            TRANSPORT_TCP --> TRANSPORT_BEHAVIOR
+            TRANSPORT_HTTP --> TRANSPORT_BEHAVIOR
+            TRANSPORT_HTTP_SERVER --> TRANSPORT_BEHAVIOR
+            TRANSPORT_WS --> TRANSPORT_BEHAVIOR
+            TRANSPORT_SSE --> TRANSPORT_BEHAVIOR
+            TRANSPORT_SSE_MGR --> TRANSPORT_SSE
+            TRANSPORT_POOL --> TRANSPORT_ADAPTER
+            TRANSPORT_REGISTRY --> TRANSPORT_BEHAVIOR
+            TRANSPORT_HEALTH --> TRANSPORT_REGISTRY
+        end
+
+        %% Observability Dependencies
+        subgraph "Observability Layer"
+            OTEL[erlmcp_otel]
+            OTEL_DATADOG[erlmcp_otel_datadog]
+            OTEL_HONEYCOMB[erlmcp_otel_honeycomb]
+            OTEL_JAEGER[erlmcp_otel_jaeger]
+            OTEL_MIDDLEWARE[erlmcp_otel_middleware]
+
+            METRICS[erlmcp_metrics]
+            METRICS_SERVER[erlmcp_metrics_server]
+            METRICS_AGG[erlmcp_metrics_aggregator]
+
+            TRACING[erlmcp_tracing]
+            TRACE_ANALYZER[erlmcp_trace_analyzer]
+
+            CHAOS[erlmcp_chaos]
+            CHAOS_NETWORK[erlmcp_chaos_network]
+            CHAOS_PROCESS[erlmcp_chaos_process]
+            CHAOS_RESOURCE[erlmcp_chaos_resource]
+            CHAOS_WORKER[erlmcp_chaos_worker]
+            RECOVERY[erlmcp_recovery_manager]
+
+            HEALTH_MONITOR[erlmcp_health_monitor]
+            DASHBOARD[erlmcp_dashboard_server]
+            PROCESS_MONITOR[erlmcp_process_monitor]
+
+            AUDIT_LOG[erlmcp_audit_log]
+            RECEIPT_CHAIN[erlmcp_receipt_chain]
+
+            OTEL_DATADOG --> OTEL
+            OTEL_HONEYCOMB --> OTEL
+            OTEL_JAEGER --> OTEL
+            OTEL_MIDDLEWARE --> OTEL
+
+            METRICS_SERVER --> METRICS
+            METRICS_AGG --> METRICS
+
+            TRACE_ANALYZER --> TRACING
+
+            CHAOS_NETWORK --> CHAOS
+            CHAOS_PROCESS --> CHAOS
+            CHAOS_RESOURCE --> CHAOS
+            CHAOS_WORKER --> CHAOS
+            RECOVERY --> CHAOS
+
+            DASHBOARD --> HEALTH_MONITOR
+            PROCESS_MONITOR --> HEALTH_MONITOR
+
+            RECEIPT_CHAIN --> AUDIT_LOG
+        end
+
+        %% Validation Dependencies
+        subgraph "Validation Layer"
+            PROTO_VALIDATOR[erlmcp_protocol_validator]
+            TRANSPORT_VALIDATOR[erlmcp_transport_validator]
+            SECURITY_VALIDATOR[erlmcp_security_validator]
+            PERF_VALIDATOR[erlmcp_performance_validator]
+
+            COMPLIANCE_REPORT[erlmcp_compliance_report]
+            COMPLIANCE_HTML[erlmcp_compliance_report_html]
+            COMPLIANCE_JSON[erlmcp_compliance_report_json]
+
+            SPEC_PARSER[erlmcp_spec_parser]
+            URI_VALIDATOR[erlmcp_uri_validator]
+            TEST_CLIENT[erlmcp_test_client]
+            VALIDATE_CLI[erlmcp_validate_cli]
+
+            PROTO_VALIDATOR --> SPEC_PARSER
+            PROTO_VALIDATOR --> COMPLIANCE_REPORT
+            TRANSPORT_VALIDATOR --> TRANSPORT_BEHAVIOR
+            TRANSPORT_VALIDATOR --> COMPLIANCE_REPORT
+            SECURITY_VALIDATOR --> COMPLIANCE_REPORT
+            PERF_VALIDATOR --> COMPLIANCE_REPORT
+
+            COMPLIANCE_HTML --> COMPLIANCE_REPORT
+            COMPLIANCE_JSON --> COMPLIANCE_REPORT
+
+            TEST_CLIENT --> TRANSPORT_VALIDATOR
+            VALIDATE_CLI --> COMPLIANCE_REPORT
+        end
+
+        %% Utility Dependencies
+        subgraph "Utility Layer"
+            BATCH[erlmcp_batch]
+            CANCELLATION[erlmcp_cancellation]
+            PAGINATION[erlmcp_pagination]
+            PATH_CANONICALIZER[erlmcp_path_canonicalizer]
+            REQUEST_ID[erlmcp_request_id]
+
+            ERRORS[erlmcp_errors]
+            LOGGING[erlmcp_logging]
+            HEALTH[erlmcp_health]
+            HOOKS[erlmcp_hooks]
+
+            CACHE[erlmcp_cache]
+            CACHE_WARMER[erlmcp_cache_warmer]
+            ICON_CACHE[erlmcp_icon_cache]
+
+            MEMORY_GUARD[erlmcp_memory_guard]
+            MEMORY_MONITOR[erlmcp_memory_monitor]
+            CPU_GUARD[erlmcp_cpu_guard]
+            CPU_QUOTA[erlmcp_cpu_quota]
+
+            GRACEFUL_DRAIN[erlmcp_graceful_drain]
+            CODE_RELOAD[erlmcp_code_reload]
+
+            NODE_MONITOR[erlmcp_node_monitor]
+            SPLIT_BRAIN[erlmcp_split_brain_detector]
+
+            DEBUGGER[erlmcp_debugger]
+            PROFILER[erlmcp_profiler]
+            MEMORY_ANALYZER[erlmcp_memory_analyzer]
+
+            REFUSAL[erlmcp_refusal]
+            SCHEMA_REGISTRY[erlmcp_schema_registry]
+
+            CACHE_WARMER --> CACHE
+            MEMORY_MONITOR --> MEMORY_GUARD
+            QUOTA --> CPU_GUARD
+        end
+
+        %% Cross-Layer Dependencies
+        SERVER --> SESSION
+        SERVER --> RESOURCES
+        SERVER --> TOOL
+        SERVER --> PROMPT
+        SERVER --> SUBSCRIPTIONS
+        SERVER --> AUTH
+        SERVER --> CIRCUIT
+        SERVER --> RATE_LIMITER
+        SERVER --> CONN_MONITOR
+        SERVER --> CONN_LIMITER
+
+        CLIENT --> SESSION
+        CLIENT --> AUTH
+
+        MSG_HANDLER --> REGISTRY
+        MSG_HANDLER --> SERVER
+        MSG_HANDLER --> CLIENT
+
+        METRICS --> SERVER
+        METRICS --> CLIENT
+        TRACING --> SERVER
+        TRACING --> CLIENT
+
+        HEALTH_MONITOR --> SERVER
+        HEALTH_MONITOR --> CLIENT
+        HEALTH_MONITOR --> TRANSPORT_HEALTH
+
+        OTEL --> SERVER
+        OTEL --> CLIENT
+        OTEL --> TRANSPORT_ADAPTER
+
+        CHAOS --> SERVER
+        CHAOS --> TRANSPORT_ADAPTER
+        CHAOS --> REGISTRY
+
+        PROTO_VALIDATOR --> JSON_RPC
+        PROTO_VALIDATOR --> MSG_PARSER
+
+        SECURITY_VALIDATOR --> AUTH
+        SECURITY_VALIDATOR --> SECRETS
+        SECURITY_VALIDATOR --> URI_VALIDATOR
+
+        PERF_VALIDATOR --> METRICS
+        PERF_VALIDATOR --> TRACING
+    end
+
+    classDef protocolStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef registryStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef sessionStyle fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    classDef capabilitiesStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef securityStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef resilienceStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef llmStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef transportStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef observabilityStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef validationStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef utilityStyle fill:#f5f5f5,stroke:#424242,stroke-width:1px
+
+    class JSON_RPC,MSG_HANDLER,MSG_PARSER,MSG_SIZE protocolStyle
+    class REGISTRY,REGISTRY_DIST,REGISTRY_UTILS,REGISTRY_BEHAVIOR registryStyle
+    class SESSION,SESSION_MGR,SESSION_BACKEND,SESSION_ETS,SESSION_DETS,SESSION_MNESIA,SESSION_FAILOVER,SESSION_REPLICATOR sessionStyle
+    class RESOURCES,RESOURCE,TOOL,PROMPT,PROMPT_NOTIFIER,SUBSCRIPTIONS,SAMPLING,COMPLETION,PROGRESS,CAPABILITIES capabilitiesStyle
+    class AUTH,AUTH_MTLS,AUTH_RATE,SECRETS securityStyle
+    class CIRCUIT,RATE_LIMITER,RATE_LIMIT_MIDDLEWARE,CONN_MONITOR,CONN_LIMITER resilienceStyle
+    class LLVM_ANTHROPIC,LLVM_OPENAI,LLVM_LOCAL,MOCK_LLM llmStyle
+    class TRANSPORT_BEHAVIOR,TRANSPORT_ADAPTER,TRANSPORT_STDIO,TRANSPORT_TCP,TRANSPORT_HTTP,TRANSPORT_HTTP_SERVER,TRANSPORT_WS,TRANSPORT_SSE,TRANSPORT_SSE_MGR,TRANSPORT_POOL,TRANSPORT_REGISTRY,TRANSPORT_HEALTH transportStyle
+    class OTEL,OTEL_DATADOG,OTEL_HONEYCOMB,OTEL_JAEGER,OTEL_MIDDLEWARE,METRICS,METRICS_SERVER,METRICS_AGG,TRACING,TRACE_ANALYZER,CHAOS,CHAOS_NETWORK,CHAOS_PROCESS,CHAOS_RESOURCE,CHAOS_WORKER,RECOVERY,HEALTH_MONITOR,DASHBOARD,PROCESS_MONITOR,AUDIT_LOG,RECEIPT_CHAIN observabilityStyle
+    class PROTO_VALIDATOR,TRANSPORT_VALIDATOR,SECURITY_VALIDATOR,PERF_VALIDATOR,COMPLIANCE_REPORT,COMPLIANCE_HTML,COMPLIANCE_JSON,SPEC_PARSER,URI_VALIDATOR,TEST_CLIENT,VALIDATE_CLI validationStyle
+    class BATCH,CANCELLATION,PAGINATION,PATH_CANONICALIZER,REQUEST_ID,ERRORS,LOGGING,HEALTH,HOOKS,CACHE,CACHE_WARMER,ICON_CACHE,MEMORY_GUARD,MEMORY_MONITOR,CPU_GUARD,CPU_QUOTA,GRACEFUL_DRAIN,CODE_RELOAD,NODE_MONITOR,SPLIT_BRAIN,DEBUGGER,PROFILER,MEMORY_ANALYZER,REFUSAL,SCHEMA_REGISTRY utilityStyle

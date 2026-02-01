@@ -1,0 +1,503 @@
+graph TB
+    subgraph "erlmcp Module Organization Index - 164 Modules"
+        direction TB
+
+        %% ========================================================================
+        %% LAYER 1: Application Entry Points (4 apps)
+        %% ========================================================================
+        subgraph "Application Layer"
+            direction LR
+
+            ERLMCP_CORE[erlmcp_core<br/>97 modules]
+            ERLMCP_TRANS[erlmcp_transports<br/>23 modules]
+            ERLMCP_OBS[erlmcp_observability<br/>31 modules]
+            ERLMCP_VAL[erlmcp_validation<br/>13 modules]
+
+            note_core["Core Protocol<br/>JSON-RPC, MCP"]
+            note_trans["Transport I/O<br/>stdio, TCP, HTTP, WS, SSE"]
+            note_obs["Telemetry<br/>Metrics, Traces, Chaos"]
+            note_val["Compliance<br/>Validators, Reports"]
+
+            ERLMCP_CORE -.-> note_core
+            ERLMCP_TRANS -.-> note_trans
+            ERLMCP_OBS -.-> note_obs
+            ERLMCP_VAL -.-> note_val
+        end
+
+        %% ========================================================================
+        %% LAYER 2: Core Protocol Modules (97 modules)
+        %% ========================================================================
+        subgraph "Core Protocol - 97 Modules"
+            direction TB
+
+            %% Message Flow (7 modules)
+            subgraph "Message Flow Pipeline"
+                JSON_RPC[erlmcp_json_rpc<br/>JSON-RPC 2.0 codec]
+                MSG_PARSER[erlmcp_message_parser<br/>MCP protocol parser]
+                MSG_SIZE[erlmcp_message_size<br/>Size validation]
+                MSG_HANDLER[erlmcp_message_handler<br/>Request router]
+                NOTIFICATION[erlmcp_notification_handler<br/>Event dispatcher]
+                BATCH[erlmcp_batch<br/>Batch operations]
+                CANCELLATION[erlmcp_cancellation<br/>Request cancellation]
+
+                JSON_RPC --> MSG_PARSER --> MSG_SIZE --> MSG_HANDLER --> NOTIFICATION
+                BATCH -.parallel. MSG_HANDLER
+                CANCELLATION -.cancel. MSG_HANDLER
+            end
+
+            %% Client/Server (11 modules)
+            subgraph "Client/Server Processes"
+                CLIENT[erlmcp_client<br/>MCP client gen_server]
+                CLIENT_TRANSPORT[erlmcp_client_transport<br/>Client transport adapter]
+                CLIENT_SUP[erlmcp_client_sup<br/>Client supervisor]
+
+                SERVER[erlmcp_server<br/>MCP server gen_server]
+                SERVER_SUP[erlmcp_server_sup<br/>Server supervisor]
+
+                CLIENT_TRANSPORT --> CLIENT
+                CLIENT_SUP -.supervise. CLIENT
+                SERVER_SUP -.supervise. SERVER
+            end
+
+            %% Registry (3 modules)
+            subgraph "Registry System"
+                REGISTRY[erlmcp_registry<br/>gproc-based registry]
+                REGISTRY_DIST[erlmcp_registry_dist<br/>Distributed routing]
+                REGISTRY_UTILS[erlmcp_registry_utils<br/>Helper functions]
+
+                REGISTRY --> REGISTRY_UTILS
+                REGISTRY_DIST --> REGISTRY
+            end
+
+            %% Session Management (9 modules)
+            subgraph "Session Layer"
+                SESSION[erlmcp_session<br/>Session state]
+                SESSION_MGR[erlmcp_session_manager<br/>Lifecycle]
+                SESSION_BACKEND[erlmcp_session_backend<br/>Behavior interface]
+                SESSION_ETS[erlmcp_session_ets<br/>In-memory backend]
+                SESSION_DETS[erlmcp_session_dets<br/>Disk backend]
+                SESSION_MNESIA[erlmcp_session_mnesia<br/>Cluster backend]
+                SESSION_FAILOVER[erlmcp_session_failover<br/>Failover logic]
+                SESSION_REPLICATOR[erlmcp_session_replicator<br/>State sync]
+
+                SESSION --> SESSION_BACKEND
+                SESSION_ETS -.implements. SESSION_BACKEND
+                SESSION_DETS -.implements. SESSION_BACKEND
+                SESSION_MNESIA -.implements. SESSION_BACKEND
+                SESSION_MGR --> SESSION
+                SESSION_FAILOVER --> SESSION_MGR
+                SESSION_REPLICATOR --> SESSION
+            end
+
+            %% Capabilities (14 modules)
+            subgraph "MCP Capabilities"
+                CAP[erlmcp_capabilities<br/>Capability negotiation]
+                RESOURCES[erlmcp_resources<br/>Resource listing]
+                RESOURCE[erlmcp_resource<br/>Single resource]
+                RESOURCE_SUB[erlmcp_resource_subscriptions<br/>Change notifications]
+                TOOL[erlmcp_tool<br/>Tool execution]
+                PROMPT[erlmcp_prompt_template<br/>Prompt templates]
+                PROMPT_NOTIFIER[erlmcp_prompt_list_change_notifier<br/>List changes]
+                SAMPLING[erlmcp_sampling<br/>LLM sampling]
+                COMPLETION[erlmcp_completion<br/>Completions]
+                PROGRESS[erlmcp_progress<br/>Progress tokens]
+                ELICITATION[erlmcp_elicitation<br/>Forms/URLs]
+                TASKS[erlmcp_tasks<br/>Background tasks]
+
+                CAP --> RESOURCES
+                CAP --> TOOL
+                CAP --> PROMPT
+                CAP --> SAMPLING
+                RESOURCE --> RESOURCES
+                RESOURCE_SUB --> RESOURCES
+                PROMPT_NOTIFIER --> PROMPT
+            end
+
+            %% Security (4 modules)
+            subgraph "Security Layer"
+                AUTH[erlmcp_auth<br/>Authentication]
+                AUTH_MTLS[erlmcp_auth_mtls<br/>Mutual TLS]
+                AUTH_RATE[erlmcp_auth_rate_limiter<br/>Auth-specific limits]
+                SECRETS[erlmcp_secrets<br/>Secrets management]
+
+                AUTH_MTLS --> AUTH
+                AUTH_RATE --> AUTH
+                SECRETS --> AUTH
+            end
+
+            %% Resilience (5 modules)
+            subgraph "Resilience Patterns"
+                CIRCUIT[erlmcp_circuit_breaker<br/>Circuit breaker]
+                RATE[erlmcp_rate_limiter<br/>Rate limiter]
+                RATE_MID[erlmcp_rate_limit_middleware<br/>Middleware injection]
+                CONN_MON[erlmcp_connection_monitor<br/>Health checks]
+                CONN_LIMIT[erlmcp_connection_limiter<br/>Connection limits]
+
+                RATE_MID --> RATE
+                CONN_LIMIT --> CONN_MON
+            end
+
+            %% Utilities (20 modules)
+            subgraph "Utility Modules"
+                PAGINATION[erlmcp_pagination<br/>Page navigation]
+                PATH_CANON[erlmcp_path_canonicalizer<br/>Path normalization]
+                REQUEST_ID[erlmcp_request_id<br/>UUID generation]
+                ERRORS[erlmcp_errors<br/>Error handling]
+                LOGGING[erlmcp_logging<br/>Structured logging]
+                HEALTH[erlmcp_health<br/>Health checks]
+                HOOKS[erlmcp_hooks<br/>Hook system]
+                CACHE[erlmcp_cache<br/>Caching layer]
+                CACHE_WARMER[erlmcp_cache_warmer<br/>Cache pre-warming]
+                ICON_CACHE[erlmcp_icon_cache<br/>Icon metadata cache]
+                MEMORY_GUARD[erlmcp_memory_guard<br/>Memory protection]
+                MEMORY_MON[erlmcp_memory_monitor<br/>Memory tracking]
+                CPU_GUARD[erlmcp_cpu_guard<br/>CPU protection]
+                CPU_QUOTA[erlmcp_cpu_quota<br/>CPU quotas]
+                GRACEFUL[erlmcp_graceful_drain<br/>Graceful shutdown]
+                RELOAD[erlmcp_code_reload<br/>Hot code reload]
+                NODE_MON[erlmcp_node_monitor<br/>Node health]
+                SPLIT_BRAIN[erlmcp_split_brain_detector<br/>Network partition]
+                DEBUGGER[erlmcp_debugger<br/>Debug tools]
+                PROFILER[erlmcp_profiler<br/>Performance profiler]
+                REFUSAL[erlmcp_refusal<br/>Error codes]
+                SCHEMA_REG[erlmcp_schema_registry<br/>Schema storage]
+
+                CACHE_WARMER --> CACHE
+                MEMORY_MON --> MEMORY_GUARD
+                CPU_QUOTA --> CPU_GUARD
+            end
+
+            %% LLM Integration (4 modules)
+            subgraph "LLM Providers"
+                LLVM_ANTHROPIC[erlmcp_llm_provider_anthropic<br/>Claude]
+                LLVM_OPENAI[erlmcp_llm_provider_openai<br/>GPT]
+                LLVM_LOCAL[erlmcp_llm_provider_local<br/>Local models]
+                MOCK_LLM[erlmcp_mock_llm<br/>Test harness]
+
+                LLVM_ANTHROPIC --> SERVER
+                LLVM_OPENAI --> SERVER
+                LLVM_LOCAL --> SERVER
+                MOCK_LLM --> SERVER
+            end
+
+            %% Distributed (6 modules)
+            subgraph "Distributed Systems"
+                FAILOVER[erlmcp_failover_worker<br/>Failover worker]
+                FAILOVER_SUP[erlmcp_failover_worker_sup<br/>Supervisor]
+                CODE_RELOAD[erlmcp_code_reload<br/>Hot reload]
+                NODE_MONITOR[erlmcp_node_monitor<br/>Node health]
+                SPLIT_BRAIN[erlmcp_split_brain_detector<br/>Partition detection]
+                TEST_SYNC[erlmcp_test_sync<br/>Test coordination]
+
+                FAILOVER_SUP -.supervise. FAILOVER
+            end
+
+            %% Supervisors (3 modules)
+            subgraph "Supervisors"
+                CORE_SUP[erlmcp_core_sup<br/>Core supervisor]
+                CLUSTER_SUP[erlmcp_cluster_sup<br/>Cluster supervisor]
+                NOTIF_SUP[erlmcp_notification_handler_sup<br/>Notification sup]
+            end
+        end
+
+        %% ========================================================================
+        %% LAYER 3: Transport Modules (23 modules)
+        %% ========================================================================
+        subgraph "Transport Layer - 23 Modules"
+            direction TB
+
+            %% Behavior Interface (2 modules)
+            subgraph "Transport Behavior"
+                TRANS_BEH[erlmcp_transport_behavior<br/>Behavior contract]
+                TRANS_ADAPTER[erlmcp_transport_adapter<br/>Adapter pattern]
+
+                TRANS_ADAPTER --> TRANS_BEH
+            end
+
+            %% Implementations (7 modules)
+            subgraph "Transport Implementations"
+                STDIO[erlmcp_transport_stdio<br/>STDIO I/O]
+                TCP[erlmcp_transport_tcp<br/>TCP sockets<br/>ranch-based]
+                HTTP[erlmcp_transport_http<br/>HTTP client<br/>gun-based]
+                HTTP_SRV[erlmcp_transport_http_server<br/>HTTP server<br/>cowboy-based]
+                WS[erlmcp_transport_ws<br/>WebSocket]
+                SSE[erlmcp_transport_sse<br/>Server-Sent Events]
+                SSE_MGR[erlmcp_transport_sse_manager<br/>SSE connection manager]
+
+                SSE_MGR --> SSE
+            end
+
+            %% Infrastructure (6 modules)
+            subgraph "Transport Infrastructure"
+                POOL[erlmcp_transport_pool<br/>Connection pooling]
+                PIPELINE[erlmcp_transport_pipeline<br/>Pipeline pattern]
+                REGISTRY[erlmcp_transport_registry<br/>Transport discovery]
+                HEALTH[erlmcp_transport_health<br/>Health checks]
+                DISCOVERY[erlmcp_transport_discovery<br/>Service discovery<br/>K8s, Consul]
+                VALIDATION[erlmcp_transport_validation<br/>Compliance check]
+
+                REGISTRY --> TRANS_BEH
+                HEALTH --> REGISTRY
+                VALIDATION --> TRANS_BEH
+            end
+
+            %% Pooling (2 modules)
+            subgraph "Pool Management"
+                POOL_MGR[erlmcp_pool_manager<br/>Pool coordinator]
+                POOL_STRAT[erlmcp_pool_strategy<br/>Pool strategies]
+
+                POOL_MGR --> POOL_STRAT
+            end
+
+            %% Security (3 modules)
+            subgraph "Transport Security"
+                HDR_VAL[erlmcp_http_header_validator<br/>Header validation]
+                ORIGIN_VAL[erlmcp_origin_validator<br/>CORS validation]
+                SEC_HDR[erlmcp_security_headers<br/>Security headers]
+                TLS_VAL[erlmcp_tls_validation<br/>Certificate validation]
+
+                HDR_VAL --> HTTP
+                ORIGIN_VAL --> HTTP
+                SEC_HDR --> HTTP
+                TLS_VAL --> HTTP
+            end
+
+            %% OTP (2 modules)
+            subgraph "Transport OTP"
+                TRANS_APP[erlmcp_transports_app<br/>Application callback]
+                TRANS_SUP[erlmcp_transport_sup<br/>Supervisor]
+
+                TRANS_APP -.starts. TRANS_SUP
+            end
+        end
+
+        %% ========================================================================
+        %% LAYER 4: Observability Modules (31 modules)
+        %% ========================================================================
+        subgraph "Observability Layer - 31 Modules"
+            direction TB
+
+            %% OpenTelemetry (6 modules)
+            subgraph "OpenTelemetry"
+                OTEL[erlmcp_otel<br/>OTEL integration]
+                OTEL_DATADOG[erlmcp_otel_datadog<br/>Datadog exporter]
+                OTEL_HONEYCOMB[erlmcp_otel_honeycomb<br/>Honeycomb exporter]
+                OTEL_JAEGER[erlmcp_otel_jaeger<br/>Jaeger exporter]
+                OTEL_MID[erlmcp_otel_middleware<br/>Middleware injection]
+
+                OTEL_DATADOG --> OTEL
+                OTEL_HONEYCOMB --> OTEL
+                OTEL_JAEGER --> OTEL
+                OTEL_MID --> OTEL
+            end
+
+            %% Metrics (3 modules)
+            subgraph "Metrics Collection"
+                METRICS[erlmcp_metrics<br/>Metrics API]
+                METRICS_SRV[erlmcp_metrics_server<br/>HTTP endpoint]
+                METRICS_AGG[erlmcp_metrics_aggregator<br/>Aggregation]
+
+                METRICS_SRV --> METRICS
+                METRICS_AGG --> METRICS
+            end
+
+            %% Tracing (2 modules)
+            subgraph "Distributed Tracing"
+                TRACING[erlmcp_tracing<br/>Trace API]
+                TRACE_ANALYZER[erlmcp_trace_analyzer<br/>Trace analysis]
+
+                TRACE_ANALYZER --> TRACING
+            end
+
+            %% Chaos Engineering (7 modules)
+            subgraph "Chaos Engineering"
+                CHAOS[erlmcp_chaos<br/>Chaos coordinator]
+                CHAOS_NET[erlmcp_chaos_network<br/>Network failures]
+                CHAOS_PROC[erlmcp_chaos_process<br/>Process failures]
+                CHAOS_RES[erlmcp_chaos_resource<br/>Resource exhaustion]
+                CHAOS_WORKER[erlmcp_chaos_worker<br/>Worker process]
+                CHAOS_SUP[erlmcp_chaos_worker_sup<br/>Worker supervisor]
+                RECOVERY[erlmcp_recovery_manager<br/>Recovery orchestration]
+
+                CHAOS_NET --> CHAOS
+                CHAOS_PROC --> CHAOS
+                CHAOS_RES --> CHAOS
+                CHAOS_SUP -.supervise. CHAOS_WORKER
+                CHAOS_WORKER --> CHAOS
+                RECOVERY --> CHAOS
+            end
+
+            %% Monitoring (4 modules)
+            subgraph "Monitoring & Dashboards"
+                HEALTH_MON[erlmcp_health_monitor<br/>Health monitoring]
+                DASHBOARD[erlmcp_dashboard_server<br/>Web dashboard]
+                DASHBOARD_HTTP[erlmcp_dashboard_http_handler<br/>HTTP handler]
+                PROC_MON[erlmcp_process_monitor<br/>Process monitoring]
+
+                DASHBOARD --> DASHBOARD_HTTP
+                DASHBOARD --> HEALTH_MON
+                PROC_MON --> HEALTH_MON
+            end
+
+            %% Debugging (3 modules)
+            subgraph "Debugging Tools"
+                DEBUGGER[erlmcp_debugger<br/>Debug interface]
+                PROFILER[erlmcp_profiler<br/>Performance profiler]
+                MEM_ANALYZER[erlmcp_memory_analyzer<br/>Memory analysis]
+
+                PROFILER --> DEBUGGER
+                MEM_ANALYZER --> DEBUGGER
+            end
+
+            %% Audit Trail (3 modules)
+            subgraph "Audit & Receipts"
+                AUDIT[erlmcp_audit_log<br/>Audit logging]
+                RECEIPT[erlmcp_receipt_chain<br/>Immutable receipts]
+                EVIDENCE[erlmcp_evidence_path<br/>Evidence tracking]
+
+                RECEIPT --> AUDIT
+                EVIDENCE --> AUDIT
+            end
+
+            %% Validation (2 modules)
+            subgraph "Metrology"
+                METRO_VAL[erlmcp_metrology_validator<br/>Unit validation]
+                BENCH_RATE[erlmcp_bench_rate_limit<br/>Benchmarks]
+
+                METRO_VAL --> METRICS
+            end
+
+            %% OTP (2 modules)
+            subgraph "Observability OTP"
+                OBS_APP[erlmcp_observability_app<br/>Application callback]
+                OBS_SUP[erlmcp_observability_sup<br/>Supervisor]
+
+                OBS_APP -.starts. OBS_SUP
+            end
+        end
+
+        %% ========================================================================
+        %% LAYER 5: Validation Modules (13 modules)
+        %% ========================================================================
+        subgraph "Validation Layer - 13 Modules"
+            direction TB
+
+            %% Validators (4 modules)
+            subgraph "Protocol Validators"
+                PROTO_VAL[erlmcp_protocol_validator<br/>JSON-RPC + MCP]
+                TRANS_VAL[erlmcp_transport_validator<br/>Transport behavior]
+                SEC_VAL[erlmcp_security_validator<br/>Auth + secrets]
+                PERF_VAL[erlmcp_performance_validator<br/>Metrics + latency]
+
+                PROTO_VAL --> SPEC_PARSER
+                TRANS_VAL --> TRANS_BEH
+                SEC_VAL --> AUTH
+                PERF_VAL --> METRICS
+            end
+
+            %% Reporting (3 modules)
+            subgraph "Compliance Reports"
+                COMPLIANCE[erlmcp_compliance_report<br/>Report generator]
+                COMPLIANCE_HTML[erlmcp_compliance_report_html<br/>HTML format]
+                COMPLIANCE_JSON[erlmcp_compliance_report_json<br/>JSON format]
+
+                COMPLIANCE_HTML --> COMPLIANCE
+                COMPLIANCE_JSON --> COMPLIANCE
+
+                PROTO_VAL --> COMPLIANCE
+                TRANS_VAL --> COMPLIANCE
+                SEC_VAL --> COMPLIANCE
+                PERF_VAL --> COMPLIANCE
+            end
+
+            %% Test Infrastructure (2 modules)
+            subgraph "Test Tools"
+                TEST_CLIENT[erlmcp_test_client<br/>Multi-transport client]
+                SPEC_PARSER[erlmcp_spec_parser<br/>MCP spec parser]
+
+                TEST_CLIENT --> TRANS_VAL
+            end
+
+            %% Validation (2 modules)
+            subgraph "Input Validation"
+                URI_VAL[erlmcp_uri_validator<br/>URI validation]
+                MEM_MGR[erlmcp_memory_manager<br/>Memory validation]
+
+                URI_VAL --> SEC_VAL
+            end
+
+            %% CLI (1 module)
+            subgraph "Command Line"
+                VALIDATE_CLI[erlmcp_validate_cli<br/>CLI interface]
+
+                VALIDATE_CLI --> COMPLIANCE
+            end
+
+            %% OTP (1 module)
+            subgraph "Validation OTP"
+                VAL_APP[erlmcp_validation_app<br/>Application callback]
+            end
+        end
+
+        %% ========================================================================
+        %% CROSS-LAYER INTEGRATION
+        %% ========================================================================
+        CLIENT --> REGISTRY
+        CLIENT --> MSG_HANDLER
+        CLIENT --> SESSION
+        CLIENT --> AUTH
+
+        SERVER --> REGISTRY
+        SERVER --> MSG_HANDLER
+        SERVER --> RESOURCES
+        SERVER --> TOOL
+        SERVER --> PROMPT
+        SERVER --> SESSION
+        SERVER --> AUTH
+        SERVER --> CIRCUIT
+
+        MSG_HANDLER --> REGISTRY
+        MSG_HANDLER --> SERVER
+        MSG_HANDLER --> CLIENT
+
+        REGISTRY --> SERVER
+        REGISTRY --> CLIENT
+
+        TRANS_BEH --> MSG_HANDLER
+        TRANS_ADAPTER --> MSG_HANDLER
+
+        METRICS --> SERVER
+        METRICS --> CLIENT
+        TRACING --> SERVER
+        TRACING --> CLIENT
+        HEALTH_MON --> SERVER
+        HEALTH_MON --> CLIENT
+    end
+
+    %% ========================================================================
+    %% LEGEND
+    %% ========================================================================
+    subgraph "Legend"
+        L1["◉ Application Layer - Entry points"]
+        L2["◉ Core Protocol - 97 modules"]
+        L3["◉ Transport Layer - 23 modules"]
+        L4["◉ Observability - 31 modules"]
+        L5["◉ Validation - 13 modules"]
+        L6["→ Dependency flow"]
+        L7["-.→ Monitoring/Supervision"]
+        L8["-.implements. Behavior implementation"]
+    end
+
+    classDef appStyle fill:#ffebee,stroke:#c62828,stroke-width:3px
+    classDef coreStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef transportStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef obsStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef valStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef legendStyle fill:#f5f5f5,stroke:#424242,stroke-width:1px
+
+    class ERLMCP_CORE,ERLMCP_TRANS,ERLMCP_OBS,ERLMCP_VAL appStyle
+    class JSON_RPC,MSG_PARSER,MSG_SIZE,MSG_HANDLER,NOTIFICATION,BATCH,CANCELLATION,CLIENT,CLIENT_TRANSPORT,CLIENT_SUP,SERVER,SERVER_SUP,REGISTRY,REGISTRY_DIST,REGISTRY_UTILS,SESSION,SESSION_MGR,SESSION_BACKEND,SESSION_ETS,SESSION_DETS,SESSION_MNESIA,SESSION_FAILOVER,SESSION_REPLICATOR,CAP,RESOURCES,RESOURCE,RESOURCE_SUB,TOOL,PROMPT,PROMPT_NOTIFIER,SAMPLING,COMPLETION,PROGRESS,ELICITATION,TASKS,AUTH,AUTH_MTLS,AUTH_RATE,SECRETS,CIRCUIT,RATE,RATE_MID,CONN_MON,CONN_LIMIT,PAGINATION,PATH_CANON,REQUEST_ID,ERRORS,LOGGING,HEALTH,HOOKS,CACHE,CACHE_WARMER,ICON_CACHE,MEMORY_GUARD,MEMORY_MON,CPU_GUARD,CPU_QUOTA,GRACEFUL,RELOAD,NODE_MON,SPLIT_BRAIN,DEBUGGER,PROFILER,REFUSAL,SCHEMA_REG,LLVM_ANTHROPIC,LLVM_OPENAI,LLVM_LOCAL,MOCK_LLM,FAILOVER,FAILOVER_SUP,CODE_RELOAD,NODE_MONITOR,SPLIT_BRAIN,TEST_SYNC,CORE_SUP,CLUSTER_SUP,NOTIF_SUP coreStyle
+    class TRANS_BEH,TRANS_ADAPTER,STDIO,TCP,HTTP,HTTP_SRV,WS,SSE,SSE_MGR,POOL,PIPELINE,REGISTRY,HEALTH,DISCOVERY,VALIDATION,POOL_MGR,POOL_STRAT,HDR_VAL,ORIGIN_VAL,SEC_HDR,TLS_VAL,TRANS_APP,TRANS_SUP transportStyle
+    class OTEL,OTEL_DATADOG,OTEL_HONEYCOMB,OTEL_JAEGER,OTEL_MID,METRICS,METRICS_SRV,METRICS_AGG,TRACING,TRACE_ANALYZER,CHAOS,CHAOS_NET,CHAOS_PROC,CHAOS_RES,CHAOS_WORKER,CHAOS_SUP,RECOVERY,HEALTH_MON,DASHBOARD,DASHBOARD_HTTP,PROC_MON,DEBUGGER,PROFILER,MEM_ANALYZER,AUDIT,RECEIPT,EVIDENCE,METRO_VAL,BENCH_RATE,OBS_APP,OBS_SUP obsStyle
+    class PROTO_VAL,TRANS_VAL,SEC_VAL,PERF_VAL,COMPLIANCE,COMPLIANCE_HTML,COMPLIANCE_JSON,TEST_CLIENT,SPEC_PARSER,URI_VAL,MEM_MGR,VALIDATE_CLI,VAL_APP valStyle
+    class L1,L2,L3,L4,L5,L6,L7,L8 legendStyle

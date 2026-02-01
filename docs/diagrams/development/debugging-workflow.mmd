@@ -1,0 +1,188 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#f1f5f9', 'primaryTextColor':'#0f172a', 'primaryBorderColor':'#3b82f6', 'lineColor':'#64748b', 'sectionBkgColor':'#e2e8f0', 'altSectionBkgColor':'#f8fafc'}}}%%
+flowchart TD
+    subgraph Detect["Issue Detection"]
+        direction LR
+
+        subgraph Signals["Detection Signals"]
+            S1["🚨 CI/CD Failure<br/>Test failures, compilation errors"]
+            S2["🚨 Alert Triggered<br/>PagerDuty, Slack alerts"]
+            S3["🚨 User Report<br/>Bug reports, support tickets"]
+            S4["🚨 Monitoring<br/>Latency spike, error rate"]
+            S1 & S2 & S3 & S4
+        end
+
+        subgraph Prioritize["Triage & Prioritize"]
+            P1["🔴 Critical<br/>Production down, data loss"]
+            P2["🟠 High<br/>Major feature broken"]
+            P3["🟡 Medium<br/>Workaround available"]
+            P4["🟢 Low<br/>Minor annoyance"]
+            P1 --> P2 --> P3 --> P4
+        end
+
+        Signals --> Prioritize
+    end
+
+    subgraph Investigate["Investigation Phase"]
+        direction TB
+
+        subgraph Reproduce["Reproduction"]
+            direction LR
+            R1["🔍 Minimal Reproducer<br/>Isolate the bug"]
+            R2["🔍 Test Case<br/>Write failing test"]
+            R3["🔍 Environment<br/>Match production config"]
+            R1 --> R2 --> R3
+        end
+
+        subgraph Diagnostics["Diagnostic Tools"]
+            direction LR
+            D1["📊 Logs<br/>erlmcp_logging structured logs"]
+            D2["📊 Traces<br/>OpenTelemetry distributed tracing"]
+            D3["📊 Metrics<br/>erlmcp_metrics dashboard"]
+            D4["📊 Process Inspector<br/>observer, recon"]
+            D1 --> D2 --> D3 --> D4
+        end
+
+        subgraph Analysis["Root Cause Analysis"]
+            direction LR
+            A1["🔬 5 Whys<br/>Ask why 5 times"]
+            A2["🔬 Fault Tree<br/>Systematic elimination"]
+            A3["🔬 Timeline<br/>When did it start?"]
+            A4["🔬 Changes<br/>Recent commits?"]
+            A1 --> A2 --> A3 --> A4
+        end
+
+        Reproduce --> Diagnostics --> Analysis
+    end
+
+    subgraph Tools["Debugging Toolbox"]
+        direction LR
+
+        subgraph ErlangTools["Erlang/OTP Tools"]
+            direction TB
+            ET1["🔧 debugger<br/>Interactive debugger"]
+            ET2["🔧 observer<br/>Process visualization"]
+            ET3["🔧 recon<br/>Runtime diagnostics"]
+            ET4["🔧 :sys.get_state<br/>Inspect gen_server state"]
+            ET5["🔧 :erlang.process_info<br/>Process details"]
+            ET1 --> ET2 --> ET3 --> ET4 --> ET5
+        end
+
+        subgraph ERLMCPTools["erlmcp Tools"]
+            direction TB
+            MT1["🔧 erlmcp_debugger<br/>MCP-specific debugging"]
+            MT2["🔧 erlmcp_tracer<br/>Message flow tracing"]
+            MT3["🔧 erlmcp_health_monitor<br/>Real-time health"]
+            MT4["🔧 erlmcp_observability<br/>Metrics + traces"]
+            MT1 --> MT2 --> MT3 --> MT4
+        end
+
+        subgraph ExternalTools["External Tools"]
+            direction TB
+            XT1["🔧 rebar3 shell<br/>Interactive REPL"]
+            XT2["🔧 wireshark<br/>Network packet capture"]
+            XT3["🔧 strace/dtrace<br/>System calls"]
+            XT1 --> XT2 --> XT3
+        end
+
+        ErlangTools & ERLMCPTools & ExternalTools
+    end
+
+    subgraph Fix["Fix & Validation"]
+        direction TB
+
+        subgraph Strategy["Fix Strategy"]
+            direction LR
+            F1["🩹 Hotfix<br/>Emergency patch"]
+            F2["🔧 Proper Fix<br/>Refactor + tests"]
+            F3["🔄 Workaround<br/>Temporary mitigation"]
+            F1 --> F2 --> F3
+        end
+
+        subgraph Implementation["Implementation"]
+            direction LR
+            I1["✅ Write Test First<br/>Failing test for bug"]
+            I2["✅ Implement Fix<br/>Minimal change"]
+            I3["✅ Verify Fix<br/>Test passes"]
+            I4["✅ Add Regression Test<br/>Prevent recurrence"]
+            I1 --> I2 --> I3 --> I4
+        end
+
+        subgraph Validation["Validation Checks"]
+            direction LR
+            V1["✔️ Local Testing<br/>rebar3 eunit"]
+            V2["✔️ Code Review<br/>Peer verification"]
+            V3["✔️ CI/CD Pass<br/>All quality gates"]
+            V4["✔️ Staging Deploy<br/>Pre-production test"]
+            V1 --> V2 --> V3 --> V4
+        end
+
+        Strategy --> Implementation --> Validation
+    end
+
+    subgraph DeployFix["Deploy Fix"]
+        direction LR
+
+        subgraph Release["Release Process"]
+            RL1["📦 Cherry-pick<br/>To release branch"]
+            RL2["📦 Tag Release<br/>Patch version"]
+            RL3["📦 Deploy<br/>Rolling update"]
+            RL1 --> RL2 --> RL3
+        end
+
+        subgraph Verify["Post-Deploy Verification"]
+            direction LR
+            PV1["🔍 Health Checks<br/>/health endpoint"]
+            PV2["🔍 Metrics<br/>Error rate normalized"]
+            PV3["🔩 Monitoring<br/>24hr observation"]
+            PV1 --> PV2 --> PV3
+        end
+
+        Release --> Verify
+    end
+
+    subgraph PostMortem["Post-Incident Activity"]
+        direction LR
+
+        subgraph Document["Documentation"]
+            direction LR
+            DOC1["📝 Incident Report<br/>What happened?"]
+            DOC2["📝 Root Cause<br/>Why did it happen?"]
+            DOC3["📝 Timeline<br/>Chronological events"]
+            DOC4["📝 Resolution<br/>How was it fixed?"]
+            DOC1 --> DOC2 --> DOC3 --> DOC4
+        end
+
+        subgraph Improve["Kaizen Improvements"]
+            direction LR
+            IMP1["🔄 Process Update<br/>Prevent recurrence"]
+            IMP2["🔄 Test Coverage<br/>Add missing tests"]
+            IMP3["🔄 Documentation<br/>Update runbooks"]
+            IMP4["🔄 Automation<br/>Add alerts/monitors"]
+            IMP1 --> IMP2 --> IMP3 --> IMP4
+        end
+
+        Document --> Improve
+    end
+
+    Detect --> Investigate
+    Investigate --> Tools
+    Tools --> Fix
+    Fix --> DeployFix
+    DeployFix --> PostMortem
+
+    %% Feedback loops
+    DeployFix -.->|❌ Fix doesn't work| Investigate
+    PostMortem -.->|🔄 Continuous improvement| Detect
+
+    style Detect fill:#fee2e2,stroke:#ef4444,stroke-width:2px
+    style Investigate fill:#fef9c3,stroke:#eab308,stroke-width:2px
+    style Tools fill:#e0e7ff,stroke:#6366f1,stroke-width:2px
+    style Fix fill:#dcfce7,stroke:#22c55e,stroke-width:2px
+    style DeployFix fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
+    style PostMortem fill:#f1f5f9,stroke:#64748b,stroke-width:2px
+
+    classDef critical fill:#fecaca,stroke:#dc2626,stroke-width:2px
+    classDef tool fill:#ddd6fe,stroke:#8b5cf6,stroke-width:1px
+
+    class P1 critical
+    class ET1,ET2,ET3,ET4,ET5,MT1,MT2,MT3,MT4,XT1,XT2,XT3 tool

@@ -1,0 +1,170 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#f1f5f9', 'primaryTextColor':'#0f172a', 'primaryBorderColor':'#3b82f6', 'lineColor':'#64748b', 'sectionBkgColor':'#e2e8f0', 'altSectionBkgColor':'#f8fafc'}}}%%
+flowchart TB
+    subgraph Release["Release Preparation"]
+        direction TB
+
+        subgraph PreRelease["Pre-Release Checklist"]
+            direction LR
+            R1["📋 Version Bump<br/>relx.config + .app.src"]
+            R2["📋 Changelog<br/>CHANGELOG.md updated"]
+            R3["📋 Migration Guide<br/>Breaking changes documented"]
+            R4["📋 Feature Freeze<br/>No new commits"]
+            R1 --> R2 --> R3 --> R4
+        end
+
+        subgraph Validation["Validation Suite"]
+            direction LR
+            V1["🧪 Full Test Suite<br/>Unit + Integration + Property"]
+            V2["⚡ Benchmark Baseline<br/>./scripts/bench/run_all_benchmarks.sh"]
+            V3["🔍 Compliance Report<br/>erlmcp_compliance_report:run"]
+            V4["📦 Evidence Bundle<br/>Receipt chain + artifacts"]
+            V1 --> V2 --> V3 --> V4
+        end
+
+        subgraph SignOff["Sign-Off Process"]
+            direction LR
+            S1["✅ Tech Lead Approval<br/>Architecture review"]
+            S2["✅ QA Approval<br/>Test coverage verified"]
+            S3["✅ Security Approval<br/>No vulnerabilities"]
+            S1 --> S2 --> S3
+        end
+
+        PreRelease --> Validation --> SignOff
+    end
+
+    subgraph Build["Build Artifacts"]
+        direction LR
+
+        subgraph ErlangBuild["Erlang Build"]
+            E1["📦 rebar3 release<br/>tarball generation"]
+            E2["📦 OTP Versions<br/>25, 26, 27, 28"]
+            E3["📦 Platform Builds<br/>Linux, macOS, Windows"]
+            E1 --> E2 --> E3
+        end
+
+        subgraph DockerBuild["Docker Build"]
+            D1["🐋 Multi-arch Build<br/>amd64 + arm64"]
+            D2["🐋 Layer Optimization<br/>Minimal base image"]
+            D3["🐋 Security Scan<br/>Trivy vulnerability check"]
+            D1 --> D2 --> D3
+        end
+
+        subgraph HexBuild["Hex.pm Build"]
+            H1["📦 Package Publish<br/>rebar3 hex publish"]
+            H2["📦 Documentation<br/>HexDocs generation"]
+            H1 --> H2
+        end
+
+        ErlangBuild & DockerBuild & HexBuild
+    end
+
+    subgraph Deploy["Deployment Strategies"]
+        direction TB
+
+        subgraph BlueGreen["Blue-Green Deployment"]
+            direction TB
+            BG1["🔵 Current: Blue<br/>Production traffic"]
+            BG2["🟢 New: Green<br/>Idle instance"]
+            BG3["🔄 Switch Traffic<br/>Zero-downtime cutover"]
+            BG1 --> BG3 --> BG2
+        end
+
+        subgraph Canary["Canary Release"]
+            direction TB
+            C1["🐦 5% Traffic<br/>Monitor metrics"]
+            C2["🐦 25% Traffic<br/>Validate performance"]
+            C3["🐦 100% Traffic<br/>Full rollout"]
+            C1 --> C2 --> C3
+        end
+
+        subgraph Rolling["Rolling Update"]
+            direction TB
+            RO1["🔄 Node 1<br/>Update & restart"]
+            RO2["🔄 Node 2..N<br/>Sequential update"]
+            RO3["🔄 Health Check<br/>Post-update validation"]
+            RO1 --> RO2 --> RO3
+        end
+
+        BlueGreen & Canary & Rolling
+    end
+
+    subgraph Environments["Deployment Environments"]
+        direction LR
+
+        subgraph Dev["Development"]
+            DEV1["🔧 Branch: main<br/>Auto-deploy on push"]
+            DEV2["🔧 Monitoring: Debug<br/>Full observability"]
+            DEV3["🔧 Data: Test<br/>Disposable datasets"]
+            DEV1 --> DEV2 --> DEV3
+        end
+
+        subgraph Staging["Staging"]
+            STG1["🎭 Branch: release/*<br/>Manual deployment"]
+            STG2["🎭 Monitoring: Production-like<br/>Real metrics"]
+            STG3["🎭 Data: Staging<br/>Anonymized production"]
+            STG1 --> STG2 --> STG3
+        end
+
+        subgraph Prod["Production"]
+            direction TB
+            PRD1["🚀 Branch: main<br/>Tagged releases only"]
+            PRD2["🚀 Monitoring: Essential<br/>Optimized cost"]
+            PRD3["🚀 Data: Production<br/>Persistent storage"]
+            PRD4["🚀 Backup: Real-time<br/>Disaster recovery"]
+            PRD1 --> PRD2 --> PRD3 --> PRD4
+        end
+
+        Dev --> Staging --> Prod
+    end
+
+    subgraph PostDeploy["Post-Deployment"]
+        direction LR
+
+        subgraph Monitoring["Monitoring & Validation"]
+            direction TB
+            M1["📊 Health Checks<br/>/health endpoint"]
+            M2["📊 Metrics<br/>Latency, throughput, errors"]
+            M3["📊 Alerts<br/>PagerDuty integration"]
+            M1 --> M2 --> M3
+        end
+
+        subgraph Rollback["Rollback Plan"]
+            direction TB
+            RB1["⏪ Trigger<br/>Automatic or manual"]
+            RB2["⏪ Restore<br/>Previous version"]
+            RB3["⏪ Analyze<br/>Root cause investigation"]
+            RB1 --> RB2 --> RB3
+        end
+
+        subgraph IncResp["Incident Response"]
+            direction TB
+            I1["🚨 Detect<br/>Automated alerting"]
+            I2["🚨 Respond<br/>On-call engineer"]
+            I3["🚨 Resolve<br/>Fix or rollback"]
+            I4["🚨 Postmortem<br/>Kaizen improvement"]
+            I1 --> I2 --> I3 --> I4
+        end
+
+        Monitoring & Rollback & IncResp
+    end
+
+    Release --> Build
+    Build --> Deploy
+    Deploy --> Environments
+    Environments --> PostDeploy
+
+    %% Error handling
+    Deploy -.->|❌ Health check failed| Rollback
+    Monitoring -.->|🚨 Critical alert| IncResp
+
+    style Release fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
+    style Build fill:#fef9c3,stroke:#eab308,stroke-width:2px
+    style Deploy fill:#dcfce7,stroke:#22c55e,stroke-width:2px
+    style Environments fill:#e0e7ff,stroke:#6366f1,stroke-width:2px
+    style PostDeploy fill:#fecaca,stroke:#ef4444,stroke-width:2px
+
+    classDef critical fill:#fecaca,stroke:#dc2626,stroke-width:2px
+    classDef success fill:#bbf7d0,stroke:#22c55e,stroke-width:2px
+
+    class Rollback,IncResp critical
+    class Monitoring success

@@ -1,0 +1,170 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#1098ad', 'primaryTextColor':'#fff', 'primaryBorderColor':'#0c8599', 'lineColor':'#495057', 'sectionBkgColor':'#c5f6fa', 'altSectionBkgColor':'#99e9f2', 'gridColor':'#adb5bd'}}}%%
+graph TB
+    subgraph "Performance Data Sources"
+        subgraph "Erlang VM Metrics"
+            Scheduler[Scheduler CPU<br/>Utilization %]
+            Memory[Memory Allocator<br/>Heap sizes]
+            GC[Garbage Collection<br/>Count & duration]
+            IO[I/O Operations<br/>Ports & drivers]
+        end
+
+        subgraph "erlmcp Metrics"
+            Throughput[Throughput<br/>Messages/second]
+            Latency[Latency<br/>p50/p95/p99/p999]
+            QueueDepth[Queue Depth<br/>Pending operations]
+            Concurrency[Concurrency<br/>Active processes]
+        end
+
+        subgraph "Transport Metrics"
+            StdioPerf[stdio<br/>Message rate]
+            TCPPerf[tcp<br/>Connection rate]
+            HTTPPerf[http<br/>Request rate]
+            WSPerf[websocket<br/>Frame rate]
+        end
+
+        subgraph "External Dependencies"
+            LLMCalls[LLM API Calls<br/>Latency & errors]
+            DBQueries[Database Queries<br/>Response time]
+            CacheHits[Cache Hits<br/>Hit ratio %]
+        end
+    end
+
+    subgraph "Performance Dashboards"
+        subgraph "Overview Dashboard"
+            SysHealth[System Health Score<br/>0-100]
+            KeyKPIs[Key KPIs<br/>SLA compliance]
+            TrendTails[7-Day Trends<br/>Velocity]
+            Anomalies[Anomaly Detection<br/>Outlier alerts]
+        end
+
+        subgraph "Throughput Dashboard"
+            MsgRate[Message Rate<br/>msg/s by transport]
+            ConnRate[Connection Rate<br/>conn/s]
+            ReqRate[Request Rate<br/>req/s]
+            Capacity[Capacity Planning<br/>Current vs Max]
+        end
+
+        subgraph "Latency Dashboard"
+            LatencyTimeline[Latency Timeline<br/>p50/p95/p99 over time]
+            LatencyHeatmap[Latency Heatmap<br/>Distribution]
+            LatencyBreakdown[Latency Breakdown<br/>By component]
+            SLACompliance[SLA Compliance<br/>% within target]
+        end
+
+        subgraph "Resource Utilization"
+            CPUUsage[CPU Usage<br/>Per scheduler]
+            MemoryUsage[Memory Usage<br/>Heap/RSS/binary]
+            ProcessCount[Process Count<br/>Active/total]
+            PortUsage[Port Usage<br/>Open files/sockets]
+        end
+
+        subgraph "Transport Performance"
+            TransportComp[Transport Comparison<br/>Side-by-side metrics]
+            ConnPool[Connection Pool<br/>Utilization %]
+            BufferUsage[Buffer Usage<br/>Queue depth]
+            ErrorRates[Error Rates<br/>By transport]
+        end
+
+        subgraph "Database & Cache"
+            QueryPerf[Query Performance<br/>Slow query log]
+            CachePerf[Cache Performance<br/>Hit/miss ratio]
+            IndexUsage[Index Usage<br/>Efficiency]
+            LockContention[Lock Contention<br/>Blocked ops]
+        end
+    end
+
+    subgraph "Performance Analysis Tools"
+        Profiler[Profiler<br/>fprof]
+        Tracer[Tracer<br/>dbg/observer]
+        Flamegraph[Flamegraph<br/>erlang-flamegraph]
+        Cover[Coverage<br/>cover/covertool]
+    end
+
+    subgraph "Alerting & Actions"
+        PerfAlerts[Performance Alerts<br/>Threshold breaches]
+        AutoScale[Auto-Scaling<br/>Capacity triggers]
+        Bottleneck[Bottleneck Detection<br/>Hot spots]
+        Recommendations[Recommendations<br/>Optimization tips]
+    end
+
+    %% Data flow to dashboards
+    Scheduler --> SysHealth
+    Memory --> SysHealth
+    Throughput --> KeyKPIs
+    Latency --> KeyKPIs
+
+    %% Throughput dashboard
+    Throughput --> MsgRate
+    Throughput --> ConnRate
+    Throughput --> ReqRate
+    Concurrency --> Capacity
+
+    %% Latency dashboard
+    Latency --> LatencyTimeline
+    Latency --> LatencyHeatmap
+    Latency --> LatencyBreakdown
+    Latency --> SLACompliance
+
+    %% Resource utilization
+    Scheduler --> CPUUsage
+    Memory --> MemoryUsage
+    IO --> ProcessCount
+    IO --> PortUsage
+
+    %% Transport performance
+    StdioPerf --> TransportComp
+    TCPPerf --> TransportComp
+    HTTPPerf --> TransportComp
+    WSPerf --> TransportComp
+    QueueDepth --> BufferUsage
+
+    %% Database & cache
+    LLMCalls --> QueryPerf
+    DBQueries --> QueryPerf
+    CacheHits --> CachePerf
+
+    %% Analysis tools
+    Profiler --> Bottleneck
+    Tracer --> Bottleneck
+    Flamegraph --> Bottleneck
+    Cover --> Recommendations
+
+    %% Alerting
+    CPUUsage --> PerfAlerts
+    MemoryUsage --> PerfAlerts
+    LatencyTimeline --> PerfAlerts
+    QueueDepth --> PerfAlerts
+
+    %% Actions
+    PerfAlerts --> AutoScale
+    Bottleneck --> Recommendations
+    Recommendations --> AutoScale
+
+    %% Cross-dashboard correlations
+    SysHealth -.->|Drill down| Throughput
+    SysHealth -.->|Drill down| Latency
+    LatencyTimeline -.->|Correlate| CPUUsage
+    QueryPerf -.->|Impact| LatencyBreakdown
+
+    %% Styles
+    classDef vmNode fill:#c5f6fa,stroke:#1098ad,stroke-width:2px
+    classDef appNode fill:#99e9f2,stroke:#0c8599,stroke-width:2px
+    classDef transNode fill:#e3fafc,stroke:#0ca678,stroke-width:2px
+    classDef extNode fill:#d3f9d8,stroke:#2f9e44,stroke-width:2px
+    classDef dashNode fill:#fff3bf,stroke:#f59f00,stroke-width:3px
+    classDef toolNode fill:#f3f0ff,stroke:#7950f2,stroke-width:2px
+    classDef alertNode fill:#ffe3e3,stroke:#c92a2a,stroke-width:2px
+
+    class Scheduler,Memory,GC,IO vmNode
+    class Throughput,Latency,QueueDepth,Concurrency appNode
+    class StdioPerf,TCPPerf,HTTPPerf,WSPerf transNode
+    class LLMCalls,DBQueries,CacheHits extNode
+    class SysHealth,KeyKPIs,TrendTails,Anomalies,MsgRate,ConnRate,ReqRate,Capacity,LatencyTimeline,LatencyHeatmap,LatencyBreakdown,SLACompliance,CPUUsage,MemoryUsage,ProcessCount,PortUsage,TransportComp,ConnPool,BufferUsage,ErrorRates,QueryPerf,CachePerf,IndexUsage,LockContention dashNode
+    class Profiler,Tracer,Flamegraph,Cover toolNode
+    class PerfAlerts,AutoScale,Bottleneck,Recommendations alertNode
+
+    %% Annotations
+    KeyKPIs -.->|SLA target: <100ms p95| LatencyTimeline
+    SysHealth -.->|Weighted score| CPUUsage
+    Bottleneck -.->|Identify| Recommendations
+    PerfAlerts -.->|Trigger| AutoScale

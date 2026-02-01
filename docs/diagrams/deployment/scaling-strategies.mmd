@@ -1,0 +1,289 @@
+erlmcp Scaling Strategies
+==========================
+
+graph TB
+    subgraph "Scaling Decision Matrix"
+        subgraph "Horizontal Scaling (Scale-Out)"
+            HS[Add More Nodes<br/>Cost: Linear<br/>Complexity: Low<br/>Best For: >40K conns]
+        end
+
+        subgraph "Vertical Scaling (Scale-Up)"
+            VS[Upgrade Resources<br/>Cost: Exponential<br/>Complexity: Medium<br/>Best For: <40K conns]
+        end
+
+        subgraph "Functional Scaling"
+            FS[Split Responsibilities<br/>Cost: Moderate<br/>Complexity: High<br/>Best For: Specialized Wloads]
+        end
+    end
+
+    subgraph "Horizontal Scaling Strategy"
+        subgraph "Phase 1: Baseline (1 Node)"
+            H1[Node 1: 40K Connections<br/>CPU: 60%<br/>Mem: 16GB]
+        end
+
+        subgraph "Phase 2: Double (2 Nodes)"
+            H2[Node 1: 40K Connections<br/>Node 2: 40K Connections<br/>Total: 80K<br/>LB: Round Robin]
+        end
+
+        subgraph "Phase 3: Quadruple (4 Nodes)"
+            H3[Node 1-4: 40K each<br/>Total: 160K Connections<br/>Mnesia: Clustered<br/>Throughput: 10M ops/s]
+        end
+
+        subgraph "Phase 4: Maximum (10 Nodes)"
+            H4[Node 1-10: 40K each<br/>Total: 400K Connections<br/>Requires: Advanced Routing<br/>Cost: Optimal]
+        end
+    end
+
+    subgraph "Vertical Scaling Strategy"
+        subgraph "Baseline Node"
+            V1[CPU: 4 cores<br/>RAM: 8GB<br/>Max: 20K conns<br/>Cost: $50/mo]
+        end
+
+        subgraph "Medium Node"
+            V2[CPU: 8 cores<br/>RAM: 16GB<br/>Max: 40K conns<br/>Cost: $100/mo<br/>Efficiency: +100%]
+        end
+
+        subgraph "Large Node"
+            V3[CPU: 16 cores<br/>RAM: 32GB<br/>Max: 50K conns<br/>Cost: $200/mo<br/>Efficiency: +25% only]
+        end
+
+        subgraph "XLarge Node"
+            V4[CPU: 32 cores<br/>RAM: 64GB<br/>Max: 60K conns<br/>Cost: $400/mo<br/>Efficiency: +20% only]
+        end
+
+        subgraph "Diminishing Returns"
+            DR[Observation:<br/>40K→50K: +25% cap, +100% cost<br/>Not recommended beyond 16 cores]
+        end
+    end
+
+    subgraph "Functional Scaling Strategy"
+        subgraph "Integrated Stack (Baseline)"
+            F1[Node: All-in-One<br/>Protocol + Transports + Obs<br/>Simplicity: High<br/>Isolation: Low]
+        end
+
+        subgraph "Protocol Nodes (Compute)"
+            F2[Node Group: Protocol<br/>erlmcp_core only<br/>CPU: Intensive<br/>Connections: 50K/node]
+        end
+
+        subgraph "Transport Nodes (I/O)"
+            F3[Node Group: Transports<br/>erlmcp_transports only<br/>Network: Intensive<br/>Acceptors: 100/node]
+        end
+
+        subgraph "Observability Nodes (Analytics)"
+            F4[Node Group: Observability<br/>erlmcp_observability only<br/>Memory: Intensive<br/>Retention: 30d]
+        end
+    end
+
+    subgraph "Auto-Scaling Triggers"
+        subgraph "Scale-Out Triggers"
+            SO1[CPU > 70% for 5min<br/>Conn Rate > 1000/s<br/>Memory > 80%]
+        end
+
+        subgraph "Scale-In Triggers"
+            SI1[CPU < 20% for 15min<br/>Conn Rate < 100/s<br/>Memory < 30%]
+        end
+
+        subgraph "Auto-Scaler"
+            AS[Kubernetes HPA / AWS ASG<br/>Min Nodes: 3<br/>Max Nodes: 10<br/>Cooldown: 5min]
+        end
+    end
+
+    subgraph "Mnesia Scaling Considerations"
+        subgraph "Small Cluster (2-3 Nodes)"
+            MS[Replication: Fast<br/>Consensus: Quick<br/>Best For: <100K sessions]
+        end
+
+        subgraph "Medium Cluster (4-6 Nodes)"
+            MM[Replication: Moderate<br/>Consensus: Stable<br/>Best For: 100K-300K sessions]
+        end
+
+        subgraph "Large Cluster (7+ Nodes)"
+            ML[Replication: Slow<br/>Consensus: Complex<br/>Recommend: Sharding]
+        end
+    end
+
+    subgraph "Load Balancer Scaling"
+        subgraph "Single LB"
+            LBS1[1 HAProxy Instance<br/>Capacity: 1M conns<br/>Single Point of Failure]
+        end
+
+        subgraph "Active-Active LB"
+            LBS2[2+ HAProxy Instances<br/>Capacity: 2M+ conns<br/>Keepalived VRRP]
+        end
+
+        subgraph "Geo-Distributed LB"
+            LBS3[Per-Region LB<br/>Global DNS LB<br/>Latency Optimization]
+        end
+    end
+
+    subgraph "Connection Pool Scaling"
+        subgraph "Poolboy Strategy"
+            PP[erlmcp_pool_manager<br/>Pool Size: 100 workers<br/>Max Overflow: 50<br/>Strategy: fifo]
+        end
+
+        subgraph "Ranch Acceptors"
+            RA[Transport Acceptors<br/>Per-Node: 100 acceptors<br/>Supervision: simple_one_for_one]
+        end
+    end
+
+    subgraph "Cost Analysis"
+        subgraph "Horizontal Scaling Costs"
+            CH[
+"""
+Scenario: 160K Connections
+- Horizontal: 4 nodes × $200 = $800/mo
+- Vertical: 2 nodes × $400 = $800/mo (same)
+- Winner: Tie at 4 nodes
+
+Scenario: 400K Connections
+- Horizontal: 10 nodes × $200 = $2000/mo
+- Vertical: 7 nodes × $400 = $2800/mo
+- Winner: Horizontal (40% cheaper)
+"""
+            ]
+        end
+
+        subgraph "Vertical Scaling Costs"
+            CV[
+"""
+Per-Connection Cost:
+- Small: $50/mo ÷ 20K = $0.0025 per conn
+- Medium: $100/mo ÷ 40K = $0.0025 per conn
+- Large: $200/mo ÷ 50K = $0.0040 per conn
+
+Best Value: Medium nodes (8 cores, 16GB)
+"""
+            ]
+        end
+    end
+
+    subgraph "Scaling Limits"
+        subgraph "Per-Node Limits"
+            L1[Max Connections: 50K<br/>Max Throughput: 2.69M ops/s<br/>Max Memory: 32GB<br/>File Descriptors: 1M]
+        end
+
+        subgraph "Cluster Limits"
+            L2[Max Nodes: 10 (practical)<br/>Max Sessions: 400K<br/>Max Throughput: 10M ops/s<br/>Mnesia Replication: 6 nodes]
+        end
+
+        subgraph "Bottlenecks"
+            L3[Network: 1Gbps → ~43K msg/s<br/>Disk I/O: Session sync<br/>Mnesia: Replication lag<br/>DNS: TTL propagation]
+        end
+    end
+
+    %% Decision Matrix
+    HS -->|Recommended for| H1
+    VS -->|Recommended for| V1
+    FS -->|Advanced Use Case| F2
+
+    %% Horizontal Scaling Flow
+    H1 -->|Trigger: >40K| H2
+    H2 -->|Trigger: >80K| H3
+    H3 -->|Trigger: >160K| H4
+
+    %% Vertical Scaling Flow
+    V1 -->|Upgrade CPU/Mem| V2
+    V2 -->|Upgrade CPU/Mem| V3
+    V3 -->|Warning: DR| V4
+    V3 --> DR
+
+    %% Functional Scaling
+    F1 -->|Split Protocol| F2
+    F1 -->|Split Transport| F3
+    F1 -->|Split Observability| F4
+
+    %% Auto-Scaling
+    SO1 -->|Scale Out| AS
+    SI1 -->|Scale In| AS
+    AS -->|Launch Nodes| H3
+    AS -->|Terminate Nodes| H2
+
+    %% Mnesia Scaling
+    MS -->|Growth| MM
+    MM -->|Growth| ML
+
+    %% LB Scaling
+    LBS1 -->|HA Upgrade| LBS2
+    LBS2 -->|Multi-Region| LBS3
+
+    %% Connection Pools
+    PP -->|Spawn Workers| RA
+
+    %% Styling
+    classDef decisionStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
+    classDef horizStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef vertStyle fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef funcStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef autoStyle fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    classDef mnesiaStyle fill:#fce4ec,stroke:#ad1457,stroke-width:2px
+    classDef lbStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef costStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef limitStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+
+    class HS,VS,FS decisionStyle
+    class H1,H2,H3,H4 horizStyle
+    class V1,V2,V3,V4,DR vertStyle
+    class F1,F2,F3,F4 funcStyle
+    class SO1,SI1,AS autoStyle
+    class MS,MM,ML mnesiaStyle
+    class LBS1,LBS2,LBS3 lbStyle
+    class PP,RA lbStyle
+    class CH,CV costStyle
+    class L1,L2,L3 limitStyle
+
+    %% Scaling Scenarios
+    subgraph "Scenario 1: Startup"
+        SC1[
+"""
+Startup Phase:
+- Deploy: 3 medium nodes (120K cap)
+- Cost: $300/mo
+- Traffic: 10K connections
+- Headroom: 110K (92%)
+"""
+        ]
+    end
+
+    subgraph "Scenario 2: Growth Spike"
+        SC2[
+"""
+Viral Growth:
+- Current: 100K connections
+- Incoming: +50K spike (1hr)
+- Action: Auto-scale +2 nodes
+- Result: Zero downtime, 5m ramp-up
+"""
+        ]
+    end
+
+    subgraph "Scenario 3: Seasonal"
+        SC3[
+"""
+Peak Season:
+- Baseline: 3 nodes (120K cap)
+- Peak: 300K connections needed
+- Deploy: Scale to 8 nodes
+- Cost Peak: $1600/mo (5× baseline)
+- Post-Peak: Scale back to 3 nodes
+"""
+        ]
+    end
+
+    subgraph "Recommendation"
+        REC[
+"""
+PRODUCTION STRATEGY:
+1. Start: 3 medium nodes (8 cores, 16GB)
+2. Scale: Horizontal up to 10 nodes
+3. Limit: 50K connections per node
+4. Monitor: CPU, memory, conn count
+5. Auto-scale: HPA with 5min cooldown
+
+COST OPTIMAL:
+- <40K: 1 medium node ($100/mo)
+- 40-120K: 3 medium nodes ($300/mo)
+- 120-200K: 5 medium nodes ($500/mo)
+- >200K: Evaluate functional scaling
+"""
+        ]
+    end

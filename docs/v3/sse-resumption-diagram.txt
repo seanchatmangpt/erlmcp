@@ -1,0 +1,275 @@
+SSE Resumption Flow Diagram
+============================
+
+Legend:
+  ---->  HTTP Request
+  <----  SSE Event
+  [API]  Function Call
+  [ETS]  ETS Operation
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INITIAL CONNECTION (No Last-Event-ID)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Client                    Cowboy Handler           Event Store
+  │                            │                        │
+  │                            │                        │
+  ├──── GET /mcp/sse ────────►│                        │
+  │                            │                        │
+  │                            │  [generate_session_id] │
+  │                            ├───────►               │
+  │                            │                        │
+  │                            │  SessionId =           │
+  │                            │  "session_<pid>_<ts>"  │
+  │                            │                        │
+  │                            │  [parse Last-Event-ID] │
+  │                            │  → undefined           │
+  │                            │                        │
+  │                            │  [replay_missed_events]│
+  │                            ├───────►               │
+  │                            │                        │
+  │                            │  [get_events_since]    │
+  │                            │    undefined           │
+  │                            │  ◄───────               │
+  │                            │  {ok, []}              │
+  │                            │                        │
+  │◄─── 200 OK ────────────────┤                        │
+  │◄─── content-type:          │                        │
+  │      text/event-stream ────┤                        │
+  │                            │                        │
+  │◄─── id: session_..._1 ─────┤  [add_event(1, data)]  │
+  │◄─── data: {...} ───────────┼──────────────────────►│
+  │                            │                        │ [ETS insert]
+  │                            │                        │
+  │◄─── id: session_..._2 ─────┤  [add_event(2, data)]  │
+  │◄─── data: {...} ───────────┼──────────────────────►│
+  │                            │                        │ [ETS insert]
+  │                            │                        │
+  │◄─── id: session_..._3 ─────┤  [add_event(3, data)]  │
+  │◄─── data: {...} ───────────┼──────────────────────►│
+  │                            │                        │ [ETS insert]
+  │                            │                        │
+
+  ⚡ Client DISCONNECTS after event 3
+  │
+  ╳                            │                        │
+                              │                        │
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RECONNECTION (With Last-Event-ID)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Client                    Cowboy Handler           Event Store
+  │                            │                        │
+  │                            │                        │
+  ├──── GET /mcp/sse ────────►│                        │
+  │     Last-Event-ID:         │                        │
+  │       session_..._3        │                        │
+  │                            │                        │
+  │                            │  [generate_session_id] │
+  │                            │  (reuse same ID)       │
+  │                            │                        │
+  │                            │  [parse Last-Event-ID] │
+  │                            │  → 3                   │
+  │                            │                        │
+  │                            │  [replay_missed_events]│
+  │                            ├───────►               │
+  │                            │                        │
+  │                            │  [get_events_since]    │
+  │                            │    SessionId, 3        │
+  │                            │  ◄───────               │
+  │                            │  {ok, [data4,          │
+  │                            │        data5, data6]}   │
+  │                            │                        │
+  │◄─── 200 OK ────────────────┤                        │
+  │                            │                        │
+  │◄─── data: {event4} ─────────┤  (REPLAY - no ID)     │
+  │◄─── data: {event5} ─────────┤  (REPLAY - no ID)     │
+  │◄─── data: {event6} ─────────┤  (REPLAY - no ID)     │
+  │                            │                        │
+  │◄─── id: session_..._7 ─────┤  [add_event(7, data)]  │
+  │◄─── data: {event7} ────────┼──────────────────────►│
+  │                            │                        │ [Live streaming]
+  │◄─── id: session_..._8 ─────┤  [add_event(8, data)]  │
+  │◄─── data: {event8} ────────┼──────────────────────►│
+  │                            │                        │ [Live streaming]
+  │                            │                        │
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+MULTIPLE DISCONNECTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Cycle 1:  Connect → events 1-10 → disconnect at 10
+         Reconnect Last-Event-ID: 10 → receive 11-15
+
+Cycle 2:  Disconnect at 15
+         Reconnect Last-Event-ID: 15 → receive 16-20
+
+Cycle 3:  Disconnect at 20
+         Reconnect Last-Event-ID: 20 → receive 21-25
+
+Each cycle:
+  1. Client receives events with IDs
+  2. Disconnects
+  3. Server continues adding events to ETS
+  4. Client reconnects with Last-Event-ID
+  5. Server replays missed events
+  6. Live streaming resumes
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+EVENT STORE ETS STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Table Name: {erlmcp_sse_events, SessionId}
+Type: set (ordered by event_number)
+
+┌────────────────────────────────────────────────────────────┐
+│ Key (event_number) │ Event Record                          │
+├────────────────────┼───────────────────────────────────────┤
+│ 1                  │ #event{                               │
+│                    │   event_number = 1,                   │
+│                    │   event_id = <<"session_..._1">>,     │
+│                    │   data = <<"{...}">>,                 │
+│                    │   timestamp = 1706745600000           │
+│                    │ }                                      │
+├────────────────────┼───────────────────────────────────────┤
+│ 2                  │ #event{event_number = 2, ...}         │
+├────────────────────┼───────────────────────────────────────┤
+│ 3                  │ #event{event_number = 3, ...}         │
+├────────────────────┼───────────────────────────────────────┤
+│ 4                  │ #event{event_number = 4, ...}         │
+│                    │ (missed by client - replayed on       │
+│                    │  reconnection with Last-Event-ID: 3)  │
+├────────────────────┼───────────────────────────────────────┤
+│ 5                  │ #event{event_number = 5, ...}         │
+└────────────────────┴───────────────────────────────────────┘
+
+Cleanup:
+- TTL: 1 hour per event
+- Scan interval: 5 minutes
+- Delete table if oldest event expired
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SSE EVENT FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WITH EVENT ID (live streaming):
+┌─────────────────────────────────┐
+│ id: session_<pid>_<ts>_<rand>_1 │  ← Event ID for resumption
+│ event: message                  │
+│ data: {"jsonrpc":"2.0",...}     │
+│                                 │
+└─────────────────────────────────┘
+
+WITHOUT EVENT ID (replay):
+┌─────────────────────────────────┐
+│ event: message                  │  ← No ID (replayed event)
+│ data: {"jsonrpc":"2.0",...}     │
+│                                 │
+└─────────────────────────────────┘
+
+CLOSE EVENT (with retry hint):
+┌─────────────────────────────────┐
+│ event: close                    │
+│ data: {"status":"closed"}       │
+│ retry: 5000                     │  ← Reconnect in 5 seconds
+│                                 │
+└─────────────────────────────────┘
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ERROR HANDLING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Scenario 1: Invalid Last-Event-ID
+  Client: Last-Event-ID: invalid_xyz
+  Parser: parse_event_id(<<"invalid_xyz">>) → 0
+  Result: Returns all available events (graceful degradation)
+
+Scenario 2: Event Store Failure
+  [get_events_since] → {error, Reason}
+  Handler: Log error, continue with live stream
+  Result: No replay, but streaming continues
+
+Scenario 3: Session Not Found
+  [get_events_since] → {ok, []}
+  Handler: Empty replay, start fresh
+  Result: Fresh stream begins
+
+Scenario 4: Expired Events
+  Current time - event.timestamp > TTL (1 hour)
+  Cleanup: Deletes expired events
+  Reconnect: Empty replay
+  Result: Fresh stream begins
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+sys.config:
+  {sse, [
+    {event_ttl, 3600000},         %% 1 hour - event retention
+    {replay_window, 86400000},    %% 24 hours - max replay window
+    {max_session_events, 10000},  %% Max events/session
+    {cleanup_interval, 300000}    %% 5 minutes - cleanup frequency
+  ]}
+
+Runtime Access:
+  application:get_env(erlmcp, sse_event_ttl, 3600000)
+  application:get_env(erlmcp, sse_replay_window, 86400000)
+  application:get_env(erlmcp, sse_max_session_events, 10000)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+TESTING STRATEGY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Chicago School TDD:
+  ✓ Real processes (no mocks)
+  ✓ Test observable behavior
+  ✓ Black-box testing
+
+Test Categories:
+  1. Last-Event-ID Header Tests (3 tests)
+     - Valid header
+     - Missing header (undefined)
+     - Malformed header
+
+  2. Event Replay Tests (3 tests)
+     - Replay after disconnect
+     - Multiple disconnects
+     - Event ordering verification
+
+  3. Session Continuity Tests (3 tests)
+     - Session ID reuse
+     - Event counter continuity
+     - Session state tracking
+
+  4. Configuration Tests (3 tests)
+     - Event TTL
+     - Replay window
+     - Max session events
+
+  5. Edge Cases (5+ tests)
+     - Expired events
+     - Event store failure
+     - Invalid headers
+     - Session not found
+     - Empty replay
+
+Total: 17+ comprehensive tests
+
+Coverage Target: >= 85%

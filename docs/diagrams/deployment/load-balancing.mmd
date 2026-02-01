@@ -1,0 +1,185 @@
+erlmcp Load Balancing and Distribution Strategies
+===================================================
+
+graph TB
+    subgraph "Client Layer"
+        C1[Client Pool 1<br/>10K Connections]
+        C2[Client Pool 2<br/>10K Connections]
+        C3[Client Pool 3<br/>10K Connections]
+    end
+
+    subgraph "Load Balancer Tier"
+        subgraph "Primary LB"
+            LB1[HAProxy Instance 1<br/>VIP: 10.0.0.10]
+        end
+
+        subgraph "Secondary LB"
+            LB2[HAProxy Instance 2<br/>VIP: 10.0.0.11<br/>Keepalived Backup]
+        end
+
+        subgraph "Health Check"
+            HC[Health Check Service<br/>TCP: 27015<br/>Interval: 2s<br/>Timeout: 1s]
+        end
+    end
+
+    subgraph "Erlang Node Cluster"
+        subgraph "Node A: High-Performance"
+            NA[erlmcp_node_a<br/>CPU: 16 cores<br/>RAM: 32GB<br/>Max: 50K conns]
+            NA_Metrics[CPU: 45%<br/>Mem: 12GB<br/>Conns: 35K]
+        end
+
+        subgraph "Node B: Standard"
+            NB[erlmcp_node_b<br/>CPU: 8 cores<br/>RAM: 16GB<br/>Max: 40K conns]
+            NB_Metrics[CPU: 62%<br/>Mem: 10GB<br/>Conns: 25K]
+        end
+
+        subgraph "Node C: Standard"
+            NC[erlmcp_node_c<br/>CPU: 8 cores<br/>RAM: 16GB<br/>Max: 40K conns]
+            NC_Metrics[CPU: 38%<br/>Mem: 8GB<br/>Conns: 20K]
+        end
+    end
+
+    subgraph "Load Balancing Algorithms"
+        subgraph "Round Robin"
+            RR[Sequence: 1→2→3→1<br/>Equal Distribution<br/>Best for: Homogeneous nodes]
+        end
+
+        subgraph "Least Connections"
+            LC[Active: min(N_conns)<br/>Dynamic Adjustment<br/>Best for: Heterogeneous nodes]
+        end
+
+        subgraph "IP Hash"
+            IPH[Hash: source_ip % N<br/>Session Affinity<br/>Best for: Stateful apps]
+        end
+
+        subgraph "Gproc-Based Routing"
+            GPROC[gproc: lookup_pid<br/>Registry-based<br/>O(log N) lookup]
+        end
+    end
+
+    subgraph "Connection Distribution Flow"
+        subgraph "Phase 1: Client Connection"
+            P1[1. Client: TCP SYN<br/>→ LB:27015]
+        end
+
+        subgraph "Phase 2: LB Decision"
+            P2[2. LB: Health Check<br/>3. LB: Algorithm<br/>4. LB: Route]
+        end
+
+        subgraph "Phase 3: Node Selection"
+            P3[5. Node: Accept<br/>6. Node: gproc register<br/>7. Node: Spawn process]
+        end
+    end
+
+    subgraph "Circuit Breaker Integration"
+        CB[Circuit Breaker State]
+        CB_Closed[Closed: Normal Flow<br/>Threshold: 95% health]
+        CB_HalfOpen[HalfOpen: Testing<br/>Sample: 10 req]
+        CB_Open[Open: Rejecting<br/>Cooldown: 30s]
+    end
+
+    subgraph "Rate Limiting"
+        RL[Token Bucket Limiter]
+        RL_Global[Global: 100K req/s]
+        RL_PerClient[Per-Client: 100 req/s]
+        RL_PerNode[Per-Node: 40K req/s]
+    end
+
+    %% Client to LB Connections
+    C1 -->|Connections: 10K| LB1
+    C2 -->|Connections: 10K| LB1
+    C3 -->|Connections: 10K| LB1
+
+    %% LB Failover
+    LB1 -.->|VRRP: Heartbeat| LB2
+    LB2 -.->|Standby| LB1
+
+    %% LB Health Checks
+    HC -->|TCP Probe| NA
+    HC -->|TCP Probe| NB
+    HC -->|TCP Probe| NC
+
+    %% LB to Node Distribution
+    LB1 -->|Round Robin<br/>Weight: 1.5| NA
+    LB1 -->|Round Robin<br/>Weight: 1.0| NB
+    LB1 -->|Round Robin<br/>Weight: 1.0| NC
+
+    %% Algorithm Visualization
+    RR -->|Select Node| NA
+    LC -->|Select Node| NB
+    IPH -->|Select Node| NC
+    GPROC -->|Route Message| NA
+
+    %% Node Metrics
+    NA --> NA_Metrics
+    NB --> NB_Metrics
+    NC --> NC_Metrics
+
+    %% Connection Flow
+    P1 --> P2
+    P2 --> P3
+
+    %% Circuit Breaker States
+    CB --> CB_Closed
+    CB --> CB_HalfOpen
+    CB --> CB_Open
+
+    CB_Closed -->|Failure Rate > 5%| CB_HalfOpen
+    CB_HalfOpen -->|Sample Failed| CB_Open
+    CB_HalfOpen -->|Sample Passed| CB_Closed
+    CB_Open -->|Cooldown Expired| CB_HalfOpen
+
+    %% Rate Limiting
+    RL --> RL_Global
+    RL --> RL_PerClient
+    RL --> RL_PerNode
+
+    %% Styling
+    classDef clientStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef lbStyle fill:#fff3e0,stroke:#e65100,stroke-width:3px
+    classDef nodeStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef algoStyle fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    classDef flowStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef healthStyle fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    classDef rateStyle fill:#e8eaf6,stroke:#1a237e,stroke-width:2px
+
+    class C1,C2,C3 clientStyle
+    class LB1,LB2,HC lbStyle
+    class NA,NB,NC,NA_Metrics,NB_Metrics,NC_Metrics nodeStyle
+    class RR,LC,IPH,GPROC algoStyle
+    class P1,P2,P3 flowStyle
+    class CB,CB_Closed,CB_HalfOpen,CB_Open healthStyle
+    class RL,RL_Global,RL_PerClient,RL_PerNode rateStyle
+
+    %% Configuration Snippets
+    subgraph "HAProxy Configuration"
+        HA[
+"""
+backend erlmcp_cluster
+    balance roundrobin
+    hash-type consistent
+
+    server node_a 10.0.1.10:27015 check inter 2000 rise 2 fall 3 maxconn 50000 weight 150
+    server node_b 10.0.1.11:27015 check inter 2000 rise 2 fall 3 maxconn 40000 weight 100
+    server node_c 10.0.1.12:27015 check inter 2000 rise 2 fall 3 maxconn 40000 weight 100
+
+    timeout connect 5s
+    timeout server 60s
+"""
+        ]
+    end
+
+    subgraph "Erlang Distribution Load"
+        EL[
+"""
+Distribution Strategy:
+- Node A: 35K conns (high CPU)
+- Node B: 25K conns (med CPU)
+- Node C: 20K conns (low CPU)
+
+Total: 80K connections
+Throughput: 2.15M msg/s
+Latency p99: 8ms
+"""
+        ]
+    end
