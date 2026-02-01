@@ -85,8 +85,8 @@ test_rollback_on_failure() ->
     % This test verifies rollback mechanism when smoke tests fail
     Module = erlmcp_json_rpc,
 
-    % Get current version
-    OldVsn = get_module_version(Module),
+    % Get current version (stored for potential rollback verification)
+    _OldVsn = get_module_version(Module),
 
     % Perform reload with smoke test that will fail
     FailingSmokeTest = fun() -> {error, intentional_failure} end,
