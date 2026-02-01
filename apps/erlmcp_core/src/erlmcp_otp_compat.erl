@@ -43,16 +43,20 @@ otp_version() ->
 -spec is_otp_28_plus() -> boolean().
 is_otp_28_plus() ->
     case otp_version() of
-        {Major, _, _} when Major >= 28 -> true;
-        _ -> false
+        {Major, _, _} when Major >= 28 ->
+            true;
+        _ ->
+            false
     end.
 
 %% @doc Check if running on OTP 27+
 -spec is_otp_27_plus() -> boolean().
 is_otp_27_plus() ->
     case otp_version() of
-        {Major, _, _} when Major >= 27 -> true;
-        _ -> false
+        {Major, _, _} when Major >= 27 ->
+            true;
+        _ ->
+            false
     end.
 
 %% @doc Check if native JSON module is available
@@ -78,16 +82,20 @@ have_priority_messages() ->
 -spec json_encode(map() | list()) -> binary().
 json_encode(Data) ->
     case have_native_json() of
-        true -> json:encode(Data);
-        false -> jsx:encode(Data)
+        true ->
+            json:encode(Data);
+        false ->
+            jsx:encode(Data)
     end.
 
 %% @doc Decode JSON with automatic module selection
 -spec json_decode(binary()) -> map() | list().
 json_decode(Binary) ->
     case have_native_json() of
-        true -> json:decode(Binary);
-        false -> jsx:decode(Binary, [return_maps])
+        true ->
+            json:decode(Binary);
+        false ->
+            jsx:decode(Binary, [return_maps])
     end.
 
 %%====================================================================
@@ -113,7 +121,7 @@ safe_processes() ->
         true ->
             logger:warning("Process enumeration of ~p processes may be inefficient. "
                            "Consider upgrading to OTP 28.3.1+ for O(1) memory.",
-                          [Count]),
+                           [Count]),
             get_processes();
         false ->
             get_processes()
@@ -191,17 +199,25 @@ send_priority(Dest, Msg) ->
 -spec parse_otp_version(string()) -> otp_version().
 parse_otp_version(VsnStr) ->
     Parts = string:split(VsnStr, ".", all),
-    ToInt = fun(Str) ->
-        case string:to_integer(Str) of
-            {Int, ""} -> Int;
-            {Int, _} -> Int;
-            _ -> 0
-        end
-    end,
-    Padded = case Parts of
-        [M1] -> [M1, "0", "0"];
-        [M1, M2] -> [M1, M2, "0"];
-        [M1, M2, M3 | _] -> [M1, M2, M3]
-    end,
+    ToInt =
+        fun(Str) ->
+           case string:to_integer(Str) of
+               {Int, ""} ->
+                   Int;
+               {Int, _} ->
+                   Int;
+               _ ->
+                   0
+           end
+        end,
+    Padded =
+        case Parts of
+            [M1] ->
+                [M1, "0", "0"];
+            [M1, M2] ->
+                [M1, M2, "0"];
+            [M1, M2, M3 | _] ->
+                [M1, M2, M3]
+        end,
     [Major, Minor, Patch] = [ToInt(P) || P <- Padded],
     {Major, Minor, Patch}.

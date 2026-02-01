@@ -18,23 +18,13 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cpu_quota).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    start_link/1,
-    check_quota/1,
-    check_quota/2,
-    record_operation/2,
-    record_operation/3,
-    get_client_stats/1,
-    reset_client/1,
-    get_quota_config/0,
-    update_quota_config/1,
-    stop/0
-]).
-
+-export([start_link/0, start_link/1, check_quota/1, check_quota/2, record_operation/2,
+         record_operation/3, get_client_stats/1, reset_client/1, get_quota_config/0,
+         update_quota_config/1, stop/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -44,31 +34,28 @@
 -type cpu_time_ms() :: non_neg_integer().
 -type operation_count() :: non_neg_integer().
 
--record(quota_state, {
-    cpu_time_used :: cpu_time_ms(),
-    operations_count :: operation_count(),
-    window_start :: integer(), %% milliseconds
-    last_update :: integer()    %% milliseconds
-}).
+-record(quota_state,
+        {cpu_time_used :: cpu_time_ms(),
+         operations_count :: operation_count(),
+         window_start :: integer(), %% milliseconds
+         last_update :: integer()}).    %% milliseconds
 
 -type quota_state() :: #quota_state{}.
 
--record(client_stats, {
-    client_id :: client_id(),
-    total_operations :: operation_count(),
-    total_cpu_time :: cpu_time_ms(),
-    quota_exceeded_count :: non_neg_integer(),
-    average_cpu_per_op :: float(),
-    last_operation_at :: integer() | undefined
-}).
+-record(client_stats,
+        {client_id :: client_id(),
+         total_operations :: operation_count(),
+         total_cpu_time :: cpu_time_ms(),
+         quota_exceeded_count :: non_neg_integer(),
+         average_cpu_per_op :: float(),
+         last_operation_at :: integer() | undefined}).
 
 -type client_stats() :: #client_stats{}.
 
--record(state, {
-    quotas :: ets:tid(),           % client_id -> quota_state
-    client_stats :: ets:tid(),     % client_id -> client_stats
-    config :: map()
-}).
+-record(state,
+        {quotas :: ets:tid(),           % client_id -> quota_state
+         client_stats :: ets:tid(),     % client_id -> client_stats
+         config :: map()}).
 
 -type state() :: #state{}.
 
@@ -95,13 +82,13 @@ start_link(Config) ->
 
 %% @doc Check if client has CPU quota available (by client_id)
 -spec check_quota(client_id()) ->
-    ok | {error, quota_exceeded, cpu_time} | {error, quota_exceeded, operations}.
+                     ok | {error, quota_exceeded, cpu_time} | {error, quota_exceeded, operations}.
 check_quota(ClientId) ->
     check_quota(ClientId, undefined).
 
 %% @doc Check if client has CPU quota available (with operation type)
 -spec check_quota(client_id(), operation_type() | undefined) ->
-    ok | {error, quota_exceeded, cpu_time} | {error, quota_exceeded, operations}.
+                     ok | {error, quota_exceeded, cpu_time} | {error, quota_exceeded, operations}.
 check_quota(ClientId, OperationType) ->
     gen_server:call(?MODULE, {check_quota, ClientId, OperationType}, 5000).
 
@@ -148,15 +135,15 @@ stop() ->
 init([Config]) ->
     process_flag(trap_exit, true),
 
-    State = #state{
-        quotas = ets:new(cpu_quotas, [set, protected]),
-        client_stats = ets:new(cpu_client_stats, [set, protected]),
-        config = Config
-    },
+    State =
+        #state{quotas = ets:new(cpu_quotas, [set, protected]),
+               client_stats = ets:new(cpu_client_stats, [set, protected]),
+               config = Config},
 
     % Start cleanup timer
     erlang:send_after(maps_get(cleanup_interval_ms, Config, ?DEFAULT_CLEANUP_INTERVAL_MS),
-                      self(), cleanup_expired),
+                      self(),
+                      cleanup_expired),
 
     logger:info("CPU quota manager started: max ~pms CPU/sec, ~p ops/sec",
                 [maps_get(max_cpu_time_per_sec, Config, ?DEFAULT_MAX_CPU_TIME_PER_SEC),
@@ -165,36 +152,33 @@ init([Config]) ->
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} | {noreply, state()}.
+                     {reply, term(), state()} | {noreply, state()}.
 handle_call({check_quota, ClientId, OperationType}, _From, State) ->
     Result = do_check_quota(ClientId, OperationType, State),
     {reply, Result, State};
-
 handle_call({record_operation, ClientId, OperationType, CpuTimeMs}, _From, State) ->
     ok = do_record_operation(ClientId, OperationType, CpuTimeMs, State),
     {reply, ok, State};
-
 handle_call({get_client_stats, ClientId}, _From, State) ->
-    Result = case ets:lookup(State#state.client_stats, ClientId) of
-        [{_, Stats}] -> {ok, Stats};
-        [] -> {error, not_found}
-    end,
+    Result =
+        case ets:lookup(State#state.client_stats, ClientId) of
+            [{_, Stats}] ->
+                {ok, Stats};
+            [] ->
+                {error, not_found}
+        end,
     {reply, Result, State};
-
 handle_call({reset_client, ClientId}, _From, State) ->
     ets:delete(State#state.quotas, ClientId),
     ets:delete(State#state.client_stats, ClientId),
     logger:warning("CPU quota reset for client: ~p", [ClientId]),
     {reply, ok, State};
-
 handle_call(get_quota_config, _From, State) ->
     {reply, State#state.config, State};
-
 handle_call({update_quota_config, NewConfig}, _From, State) ->
     MergedConfig = maps:merge(State#state.config, NewConfig),
     logger:info("CPU quota config updated: ~p", [MergedConfig]),
     {reply, ok, State#state{config = MergedConfig}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -205,11 +189,10 @@ handle_cast(_Msg, State) ->
 -spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info(cleanup_expired, State) ->
     cleanup_expired_entries(State),
-    CleanupInterval = maps_get(cleanup_interval_ms, State#state.config,
-                                ?DEFAULT_CLEANUP_INTERVAL_MS),
+    CleanupInterval =
+        maps_get(cleanup_interval_ms, State#state.config, ?DEFAULT_CLEANUP_INTERVAL_MS),
     erlang:send_after(CleanupInterval, self(), cleanup_expired),
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -230,47 +213,43 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private Check if client has CPU quota available
 do_check_quota(ClientId, _OperationType, State) ->
     Now = erlang:system_time(millisecond),
-    MaxCpuTime = maps_get(max_cpu_time_per_sec, State#state.config,
-                          ?DEFAULT_MAX_CPU_TIME_PER_SEC),
-    MaxOps = maps_get(max_ops_per_sec, State#state.config,
-                      ?DEFAULT_MAX_OPS_PER_SEC),
+    MaxCpuTime = maps_get(max_cpu_time_per_sec, State#state.config, ?DEFAULT_MAX_CPU_TIME_PER_SEC),
+    MaxOps = maps_get(max_ops_per_sec, State#state.config, ?DEFAULT_MAX_OPS_PER_SEC),
     WindowMs = maps_get(window_ms, State#state.config, ?DEFAULT_WINDOW_MS),
 
     case ets:lookup(State#state.quotas, ClientId) of
-        [{_, #quota_state{cpu_time_used = CpuUsed,
-                          operations_count = OpsCount,
-                          window_start = WindowStart}}] ->
+        [{_,
+          #quota_state{cpu_time_used = CpuUsed,
+                       operations_count = OpsCount,
+                       window_start = WindowStart}}] ->
             TimeSinceStart = Now - WindowStart,
-            if
-                TimeSinceStart >= WindowMs ->
-                    % Window expired, reset quota
-                    ets:insert(State#state.quotas,
-                              {ClientId, #quota_state{
-                                  cpu_time_used = 0,
-                                  operations_count = 0,
-                                  window_start = Now,
-                                  last_update = Now
-                              }}),
-                    ok;
-                CpuUsed >= MaxCpuTime ->
-                    % CPU time quota exceeded
-                    {error, quota_exceeded, cpu_time};
-                OpsCount >= MaxOps ->
-                    % Operations count quota exceeded
-                    {error, quota_exceeded, operations};
-                true ->
-                    % Within quota
-                    ok
+            if TimeSinceStart >= WindowMs ->
+                   % Window expired, reset quota
+                   ets:insert(State#state.quotas,
+                              {ClientId,
+                               #quota_state{cpu_time_used = 0,
+                                            operations_count = 0,
+                                            window_start = Now,
+                                            last_update = Now}}),
+                   ok;
+               CpuUsed >= MaxCpuTime ->
+                   % CPU time quota exceeded
+                   {error, quota_exceeded, cpu_time};
+               OpsCount >= MaxOps ->
+                   % Operations count quota exceeded
+                   {error, quota_exceeded, operations};
+               true ->
+                   % Within quota
+                   ok
             end;
         [] ->
             % First operation, initialize quota
             ets:insert(State#state.quotas,
-                      {ClientId, #quota_state{
-                          cpu_time_used = 0,
-                          operations_count = 0,
-                          window_start = Now,
-                          last_update = Now
-                      }}),
+                       {ClientId,
+                        #quota_state{cpu_time_used = 0,
+                                     operations_count = 0,
+                                     window_start = Now,
+                                     last_update = Now}}),
             ok
     end.
 
@@ -279,54 +258,50 @@ do_record_operation(ClientId, OperationType, CpuTimeMs, State) ->
     Now = erlang:system_time(millisecond),
 
     % Update quota state
-    QuotaState = case ets:lookup(State#state.quotas, ClientId) of
-        [{_, #quota_state{cpu_time_used = CpuUsed,
-                          operations_count = OpsCount,
-                          window_start = WindowStart}}] ->
-            #quota_state{
-                cpu_time_used = CpuUsed + CpuTimeMs,
-                operations_count = OpsCount + 1,
-                window_start = WindowStart,
-                last_update = Now
-            };
-        [] ->
-            #quota_state{
-                cpu_time_used = CpuTimeMs,
-                operations_count = 1,
-                window_start = Now,
-                last_update = Now
-            }
-    end,
+    QuotaState =
+        case ets:lookup(State#state.quotas, ClientId) of
+            [{_,
+              #quota_state{cpu_time_used = CpuUsed,
+                           operations_count = OpsCount,
+                           window_start = WindowStart}}] ->
+                #quota_state{cpu_time_used = CpuUsed + CpuTimeMs,
+                             operations_count = OpsCount + 1,
+                             window_start = WindowStart,
+                             last_update = Now};
+            [] ->
+                #quota_state{cpu_time_used = CpuTimeMs,
+                             operations_count = 1,
+                             window_start = Now,
+                             last_update = Now}
+        end,
     ets:insert(State#state.quotas, {ClientId, QuotaState}),
 
     % Update or create client stats
-    Stats = case ets:lookup(State#state.client_stats, ClientId) of
-        [{_, ExistingStats}] ->
-            TotalOps = ExistingStats#client_stats.total_operations + 1,
-            TotalCpu = ExistingStats#client_stats.total_cpu_time + CpuTimeMs,
-            ExistingStats#client_stats{
-                total_operations = TotalOps,
-                total_cpu_time = TotalCpu,
-                average_cpu_per_op = TotalCpu / TotalOps,
-                last_operation_at = Now
-            };
-        [] ->
-            #client_stats{
-                client_id = ClientId,
-                total_operations = 1,
-                total_cpu_time = CpuTimeMs,
-                quota_exceeded_count = 0,
-                average_cpu_per_op = CpuTimeMs,
-                last_operation_at = Now
-            }
-    end,
+    Stats =
+        case ets:lookup(State#state.client_stats, ClientId) of
+            [{_, ExistingStats}] ->
+                TotalOps = ExistingStats#client_stats.total_operations + 1,
+                TotalCpu = ExistingStats#client_stats.total_cpu_time + CpuTimeMs,
+                ExistingStats#client_stats{total_operations = TotalOps,
+                                           total_cpu_time = TotalCpu,
+                                           average_cpu_per_op = TotalCpu / TotalOps,
+                                           last_operation_at = Now};
+            [] ->
+                #client_stats{client_id = ClientId,
+                              total_operations = 1,
+                              total_cpu_time = CpuTimeMs,
+                              quota_exceeded_count = 0,
+                              average_cpu_per_op = CpuTimeMs,
+                              last_operation_at = Now}
+        end,
     ets:insert(State#state.client_stats, {ClientId, Stats}),
 
     % Log if operation took significant CPU time
-    case CpuTimeMs > 50 of  % More than 50ms is considered heavy
+    case CpuTimeMs > 50  % More than 50ms is considered heavy
+    of
         true ->
             logger:warning("Heavy CPU operation detected: client=~p, type=~p, cpu_time=~pms",
-                          [ClientId, OperationType, CpuTimeMs]);
+                           [ClientId, OperationType, CpuTimeMs]);
         false ->
             ok
     end,
@@ -338,23 +313,27 @@ cleanup_expired_entries(State) ->
     Now = erlang:system_time(millisecond),
 
     % Cleanup old quota states (inactive for 5 minutes)
-    FiveMinutesAgo = Now - (5 * 60 * 1000),
+    FiveMinutesAgo = Now - 5 * 60 * 1000,
     ets:foldl(fun({ClientId, #quota_state{last_update = LastUpdate}}, Acc) ->
-        case LastUpdate < FiveMinutesAgo of
-            true ->
-                ets:delete(State#state.quotas, ClientId),
-                logger:debug("CPU quota expired for client: ~p", [ClientId]);
-            false ->
-                ok
-        end,
-        Acc
-    end, ok, State#state.quotas),
+                 case LastUpdate < FiveMinutesAgo of
+                     true ->
+                         ets:delete(State#state.quotas, ClientId),
+                         logger:debug("CPU quota expired for client: ~p", [ClientId]);
+                     false ->
+                         ok
+                 end,
+                 Acc
+              end,
+              ok,
+              State#state.quotas),
 
     ok.
 
 %% @private Safe maps:get with default
 maps_get(Key, Map, Default) ->
     case maps:find(Key, Map) of
-        {ok, Value} -> Value;
-        error -> Default
+        {ok, Value} ->
+            Value;
+        error ->
+            Default
     end.

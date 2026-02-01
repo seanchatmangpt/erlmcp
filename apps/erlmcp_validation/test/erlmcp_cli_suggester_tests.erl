@@ -13,6 +13,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_suggester_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
@@ -23,8 +24,7 @@ suggester_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Initialize suggester", fun test_init_suggester/0},
+     [{"Initialize suggester", fun test_init_suggester/0},
       {"Suggest based on history", fun test_suggest_from_history/0},
       {"Suggest based on context", fun test_suggest_from_context/0},
       {"Suggest based on frequency", fun test_suggest_by_frequency/0},
@@ -33,8 +33,7 @@ suggester_test_() ->
       {"Suggest flags for command", fun test_suggest_flags/0},
       {"Learn from user behavior", fun test_learn_behavior/0},
       {"Rank suggestions", fun test_rank_suggestions/0},
-      {"Filter irrelevant suggestions", fun test_filter_suggestions/0}
-     ]}.
+      {"Filter irrelevant suggestions", fun test_filter_suggestions/0}]}.
 
 setup() ->
     application:ensure_all_started(erlmcp),
@@ -92,7 +91,10 @@ test_suggest_corrections() ->
 
 test_suggest_flags() ->
     {ok, Suggester} = erlmcp_cli_suggester:start_link(),
-    ok = erlmcp_cli_suggester:register_command(Suggester, "validate", [{flag, <<"--format">>, [<<"json">>]}]),
+    ok =
+        erlmcp_cli_suggester:register_command(Suggester,
+                                              "validate",
+                                              [{flag, <<"--format">>, [<<"json">>]}]),
     {ok, Flags} = erlmcp_cli_suggester:suggest_flags(Suggester, "validate"),
     ?assert(lists:member(<<"--format">>, Flags)),
     ok = erlmcp_cli_suggester:stop(Suggester).
@@ -119,8 +121,10 @@ test_filter_suggestions() ->
     {ok, Suggester} = erlmcp_cli_suggester:start_link(),
     ok = erlmcp_cli_suggester:record_command(Suggester, "validate spec"),
     ok = erlmcp_cli_suggester:record_command(Suggester, "help"),
-    {ok, Filtered} = erlmcp_cli_suggester:suggest_filtered(Suggester, fun(Cmd) ->
-        binary:match(Cmd, <<"validate">>) =/= nomatch
-    end),
+    {ok, Filtered} =
+        erlmcp_cli_suggester:suggest_filtered(Suggester,
+                                              fun(Cmd) ->
+                                                 binary:match(Cmd, <<"validate">>) =/= nomatch
+                                              end),
     ?assertEqual([<<"validate spec">>], Filtered),
     ok = erlmcp_cli_suggester:stop(Suggester).

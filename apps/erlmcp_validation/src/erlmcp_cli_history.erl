@@ -17,25 +17,14 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_history).
+
 -behaviour(gen_server).
 
 %% API exports
--export([
-    start_link/0, start_link/1,
-    add/1,
-    get/1,
-    get_all/0,
-    search/1,
-    clear/0,
-    size/0,
-    save/0,
-    load/0,
-    stop/0
-]).
-
+-export([start_link/0, start_link/1, add/1, get/1, get_all/0, search/1, clear/0, size/0, save/0,
+         load/0, stop/0]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Default configuration
 -define(DEFAULT_MAX_SIZE, 1000).
@@ -43,13 +32,12 @@
 -define(SAVE_INTERVAL, 30000). % Save every 30 seconds
 
 %% State record
--record(state, {
-    history = [] :: [string()],
-    max_size = ?DEFAULT_MAX_SIZE :: pos_integer(),
-    history_file :: file:filename(),
-    save_timer :: reference() | undefined,
-    suppress_duplicates = true :: boolean()
-}).
+-record(state,
+        {history = [] :: [string()],
+         max_size = ?DEFAULT_MAX_SIZE :: pos_integer(),
+         history_file :: file:filename(),
+         save_timer :: reference() | undefined,
+         suppress_duplicates = true :: boolean()}).
 
 %%====================================================================
 %% API Functions
@@ -126,19 +114,19 @@ init(Opts) ->
     % Ensure directory exists
     ok = filelib:ensure_dir(HistoryFile),
 
-    State = #state{
-        max_size = maps:get(max_size, Opts, ?DEFAULT_MAX_SIZE),
-        history_file = HistoryFile,
-        suppress_duplicates = maps:get(suppress_duplicates, Opts, true)
-    },
+    State =
+        #state{max_size = maps:get(max_size, Opts, ?DEFAULT_MAX_SIZE),
+               history_file = HistoryFile,
+               suppress_duplicates = maps:get(suppress_duplicates, Opts, true)},
 
     % Load existing history
-    State2 = case load_history_from_file(HistoryFile) of
-        {ok, History} ->
-            State#state{history = History};
-        {error, _} ->
-            State
-    end,
+    State2 =
+        case load_history_from_file(HistoryFile) of
+            {ok, History} ->
+                State#state{history = History};
+            {error, _} ->
+                State
+        end,
 
     % Start auto-save timer
     Timer = erlang:send_after(?SAVE_INTERVAL, self(), auto_save),
@@ -148,34 +136,28 @@ init(Opts) ->
 
 %% @doc Handle synchronous calls
 handle_call({get, Index}, _From, State) ->
-    Reply = case Index =< length(State#state.history) of
-        true ->
-            Command = lists:nth(Index, State#state.history),
-            {ok, Command};
-        false ->
-            {error, not_found}
-    end,
+    Reply =
+        case Index =< length(State#state.history) of
+            true ->
+                Command = lists:nth(Index, State#state.history),
+                {ok, Command};
+            false ->
+                {error, not_found}
+        end,
     {reply, Reply, State};
-
 handle_call(get_all, _From, State) ->
     {reply, State#state.history, State};
-
 handle_call({search, Pattern}, _From, State) ->
-    Matches = [Cmd || Cmd <- State#state.history,
-                      string:find(Cmd, Pattern) =/= nomatch],
+    Matches = [Cmd || Cmd <- State#state.history, string:find(Cmd, Pattern) =/= nomatch],
     {reply, Matches, State};
-
 handle_call(clear, _From, State) ->
     NewState = State#state{history = []},
     {reply, ok, NewState};
-
 handle_call(size, _From, State) ->
     {reply, length(State#state.history), State};
-
 handle_call(save, _From, State) ->
     Reply = save_history_to_file(State#state.history, State#state.history_file),
     {reply, Reply, State};
-
 handle_call(load, _From, State) ->
     case load_history_from_file(State#state.history_file) of
         {ok, History} ->
@@ -183,7 +165,6 @@ handle_call(load, _From, State) ->
         {error, Reason} = Error ->
             {reply, Error, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -193,14 +174,14 @@ handle_cast({add, Command}, State) ->
     Trimmed = string:trim(Command),
 
     % Skip empty commands
-    NewState = case Trimmed of
-        "" ->
-            State;
-        _ ->
-            add_to_history(Trimmed, State)
-    end,
+    NewState =
+        case Trimmed of
+            "" ->
+                State;
+            _ ->
+                add_to_history(Trimmed, State)
+        end,
     {noreply, NewState};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -212,7 +193,6 @@ handle_info(auto_save, State) ->
     % Restart timer
     Timer = erlang:send_after(?SAVE_INTERVAL, self(), auto_save),
     {noreply, State#state{save_timer = Timer}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -220,8 +200,10 @@ handle_info(_Info, State) ->
 terminate(_Reason, State) ->
     % Cancel timer
     case State#state.save_timer of
-        undefined -> ok;
-        Timer -> erlang:cancel_timer(Timer)
+        undefined ->
+            ok;
+        Timer ->
+            erlang:cancel_timer(Timer)
     end,
 
     % Final save
@@ -244,19 +226,25 @@ add_to_history(Command, State) ->
     SuppressDuplicates = State#state.suppress_duplicates,
 
     % Remove duplicate if suppression is enabled
-    History2 = case SuppressDuplicates of
-        true -> lists:delete(Command, History);
-        false -> History
-    end,
+    History2 =
+        case SuppressDuplicates of
+            true ->
+                lists:delete(Command, History);
+            false ->
+                History
+        end,
 
     % Add to front of history
     History3 = [Command | History2],
 
     % Trim to max size
-    History4 = case length(History3) > MaxSize of
-        true -> lists:sublist(History3, MaxSize);
-        false -> History3
-    end,
+    History4 =
+        case length(History3) > MaxSize of
+            true ->
+                lists:sublist(History3, MaxSize);
+            false ->
+                History3
+        end,
 
     State#state{history = History4}.
 
@@ -268,8 +256,10 @@ save_history_to_file(History, FilePath) ->
     Content = string:join(Lines, "\n"),
 
     case file:write_file(FilePath, Content) of
-        ok -> ok;
-        {error, Reason} -> {error, Reason}
+        ok ->
+            ok;
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Load history from file

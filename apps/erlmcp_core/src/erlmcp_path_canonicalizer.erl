@@ -1,11 +1,7 @@
 -module(erlmcp_path_canonicalizer).
 
 %% API exports
--export([
-    validate_resource_path/2,
-    canonicalize_path/1,
-    is_path_safe/2
-]).
+-export([validate_resource_path/2, canonicalize_path/1, is_path_safe/2]).
 
 %%%-----------------------------------------------------------------
 %%% Path Canonicalizer for MCP Resources
@@ -27,8 +23,7 @@
 
 %% @doc Validate resource path against allowed directories
 %% Returns: {ok, CanonicalUri} | {error, Reason}
--spec validate_resource_path(binary(), [binary()]) ->
-    {ok, binary()} | {error, term()}.
+-spec validate_resource_path(binary(), [binary()]) -> {ok, binary()} | {error, term()}.
 validate_resource_path(Uri, AllowedDirs) when is_binary(Uri), is_list(AllowedDirs) ->
     try
         %% 1. Parse URI to extract path
@@ -83,9 +78,7 @@ canonicalize_path(Path) when is_binary(Path) ->
 -spec is_path_safe(binary(), [binary()]) -> boolean().
 is_path_safe(Path, AllowedDirs) when is_binary(Path), is_list(AllowedDirs) ->
     %% Check if path starts with any allowed directory
-    lists:any(fun(AllowedDir) ->
-        is_prefix_of(AllowedDir, Path)
-    end, AllowedDirs).
+    lists:any(fun(AllowedDir) -> is_prefix_of(AllowedDir, Path) end, AllowedDirs).
 
 %%%===================================================================
 %%% Internal functions
@@ -99,8 +92,10 @@ extract_path_from_uri(Uri) ->
             %% Remove query string and fragment if present
             QuerySep = <<"?">>,
             case binary:split(PathWithQuery, QuerySep) of
-                [PathOnly, _] -> PathOnly;
-                [PathOnly] -> PathOnly
+                [PathOnly, _] ->
+                    PathOnly;
+                [PathOnly] ->
+                    PathOnly
             end;
         [PathOnly] ->
             %% No scheme, treat as path
@@ -121,11 +116,14 @@ rebuild_uri(Uri, CanonicalPath) ->
 %% @private Normalize path separators (handle mixed \ and /)
 normalize_separators(PathList) ->
     lists:map(fun(C) ->
-        case C of
-            $\\ -> $/;
-            _ -> C
-        end
-    end, PathList).
+                 case C of
+                     $\\ ->
+                         $/;
+                     _ ->
+                         C
+                 end
+              end,
+              PathList).
 
 %% @private Process path components (resolve . and ..)
 process_path_components([], Acc) ->
@@ -153,10 +151,14 @@ reconstruct_path([]) ->
     "/";
 reconstruct_path(Components) ->
     %% Ensure leading slash
-    Path = string:join(lists:reverse(Components), "/"),
+    Path =
+        string:join(
+            lists:reverse(Components), "/"),
     case Path of
-        [$/ | _] -> Path;
-        _ -> [$/ | Path]
+        [$/ | _] ->
+            Path;
+        _ ->
+            [$/ | Path]
     end.
 
 %% @private Check if Target is a prefix of Path

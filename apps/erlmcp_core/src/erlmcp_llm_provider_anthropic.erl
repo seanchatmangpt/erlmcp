@@ -3,28 +3,30 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_llm_provider_anthropic).
+
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, start_link/1, create_message/2,
-         set_api_key/1, get_api_key/0, set_model/1, get_model/0, set_version/1]).
-
+-export([start_link/0, start_link/1, create_message/2, set_api_key/1, get_api_key/0, set_model/1,
+         get_model/0, set_version/1]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
+
 -include_lib("kernel/include/logger.hrl").
 
--record(state, {
-    api_key :: binary() | undefined,
-    model :: binary(),
-    version :: binary(),
-    timeout :: pos_integer()
-}).
+-record(state,
+        {api_key :: binary() | undefined,
+         model :: binary(),
+         version :: binary(),
+         timeout :: pos_integer()}).
 
-start_link() -> start_link(#{}).
-start_link(Config) -> gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
+start_link() ->
+    start_link(#{}).
+
+start_link(Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [Config], []).
 
 create_message(Messages, Params) ->
     gen_server:call(?MODULE, {create_message, Messages, Params}, 60000).
@@ -32,12 +34,14 @@ create_message(Messages, Params) ->
 set_api_key(ApiKey) when is_binary(ApiKey) ->
     gen_server:call(?MODULE, {set_api_key, ApiKey}).
 
-get_api_key() -> gen_server:call(?MODULE, get_api_key).
+get_api_key() ->
+    gen_server:call(?MODULE, get_api_key).
 
 set_model(Model) when is_binary(Model) ->
     gen_server:call(?MODULE, {set_model, Model}).
 
-get_model() -> gen_server:call(?MODULE, get_model).
+get_model() ->
+    gen_server:call(?MODULE, get_model).
 
 set_version(Version) when is_binary(Version) ->
     gen_server:call(?MODULE, {set_version, Version}).
@@ -49,31 +53,30 @@ init([Config]) ->
     Timeout = maps_get(timeout, Config, 60000),
 
     ?LOG_INFO("Anthropic provider initialized with model: ~s", [Model]),
-    {ok, #state{api_key = ApiKey, model = Model, version = Version, timeout = Timeout}}.
+    {ok,
+     #state{api_key = ApiKey,
+            model = Model,
+            version = Version,
+            timeout = Timeout}}.
 
 handle_call({create_message, Messages, Params}, _From, State) ->
     Result = do_create_message(Messages, Params, State),
     {reply, Result, State};
-
 handle_call({set_api_key, ApiKey}, _From, State) ->
     {reply, ok, State#state{api_key = ApiKey}};
-
 handle_call(get_api_key, _From, State) ->
     {reply, State#state.api_key, State};
-
 handle_call({set_model, Model}, _From, State) ->
     {reply, ok, State#state{model = Model}};
-
 handle_call(get_model, _From, State) ->
     {reply, State#state.model, State};
-
 handle_call({set_version, Version}, _From, State) ->
     {reply, ok, State#state{version = Version}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
-handle_cast(_Msg, State) -> {noreply, State}.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
 
 handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
     % Handle gun connection process death during API requests
@@ -82,12 +85,14 @@ handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
     logger:warning("Gun connection process ~p died during Anthropic API request: ~p (monitor: ~p)",
                    [Pid, Reason, MonitorRef]),
     {noreply, State};
+handle_info(_Info, State) ->
+    {noreply, State}.
 
-handle_info(_Info, State) -> {noreply, State}.
+terminate(_Reason, _State) ->
+    ok.
 
-terminate(_Reason, _State) -> ok.
-
-code_change(_OldVsn, State, _Extra) -> {ok, State}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %%%===================================================================
 %%% Internal functions
@@ -101,25 +106,25 @@ do_create_message(Messages, Params, State) ->
 
     {SystemMessages, UserMessages} = split_messages(Messages),
 
-    RequestBody = #{
-        <<"model">> => Model,
-        <<"messages">> => UserMessages,
-        <<"max_tokens">> => MaxTokens
-    },
+    RequestBody =
+        #{<<"model">> => Model,
+          <<"messages">> => UserMessages,
+          <<"max_tokens">> => MaxTokens},
 
-    RequestBody1 = case SystemMessages of
-        [] -> RequestBody;
-        [#{<<"content">> := SystemContent}] ->
-            RequestBody#{<<"system">> => SystemContent}
-    end,
+    RequestBody1 =
+        case SystemMessages of
+            [] ->
+                RequestBody;
+            [#{<<"content">> := SystemContent}] ->
+                RequestBody#{<<"system">> => SystemContent}
+        end,
 
     Url = <<"https://api.anthropic.com/v1/messages">>,
 
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"x-api-key">>, State#state.api_key},
-        {<<"anthropic-version">>, State#state.version}
-    ],
+    Headers =
+        [{<<"Content-Type">>, <<"application/json">>},
+         {<<"x-api-key">>, State#state.api_key},
+         {<<"anthropic-version">>, State#state.version}],
 
     case http_post(Url, Headers, RequestBody1, State#state.timeout) of
         {ok, ResponseBody} ->
@@ -130,29 +135,30 @@ do_create_message(Messages, Params, State) ->
     end.
 
 split_messages(Messages) ->
-    lists:foldl(fun
-        (#{<<"role">> := <<"system">>, <<"content">> := Content}, {SysAcc, UserAcc}) ->
-            {[#{<<"content">> => Content} | SysAcc], UserAcc};
-        (#{<<"role">> := Role, <<"content">> := Content}, {SysAcc, UserAcc}) ->
-            {SysAcc, [#{<<"role">> => Role, <<"content">> => Content} | UserAcc]}
-    end, {[], []}, Messages).
+    lists:foldl(fun (#{<<"role">> := <<"system">>, <<"content">> := Content}, {SysAcc, UserAcc}) ->
+                        {[#{<<"content">> => Content} | SysAcc], UserAcc};
+                    (#{<<"role">> := Role, <<"content">> := Content}, {SysAcc, UserAcc}) ->
+                        {SysAcc, [#{<<"role">> => Role, <<"content">> => Content} | UserAcc]}
+                end,
+                {[], []},
+                Messages).
 
 parse_anthropic_response(ResponseBody) ->
     try jsx:decode(ResponseBody, [return_maps]) of
         #{<<"content">> := [#{<<"type">> := <<"text">>, <<"text">> := Text} | _],
-          <<"model">> := Model, <<"usage">> := Usage} ->
-            {ok, #{
-                <<"role">> => <<"assistant">>,
-                <<"content">> => Text,
-                <<"model">> => Model,
-                <<"stopReason">> => <<"end_of_turn">>,
-                <<"usage">> => #{
-                    <<"promptTokens">> => maps_get(<<"input_tokens">>, Usage, 0),
-                    <<"completionTokens">> => maps_get(<<"output_tokens">>, Usage, 0),
-                    <<"totalTokens">> => (maps_get(<<"input_tokens">>, Usage, 0) +
-                                          maps_get(<<"output_tokens">>, Usage, 0))
-                }
-            }};
+          <<"model">> := Model,
+          <<"usage">> := Usage} ->
+            {ok,
+             #{<<"role">> => <<"assistant">>,
+               <<"content">> => Text,
+               <<"model">> => Model,
+               <<"stopReason">> => <<"end_of_turn">>,
+               <<"usage">> =>
+                   #{<<"promptTokens">> => maps_get(<<"input_tokens">>, Usage, 0),
+                     <<"completionTokens">> => maps_get(<<"output_tokens">>, Usage, 0),
+                     <<"totalTokens">> =>
+                         maps_get(<<"input_tokens">>, Usage, 0)
+                         + maps_get(<<"output_tokens">>, Usage, 0)}}};
         #{<<"error">> := Error} ->
             Message = maps_get(<<"message">>, Error, <<"Unknown error">>),
             Type = maps_get(<<"type">>, Error, <<"api_error">>),
@@ -161,18 +167,25 @@ parse_anthropic_response(ResponseBody) ->
             ?LOG_ERROR("Unexpected Anthropic response format: ~p", [Other]),
             {error, invalid_response_format}
     catch
-        _:_:_ -> {error, json_decode_failed}
+        _:_ ->
+            {error, json_decode_failed}
     end.
 
 http_post(Url, Headers, BodyMap, Timeout) ->
-    #{scheme := Scheme, host := Host, port := Port} = uri_string:parse(Url),
+    #{scheme := Scheme,
+      host := Host,
+      port := Port} =
+        uri_string:parse(Url),
     Path = maps_get(path, uri_string:parse(Url), <<"/">>),
     Body = jsx:encode(BodyMap),
 
-    Transport = case Scheme of
-        <<"https">> -> tls;
-        <<"http">> -> tcp
-    end,
+    Transport =
+        case Scheme of
+            <<"https">> ->
+                tls;
+            <<"http">> ->
+                tcp
+        end,
 
     case gun:open(Host, Port, #{transport => Transport, protocols => [http]}) of
         {ok, ConnPid} ->
@@ -214,13 +227,18 @@ http_post(Url, Headers, BodyMap, Timeout) ->
 
 get_env_api_key() ->
     case os:getenv("ANTHROPIC_API_KEY") of
-        false -> undefined;
-        [] -> undefined;
-        Key -> list_to_binary(Key)
+        false ->
+            undefined;
+        [] ->
+            undefined;
+        Key ->
+            list_to_binary(Key)
     end.
 
 maps_get(Key, Map, Default) ->
     case maps:find(Key, Map) of
-        {ok, Value} -> Value;
-        error -> Default
+        {ok, Value} ->
+            Value;
+        error ->
+            Default
     end.

@@ -39,20 +39,10 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_exporter).
 
-%% Behavior definition
--callback export(Data :: term(), State :: term()) ->
-    {ok, Result :: map(), NewState :: term()} | {error, Reason :: term()}.
-
--callback get_config_schema() -> Schema :: map().
-
 %% Re-export plugin behavior
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    erlmcp_plugin:behaviour_info(callbacks) ++
-    [
-        {export, 2},
-        {get_config_schema, 0}
-    ];
+    erlmcp_plugin:behaviour_info(callbacks) ++ [{export, 2}, {get_config_schema, 0}];
 behaviour_info(_) ->
     undefined.

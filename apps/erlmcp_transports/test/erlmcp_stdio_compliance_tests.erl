@@ -13,6 +13,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_stdio_compliance_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
@@ -48,31 +49,14 @@ stdio_compliance_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Stdio required callbacks - start_link, send, close",
-       fun test_required_callbacks/0},
-
-      {"Stdio connection lifecycle - start and stop",
-       fun test_lifecycle/0},
-
-      {"Stdio message framing - line delimited delivery",
-       fun test_message_framing/0},
-
-      {"Stdio message delivery to owner process",
-       fun test_message_delivery/0},
-
-      {"Stdio owner process monitoring - cleanup on death",
-       fun test_owner_monitoring/0},
-
-      {"Stdio test mode - simulate_input support",
-       fun test_test_mode/0},
-
-      {"Stdio empty line handling - skipped",
-       fun test_empty_lines/0},
-
-      {"Stdio concurrent messages - no loss",
-       fun test_concurrent_messages/0}
-     ]}.
+     [{"Stdio required callbacks - start_link, send, close", fun test_required_callbacks/0},
+      {"Stdio connection lifecycle - start and stop", fun test_lifecycle/0},
+      {"Stdio message framing - line delimited delivery", fun test_message_framing/0},
+      {"Stdio message delivery to owner process", fun test_message_delivery/0},
+      {"Stdio owner process monitoring - cleanup on death", fun test_owner_monitoring/0},
+      {"Stdio test mode - simulate_input support", fun test_test_mode/0},
+      {"Stdio empty line handling - skipped", fun test_empty_lines/0},
+      {"Stdio concurrent messages - no loss", fun test_concurrent_messages/0}]}.
 
 %%====================================================================
 %% Required Callbacks Tests
@@ -127,7 +111,8 @@ test_message_framing() ->
         gen_server:call(Transport, {simulate_input, Msg1}),
 
         receive
-            {transport_message, Msg1} -> ok
+            {transport_message, Msg1} ->
+                ok
         after 1000 ->
             ?assert(false, "Message not received")
         end,
@@ -139,8 +124,18 @@ test_message_framing() ->
         gen_server:call(Transport, {simulate_input, Msg2}),
         gen_server:call(Transport, {simulate_input, Msg3}),
 
-        receive {transport_message, _} -> ok after 500 -> ok end,
-        receive {transport_message, _} -> ok after 500 -> ok end
+        receive
+            {transport_message, _} ->
+                ok
+        after 500 ->
+            ok
+        end,
+        receive
+            {transport_message, _} ->
+                ok
+        after 500 ->
+            ok
+        end
     after
         catch gen_server:stop(Transport, normal, 1000)
     end.
@@ -158,7 +153,8 @@ test_message_delivery() ->
         gen_server:call(Transport, {simulate_input, TestMsg}),
 
         receive
-            {transport_message, TestMsg} -> ok
+            {transport_message, TestMsg} ->
+                ok
         after 1000 ->
             ?assert(false, "Message not delivered to owner")
         end
@@ -171,9 +167,13 @@ test_message_delivery() ->
 %%====================================================================
 
 test_owner_monitoring() ->
-    Owner = spawn(fun() ->
-        receive stop -> ok end
-    end),
+    Owner =
+        spawn(fun() ->
+                 receive
+                     stop ->
+                         ok
+                 end
+              end),
 
     {ok, Transport} = ?STDIO_TRANSPORT:start_link(Owner),
 
@@ -206,7 +206,8 @@ test_test_mode() ->
         ?assertEqual(ok, gen_server:call(Transport, {simulate_input, TestMsg})),
 
         receive
-            {transport_message, TestMsg} -> ok
+            {transport_message, TestMsg} ->
+                ok
         after 1000 ->
             ?assert(false, "Test mode failed")
         end
@@ -250,10 +251,12 @@ test_concurrent_messages() ->
         NumMessages = 50,
 
         %% Send concurrent messages
-        Pids = [spawn(fun() ->
-            Msg = integer_to_binary(N),
-            gen_server:call(Transport, {simulate_input, Msg})
-        end) || N <- lists:seq(1, NumMessages)],
+        Pids =
+            [spawn(fun() ->
+                      Msg = integer_to_binary(N),
+                      gen_server:call(Transport, {simulate_input, Msg})
+                   end)
+             || N <- lists:seq(1, NumMessages)],
 
         %% Wait for completion
         timer:sleep(500),

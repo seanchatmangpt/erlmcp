@@ -21,8 +21,7 @@ dashboard_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Dashboard server starts and stops", fun test_server_lifecycle/0},
+     [{"Dashboard server starts and stops", fun test_server_lifecycle/0},
       {"HTTP metrics endpoint returns JSON", fun test_http_metrics/0},
       {"HTTP historical endpoint works", fun test_http_historical/0},
       {"HTTP export CSV works", fun test_http_export_csv/0},
@@ -36,8 +35,7 @@ dashboard_test_() ->
       {"Metrics aggregator percentile monotonicity", fun test_percentiles_monotonic/0},
       {"Bucket rotation works", fun test_bucket_rotation/0},
       {"Historical queries work", fun test_historical_queries/0},
-      {"Alert thresholds trigger", fun test_alert_thresholds/0}
-     ]}.
+      {"Alert thresholds trigger", fun test_alert_thresholds/0}]}.
 
 setup() ->
     % Start required applications (NOT erlmcp_observability to avoid auto-starting dashboard)
@@ -48,12 +46,14 @@ setup() ->
 
     % Start metrics aggregator manually (not via supervision tree)
     % Check if already running from previous test (foreach runs tests sequentially)
-    AggPid = case whereis(erlmcp_metrics_aggregator) of
-        undefined ->
-            {ok, Pid} = erlmcp_metrics_aggregator:start_link(),
-            Pid;
-        Pid -> Pid
-    end,
+    AggPid =
+        case whereis(erlmcp_metrics_aggregator) of
+            undefined ->
+                {ok, Pid} = erlmcp_metrics_aggregator:start_link(),
+                Pid;
+            Pid ->
+                Pid
+        end,
 
     % Start dashboard server on test port (not via supervision tree)
     {ok, DashPid} = erlmcp_dashboard_server:start_link(?TEST_PORT),
@@ -115,7 +115,9 @@ test_http_historical() ->
 
     Now = erlang:system_time(millisecond),
     Start = Now - 60000, % 1 minute ago
-    Path = lists:flatten(io_lib:format("/api/metrics/historical?start=~p&end=~p", [Start, Now])),
+    Path =
+        lists:flatten(
+            io_lib:format("/api/metrics/historical?start=~p&end=~p", [Start, Now])),
 
     StreamRef = gun:get(ConnPid, Path),
     case gun:await(ConnPid, StreamRef, 5000) of
@@ -237,10 +239,9 @@ test_websocket_subscribe() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe message
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                metrics => [<<"throughput">>, <<"latency">>]
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>,
+                             metrics => [<<"throughput">>, <<"latency">>]}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for subscribed response (may get connected first)
@@ -383,9 +384,10 @@ test_bucket_rotation() ->
 test_historical_queries() ->
     % Record metrics over time
     lists:foreach(fun(I) ->
-        erlmcp_metrics_aggregator:record_metric(throughput, test, I * 10),
-        timer:sleep(50)
-    end, lists:seq(1, 5)),
+                     erlmcp_metrics_aggregator:record_metric(throughput, test, I * 10),
+                     timer:sleep(50)
+                  end,
+                  lists:seq(1, 5)),
 
     Now = erlang:system_time(millisecond),
     Start = Now - 5000, % 5 seconds ago
@@ -409,14 +411,15 @@ test_alert_thresholds() ->
 -ifdef(PROPER).
 
 prop_percentiles_sorted() ->
-    ?FORALL(Values, non_empty(list(number())),
-        begin
-            Percentiles = erlmcp_metrics_aggregator:get_percentiles(Values),
-            P50 = maps:get(p50, Percentiles),
-            P95 = maps:get(p95, Percentiles),
-            P99 = maps:get(p99, Percentiles),
-            P999 = maps:get(p999, Percentiles),
-            (P50 =< P95) andalso (P95 =< P99) andalso (P99 =< P999)
-        end).
+    ?FORALL(Values,
+            non_empty(list(number())),
+            begin
+                Percentiles = erlmcp_metrics_aggregator:get_percentiles(Values),
+                P50 = maps:get(p50, Percentiles),
+                P95 = maps:get(p95, Percentiles),
+                P99 = maps:get(p99, Percentiles),
+                P999 = maps:get(p999, Percentiles),
+                P50 =< P95 andalso P95 =< P99 andalso P99 =< P999
+            end).
 
 -endif.

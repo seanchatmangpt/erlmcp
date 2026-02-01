@@ -8,6 +8,7 @@
 %%%-------------------------------------------------------------------
 
 -ifndef(ERLMCP_AUTH_HRL).
+
 -define(ERLMCP_AUTH_HRL, 1).
 
 %%====================================================================
@@ -37,16 +38,15 @@
 %% Session Record
 %%====================================================================
 
--record(session, {
-    session_id :: session_id(),
-    user_id :: user_id(),
-    roles :: [role()],
-    permissions :: [permission()],
-    auth_method :: auth_method(),
-    created_at :: integer(),
-    expires_at :: integer(),
-    metadata :: map()
-}).
+-record(session,
+        {session_id :: session_id(),
+         user_id :: user_id(),
+         roles :: [role()],
+         permissions :: [permission()],
+         auth_method :: auth_method(),
+         created_at :: integer(),
+         expires_at :: integer(),
+         metadata :: map()}).
 
 -type session() :: #session{}.
 
@@ -54,29 +54,24 @@
 %% Rate Limiter State Records
 %%====================================================================
 
--record(rate_limit_state, {
-    count :: non_neg_integer(),
-    window_start :: integer() %% milliseconds
-}).
-
--record(block_state, {
-    reason :: term(),
-    blocked_until :: integer(), %% milliseconds
-    failure_count :: non_neg_integer(),
-    backoff_level :: 0..5
-}).
-
--record(client_stats, {
-    client_id :: binary() | undefined,
-    ip_address :: inet:ip_address() | undefined,
-    total_attempts :: non_neg_integer(),
-    successful_auths :: non_neg_integer(),
-    failed_auths :: non_neg_integer(),
-    rate_limited_count :: non_neg_integer(),
-    blocked_count :: non_neg_integer(),
-    current_backoff_level :: 0..5,
-    last_attempt_at :: integer() | undefined
-}).
+-record(rate_limit_state,
+        {count :: non_neg_integer(),
+         window_start :: integer()}). %% milliseconds
+-record(block_state,
+        {reason :: term(),
+         blocked_until :: integer(), %% milliseconds
+         failure_count :: non_neg_integer(),
+         backoff_level :: 0..5}).
+-record(client_stats,
+        {client_id :: binary() | undefined,
+         ip_address :: inet:ip_address() | undefined,
+         total_attempts :: non_neg_integer(),
+         successful_auths :: non_neg_integer(),
+         failed_auths :: non_neg_integer(),
+         rate_limited_count :: non_neg_integer(),
+         blocked_count :: non_neg_integer(),
+         current_backoff_level :: 0..5,
+         last_attempt_at :: integer() | undefined}).
 
 %%====================================================================
 %% Authentication Result Macros

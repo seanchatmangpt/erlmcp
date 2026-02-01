@@ -18,10 +18,7 @@
 -module(erlmcp_compliance_report_html).
 
 %% API
--export([
-    generate_report/1,
-    generate_report/2
-]).
+-export([generate_report/1, generate_report/2]).
 
 %% Types
 -type validation_results() :: map().
@@ -45,68 +42,88 @@ generate_report(Results, Options) when is_map(Results), is_map(Options) ->
     OverallStatus = compute_status(Results),
     StatusClass = status_to_class(OverallStatus),
     UpperStatus = string:uppercase(binary_to_list(OverallStatus)),
-    
+
     Compliance = maps:get(overall, Results, 0.0),
     Timestamp = maps:get(timestamp, Results, <<"Unknown">>),
     SpecVersion = maps:get(spec_version, Results, <<"Unknown">>),
-    
+
     Details = maps:get(details, Results, #{}),
     Passed = maps:get(passed_tests, Details, 0),
     Total = maps:get(total_requirements, Details, 0),
-    
-    PassRate = case Total of
-        0 -> <<"0.0">>;
-        _ -> float_to_binary((Passed / Total) * 100.0, [{decimals, 1}])
-    end,
+
+    PassRate =
+        case Total of
+            0 ->
+                <<"0.0">>;
+            _ ->
+                float_to_binary(Passed / Total * 100.0, [{decimals, 1}])
+        end,
 
     %% Build HTML
-    HTML = io_lib:format(
-        "<!DOCTYPE html>~n"
-        "<html lang=\"en\">~n"
-        "<head>~n"
-        "    <meta charset=\"UTF-8\">~n"
-        "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">~n"
-        "    <title>erlmcp MCP Compliance Report</title>~n"
-        "~s"
-        "~s"
-        "</head>~n"
-        "<body>~n"
-        "<div class=\"container\">~n"
-        "    <div class=\"header\">~n"
-        "        <h1>MCP 2025-11-25 Compliance Report</h1>~n"
-        "        <div class=\"meta\">Generated: ~s | Specification: ~s</div>~n"
-        "        <div class=\"summary\">~n"
-        "            Overall: <span class=\"~s\">~s</span><br/>~n"
-        "            Tests: ~p/~p passed (~s%)<br/>~n"
-        "            Compliance: ~.2f%~n"
-        "        </div>~n"
-        "    </div>~n"
-        "~s"
-        "~s"
-        "~s"
-        "~s"
-        "~s"
-        "~s"
-        "</div>~n"
-        "~s"
-        "</body>~n"
-        "</html>~n",
-        [
-            case IncludeCSS of true -> get_css(); false -> "" end,
-            case IncludeJS of true -> get_javascript(); false -> "" end,
-            Timestamp, SpecVersion,
-            StatusClass, UpperStatus,
-            Passed, Total, PassRate,
-            Compliance,
-            generate_toc(Results),
-            generate_validation_sections(Results),
-            generate_gap_section(Results),
-            generate_recommendations_section(Results),
-            generate_traceability_section(Results),
-            generate_performance_section(Results),
-            case IncludeJS of true -> "<script>initReport();</script>~n"; false -> "" end
-        ]),
-    
+    HTML =
+        io_lib:format("<!DOCTYPE html>~n"
+                      "<html lang=\"en\">~n"
+                      "<head>~n"
+                      "    <meta charset=\"UTF-8\">~n"
+                      "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">~n"
+                      "    <title>erlmcp MCP Compliance Report</title>~n"
+                      "~s"
+                      "~s"
+                      "</head>~n"
+                      "<body>~n"
+                      "<div class=\"container\">~n"
+                      "    <div class=\"header\">~n"
+                      "        <h1>MCP 2025-11-25 Compliance Report</h1>~n"
+                      "        <div class=\"meta\">Generated: ~s | Specification: ~s</div>~n"
+                      "        <div class=\"summary\">~n"
+                      "            Overall: <span class=\"~s\">~s</span><br/>~n"
+                      "            Tests: ~p/~p passed (~s%)<br/>~n"
+                      "            Compliance: ~.2f%~n"
+                      "        </div>~n"
+                      "    </div>~n"
+                      "~s"
+                      "~s"
+                      "~s"
+                      "~s"
+                      "~s"
+                      "~s"
+                      "</div>~n"
+                      "~s"
+                      "</body>~n"
+                      "</html>~n",
+                      [case IncludeCSS of
+                           true ->
+                               get_css();
+                           false ->
+                               ""
+                       end,
+                       case IncludeJS of
+                           true ->
+                               get_javascript();
+                           false ->
+                               ""
+                       end,
+                       Timestamp,
+                       SpecVersion,
+                       StatusClass,
+                       UpperStatus,
+                       Passed,
+                       Total,
+                       PassRate,
+                       Compliance,
+                       generate_toc(Results),
+                       generate_validation_sections(Results),
+                       generate_gap_section(Results),
+                       generate_recommendations_section(Results),
+                       generate_traceability_section(Results),
+                       generate_performance_section(Results),
+                       case IncludeJS of
+                           true ->
+                               "<script>initReport();</script>~n";
+                           false ->
+                               ""
+                       end]),
+
     iolist_to_binary(HTML).
 
 %%%====================================================================
@@ -118,18 +135,25 @@ compute_status(Results) ->
     Compliance = maps:get(overall, Results, 0.0),
     Gaps = maps:get(gaps, Results, []),
     CriticalGaps = [G || G <- Gaps, maps:get(<<"severity">>, G, <<"medium">>) =:= <<"critical">>],
-    
+
     case {Compliance, CriticalGaps} of
-        {C, _} when C >= 80.0 -> <<"passed">>;
-        {C, []} when C >= 50.0 -> <<"warning">>;
-        _ -> <<"failed">>
+        {C, _} when C >= 80.0 ->
+            <<"passed">>;
+        {C, []} when C >= 50.0 ->
+            <<"warning">>;
+        _ ->
+            <<"failed">>
     end.
 
 %% @private
-status_to_class(<<"passed">>) -> <<"pass">>;
-status_to_class(<<"failed">>) -> <<"fail">>;
-status_to_class(<<"warning">>) -> <<"warning">>;
-status_to_class(_) -> <<"unknown">>.
+status_to_class(<<"passed">>) ->
+    <<"pass">>;
+status_to_class(<<"failed">>) ->
+    <<"fail">>;
+status_to_class(<<"warning">>) ->
+    <<"warning">>;
+status_to_class(_) ->
+    <<"unknown">>.
 
 %%%====================================================================
 %%% Internal Functions - Section Generators
@@ -139,68 +163,89 @@ status_to_class(_) -> <<"unknown">>.
 generate_toc(Results) ->
     HasGaps = length(maps:get(gaps, Results, [])) > 0,
     HasRecs = length(maps:get(recommendations, Results, [])) > 0,
-    HasTrace = maps:size(maps:get(traceability, Results, #{})) > 0,
-    
-    GapsLink = case HasGaps of 
-        true -> "            <li><a href=\"#gaps\">Gap Analysis</a></li>~n";
-        false -> ""
-    end,
-    
-    RecsLink = case HasRecs of
-        true -> "            <li><a href=\"#recommendations\">Recommendations</a></li>~n";
-        false -> ""
-    end,
-    
-    TraceLink = case HasTrace of
-        true -> "            <li><a href=\"#traceability\">Traceability Matrix</a></li>~n";
-        false -> ""
-    end,
-    
-    io_lib:format(
-        "    <div class=\"toc\">~n"
-        "        <h2>Table of Contents</h2>~n"
-        "        <ul>~n"
-        "            <li><a href=\"#summary\">Summary</a></li>~n"
-        "            <li><a href=\"#sections\">Validation Sections</a></li>~n"
-        "~s"
-        "~s"
-        "~s"
-        "        </ul>~n"
-        "    </div>~n",
-        [GapsLink, RecsLink, TraceLink]).
+    HasTrace =
+        maps:size(
+            maps:get(traceability, Results, #{}))
+        > 0,
+
+    GapsLink =
+        case HasGaps of
+            true ->
+                "            <li><a href=\"#gaps\">Gap Analysis</a></li>~n";
+            false ->
+                ""
+        end,
+
+    RecsLink =
+        case HasRecs of
+            true ->
+                "            <li><a href=\"#recommendations\">Recommendations</a></li>~n";
+            false ->
+                ""
+        end,
+
+    TraceLink =
+        case HasTrace of
+            true ->
+                "            <li><a href=\"#traceability\">Traceability Matrix</a></li>~n";
+            false ->
+                ""
+        end,
+
+    io_lib:format("    <div class=\"toc\">~n"
+                  "        <h2>Table of Contents</h2>~n"
+                  "        <ul>~n"
+                  "            <li><a href=\"#summary\">Summary</a></li>~n"
+                  "            <li><a href=\"#sections\">Validation Sections</a></li>~n"
+                  "~s"
+                  "~s"
+                  "~s"
+                  "        </ul>~n"
+                  "    </div>~n",
+                  [GapsLink, RecsLink, TraceLink]).
 
 %% @private
 generate_validation_sections(Results) ->
     BySection = maps:get(by_section, Results, #{}),
-    
-    Sections = maps:fold(fun(Section, Compliance, Acc) ->
-        Class = case Compliance of
-            Score when Score >= 80.0 -> "pass";
-            Score when Score >= 50.0 -> "warning";
-            _ -> "fail"
-        end,
-        
-        SectionID = binary:replace(binary:replace(Section, <<" ">>, <<"-">>, [global]), <<"/">>, <<"-">>, [global]),
-        
-        [
-            io_lib:format(
-                "    <div class=\"validator\" id=\"section-~s\">~n"
-                "        <h3>~s</h3>~n"
-                "        <div class=\"compliance-bar\">~n"
-                "            <div class=\"compliance-fill ~s\" style=\"width: ~.1f%\"></div>~n"
-                "        </div>~n"
-                "        <div class=\"stats\">Compliance: ~.2f%%</div>~n"
-                "    </div>~n",
-                [SectionID, Section, Class, Compliance, Compliance])
-        | Acc]
-    end, [], BySection),
-    
-    lists:reverse(["    <div id=\"sections\">~n        <h2>Validation Sections</h2>~n" | Sections]) ++ ["    </div>~n"].
+
+    Sections =
+        maps:fold(fun(Section, Compliance, Acc) ->
+                     Class =
+                         case Compliance of
+                             Score when Score >= 80.0 ->
+                                 "pass";
+                             Score when Score >= 50.0 ->
+                                 "warning";
+                             _ ->
+                                 "fail"
+                         end,
+
+                     SectionID =
+                         binary:replace(
+                             binary:replace(Section, <<" ">>, <<"-">>, [global]),
+                             <<"/">>,
+                             <<"-">>,
+                             [global]),
+
+                     [io_lib:format("    <div class=\"validator\" id=\"section-~s\">~n"
+                                    "        <h3>~s</h3>~n"
+                                    "        <div class=\"compliance-bar\">~n"
+                                    "            <div class=\"compliance-fill ~s\" style=\"width: ~.1f%\"></div>~n"
+                                    "        </div>~n"
+                                    "        <div class=\"stats\">Compliance: ~.2f%%</div>~n"
+                                    "    </div>~n",
+                                    [SectionID, Section, Class, Compliance, Compliance])
+                      | Acc]
+                  end,
+                  [],
+                  BySection),
+    lists:reverse(["    <div id=\"sections\">~n        <h2>Validation Sections</h2>~n" | Sections])
+    ++ ["    </div>~n"].
 
 %% @private
 generate_gap_section(Results) ->
     Gaps = maps:get(gaps, Results, []),
-    
+
     case Gaps of
         [] ->
             "    <div id=\"gaps\">~n"
@@ -208,136 +253,145 @@ generate_gap_section(Results) ->
             "        <div class=\"no-gaps\">No gaps identified - all requirements tested!</div>~n"
             "    </div>~n";
         _ ->
-            GapItems = lists:map(fun(Gap) ->
-                Req = maps:get(<<"requirement">>, Gap, #{}),
-                ReqName = maps:get(name, Req, <<"Unknown">>),
-                Status = maps:get(<<"status">>, Gap, <<"unknown">>),
-                Severity = maps:get(<<"severity">>, Gap, <<"medium">>),
-                Rec = maps:get(<<"recommendation">>, Gap, <<"No recommendation">>),
-                Section = maps:get(section, Req, <<"Unknown">>),
-                
-                io_lib:format(
-                    "        <div class=\"gap-item severity-~s\">~n"
-                    "            <h4>~s</h4>~n"
-                    "            <div class=\"gap-meta\">Section: ~s | Status: ~s | Severity: ~s</div>~n"
-                    "            <div class=\"gap-recommendation\">Recommendation: ~s</div>~n"
-                    "        </div>~n",
-                    [Severity, ReqName, Section, Status, Severity, Rec])
-            end, Gaps),
-            
-            io_lib:format(
-                "    <div id=\"gaps\">~n"
-                "        <h2>Gap Analysis</h2>~n"
-                "        <div class=\"gaps-list\">~n"
-                "~s"
-                "        </div>~n"
-                "    </div>~n",
-                [lists:flatten(GapItems)])
+            GapItems =
+                lists:map(fun(Gap) ->
+                             Req = maps:get(<<"requirement">>, Gap, #{}),
+                             ReqName = maps:get(name, Req, <<"Unknown">>),
+                             Status = maps:get(<<"status">>, Gap, <<"unknown">>),
+                             Severity = maps:get(<<"severity">>, Gap, <<"medium">>),
+                             Rec = maps:get(<<"recommendation">>, Gap, <<"No recommendation">>),
+                             Section = maps:get(section, Req, <<"Unknown">>),
+
+                             io_lib:format("        <div class=\"gap-item severity-~s\">~n"
+                                           "            <h4>~s</h4>~n"
+                                           "            <div class=\"gap-meta\">Section: ~s | Status: ~s | Severity: ~s</div>~n"
+                                           "            <div class=\"gap-recommendation\">Recommendation: ~s</div>~n"
+                                           "        </div>~n",
+                                           [Severity, ReqName, Section, Status, Severity, Rec])
+                          end,
+                          Gaps),
+
+            io_lib:format("    <div id=\"gaps\">~n"
+                          "        <h2>Gap Analysis</h2>~n"
+                          "        <div class=\"gaps-list\">~n"
+                          "~s"
+                          "        </div>~n"
+                          "    </div>~n",
+                          [lists:flatten(GapItems)])
     end.
 
 %% @private
 generate_recommendations_section(Results) ->
     Recommendations = maps:get(recommendations, Results, []),
-    
+
     case Recommendations of
-        [] -> "";
+        [] ->
+            "";
         _ ->
-            RecItems = lists:map(fun(Rec) ->
-                io_lib:format("            <li>~s</li>~n", [Rec])
-            end, Recommendations),
-            
-            io_lib:format(
-                "    <div id=\"recommendations\">~n"
-                "        <h2>Recommendations</h2>~n"
-                "        <ul class=\"recommendations-list\">~n"
-                "~s"
-                "        </ul>~n"
-                "    </div>~n",
-                [lists:flatten(RecItems)])
+            RecItems =
+                lists:map(fun(Rec) -> io_lib:format("            <li>~s</li>~n", [Rec]) end,
+                          Recommendations),
+
+            io_lib:format("    <div id=\"recommendations\">~n"
+                          "        <h2>Recommendations</h2>~n"
+                          "        <ul class=\"recommendations-list\">~n"
+                          "~s"
+                          "        </ul>~n"
+                          "    </div>~n",
+                          [lists:flatten(RecItems)])
     end.
 
 %% @private
 generate_traceability_section(Results) ->
     Traceability = maps:get(traceability, Results, #{}),
-    
+
     case maps:size(Traceability) of
-        0 -> "";
+        0 ->
+            "";
         _ ->
-            Rows = maps:fold(fun(_ReqId, ReqData, Acc) ->
-                ReqName = maps:get(<<"requirement">>, ReqData, <<"Unknown">>),
-                Tests = maps:get(<<"tests">>, ReqData, []),
-                Status = maps:get(<<"status">>, ReqData, <<"unknown">>),
-                LastTested = maps:get(<<"last_tested">>, ReqData, <<"never">>),
-                
-                StatusClass = status_to_class(Status),
-                TestsStr = case Tests of
-                    [] -> "No tests";
-                    _ -> string:join([binary_to_list(T) || T <- Tests], ", ")
-                end,
-                
-                [io_lib:format(
-                    "            <tr>~n"
-                    "                <td>~s</td>~n"
-                    "                <td class=\"tests-list\">~s</td>~n"
-                    "                <td class=\"~s\">~s</td>~n"
-                    "                <td>~s</td>~n"
-                    "            </tr>~n",
-                    [ReqName, TestsStr, StatusClass, Status, LastTested])
-                | Acc]
-            end, [], Traceability),
-            
-            io_lib:format(
-                "    <div id=\"traceability\">~n"
-                "        <h2>Traceability Matrix</h2>~n"
-                "        <table class=\"traceability-table\">~n"
-                "            <thead>~n"
-                "                <tr>~n"
-                "                    <th>Requirement</th>~n"
-                "                    <th>Tests</th>~n"
-                "                    <th>Status</th>~n"
-                "                    <th>Last Tested</th>~n"
-                "                </tr>~n"
-                "            </thead>~n"
-                "            <tbody>~n"
-                "~s"
-                "            </tbody>~n"
-                "        </table>~n"
-                "    </div>~n",
-                [lists:flatten(lists:reverse(Rows))])
+            Rows =
+                maps:fold(fun(_ReqId, ReqData, Acc) ->
+                             ReqName = maps:get(<<"requirement">>, ReqData, <<"Unknown">>),
+                             Tests = maps:get(<<"tests">>, ReqData, []),
+                             Status = maps:get(<<"status">>, ReqData, <<"unknown">>),
+                             LastTested = maps:get(<<"last_tested">>, ReqData, <<"never">>),
+
+                             StatusClass = status_to_class(Status),
+                             TestsStr =
+                                 case Tests of
+                                     [] ->
+                                         "No tests";
+                                     _ ->
+                                         string:join([binary_to_list(T) || T <- Tests], ", ")
+                                 end,
+
+                             [io_lib:format("            <tr>~n"
+                                            "                <td>~s</td>~n"
+                                            "                <td class=\"tests-list\">~s</td>~n"
+                                            "                <td class=\"~s\">~s</td>~n"
+                                            "                <td>~s</td>~n"
+                                            "            </tr>~n",
+                                            [ReqName, TestsStr, StatusClass, Status, LastTested])
+                              | Acc]
+                          end,
+                          [],
+                          Traceability),
+
+            io_lib:format("    <div id=\"traceability\">~n"
+                          "        <h2>Traceability Matrix</h2>~n"
+                          "        <table class=\"traceability-table\">~n"
+                          "            <thead>~n"
+                          "                <tr>~n"
+                          "                    <th>Requirement</th>~n"
+                          "                    <th>Tests</th>~n"
+                          "                    <th>Status</th>~n"
+                          "                    <th>Last Tested</th>~n"
+                          "                </tr>~n"
+                          "            </thead>~n"
+                          "            <tbody>~n"
+                          "~s"
+                          "            </tbody>~n"
+                          "        </table>~n"
+                          "    </div>~n",
+                          [lists:flatten(
+                               lists:reverse(Rows))])
     end.
 
 %% @private
 generate_performance_section(Results) ->
     Details = maps:get(details, Results, #{}),
     case maps:get(performance, Details, undefined) of
-        undefined -> "";
+        undefined ->
+            "";
         Metrics ->
-            Rows = maps:fold(fun(Name, Value, Acc) ->
-                [io_lib:format(
-                    "            <tr>~n"
-                    "                <td>~s</td>~n"
-                    "                <td>~p</td>~n"
-                    "            </tr>~n",
-                    [Name, Value])
-                | Acc]
-            end, [], Metrics),
-            
-            io_lib:format(
-                "    <div id=\"performance\">~n"
-                "        <h2>Performance Metrics</h2>~n"
-                "        <table class=\"performance-table\">~n"
-                "            <thead>~n"
-                "                <tr>~n"
-                "                    <th>Metric</th>~n"
-                "                    <th>Value</th>~n"
-                "                </tr>~n"
-                "            </thead>~n"
-                "            <tbody>~n"
-                "~s"
-                "            </tbody>~n"
-                "        </table>~n"
-                "    </div>~n",
-                [lists:flatten(lists:reverse(Rows))])
+            Rows =
+                maps:fold(fun(Name, Value, Acc) ->
+                             [io_lib:format("            <tr>~n"
+                                            "                <td>~s</td>~n"
+                                            "                <td>~p</td>~n"
+                                            "            </tr>~n",
+                                            [Name, Value])
+                              | Acc]
+                          end,
+                          [],
+                          Metrics),
+
+            io_lib:format("    <div id=\"performance\">~n"
+                          "        <h2>Performance Metrics</h2>~n"
+                          "        <table class=\"performance-table\">~n"
+                          "            <thead>~n"
+                          "                <tr>~n"
+                          "                    <th>Metric</th>~n"
+                          "                    <th>Value</th>~n"
+                          "                </tr>~n"
+                          "            </thead>~n"
+                          "            <tbody>~n"
+                          "~s"
+                          "            </tbody>~n"
+                          "        </table>~n"
+                          "    </div>~n",
+                          [lists:flatten(
+                               lists:reverse(Rows))])
     end.
 
 %%%====================================================================

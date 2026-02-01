@@ -9,44 +9,32 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_subscription).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/0,
-    subscribe/2,
-    subscribe/3,
-    unsubscribe/2,
-    list_subscribers/1,
-    notify/2,
-    notify/3,
-    bulk_notify/2,
-    get_subscription_count/0,
-    get_subscriber_count/1
-]).
-
+-export([start_link/0, subscribe/2, subscribe/3, unsubscribe/2, list_subscribers/1, notify/2,
+         notify/3, bulk_notify/2, get_subscription_count/0, get_subscriber_count/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
 -type subscription_id() :: binary().
 -type subscriber() :: pid().
--type subscription_metadata() :: #{
-    filter => fun((term()) -> boolean()) | undefined,
-    rate_limit => non_neg_integer() | undefined,
-    created_at => integer(),
-    monitor_ref => reference()
-}.
+-type subscription_metadata() ::
+    #{filter => fun((term()) -> boolean()) | undefined,
+      rate_limit => non_neg_integer() | undefined,
+      created_at => integer(),
+      monitor_ref => reference()}.
 
 -export_type([subscription_id/0, subscriber/0, subscription_metadata/0]).
 
 %% State record
--record(state, {
-    subscriptions :: #{subscription_id() => #{subscriber() => subscription_metadata()}},
-    inverse_index :: #{subscriber() => sets:set(subscription_id())}
-}).
+-record(state,
+        {subscriptions :: #{subscription_id() => #{subscriber() => subscription_metadata()}},
+         inverse_index :: #{subscriber() => sets:set(subscription_id())}}).
 
 -type state() :: #state{}.
 
@@ -70,7 +58,8 @@ subscribe(SubscriptionId, Subscriber) when is_binary(SubscriptionId), is_pid(Sub
 %%   - filter: fun((Message) -> boolean()) - Message filter function
 %%   - rate_limit: non_neg_integer() - Max messages per second (0 = no limit)
 -spec subscribe(subscription_id(), subscriber(), map()) -> ok | {error, term()}.
-subscribe(SubscriptionId, Subscriber, Options) when is_binary(SubscriptionId), is_pid(Subscriber), is_map(Options) ->
+subscribe(SubscriptionId, Subscriber, Options)
+    when is_binary(SubscriptionId), is_pid(Subscriber), is_map(Options) ->
     gen_server:call(?MODULE, {subscribe, SubscriptionId, Subscriber, Options}).
 
 %% @doc Unsubscribe a process from a subscription ID.
@@ -118,28 +107,24 @@ get_subscriber_count(SubscriptionId) when is_binary(SubscriptionId) ->
 -spec init([]) -> {ok, state()}.
 init([]) ->
     process_flag(trap_exit, true),
-    {ok, #state{
-        subscriptions = #{},
-        inverse_index = #{}
-    }}.
+    {ok, #state{subscriptions = #{}, inverse_index = #{}}}.
 
--spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()}.
+-spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
 handle_call({subscribe, SubscriptionId, Subscriber, Options}, _From, State) ->
     case validate_subscriber(Subscriber) of
         ok ->
             MonitorRef = monitor(process, Subscriber),
-            Metadata = #{
-                filter => maps:get(filter, Options, undefined),
-                rate_limit => maps:get(rate_limit, Options, undefined),
-                created_at => erlang:system_time(millisecond),
-                monitor_ref => MonitorRef
-            },
+            Metadata =
+                #{filter => maps:get(filter, Options, undefined),
+                  rate_limit => maps:get(rate_limit, Options, undefined),
+                  created_at => erlang:system_time(millisecond),
+                  monitor_ref => MonitorRef},
 
             % Add to subscriptions map
             SubscriptionsMap = maps:get(SubscriptionId, State#state.subscriptions, #{}),
             NewSubscriptionsMap = maps:put(Subscriber, Metadata, SubscriptionsMap),
-            NewSubscriptions = maps:put(SubscriptionId, NewSubscriptionsMap, State#state.subscriptions),
+            NewSubscriptions =
+                maps:put(SubscriptionId, NewSubscriptionsMap, State#state.subscriptions),
 
             % Update inverse index
             SubscriberSubs = maps:get(Subscriber, State#state.inverse_index, sets:new()),
@@ -147,14 +132,12 @@ handle_call({subscribe, SubscriptionId, Subscriber, Options}, _From, State) ->
             NewInverseIndex = maps:put(Subscriber, NewSubscriberSubs, State#state.inverse_index),
 
             logger:debug("Subscribed ~p to ~p", [Subscriber, SubscriptionId]),
-            {reply, ok, State#state{
-                subscriptions = NewSubscriptions,
-                inverse_index = NewInverseIndex
-            }};
+            {reply,
+             ok,
+             State#state{subscriptions = NewSubscriptions, inverse_index = NewInverseIndex}};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({unsubscribe, SubscriptionId, Subscriber}, _From, State) ->
     case maps:get(SubscriptionId, State#state.subscriptions, undefined) of
         undefined ->
@@ -170,45 +153,54 @@ handle_call({unsubscribe, SubscriptionId, Subscriber}, _From, State) ->
 
                     % Remove from subscriptions map
                     NewSubscribersMap = maps:remove(Subscriber, SubscribersMap),
-                    NewSubscriptions = case maps:size(NewSubscribersMap) of
-                        0 -> maps:remove(SubscriptionId, State#state.subscriptions);
-                        _ -> maps:put(SubscriptionId, NewSubscribersMap, State#state.subscriptions)
-                    end,
+                    NewSubscriptions =
+                        case maps:size(NewSubscribersMap) of
+                            0 ->
+                                maps:remove(SubscriptionId, State#state.subscriptions);
+                            _ ->
+                                maps:put(SubscriptionId,
+                                         NewSubscribersMap,
+                                         State#state.subscriptions)
+                        end,
 
                     % Update inverse index
                     SubscriberSubs = maps:get(Subscriber, State#state.inverse_index, sets:new()),
                     NewSubscriberSubs = sets:del_element(SubscriptionId, SubscriberSubs),
-                    NewInverseIndex = case sets:size(NewSubscriberSubs) of
-                        0 -> maps:remove(Subscriber, State#state.inverse_index);
-                        _ -> maps:put(Subscriber, NewSubscriberSubs, State#state.inverse_index)
-                    end,
+                    NewInverseIndex =
+                        case sets:size(NewSubscriberSubs) of
+                            0 ->
+                                maps:remove(Subscriber, State#state.inverse_index);
+                            _ ->
+                                maps:put(Subscriber, NewSubscriberSubs, State#state.inverse_index)
+                        end,
 
                     logger:debug("Unsubscribed ~p from ~p", [Subscriber, SubscriptionId]),
-                    {reply, ok, State#state{
-                        subscriptions = NewSubscriptions,
-                        inverse_index = NewInverseIndex
-                    }}
+                    {reply,
+                     ok,
+                     State#state{subscriptions = NewSubscriptions, inverse_index = NewInverseIndex}}
             end
     end;
-
 handle_call({list_subscribers, SubscriptionId}, _From, State) ->
-    Subscribers = case maps:get(SubscriptionId, State#state.subscriptions, undefined) of
-        undefined -> [];
-        SubscribersMap -> maps:keys(SubscribersMap)
-    end,
+    Subscribers =
+        case maps:get(SubscriptionId, State#state.subscriptions, undefined) of
+            undefined ->
+                [];
+            SubscribersMap ->
+                maps:keys(SubscribersMap)
+        end,
     {reply, Subscribers, State};
-
 handle_call(get_subscription_count, _From, State) ->
     Count = lists:sum([maps:size(SubsMap) || SubsMap <- maps:values(State#state.subscriptions)]),
     {reply, Count, State};
-
 handle_call({get_subscriber_count, SubscriptionId}, _From, State) ->
-    Count = case maps:get(SubscriptionId, State#state.subscriptions, undefined) of
-        undefined -> 0;
-        SubscribersMap -> maps:size(SubscribersMap)
-    end,
+    Count =
+        case maps:get(SubscriptionId, State#state.subscriptions, undefined) of
+            undefined ->
+                0;
+            SubscribersMap ->
+                maps:size(SubscribersMap)
+        end,
     {reply, Count, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -222,18 +214,18 @@ handle_cast({notify, SubscriptionId, Message, Options}, State) ->
             notify_subscribers(maps:to_list(SubscribersMap), Message, Timeout),
             {noreply, State}
     end;
-
 handle_cast({bulk_notify, SubscriptionIds, Message}, State) ->
     Timeout = 5000,
     lists:foreach(fun(SubscriptionId) ->
-        case maps:get(SubscriptionId, State#state.subscriptions, undefined) of
-            undefined -> ok;
-            SubscribersMap ->
-                notify_subscribers(maps:to_list(SubscribersMap), Message, Timeout)
-        end
-    end, SubscriptionIds),
+                     case maps:get(SubscriptionId, State#state.subscriptions, undefined) of
+                         undefined ->
+                             ok;
+                         SubscribersMap ->
+                             notify_subscribers(maps:to_list(SubscribersMap), Message, Timeout)
+                     end
+                  end,
+                  SubscriptionIds),
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -244,27 +236,30 @@ handle_info({'DOWN', MonitorRef, process, Subscriber, _Info}, State) ->
         undefined ->
             {noreply, State};
         SubscriberSubs ->
-            NewSubscriptions = sets:fold(fun(SubscriptionId, AccSubs) ->
-                case maps:get(SubscriptionId, AccSubs, undefined) of
-                    undefined -> AccSubs;
-                    SubscribersMap ->
-                        NewSubscribersMap = maps:remove(Subscriber, SubscribersMap),
-                        case maps:size(NewSubscribersMap) of
-                            0 -> maps:remove(SubscriptionId, AccSubs);
-                            _ -> maps:put(SubscriptionId, NewSubscribersMap, AccSubs)
-                        end
-                end
-            end, State#state.subscriptions, SubscriberSubs),
+            NewSubscriptions =
+                sets:fold(fun(SubscriptionId, AccSubs) ->
+                             case maps:get(SubscriptionId, AccSubs, undefined) of
+                                 undefined ->
+                                     AccSubs;
+                                 SubscribersMap ->
+                                     NewSubscribersMap = maps:remove(Subscriber, SubscribersMap),
+                                     case maps:size(NewSubscribersMap) of
+                                         0 ->
+                                             maps:remove(SubscriptionId, AccSubs);
+                                         _ ->
+                                             maps:put(SubscriptionId, NewSubscribersMap, AccSubs)
+                                     end
+                             end
+                          end,
+                          State#state.subscriptions,
+                          SubscriberSubs),
 
             NewInverseIndex = maps:remove(Subscriber, State#state.inverse_index),
 
             logger:info("Cleaned up subscriptions for dead subscriber ~p", [Subscriber]),
-            {noreply, State#state{
-                subscriptions = NewSubscriptions,
-                inverse_index = NewInverseIndex
-            }}
+            {noreply,
+             State#state{subscriptions = NewSubscriptions, inverse_index = NewInverseIndex}}
     end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -287,8 +282,10 @@ validate_subscriber(Subscriber) when is_pid(Subscriber) ->
     case SubNode of
         Node when Node =:= node() ->
             case is_process_alive(Subscriber) of
-                true -> ok;
-                false -> {error, no_process}
+                true ->
+                    ok;
+                false ->
+                    {error, no_process}
             end;
         _Node ->
             {error, {remote_process_not_supported, SubNode}}
@@ -329,8 +326,10 @@ notify_subscribers([{Subscriber, Metadata} | Rest], Message, Timeout) ->
 
 %% @doc Apply message filter if present.
 -spec apply_filter(fun((term()) -> boolean()) | undefined, term()) -> boolean().
-apply_filter(undefined, _Message) -> true;
-apply_filter(Filter, Message) when is_function(Filter, 1) -> Filter(Message).
+apply_filter(undefined, _Message) ->
+    true;
+apply_filter(Filter, Message) when is_function(Filter, 1) ->
+    Filter(Message).
 
 %% @doc Check rate limit for subscriber.
 %% Uses token bucket algorithm via erlmcp_rate_limiter for efficient,
@@ -339,8 +338,10 @@ apply_filter(Filter, Message) when is_function(Filter, 1) -> Filter(Message).
 check_rate_limit(Subscriber, Metadata) ->
     RateLimit = maps:get(rate_limit, Metadata, undefined),
     case RateLimit of
-        undefined -> true;
-        0 -> true;
+        undefined ->
+            true;
+        0 ->
+            true;
         Limit when is_integer(Limit), Limit > 0 ->
             % Use token bucket algorithm via erlmcp_rate_limiter
             % Create a unique client ID for this subscription rate limit

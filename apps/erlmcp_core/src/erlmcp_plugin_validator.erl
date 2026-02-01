@@ -37,20 +37,10 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_validator).
 
-%% Behavior definition
--callback validate(Data :: term(), State :: term()) ->
-    {ok, Result :: map(), NewState :: term()} | {error, Reason :: term()}.
-
--callback get_schema() -> Schema :: map().
-
 %% Re-export plugin behavior
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    erlmcp_plugin:behaviour_info(callbacks) ++
-    [
-        {validate, 2},
-        {get_schema, 0}
-    ];
+    erlmcp_plugin:behaviour_info(callbacks) ++ [{validate, 2}, {get_schema, 0}];
 behaviour_info(_) ->
     undefined.

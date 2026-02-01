@@ -10,6 +10,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_discovery_dns_sd_tests).
+
 -author("erlmcp").
 
 -include_lib("eunit/include/eunit.hrl").
@@ -64,8 +65,7 @@ mdns_response_parse_ptr_test() ->
 
     % Answer: compressed name, TYPE=PTR (12), CLASS=IN (1), TTL=3600, RDLENGTH=10
     Target = <<"target.host">>,
-    Answer = <<16#C0:8, 16#0C:8, 12:16, 1:16, 3600:32, (byte_size(Target)):16,
-              Target/binary>>,
+    Answer = <<16#C0:8, 16#0C:8, 12:16, 1:16, 3600:32, (byte_size(Target)):16, Target/binary>>,
 
     Packet = <<Header/binary, Answer/binary>>,
 
@@ -107,11 +107,7 @@ mdns_response_parse_empty_test() ->
 %% @doc Test opening UDP socket for mDNS
 udp_socket_open_test() ->
     % Open a UDP socket (same parameters as mDNS discovery)
-    {ok, Socket} = gen_udp:open(0, [
-        binary,
-        {active, false},
-        {reuseaddr, true}
-    ]),
+    {ok, Socket} = gen_udp:open(0, [binary, {active, false}, {reuseaddr, true}]),
 
     % Verify socket is open
     ?assert(is_port(Socket)),
@@ -121,15 +117,11 @@ udp_socket_open_test() ->
 
 %% @doc Test sending data to multicast address
 udp_send_multicast_test() ->
-    {ok, Socket} = gen_udp:open(0, [
-        binary,
-        {active, false},
-        {reuseaddr, true}
-    ]),
+    {ok, Socket} = gen_udp:open(0, [binary, {active, false}, {reuseaddr, true}]),
 
     % Send test packet to mDNS multicast address
     Packet = <<0, 1, 2, 3>>,
-    Result = gen_udp:send(Socket, {224,0,0,251}, 5353, Packet),
+    Result = gen_udp:send(Socket, {224, 0, 0, 251}, 5353, Packet),
 
     % Should succeed (even if no one is listening)
     ?assertEqual(ok, Result),
@@ -138,10 +130,7 @@ udp_send_multicast_test() ->
 
 %% @doc Test UDP timeout
 udp_recv_timeout_test() ->
-    {ok, Socket} = gen_udp:open(0, [
-        binary,
-        {active, false}
-    ]),
+    {ok, Socket} = gen_udp:open(0, [binary, {active, false}]),
 
     % Try to receive with short timeout
     Result = gen_udp:recv(Socket, 1500, 100),
@@ -153,15 +142,11 @@ udp_recv_timeout_test() ->
 
 %% @doc Test broadcast socket option
 udp_broadcast_socket_test() ->
-    {ok, Socket} = gen_udp:open(0, [
-        binary,
-        {active, false},
-        {broadcast, true}
-    ]),
+    {ok, Socket} = gen_udp:open(0, [binary, {active, false}, {broadcast, true}]),
 
     % Send to broadcast address
     Packet = <<"{\"test\": true}">>,
-    Result = gen_udp:send(Socket, {255,255,255,255}, 9900, Packet),
+    Result = gen_udp:send(Socket, {255, 255, 255, 255}, 9900, Packet),
 
     ?assertEqual(ok, Result),
 

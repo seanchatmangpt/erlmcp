@@ -15,13 +15,14 @@ set -euo pipefail
 # Configuration
 # ============================================================================
 
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-/home/user/erlmcp}"
+PROJECT_DIR="${ERLMCP_ROOT:-${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}}"
 LOG_DIR="$PROJECT_DIR/.erlmcp"
 BUILD_LOG="$LOG_DIR/build.log"
 TEST_LOG="$LOG_DIR/test.log"
 MAX_LOG_SIZE=$((10 * 1024 * 1024))  # 10MB
 KEEP_ROTATIONS=5
-TIMEOUT_SECONDS=120
+# Timeout should match settings.json (600s = 10 minutes)
+TIMEOUT_SECONDS=${POST_CI_TIMEOUT:-600}
 
 # ============================================================================
 # Log Rotation
@@ -116,6 +117,12 @@ if [[ "$TOOL" == "Write" || "$TOOL" == "Edit" ]]; then
                 # Run compilation
                 echo "[$timestamp] Running: rebar3 compile" >> "$BUILD_LOG"
                 cd "$PROJECT_DIR" || exit 2
+
+                # Source SessionStart environment for OTP 28
+                local env_file="${PROJECT_DIR}/.erlmcp/env.sh"
+                if [[ -f "$env_file" ]]; then
+                    source "$env_file"
+                fi
 
                 if TERM=dumb timeout "$TIMEOUT_SECONDS" rebar3 compile >> "$BUILD_LOG" 2>&1; then
                     compile_status="SUCCESS"

@@ -12,37 +12,27 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_tracer).
 
--export([
-    trace_command/2,
-    trace_command/3,
-    start_trace/1,
-    stop_trace/0,
-    get_trace_results/0,
-    export_trace/2,
-    parse_trace_spec/1
-]).
+-export([trace_command/2, trace_command/3, start_trace/1, stop_trace/0, get_trace_results/0,
+         export_trace/2, parse_trace_spec/1]).
 
 %%====================================================================
 %% Types
 %%====================================================================
 
 -type trace_spec() :: binary() | string().
--type trace_opts() :: #{
-    spec => trace_spec(),
-    duration => pos_integer(),
-    output_file => string(),
-    max_events => pos_integer()
-}.
-
--type trace_event() :: #{
-    type => atom(),
-    timestamp => integer(),
-    pid => binary(),
-    module => atom(),
-    function => atom(),
-    args => list(),
-    result => term()
-}.
+-type trace_opts() ::
+    #{spec => trace_spec(),
+      duration => pos_integer(),
+      output_file => string(),
+      max_events => pos_integer()}.
+-type trace_event() ::
+    #{type => atom(),
+      timestamp => integer(),
+      pid => binary(),
+      module => atom(),
+      function => atom(),
+      args => list(),
+      result => term()}.
 
 %%====================================================================
 %% API Functions - Command Tracing
@@ -55,8 +45,7 @@ trace_command(Command, Opts) ->
     trace_command(Command, TraceSpec, Opts).
 
 %% @doc Trace command with specific trace specification
--spec trace_command(fun(() -> term()), trace_spec(), trace_opts()) ->
-    {ok, map()} | {error, term()}.
+-spec trace_command(fun(() -> term()), trace_spec(), trace_opts()) -> {ok, map()} | {error, term()}.
 trace_command(Command, TraceSpec, Opts) when is_function(Command, 0) ->
     try
         %% Parse trace specification
@@ -76,19 +65,17 @@ trace_command(Command, TraceSpec, Opts) when is_function(Command, 0) ->
         %% Stop tracing
         TraceResults = stop_trace_internal(TracePid),
 
-        {ok, #{
-            duration_ms => Duration,
-            result => Result,
-            trace => TraceResults,
-            timestamp => iso8601_timestamp()
-        }}
+        {ok,
+         #{duration_ms => Duration,
+           result => Result,
+           trace => TraceResults,
+           timestamp => iso8601_timestamp()}}
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %% @doc Start tracing session
@@ -100,11 +87,10 @@ start_trace(Opts) ->
         start_trace_internal(TracePatterns, Opts)
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %% @doc Stop tracing session
@@ -120,11 +106,10 @@ stop_trace() ->
         end
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %% @doc Get current trace results
@@ -137,18 +122,18 @@ get_trace_results() ->
             Pid ->
                 Pid ! {get_events, self()},
                 receive
-                    {trace_events, Events} -> {ok, Events}
+                    {trace_events, Events} ->
+                        {ok, Events}
                 after 5000 ->
                     {error, timeout}
                 end
         end
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %% @doc Export trace to file
@@ -156,11 +141,15 @@ get_trace_results() ->
 export_trace(TraceEvents, Filename) ->
     try
         %% Determine format from extension
-        Format = case filename:extension(Filename) of
-            ".json" -> json;
-            ".txt" -> text;
-            _ -> json
-        end,
+        Format =
+            case filename:extension(Filename) of
+                ".json" ->
+                    json;
+                ".txt" ->
+                    text;
+                _ ->
+                    json
+            end,
 
         %% Format data
         FormattedData = format_trace_data(TraceEvents, Format),
@@ -169,11 +158,10 @@ export_trace(TraceEvents, Filename) ->
         file:write_file(Filename, FormattedData)
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %%====================================================================
@@ -194,9 +182,7 @@ parse_trace_spec(Spec) when is_list(Spec) ->
     %% Split by comma
     Patterns = string:split(Spec, ",", all),
 
-    lists:map(fun(Pattern) ->
-        parse_single_pattern(string:trim(Pattern))
-    end, Patterns).
+    lists:map(fun(Pattern) -> parse_single_pattern(string:trim(Pattern)) end, Patterns).
 
 -type trace_pattern() :: {module(), function(), arity() | all}.
 
@@ -229,9 +215,7 @@ start_trace_internal(TracePatterns, Opts) ->
     MaxEvents = maps:get(max_events, Opts, 10000),
 
     %% Start trace collector process
-    CollectorPid = spawn(fun() ->
-        trace_collector_loop([], MaxEvents)
-    end),
+    CollectorPid = spawn(fun() -> trace_collector_loop([], MaxEvents) end),
 
     %% Register collector
     erlang:register(erlmcp_trace_collector, CollectorPid),
@@ -240,9 +224,9 @@ start_trace_internal(TracePatterns, Opts) ->
     erlang:trace(all, true, [call, procs, {tracer, CollectorPid}]),
 
     %% Apply trace patterns
-    lists:foreach(fun({Module, Function, Arity}) ->
-        apply_trace_pattern(Module, Function, Arity)
-    end, TracePatterns),
+    lists:foreach(fun({Module, Function, Arity}) -> apply_trace_pattern(Module, Function, Arity)
+                  end,
+                  TracePatterns),
 
     {ok, CollectorPid}.
 
@@ -257,11 +241,13 @@ stop_trace_internal(CollectorPid) ->
 
     %% Get collected events
     CollectorPid ! {get_events, self()},
-    Events = receive
-        {trace_events, E} -> E
-    after 5000 ->
-        []
-    end,
+    Events =
+        receive
+            {trace_events, E} ->
+                E
+        after 5000 ->
+            []
+        end,
 
     %% Stop collector
     CollectorPid ! stop,
@@ -295,60 +281,50 @@ apply_trace_pattern(Module, Function, Arity) ->
 trace_collector_loop(Events, MaxEvents) ->
     receive
         {trace, Pid, call, {M, F, Args}} ->
-            Event = #{
-                type => call,
-                timestamp => erlang:system_time(microsecond),
-                pid => list_to_binary(pid_to_list(Pid)),
-                module => M,
-                function => F,
-                args => Args
-            },
+            Event =
+                #{type => call,
+                  timestamp => erlang:system_time(microsecond),
+                  pid => list_to_binary(pid_to_list(Pid)),
+                  module => M,
+                  function => F,
+                  args => Args},
             NewEvents = [Event | lists:sublist(Events, MaxEvents - 1)],
             trace_collector_loop(NewEvents, MaxEvents);
-
         {trace, Pid, return_from, {M, F, A}, Result} ->
-            Event = #{
-                type => return,
-                timestamp => erlang:system_time(microsecond),
-                pid => list_to_binary(pid_to_list(Pid)),
-                module => M,
-                function => F,
-                arity => A,
-                result => format_result(Result)
-            },
+            Event =
+                #{type => return,
+                  timestamp => erlang:system_time(microsecond),
+                  pid => list_to_binary(pid_to_list(Pid)),
+                  module => M,
+                  function => F,
+                  arity => A,
+                  result => format_result(Result)},
             NewEvents = [Event | lists:sublist(Events, MaxEvents - 1)],
             trace_collector_loop(NewEvents, MaxEvents);
-
         {trace, Pid, spawn, Pid2, {M, F, Args}} ->
-            Event = #{
-                type => spawn,
-                timestamp => erlang:system_time(microsecond),
-                pid => list_to_binary(pid_to_list(Pid)),
-                spawned_pid => list_to_binary(pid_to_list(Pid2)),
-                module => M,
-                function => F,
-                args => Args
-            },
+            Event =
+                #{type => spawn,
+                  timestamp => erlang:system_time(microsecond),
+                  pid => list_to_binary(pid_to_list(Pid)),
+                  spawned_pid => list_to_binary(pid_to_list(Pid2)),
+                  module => M,
+                  function => F,
+                  args => Args},
             NewEvents = [Event | lists:sublist(Events, MaxEvents - 1)],
             trace_collector_loop(NewEvents, MaxEvents);
-
         {trace, Pid, exit, Reason} ->
-            Event = #{
-                type => exit,
-                timestamp => erlang:system_time(microsecond),
-                pid => list_to_binary(pid_to_list(Pid)),
-                reason => format_result(Reason)
-            },
+            Event =
+                #{type => exit,
+                  timestamp => erlang:system_time(microsecond),
+                  pid => list_to_binary(pid_to_list(Pid)),
+                  reason => format_result(Reason)},
             NewEvents = [Event | lists:sublist(Events, MaxEvents - 1)],
             trace_collector_loop(NewEvents, MaxEvents);
-
         {get_events, From} ->
             From ! {trace_events, lists:reverse(Events)},
             trace_collector_loop(Events, MaxEvents);
-
         stop ->
             ok;
-
         _Other ->
             trace_collector_loop(Events, MaxEvents)
     end.
@@ -366,13 +342,29 @@ format_trace_data(TraceEvents, text) ->
 
 %% @private Format single trace event as text
 -spec format_trace_event_text(trace_event()) -> iolist().
-format_trace_event_text(#{type := call, timestamp := TS, pid := Pid, module := M, function := F, args := Args}) ->
+format_trace_event_text(#{type := call,
+                          timestamp := TS,
+                          pid := Pid,
+                          module := M,
+                          function := F,
+                          args := Args}) ->
     io_lib:format("[~p] ~s CALL ~s:~s(~p)~n", [TS, Pid, M, F, Args]);
-format_trace_event_text(#{type := return, timestamp := TS, pid := Pid, module := M, function := F, result := Result}) ->
+format_trace_event_text(#{type := return,
+                          timestamp := TS,
+                          pid := Pid,
+                          module := M,
+                          function := F,
+                          result := Result}) ->
     io_lib:format("[~p] ~s RETURN ~s:~s -> ~p~n", [TS, Pid, M, F, Result]);
-format_trace_event_text(#{type := spawn, timestamp := TS, pid := Pid, spawned_pid := Pid2}) ->
+format_trace_event_text(#{type := spawn,
+                          timestamp := TS,
+                          pid := Pid,
+                          spawned_pid := Pid2}) ->
     io_lib:format("[~p] ~s SPAWN ~s~n", [TS, Pid, Pid2]);
-format_trace_event_text(#{type := exit, timestamp := TS, pid := Pid, reason := Reason}) ->
+format_trace_event_text(#{type := exit,
+                          timestamp := TS,
+                          pid := Pid,
+                          reason := Reason}) ->
     io_lib:format("[~p] ~s EXIT ~p~n", [TS, Pid, Reason]);
 format_trace_event_text(Event) ->
     io_lib:format("~p~n", [Event]).
@@ -385,8 +377,10 @@ format_result(Result) when is_atom(Result) ->
     atom_to_binary(Result, utf8);
 format_result(Result) when is_list(Result) ->
     case io_lib:printable_unicode_list(Result) of
-        true -> list_to_binary(Result);
-        false -> list_to_binary(io_lib:format("~p", [Result]))
+        true ->
+            list_to_binary(Result);
+        false ->
+            list_to_binary(io_lib:format("~p", [Result]))
     end;
 format_result(Result) when is_pid(Result) ->
     list_to_binary(pid_to_list(Result));
@@ -397,14 +391,18 @@ format_result(Result) ->
 -spec normalize_for_json(term()) -> term().
 normalize_for_json(Data) when is_map(Data) ->
     maps:fold(fun(K, V, Acc) ->
-        Key = normalize_json_key(K),
-        Value = normalize_for_json(V),
-        Acc#{Key => Value}
-    end, #{}, Data);
+                 Key = normalize_json_key(K),
+                 Value = normalize_for_json(V),
+                 Acc#{Key => Value}
+              end,
+              #{},
+              Data);
 normalize_for_json(Data) when is_list(Data) ->
     case io_lib:printable_unicode_list(Data) of
-        true -> list_to_binary(Data);
-        false -> [normalize_for_json(Item) || Item <- Data]
+        true ->
+            list_to_binary(Data);
+        false ->
+            [normalize_for_json(Item) || Item <- Data]
     end;
 normalize_for_json(Data) when is_atom(Data) ->
     atom_to_binary(Data, utf8);
@@ -420,10 +418,14 @@ normalize_for_json(Data) ->
     list_to_binary(io_lib:format("~p", [Data])).
 
 -spec normalize_json_key(term()) -> binary().
-normalize_json_key(Key) when is_binary(Key) -> Key;
-normalize_json_key(Key) when is_atom(Key) -> atom_to_binary(Key, utf8);
-normalize_json_key(Key) when is_list(Key) -> list_to_binary(Key);
-normalize_json_key(Key) -> list_to_binary(io_lib:format("~p", [Key])).
+normalize_json_key(Key) when is_binary(Key) ->
+    Key;
+normalize_json_key(Key) when is_atom(Key) ->
+    atom_to_binary(Key, utf8);
+normalize_json_key(Key) when is_list(Key) ->
+    list_to_binary(Key);
+normalize_json_key(Key) ->
+    list_to_binary(io_lib:format("~p", [Key])).
 
 %%====================================================================
 %% Internal Functions - Utilities
@@ -434,4 +436,4 @@ normalize_json_key(Key) -> list_to_binary(io_lib:format("~p", [Key])).
 iso8601_timestamp() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:universal_time(),
     iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
-                  [Year, Month, Day, Hour, Min, Sec])).
+                                   [Year, Month, Day, Hour, Min, Sec])).

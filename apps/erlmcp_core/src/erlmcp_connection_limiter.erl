@@ -28,19 +28,8 @@
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    stop/0,
-    accept_connection/1,
-    release_connection/1,
-    get_connection_count/0,
-    get_connection_count/1,
-    set_limit/1,
-    get_limit/0,
-    get_stats/0,
-    is_limit_enabled/0
-]).
-
+-export([start_link/0, stop/0, accept_connection/1, release_connection/1, get_connection_count/0,
+         get_connection_count/1, set_limit/1, get_limit/0, get_stats/0, is_limit_enabled/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -55,20 +44,18 @@
 %% Types
 -type server_id() :: atom() | binary().
 -type limit_result() :: accept | {error, too_many_connections}.
--type stats() :: #{
-    current_connections => non_neg_integer(),
-    max_connections => non_neg_integer(),
-    alert_threshold => float(),
-    last_alert => integer() | undefined
-}.
+-type stats() ::
+    #{current_connections => non_neg_integer(),
+      max_connections => non_neg_integer(),
+      alert_threshold => float(),
+      last_alert => integer() | undefined}.
 
 %% Server state
--record(state, {
-    max_connections :: pos_integer(),
-    alert_threshold :: float(),
-    last_alert :: integer() | undefined,
-    server_counts :: #{server_id() => non_neg_integer()}
-}).
+-record(state,
+        {max_connections :: pos_integer(),
+         alert_threshold :: float(),
+         last_alert :: integer() | undefined,
+         server_counts :: #{server_id() => non_neg_integer()}}).
 
 %%====================================================================
 %% API Functions
@@ -112,7 +99,7 @@ accept_connection(ServerId) ->
                     accept;
                 {error, too_many_connections, Count} ->
                     logger:warning("Connection limit exceeded: ~p for server ~p",
-                                 [Count, ServerId]),
+                                   [Count, ServerId]),
                     {error, too_many_connections}
             end
     end.
@@ -189,21 +176,18 @@ init([]) ->
     %% Register gproc counter for global count
     ensure_counter_registered(),
 
-    {ok, #state{
-        max_connections = MaxConnections,
-        alert_threshold = AlertThreshold,
-        last_alert = undefined,
-        server_counts = #{}
-    }}.
+    {ok,
+     #state{max_connections = MaxConnections,
+            alert_threshold = AlertThreshold,
+            last_alert = undefined,
+            server_counts = #{}}}.
 
 handle_call(get_connection_count, _From, State) ->
     Count = get_counter_value(),
     {reply, Count, State};
-
 handle_call({get_connection_count, ServerId}, _From, State) ->
     Count = maps:get(ServerId, State#state.server_counts, 0),
     {reply, Count, State};
-
 handle_call({check_accept, ServerId}, _From, State) ->
     %% Increment counters
     increment_counter(),
@@ -222,31 +206,24 @@ handle_call({check_accept, ServerId}, _From, State) ->
             decrement_counter(),
             {reply, {error, too_many_connections, CurrentCount}, State}
     end;
-
 handle_call({accept_connection, ServerId}, _From, State) ->
     %% Increment counters without checking limit (when limiting disabled)
     increment_counter(),
     NewServerCounts = maps:update_with(ServerId, fun(V) -> V + 1 end, 1, State#state.server_counts),
     {reply, accept, State#state{server_counts = NewServerCounts}};
-
 handle_call({set_limit, Limit}, _From, State) when is_integer(Limit), Limit > 0 ->
-    logger:info("Connection limit updated: ~p -> ~p",
-               [State#state.max_connections, Limit]),
+    logger:info("Connection limit updated: ~p -> ~p", [State#state.max_connections, Limit]),
     {reply, ok, State#state{max_connections = Limit}};
-
 handle_call(get_limit, _From, State) ->
     {reply, State#state.max_connections, State};
-
 handle_call(get_stats, _From, State) ->
     Count = get_counter_value(),
-    Stats = #{
-        current_connections => Count,
-        max_connections => State#state.max_connections,
-        alert_threshold => State#state.alert_threshold,
-        last_alert => State#state.last_alert
-    },
+    Stats =
+        #{current_connections => Count,
+          max_connections => State#state.max_connections,
+          alert_threshold => State#state.alert_threshold,
+          last_alert => State#state.last_alert},
     {reply, Stats, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -255,18 +232,15 @@ handle_cast({release_connection, ServerId}, State) ->
     decrement_counter(),
     NewServerCounts = maps:update_with(ServerId, fun(V) -> V - 1 end, 0, State#state.server_counts),
     {noreply, State#state{server_counts = NewServerCounts}};
-
 handle_cast({check_alert, CurrentCount, MaxConnections}, State) ->
     NewState = handle_alert(CurrentCount, MaxConnections, State),
     {noreply, NewState};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({check_alert, CurrentCount, MaxConnections}, State) ->
     NewState = handle_alert(CurrentCount, MaxConnections, State),
     {noreply, NewState};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -356,14 +330,15 @@ decrement_counter() ->
 %% @private Check if alert threshold is exceeded
 -spec check_alert_threshold(non_neg_integer(), pos_integer()) -> ok.
 check_alert_threshold(CurrentCount, MaxConnections) ->
-    Threshold = case application:get_env(erlmcp_core, connection_limiting) of
-        {ok, Config} when is_map(Config) ->
-            maps:get(alert_threshold, Config, ?DEFAULT_ALERT_THRESHOLD);
-        {ok, Config} when is_list(Config) ->
-            proplists:get_value(alert_threshold, Config, ?DEFAULT_ALERT_THRESHOLD);
-        _ ->
-            ?DEFAULT_ALERT_THRESHOLD
-    end,
+    Threshold =
+        case application:get_env(erlmcp_core, connection_limiting) of
+            {ok, Config} when is_map(Config) ->
+                maps:get(alert_threshold, Config, ?DEFAULT_ALERT_THRESHOLD);
+            {ok, Config} when is_list(Config) ->
+                proplists:get_value(alert_threshold, Config, ?DEFAULT_ALERT_THRESHOLD);
+            _ ->
+                ?DEFAULT_ALERT_THRESHOLD
+        end,
 
     UsageRatio = CurrentCount / MaxConnections,
 
@@ -384,7 +359,7 @@ handle_alert(CurrentCount, MaxConnections, State) ->
             %% First alert
             emit_alert(CurrentCount, MaxConnections),
             State#state{last_alert = TimeNow};
-        LastAlert when (TimeNow - LastAlert) > ?ALERT_COOLDOWN ->
+        LastAlert when TimeNow - LastAlert > ?ALERT_COOLDOWN ->
             %% Cooldown expired, can alert again
             emit_alert(CurrentCount, MaxConnections),
             State#state{last_alert = TimeNow};
@@ -396,7 +371,7 @@ handle_alert(CurrentCount, MaxConnections, State) ->
 %% @private Emit alert log
 -spec emit_alert(non_neg_integer(), pos_integer()) -> ok.
 emit_alert(CurrentCount, MaxConnections) ->
-    UsagePercent = (CurrentCount / MaxConnections) * 100,
+    UsagePercent = CurrentCount / MaxConnections * 100,
     logger:warning("Connection limit alert: ~p/~p connections (~.1f% capacity)",
-                 [CurrentCount, MaxConnections, UsagePercent]),
+                   [CurrentCount, MaxConnections, UsagePercent]),
     ok.

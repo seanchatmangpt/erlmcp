@@ -1,4 +1,5 @@
 -module(erlmcp_transport_http_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %% HTTP Transport Tests - Chicago School TDD
@@ -25,33 +26,28 @@ http_url_parsing_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Parse HTTP URL",
-         fun() ->
-             Opts = #{url => "http://localhost:8080/mcp"},
-             ?assert(is_map(Opts)),
-             ?assert(maps:is_key(url, Opts))
-         end},
-
-        {"Parse HTTPS URL",
-         fun() ->
-             Opts = #{url => "https://api.example.com/v1/mcp"},
-             ?assert(is_map(Opts)),
-             ?assert(maps:is_key(url, Opts))
-         end},
-
-        {"Parse URL with port",
-         fun() ->
-             Opts = #{url => "http://localhost:9090/api"},
-             ?assert(is_map(Opts))
-         end},
-
-        {"Parse URL with path",
-         fun() ->
-             Opts = #{url => "https://example.com/api/v2/endpoint"},
-             ?assert(is_map(Opts))
-         end}
-     ]}.
+     [{"Parse HTTP URL",
+       fun() ->
+          Opts = #{url => "http://localhost:8080/mcp"},
+          ?assert(is_map(Opts)),
+          ?assert(maps:is_key(url, Opts))
+       end},
+      {"Parse HTTPS URL",
+       fun() ->
+          Opts = #{url => "https://api.example.com/v1/mcp"},
+          ?assert(is_map(Opts)),
+          ?assert(maps:is_key(url, Opts))
+       end},
+      {"Parse URL with port",
+       fun() ->
+          Opts = #{url => "http://localhost:9090/api"},
+          ?assert(is_map(Opts))
+       end},
+      {"Parse URL with path",
+       fun() ->
+          Opts = #{url => "https://example.com/api/v2/endpoint"},
+          ?assert(is_map(Opts))
+       end}]}.
 
 %%%===================================================================
 %%% Header Normalization Tests
@@ -61,42 +57,28 @@ http_header_normalization_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Normalize string headers",
-         fun() ->
-             Headers = [{"Content-Type", "application/json"}],
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 headers => Headers
-             },
-             ?assert(is_map(Opts)),
-             ?assert(maps:is_key(headers, Opts))
-         end},
-
-        {"Normalize binary headers",
-         fun() ->
-             Headers = [{<<"Accept">>, <<"text/plain">>}],
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 headers => Headers
-             },
-             ?assert(is_map(Opts))
-         end},
-
-        {"Mixed header types",
-         fun() ->
-             Headers = [
-                 {"Content-Type", "application/json"},
-                 {<<"Accept">>, <<"text/plain">>},
-                 {"Authorization", "Bearer token"}
-             ],
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 headers => Headers
-             },
-             ?assert(is_map(Opts))
-         end}
-     ]}.
+     [{"Normalize string headers",
+       fun() ->
+          Headers = [{"Content-Type", "application/json"}],
+          Opts = #{url => "http://localhost:8080/mcp", headers => Headers},
+          ?assert(is_map(Opts)),
+          ?assert(maps:is_key(headers, Opts))
+       end},
+      {"Normalize binary headers",
+       fun() ->
+          Headers = [{<<"Accept">>, <<"text/plain">>}],
+          Opts = #{url => "http://localhost:8080/mcp", headers => Headers},
+          ?assert(is_map(Opts))
+       end},
+      {"Mixed header types",
+       fun() ->
+          Headers =
+              [{"Content-Type", "application/json"},
+               {<<"Accept">>, <<"text/plain">>},
+               {"Authorization", "Bearer token"}],
+          Opts = #{url => "http://localhost:8080/mcp", headers => Headers},
+          ?assert(is_map(Opts))
+       end}]}.
 
 %%%===================================================================
 %%% Transport Init Tests
@@ -106,52 +88,53 @@ http_transport_init_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 10,
-     [
-        {"Init with valid HTTP URL",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self()
-             },
-             % We expect this to possibly fail if no server is running
-             % but it should not crash
-             Result = case erlmcp_transport_http:init(Opts) of
-                 {ok, _Pid} -> ok;
-                 {error, _Reason} -> error
-             end,
-             ?assert(Result =:= ok orelse Result =:= error)
-         end},
-
-        {"Init with timeout option",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
+     {timeout,
+      10,
+      [{"Init with valid HTTP URL",
+        fun() ->
+           Opts = #{url => "http://localhost:8080/mcp", owner => self()},
+           % We expect this to possibly fail if no server is running
+           % but it should not crash
+           Result =
+               case erlmcp_transport_http:init(Opts) of
+                   {ok, _Pid} ->
+                       ok;
+                   {error, _Reason} ->
+                       error
+               end,
+           ?assert(Result =:= ok orelse Result =:= error)
+        end},
+       {"Init with timeout option",
+        fun() ->
+           Opts =
+               #{url => "http://localhost:8080/mcp",
                  owner => self(),
                  connect_timeout => 1000,
-                 timeout => 5000
-             },
-             Result = case erlmcp_transport_http:init(Opts) of
-                 {ok, _Pid} -> ok;
-                 {error, _Reason} -> error
-             end,
-             ?assert(Result =:= ok orelse Result =:= error)
-         end},
-
-        {"Init with SSL options for HTTPS",
-         fun() ->
-             Opts = #{
-                 url => "https://example.com/mcp",
+                 timeout => 5000},
+           Result =
+               case erlmcp_transport_http:init(Opts) of
+                   {ok, _Pid} ->
+                       ok;
+                   {error, _Reason} ->
+                       error
+               end,
+           ?assert(Result =:= ok orelse Result =:= error)
+        end},
+       {"Init with SSL options for HTTPS",
+        fun() ->
+           Opts =
+               #{url => "https://example.com/mcp",
                  owner => self(),
-                 ssl_options => [{verify, verify_none}]
-             },
-             Result = case erlmcp_transport_http:init(Opts) of
-                 {ok, _Pid} -> ok;
-                 {error, _Reason} -> error
-             end,
-             ?assert(Result =:= ok orelse Result =:= error)
-         end}
-     ]}}.
+                 ssl_options => [{verify, verify_none}]},
+           Result =
+               case erlmcp_transport_http:init(Opts) of
+                   {ok, _Pid} ->
+                       ok;
+                   {error, _Reason} ->
+                       error
+               end,
+           ?assert(Result =:= ok orelse Result =:= error)
+        end}]}}.
 
 %%%===================================================================
 %% Observable Behavior Tests
@@ -161,14 +144,12 @@ http_send_behavior_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 10,
-     fun() ->
+     {timeout,
+      10,
+      fun() ->
          % Start a mock HTTP server for testing
          % For now, we test that the API doesn't crash
-         Opts = #{
-             url => "http://localhost:18080/mcp",
-             owner => self()
-         },
+         Opts = #{url => "http://localhost:18080/mcp", owner => self()},
 
          case erlmcp_transport_http:init(Opts) of
              {ok, Pid} ->
@@ -186,32 +167,29 @@ http_send_behavior_test_() ->
                  % Connection failed - also acceptable
                  ?assert(true)
          end
-     end}}.
+      end}}.
 
 http_close_behavior_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
      fun() ->
-         Opts = #{
-             url => "http://localhost:18080/mcp",
-             owner => self()
-         },
+        Opts = #{url => "http://localhost:18080/mcp", owner => self()},
 
-         case erlmcp_transport_http:init(Opts) of
-             {ok, Pid} ->
-                 ?assert(is_pid(Pid)),
-                 ?assert(is_process_alive(Pid)),
+        case erlmcp_transport_http:init(Opts) of
+            {ok, Pid} ->
+                ?assert(is_pid(Pid)),
+                ?assert(is_process_alive(Pid)),
 
-                 % Close transport
-                 ?assertEqual(ok, erlmcp_transport_http:close(Pid)),
+                % Close transport
+                ?assertEqual(ok, erlmcp_transport_http:close(Pid)),
 
-                 timer:sleep(100),
-                 ?assertNot(is_process_alive(Pid));
-             {error, _} ->
-                 % Connection failed - test passes
-                 ?assert(true)
-         end
+                timer:sleep(100),
+                ?assertNot(is_process_alive(Pid));
+            {error, _} ->
+                % Connection failed - test passes
+                ?assert(true)
+        end
      end}.
 
 %%%===================================================================
@@ -222,64 +200,70 @@ http_invalid_url_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Empty URL",
-         fun() ->
-             Opts = #{url => "", owner => self()},
-             Result = case erlmcp_transport_http:init(Opts) of
-                 {ok, _} -> ok;
-                 {error, _} -> error
-             end,
-             ?assert(Result =:= ok orelse Result =:= error)
-         end},
-
-        {"Invalid URL format",
-         fun() ->
-             Opts = #{url => "not-a-url", owner => self()},
-             Result = case erlmcp_transport_http:init(Opts) of
-                 {ok, _} -> ok;
-                 {error, _} -> error
-             end,
-             ?assert(Result =:= ok orelse Result =:= error)
-         end},
-
-        {"Missing URL",
-         fun() ->
-             Opts = #{owner => self()},
-             Result = case erlmcp_transport_http:init(Opts) of
-                 {ok, _} -> ok;
-                 {error, _} -> error
-             end,
-             ?assert(Result =:= ok orelse Result =:= error)
-         end}
-     ]}.
+     [{"Empty URL",
+       fun() ->
+          Opts = #{url => "", owner => self()},
+          Result =
+              case erlmcp_transport_http:init(Opts) of
+                  {ok, _} ->
+                      ok;
+                  {error, _} ->
+                      error
+              end,
+          ?assert(Result =:= ok orelse Result =:= error)
+       end},
+      {"Invalid URL format",
+       fun() ->
+          Opts = #{url => "not-a-url", owner => self()},
+          Result =
+              case erlmcp_transport_http:init(Opts) of
+                  {ok, _} ->
+                      ok;
+                  {error, _} ->
+                      error
+              end,
+          ?assert(Result =:= ok orelse Result =:= error)
+       end},
+      {"Missing URL",
+       fun() ->
+          Opts = #{owner => self()},
+          Result =
+              case erlmcp_transport_http:init(Opts) of
+                  {ok, _} ->
+                      ok;
+                  {error, _} ->
+                      error
+              end,
+          ?assert(Result =:= ok orelse Result =:= error)
+       end}]}.
 
 http_connection_timeout_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 15,
-     fun() ->
+     {timeout,
+      15,
+      fun() ->
          % Use unreachable IP
-         Opts = #{
-             url => "http://192.0.2.1:8080/mcp",
-             owner => self(),
-             connect_timeout => 1000
-         },
-         Result = case erlmcp_transport_http:init(Opts) of
-             {ok, Pid} ->
-                 try
-                     % Process started but connection will timeout
-                     timer:sleep(2000),
-                     ?assert(is_process_alive(Pid))
-                 after
-                     erlmcp_transport_http:close(Pid)
-                 end;
-             {error, _Reason} ->
-                 % Connection failed immediately - acceptable
-                 ?assert(true)
-         end
-     end}}.
+         Opts =
+             #{url => "http://192.0.2.1:8080/mcp",
+               owner => self(),
+               connect_timeout => 1000},
+         Result =
+             case erlmcp_transport_http:init(Opts) of
+                 {ok, Pid} ->
+                     try
+                         % Process started but connection will timeout
+                         timer:sleep(2000),
+                         ?assert(is_process_alive(Pid))
+                     after
+                         erlmcp_transport_http:close(Pid)
+                     end;
+                 {error, _Reason} ->
+                     % Connection failed immediately - acceptable
+                     ?assert(true)
+             end
+      end}}.
 
 %%%===================================================================
 %% Retry Logic Tests
@@ -289,29 +273,24 @@ http_retry_configuration_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Configure max retries",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:18080/mcp",
-                 owner => self(),
-                 max_retries => 3,
-                 retry_delay => 100
-             },
-             ?assertEqual(3, maps:get(max_retries, Opts)),
-             ?assertEqual(100, maps:get(retry_delay, Opts))
-         end},
-
-        {"Zero retries",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:18080/mcp",
-                 owner => self(),
-                 max_retries => 0
-             },
-             ?assertEqual(0, maps:get(max_retries, Opts))
-         end}
-     ]}.
+     [{"Configure max retries",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:18080/mcp",
+                owner => self(),
+                max_retries => 3,
+                retry_delay => 100},
+          ?assertEqual(3, maps:get(max_retries, Opts)),
+          ?assertEqual(100, maps:get(retry_delay, Opts))
+       end},
+      {"Zero retries",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:18080/mcp",
+                owner => self(),
+                max_retries => 0},
+          ?assertEqual(0, maps:get(max_retries, Opts))
+       end}]}.
 
 %%%===================================================================
 %% SSL/TLS Tests
@@ -321,34 +300,28 @@ https_url_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 10,
-     [
-        {"HTTPS with default SSL",
-         fun() ->
-             Opts = #{
-                 url => "https://example.com/mcp",
-                 owner => self()
-             },
-             Result = case erlmcp_transport_http:init(Opts) of
-                 {ok, _} -> ok;
-                 {error, _} -> error
-             end,
-             ?assert(Result =:= ok orelse Result =:= error)
-         end},
-
-        {"HTTPS with custom SSL options",
-         fun() ->
-             Opts = #{
-                 url => "https://example.com/mcp",
+     {timeout,
+      10,
+      [{"HTTPS with default SSL",
+        fun() ->
+           Opts = #{url => "https://example.com/mcp", owner => self()},
+           Result =
+               case erlmcp_transport_http:init(Opts) of
+                   {ok, _} ->
+                       ok;
+                   {error, _} ->
+                       error
+               end,
+           ?assert(Result =:= ok orelse Result =:= error)
+        end},
+       {"HTTPS with custom SSL options",
+        fun() ->
+           Opts =
+               #{url => "https://example.com/mcp",
                  owner => self(),
-                 ssl_options => [
-                     {verify, verify_peer},
-                     {cacertfile, "/path/to/cacert.pem"}
-                 ]
-             },
-             ?assert(maps:is_key(ssl_options, Opts))
-         end}
-     ]}}.
+                 ssl_options => [{verify, verify_peer}, {cacertfile, "/path/to/cacert.pem"}]},
+           ?assert(maps:is_key(ssl_options, Opts))
+        end}]}}.
 
 %%%===================================================================
 %% Pool Configuration Tests
@@ -358,26 +331,19 @@ http_pool_configuration_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Configure pool size",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self(),
-                 pool_size => 10
-             },
-             ?assertEqual(10, maps:get(pool_size, Opts))
-         end},
-
-        {"Default pool size",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self()
-             },
-             ?assertNot(maps:is_key(pool_size, Opts))
-         end}
-     ]}.
+     [{"Configure pool size",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:8080/mcp",
+                owner => self(),
+                pool_size => 10},
+          ?assertEqual(10, maps:get(pool_size, Opts))
+       end},
+      {"Default pool size",
+       fun() ->
+          Opts = #{url => "http://localhost:8080/mcp", owner => self()},
+          ?assertNot(maps:is_key(pool_size, Opts))
+       end}]}.
 
 %%%===================================================================
 %% Method Configuration Tests
@@ -387,36 +353,27 @@ http_method_configuration_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"POST method",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self(),
-                 method => post
-             },
-             ?assertEqual(post, maps:get(method, Opts))
-         end},
-
-        {"GET method",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self(),
-                 method => get
-             },
-             ?assertEqual(get, maps:get(method, Opts))
-         end},
-
-        {"Default method (POST for MCP)",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self()
-             },
-             ?assertNot(maps:is_key(method, Opts))
-         end}
-     ]}.
+     [{"POST method",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:8080/mcp",
+                owner => self(),
+                method => post},
+          ?assertEqual(post, maps:get(method, Opts))
+       end},
+      {"GET method",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:8080/mcp",
+                owner => self(),
+                method => get},
+          ?assertEqual(get, maps:get(method, Opts))
+       end},
+      {"Default method (POST for MCP)",
+       fun() ->
+          Opts = #{url => "http://localhost:8080/mcp", owner => self()},
+          ?assertNot(maps:is_key(method, Opts))
+       end}]}.
 
 %%%===================================================================
 %% Timeout Configuration Tests
@@ -426,39 +383,32 @@ http_timeout_configuration_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Request timeout",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self(),
-                 timeout => 10000
-             },
-             ?assertEqual(10000, maps:get(timeout, Opts))
-         end},
-
-        {"Connect timeout",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self(),
-                 connect_timeout => 5000
-             },
-             ?assertEqual(5000, maps:get(connect_timeout, Opts))
-         end},
-
-        {"Both timeouts",
-         fun() ->
-             Opts = #{
-                 url => "http://localhost:8080/mcp",
-                 owner => self(),
-                 connect_timeout => 2000,
-                 timeout => 8000
-             },
-             ?assertEqual(2000, maps:get(connect_timeout, Opts)),
-             ?assertEqual(8000, maps:get(timeout, Opts))
-         end}
-     ]}.
+     [{"Request timeout",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:8080/mcp",
+                owner => self(),
+                timeout => 10000},
+          ?assertEqual(10000, maps:get(timeout, Opts))
+       end},
+      {"Connect timeout",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:8080/mcp",
+                owner => self(),
+                connect_timeout => 5000},
+          ?assertEqual(5000, maps:get(connect_timeout, Opts))
+       end},
+      {"Both timeouts",
+       fun() ->
+          Opts =
+              #{url => "http://localhost:8080/mcp",
+                owner => self(),
+                connect_timeout => 2000,
+                timeout => 8000},
+          ?assertEqual(2000, maps:get(connect_timeout, Opts)),
+          ?assertEqual(8000, maps:get(timeout, Opts))
+       end}]}.
 
 %%%===================================================================
 %% Data Format Tests
@@ -468,40 +418,33 @@ http_json_data_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Valid JSON data",
-         fun() ->
-             JsonData = jsx:encode(#{
-                 jsonrpc => <<"2.0">>,
-                 method => <<"test">>,
-                 id => 1
-             }),
-             ?assert(is_binary(JsonData)),
-             ?assert(<<"jsonrpc">> =< JsonData)
-         end},
-
-        {"JSON array params",
-         fun() ->
-             JsonData = jsx:encode(#{
-                 jsonrpc => <<"2.0">>,
-                 method => <<"test">>,
-                 params => [1, 2, 3],
-                 id => 1
-             }),
-             ?assert(is_binary(JsonData))
-         end},
-
-        {"JSON object params",
-         fun() ->
-             JsonData = jsx:encode(#{
-                 jsonrpc => <<"2.0">>,
-                 method => <<"test">>,
-                 params => #{key => <<"value">>},
-                 id => 1
-             }),
-             ?assert(is_binary(JsonData))
-         end}
-     ]}.
+     [{"Valid JSON data",
+       fun() ->
+          JsonData =
+              jsx:encode(#{jsonrpc => <<"2.0">>,
+                           method => <<"test">>,
+                           id => 1}),
+          ?assert(is_binary(JsonData)),
+          ?assert(<<"jsonrpc">> =< JsonData)
+       end},
+      {"JSON array params",
+       fun() ->
+          JsonData =
+              jsx:encode(#{jsonrpc => <<"2.0">>,
+                           method => <<"test">>,
+                           params => [1, 2, 3],
+                           id => 1}),
+          ?assert(is_binary(JsonData))
+       end},
+      {"JSON object params",
+       fun() ->
+          JsonData =
+              jsx:encode(#{jsonrpc => <<"2.0">>,
+                           method => <<"test">>,
+                           params => #{key => <<"value">>},
+                           id => 1}),
+          ?assert(is_binary(JsonData))
+       end}]}.
 
 %%%===================================================================
 %% Integration Test Placeholder

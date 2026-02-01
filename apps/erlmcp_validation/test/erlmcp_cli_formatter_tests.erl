@@ -16,8 +16,7 @@ erlmcp_cli_formatter_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Color functions work correctly", fun test_colors/0},
+     [{"Color functions work correctly", fun test_colors/0},
       {"Format status correctly", fun test_format_status/0},
       {"Format table correctly", fun test_format_table/0},
       {"Format tree correctly", fun test_format_tree/0},
@@ -26,8 +25,7 @@ erlmcp_cli_formatter_test_() ->
       {"Format box correctly", fun test_format_box/0},
       {"Strip colors correctly", fun test_strip_colors/0},
       {"Enable and disable colors", fun test_color_toggle/0},
-      {"Format result map", fun test_format_result/0}
-     ]}.
+      {"Format result map", fun test_format_result/0}]}.
 
 %%====================================================================
 %% Setup/Cleanup
@@ -86,11 +84,16 @@ test_format_status() ->
     ok.
 
 test_format_table() ->
-    Rows = [
-        #{name => "alice", age => 30, city => "NYC"},
-        #{name => "bob", age => 25, city => "LA"},
-        #{name => "charlie", age => 35, city => "SF"}
-    ],
+    Rows =
+        [#{name => "alice",
+           age => 30,
+           city => "NYC"},
+         #{name => "bob",
+           age => 25,
+           city => "LA"},
+         #{name => "charlie",
+           age => 35,
+           city => "SF"}],
     Columns = [name, age, city],
 
     Table = erlmcp_cli_formatter:format_table(Rows, Columns),
@@ -111,15 +114,11 @@ test_format_table() ->
     ok.
 
 test_format_tree() ->
-    Tree = #{
-        name => "root",
-        children => [
-            #{name => "child1"},
-            #{name => "child2"}
-        ]
-    },
+    Tree = #{name => "root", children => [#{name => "child1"}, #{name => "child2"}]},
 
-    TreeStr = lists:flatten(erlmcp_cli_formatter:format_tree(Tree)),
+    TreeStr =
+        lists:flatten(
+            erlmcp_cli_formatter:format_tree(Tree)),
 
     ?assert(string:find(TreeStr, "name") =/= nomatch),
     ?assert(string:find(TreeStr, "root") =/= nomatch),
@@ -128,11 +127,10 @@ test_format_tree() ->
     ok.
 
 test_format_json() ->
-    Data = #{
-        key => <<"value">>,
-        number => 42,
-        nested => #{inner => true}
-    },
+    Data =
+        #{key => <<"value">>,
+          number => 42,
+          nested => #{inner => true}},
 
     Json = erlmcp_cli_formatter:format_json(Data),
     JsonStr = lists:flatten(Json),
@@ -204,11 +202,10 @@ test_color_toggle() ->
     ok.
 
 test_format_result() ->
-    Result = #{
-        status => passed,
-        score => 100,
-        message => "All tests passed"
-    },
+    Result =
+        #{status => passed,
+          score => 100,
+          message => "All tests passed"},
 
     Formatted = erlmcp_cli_formatter:format_result(Result),
     FormattedStr = lists:flatten(Formatted),

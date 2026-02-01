@@ -1,4 +1,5 @@
 -module(erlmcp_transport_stdio_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %% Stdio Transport Tests - Chicago School TDD
@@ -24,93 +25,84 @@ stdio_start_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Start stdio transport with owner",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 ?assert(is_pid(Transport)),
-                 ?assert(is_process_alive(Transport))
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end},
-
-        {"Multiple transports with unique IDs",
-         fun() ->
-             Owner = self(),
-             {ok, T1} = erlmcp_transport_stdio:start_link(Owner),
-             {ok, T2} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 ?assert(is_process_alive(T1)),
-                 ?assert(is_process_alive(T2)),
-                 ?assert(T1 =/= T2)
-             after
-                 catch gen_server:stop(T1, normal, 1000),
-                 catch gen_server:stop(T2, normal, 1000)
-             end
-         end}
-     ]}.
+     [{"Start stdio transport with owner",
+       fun() ->
+          Owner = self(),
+          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+          try
+              ?assert(is_pid(Transport)),
+              ?assert(is_process_alive(Transport))
+          after
+              catch gen_server:stop(Transport, normal, 1000)
+          end
+       end},
+      {"Multiple transports with unique IDs",
+       fun() ->
+          Owner = self(),
+          {ok, T1} = erlmcp_transport_stdio:start_link(Owner),
+          {ok, T2} = erlmcp_transport_stdio:start_link(Owner),
+          try
+              ?assert(is_process_alive(T1)),
+              ?assert(is_process_alive(T2)),
+              ?assert(T1 =/= T2)
+          after
+              catch gen_server:stop(T1, normal, 1000),
+              catch gen_server:stop(T2, normal, 1000)
+          end
+       end}]}.
 
 stdio_send_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Send binary data",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 TestData = <<"test message">>,
-                 ?assertEqual(ok, erlmcp_transport_stdio:send(Transport, TestData))
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end},
-
-        {"Send iolist data",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 TestIolist = [<<"test">>, " ", <<"message">>],
-                 ?assertEqual(ok, erlmcp_transport_stdio:send(Transport, TestIolist))
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end},
-
-        {"Send empty data",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 ?assertEqual(ok, erlmcp_transport_stdio:send(Transport, <<>>))
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end}
-     ]}.
+     [{"Send binary data",
+       fun() ->
+          Owner = self(),
+          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+          try
+              TestData = <<"test message">>,
+              ?assertEqual(ok, erlmcp_transport_stdio:send(Transport, TestData))
+          after
+              catch gen_server:stop(Transport, normal, 1000)
+          end
+       end},
+      {"Send iolist data",
+       fun() ->
+          Owner = self(),
+          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+          try
+              TestIolist = [<<"test">>, " ", <<"message">>],
+              ?assertEqual(ok, erlmcp_transport_stdio:send(Transport, TestIolist))
+          after
+              catch gen_server:stop(Transport, normal, 1000)
+          end
+       end},
+      {"Send empty data",
+       fun() ->
+          Owner = self(),
+          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+          try
+              ?assertEqual(ok, erlmcp_transport_stdio:send(Transport, <<>>))
+          after
+              catch gen_server:stop(Transport, normal, 1000)
+          end
+       end}]}.
 
 stdio_close_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Close transport stops process",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             ?assert(is_process_alive(Transport)),
+     [{"Close transport stops process",
+       fun() ->
+          Owner = self(),
+          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+          ?assert(is_process_alive(Transport)),
 
-             ?assertEqual(ok, erlmcp_transport_stdio:close(Transport)),
+          ?assertEqual(ok, erlmcp_transport_stdio:close(Transport)),
 
-             timer:sleep(100),
-             ?assertNot(is_process_alive(Transport))
-         end}
-     ]}.
+          timer:sleep(100),
+          ?assertNot(is_process_alive(Transport))
+       end}]}.
 
 %%%===================================================================
 %%% Message Delivery Tests
@@ -120,8 +112,9 @@ stdio_message_delivery_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 5,
-     fun() ->
+     {timeout,
+      5,
+      fun() ->
          Owner = self(),
          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
          try
@@ -139,41 +132,40 @@ stdio_message_delivery_test_() ->
          after
              catch gen_server:stop(Transport, normal, 1000)
          end
-     end}}.
+      end}}.
 
 stdio_multiple_messages_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 5,
-     fun() ->
+     {timeout,
+      5,
+      fun() ->
          Owner = self(),
          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
          try
-             Messages = [
-                 <<"message 1">>,
-                 <<"message 2">>,
-                 <<"message 3">>
-             ],
+             Messages = [<<"message 1">>, <<"message 2">>, <<"message 3">>],
 
-             lists:foreach(fun(Msg) ->
-                 gen_server:call(Transport, {simulate_input, Msg})
-             end, Messages),
+             lists:foreach(fun(Msg) -> gen_server:call(Transport, {simulate_input, Msg}) end,
+                           Messages),
 
              % Receive all messages
-             Received = lists:map(fun(_) ->
-                 receive
-                     {transport_message, M} -> M
-                 after 1000 ->
-                     ?assert(false, "Missing message")
-                 end
-             end, Messages),
+             Received =
+                 lists:map(fun(_) ->
+                              receive
+                                  {transport_message, M} ->
+                                      M
+                              after 1000 ->
+                                  ?assert(false, "Missing message")
+                              end
+                           end,
+                           Messages),
 
              ?assertEqual(Messages, Received)
          after
              catch gen_server:stop(Transport, normal, 1000)
          end
-     end}}.
+      end}}.
 
 %%%===================================================================
 %%% Owner Monitoring Tests
@@ -183,14 +175,18 @@ stdio_owner_monitoring_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 5,
-     fun() ->
-         Owner = spawn_link(fun() ->
-             receive
-                 stop -> ok
-             after 10000 -> ok
-             end
-         end),
+     {timeout,
+      5,
+      fun() ->
+         Owner =
+             spawn_link(fun() ->
+                           receive
+                               stop ->
+                                   ok
+                           after 10000 ->
+                               ok
+                           end
+                        end),
 
          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
          ?assert(is_process_alive(Transport)),
@@ -205,7 +201,7 @@ stdio_owner_monitoring_test_() ->
          % Transport should die when owner dies
          timer:sleep(500),
          ?assertNot(is_process_alive(Transport))
-     end}}.
+      end}}.
 
 %%%===================================================================
 %%% Line Ending Tests
@@ -215,65 +211,62 @@ stdio_line_endings_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 5,
-     [
-        {"Newline termination",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 Line = <<"test line\n">>,
-                 gen_server:call(Transport, {simulate_input, Line}),
+     {timeout,
+      5,
+      [{"Newline termination",
+        fun() ->
+           Owner = self(),
+           {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+           try
+               Line = <<"test line\n">>,
+               gen_server:call(Transport, {simulate_input, Line}),
 
-                 receive
-                     {transport_message, Received} ->
-                         ?assert(is_binary(Received))
-                 after 1000 ->
-                     ?assert(false)
-                 end
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end},
+               receive
+                   {transport_message, Received} ->
+                       ?assert(is_binary(Received))
+               after 1000 ->
+                   ?assert(false)
+               end
+           after
+               catch gen_server:stop(Transport, normal, 1000)
+           end
+        end},
+       {"Carriage return + newline",
+        fun() ->
+           Owner = self(),
+           {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+           try
+               Line = <<"test line\r\n">>,
+               gen_server:call(Transport, {simulate_input, Line}),
 
-        {"Carriage return + newline",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 Line = <<"test line\r\n">>,
-                 gen_server:call(Transport, {simulate_input, Line}),
+               receive
+                   {transport_message, Received} ->
+                       ?assert(is_binary(Received))
+               after 1000 ->
+                   ?assert(false)
+               end
+           after
+               catch gen_server:stop(Transport, normal, 1000)
+           end
+        end},
+       {"Carriage return only",
+        fun() ->
+           Owner = self(),
+           {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+           try
+               Line = <<"test line\r">>,
+               gen_server:call(Transport, {simulate_input, Line}),
 
-                 receive
-                     {transport_message, Received} ->
-                         ?assert(is_binary(Received))
-                 after 1000 ->
-                     ?assert(false)
-                 end
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end},
-
-        {"Carriage return only",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 Line = <<"test line\r">>,
-                 gen_server:call(Transport, {simulate_input, Line}),
-
-                 receive
-                     {transport_message, Received} ->
-                         ?assert(is_binary(Received))
-                 after 1000 ->
-                     ?assert(false)
-                 end
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end}
-     ]}}.
+               receive
+                   {transport_message, Received} ->
+                       ?assert(is_binary(Received))
+               after 1000 ->
+                   ?assert(false)
+               end
+           after
+               catch gen_server:stop(Transport, normal, 1000)
+           end
+        end}]}}.
 
 %%%===================================================================
 %%% Empty Line Handling Tests
@@ -283,8 +276,9 @@ stdio_empty_line_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 5,
-     fun() ->
+     {timeout,
+      5,
+      fun() ->
          Owner = self(),
          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
          try
@@ -303,7 +297,7 @@ stdio_empty_line_test_() ->
          after
              catch gen_server:stop(Transport, normal, 1000)
          end
-     end}}.
+      end}}.
 
 %%%===================================================================
 %%% Concurrent Message Tests
@@ -313,8 +307,9 @@ stdio_concurrent_messages_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 10,
-     fun() ->
+     {timeout,
+      10,
+      fun() ->
          Owner = self(),
          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
          try
@@ -322,11 +317,12 @@ stdio_concurrent_messages_test_() ->
              NumMessages = 50,
 
              lists:foreach(fun(N) ->
-                 spawn(fun() ->
-                     Msg = integer_to_binary(N),
-                     gen_server:call(Transport, {simulate_input, Msg})
-                 end)
-             end, lists:seq(1, NumMessages)),
+                              spawn(fun() ->
+                                       Msg = integer_to_binary(N),
+                                       gen_server:call(Transport, {simulate_input, Msg})
+                                    end)
+                           end,
+                           lists:seq(1, NumMessages)),
 
              % Collect messages
              timer:sleep(500),
@@ -339,14 +335,15 @@ stdio_concurrent_messages_test_() ->
          after
              catch gen_server:stop(Transport, normal, 1000)
          end
-     end}}.
+      end}}.
 
 stdio_load_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 15,
-     fun() ->
+     {timeout,
+      15,
+      fun() ->
          Owner = self(),
          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
          try
@@ -354,11 +351,10 @@ stdio_load_test_() ->
              StartTime = erlang:monotonic_time(millisecond),
 
              lists:foreach(fun(N) ->
-                 Msg = integer_to_binary(N),
-                 spawn(fun() ->
-                     gen_server:call(Transport, {simulate_input, Msg})
-                 end)
-             end, lists:seq(1, 100)),
+                              Msg = integer_to_binary(N),
+                              spawn(fun() -> gen_server:call(Transport, {simulate_input, Msg}) end)
+                           end,
+                           lists:seq(1, 100)),
 
              EndTime = erlang:monotonic_time(millisecond),
              Duration = EndTime - StartTime,
@@ -372,7 +368,7 @@ stdio_load_test_() ->
          after
              catch gen_server:stop(Transport, normal, 1000)
          end
-     end}}.
+      end}}.
 
 %%%===================================================================
 %%% Integration Tests
@@ -382,8 +378,9 @@ stdio_full_lifecycle_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 5,
-     fun() ->
+     {timeout,
+      5,
+      fun() ->
          Owner = self(),
          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
          try
@@ -398,7 +395,8 @@ stdio_full_lifecycle_test_() ->
 
              % Receive message
              receive
-                 {transport_message, <<"input test">>} -> ok
+                 {transport_message, <<"input test">>} ->
+                     ok
              after 1000 ->
                  ?assert(false)
              end,
@@ -408,14 +406,15 @@ stdio_full_lifecycle_test_() ->
          after
              catch gen_server:stop(Transport, normal, 1000)
          end
-     end}}.
+      end}}.
 
 stdio_with_registry_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     {timeout, 10,
-     fun() ->
+     {timeout,
+      10,
+      fun() ->
          Owner = self(),
 
          % Start registry
@@ -425,21 +424,25 @@ stdio_with_registry_test_() ->
              {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
 
              % Register transport
-             TransportConfig = #{
-                 type => stdio,
-                 config => #{}
-             },
+             TransportConfig = #{type => stdio, config => #{}},
 
-             ?assertEqual(ok, gen_server:call(Registry, {register_transport, stdio_test_transport, Transport, TransportConfig})),
+             ?assertEqual(ok,
+                          gen_server:call(Registry,
+                                          {register_transport,
+                                           stdio_test_transport,
+                                           Transport,
+                                           TransportConfig})),
 
              % Verify registration
-             ?assertMatch({ok, {Transport, TransportConfig}}, gen_server:call(Registry, {find_transport, stdio_test_transport})),
+             ?assertMatch({ok, {Transport, TransportConfig}},
+                          gen_server:call(Registry, {find_transport, stdio_test_transport})),
 
              % Test message through registry
              gen_server:call(Transport, {simulate_input, <<"registry test">>}),
 
              receive
-                 {transport_message, <<"registry test">>} -> ok
+                 {transport_message, <<"registry test">>} ->
+                     ok
              after 1000 ->
                  ?assert(false)
              end,
@@ -450,7 +453,7 @@ stdio_with_registry_test_() ->
          after
              gen_server:stop(Registry, normal, 1000)
          end
-     end}}.
+      end}}.
 
 %%%===================================================================
 %%% Error Handling Tests
@@ -460,20 +463,18 @@ stdio_invalid_input_test_() ->
     {setup,
      fun setup/0,
      fun teardown/1,
-     [
-        {"Non-binary input",
-         fun() ->
-             Owner = self(),
-             {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
-             try
-                 % Should handle gracefully
-                 Result = catch gen_server:call(Transport, {simulate_input, invalid}),
-                 ?assert(is_tuple(Result) orelse Result =:= ok)
-             after
-                 catch gen_server:stop(Transport, normal, 1000)
-             end
-         end}
-     ]}.
+     [{"Non-binary input",
+       fun() ->
+          Owner = self(),
+          {ok, Transport} = erlmcp_transport_stdio:start_link(Owner),
+          try
+              % Should handle gracefully
+              Result = (catch gen_server:call(Transport, {simulate_input, invalid})),
+              ?assert(is_tuple(Result) orelse Result =:= ok)
+          after
+              catch gen_server:stop(Transport, normal, 1000)
+          end
+       end}]}.
 
 %%%===================================================================
 %%% Helper Functions

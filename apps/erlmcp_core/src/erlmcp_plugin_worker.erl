@@ -19,30 +19,15 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_worker).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/2,
-    call_function/3,
-    stop/1
-]).
-
+-export([start_link/2, call_function/3, stop/1]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
--record(state, {
-    module :: module(),
-    plugin_state :: term(),
-    metadata :: map(),
-    opts :: map()
-}).
+-record(state, {module :: module(), plugin_state :: term(), metadata :: map(), opts :: map()}).
 
 %%====================================================================
 %% API
@@ -74,12 +59,11 @@ init({Module, Opts}) ->
         %% Initialize plugin
         case Module:init(Opts) of
             {ok, PluginState} ->
-                State = #state{
-                    module = Module,
-                    plugin_state = PluginState,
-                    metadata = Metadata,
-                    opts = Opts
-                },
+                State =
+                    #state{module = Module,
+                           plugin_state = PluginState,
+                           metadata = Metadata,
+                           opts = Opts},
                 {ok, State};
             {error, Reason} ->
                 {stop, {init_failed, Reason}}
@@ -98,51 +82,54 @@ handle_call({call_function, Function, Args}, _From, State) ->
         case erlang:function_exported(Module, Function, length(Args)) of
             true ->
                 %% Call plugin function
-                Result = case Args of
-                    [] ->
-                        Module:Function();
-                    [Arg1] when Function =:= pre_execute;
-                                Function =:= post_execute;
-                                Function =:= format;
-                                Function =:= export;
-                                Function =:= execute ->
-                        %% Functions that take (Data, State)
-                        case Module:Function(Arg1, PluginState) of
-                            {ok, Output, NewPluginState} ->
-                                NewState = State#state{plugin_state = NewPluginState},
-                                {ok, Output, NewState};
-                            {ok, Output} ->
-                                {ok, Output, State};
-                            {error, Reason} ->
-                                {error, Reason, State}
-                        end;
-                    [Arg1] when Function =:= validate ->
-                        %% validate/2 returns {ok, Result, State}
-                        case Module:Function(Arg1, PluginState) of
-                            {ok, Output, NewPluginState} ->
-                                NewState = State#state{plugin_state = NewPluginState},
-                                {ok, Output, NewState};
-                            {error, Reason} ->
-                                {error, Reason, State}
-                        end;
-                    [Arg1] ->
-                        %% Single arg, no state
-                        Module:Function(Arg1);
-                    _ ->
-                        %% Multiple args, apply
-                        erlang:apply(Module, Function, Args)
-                end,
+                Result =
+                    case Args of
+                        [] ->
+                            Module:Function();
+                        [Arg1]
+                            when Function =:= pre_execute;
+                                 Function =:= post_execute;
+                                 Function =:= format;
+                                 Function =:= export;
+                                 Function =:= execute ->
+                            %% Functions that take (Data, State)
+                            case Module:Function(Arg1, PluginState) of
+                                {ok, Output, NewPluginState} ->
+                                    NewState = State#state{plugin_state = NewPluginState},
+                                    {ok, Output, NewState};
+                                {ok, Output} ->
+                                    {ok, Output, State};
+                                {error, Reason} ->
+                                    {error, Reason, State}
+                            end;
+                        [Arg1] when Function =:= validate ->
+                            %% validate/2 returns {ok, Result, State}
+                            case Module:Function(Arg1, PluginState) of
+                                {ok, Output, NewPluginState} ->
+                                    NewState = State#state{plugin_state = NewPluginState},
+                                    {ok, Output, NewState};
+                                {error, Reason} ->
+                                    {error, Reason, State}
+                            end;
+                        [Arg1] ->
+                            %% Single arg, no state
+                            Module:Function(Arg1);
+                        _ ->
+                            %% Multiple args, apply
+                            erlang:apply(Module, Function, Args)
+                    end,
 
                 %% Handle result
                 case Result of
-                    {ok, Output, NewState} ->
-                        {reply, {ok, Output}, NewState};
-                    {ok, Output} ->
-                        {reply, {ok, Output}, State};
-                    {error, Reason, _} ->
-                        {reply, {error, Reason}, State};
-                    {error, Reason} ->
-                        {reply, {error, Reason}, State};
+                    {ok, ResultOutput, ResultState}
+                        when is_tuple(ResultState); is_list(ResultState) ->
+                        {reply, {ok, ResultOutput}, ResultState};
+                    {ok, ResultOutput} ->
+                        {reply, {ok, ResultOutput}, State};
+                    {error, ErrorReason, _} ->
+                        {reply, {error, ErrorReason}, State};
+                    {error, ErrorReason} ->
+                        {reply, {error, ErrorReason}, State};
                     Other ->
                         {reply, Other, State}
                 end;
@@ -153,7 +140,6 @@ handle_call({call_function, Function, Args}, _From, State) ->
         _:Error:Stack ->
             {reply, {error, {function_call_failed, Error, Stack}}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 

@@ -1,9 +1,9 @@
 -module(erlmcp_notification_handler_sup).
+
 -behaviour(supervisor).
 
 %% API
 -export([start_link/0, start_handler/3]).
-
 %% supervisor callbacks
 -export([init/1]).
 
@@ -30,25 +30,20 @@ init([]) ->
     %% Restart: transient - restart only on abnormal termination
     %% This ensures handlers that exit normally are not restarted,
     %% but crashed handlers are automatically restarted.
-
-    SupFlags = #{
-        strategy => simple_one_for_one,
-        intensity => 5,
-        period => 60
-    },
+    SupFlags =
+        #{strategy => simple_one_for_one,
+          intensity => 5,
+          period => 60},
 
     %% CRITICAL FIX: For simple_one_for_one, start args MUST be a list.
     %% The args passed to start_handler/3 are appended to this list.
     %% We provide placeholder args that will be replaced.
-    ChildSpecs = [
-        #{
-            id => notification_handler,
-            start => {erlmcp_notification_handler, start_link, [undefined, undefined, #{}]},
-            restart => transient,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_notification_handler]
-        }
-    ],
+    ChildSpecs =
+        [#{id => notification_handler,
+           start => {erlmcp_notification_handler, start_link, [undefined, undefined, #{}]},
+           restart => transient,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_notification_handler]}],
 
     {ok, {SupFlags, ChildSpecs}}.

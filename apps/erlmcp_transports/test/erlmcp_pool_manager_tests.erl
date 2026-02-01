@@ -16,13 +16,12 @@
 %%====================================================================
 
 pool_creation_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 20,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
+    Opts =
+        #{min_size => 5,
+          max_size => 20,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
     ?assert(is_pid(Pool)),
@@ -35,14 +34,12 @@ pool_creation_test() ->
     erlmcp_pool_manager:stop(Pool).
 
 checkout_checkin_test() ->
-    Opts = #{
-        min_size => 3,
-        max_size => 10,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 3,
+          max_size => 10,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -66,14 +63,12 @@ checkout_checkin_test() ->
     erlmcp_pool_manager:stop(Pool).
 
 multiple_checkouts_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 20,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 5,
+          max_size => 20,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -103,29 +98,28 @@ multiple_checkouts_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 %%====================================================================
 %% Strategy Tests
 %%====================================================================
 
 round_robin_strategy_test() ->
-    Opts = #{
-        min_size => 3,
-        max_size => 10,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 3,
+          max_size => 10,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
     %% Checkout and return multiple times to verify round-robin
-    Conns = [begin
-        {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
-        ok = erlmcp_pool_manager:checkin(Pool, Conn),
-        Conn
-    end || _ <- lists:seq(1, 6)],
+    Conns =
+        [begin
+             {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
+             ok = erlmcp_pool_manager:checkin(Pool, Conn),
+             Conn
+         end
+         || _ <- lists:seq(1, 6)],
 
     %% Should cycle through connections
     [C1, C2, C3, C4, C5, C6] = Conns,
@@ -135,16 +129,13 @@ round_robin_strategy_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 least_loaded_strategy_test() ->
-    Opts = #{
-        min_size => 3,
-        max_size => 10,
-        strategy => least_loaded,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 3,
+          max_size => 10,
+          strategy => least_loaded,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -161,25 +152,24 @@ least_loaded_strategy_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 random_strategy_test() ->
-    Opts = #{
-        min_size => 10,
-        max_size => 50,
-        strategy => random,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 10,
+          max_size => 50,
+          strategy => random,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
     %% Checkout many connections
-    Conns = [begin
-        {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
-        ok = erlmcp_pool_manager:checkin(Pool, Conn),
-        Conn
-    end || _ <- lists:seq(1, 20)],
+    Conns =
+        [begin
+             {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
+             ok = erlmcp_pool_manager:checkin(Pool, Conn),
+             Conn
+         end
+         || _ <- lists:seq(1, 20)],
 
     %% Should have some distribution (not all same)
     UniqueConns = lists:usort(Conns),
@@ -187,20 +177,17 @@ random_strategy_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 %%====================================================================
 %% Pool Sizing Tests
 %%====================================================================
 
 pool_resize_grow_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 50,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 5,
+          max_size => 50,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -217,16 +204,13 @@ pool_resize_grow_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 pool_resize_shrink_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 50,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 5,
+          max_size => 50,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -244,16 +228,13 @@ pool_resize_shrink_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 pool_resize_bounds_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 50,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 5,
+          max_size => 50,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -265,20 +246,17 @@ pool_resize_bounds_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 %%====================================================================
 %% Metrics Tests
 %%====================================================================
 
 metrics_tracking_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 20,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 5,
+          max_size => 20,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -302,24 +280,23 @@ metrics_tracking_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 utilization_calculation_test() ->
-    Opts = #{
-        min_size => 10,
-        max_size => 20,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 10,
+          max_size => 20,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
     %% Checkout half the connections
-    Conns = [begin
-        {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
-        Conn
-    end || _ <- lists:seq(1, 5)],
+    Conns =
+        [begin
+             {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
+             Conn
+         end
+         || _ <- lists:seq(1, 5)],
 
     %% Check utilization
     Metrics = erlmcp_pool_manager:get_metrics(Pool),
@@ -333,22 +310,21 @@ utilization_calculation_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 %%====================================================================
 %% Health Check Tests
 %%====================================================================
 
 health_check_test_() ->
-    {timeout, 10, fun() ->
-        Opts = #{
-            min_size => 5,
-            max_size => 20,
-            strategy => round_robin,
-            health_check_interval => 500,  % Fast health checks for testing
-            worker_module => erlmcp_test_pool_worker,
-            worker_opts => #{owner => self()}
-        },
-
+    {timeout,
+     10,
+     fun() ->
+        Opts =
+            #{min_size => 5,
+              max_size => 20,
+              strategy => round_robin,
+              health_check_interval => 500,  % Fast health checks for testing
+              worker_module => erlmcp_test_pool_worker,
+              worker_opts => #{owner => self()}},
 
         {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -360,17 +336,15 @@ health_check_test_() ->
         ?assertEqual(healthy, maps:get(health_status, Status)),
 
         erlmcp_pool_manager:stop(Pool)
-    end}.
+     end}.
 
 connection_recovery_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 20,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 5,
+          max_size => 20,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -389,40 +363,49 @@ connection_recovery_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 %%====================================================================
 %% Concurrent Access Tests
 %%====================================================================
 
 concurrent_checkouts_test_() ->
-    {timeout, 15, fun() ->
-        Opts = #{
-            min_size => 10,
-            max_size => 100,
-            strategy => round_robin,
-            worker_module => erlmcp_test_pool_worker,
-            worker_opts => #{owner => self()}
-        },
-
+    {timeout,
+     15,
+     fun() ->
+        Opts =
+            #{min_size => 10,
+              max_size => 100,
+              strategy => round_robin,
+              worker_module => erlmcp_test_pool_worker,
+              worker_opts => #{owner => self()}},
 
         {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
         %% Spawn concurrent workers
         Parent = self(),
-        Workers = [spawn(fun() ->
-            case erlmcp_pool_manager:checkout(Pool) of
-                {ok, Conn} ->
-                    timer:sleep(10),
-                    ok = erlmcp_pool_manager:checkin(Pool, Conn);
-                {error, Reason} when Reason =:= no_healthy_connections; Reason =:= no_idle_connections ->
-                    %% Pool exhausted - acceptable in high concurrency
-                    ok
-            end,
-            Parent ! {worker_done, self()}
-        end) || _ <- lists:seq(1, 50)],
+        Workers =
+            [spawn(fun() ->
+                      case erlmcp_pool_manager:checkout(Pool) of
+                          {ok, Conn} ->
+                              timer:sleep(10),
+                              ok = erlmcp_pool_manager:checkin(Pool, Conn);
+                          {error, Reason}
+                              when Reason =:= no_healthy_connections;
+                                   Reason =:= no_idle_connections ->
+                              %% Pool exhausted - acceptable in high concurrency
+                              ok
+                      end,
+                      Parent ! {worker_done, self()}
+                   end)
+             || _ <- lists:seq(1, 50)],
 
         %% Wait for all workers
-        [receive {worker_done, W} -> ok after 5000 -> error(timeout) end || W <- Workers],
+        [receive
+             {worker_done, W} ->
+                 ok
+         after 5000 ->
+             error(timeout)
+         end
+         || W <- Workers],
 
         %% Verify pool is consistent
         Status = erlmcp_pool_manager:get_status(Pool),
@@ -430,46 +413,56 @@ concurrent_checkouts_test_() ->
         ?assertEqual(0, maps:get(active_count, Status)),
 
         erlmcp_pool_manager:stop(Pool)
-    end}.
+     end}.
 
 high_concurrency_stress_test_() ->
-    {timeout, 30, fun() ->
-        Opts = #{
-            min_size => 20,
-            max_size => 200,
-            strategy => least_loaded,
-            worker_module => erlmcp_test_pool_worker,
-            worker_opts => #{owner => self()}
-        },
-
+    {timeout,
+     30,
+     fun() ->
+        Opts =
+            #{min_size => 20,
+              max_size => 200,
+              strategy => least_loaded,
+              worker_module => erlmcp_test_pool_worker,
+              worker_opts => #{owner => self()}},
 
         {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
         %% Spawn many concurrent workers
         Parent = self(),
-        Workers = [spawn(fun() ->
-            SuccessCount = lists:foldl(fun(_, Acc) ->
-                case erlmcp_pool_manager:checkout(Pool) of
-                    {ok, Conn} ->
-                        ok = erlmcp_pool_manager:checkin(Pool, Conn),
-                        Acc + 1;
-                    {error, Reason} when Reason =:= no_healthy_connections; Reason =:= no_idle_connections ->
-                        %% Pool exhausted - acceptable in high concurrency
-                        Acc
-                end
-            end, 0, lists:seq(1, 10)),
-            Parent ! {worker_done, self(), SuccessCount}
-        end) || _ <- lists:seq(1, 100)],
+        Workers =
+            [spawn(fun() ->
+                      SuccessCount =
+                          lists:foldl(fun(_, Acc) ->
+                                         case erlmcp_pool_manager:checkout(Pool) of
+                                             {ok, Conn} ->
+                                                 ok = erlmcp_pool_manager:checkin(Pool, Conn),
+                                                 Acc + 1;
+                                             {error, Reason}
+                                                 when Reason =:= no_healthy_connections;
+                                                      Reason =:= no_idle_connections ->
+                                                 %% Pool exhausted - acceptable in high concurrency
+                                                 Acc
+                                         end
+                                      end,
+                                      0,
+                                      lists:seq(1, 10)),
+                      Parent ! {worker_done, self(), SuccessCount}
+                   end)
+             || _ <- lists:seq(1, 100)],
 
         %% Wait for completion and collect successful checkouts
-        {TotalSuccess, _} = lists:foldl(fun(_, {Acc, WorkerList}) ->
-            receive
-                {worker_done, W, Count} ->
-                    {Acc + Count, WorkerList -- [W]}
-            after 10000 ->
-                error(timeout)
-            end
-        end, {0, Workers}, Workers),
+        {TotalSuccess, _} =
+            lists:foldl(fun(_, {Acc, WorkerList}) ->
+                           receive
+                               {worker_done, W, Count} ->
+                                   {Acc + Count, WorkerList -- [W]}
+                           after 10000 ->
+                               error(timeout)
+                           end
+                        end,
+                        {0, Workers},
+                        Workers),
 
         %% Check metrics
         Metrics = erlmcp_pool_manager:get_metrics(Pool),
@@ -481,22 +474,20 @@ high_concurrency_stress_test_() ->
         ?assertEqual(0, FailedCheckouts),
 
         erlmcp_pool_manager:stop(Pool)
-    end}.
+     end}.
 
 %%====================================================================
 %% Error Handling Tests
 %%====================================================================
 
 pool_exhaustion_test() ->
-    Opts = #{
-        min_size => 2,
-        max_size => 2,  % Small pool at fixed size
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()},
-        checkout_timeout => 100  % Short timeout
-    },
-
+    Opts =
+        #{min_size => 2,
+          max_size => 2,  % Small pool at fixed size
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()},
+          checkout_timeout => 100},  % Short timeout
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -535,15 +526,13 @@ pool_exhaustion_test() ->
     erlmcp_pool_manager:stop(Pool).
 
 no_connections_available_test() ->
-    Opts = #{
-        min_size => 2,
-        max_size => 5,  % Can grow
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()},
-        checkout_timeout => 100
-    },
-
+    Opts =
+        #{min_size => 2,
+          max_size => 5,  % Can grow
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()},
+          checkout_timeout => 100},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -574,16 +563,13 @@ no_connections_available_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 invalid_checkin_test() ->
-    Opts = #{
-        min_size => 5,
-        max_size => 20,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 5,
+          max_size => 20,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
@@ -593,30 +579,28 @@ invalid_checkin_test() ->
 
     erlmcp_pool_manager:stop(Pool).
 
-
 %%====================================================================
 %% Integration Tests
 %%====================================================================
 
 pool_lifecycle_test() ->
-    Opts = #{
-        min_size => 10,
-        max_size => 50,
-        strategy => round_robin,
-        worker_module => erlmcp_test_pool_worker,
-        worker_opts => #{owner => self()}
-    },
-
+    Opts =
+        #{min_size => 10,
+          max_size => 50,
+          strategy => round_robin,
+          worker_module => erlmcp_test_pool_worker,
+          worker_opts => #{owner => self()}},
 
     %% Start pool
     {ok, Pool} = erlmcp_pool_manager:start_link(Opts),
 
     %% Simulate typical usage pattern
     lists:foreach(fun(_) ->
-        {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
-        timer:sleep(1),
-        ok = erlmcp_pool_manager:checkin(Pool, Conn)
-    end, lists:seq(1, 100)),
+                     {ok, Conn} = erlmcp_pool_manager:checkout(Pool),
+                     timer:sleep(1),
+                     ok = erlmcp_pool_manager:checkin(Pool, Conn)
+                  end,
+                  lists:seq(1, 100)),
 
     %% Verify metrics
     Metrics = erlmcp_pool_manager:get_metrics(Pool),
@@ -625,4 +609,3 @@ pool_lifecycle_test() ->
 
     %% Clean shutdown
     erlmcp_pool_manager:stop(Pool).
-

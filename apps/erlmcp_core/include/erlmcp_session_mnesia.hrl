@@ -5,8 +5,5 @@
 %%% @end
 %%%-------------------------------------------------------------------
 
--record(erlmcp_session, {
-    session_id :: binary(),
-    session_data :: map(),
-    last_accessed :: integer()
-}).
+-record(erlmcp_session,
+        {session_id :: binary(), session_data :: map(), last_accessed :: integer()}).

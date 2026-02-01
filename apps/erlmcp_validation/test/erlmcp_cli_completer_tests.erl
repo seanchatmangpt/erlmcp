@@ -13,6 +13,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_completer_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
@@ -23,8 +24,7 @@ completer_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Initialize completer", fun test_init_completer/0},
+     [{"Initialize completer", fun test_init_completer/0},
       {"Add completion entry", fun test_add_entry/0},
       {"Add multiple entries", fun test_add_multiple/0},
       {"Complete simple prefix", fun test_complete_simple/0},
@@ -50,8 +50,7 @@ completer_test_() ->
       {"Clear cache", fun test_clear_cache/0},
       {"Custom completion provider", fun test_custom_provider/0},
       {"Async completion", fun test_async_completion/0},
-      {"Completion timeout", fun test_completion_timeout/0}
-     ]}.
+      {"Completion timeout", fun test_completion_timeout/0}]}.
 
 setup() ->
     application:ensure_all_started(erlmcp),
@@ -66,11 +65,10 @@ cleanup(_Args) ->
 
 test_init_completer() ->
     %% Initialize completer with default commands
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>},
-        {command, <<"version">>},
-        {command, <<"validate">>}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command, <<"help">>},
+                                   {command, <<"version">>},
+                                   {command, <<"validate">>}]),
 
     %% Verify completer state
     ?assert(is_pid(Completer)),
@@ -97,11 +95,7 @@ test_add_multiple() ->
     {ok, Completer} = erlmcp_cli_completer:init([]),
 
     %% Add multiple entries
-    Entries = [
-        {command, <<"validate">>},
-        {command, <<"verify">>},
-        {command, <<"version">>}
-    ],
+    Entries = [{command, <<"validate">>}, {command, <<"verify">>}, {command, <<"version">>}],
     ok = erlmcp_cli_completer:add_entries(Completer, Entries),
 
     %% Verify all added
@@ -115,10 +109,7 @@ test_add_multiple() ->
 %%%====================================================================
 
 test_complete_simple() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>},
-        {command, <<"version">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}, {command, <<"version">>}]),
 
     %% Complete "h" → should match "help"
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"h">>),
@@ -127,11 +118,10 @@ test_complete_simple() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_complete_multiple_matches() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"validate">>},
-        {command, <<"verify">>},
-        {command, <<"version">>}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command, <<"validate">>},
+                                   {command, <<"verify">>},
+                                   {command, <<"version">>}]),
 
     %% Complete "v" → should match all three
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"v">>),
@@ -143,9 +133,7 @@ test_complete_multiple_matches() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_complete_no_matches() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}]),
 
     %% Complete "x" → no matches
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"x">>),
@@ -154,9 +142,7 @@ test_complete_no_matches() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_complete_exact_match() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}]),
 
     %% Complete "help" → exact match
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"help">>),
@@ -165,9 +151,7 @@ test_complete_exact_match() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_complete_partial() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"validate">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"validate">>}]),
 
     %% Complete "val" → should match "validate"
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"val">>),
@@ -180,10 +164,9 @@ test_complete_partial() ->
 %%%====================================================================
 
 test_complete_with_description() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>, <<"Show help information">>},
-        {command, <<"version">>, <<"Show version">>}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command, <<"help">>, <<"Show help information">>},
+                                   {command, <<"version">>, <<"Show version">>}]),
 
     %% Complete with descriptions
     {ok, Results} = erlmcp_cli_completer:complete_with_info(Completer, <<"h">>),
@@ -194,11 +177,10 @@ test_complete_with_description() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_complete_with_types() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>, command},
-        {flag, <<"--format">>, flag},
-        {file, <<"config.json">>, file}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command, <<"help">>, command},
+                                   {flag, <<"--format">>, flag},
+                                   {file, <<"config.json">>, file}]),
 
     %% Complete and get types
     {ok, Results} = erlmcp_cli_completer:complete_with_type(Completer, <<"h">>),
@@ -213,12 +195,11 @@ test_complete_with_types() ->
 %%%====================================================================
 
 test_complete_commands() ->
-    {ok, Completer} = erlmcp_cli_completer:init_with_commands([
-        <<"help">>,
-        <<"version">>,
-        <<"validate">>,
-        <<"verify">>
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init_with_commands([<<"help">>,
+                                                 <<"version">>,
+                                                 <<"validate">>,
+                                                 <<"verify">>]),
 
     %% Complete "ve" → ["verify", "version"]
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"ve">>),
@@ -229,13 +210,12 @@ test_complete_commands() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_complete_subcommands() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"validate">>, [
-            {subcommand, <<"spec">>},
-            {subcommand, <<"protocol">>},
-            {subcommand, <<"transport">>}
-        ]}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command,
+                                    <<"validate">>,
+                                    [{subcommand, <<"spec">>},
+                                     {subcommand, <<"protocol">>},
+                                     {subcommand, <<"transport">>}]}]),
 
     %% Complete "validate s" → ["spec"]
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"validate s">>),
@@ -244,11 +224,10 @@ test_complete_subcommands() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_complete_flags() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {flag, <<"--format">>},
-        {flag, <<"--file">>},
-        {flag, <<"--force">>}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{flag, <<"--format">>},
+                                   {flag, <<"--file">>},
+                                   {flag, <<"--force">>}]),
 
     %% Complete "--f" → ["--file", "--force", "--format"]
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"--f">>),
@@ -309,10 +288,7 @@ test_complete_env_vars() ->
 %%%====================================================================
 
 test_rank_by_frequency() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>},
-        {command, <<"version">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}, {command, <<"version">>}]),
 
     %% Use "help" multiple times
     ok = erlmcp_cli_completer:record_usage(Completer, <<"help">>),
@@ -326,10 +302,7 @@ test_rank_by_frequency() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_rank_by_recency() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>},
-        {command, <<"version">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}, {command, <<"version">>}]),
 
     %% Use "version" most recently
     ok = erlmcp_cli_completer:record_usage(Completer, <<"help">>),
@@ -347,9 +320,7 @@ test_rank_by_recency() ->
 %%%====================================================================
 
 test_fuzzy_matching() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"validate">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"validate">>}]),
 
     %% Enable fuzzy matching
     ok = erlmcp_cli_completer:enable_fuzzy(Completer),
@@ -361,9 +332,7 @@ test_fuzzy_matching() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_case_insensitive() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"Validate">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"Validate">>}]),
 
     %% Enable case-insensitive matching
     ok = erlmcp_cli_completer:set_case_sensitive(Completer, false),
@@ -379,16 +348,16 @@ test_case_insensitive() ->
 %%%====================================================================
 
 test_complete_with_context() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"validate">>, [
-            {subcommand, <<"spec">>},
-            {subcommand, <<"protocol">>}
-        ]}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command,
+                                    <<"validate">>,
+                                    [{subcommand, <<"spec">>}, {subcommand, <<"protocol">>}]}]),
 
     %% Complete with context: after "validate", suggest subcommands
-    {ok, Matches} = erlmcp_cli_completer:complete_with_context(
-        Completer, <<"s">>, #{context => [<<"validate">>]}),
+    {ok, Matches} =
+        erlmcp_cli_completer:complete_with_context(Completer,
+                                                   <<"s">>,
+                                                   #{context => [<<"validate">>]}),
 
     %% Should suggest "spec"
     ?assertEqual([<<"spec">>], Matches),
@@ -400,11 +369,10 @@ test_complete_with_context() ->
 %%%====================================================================
 
 test_complete_wildcards() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"test1">>},
-        {command, <<"test2">>},
-        {command, <<"test3">>}
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command, <<"test1">>},
+                                   {command, <<"test2">>},
+                                   {command, <<"test3">>}]),
 
     %% Complete "test*" → all test commands
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"test*">>),
@@ -417,9 +385,7 @@ test_complete_wildcards() ->
 %%%====================================================================
 
 test_cache_completions() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}]),
 
     %% Enable caching
     ok = erlmcp_cli_completer:enable_cache(Completer),
@@ -460,12 +426,15 @@ test_clear_cache() ->
 
 test_custom_provider() ->
     %% Custom completion provider function
-    CustomProvider = fun(Prefix) ->
-        case Prefix of
-            <<"custom_">> -> [<<"custom_cmd1">>, <<"custom_cmd2">>];
-            _ -> []
-        end
-    end,
+    CustomProvider =
+        fun(Prefix) ->
+           case Prefix of
+               <<"custom_">> ->
+                   [<<"custom_cmd1">>, <<"custom_cmd2">>];
+               _ ->
+                   []
+           end
+        end,
 
     {ok, Completer} = erlmcp_cli_completer:init([]),
 
@@ -483,15 +452,15 @@ test_custom_provider() ->
 %%%====================================================================
 
 test_async_completion() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}]),
 
     %% Request async completion
     Self = self(),
-    ok = erlmcp_cli_completer:complete_async(Completer, <<"h">>, fun(Matches) ->
-        Self ! {completion_result, Matches}
-    end),
+    ok =
+        erlmcp_cli_completer:complete_async(Completer,
+                                            <<"h">>,
+                                            fun(Matches) -> Self ! {completion_result, Matches}
+                                            end),
 
     %% Wait for async result
     receive
@@ -509,10 +478,11 @@ test_async_completion() ->
 
 test_completion_timeout() ->
     %% Slow custom provider
-    SlowProvider = fun(_Prefix) ->
-        timer:sleep(10000),
-        [<<"slow">>]
-    end,
+    SlowProvider =
+        fun(_Prefix) ->
+           timer:sleep(10000),
+           [<<"slow">>]
+        end,
 
     {ok, Completer} = erlmcp_cli_completer:init([], #{timeout => 1000}),
     ok = erlmcp_cli_completer:add_provider(Completer, slow, SlowProvider),
@@ -531,18 +501,14 @@ edge_cases_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Empty prefix completion", fun test_empty_prefix/0},
+     [{"Empty prefix completion", fun test_empty_prefix/0},
       {"Very long prefix", fun test_long_prefix/0},
       {"Special characters in prefix", fun test_special_chars/0},
       {"Unicode prefix", fun test_unicode_prefix/0},
-      {"Completion with duplicates", fun test_duplicates/0}
-     ]}.
+      {"Completion with duplicates", fun test_duplicates/0}]}.
 
 test_empty_prefix() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"help">>}]),
 
     %% Empty prefix → should return all commands
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"">>),
@@ -561,9 +527,7 @@ test_long_prefix() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_special_chars() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"--help">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"--help">>}]),
 
     %% Complete with special characters
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"--h">>),
@@ -572,9 +536,7 @@ test_special_chars() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_unicode_prefix() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"世界">>}
-    ]),
+    {ok, Completer} = erlmcp_cli_completer:init([{command, <<"世界">>}]),
 
     %% Complete Unicode prefix
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"世">>),
@@ -583,10 +545,9 @@ test_unicode_prefix() ->
     ok = erlmcp_cli_completer:stop(Completer).
 
 test_duplicates() ->
-    {ok, Completer} = erlmcp_cli_completer:init([
-        {command, <<"help">>},
-        {command, <<"help">>}  %% Duplicate
-    ]),
+    {ok, Completer} =
+        erlmcp_cli_completer:init([{command, <<"help">>},
+                                   {command, <<"help">>}]),  %% Duplicate
 
     %% Should deduplicate results
     {ok, Matches} = erlmcp_cli_completer:complete(Completer, <<"h">>),

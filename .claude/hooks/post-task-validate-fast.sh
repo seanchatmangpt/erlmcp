@@ -45,6 +45,13 @@ main() {
 
     cd "$PROJECT_ROOT"
 
+    # Source SessionStart environment for OTP 28
+    local env_file="${PROJECT_ROOT}/.erlmcp/env.sh"
+    if [[ -f "$env_file" ]]; then
+        source "$env_file"
+        log_hook "Sourced environment from: $env_file"
+    fi
+
     # Quick validation: compilation only
     log_hook "Running quick validation (compilation)..."
     echo ""

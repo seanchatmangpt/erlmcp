@@ -14,6 +14,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_transport_validator_tests_enhanced).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%===================================================================
@@ -24,68 +25,58 @@ transport_validator_test_() ->
     {setup,
      fun setup_validator/0,
      fun cleanup_validator/1,
-     [
-      %% Callback Validation Tests (10 tests)
+     [%% Callback Validation Tests (10 tests)
       {"Init Callback Exported", fun test_init_exported/0},
       {"Send Callback Exported", fun test_send_exported/0},
       {"Close Callback Exported", fun test_close_exported/0},
-      {"Init Arity Correct", fun test_init_arity/0},
-      {"Send Arity Correct", fun test_send_arity/0},
+      {"Init Arity Correct", fun test_init_arity/0}, {"Send Arity Correct", fun test_send_arity/0},
       {"Close Arity Correct", fun test_close_arity/0},
       {"Gen Server Behavior Declared", fun test_gen_server_behavior/0},
       {"Handle Call Exported", fun test_handle_call_exported/0},
       {"Handle Cast Exported", fun test_handle_cast_exported/0},
       {"Terminate Exported", fun test_terminate_exported/0},
-
       %% STDIO Framing Tests (5 tests)
       {"STDIO Newline Delimited", fun test_stdio_newline_delimited/0},
       {"STDIO JSON Encoding", fun test_stdio_json_encoding/0},
       {"STDIO Message Boundary", fun test_stdio_message_boundary/0},
       {"STDIO Buffer Handling", fun test_stdio_buffer_handling/0},
       {"STDIO Stream Based", fun test_stdio_stream_based/0},
-
       %% TCP Framing Tests (5 tests)
       {"TCP Length Prefix", fun test_tcp_length_prefix/0},
       {"TCP JSON Encoding", fun test_tcp_json_encoding/0},
       {"TCP Buffer Handling", fun test_tcp_buffer_handling/0},
       {"TCP Partial Messages", fun test_tcp_partial_messages/0},
       {"TCP Connection Oriented", fun test_tcp_connection_oriented/0},
-
       %% HTTP Framing Tests (5 tests)
       {"HTTP Content Type", fun test_http_content_type/0},
       {"HTTP POST Method", fun test_http_post_method/0},
       {"HTTP JSON Encoding", fun test_http_json_encoding/0},
       {"HTTP Request Response", fun test_http_request_response/0},
       {"HTTP Status Codes", fun test_http_status_codes/0},
-
       %% WebSocket Framing Tests (5 tests)
       {"WebSocket Text Frames", fun test_websocket_text_frames/0},
       {"WebSocket JSON Encoding", fun test_websocket_json_encoding/0},
       {"WebSocket Frame Types", fun test_websocket_frame_types/0},
       {"WebSocket Connection Upgrade", fun test_websocket_upgrade/0},
       {"WebSocket Message Framing", fun test_websocket_message_framing/0},
-
       %% Registry Integration Tests (5 tests)
       {"Registry Functions Exported", fun test_registry_functions/0},
       {"GPROC Dependency", fun test_gproc_dependency/0},
       {"Registry Registration", fun test_registry_registration/0},
       {"Registry Unregistration", fun test_registry_unregistration/0},
       {"Registry Behavior Compliance", fun test_registry_behavior/0},
-
       %% Lifecycle Tests (5 tests)
       {"Start Link Exported", fun test_start_link_exported/0},
       {"Terminate Cleanup", fun test_terminate_cleanup/0},
       {"Owner Monitoring", fun test_owner_monitoring/0},
       {"Process Initialization", fun test_process_initialization/0},
       {"Graceful Shutdown", fun test_graceful_shutdown/0},
-
       %% Full Validation Tests (5 tests)
       {"STDIO Full Validation", fun test_stdio_full_validation/0},
       {"TCP Full Validation", fun test_tcp_full_validation/0},
       {"HTTP Full Validation", fun test_http_full_validation/0},
       {"WebSocket Full Validation", fun test_websocket_full_validation/0},
-      {"Validation Summary Report", fun test_validation_summary/0}
-     ]}.
+      {"Validation Summary Report", fun test_validation_summary/0}]}.
 
 setup_validator() ->
     {ok, Pid} = erlmcp_transport_validator:start_link(),
@@ -166,8 +157,7 @@ test_stdio_buffer_handling() ->
     ?assertNot(binary:match(PartialMessage, <<"\n">>) =/= nomatch).
 
 test_stdio_stream_based() ->
-    ValidationResult = erlmcp_transport_validator:validate_framing(
-        erlmcp_transport_stdio, stdio),
+    ValidationResult = erlmcp_transport_validator:validate_framing(erlmcp_transport_stdio, stdio),
     ?assertMatch(#{transport_type := stdio}, ValidationResult).
 
 %%%===================================================================
@@ -191,15 +181,14 @@ test_tcp_buffer_handling() ->
 
 test_tcp_partial_messages() ->
     %% TCP must handle partial length-prefixed messages
-    LengthPrefix = <<0,0,0,100>>,  %% 100 bytes message
+    LengthPrefix = <<0, 0, 0, 100>>,  %% 100 bytes message
     PartialJSON = <<"{\"json\":\"partial\"}">>,
     PartialMessage = <<LengthPrefix/binary, PartialJSON/binary>>,
     ?assertEqual(104, byte_size(PartialMessage)),
-    ?assertEqual(100, binary:part(LengthPrefix, {0,4})).
+    ?assertEqual(100, binary:part(LengthPrefix, {0, 4})).
 
 test_tcp_connection_oriented() ->
-    ValidationResult = erlmcp_transport_validator:validate_framing(
-        erlmcp_transport_tcp, tcp),
+    ValidationResult = erlmcp_transport_validator:validate_framing(erlmcp_transport_tcp, tcp),
     ?assertMatch(#{transport_type := tcp}, ValidationResult).
 
 %%%===================================================================
@@ -223,8 +212,7 @@ test_http_json_encoding() ->
 
 test_http_request_response() ->
     %% HTTP is request-response based
-    ValidationResult = erlmcp_transport_validator:validate_framing(
-        erlmcp_transport_http, http),
+    ValidationResult = erlmcp_transport_validator:validate_framing(erlmcp_transport_http, http),
     ?assertMatch(#{transport_type := http}, ValidationResult).
 
 test_http_status_codes() ->
@@ -253,8 +241,7 @@ test_websocket_frame_types() ->
 
 test_websocket_upgrade() ->
     %% WebSocket requires HTTP upgrade
-    ValidationResult = erlmcp_transport_validator:validate_framing(
-        erlmcp_transport_ws, websocket),
+    ValidationResult = erlmcp_transport_validator:validate_framing(erlmcp_transport_ws, websocket),
     ?assertMatch(#{transport_type := websocket}, ValidationResult).
 
 test_websocket_message_framing() ->
@@ -288,9 +275,10 @@ test_registry_behavior() ->
     %% All transports should follow registry behavior
     Transports = [erlmcp_transport_stdio, erlmcp_transport_tcp],
     lists:foreach(fun(T) ->
-        Result = erlmcp_transport_validator:validate_registry(T),
-        ?assertMatch(#{category := registry}, Result)
-    end, Transports).
+                     Result = erlmcp_transport_validator:validate_registry(T),
+                     ?assertMatch(#{category := registry}, Result)
+                  end,
+                  Transports).
 
 %%%===================================================================
 %%% Lifecycle Tests (5 tests)

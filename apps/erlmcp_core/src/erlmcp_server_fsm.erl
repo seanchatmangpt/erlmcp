@@ -7,50 +7,34 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_server_fsm).
+
 -behaviour(gen_statem).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/1,
-    start_link/2,
-    accept_connections/1,
-    drain/1,
-    shutdown/1,
-    state_name/1,
-    stop/1
-]).
-
+-export([start_link/1, start_link/2, accept_connections/1, drain/1, shutdown/1, state_name/1,
+         stop/1]).
 %% gen_statem callbacks
--export([
-    init/1,
-    callback_mode/0,
-    handle_event/4,
-    terminate/3,
-    code_change/4,
-    format_status/2
-]).
+-export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/2]).
 
 %% State names for type specs
 -type server_state() :: initialization | accepting | drain | shutdown.
--type server_id() :: term().
 
--export_type([server_state/0, server_id/0]).
+-export_type([server_state/0]).
 
 %% State data record
--record(data, {
-    server_id :: server_id(),
-    capabilities :: #mcp_server_capabilities{} | undefined,
-    protocol_version :: binary() | undefined,
-    transport :: module() | undefined,
-    transport_state :: term() | undefined,
-    active_connections = [] :: [pid()],
-    drain_timeout_ms = 30000 :: pos_integer(),
-    drain_timeout_ref :: reference() | undefined,
-    init_timeout_ref :: reference() | undefined,
-    options :: map()
-}).
+-record(data,
+        {server_id :: server_id(),
+         capabilities :: #mcp_server_capabilities{} | undefined,
+         protocol_version :: binary() | undefined,
+         transport :: module() | undefined,
+         transport_state :: term() | undefined,
+         active_connections = [] :: [pid()],
+         drain_timeout_ms = 30000 :: pos_integer(),
+         drain_timeout_ref :: reference() | undefined,
+         init_timeout_ref :: reference() | undefined,
+         options :: map()}).
 
 -type state_data() :: #data{}.
 
@@ -100,13 +84,12 @@ init([ServerId, Options]) ->
     %% No blocking operations in init/1 - Armstrong principle
     logger:info("Server FSM ~p initializing", [ServerId]),
 
-    Data = #data{
-        server_id = ServerId,
-        options = Options,
-        drain_timeout_ms = maps:get(drain_timeout_ms, Options, ?DEFAULT_DRAIN_TIMEOUT_MS),
-        capabilities = maps:get(capabilities, Options, #mcp_server_capabilities{}),
-        protocol_version = maps:get(protocol_version, Options, ?MCP_VERSION)
-    },
+    Data =
+        #data{server_id = ServerId,
+              options = Options,
+              drain_timeout_ms = maps:get(drain_timeout_ms, Options, ?DEFAULT_DRAIN_TIMEOUT_MS),
+              capabilities = maps:get(capabilities, Options, #mcp_server_capabilities{}),
+              protocol_version = maps:get(protocol_version, Options, ?MCP_VERSION)},
 
     %% Emit state transition event for debugging
     emit_state_transition(undefined, initialization, Data),
@@ -143,7 +126,7 @@ handle_event(enter, OldState, State, Data) ->
             %% Set drain timeout
             TimeoutRef = erlang:send_after(Data#data.drain_timeout_ms, self(), drain_timeout),
             logger:info("Server ~p draining ~p active connections",
-                       [Data#data.server_id, length(Data#data.active_connections)]),
+                        [Data#data.server_id, length(Data#data.active_connections)]),
             {keep_state, Data#data{drain_timeout_ref = TimeoutRef}};
         shutdown ->
             %% Cleanup all resources
@@ -154,56 +137,43 @@ handle_event(enter, OldState, State, Data) ->
         _ ->
             {keep_state_and_data, []}
     end;
-
 %% Priority messages (OTP 28) - bypass normal queue for control signals
 %% Health check signal
 handle_event({call, From}, {health_check}, State, Data) ->
-    Health = #{
-        state => State,
-        active_connections => length(Data#data.active_connections)
-    },
+    Health = #{state => State, active_connections => length(Data#data.active_connections)},
     {keep_state_and_data, [{reply, From, {ok, Health}}]};
-
 %% Drain signal (graceful shutdown) - Priority message
 handle_event({call, From}, drain, accepting, Data) ->
     logger:info("Server ~p received drain signal", [Data#data.server_id]),
     emit_state_transition(accepting, drain, Data),
     {next_state, drain, Data, [{reply, From, ok}]};
-
 handle_event({call, From}, drain, State, _Data) when State =:= drain; State =:= shutdown ->
     {keep_state_and_data, [{reply, From, ok}]};
-
 handle_event({call, From}, drain, State, _Data) ->
     {keep_state_and_data, [{reply, From, {error, {invalid_state, State}}}]};
-
 %% Cancel signal (immediate abort) - Priority message
 handle_event({call, From}, cancel, _State, Data) ->
     logger:warning("Server ~p received cancel signal", [Data#data.server_id]),
     emit_state_transition(_State, shutdown, Data),
     {next_state, shutdown, Data, [{reply, From, ok}]};
-
 %% Shutdown signal
 handle_event({call, From}, shutdown, _State, Data) ->
     logger:info("Server ~p shutting down", [Data#data.server_id]),
     emit_state_transition(_State, shutdown, Data),
     {next_state, shutdown, Data, [{reply, From, ok}]};
-
 %% State name query
 handle_event({call, From}, state_name, State, _Data) ->
     {keep_state_and_data, [{reply, From, State}]};
-
 %% initialization state events
 handle_event({call, From}, accept_connections, initialization, Data) ->
     logger:info("Server ~p ready to accept connections", [Data#data.server_id]),
     emit_state_transition(initialization, accepting, Data),
     {next_state, accepting, Data, [{reply, From, ok}]};
-
 %% Initialization timeout
 handle_event(info, init_timeout, initialization, Data) ->
     logger:error("Server ~p initialization timeout", [Data#data.server_id]),
     emit_state_transition(initialization, shutdown, Data),
     {next_state, shutdown, Data};
-
 %% accepting state events
 handle_event(info, {connection_established, ConnPid}, accepting, Data) ->
     logger:debug("Server ~p new connection: ~p", [Data#data.server_id, ConnPid]),
@@ -211,9 +181,8 @@ handle_event(info, {connection_established, ConnPid}, accepting, Data) ->
     erlang:monitor(process, ConnPid),
     NewConnections = [ConnPid | Data#data.active_connections],
     {keep_state, Data#data{active_connections = NewConnections}};
-
 handle_event(info, {'DOWN', _Ref, process, ConnPid, _Reason}, State, Data)
-  when State =:= accepting; State =:= drain ->
+    when State =:= accepting; State =:= drain ->
     logger:debug("Server ~p connection terminated: ~p", [Data#data.server_id, ConnPid]),
     NewConnections = lists:delete(ConnPid, Data#data.active_connections),
     NewData = Data#data{active_connections = NewConnections},
@@ -227,29 +196,25 @@ handle_event(info, {'DOWN', _Ref, process, ConnPid, _Reason}, State, Data)
         _ ->
             {keep_state, NewData}
     end;
-
 %% drain state events
 handle_event(info, {connection_established, _ConnPid}, drain, _Data) ->
     %% Reject new connections during drain
     logger:warning("Server ~p rejecting connection during drain", [_Data#data.server_id]),
     {keep_state_and_data, []};
-
 handle_event(info, drain_timeout, drain, Data) ->
     logger:warning("Server ~p drain timeout, forcing shutdown (~p connections remain)",
-                  [Data#data.server_id, length(Data#data.active_connections)]),
+                   [Data#data.server_id, length(Data#data.active_connections)]),
     emit_state_transition(drain, shutdown, Data),
     {next_state, shutdown, Data};
-
 %% Catch-all for unhandled events
 handle_event(EventType, Event, State, Data) ->
     logger:warning("Server ~p unhandled event ~p in state ~p: ~p",
-                  [Data#data.server_id, EventType, State, Event]),
+                   [Data#data.server_id, EventType, State, Event]),
     {keep_state_and_data, []}.
 
 -spec terminate(term(), server_state(), state_data()) -> ok.
 terminate(Reason, State, Data) ->
-    logger:info("Server ~p terminating in state ~p: ~p",
-               [Data#data.server_id, State, Reason]),
+    logger:info("Server ~p terminating in state ~p: ~p", [Data#data.server_id, State, Reason]),
     close_all_connections(Data),
     cleanup_transport(Data),
     cancel_init_timeout(Data),
@@ -257,20 +222,18 @@ terminate(Reason, State, Data) ->
     ok.
 
 -spec code_change(term(), server_state(), state_data(), term()) ->
-    {ok, server_state(), state_data()}.
+                     {ok, server_state(), state_data()}.
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
--spec format_status(Opt, Status) -> term() when
-    Opt :: normal | terminate,
-    Status :: list().
+-spec format_status(Opt, Status) -> term()
+    when Opt :: normal | terminate,
+         Status :: list().
 format_status(_Opt, [_PDict, State, Data]) ->
-    #{
-        state => State,
-        server_id => Data#data.server_id,
-        active_connections => length(Data#data.active_connections),
-        protocol_version => Data#data.protocol_version
-    }.
+    #{state => State,
+      server_id => Data#data.server_id,
+      active_connections => length(Data#data.active_connections),
+      protocol_version => Data#data.protocol_version}.
 
 %%====================================================================
 %% Internal functions
@@ -279,15 +242,14 @@ format_status(_Opt, [_PDict, State, Data]) ->
 -spec emit_state_transition(server_state() | undefined, server_state(), state_data()) -> ok.
 emit_state_transition(OldState, NewState, Data) ->
     %% Emit state transition event for debugging/observability
-    Event = #{
-        type => state_transition,
-        module => ?MODULE,
-        server_id => Data#data.server_id,
-        from_state => OldState,
-        to_state => NewState,
-        active_connections => length(Data#data.active_connections),
-        timestamp => erlang:system_time(millisecond)
-    },
+    Event =
+        #{type => state_transition,
+          module => ?MODULE,
+          server_id => Data#data.server_id,
+          from_state => OldState,
+          to_state => NewState,
+          active_connections => length(Data#data.active_connections),
+          timestamp => erlang:system_time(millisecond)},
     logger:debug("State transition event: ~p", [Event]),
     %% Could also send to telemetry/OTEL here
     ok.
@@ -299,11 +261,14 @@ cleanup_transport(#data{transport = Transport, transport_state = State}) when St
     %% Call transport cleanup if available
     try
         case erlang:function_exported(Transport, close, 1) of
-            true -> Transport:close(State);
-            false -> ok
+            true ->
+                Transport:close(State);
+            false ->
+                ok
         end
     catch
-        _:_ -> ok
+        _:_ ->
+            ok
     end,
     ok;
 cleanup_transport(_) ->
@@ -314,21 +279,20 @@ close_all_connections(#data{active_connections = []}) ->
     ok;
 close_all_connections(#data{active_connections = Connections}) ->
     logger:info("Closing ~p active connections", [length(Connections)]),
-    lists:foreach(
-        fun(Pid) ->
-            case is_process_alive(Pid) of
-                true ->
-                    try
-                        gen_statem:stop(Pid, normal, ?SHUTDOWN_TIMEOUT_MS)
-                    catch
-                        _:_ -> ok
-                    end;
-                false ->
-                    ok
-            end
-        end,
-        Connections
-    ),
+    lists:foreach(fun(Pid) ->
+                     case is_process_alive(Pid) of
+                         true ->
+                             try
+                                 gen_statem:stop(Pid, normal, ?SHUTDOWN_TIMEOUT_MS)
+                             catch
+                                 _:_ ->
+                                     ok
+                             end;
+                         false ->
+                             ok
+                     end
+                  end,
+                  Connections),
     ok.
 
 -spec cancel_init_timeout(state_data()) -> ok.

@@ -1,4 +1,5 @@
 -module(erlmcp_compliance_report_tests).
+
 -author("erlmcp").
 
 -include_lib("eunit/include/eunit.hrl").
@@ -12,8 +13,7 @@ evidence_test_() ->
     {setup,
      fun setup_evidence/0,
      fun cleanup_evidence/1,
-     [
-      {"collect evidence for test results", fun test_collect_test_evidence/0},
+     [{"collect evidence for test results", fun test_collect_test_evidence/0},
       {"collect evidence for coverage metrics", fun test_collect_coverage_evidence/0},
       {"collect evidence for security scan", fun test_collect_security_evidence/0},
       {"collect evidence for performance benchmark", fun test_collect_performance_evidence/0},
@@ -27,8 +27,7 @@ evidence_test_() ->
       {"link evidence to receipt chain", fun test_link_receipt_chain/0},
       {"handle invalid evidence type", fun test_invalid_evidence_type/0},
       {"handle file write errors", fun test_file_write_errors/0},
-      {"handle missing evidence directory", fun test_missing_evidence_directory/0}
-     ]}.
+      {"handle missing evidence directory", fun test_missing_evidence_directory/0}]}.
 
 %%%====================================================================
 %%% Setup and Cleanup
@@ -36,8 +35,11 @@ evidence_test_() ->
 
 setup_evidence() ->
     %% Create temporary directory for evidence
-    TmpDir = filename:join(["/tmp", "evidence_" ++ integer_to_list(erlang:unique_integer([positive]))]),
-    ok = filelib:ensure_dir(filename:join([TmpDir, ".gitkeep"])),
+    TmpDir =
+        filename:join(["/tmp", "evidence_" ++ integer_to_list(erlang:unique_integer([positive]))]),
+    ok =
+        filelib:ensure_dir(
+            filename:join([TmpDir, ".gitkeep"])),
     %% Start application if needed
     application:ensure_all_started(erlmcp_validation),
     {TmpDir}.
@@ -49,12 +51,15 @@ cleanup_evidence({TmpDir}) ->
             ok = file:del_dir(TmpDir);
         {ok, Files} ->
             lists:foreach(fun(F) ->
-                File = filename:join([TmpDir, F]),
-                case file:del_file(File) of
-                    ok -> ok;
-                    {error, _} -> ok
-                end
-            end, Files),
+                             File = filename:join([TmpDir, F]),
+                             case file:del_file(File) of
+                                 ok ->
+                                     ok;
+                                 {error, _} ->
+                                     ok
+                             end
+                          end,
+                          Files),
             ok = file:del_dir(TmpDir);
         {error, _} ->
             ok
@@ -71,30 +76,32 @@ cleanup_recursive(Dir) ->
             file:del_dir(Dir);
         {ok, Files} ->
             lists:foreach(fun(F) ->
-                Path = filename:join([Dir, F]),
-                case filelib:is_dir(Path) of
-                    true -> cleanup_recursive(Path);
-                    false -> file:del_file(Path)
-                end
-            end),
+                             Path = filename:join([Dir, F]),
+                             case filelib:is_dir(Path) of
+                                 true ->
+                                     cleanup_recursive(Path);
+                                 false ->
+                                     file:del_file(Path)
+                             end
+                          end),
             file:del_dir(Dir);
         {error, _} ->
             ok
     end.
+
 %%% Test Cases
 %%%====================================================================
 
 %% @doc Test collecting evidence for test results
 test_collect_test_evidence() ->
     %% Given: Test result data
-    TestData = #{
-        type => test_result,
-        module => erlmcp_json_rpc_tests,
-        function => test_encode_request,
-        status => passed,
-        runtime_ms => 5,
-        timestamp => "2026-01-30T12:00:00Z"
-    },
+    TestData =
+        #{type => test_result,
+          module => erlmcp_json_rpc_tests,
+          function => test_encode_request,
+          status => passed,
+          runtime_ms => 5,
+          timestamp => "2026-01-30T12:00:00Z"},
 
     %% When: Collecting evidence
     {ok, Evidence} = erlmcp_compliance_report:collect_evidence(test_result, TestData),
@@ -112,14 +119,13 @@ test_collect_test_evidence() ->
 %% @doc Test collecting evidence for coverage metrics
 test_collect_coverage_evidence() ->
     %% Given: Coverage data
-    CoverageData = #{
-        type => coverage_metrics,
-        module => erlmcp_json_rpc,
-        coverage_percentage => 85.5,
-        lines_covered => 425,
-        lines_total => 497,
-        timestamp => "2026-01-30T12:00:00Z"
-    },
+    CoverageData =
+        #{type => coverage_metrics,
+          module => erlmcp_json_rpc,
+          coverage_percentage => 85.5,
+          lines_covered => 425,
+          lines_total => 497,
+          timestamp => "2026-01-30T12:00:00Z"},
 
     %% When: Collecting evidence
     {ok, Evidence} = erlmcp_compliance_report:collect_evidence(coverage_metrics, CoverageData),
@@ -132,13 +138,17 @@ test_collect_coverage_evidence() ->
 %% @doc Test collecting evidence for security scan
 test_collect_security_evidence() ->
     %% Given: Security scan data
-    SecurityData = #{
-        type => security_scan,
-        scanner => bandit,
-        issues_found => 0,
-        timestamp => "2026-01-30T12:00:00Z",
-        scan_report => #{severity => #{critical => 0, high => 0, medium => 0, low => 0}}
-    },
+    SecurityData =
+        #{type => security_scan,
+          scanner => bandit,
+          issues_found => 0,
+          timestamp => "2026-01-30T12:00:00Z",
+          scan_report =>
+              #{severity =>
+                    #{critical => 0,
+                      high => 0,
+                      medium => 0,
+                      low => 0}}},
 
     %% When: Collecting evidence
     {ok, Evidence} = erlmcp_compliance_report:collect_evidence(security_scan, SecurityData),
@@ -151,18 +161,18 @@ test_collect_security_evidence() ->
 %% @doc Test collecting evidence for performance benchmark
 test_collect_performance_evidence() ->
     %% Given: Benchmark data
-    BenchmarkData = #{
-        type => performance_benchmark,
-        benchmark_name => core_ops_100k,
-        throughput_ops_per_sec => 2690000,
-        latency_p50_us => 150,
-        latency_p95_us => 300,
-        latency_p99_us => 450,
-        timestamp => "2026-01-30T12:00:00Z"
-    },
+    BenchmarkData =
+        #{type => performance_benchmark,
+          benchmark_name => core_ops_100k,
+          throughput_ops_per_sec => 2690000,
+          latency_p50_us => 150,
+          latency_p95_us => 300,
+          latency_p99_us => 450,
+          timestamp => "2026-01-30T12:00:00Z"},
 
     %% When: Collecting evidence
-    {ok, Evidence} = erlmcp_compliance_report:collect_evidence(performance_benchmark, BenchmarkData),
+    {ok, Evidence} =
+        erlmcp_compliance_report:collect_evidence(performance_benchmark, BenchmarkData),
 
     %% Then: Evidence should contain performance metrics
     ?assert(is_map(Evidence)),
@@ -172,17 +182,17 @@ test_collect_performance_evidence() ->
 %% @doc Test collecting evidence for compliance validation
 test_collect_compliance_evidence() ->
     %% Given: Compliance validation data
-    ComplianceData = #{
-        type => compliance_validation,
-        spec_version => "2025-11-25",
-        overall_compliance => 95.5,
-        requirements_checked => 100,
-        requirements_passed => 95,
-        timestamp => "2026-01-30T12:00:00Z"
-    },
+    ComplianceData =
+        #{type => compliance_validation,
+          spec_version => "2025-11-25",
+          overall_compliance => 95.5,
+          requirements_checked => 100,
+          requirements_passed => 95,
+          timestamp => "2026-01-30T12:00:00Z"},
 
     %% When: Collecting evidence
-    {ok, Evidence} = erlmcp_compliance_report:collect_evidence(compliance_validation, ComplianceData),
+    {ok, Evidence} =
+        erlmcp_compliance_report:collect_evidence(compliance_validation, ComplianceData),
 
     %% Then: Evidence should contain compliance information
     ?assert(is_map(Evidence)),
@@ -214,11 +224,10 @@ test_verify_evidence_integrity() ->
     %% Given: Evidence with known hash
     Content = #{test => "verify integrity", value => 123},
     {ok, OriginalHash} = erlmcp_compliance_report:hash_evidence(Content),
-    Evidence = #{
-        content => Content,
-        hash => OriginalHash,
-        timestamp => "2026-01-30T12:00:00Z"
-    },
+    Evidence =
+        #{content => Content,
+          hash => OriginalHash,
+          timestamp => "2026-01-30T12:00:00Z"},
 
     %% When: Verifying evidence
     Result = erlmcp_compliance_report:verify_evidence_integrity(Content, OriginalHash),
@@ -244,22 +253,17 @@ test_store_evidence_bundle() ->
     %% Given: Evidence bundle
     {TmpDir} = setup_evidence(),
     BundleId = "test_bundle_" ++ integer_to_list(erlang:unique_integer([positive])),
-    EvidenceItems = [
-        #{
-            evidence_id => <<"ev1">>,
-            evidence_type => <<"test_result">>,
-            content => #{test => "data1"},
-            hash => <<"hash1">>,
-            timestamp => "2026-01-30T12:00:00Z"
-        },
-        #{
-            evidence_id => <<"ev2">>,
-            evidence_type => <<"coverage_metrics">>,
-            content => #{coverage => 85.5},
-            hash => <<"hash2">>,
-            timestamp => "2026-01-30T12:01:00Z"
-        }
-    ],
+    EvidenceItems =
+        [#{evidence_id => <<"ev1">>,
+           evidence_type => <<"test_result">>,
+           content => #{test => "data1"},
+           hash => <<"hash1">>,
+           timestamp => "2026-01-30T12:00:00Z"},
+         #{evidence_id => <<"ev2">>,
+           evidence_type => <<"coverage_metrics">>,
+           content => #{coverage => 85.5},
+           hash => <<"hash2">>,
+           timestamp => "2026-01-30T12:01:00Z"}],
 
     %% When: Storing evidence bundle
     BundlePath = filename:join([TmpDir, BundleId]),
@@ -270,12 +274,17 @@ test_store_evidence_bundle() ->
 
     %% Verify files exist
     ?assert(filelib:is_dir(BundlePath)),
-    ?assert(filelib:is_file(filename:join([BundlePath, "bundle_manifest.json"]))),
-    ?assert(filelib:is_file(filename:join([BundlePath, "ev1.json"]))),
-    ?assert(filelib:is_file(filename:join([BundlePath, "ev2.json"]))),
+    ?assert(filelib:is_file(
+                filename:join([BundlePath, "bundle_manifest.json"]))),
+    ?assert(filelib:is_file(
+                filename:join([BundlePath, "ev1.json"]))),
+    ?assert(filelib:is_file(
+                filename:join([BundlePath, "ev2.json"]))),
 
     %% Verify manifest content
-    {ok, ManifestContent} = file:read_file(filename:join([BundlePath, "bundle_manifest.json"])),
+    {ok, ManifestContent} =
+        file:read_file(
+            filename:join([BundlePath, "bundle_manifest.json"])),
     Manifest = jsx:decode(ManifestContent, [return_maps]),
     ?assert(maps:is_key(<<"bundle_id">>, Manifest)),
     ?assert(maps:is_key(<<"evidence_count">>, Manifest)),
@@ -297,30 +306,27 @@ test_create_evidence_bundle() ->
     %% Then: Directory structure should be created
     ?assertMatch({ok, _}, Result),
     ?assert(filelib:is_dir(BundlePath)),
-    ?assert(filelib:is_dir(filename:join([BundlePath, "evidence"]))),
-    ?assert(filelib:is_dir(filename:join([BundlePath, "metadata"]))),
+    ?assert(filelib:is_dir(
+                filename:join([BundlePath, "evidence"]))),
+    ?assert(filelib:is_dir(
+                filename:join([BundlePath, "metadata"]))),
 
     cleanup_evidence({TmpDir}).
 
 %% @doc Test generating evidence report
 test_generate_evidence_report() ->
     %% Given: Collected evidence items
-    EvidenceItems = [
-        #{
-            evidence_id => <<"ev1">>,
-            evidence_type => <<"test_result">>,
-            content => #{module => test_module, status => passed},
-            hash => <<"hash1">>,
-            timestamp => "2026-01-30T12:00:00Z"
-        },
-        #{
-            evidence_id => <<"ev2">>,
-            evidence_type => <<"coverage_metrics">>,
-            content => #{coverage => 90.0},
-            hash => <<"hash2">>,
-            timestamp => "2026-01-30T12:01:00Z"
-        }
-    ],
+    EvidenceItems =
+        [#{evidence_id => <<"ev1">>,
+           evidence_type => <<"test_result">>,
+           content => #{module => test_module, status => passed},
+           hash => <<"hash1">>,
+           timestamp => "2026-01-30T12:00:00Z"},
+         #{evidence_id => <<"ev2">>,
+           evidence_type => <<"coverage_metrics">>,
+           content => #{coverage => 90.0},
+           hash => <<"hash2">>,
+           timestamp => "2026-01-30T12:01:00Z"}],
 
     %% When: Generating evidence report
     Report = erlmcp_compliance_report:generate_evidence_report(EvidenceItems),
@@ -346,11 +352,10 @@ test_link_receipt_chain() ->
     BundlePath = filename:join([TmpDir, BundleId]),
 
     EvidenceId = <<"ev_receipt_1">>,
-    ReceiptChain = #{
-        previous_hash => <<"prev_hash_123">>,
-        transaction_id => <<"tx_456">>,
-        timestamp => "2026-01-30T12:00:00Z"
-    },
+    ReceiptChain =
+        #{previous_hash => <<"prev_hash_123">>,
+          transaction_id => <<"tx_456">>,
+          timestamp => "2026-01-30T12:00:00Z"},
 
     %% When: Linking to receipt chain
     Result = erlmcp_compliance_report:link_receipt_chain(BundlePath, ReceiptChain),
@@ -374,10 +379,7 @@ test_link_receipt_chain() ->
 %% @doc Test handling invalid evidence type
 test_invalid_evidence_type() ->
     %% Given: Invalid evidence type
-    InvalidData = #{
-        type => invalid_type,
-        data => some_data
-    },
+    InvalidData = #{type => invalid_type, data => some_data},
 
     %% When: Collecting evidence
     Result = erlmcp_compliance_report:collect_evidence(invalid_type, InvalidData),
@@ -390,15 +392,12 @@ test_file_write_errors() ->
     %% Given: Invalid path (non-existent directory with no write permissions)
     InvalidPath = "/root/non_existent_path/no_write_permissions",
 
-    EvidenceItems = [
-        #{
-            evidence_id => <<"ev1">>,
-            evidence_type => <<"test_result">>,
-            content => #{test => "data"},
-            hash => <<"hash1">>,
-            timestamp => "2026-01-30T12:00:00Z"
-        }
-    ],
+    EvidenceItems =
+        [#{evidence_id => <<"ev1">>,
+           evidence_type => <<"test_result">>,
+           content => #{test => "data"},
+           hash => <<"hash1">>,
+           timestamp => "2026-01-30T12:00:00Z"}],
 
     %% When: Trying to store to invalid path
     Result = erlmcp_compliance_report:store_evidence_bundle(InvalidPath, EvidenceItems),
@@ -414,15 +413,12 @@ test_missing_evidence_directory() ->
     BundlePath = filename:join([TmpDir, BundleId]),
 
     %% Don't create the directory
-    EvidenceItems = [
-        #{
-            evidence_id => <<"ev1">>,
-            evidence_type => <<"test_result">>,
-            content => #{test => "data"},
-            hash => <<"hash1">>,
-            timestamp => "2026-01-30T12:00:00Z"
-        }
-    ],
+    EvidenceItems =
+        [#{evidence_id => <<"ev1">>,
+           evidence_type => <<"test_result">>,
+           content => #{test => "data"},
+           hash => <<"hash1">>,
+           timestamp => "2026-01-30T12:00:00Z"}],
 
     %% When: Storing evidence (should auto-create directory)
     Result = erlmcp_compliance_report:store_evidence_bundle(BundlePath, EvidenceItems),
@@ -441,9 +437,7 @@ evidence_collection_workflow_test_() ->
     {setup,
      fun setup_evidence/0,
      fun cleanup_evidence/1,
-     [
-      {"complete evidence collection workflow", fun test_full_workflow/0}
-     ]}.
+     [{"complete evidence collection workflow", fun test_full_workflow/0}]}.
 
 %% @doc Test complete evidence collection workflow
 test_full_workflow() ->
@@ -456,21 +450,28 @@ test_full_workflow() ->
     ?assert(filelib:is_dir(BundleDir)),
 
     %% Step 2: Collect different types of evidence
-    TestData = #{type => test_result, module => test_module, status => passed},
+    TestData =
+        #{type => test_result,
+          module => test_module,
+          status => passed},
     {ok, TestEvidence} = erlmcp_compliance_report:collect_evidence(test_result, TestData),
     ?assert(maps:is_key(hash, TestEvidence)),
 
     CoverageData = #{type => coverage_metrics, coverage => 85.5},
-    {ok, CoverageEvidence} = erlmcp_compliance_report:collect_evidence(coverage_metrics, CoverageData),
+    {ok, CoverageEvidence} =
+        erlmcp_compliance_report:collect_evidence(coverage_metrics, CoverageData),
     ?assert(maps:is_key(hash, CoverageEvidence)),
 
     %% Step 3: Verify hashes
     TestContent = maps:get(content, TestEvidence),
     TestHash = maps:get(hash, TestEvidence),
-    ?assertEqual({ok, true}, erlmcp_compliance_report:verify_evidence_integrity(TestContent, TestHash)),
+    ?assertEqual({ok, true},
+                 erlmcp_compliance_report:verify_evidence_integrity(TestContent, TestHash)),
 
     %% Step 4: Store evidence bundle
-    {ok, StoredPath} = erlmcp_compliance_report:store_evidence_bundle(BundlePath, [TestEvidence, CoverageEvidence]),
+    {ok, StoredPath} =
+        erlmcp_compliance_report:store_evidence_bundle(BundlePath,
+                                                       [TestEvidence, CoverageEvidence]),
     ?assert(filelib:is_dir(StoredPath)),
 
     %% Step 5: Link to receipt chain

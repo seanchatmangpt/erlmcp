@@ -76,15 +76,21 @@ Download and build OTP 28.3.1 from official Erlang Solutions packages.
 
 Check OTP version and verify compilation readiness.
 
+**IMPORTANT**: Always source the environment file first to ensure OTP 28 is used:
+```bash
+source .erlmcp/env.sh
+```
+
 **Behavior**:
-1. Detect installed OTP version (erl -noshell -eval)
-2. Compare against required version (28.3.1)
-3. Test basic compilation (rebar3 version)
-4. Return verification result
+1. Source `.erlmcp/env.sh` (ensures OTP 28.3.1 in PATH)
+2. Detect installed OTP version (erl -noshell -eval)
+3. Compare against required version (28.3.1)
+4. Test basic compilation (rebar3 version)
+5. Return verification result
 
 **Checks Performed**:
 - OTP version >= 28.3.1
-- erl command available
+- erl command available (from .erlmcp/env.sh)
 - rebar3 command available
 - Basic compilation works
 
@@ -106,7 +112,7 @@ Check OTP version and verify compilation readiness.
 **Example**:
 ```bash
 /otp-manager verify
-# Checks OTP version and compilation readiness
+# Sources .erlmcp/env.sh, checks OTP version and compilation readiness
 # Returns: exit code 0-3 (see above)
 ```
 

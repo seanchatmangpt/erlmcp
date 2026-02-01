@@ -1,48 +1,26 @@
 -module(erlmcp_session_manager).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/0,
-    create_session/1,
-    create_session/2,
-    create_session/3,
-    get_session/1,
-    update_session/2,
-    delete_session/1,
-    list_sessions/0,
-    list_sessions/1,
-    cleanup_expired/0,
-    set_timeout/2,
-    touch_session/1,
-    persist_session/1,
-    persist_session/2,
-    load_session/1,
-    delete_persistent/1
-]).
-
+-export([start_link/0, create_session/1, create_session/2, create_session/3, get_session/1,
+         update_session/2, delete_session/1, list_sessions/0, list_sessions/1, cleanup_expired/0,
+         set_timeout/2, touch_session/1, persist_session/1, persist_session/2, load_session/1,
+         delete_persistent/1]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
 -type session_id() :: binary().
--type session_data() :: #{
-    id := session_id(),
-    created_at := integer(),
-    last_accessed := integer(),
-    timeout_ms := pos_integer() | infinity,
-    metadata := map(),
-    replication_ref => reference()
-}.
+-type session_data() ::
+    #{id := session_id(),
+      created_at := integer(),
+      last_accessed := integer(),
+      timeout_ms := pos_integer() | infinity,
+      metadata := map(),
+      replication_ref => reference()}.
 
 -export_type([session_id/0, session_data/0]).
 
@@ -50,23 +28,20 @@
 -type state_version() :: v1 | v2.
 
 %% Mnesia record for persistent sessions
--record(persistent_session, {
-    session_id :: binary(),
-    session :: map(),
-    created_at :: integer(),
-    last_accessed :: integer(),
-    ttl :: integer()
-}).
-
+-record(persistent_session,
+        {session_id :: binary(),
+         session :: map(),
+         created_at :: integer(),
+         last_accessed :: integer(),
+         ttl :: integer()}).
 %% State record
--record(state, {
-    version = v1 :: state_version(),  % State version for hot code loading
-    table :: ets:tid(),
-    cleanup_timer :: reference() | undefined,
-    cleanup_interval_ms = 60000 :: pos_integer(),  % 1 minute
-    default_timeout_ms = 3600000 :: pos_integer(),  % 1 hour
-    persistent_enabled = false :: boolean()  % Mnesia persistence flag
-}).
+-record(state,
+        {version = v1 :: state_version(),  % State version for hot code loading
+         table :: ets:tid(),
+         cleanup_timer :: reference() | undefined,
+         cleanup_interval_ms = 60000 :: pos_integer(),  % 1 minute
+         default_timeout_ms = 3600000 :: pos_integer(),  % 1 hour
+         persistent_enabled = false :: boolean()}).  % Mnesia persistence flag
 
 -define(TABLE_NAME, erlmcp_sessions).
 -define(PERSISTENT_TABLE_NAME, erlmcp_persistent_sessions).
@@ -90,7 +65,8 @@ create_session(Metadata) ->
 create_session(Metadata, TimeoutMs) ->
     create_session(Metadata, TimeoutMs, #{}).
 
--spec create_session(map(), pos_integer() | infinity, map()) -> {ok, session_id()} | {error, term()}.
+-spec create_session(map(), pos_integer() | infinity, map()) ->
+                        {ok, session_id()} | {error, term()}.
 create_session(Metadata, TimeoutMs, Options) ->
     gen_server:call(?MODULE, {create_session, Metadata, TimeoutMs, Options}).
 
@@ -98,7 +74,8 @@ create_session(Metadata, TimeoutMs, Options) ->
 get_session(SessionId) ->
     gen_server:call(?MODULE, {get_session, SessionId}).
 
--spec update_session(session_id(), fun((session_data()) -> session_data())) -> ok | {error, not_found}.
+-spec update_session(session_id(), fun((session_data()) -> session_data())) ->
+                        ok | {error, not_found}.
 update_session(SessionId, UpdateFun) ->
     gen_server:call(?MODULE, {update_session, SessionId, UpdateFun}).
 
@@ -155,30 +132,27 @@ init([]) ->
     process_flag(trap_exit, true),
 
     %% Fast init - minimal state setup, no blocking operations
-    State = #state{
-        cleanup_interval_ms = ?DEFAULT_CLEANUP_INTERVAL,
-        default_timeout_ms = ?DEFAULT_SESSION_TIMEOUT,
-        persistent_enabled = false
-    },
+    State =
+        #state{cleanup_interval_ms = ?DEFAULT_CLEANUP_INTERVAL,
+               default_timeout_ms = ?DEFAULT_SESSION_TIMEOUT,
+               persistent_enabled = false},
 
     logger:info("Starting session manager (async initialization)"),
     % Schedule async initialization - won't block supervisor
     {ok, State, {continue, initialize_storage}}.
 
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}} | {noreply, #state{}}.
-
+                     {reply, term(), #state{}} | {noreply, #state{}}.
 handle_call({create_session, Metadata, TimeoutMs}, _From, State) ->
     SessionId = generate_session_id(),
     Now = erlang:system_time(millisecond),
 
-    SessionData = #{
-        id => SessionId,
-        created_at => Now,
-        last_accessed => Now,
-        timeout_ms => TimeoutMs,
-        metadata => Metadata
-    },
+    SessionData =
+        #{id => SessionId,
+          created_at => Now,
+          last_accessed => Now,
+          timeout_ms => TimeoutMs,
+          metadata => Metadata},
 
     true = ets:insert(State#state.table, {SessionData, SessionId}),
 
@@ -186,7 +160,6 @@ handle_call({create_session, Metadata, TimeoutMs}, _From, State) ->
     notify_replicator({session_created, SessionId, SessionData}),
 
     {reply, {ok, SessionId}, State};
-
 handle_call({get_session, SessionId}, _From, State) ->
     case ets:lookup(State#state.table, SessionId) of
         [{SessionData, SessionId}] ->
@@ -199,7 +172,6 @@ handle_call({get_session, SessionId}, _From, State) ->
         [] ->
             {reply, {error, not_found}, State}
     end;
-
 handle_call({update_session, SessionId, UpdateFun}, _From, State) ->
     case ets:lookup(State#state.table, SessionId) of
         [{SessionData, SessionId}] ->
@@ -220,7 +192,6 @@ handle_call({update_session, SessionId, UpdateFun}, _From, State) ->
         [] ->
             {reply, {error, not_found}, State}
     end;
-
 handle_call({delete_session, SessionId}, _From, State) ->
     ets:delete(State#state.table, SessionId),
 
@@ -228,34 +199,28 @@ handle_call({delete_session, SessionId}, _From, State) ->
     notify_replicator({session_deleted, SessionId}),
 
     {reply, ok, State};
-
 handle_call(list_sessions, _From, State) ->
-    Sessions = ets:foldl(
-        fun({SessionData, _SessionId}, Acc) ->
-            [SessionData | Acc]
-        end,
-        [],
-        State#state.table
-    ),
+    Sessions =
+        ets:foldl(fun({SessionData, _SessionId}, Acc) -> [SessionData | Acc] end,
+                  [],
+                  State#state.table),
     {reply, Sessions, State};
-
 handle_call({list_sessions, FilterFun}, _From, State) ->
-    Sessions = ets:foldl(
-        fun({SessionData, _SessionId}, Acc) ->
-            case FilterFun(SessionData) of
-                true -> [SessionData | Acc];
-                false -> Acc
-            end
-        end,
-        [],
-        State#state.table
-    ),
+    Sessions =
+        ets:foldl(fun({SessionData, _SessionId}, Acc) ->
+                     case FilterFun(SessionData) of
+                         true ->
+                             [SessionData | Acc];
+                         false ->
+                             Acc
+                     end
+                  end,
+                  [],
+                  State#state.table),
     {reply, Sessions, State};
-
 handle_call(cleanup_expired, _From, State) ->
     Count = do_cleanup_expired(State),
     {reply, {ok, Count}, State};
-
 handle_call({set_timeout, SessionId, TimeoutMs}, _From, State) ->
     case ets:lookup(State#state.table, SessionId) of
         [{SessionData, SessionId}] ->
@@ -269,7 +234,6 @@ handle_call({set_timeout, SessionId, TimeoutMs}, _From, State) ->
         [] ->
             {reply, {error, not_found}, State}
     end;
-
 handle_call({touch_session, SessionId}, _From, State) ->
     case ets:lookup(State#state.table, SessionId) of
         [{SessionData, SessionId}] ->
@@ -280,7 +244,6 @@ handle_call({touch_session, SessionId}, _From, State) ->
         [] ->
             {reply, {error, not_found}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -289,52 +252,52 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_continue(term(), #state{}) -> {noreply, #state{}}.
-
 %% Async storage initialization - doesn't block supervisor
 handle_continue(initialize_storage, State) ->
     %% Create ETS table for session storage (in-memory cache)
     %% - ordered_set for efficient range queries
     %% - public for direct reads (optional optimization)
     %% - {read_concurrency, true} for better read performance
-    Table = ets:new(?TABLE_NAME, [
-        ordered_set,
-        public,
-        named_table,
-        {read_concurrency, true},
-        {keypos, 2}  % Use session id as key (position 2 in tuple {session_data, id, ...})
-    ]),
+    Table =
+        ets:new(?TABLE_NAME,
+                [ordered_set,
+                 public,
+                 named_table,
+                 {read_concurrency, true},
+                 {keypos,
+                  2}]),  % Use session id as key (position 2 in tuple {session_data, id, ...})
 
     %% Create Mnesia table for persistent sessions (Joe Armstrong: "Databases are for persistence")
     %% This can be slow but won't block supervisor startup
-    PersistentEnabled = case mnesia:create_table(?PERSISTENT_TABLE_NAME, [
-        {disc_copies, [node()]},
-        {attributes, record_info(fields, persistent_session)},
-        {type, set}
-    ]) of
-        {atomic, ok} ->
-            logger:info("Created Mnesia persistent sessions table: ~p", [?PERSISTENT_TABLE_NAME]),
-            true;
-        {aborted, {already_exists, _}} ->
-            logger:info("Mnesia persistent sessions table already exists: ~p", [?PERSISTENT_TABLE_NAME]),
-            true;
-        {aborted, Reason} ->
-            logger:error("Failed to create Mnesia table: ~p", [Reason]),
-            false
-    end,
+    PersistentEnabled =
+        case mnesia:create_table(?PERSISTENT_TABLE_NAME,
+                                 [{disc_copies, [node()]},
+                                  {attributes, record_info(fields, persistent_session)},
+                                  {type, set}])
+        of
+            {atomic, ok} ->
+                logger:info("Created Mnesia persistent sessions table: ~p",
+                            [?PERSISTENT_TABLE_NAME]),
+                true;
+            {aborted, {already_exists, _}} ->
+                logger:info("Mnesia persistent sessions table already exists: ~p",
+                            [?PERSISTENT_TABLE_NAME]),
+                true;
+            {aborted, Reason} ->
+                logger:error("Failed to create Mnesia table: ~p", [Reason]),
+                false
+        end,
 
     %% Start cleanup timer
     CleanupTimer = schedule_cleanup(?DEFAULT_CLEANUP_INTERVAL),
 
-    NewState = State#state{
-        table = Table,
-        cleanup_timer = CleanupTimer,
-        persistent_enabled = PersistentEnabled
-    },
+    NewState =
+        State#state{table = Table,
+                    cleanup_timer = CleanupTimer,
+                    persistent_enabled = PersistentEnabled},
 
-    logger:info("Session manager initialized (ETS: ~p, Mnesia: ~p)",
-               [Table, PersistentEnabled]),
+    logger:info("Session manager initialized (ETS: ~p, Mnesia: ~p)", [Table, PersistentEnabled]),
     {noreply, NewState};
-
 handle_continue(_Continue, State) ->
     {noreply, State}.
 
@@ -343,12 +306,13 @@ handle_info(cleanup_expired, State) ->
     Count = do_cleanup_expired(State),
     %% Log cleanup if any sessions were removed
     case Count > 0 of
-        true -> logger:debug("Session cleanup removed ~p expired sessions", [Count]);
-        false -> ok
+        true ->
+            logger:debug("Session cleanup removed ~p expired sessions", [Count]);
+        false ->
+            ok
     end,
     NewTimer = schedule_cleanup(State#state.cleanup_interval_ms),
     {noreply, State#state{cleanup_timer = NewTimer}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -356,9 +320,11 @@ handle_info(_Info, State) ->
 terminate(_Reason, State) ->
     %% Cancel cleanup timer
     _ = case State#state.cleanup_timer of
-        undefined -> ok;
-        Timer -> erlang:cancel_timer(Timer)
-    end,
+            undefined ->
+                ok;
+            Timer ->
+                erlang:cancel_timer(Timer)
+        end,
 
     %% Delete ETS table
     ets:delete(State#state.table),
@@ -373,8 +339,7 @@ code_change(OldVsn, State, Extra) ->
         {ok, NewState}
     catch
         Class:Reason:Stack ->
-            logger:error("Session manager: Code change failed: ~p:~p~n~p",
-                        [Class, Reason, Stack]),
+            logger:error("Session manager: Code change failed: ~p:~p~n~p", [Class, Reason, Stack]),
             error({code_change_failed, Class, Reason})
     end.
 
@@ -386,11 +351,13 @@ migrate_session_state(_OldVsn, #state{version = v1} = State, _Extra) ->
 migrate_session_state({down, _FromVsn}, #state{} = State, _Extra) ->
     %% Downgrade migration - ensure version field exists
     case State#state.version of
-        undefined -> State#state{version = v1};
-        _ -> State
+        undefined ->
+            State#state{version = v1};
+        _ ->
+            State
     end;
 migrate_session_state(OldVsn, #state{version = undefined} = State, _Extra)
-  when is_list(OldVsn); is_atom(OldVsn) ->
+    when is_list(OldVsn); is_atom(OldVsn) ->
     %% Legacy state (pre-versioning) - upgrade to v1
     logger:info("Session manager: Upgrading legacy state to v1"),
     State#state{version = v1};
@@ -417,25 +384,24 @@ do_cleanup_expired(State) ->
     Now = erlang:system_time(millisecond),
 
     %% Find expired sessions
-    ExpiredSessions = ets:foldl(
-        fun({SessionData, SessionId}, Acc) ->
-            case is_expired(SessionData, Now) of
-                true -> [SessionId | Acc];
-                false -> Acc
-            end
-        end,
-        [],
-        State#state.table
-    ),
+    ExpiredSessions =
+        ets:foldl(fun({SessionData, SessionId}, Acc) ->
+                     case is_expired(SessionData, Now) of
+                         true ->
+                             [SessionId | Acc];
+                         false ->
+                             Acc
+                     end
+                  end,
+                  [],
+                  State#state.table),
 
     %% Delete expired sessions
-    lists:foreach(
-        fun(SessionId) ->
-            ets:delete(State#state.table, SessionId),
-            notify_replicator({session_expired, SessionId})
-        end,
-        ExpiredSessions
-    ),
+    lists:foreach(fun(SessionId) ->
+                     ets:delete(State#state.table, SessionId),
+                     notify_replicator({session_expired, SessionId})
+                  end,
+                  ExpiredSessions),
 
     length(ExpiredSessions).
 
@@ -443,7 +409,7 @@ do_cleanup_expired(State) ->
 is_expired(#{timeout_ms := infinity}, _Now) ->
     false;
 is_expired(#{last_accessed := LastAccessed, timeout_ms := TimeoutMs}, Now) ->
-    (Now - LastAccessed) > TimeoutMs.
+    Now - LastAccessed > TimeoutMs.
 
 -spec notify_replicator(term()) -> ok.
 notify_replicator(Event) ->

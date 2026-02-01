@@ -23,20 +23,11 @@
 -module(erlmcp_plugin_loader).
 
 %% API
--export([
-    discover_plugins/0,
-    discover_plugins/1,
-    load_plugin/1,
-    unload_plugin/1,
-    validate_plugin/1,
-    get_plugin_paths/0
-]).
+-export([discover_plugins/0, discover_plugins/1, load_plugin/1, unload_plugin/1, validate_plugin/1,
+         get_plugin_paths/0]).
 
--define(DEFAULT_PLUGIN_DIRS, [
-    "~/.erlmcp/plugins",
-    "/usr/local/lib/erlmcp/plugins",
-    "/opt/erlmcp/plugins"
-]).
+-define(DEFAULT_PLUGIN_DIRS,
+        ["~/.erlmcp/plugins", "/usr/local/lib/erlmcp/plugins", "/opt/erlmcp/plugins"]).
 
 %%====================================================================
 %% API
@@ -55,10 +46,14 @@ discover_plugins(Paths) ->
         ExpandedPaths = [expand_path(Path) || Path <- Paths],
         ExistingPaths = [Path || Path <- ExpandedPaths, filelib:is_dir(Path)],
 
-        Modules = lists:flatmap(fun(Path) ->
-            BeamFiles = filelib:wildcard(filename:join(Path, "*.beam")),
-            [beam_to_module(Beam) || Beam <- BeamFiles]
-        end, ExistingPaths),
+        Modules =
+            lists:flatmap(fun(Path) ->
+                             BeamFiles =
+                                 filelib:wildcard(
+                                     filename:join(Path, "*.beam")),
+                             [beam_to_module(Beam) || Beam <- BeamFiles]
+                          end,
+                          ExistingPaths),
 
         {ok, lists:usort(Modules)}
     catch
@@ -111,8 +106,10 @@ unload_plugin(Module) when is_atom(Module) ->
         code:purge(Module),
         %% Delete module
         case code:delete(Module) of
-            true -> ok;
-            false -> {error, not_loaded}
+            true ->
+                ok;
+            false ->
+                {error, not_loaded}
         end
     catch
         _:Error:Stack ->
@@ -155,10 +152,13 @@ get_plugin_paths() ->
     ConfigPaths = application:get_env(erlmcp_core, plugin_dirs, []),
 
     %% Application priv dir
-    PrivPath = case code:priv_dir(erlmcp_core) of
-        {error, bad_name} -> [];
-        PrivDir -> [filename:join(PrivDir, "plugins")]
-    end,
+    PrivPath =
+        case code:priv_dir(erlmcp_core) of
+            {error, bad_name} ->
+                [];
+            PrivDir ->
+                [filename:join(PrivDir, "plugins")]
+        end,
 
     %% Combine all paths
     ConfigPaths ++ PrivPath ++ ?DEFAULT_PLUGIN_DIRS.
@@ -195,8 +195,10 @@ validate_metadata(Module) ->
                 Type = maps:get(type, Metadata),
                 ValidTypes = [validator, formatter, exporter, command, middleware],
                 case lists:member(Type, ValidTypes) of
-                    true -> ok;
-                    false -> {error, {invalid_type, Type}}
+                    true ->
+                        ok;
+                    false ->
+                        {error, {invalid_type, Type}}
                 end;
             false ->
                 MissingFields = [F || F <- RequiredFields, not maps:is_key(F, Metadata)],
@@ -214,32 +216,37 @@ validate_behavior_callbacks(Module) ->
         Type = maps:get(type, Metadata),
 
         %% Base callbacks (all plugins)
-        BaseCallbacks = [
-            {init, 1},
-            {metadata, 0}
-        ],
+        BaseCallbacks = [{init, 1}, {metadata, 0}],
 
         %% Type-specific callbacks
-        TypeCallbacks = case Type of
-            validator -> [{validate, 2}, {get_schema, 0}];
-            formatter -> [{format, 2}, {supports_format, 0}];
-            exporter -> [{export, 2}, {get_config_schema, 0}];
-            command -> [{execute, 2}, {help, 0}];
-            middleware -> [{pre_execute, 2}, {post_execute, 2}];
-            _ -> []
-        end,
+        TypeCallbacks =
+            case Type of
+                validator ->
+                    [{validate, 2}, {get_schema, 0}];
+                formatter ->
+                    [{format, 2}, {supports_format, 0}];
+                exporter ->
+                    [{export, 2}, {get_config_schema, 0}];
+                command ->
+                    [{execute, 2}, {help, 0}];
+                middleware ->
+                    [{pre_execute, 2}, {post_execute, 2}];
+                _ ->
+                    []
+            end,
 
         AllCallbacks = BaseCallbacks ++ TypeCallbacks,
 
         %% Check each callback is exported
         Exports = Module:module_info(exports),
-        MissingCallbacks = lists:filter(fun(Callback) ->
-            not lists:member(Callback, Exports)
-        end, AllCallbacks),
+        MissingCallbacks =
+            lists:filter(fun(Callback) -> not lists:member(Callback, Exports) end, AllCallbacks),
 
         case MissingCallbacks of
-            [] -> ok;
-            _ -> {error, {missing_callbacks, MissingCallbacks}}
+            [] ->
+                ok;
+            _ ->
+                {error, {missing_callbacks, MissingCallbacks}}
         end
     catch
         _:Error:Stack ->

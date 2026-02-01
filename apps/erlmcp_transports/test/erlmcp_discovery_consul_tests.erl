@@ -7,6 +7,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_discovery_consul_tests).
+
 -author("erlmcp").
 
 -include_lib("eunit/include/eunit.hrl").
@@ -17,15 +18,12 @@
 
 %% @doc Test Consul service discovery with single instance
 consul_single_service_test() ->
-    ServiceJson = [
-        #{
-            <<"ServiceID">> => <<"erlmcp-1">>,
-            <<"ServiceAddress">> => <<"10.0.0.1">>,
-            <<"ServicePort">> => 9000,
-            <<"ServiceTags">> => [<<"erlmcp:tcp">>],
-            <<"Address">> => <<"10.0.0.1">>
-        }
-    ],
+    ServiceJson =
+        [#{<<"ServiceID">> => <<"erlmcp-1">>,
+           <<"ServiceAddress">> => <<"10.0.0.1">>,
+           <<"ServicePort">> => 9000,
+           <<"ServiceTags">> => [<<"erlmcp:tcp">>],
+           <<"Address">> => <<"10.0.0.1">>}],
 
     {ok, Transports} = erlmcp_transport_discovery:parse_consul_services(ServiceJson),
 
@@ -40,22 +38,17 @@ consul_single_service_test() ->
 
 %% @doc Test Consul service discovery with multiple instances
 consul_multiple_services_test() ->
-    ServiceJson = [
-        #{
-            <<"ServiceID">> => <<"erlmcp-1">>,
-            <<"ServiceAddress">> => <<"10.0.0.1">>,
-            <<"ServicePort">> => 9000,
-            <<"ServiceTags">> => [<<"erlmcp:tcp">>],
-            <<"Address">> => <<"10.0.0.1">>
-        },
-        #{
-            <<"ServiceID">> => <<"erlmcp-2">>,
-            <<"ServiceAddress">> => <<"10.0.0.2">>,
-            <<"ServicePort">> => 9001,
-            <<"ServiceTags">> => [<<"erlmcp:http">>],
-            <<"Address">> => <<"10.0.0.2">>
-        }
-    ],
+    ServiceJson =
+        [#{<<"ServiceID">> => <<"erlmcp-1">>,
+           <<"ServiceAddress">> => <<"10.0.0.1">>,
+           <<"ServicePort">> => 9000,
+           <<"ServiceTags">> => [<<"erlmcp:tcp">>],
+           <<"Address">> => <<"10.0.0.1">>},
+         #{<<"ServiceID">> => <<"erlmcp-2">>,
+           <<"ServiceAddress">> => <<"10.0.0.2">>,
+           <<"ServicePort">> => 9001,
+           <<"ServiceTags">> => [<<"erlmcp:http">>],
+           <<"Address">> => <<"10.0.0.2">>}],
 
     {ok, Transports} = erlmcp_transport_discovery:parse_consul_services(ServiceJson),
 
@@ -71,40 +64,40 @@ consul_multiple_services_test() ->
 
 %% @doc Test transport type extraction from tags
 consul_transport_type_test() ->
-    TcpService = #{
-        <<"ServiceID">> => <<"tcp-service">>,
-        <<"ServiceAddress">> => <<"10.0.0.1">>,
-        <<"ServicePort">> => 9000,
-        <<"ServiceTags">> => [<<"erlmcp:tcp">>],
-        <<"Address">> => <<"10.0.0.1">>
-    },
+    TcpService =
+        #{<<"ServiceID">> => <<"tcp-service">>,
+          <<"ServiceAddress">> => <<"10.0.0.1">>,
+          <<"ServicePort">> => 9000,
+          <<"ServiceTags">> => [<<"erlmcp:tcp">>],
+          <<"Address">> => <<"10.0.0.1">>},
 
     {ok, tcp_service, TcpConfig} = erlmcp_transport_discovery:parse_consul_service(TcpService),
     ?assertEqual(tcp, maps:get(type, TcpConfig)),
 
-    HttpService = TcpService#{<<"ServiceID">> => <<"http-service">>, <<"ServiceTags">> => [<<"erlmcp:http">>]},
+    HttpService =
+        TcpService#{<<"ServiceID">> => <<"http-service">>,
+                    <<"ServiceTags">> => [<<"erlmcp:http">>]},
     {ok, http_service, HttpConfig} = erlmcp_transport_discovery:parse_consul_service(HttpService),
     ?assertEqual(http, maps:get(type, HttpConfig)),
 
-    WsService = TcpService#{<<"ServiceID">> => <<"ws-service">>, <<"ServiceTags">> => [<<"erlmcp:ws">>]},
+    WsService =
+        TcpService#{<<"ServiceID">> => <<"ws-service">>, <<"ServiceTags">> => [<<"erlmcp:ws">>]},
     {ok, ws_service, WsConfig} = erlmcp_transport_discovery:parse_consul_service(WsService),
     ?assertEqual(ws, maps:get(type, WsConfig)),
 
     DefaultService = TcpService#{<<"ServiceID">> => <<"default-service">>, <<"ServiceTags">> => []},
-    {ok, default_service, DefaultConfig} = erlmcp_transport_discovery:parse_consul_service(DefaultService),
+    {ok, default_service, DefaultConfig} =
+        erlmcp_transport_discovery:parse_consul_service(DefaultService),
     ?assertEqual(tcp, maps:get(type, DefaultConfig)).
 
 %% @doc Test service with empty ServiceAddress
 consul_empty_service_address_test() ->
-    ServiceJson = [
-        #{
-            <<"ServiceID">> => <<"erlmcp-node">>,
-            <<"ServiceAddress">> => <<"">>,
-            <<"ServicePort">> => 9000,
-            <<"ServiceTags">> => [<<"erlmcp:tcp">>],
-            <<"Address">> => <<"192.168.1.100">>
-        }
-    ],
+    ServiceJson =
+        [#{<<"ServiceID">> => <<"erlmcp-node">>,
+           <<"ServiceAddress">> => <<"">>,
+           <<"ServicePort">> => 9000,
+           <<"ServiceTags">> => [<<"erlmcp:tcp">>],
+           <<"Address">> => <<"192.168.1.100">>}],
 
     {ok, Transports} = erlmcp_transport_discovery:parse_consul_services(ServiceJson),
     Config = maps:get(erlmcp_node, Transports),
@@ -112,14 +105,11 @@ consul_empty_service_address_test() ->
 
 %% @doc Test service with missing ServiceAddress
 consul_missing_service_address_test() ->
-    ServiceJson = [
-        #{
-            <<"ServiceID">> => <<"erlmcp-node">>,
-            <<"ServicePort">> => 9000,
-            <<"ServiceTags">> => [<<"erlmcp:tcp">>],
-            <<"Address">> => <<"192.168.1.100">>
-        }
-    ],
+    ServiceJson =
+        [#{<<"ServiceID">> => <<"erlmcp-node">>,
+           <<"ServicePort">> => 9000,
+           <<"ServiceTags">> => [<<"erlmcp:tcp">>],
+           <<"Address">> => <<"192.168.1.100">>}],
 
     {ok, Transports} = erlmcp_transport_discovery:parse_consul_services(ServiceJson),
     Config = maps:get(erlmcp_node, Transports),
@@ -127,18 +117,12 @@ consul_missing_service_address_test() ->
 
 %% @doc Test error handling for missing required fields
 consul_missing_field_test() ->
-    MissingId = #{
-        <<"ServicePort">> => 9000,
-        <<"ServiceTags">> => []
-    },
+    MissingId = #{<<"ServicePort">> => 9000, <<"ServiceTags">> => []},
 
     ?assertMatch({error, {missing_field, <<"ServiceID">>}},
                  erlmcp_transport_discovery:parse_consul_service(MissingId)),
 
-    MissingPort = #{
-        <<"ServiceID">> => <<"test">>,
-        <<"ServiceTags">> => []
-    },
+    MissingPort = #{<<"ServiceID">> => <<"test">>, <<"ServiceTags">> => []},
 
     ?assertMatch({error, {missing_field, <<"ServicePort">>}},
                  erlmcp_transport_discovery:parse_consul_service(MissingPort)).

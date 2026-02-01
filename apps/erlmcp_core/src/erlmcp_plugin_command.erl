@@ -36,20 +36,10 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_command).
 
-%% Behavior definition
--callback execute(Args :: [string()], State :: term()) ->
-    {ok, Result :: term(), NewState :: term()} | {error, Reason :: term()}.
-
--callback help() -> HelpText :: binary().
-
 %% Re-export plugin behavior
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    erlmcp_plugin:behaviour_info(callbacks) ++
-    [
-        {execute, 2},
-        {help, 0}
-    ];
+    erlmcp_plugin:behaviour_info(callbacks) ++ [{execute, 2}, {help, 0}];
 behaviour_info(_) ->
     undefined.

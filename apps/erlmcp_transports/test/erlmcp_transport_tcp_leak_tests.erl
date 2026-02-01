@@ -14,10 +14,12 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_transport_tcp_leak_tests).
+
 -author("erlmcp").
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("common_test/include/ct.hrl").
+
 -include("erlmcp_transport_tcp.hrl").
 
 %% Test fixtures
@@ -38,20 +40,23 @@ setup() ->
     timer:sleep(50),
 
     %% Start connection limiter directly (handle already started case)
-    LimiterPid = case erlmcp_connection_limiter:start_link() of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
-    end,
+    LimiterPid =
+        case erlmcp_connection_limiter:start_link() of
+            {ok, Pid} ->
+                Pid;
+            {error, {already_started, Pid}} ->
+                Pid
+        end,
 
     %% Set a low limit for testing
     ok = erlmcp_connection_limiter:set_limit(100),
 
     %% Enable connection limiting
-    application:set_env(erlmcp_core, connection_limiting, #{
-        max_connections => 100,
-        alert_threshold => 0.7,
-        enabled => true
-    }),
+    application:set_env(erlmcp_core,
+                        connection_limiting,
+                        #{max_connections => 100,
+                          alert_threshold => 0.7,
+                          enabled => true}),
 
     %% Get baseline count
     InitialCount = erlmcp_connection_limiter:get_connection_count(),
@@ -76,13 +81,14 @@ cleanup_tcp_handlers() ->
     %% Find and kill any remaining TCP handler processes
     AllProcesses = processes(),
     lists:foreach(fun(Pid) ->
-        case process_info(Pid, initial_call) of
-            {initial_call, {erlmcp_transport_tcp, _, _}} ->
-                catch exit(Pid, kill);
-            _ ->
-                ok
-        end
-    end, AllProcesses).
+                     case process_info(Pid, initial_call) of
+                         {initial_call, {erlmcp_transport_tcp, _, _}} ->
+                             catch exit(Pid, kill);
+                         _ ->
+                             ok
+                     end
+                  end,
+                  AllProcesses).
 
 %%%====================================================================
 %%% Connection Leak Tests (EUnit)
@@ -92,13 +98,11 @@ connection_leak_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-        {"Normal handler lifecycle releases slot", fun normal_lifecycle_releases_slot/0},
-        {"Concurrent connections don't leak slots", fun concurrent_connections_no_leak/0},
-        {"Connection limit enforced correctly", fun connection_limit_enforced/0},
-        {"Slot reuse after handler termination", fun slot_reuse_after_termination/0},
-        {"Rapid connect/disconnect cycles don't leak", fun rapid_cycles_no_leak/0}
-     ]}.
+     [{"Normal handler lifecycle releases slot", fun normal_lifecycle_releases_slot/0},
+      {"Concurrent connections don't leak slots", fun concurrent_connections_no_leak/0},
+      {"Connection limit enforced correctly", fun connection_limit_enforced/0},
+      {"Slot reuse after handler termination", fun slot_reuse_after_termination/0},
+      {"Rapid connect/disconnect cycles don't leak", fun rapid_cycles_no_leak/0}]}.
 
 %%%-------------------------------------------------------------------
 %%% Test Cases
@@ -110,18 +114,17 @@ normal_lifecycle_releases_slot() ->
 
     try
         %% Start a TCP server
-        {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-            port => 0,
-            server_id => ?TEST_SERVER_ID,
-            owner => self()
-        }),
+        {ok, ServerPid} =
+            erlmcp_transport_tcp:start_server(#{port => 0,
+                                                server_id => ?TEST_SERVER_ID,
+                                                owner => self()}),
 
         %% Get the actual port
         {ok, State} = gen_server:call(ServerPid, get_state),
         Port = State#state.port,
 
         %% Accept a connection
-        {ok, ClientSocket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
+        {ok, ClientSocket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
 
         %% Wait for handler to start
         timer:sleep(100),
@@ -153,11 +156,10 @@ concurrent_connections_no_leak() ->
 
     try
         %% Start a TCP server
-        {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-            port => 0,
-            server_id => ?TEST_SERVER_ID,
-            owner => self()
-        }),
+        {ok, ServerPid} =
+            erlmcp_transport_tcp:start_server(#{port => 0,
+                                                server_id => ?TEST_SERVER_ID,
+                                                owner => self()}),
 
         %% Get the actual port
         {ok, State} = gen_server:call(ServerPid, get_state),
@@ -165,10 +167,12 @@ concurrent_connections_no_leak() ->
 
         %% Create 10 concurrent connections
         NumConns = 10,
-        Clients = lists:map(fun(_) ->
-            {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-            Socket
-        end, lists:seq(1, NumConns)),
+        Clients =
+            lists:map(fun(_) ->
+                         {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                         Socket
+                      end,
+                      lists:seq(1, NumConns)),
 
         %% Wait for all handlers to start
         timer:sleep(200),
@@ -178,9 +182,7 @@ concurrent_connections_no_leak() ->
         ?assertEqual(InitialCount + NumConns, AfterAccept),
 
         %% Close all connections
-        lists:foreach(fun(Socket) ->
-            gen_tcp:close(Socket)
-        end, Clients),
+        lists:foreach(fun(Socket) -> gen_tcp:close(Socket) end, Clients),
 
         %% Wait for cleanup
         timer:sleep(300),
@@ -204,11 +206,10 @@ connection_limit_enforced() ->
         ok = erlmcp_connection_limiter:set_limit(5),
 
         %% Start a TCP server
-        {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-            port => 0,
-            server_id => ?TEST_SERVER_ID,
-            owner => self()
-        }),
+        {ok, ServerPid} =
+            erlmcp_transport_tcp:start_server(#{port => 0,
+                                                server_id => ?TEST_SERVER_ID,
+                                                owner => self()}),
 
         %% Get the actual port
         {ok, State} = gen_server:call(ServerPid, get_state),
@@ -216,10 +217,12 @@ connection_limit_enforced() ->
 
         %% Create connections up to the limit
         Limit = 5,
-        Clients = lists:map(fun(_) ->
-            {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-            Socket
-        end, lists:seq(1, Limit)),
+        Clients =
+            lists:map(fun(_) ->
+                         {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                         Socket
+                      end,
+                      lists:seq(1, Limit)),
 
         %% Wait for handlers to start
         timer:sleep(200),
@@ -230,14 +233,16 @@ connection_limit_enforced() ->
 
         %% Try to create more connections - they should be rejected
         %% Note: TCP accepts will happen but handlers may be rejected
-        ExtraClients = lists:map(fun(_) ->
-            case gen_tcp:connect({127,0,0,1}, Port, [{active, false}], 1000) of
-                {ok, Socket} ->
-                    {ok, Socket};
-                {error, _} = Error ->
-                    Error
-            end
-        end, lists:seq(1, 3)),
+        ExtraClients =
+            lists:map(fun(_) ->
+                         case gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}], 1000) of
+                             {ok, Socket} ->
+                                 {ok, Socket};
+                             {error, _} = Error ->
+                                 Error
+                         end
+                      end,
+                      lists:seq(1, 3)),
 
         %% Wait to see what happened
         timer:sleep(200),
@@ -247,10 +252,12 @@ connection_limit_enforced() ->
         ?assert(FinalCount =< InitialCount + Limit + 1),  % Allow small race window
 
         %% Cleanup all clients
-        lists:foreach(fun
-            ({ok, Socket}) -> gen_tcp:close(Socket);
-            (_) -> ok
-        end, Clients ++ ExtraClients),
+        lists:foreach(fun ({ok, Socket}) ->
+                              gen_tcp:close(Socket);
+                          (_) ->
+                              ok
+                      end,
+                      Clients ++ ExtraClients),
 
         timer:sleep(200),
 
@@ -268,11 +275,10 @@ slot_reuse_after_termination() ->
 
     try
         %% Start a TCP server
-        {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-            port => 0,
-            server_id => ?TEST_SERVER_ID,
-            owner => self()
-        }),
+        {ok, ServerPid} =
+            erlmcp_transport_tcp:start_server(#{port => 0,
+                                                server_id => ?TEST_SERVER_ID,
+                                                owner => self()}),
 
         %% Get the actual port
         {ok, State} = gen_server:call(ServerPid, get_state),
@@ -280,14 +286,15 @@ slot_reuse_after_termination() ->
 
         %% Create and close a connection multiple times
         lists:foreach(fun(_Iter) ->
-            %% Connect
-            {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-            timer:sleep(50),
+                         %% Connect
+                         {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                         timer:sleep(50),
 
-            %% Disconnect
-            gen_tcp:close(Socket),
-            timer:sleep(50)
-        end, lists:seq(1, 10)),
+                         %% Disconnect
+                         gen_tcp:close(Socket),
+                         timer:sleep(50)
+                      end,
+                      lists:seq(1, 10)),
 
         %% Wait for final cleanup
         timer:sleep(300),
@@ -308,11 +315,10 @@ rapid_cycles_no_leak() ->
 
     try
         %% Start a TCP server
-        {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-            port => 0,
-            server_id => ?TEST_SERVER_ID,
-            owner => self()
-        }),
+        {ok, ServerPid} =
+            erlmcp_transport_tcp:start_server(#{port => 0,
+                                                server_id => ?TEST_SERVER_ID,
+                                                owner => self()}),
 
         %% Get the actual port
         {ok, State} = gen_server:call(ServerPid, get_state),
@@ -321,10 +327,11 @@ rapid_cycles_no_leak() ->
         %% Simulate rapid connection churn
         NumCycles = 20,
         lists:foreach(fun(_Iter) ->
-            {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-            %% Immediate disconnect
-            gen_tcp:close(Socket)
-        end, lists:seq(1, NumCycles)),
+                         {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                         %% Immediate disconnect
+                         gen_tcp:close(Socket)
+                      end,
+                      lists:seq(1, NumCycles)),
 
         %% Wait for all handlers to terminate
         timer:sleep(500),
@@ -344,13 +351,11 @@ rapid_cycles_no_leak() ->
 %%%====================================================================
 
 all() ->
-    [
-     normal_lifecycle_ct,
+    [normal_lifecycle_ct,
      concurrent_connections_ct,
      connection_limit_ct,
      slot_reuse_ct,
-     rapid_cycles_ct
-    ].
+     rapid_cycles_ct].
 
 init_per_suite(Config) ->
     %% Start ranch FIRST
@@ -362,17 +367,20 @@ init_per_suite(Config) ->
     timer:sleep(50),
 
     %% Start connection limiter (handle already started case)
-    LimiterPid = case erlmcp_connection_limiter:start_link() of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
-    end,
+    LimiterPid =
+        case erlmcp_connection_limiter:start_link() of
+            {ok, Pid} ->
+                Pid;
+            {error, {already_started, Pid}} ->
+                Pid
+        end,
     ok = erlmcp_connection_limiter:set_limit(100),
 
-    application:set_env(erlmcp_core, connection_limiting, #{
-        max_connections => 100,
-        alert_threshold => 0.7,
-        enabled => true
-    }),
+    application:set_env(erlmcp_core,
+                        connection_limiting,
+                        #{max_connections => 100,
+                          alert_threshold => 0.7,
+                          enabled => true}),
 
     [{limiter_pid, LimiterPid} | Config].
 
@@ -401,18 +409,17 @@ normal_lifecycle_ct(Config) ->
     InitialCount = ?config(initial_count, Config),
 
     %% Start a TCP server
-    {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-        port => 0,
-        server_id => ?TEST_SERVER_ID,
-        owner => self()
-    }),
+    {ok, ServerPid} =
+        erlmcp_transport_tcp:start_server(#{port => 0,
+                                            server_id => ?TEST_SERVER_ID,
+                                            owner => self()}),
 
     %% Get the actual port
     {ok, State} = gen_server:call(ServerPid, get_state),
     Port = State#state.port,
 
     %% Accept a connection
-    {ok, ClientSocket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
+    {ok, ClientSocket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
 
     %% Wait for handler to start
     timer:sleep(100),
@@ -436,11 +443,10 @@ concurrent_connections_ct(Config) ->
     InitialCount = ?config(initial_count, Config),
 
     %% Start a TCP server
-    {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-        port => 0,
-        server_id => ?TEST_SERVER_ID,
-        owner => self()
-    }),
+    {ok, ServerPid} =
+        erlmcp_transport_tcp:start_server(#{port => 0,
+                                            server_id => ?TEST_SERVER_ID,
+                                            owner => self()}),
 
     %% Get the actual port
     {ok, State} = gen_server:call(ServerPid, get_state),
@@ -448,10 +454,12 @@ concurrent_connections_ct(Config) ->
 
     %% Create 10 concurrent connections
     NumConns = 10,
-    Clients = lists:map(fun(_) ->
-        {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-        Socket
-    end, lists:seq(1, NumConns)),
+    Clients =
+        lists:map(fun(_) ->
+                     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                     Socket
+                  end,
+                  lists:seq(1, NumConns)),
 
     %% Wait for all handlers to start
     timer:sleep(200),
@@ -461,9 +469,7 @@ concurrent_connections_ct(Config) ->
     ?assertEqual(InitialCount + NumConns, AfterAccept),
 
     %% Close all connections
-    lists:foreach(fun(Socket) ->
-        gen_tcp:close(Socket)
-    end, Clients),
+    lists:foreach(fun(Socket) -> gen_tcp:close(Socket) end, Clients),
 
     %% Wait for cleanup
     timer:sleep(300),
@@ -482,11 +488,10 @@ connection_limit_ct(Config) ->
     ok = erlmcp_connection_limiter:set_limit(5),
 
     %% Start a TCP server
-    {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-        port => 0,
-        server_id => ?TEST_SERVER_ID,
-        owner => self()
-    }),
+    {ok, ServerPid} =
+        erlmcp_transport_tcp:start_server(#{port => 0,
+                                            server_id => ?TEST_SERVER_ID,
+                                            owner => self()}),
 
     %% Get the actual port
     {ok, State} = gen_server:call(ServerPid, get_state),
@@ -494,10 +499,12 @@ connection_limit_ct(Config) ->
 
     %% Create connections up to the limit
     Limit = 5,
-    Clients = lists:map(fun(_) ->
-        {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-        Socket
-    end, lists:seq(1, Limit)),
+    Clients =
+        lists:map(fun(_) ->
+                     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                     Socket
+                  end,
+                  lists:seq(1, Limit)),
 
     %% Wait for handlers to start
     timer:sleep(200),
@@ -507,14 +514,16 @@ connection_limit_ct(Config) ->
     ?assertEqual(InitialCount + Limit, AtLimit),
 
     %% Try to create more connections
-    ExtraClients = lists:map(fun(_) ->
-        case gen_tcp:connect({127,0,0,1}, Port, [{active, false}], 1000) of
-            {ok, Socket} ->
-                {ok, Socket};
-            {error, _} = Error ->
-                Error
-        end
-    end, lists:seq(1, 3)),
+    ExtraClients =
+        lists:map(fun(_) ->
+                     case gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}], 1000) of
+                         {ok, Socket} ->
+                             {ok, Socket};
+                         {error, _} = Error ->
+                             Error
+                     end
+                  end,
+                  lists:seq(1, 3)),
 
     %% Wait to see what happened
     timer:sleep(200),
@@ -524,10 +533,12 @@ connection_limit_ct(Config) ->
     ?assert(FinalCount =< InitialCount + Limit + 1),
 
     %% Cleanup all clients
-    lists:foreach(fun
-        ({ok, Socket}) -> gen_tcp:close(Socket);
-        (_) -> ok
-    end, Clients ++ ExtraClients),
+    lists:foreach(fun ({ok, Socket}) ->
+                          gen_tcp:close(Socket);
+                      (_) ->
+                          ok
+                  end,
+                  Clients ++ ExtraClients),
 
     timer:sleep(200),
 
@@ -541,11 +552,10 @@ slot_reuse_ct(Config) ->
     InitialCount = ?config(initial_count, Config),
 
     %% Start a TCP server
-    {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-        port => 0,
-        server_id => ?TEST_SERVER_ID,
-        owner => self()
-    }),
+    {ok, ServerPid} =
+        erlmcp_transport_tcp:start_server(#{port => 0,
+                                            server_id => ?TEST_SERVER_ID,
+                                            owner => self()}),
 
     %% Get the actual port
     {ok, State} = gen_server:call(ServerPid, get_state),
@@ -553,11 +563,12 @@ slot_reuse_ct(Config) ->
 
     %% Create and close a connection multiple times
     lists:foreach(fun(_Iter) ->
-        {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-        timer:sleep(50),
-        gen_tcp:close(Socket),
-        timer:sleep(50)
-    end, lists:seq(1, 10)),
+                     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                     timer:sleep(50),
+                     gen_tcp:close(Socket),
+                     timer:sleep(50)
+                  end,
+                  lists:seq(1, 10)),
 
     %% Wait for final cleanup
     timer:sleep(300),
@@ -573,11 +584,10 @@ rapid_cycles_ct(Config) ->
     InitialCount = ?config(initial_count, Config),
 
     %% Start a TCP server
-    {ok, ServerPid} = erlmcp_transport_tcp:start_server(#{
-        port => 0,
-        server_id => ?TEST_SERVER_ID,
-        owner => self()
-    }),
+    {ok, ServerPid} =
+        erlmcp_transport_tcp:start_server(#{port => 0,
+                                            server_id => ?TEST_SERVER_ID,
+                                            owner => self()}),
 
     %% Get the actual port
     {ok, State} = gen_server:call(ServerPid, get_state),
@@ -586,9 +596,10 @@ rapid_cycles_ct(Config) ->
     %% Simulate rapid connection churn
     NumCycles = 20,
     lists:foreach(fun(_Iter) ->
-        {ok, Socket} = gen_tcp:connect({127,0,0,1}, Port, [{active, false}]),
-        gen_tcp:close(Socket)
-    end, lists:seq(1, NumCycles)),
+                     {ok, Socket} = gen_tcp:connect({127, 0, 0, 1}, Port, [{active, false}]),
+                     gen_tcp:close(Socket)
+                  end,
+                  lists:seq(1, NumCycles)),
 
     %% Wait for all handlers to terminate
     timer:sleep(500),

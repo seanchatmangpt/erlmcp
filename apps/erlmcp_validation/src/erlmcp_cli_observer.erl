@@ -12,24 +12,17 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_observer).
 
--export([
-    watch/0,
-    watch/1,
-    start_watch/1,
-    stop_watch/0,
-    get_snapshot/0
-]).
+-export([watch/0, watch/1, start_watch/1, stop_watch/0, get_snapshot/0]).
 
 %%====================================================================
 %% Types
 %%====================================================================
 
--type watch_opts() :: #{
-    refresh_interval => pos_integer(),
-    format => atom(),
-    metrics => [atom()],
-    output_file => string()
-}.
+-type watch_opts() ::
+    #{refresh_interval => pos_integer(),
+      format => atom(),
+      metrics => [atom()],
+      output_file => string()}.
 
 %%====================================================================
 %% API Functions - Real-Time Watching
@@ -51,11 +44,10 @@ watch(Opts) ->
         watch_loop(Opts, RefreshInterval, Format)
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %% @doc Start background watch process
@@ -65,19 +57,16 @@ start_watch(Opts) ->
         RefreshInterval = maps:get(refresh_interval, Opts, 1000),
         OutputFile = maps:get(output_file, Opts, undefined),
 
-        Pid = spawn(fun() ->
-            watch_background_loop(Opts, RefreshInterval, OutputFile, [])
-        end),
+        Pid = spawn(fun() -> watch_background_loop(Opts, RefreshInterval, OutputFile, []) end),
 
         erlang:register(erlmcp_cli_watch, Pid),
         {ok, Pid}
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %% @doc Stop background watch process
@@ -99,11 +88,10 @@ get_snapshot() ->
         {ok, Snapshot}
     catch
         Class:Error:Stack ->
-            {error, #{
-                class => Class,
-                error => Error,
-                stacktrace => Stack
-            }}
+            {error,
+             #{class => Class,
+               error => Error,
+               stacktrace => Stack}}
     end.
 
 %%====================================================================
@@ -124,12 +112,15 @@ watch_loop(Opts, RefreshInterval, Format) ->
 
     %% Wait for refresh or exit
     receive
-        stop -> ok
+        stop ->
+            ok
     after RefreshInterval ->
         %% Check for user input (q to quit)
         case check_for_quit() of
-            true -> ok;
-            false -> watch_loop(Opts, RefreshInterval, Format)
+            true ->
+                ok;
+            false ->
+                watch_loop(Opts, RefreshInterval, Format)
         end
     end.
 
@@ -144,7 +135,8 @@ watch_background_loop(Opts, RefreshInterval, OutputFile, History) ->
 
     %% Write to file if specified
     case OutputFile of
-        undefined -> ok;
+        undefined ->
+            ok;
         _ ->
             FormattedData = jsx:encode(NewHistory, [{space, 1}, {indent, 2}]),
             file:write_file(OutputFile, FormattedData)
@@ -152,7 +144,8 @@ watch_background_loop(Opts, RefreshInterval, OutputFile, History) ->
 
     %% Wait for refresh or stop
     receive
-        stop -> ok;
+        stop ->
+            ok;
         {get_history, From} ->
             From ! {history, lists:reverse(NewHistory)},
             watch_background_loop(Opts, RefreshInterval, OutputFile, NewHistory)
@@ -167,29 +160,25 @@ watch_background_loop(Opts, RefreshInterval, OutputFile, History) ->
 %% @private Collect all metrics
 -spec collect_metrics() -> map().
 collect_metrics() ->
-    #{
-        timestamp => iso8601_timestamp(),
-        system => collect_system_metrics(),
-        memory => collect_memory_metrics(),
-        processes => collect_process_metrics(),
-        connections => collect_connection_metrics(),
-        throughput => collect_throughput_metrics(),
-        latency => collect_latency_metrics(),
-        errors => collect_error_metrics(),
-        health => collect_health_metrics()
-    }.
+    #{timestamp => iso8601_timestamp(),
+      system => collect_system_metrics(),
+      memory => collect_memory_metrics(),
+      processes => collect_process_metrics(),
+      connections => collect_connection_metrics(),
+      throughput => collect_throughput_metrics(),
+      latency => collect_latency_metrics(),
+      errors => collect_error_metrics(),
+      health => collect_health_metrics()}.
 
 %% @private Collect system metrics
 -spec collect_system_metrics() -> map().
 collect_system_metrics() ->
-    #{
-        uptime_seconds => element(1, erlang:statistics(wall_clock)) div 1000,
-        schedulers_online => erlang:system_info(schedulers_online),
-        run_queue => erlang:statistics(run_queue),
-        reductions => element(1, erlang:statistics(reductions)),
-        io_input_bytes => element(1, erlang:statistics(io)),
-        io_output_bytes => element(2, erlang:statistics(io))
-    }.
+    #{uptime_seconds => element(1, erlang:statistics(wall_clock)) div 1000,
+      schedulers_online => erlang:system_info(schedulers_online),
+      run_queue => erlang:statistics(run_queue),
+      reductions => element(1, erlang:statistics(reductions)),
+      io_input_bytes => element(1, erlang:statistics(io)),
+      io_output_bytes => element(2, erlang:statistics(io))}.
 
 %% @private Collect memory metrics
 -spec collect_memory_metrics() -> map().
@@ -198,15 +187,13 @@ collect_memory_metrics() ->
     Total = proplists:get_value(total, Memory, 0),
     Processes = proplists:get_value(processes, Memory, 0),
 
-    #{
-        total_mb => Total / (1024 * 1024),
-        processes_mb => Processes / (1024 * 1024),
-        system_mb => (Total - Processes) / (1024 * 1024),
-        usage_percentage => (Processes / Total) * 100,
-        binary_mb => proplists:get_value(binary, Memory, 0) / (1024 * 1024),
-        atom_mb => proplists:get_value(atom, Memory, 0) / (1024 * 1024),
-        ets_mb => proplists:get_value(ets, Memory, 0) / (1024 * 1024)
-    }.
+    #{total_mb => Total / (1024 * 1024),
+      processes_mb => Processes / (1024 * 1024),
+      system_mb => (Total - Processes) / (1024 * 1024),
+      usage_percentage => Processes / Total * 100,
+      binary_mb => proplists:get_value(binary, Memory, 0) / (1024 * 1024),
+      atom_mb => proplists:get_value(atom, Memory, 0) / (1024 * 1024),
+      ets_mb => proplists:get_value(ets, Memory, 0) / (1024 * 1024)}.
 
 %% @private Collect process metrics
 -spec collect_process_metrics() -> map().
@@ -214,34 +201,33 @@ collect_process_metrics() ->
     ProcessCount = erlang:system_info(process_count),
     ProcessLimit = erlang:system_info(process_limit),
 
-    #{
-        count => ProcessCount,
-        limit => ProcessLimit,
-        usage_percentage => (ProcessCount / ProcessLimit) * 100,
-        port_count => erlang:system_info(port_count),
-        atom_count => erlang:system_info(atom_count),
-        ets_count => length(ets:all())
-    }.
+    #{count => ProcessCount,
+      limit => ProcessLimit,
+      usage_percentage => ProcessCount / ProcessLimit * 100,
+      port_count => erlang:system_info(port_count),
+      atom_count => erlang:system_info(atom_count),
+      ets_count => length(ets:all())}.
 
 %% @private Collect connection metrics
 -spec collect_connection_metrics() -> map().
 collect_connection_metrics() ->
     %% Try to get connection count from registry
-    ConnectionCount = case whereis(erlmcp_registry) of
-        undefined -> 0;
-        _ ->
-            try
-                length(gproc:lookup_pids({p, l, server}))
-            catch
-                _:_ -> 0
-            end
-    end,
+    ConnectionCount =
+        case whereis(erlmcp_registry) of
+            undefined ->
+                0;
+            _ ->
+                try
+                    length(gproc:lookup_pids({p, l, server}))
+                catch
+                    _:_ ->
+                        0
+                end
+        end,
 
-    #{
-        active_connections => ConnectionCount,
-        servers => count_processes_by_name(erlmcp_server),
-        clients => count_processes_by_name(erlmcp_client)
-    }.
+    #{active_connections => ConnectionCount,
+      servers => count_processes_by_name(erlmcp_server),
+      clients => count_processes_by_name(erlmcp_client)}.
 
 %% @private Collect throughput metrics
 -spec collect_throughput_metrics() -> map().
@@ -254,10 +240,8 @@ collect_throughput_metrics() ->
             try
                 Summary = erlmcp_metrics:get_performance_summary(),
                 Rates = maps:get(<<"rates">>, Summary, #{}),
-                #{
-                    messages_per_second => maps:get(
-                        <<"transport_operation_duration_ms_per_second">>, Rates, 0)
-                }
+                #{messages_per_second =>
+                      maps:get(<<"transport_operation_duration_ms_per_second">>, Rates, 0)}
             catch
                 _:_ ->
                     #{messages_per_second => 0}
@@ -270,31 +254,30 @@ collect_latency_metrics() ->
     %% Try to get latency from metrics
     case whereis(erlmcp_metrics) of
         undefined ->
-            #{p50 => 0, p95 => 0, p99 => 0};
+            #{p50 => 0,
+              p95 => 0,
+              p99 => 0};
         _ ->
             try
                 Summary = erlmcp_metrics:get_performance_summary(),
                 Percentiles = maps:get(<<"percentiles">>, Summary, #{}),
-                TransportPercentiles = maps:get(
-                    <<"transport_operation_duration_ms_percentiles">>, Percentiles, #{}),
-                #{
-                    p50 => maps:get(<<"p50">>, TransportPercentiles, 0),
-                    p95 => maps:get(<<"p95">>, TransportPercentiles, 0),
-                    p99 => maps:get(<<"p99">>, TransportPercentiles, 0)
-                }
+                TransportPercentiles =
+                    maps:get(<<"transport_operation_duration_ms_percentiles">>, Percentiles, #{}),
+                #{p50 => maps:get(<<"p50">>, TransportPercentiles, 0),
+                  p95 => maps:get(<<"p95">>, TransportPercentiles, 0),
+                  p99 => maps:get(<<"p99">>, TransportPercentiles, 0)}
             catch
                 _:_ ->
-                    #{p50 => 0, p95 => 0, p99 => 0}
+                    #{p50 => 0,
+                      p95 => 0,
+                      p99 => 0}
             end
     end.
 
 %% @private Collect error metrics
 -spec collect_error_metrics() -> map().
 collect_error_metrics() ->
-    #{
-        error_rate => 0.0,
-        recent_errors => []
-    }.
+    #{error_rate => 0.0, recent_errors => []}.
 
 %% @private Collect health metrics
 -spec collect_health_metrics() -> map().
@@ -413,14 +396,15 @@ count_processes_by_name(Prefix) ->
 
     Registered = erlang:registered(),
     length(lists:filter(fun(Name) ->
-        NameStr = atom_to_list(Name),
-        case length(NameStr) >= PrefixLen of
-            true ->
-                lists:prefix(PrefixStr, NameStr);
-            false ->
-                false
-        end
-    end, Registered)).
+                           NameStr = atom_to_list(Name),
+                           case length(NameStr) >= PrefixLen of
+                               true ->
+                                   lists:prefix(PrefixStr, NameStr);
+                               false ->
+                                   false
+                           end
+                        end,
+                        Registered)).
 
 %% @private Check for quit input
 -spec check_for_quit() -> boolean().
@@ -433,4 +417,4 @@ check_for_quit() ->
 iso8601_timestamp() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:universal_time(),
     iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
-                  [Year, Month, Day, Hour, Min, Sec])).
+                                   [Year, Month, Day, Hour, Min, Sec])).

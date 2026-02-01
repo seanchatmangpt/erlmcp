@@ -1,14 +1,13 @@
 -module(erlmcp_trace_analyzer).
+
 -behaviour(gen_server).
 
 %% API
 -export([start_link/0, stop/1]).
 -export([find_critical_path/1, detect_anomalies/1]).
 -export([analyze_trace/1, validate_span_relationships/1, generate_report/2]).
-
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
 -define(DEFAULT_TIMEOUT, 5000).
@@ -97,11 +96,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% @private Calculate critical path through spans
 calculate_critical_path(Spans) ->
     %% Build duration map
-    Durations = lists:map(fun(Span) ->
-        SpanId = maps:get(span_id, Span),
-        Duration = maps:get(end_time, Span, 0) - maps:get(start_time, Span, 0),
-        {SpanId, Duration}
-    end, Spans),
+    Durations =
+        lists:map(fun(Span) ->
+                     SpanId = maps:get(span_id, Span),
+                     Duration = maps:get(end_time, Span, 0) - maps:get(start_time, Span, 0),
+                     {SpanId, Duration}
+                  end,
+                  Spans),
 
     %% Build parent-child relationships
     Children = build_children_map(Spans),
@@ -113,22 +114,27 @@ calculate_critical_path(Spans) ->
 
     %% Return the longest path
     case CriticalPaths of
-        [] -> [];
-        _ -> hd(CriticalPaths)
+        [] ->
+            [];
+        _ ->
+            hd(CriticalPaths)
     end.
 
 %% @private Build map of parent -> children
 build_children_map(Spans) ->
     lists:foldl(fun(Span, Acc) ->
-        ParentId = maps:get(parent_id, Span, undefined),
-        SpanId = maps:get(span_id, Span),
-        case ParentId of
-            undefined -> Acc;
-            _ ->
-                Existing = maps:get(ParentId, Acc, []),
-                maps:put(ParentId, [SpanId | Existing], Acc)
-        end
-    end, #{}, Spans).
+                   ParentId = maps:get(parent_id, Span, undefined),
+                   SpanId = maps:get(span_id, Span),
+                   case ParentId of
+                       undefined ->
+                           Acc;
+                       _ ->
+                           Existing = maps:get(ParentId, Acc, []),
+                           maps:put(ParentId, [SpanId | Existing], Acc)
+                   end
+                end,
+                #{},
+                Spans).
 
 %% @private Find path through a span and its children
 find_path_through_span(Span, Durations, Children) ->
@@ -140,18 +146,27 @@ find_path_through_span(Span, Durations, Children) ->
         _ ->
             %% Find longest path through children
             ChildPaths = [find_path_through_child(C, Durations, Children) || C <- ChildIds],
-            LongestChildPath = case ChildPaths of
-                [] -> [];
-                [SinglePath] -> SinglePath;
-                Paths ->
-                    %% Find path with maximum duration
-                    lists:foldl(fun(Path, MaxPath) ->
-                        case path_duration(Path, Durations) > path_duration(MaxPath, Durations) of
-                            true -> Path;
-                            false -> MaxPath
-                        end
-                    end, hd(Paths), tl(Paths))
-            end,
+            LongestChildPath =
+                case ChildPaths of
+                    [] ->
+                        [];
+                    [SinglePath] ->
+                        SinglePath;
+                    Paths ->
+                        %% Find path with maximum duration
+                        lists:foldl(fun(Path, MaxPath) ->
+                                       case path_duration(Path, Durations)
+                                            > path_duration(MaxPath, Durations)
+                                       of
+                                           true ->
+                                               Path;
+                                           false ->
+                                               MaxPath
+                                       end
+                                    end,
+                                    hd(Paths),
+                                    tl(Paths))
+                end,
             [SpanId | LongestChildPath]
     end.
 
@@ -164,27 +179,31 @@ find_path_through_child(ChildId, Durations, Children) ->
 %% @private Calculate total duration of a path
 path_duration(Path, Durations) ->
     lists:foldl(fun(SpanId, Acc) ->
-        case lists:keyfind(SpanId, 1, Durations) of
-            false -> Acc;
-            {_, Duration} -> Acc + Duration
-        end
-    end, 0, Path).
+                   case lists:keyfind(SpanId, 1, Durations) of
+                       false ->
+                           Acc;
+                       {_, Duration} ->
+                           Acc + Duration
+                   end
+                end,
+                0,
+                Path).
 
 %% @private Analyze spans for anomalies
 analyze_for_anomalies(Spans) ->
-    Anomalies = [
-        detect_latency_anomalies(Spans),
-        detect_missing_parents(Spans),
-        detect_circular_dependencies(Spans),
-        detect_error_clusters(Spans)
-    ],
+    Anomalies =
+        [detect_latency_anomalies(Spans),
+         detect_missing_parents(Spans),
+         detect_circular_dependencies(Spans),
+         detect_error_clusters(Spans)],
     lists:flatten(Anomalies).
 
 %% @private Detect latency anomalies
 detect_latency_anomalies(Spans) ->
     Durations = [maps:get(end_time, S, 0) - maps:get(start_time, S, 0) || S <- Spans],
     case Durations of
-        [] -> [];
+        [] ->
+            [];
         _ ->
             AvgDuration = lists:sum(Durations) / length(Durations),
             Threshold = AvgDuration * 3,  %% 3x average is anomaly
@@ -194,8 +213,7 @@ detect_latency_anomalies(Spans) ->
                duration_us => maps:get(end_time, S, 0) - maps:get(start_time, S, 0),
                threshold_us => Threshold,
                severity => high}
-             || S <- Spans,
-                (maps:get(end_time, S, 0) - maps:get(start_time, S, 0)) > Threshold]
+             || S <- Spans, maps:get(end_time, S, 0) - maps:get(start_time, S, 0) > Threshold]
     end.
 
 %% @private Detect missing parent spans
@@ -207,7 +225,9 @@ detect_missing_parents(Spans) ->
        severity => medium}
      || S <- Spans,
         maps:get(parent_id, S, undefined) =/= undefined,
-        not lists:member(maps:get(parent_id, S), SpanIds)].
+        not
+            lists:member(
+                maps:get(parent_id, S), SpanIds)].
 
 %% @private Detect circular dependencies
 detect_circular_dependencies(Spans) ->
@@ -224,13 +244,17 @@ detect_circular_dependencies(Spans) ->
 %% @private Build adjacency list for cycle detection
 build_adjacency(Spans) ->
     lists:foldl(fun(Span, Acc) ->
-        ParentId = maps:get(parent_id, Span, undefined),
-        SpanId = maps:get(span_id, Span),
-        case ParentId of
-            undefined -> Acc;
-            _ -> maps:put(ParentId, SpanId, Acc)
-        end
-    end, #{}, Spans).
+                   ParentId = maps:get(parent_id, Span, undefined),
+                   SpanId = maps:get(span_id, Span),
+                   case ParentId of
+                       undefined ->
+                           Acc;
+                       _ ->
+                           maps:put(ParentId, SpanId, Acc)
+                   end
+                end,
+                #{},
+                Spans).
 
 %% @private Detect cycles in adjacency list
 detect_cycles(Adjacency) ->
@@ -241,7 +265,8 @@ detect_error_clusters(Spans) ->
     ErrorSpans = [S || S <- Spans, maps:get(status, S, ok) =:= error],
 
     case ErrorSpans of
-        [] -> [];
+        [] ->
+            [];
         _ ->
             %% Group by time windows (1 second windows)
             TimeWindows = group_by_time_window(ErrorSpans, 1000000),  %% 1 second in microseconds
@@ -250,10 +275,14 @@ detect_error_clusters(Spans) ->
                cluster_id => integer_to_binary(N),
                error_count => length(Cluster),
                time_window_us => WindowStart,
-               severity => if length(Cluster) > 5 -> critical;
-                              length(Cluster) > 2 -> high;
-                              true -> medium
-                           end}
+               severity =>
+                   if length(Cluster) > 5 ->
+                          critical;
+                      length(Cluster) > 2 ->
+                          high;
+                      true ->
+                          medium
+                   end}
              || {N, {WindowStart, Cluster}} <- enumerate(TimeWindows),
                 length(Cluster) >= 2]  %% At least 2 errors to be a cluster
     end.
@@ -261,28 +290,32 @@ detect_error_clusters(Spans) ->
 %% @private Group spans by time window
 group_by_time_window(Spans, WindowSize) ->
     %% Sort spans by start time
-    SortedSpans = lists:sort(fun(A, B) ->
-        maps:get(start_time, A, 0) =< maps:get(start_time, B, 0)
-    end, Spans),
+    SortedSpans =
+        lists:sort(fun(A, B) -> maps:get(start_time, A, 0) =< maps:get(start_time, B, 0) end,
+                   Spans),
 
     %% Group into windows
     lists:foldl(fun(Span, Acc) ->
-        StartTime = maps:get(start_time, Span, 0),
-        WindowStart = (StartTime div WindowSize) * WindowSize,
-        case lists:keyfind(WindowStart, 1, Acc) of
-            false ->
-                [{WindowStart, [Span]} | Acc];
-            {WindowStart, Existing} ->
-                lists:keyreplace(WindowStart, 1, Acc, {WindowStart, [Span | Existing]})
-        end
-    end, [], SortedSpans).
+                   StartTime = maps:get(start_time, Span, 0),
+                   WindowStart = StartTime div WindowSize * WindowSize,
+                   case lists:keyfind(WindowStart, 1, Acc) of
+                       false ->
+                           [{WindowStart, [Span]} | Acc];
+                       {WindowStart, Existing} ->
+                           lists:keyreplace(WindowStart, 1, Acc, {WindowStart, [Span | Existing]})
+                   end
+                end,
+                [],
+                SortedSpans).
 
 %% @private Enumerate list
 enumerate(List) ->
     enumerate(List, 0).
 
-enumerate([], _N) -> [];
-enumerate([H|T], N) -> [{N, H} | enumerate(T, N+1)].
+enumerate([], _N) ->
+    [];
+enumerate([H | T], N) ->
+    [{N, H} | enumerate(T, N + 1)].
 
 %% @private Get spans from storage
 get_spans_from_storage(TraceId) ->
@@ -291,10 +324,13 @@ get_spans_from_storage(TraceId) ->
             {error, storage_not_available};
         StoragePid ->
             try gen_server:call(StoragePid, {get_spans_by_trace, TraceId}, ?DEFAULT_TIMEOUT) of
-                {ok, Spans} -> {ok, Spans};
-                {error, Reason} -> {error, Reason}
+                {ok, Spans} ->
+                    {ok, Spans};
+                {error, Reason} ->
+                    {error, Reason}
             catch
-                _:_ -> {error, storage_call_failed}
+                _:_ ->
+                    {error, storage_call_failed}
             end
     end.
 
@@ -315,24 +351,24 @@ perform_full_analysis(Spans) ->
     %% Generate recommendations
     Recommendations = generate_global_recommendations(Bottlenecks, Spans),
 
-    #trace_analysis{
-        trace_id = maps:get(trace_id, hd(Spans), <<"unknown">>),
-        bottlenecks = Bottlenecks,
-        performance_score = PerformanceScore,
-        avg_duration = AvgDuration,
-        error_rate = ErrorRate,
-        recommendations = Recommendations,
-        analyzed_at = erlang:system_time(millisecond)
-    }.
+    #trace_analysis{trace_id = maps:get(trace_id, hd(Spans), <<"unknown">>),
+                    bottlenecks = Bottlenecks,
+                    performance_score = PerformanceScore,
+                    avg_duration = AvgDuration,
+                    error_rate = ErrorRate,
+                    recommendations = Recommendations,
+                    analyzed_at = erlang:system_time(millisecond)}.
 
 %% @private Identify bottlenecks in spans
 identify_bottlenecks(Spans) ->
     %% Calculate bottleneck score based on duration and frequency
-    Durations = [{maps:get(span_id, S),
-                  maps:get(end_time, S, 0) - maps:get(start_time, S, 0)} || S <- Spans],
+    Durations =
+        [{maps:get(span_id, S), maps:get(end_time, S, 0) - maps:get(start_time, S, 0)}
+         || S <- Spans],
 
     case Durations of
-        [] -> [];
+        [] ->
+            [];
         _ ->
             AvgDuration = lists:sum([D || {_, D} <- Durations]) / length(Durations),
 
@@ -355,20 +391,22 @@ calculate_bottleneck_score(Duration, AvgDuration, AllSpans) ->
 %% @private Generate bottleneck recommendations
 generate_recommendations(Duration, AvgDuration) ->
     Ratio = Duration / AvgDuration,
-    if
-        Ratio > 5 ->
-            ["Critical: Span is " ++ float_to_list(Ratio, [{decimals, 1}]) ++
-             "x slower than average. Consider: async processing, caching, or optimization",
-             "Investigate blocking operations",
-             "Review database queries or external calls"];
-        Ratio > 3 ->
-            ["High: Span is " ++ float_to_list(Ratio, [{decimals, 1}]) ++
-             "x slower than average. Review implementation",
-             "Check for unnecessary work",
-             "Consider batching or parallelization"];
-        true ->
-            ["Moderate: Span is " ++ float_to_list(Ratio, [{decimals, 1}]) ++
-             "x slower than average. Monitor and optimize if needed"]
+    if Ratio > 5 ->
+           ["Critical: Span is "
+            ++ float_to_list(Ratio, [{decimals, 1}])
+            ++ "x slower than average. Consider: async processing, caching, or optimization",
+            "Investigate blocking operations",
+            "Review database queries or external calls"];
+       Ratio > 3 ->
+           ["High: Span is "
+            ++ float_to_list(Ratio, [{decimals, 1}])
+            ++ "x slower than average. Review implementation",
+            "Check for unnecessary work",
+            "Consider batching or parallelization"];
+       true ->
+           ["Moderate: Span is "
+            ++ float_to_list(Ratio, [{decimals, 1}])
+            ++ "x slower than average. Monitor and optimize if needed"]
     end.
 
 %% @private Validate span relationships
@@ -376,22 +414,27 @@ validate_relationships(Spans) ->
     %% Check for orphan spans (missing parents)
     SpanIds = [maps:get(span_id, S) || S <- Spans],
 
-    Results = lists:map(fun(Span) ->
-        SpanId = maps:get(span_id, Span),
-        ParentId = maps:get(parent_id, Span, undefined),
+    Results =
+        lists:map(fun(Span) ->
+                     SpanId = maps:get(span_id, Span),
+                     ParentId = maps:get(parent_id, Span, undefined),
 
-        Issues = case ParentId of
-            undefined ->
-                [];
-            _ ->
-                case lists:member(ParentId, SpanIds) of
-                    true -> [];
-                    false -> ["Parent span not found: " ++ ParentId]
-                end
-        end,
+                     Issues =
+                         case ParentId of
+                             undefined ->
+                                 [];
+                             _ ->
+                                 case lists:member(ParentId, SpanIds) of
+                                     true ->
+                                         [];
+                                     false ->
+                                         ["Parent span not found: " ++ ParentId]
+                                 end
+                         end,
 
-        {SpanId, lists:reverse(Issues)}
-    end, Spans),
+                     {SpanId, lists:reverse(Issues)}
+                  end,
+                  Spans),
 
     TotalIssues = lists:sum([length(Issues) || {_, Issues} <- Results]),
     Valid = TotalIssues =:= 0,
@@ -407,56 +450,61 @@ create_report(Spans, json) ->
     {ok, CriticalPath} = find_critical_path(Spans),
     {ok, Anomalies} = detect_anomalies(Spans),
 
-    TotalDuration = case Spans of
-        [] -> 0;
-        _ ->
-            StartTimes = [maps:get(start_time, S, 0) || S <- Spans],
-            EndTimes = [maps:get(end_time, S, 0) || S <- Spans],
-            lists:max(EndTimes) - lists:min(StartTimes)
-    end,
+    TotalDuration =
+        case Spans of
+            [] ->
+                0;
+            _ ->
+                StartTimes = [maps:get(start_time, S, 0) || S <- Spans],
+                EndTimes = [maps:get(end_time, S, 0) || S <- Spans],
+                lists:max(EndTimes) - lists:min(StartTimes)
+        end,
 
     #{trace_id => maps:get(trace_id, hd(Spans), <<"unknown">>),
-      summary => #{
-        span_count => length(Spans),
-        total_duration_us => TotalDuration,
-        anomaly_count => length(Anomalies)
-      },
+      summary =>
+          #{span_count => length(Spans),
+            total_duration_us => TotalDuration,
+            anomaly_count => length(Anomalies)},
       critical_path => CriticalPath,
       anomalies => Anomalies};
 create_report(Spans, text) ->
     %% Text format returns list of strings
-    [
-      "=== Trace Analysis Report ===",
-      io_lib:format("Total Spans: ~p", [length(Spans)]),
-      io_lib:format("Trace ID: ~p", [maps:get(trace_id, hd(Spans), <<"unknown">>)]),
-      "============================"
-    ].
+    ["=== Trace Analysis Report ===",
+     io_lib:format("Total Spans: ~p", [length(Spans)]),
+     io_lib:format("Trace ID: ~p", [maps:get(trace_id, hd(Spans), <<"unknown">>)]),
+     "============================"].
 
 %% @private Calculate performance score (0-100)
 calculate_performance_score(Spans) ->
     case Spans of
-        [] -> 100.0;
+        [] ->
+            100.0;
         _ ->
             %% Factor in error rate and duration variance
             ErrorRate = calculate_error_rate(Spans),
             Durations = [maps:get(end_time, S, 0) - maps:get(start_time, S, 0) || S <- Spans],
             AvgDuration = lists:sum(Durations) / length(Durations),
-            Variance = lists:sum([math:pow(D - AvgDuration, 2) || D <- Durations]) / length(Durations),
+            Variance =
+                lists:sum([math:pow(D - AvgDuration, 2) || D <- Durations]) / length(Durations),
             StdDev = math:sqrt(Variance),
-            CoefVar = case AvgDuration > 0 of
-                true -> (StdDev / AvgDuration) * 100;
-                false -> 0
-            end,
+            CoefVar =
+                case AvgDuration > 0 of
+                    true ->
+                        StdDev / AvgDuration * 100;
+                    false ->
+                        0
+                end,
 
             %% Score: 100 - (error_rate * 50) - (coef_var * 0.5)
-            Score = 100 - (ErrorRate * 50) - (CoefVar * 0.5),
+            Score = 100 - ErrorRate * 50 - CoefVar * 0.5,
             max(0, min(100, Score))
     end.
 
 %% @private Calculate average duration
 calculate_avg_duration(Spans) ->
     case Spans of
-        [] -> 0;
+        [] ->
+            0;
         _ ->
             Durations = [maps:get(end_time, S, 0) - maps:get(start_time, S, 0) || S <- Spans],
             lists:sum(Durations) / length(Durations)
@@ -465,7 +513,8 @@ calculate_avg_duration(Spans) ->
 %% @private Calculate error rate
 calculate_error_rate(Spans) ->
     case Spans of
-        [] -> 0.0;
+        [] ->
+            0.0;
         _ ->
             ErrorCount = length([S || S <- Spans, maps:get(status, S, ok) =:= error]),
             ErrorCount / length(Spans)
@@ -476,22 +525,27 @@ generate_global_recommendations(Bottlenecks, Spans) ->
     ErrorRate = calculate_error_rate(Spans),
     PerfScore = calculate_performance_score(Spans),
 
-    Recommendations = [
-        if ErrorRate > 0.1 ->
-            [<<"High error rate detected (">>, float_to_binary(ErrorRate * 100, [{decimals, 1}]),
-             <<"%). Review error handling and retry logic.">>];
-           true -> []
-        end,
-        if PerfScore < 50 ->
-            [<<"Low performance score (">>, float_to_binary(PerfScore, [{decimals, 1}]),
-             <<"/100). System needs optimization.">>];
-           true -> []
-        end,
-        if length(Bottlenecks) > 3 ->
-            [<<"Multiple bottlenecks detected (">>, integer_to_binary(length(Bottlenecks)),
-             <<"). Prioritize fixing the slowest spans first.">>];
-           true -> []
-        end
-    ],
+    Recommendations =
+        [if ErrorRate > 0.1 ->
+                [<<"High error rate detected (">>,
+                 float_to_binary(ErrorRate * 100, [{decimals, 1}]),
+                 <<"%). Review error handling and retry logic.">>];
+            true ->
+                []
+         end,
+         if PerfScore < 50 ->
+                [<<"Low performance score (">>,
+                 float_to_binary(PerfScore, [{decimals, 1}]),
+                 <<"/100). System needs optimization.">>];
+            true ->
+                []
+         end,
+         if length(Bottlenecks) > 3 ->
+                [<<"Multiple bottlenecks detected (">>,
+                 integer_to_binary(length(Bottlenecks)),
+                 <<"). Prioritize fixing the slowest spans first.">>];
+            true ->
+                []
+         end],
 
     lists:flatten(Recommendations).

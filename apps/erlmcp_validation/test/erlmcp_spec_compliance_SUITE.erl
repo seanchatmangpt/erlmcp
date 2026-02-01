@@ -15,6 +15,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_spec_compliance_SUITE).
+
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
@@ -24,150 +25,127 @@
 -define(MCP_VERSION, <<"2025-11-25">>).
 
 %% Define records locally
--record(mcp_resources_capability, {
-    subscribe = false :: boolean(),
-    listChanged = false :: boolean()
-}).
-
--record(mcp_tools_capability, {
-    listChanged = false :: boolean()
-}).
-
--record(mcp_prompts_capability, {
-    listChanged = false :: boolean()
-}).
-
--record(mcp_logging_capability, {
-}).
-
--record(mcp_sampling_capability, {
-    modelPreferences = undefined :: map() | undefined
-}).
-
--record(mcp_roots_capability, {
-}).
-
--record(mcp_capability, {
-    enabled = false :: boolean()
-}).
-
--record(mcp_server_capabilities, {
-    resources = #mcp_resources_capability{} :: #mcp_resources_capability{},
-    tools = #mcp_tools_capability{} :: #mcp_tools_capability{},
-    prompts = #mcp_prompts_capability{} :: #mcp_prompts_capability{},
-    logging = #mcp_logging_capability{} :: #mcp_logging_capability{},
-    sampling = #mcp_sampling_capability{} :: #mcp_sampling_capability{},
-    roots = #mcp_roots_capability{} :: #mcp_roots_capability{},
-    completions = undefined :: #mcp_capability{} | undefined,
-    experimental = undefined :: map() | undefined
-}).
-
--record(mcp_client_capabilities, {
-    roots = undefined :: map() | undefined,
-    sampling = undefined :: #mcp_sampling_capability{} | undefined,
-    experimental = undefined :: map() | undefined,
-    tools = #mcp_tools_capability{} :: #mcp_tools_capability{}
-}).
+-record(mcp_resources_capability,
+        {subscribe = false :: boolean(), listChanged = false :: boolean()}).
+-record(mcp_tools_capability, {listChanged = false :: boolean()}).
+-record(mcp_prompts_capability, {listChanged = false :: boolean()}).
+-record(mcp_logging_capability, {}).
+-record(mcp_sampling_capability, {modelPreferences = undefined :: map() | undefined}).
+-record(mcp_roots_capability, {}).
+-record(mcp_capability, {enabled = false :: boolean()}).
+-record(mcp_server_capabilities,
+        {resources = #mcp_resources_capability{} :: #mcp_resources_capability{},
+         tools = #mcp_tools_capability{} :: #mcp_tools_capability{},
+         prompts = #mcp_prompts_capability{} :: #mcp_prompts_capability{},
+         logging = #mcp_logging_capability{} :: #mcp_logging_capability{},
+         sampling = #mcp_sampling_capability{} :: #mcp_sampling_capability{},
+         roots = #mcp_roots_capability{} :: #mcp_roots_capability{},
+         completions = undefined :: #mcp_capability{} | undefined,
+         experimental = undefined :: map() | undefined}).
+-record(mcp_client_capabilities,
+        {roots = undefined :: map() | undefined,
+         sampling = undefined :: #mcp_sampling_capability{} | undefined,
+         experimental = undefined :: map() | undefined,
+         tools = #mcp_tools_capability{} :: #mcp_tools_capability{}}).
 
 %%====================================================================
 %% Common Test Callbacks
 %%====================================================================
 
 all() ->
-    [
-        {group, lifecycle},
-        {group, tools_api},
-        {group, resources_api},
-        {group, transport},
-        {group, error_codes}
-    ].
+    [{group, lifecycle},
+     {group, tools_api},
+     {group, resources_api},
+     {group, transport},
+     {group, error_codes}].
 
 groups() ->
-    [
-        {lifecycle, [sequence], [
-            init_server_capabilities,
-            connect_client_to_server,
-            authenticate_client,
-            establish_session,
-            negotiate_features,
-            timeout_inactive_session,
-            graceful_disconnect,
-            error_recovery,
-            concurrent_clients,
-            session_cleanup
-        ]},
-        {tools_api, [parallel], [
-            list_tools_empty,
-            list_tools_with_descriptions,
-            list_tools_pagination,
-            call_tool_success,
-            call_tool_missing_args,
-            call_tool_invalid_args,
-            call_tool_timeout,
-            call_tool_error_handling,
-            tool_progress_updates,
-            tool_cancellation,
-            tool_sampling,
-            tool_schema_validation
-        ]},
-        {resources_api, [parallel], [
-            list_resources_uri_matching,
-            list_resources_content_types,
-            read_resource_success,
-            read_resource_not_found,
-            subscribe_resource,
-            unsubscribe_resource,
-            resource_updates,
-            resource_list_changes,
-            resource_permissions,
-            resource_mime_types,
-            resource_large_content,
-            resource_binary_data,
-            resource_error_codes,
-            resource_cleanup
-        ]},
-        {transport, [parallel], [
-            stdio_line_protocol,
-            tcp_connection_pooling,
-            http_request_response,
-            websocket_bidirectional,
-            sse_server_push,
-            transport_switching,
-            concurrent_transports,
-            message_ordering,
-            compression_support,
-            keepalive,
-            backpressure_handling,
-            connection_limits,
-            error_propagation,
-            graceful_degradation,
-            transport_failover
-        ]},
-        {error_codes, [parallel], [
-            invalid_request_1001,
-            method_not_found_1002,
-            invalid_params_1003,
-            internal_error_1011,
-            parse_error_1012,
-            unsupported_tool_1020,
-            tool_execution_1021,
-            resource_unavailable_1030,
-            invalid_uri_1031,
-            request_timeout_1040,
-            rate_limited_1050,
-            concurrent_limit_1051
-        ]}
-    ].
+    [{lifecycle,
+      [sequence],
+      [init_server_capabilities,
+       connect_client_to_server,
+       authenticate_client,
+       establish_session,
+       negotiate_features,
+       timeout_inactive_session,
+       graceful_disconnect,
+       error_recovery,
+       concurrent_clients,
+       session_cleanup]},
+     {tools_api,
+      [parallel],
+      [list_tools_empty,
+       list_tools_with_descriptions,
+       list_tools_pagination,
+       call_tool_success,
+       call_tool_missing_args,
+       call_tool_invalid_args,
+       call_tool_timeout,
+       call_tool_error_handling,
+       tool_progress_updates,
+       tool_cancellation,
+       tool_sampling,
+       tool_schema_validation]},
+     {resources_api,
+      [parallel],
+      [list_resources_uri_matching,
+       list_resources_content_types,
+       read_resource_success,
+       read_resource_not_found,
+       subscribe_resource,
+       unsubscribe_resource,
+       resource_updates,
+       resource_list_changes,
+       resource_permissions,
+       resource_mime_types,
+       resource_large_content,
+       resource_binary_data,
+       resource_error_codes,
+       resource_cleanup]},
+     {transport,
+      [parallel],
+      [stdio_line_protocol,
+       tcp_connection_pooling,
+       http_request_response,
+       websocket_bidirectional,
+       sse_server_push,
+       transport_switching,
+       concurrent_transports,
+       message_ordering,
+       compression_support,
+       keepalive,
+       backpressure_handling,
+       connection_limits,
+       error_propagation,
+       graceful_degradation,
+       transport_failover]},
+     {error_codes,
+      [parallel],
+      [invalid_request_1001,
+       method_not_found_1002,
+       invalid_params_1003,
+       internal_error_1011,
+       parse_error_1012,
+       unsupported_tool_1020,
+       tool_execution_1021,
+       resource_unavailable_1030,
+       invalid_uri_1031,
+       request_timeout_1040,
+       rate_limited_1050,
+       concurrent_limit_1051]}].
 
 init_per_suite(Config) ->
     %% Start required applications (real system)
     Apps = [crypto, ssl, gproc, jsx, jesse],
     lists:foreach(fun(App) ->
-        case application:start(App) of
-            ok -> ok;
-            {error, {already_started, _}} -> ok
-        end
-    end, Apps),
+                     case application:start(App) of
+                         ok ->
+                             ok;
+                         {error, {already_started, _}} ->
+                             ok
+                     end
+                  end,
+                  Apps),
 
     %% Start erlmcp applications (full supervision tree)
     {ok, _} = application:ensure_all_started(erlmcp_core),
@@ -202,11 +180,10 @@ end_per_testcase(TestCase, Config) ->
 
 init_server_capabilities(_Config) ->
     %% Test: Initialize server with various capabilities
-    ServerCaps = #mcp_server_capabilities{
-        resources = #{},
-        tools = #{},
-        prompts = #{}
-    },
+    ServerCaps =
+        #mcp_server_capabilities{resources = #{},
+                                 tools = #{},
+                                 prompts = #{}},
 
     %% Exercise: Start real server with capabilities
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
@@ -227,19 +204,15 @@ connect_client_to_server(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Send initialize request via JSON-RPC (real protocol)
-    InitRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            <<"protocolVersion">> => ?MCP_VERSION,
-            <<"capabilities">> => #{},
-            <<"clientInfo">> => #{
-                <<"name">> => <<"test_client">>,
-                <<"version">> => <<"1.0.0">>
-            }
-        }
-    },
+    InitRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"initialize">>,
+          <<"params">> =>
+              #{<<"protocolVersion">> => ?MCP_VERSION,
+                <<"capabilities">> => #{},
+                <<"clientInfo">> =>
+                    #{<<"name">> => <<"test_client">>, <<"version">> => <<"1.0.0">>}}},
 
     %% Send via transport (real message passing)
     TransportPid ! {simulate_input, jsx:encode(InitRequest)},
@@ -277,11 +250,10 @@ establish_session(_Config) ->
     timer:sleep(100),
 
     %% Send initialized notification
-    InitializedNotification = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"notifications/initialized">>,
-        <<"params">> => #{}
-    },
+    InitializedNotification =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"method">> => <<"notifications/initialized">>,
+          <<"params">> => #{}},
     TransportPid ! {simulate_input, jsx:encode(InitializedNotification)},
     timer:sleep(100),
 
@@ -294,16 +266,11 @@ establish_session(_Config) ->
 
 negotiate_features(_Config) ->
     %% Test: Feature negotiation during initialization
-    ServerCaps = #mcp_server_capabilities{
-        resources = #{},
-        tools = #{}
-    },
+    ServerCaps = #mcp_server_capabilities{resources = #{}, tools = #{}},
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Client requests features
-    ClientCaps = #mcp_client_capabilities{
-        roots = #{}
-    },
+    ClientCaps = #mcp_client_capabilities{roots = #{}},
 
     %% Verify: Both capabilities can be encoded
     ?assertMatch(#{}, capability_to_map(ServerCaps)),
@@ -365,15 +332,15 @@ concurrent_clients(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Start multiple transports (concurrent clients)
-    Transports = [begin
-        {ok, TPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
-        TPid
-    end || _ <- lists:seq(1, 5)],
+    Transports =
+        [begin
+             {ok, TPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
+             TPid
+         end
+         || _ <- lists:seq(1, 5)],
 
     %% Verify: All transports alive (concurrent connections work)
-    lists:foreach(fun(TPid) ->
-        ?assert(is_process_alive(TPid))
-    end, Transports),
+    lists:foreach(fun(TPid) -> ?assert(is_process_alive(TPid)) end, Transports),
 
     %% Cleanup
     lists:foreach(fun erlmcp_transport_stdio:close/1, Transports),
@@ -412,12 +379,11 @@ list_tools_empty(_Config) ->
     timer:sleep(100),
 
     %% List tools request
-    ListToolsRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"tools/list">>,
-        <<"params">> => #{}
-    },
+    ListToolsRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"tools/list">>,
+          <<"params">> => #{}},
     TransportPid ! {simulate_input, jsx:encode(ListToolsRequest)},
     timer:sleep(100),
 
@@ -435,12 +401,11 @@ list_tools_with_descriptions(_Config) ->
 
     %% Add tool with description
     EchoHandler = fun(Args) -> #{<<"result">> => Args} end,
-    ok = erlmcp_server:add_tool_with_description(
-        ServerPid,
-        <<"echo">>,
-        EchoHandler,
-        <<"Echoes input arguments">>
-    ),
+    ok =
+        erlmcp_server:add_tool_with_description(ServerPid,
+                                                <<"echo">>,
+                                                EchoHandler,
+                                                <<"Echoes input arguments">>),
 
     %% Verify: Tool added (observable state)
     ?assert(is_process_alive(ServerPid)),
@@ -456,9 +421,10 @@ list_tools_pagination(_Config) ->
     %% Add multiple tools
     Handler = fun(Args) -> Args end,
     lists:foreach(fun(N) ->
-        ToolName = iolist_to_binary([<<"tool_">>, integer_to_binary(N)]),
-        ok = erlmcp_server:add_tool(ServerPid, ToolName, Handler)
-    end, lists:seq(1, 20)),
+                     ToolName = iolist_to_binary([<<"tool_">>, integer_to_binary(N)]),
+                     ok = erlmcp_server:add_tool(ServerPid, ToolName, Handler)
+                  end,
+                  lists:seq(1, 20)),
 
     %% Verify: All tools added
     ?assert(is_process_alive(ServerPid)),
@@ -473,12 +439,11 @@ call_tool_success(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Add echo tool
-    EchoHandler = fun(Args) ->
-        [#{
-            <<"type">> => <<"text">>,
-            <<"text">> => maps:get(<<"message">>, Args, <<"no message">>)
-        }]
-    end,
+    EchoHandler =
+        fun(Args) ->
+           [#{<<"type">> => <<"text">>,
+              <<"text">> => maps:get(<<"message">>, Args, <<"no message">>)}]
+        end,
     ok = erlmcp_server:add_tool(ServerPid, <<"echo">>, EchoHandler),
 
     %% Initialize
@@ -487,15 +452,12 @@ call_tool_success(_Config) ->
     timer:sleep(100),
 
     %% Call tool
-    CallToolRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{
-            <<"name">> => <<"echo">>,
-            <<"arguments">> => #{<<"message">> => <<"hello">>}
-        }
-    },
+    CallToolRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"tools/call">>,
+          <<"params">> =>
+              #{<<"name">> => <<"echo">>, <<"arguments">> => #{<<"message">> => <<"hello">>}}},
     TransportPid ! {simulate_input, jsx:encode(CallToolRequest)},
     timer:sleep(100),
 
@@ -513,12 +475,15 @@ call_tool_missing_args(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Add tool that requires arguments
-    RequiredArgsHandler = fun(Args) ->
-        case maps:get(<<"required_arg">>, Args, undefined) of
-            undefined -> error({missing_argument, required_arg});
-            Val -> [#{<<"type">> => <<"text">>, <<"text">> => Val}]
-        end
-    end,
+    RequiredArgsHandler =
+        fun(Args) ->
+           case maps:get(<<"required_arg">>, Args, undefined) of
+               undefined ->
+                   error({missing_argument, required_arg});
+               Val ->
+                   [#{<<"type">> => <<"text">>, <<"text">> => Val}]
+           end
+        end,
     ok = erlmcp_server:add_tool(ServerPid, <<"requires_args">>, RequiredArgsHandler),
 
     %% Initialize
@@ -527,15 +492,11 @@ call_tool_missing_args(_Config) ->
     timer:sleep(100),
 
     %% Call tool without required argument
-    CallToolRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{
-            <<"name">> => <<"requires_args">>,
-            <<"arguments">> => #{}
-        }
-    },
+    CallToolRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"tools/call">>,
+          <<"params">> => #{<<"name">> => <<"requires_args">>, <<"arguments">> => #{}}},
     TransportPid ! {simulate_input, jsx:encode(CallToolRequest)},
     timer:sleep(100),
 
@@ -552,14 +513,15 @@ call_tool_invalid_args(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add tool with type checking
-    TypedHandler = fun(Args) ->
-        case maps:get(<<"number">>, Args, undefined) of
-            N when is_number(N) ->
-                [#{<<"type">> => <<"text">>, <<"text">> => integer_to_binary(round(N))}];
-            _ ->
-                error({invalid_type, expected_number})
-        end
-    end,
+    TypedHandler =
+        fun(Args) ->
+           case maps:get(<<"number">>, Args, undefined) of
+               N when is_number(N) ->
+                   [#{<<"type">> => <<"text">>, <<"text">> => integer_to_binary(round(N))}];
+               _ ->
+                   error({invalid_type, expected_number})
+           end
+        end,
     ok = erlmcp_server:add_tool(ServerPid, <<"typed_tool">>, TypedHandler),
 
     %% Verify: Tool added
@@ -574,10 +536,11 @@ call_tool_timeout(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add slow tool
-    SlowHandler = fun(_Args) ->
-        timer:sleep(5000), % 5 second delay
-        [#{<<"type">> => <<"text">>, <<"text">> => <<"slow response">>}]
-    end,
+    SlowHandler =
+        fun(_Args) ->
+           timer:sleep(5000), % 5 second delay
+           [#{<<"type">> => <<"text">>, <<"text">> => <<"slow response">>}]
+        end,
     ok = erlmcp_server:add_tool(ServerPid, <<"slow_tool">>, SlowHandler),
 
     %% Verify: Tool added (actual timeout behavior tested via client)
@@ -593,9 +556,7 @@ call_tool_error_handling(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Add error-throwing tool
-    ErrorHandler = fun(_Args) ->
-        error({tool_error, <<"something went wrong">>})
-    end,
+    ErrorHandler = fun(_Args) -> error({tool_error, <<"something went wrong">>}) end,
     ok = erlmcp_server:add_tool(ServerPid, <<"error_tool">>, ErrorHandler),
 
     %% Initialize
@@ -604,15 +565,11 @@ call_tool_error_handling(_Config) ->
     timer:sleep(100),
 
     %% Call error tool
-    CallToolRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{
-            <<"name">> => <<"error_tool">>,
-            <<"arguments">> => #{}
-        }
-    },
+    CallToolRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"tools/call">>,
+          <<"params">> => #{<<"name">> => <<"error_tool">>, <<"arguments">> => #{}}},
     TransportPid ! {simulate_input, jsx:encode(CallToolRequest)},
     timer:sleep(100),
 
@@ -629,17 +586,19 @@ tool_progress_updates(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add tool with progress reporting
-    ProgressHandler = fun(Args) ->
-        Meta = maps:get(<<"_meta">>, Args, #{}),
-        ProgressToken = maps:get(<<"progressToken">>, Meta, undefined),
-        case ProgressToken of
-            undefined -> ok;
-            Token ->
-                %% Report progress
-                erlmcp_server:report_progress(ServerPid, Token, 50, 100)
+    ProgressHandler =
+        fun(Args) ->
+           Meta = maps:get(<<"_meta">>, Args, #{}),
+           ProgressToken = maps:get(<<"progressToken">>, Meta, undefined),
+           case ProgressToken of
+               undefined ->
+                   ok;
+               Token ->
+                   %% Report progress
+                   erlmcp_server:report_progress(ServerPid, Token, 50, 100)
+           end,
+           [#{<<"type">> => <<"text">>, <<"text">> => <<"done">>}]
         end,
-        [#{<<"type">> => <<"text">>, <<"text">> => <<"done">>}]
-    end,
     ok = erlmcp_server:add_tool(ServerPid, <<"progress_tool">>, ProgressHandler),
 
     %% Verify: Tool added
@@ -654,9 +613,8 @@ tool_cancellation(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add cancellable tool (placeholder - full cancellation not implemented)
-    CancellableHandler = fun(_Args) ->
-        [#{<<"type">> => <<"text">>, <<"text">> => <<"completed">>}]
-    end,
+    CancellableHandler =
+        fun(_Args) -> [#{<<"type">> => <<"text">>, <<"text">> => <<"completed">>}] end,
     ok = erlmcp_server:add_tool(ServerPid, <<"cancellable">>, CancellableHandler),
 
     %% Verify: Tool added
@@ -686,17 +644,15 @@ tool_schema_validation(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add tool with schema
-    Schema = #{
-        <<"type">> => <<"object">>,
-        <<"properties">> => #{
-            <<"name">> => #{<<"type">> => <<"string">>}
-        },
-        <<"required">> => [<<"name">>]
-    },
-    Handler = fun(Args) ->
-        Name = maps:get(<<"name">>, Args),
-        [#{<<"type">> => <<"text">>, <<"text">> => Name}]
-    end,
+    Schema =
+        #{<<"type">> => <<"object">>,
+          <<"properties">> => #{<<"name">> => #{<<"type">> => <<"string">>}},
+          <<"required">> => [<<"name">>]},
+    Handler =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args),
+           [#{<<"type">> => <<"text">>, <<"text">> => Name}]
+        end,
     ok = erlmcp_server:add_tool_with_schema(ServerPid, <<"validated_tool">>, Handler, Schema),
 
     %% Verify: Tool with schema added
@@ -715,17 +671,13 @@ list_resources_uri_matching(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add resources with different URIs
-    ResourceHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"file:///test.txt">>,
-            <<"name">> => <<"test resource">>,
-            <<"mimeType">> => <<"text/plain">>,
-            <<"contents">> => [#{
-                <<"type">> => <<"text">>,
-                <<"text">> => <<"content">>
-            }]
-        }
-    end,
+    ResourceHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///test.txt">>,
+             <<"name">> => <<"test resource">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"content">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///test.txt">>, ResourceHandler),
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///data.json">>, ResourceHandler),
 
@@ -741,26 +693,22 @@ list_resources_content_types(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add text resource
-    TextHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"text://test">>,
-            <<"mimeType">> => <<"text/plain">>,
-            <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"hello">>}]
-        }
-    end,
+    TextHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"text://test">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"hello">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"text://test">>, TextHandler),
 
     %% Add binary resource
-    BinaryHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"binary://data">>,
-            <<"mimeType">> => <<"application/octet-stream">>,
-            <<"contents">> => [#{
-                <<"type">> => <<"blob">>,
-                <<"blob">> => base64:encode(<<"binary data">>)
-            }]
-        }
-    end,
+    BinaryHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"binary://data">>,
+             <<"mimeType">> => <<"application/octet-stream">>,
+             <<"contents">> =>
+                 [#{<<"type">> => <<"blob">>, <<"blob">> => base64:encode(<<"binary data">>)}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"binary://data">>, BinaryHandler),
 
     %% Verify: Both resources added
@@ -776,13 +724,12 @@ read_resource_success(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Add resource
-    ResourceHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"file:///test.txt">>,
-            <<"mimeType">> => <<"text/plain">>,
-            <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"content">>}]
-        }
-    end,
+    ResourceHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///test.txt">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"content">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///test.txt">>, ResourceHandler),
 
     %% Initialize
@@ -791,14 +738,11 @@ read_resource_success(_Config) ->
     timer:sleep(100),
 
     %% Read resource
-    ReadRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"resources/read">>,
-        <<"params">> => #{
-            <<"uri">> => <<"file:///test.txt">>
-        }
-    },
+    ReadRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"resources/read">>,
+          <<"params">> => #{<<"uri">> => <<"file:///test.txt">>}},
     TransportPid ! {simulate_input, jsx:encode(ReadRequest)},
     timer:sleep(100),
 
@@ -821,14 +765,11 @@ read_resource_not_found(_Config) ->
     timer:sleep(100),
 
     %% Read non-existent resource
-    ReadRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"resources/read">>,
-        <<"params">> => #{
-            <<"uri">> => <<"file:///nonexistent.txt">>
-        }
-    },
+    ReadRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"resources/read">>,
+          <<"params">> => #{<<"uri">> => <<"file:///nonexistent.txt">>}},
     TransportPid ! {simulate_input, jsx:encode(ReadRequest)},
     timer:sleep(100),
 
@@ -846,13 +787,12 @@ subscribe_resource(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Add resource
-    ResourceHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"file:///watched.txt">>,
-            <<"mimeType">> => <<"text/plain">>,
-            <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"v1">>}]
-        }
-    end,
+    ResourceHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///watched.txt">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"v1">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///watched.txt">>, ResourceHandler),
 
     %% Initialize
@@ -861,14 +801,11 @@ subscribe_resource(_Config) ->
     timer:sleep(100),
 
     %% Subscribe to resource
-    SubscribeRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"resources/subscribe">>,
-        <<"params">> => #{
-            <<"uri">> => <<"file:///watched.txt">>
-        }
-    },
+    SubscribeRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"resources/subscribe">>,
+          <<"params">> => #{<<"uri">> => <<"file:///watched.txt">>}},
     TransportPid ! {simulate_input, jsx:encode(SubscribeRequest)},
     timer:sleep(100),
 
@@ -886,13 +823,12 @@ unsubscribe_resource(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Add and subscribe to resource
-    ResourceHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"file:///temp.txt">>,
-            <<"mimeType">> => <<"text/plain">>,
-            <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"data">>}]
-        }
-    end,
+    ResourceHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///temp.txt">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"data">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///temp.txt">>, ResourceHandler),
 
     %% Initialize
@@ -901,14 +837,11 @@ unsubscribe_resource(_Config) ->
     timer:sleep(100),
 
     %% Unsubscribe
-    UnsubscribeRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"resources/unsubscribe">>,
-        <<"params">> => #{
-            <<"uri">> => <<"file:///temp.txt">>
-        }
-    },
+    UnsubscribeRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"resources/unsubscribe">>,
+          <<"params">> => #{<<"uri">> => <<"file:///temp.txt">>}},
     TransportPid ! {simulate_input, jsx:encode(UnsubscribeRequest)},
     timer:sleep(100),
 
@@ -925,13 +858,12 @@ resource_updates(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add resource
-    ResourceHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"file:///dynamic.txt">>,
-            <<"mimeType">> => <<"text/plain">>,
-            <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"v1">>}]
-        }
-    end,
+    ResourceHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///dynamic.txt">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"v1">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///dynamic.txt">>, ResourceHandler),
 
     %% Trigger update notification
@@ -950,10 +882,12 @@ resource_list_changes(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add initial resource
-    Handler = fun(_Uri) ->
-        #{<<"uri">> => <<"file:///test">>, <<"mimeType">> => <<"text/plain">>,
-          <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"data">>}]}
-    end,
+    Handler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///test">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"data">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///test">>, Handler),
 
     %% Add another resource (triggers list change)
@@ -972,10 +906,12 @@ resource_permissions(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add restricted resource (permissions not fully implemented)
-    Handler = fun(_Uri) ->
-        #{<<"uri">> => <<"file:///restricted">>, <<"mimeType">> => <<"text/plain">>,
-          <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"secret">>}]}
-    end,
+    Handler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///restricted">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"secret">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///restricted">>, Handler),
 
     %% Verify: Resource added
@@ -990,22 +926,25 @@ resource_mime_types(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add resources with different MIME types
-    MimeTypes = [
-        {<<"text/plain">>, <<"plain">>},
-        {<<"application/json">>, <<"json">>},
-        {<<"text/html">>, <<"html">>},
-        {<<"application/xml">>, <<"xml">>}
-    ],
+    MimeTypes =
+        [{<<"text/plain">>, <<"plain">>},
+         {<<"application/json">>, <<"json">>},
+         {<<"text/html">>, <<"html">>},
+         {<<"application/xml">>, <<"xml">>}],
     lists:foreach(fun({MimeType, Suffix}) ->
-        Handler = fun(_Uri) ->
-            #{
-                <<"uri">> => <<"file:///test.", Suffix/binary>>,
-                <<"mimeType">> => MimeType,
-                <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"content">>}]
-            }
-        end,
-        ok = erlmcp_server:add_resource(ServerPid, <<"file:///test.", Suffix/binary>>, Handler)
-    end, MimeTypes),
+                     Handler =
+                         fun(_Uri) ->
+                            #{<<"uri">> => <<"file:///test.", Suffix/binary>>,
+                              <<"mimeType">> => MimeType,
+                              <<"contents">> =>
+                                  [#{<<"type">> => <<"text">>, <<"text">> => <<"content">>}]}
+                         end,
+                     ok =
+                         erlmcp_server:add_resource(ServerPid,
+                                                    <<"file:///test.", Suffix/binary>>,
+                                                    Handler)
+                  end,
+                  MimeTypes),
 
     %% Verify: All resources added
     ?assert(is_process_alive(ServerPid)),
@@ -1020,16 +959,12 @@ resource_large_content(_Config) ->
 
     %% Add resource with large content (1MB)
     LargeContent = binary:copy(<<"X">>, 1024 * 1024),
-    LargeHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"file:///large.bin">>,
-            <<"mimeType">> => <<"application/octet-stream">>,
-            <<"contents">> => [#{
-                <<"type">> => <<"text">>,
-                <<"text">> => LargeContent
-            }]
-        }
-    end,
+    LargeHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///large.bin">>,
+             <<"mimeType">> => <<"application/octet-stream">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => LargeContent}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///large.bin">>, LargeHandler),
 
     %% Verify: Large resource added
@@ -1045,16 +980,13 @@ resource_binary_data(_Config) ->
 
     %% Add binary resource
     BinaryData = <<1, 2, 3, 4, 5, 6, 7, 8>>,
-    BinaryHandler = fun(_Uri) ->
-        #{
-            <<"uri">> => <<"file:///binary.dat">>,
-            <<"mimeType">> => <<"application/octet-stream">>,
-            <<"contents">> => [#{
-                <<"type">> => <<"blob">>,
-                <<"blob">> => base64:encode(BinaryData)
-            }]
-        }
-    end,
+    BinaryHandler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///binary.dat">>,
+             <<"mimeType">> => <<"application/octet-stream">>,
+             <<"contents">> =>
+                 [#{<<"type">> => <<"blob">>, <<"blob">> => base64:encode(BinaryData)}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///binary.dat">>, BinaryHandler),
 
     %% Verify: Binary resource added
@@ -1081,10 +1013,12 @@ resource_cleanup(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add resources
-    Handler = fun(_Uri) ->
-        #{<<"uri">> => <<"file:///cleanup">>, <<"mimeType">> => <<"text/plain">>,
-          <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"data">>}]}
-    end,
+    Handler =
+        fun(_Uri) ->
+           #{<<"uri">> => <<"file:///cleanup">>,
+             <<"mimeType">> => <<"text/plain">>,
+             <<"contents">> => [#{<<"type">> => <<"text">>, <<"text">> => <<"data">>}]}
+        end,
     ok = erlmcp_server:add_resource(ServerPid, <<"file:///cleanup">>, Handler),
 
     %% Stop server (cleanup)
@@ -1149,15 +1083,15 @@ concurrent_transports(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Start multiple stdio transports
-    Transports = [begin
-        {ok, TPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
-        TPid
-    end || _ <- lists:seq(1, 10)],
+    Transports =
+        [begin
+             {ok, TPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
+             TPid
+         end
+         || _ <- lists:seq(1, 10)],
 
     %% Verify: All transports active
-    lists:foreach(fun(TPid) ->
-        ?assert(is_process_alive(TPid))
-    end, Transports),
+    lists:foreach(fun(TPid) -> ?assert(is_process_alive(TPid)) end, Transports),
 
     %% Cleanup
     lists:foreach(fun erlmcp_transport_stdio:close/1, Transports),
@@ -1171,14 +1105,16 @@ message_ordering(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Send multiple messages in sequence
-    Messages = [
-        #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => N, <<"method">> => <<"test">>}
-        || N <- lists:seq(1, 10)
-    ],
+    Messages =
+        [#{<<"jsonrpc">> => <<"2.0">>,
+           <<"id">> => N,
+           <<"method">> => <<"test">>}
+         || N <- lists:seq(1, 10)],
     lists:foreach(fun(Msg) ->
-        TransportPid ! {simulate_input, jsx:encode(Msg)},
-        timer:sleep(10)
-    end, Messages),
+                     TransportPid ! {simulate_input, jsx:encode(Msg)},
+                     timer:sleep(10)
+                  end,
+                  Messages),
 
     %% Verify: All messages processed (ordering maintained)
     ?assert(is_process_alive(TransportPid)),
@@ -1208,10 +1144,12 @@ connection_limits(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Create many connections (no hard limit currently)
-    Transports = [begin
-        {ok, TPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
-        TPid
-    end || _ <- lists:seq(1, 50)],
+    Transports =
+        [begin
+             {ok, TPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
+             TPid
+         end
+         || _ <- lists:seq(1, 50)],
 
     %% Verify: All connections established
     ?assertEqual(50, length(Transports)),
@@ -1265,11 +1203,8 @@ invalid_request_1001(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Send invalid request (missing required fields)
-    InvalidRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1
-        %% Missing method field
-    },
+    InvalidRequest = #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 1},
+    %% Missing method field
     TransportPid ! {simulate_input, jsx:encode(InvalidRequest)},
     timer:sleep(100),
 
@@ -1292,12 +1227,11 @@ method_not_found_1002(_Config) ->
     timer:sleep(100),
 
     %% Call non-existent method
-    Request = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"nonexistent/method">>,
-        <<"params">> => #{}
-    },
+    Request =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"nonexistent/method">>,
+          <<"params">> => #{}},
     TransportPid ! {simulate_input, jsx:encode(Request)},
     timer:sleep(100),
 
@@ -1315,16 +1249,14 @@ invalid_params_1003(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Initialize with invalid params (missing required field)
-    InvalidInit = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            %% Missing protocolVersion
-            <<"capabilities">> => #{},
-            <<"clientInfo">> => #{}
-        }
-    },
+    InvalidInit =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"initialize">>,
+          <<"params">> =>
+              #{%% Missing protocolVersion
+                <<"capabilities">> => #{},
+                <<"clientInfo">> => #{}}},
     TransportPid ! {simulate_input, jsx:encode(InvalidInit)},
     timer:sleep(100),
 
@@ -1341,9 +1273,7 @@ internal_error_1011(_Config) ->
     {ok, ServerPid} = erlmcp_server:start_link(make_server_id(), ServerCaps),
 
     %% Add tool that crashes
-    CrashHandler = fun(_Args) ->
-        exit(internal_crash)
-    end,
+    CrashHandler = fun(_Args) -> exit(internal_crash) end,
     ok = erlmcp_server:add_tool(ServerPid, <<"crash_tool">>, CrashHandler),
 
     %% Verify: Server handles internal errors
@@ -1381,15 +1311,11 @@ unsupported_tool_1020(_Config) ->
     timer:sleep(100),
 
     %% Call non-existent tool
-    CallToolRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{
-            <<"name">> => <<"nonexistent_tool">>,
-            <<"arguments">> => #{}
-        }
-    },
+    CallToolRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"tools/call">>,
+          <<"params">> => #{<<"name">> => <<"nonexistent_tool">>, <<"arguments">> => #{}}},
     TransportPid ! {simulate_input, jsx:encode(CallToolRequest)},
     timer:sleep(100),
 
@@ -1407,9 +1333,7 @@ tool_execution_1021(_Config) ->
     {ok, TransportPid} = erlmcp_transport_stdio:start_link(ServerPid, #{test_mode => true}),
 
     %% Add tool that fails
-    FailHandler = fun(_Args) ->
-        error({execution_failed, <<"Tool execution error">>})
-    end,
+    FailHandler = fun(_Args) -> error({execution_failed, <<"Tool execution error">>}) end,
     ok = erlmcp_server:add_tool(ServerPid, <<"fail_tool">>, FailHandler),
 
     %% Initialize
@@ -1418,15 +1342,11 @@ tool_execution_1021(_Config) ->
     timer:sleep(100),
 
     %% Call failing tool
-    CallToolRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{
-            <<"name">> => <<"fail_tool">>,
-            <<"arguments">> => #{}
-        }
-    },
+    CallToolRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"tools/call">>,
+          <<"params">> => #{<<"name">> => <<"fail_tool">>, <<"arguments">> => #{}}},
     TransportPid ! {simulate_input, jsx:encode(CallToolRequest)},
     timer:sleep(100),
 
@@ -1449,14 +1369,11 @@ resource_unavailable_1030(_Config) ->
     timer:sleep(100),
 
     %% Read unavailable resource
-    ReadRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"resources/read">>,
-        <<"params">> => #{
-            <<"uri">> => <<"file:///unavailable.txt">>
-        }
-    },
+    ReadRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"resources/read">>,
+          <<"params">> => #{<<"uri">> => <<"file:///unavailable.txt">>}},
     TransportPid ! {simulate_input, jsx:encode(ReadRequest)},
     timer:sleep(100),
 
@@ -1479,14 +1396,11 @@ invalid_uri_1031(_Config) ->
     timer:sleep(100),
 
     %% Read with invalid URI
-    ReadRequest = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"resources/read">>,
-        <<"params">> => #{
-            <<"uri">> => <<"not a valid uri">>
-        }
-    },
+    ReadRequest =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"method">> => <<"resources/read">>,
+          <<"params">> => #{<<"uri">> => <<"not a valid uri">>}},
     TransportPid ! {simulate_input, jsx:encode(ReadRequest)},
     timer:sleep(100),
 
@@ -1520,42 +1434,45 @@ concurrent_limit_1051(_Config) ->
 %%====================================================================
 
 make_server_id() ->
-    iolist_to_binary([
-        <<"test_server_">>,
-        integer_to_binary(erlang:system_time(millisecond))
-    ]).
+    iolist_to_binary([<<"test_server_">>, integer_to_binary(erlang:system_time(millisecond))]).
 
 make_initialize_request(RequestId) ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => RequestId,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            <<"protocolVersion">> => ?MCP_VERSION,
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => RequestId,
+      <<"method">> => <<"initialize">>,
+      <<"params">> =>
+          #{<<"protocolVersion">> => ?MCP_VERSION,
             <<"capabilities">> => #{},
-            <<"clientInfo">> => #{
-                <<"name">> => <<"test_client">>,
-                <<"version">> => <<"1.0.0">>
-            }
-        }
-    }.
+            <<"clientInfo">> => #{<<"name">> => <<"test_client">>, <<"version">> => <<"1.0.0">>}}}.
 
-capability_to_map(#mcp_server_capabilities{resources = Resources, tools = Tools, prompts = Prompts}) ->
+capability_to_map(#mcp_server_capabilities{resources = Resources,
+                                           tools = Tools,
+                                           prompts = Prompts}) ->
     Map = #{},
-    Map1 = case Resources of
-        undefined -> Map;
-        _ -> maps:put(<<"resources">>, #{}, Map)
-    end,
-    Map2 = case Tools of
-        undefined -> Map1;
-        _ -> maps:put(<<"tools">>, #{}, Map1)
-    end,
+    Map1 =
+        case Resources of
+            undefined ->
+                Map;
+            _ ->
+                maps:put(<<"resources">>, #{}, Map)
+        end,
+    Map2 =
+        case Tools of
+            undefined ->
+                Map1;
+            _ ->
+                maps:put(<<"tools">>, #{}, Map1)
+        end,
     case Prompts of
-        undefined -> Map2;
-        _ -> maps:put(<<"prompts">>, #{}, Map2)
+        undefined ->
+            Map2;
+        _ ->
+            maps:put(<<"prompts">>, #{}, Map2)
     end;
 capability_to_map(#mcp_client_capabilities{roots = Roots}) ->
     case Roots of
-        undefined -> #{};
-        _ -> #{<<"roots">> => #{}}
+        undefined ->
+            #{};
+        _ ->
+            #{<<"roots">> => #{}}
     end.

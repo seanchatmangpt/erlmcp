@@ -19,19 +19,12 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_streaming_poc).
+
 -behaviour(gen_server).
 
 %% API exports
--export([
-    start_link/0,
-    start_link/1,
-    stop/1,
-    subscribe/2,
-    unsubscribe/2,
-    execute_tool/3,
-    run_demo/0
-]).
-
+-export([start_link/0, start_link/1, stop/1, subscribe/2, unsubscribe/2, execute_tool/3,
+         run_demo/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -44,38 +37,32 @@
 -type chunk_data() :: binary() | map().
 -type execution_id() :: reference().
 -type subscriber_pid() :: pid().
-
 %% Backpressure strategy
 -type backpressure_strategy() :: drop | buffer | block.
 
 %% Subscriber info
--record(subscriber, {
-    pid :: subscriber_pid(),
-    monitor_ref :: reference(),
-    buffer = [] :: [chunk_data()],
-    buffer_size = 0 :: non_neg_integer(),
-    max_buffer_size = 100 :: pos_integer(),
-    backpressure = drop :: backpressure_strategy(),
-    chunks_received = 0 :: non_neg_integer(),
-    chunks_dropped = 0 :: non_neg_integer()
-}).
-
+-record(subscriber,
+        {pid :: subscriber_pid(),
+         monitor_ref :: reference(),
+         buffer = [] :: [chunk_data()],
+         buffer_size = 0 :: non_neg_integer(),
+         max_buffer_size = 100 :: pos_integer(),
+         backpressure = drop :: backpressure_strategy(),
+         chunks_received = 0 :: non_neg_integer(),
+         chunks_dropped = 0 :: non_neg_integer()}).
 %% Execution info
--record(execution, {
-    id :: execution_id(),
-    tool_name :: tool_name(),
-    params :: tool_params(),
-    subscribers = [] :: [#subscriber{}],
-    chunks_sent = 0 :: non_neg_integer(),
-    start_time :: integer(),
-    completed = false :: boolean()
-}).
-
+-record(execution,
+        {id :: execution_id(),
+         tool_name :: tool_name(),
+         params :: tool_params(),
+         subscribers = [] :: [#subscriber{}],
+         chunks_sent = 0 :: non_neg_integer(),
+         start_time :: integer(),
+         completed = false :: boolean()}).
 %% State record
--record(state, {
-    executions = #{} :: #{execution_id() => #execution{}},
-    tools = #{} :: #{tool_name() => fun((tool_params()) -> ok)}
-}).
+-record(state,
+        {executions = #{} :: #{execution_id() => #execution{}},
+         tools = #{} :: #{tool_name() => fun((tool_params()) -> ok)}}).
 
 -type state() :: #state{}.
 
@@ -136,19 +123,19 @@ run_demo() ->
     register_demo_tool(Server),
 
     %% Execute the tool
-    {ok, ExecutionId} = execute_tool(Server, <<"slow_data_processor">>, #{
-        chunks => 10,
-        delay_ms => 200,
-        chunk_size => 100
-    }),
+    {ok, ExecutionId} =
+        execute_tool(Server,
+                     <<"slow_data_processor">>,
+                     #{chunks => 10,
+                       delay_ms => 200,
+                       chunk_size => 100}),
     io:format("[Execution] Started execution: ~p~n", [ExecutionId]),
 
     %% Start 3 subscriber processes
-    Subscribers = [
-        spawn_subscriber(Server, ExecutionId, <<"Subscriber-1">>, fast),
-        spawn_subscriber(Server, ExecutionId, <<"Subscriber-2">>, medium),
-        spawn_subscriber(Server, ExecutionId, <<"Subscriber-3">>, slow)
-    ],
+    Subscribers =
+        [spawn_subscriber(Server, ExecutionId, <<"Subscriber-1">>, fast),
+         spawn_subscriber(Server, ExecutionId, <<"Subscriber-2">>, medium),
+         spawn_subscriber(Server, ExecutionId, <<"Subscriber-3">>, slow)],
     io:format("[Subscribers] Started 3 subscribers: ~p~n", [Subscribers]),
 
     %% Wait for completion and collect results
@@ -160,16 +147,20 @@ run_demo() ->
     %% Print results
     io:format("~n=== Results ===~n", []),
     lists:foreach(fun({Name, ChunksReceived, Latencies}) ->
-        AvgLatency = case Latencies of
-            [] -> 0;
-            _ -> lists:sum(Latencies) div length(Latencies)
-        end,
-        P50 = percentile(Latencies, 0.5),
-        P95 = percentile(Latencies, 0.95),
-        P99 = percentile(Latencies, 0.99),
-        io:format("[~s] Chunks: ~p, Avg Latency: ~p us, P50: ~p us, P95: ~p us, P99: ~p us~n",
-                  [Name, ChunksReceived, AvgLatency, P50, P95, P99])
-    end, Stats),
+                     AvgLatency =
+                         case Latencies of
+                             [] ->
+                                 0;
+                             _ ->
+                                 lists:sum(Latencies) div length(Latencies)
+                         end,
+                     P50 = percentile(Latencies, 0.5),
+                     P95 = percentile(Latencies, 0.95),
+                     P99 = percentile(Latencies, 0.99),
+                     io:format("[~s] Chunks: ~p, Avg Latency: ~p us, P50: ~p us, P95: ~p us, P99: ~p us~n",
+                               [Name, ChunksReceived, AvgLatency, P50, P95, P99])
+                  end,
+                  Stats),
 
     %% Cleanup
     lists:foreach(fun(Sub) -> Sub ! stop end, Subscribers),
@@ -195,10 +186,7 @@ handle_call({subscribe, ExecutionId, SubscriberPid}, _From, State) ->
                 false ->
                     %% Add new subscriber
                     MonitorRef = monitor(process, SubscriberPid),
-                    Subscriber = #subscriber{
-                        pid = SubscriberPid,
-                        monitor_ref = MonitorRef
-                    },
+                    Subscriber = #subscriber{pid = SubscriberPid, monitor_ref = MonitorRef},
                     NewSubscribers = [Subscriber | Execution#execution.subscribers],
                     NewExecution = Execution#execution{subscribers = NewSubscribers},
                     NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
@@ -207,7 +195,6 @@ handle_call({subscribe, ExecutionId, SubscriberPid}, _From, State) ->
                     {reply, {error, already_subscribed}, State}
             end
     end;
-
 handle_call({unsubscribe, ExecutionId, SubscriberPid}, _From, State) ->
     case maps:get(ExecutionId, State#state.executions, undefined) of
         undefined ->
@@ -218,23 +205,23 @@ handle_call({unsubscribe, ExecutionId, SubscriberPid}, _From, State) ->
                     {reply, ok, State};
                 Subscriber ->
                     demonitor(Subscriber#subscriber.monitor_ref, [flush]),
-                    NewSubscribers = lists:keydelete(SubscriberPid, #subscriber.pid,
-                                                     Execution#execution.subscribers),
+                    NewSubscribers =
+                        lists:keydelete(SubscriberPid,
+                                        #subscriber.pid,
+                                        Execution#execution.subscribers),
                     NewExecution = Execution#execution{subscribers = NewSubscribers},
                     NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
                     {reply, ok, State#state{executions = NewExecutions}}
             end
     end;
-
 handle_call({execute_tool, ToolName, Params}, _From, State) ->
     %% Create execution
     ExecutionId = make_ref(),
-    Execution = #execution{
-        id = ExecutionId,
-        tool_name = ToolName,
-        params = Params,
-        start_time = erlang:monotonic_time(microsecond)
-    },
+    Execution =
+        #execution{id = ExecutionId,
+                   tool_name = ToolName,
+                   params = Params,
+                   start_time = erlang:monotonic_time(microsecond)},
     NewExecutions = maps:put(ExecutionId, Execution, State#state.executions),
     NewState = State#state{executions = NewExecutions},
 
@@ -243,7 +230,6 @@ handle_call({execute_tool, ToolName, Params}, _From, State) ->
     spawn(fun() -> execute_tool_async(Self, ExecutionId, ToolName, Params) end),
 
     {reply, {ok, ExecutionId}, NewState};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -254,19 +240,19 @@ handle_cast({stream_chunk, ExecutionId, ChunkData}, State) ->
         Execution ->
             %% Send chunk to all subscribers
             Timestamp = erlang:monotonic_time(microsecond),
-            NewSubscribers = lists:map(fun(Subscriber) ->
-                send_chunk_to_subscriber(Subscriber, ExecutionId, ChunkData, Timestamp)
-            end, Execution#execution.subscribers),
+            NewSubscribers =
+                lists:map(fun(Subscriber) ->
+                             send_chunk_to_subscriber(Subscriber, ExecutionId, ChunkData, Timestamp)
+                          end,
+                          Execution#execution.subscribers),
 
             %% Update execution
-            NewExecution = Execution#execution{
-                subscribers = NewSubscribers,
-                chunks_sent = Execution#execution.chunks_sent + 1
-            },
+            NewExecution =
+                Execution#execution{subscribers = NewSubscribers,
+                                    chunks_sent = Execution#execution.chunks_sent + 1},
             NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
             {noreply, State#state{executions = NewExecutions}}
     end;
-
 handle_cast({stream_complete, ExecutionId}, State) ->
     case maps:get(ExecutionId, State#state.executions, undefined) of
         undefined ->
@@ -274,36 +260,41 @@ handle_cast({stream_complete, ExecutionId}, State) ->
         Execution ->
             %% Notify all subscribers of completion
             lists:foreach(fun(Subscriber) ->
-                Subscriber#subscriber.pid ! {stream_complete, ExecutionId}
-            end, Execution#execution.subscribers),
+                             Subscriber#subscriber.pid ! {stream_complete, ExecutionId}
+                          end,
+                          Execution#execution.subscribers),
 
             %% Mark execution as complete
             NewExecution = Execution#execution{completed = true},
             NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
             {noreply, State#state{executions = NewExecutions}}
     end;
-
 handle_cast({register_tool, ToolName, Handler}, State) ->
     NewTools = maps:put(ToolName, Handler, State#state.tools),
     {noreply, State#state{tools = NewTools}};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({'DOWN', MonitorRef, process, SubscriberPid, _Reason}, State) ->
     %% Remove dead subscriber from all executions
-    NewExecutions = maps:map(fun(_ExecId, Execution) ->
-        case lists:keyfind(MonitorRef, #subscriber.monitor_ref, Execution#execution.subscribers) of
-            false ->
-                Execution;
-            _Subscriber ->
-                NewSubscribers = lists:keydelete(SubscriberPid, #subscriber.pid,
+    NewExecutions =
+        maps:map(fun(_ExecId, Execution) ->
+                    case lists:keyfind(MonitorRef,
+                                       #subscriber.monitor_ref,
+                                       Execution#execution.subscribers)
+                    of
+                        false ->
+                            Execution;
+                        _Subscriber ->
+                            NewSubscribers =
+                                lists:keydelete(SubscriberPid,
+                                                #subscriber.pid,
                                                 Execution#execution.subscribers),
-                Execution#execution{subscribers = NewSubscribers}
-        end
-    end, State#state.executions),
+                            Execution#execution{subscribers = NewSubscribers}
+                    end
+                 end,
+                 State#state.executions),
     {noreply, State#state{executions = NewExecutions}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -325,24 +316,22 @@ send_chunk_to_subscriber(Subscriber, ExecutionId, ChunkData, Timestamp) ->
             case erlang:process_info(Subscriber#subscriber.pid, message_queue_len) of
                 {message_queue_len, Len} when Len < 10 ->
                     Subscriber#subscriber.pid ! {stream_chunk, ExecutionId, ChunkData, Timestamp},
-                    Subscriber#subscriber{chunks_received = Subscriber#subscriber.chunks_received + 1};
+                    Subscriber#subscriber{chunks_received =
+                                              Subscriber#subscriber.chunks_received + 1};
                 _ ->
                     %% Drop chunk
                     Subscriber#subscriber{chunks_dropped = Subscriber#subscriber.chunks_dropped + 1}
             end;
         buffer ->
             %% Buffer chunks if under limit
-            if
-                Subscriber#subscriber.buffer_size < Subscriber#subscriber.max_buffer_size ->
-                    %% Add to buffer
-                    NewBuffer = Subscriber#subscriber.buffer ++ [{ChunkData, Timestamp}],
-                    Subscriber#subscriber{
-                        buffer = NewBuffer,
-                        buffer_size = Subscriber#subscriber.buffer_size + 1
-                    };
-                true ->
-                    %% Buffer full, drop
-                    Subscriber#subscriber{chunks_dropped = Subscriber#subscriber.chunks_dropped + 1}
+            if Subscriber#subscriber.buffer_size < Subscriber#subscriber.max_buffer_size ->
+                   %% Add to buffer
+                   NewBuffer = Subscriber#subscriber.buffer ++ [{ChunkData, Timestamp}],
+                   Subscriber#subscriber{buffer = NewBuffer,
+                                         buffer_size = Subscriber#subscriber.buffer_size + 1};
+               true ->
+                   %% Buffer full, drop
+                   Subscriber#subscriber{chunks_dropped = Subscriber#subscriber.chunks_dropped + 1}
             end;
         block ->
             %% Always send (blocking)
@@ -359,20 +348,20 @@ execute_tool_async(Server, ExecutionId, ToolName, Params) ->
 
     %% Generate and stream chunks
     lists:foreach(fun(ChunkNum) ->
-        %% Simulate processing delay
-        timer:sleep(DelayMs),
+                     %% Simulate processing delay
+                     timer:sleep(DelayMs),
 
-        %% Generate chunk data
-        ChunkData = #{
-            chunk_num => ChunkNum,
-            total_chunks => NumChunks,
-            data => generate_chunk_data(ChunkSize),
-            timestamp => erlang:system_time(microsecond)
-        },
+                     %% Generate chunk data
+                     ChunkData =
+                         #{chunk_num => ChunkNum,
+                           total_chunks => NumChunks,
+                           data => generate_chunk_data(ChunkSize),
+                           timestamp => erlang:system_time(microsecond)},
 
-        %% Stream chunk to server
-        gen_server:cast(Server, {stream_chunk, ExecutionId, ChunkData})
-    end, lists:seq(1, NumChunks)),
+                     %% Stream chunk to server
+                     gen_server:cast(Server, {stream_chunk, ExecutionId, ChunkData})
+                  end,
+                  lists:seq(1, NumChunks)),
 
     %% Signal completion
     gen_server:cast(Server, {stream_complete, ExecutionId}).
@@ -390,20 +379,24 @@ register_demo_tool(Server) ->
 spawn_subscriber(Server, ExecutionId, Name, Speed) ->
     Parent = self(),
     spawn(fun() ->
-        %% Subscribe to execution
-        ok = subscribe(Server, ExecutionId),
-        io:format("[~s] Subscribed to execution: ~p~n", [Name, ExecutionId]),
+             %% Subscribe to execution
+             ok = subscribe(Server, ExecutionId),
+             io:format("[~s] Subscribed to execution: ~p~n", [Name, ExecutionId]),
 
-        %% Processing delay based on speed
-        DelayMs = case Speed of
-            fast -> 0;
-            medium -> 10;
-            slow -> 50
-        end,
+             %% Processing delay based on speed
+             DelayMs =
+                 case Speed of
+                     fast ->
+                         0;
+                     medium ->
+                         10;
+                     slow ->
+                         50
+                 end,
 
-        %% Receive chunks
-        subscriber_loop(Name, ExecutionId, DelayMs, [], Parent)
-    end).
+             %% Receive chunks
+             subscriber_loop(Name, ExecutionId, DelayMs, [], Parent)
+          end).
 
 %% @doc Subscriber loop receiving chunks
 subscriber_loop(Name, ExecutionId, DelayMs, Latencies, Parent) ->
@@ -422,15 +415,11 @@ subscriber_loop(Name, ExecutionId, DelayMs, Latencies, Parent) ->
                       [Name, ChunkNum, TotalChunks, Latency]),
 
             subscriber_loop(Name, ExecutionId, DelayMs, [Latency | Latencies], Parent);
-
         {stream_complete, ExecutionId} ->
-            io:format("[~s] Stream complete. Total chunks: ~p~n",
-                      [Name, length(Latencies)]),
+            io:format("[~s] Stream complete. Total chunks: ~p~n", [Name, length(Latencies)]),
             subscriber_complete(Name, Latencies, Parent);
-
         stop ->
             ok;
-
         _Other ->
             subscriber_loop(Name, ExecutionId, DelayMs, Latencies, Parent)
     after 5000 ->

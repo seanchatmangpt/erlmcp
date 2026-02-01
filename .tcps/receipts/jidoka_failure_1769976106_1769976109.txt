@@ -1,0 +1,42 @@
+TCPS Jidoka Failure Receipt (自働化失敗レシート)
+================================================
+
+Work Order: 1769976106
+Timestamp:  2026-02-01T20:01:46Z
+Gate:       Gate 1: Schema Validation
+Status:     FAILED - LINE STOPPED
+
+Failure Details:
+Compilation failed
+
+Technical Details:
+===> Analyzing applications...
+===> Compiling extra_apps/erlmcp_core/test
+===> Compiling _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl failed
+_build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:{10,14}: can't find include lib "proper/include/proper.hrl"; Make sure proper is in your app file's 'applications' list
+     ┌─ _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:
+     │
+ 533 │      ?FORALL(_N,
+     │       ╰── undefined macro 'FORALL/3'
+
+     ┌─ _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:
+     │
+ 555 │      ?FORALL({Status1, Status2},
+     │       ╰── undefined macro 'FORALL/3'
+
+     ┌─ _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:
+     │
+ 581 │      ?FORALL(Metadata,
+     │       ╰── undefined macro 'FORALL/3'
+
+Action Required:
+1. Fix the root cause (do not bypass the gate)
+2. Run 5 Whys analysis if recurring
+3. Re-run quality gates
+4. Resume production only after passing
+
+Jidoka Principle:
+Quality must be built into the process.
+Stop the line immediately when defects are detected.
+
+Receipt Hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

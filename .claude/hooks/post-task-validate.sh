@@ -45,6 +45,13 @@ main() {
 
     cd "$PROJECT_ROOT"
 
+    # Source SessionStart environment for OTP 28
+    local env_file="${PROJECT_ROOT}/.erlmcp/env.sh"
+    if [[ -f "$env_file" ]]; then
+        source "$env_file"
+        log_hook "Sourced environment from: $env_file"
+    fi
+
     # Run Erlang-based quality gates validation
     log_hook "Running TCPS quality gates via erlmcp_hooks..."
     echo ""

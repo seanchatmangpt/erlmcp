@@ -9,15 +9,9 @@
 -module(erlmcp_validator_hooks).
 
 %% API exports
--export([
-    maybe_emit_reproducer/4,
-    emit_protocol_failure/3,
-    emit_transport_failure/3,
-    emit_sse_failure/3,
-    enable_reproducer_capture/0,
-    disable_reproducer_capture/0,
-    is_capture_enabled/0
-]).
+-export([maybe_emit_reproducer/4, emit_protocol_failure/3, emit_transport_failure/3,
+         emit_sse_failure/3, enable_reproducer_capture/0, disable_reproducer_capture/0,
+         is_capture_enabled/0]).
 
 -define(CAPTURE_ENABLED_KEY, erlmcp_reproducer_capture_enabled).
 
@@ -53,10 +47,11 @@ emit_protocol_failure(RuleId, Expected, Actual) ->
             ok;
         _Pid ->
             Input = get_failure_context(),
-            case erlmcp_reproducer:capture_protocol_failure(
-                    RuleId, Input, Expected, Actual) of
-                {ok, _Id} -> ok;
-                {error, Reason} -> {error, Reason}
+            case erlmcp_reproducer:capture_protocol_failure(RuleId, Input, Expected, Actual) of
+                {ok, _Id} ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
@@ -68,10 +63,11 @@ emit_transport_failure(RuleId, Expected, Actual) ->
             ok;
         _Pid ->
             Input = get_failure_context(),
-            case erlmcp_reproducer:capture_transport_failure(
-                    RuleId, Input, Expected, Actual) of
-                {ok, _Id} -> ok;
-                {error, Reason} -> {error, Reason}
+            case erlmcp_reproducer:capture_transport_failure(RuleId, Input, Expected, Actual) of
+                {ok, _Id} ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
@@ -83,10 +79,11 @@ emit_sse_failure(RuleId, Expected, Actual) ->
             ok;
         _Pid ->
             Input = get_failure_context(),
-            case erlmcp_reproducer:capture_sse_failure(
-                    RuleId, Input, Expected, Actual) of
-                {ok, _Id} -> ok;
-                {error, Reason} -> {error, Reason}
+            case erlmcp_reproducer:capture_sse_failure(RuleId, Input, Expected, Actual) of
+                {ok, _Id} ->
+                    ok;
+                {error, Reason} ->
+                    {error, Reason}
             end
     end.
 
@@ -106,8 +103,10 @@ disable_reproducer_capture() ->
 -spec is_capture_enabled() -> boolean().
 is_capture_enabled() ->
     case application:get_env(erlmcp_core, ?CAPTURE_ENABLED_KEY, false) of
-        true -> true;
-        _ -> false
+        true ->
+            true;
+        _ ->
+            false
     end.
 
 %%%===================================================================
@@ -118,6 +117,8 @@ is_capture_enabled() ->
 -spec get_failure_context() -> term().
 get_failure_context() ->
     case get(erlmcp_validator_failure_context) of
-        undefined -> undefined;
-        Context -> Context
+        undefined ->
+            undefined;
+        Context ->
+            Context
     end.

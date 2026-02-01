@@ -19,24 +19,20 @@
 
 %% Test attribute key normalization
 normalize_attr_key_test_() ->
-    [
-     ?_assertEqual(<<"test_key">>, erlmcp_tracing:normalize_attr_key(<<"test_key">>)),
+    [?_assertEqual(<<"test_key">>, erlmcp_tracing:normalize_attr_key(<<"test_key">>)),
      ?_assertEqual(<<"atom_key">>, erlmcp_tracing:normalize_attr_key(atom_key)),
      ?_assertEqual(<<"string_key">>, erlmcp_tracing:normalize_attr_key("string_key")),
-     ?_assertEqual(<<"123">>, erlmcp_tracing:normalize_attr_key(123))
-    ].
+     ?_assertEqual(<<"123">>, erlmcp_tracing:normalize_attr_key(123))].
 
 %% Test attribute value normalization
 normalize_attr_value_test_() ->
-    [
-     ?_assertEqual(<<"binary_value">>, erlmcp_tracing:normalize_attr_value(<<"binary_value">>)),
+    [?_assertEqual(<<"binary_value">>, erlmcp_tracing:normalize_attr_value(<<"binary_value">>)),
      ?_assertEqual(123, erlmcp_tracing:normalize_attr_value(123)),
      ?_assertEqual(45.6, erlmcp_tracing:normalize_attr_value(45.6)),
      ?_assertEqual(true, erlmcp_tracing:normalize_attr_value(true)),
      ?_assertEqual(false, erlmcp_tracing:normalize_attr_value(false)),
      ?_assertEqual(<<"atom_value">>, erlmcp_tracing:normalize_attr_value(atom_value)),
-     ?_assertEqual(<<"string_value">>, erlmcp_tracing:normalize_attr_value("string_value"))
-    ].
+     ?_assertEqual(<<"string_value">>, erlmcp_tracing:normalize_attr_value("string_value"))].
 
 %%====================================================================
 %% Span Lifecycle Tests
@@ -46,88 +42,87 @@ normalize_attr_value_test_() ->
 span_lifecycle_test_() ->
     {setup,
      fun() ->
-         % Initialize OTEL for tracing tests
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config),
-         Config
+        % Initialize OTEL for tracing tests
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config),
+        Config
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              % Start a span
-              SpanCtx = erlmcp_tracing:start_span(<<"test.span">>),
+        [?_test(begin
+                    % Start a span
+                    SpanCtx = erlmcp_tracing:start_span(<<"test.span">>),
 
-              % Verify span context is a map (observable behavior)
-              ?assert(is_map(SpanCtx)),
+                    % Verify span context is a map (observable behavior)
+                    ?assert(is_map(SpanCtx)),
 
-              % Set attributes
-              ok = erlmcp_tracing:set_attributes(SpanCtx, #{<<"test.attr">> => <<"test_value">>}),
+                    % Set attributes
+                    ok =
+                        erlmcp_tracing:set_attributes(SpanCtx,
+                                                      #{<<"test.attr">> => <<"test_value">>}),
 
-              % Set status
-              ok = erlmcp_tracing:set_status(SpanCtx, ok),
+                    % Set status
+                    ok = erlmcp_tracing:set_status(SpanCtx, ok),
 
-              % End span
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    % End span
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %% Test server span creation with proper attributes
 server_span_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              % Test with atom server ID (actual behavior)
-              SpanCtx = erlmcp_tracing:start_server_span(<<"server.test">>, test_server),
+        [?_test(begin
+                    % Test with atom server ID (actual behavior)
+                    SpanCtx = erlmcp_tracing:start_server_span(<<"server.test">>, test_server),
 
-              % Verify span context is a map
-              ?assert(is_map(SpanCtx)),
+                    % Verify span context is a map
+                    ?assert(is_map(SpanCtx)),
 
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %% Test transport span creation with proper attributes
 transport_span_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              TransportPid = self(),
-              % Test with atom transport type
-              SpanCtx = erlmcp_tracing:start_transport_span(<<"transport.test">>, TransportPid, stdio),
+        [?_test(begin
+                    TransportPid = self(),
+                    % Test with atom transport type
+                    SpanCtx =
+                        erlmcp_tracing:start_transport_span(<<"transport.test">>,
+                                                            TransportPid,
+                                                            stdio),
 
-              % Verify span context is a map
-              ?assert(is_map(SpanCtx)),
+                    % Verify span context is a map
+                    ?assert(is_map(SpanCtx)),
 
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %%====================================================================
@@ -138,51 +133,50 @@ transport_span_test_() ->
 record_error_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"error.test">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"error.test">>),
 
-              % Record error details
-              ok = erlmcp_tracing:record_error_details(SpanCtx, test_error, #{<<"details">> => <<"test">>}),
+                    % Record error details
+                    ok =
+                        erlmcp_tracing:record_error_details(SpanCtx,
+                                                            test_error,
+                                                            #{<<"details">> => <<"test">>}),
 
-              % Verify error details don't crash (behavior verification)
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    % Verify error details don't crash (behavior verification)
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %% Test exception recording
 record_exception_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"exception.test">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"exception.test">>),
 
-              % Record exception
-              ok = erlmcp_tracing:record_exception(SpanCtx, error, test_reason),
+                    % Record exception
+                    ok = erlmcp_tracing:record_exception(SpanCtx, error, test_reason),
 
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %%====================================================================
@@ -193,52 +187,48 @@ record_exception_test_() ->
 record_metrics_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"metrics.test">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"metrics.test">>),
 
-              % record_performance_metrics calls set_attributes internally
-              ok = erlmcp_tracing:record_performance_metrics(SpanCtx, #{
-                  <<"duration_ms">> => 100,
-                  <<"memory_bytes">> => 1024
-              }),
+                    % record_performance_metrics calls set_attributes internally
+                    ok =
+                        erlmcp_tracing:record_performance_metrics(SpanCtx,
+                                                                  #{<<"duration_ms">> => 100,
+                                                                    <<"memory_bytes">> => 1024}),
 
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %% Test message metrics recording
 record_message_metrics_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"message.test">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"message.test">>),
 
-              ok = erlmcp_tracing:record_message_metrics(SpanCtx, <<"test_method">>, 512),
+                    ok = erlmcp_tracing:record_message_metrics(SpanCtx, <<"test_method">>, 512),
 
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %%====================================================================
@@ -258,29 +248,27 @@ log_test_() ->
 add_span_attribute_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"attr.test">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"attr.test">>),
 
-              % add_span_attribute calls set_attributes internally with normalized key/value
-              ok = erlmcp_tracing:add_span_attribute(SpanCtx, <<"single.attr">>, <<"value">>),
+                    % add_span_attribute calls set_attributes internally with normalized key/value
+                    ok = erlmcp_tracing:add_span_attribute(SpanCtx, <<"single.attr">>, <<"value">>),
 
-              % Add second attribute with atom key (should be normalized to binary)
-              ok = erlmcp_tracing:add_span_attribute(SpanCtx, atom_attr, atom_value),
+                    % Add second attribute with atom key (should be normalized to binary)
+                    ok = erlmcp_tracing:add_span_attribute(SpanCtx, atom_attr, atom_value),
 
-              % Verify operations don't crash
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    % Verify operations don't crash
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %%====================================================================
@@ -291,105 +279,97 @@ add_span_attribute_test_() ->
 span_with_empty_attributes_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"empty.test">>, #{}),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"empty.test">>, #{}),
 
-              % Verify span was created (returns a map, not a reference)
-              ?assert(is_map(SpanCtx)),
+                    % Verify span was created (returns a map, not a reference)
+                    ?assert(is_map(SpanCtx)),
 
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %% Test set status with invalid value (should not crash)
 set_invalid_status_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"status.test">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"status.test">>),
 
-              % Setting invalid status should not crash, just return ok
-              ?assertEqual(ok, erlmcp_tracing:set_status(SpanCtx, invalid_status)),
+                    % Setting invalid status should not crash, just return ok
+                    ?assertEqual(ok, erlmcp_tracing:set_status(SpanCtx, invalid_status)),
 
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %% Test concurrent attribute setting
 concurrent_attributes_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"concurrent.test">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"concurrent.test">>),
 
-              % Set multiple attributes
-              ok = erlmcp_tracing:set_attributes(SpanCtx, #{
-                  <<"attr1">> => value1,
-                  <<"attr2">> => value2,
-                  <<"attr3">> => value3
-              }),
+                    % Set multiple attributes
+                    ok =
+                        erlmcp_tracing:set_attributes(SpanCtx,
+                                                      #{<<"attr1">> => value1,
+                                                        <<"attr2">> => value2,
+                                                        <<"attr3">> => value3}),
 
-              % Verify operations don't crash
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    % Verify operations don't crash
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %% Test error recording with empty details
 record_error_with_empty_details_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              SpanCtx = erlmcp_tracing:start_span(<<"error.empty">>),
+        [?_test(begin
+                    SpanCtx = erlmcp_tracing:start_span(<<"error.empty">>),
 
-              ok = erlmcp_tracing:record_error_details(SpanCtx, empty_error, #{}),
+                    ok = erlmcp_tracing:record_error_details(SpanCtx, empty_error, #{}),
 
-              % Verify operations don't crash
-              ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
-          end)
-         ]
+                    % Verify operations don't crash
+                    ?assertEqual(ok, erlmcp_tracing:end_span(SpanCtx))
+                end)]
      end}.
 
 %%====================================================================
@@ -400,40 +380,44 @@ record_error_with_empty_details_test_() ->
 tracing_workflow_test_() ->
     {setup,
      fun() ->
-         Config = #{service_name => <<"tracing_test">>, exporters => [console]},
-         ok = erlmcp_otel:init(Config)
+        Config = #{service_name => <<"tracing_test">>, exporters => [console]},
+        ok = erlmcp_otel:init(Config)
      end,
      fun(_Config) ->
-         ok = erlmcp_otel:shutdown(),
-         erase(erlmcp_otel_current_context),
-         erase(erlmcp_otel_config)
+        ok = erlmcp_otel:shutdown(),
+        erase(erlmcp_otel_current_context),
+        erase(erlmcp_otel_config)
      end,
      fun(_Config) ->
-         [
-          ?_test(begin
-              % Start a server span
-              ServerSpan = erlmcp_tracing:start_server_span(<<"mcp.request">>, test_server),
+        [?_test(begin
+                    % Start a server span
+                    ServerSpan = erlmcp_tracing:start_server_span(<<"mcp.request">>, test_server),
 
-              % Add attributes
-              ok = erlmcp_tracing:add_span_attribute(ServerSpan, <<"request.id">>, <<"req-123">>),
+                    % Add attributes
+                    ok =
+                        erlmcp_tracing:add_span_attribute(ServerSpan,
+                                                          <<"request.id">>,
+                                                          <<"req-123">>),
 
-              % Start a nested tool span
-              ToolSpan = erlmcp_tracing:start_span(<<"mcp.tool.call">>),
-              ok = erlmcp_tracing:add_span_attribute(ToolSpan, <<"tool.name">>, <<"test_tool">>),
+                    % Start a nested tool span
+                    ToolSpan = erlmcp_tracing:start_span(<<"mcp.tool.call">>),
+                    ok =
+                        erlmcp_tracing:add_span_attribute(ToolSpan,
+                                                          <<"tool.name">>,
+                                                          <<"test_tool">>),
 
-              % Record metrics
-              ok = erlmcp_tracing:record_performance_metrics(ToolSpan, #{
-                  <<"duration_ms">> => 50
-              }),
+                    % Record metrics
+                    ok =
+                        erlmcp_tracing:record_performance_metrics(ToolSpan,
+                                                                  #{<<"duration_ms">> => 50}),
 
-              % End tool span
-              ok = erlmcp_tracing:end_span(ToolSpan),
+                    % End tool span
+                    ok = erlmcp_tracing:end_span(ToolSpan),
 
-              % Record message metrics on server span
-              ok = erlmcp_tracing:record_message_metrics(ServerSpan, <<"tools/call">>, 1024),
+                    % Record message metrics on server span
+                    ok = erlmcp_tracing:record_message_metrics(ServerSpan, <<"tools/call">>, 1024),
 
-              % End server span
-              ok = erlmcp_tracing:end_span(ServerSpan)
-          end)
-         ]
+                    % End server span
+                    ok = erlmcp_tracing:end_span(ServerSpan)
+                end)]
      end}.

@@ -8,11 +8,7 @@
 -module(erlmcp_auth_mtls).
 
 %% API exports
--export([
-    validate/2,
-    extract_certificate_from_socket/1,
-    check_revocation/3
-]).
+-export([validate/2, extract_certificate_from_socket/1, check_revocation/3]).
 
 %% Types
 -type cert_der() :: binary().

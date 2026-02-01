@@ -1,0 +1,16 @@
+AGENT_11_STATUS=INCOMPLETE
+AGENT_11_TIMESTAMP=2026-02-01T12:00:00Z
+AGENT_11_REASON=Cannot complete coverage analysis due to blocking test compilation issues
+AGENT_11_ESTIMATED_COVERAGE=50-60%
+AGENT_11_THRESHOLD_MET=NO
+AGENT_11_BLOCKING_ISSUES=3
+
+# Issues:
+# 1. erlmcp_integration_SUITE.erl - Missing helper functions (make_test_server_id, make_test_transport_id)
+# 2. erlmcp_trace_analyzer_tests.erl - File misplaced, missing gen_server behaviour
+# 3. erlmcp_circuit_breaker_priority_tests.erl - Incomplete test functions (FIXED)
+
+# Required fixes before coverage can be measured:
+# - Implement missing helper functions in integration suite
+# - Restore trace analyzer tests to proper location with behaviour
+# - Complete all incomplete test functions

@@ -8,6 +8,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_observability_app).
+
 -behaviour(application).
 
 %% Application callbacks
@@ -34,9 +35,9 @@ start(_StartType, _StartArgs) ->
             case application:get_env(erlmcp_observability, otel_enabled, true) of
                 true ->
                     spawn(fun() ->
-                        timer:sleep(100),  % Small delay to let supervisor initialize
-                        init_otel()
-                    end);
+                             timer:sleep(100),  % Small delay to let supervisor initialize
+                             init_otel()
+                          end);
                 false ->
                     ok
             end,
@@ -54,8 +55,10 @@ stop(_State) ->
 
     %% Shutdown OpenTelemetry
     case application:get_env(erlmcp_observability, otel_enabled, true) of
-        true -> erlmcp_otel:shutdown();
-        false -> ok
+        true ->
+            erlmcp_otel:shutdown();
+        false ->
+            ok
     end,
 
     ok.
@@ -68,17 +71,16 @@ stop(_State) ->
 %% Initialize OpenTelemetry with configuration from environment
 -spec init_otel() -> ok.
 init_otel() ->
-    ServiceName = application:get_env(erlmcp_observability, otel_service_name,
-                                      <<"erlmcp-observability">>),
+    ServiceName =
+        application:get_env(erlmcp_observability, otel_service_name, <<"erlmcp-observability">>),
     Exporters = application:get_env(erlmcp_observability, otel_exporters, [console]),
     Sampling = application:get_env(erlmcp_observability, otel_sampling, always_on),
 
-    Config = #{
-        service_name => ServiceName,
-        service_version => <<"0.7.0">>,
-        exporters => Exporters,
-        sampling => Sampling
-    },
+    Config =
+        #{service_name => ServiceName,
+          service_version => <<"0.7.0">>,
+          exporters => Exporters,
+          sampling => Sampling},
 
     case erlmcp_otel:init(Config) of
         ok ->

@@ -24,40 +24,30 @@
 %%====================================================================
 
 %% @doc Register an entity (server or transport) with the registry
--callback register(Type :: entity_type(), Id :: entity_id(), Pid :: pid(), Config :: entity_config()) ->
-    ok | {error, Reason :: term()}.
-
+-callback register(Type :: entity_type(),
+                   Id :: entity_id(),
+                   Pid :: pid(),
+                   Config :: entity_config()) ->
+                      ok | {error, Reason :: term()}.
 %% @doc Unregister an entity from the registry
--callback unregister(Type :: entity_type(), Id :: entity_id()) ->
-    ok.
-
+-callback unregister(Type :: entity_type(), Id :: entity_id()) -> ok.
 %% @doc Find an entity in the registry
 -callback whereis(Type :: entity_type(), Id :: entity_id()) ->
-    {ok, {Pid :: pid(), Config :: entity_config()}} |
-    {ok, {Node :: node(), Pid :: pid(), Config :: entity_config()}} |
-    {error, not_found}.
-
+                     {ok, {Pid :: pid(), Config :: entity_config()}} |
+                     {ok, {Node :: node(), Pid :: pid(), Config :: entity_config()}} |
+                     {error, not_found}.
 %% @doc List all entities of a given type
 -callback list(Type :: entity_type()) ->
-    [{Id :: entity_id(), {Pid :: pid(), Config :: entity_config()}}] |
-    [{Id :: entity_id(), {Node :: node(), Pid :: pid(), Config :: entity_config()}}].
-
+                  [{Id :: entity_id(), {Pid :: pid(), Config :: entity_config()}}] |
+                  [{Id :: entity_id(), {Node :: node(), Pid :: pid(), Config :: entity_config()}}].
 %% @doc Update entity configuration
 -callback update(Type :: entity_type(), Id :: entity_id(), Config :: entity_config()) ->
-    ok | {error, Reason :: term()}.
-
+                    ok | {error, Reason :: term()}.
 %% @doc Join a process group (for distributed backends)
--callback join_group(Group :: atom(), Pid :: pid()) ->
-    ok | {error, Reason :: term()}.
-
+-callback join_group(Group :: atom(), Pid :: pid()) -> ok | {error, Reason :: term()}.
 %% @doc Leave a process group (for distributed backends)
--callback leave_group(Group :: atom(), Pid :: pid()) ->
-    ok.
-
+-callback leave_group(Group :: atom(), Pid :: pid()) -> ok.
 %% @doc Get members of a process group
--callback get_group_members(Group :: atom()) ->
-    [pid()].
-
+-callback get_group_members(Group :: atom()) -> [pid()].
 %% @doc Check if backend is distributed
--callback is_distributed() ->
-    boolean().
+-callback is_distributed() -> boolean().

@@ -25,7 +25,9 @@ set -euo pipefail
 # Configuration
 #------------------------------------------------------------------------------
 
-ERLMCP_ROOT="${ERLMCP_ROOT:-/home/user/erlmcp}"
+# Find project root (parent of .claude directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ERLMCP_ROOT="${ERLMCP_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 ERLMCP_CACHE="${ERLMCP_CACHE:-${ERLMCP_ROOT}/.erlmcp/cache}"
 ERLMCP_LOG="${ERLMCP_LOG:-${ERLMCP_ROOT}/.erlmcp/otp-manager.log}"
 

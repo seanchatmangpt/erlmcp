@@ -1,41 +1,38 @@
 -module(erlmcp_client).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/1, start_link/2,
-    initialize/2, initialize/3,
-    list_resources/1, list_resource_templates/1,
-    read_resource/2, subscribe_to_resource/2, unsubscribe_from_resource/2,
-    list_prompts/1, get_prompt/2, get_prompt/3,
-    list_tools/1, call_tool/3,
-    complete/3, complete/4,
-    with_batch/2, send_batch_request/4,
-    set_notification_handler/3, remove_notification_handler/2,
-    set_sampling_handler/2, remove_sampling_handler/1,
-    list_roots/1, add_root/2, remove_root/2,  %% v3.0 Roots API
-    stop/1,
-    cleanup_stale_correlations/0
-]).
+-export([start_link/1, start_link/2, initialize/2, initialize/3, list_resources/1,
+         list_resource_templates/1, read_resource/2, subscribe_to_resource/2,
+         unsubscribe_from_resource/2, list_prompts/1, get_prompt/2, get_prompt/3, list_tools/1,
+         call_tool/3, complete/3, complete/4, with_batch/2, send_batch_request/4,
+         set_notification_handler/3, remove_notification_handler/2, set_sampling_handler/2,
+         remove_sampling_handler/1, list_roots/1, add_root/2, remove_root/2, stop/1,
+         cleanup_stale_correlations/0]).
+
+                                              %% v3.0 Roots API
 
 %% Test exports
 -ifdef(TEST).
+
 -export([encode_capabilities/1]).
+
 -endif.
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, format_status/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
+         format_status/2]).
 
 %% Types
 -type client() :: pid().
 -type transport_opts() :: {stdio, list()} | {tcp, map()} | {http, map()}.
--type client_opts() :: #{
-    strict_mode => boolean(),
-    timeout => timeout(),
-    _ => _
-}.
+-type client_opts() ::
+    #{strict_mode => boolean(),
+      timeout => timeout(),
+      _ => _}.
 -type request_id() :: pos_integer().
 -type batch_id() :: reference().
 -type notification_handler() :: fun((binary(), map()) -> any()) | {module(), atom()}.
@@ -47,48 +44,50 @@
 -type client_phase() :: pre_initialization | initializing | initialized | error | closed.
 
 %% State record with better type specifications
--record(state, {
-    transport :: module(),
-    transport_state :: term(),
-    phase = pre_initialization :: client_phase(),
-    capabilities :: #mcp_server_capabilities{} | undefined,
-    request_id = 1 :: request_id(),
-    pending_requests = #{} :: #{request_id() => {atom(), pid()}},
-    batch_requests = #{} :: #{batch_id() => [{request_id(), binary(), map()}]},
-    notification_handlers = #{} :: #{binary() => notification_handler()},
-    sampling_handler :: sampling_handler() | undefined,
-    strict_mode = false :: boolean(),
-    subscriptions = sets:set() :: sets:set(binary()),
-    initialized = false :: boolean(),
-    timeout = 5000 :: timeout(),
-    last_event_id :: binary() | undefined,
-    reconnect_timer :: reference() | undefined,
-    auto_reconnect = true :: boolean(),
-    active_handlers = [] :: [pid()],  % Track supervised handler PIDs for cleanup
-    correlation_table :: ets:tid() | undefined  % ETS table for persistent correlation storage
-}).
+-record(state,
+        {transport :: module(),
+         transport_state :: term(),
+         phase = pre_initialization :: client_phase(),
+         capabilities :: #mcp_server_capabilities{} | undefined,
+         request_id = 1 :: request_id(),
+         pending_requests = #{} :: #{request_id() => {atom(), pid()}},
+         batch_requests = #{} :: #{batch_id() => [{request_id(), binary(), map()}]},
+         notification_handlers = #{} :: #{binary() => notification_handler()},
+         sampling_handler :: sampling_handler() | undefined,
+         strict_mode = false :: boolean(),
+         subscriptions = sets:set() :: sets:set(binary()),
+         initialized = false :: boolean(),
+         timeout = 5000 :: timeout(),
+         last_event_id :: binary() | undefined,
+         reconnect_timer :: reference() | undefined,
+         auto_reconnect = true :: boolean(),
+         active_handlers = [] :: [pid()],  % Track supervised handler PIDs for cleanup
+         correlation_table ::
+             ets:tid() | undefined}).  % ETS table for persistent correlation storage
 
 -type state() :: #state{}.
 
 %% Hibernation configuration for idle connections
 %% Reduces memory per idle connection from ~50KB to ~5KB
 -define(HIBERNATE_AFTER_MS, 30000). % 30 seconds of inactivity triggers hibernation
-
 %% Macros for common patterns
 -define(CALL_TIMEOUT(State), State#state.timeout).
 -define(IS_INITIALIZED(State), State#state.initialized).
 -define(CHECK_CAPABILITY(State, Cap),
-    case validate_capability(State, Cap) of
-        ok -> do_request;
-        {error, _} = Error -> Error
-    end).
-
+        case validate_capability(State, Cap) of
+            ok ->
+                do_request;
+            {error, _} = Error ->
+                Error
+        end).
 %% Phase enforcement macro - check if client is initialized
 -define(CHECK_INITIALIZED(State, From),
-    case State#state.phase of
-        initialized -> ok;
-        Phase -> {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State}
-    end).
+        case State#state.phase of
+            initialized ->
+                ok;
+            Phase ->
+                {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State}
+        end).
 
 %%====================================================================
 %% API Functions
@@ -102,15 +101,15 @@ start_link(TransportOpts) ->
 start_link(TransportOpts, Options) ->
     %% Enable hibernation after 30 seconds of inactivity to reduce memory usage
     %% from ~50KB per idle connection to ~5KB (automatic GC on hibernate)
-    gen_server:start_link(?MODULE, [TransportOpts, Options], [{hibernate_after, ?HIBERNATE_AFTER_MS}]).
+    gen_server:start_link(?MODULE,
+                          [TransportOpts, Options],
+                          [{hibernate_after, ?HIBERNATE_AFTER_MS}]).
 
--spec initialize(client(), #mcp_client_capabilities{}) ->
-    {ok, map()} | {error, term()}.
+-spec initialize(client(), #mcp_client_capabilities{}) -> {ok, map()} | {error, term()}.
 initialize(Client, Capabilities) ->
     initialize(Client, Capabilities, #{}).
 
--spec initialize(client(), #mcp_client_capabilities{}, map()) ->
-    {ok, map()} | {error, term()}.
+-spec initialize(client(), #mcp_client_capabilities{}, map()) -> {ok, map()} | {error, term()}.
 initialize(Client, Capabilities, Options) ->
     gen_server:call(Client, {initialize, Capabilities, Options}, infinity).
 
@@ -154,7 +153,7 @@ complete(Client, Ref, Argument) ->
 
 -spec complete(client(), binary(), binary(), timeout()) -> {ok, map()} | {error, term()}.
 complete(Client, Ref, Argument, Timeout)
-  when is_binary(Ref), is_binary(Argument), is_integer(Timeout) ->
+    when is_binary(Ref), is_binary(Argument), is_integer(Timeout) ->
     gen_server:call(Client, {complete, Ref, Argument}, Timeout).
 
 -spec stop(client()) -> ok.
@@ -215,9 +214,9 @@ with_batch(Client, BatchFun) when is_function(BatchFun, 1) ->
     end.
 
 -spec send_batch_request(client(), batch_id(), binary(), map()) ->
-    {ok, request_id()} | {error, term()}.
+                            {ok, request_id()} | {error, term()}.
 send_batch_request(Client, BatchId, Method, Params)
-  when is_reference(BatchId), is_binary(Method), is_map(Params) ->
+    when is_reference(BatchId), is_binary(Method), is_map(Params) ->
     gen_server:call(Client, {add_to_batch, BatchId, Method, Params}).
 
 -spec set_notification_handler(client(), binary(), notification_handler()) -> ok.
@@ -240,45 +239,47 @@ remove_sampling_handler(Client) ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init([transport_opts() | client_opts()]) -> {ok, state(), {continue, {connect, transport_opts(), client_opts()}}}.
+-spec init([transport_opts() | client_opts()]) ->
+              {ok, state(), {continue, {connect, transport_opts(), client_opts()}}}.
 init([TransportOpts, Options]) ->
     process_flag(trap_exit, true),
 
     % Fast init - just set up basic state, no blocking operations
-    State = #state{
-        strict_mode = maps:get(strict_mode, Options, false),
-        timeout = maps:get(timeout, Options, 5000),
-        subscriptions = sets:new()
-    },
+    State =
+        #state{strict_mode = maps:get(strict_mode, Options, false),
+               timeout = maps:get(timeout, Options, 5000),
+               subscriptions = sets:new()},
 
     logger:info("Starting MCP client (async initialization)"),
     % Schedule async connection - won't block supervisor
     {ok, State, {continue, {connect, TransportOpts, Options}}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} |
-    {noreply, state()} |
-    {stop, term(), term(), state()}.
-
+                     {reply, term(), state()} |
+                     {noreply, state()} |
+                     {stop, term(), term(), state()}.
 %% Initialize must be called during pre_initialization phase
-handle_call({initialize, Capabilities, _Options}, From, #state{phase = pre_initialization} = State) ->
+handle_call({initialize, Capabilities, _Options},
+            From,
+            #state{phase = pre_initialization} = State) ->
     Request = build_initialize_request(Capabilities),
     NewState = State#state{phase = initializing},
     %% Use timeout to prevent hanging tests
     {ok, NewState2} = send_request(NewState, <<"initialize">>, Request, {initialize, From}),
     {noreply, NewState2};
-
 %% Initialize not allowed in other phases
 handle_call({initialize, _Capabilities, _Options}, From, #state{phase = Phase} = State) ->
-    gen_server:reply(From, {error, {invalid_phase, Phase, <<"Initialize must be called in pre_initialization phase">>}}),
+    gen_server:reply(From,
+                     {error,
+                      {invalid_phase,
+                       Phase,
+                       <<"Initialize must be called in pre_initialization phase">>}}),
     {noreply, State};
-
 %% Ping method (MCP 2025-11-25)
 %% Allowed in any phase - simple liveness check
 handle_call(ping, From, State) ->
     {ok, NewState} = send_request(State, <<"ping">>, #{}, {ping, From}),
     {noreply, NewState};
-
 %% All capability requests require initialized phase
 handle_call(list_resources, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
@@ -288,26 +289,25 @@ handle_call(list_resources, From, #state{phase = initialized} = State) ->
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call(list_resources, From, #state{phase = Phase} = State) ->
-    gen_server:reply(From, {error, {not_initialized, Phase, <<"Server must complete initialization first">>}}),
+    gen_server:reply(From,
+                     {error,
+                      {not_initialized, Phase, <<"Server must complete initialization first">>}}),
     {noreply, State};
-
 %% Read resource requires initialized phase
 handle_call({read_resource, Uri}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             Params = #{<<"uri">> => Uri},
-            {ok, NewState} = send_request(State, <<"resources/read">>, Params, {read_resource, From}),
+            {ok, NewState} =
+                send_request(State, <<"resources/read">>, Params, {read_resource, From}),
             {noreply, NewState};
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({read_resource, _Uri}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% List tools requires initialized phase
 handle_call(list_tools, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, tools) of
@@ -317,11 +317,9 @@ handle_call(list_tools, From, #state{phase = initialized} = State) ->
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call(list_tools, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% Call tool requires initialized phase
 handle_call({call_tool, Name, Arguments}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, tools) of
@@ -332,32 +330,25 @@ handle_call({call_tool, Name, Arguments}, From, #state{phase = initialized} = St
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({call_tool, _, _}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% Complete requires initialized phase
 handle_call({complete, Ref, Argument}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, completions) of
         do_request ->
-            Params = #{
-                <<"ref">> => Ref,
-                <<"argument">> => #{
-                    <<"name">> => Argument,
-                    <<"value">> => <<>>
-                }
-            },
-            {ok, NewState} = send_request(State, <<"completion/complete">>, Params, {complete, From}),
+            Params =
+                #{<<"ref">> => Ref,
+                  <<"argument">> => #{<<"name">> => Argument, <<"value">> => <<>>}},
+            {ok, NewState} =
+                send_request(State, <<"completion/complete">>, Params, {complete, From}),
             {noreply, NewState};
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({complete, _Ref, _Argument}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% List prompts requires initialized phase
 handle_call(list_prompts, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, prompts) of
@@ -367,11 +358,9 @@ handle_call(list_prompts, From, #state{phase = initialized} = State) ->
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call(list_prompts, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% Get prompt requires initialized phase
 handle_call({get_prompt, Name, Arguments}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, prompts) of
@@ -382,79 +371,79 @@ handle_call({get_prompt, Name, Arguments}, From, #state{phase = initialized} = S
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({get_prompt, _, _}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% List resource templates requires initialized phase
 handle_call(list_resource_templates, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
-            {ok, NewState} = send_request(State, <<"resources/templates/list">>, #{}, {list_resource_templates, From}),
+            {ok, NewState} =
+                send_request(State,
+                             <<"resources/templates/list">>,
+                             #{},
+                             {list_resource_templates, From}),
             {noreply, NewState};
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call(list_resource_templates, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% Subscribe resource requires initialized phase
 handle_call({subscribe_resource, Uri}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             Params = #{<<"uri">> => Uri},
-            NewState = State#state{
-                subscriptions = sets:add_element(Uri, State#state.subscriptions)
-            },
-            {ok, NewState2} = send_request(NewState, <<"resources/subscribe">>, Params, {subscribe_resource, From}),
+            NewState =
+                State#state{subscriptions = sets:add_element(Uri, State#state.subscriptions)},
+            {ok, NewState2} =
+                send_request(NewState,
+                             <<"resources/subscribe">>,
+                             Params,
+                             {subscribe_resource, From}),
             {noreply, NewState2};
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({subscribe_resource, _Uri}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %% Unsubscribe resource requires initialized phase
 handle_call({unsubscribe_resource, Uri}, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, resources) of
         do_request ->
             Params = #{<<"uri">> => Uri},
-            NewState = State#state{
-                subscriptions = sets:del_element(Uri, State#state.subscriptions)
-            },
-            {ok, NewState2} = send_request(NewState, <<"resources/unsubscribe">>, Params, {unsubscribe_resource, From}),
+            NewState =
+                State#state{subscriptions = sets:del_element(Uri, State#state.subscriptions)},
+            {ok, NewState2} =
+                send_request(NewState,
+                             <<"resources/unsubscribe">>,
+                             Params,
+                             {unsubscribe_resource, From}),
             {noreply, NewState2};
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({unsubscribe_resource, _Uri}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
-
 %%====================================================================
 %% Roots API (MCP 2025-11-25) - v3.0
 %%====================================================================
-
 %% @doc List all roots
 handle_call(list_roots, From, #state{phase = initialized} = State) ->
     case ?CHECK_CAPABILITY(State, roots) of
         do_request ->
             Params = #{},
-            {ok, NewState} = send_request(State, ?MCP_METHOD_ROOTS_LIST, Params, {list_roots, From}),
+            {ok, NewState} =
+                send_request(State, ?MCP_METHOD_ROOTS_LIST, Params, {list_roots, From}),
             {noreply, NewState};
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call(list_roots, _From, #state{phase = Phase} = State) ->
     {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State};
-
 %% @doc Add a root
 handle_call({add_root, Uri}, From, #state{phase = initialized} = State) when is_binary(Uri) ->
     case ?CHECK_CAPABILITY(State, roots) of
@@ -465,32 +454,27 @@ handle_call({add_root, Uri}, From, #state{phase = initialized} = State) when is_
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({add_root, _Uri}, _From, #state{phase = Phase} = State) ->
     {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State};
-
 %% @doc Remove a root
 handle_call({remove_root, Uri}, From, #state{phase = initialized} = State) when is_binary(Uri) ->
     case ?CHECK_CAPABILITY(State, roots) of
         do_request ->
             Params = #{<<"uri">> => Uri},
-            {ok, NewState} = send_request(State, ?MCP_METHOD_ROOTS_REMOVE, Params, {remove_root, From}),
+            {ok, NewState} =
+                send_request(State, ?MCP_METHOD_ROOTS_REMOVE, Params, {remove_root, From}),
             {noreply, NewState};
         {error, _} = ErrorTuple ->
             {reply, ErrorTuple, State}
     end;
-
 handle_call({remove_root, _Uri}, _From, #state{phase = Phase} = State) ->
     {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State};
-
 %%====================================================================
 %% Batch API
 %%====================================================================
-
 handle_call({start_batch, BatchId}, _From, State) ->
     NewBatches = maps:put(BatchId, [], State#state.batch_requests),
     {reply, ok, State#state{batch_requests = NewBatches}};
-
 handle_call({add_to_batch, BatchId, Method, Params}, _From, State) ->
     case maps:find(BatchId, State#state.batch_requests) of
         {ok, Requests} ->
@@ -498,22 +482,25 @@ handle_call({add_to_batch, BatchId, Method, Params}, _From, State) ->
             %% P0 SECURITY: Safe request ID handling for batch requests
             case erlmcp_request_id:safe_increment(RequestId) of
                 {error, overflow} ->
-                    logger:error("Request ID space exhausted at ID ~w. Reconnection required.", [RequestId]),
-                    {reply, {error, {request_id_overflow,
-                        <<"Request ID space exhausted. Reconnection required.">>}}, State};
+                    logger:error("Request ID space exhausted at ID ~w. Reconnection required.",
+                                 [RequestId]),
+                    {reply,
+                     {error,
+                      {request_id_overflow,
+                       <<"Request ID space exhausted. Reconnection required.">>}},
+                     State};
                 {ok, NextRequestId} ->
                     Request = {RequestId, Method, Params},
                     NewRequests = [Request | Requests],
-                    NewState = State#state{
-                        request_id = NextRequestId,
-                        batch_requests = maps:put(BatchId, NewRequests, State#state.batch_requests)
-                    },
+                    NewState =
+                        State#state{request_id = NextRequestId,
+                                    batch_requests =
+                                        maps:put(BatchId, NewRequests, State#state.batch_requests)},
                     {reply, {ok, RequestId}, NewState}
             end;
         error ->
             {reply, {error, batch_not_found}, State}
     end;
-
 handle_call({execute_batch, BatchId}, _From, State) ->
     case maps:take(BatchId, State#state.batch_requests) of
         {Requests, NewBatches} ->
@@ -523,25 +510,19 @@ handle_call({execute_batch, BatchId}, _From, State) ->
         error ->
             {reply, {error, batch_not_found}, State}
     end;
-
 handle_call({cancel_batch, BatchId}, _From, State) ->
     NewBatches = maps:remove(BatchId, State#state.batch_requests),
     {reply, ok, State#state{batch_requests = NewBatches}};
-
 handle_call({set_notification_handler, Method, Handler}, _From, State) ->
     NewHandlers = maps:put(Method, Handler, State#state.notification_handlers),
     {reply, ok, State#state{notification_handlers = NewHandlers}};
-
 handle_call({remove_notification_handler, Method}, _From, State) ->
     NewHandlers = maps:remove(Method, State#state.notification_handlers),
     {reply, ok, State#state{notification_handlers = NewHandlers}};
-
 handle_call({set_sampling_handler, Handler}, _From, State) ->
     {reply, ok, State#state{sampling_handler = Handler}};
-
 handle_call(remove_sampling_handler, _From, State) ->
     {reply, ok, State#state{sampling_handler = undefined}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -550,77 +531,67 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_continue(term(), state()) -> {noreply, state()} | {stop, term(), state()}.
-
 %% Async connection - doesn't block supervisor
 handle_continue({connect, TransportOpts, _Options}, State) ->
     StartTime = erlang:monotonic_time(microsecond),
 
     %% Initialize ETS table for persistent correlation storage
-    CorrelationTable = case ets:info(erlmcp_correlation_table) of
-        undefined ->
-            ets:new(erlmcp_correlation_table, [
-                named_table,
-                set,
-                public,
-                {read_concurrency, true},
-                {write_concurrency, true}
-            ]);
-        _ ->
-            erlmcp_correlation_table
-    end,
+    CorrelationTable =
+        case ets:info(erlmcp_correlation_table) of
+            undefined ->
+                ets:new(erlmcp_correlation_table,
+                        [named_table,
+                         set,
+                         public,
+                         {read_concurrency, true},
+                         {write_concurrency, true}]);
+            _ ->
+                erlmcp_correlation_table
+        end,
 
     case init_transport(TransportOpts) of
         {ok, Transport, TransportState} ->
-            NewState = State#state{
-                transport = Transport,
-                transport_state = TransportState,
-                correlation_table = CorrelationTable
-            },
+            NewState =
+                State#state{transport = Transport,
+                            transport_state = TransportState,
+                            correlation_table = CorrelationTable},
             %% Recover pending correlations from ETS table on initialization
             NewState2 = recover_correlations(NewState),
 
             %% Emit telemetry event for successful connection
             Duration = erlang:monotonic_time(microsecond) - StartTime,
-            telemetry:execute(
-                [erlmcp, client, connection, open],
-                #{
-                    count => 1,
-                    duration_us => Duration
-                },
-                #{
-                    transport => Transport,
-                    strict_mode => State#state.strict_mode,
-                    timeout => State#state.timeout,
-                    recovered_correlations => maps:size(NewState2#state.pending_requests)
-                }
-            ),
+            telemetry:execute([erlmcp, client, connection, open],
+                              #{count => 1, duration_us => Duration},
+                              #{transport => Transport,
+                                strict_mode => State#state.strict_mode,
+                                timeout => State#state.timeout,
+                                recovered_correlations =>
+                                    maps:size(NewState2#state.pending_requests)}),
 
             logger:info("MCP client connected via ~p (recovered ~p correlations)",
-                       [Transport, maps:size(NewState2#state.pending_requests)]),
+                        [Transport, maps:size(NewState2#state.pending_requests)]),
             {noreply, NewState2};
         {error, Reason} ->
             %% Emit telemetry event for connection failure
-            telemetry:execute(
-                [erlmcp, client, error],
-                #{count => 1},
-                #{
-                    error_type => connection_failed,
-                    error_reason => Reason,
-                    transport => element(1, TransportOpts)
-                }
-            ),
+            telemetry:execute([erlmcp, client, error],
+                              #{count => 1},
+                              #{error_type => connection_failed,
+                                error_reason => Reason,
+                                transport => element(1, TransportOpts)}),
 
             logger:error("MCP client connection failed: ~p", [Reason]),
             {stop, Reason, State}
     end;
-
 handle_continue(_Continue, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info({transport_message, Data}, State) ->
     case erlmcp_json_rpc:decode_message(Data) of
-        {ok, #json_rpc_response{id = Id, result = Result, error = undefined}} ->
+        {ok,
+         #json_rpc_response{id = Id,
+                            result = Result,
+                            error = undefined}} ->
             handle_response(Id, {ok, Result}, State);
         {ok, #json_rpc_response{id = Id, error = Error}} ->
             handle_response(Id, {error, Error}, State);
@@ -630,41 +601,30 @@ handle_info({transport_message, Data}, State) ->
             logger:error("Failed to decode message: ~p", [Reason]),
             {noreply, State}
     end;
-
 handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.transport_state ->
     logger:error("Transport process died: ~p", [Reason]),
     {stop, {transport_died, Reason}, State};
-
 %% Handle initialization timeout
 handle_info(initialization_timeout, #state{phase = initializing} = State) ->
     logger:error("Initialization timeout - server did not send notifications/initialized within ~p ms",
                  [State#state.timeout]),
     {stop, initialization_timeout, State};
-
 %% Ignore initialization timeout if already initialized
 handle_info(initialization_timeout, State) ->
     logger:debug("Ignoring initialization timeout - already in phase ~p", [State#state.phase]),
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
 terminate(Reason, State) ->
     %% Emit telemetry event for disconnect
-    telemetry:execute(
-        [erlmcp, client, connection, close],
-        #{
-            count => 1,
-            pending_requests => maps:size(State#state.pending_requests)
-        },
-        #{
-            reason => Reason,
-            transport => State#state.transport,
-            phase => State#state.phase,
-            subscriptions => sets:size(State#state.subscriptions)
-        }
-    ),
+    telemetry:execute([erlmcp, client, connection, close],
+                      #{count => 1, pending_requests => maps:size(State#state.pending_requests)},
+                      #{reason => Reason,
+                        transport => State#state.transport,
+                        phase => State#state.phase,
+                        subscriptions => sets:size(State#state.subscriptions)}),
 
     close_transport(State),
     %% Clean up stale correlations on termination
@@ -695,70 +655,69 @@ format_status(Opt, [PDict, State]) ->
 
 %% @doc Sanitize client state by hiding sensitive data
 -spec sanitize_client_state(state()) -> map().
-sanitize_client_state(#state{
-    transport = Transport,
-    transport_state = _TransportState,
-    phase = Phase,
-    capabilities = Caps,
-    request_id = RequestId,
-    pending_requests = Pending,
-    batch_requests = Batches,
-    notification_handlers = NotifHandlers,
-    sampling_handler = SamplingHandler,
-    strict_mode = StrictMode,
-    subscriptions = Subs,
-    initialized = Initialized,
-    timeout = Timeout,
-    last_event_id = LastEventId,
-    auto_reconnect = AutoReconnect,
-    active_handlers = ActiveHandlers,
-    correlation_table = CorrelationTable
-}) ->
-    #{
-        transport => Transport,
-        transport_state => <<"[REDACTED]">>,  % Hide transport internals
-        phase => Phase,
-        capabilities => sanitize_client_capabilities(Caps),
-        request_id => RequestId,
-        pending_requests_count => maps:size(Pending),
-        batch_requests_count => maps:size(Batches),
-        notification_handlers_count => maps:size(NotifHandlers),
-        has_sampling_handler => SamplingHandler =/= undefined,
-        strict_mode => StrictMode,
-        subscriptions_count => sets:size(Subs),
-        initialized => Initialized,
-        timeout => Timeout,
-        last_event_id => LastEventId,
-        auto_reconnect => AutoReconnect,
-        active_handlers_count => length(ActiveHandlers),
-        correlation_table => case CorrelationTable of
-            undefined -> undefined;
-            _ -> ets:info(CorrelationTable, size)
-        end
-    }.
+sanitize_client_state(#state{transport = Transport,
+                             transport_state = _TransportState,
+                             phase = Phase,
+                             capabilities = Caps,
+                             request_id = RequestId,
+                             pending_requests = Pending,
+                             batch_requests = Batches,
+                             notification_handlers = NotifHandlers,
+                             sampling_handler = SamplingHandler,
+                             strict_mode = StrictMode,
+                             subscriptions = Subs,
+                             initialized = Initialized,
+                             timeout = Timeout,
+                             last_event_id = LastEventId,
+                             auto_reconnect = AutoReconnect,
+                             active_handlers = ActiveHandlers,
+                             correlation_table = CorrelationTable}) ->
+    #{transport => Transport,
+      transport_state => <<"[REDACTED]">>,  % Hide transport internals
+      phase => Phase,
+      capabilities => sanitize_client_capabilities(Caps),
+      request_id => RequestId,
+      pending_requests_count => maps:size(Pending),
+      batch_requests_count => maps:size(Batches),
+      notification_handlers_count => maps:size(NotifHandlers),
+      has_sampling_handler => SamplingHandler =/= undefined,
+      strict_mode => StrictMode,
+      subscriptions_count => sets:size(Subs),
+      initialized => Initialized,
+      timeout => Timeout,
+      last_event_id => LastEventId,
+      auto_reconnect => AutoReconnect,
+      active_handlers_count => length(ActiveHandlers),
+      correlation_table =>
+          case CorrelationTable of
+              undefined ->
+                  undefined;
+              _ ->
+                  ets:info(CorrelationTable, size)
+          end}.
 
 %% @doc Sanitize server capabilities
 -spec sanitize_client_capabilities(#mcp_server_capabilities{} | undefined) -> map() | undefined.
 sanitize_client_capabilities(undefined) ->
     undefined;
-sanitize_client_capabilities(#mcp_server_capabilities{
-    resources = Res,
-    tools = Tools,
-    prompts = Prompts,
-    logging = Logging,
-    experimental = Experimental
-}) ->
-    #{
-        resources => sanitize_client_capability(Res),
-        tools => sanitize_client_capability(Tools),
-        prompts => sanitize_client_capability(Prompts),
-        logging => sanitize_client_capability(Logging),
-        experimental => case Experimental of
-            undefined -> undefined;
-            Exp when is_map(Exp) -> maps:keys(Exp);
-            _ -> <<"[REDACTED]">>
-        end
-    }.
+sanitize_client_capabilities(#mcp_server_capabilities{resources = Res,
+                                                      tools = Tools,
+                                                      prompts = Prompts,
+                                                      logging = Logging,
+                                                      experimental = Experimental}) ->
+    #{resources => sanitize_client_capability(Res),
+      tools => sanitize_client_capability(Tools),
+      prompts => sanitize_client_capability(Prompts),
+      logging => sanitize_client_capability(Logging),
+      experimental =>
+          case Experimental of
+              undefined ->
+                  undefined;
+              Exp when is_map(Exp) ->
+                  maps:keys(Exp);
+              _ ->
+                  <<"[REDACTED]">>
+          end}.
 
 %% @doc Sanitize individual capability
 -spec sanitize_client_capability(#mcp_capability{} | undefined) -> map() | undefined.
@@ -773,8 +732,7 @@ sanitize_client_capability(_Other) ->
 %% Internal functions
 %%====================================================================
 
--spec init_transport(transport_opts()) ->
-    {ok, module(), term()} | {error, term()}.
+-spec init_transport(transport_opts()) -> {ok, module(), term()} | {error, term()}.
 init_transport({stdio, Opts}) when is_list(Opts); is_map(Opts) ->
     %% For stdio, use self() as the transport process (simplest for testing)
     %% In production, this would be erlmcp_transport_stdio from erlmcp_transports
@@ -793,8 +751,7 @@ close_transport(#state{transport = Transport, transport_state = TransportState})
     catch Transport:close(TransportState),
     ok.
 
--spec send_request(state(), binary(), map(), {atom(), pid()}) ->
-    {ok, state()} | {error, term()}.
+-spec send_request(state(), binary(), map(), {atom(), pid()}) -> {ok, state()} | {error, term()}.
 send_request(State, Method, Params, RequestInfo) ->
     RequestId = State#state.request_id,
     {_, FromPid} = RequestInfo,
@@ -805,30 +762,31 @@ send_request(State, Method, Params, RequestInfo) ->
     case erlmcp_request_id:safe_increment(RequestId) of
         {error, overflow} ->
             %% ID space exhausted - reply once and return error
-            logger:error("Request ID space exhausted at ID ~w. Reconnection required.", [RequestId]),
+            logger:error("Request ID space exhausted at ID ~w. Reconnection required.",
+                         [RequestId]),
 
             %% Emit telemetry event for error
-            telemetry:execute(
-                [erlmcp, client, request, exception],
-                #{count => 1},
-                #{
-                    error_type => request_id_overflow,
-                    method => Method,
-                    request_id => RequestId,
-                    transport => State#state.transport
-                }
-            ),
+            telemetry:execute([erlmcp, client, request, exception],
+                              #{count => 1},
+                              #{error_type => request_id_overflow,
+                                method => Method,
+                                request_id => RequestId,
+                                transport => State#state.transport}),
 
-            gen_server:reply(FromPid, {error, {request_id_overflow,
-                <<"Request ID space exhausted. Reconnection required.">>}}),
+            gen_server:reply(FromPid,
+                             {error,
+                              {request_id_overflow,
+                               <<"Request ID space exhausted. Reconnection required.">>}}),
             {error, request_id_exhausted};
         {ok, SafeNextId} ->
             %% Check thresholds for monitoring and auto-reconnection
             case erlmcp_request_id:check_thresholds(SafeNextId) of
                 {ok, reserved, Usage} ->
-                    logger:warning("Request ID space at reserved level: ~.2%. Reconnection recommended.", [Usage]);
+                    logger:warning("Request ID space at reserved level: ~.2%. Reconnection recommended.",
+                                   [Usage]);
                 {ok, critical, Usage} ->
-                    logger:warning("Request ID space at critical level: ~.2%. Schedule reconnection.", [Usage]);
+                    logger:warning("Request ID space at critical level: ~.2%. Schedule reconnection.",
+                                   [Usage]);
                 {ok, warning, Usage} ->
                     logger:info("Request ID space at warning level: ~.2%. Monitor usage.", [Usage]);
                 {ok, normal, _Usage} ->
@@ -841,62 +799,55 @@ send_request(State, Method, Params, RequestInfo) ->
                     logger:error("CRITICAL: Request ID collision detected for ID ~w", [RequestId]),
 
                     %% Emit telemetry event for error
-                    telemetry:execute(
-                        [erlmcp, client, request, exception],
-                        #{count => 1},
-                        #{
-                            error_type => request_id_collision,
-                            method => Method,
-                            request_id => RequestId,
-                            transport => State#state.transport
-                        }
-                    ),
+                    telemetry:execute([erlmcp, client, request, exception],
+                                      #{count => 1},
+                                      #{error_type => request_id_collision,
+                                        method => Method,
+                                        request_id => RequestId,
+                                        transport => State#state.transport}),
 
-                    gen_server:reply(FromPid, {error, {request_id_collision,
-                        <<"Internal error: request ID collision">>}}),
+                    gen_server:reply(FromPid,
+                                     {error,
+                                      {request_id_collision,
+                                       <<"Internal error: request ID collision">>}}),
                     {error, request_id_collision};
                 false ->
                     Json = erlmcp_json_rpc:encode_request(RequestId, Method, Params),
                     case send_message(State, Json) of
                         ok ->
                             %% Store correlation in ETS for persistence across reconnection
-                            store_correlation(State#state.correlation_table, RequestId, RequestInfo, Method),
+                            store_correlation(State#state.correlation_table,
+                                              RequestId,
+                                              RequestInfo,
+                                              Method),
 
                             %% Emit telemetry event for successful request
                             Duration = erlang:monotonic_time(microsecond) - StartTime,
-                            telemetry:execute(
-                                [erlmcp, client, request, start],
-                                #{
-                                    count => 1,
-                                    duration_us => Duration,
-                                    bytes => byte_size(Json)
-                                },
-                                #{
-                                    method => Method,
-                                    request_id => RequestId,
-                                    transport => State#state.transport,
-                                    phase => State#state.phase
-                                }
-                            ),
+                            telemetry:execute([erlmcp, client, request, start],
+                                              #{count => 1,
+                                                duration_us => Duration,
+                                                bytes => byte_size(Json)},
+                                              #{method => Method,
+                                                request_id => RequestId,
+                                                transport => State#state.transport,
+                                                phase => State#state.phase}),
 
-                            NewState = State#state{
-                                request_id = SafeNextId,
-                                pending_requests = maps:put(RequestId, RequestInfo, State#state.pending_requests)
-                            },
+                            NewState =
+                                State#state{request_id = SafeNextId,
+                                            pending_requests =
+                                                maps:put(RequestId,
+                                                         RequestInfo,
+                                                         State#state.pending_requests)},
                             {ok, NewState};
                         {error, Reason} ->
                             %% Emit telemetry event for send error
-                            telemetry:execute(
-                                [erlmcp, client, request, exception],
-                                #{count => 1},
-                                #{
-                                    error_type => send_failed,
-                                    error_reason => Reason,
-                                    method => Method,
-                                    request_id => RequestId,
-                                    transport => State#state.transport
-                                }
-                            ),
+                            telemetry:execute([erlmcp, client, request, exception],
+                                              #{count => 1},
+                                              #{error_type => send_failed,
+                                                error_reason => Reason,
+                                                method => Method,
+                                                request_id => RequestId,
+                                                transport => State#state.transport}),
 
                             gen_server:reply(FromPid, {error, Reason}),
                             {error, Reason}
@@ -910,14 +861,9 @@ send_message(#state{transport = Transport, transport_state = TransportState}, Me
 
 -spec build_initialize_request(#mcp_client_capabilities{}) -> map().
 build_initialize_request(Capabilities) ->
-    #{
-        <<"protocolVersion">> => ?MCP_VERSION,
-        <<"capabilities">> => encode_capabilities(Capabilities),
-        <<"clientInfo">> => #{
-            <<"name">> => <<"erlmcp">>,
-            <<"version">> => <<"0.1.0">>
-        }
-    }.
+    #{<<"protocolVersion">> => ?MCP_VERSION,
+      <<"capabilities">> => encode_capabilities(Capabilities),
+      <<"clientInfo">> => #{<<"name">> => <<"erlmcp">>, <<"version">> => <<"0.1.0">>}}.
 
 -spec build_prompt_params(binary(), map()) -> map().
 build_prompt_params(Name, Arguments) when map_size(Arguments) =:= 0 ->
@@ -931,7 +877,7 @@ encode_capabilities({Name, Version}) when is_binary(Name), is_binary(Version) ->
     #{name => Name, version => Version};
 %% Handle map with name/version keys
 encode_capabilities(#{name := Name, version := Version} = Caps)
-  when is_binary(Name), is_binary(Version) ->
+    when is_binary(Name), is_binary(Version) ->
     Caps;
 %% Handle plain map (pass through)
 encode_capabilities(Caps) when is_map(Caps), not is_record(Caps, mcp_client_capabilities) ->
@@ -970,7 +916,7 @@ validate_capability(#state{capabilities = Caps}, Capability) ->
     check_server_capability(Caps, Capability).
 
 -spec check_server_capability(#mcp_server_capabilities{}, atom()) ->
-    ok | {error, capability_not_supported}.
+                                 ok | {error, capability_not_supported}.
 check_server_capability(Caps, resources) ->
     check_capability_enabled(Caps#mcp_server_capabilities.resources);
 check_server_capability(Caps, tools) ->
@@ -979,27 +925,31 @@ check_server_capability(Caps, prompts) ->
     check_capability_enabled(Caps#mcp_server_capabilities.prompts);
 check_server_capability(Caps, roots) ->
     case Caps#mcp_server_capabilities.roots of
-        #mcp_roots_capability{list_changed = true} -> ok;
-        #mcp_roots_capability{} -> ok;
-        undefined -> {error, capability_not_supported}
+        #mcp_roots_capability{list_changed = true} ->
+            ok;
+        #mcp_roots_capability{} ->
+            ok;
+        undefined ->
+            {error, capability_not_supported}
     end;
 check_server_capability(Caps, completions) ->
     case Caps#mcp_server_capabilities.experimental of
-        #{<<"completions">> := _} -> ok;
-        _ -> {error, capability_not_supported}
+        #{<<"completions">> := _} ->
+            ok;
+        _ ->
+            {error, capability_not_supported}
     end;
 check_server_capability(_Caps, _) ->
     ok.
 
 -spec check_capability_enabled(#mcp_capability{} | undefined) ->
-    ok | {error, capability_not_supported}.
+                                  ok | {error, capability_not_supported}.
 check_capability_enabled(#mcp_capability{enabled = true}) ->
     ok;
 check_capability_enabled(_) ->
     {error, capability_not_supported}.
 
--spec handle_response(request_id(), {ok, map()} | {error, map()}, state()) ->
-    {noreply, state()}.
+-spec handle_response(request_id(), {ok, map()} | {error, map()}, state()) -> {noreply, state()}.
 handle_response(Id, Result, State) ->
     ResponseTime = erlang:monotonic_time(microsecond),
 
@@ -1010,43 +960,36 @@ handle_response(Id, Result, State) ->
             delete_correlation(State#state.correlation_table, Id),
 
             %% Emit telemetry event for initialize response
-            telemetry:execute(
-                [erlmcp, client, request, stop],
-                #{
-                    count => 1
-                },
-                #{
-                    method => <<"initialize">>,
-                    request_id => Id,
-                    status => case Result of
-                        {ok, _} -> ok;
-                        {error, _} -> error
-                    end,
-                    transport => State#state.transport,
-                    phase => State#state.phase
-                }
-            ),
+            telemetry:execute([erlmcp, client, request, stop],
+                              #{count => 1},
+                              #{method => <<"initialize">>,
+                                request_id => Id,
+                                status =>
+                                    case Result of
+                                        {ok, _} ->
+                                            ok;
+                                        {error, _} ->
+                                            error
+                                    end,
+                                transport => State#state.transport,
+                                phase => State#state.phase}),
 
             case Result of
                 {ok, InitResult} ->
                     ServerCapabilities = extract_server_capabilities(InitResult),
                     %% Stay in initializing phase until server sends notifications/initialized
                     %% Do NOT set initialized=true yet - wait for the notification
-                    NewState = State#state{
-                        pending_requests = NewPending,
-                        capabilities = ServerCapabilities,
-                        phase = initializing
-                    },
+                    NewState =
+                        State#state{pending_requests = NewPending,
+                                    capabilities = ServerCapabilities,
+                                    phase = initializing},
                     %% Set initialization timeout to prevent hanging
                     InitTimeout = State#state.timeout,
                     erlang:send_after(InitTimeout, self(), initialization_timeout),
                     {noreply, NewState};
                 {error, _} ->
                     %% Go to error phase on initialization failure
-                    NewState = State#state{
-                        pending_requests = NewPending,
-                        phase = error
-                    },
+                    NewState = State#state{pending_requests = NewPending, phase = error},
                     {noreply, NewState}
             end;
         {{RequestType, From}, NewPending} ->
@@ -1055,38 +998,31 @@ handle_response(Id, Result, State) ->
             delete_correlation(State#state.correlation_table, Id),
 
             %% Emit telemetry event for response
-            telemetry:execute(
-                [erlmcp, client, request, stop],
-                #{
-                    count => 1
-                },
-                #{
-                    method => atom_to_binary(RequestType),
-                    request_id => Id,
-                    status => case Result of
-                        {ok, _} -> ok;
-                        {error, _} -> error
-                    end,
-                    transport => State#state.transport,
-                    phase => State#state.phase
-                }
-            ),
+            telemetry:execute([erlmcp, client, request, stop],
+                              #{count => 1},
+                              #{method => atom_to_binary(RequestType),
+                                request_id => Id,
+                                status =>
+                                    case Result of
+                                        {ok, _} ->
+                                            ok;
+                                        {error, _} ->
+                                            error
+                                    end,
+                                transport => State#state.transport,
+                                phase => State#state.phase}),
 
             {noreply, State#state{pending_requests = NewPending}};
         error ->
             logger:warning("Received response for unknown request ID: ~p", [Id]),
 
             %% Emit telemetry event for unexpected response
-            telemetry:execute(
-                [erlmcp, client, request, exception],
-                #{count => 1},
-                #{
-                    error_type => unknown_request_id,
-                    request_id => Id,
-                    transport => State#state.transport,
-                    phase => State#state.phase
-                }
-            ),
+            telemetry:execute([erlmcp, client, request, exception],
+                              #{count => 1},
+                              #{error_type => unknown_request_id,
+                                request_id => Id,
+                                transport => State#state.transport,
+                                phase => State#state.phase}),
 
             {noreply, State}
     end.
@@ -1097,12 +1033,20 @@ extract_server_capabilities(InitResult) ->
         undefined ->
             undefined;
         Caps when is_map(Caps) ->
-            #mcp_server_capabilities{
-                resources = extract_capability(maps:get(<<"resources">>, Caps, undefined)),
-                tools = extract_capability(maps:get(<<"tools">>, Caps, undefined)),
-                prompts = extract_capability(maps:get(<<"prompts">>, Caps, undefined)),
-                logging = extract_capability(maps:get(<<"logging">>, Caps, undefined))
-            }
+            #mcp_server_capabilities{resources =
+                                         extract_capability(maps:get(<<"resources">>,
+                                                                     Caps,
+                                                                     undefined)),
+                                     tools =
+                                         extract_capability(maps:get(<<"tools">>, Caps, undefined)),
+                                     prompts =
+                                         extract_capability(maps:get(<<"prompts">>,
+                                                                     Caps,
+                                                                     undefined)),
+                                     logging =
+                                         extract_capability(maps:get(<<"logging">>,
+                                                                     Caps,
+                                                                     undefined))}
     end.
 
 -spec extract_capability(map() | undefined) -> #mcp_capability{} | undefined.
@@ -1114,23 +1058,21 @@ extract_capability(_) ->
     undefined.
 
 -spec handle_notification(binary(), map(), state()) -> {noreply, state()}.
-
 %% INITIALIZED notification transitions to initialized phase
-handle_notification(<<"notifications/initialized">> = Method, _Params, #state{phase = initializing} = State) ->
+handle_notification(<<"notifications/initialized">> = Method,
+                    _Params,
+                    #state{phase = initializing} = State) ->
     logger:info("Client received initialized notification, transitioning to initialized phase"),
     %% Cancel the initialization timeout since we received the notification
     %% (We can't cancel send_after messages easily, so we handle them in handle_info)
     {noreply, State#state{phase = initialized, initialized = true}};
-
 %% Ignore notifications/initialized if not in initializing phase (already initialized)
 handle_notification(<<"notifications/initialized">> = Method, _Params, State) ->
     logger:debug("Received notifications/initialized in phase ~p, ignoring", [State#state.phase]),
     {noreply, State};
-
 handle_notification(<<"sampling/createMessage">> = Method, Params, State) ->
     spawn_handler(State#state.sampling_handler, Method, Params),
     {noreply, State};
-
 handle_notification(<<"resources/updated">> = Method, Params, State) ->
     case maps:get(<<"uri">>, Params, undefined) of
         undefined ->
@@ -1143,10 +1085,8 @@ handle_notification(<<"resources/updated">> = Method, Params, State) ->
                     {noreply, State}
             end
     end;
-
 handle_notification(<<"resources/list_changed">> = Method, Params, State) ->
     invoke_notification_handler(Method, Params, State);
-
 handle_notification(Method, Params, State) ->
     invoke_notification_handler(Method, Params, State).
 
@@ -1203,12 +1143,11 @@ execute_batch_requests([{RequestId, Method, Params} | Rest], State) ->
 store_correlation(undefined, _RequestId, _RequestInfo, _Method) ->
     true;
 store_correlation(Table, RequestId, {RequestType, FromPid}, Method) ->
-    CorrelationData = #{
-        timestamp => erlang:system_time(millisecond),
-        request_type => RequestType,
-        from_pid => FromPid,
-        method => Method
-    },
+    CorrelationData =
+        #{timestamp => erlang:system_time(millisecond),
+          request_type => RequestType,
+          from_pid => FromPid,
+          method => Method},
     ets:insert(Table, {RequestId, CorrelationData}),
     logger:debug("Stored correlation for request ID ~w: ~p", [RequestId, CorrelationData]),
     true.
@@ -1231,21 +1170,19 @@ recover_correlations(#state{correlation_table = Table, pending_requests = Pendin
     %% Get all correlations from ETS table
     Correlations = ets:tab2list(Table),
     %% Filter out stale correlations (> 5 minutes old) and dead PIDs
-    ValidCorrelations = lists:filter(
-        fun({_RequestId, #{timestamp := TS, from_pid := Pid}}) ->
-            Age = Now - TS,
-            Age < 300000 andalso is_process_alive(Pid)
-        end,
-        Correlations
-    ),
+    ValidCorrelations =
+        lists:filter(fun({_RequestId, #{timestamp := TS, from_pid := Pid}}) ->
+                        Age = Now - TS,
+                        Age < 300000 andalso is_process_alive(Pid)
+                     end,
+                     Correlations),
     %% Update pending requests map with recovered correlations
-    RecoveredPending = lists:foldl(
-        fun({RequestId, #{request_type := Type, from_pid := Pid}}, Acc) ->
-            maps:put(RequestId, {Type, Pid}, Acc)
-        end,
-        Pending,
-        ValidCorrelations
-    ),
+    RecoveredPending =
+        lists:foldl(fun({RequestId, #{request_type := Type, from_pid := Pid}}, Acc) ->
+                       maps:put(RequestId, {Type, Pid}, Acc)
+                    end,
+                    Pending,
+                    ValidCorrelations),
     logger:info("Recovered ~p correlations from ETS table", [length(ValidCorrelations)]),
     State#state{pending_requests = RecoveredPending}.
 
@@ -1258,11 +1195,7 @@ cleanup_stale_correlations() ->
             0;
         _ ->
             Now = erlang:system_time(millisecond),
-            MatchSpec = [{
-                {'$1', #{timestamp => '$2'}},
-                [{'>', {'-', Now, '$2'}, 300000}],
-                [true]
-            }],
+            MatchSpec = [{{'$1', #{timestamp => '$2'}}, [{'>', {'-', Now, '$2'}, 300000}], [true]}],
             DeletedCount = ets:select_delete(erlmcp_correlation_table, MatchSpec),
             logger:info("Cleaned up ~p stale correlations", [DeletedCount]),
             DeletedCount

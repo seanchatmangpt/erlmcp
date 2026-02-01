@@ -11,18 +11,18 @@
 %% - get_all_names/1: Get all registered names
 %% - stop/1: Stop the registry
 -module(erlmcp_distributed_registry_poc).
+
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, register_name/3, whereis_name/2, unregister_name/2, get_all_names/1, stop/1]).
-
+-export([start_link/0, register_name/3, whereis_name/2, unregister_name/2, get_all_names/1,
+         stop/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {
-    registry :: map(),  %% Name -> Pid
-    monitors :: map()   %% Pid -> Name (for cleanup)
-}).
+-record(state,
+        {registry :: map(),  %% Name -> Pid
+         monitors :: map()}).   %% Pid -> Name (for cleanup)
 
 %%====================================================================
 %% API
@@ -63,12 +63,11 @@ stop(RegistryPid) ->
 %%====================================================================
 
 init([]) ->
-    {ok, #state{
-        registry = #{},
-        monitors = #{}
-    }}.
+    {ok, #state{registry = #{}, monitors = #{}}}.
 
-handle_call({register_name, Name, ProcessPid}, _From, State = #state{registry = Registry, monitors = Monitors}) ->
+handle_call({register_name, Name, ProcessPid},
+            _From,
+            State = #state{registry = Registry, monitors = Monitors}) ->
     case maps:is_key(Name, Registry) of
         true ->
             {reply, {error, already_registered}, State};
@@ -79,7 +78,6 @@ handle_call({register_name, Name, ProcessPid}, _From, State = #state{registry = 
             NewMonitors = maps:put(ProcessPid, {Name, MonitorRef}, Monitors),
             {reply, ok, State#state{registry = NewRegistry, monitors = NewMonitors}}
     end;
-
 handle_call({whereis_name, Name}, _From, State = #state{registry = Registry}) ->
     case maps:get(Name, Registry, undefined) of
         undefined ->
@@ -87,8 +85,9 @@ handle_call({whereis_name, Name}, _From, State = #state{registry = Registry}) ->
         Pid ->
             {reply, {ok, Pid}, State}
     end;
-
-handle_call({unregister_name, Name}, _From, State = #state{registry = Registry, monitors = Monitors}) ->
+handle_call({unregister_name, Name},
+            _From,
+            State = #state{registry = Registry, monitors = Monitors}) ->
     case maps:get(Name, Registry, undefined) of
         undefined ->
             {reply, ok, State};
@@ -104,18 +103,17 @@ handle_call({unregister_name, Name}, _From, State = #state{registry = Registry, 
             NewMonitors = maps:remove(Pid, Monitors),
             {reply, ok, State#state{registry = NewRegistry, monitors = NewMonitors}}
     end;
-
 handle_call(get_all_names, _From, State = #state{registry = Registry}) ->
     Names = maps:keys(Registry),
     {reply, {ok, Names}, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.
 
-handle_info({'DOWN', MonitorRef, process, Pid, _Reason}, State = #state{registry = Registry, monitors = Monitors}) ->
+handle_info({'DOWN', MonitorRef, process, Pid, _Reason},
+            State = #state{registry = Registry, monitors = Monitors}) ->
     %% Process died - cleanup
     case maps:get(Pid, Monitors, undefined) of
         {Name, MonitorRef} ->
@@ -125,7 +123,6 @@ handle_info({'DOWN', MonitorRef, process, Pid, _Reason}, State = #state{registry
         undefined ->
             {noreply, State}
     end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 

@@ -15,15 +15,11 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_worker_sup).
+
 -behaviour(supervisor).
 
 %% API
--export([
-    start_link/0,
-    start_plugin/2,
-    stop_plugin/1
-]).
-
+-export([start_link/0, start_plugin/2, stop_plugin/1]).
 %% supervisor callbacks
 -export([init/1]).
 
@@ -52,19 +48,17 @@ stop_plugin(Pid) ->
 %%====================================================================
 
 init([]) ->
-    SupFlags = #{
-        strategy => simple_one_for_one,  % Dynamic workers
-        intensity => 5,                  % Max 5 restarts
-        period => 60                     % In 60 seconds
-    },
+    SupFlags =
+        #{strategy => simple_one_for_one,  % Dynamic workers
+          intensity => 5,                  % Max 5 restarts
+          period => 60},                     % In 60 seconds
 
-    ChildSpec = #{
-        id => erlmcp_plugin_worker,
-        start => {erlmcp_plugin_worker, start_link, []},
-        restart => transient,            % Don't restart on normal exit
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_plugin_worker]
-    },
+    ChildSpec =
+        #{id => erlmcp_plugin_worker,
+          start => {erlmcp_plugin_worker, start_link, []},
+          restart => transient,            % Don't restart on normal exit
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_plugin_worker]},
 
     {ok, {SupFlags, [ChildSpec]}}.

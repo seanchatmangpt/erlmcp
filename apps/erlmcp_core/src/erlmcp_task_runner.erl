@@ -19,26 +19,12 @@
 -module(erlmcp_task_runner).
 
 %% API
--export([
-    start_task/2,
-    start_task/3,
-    start_link/1,
-    start_link/2,
-    cancel_task/1,
-    cancel_task/2,
-    get_status/1
-]).
-
+-export([start_task/2, start_task/3, start_link/1, start_link/2, cancel_task/1, cancel_task/2,
+         get_status/1]).
 %% Internal exports for proc_lib
 -export([init/2]).
-
 %% System message handling
--export([
-    system_continue/3,
-    system_terminate/4,
-    system_code_change/4,
-    system_get_state/1
-]).
+-export([system_continue/3, system_terminate/4, system_code_change/4, system_get_state/1]).
 
 -include("erlmcp.hrl").
 
@@ -48,25 +34,23 @@
 
 -type task_id() :: binary().
 -type task_fn() :: fun(() -> term()).
--type task_spec() :: #{
-    task_fn := task_fn(),
-    timeout => pos_integer(),
-    progress_token => reference(),
-    task_id => task_id(),
-    parent => pid(),
-    metadata => map()
-}.
--type task_state() :: #{
-    task_id := task_id(),
-    task_fn := task_fn(),
-    timeout := pos_integer(),
-    progress_token => reference(),
-    parent := pid(),
-    start_time := integer(),
-    timer_ref => reference(),
-    metadata := map(),
-    status := pending | running | completed | failed | cancelled
-}.
+-type task_spec() ::
+    #{task_fn := task_fn(),
+      timeout => pos_integer(),
+      progress_token => reference(),
+      task_id => task_id(),
+      parent => pid(),
+      metadata => map()}.
+-type task_state() ::
+    #{task_id := task_id(),
+      task_fn := task_fn(),
+      timeout := pos_integer(),
+      progress_token => reference(),
+      parent := pid(),
+      start_time := integer(),
+      timer_ref => reference(),
+      metadata := map(),
+      status := pending | running | completed | failed | cancelled}.
 
 -export_type([task_id/0, task_fn/0, task_spec/0, task_state/0]).
 
@@ -87,14 +71,13 @@ start_task(Fun, Opts) when is_function(Fun, 0), is_map(Opts) ->
     TaskId = generate_task_id(),
     Parent = self(),
 
-    TaskSpec = #{
-        task_fn => Fun,
-        timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
-        progress_token => maps:get(progress_token, Opts, undefined),
-        task_id => TaskId,
-        parent => Parent,
-        metadata => maps:get(metadata, Opts, #{})
-    },
+    TaskSpec =
+        #{task_fn => Fun,
+          timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
+          progress_token => maps:get(progress_token, Opts, undefined),
+          task_id => TaskId,
+          parent => Parent,
+          metadata => maps:get(metadata, Opts, #{})},
 
     Pid = proc_lib:spawn_link(?MODULE, init, [Parent, TaskSpec]),
 
@@ -113,14 +96,13 @@ start_task(Fun, Opts) when is_function(Fun, 0), is_map(Opts) ->
 start_task(Fun, TaskId, Opts) when is_function(Fun, 0), is_binary(TaskId), is_map(Opts) ->
     Parent = self(),
 
-    TaskSpec = #{
-        task_fn => Fun,
-        timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
-        progress_token => maps:get(progress_token, Opts, undefined),
-        task_id => TaskId,
-        parent => Parent,
-        metadata => maps:get(metadata, Opts, #{})
-    },
+    TaskSpec =
+        #{task_fn => Fun,
+          timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
+          progress_token => maps:get(progress_token, Opts, undefined),
+          task_id => TaskId,
+          parent => Parent,
+          metadata => maps:get(metadata, Opts, #{})},
 
     Pid = proc_lib:spawn_link(?MODULE, init, [Parent, TaskSpec]),
 
@@ -152,14 +134,13 @@ start_link(Fun, Opts) when is_function(Fun, 0), is_map(Opts) ->
     TaskId = maps:get(task_id, Opts, generate_task_id()),
     Parent = maps:get(parent, Opts, self()),
 
-    TaskSpec = #{
-        task_fn => Fun,
-        timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
-        progress_token => maps:get(progress_token, Opts, undefined),
-        task_id => TaskId,
-        parent => Parent,
-        metadata => maps:get(metadata, Opts, #{})
-    },
+    TaskSpec =
+        #{task_fn => Fun,
+          timeout => maps:get(timeout, Opts, ?DEFAULT_TIMEOUT_MS),
+          progress_token => maps:get(progress_token, Opts, undefined),
+          task_id => TaskId,
+          parent => Parent,
+          metadata => maps:get(metadata, Opts, #{})},
 
     start_link(TaskSpec).
 
@@ -181,11 +162,10 @@ get_status(Pid) when is_pid(Pid) ->
         {'EXIT', Reason} ->
             {error, Reason};
         State when is_map(State) ->
-            {ok, #{
-                task_id => maps:get(task_id, State),
-                status => maps:get(status, State),
-                elapsed_ms => erlang:system_time(millisecond) - maps:get(start_time, State)
-            }};
+            {ok,
+             #{task_id => maps:get(task_id, State),
+               status => maps:get(status, State),
+               elapsed_ms => erlang:system_time(millisecond) - maps:get(start_time, State)}};
         State ->
             {ok, State}
     end.
@@ -208,17 +188,16 @@ init(Parent, TaskSpec) ->
     TaskFun = maps:get(task_fn, TaskSpec),
 
     % Initialize state
-    State = #{
-        task_id => TaskId,
-        task_fn => TaskFun,
-        timeout => Timeout,
-        progress_token => ProgressToken,
-        parent => Parent,
-        start_time => erlang:system_time(millisecond),
-        timer_ref => undefined,
-        metadata => Metadata,
-        status => pending
-    },
+    State =
+        #{task_id => TaskId,
+          task_fn => TaskFun,
+          timeout => Timeout,
+          progress_token => ProgressToken,
+          parent => Parent,
+          start_time => erlang:system_time(millisecond),
+          timer_ref => undefined,
+          metadata => Metadata,
+          status => pending},
 
     % Notify parent we're ready (for proc_lib:start_link)
     proc_lib:init_ack(Parent, {ok, self()}),
@@ -235,8 +214,10 @@ init(Parent, TaskSpec) ->
 
     % Initialize progress tracking if token provided
     case ProgressToken of
-        undefined -> ok;
-        _ -> erlmcp_progress:create(Parent, <<"Task started: ", TaskId/binary>>)
+        undefined ->
+            ok;
+        _ ->
+            erlmcp_progress:create(Parent, <<"Task started: ", TaskId/binary>>)
     end,
 
     % Execute task
@@ -245,23 +226,28 @@ init(Parent, TaskSpec) ->
 %% @doc Execute the task function and handle result.
 -spec execute_task(task_state()) -> no_return().
 execute_task(#{task_fn := Fun, progress_token := ProgressToken} = State) ->
-    Result = try
-        Fun()
-    of
-        R -> {ok, R}
-    catch
-        throw:Reason -> {error, {throw, Reason}};
-        error:Reason:Stacktrace -> {error, {error, Reason, Stacktrace}};
-        exit:Reason -> {error, {exit, Reason}}
-    end,
+    Result =
+        try Fun() of
+            R ->
+                {ok, R}
+        catch
+            Reason ->
+                {error, {throw, Reason}};
+            error:Reason:Stacktrace ->
+                {error, {error, Reason, Stacktrace}};
+            exit:Reason ->
+                {error, {exit, Reason}}
+        end,
 
     % Cancel timeout timer
     cancel_timer(State),
 
     % Update progress to complete
     case ProgressToken of
-        undefined -> ok;
-        _ -> erlmcp_progress:complete(ProgressToken)
+        undefined ->
+            ok;
+        _ ->
+            erlmcp_progress:complete(ProgressToken)
     end,
 
     % Notify result
@@ -284,29 +270,23 @@ task_loop(State) ->
             cancel_timer(State),
             notify_task_cancelled(State, Reason),
             terminate_task(State#{status => cancelled}, {shutdown, cancelled});
-
         task_timeout ->
-            logger:warning("Task ~s timed out after ~p ms",
-                          [TaskId, maps:get(timeout, State)]),
+            logger:warning("Task ~s timed out after ~p ms", [TaskId, maps:get(timeout, State)]),
             notify_task_timeout(State),
             terminate_task(State#{status => failed}, {shutdown, timeout});
-
         {system, From, Request} ->
             % Handle system messages for sys module
             sys:handle_system_msg(Request, From, Parent, ?MODULE, [], State);
-
         {'EXIT', Parent, Reason} ->
             % Parent died, clean up
             logger:info("Task ~s parent died: ~p", [TaskId, Reason]),
             terminate_task(State, {shutdown, parent_died});
-
         _Other ->
             % Ignore unknown messages
             task_loop(State)
-    after
-        1000 ->
-            % Periodic liveness check
-            task_loop(State)
+    after 1000 ->
+        % Periodic liveness check
+        task_loop(State)
     end.
 
 %%%===================================================================
@@ -365,7 +345,8 @@ cancel_timer(#{timer_ref := undefined}) ->
 cancel_timer(#{timer_ref := TimerRef}) ->
     erlang:cancel_timer(TimerRef),
     receive
-        task_timeout -> ok
+        task_timeout ->
+            ok
     after 0 ->
         ok
     end.
@@ -381,7 +362,8 @@ notify_task_started(TaskId, WorkerPid) ->
             try
                 erlmcp_tasks:start_task_execution(TaskId, WorkerPid)
             catch
-                _:_ -> ok
+                _:_ ->
+                    ok
             end
     end.
 
@@ -397,20 +379,26 @@ notify_task_complete(#{task_id := TaskId, parent := Parent}, Result) ->
             try
                 erlmcp_tasks:complete_task(TaskId, Result)
             catch
-                _:_ -> ok
+                _:_ ->
+                    ok
             end
     end.
 
 %% @private
 %% Notify task failure
 -spec notify_task_failed(task_state(), term()) -> ok.
-notify_task_failed(#{task_id := TaskId, parent := Parent, progress_token := ProgressToken}, Error) ->
+notify_task_failed(#{task_id := TaskId,
+                     parent := Parent,
+                     progress_token := ProgressToken},
+                   Error) ->
     Parent ! {task_failed, TaskId, Error},
 
     % Complete progress token
     case ProgressToken of
-        undefined -> ok;
-        _ -> erlmcp_progress:complete(ProgressToken)
+        undefined ->
+            ok;
+        _ ->
+            erlmcp_progress:complete(ProgressToken)
     end,
 
     case whereis(erlmcp_tasks) of
@@ -420,20 +408,26 @@ notify_task_failed(#{task_id := TaskId, parent := Parent, progress_token := Prog
             try
                 erlmcp_tasks:fail_task(TaskId, Error)
             catch
-                _:_ -> ok
+                _:_ ->
+                    ok
             end
     end.
 
 %% @private
 %% Notify task cancellation
 -spec notify_task_cancelled(task_state(), binary()) -> ok.
-notify_task_cancelled(#{task_id := TaskId, parent := Parent, progress_token := ProgressToken}, Reason) ->
+notify_task_cancelled(#{task_id := TaskId,
+                        parent := Parent,
+                        progress_token := ProgressToken},
+                      Reason) ->
     Parent ! {task_cancelled, TaskId, Reason},
 
     % Complete progress token
     case ProgressToken of
-        undefined -> ok;
-        _ -> erlmcp_progress:complete(ProgressToken)
+        undefined ->
+            ok;
+        _ ->
+            erlmcp_progress:complete(ProgressToken)
     end,
 
     case whereis(erlmcp_tasks) of
@@ -443,7 +437,8 @@ notify_task_cancelled(#{task_id := TaskId, parent := Parent, progress_token := P
             try
                 erlmcp_tasks:cancel_task(undefined, TaskId, Reason)
             catch
-                _:_ -> ok
+                _:_ ->
+                    ok
             end
     end.
 
@@ -451,11 +446,10 @@ notify_task_cancelled(#{task_id := TaskId, parent := Parent, progress_token := P
 %% Notify task timeout
 -spec notify_task_timeout(task_state()) -> ok.
 notify_task_timeout(#{task_id := TaskId, timeout := Timeout} = State) ->
-    Error = #{
-        code => ?MCP_ERROR_TIMEOUT,
-        message => <<"Task timed out">>,
-        data => #{timeout => Timeout}
-    },
+    Error =
+        #{code => ?MCP_ERROR_TIMEOUT,
+          message => <<"Task timed out">>,
+          data => #{timeout => Timeout}},
     notify_task_failed(State, Error).
 
 %% @private

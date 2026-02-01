@@ -15,6 +15,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_secret_scan_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%===================================================================
@@ -39,11 +40,9 @@ aws_access_key_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_detect_aws_access_key/0,
+     [fun test_detect_aws_access_key/0,
       fun test_detect_aws_secret_key/0,
-      fun test_aws_key_with_context/0
-     ]}.
+      fun test_aws_key_with_context/0]}.
 
 test_detect_aws_access_key() ->
     %% AWS Access Key: AKIA + 16 chars = 20 total
@@ -52,9 +51,7 @@ test_detect_aws_access_key() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"AWS Access Key">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"AWS Access Key">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -70,12 +67,11 @@ test_detect_aws_secret_key() ->
     end.
 
 test_aws_key_with_context() ->
-    Content = <<
-        "-module(config).\n"
-        "get_aws_config() ->\n"
-        "    #{access_key => \"AKIA1234567890ABCDEF\",\n"
-        "      region => \"us-east-1\"}.\n"
-    >>,
+    Content =
+        <<"-module(config).\n"
+          "get_aws_config() ->\n"
+          "    #{access_key => \"AKIA1234567890ABCDEF\",\n"
+          "      region => \"us-east-1\"}.\n">>,
     Filename = create_test_file("aws_context_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -94,11 +90,9 @@ github_token_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_detect_github_pat/0,
+     [fun test_detect_github_pat/0,
       fun test_github_token_in_config/0,
-      fun test_github_token_url/0
-     ]}.
+      fun test_github_token_url/0]}.
 
 test_detect_github_pat() ->
     %% GitHub PAT: ghp_ + 36 chars = 40 total
@@ -107,19 +101,16 @@ test_detect_github_pat() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"GitHub Token">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"GitHub Token">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
 
 test_github_token_in_config() ->
-    Content = <<
-        "{github, [\n"
-        "  {token, \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n"
-        "]}.\n"
-    >>,
+    Content =
+        <<"{github, [\n"
+          "  {token, \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n"
+          "]}.\n">>,
     Filename = create_test_file("github_config_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -146,12 +137,10 @@ api_key_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_detect_api_key/0,
+     [fun test_detect_api_key/0,
       fun test_detect_google_api_key/0,
       fun test_detect_stripe_key/0,
-      fun test_api_key_variations/0
-     ]}.
+      fun test_api_key_variations/0]}.
 
 test_detect_api_key() ->
     Content = <<"api_key := \"1234567890abcdefghijklmnopqrstuvwxyz\"\n">>,
@@ -159,9 +148,7 @@ test_detect_api_key() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"API Key">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"API Key">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -172,9 +159,7 @@ test_detect_google_api_key() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"Google API Key">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"Google API Key">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -185,19 +170,16 @@ test_detect_stripe_key() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"Stripe Live Key">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"Stripe Live Key">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
 
 test_api_key_variations() ->
-    Content = <<
-        "apikey = \"key123\"\n"
-        "APIKEY = \"key456\"\n"
-        "Api-Key = \"key789\"\n"
-    >>,
+    Content =
+        <<"apikey = \"key123\"\n"
+          "APIKEY = \"key456\"\n"
+          "Api-Key = \"key789\"\n">>,
     Filename = create_test_file("api_key_var_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -214,11 +196,9 @@ private_key_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_detect_rsa_private_key/0,
+     [fun test_detect_rsa_private_key/0,
       fun test_detect_ec_private_key/0,
-      fun test_private_key_assignment/0
-     ]}.
+      fun test_private_key_assignment/0]}.
 
 test_detect_rsa_private_key() ->
     Content = <<"-----BEGIN RSA PRIVATE KEY-----\n">>,
@@ -226,9 +206,7 @@ test_detect_rsa_private_key() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"Private Key">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"Private Key">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -261,11 +239,9 @@ database_connection_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_detect_postgresql_conn/0,
+     [fun test_detect_postgresql_conn/0,
       fun test_detect_mysql_conn/0,
-      fun test_detect_mongodb_conn/0
-     ]}.
+      fun test_detect_mongodb_conn/0]}.
 
 test_detect_postgresql_conn() ->
     Content = <<"db_url := \"postgresql://user:password@localhost:5432/db\"\n">>,
@@ -273,9 +249,8 @@ test_detect_postgresql_conn() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"PostgreSQL Connection String">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"PostgreSQL Connection String">> end,
+                          Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -286,9 +261,8 @@ test_detect_mysql_conn() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"MySQL Connection String">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"MySQL Connection String">> end,
+                          Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -299,9 +273,8 @@ test_detect_mongodb_conn() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"MongoDB Connection String">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"MongoDB Connection String">> end,
+                          Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -314,21 +287,18 @@ slack_token_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_detect_slack_bot_token/0,
+     [fun test_detect_slack_bot_token/0,
       fun test_detect_slack_user_token/0,
-      fun test_detect_slack_oauth_token/0
-     ]}.
+      fun test_detect_slack_oauth_token/0]}.
 
 test_detect_slack_bot_token() ->
-    Content = <<"slack_bot_token = \"xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwxyz\"\n">>,
+    Content =
+        <<"slack_bot_token = \"xoxb-123456789012-1234567890123-abcdefghijklmnopqrstuvwxyz\"\n">>,
     Filename = create_test_file("slack_bot_test.erl", Content),
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"Slack Token">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"Slack Token">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -361,11 +331,9 @@ password_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_detect_hardcoded_password/0,
+     [fun test_detect_hardcoded_password/0,
       fun test_password_in_map/0,
-      fun test_password_variable/0
-     ]}.
+      fun test_password_variable/0]}.
 
 test_detect_hardcoded_password() ->
     Content = <<"password := \"mysecretpassword\"\n">>,
@@ -373,9 +341,7 @@ test_detect_hardcoded_password() ->
     try
         Result = scan_test_file(Filename),
         ?assert(length(Result) > 0),
-        ?assert(lists:any(fun(S) ->
-            maps:get(type, S) =:= <<"Hardcoded Password">>
-        end, Result))
+        ?assert(lists:any(fun(S) -> maps:get(type, S) =:= <<"Hardcoded Password">> end, Result))
     after
         cleanup_test_file(Filename)
     end.
@@ -408,18 +374,13 @@ clean_content_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_clean_erlang_code/0,
-      fun test_clean_config/0,
-      fun test_clean_environment_vars/0
-     ]}.
+     [fun test_clean_erlang_code/0, fun test_clean_config/0, fun test_clean_environment_vars/0]}.
 
 test_clean_erlang_code() ->
-    Content = <<
-        "-module(my_module).\n"
-        "-export([func/1]).\n"
-        "func(X) -> X * 2.\n"
-    >>,
+    Content =
+        <<"-module(my_module).\n"
+          "-export([func/1]).\n"
+          "func(X) -> X * 2.\n">>,
     Filename = create_test_file("clean_code_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -429,11 +390,10 @@ test_clean_erlang_code() ->
     end.
 
 test_clean_config() ->
-    Content = <<
-        "{port, 8080}.\n"
-        "{host, \"localhost\"}.\n"
-        "{log_level, info}.\n"
-    >>,
+    Content =
+        <<"{port, 8080}.\n"
+          "{host, \"localhost\"}.\n"
+          "{log_level, info}.\n">>,
     Filename = create_test_file("clean_config_test.config", Content),
     try
         Result = scan_test_file(Filename),
@@ -443,11 +403,10 @@ test_clean_config() ->
     end.
 
 test_clean_environment_vars() ->
-    Content = <<
-        "export DB_HOST=localhost\n"
-        "export DB_PORT=5432\n"
-        "export LOG_LEVEL=debug\n"
-    >>,
+    Content =
+        <<"export DB_HOST=localhost\n"
+          "export DB_PORT=5432\n"
+          "export LOG_LEVEL=debug\n">>,
     Filename = create_test_file("clean_env_test.sh", Content),
     try
         Result = scan_test_file(Filename),
@@ -464,12 +423,10 @@ edge_case_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_empty_file/0,
+     [fun test_empty_file/0,
       fun test_multiline_secret/0,
       fun test_commented_secret/0,
-      fun test_fake_positive_prevention/0
-     ]}.
+      fun test_fake_positive_prevention/0]}.
 
 test_empty_file() ->
     Content = <<"\n\n\n">>,
@@ -482,10 +439,9 @@ test_empty_file() ->
     end.
 
 test_multiline_secret() ->
-    Content = <<
-        "api_key = \n"
-        "\"AKIA1234567890ABCD\"\n"
-    >>,
+    Content =
+        <<"api_key = \n"
+          "\"AKIA1234567890ABCD\"\n">>,
     Filename = create_test_file("multiline_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -495,10 +451,9 @@ test_multiline_secret() ->
     end.
 
 test_commented_secret() ->
-    Content = <<
-        "% password := \"oldpassword\"\n"
-        "password := application:get_env(db, password)\n"
-    >>,
+    Content =
+        <<"% password := \"oldpassword\"\n"
+          "password := application:get_env(db, password)\n">>,
     Filename = create_test_file("commented_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -509,11 +464,10 @@ test_commented_secret() ->
     end.
 
 test_fake_positive_prevention() ->
-    Content = <<
-        "%% This is not a real secret\n"
-        "api_key_format = \"AKIA........................\"\n"
-        "token_template = \"ghp_................................\"\n"
-    >>,
+    Content =
+        <<"%% This is not a real secret\n"
+          "api_key_format = \"AKIA........................\"\n"
+          "token_template = \"ghp_................................\"\n">>,
     Filename = create_test_file("fake_positive_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -531,17 +485,13 @@ multiple_secrets_test_() ->
     {foreach,
      fun() -> ok end,
      fun(_) -> ok end,
-     [
-      fun test_multiple_secrets_same_file/0,
-      fun test_secrets_across_lines/0
-     ]}.
+     [fun test_multiple_secrets_same_file/0, fun test_secrets_across_lines/0]}.
 
 test_multiple_secrets_same_file() ->
-    Content = <<
-        "aws_key = \"AKIA1234567890ABCDEF\"\n"
-        "github_token = \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n"
-        "api_key = \"1234567890abcdefghijklmnopqrstuvwxyz\"\n"
-    >>,
+    Content =
+        <<"aws_key = \"AKIA1234567890ABCDEF\"\n"
+          "github_token = \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n"
+          "api_key = \"1234567890abcdefghijklmnopqrstuvwxyz\"\n">>,
     Filename = create_test_file("multiple_secrets_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -551,13 +501,12 @@ test_multiple_secrets_same_file() ->
     end.
 
 test_secrets_across_lines() ->
-    Content = <<
-        "config1 = #{key => \"val1\"}.\n"
-        "aws_key = \"AKIA1234567890ABCDEF\"\n"
-        "config2 = #{key => \"val2\"}.\n"
-        "db_url = \"postgresql://user:pass@localhost/db\"\n"
-        "config3 = #{key => \"val3\"}.\n"
-    >>,
+    Content =
+        <<"config1 = #{key => \"val1\"}.\n"
+          "aws_key = \"AKIA1234567890ABCDEF\"\n"
+          "config2 = #{key => \"val2\"}.\n"
+          "db_url = \"postgresql://user:pass@localhost/db\"\n"
+          "config3 = #{key => \"val3\"}.\n">>,
     Filename = create_test_file("across_lines_test.erl", Content),
     try
         Result = scan_test_file(Filename),
@@ -575,26 +524,28 @@ test_secrets_across_lines() ->
 %% @private Scan test file using secret patterns from security validator
 scan_test_file(Filename) ->
     %% Use the same patterns as check_no_hardcoded_secrets/1
-    SecretPatterns = [
-        "password\\s*:=\\s*\"[^\"]+\"",
-        "api_key\\s*:=\\s*\"[^\"]+\"",
-        "secret\\s*:=\\s*\"[^\"]+\"",
-        "token\\s*:=\\s*\"[^\"]+\"",
-        "private_key\\s*:=\\s*\"[^\"]+\"",
-        "AKIA[0-9A-Z]{16}",
-        "AIza[0-9A-Za-z\\-_]{35}",
-        "sk_live_[0-9a-zA-Z]{24}",
-        "xox[baprs]-[0-9]{12}-[0-9]{12}-[0-9a-zA-Z]{32}",
-        "ghp_[a-zA-Z0-9]{36}",
-        "postgresql://[^:]+:[^@]+@",
-        "mysql://[^:]+:[^@]+@",
-        "mongodb://[^:]+:[^@]+@"
-    ],
+    SecretPatterns =
+        ["password\\s*:=\\s*\"[^\"]+\"",
+         "api_key\\s*:=\\s*\"[^\"]+\"",
+         "secret\\s*:=\\s*\"[^\"]+\"",
+         "token\\s*:=\\s*\"[^\"]+\"",
+         "private_key\\s*:=\\s*\"[^\"]+\"",
+         "AKIA[0-9A-Z]{16}",
+         "AIza[0-9A-Za-z\\-_]{35}",
+         "sk_live_[0-9a-zA-Z]{24}",
+         "xox[baprs]-[0-9]{12}-[0-9]{12}-[0-9a-zA-Z]{32}",
+         "ghp_[a-zA-Z0-9]{36}",
+         "postgresql://[^:]+:[^@]+@",
+         "mysql://[^:]+:[^@]+@",
+         "mongodb://[^:]+:[^@]+@"],
     case erlmcp_security_validator:scan_files_for_secrets([Filename], SecretPatterns) of
-        [] -> [];
+        [] ->
+            [];
         Results ->
             case hd(Results) of
-                #{secrets := Secrets} -> Secrets;
-                _ -> []
+                #{secrets := Secrets} ->
+                    Secrets;
+                _ ->
+                    []
             end
     end.

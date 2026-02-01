@@ -12,16 +12,8 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    parse_json_rpc/1,
-    validate_jsonrpc_version/1,
-    parse_by_type/1,
-    parse_request/3,
-    parse_response/3,
-    parse_notification/2,
-    decode_id/1,
-    validate_params/1
-]).
+-export([parse_json_rpc/1, validate_jsonrpc_version/1, parse_by_type/1, parse_request/3,
+         parse_response/3, parse_notification/2, decode_id/1, validate_params/1]).
 
 %% Types
 -type json_rpc_message() :: #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}.
@@ -38,8 +30,10 @@
 -spec parse_json_rpc(map()) -> decode_result().
 parse_json_rpc(Data) ->
     case validate_jsonrpc_version(Data) of
-        ok -> parse_by_type(Data);
-        Error -> Error
+        ok ->
+            parse_by_type(Data);
+        Error ->
+            Error
     end.
 
 %% @doc Validate JSON-RPC version field (fast path).
@@ -78,31 +72,26 @@ parse_by_type(_) ->
 -spec parse_request(json_rpc_id(), binary(), map()) -> decode_result().
 parse_request(Id, Method, Data) when is_binary(Method) ->
     Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, undefined),
-    {ok, #json_rpc_request{
-        id = decode_id(Id),
-        method = Method,
-        params = validate_params(Params)
-    }};
+    {ok,
+     #json_rpc_request{id = decode_id(Id),
+                       method = Method,
+                       params = validate_params(Params)}};
 parse_request(_Id, Method, _Data) ->
     {error, {invalid_request, {invalid_method, Method}}}.
 
 %% @doc Parse response message (fast path).
 -spec parse_response(json_rpc_id(), term(), term()) -> decode_result().
 parse_response(Id, Result, Error) ->
-    {ok, #json_rpc_response{
-        id = decode_id(Id),
-        result = Result,
-        error = Error
-    }}.
+    {ok,
+     #json_rpc_response{id = decode_id(Id),
+                        result = Result,
+                        error = Error}}.
 
 %% @doc Parse notification message (fast path).
 -spec parse_notification(binary(), map()) -> decode_result().
 parse_notification(Method, Data) when is_binary(Method) ->
     Params = maps:get(?JSONRPC_FIELD_PARAMS, Data, undefined),
-    {ok, #json_rpc_notification{
-        method = Method,
-        params = validate_params(Params)
-    }};
+    {ok, #json_rpc_notification{method = Method, params = validate_params(Params)}};
 parse_notification(Method, _Data) ->
     {error, {invalid_request, {invalid_method, Method}}}.
 
@@ -112,14 +101,22 @@ parse_notification(Method, _Data) ->
 
 %% @doc Decode ID with fast pattern matching (hot path).
 -spec decode_id(term()) -> json_rpc_id().
-decode_id(null) -> null;
-decode_id(Id) when is_binary(Id) -> Id;
-decode_id(Id) when is_integer(Id) -> Id;
-decode_id(Id) -> Id.
+decode_id(null) ->
+    null;
+decode_id(Id) when is_binary(Id) ->
+    Id;
+decode_id(Id) when is_integer(Id) ->
+    Id;
+decode_id(Id) ->
+    Id.
 
 %% @doc Validate parameters type (fast inline check).
 -spec validate_params(term()) -> json_rpc_params().
-validate_params(undefined) -> undefined;
-validate_params(Params) when is_map(Params) -> Params;
-validate_params(Params) when is_list(Params) -> Params;
-validate_params(_) -> undefined.
+validate_params(undefined) ->
+    undefined;
+validate_params(Params) when is_map(Params) ->
+    Params;
+validate_params(Params) when is_list(Params) ->
+    Params;
+validate_params(_) ->
+    undefined.

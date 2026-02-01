@@ -27,24 +27,11 @@
 -module(erlmcp_event_manager).
 
 %% API exports
--export([
-    start_link/0,
-    notify/1,
-    notify_async/1,
-    add_handler/2,
-    add_handler/3,
-    delete_handler/2,
-    swap_handler/3,
-    which_handlers/0,
-    stop/0
-]).
+-export([start_link/0, notify/1, notify_async/1, add_handler/2, add_handler/3, delete_handler/2,
+         swap_handler/3, which_handlers/0, stop/0]).
 
 %% Type exports
--export_type([
-    event/0,
-    handler/0,
-    handler_state/0
-]).
+-export_type([event/0, handler/0, handler_state/0]).
 
 %%====================================================================
 %% Types
@@ -52,7 +39,6 @@
 
 -type handler() :: module().
 -type handler_state() :: term().
-
 -type event() ::
     {tool_executed, ToolName :: binary(), Duration :: non_neg_integer(), Result :: term()} |
     {resource_updated, Uri :: binary(), Metadata :: map()} |
@@ -109,7 +95,8 @@ notify_async(Event) ->
             logger:warning("Event manager not started, dropping event: ~p", [Event]),
             ok;
         Class:Reason:Stack ->
-            logger:error("Async event notification failed: ~p:~p~nStack: ~p", [Class, Reason, Stack]),
+            logger:error("Async event notification failed: ~p:~p~nStack: ~p",
+                         [Class, Reason, Stack]),
             ok
     end.
 

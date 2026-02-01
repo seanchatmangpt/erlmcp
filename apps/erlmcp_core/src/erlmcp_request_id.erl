@@ -33,7 +33,7 @@ safe_increment(RequestId) when RequestId >= 0 ->
 %% Returns {ok, Level, UsagePercentage}
 -spec check_thresholds(request_id()) -> {ok, threshold_level(), usage_percentage()}.
 check_thresholds(RequestId) ->
-    Usage = (RequestId / ?MAX_SAFE_REQUEST_ID) * 100.0,
+    Usage = RequestId / ?MAX_SAFE_REQUEST_ID * 100.0,
     Level = determine_threshold_level(Usage),
     {ok, Level, Usage}.
 

@@ -1,4 +1,5 @@
 -module(erlmcp_registry_utils).
+
 %%%-----------------------------------------------------------------
 %%% @doc Registry utilities for race condition prevention
 %%%
@@ -6,12 +7,8 @@
 %%% conditions in concurrent registry operations.
 %%% @end
 %%%-----------------------------------------------------------------
--export([
-    try_register_with_retry/5,
-    ensure_gproc_started/0,
-    clear_test_registrations/0,
-    generate_unique_id/1
-]).
+-export([try_register_with_retry/5, ensure_gproc_started/0, clear_test_registrations/0,
+         generate_unique_id/1]).
 
 -define(MAX_RETRIES, 5).
 -define(RETRY_DELAY_BASE, 10).
@@ -25,29 +22,26 @@
 %% unique identifiers.
 %% @end
 %%--------------------------------------------------------------------
--spec try_register_with_retry(
-    gproc:key() | fun(() -> gproc:key()),
-    pid(),
-    map(),
-    pos_integer(),
-    atom()
-) -> {ok, gproc:key()} | {error, term()}.
-
+-spec try_register_with_retry(gproc:key() | fun(() -> gproc:key()),
+                              pid(),
+                              map(),
+                              pos_integer(),
+                              atom()) ->
+                                 {ok, gproc:key()} | {error, term()}.
 try_register_with_retry(KeyFun, Pid, Value, MaxRetries, Prefix) when is_function(KeyFun, 0) ->
     try_register_with_retry(KeyFun(), Pid, Value, MaxRetries, Prefix);
-
 try_register_with_retry(Key, Pid, Value, MaxRetries, Prefix) ->
     try_register_with_retry(Key, Pid, Value, MaxRetries, Prefix, 0).
 
-try_register_with_retry(_KeyFun, _Pid, _Value, MaxRetries, _Prefix, Attempt) when Attempt >= MaxRetries ->
+try_register_with_retry(_KeyFun, _Pid, _Value, MaxRetries, _Prefix, Attempt)
+    when Attempt >= MaxRetries ->
     {error, {max_retries_exceeded, MaxRetries}};
-
-try_register_with_retry(KeyFun, Pid, Value, MaxRetries, Prefix, Attempt) when is_function(KeyFun, 0) ->
+try_register_with_retry(KeyFun, Pid, Value, MaxRetries, Prefix, Attempt)
+    when is_function(KeyFun, 0) ->
     % Generate unique key for each attempt
     UniqueId = generate_unique_id(Prefix),
     Key = KeyFun(UniqueId),
     try_register_with_retry(Key, Pid, Value, MaxRetries, Prefix, Attempt);
-
 try_register_with_retry(Key, Pid, Value, MaxRetries, Prefix, Attempt) ->
     case gproc:where(Key) of
         undefined ->
@@ -58,7 +52,8 @@ try_register_with_retry(Key, Pid, Value, MaxRetries, Prefix, Attempt) ->
             catch
                 error:badarg ->
                     % Race condition: another process registered just now
-                    logger:debug("Registration race on attempt ~p for key ~p, retrying...", [Attempt, Key]),
+                    logger:debug("Registration race on attempt ~p for key ~p, retrying...",
+                                 [Attempt, Key]),
                     RetryDelay = calculate_backoff(Attempt),
                     timer:sleep(RetryDelay),
                     try_register_with_retry(Key, Pid, Value, MaxRetries, Prefix, Attempt + 1)
@@ -67,8 +62,7 @@ try_register_with_retry(Key, Pid, Value, MaxRetries, Prefix, Attempt) ->
             % Already registered by same process - this is OK
             {ok, Key};
         ExistingPid ->
-            logger:warning("Key ~p already registered by ~p (we are ~p)",
-                          [Key, ExistingPid, Pid]),
+            logger:warning("Key ~p already registered by ~p (we are ~p)", [Key, ExistingPid, Pid]),
             {error, {already_registered, ExistingPid}}
     end.
 
@@ -108,29 +102,29 @@ clear_test_registrations() ->
     % Clear local servers
     ServerPattern = [{{{n, l, {mcp, server, '$1'}}, '$2', '_'}, [], [{{'$1', '$2'}}]}],
     ServerEntries = gproc:select(ServerPattern),
-    lists:foreach(fun({Id, Pid}) ->
-        catch gproc:unreg_other({n, l, {mcp, server, Id}}, Pid)
-    end, ServerEntries),
+    lists:foreach(fun({Id, Pid}) -> catch gproc:unreg_other({n, l, {mcp, server, Id}}, Pid) end,
+                  ServerEntries),
 
     % Clear local transports
     TransportPattern = [{{{n, l, {mcp, transport, '$1'}}, '$2', '_'}, [], [{{'$1', '$2'}}]}],
     TransportEntries = gproc:select(TransportPattern),
-    lists:foreach(fun({Id, Pid}) ->
-        catch gproc:unreg_other({n, l, {mcp, transport, Id}}, Pid)
-    end, TransportEntries),
+    lists:foreach(fun({Id, Pid}) -> catch gproc:unreg_other({n, l, {mcp, transport, Id}}, Pid) end,
+                  TransportEntries),
 
     % Clear global registrations
     GlobalServerPattern = [{{{n, g, {mcp_global, server, '$1'}}, '$2', '_'}, [], [{{'$1', '$2'}}]}],
     GlobalServerEntries = gproc:select(GlobalServerPattern),
-    lists:foreach(fun({Id, Pid}) ->
-        catch gproc:unreg_other({n, g, {mcp_global, server, Id}}, Pid)
-    end, GlobalServerEntries),
+    lists:foreach(fun({Id, Pid}) -> catch gproc:unreg_other({n, g, {mcp_global, server, Id}}, Pid)
+                  end,
+                  GlobalServerEntries),
 
-    GlobalTransportPattern = [{{{n, g, {mcp_global, transport, '$1'}}, '$2', '_'}, [], [{{'$1', '$2'}}]}],
+    GlobalTransportPattern =
+        [{{{n, g, {mcp_global, transport, '$1'}}, '$2', '_'}, [], [{{'$1', '$2'}}]}],
     GlobalTransportEntries = gproc:select(GlobalTransportPattern),
     lists:foreach(fun({Id, Pid}) ->
-        catch gproc:unreg_other({n, g, {mcp_global, transport, Id}}, Pid)
-    end, GlobalTransportEntries),
+                     catch gproc:unreg_other({n, g, {mcp_global, transport, Id}}, Pid)
+                  end,
+                  GlobalTransportEntries),
 
     ok.
 
@@ -142,6 +136,8 @@ clear_test_registrations() ->
 generate_unique_id(Prefix) ->
     Timestamp = erlang:system_time(microsecond),
     UniqueInt = erlang:unique_integer([positive, monotonic]),
-    list_to_atom(atom_to_list(Prefix) ++ "_" ++
-                 integer_to_list(Timestamp) ++ "_" ++
-                 integer_to_list(UniqueInt)).
+    list_to_atom(atom_to_list(Prefix)
+                 ++ "_"
+                 ++ integer_to_list(Timestamp)
+                 ++ "_"
+                 ++ integer_to_list(UniqueInt)).

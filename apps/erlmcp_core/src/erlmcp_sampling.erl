@@ -22,38 +22,23 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_sampling).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    create_message/2,
-    create_message/3,
-    set_model_provider/2,
-    get_model_provider/0,
-    get_provider_config/0,
-    set_provider_config/1
-]).
-
+-export([start_link/0, create_message/2, create_message/3, set_model_provider/2,
+         get_model_provider/0, get_provider_config/0, set_provider_config/1]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 
 %% State record
--record(state, {
-    model_provider :: module(),           % LLM provider callback module
-    default_params :: map(),              % Default model parameters
-    request_count = 0 :: non_neg_integer(), % Request counter
-    last_request :: integer()            % Timestamp of last request
-}).
+-record(state,
+        {model_provider :: module(),           % LLM provider callback module
+         default_params :: map(),              % Default model parameters
+         request_count = 0 :: non_neg_integer(), % Request counter
+         last_request :: integer()}).            % Timestamp of last request
 
 -type sampling_messages() :: [map()].
 -type sampling_params() :: map().
@@ -131,24 +116,19 @@ init([]) ->
             end
     end,
 
-    {ok, #state{
-        model_provider = ProviderModule,
-        default_params = get_default_params()
-    }}.
+    {ok, #state{model_provider = ProviderModule, default_params = get_default_params()}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}} | {noreply, #state{}}.
-
+                     {reply, term(), #state{}} | {noreply, #state{}}.
 handle_call({create_message, Messages, Params}, _From, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"sampling.create_message">>),
     try
         %% Update metrics
         RequestCount = State#state.request_count + 1,
-        erlmcp_tracing:set_attributes(SpanCtx, #{
-            <<"sampling.request_count">> => RequestCount,
-            <<"sampling.messages_count">> => length(Messages)
-        }),
+        erlmcp_tracing:set_attributes(SpanCtx,
+                                      #{<<"sampling.request_count">> => RequestCount,
+                                        <<"sampling.messages_count">> => length(Messages)}),
 
         %% Validate input
         case validate_messages(Messages) of
@@ -160,66 +140,69 @@ handle_call({create_message, Messages, Params}, _From, State) ->
 
                         %% Call the model provider
                         ProviderModule = State#state.model_provider,
-                        Result = case code:ensure_loaded(ProviderModule) of
-                            {module, ProviderModule} ->
-                                case erlang:function_exported(ProviderModule, create_message, 2) of
-                                    true ->
-                                        ProviderModule:create_message(Messages, MergedParams);
-                                    false ->
-                                        logger:error("Model provider ~p does not export create_message/2",
-                                                    [ProviderModule]),
-                                        {error, invalid_provider}
-                                end;
-                            {error, LoadReason} ->
-                                logger:error("Failed to load model provider ~p: ~p",
-                                            [ProviderModule, LoadReason]),
-                                {error, invalid_provider}
-                        end,
+                        Result =
+                            case code:ensure_loaded(ProviderModule) of
+                                {module, ProviderModule} ->
+                                    case erlang:function_exported(ProviderModule, create_message, 2)
+                                    of
+                                        true ->
+                                            ProviderModule:create_message(Messages, MergedParams);
+                                        false ->
+                                            logger:error("Model provider ~p does not export create_message/2",
+                                                         [ProviderModule]),
+                                            {error, invalid_provider}
+                                    end;
+                                {error, LoadReason} ->
+                                    logger:error("Failed to load model provider ~p: ~p",
+                                                 [ProviderModule, LoadReason]),
+                                    {error, invalid_provider}
+                            end,
 
                         case Result of
                             {ok, Response} ->
                                 erlmcp_tracing:set_status(SpanCtx, ok),
-                                NewState = State#state{
-                                    request_count = RequestCount,
-                                    last_request = erlang:system_time(millisecond)
-                                },
+                                NewState =
+                                    State#state{request_count = RequestCount,
+                                                last_request = erlang:system_time(millisecond)},
                                 {reply, {ok, Response}, NewState};
                             {error, Reason} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, provider_error, Reason),
+                                erlmcp_tracing:record_error_details(SpanCtx,
+                                                                    provider_error,
+                                                                    Reason),
                                 {reply, {error, Reason}, State}
                         end;
                     {error, ValidationError} ->
-                        erlmcp_tracing:record_error_details(SpanCtx, params_validation_failed, ValidationError),
+                        erlmcp_tracing:record_error_details(SpanCtx,
+                                                            params_validation_failed,
+                                                            ValidationError),
                         {reply, {error, ValidationError}, State}
                 end;
             {error, ValidationError} ->
-                erlmcp_tracing:record_error_details(SpanCtx, messages_validation_failed, ValidationError),
+                erlmcp_tracing:record_error_details(SpanCtx,
+                                                    messages_validation_failed,
+                                                    ValidationError),
                 {reply, {error, ValidationError}, State}
         end
     catch
         Class:ExceptionReason:Stacktrace ->
             erlmcp_tracing:record_exception(SpanCtx, Class, ExceptionReason, Stacktrace),
-            logger:error("Sampling create_message crashed: ~p:~p~n~p", [Class, ExceptionReason, Stacktrace]),
+            logger:error("Sampling create_message crashed: ~p:~p~n~p",
+                         [Class, ExceptionReason, Stacktrace]),
             {reply, {error, internal_error}, State}
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
-
 handle_call({set_model_provider, ProviderModule}, _From, State) when is_atom(ProviderModule) ->
     logger:info("Setting model provider to ~p", [ProviderModule]),
     {reply, ok, State#state{model_provider = ProviderModule}};
-
 handle_call(get_model_provider, _From, State) ->
     {reply, State#state.model_provider, State};
-
 handle_call(get_provider_config, _From, State) ->
     {reply, get_default_params(), State};
-
 handle_call({set_provider_config, Config}, _From, State) ->
     %% Update default params
     NewDefaultParams = maps:merge(State#state.default_params, Config),
     {reply, ok, State#state{default_params = NewDefaultParams}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -254,8 +237,10 @@ validate_messages([]) ->
     {error, empty_messages};
 validate_messages(Messages) when is_list(Messages) ->
     case lists:all(fun validate_message/1, Messages) of
-        true -> ok;
-        false -> {error, invalid_message_format}
+        true ->
+            ok;
+        false ->
+            {error, invalid_message_format}
     end;
 validate_messages(_) ->
     {error, messages_must_be_list}.
@@ -264,14 +249,19 @@ validate_messages(_) ->
 -spec validate_message(map()) -> boolean().
 validate_message(Message) when is_map(Message) ->
     case maps:get(<<"role">>, Message, undefined) of
-        undefined -> false;
+        undefined ->
+            false;
         Role when is_binary(Role) ->
             case maps:get(<<"content">>, Message, undefined) of
-                undefined -> false;
-                Content when is_binary(Content); is_map(Content) -> true;
-                _ -> false
+                undefined ->
+                    false;
+                Content when is_binary(Content); is_map(Content) ->
+                    true;
+                _ ->
+                    false
             end;
-        _ -> false
+        _ ->
+            false
     end;
 validate_message(_) ->
     false.
@@ -299,16 +289,19 @@ merge_params(UserParams, DefaultParams) ->
 %% @doc Get default parameters from config
 -spec get_default_params() -> map().
 get_default_params() ->
-    #{
-        <<"model">> => application:get_env(erlmcp, default_model, <<"gpt-3.5-turbo">>),
-        <<"temperature">> => application:get_env(erlmcp, default_temperature, 0.7),
-        <<"maxTokens">> => application:get_env(erlmcp, default_max_tokens, 1000)
-    }.
+    #{<<"model">> => application:get_env(erlmcp, default_model, <<"gpt-3.5-turbo">>),
+      <<"temperature">> => application:get_env(erlmcp, default_temperature, 0.7),
+      <<"maxTokens">> => application:get_env(erlmcp, default_max_tokens, 1000)}.
 
 %% @private Convert provider name to module
 -spec provider_name_to_module(openai | anthropic | local | mock) -> module().
-provider_name_to_module(openai) -> erlmcp_llm_provider_openai;
-provider_name_to_module(anthropic) -> erlmcp_llm_provider_anthropic;
-provider_name_to_module(local) -> erlmcp_llm_provider_local;
-provider_name_to_module(mock) -> erlmcp_mock_llm;
-provider_name_to_module(_) -> erlmcp_mock_llm.
+provider_name_to_module(openai) ->
+    erlmcp_llm_provider_openai;
+provider_name_to_module(anthropic) ->
+    erlmcp_llm_provider_anthropic;
+provider_name_to_module(local) ->
+    erlmcp_llm_provider_local;
+provider_name_to_module(mock) ->
+    erlmcp_mock_llm;
+provider_name_to_module(_) ->
+    erlmcp_mock_llm.

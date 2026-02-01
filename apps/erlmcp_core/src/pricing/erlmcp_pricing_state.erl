@@ -3,21 +3,10 @@
 -module(erlmcp_pricing_state).
 
 %% Public API
--export([
-    get_current_plan/0,
-    set_current_plan/1,
-    get_last_upgrade_time/1,
-    set_last_upgrade_time/2,
-    get_certification_valid/1,
-    set_certification_valid/2,
-    get_upgrade_timestamp/0,
-    set_upgrade_timestamp/1,
-    get_all_state/0,
-    get_plan/1,
-    get_all_plans/0,
-    get_usage/1,
-    set_plans/1
-]).
+-export([get_current_plan/0, set_current_plan/1, get_last_upgrade_time/1, set_last_upgrade_time/2,
+         get_certification_valid/1, set_certification_valid/2, get_upgrade_timestamp/0,
+         set_upgrade_timestamp/1, get_all_state/0, get_plan/1, get_all_plans/0, get_usage/1,
+         set_plans/1]).
 
 -include("erlmcp.hrl").
 
@@ -30,12 +19,8 @@
 ensure_table() ->
     case ets:info(?STATE_TABLE) of
         undefined ->
-            ets:new(?STATE_TABLE, [
-                named_table,
-                public,
-                {write_concurrency, true},
-                {read_concurrency, true}
-            ]);
+            ets:new(?STATE_TABLE,
+                    [named_table, public, {write_concurrency, true}, {read_concurrency, true}]);
         _ ->
             ok
     end.
@@ -47,8 +32,10 @@ ensure_table() ->
 get_current_plan() ->
     ensure_table(),
     case ets:lookup(?STATE_TABLE, current_plan) of
-        [{_, Plan}] -> {ok, Plan};
-        [] -> {error, not_found}
+        [{_, Plan}] ->
+            {ok, Plan};
+        [] ->
+            {error, not_found}
     end.
 
 %% @doc Set current pricing plan
@@ -63,8 +50,10 @@ get_last_upgrade_time(Plan) ->
     ensure_table(),
     Key = {last_upgrade_time, Plan},
     case ets:lookup(?STATE_TABLE, Key) of
-        [{_, Time}] -> Time;
-        [] -> not_found
+        [{_, Time}] ->
+            Time;
+        [] ->
+            not_found
     end.
 
 %% @doc Set last upgrade time for a plan
@@ -79,8 +68,10 @@ get_certification_valid(Plan) ->
     ensure_table(),
     Key = {certification_valid, Plan},
     case ets:lookup(?STATE_TABLE, Key) of
-        [{_, Valid}] -> Valid;
-        [] -> false
+        [{_, Valid}] ->
+            Valid;
+        [] ->
+            false
     end.
 
 %% @doc Set plan certification validity
@@ -94,8 +85,10 @@ set_certification_valid(Plan, Valid) ->
 get_upgrade_timestamp() ->
     ensure_table(),
     case ets:lookup(?STATE_TABLE, upgrade_timestamp) of
-        [{_, Timestamp}] -> Timestamp;
-        [] -> not_found
+        [{_, Timestamp}] ->
+            Timestamp;
+        [] ->
+            not_found
     end.
 
 %% @doc Set upgrade timestamp
@@ -133,18 +126,17 @@ get_plan(Plan) when is_atom(Plan) ->
 get_all_plans() ->
     case erlmcp_pricing_plan:list_available_plans() of
         {ok, Tiers} ->
-            PlansMap = lists:foldl(
-                fun(Tier, Acc) ->
-                    case erlmcp_pricing_plan:load_plan(Tier) of
-                        {ok, PlanSpec} ->
-                            maps:put(Tier, PlanSpec, Acc);
-                        {error, _} ->
-                            Acc
-                    end
-                end,
-                #{},
-                Tiers
-            ),
+            PlansMap =
+                lists:foldl(fun(Tier, Acc) ->
+                               case erlmcp_pricing_plan:load_plan(Tier) of
+                                   {ok, PlanSpec} ->
+                                       maps:put(Tier, PlanSpec, Acc);
+                                   {error, _} ->
+                                       Acc
+                               end
+                            end,
+                            #{},
+                            Tiers),
             {ok, PlansMap};
         Error ->
             Error
@@ -161,13 +153,12 @@ get_usage(User) when is_binary(User) ->
             {ok, Usage};
         [] ->
             %% Return default zero usage if not found
-            {ok, #{
-                user => User,
-                requests => 0,
-                connections => 0,
-                memory_bytes => 0,
-                last_updated => erlang:system_time(second)
-            }}
+            {ok,
+             #{user => User,
+               requests => 0,
+               connections => 0,
+               memory_bytes => 0,
+               last_updated => erlang:system_time(second)}}
     end.
 
 %% @doc Set pricing plans in state
