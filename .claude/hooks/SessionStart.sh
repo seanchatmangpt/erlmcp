@@ -23,6 +23,7 @@ set -euo pipefail
 #==============================================================================
 
 readonly REQUIRED_OTP_VERSION="28.3.1"
+readonly ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" 2>/dev/null && pwd || echo "$PWD")"
 readonly REQUIRED_OTP_MAJOR=28
 readonly ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" && pwd)"
 readonly OTP_CACHE_DIR="${ERLMCP_ROOT}/.erlmcp/otp-${REQUIRED_OTP_VERSION}"
@@ -176,9 +177,9 @@ download_prebuilt_otp() {
     mkdir -p "$OTP_CACHE_DIR"
     local tarball="$OTP_CACHE_DIR/erlang-prebuilt.tar.gz"
 
-    log_info "Downloading pre-built OTP..."
-    if ! wget -q --show-progress -O "$tarball" "$OTP_PREBUILT_URL" 2>&1 | tee -a "$LOG_FILE"; then
-        log_info "Pre-built download failed"
+    log_info "Downloading pre-built OTP (this may take ~30s)..."
+    if ! curl -fsSL -o "$tarball" "$OTP_PREBUILT_URL" 2>&1 | tee -a "$LOG_FILE"; then
+        log_info "Pre-built download failed (will try source build)"
         rm -f "$tarball"
         return 1
     fi
@@ -195,21 +196,38 @@ download_prebuilt_otp() {
 
     log_success "SHA256 verified"
 
-    log_info "Extracting OTP..."
-    if ! tar xzf "$tarball" -C "$(dirname "$OTP_CACHE_DIR")"; then
-        log_error "Failed to extract"
-        rm -f "$tarball"
+    log_info "Extracting OTP to cache directory..."
+    local temp_extract_dir="${ERLMCP_ROOT}/.erlmcp/temp-otp-extract"
+    mkdir -p "$temp_extract_dir"
+
+    if ! tar xzf "$tarball" -C "$temp_extract_dir"; then
+        log_error "Failed to extract pre-built OTP"
+        rm -rf "$temp_extract_dir" "$tarball"
         return 1
     fi
 
-    # Move to expected location if needed
-    local extracted_dir="$(dirname "$OTP_CACHE_DIR")/otp-${REQUIRED_OTP_VERSION}"
-    if [[ -d "$extracted_dir" && ! -e "$OTP_CACHE_DIR" ]]; then
-        mv "$extracted_dir" "$OTP_CACHE_DIR"
+    # Handle tar structure: check if contents are in a subdirectory
+    local extracted_content
+    extracted_content=$(ls -d "$temp_extract_dir"/* 2>/dev/null | head -1)
+
+    if [[ -z "$extracted_content" ]]; then
+        log_error "No files extracted from tarball"
+        rm -rf "$temp_extract_dir" "$tarball"
+        return 1
     fi
 
-    rm -f "$tarball"
-    log_success "Pre-built OTP installed"
+    # Move to final location
+    rm -rf "$OTP_CACHE_DIR"
+    if [[ -d "$extracted_content/bin" && -d "$extracted_content/lib" ]]; then
+        # Tarball contains otp-28.3.1 directory with bin/lib subdirs
+        mv "$extracted_content" "$OTP_CACHE_DIR"
+    else
+        # Tarball structure has bin/lib at top level
+        mv "$temp_extract_dir" "$OTP_CACHE_DIR"
+    fi
+
+    rm -rf "$temp_extract_dir" "$tarball"
+    log_success "Pre-built OTP installed successfully"
     return 0
 }
 
@@ -224,15 +242,18 @@ build_otp_from_source() {
     mkdir -p "$BUILD_TEMP_DIR"
     cd "$BUILD_TEMP_DIR"
 
-    log_info "Downloading source..."
-    if ! wget -q --show-progress "$OTP_RELEASE_URL" 2>&1 | tee -a "$LOG_FILE"; then
-        log_error "Failed to download source"
+    log_info "Downloading otp_src_${REQUIRED_OTP_VERSION}.tar.gz..."
+    local tarball="otp_src_${REQUIRED_OTP_VERSION}.tar.gz"
+    if ! curl -fsSL -o "$tarball" "$OTP_RELEASE_URL" 2>&1 | tee -a "$LOG_FILE"; then
+        log_error "Failed to download OTP source"
         return 1
     fi
 
-    log_info "Extracting..."
-    if ! tar xzf otp_src_*.tar.gz; then
-        log_error "Failed to extract"
+    log_success "Downloaded $(ls -lh "$tarball" | awk '{print $5}')"
+
+    log_info "Extracting archive..."
+    if ! tar xzf "$tarball"; then
+        log_error "Failed to extract OTP source"
         return 1
     fi
 
@@ -257,6 +278,50 @@ build_otp_from_source() {
         log_error "Install failed"
         return 1
     fi
+    log_success "Installation complete"
+
+    return 0
+}
+
+#==============================================================================
+# Phase 4: Verify & Cache
+#==============================================================================
+
+verify_otp_build() {
+    log_phase "4/6" "Verifying OTP build"
+
+    if [[ ! -f "$OTP_BIN" ]]; then
+        log_error "OTP binary not found at $OTP_BIN"
+        return 1
+    fi
+
+    log_info "Verifying OTP binary: $OTP_BIN"
+
+    # Test if binary is executable and works
+    local built_version
+    if ! built_version=$("$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>&1); then
+        log_error "Failed to execute OTP binary: $built_version"
+        return 1
+    fi
+
+    if [[ -z "$built_version" ]]; then
+        log_error "Failed to detect OTP version"
+        return 1
+    fi
+
+    # Check major version (e.g., "28" matches "28.3.1")
+    local required_major="${REQUIRED_OTP_VERSION%%.*}"
+    if [[ "$built_version" != "$required_major" ]]; then
+        log_error "OTP version mismatch: built=$built_version, required major=$required_major"
+        return 1
+    fi
+
+    log_success "OTP $built_version verified and cached at $OTP_CACHE_DIR"
+
+    # Show build info
+    local erts_version
+    erts_version=$("$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(version)]), halt().' 2>/dev/null || echo "unknown")
+    log_info "ERTS Version: $erts_version"
 
     log_success "Build complete"
     return 0
@@ -281,7 +346,24 @@ setup_environment() {
 
     mkdir -p "$ERLMCP_CACHE"
 
-    log_success "Environment configured"
+    # Persist environment variables across shell invocations (Claude Code on the web)
+    if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+        {
+            echo "export PATH=\"${OTP_CACHE_DIR}/bin:\$PATH\""
+            echo "export CLAUDE_CODE_REMOTE=true"
+            echo "export ERLMCP_PROFILE=cloud"
+            echo "export ERLMCP_CACHE=\"${ERLMCP_CACHE}\""
+            echo "export TERM=dumb"
+            echo "export REBAR_COLOR=none"
+            echo "export ERL_AFLAGS=\"-kernel shell_history enabled\""
+        } >> "$CLAUDE_ENV_FILE"
+        log_info "Environment variables persisted to CLAUDE_ENV_FILE"
+    fi
+
+    log_success "Environment variables set"
+    log_info "  CLAUDE_CODE_REMOTE=$CLAUDE_CODE_REMOTE"
+    log_info "  ERLMCP_PROFILE=$ERLMCP_PROFILE"
+    log_info "  ERLMCP_CACHE=$ERLMCP_CACHE"
     log_info "  PATH includes ${OTP_CACHE_DIR}/bin"
     log_info "  ERLMCP_PROFILE=$ERLMCP_PROFILE"
     return 0
@@ -387,6 +469,9 @@ main() {
             create_lock_file
             log_success "SessionStart complete (existing OTP, ~5s)"
             exit 0
+        else
+            log_info "Pre-built OTP verification failed, cleaning up for fallback..."
+            rm -rf "$OTP_CACHE_DIR"
         fi
 
         log_info "No suitable OTP found, falling back to source build..."
