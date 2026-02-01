@@ -1,480 +1,366 @@
-# ErlMCP Multi-Environment Configuration Guide
+# ErlMCP Environment Configuration Guide
 
 ## Overview
 
-This guide explains the three-tier environment strategy for ErlMCP:
-- **Development**: Local machine, minimal external dependencies
-- **Staging**: GCP dev project, production-like but with relaxed constraints
-- **Production**: GCP prod project, hardened, fully monitored
+ErlMCP uses a **profile-based configuration system** controlled by the `ERLMCP_PROFILE` environment variable. This guide explains how to select and use the four available profiles for different use cases.
 
-## Architecture Decision: Why Three Tiers?
-
-### 1. Development (Local)
-- **Target**: Developers on macOS/Linux
-- **Deployment**: Direct to localhost via Docker Compose
-- **Database**: Local PostgreSQL (optional), no Firestore
-- **Configuration**: `.env` files, verbose logging, debug endpoints enabled
-
-**Rationale**: Fastest iteration, no cloud dependencies, full debugging access
-
-### 2. Staging
-- **Target**: QA, integration testing, customer demos
-- **Deployment**: GCP dev project (taiea-dev) on GKE
-- **Database**: Cloud SQL test database, Firestore on dev project
-- **Configuration**: Production-like infrastructure, experimental features enabled
-- **Cost**: ~$500-1000/month (development project, minimal replicas)
-
-**Rationale**: Full infrastructure testing, catch issues before prod, features testing
-
-### 3. Production
-- **Target**: Customer-facing SaaS service
-- **Deployment**: GCP prod project (taiea-prod) on GKE
-- **Database**: Cloud SQL prod database, Firestore on prod project
-- **Configuration**: Hardened security, minimal logging, comprehensive monitoring
-- **Cost**: ~$5000+/month (HA setup, full monitoring, backups)
-
-**Rationale**: Customer trust, regulatory compliance, reliability guarantees
-
-## Environment Configuration Files
-
-### 1. Environment Variables (`.env`)
-
-Located in `/config/`:
-- `dev.env` - Local development settings
-- `staging.env` - GCP dev project settings
-- `production.env` - GCP prod project settings
-
-#### Key Differences
-
-| Variable | Dev | Staging | Production |
-|----------|-----|---------|------------|
-| `LOG_LEVEL` | debug | info | warn |
-| `SERVER_CONCURRENCY` | 4 | 8 | 16 |
-| `DB_POOL_SIZE` | 5 | 15 | 25 |
-| `FIRESTORE_ENABLED` | false | true | true |
-| `REDIS_ENABLED` | false | true | true |
-| `OTEL_ENABLED` | false | true | true |
-| `FEATURE_RATE_LIMITING` | false | true | true |
-| `ALERT_THRESHOLD_ERROR_RATE` | N/A | 0.05 (5%) | 0.001 (0.1%) |
-
-### 2. Erlang Configuration (`sys.config.*`)
-
-Located in `/config/`:
-- `sys.config.dev` - Local Erlang runtime settings
-- `sys.config.staging` - GCP staging Erlang settings
-- `sys.config.prod` - GCP production Erlang settings
-
-#### Key Differences
-
-| Setting | Dev | Staging | Production |
-|---------|-----|---------|------------|
-| `logger_level` | debug | info | warn |
-| `enable_debug_endpoints` | true | true | false |
-| `cache_enabled` | false | true | true |
-| `max_pending_requests` | 500 | 250 | 100 |
-| `file_logging_path` | logs/erlmcp.log | /var/logs/ | /var/logs/ |
-| `max_log_file_bytes` | 50 MB | 100 MB | 100 MB |
-
-## Switching Environments
-
-### Local Development Setup
+## Quick Start
 
 ```bash
-# 1. Start local PostgreSQL (optional)
-docker-compose -f docker-compose.yml up -d postgres
+# Development (default - safest for humans)
+make compile
 
-# 2. Build with development config
-export ENV=dev
-cargo build
+# Test (for CI/CD)
+export ERLMCP_PROFILE=test
+make compile
 
-# 3. Run with development settings
-ENV=dev ./target/debug/erlmcp_server
+# Staging (for load testing)
+export ERLMCP_PROFILE=staging
+make compile
 
-# 4. Verify with health check
-curl http://localhost:8080/health
+# Production (for release builds)
+export ERLMCP_PROFILE=prod
+make compile
 ```
 
-### Deploying to Staging
+## Profile Selection via ERLMCP_PROFILE
+
+The `ERLMCP_PROFILE` environment variable controls which configuration profile is used when building and running ErlMCP. The profile determines logging levels, timeouts, feature toggles, and resource limits.
+
+### Setting the Profile
 
 ```bash
-# 1. Authenticate with GCP
-gcloud auth application-default login
-gcloud config set project taiea-dev
+# Set before running any make command
+export ERLMCP_PROFILE=dev
 
-# 2. Build Docker image
-docker build -t erlmcp:staging .
-
-# 3. Push to Artifact Registry
-docker tag erlmcp:staging us-central1-docker.pkg.dev/taiea-dev/erlmcp-tai-repo/erlmcp:staging
-docker push us-central1-docker.pkg.dev/taiea-dev/erlmcp-tai-repo/erlmcp:staging
-
-# 4. Deploy using script
-./tools/deploy-env.sh staging latest
-
-# 5. Verify deployment
-kubectl get pods -n taiea-staging
-kubectl logs -n taiea-staging deployment/taiea-staging -f
+# Or inline for a single command
+ERLMCP_PROFILE=test make compile
 ```
 
-### Deploying to Production
+### How It Works
 
-**CRITICAL**: Production deployments require multiple approval steps
+1. When you run `make compile` or `rebar3 compile`, the Makefile symlinks `config/sys.config` to the appropriate `config/sys.config.{profile}` file
+2. Rebar3 reads `config/sys.config` during compilation
+3. The Erlang application starts with the selected profile's configuration
 
+## The Four Profiles
+
+### 1. dev (Development - DEFAULT)
+
+**Purpose**: Fast iteration, extensive logging, easy debugging
+
+**When to use**:
+- Local development on your machine
+- Debugging issues
+- Exploring the codebase
+- Writing new features
+
+**Characteristics**:
+- Log level: `debug` (very verbose)
+- Timeouts: 10 seconds (generous for debugging)
+- Strict mode: `false` (lenient validation)
+- Max pending requests: 500 (high limit for load testing locally)
+- Caching: disabled (always fresh data)
+- Rate limiting: disabled
+- Debug endpoints: enabled
+- File logging: `logs/erlmcp-dev.log` (50MB max)
+
+**Example**:
 ```bash
-# 1. Authenticate and select prod project
-gcloud auth application-default login
-gcloud config set project taiea-prod
+# Default - no need to set ERLMCP_PROFILE
+make compile
+make console
 
-# 2. Tag image as production
-docker tag erlmcp:staging us-central1-docker.pkg.dev/taiea-prod/erlmcp-tai-repo/erlmcp:v1.2.3
-docker push us-central1-docker.pkg.dev/taiea-prod/erlmcp-tai-repo/erlmcp:v1.2.3
-
-# 3. Validation only (REQUIRED before actual deployment)
-./tools/deploy-env.sh production v1.2.3 --validate-only
-
-# 4. Review validation output, ensure no errors
-
-# 5. Deploy to production (requires manual approval)
-./tools/deploy-env.sh production v1.2.3
-
-# 6. Monitor deployment
-kubectl logs -n taiea-prod deployment/taiea-prod -f
+# Or explicitly
+export ERLMCP_PROFILE=dev
+make compile
 ```
 
-## Environment-Specific Features
-
-### Development
-
-```
-✓ Debug endpoints enabled (/debug, /profile)
-✓ SQL query logging enabled
-✓ HTTP request/response logging enabled
-✓ In-memory cache (no Redis)
-✓ Profiling endpoints active
-✗ Rate limiting disabled
-✗ Firestore disabled
-```
-
-**Use For**: Local development, testing, debugging
-
-### Staging
-
-```
-✓ Rate limiting enabled (500 req/s)
-✓ Firestore enabled (test project)
-✓ Redis caching enabled
-✓ OpenTelemetry enabled
-✓ Experimental features enabled
-✓ Smoke tests after deployment
-✗ Debug endpoints enabled (but monitored)
-✗ PII masking disabled
-```
-
-**Use For**: Integration testing, feature validation, performance testing, customer demos
-
-### Production
-
-```
-✓ Rate limiting strict (1000 req/s aggregate)
-✓ Firestore enabled (prod project)
-✓ Redis cluster with sentinel
-✓ Full OpenTelemetry with Datadog
-✓ Backup automation (hourly)
-✓ Disaster recovery enabled
-✓ Audit logging enabled
-✓ PII data masking enabled
-✗ Debug endpoints disabled
-✗ Experimental features disabled
-✗ SQL logging disabled (except errors)
-```
-
-**Use For**: Customer-facing service, SaaS operations
-
-## Database Configuration
-
-### Development
-- **Type**: PostgreSQL (local, via Docker)
-- **Database**: `erlmcp_dev`
-- **Pool Size**: 5
-- **Connection String**: `postgres://erlmcp:dev_password@localhost:5432/erlmcp_dev`
-- **Firestore**: Disabled
-- **Emulator**: Local Firestore emulator on port 8081 (optional)
-
-### Staging
-- **Type**: Cloud SQL (GCP dev project)
-- **Database**: `erlmcp_staging`
-- **Pool Size**: 15
-- **Connection String**: `postgres://erlmcp-sa:password@cloudsql-staging.c.taiea-dev.internal:5432/erlmcp_staging`
-- **Firestore**: Enabled, test database on taiea-dev
-- **Backups**: Daily automated backups
-
-### Production
-- **Type**: Cloud SQL (GCP prod project)
-- **Database**: `erlmcp_prod`
-- **Pool Size**: 25
-- **Connection String**: `postgres://erlmcp-sa:password@cloudsql-prod.c.taiea-prod.internal:5432/erlmcp_prod`
-- **Firestore**: Enabled, production database on taiea-prod
-- **Backups**: Hourly automated backups with 30-day retention
-- **Replication**: Read replicas in alternate regions
-
-## Security Configuration
-
-### Development
-- **TLS**: Disabled (http://)
-- **Auth**: Basic/mock authentication
-- **Secrets**: .env file (NEVER commit sensitive values)
-- **CORS**: Allow all origins
-
-### Staging
-- **TLS**: Enabled (https://), self-signed OK
-- **Auth**: OAuth 2.0 with test credentials
-- **Secrets**: GCP Secret Manager with test values
-- **CORS**: Allow staging origins only
-
-### Production
-- **TLS**: Enabled with valid certificate
-- **Auth**: OAuth 2.0 with production credentials
-- **Secrets**: GCP Secret Manager with production encryption
-- **CORS**: Allow production domains only
-- **Rate Limiting**: Enabled at multiple levels
-- **DDoS Protection**: Cloud Armor enabled
-
-## Observability
-
-### Development
-```
-Logging: stdout, file (50MB max)
-Metrics: None
-Tracing: None
-Health Check: Manual (curl)
-```
-
-### Staging
-```
-Logging: stdout, file (/var/logs/erlmcp-staging.log)
-Metrics: Prometheus (push to gateway)
-Tracing: Jaeger (probabilistic 10%)
-Health Check: Kubernetes readiness probe (5s interval)
-Alerts: Basic (error threshold 5%)
-```
-
-### Production
-```
-Logging: structured JSON to /var/logs/, rotated hourly
-Metrics: Prometheus + Datadog agent
-Tracing: Jaeger (probabilistic 1%)
-Health Check: Kubernetes liveness/readiness (10s intervals)
-Alerts: Strict thresholds:
-  - Error rate > 0.1%
-  - P99 latency > 500ms
-  - P999 latency > 1000ms
-  - Memory > 75%
-  - CPU > 70%
-```
-
-## Scaling Considerations
-
-### Development
-- **Replicas**: 1 (local container)
-- **Resources**: 256MB RAM, 100m CPU
-- **Scaling**: Manual, not automated
-
-### Staging
-- **Replicas**: 2 (basic HA)
-- **Resources**: 512MB RAM, 250m CPU
-- **Scaling**: Manual, horizontal pod autoscaler optional
-
-### Production
-- **Replicas**: 3-5 (minimum HA)
-- **Resources**: 2GB RAM, 1000m CPU per pod
-- **Scaling**: Automatic based on metrics:
-  - Scale up if CPU > 70% or memory > 80%
-  - Scale down if CPU < 30% for 5 minutes
-  - Min replicas: 3
-  - Max replicas: 20
-
-## Cost Estimation
-
-### Development
-- **Compute**: $0 (local)
-- **Database**: $0 (local)
-- **Monitoring**: $0 (local)
-- **Total**: $0/month
-
-### Staging (GCP Dev Project)
-- **GKE Cluster**: $150 (1 small cluster)
-- **Cloud SQL**: $200 (shared dev instance)
-- **Firestore**: $100 (light usage)
-- **Artifact Registry**: $50
-- **Monitoring/Logging**: $100
-- **Total**: ~$600/month
-
-### Production (GCP Prod Project)
-- **GKE Cluster**: $1000 (HA setup)
-- **Cloud SQL**: $2000 (prod instance + replicas)
-- **Firestore**: $1000+ (customer data)
-- **Cloud Load Balancer**: $500
-- **Cloud CDN**: $200
-- **Cloud Armor**: $300
-- **Artifact Registry**: $100
-- **Monitoring/Logging**: $500
-- **Backup Storage**: $300
-- **Total**: ~$6500+/month
-
-## Environment Parity Checklist
-
-Use this checklist to ensure staging matches production as closely as possible:
-
-- [ ] Database version matches (PostgreSQL version)
-- [ ] Firestore configuration matches
-- [ ] Redis configuration matches
-- [ ] Network topology similar (VPC/firewall rules)
-- [ ] IAM roles and permissions match
-- [ ] TLS/certificate configuration matches
-- [ ] Logging format matches
-- [ ] Metrics/tracing configuration matches
-- [ ] Health check endpoints match
-- [ ] Resource limits similar (scaled down for staging)
-- [ ] Backup strategy matches
-- [ ] Secret management strategy matches
-- [ ] Load balancer configuration similar
-- [ ] DNS/routing configuration matches
-
-## Troubleshooting Guide
-
-### Development Issues
-
-**Problem**: Service won't start locally
-```bash
-# Check if port 8080 is in use
-lsof -i :8080
-
-# Kill existing process if needed
-kill -9 <PID>
-
-# Check PostgreSQL is running
-docker-compose ps
-```
-
-**Problem**: Can't connect to local database
-```bash
-# Verify connection string
-echo $DATABASE_URL
-
-# Test connection
-psql "postgres://erlmcp:dev_password@localhost:5432/erlmcp_dev"
-```
-
-### Staging Issues
-
-**Problem**: Deployment hangs
-```bash
-# Check deployment status
-kubectl describe deployment taiea-staging -n taiea-staging
-
-# Check pod events
-kubectl describe pod <POD_NAME> -n taiea-staging
-
-# Check image pull
-kubectl get events -n taiea-staging
-```
-
-**Problem**: Pod crashes
-```bash
-# View logs
-kubectl logs <POD_NAME> -n taiea-staging
-
-# Check resource limits
-kubectl top pod -n taiea-staging
-
-# View Kubernetes events
-kubectl describe pod <POD_NAME> -n taiea-staging
-```
-
-### Production Issues
-
-**Problem**: Service degradation
-```bash
-# Check all replicas healthy
-kubectl get pods -n taiea-prod
-
-# View metrics (CPU, memory)
-kubectl top nodes
-kubectl top pods -n taiea-prod
-
-# Check service logs
-kubectl logs -f -n taiea-prod deployment/taiea-prod --all-containers=true
-```
-
-**Problem**: Database connection errors
-```bash
-# Check Cloud SQL instance
-gcloud sql instances describe erlmcp-prod --project taiea-prod
-
-# Verify IAM permissions
-gcloud projects get-iam-policy taiea-prod
-
-# Test connectivity from pod
-kubectl exec -it <POD_NAME> -n taiea-prod -- \
-  psql "postgres://user:pass@host:5432/db"
-```
-
-## Related Documentation
-
-- [GCP Infrastructure Setup](../gcp/README.md)
-- [Docker Configuration](./DOCKER_GUIDE.md)
-- [Operations Runbooks](./OPERATIONS_RUNBOOKS.md)
-- [Deployment Checklist](#deployment-checklist)
-
-## Deployment Checklist
-
-### Before Staging Deployment
-- [ ] All tests passing locally
-- [ ] Code review completed
-- [ ] Environment variables validated
-- [ ] Database migrations prepared
-- [ ] Configuration files reviewed
-- [ ] Docker image builds successfully
-- [ ] No hardcoded secrets in image
-
-### Before Production Deployment
-- [ ] Staging deployment successful
-- [ ] Smoke tests passing
-- [ ] Performance tests acceptable
-- [ ] Security scan passed
-- [ ] Backup strategy verified
-- [ ] Rollback plan documented
-- [ ] On-call engineer assigned
-- [ ] Deployment window scheduled
-- [ ] Status page prepared
-- [ ] Post-deployment validation plan
-
-## Next Steps
-
-1. **Setup Local Development**
-   ```bash
-   cp config/dev.env .env.local
-   docker-compose up -d
-   cargo build
-   ```
-
-2. **Configure GCP Projects**
-   - Review `gcp/main.tf`
-   - Run `terraform apply` to create infrastructure
-
-3. **Deploy to Staging**
-   ```bash
-   ./tools/deploy-env.sh staging latest --validate-only
-   ./tools/deploy-env.sh staging latest
-   ```
-
-4. **Monitor Production**
-   - Set up dashboards
-   - Configure alerts
-   - Establish on-call rotation
+**Best for**: Humans iterating quickly
 
 ---
 
-**Last Updated**: January 2026
-**Version**: 1.0.0
-**Maintainer**: DevOps Team
+### 2. test (CI/CD Testing)
+
+**Purpose**: Fast execution, deterministic behavior, comprehensive test coverage
+
+**When to use**:
+- Running tests locally before committing
+- CI/CD pipelines (GitHub Actions, etc.)
+- Automated test suites (EUnit, Common Test, Proper)
+- Pre-commit hooks
+
+**Characteristics**:
+- Log level: `debug` (all logs for test verification)
+- Timeouts: 1 second (fast fail for quick feedback)
+- Strict mode: `true` (catch validation errors)
+- Max pending requests: 100 (test isolation)
+- Caching: disabled (deterministic results)
+- Rate limiting: disabled (no test interference)
+- Async processing: disabled (synchronous for determinism)
+- Logging: console/stderr only (no files, for CI capture)
+- Random ports: enabled (avoid conflicts in parallel tests)
+
+**Example**:
+```bash
+export ERLMCP_PROFILE=test
+make check  # Run all quality gates
+rebar3 eunit
+rebar3 ct
+```
+
+**Best for**: Automated testing, CI/CD pipelines
+
+---
+
+### 3. staging (Pre-Production Testing)
+
+**Purpose**: Production-like behavior with debugging capabilities
+
+**When to use**:
+- Load testing
+- Performance benchmarking
+- Integration testing with real services
+- QA validation
+- Chaos engineering experiments
+
+**Characteristics**:
+- Log level: `info` (moderate logging)
+- Timeouts: 5 seconds (production-like)
+- Strict mode: `true`
+- Max pending requests: 250
+- Caching: enabled (TTL 30 minutes)
+- Rate limiting: enabled (500 req/s)
+- Async processing: enabled
+- Debug endpoints: enabled (for testing)
+- File logging: `/var/logs/erlmcp-staging.log` (100MB max, compressed rotation)
+
+**Example**:
+```bash
+export ERLMCP_PROFILE=staging
+make compile
+./scripts/bench/run_all_benchmarks.sh
+```
+
+**Best for**: Load testing, performance validation, chaos engineering
+
+---
+
+### 4. prod (Production Release)
+
+**Purpose**: Hardened production deployment, minimal logging, maximum performance
+
+**When to use**:
+- Production releases
+- Production releases only
+- Do not use for development
+
+**Characteristics**:
+- Log level: `error` (minimal logging)
+- Timeouts: 5 seconds (strict)
+- Strict mode: `true` (no lenient parsing)
+- Max pending requests: 100 (bounded for stability)
+- Caching: enabled (TTL 1 hour)
+- Rate limiting: enabled (1000 req/s)
+- Async processing: enabled
+- Debug endpoints: disabled (security)
+- File logging: `/var/logs/erlmcp-prod.log` (100MB max, compressed rotation)
+- Experimental features: disabled
+
+**Example**:
+```bash
+export ERLMCP_PROFILE=prod
+make compile
+rebar3 as prod release
+```
+
+**Best for**: Production deployments, official releases
+
+---
+
+## Profile Comparison Matrix
+
+| Feature | dev | test | staging | prod |
+|---------|-----|------|---------|------|
+| **Log Level** | debug | debug | info | error |
+| **Strict Mode** | false | true | true | true |
+| **Timeout** | 10s | 1s | 5s | 5s |
+| **Max Pending Requests** | 500 | 100 | 250 | 100 |
+| **Caching** | disabled | disabled | enabled | enabled |
+| **Rate Limiting** | disabled | disabled | enabled | enabled |
+| **Debug Endpoints** | enabled | enabled | enabled | disabled |
+| **File Logging** | logs/ | none | /var/logs/ | /var/logs/ |
+| **Async Processing** | disabled | disabled | enabled | enabled |
+| **Experimental Features** | enabled | enabled | enabled | disabled |
+| **Primary Use Case** | Development | CI/CD | Load testing | Production |
+
+## Troubleshooting
+
+### How do I know what profile is active?
+
+Check the symlink:
+```bash
+ls -l config/sys.config
+# Output: config/sys.config -> sys.config.dev
+```
+
+Or check the environment variable:
+```bash
+echo $ERLMCP_PROFILE
+# Output: dev (or empty, which defaults to dev)
+```
+
+### I changed ERLMCP_PROFILE but nothing happened
+
+You need to recompile after changing the profile:
+```bash
+export ERLMCP_PROFILE=staging
+make clean compile  # Full rebuild
+```
+
+The symlink is created during the compilation step by the Makefile.
+
+### Tests are failing with timeout errors
+
+Make sure you're using the test profile:
+```bash
+export ERLMCP_PROFILE=test
+make check
+```
+
+The test profile has shorter timeouts (1s) for fast feedback.
+
+### I want more verbose logging in production
+
+**Don't do this.** Changing log levels in production can:
+- Overwhelm disk I/O
+- Expose sensitive data
+- Degrade performance
+
+Instead:
+1. Reproduce the issue locally with `ERLMCP_PROFILE=dev`
+2. Use tracing/observability tools (OpenTelemetry)
+3. Enable debug logging temporarily on a single node
+
+### Which profile should I use for benchmarking?
+
+Use `staging` for benchmarks:
+```bash
+export ERLMCP_PROFILE=staging
+make compile
+./scripts/bench/run_all_benchmarks.sh
+```
+
+The staging profile has production-like behavior (caching, rate limiting) but with debug capabilities.
+
+### Can I create custom profiles?
+
+Yes! Create a new file:
+```bash
+cp config/sys.config.dev config/sys.config.custom
+# Edit config/sys.config.custom
+export ERLMCP_PROFILE=custom
+make compile
+```
+
+The Makefile will automatically symlink to `config/sys.config.{ERLMCP_PROFILE}` if it exists.
+
+## Configuration Files Reference
+
+### Profile-Specific Configs
+
+Located in `config/`:
+
+- `sys.config.dev` - Development profile (3.9KB)
+- `sys.config.test` - Test profile (3.8KB)
+- `sys.config.staging` - Staging profile (4.9KB)
+- `sys.config.prod` - Production profile (6.0KB)
+
+### Symlink Target
+
+- `sys.config` - Symlink to the active profile (created by Makefile)
+
+### Specialized Configs
+
+- `cluster.config` - Mnesia cluster configuration
+- `dashboard.config` - Dashboard server configuration
+- `monitor.config` - Monitoring/observability configuration
+- `vm.args` - Erlang VM arguments
+
+## Environment Variables (.env files)
+
+In addition to `ERLMCP_PROFILE`, you can use `.env` files for secrets and deployment-specific settings:
+
+- `dev.env` - Local development environment variables
+- `staging.env` - Staging environment variables
+- `production.env` - Production environment variables
+
+**Example** (`dev.env`):
+```bash
+ERLMCP_DB_HOST=localhost
+ERLMCP_DB_PORT=5432
+ERLMCP_DB_NAME=erlmcp_dev
+ERLMCP_JWT_SECRET=dev_secret_not_for_production
+```
+
+Load with:
+```bash
+source config/dev.env
+export ERLMCP_PROFILE=dev
+make compile
+```
+
+## Best Practices
+
+### 1. Always set ERLMCP_PROFILE in CI/CD
+
+```yaml
+# .github/workflows/ci.yml
+env:
+  ERLMCP_PROFILE: test
+
+jobs:
+  test:
+    steps:
+      - run: make check
+```
+
+### 2. Use dev for local development (default)
+
+```bash
+# No need to set anything
+make compile
+make console
+```
+
+### 3. Use staging for benchmarks
+
+```bash
+export ERLMCP_PROFILE=staging
+make benchmark-quick
+```
+
+### 4. Use prod only for releases
+
+```bash
+export ERLMCP_PROFILE=prod
+make clean compile
+rebar3 as prod release
+rebar3 as prod tar
+```
+
+### 5. Document custom profiles
+
+If you create custom profiles, document them in this guide.
+
+## Related Documentation
+
+- [CONFIGURATION_GUIDE.md](CONFIGURATION_GUIDE.md) - Comprehensive configuration reference
+- [DEVELOPMENT.md](../DEVELOPMENT.md) - Development workflow
+- [CLAUDE.md](../CLAUDE.md) - System architecture and OTP patterns
+- [CLI_USAGE.md](../CLI_USAGE.md) - Command-line tools
+
+---
+
+**Last Updated**: February 2026 (v2.1.0)
+**Maintainer**: erlmcp core team

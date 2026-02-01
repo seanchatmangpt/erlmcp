@@ -1,0 +1,123 @@
+%% Test system configuration for ErlMCP
+%% Optimized for CI/CD, fast test execution, and comprehensive verification
+
+[
+    {erlmcp, [
+        %% Logging configuration - DEBUG for test verification
+        {log_level, debug},
+        {logger_level, debug},
+
+        %% Client defaults - fast timeouts for quick tests
+        {client_defaults, #{
+            timeout => 1000,             % 1 second (fast fail)
+            strict_mode => true,          % Strict validation in tests
+            max_pending_requests => 100,  % Lower limit for test isolation
+            retry_attempts => 1,          % Minimal retries in tests
+            retry_backoff_ms => 10
+        }},
+
+        %% Server defaults - test-optimized limits
+        {server_defaults, #{
+            max_subscriptions_per_resource => 100,
+            max_progress_tokens => 1000,
+            enable_debug_endpoints => true
+        }},
+
+        %% Transport settings - all enabled for comprehensive testing
+        {transport_defaults, #{
+            tcp => #{
+                connect_timeout => 1000,
+                keepalive => false,      % Disable for faster cleanup
+                nodelay => true,
+                listen_backlog => 32
+            },
+            http => #{
+                connect_timeout => 1000,
+                request_timeout => 5000,
+                max_connections => 50
+            },
+            stdio => #{
+                enabled => true,
+                buffer_size => 256
+            }
+        }},
+
+        %% Connection pooling - minimal for test isolation
+        {connection_pooling, #{
+            enabled => true,
+            pool_size => 2,
+            max_overflow => 2,
+            pool_timeout => 1000
+        }},
+
+        %% Caching disabled in tests (deterministic behavior)
+        {cache_enabled, false},
+
+        %% Feature toggles - all enabled for comprehensive testing
+        {features, #{
+            rate_limiting => false,      % Disabled to avoid test interference
+            async_processing => false,   % Synchronous for determinism
+            webhook_delivery => false,   % Disabled in tests
+            experimental => true         % Test experimental features
+        }},
+
+        %% Test-specific options
+        {test, #{
+            enable_console_logging => true,
+            enable_file_logging => false,    % Console only for CI/CD
+            enable_sql_logging => false,
+            enable_http_logging => false,
+            enable_profiling => false,
+            fast_shutdown => true,           % Quick cleanup between tests
+            random_ports => true             % Avoid port conflicts
+        }}
+    ]},
+
+    {kernel, [
+        {logger_level, debug},
+        {logger, [
+            %% Console handler - ALL messages to stderr for CI/CD capture
+            {handler, default, logger_std_h, #{
+                config => #{
+                    type => standard_error,
+                    sync_mode_qlen => 1,       % Immediate flushing for tests
+                    drop_mode_qlen => 10,
+                    flush_qlen => 20
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", {mfa, ["N/A"]}, ":", line, " ", msg, "\n"],
+                    time_offset => "",
+                    time_designator => $T,
+                    single_line => false,
+                    max_size => 2048
+                }},
+                level => debug
+            }}
+        ]},
+        %% Disable distributed Erlang in tests
+        {distributed, []},
+        %% Short net tick time for faster test detection
+        {net_ticktime, 10}
+    ]},
+
+    {sasl, [
+        {sasl_error_logger, false},     % Disable SASL reports in tests
+        {errlog_type, error},
+        {error_logger_format_depth, 20}
+    ]},
+
+    %% Common Test configuration
+    {common_test, [
+        {auto_compile, false},
+        {create_priv_dir, auto_per_tc},
+        {include, ["include"]},
+        {logdir, "log/ct"},
+        {cover_spec, "test/cover.spec"}
+    ]},
+
+    %% EUnit configuration
+    {eunit, [
+        {report, {eunit_surefire, [{dir, "log/eunit"}]}},
+        {verbose, true}
+    ]}
+].
