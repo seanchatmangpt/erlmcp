@@ -23,14 +23,21 @@ set -euo pipefail
 #==============================================================================
 
 readonly REQUIRED_OTP_VERSION="28.3.1"
-readonly OTP_RELEASE_URL="https://github.com/erlang/otp/releases/download/OTP-${REQUIRED_OTP_VERSION}/otp_src_${REQUIRED_OTP_VERSION}.tar.gz"
 readonly ERLMCP_ROOT="${ERLMCP_ROOT:-.}"
 readonly OTP_CACHE_DIR="${ERLMCP_ROOT}/.erlmcp/otp-${REQUIRED_OTP_VERSION}"
 readonly OTP_BIN="${OTP_CACHE_DIR}/bin/erl"
 readonly LOCK_FILE="${ERLMCP_ROOT}/.erlmcp/cache/sessionstart.lock"
 readonly LOG_FILE="${ERLMCP_ROOT}/.erlmcp/sessionstart.log"
 readonly BUILD_TEMP_DIR="/tmp/otp-build-$$"
-readonly SCRIPT_VERSION="2.0.0"
+readonly SCRIPT_VERSION="2.1.0"
+
+# Pre-built OTP distribution (fast path, ~30s)
+readonly OTP_PREBUILT_URL="https://github.com/seanchatmangpt/erlmcp/releases/download/erlang-28.3.1/erlang-28.3.1-linux-x86_64.tar.gz"
+readonly OTP_PREBUILT_SHA256="58f91a25499d962664dc8a5e94f52164524671d385baeebee72741c7748c57d8"
+
+# Fallback: Build from GitHub source (slow path, ~6m)
+readonly OTP_GITHUB_SOURCE_URL="https://github.com/erlang/otp.git"
+readonly OTP_RELEASE_URL="https://github.com/erlang/otp/releases/download/OTP-${REQUIRED_OTP_VERSION}/otp_src_${REQUIRED_OTP_VERSION}.tar.gz"
 
 # CPU count for parallel build
 readonly CPU_COUNT=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
@@ -96,7 +103,60 @@ is_otp_cached() {
 }
 
 #==============================================================================
-# Phase 2: Download OTP Source
+# Phase 2A: Download Pre-built OTP (Fast Path)
+#==============================================================================
+
+download_prebuilt_otp() {
+    log_phase "2A/6" "Attempting pre-built OTP download (fast path)"
+
+    log_info "URL: $OTP_PREBUILT_URL"
+    log_info "Expected SHA256: $OTP_PREBUILT_SHA256"
+
+    mkdir -p "$OTP_CACHE_DIR"
+    local tarball="$OTP_CACHE_DIR/erlang-prebuilt.tar.gz"
+
+    log_info "Downloading pre-built OTP (this may take ~30s)..."
+    if ! wget -q --show-progress -O "$tarball" "$OTP_PREBUILT_URL" 2>&1 | tee -a "$LOG_FILE"; then
+        log_info "Pre-built download failed (will try source build)"
+        rm -f "$tarball"
+        return 1
+    fi
+
+    log_info "Verifying SHA256 checksum..."
+    local actual_sha256
+    actual_sha256=$(sha256sum "$tarball" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$tarball" 2>/dev/null | awk '{print $1}')
+
+    if [[ "$actual_sha256" != "$OTP_PREBUILT_SHA256" ]]; then
+        log_error "SHA256 mismatch!"
+        log_error "  Expected: $OTP_PREBUILT_SHA256"
+        log_error "  Actual:   $actual_sha256"
+        rm -f "$tarball"
+        return 1
+    fi
+
+    log_success "SHA256 verified: $actual_sha256"
+
+    log_info "Extracting OTP to cache directory..."
+    if ! tar xzf "$tarball" -C "$(dirname "$OTP_CACHE_DIR")"; then
+        log_error "Failed to extract pre-built OTP"
+        rm -f "$tarball"
+        return 1
+    fi
+
+    # Move extracted directory to expected location if needed
+    local extracted_dir
+    extracted_dir="$(dirname "$OTP_CACHE_DIR")/otp-28.3.1"
+    if [[ -d "$extracted_dir" && ! -e "$OTP_CACHE_DIR" ]]; then
+        mv "$extracted_dir" "$OTP_CACHE_DIR"
+    fi
+
+    rm -f "$tarball"
+    log_success "Pre-built OTP installed successfully"
+    return 0
+}
+
+#==============================================================================
+# Phase 2B: Download OTP Source (Fallback)
 #==============================================================================
 
 download_otp_source() {
@@ -278,7 +338,7 @@ main() {
     init_logging
 
     log_info "Starting SessionStart.sh (v$SCRIPT_VERSION)"
-    log_info "Strategy: Build OTP from GitHub source (Joe Armstrong AGI)"
+    log_info "Strategy: Pre-built OTP (fast) → Source build (fallback)"
 
     # Phase 1: Check cache
     log_phase "1/6" "Cache check"
@@ -291,9 +351,23 @@ main() {
         exit 0
     fi
 
-    log_info "OTP not cached, proceeding with source build..."
+    log_info "OTP not cached, attempting acquisition..."
 
-    # Phase 2: Download
+    # Phase 2A: Try pre-built (fast path, ~30s)
+    if download_prebuilt_otp; then
+        # Phase 4: Verify pre-built
+        if verify_otp_build; then
+            setup_environment
+            create_lock_file
+            log_success "SessionStart complete (pre-built, ~30s)"
+            exit 0
+        fi
+    fi
+
+    # Phase 2B-3: Fallback to source build (slow path, ~6m)
+    log_info "Pre-built unavailable, building from source..."
+
+    # Phase 2B: Download source
     if ! download_otp_source; then
         log_error "FATAL: OTP download failed"
         cleanup
