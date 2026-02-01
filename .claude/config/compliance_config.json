@@ -1,0 +1,37 @@
+{
+  "spec_version": "2025-11-25",
+  "output_format": "json",
+  "report_dir": "reports/compliance",
+  "validators": {
+    "protocol": {
+      "enabled": true,
+      "module": "erlmcp_protocol_validator",
+      "weight": 0.4
+    },
+    "transport": {
+      "enabled": true,
+      "module": "erlmcp_transport_validator",
+      "weight": 0.3
+    },
+    "security": {
+      "enabled": true,
+      "module": "erlmcp_security_validator",
+      "weight": 0.2
+    },
+    "performance": {
+      "enabled": true,
+      "module": "erlmcp_performance_validator",
+      "weight": 0.1
+    }
+  },
+  "thresholds": {
+    "overall_compliance_percent": 80.0,
+    "critical_failures": 0,
+    "high_severity_failures": 0
+  },
+  "archive": {
+    "enabled": true,
+    "retention_days": 90,
+    "max_archives": 50
+  }
+}

@@ -62,10 +62,18 @@ jobs:
             ${{ runner.os }}-rebar3-
 
       - name: Compile All Applications
+        id: compile
         run: |
           TERM=dumb rebar3 compile --all
         env:
           TERM: dumb
+
+      - name: Capture compilation failure
+        if: failure() && steps.compile.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: compile
+          otp-version: ${{ matrix.otp }}
 
       - name: Verify Compilation Success
         run: |
@@ -147,10 +155,18 @@ jobs:
             ${{ runner.os }}-rebar3-
 
       - name: Run EUnit Tests
+        id: eunit
         run: |
           rebar3 eunit --cover --cover_export_name=coverage
         env:
           TERM: dumb
+
+      - name: Capture EUnit failure
+        if: failure() && steps.eunit.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: eunit
+          otp-version: ${{ matrix.otp }}
 
       - name: Extract Coverage Results
         run: |
@@ -171,6 +187,7 @@ jobs:
           cp -r _build/test/cover evidence/eunit/ || true
 
       - name: Verify Coverage Threshold
+        id: coverage
         run: |
           mkdir -p evidence/eunit
 
@@ -194,6 +211,13 @@ jobs:
             echo "COVERAGE_PASSED=true" >> $GITHUB_ENV
             echo "PASS: Coverage $coverage meets 80% threshold"
           fi
+
+      - name: Capture coverage failure
+        if: failure() && steps.coverage.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: eunit
+          otp-version: ${{ matrix.otp }}
 
       - name: Upload EUnit Artifacts
         uses: actions/upload-artifact@v4
@@ -235,11 +259,19 @@ jobs:
             ${{ runner.os }}-rebar3-
 
       - name: Run Common Test Suites
+        id: ct
         run: |
           rebar3 ct --suite=apps/erlmcp_transports/test/erlmcp_transport_http_SUITE \
                     --suite=apps/erlmcp_observability/test/erlmcp_metrics_SUITE
         env:
           TERM: dumb
+
+      - name: Capture CT failure
+        if: failure() && steps.ct.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: ct
+          otp-version: ${{ matrix.otp }}
 
       - name: Extract CT Results
         run: |
@@ -300,9 +332,17 @@ jobs:
             ${{ runner.os }}-dialyzer-
 
       - name: Build PLT and Run Dialyzer
+        id: dialyzer
         run: |
           rebar3 dialyzer --build_plt --get_warnings --error_descriptions
         continue-on-error: false
+
+      - name: Capture Dialyzer failure
+        if: failure() && steps.dialyzer.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: dialyzer
+          otp-version: ${{ matrix.otp }}
 
       - name: Extract Dialyzer Results
         run: |
@@ -365,10 +405,18 @@ jobs:
             ${{ runner.os }}-rebar3-
 
       - name: Run Xref Analysis
+        id: xref
         run: |
           rebar3 xref
         env:
           TERM: dumb
+
+      - name: Capture Xref failure
+        if: failure() && steps.xref.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: xref
+          otp-version: ${{ matrix.otp }}
 
       - name: Extract Xref Results
         run: |
@@ -417,6 +465,7 @@ jobs:
           key: ${{ runner.os }}-rebar3-27-${{ hashFiles('**/rebar.lock') }}
 
       - name: Run Spec Compliance Validation
+        id: spec_validate
         run: |
           # Check if spec validator exists
           if [ -f "apps/erlmcp_validation/src/erlmcp_protocol_validator.erl" ]; then
@@ -439,6 +488,13 @@ jobs:
           if grep -q "jsonrpc\|\"2.0\"" apps/erlmcp_core/src/erlmcp_json_rpc.erl; then
             echo "✓ JSON-RPC 2.0 implemented"
           fi
+
+      - name: Capture validation failure
+        if: failure() && steps.spec_validate.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: validation
+          otp-version: '27'
 
       - name: Generate Compliance Report
         run: |
@@ -498,6 +554,7 @@ jobs:
           key: ${{ runner.os }}-rebar3-27-${{ hashFiles('**/rebar.lock') }}
 
       - name: Check Dependency Vulnerabilities
+        id: security
         run: |
           mkdir -p evidence/security
 
@@ -513,6 +570,13 @@ jobs:
           # Count potential issues
           secrets_count=$(wc -l < evidence/security/secrets_scan.txt 2>/dev/null || echo "0")
           echo "SECRETS_FOUND=$secrets_count" >> $GITHUB_ENV
+
+      - name: Capture security failure
+        if: failure() && steps.security.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: security
+          otp-version: '27'
 
       - name: Run Security Validation Tests
         run: |
@@ -592,6 +656,7 @@ jobs:
           EOF
 
       - name: Run Quick Benchmarks
+        id: perf_check
         run: |
           # Run core_ops benchmark (10k ops, < 1 min)
           if [ -f "apps/erlmcp_bench/src/erlmcp_bench_core_ops.erl" ]; then
@@ -601,16 +666,24 @@ jobs:
             erl -pa _build/default/lib/*/ebin -noshell -eval "
               case erlmcp_bench_core_ops:run(<<"core_ops_10k">>) of
                 {ok, Results} ->
-                  io:format("~p~n", [Results]),
+                  io:format(\"~p~n\", [Results]),
                   init:stop();
                 Error ->
-                  io:format("Benchmark failed: ~p~n", [Error]),
+                  io:format(\"Benchmark failed: ~p~n\", [Error]),
                   init:stop(1)
               end
             " > evidence/perf/benchmark_results.txt 2>&1 || true
           else
             echo "Benchmark module not found, skipping..."
           fi
+
+      - name: Capture performance failure
+        if: failure() && steps.perf_check.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: benchmark
+          otp-version: '27'
+          workload-id: core_ops_10k
 
       - name: Compare with Baselines
         run: |

@@ -2,8 +2,33 @@
 # Automated Test Runner - Blocks on failures
 # Usage: ./tools/test-runner.sh
 # Exit codes: 0 = success, 1 = failure
+#
+# Environment:
+#   ERLMCP_PROFILE  Profile to use (dev|test|staging|prod), defaults to 'test'
 
 set -euo pipefail
+
+# ==============================================================================
+# Profile Configuration
+# ==============================================================================
+
+# Set default profile for test runs (safer for testing)
+ERLMCP_PROFILE="${ERLMCP_PROFILE:-test}"
+
+# Validate profile (with graceful fallback to test)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VALIDATE_SCRIPT="$SCRIPT_DIR/../scripts/validate_profile.sh"
+
+if [ -f "$VALIDATE_SCRIPT" ]; then
+    if ! "$VALIDATE_SCRIPT" "$ERLMCP_PROFILE" 2>/dev/null; then
+        echo "WARNING: Invalid profile '$ERLMCP_PROFILE', falling back to 'test'"
+        ERLMCP_PROFILE=test
+    fi
+else
+    echo "WARNING: validate_profile.sh not found, using profile: $ERLMCP_PROFILE"
+fi
+
+export ERLMCP_PROFILE
 
 # Color codes
 RED='\033[0;31m'
@@ -19,6 +44,7 @@ RESULTS_JSON="${RESULTS_DIR}/test_results.json"
 echo "========================================"
 echo "ErlMCP Test Runner"
 echo "========================================"
+echo "Profile: $ERLMCP_PROFILE"
 echo ""
 
 # Create results directory

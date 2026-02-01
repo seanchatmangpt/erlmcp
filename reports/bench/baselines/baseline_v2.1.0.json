@@ -1,0 +1,80 @@
+{
+  "version": "2.1.0",
+  "timestamp": 1769908413,
+  "otp_version": "28.3.1",
+  "description": "Baseline performance targets for erlmcp v2.1.0",
+  "benchmarks": {
+    "core_ops_1k": {
+      "throughput_msg_per_s": 2500000,
+      "latency_p50_us": 0.4,
+      "latency_p95_us": 1.0,
+      "latency_p99_us": 2.0,
+      "memory_heap_mib_per_conn": 0.1,
+      "workload_size": 1000,
+      "transport": "internal",
+      "scope": "per_operation"
+    },
+    "core_ops_100k": {
+      "throughput_msg_per_s": 2690000,
+      "latency_p50_us": 0.37,
+      "latency_p95_us": 0.8,
+      "latency_p99_us": 1.5,
+      "memory_heap_mib_per_conn": 0.15,
+      "workload_size": 100000,
+      "transport": "internal",
+      "scope": "per_operation"
+    },
+    "tcp_quick_1k": {
+      "throughput_msg_per_s": 43000,
+      "latency_p50_us": 23,
+      "latency_p95_us": 100,
+      "latency_p99_us": 250,
+      "memory_heap_mib_per_conn": 0.5,
+      "workload_size": 1000,
+      "transport": "tcp",
+      "scope": "per_connection"
+    },
+    "tcp_sustained_10k": {
+      "throughput_msg_per_s": 43000,
+      "latency_p50_us": 23,
+      "latency_p95_us": 120,
+      "latency_p99_us": 300,
+      "memory_heap_mib_per_conn": 0.8,
+      "workload_size": 10000,
+      "transport": "tcp",
+      "scope": "per_connection"
+    },
+    "stress_30s_100k_ops": {
+      "throughput_msg_per_s": 372000,
+      "latency_p50_us": 2.7,
+      "latency_p95_us": 10.0,
+      "latency_p99_us": 25.0,
+      "memory_rss_mib_per_node": 150,
+      "duration_s": 30,
+      "total_ops": 11160000,
+      "transport": "mixed",
+      "scope": "per_node_total"
+    },
+    "integration_mcp_tool_sequence": {
+      "latency_p50_us": 500,
+      "latency_p95_us": 2000,
+      "latency_p99_us": 5000,
+      "e2e_latency_ms": 15,
+      "protocol_compliance_percent": 100.0,
+      "transport": "stdio",
+      "scope": "per_workflow"
+    }
+  },
+  "capacity": {
+    "concurrent_connections_per_node": 45000,
+    "max_sustainable_throughput_msg_per_s": 372000,
+    "memory_per_connection_mib": 0.5
+  },
+  "notes": [
+    "Baseline established from v2.1.0 performance measurements (Jan 2026)",
+    "Core ops baseline: μ = 2.69M ops/sec (CLAUDE.md reference)",
+    "Network I/O baseline: 43K msg/s (real TCP sockets, 4KB packets)",
+    "Sustained load baseline: 372K msg/s (60M ops / 30s)",
+    "Capacity: 40-50K concurrent connections per node (honest measurement)"
+  ]
+}
