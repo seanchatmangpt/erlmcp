@@ -23,7 +23,7 @@ set -euo pipefail
 #==============================================================================
 
 readonly REQUIRED_OTP_VERSION="28.3.1"
-readonly ERLMCP_ROOT="${ERLMCP_ROOT:-.}"
+readonly ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" 2>/dev/null && pwd || echo "$PWD")"
 readonly OTP_CACHE_DIR="${ERLMCP_ROOT}/.erlmcp/otp-${REQUIRED_OTP_VERSION}"
 readonly OTP_BIN="${OTP_CACHE_DIR}/bin/erl"
 readonly LOCK_FILE="${ERLMCP_ROOT}/.erlmcp/cache/sessionstart.lock"
@@ -268,16 +268,23 @@ verify_otp_build() {
     fi
 
     log_info "Verifying OTP binary: $OTP_BIN"
+
+    # Test if binary is executable and works
     local built_version
-    built_version=$("$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null || echo "")
+    if ! built_version=$("$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>&1); then
+        log_error "Failed to execute OTP binary: $built_version"
+        return 1
+    fi
 
     if [[ -z "$built_version" ]]; then
         log_error "Failed to detect OTP version"
         return 1
     fi
 
-    if [[ "$built_version" != "$REQUIRED_OTP_VERSION" ]]; then
-        log_error "OTP version mismatch: built=$built_version, required=$REQUIRED_OTP_VERSION"
+    # Check major version (e.g., "28" matches "28.3.1")
+    local required_major="${REQUIRED_OTP_VERSION%%.*}"
+    if [[ "$built_version" != "$required_major" ]]; then
+        log_error "OTP version mismatch: built=$built_version, required major=$required_major"
         return 1
     fi
 
@@ -378,6 +385,9 @@ main() {
             create_lock_file
             log_success "SessionStart complete (pre-built, ~30s)"
             exit 0
+        else
+            log_info "Pre-built OTP verification failed, cleaning up for fallback..."
+            rm -rf "$OTP_CACHE_DIR"
         fi
     fi
 
