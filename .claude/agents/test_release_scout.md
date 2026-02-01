@@ -1,3 +1,9 @@
+---
+name: test-release-scout
+description: Test suite for release-scout agent tool access and reporting
+type: test
+---
+
 # Release Scout Agent - Test Suite
 
 **Test File**: `.claude/agents/test_release_scout.md`
