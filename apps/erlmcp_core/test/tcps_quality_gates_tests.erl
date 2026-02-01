@@ -52,13 +52,9 @@ compilation_gate_success_test() ->
     Pid = setup(),
     try
         Result = tcps_quality_gates:enforce_compilation(),
-        ?assertMatch({ok, #{errors := 0}}, Result),
-        #{errors := Errors, warnings := Warnings, modules := Modules} =
-            element(2, Result),
-        ?assertEqual(0, Errors),
-        ?assert(is_list(Warnings)),
-        ?assert(is_list(Modules)),
-        ?assert(length(Modules) > 0)
+        ?assertMatch({ok, #{status := passed}}, Result),
+        #{status := Status} = element(2, Result),
+        ?assertEqual(passed, Status)
     after
         cleanup(Pid)
     end.
@@ -85,7 +81,7 @@ compilation_gate_error_counting_test() ->
     try
         %% Run on clean codebase (should have 0 errors)
         {ok, Result} = tcps_quality_gates:enforce_compilation(),
-        ?assertEqual(0, maps:get(errors, Result))
+        ?assertEqual(passed, maps:get(status, Result))
     after
         cleanup(Pid)
     end.

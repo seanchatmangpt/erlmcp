@@ -51,10 +51,10 @@ test_priority_shutdown_signal(Pid) ->
          EndTime = erlang:monotonic_time(microsecond),
          LatencyUs = EndTime - StartTime,
 
-         % Should have processed shutdown signal
-         ?assertMatch(#{}, Status),
+         % Should have processed shutdown signal quickly
+         ?assert(LatencyUs < 100000), % Less than 100ms
 
-         
+         ?debugFmt("OTP 28 priority shutdown signal latency: ~p us", [LatencyUs])
      end}.
 
 test_priority_shutdown_latency(Pid) ->
@@ -216,7 +216,38 @@ test_shutdown_timeout(_Pid) ->
 test_priority_metrics_tracking(_Pid) ->
     {"Priority shutdown metrics should be tracked",
      fun() ->
-         
+         % Start a fresh drain service for testing metrics
+         {ok, MetricsPid} = erlmcp_graceful_drain:start_link(),
+
+         % Simulate connections for metrics
+         ok = erlmcp_graceful_drain:connection_started(m1),
+         ok = erlmcp_graceful_drain:connection_started(m2),
+         ok = erlmcp_graceful_drain:connection_started(m3),
+
+         % Verify connection count
+         ActiveCount = erlmcp_graceful_drain:get_active_connections(),
+         ?assertEqual(3, ActiveCount),
+
+         % Initiate shutdown with metrics tracking
+         StartTime = erlang:monotonic_time(microsecond),
+         ok = erlmcp_graceful_drain:initiate_shutdown(2000),
+
+         % Finish connections to trigger graceful shutdown
+         ok = erlmcp_graceful_drain:connection_finished(m1),
+         ok = erlmcp_graceful_drain:connection_finished(m2),
+         ok = erlmcp_graceful_drain:connection_finished(m3),
+
+         % Wait for shutdown
+         timer:sleep(50),
+
+         EndTime = erlang:monotonic_time(microsecond),
+         ShutdownTimeUs = EndTime - StartTime,
+
+         % Verify process terminated
+         ?assertNot(is_process_alive(MetricsPid)),
+
+         ?debugFmt("OTP 28 priority shutdown metrics: ~p us, ~p connections",
+                  [ShutdownTimeUs, ActiveCount])
      end}.
 
 %%====================================================================
