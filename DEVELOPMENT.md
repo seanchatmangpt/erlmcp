@@ -1270,6 +1270,7 @@ make receipts-list
 - **Work Order:** [AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md](AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md) (WO-010)
 - **Settings:** [.claude/settings.json](.claude/settings.json)
 - **Hook Implementations:** [.claude/hooks/](.claude/hooks/)
+- **Multi-Agent Work Orders:** [docs/GOVERNANCE_SYSTEM.md](docs/GOVERNANCE_SYSTEM.md) - Work order protocol, agent coordination, audit trails
 
 ## Troubleshooting
 
