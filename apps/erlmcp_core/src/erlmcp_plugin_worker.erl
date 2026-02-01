@@ -135,14 +135,14 @@ handle_call({call_function, Function, Args}, _From, State) ->
 
                 %% Handle result
                 case Result of
-                    {ok, Output, NewState} ->
-                        {reply, {ok, Output}, NewState};
-                    {ok, Output} ->
-                        {reply, {ok, Output}, State};
-                    {error, Reason, _} ->
-                        {reply, {error, Reason}, State};
-                    {error, Reason} ->
-                        {reply, {error, Reason}, State};
+                    {ok, ResultOutput, ResultState} when is_tuple(ResultState); is_list(ResultState) ->
+                        {reply, {ok, ResultOutput}, ResultState};
+                    {ok, ResultOutput} ->
+                        {reply, {ok, ResultOutput}, State};
+                    {error, ErrorReason, _} ->
+                        {reply, {error, ErrorReason}, State};
+                    {error, ErrorReason} ->
+                        {reply, {error, ErrorReason}, State};
                     Other ->
                         {reply, Other, State}
                 end;

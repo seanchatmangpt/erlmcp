@@ -11,6 +11,14 @@ PASSED=true
 
 echo -e "${YELLOW}🔍 Pre-Task Quality Checks${NC}"
 
+# Source SessionStart environment for OTP 28
+ENV_FILE="${CLAUDE_PROJECT_DIR}/.erlmcp/env.sh"
+if [[ -f "$ENV_FILE" ]]; then
+    source "$ENV_FILE"
+    OTP_VER=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null)
+    echo -e "${YELLOW}→ Using OTP ${OTP_VER}${NC}"
+fi
+
 # Compilation
 echo -e "\n${YELLOW}→ Compilation${NC}"
 if TERM=dumb rebar3 compile 2>&1 | grep -q "Error:"; then

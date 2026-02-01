@@ -34,9 +34,8 @@
 
 %% State names for type specs
 -type server_state() :: initialization | accepting | drain | shutdown.
--type server_id() :: term().
 
--export_type([server_state/0, server_id/0]).
+-export_type([server_state/0]).
 
 %% State data record
 -record(data, {

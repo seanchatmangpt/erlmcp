@@ -50,11 +50,10 @@ test_priority_health_check_latency(Pid) ->
          LatencyUs = EndTime - StartTime,
 
          ?assertEqual(healthy, Result),
-
-         
+         ?assert(LatencyUs < 1000)
      end}.
 
-test_priority_system_health_latency(Pid) ->
+test_priority_system_health_latency(_Pid) ->
     {"Priority system health check should have low latency",
      fun() ->
          % Perform system health check and measure latency
@@ -81,15 +80,13 @@ test_priority_component_health_latency(_Pid) ->
          ok = erlmcp_health_monitor:register_component(worker2, Worker2, fun() -> healthy end),
          ok = erlmcp_health_monitor:register_component(worker3, Worker3, fun() -> healthy end),
 
-         % Measure latency for each component
-         Latencies = lists:map(fun(Component) ->
+         % Measure latency for each component (latencies calculated but not asserted in this test)
+        _Latencies = lists:map(fun(Component) ->
              StartTime = erlang:monotonic_time(microsecond),
              _Result = erlmcp_health_monitor:get_component_health(Component),
              EndTime = erlang:monotonic_time(microsecond),
              EndTime - StartTime
          end, [worker1, worker2, worker3]),
-
-         ,
 
          % Cleanup
          exit(Worker1, shutdown),
@@ -104,7 +101,17 @@ test_priority_component_health_latency(_Pid) ->
 test_priority_metrics_tracking(_Pid) ->
     {"Priority messages should be tracked in metrics",
      fun() ->
-         
+         % Get initial metrics
+         InitialMetrics = erlmcp_health_monitor:get_metrics(),
+         ?assertMatch(#{}, InitialMetrics),
+
+         % Simulate some priority messages
+         ok = erlmcp_health_monitor:register_component(test_comp, self(), fun() -> healthy end),
+         ok = erlmcp_health_monitor:update_component_health(test_comp, healthy),
+
+         % Get updated metrics
+         UpdatedMetrics = erlmcp_health_monitor:get_metrics(),
+         ?assertMatch(#{test_comp := _}, UpdatedMetrics)
      end}.
 
 %%====================================================================
@@ -119,9 +126,7 @@ test_k8s_liveness_probe_priority(_Pid) ->
 
          % All should succeed
          ?assertEqual(10, length(Results)),
-         ?assert(lists:all(fun(R) -> maps:is_key(overall_status, R) end, Results)),
-
-         
+         ?assert(lists:all(fun(R) -> maps:is_key(overall_status, R) end, Results))
      end}.
 
 %%====================================================================
@@ -147,10 +152,10 @@ test_concurrent_priority_requests(_Pid) ->
          Latencies = [receive {latency, L} -> L after 5000 -> error(timeout) end
                       || _ <- Pids],
 
-         AvgLatency = lists:sum(Latencies) / length(Latencies),
+         _AvgLatency = lists:sum(Latencies) / length(Latencies),
          MaxLatency = lists:max(Latencies),
 
-         
+         ?assert(MaxLatency < 1000)
      end}.
 
 %%====================================================================
@@ -175,10 +180,10 @@ test_priority_under_load(_Pid) ->
 
          AvgLatency = lists:sum(Latencies) / length(Latencies),
 
-         % Stop background load
-         stop_background_load(LoadPids),
+         ?assert(AvgLatency < 1000),
 
-         
+         % Stop background load
+         stop_background_load(LoadPids)
      end}.
 
 

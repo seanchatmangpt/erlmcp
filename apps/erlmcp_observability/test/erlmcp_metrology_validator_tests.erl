@@ -32,35 +32,6 @@ valid_benchmark_output() ->
         memory_rss_mib_per_node => 256
     }.
 
-%% Missing required fields fixture
-missing_fields_output() ->
-    #{
-        throughput_msg_per_s => 1000000,
-        latency_p50_us => 2
-    }.
-
-%% Ambiguous units fixture (non-canonical)
-ambiguous_units_output() ->
-    #{
-        workload_id => <<"test">>,
-        transport => <<"tcp">>,
-        duration_s => 5,
-        scope => <<"per_connection_total">>,
-        throughput => 1000000,  %% Should be throughput_msg_per_s
-        latency_ms => 10,        %% Should be latency_p50_us
-        memory => 512            %% Should be memory_heap_mib_per_conn
-    }.
-
-%% Invalid scope fixture
-invalid_scope_output() ->
-    #{
-        workload_id => <<"test">>,
-        transport => <<"http">>,
-        duration_s => 5,
-        scope => <<"invalid_scope">>,
-        throughput_msg_per_s => 500000
-    }.
-
 %%====================================================================
 %% Lifecycle Tests
 %%====================================================================

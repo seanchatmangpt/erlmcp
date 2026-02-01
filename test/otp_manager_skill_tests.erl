@@ -99,8 +99,8 @@ test_scripts_executable() ->
         ?SKILL_DIR ++ "/otp_clean.sh"
     ],
     lists:foreach(fun(Script) ->
-        {ok, FileInfo} = file:read_file_info(Script),
-        Mode = FileInfo#file_info.mode,
+        {ok, FileInfo} = file:read_file_info(Script, [raw]),
+        Mode = maps:get(mode, FileInfo),
         %% Check if executable bit is set (mode & 0o111 != 0)
         IsExecutable = (Mode band 8#111) =/= 0,
         ?assert(IsExecutable),

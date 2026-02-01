@@ -12,6 +12,13 @@ mkdir -p "$REPORT_DIR"
 
 echo -e "${YELLOW}📊 Post-Task Quality Analysis${NC}"
 
+# Source SessionStart environment for OTP 28
+ENV_FILE="${CLAUDE_PROJECT_DIR}/.erlmcp/env.sh"
+if [[ -f "$ENV_FILE" ]]; then
+    source "$ENV_FILE"
+    echo -e "${YELLOW}→ Using OTP $(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null)${NC}"
+fi
+
 # Full test suite
 echo -e "${YELLOW}→ Running tests${NC}"
 rebar3 eunit 2>&1 | tee "$REPORT_DIR/eunit_$TIMESTAMP.log"

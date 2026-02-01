@@ -36,12 +36,6 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_formatter).
 
-%% Behavior definition
--callback format(Data :: term(), State :: term()) ->
-    {ok, Formatted :: binary(), NewState :: term()} | {error, Reason :: term()}.
-
--callback supports_format() -> atom().
-
 %% Re-export plugin behavior
 -export([behaviour_info/1]).
 

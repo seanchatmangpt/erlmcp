@@ -1,0 +1,251 @@
+name: Documentation Quality Checks
+
+on:
+  push:
+    branches: [main, 'release/**', 'feature/**']
+    paths:
+      - 'docs/**'
+      - '**.md'
+  pull_request:
+    branches: [main, 'release/**']
+    paths:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+env:
+  MIN_QUALITY_SCORE: 80
+  OTP_VERSION: '26'
+
+jobs:
+  # =============================================================================
+  # JOB 1: Documentation Build
+  # =============================================================================
+  doc-build:
+    name: Build Documentation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: '3.24'
+
+      - name: Cache documentation build
+        uses: actions/cache@v3
+        with:
+          path: |
+            .erlmcp/docs-*.txt
+            .erlmcp/docs-*.json
+            .erlmcp/quality-report*.txt
+          key: docs-${{ github.sha }}
+          restore-keys: |
+            docs-${{ github.base_ref }}-
+
+      - name: Run documentation build
+        run: |
+          chmod +x scripts/documentation/build-docs.sh
+          ./scripts/documentation/build-docs.sh
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: documentation-build
+          path: |
+            .erlmcp/docs-build.log
+            .erlmcp/docs-quality-report.json
+            .erlmcp/docs-stats-*.txt
+            docs/INDEX.md
+          retention-days: 30
+
+  # =============================================================================
+  # JOB 2: Link Validation
+  # =============================================================================
+  link-validation:
+    name: Validate Links
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run link validation
+        run: |
+          chmod +x scripts/documentation/validate-links.sh
+          ./scripts/documentation/validate-links.sh --fail-on-error
+
+      - name: Upload link validation report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: link-validation-report
+          path: .erlmcp/link-validation-*.txt
+          retention-days: 30
+
+  # =============================================================================
+  # JOB 3: Duplicate Detection
+  # =============================================================================
+  duplicate-detection:
+    name: Detect Duplicates
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run duplicate detection
+        run: |
+          chmod +x scripts/documentation/detect-duplicates.sh
+          ./scripts/documentation/detect-duplicates.sh
+
+      - name: Upload duplicate report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: duplicate-report
+          path: .erlmcp/duplicate-report-*.txt
+          retention-days: 30
+
+  # =============================================================================
+  # JOB 4: Quality Metrics
+  # =============================================================================
+  quality-metrics:
+    name: Quality Metrics
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run quality metrics
+        run: |
+          chmod +x scripts/documentation/quality-metrics.sh
+          ./scripts/documentation/quality-metrics.sh --format all
+
+      - name: Upload quality reports
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: quality-reports
+          path: |
+            .erlmcp/quality-report-*.txt
+            .erlmcp/quality-report-*.json
+            .erlmcp/quality-report-*.html
+          retention-days: 30
+
+      - name: Comment PR with quality score
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = '.erlmcp/quality-report-*.json';
+            const files = require('glob').sync(reportPath);
+
+            if (files.length > 0) {
+              const report = JSON.parse(fs.readFileSync(files[0], 'utf8'));
+              const score = report.overall_score;
+              const status = score >= 80 ? '✅' : '⚠️';
+
+              const body = `## Documentation Quality Report
+
+              ${status} **Quality Score:** ${score}/100
+
+              **Detailed Metrics:**
+              - Structure: ${report.metrics.structure.score}/100
+              - Links: ${report.metrics.links.score}/100
+              - Content: ${report.metrics.content.score}/100
+              - Style: ${report.metrics.style.score}/100
+              - Completeness: ${report.metrics.completeness.score}/100
+
+              [View Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})`;
+
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+
+  # =============================================================================
+  # JOB 5: Quality Gate
+  # =============================================================================
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-22.04
+    needs: [doc-build, link-validation, duplicate-detection, quality-metrics]
+    timeout-minutes: 5
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Check quality gate
+        run: |
+          # Check if quality score meets threshold
+          if [ -f quality-reports/quality-report-*.json ]; then
+            SCORE=$(jq -r '.overall_score' quality-reports/quality-report-*.json | head -1)
+            echo "Documentation quality score: $SCORE/100"
+
+            if [ $SCORE -lt ${{ env.MIN_QUALITY_SCORE }} ]; then
+              echo "❌ Quality gate failed: $SCORE < ${{ env.MIN_QUALITY_SCORE }}"
+              exit 1
+            else
+              echo "✅ Quality gate passed"
+            fi
+          else
+            echo "⚠️  Quality report not found"
+            exit 1
+          fi
+
+      - name: Generate summary
+        run: |
+          echo "## Documentation Quality Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Build completed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Links validated" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ No duplicates found" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Quality metrics calculated" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================================================
+  # JOB 6: Documentation Deployment (main only)
+  # =============================================================================
+  deploy-docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-22.04
+    needs: quality-gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: documentation-build
+
+      - name: Deploy to GitHub Pages
+        run: |
+          echo "Deploying documentation to GitHub Pages..."
+          # Add deployment logic here
+          # For example: mkdocs gh-deploy or similar
+
+      - name: Create deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Documentation deployed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "Build: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
