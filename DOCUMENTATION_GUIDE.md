@@ -21,6 +21,7 @@ Start here for project orientation:
 | Topic | Location |
 |-------|----------|
 | Cloud Execution & Autonomous Development | `docs/CLOUD_EXECUTION.md` |
+| Governance System (Multi-Agent Work Orders) | `docs/GOVERNANCE_SYSTEM.md` |
 | API Reference (MCP endpoints) | `archive/misc/MCP_ENDPOINTS_AND_CAPABILITIES_GUIDE.md` |
 | Quality Gates & Testing | `archive/quality-reports/` (22 files) |
 | Performance/Benchmarks | `archive/benchmarks/` (16 files) |
@@ -84,12 +85,14 @@ These are the **core operational documents** you'll use most often:
 - **Use Case**: Understanding PR process, code requirements
 - **Status**: ✅ Current
 
-#### 6-10. **Reference Guides**
+#### 6-11. **Reference Guides**
 - `CODE_QUALITY_REPORT_V2.1.md` - Latest quality metrics
 - `CODE_REVIEW_QUICK_REFERENCE.md` - Code review checklist
 - `CLI_USAGE.md` - Command-line tool docs
 - `DOCUMENTATION_GUIDE.md` - This navigation guide
 - `RELEASE_NOTES_v2.1.0.md` - Latest release details
+- `docs/CLOUD_EXECUTION.md` - Cloud sessions, autonomous execution
+- `docs/GOVERNANCE_SYSTEM.md` - Multi-agent work orders, coordination
 
 ### Archive/ (150 Retained Files)
 

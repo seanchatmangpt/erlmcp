@@ -125,6 +125,7 @@ For comprehensive navigation and finding specific topics:
 **Getting Started**:
 - [Development Setup](DEVELOPMENT.md) - Environment setup and workflow
 - [Cloud Execution Guide](docs/CLOUD_EXECUTION.md) - Cloud sessions, autonomous execution, cost optimization
+- [Governance System](docs/GOVERNANCE_SYSTEM.md) - Multi-agent work orders, coordination, audit trails
 - [Contributing Guidelines](CONTRIBUTING.md) - Code standards and PR process
 - [System Architecture](CLAUDE.md) - Formal specification, OTP patterns, quality gates
 
