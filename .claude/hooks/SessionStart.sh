@@ -259,8 +259,19 @@ verify_otp_build() {
         return 1
     fi
 
-    if [[ "$built_version" != "$REQUIRED_OTP_VERSION" ]]; then
-        log_error "OTP version mismatch: built=$built_version, required=$REQUIRED_OTP_VERSION"
+    # Extract major version (e.g., "28" from "28.3.1" or "28")
+    local major_version
+    if [[ "$built_version" =~ ^([0-9]+) ]]; then
+        major_version="${BASH_REMATCH[1]}"
+    else
+        log_error "Failed to extract OTP major version from: $built_version"
+        return 1
+    fi
+
+    # Check if major version matches (28.x.x is acceptable)
+    local required_major=28
+    if [[ "$major_version" -lt "$required_major" ]]; then
+        log_error "OTP version mismatch: built=$built_version (major: $major_version), required=28+"
         return 1
     fi
 
