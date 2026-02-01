@@ -22,6 +22,7 @@
 %% API
 -export([
     start_link/0,
+    validate_all/1,
     run/1,
     validate_callbacks/1,
     validate_framing/2,
@@ -85,6 +86,68 @@
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+%% @doc Validate all transport implementations for MCP specification
+-spec validate_all(binary()) -> #{
+    status := passed | failed | warning,
+    timestamp := integer(),
+    checks := [#{
+        name := binary(),
+        status := passed | failed | warning,
+        message => binary(),
+        details => map()
+    }],
+    passed := non_neg_integer(),
+    failed := non_neg_integer()
+}.
+validate_all(SpecVersion) when is_binary(SpecVersion) ->
+    Timestamp = erlang:system_time(millisecond),
+
+    %% Define transport modules to validate
+    Transports = [
+        {erlmcp_transport_stdio, stdio},
+        {erlmcp_transport_tcp, tcp},
+        {erlmcp_transport_http, http},
+        {erlmcp_transport_ws, websocket},
+        {erlmcp_transport_sse, sse}
+    ],
+
+    %% Validate each transport
+    Checks = lists:flatmap(
+        fun({Module, Type}) ->
+            validate_transport_all(Module, Type, SpecVersion)
+        end,
+        Transports
+    ),
+
+    %% Count results
+    {Passed, Failed, Warnings} = lists:foldl(
+        fun(Check, {P, F, W}) ->
+            case maps:get(status, Check) of
+                passed -> {P + 1, F, W};
+                failed -> {P, F + 1, W};
+                warning -> {P, F, W + 1}
+            end
+        end,
+        {0, 0, 0},
+        Checks
+    ),
+
+    %% Determine overall status (critical failures fail, warnings don't)
+    OverallStatus = case Failed of
+        0 -> passed;
+        _ -> failed
+    end,
+
+    #{
+        status => OverallStatus,
+        timestamp => Timestamp,
+        spec_version => SpecVersion,
+        checks => Checks,
+        passed => Passed,
+        failed => Failed,
+        warnings => Warnings
+    }.
 
 run(TransportModule) when is_atom(TransportModule) ->
     gen_server:call(?SERVER, {run, TransportModule}).
@@ -1299,4 +1362,90 @@ check_gen_tcp_packet_option(Module) ->
             {false, "No gen_tcp packet option found"};
         {error, Reason} ->
             {false, Reason}
+    end.
+
+%%%===================================================================
+%%% Internal Functions for validate_all/1
+%%%===================================================================
+
+%% @private Validate all aspects of a transport
+validate_transport_all(Module, Type, _SpecVersion) ->
+    ModuleBin = atom_to_binary(Module, utf8),
+
+    %% Check if module exists
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            [
+                check_transport_callbacks(Module, ModuleBin),
+                check_transport_framing(Module, Type, ModuleBin),
+                check_transport_registry(Module, ModuleBin),
+                check_transport_lifecycle(Module, ModuleBin)
+            ];
+        {error, _} ->
+            [#{
+                name => <<ModuleBin/binary, "_existence">>,
+                status => warning,
+                message => <<"Transport module not available">>,
+                details => #{module => Module}
+            }]
+    end.
+
+%% @private Check transport callbacks
+check_transport_callbacks(Module, ModuleBin) ->
+    Result = validate_callbacks(Module),
+    case maps:get(status, Result) of
+        passed ->
+            #{name => <<ModuleBin/binary, "_callbacks">>,
+              status => passed,
+              message => <<"All required callbacks implemented">>};
+        failed ->
+            #{name => <<ModuleBin/binary, "_callbacks">>,
+              status => failed,
+              message => <<"Missing required callbacks">>,
+              details => Result}
+    end.
+
+%% @private Check transport framing
+check_transport_framing(Module, Type, ModuleBin) ->
+    Result = validate_framing(Module, Type),
+    case maps:get(status, Result) of
+        passed ->
+            #{name => <<ModuleBin/binary, "_framing">>,
+              status => passed,
+              message => <<"Transport framing correct">>};
+        failed ->
+            #{name => <<ModuleBin/binary, "_framing">>,
+              status => warning,
+              message => <<"Transport framing warnings">>,
+              details => Result}
+    end.
+
+%% @private Check transport registry integration
+check_transport_registry(Module, ModuleBin) ->
+    Result = validate_registry(Module),
+    case maps:get(status, Result) of
+        passed ->
+            #{name => <<ModuleBin/binary, "_registry">>,
+              status => passed,
+              message => <<"Registry integration validated">>};
+        failed ->
+            #{name => <<ModuleBin/binary, "_registry">>,
+              status => warning,
+              message => <<"Registry integration has warnings">>,
+              details => Result}
+    end.
+
+%% @private Check transport lifecycle
+check_transport_lifecycle(Module, ModuleBin) ->
+    Result = validate_lifecycle(Module),
+    case maps:get(status, Result) of
+        passed ->
+            #{name => <<ModuleBin/binary, "_lifecycle">>,
+              status => passed,
+              message => <<"Lifecycle management validated">>};
+        failed ->
+            #{name => <<ModuleBin/binary, "_lifecycle">>,
+              status => failed,
+              message => <<"Lifecycle validation failed">>,
+              details => Result}
     end.
