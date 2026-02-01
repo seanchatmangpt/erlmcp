@@ -27,46 +27,24 @@
 %%%-----------------------------------------------------------------------------
 -module(erlmcp_profiler).
 
-
 %% API - CPU Profiling
--export([
-    profile/3,
-    profile/4,
-    profile_mfa/3,
-    profile_pid/2,
-    stop_profiling/0
-]).
-
+-export([profile/3, profile/4, profile_mfa/3, profile_pid/2, stop_profiling/0]).
 %% API - Memory Profiling
--export([
-    memory_snapshot/0,
-    memory_snapshot/1,
-    process_memory/1,
-    binary_leaks/0,
-    heap_fragmentation/1
-]).
-
+-export([memory_snapshot/0, memory_snapshot/1, process_memory/1, binary_leaks/0,
+         heap_fragmentation/1]).
 %% API - Flame Graphs
--export([
-    flame_graph/2,
-    export_folded_stacks/2
-]).
-
+-export([flame_graph/2, export_folded_stacks/2]).
 %% API - Live Inspection
--export([
-    inspect_process/1,
-    trace_messages/2
-]).
+-export([inspect_process/1, trace_messages/2]).
 
 -include_lib("kernel/include/logger.hrl").
 
 -type profile_mode() :: fprof | eprof | cprof.
--type profile_opts() :: #{
-    duration => pos_integer(),
-    output => file:filename(),
-    mode => profile_mode(),
-    sorting => time | calls | acc
-}.
+-type profile_opts() ::
+    #{duration => pos_integer(),
+      output => file:filename(),
+      mode => profile_mode(),
+      sorting => time | calls | acc}.
 
 %%%=============================================================================
 %%% CPU PROFILING API
@@ -79,9 +57,12 @@ profile(Module, Duration, Opts) ->
     Output = maps:get(output, Opts, "profile.out"),
 
     case Mode of
-        fprof -> profile_fprof(Module, Duration, Output, Opts);
-        eprof -> profile_eprof(Module, Duration, Output, Opts);
-        cprof -> profile_cprof(Module, Duration, Output, Opts)
+        fprof ->
+            profile_fprof(Module, Duration, Output, Opts);
+        eprof ->
+            profile_eprof(Module, Duration, Output, Opts);
+        cprof ->
+            profile_cprof(Module, Duration, Output, Opts)
     end.
 
 %% @doc Profile specific function in module
@@ -94,7 +75,7 @@ profile(Module, Function, Arity, Opts) ->
 profile_mfa({M, F, A}, Duration, Opts) ->
     Mode = maps:get(mode, Opts, fprof),
     Output = maps:get(output, Opts, "profile.out"),
-    
+
     case Mode of
         fprof ->
             fprof:trace([start, {procs, whereis(M)}]),
@@ -125,7 +106,7 @@ profile_pid(Pid, Opts) ->
     Duration = maps:get(duration, Opts, 10000),
     Mode = maps:get(mode, Opts, fprof),
     Output = maps:get(output, Opts, "profile.out"),
-    
+
     case Mode of
         fprof ->
             fprof:trace([start, {procs, [Pid]}]),
@@ -133,7 +114,10 @@ profile_pid(Pid, Opts) ->
             fprof:trace([stop]),
             fprof:profile(),
             fprof:analyse([{dest, Output}, {sort, acc}]),
-            {ok, #{file => Output, mode => fprof, pid => Pid}};
+            {ok,
+             #{file => Output,
+               mode => fprof,
+               pid => Pid}};
         eprof ->
             eprof:start(),
             eprof:start_profiling([Pid]),
@@ -141,7 +125,10 @@ profile_pid(Pid, Opts) ->
             eprof:stop_profiling(),
             Result = eprof:analyze(total),
             eprof:stop(),
-            {ok, #{result => Result, mode => eprof, pid => Pid}}
+            {ok,
+             #{result => Result,
+               mode => eprof,
+               pid => Pid}}
     end.
 
 %% @doc Stop all active profiling
@@ -166,53 +153,60 @@ memory_snapshot() ->
 memory_snapshot(Opts) ->
     Top = maps:get(top, Opts, 20),
     SortBy = maps:get(sort, Opts, memory),
-    
-    Processes = [{Pid, process_info(Pid, [memory, message_queue_len, reductions, registered_name])}
-                 || Pid <- erlang:processes()],
-    
-    Sorted = lists:sort(
-        fun({_, InfoA}, {_, InfoB}) ->
-            MemA = proplists:get_value(memory, InfoA, 0),
-            MemB = proplists:get_value(memory, InfoB, 0),
-            case SortBy of
-                memory -> MemA >= MemB;
-                reductions -> 
-                    RedA = proplists:get_value(reductions, InfoA, 0),
-                    RedB = proplists:get_value(reductions, InfoB, 0),
-                    RedA >= RedB
-            end
-        end,
-        Processes
-    ),
-    
+
+    Processes =
+        [{Pid, process_info(Pid, [memory, message_queue_len, reductions, registered_name])}
+         || Pid <- erlang:processes()],
+
+    Sorted =
+        lists:sort(fun({_, InfoA}, {_, InfoB}) ->
+                      MemA = proplists:get_value(memory, InfoA, 0),
+                      MemB = proplists:get_value(memory, InfoB, 0),
+                      case SortBy of
+                          memory ->
+                              MemA >= MemB;
+                          reductions ->
+                              RedA = proplists:get_value(reductions, InfoA, 0),
+                              RedB = proplists:get_value(reductions, InfoB, 0),
+                              RedA >= RedB
+                      end
+                   end,
+                   Processes),
+
     TopProcesses = lists:sublist(Sorted, Top),
-    
-    Result = [begin
-        Memory = proplists:get_value(memory, Info, 0),
-        MsgQueue = proplists:get_value(message_queue_len, Info, 0),
-        Reductions = proplists:get_value(reductions, Info, 0),
-        RegName = proplists:get_value(registered_name, Info, undefined),
-        
-        #{
-            pid => Pid,
-            memory_bytes => Memory,
-            memory_mb => Memory / 1024 / 1024,
-            message_queue_len => MsgQueue,
-            reductions => Reductions,
-            registered_name => RegName
-        }
-    end || {Pid, Info} <- TopProcesses],
-    
-    ?LOG_INFO("Memory snapshot: ~p processes, top ~p by ~p", 
-              [length(Processes), Top, SortBy]),
-    
+
+    Result =
+        [begin
+             Memory = proplists:get_value(memory, Info, 0),
+             MsgQueue = proplists:get_value(message_queue_len, Info, 0),
+             Reductions = proplists:get_value(reductions, Info, 0),
+             RegName = proplists:get_value(registered_name, Info, undefined),
+
+             #{pid => Pid,
+               memory_bytes => Memory,
+               memory_mb => Memory / 1024 / 1024,
+               message_queue_len => MsgQueue,
+               reductions => Reductions,
+               registered_name => RegName}
+         end
+         || {Pid, Info} <- TopProcesses],
+
+    ?LOG_INFO("Memory snapshot: ~p processes, top ~p by ~p", [length(Processes), Top, SortBy]),
+
     {ok, Result}.
 
 %% @doc Get detailed memory info for a specific process
 -spec process_memory(pid()) -> {ok, map()} | {error, term()}.
 process_memory(Pid) ->
-    case process_info(Pid, [memory, heap_size, stack_size, total_heap_size, 
-                            message_queue_len, messages, dictionary]) of
+    case process_info(Pid,
+                      [memory,
+                       heap_size,
+                       stack_size,
+                       total_heap_size,
+                       message_queue_len,
+                       messages,
+                       dictionary])
+    of
         undefined ->
             {error, process_not_found};
         Info ->
@@ -221,60 +215,61 @@ process_memory(Pid) ->
             StackSize = proplists:get_value(stack_size, Info, 0),
             TotalHeap = proplists:get_value(total_heap_size, Info, 0),
             MsgQueue = proplists:get_value(message_queue_len, Info, 0),
-            
-            {ok, #{
-                pid => Pid,
-                memory_bytes => Memory,
-                memory_mb => Memory / 1024 / 1024,
-                heap_size_words => HeapSize,
-                stack_size_words => StackSize,
-                total_heap_size_words => TotalHeap,
-                heap_fragmentation_pct => 
-                    case TotalHeap of
-                        0 -> 0.0;
-                        _ -> ((TotalHeap - HeapSize) / TotalHeap) * 100
-                    end,
-                message_queue_len => MsgQueue
-            }}
+
+            {ok,
+             #{pid => Pid,
+               memory_bytes => Memory,
+               memory_mb => Memory / 1024 / 1024,
+               heap_size_words => HeapSize,
+               stack_size_words => StackSize,
+               total_heap_size_words => TotalHeap,
+               heap_fragmentation_pct =>
+                   case TotalHeap of
+                       0 ->
+                           0.0;
+                       _ ->
+                           (TotalHeap - HeapSize) / TotalHeap * 100
+                   end,
+               message_queue_len => MsgQueue}}
     end.
 
 %% @doc Detect binary memory leaks
 -spec binary_leaks() -> {ok, [map()]}.
 binary_leaks() ->
-    Processes = [{Pid, process_info(Pid, [binary, memory, registered_name])}
-                 || Pid <- erlang:processes()],
-    
-    Suspects = lists:filtermap(
-        fun({Pid, Info}) ->
-            case proplists:get_value(binary, Info) of
-                undefined -> false;
-                Binaries ->
-                    TotalBinarySize = lists:sum([Size || {_, Size, _} <- Binaries]),
-                    Memory = proplists:get_value(memory, Info, 0),
-                    RegName = proplists:get_value(registered_name, Info, undefined),
-                    
-                    %% Suspicious if binaries > 50% of process memory
-                    case Memory > 0 andalso (TotalBinarySize / Memory) > 0.5 of
-                        true ->
-                            {true, #{
-                                pid => Pid,
-                                binary_size_bytes => TotalBinarySize,
-                                binary_size_mb => TotalBinarySize / 1024 / 1024,
-                                total_memory_bytes => Memory,
-                                binary_ratio => TotalBinarySize / Memory,
-                                binary_count => length(Binaries),
-                                registered_name => RegName
-                            }};
-                        false -> false
-                    end
-            end
-        end,
-        Processes
-    ),
-    
-    {ok, lists:sort(fun(A, B) -> 
-        maps:get(binary_size_bytes, A) >= maps:get(binary_size_bytes, B)
-    end, Suspects)}.
+    Processes =
+        [{Pid, process_info(Pid, [binary, memory, registered_name])} || Pid <- erlang:processes()],
+
+    Suspects =
+        lists:filtermap(fun({Pid, Info}) ->
+                           case proplists:get_value(binary, Info) of
+                               undefined ->
+                                   false;
+                               Binaries ->
+                                   TotalBinarySize = lists:sum([Size || {_, Size, _} <- Binaries]),
+                                   Memory = proplists:get_value(memory, Info, 0),
+                                   RegName = proplists:get_value(registered_name, Info, undefined),
+
+                                   %% Suspicious if binaries > 50% of process memory
+                                   case Memory > 0 andalso TotalBinarySize / Memory > 0.5 of
+                                       true ->
+                                           {true,
+                                            #{pid => Pid,
+                                              binary_size_bytes => TotalBinarySize,
+                                              binary_size_mb => TotalBinarySize / 1024 / 1024,
+                                              total_memory_bytes => Memory,
+                                              binary_ratio => TotalBinarySize / Memory,
+                                              binary_count => length(Binaries),
+                                              registered_name => RegName}};
+                                       false ->
+                                           false
+                                   end
+                           end
+                        end,
+                        Processes),
+
+    {ok,
+     lists:sort(fun(A, B) -> maps:get(binary_size_bytes, A) >= maps:get(binary_size_bytes, B) end,
+                Suspects)}.
 
 %% @doc Calculate heap fragmentation for a process
 -spec heap_fragmentation(pid()) -> {ok, float()} | {error, term()}.
@@ -285,12 +280,15 @@ heap_fragmentation(Pid) ->
         Info ->
             HeapSize = proplists:get_value(heap_size, Info, 0),
             TotalHeap = proplists:get_value(total_heap_size, Info, 0),
-            
-            Fragmentation = case TotalHeap of
-                0 -> 0.0;
-                _ -> ((TotalHeap - HeapSize) / TotalHeap) * 100
-            end,
-            
+
+            Fragmentation =
+                case TotalHeap of
+                    0 ->
+                        0.0;
+                    _ ->
+                        (TotalHeap - HeapSize) / TotalHeap * 100
+                end,
+
             {ok, Fragmentation}
     end.
 
@@ -306,13 +304,13 @@ flame_graph(ProfileFile, OutputFile) ->
             %% Parse fprof output and convert to folded stack format
             Stacks = parse_fprof_to_stacks(Binary),
             FoldedStacks = fold_stacks(Stacks),
-            
+
             %% Write folded stacks (can be used with flamegraph.pl)
             case file:write_file(OutputFile, FoldedStacks) of
                 ok ->
                     ?LOG_INFO("Flame graph data written to ~s", [OutputFile]),
-                    ?LOG_INFO("Generate SVG: flamegraph.pl ~s > ~s.svg", 
-                             [OutputFile, filename:basename(OutputFile, ".txt")]),
+                    ?LOG_INFO("Generate SVG: flamegraph.pl ~s > ~s.svg",
+                              [OutputFile, filename:basename(OutputFile, ".txt")]),
                     ok;
                 {error, Reason} ->
                     {error, {write_failed, Reason}}
@@ -337,18 +335,19 @@ inspect_process(Pid) ->
         undefined ->
             {error, process_not_found};
         Info ->
-            State = try
-                sys:get_state(Pid, 1000)
-            catch
-                _:_ -> unavailable
-            end,
-            
-            {ok, #{
-                pid => Pid,
-                process_info => Info,
-                state => State,
-                timestamp => erlang:system_time(millisecond)
-            }}
+            State =
+                try
+                    sys:get_state(Pid, 1000)
+                catch
+                    _:_ ->
+                        unavailable
+                end,
+
+            {ok,
+             #{pid => Pid,
+               process_info => Info,
+               state => State,
+               timestamp => erlang:system_time(millisecond)}}
     end.
 
 %% @doc Trace messages for a process
@@ -356,14 +355,15 @@ inspect_process(Pid) ->
 trace_messages(Pid, Duration) ->
     Tracer = spawn(fun() -> message_tracer(Pid, []) end),
     erlang:trace(Pid, true, ['receive', {tracer, Tracer}]),
-    
+
     timer:sleep(Duration),
-    
+
     erlang:trace(Pid, false, ['receive']),
     Tracer ! {get_messages, self()},
-    
+
     receive
-        {messages, Messages} -> {ok, lists:reverse(Messages)}
+        {messages, Messages} ->
+            {ok, lists:reverse(Messages)}
     after 5000 ->
         {ok, []}
     end.
@@ -373,10 +373,10 @@ trace_messages(Pid, Duration) ->
 %%%=============================================================================
 
 -spec profile_fprof(module(), pos_integer(), file:filename(), profile_opts()) ->
-    {ok, map()} | {error, term()}.
+                       {ok, map()} | {error, term()}.
 profile_fprof(Module, Duration, Output, Opts) ->
     Sorting = maps:get(sorting, Opts, acc),
-    
+
     case whereis(Module) of
         undefined ->
             {error, {process_not_registered, Module}};
@@ -386,18 +386,17 @@ profile_fprof(Module, Duration, Output, Opts) ->
             fprof:trace([stop]),
             fprof:profile(),
             fprof:analyse([{dest, Output}, {sort, Sorting}]),
-            
-            {ok, #{
-                file => Output,
-                mode => fprof,
-                module => Module,
-                pid => Pid,
-                duration_ms => Duration
-            }}
+
+            {ok,
+             #{file => Output,
+               mode => fprof,
+               module => Module,
+               pid => Pid,
+               duration_ms => Duration}}
     end.
 
 -spec profile_eprof(module(), pos_integer(), file:filename(), profile_opts()) ->
-    {ok, map()} | {error, term()}.
+                       {ok, map()} | {error, term()}.
 profile_eprof(Module, Duration, _Output, _Opts) ->
     case whereis(Module) of
         undefined ->
@@ -409,30 +408,28 @@ profile_eprof(Module, Duration, _Output, _Opts) ->
             eprof:stop_profiling(),
             Result = eprof:analyze(total, [{sort, time}]),
             eprof:stop(),
-            
-            {ok, #{
-                mode => eprof,
-                module => Module,
-                pid => Pid,
-                duration_ms => Duration,
-                result => Result
-            }}
+
+            {ok,
+             #{mode => eprof,
+               module => Module,
+               pid => Pid,
+               duration_ms => Duration,
+               result => Result}}
     end.
 
 -spec profile_cprof(module(), pos_integer(), file:filename(), profile_opts()) ->
-    {ok, map()} | {error, term()}.
+                       {ok, map()} | {error, term()}.
 profile_cprof(Module, Duration, _Output, _Opts) ->
     cprof:start(Module),
     timer:sleep(Duration),
     Result = cprof:analyse(Module),
     cprof:stop(),
-    
-    {ok, #{
-        mode => cprof,
-        module => Module,
-        duration_ms => Duration,
-        result => Result
-    }}.
+
+    {ok,
+     #{mode => cprof,
+       module => Module,
+       duration_ms => Duration,
+       result => Result}}.
 
 %%%=============================================================================
 %%% INTERNAL FUNCTIONS - FLAME GRAPHS
@@ -443,19 +440,22 @@ parse_fprof_to_stacks(Binary) ->
     Lines = binary:split(Binary, <<"\n">>, [global]),
     %% Simplified parser - in production, use proper fprof format parsing
     lists:filtermap(fun(Line) ->
-        case binary:split(Line, <<" ">>, [global]) of
-            [Function, Time | _] ->
-                {true, #{function => Function, time => Time}};
-            _ -> false
-        end
-    end, Lines).
+                       case binary:split(Line, <<" ">>, [global]) of
+                           [Function, Time | _] ->
+                               {true, #{function => Function, time => Time}};
+                           _ ->
+                               false
+                       end
+                    end,
+                    Lines).
 
 -spec fold_stacks([map()]) -> binary().
 fold_stacks(Stacks) ->
     %% Convert to folded stack format: "func1;func2;func3 100"
-    Folded = lists:map(fun(#{function := Func, time := Time}) ->
-        <<Func/binary, " ", Time/binary, "\n">>
-    end, Stacks),
+    Folded =
+        lists:map(fun(#{function := Func, time := Time}) -> <<Func/binary, " ", Time/binary, "\n">>
+                  end,
+                  Stacks),
     iolist_to_binary(Folded).
 
 %%%=============================================================================

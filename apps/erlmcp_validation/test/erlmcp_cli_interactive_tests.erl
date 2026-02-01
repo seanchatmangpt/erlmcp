@@ -13,6 +13,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_interactive_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
@@ -23,8 +24,7 @@ cli_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Start interactive session", fun test_start_session/0},
+     [{"Start interactive session", fun test_start_session/0},
       {"Stop interactive session", fun test_stop_session/0},
       {"Parse simple command", fun test_parse_simple_command/0},
       {"Parse command with arguments", fun test_parse_command_with_args/0},
@@ -53,8 +53,7 @@ cli_test_() ->
       {"Command chaining with &&", fun test_command_chaining/0},
       {"Command piping", fun test_command_piping/0},
       {"Background execution", fun test_background_execution/0},
-      {"Auto-suggestion display", fun test_auto_suggestions/0}
-     ]}.
+      {"Auto-suggestion display", fun test_auto_suggestions/0}]}.
 
 setup() ->
     %% Start required applications
@@ -397,15 +396,21 @@ test_concurrent_commands() ->
     {ok, Pid} = erlmcp_cli_interactive:start_link(),
 
     %% Spawn 10 concurrent command executions
-    Pids = [spawn(fun() ->
-        {ok, _} = erlmcp_cli_interactive:execute(Pid, "help")
-    end) || _ <- lists:seq(1, 10)],
+    Pids =
+        [spawn(fun() -> {ok, _} = erlmcp_cli_interactive:execute(Pid, "help") end)
+         || _ <- lists:seq(1, 10)],
 
     %% Wait for all to complete
     [begin
-        Ref = monitor(process, P),
-        receive {'DOWN', Ref, process, P, _} -> ok after 5000 -> error(timeout) end
-    end || P <- Pids],
+         Ref = monitor(process, P),
+         receive
+             {'DOWN', Ref, process, P, _} ->
+                 ok
+         after 5000 ->
+             error(timeout)
+         end
+     end
+     || P <- Pids],
 
     %% Session should be stable
     ?assert(is_process_alive(Pid)),
@@ -532,14 +537,12 @@ edge_cases_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Empty history navigation", fun test_empty_history_navigation/0},
+     [{"Empty history navigation", fun test_empty_history_navigation/0},
       {"History overflow", fun test_history_overflow/0},
       {"Invalid alias definition", fun test_invalid_alias/0},
       {"Circular alias reference", fun test_circular_alias/0},
       {"Unicode input", fun test_unicode_input/0},
-      {"Very long command", fun test_long_command/0}
-     ]}.
+      {"Very long command", fun test_long_command/0}]}.
 
 test_empty_history_navigation() ->
     {ok, Pid} = erlmcp_cli_interactive:start_link(),

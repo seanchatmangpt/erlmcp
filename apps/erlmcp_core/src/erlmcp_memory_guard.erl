@@ -22,19 +22,13 @@
 -module(erlmcp_memory_guard).
 
 -include("erlmcp.hrl").
+
 %% Note: erlmcp.hrl already includes refusal macros, don't include erlmcp_refusal.hrl
 -include_lib("kernel/include/logger.hrl").
 
 %% API
--export([
-    check_allocation/1,
-    check_allocation/2,
-    get_memory_stats/0,
-    get_system_limit/0,
-    get_payload_limit/0,
-    get_circuit_breaker_threshold/0,
-    is_circuit_breaker_open/0
-]).
+-export([check_allocation/1, check_allocation/2, get_memory_stats/0, get_system_limit/0,
+         get_payload_limit/0, get_circuit_breaker_threshold/0, is_circuit_breaker_open/0]).
 
 %%====================================================================
 %% Constants
@@ -49,15 +43,13 @@
 %% Type Definitions
 %%====================================================================
 
--type memory_stats() :: #{
-    total => non_neg_integer(),
-    used => non_neg_integer(),
-    available => non_neg_integer(),
-    used_percent => float(),
-    system_limit => non_neg_integer(),
-    circuit_breaker_open => boolean()
-}.
-
+-type memory_stats() ::
+    #{total => non_neg_integer(),
+      used => non_neg_integer(),
+      available => non_neg_integer(),
+      used_percent => float(),
+      system_limit => non_neg_integer(),
+      circuit_breaker_open => boolean()}.
 -type allocation_result() :: ok | {error, resource_exhausted | payload_too_large}.
 
 %%====================================================================
@@ -72,15 +64,12 @@ check_allocation(PayloadSize) when is_integer(PayloadSize), PayloadSize >= 0 ->
 %% @doc Check if payload allocation is safe with custom limit
 -spec check_allocation(non_neg_integer(), pos_integer()) -> allocation_result().
 check_allocation(PayloadSize, MaxPayloadSize)
-  when is_integer(PayloadSize), PayloadSize >= 0,
-       is_integer(MaxPayloadSize), MaxPayloadSize > 0 ->
-
+    when is_integer(PayloadSize), PayloadSize >= 0, is_integer(MaxPayloadSize),
+         MaxPayloadSize > 0 ->
     %% Check 1: Payload size limit
     case PayloadSize > MaxPayloadSize of
         true ->
-            ?LOG_WARNING("Payload too large: ~p bytes (max: ~p)", [
-                PayloadSize, MaxPayloadSize
-            ]),
+            ?LOG_WARNING("Payload too large: ~p bytes (max: ~p)", [PayloadSize, MaxPayloadSize]),
             {error, payload_too_large};
         false ->
             %% Check 2: System memory circuit breaker
@@ -88,8 +77,7 @@ check_allocation(PayloadSize, MaxPayloadSize)
                 ok ->
                     ok;
                 {error, circuit_breaker_open} ->
-                    ?LOG_ERROR("Circuit breaker open: system memory at ~p%",
-                        [get_memory_stats()]),
+                    ?LOG_ERROR("Circuit breaker open: system memory at ~p%", [get_memory_stats()]),
                     {error, resource_exhausted}
             end
     end.
@@ -99,17 +87,15 @@ check_allocation(PayloadSize, MaxPayloadSize)
 get_memory_stats() ->
     TotalMemory = erlang:memory(total),
     SystemLimit = get_system_limit(),
-    UsedPercent = (TotalMemory / SystemLimit) * 100,
+    UsedPercent = TotalMemory / SystemLimit * 100,
     CircuitBreakerOpen = UsedPercent > ?CIRCUIT_BREAKER_THRESHOLD * 100,
 
-    #{
-        total => TotalMemory,
-        used => TotalMemory,
-        available => SystemLimit - TotalMemory,
-        used_percent => UsedPercent,
-        system_limit => SystemLimit,
-        circuit_breaker_open => CircuitBreakerOpen
-    }.
+    #{total => TotalMemory,
+      used => TotalMemory,
+      available => SystemLimit - TotalMemory,
+      used_percent => UsedPercent,
+      system_limit => SystemLimit,
+      circuit_breaker_open => CircuitBreakerOpen}.
 
 %% @doc Get configured system memory limit
 -spec get_system_limit() -> pos_integer().
@@ -171,6 +157,7 @@ check_system_memory() ->
 %%====================================================================
 
 -ifdef(TEST).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %% Test payload size check

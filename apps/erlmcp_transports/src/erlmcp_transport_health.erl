@@ -13,18 +13,11 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, start_link/1,
-         check_health/1, check_health/2,
-         get_health_status/1,
-         register_transport/3,
-         unregister_transport/1,
-         update_metrics/3,
-         trigger_health_check/1,
+-export([start_link/0, start_link/1, check_health/1, check_health/2, get_health_status/1,
+         register_transport/3, unregister_transport/1, update_metrics/3, trigger_health_check/1,
          reset_metrics/1]).
-
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -35,29 +28,26 @@
 
 -type transport_id() :: atom().
 -type health_status() :: healthy | degraded | unhealthy | unknown.
--type health_metrics() :: #{
-    timestamp => integer(),
-    connection_status => up | down | unknown,
-    latency_ms => number() | undefined,
-    error_rate => float(),
-    throughput => number(),
-    last_error => term() | undefined
-}.
--type transport_health() :: #{
-    transport_id => transport_id(),
-    status => health_status(),
-    metrics => health_metrics(),
-    last_check => integer(),
-    consecutive_failures => non_neg_integer(),
-    last_healthy => integer() | undefined
-}.
+-type health_metrics() ::
+    #{timestamp => integer(),
+      connection_status => up | down | unknown,
+      latency_ms => number() | undefined,
+      error_rate => float(),
+      throughput => number(),
+      last_error => term() | undefined}.
+-type transport_health() ::
+    #{transport_id => transport_id(),
+      status => health_status(),
+      metrics => health_metrics(),
+      last_check => integer(),
+      consecutive_failures => non_neg_integer(),
+      last_healthy => integer() | undefined}.
 
--record(state, {
-    check_interval = ?DEFAULT_CHECK_INTERVAL :: pos_integer(),
-    health_checks = #{} :: #{transport_id() => transport_health()},
-    check_timer :: reference() | undefined,
-    metrics_history = #{} :: #{transport_id() => [health_metrics()]}
-}).
+-record(state,
+        {check_interval = ?DEFAULT_CHECK_INTERVAL :: pos_integer(),
+         health_checks = #{} :: #{transport_id() => transport_health()},
+         check_timer :: reference() | undefined,
+         metrics_history = #{} :: #{transport_id() => [health_metrics()]}}).
 
 %%%===================================================================
 %%% API
@@ -120,15 +110,11 @@ reset_metrics(TransportId) ->
 init(Opts) ->
     CheckInterval = maps:get(check_interval, Opts, ?DEFAULT_CHECK_INTERVAL),
     Timer = erlang:send_after(CheckInterval, self(), scheduled_check),
-    {ok, #state{
-        check_interval = CheckInterval,
-        check_timer = Timer
-    }}.
+    {ok, #state{check_interval = CheckInterval, check_timer = Timer}}.
 
 handle_call({check_health, TransportId}, _From, State) ->
     Result = perform_health_check(TransportId, State),
     {reply, Result, State};
-
 handle_call({get_health_status, TransportId}, _From, State) ->
     case maps:get(TransportId, State#state.health_checks, undefined) of
         undefined ->
@@ -136,58 +122,54 @@ handle_call({get_health_status, TransportId}, _From, State) ->
         Health ->
             {reply, {ok, Health}, State}
     end;
-
 handle_call({register_transport, TransportId, Pid, Config}, _From, State) ->
-    InitialHealth = #{
-        transport_id => TransportId,
-        status => unknown,
-        metrics => initial_metrics(),
-        last_check => erlang:system_time(millisecond),
-        consecutive_failures => 0,
-        last_healthy => undefined
-    },
+    InitialHealth =
+        #{transport_id => TransportId,
+          status => unknown,
+          metrics => initial_metrics(),
+          last_check => erlang:system_time(millisecond),
+          consecutive_failures => 0,
+          last_healthy => undefined},
     NewHealthChecks = maps:put(TransportId, InitialHealth, State#state.health_checks),
     MonitorRef = monitor(process, Pid),
     ?LOG_INFO("Registered transport ~p for health monitoring", [TransportId]),
     {reply, ok, State#state{health_checks = NewHealthChecks}};
-
 handle_call({unregister_transport, TransportId}, _From, State) ->
     NewHealthChecks = maps:remove(TransportId, State#state.health_checks),
     NewHistory = maps:remove(TransportId, State#state.metrics_history),
     ?LOG_INFO("Unregistered transport ~p from health monitoring", [TransportId]),
     {reply, ok, State#state{health_checks = NewHealthChecks, metrics_history = NewHistory}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast({update_metrics, TransportId, MetricName, Value}, State) ->
-    NewState = case maps:get(TransportId, State#state.health_checks, undefined) of
-        undefined ->
-            State;
-        _Health ->
-            update_transport_metrics(TransportId, MetricName, Value, State)
-    end,
+    NewState =
+        case maps:get(TransportId, State#state.health_checks, undefined) of
+            undefined ->
+                State;
+            _Health ->
+                update_transport_metrics(TransportId, MetricName, Value, State)
+        end,
     {noreply, NewState};
-
 handle_cast({trigger_health_check, TransportId}, State) ->
-    NewState = case maps:get(TransportId, State#state.health_checks, undefined) of
-        undefined ->
-            State;
-        _Health ->
-            {ok, _Status} = perform_health_check(TransportId, State),
-            State
-    end,
+    NewState =
+        case maps:get(TransportId, State#state.health_checks, undefined) of
+            undefined ->
+                State;
+            _Health ->
+                {ok, _Status} = perform_health_check(TransportId, State),
+                State
+        end,
     {noreply, NewState};
-
 handle_cast({reset_metrics, TransportId}, State) ->
-    NewState = case maps:get(TransportId, State#state.health_checks, undefined) of
-        undefined ->
-            State;
-        _Health ->
-            reset_transport_metrics(TransportId, State)
-    end,
+    NewState =
+        case maps:get(TransportId, State#state.health_checks, undefined) of
+            undefined ->
+                State;
+            _Health ->
+                reset_transport_metrics(TransportId, State)
+        end,
     {noreply, NewState};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -196,18 +178,18 @@ handle_info(scheduled_check, State) ->
     NewState = perform_all_health_checks(State),
     Timer = erlang:send_after(State#state.check_interval, self(), scheduled_check),
     {noreply, NewState#state{check_timer = Timer}};
-
 handle_info({'DOWN', _MonitorRef, process, _Pid, _Reason}, State) ->
     % Handle process death - transport died
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{check_timer = Timer}) ->
     case Timer of
-        undefined -> ok;
-        _ -> erlang:cancel_timer(Timer)
+        undefined ->
+            ok;
+        _ ->
+            erlang:cancel_timer(Timer)
     end,
     ok.
 
@@ -240,14 +222,21 @@ perform_health_check(TransportId, State) ->
 check_transport_status(TransportId, _Health) ->
     % Determine transport type and perform appropriate check
     TransportType = get_transport_type(TransportId),
-    Result = case TransportType of
-        tcp -> check_tcp_transport(TransportId);
-        stdio -> check_stdio_transport(TransportId);
-        sse -> check_sse_transport(TransportId);
-        http -> check_http_transport(TransportId);
-        websocket -> check_ws_transport(TransportId);
-        _ -> {ok, #{status => unknown}}
-    end,
+    Result =
+        case TransportType of
+            tcp ->
+                check_tcp_transport(TransportId);
+            stdio ->
+                check_stdio_transport(TransportId);
+            sse ->
+                check_sse_transport(TransportId);
+            http ->
+                check_http_transport(TransportId);
+            websocket ->
+                check_ws_transport(TransportId);
+            _ ->
+                {ok, #{status => unknown}}
+        end,
 
     % Convert result to health_status
     case Result of
@@ -284,16 +273,22 @@ get_transport_type_from_name(TransportId) ->
                             case string:find(TransportIdStr, "stdio") of
                                 nomatch ->
                                     case string:find(TransportIdStr, "sse") of
-                                        nomatch -> unknown;
-                                        _ -> sse
+                                        nomatch ->
+                                            unknown;
+                                        _ ->
+                                            sse
                                     end;
-                                _ -> stdio
+                                _ ->
+                                    stdio
                             end;
-                        _ -> tcp
+                        _ ->
+                            tcp
                     end;
-                _ -> http
+                _ ->
+                    http
             end;
-        _ -> websocket
+        _ ->
+            websocket
     end.
 
 %% @doc Check TCP transport health
@@ -310,7 +305,11 @@ check_tcp_transport(TransportId) ->
                 _ ->
                     % Attempt connection to verify endpoint is reachable
                     StartTime = erlang:monotonic_time(microsecond),
-                    case gen_tcp:connect(Host, Port, [binary, {active, false}], ?HEALTH_CHECK_TIMEOUT) of
+                    case gen_tcp:connect(Host,
+                                         Port,
+                                         [binary, {active, false}],
+                                         ?HEALTH_CHECK_TIMEOUT)
+                    of
                         {ok, Socket} ->
                             EndTime = erlang:monotonic_time(microsecond),
                             LatencyUs = EndTime - StartTime,
@@ -366,11 +365,15 @@ check_sse_transport(TransportId) ->
             Host = maps:get(host, Config, "localhost"),
             Port = maps:get(port, Config, 8080),
             Path = maps:get(path, Config, "/mcp/sse"),
-            Scheme = case maps:get(ssl, Config, false) of
-                true -> "https";
-                false -> "http"
-            end,
-            URL = lists:flatten(io_lib:format("~s://~s:~p~s", [Scheme, Host, Port, Path])),
+            Scheme =
+                case maps:get(ssl, Config, false) of
+                    true ->
+                        "https";
+                    false ->
+                        "http"
+                end,
+            URL = lists:flatten(
+                      io_lib:format("~s://~s:~p~s", [Scheme, Host, Port, Path])),
             % Make HTTP HEAD request to verify endpoint is responding
             check_http_endpoint(URL);
         {error, not_found} ->
@@ -387,11 +390,15 @@ check_http_transport(TransportId) ->
             Host = maps:get(host, Config, "localhost"),
             Port = maps:get(port, Config, 8080),
             Path = maps:get(path, Config, "/mcp"),
-            Scheme = case maps:get(ssl, Config, false) of
-                true -> "https";
-                false -> "http"
-            end,
-            URL = lists:flatten(io_lib:format("~s://~s:~p~s", [Scheme, Host, Port, Path])),
+            Scheme =
+                case maps:get(ssl, Config, false) of
+                    true ->
+                        "https";
+                    false ->
+                        "http"
+                end,
+            URL = lists:flatten(
+                      io_lib:format("~s://~s:~p~s", [Scheme, Host, Port, Path])),
             % Make HTTP HEAD request to verify endpoint is responding
             check_http_endpoint(URL);
         {error, not_found} ->
@@ -431,20 +438,30 @@ check_http_endpoint(URL) ->
 
     % Parse URL
     URIMap = uri_string:parse(URL),
-    Scheme = case maps:get(scheme, URIMap, "http") of
-        "https" -> https;
-        _ -> http
-    end,
+    Scheme =
+        case maps:get(scheme, URIMap, "http") of
+            "https" ->
+                https;
+            _ ->
+                http
+        end,
     Host = maps:get(host, URIMap, "localhost"),
-    Port = maps:get(port, URIMap, case Scheme of https -> 443; _ -> 80 end),
+    Port =
+        maps:get(port,
+                 URIMap,
+                 case Scheme of
+                     https ->
+                         443;
+                     _ ->
+                         80
+                 end),
     Path = maps:get(path, URIMap, "/"),
 
     % Open connection with gun
-    Opts = #{
-        protocols => [http],
-        retry => 0,
-        connect_timeout => ?HEALTH_CHECK_TIMEOUT
-    },
+    Opts =
+        #{protocols => [http],
+          retry => 0,
+          connect_timeout => ?HEALTH_CHECK_TIMEOUT},
 
     case gun:open(Host, Port, Opts) of
         {ok, ConnPid} ->
@@ -460,11 +477,10 @@ check_http_endpoint(URL) ->
                             gun:close(ConnPid),
                             % Accept 2xx, 3xx, 4xx as healthy (server is responding)
                             % Only 5xx or connection failure is unhealthy
-                            if
-                                Status >= 200, Status < 500 ->
-                                    {ok, #{status => healthy, latency_ms => LatencyMs}};
-                                true ->
-                                    {error, {http_status, Status}}
+                            if Status >= 200, Status < 500 ->
+                                   {ok, #{status => healthy, latency_ms => LatencyMs}};
+                               true ->
+                                   {error, {http_status, Status}}
                             end;
                         {error, Reason} ->
                             gun:close(ConnPid),
@@ -483,9 +499,11 @@ check_http_endpoint(URL) ->
 perform_all_health_checks(State) ->
     TransportIds = maps:keys(State#state.health_checks),
     lists:foldl(fun(TransportId, AccState) ->
-        {ok, _Status} = perform_health_check(TransportId, AccState),
-        AccState
-    end, State, TransportIds).
+                   {ok, _Status} = perform_health_check(TransportId, AccState),
+                   AccState
+                end,
+                State,
+                TransportIds).
 
 %% @doc Update transport metrics
 -spec update_transport_metrics(transport_id(), atom(), number(), #state{}) -> #state{}.
@@ -516,11 +534,9 @@ reset_transport_metrics(TransportId, State) ->
 %% @doc Create initial metrics
 -spec initial_metrics() -> health_metrics().
 initial_metrics() ->
-    #{
-        timestamp => erlang:system_time(millisecond),
-        connection_status => unknown,
-        latency_ms => undefined,
-        error_rate => 0.0,
-        throughput => 0,
-        last_error => undefined
-    }.
+    #{timestamp => erlang:system_time(millisecond),
+      connection_status => unknown,
+      latency_ms => undefined,
+      error_rate => 0.0,
+      throughput => 0,
+      last_error => undefined}.

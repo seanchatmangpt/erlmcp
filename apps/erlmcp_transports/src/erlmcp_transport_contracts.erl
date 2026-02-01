@@ -125,22 +125,19 @@
 %%% - Send messages to owner as `{transport_message, Binary}`
 %%% - Unregister from registry on termination
 
--type stdio_config() :: #{
-    transport_id := atom(),
-    owner := pid(),
-    max_message_size => pos_integer(),
-    test_mode => boolean()
-}.
-
--type stdio_state() :: #{
-    owner := pid(),
-    owner_monitor := reference() | undefined,
-    reader := pid() | undefined,
-    buffer := binary(),
-    test_mode := boolean(),
-    max_message_size := pos_integer(),
-    transport_id := atom()
-}.
+-type stdio_config() ::
+    #{transport_id := atom(),
+      owner := pid(),
+      max_message_size => pos_integer(),
+      test_mode => boolean()}.
+-type stdio_state() ::
+    #{owner := pid(),
+      owner_monitor := reference() | undefined,
+      reader := pid() | undefined,
+      buffer := binary(),
+      test_mode := boolean(),
+      max_message_size := pos_integer(),
+      transport_id := atom()}.
 
 %%====================================================================
 %% TCP Transport Contract
@@ -270,51 +267,64 @@
 %%% - resource_monitor_timer: Reference for resource checks
 
 -type tcp_mode() :: client | server.
+-type tcp_config() ::
+    #{mode := tcp_mode(),
+      transport_id := atom(),
+      host => inet:hostname() | inet:ip_address(),
+      port => inet:port_number(),
+      owner => pid(),
+      server_id => atom(),
+      num_acceptors => pos_integer(),
+      max_connections => pos_integer() | infinity,
+      connect_timeout => timeout(),
+      max_reconnect_attempts => pos_integer() | infinity,
+      keepalive => boolean(),
+      nodelay => boolean(),
+      buffer_size => pos_integer(),
+      use_pool => boolean(),
+      pool_name => atom(),
+      pool_min_size => pos_integer(),
+      pool_max_size => pos_integer(),
+      pool_strategy => round_robin | least_loaded | random}.
 
--type tcp_config() :: #{
-    mode := tcp_mode(),
-    transport_id := atom(),
-    host => inet:hostname() | inet:ip_address(),  % Required for client
-    port => inet:port_number(),                   % Required for server/client
-    owner => pid(),
-    server_id => atom(),
-    num_acceptors => pos_integer(),               % Server only
-    max_connections => pos_integer() | infinity,  % Server only
-    connect_timeout => timeout(),                 % Client only
-    max_reconnect_attempts => pos_integer() | infinity,  % Client only
-    keepalive => boolean(),
-    nodelay => boolean(),
-    buffer_size => pos_integer(),
+                                                  % Required for client
+                   % Required for server/client
+
+                                                  % Server only
+  % Server only
+
+                                                  % Client only
+  % Client only
+
     % Pool configuration
-    use_pool => boolean(),
-    pool_name => atom(),
-    pool_min_size => pos_integer(),
-    pool_max_size => pos_integer(),
-    pool_strategy => round_robin | least_loaded | random
-}.
 
--type tcp_state() :: #{
-    mode := tcp_mode(),
-    transport_id := atom(),
-    server_id => atom(),
-    socket => gen_tcp:socket() | undefined,
-    ranch_ref => ranch:ref() | undefined,  % Server mode only
-    owner := pid(),
-    host => inet:hostname(),                % Client mode
-    port => inet:port_number(),
-    connected := boolean(),
-    buffer := binary(),
-    reconnect_timer => reference() | undefined,
-    reconnect_attempts := non_neg_integer(),
-    max_reconnect_attempts => pos_integer() | infinity,
-    bytes_sent := non_neg_integer(),
-    bytes_received := non_neg_integer(),
-    idle_timer => reference() | undefined,
-    resource_monitor_timer => reference() | undefined,
-    last_activity := integer(),
-    max_message_size := pos_integer(),
-    initialized => boolean()  % Server: tracks successful init
-}.
+-type tcp_state() ::
+    #{mode := tcp_mode(),
+      transport_id := atom(),
+      server_id => atom(),
+      socket => gen_tcp:socket() | undefined,
+      ranch_ref => ranch:ref() | undefined,
+      owner := pid(),
+      host => inet:hostname(),
+      port => inet:port_number(),
+      connected := boolean(),
+      buffer := binary(),
+      reconnect_timer => reference() | undefined,
+      reconnect_attempts := non_neg_integer(),
+      max_reconnect_attempts => pos_integer() | infinity,
+      bytes_sent := non_neg_integer(),
+      bytes_received := non_neg_integer(),
+      idle_timer => reference() | undefined,
+      resource_monitor_timer => reference() | undefined,
+      last_activity := integer(),
+      max_message_size := pos_integer(),
+      initialized => boolean()}.
+
+                                           % Server mode only
+
+                                            % Client mode
+
+                              % Server: tracks successful init
 
 %%====================================================================
 %% HTTP/SSE Transport Contract
@@ -426,50 +436,42 @@
 %%% - sse_connections: Map of session_id → SSE stream
 
 -type http_method() :: get | post | put | delete.
-
--type http_config() :: #{
-    transport_id := atom(),
-    url := binary() | string(),
-    owner := pid(),
-    method => http_method(),
-    headers => [{binary(), binary()}],
-    timeout => timeout(),
-    connect_timeout => timeout(),
-    max_retries => non_neg_integer(),
-    retry_delay => pos_integer(),
-    ssl_options => [ssl:tls_client_option()],
-    pool_size => non_neg_integer()
-}.
-
--type sse_config() :: #{
-    transport_id := atom(),
-    port := inet:port_number(),
-    path => binary(),
-    owner := pid(),
-    max_connections => pos_integer(),
-    event_buffer_size => pos_integer(),
-    keepalive_interval => pos_integer(),
-    reconnect_timeout => timeout()
-}.
-
--type http_state() :: #{
-    transport_id := atom(),
-    gun_pid => pid() | undefined,
-    stream_ref => reference() | undefined,
-    url := binary(),
-    method := http_method(),
-    headers := [{binary(), binary()}],
-    pending_requests := #{term() => term()},
-    max_message_size := pos_integer()
-}.
-
--type sse_state() :: #{
-    transport_id := atom(),
-    cowboy_pid => pid() | undefined,
-    sse_connections := #{binary() => pid()},
-    event_buffer_size := pos_integer(),
-    keepalive_interval := pos_integer()
-}.
+-type http_config() ::
+    #{transport_id := atom(),
+      url := binary() | string(),
+      owner := pid(),
+      method => http_method(),
+      headers => [{binary(), binary()}],
+      timeout => timeout(),
+      connect_timeout => timeout(),
+      max_retries => non_neg_integer(),
+      retry_delay => pos_integer(),
+      ssl_options => [ssl:tls_client_option()],
+      pool_size => non_neg_integer()}.
+-type sse_config() ::
+    #{transport_id := atom(),
+      port := inet:port_number(),
+      path => binary(),
+      owner := pid(),
+      max_connections => pos_integer(),
+      event_buffer_size => pos_integer(),
+      keepalive_interval => pos_integer(),
+      reconnect_timeout => timeout()}.
+-type http_state() ::
+    #{transport_id := atom(),
+      gun_pid => pid() | undefined,
+      stream_ref => reference() | undefined,
+      url := binary(),
+      method := http_method(),
+      headers := [{binary(), binary()}],
+      pending_requests := #{term() => term()},
+      max_message_size := pos_integer()}.
+-type sse_state() ::
+    #{transport_id := atom(),
+      cowboy_pid => pid() | undefined,
+      sse_connections := #{binary() => pid()},
+      event_buffer_size := pos_integer(),
+      keepalive_interval := pos_integer()}.
 
 %%====================================================================
 %% WebSocket Transport Contract
@@ -591,45 +593,41 @@
 %%% - backpressure_state: Flow control state
 %%% - Statistics: messages_received/sent, bytes_received/sent, ping/pong counts
 
--type ws_config() :: #{
-    transport_id := atom(),
-    port := inet:port_number(),
-    path => binary(),
-    max_message_size => pos_integer(),
-    strict_delimiter_check => boolean(),
-    validate_utf8 => boolean(),
-    max_connections => pos_integer(),
-    connect_timeout => timeout(),
-    frame_buffer_size => pos_integer()
-}.
-
+-type ws_config() ::
+    #{transport_id := atom(),
+      port := inet:port_number(),
+      path => binary(),
+      max_message_size => pos_integer(),
+      strict_delimiter_check => boolean(),
+      validate_utf8 => boolean(),
+      max_connections => pos_integer(),
+      connect_timeout => timeout(),
+      frame_buffer_size => pos_integer()}.
 -type ws_backpressure_state() :: inactive | active.
-
--type ws_state() :: #{
-    transport_id := binary(),
-    registry_pid := pid(),
-    connection_info := map(),
-    session_id := binary(),
-    ping_timer => reference() | undefined,
-    fragment_buffer => binary() | undefined,
-    fragment_start_time => integer() | undefined,
-    max_message_size := integer(),
-    strict_delimiter_check := boolean(),
-    validate_utf8 := boolean(),
-    frame_buffer_size := integer(),
-    frame_buffer_used := integer(),
-    backpressure_state := ws_backpressure_state(),
-    backpressure_timer => reference() | undefined,
-    messages_pending := non_neg_integer(),
-    bytes_buffered := non_neg_integer(),
-    messages_received := non_neg_integer(),
-    messages_sent := non_neg_integer(),
-    bytes_received := non_neg_integer(),
-    bytes_sent := non_neg_integer(),
-    ping_count := non_neg_integer(),
-    pong_count := non_neg_integer(),
-    connection_start_time := integer()
-}.
+-type ws_state() ::
+    #{transport_id := binary(),
+      registry_pid := pid(),
+      connection_info := map(),
+      session_id := binary(),
+      ping_timer => reference() | undefined,
+      fragment_buffer => binary() | undefined,
+      fragment_start_time => integer() | undefined,
+      max_message_size := integer(),
+      strict_delimiter_check := boolean(),
+      validate_utf8 := boolean(),
+      frame_buffer_size := integer(),
+      frame_buffer_used := integer(),
+      backpressure_state := ws_backpressure_state(),
+      backpressure_timer => reference() | undefined,
+      messages_pending := non_neg_integer(),
+      bytes_buffered := non_neg_integer(),
+      messages_received := non_neg_integer(),
+      messages_sent := non_neg_integer(),
+      bytes_received := non_neg_integer(),
+      bytes_sent := non_neg_integer(),
+      ping_count := non_neg_integer(),
+      pong_count := non_neg_integer(),
+      connection_start_time := integer()}.
 
 %%====================================================================
 %% Universal Transport Behavior Callbacks
@@ -844,25 +842,17 @@
 %% Export Type Specifications
 %%====================================================================
 
--export_type([
-    % STDIO
-    stdio_config/0,
-    stdio_state/0,
+-export_type([stdio_config/0, stdio_state/0, tcp_mode/0, tcp_config/0, tcp_state/0, http_method/0,
+              http_config/0, http_state/0, sse_config/0, sse_state/0, ws_config/0, ws_state/0,
+              ws_backpressure_state/0]).
+
+                                            % STDIO
+
     % TCP
-    tcp_mode/0,
-    tcp_config/0,
-    tcp_state/0,
+
     % HTTP/SSE
-    http_method/0,
-    http_config/0,
-    http_state/0,
-    sse_config/0,
-    sse_state/0,
+
     % WebSocket
-    ws_config/0,
-    ws_state/0,
-    ws_backpressure_state/0
-]).
 
 %%====================================================================
 %% Documentation Functions (Non-executable)

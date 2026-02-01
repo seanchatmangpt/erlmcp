@@ -34,42 +34,25 @@
 %%% @end
 %%%-----------------------------------------------------------------------------
 -module(erlmcp_hooks).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    pre_task/2,
-    post_task/1,
-    post_task/2,
-    pre_edit/2,
-    post_edit/2,
-    session_start/1,
-    session_end/1
-]).
-
+-export([start_link/0, pre_task/2, post_task/1, post_task/2, pre_edit/2, post_edit/2,
+         session_start/1, session_end/1]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %%%=============================================================================
 %%% Type Definitions
 %%%=============================================================================
 
 -type task_id() :: binary().
--type task_context() :: #{
-    description => binary(),
-    tool => binary(),
-    file_path => binary(),
-    session_id => binary()
-}.
-
+-type task_context() ::
+    #{description => binary(),
+      tool => binary(),
+      file_path => binary(),
+      session_id => binary()}.
 -type hook_result() :: {pass, map()} | {fail, map()}.
 
 -export_type([task_id/0, task_context/0, hook_result/0]).
@@ -84,11 +67,10 @@
 %%% gen_server State
 %%%=============================================================================
 
--record(state, {
-    hooks_enabled = true :: boolean(),
-    auto_format = true :: boolean(),
-    quality_gates_enabled = true :: boolean()
-}).
+-record(state,
+        {hooks_enabled = true :: boolean(),
+         auto_format = true :: boolean(),
+         quality_gates_enabled = true :: boolean()}).
 
 %%%=============================================================================
 %%% API Functions
@@ -216,27 +198,21 @@ init([]) ->
 handle_call({pre_task, TaskId, Context}, _From, State) ->
     Result = do_pre_task(TaskId, Context, State),
     {reply, Result, State};
-
 handle_call({post_task, TaskId, Context}, _From, State) ->
     Result = do_post_task(TaskId, Context, State),
     {reply, Result, State};
-
 handle_call({pre_edit, FilePath, Context}, _From, State) ->
     Result = do_pre_edit(FilePath, Context, State),
     {reply, Result, State};
-
 handle_call({post_edit, FilePath, Context}, _From, State) ->
     Result = do_post_edit(FilePath, Context, State),
     {reply, Result, State};
-
 handle_call({session_start, SessionId}, _From, State) ->
     Result = do_session_start(SessionId, State),
     {reply, Result, State};
-
 handle_call({session_end, SessionId}, _From, State) ->
     Result = do_session_end(SessionId, State),
     {reply, Result, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -266,19 +242,17 @@ do_pre_task(TaskId, Context, _State) ->
     % Validate task description
     case maps:get(description, Context, <<>>) of
         <<>> ->
-            {fail, #{
-                hook => pre_task,
-                task_id => TaskId,
-                error => <<"Task description is empty">>,
-                severity => medium
-            }};
+            {fail,
+             #{hook => pre_task,
+               task_id => TaskId,
+               error => <<"Task description is empty">>,
+               severity => medium}};
         Description ->
             io:format("  Task: ~s~n", [Description]),
-            {pass, #{
-                hook => pre_task,
-                task_id => TaskId,
-                validated => true
-            }}
+            {pass,
+             #{hook => pre_task,
+               task_id => TaskId,
+               validated => true}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -292,7 +266,10 @@ do_post_task(TaskId, Context, State) ->
     case State#state.quality_gates_enabled of
         false ->
             io:format("  Quality gates DISABLED (development mode)~n"),
-            {pass, #{hook => post_task, task_id => TaskId, gates_disabled => true}};
+            {pass,
+             #{hook => post_task,
+               task_id => TaskId,
+               gates_disabled => true}};
         true ->
             % Convert task ID to SKU ID
             SkuId = task_id_to_sku(TaskId, Context),
@@ -307,13 +284,12 @@ do_post_task(TaskId, Context, State) ->
                             io:format("  Total gates: ~p~n", [length(Receipts)]),
                             io:format("  Task completion: ALLOWED~n"),
                             io:format("==================================================~n"),
-                            {pass, #{
-                                hook => post_task,
-                                task_id => TaskId,
-                                sku_id => SkuId,
-                                gates_passed => length(Receipts),
-                                receipts => Receipts
-                            }};
+                            {pass,
+                             #{hook => post_task,
+                               task_id => TaskId,
+                               sku_id => SkuId,
+                               gates_passed => length(Receipts),
+                               receipts => Receipts}};
                         {failed_at, Gate, Violations} ->
                             io:format("~n❌ QUALITY GATE FAILED: ~p~n", [Gate]),
                             io:format("  Violations: ~p~n", [length(Violations)]),
@@ -321,14 +297,13 @@ do_post_task(TaskId, Context, State) ->
                             io:format("~nRESOLUTION REQUIRED:~n"),
                             print_violations(Violations),
                             io:format("==================================================~n"),
-                            {fail, #{
-                                hook => post_task,
-                                task_id => TaskId,
-                                sku_id => SkuId,
-                                failed_gate => Gate,
-                                violations => Violations,
-                                blocked => true
-                            }}
+                            {fail,
+                             #{hook => post_task,
+                               task_id => TaskId,
+                               sku_id => SkuId,
+                               failed_gate => Gate,
+                               violations => Violations,
+                               blocked => true}}
                     end;
                 false ->
                     % TCPS quality gates not available - run basic validation
@@ -348,20 +323,18 @@ do_pre_edit(FilePath, _Context, _State) ->
     case check_file_type(FilePath) of
         {ok, FileType} ->
             io:format("  File type: ~s (allowed)~n", [FileType]),
-            {pass, #{
-                hook => pre_edit,
-                file_path => FilePath,
-                file_type => FileType,
-                allowed => true
-            }};
+            {pass,
+             #{hook => pre_edit,
+               file_path => FilePath,
+               file_type => FileType,
+               allowed => true}};
         {error, invalid_type} ->
             io:format("  File type: INVALID (only .erl, .hrl, .rs allowed)~n"),
-            {fail, #{
-                hook => pre_edit,
-                file_path => FilePath,
-                error => <<"Invalid file type - only Erlang (.erl, .hrl) and Rust (.rs) allowed">>,
-                severity => high
-            }}
+            {fail,
+             #{hook => pre_edit,
+               file_path => FilePath,
+               error => <<"Invalid file type - only Erlang (.erl, .hrl) and Rust (.rs) allowed">>,
+               severity => high}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -374,7 +347,10 @@ do_post_edit(FilePath, _Context, State) ->
     case State#state.auto_format of
         false ->
             io:format("  Auto-format DISABLED~n"),
-            {pass, #{hook => post_edit, file_path => FilePath, auto_format => false}};
+            {pass,
+             #{hook => post_edit,
+               file_path => FilePath,
+               auto_format => false}};
         true ->
             case check_file_type(FilePath) of
                 {ok, erlang} ->
@@ -382,7 +358,10 @@ do_post_edit(FilePath, _Context, State) ->
                 {ok, rust} ->
                     auto_format_rust(FilePath);
                 {error, invalid_type} ->
-                    {pass, #{hook => post_edit, file_path => FilePath, skipped => true}}
+                    {pass,
+                     #{hook => post_edit,
+                       file_path => FilePath,
+                       skipped => true}}
             end
     end.
 
@@ -397,19 +376,17 @@ do_session_start(SessionId, _State) ->
     case application:ensure_all_started(tcps_erlmcp) of
         {ok, _Apps} ->
             io:format("  TCPS services started~n"),
-            {pass, #{
-                hook => session_start,
-                session_id => SessionId,
-                tcps_started => true
-            }};
+            {pass,
+             #{hook => session_start,
+               session_id => SessionId,
+               tcps_started => true}};
         {error, Reason} ->
             io:format("  WARNING: Failed to start TCPS services: ~p~n", [Reason]),
-            {pass, #{
-                hook => session_start,
-                session_id => SessionId,
-                tcps_started => false,
-                warning => Reason
-            }}
+            {pass,
+             #{hook => session_start,
+               session_id => SessionId,
+               tcps_started => false,
+               warning => Reason}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -420,17 +397,19 @@ do_session_end(SessionId, _State) ->
     io:format("[erlmcp_hooks] Session end: ~s~n", [SessionId]),
 
     % Export metrics if available
-    Metrics = case erlang:function_exported(tcps_quality_gates, get_quality_metrics, 0) of
-        true -> tcps_quality_gates:get_quality_metrics();
-        false -> #{}
-    end,
+    Metrics =
+        case erlang:function_exported(tcps_quality_gates, get_quality_metrics, 0) of
+            true ->
+                tcps_quality_gates:get_quality_metrics();
+            false ->
+                #{}
+        end,
 
     io:format("  Session metrics exported~n"),
-    {pass, #{
-        hook => session_end,
-        session_id => SessionId,
-        metrics => Metrics
-    }}.
+    {pass,
+     #{hook => session_end,
+       session_id => SessionId,
+       metrics => Metrics}}.
 
 %%%=============================================================================
 %%% Internal Helper Functions
@@ -450,10 +429,14 @@ task_id_to_sku(TaskId, _Context) ->
 -spec check_file_type(binary()) -> {ok, erlang | rust} | {error, invalid_type}.
 check_file_type(FilePath) ->
     case filename:extension(binary_to_list(FilePath)) of
-        ".erl" -> {ok, erlang};
-        ".hrl" -> {ok, erlang};
-        ".rs" -> {ok, rust};
-        _ -> {error, invalid_type}
+        ".erl" ->
+            {ok, erlang};
+        ".hrl" ->
+            {ok, erlang};
+        ".rs" ->
+            {ok, rust};
+        _ ->
+            {error, invalid_type}
     end.
 
 %%------------------------------------------------------------------------------
@@ -467,19 +450,17 @@ auto_format_erlang(FilePath) ->
     case os:cmd("rebar3 fmt -f " ++ FilePathStr) of
         "" ->
             io:format("  ✅ Formatted successfully~n"),
-            {pass, #{
-                hook => post_edit,
-                file_path => FilePath,
-                formatted => true
-            }};
+            {pass,
+             #{hook => post_edit,
+               file_path => FilePath,
+               formatted => true}};
         Output ->
             io:format("  Format output: ~s~n", [Output]),
-            {pass, #{
-                hook => post_edit,
-                file_path => FilePath,
-                formatted => true,
-                output => list_to_binary(Output)
-            }}
+            {pass,
+             #{hook => post_edit,
+               file_path => FilePath,
+               formatted => true,
+               output => list_to_binary(Output)}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -493,19 +474,17 @@ auto_format_rust(FilePath) ->
     case os:cmd("rustfmt " ++ FilePathStr ++ " 2>&1") of
         "" ->
             io:format("  ✅ Formatted successfully~n"),
-            {pass, #{
-                hook => post_edit,
-                file_path => FilePath,
-                formatted => true
-            }};
+            {pass,
+             #{hook => post_edit,
+               file_path => FilePath,
+               formatted => true}};
         Output ->
             io:format("  Format output: ~s~n", [Output]),
-            {pass, #{
-                hook => post_edit,
-                file_path => FilePath,
-                formatted => true,
-                output => list_to_binary(Output)
-            }}
+            {pass,
+             #{hook => post_edit,
+               file_path => FilePath,
+               formatted => true,
+               output => list_to_binary(Output)}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -515,10 +494,7 @@ auto_format_rust(FilePath) ->
 run_basic_validation(TaskId, _Context) ->
     io:format("  Running basic validation...~n"),
 
-    Checks = [
-        {compilation, check_compilation()},
-        {tests, check_tests()}
-    ],
+    Checks = [{compilation, check_compilation()}, {tests, check_tests()}],
 
     Failures = [{Name, Reason} || {Name, {error, Reason}} <- Checks],
 
@@ -528,25 +504,23 @@ run_basic_validation(TaskId, _Context) ->
             io:format("  Compilation: OK~n"),
             io:format("  Tests: OK~n"),
             io:format("==================================================~n"),
-            {pass, #{
-                hook => post_task,
-                task_id => TaskId,
-                basic_validation => true,
-                checks_passed => [Name || {Name, {ok, _}} <- Checks]
-            }};
+            {pass,
+             #{hook => post_task,
+               task_id => TaskId,
+               basic_validation => true,
+               checks_passed => [Name || {Name, {ok, _}} <- Checks]}};
         _ ->
             io:format("~n❌ BASIC VALIDATION FAILED~n"),
-            lists:foreach(fun({Name, Reason}) ->
-                io:format("  ~p: FAILED (~p)~n", [Name, Reason])
-            end, Failures),
+            lists:foreach(fun({Name, Reason}) -> io:format("  ~p: FAILED (~p)~n", [Name, Reason])
+                          end,
+                          Failures),
             io:format("==================================================~n"),
-            {fail, #{
-                hook => post_task,
-                task_id => TaskId,
-                basic_validation => false,
-                failures => Failures,
-                blocked => true
-            }}
+            {fail,
+             #{hook => post_task,
+               task_id => TaskId,
+               basic_validation => false,
+               failures => Failures,
+               blocked => true}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -557,8 +531,10 @@ check_compilation() ->
     case os:cmd("TERM=dumb rebar3 compile 2>&1") of
         Output ->
             case string:find(Output, "error") of
-                nomatch -> {ok, success};
-                _ -> {error, compilation_failed}
+                nomatch ->
+                    {ok, success};
+                _ ->
+                    {error, compilation_failed}
             end
     end.
 
@@ -575,8 +551,10 @@ check_tests() ->
     CtPassed = string:find(CtOutput, "FAILED") =:= nomatch,
 
     case EunitPassed andalso CtPassed of
-        true -> {ok, success};
-        false -> {error, tests_failed}
+        true ->
+            {ok, success};
+        false ->
+            {error, tests_failed}
     end.
 
 %%------------------------------------------------------------------------------
@@ -585,12 +563,15 @@ check_tests() ->
 -spec print_violations(list()) -> ok.
 print_violations(Violations) ->
     lists:foreach(fun(V) ->
-        Gate = maps:get(gate, V, unknown),
-        Severity = maps:get(severity, V, medium),
-        io:format("  - Gate: ~p (Severity: ~p)~n", [Gate, Severity]),
-        case maps:get(error, V, undefined) of
-            undefined -> ok;
-            Error -> io:format("    Error: ~s~n", [Error])
-        end
-    end, Violations),
+                     Gate = maps:get(gate, V, unknown),
+                     Severity = maps:get(severity, V, medium),
+                     io:format("  - Gate: ~p (Severity: ~p)~n", [Gate, Severity]),
+                     case maps:get(error, V, undefined) of
+                         undefined ->
+                             ok;
+                         Error ->
+                             io:format("    Error: ~s~n", [Error])
+                     end
+                  end,
+                  Violations),
     ok.

@@ -16,25 +16,20 @@
 -module(erlmcp_security_headers).
 
 %% API exports
--export([
-    add_headers/1,
-    add_headers/2,
-    get_default_headers/0,
-    configure/1,
-    wrap_handler/1,
-    execute/2  % Cowboy middleware callback
-]).
+-export([add_headers/1, add_headers/2, get_default_headers/0, configure/1, wrap_handler/1,
+         execute/2]).
+
+               % Cowboy middleware callback
 
 %% Types
 -type headers() :: [{binary(), binary()}].
--type config() :: #{
-    csp => binary(),
-    hsts => boolean(),
-    hsts_max_age => pos_integer(),
-    frame_options => deny | sameorigin,
-    referrer_policy => binary(),
-    permissions_policy => binary()
-}.
+-type config() ::
+    #{csp => binary(),
+      hsts => boolean(),
+      hsts_max_age => pos_integer(),
+      frame_options => deny | sameorigin,
+      referrer_policy => binary(),
+      permissions_policy => binary()}.
 
 -export_type([headers/0, config/0]).
 
@@ -90,9 +85,7 @@ wrap_handler(OriginalHandler) when is_atom(OriginalHandler) ->
 
     % Store the wrapper function in the process dictionary for quick access
     % This is a simple approach; for production, consider using ets or persistent_term
-    WrapperName = list_to_atom(
-        atom_to_list(OriginalHandler) ++ "_security_headers_wrapper"
-    ),
+    WrapperName = list_to_atom(atom_to_list(OriginalHandler) ++ "_security_headers_wrapper"),
     put({?MODULE, wrapper_name}, WrapperName),
     put({?MODULE, original_handler}, OriginalHandler),
     put({?MODULE, security_headers}, SecurityHeaders),
@@ -101,7 +94,6 @@ wrap_handler(OriginalHandler) when is_atom(OriginalHandler) ->
     % For now, we'll use a simpler approach: return a wrapper function
     % that can be used with cowboy's handler mechanics
     OriginalHandler;
-
 wrap_handler(HandlerFun) when is_function(HandlerFun, 2) ->
     % If given a function handler, wrap it directly
     Config = application:get_env(erlmcp, security_headers_config, #{}),
@@ -109,19 +101,19 @@ wrap_handler(HandlerFun) when is_function(HandlerFun, 2) ->
 
     % Return a wrapped function following middleware pattern
     fun(Req, State) ->
-        case HandlerFun(Req, State) of
-            {ok, Req2, State2} ->
-                Req3 = add_headers_to_request(Req2, SecurityHeaders),
-                {ok, Req3, State2};
-            {shutdown, Req2} ->
-                Req3 = add_headers_to_request(Req2, SecurityHeaders),
-                {shutdown, Req3};
-            {stop, Req2} ->
-                Req3 = add_headers_to_request(Req2, SecurityHeaders),
-                {stop, Req3};
-            Other ->
-                Other
-        end
+       case HandlerFun(Req, State) of
+           {ok, Req2, State2} ->
+               Req3 = add_headers_to_request(Req2, SecurityHeaders),
+               {ok, Req3, State2};
+           {shutdown, Req2} ->
+               Req3 = add_headers_to_request(Req2, SecurityHeaders),
+               {shutdown, Req3};
+           {stop, Req2} ->
+               Req3 = add_headers_to_request(Req2, SecurityHeaders),
+               {stop, Req3};
+           Other ->
+               Other
+       end
     end.
 
 %%====================================================================
@@ -140,47 +132,41 @@ add_headers_to_request(Req, [{Name, Value} | Rest]) ->
 %% @private Build security headers from config.
 -spec build_security_headers(config()) -> headers().
 build_security_headers(Config) ->
-    [
-        % Prevent MIME type sniffing
-        {<<"x-content-type-options">>, <<"nosniff">>},
-
-        % Prevent clickjacking
-        {<<"x-frame-options">>, frame_options_value(Config)},
-
-        % Enable XSS protection (legacy, but still useful)
-        {<<"x-xss-protection">>, <<"1; mode=block">>},
-
-        % Content Security Policy
-        {<<"content-security-policy">>, csp_value(Config)},
-
-        % HTTP Strict Transport Security (HSTS)
-        hsts_header(Config),
-
-        % Referrer policy
-        {<<"referrer-policy">>, referrer_policy_value(Config)},
-
-        % Permissions policy (formerly Feature-Policy)
-        {<<"permissions-policy">>, permissions_policy_value(Config)},
-
-        % Expect-CT for certificate transparency
-        {<<"expect-ct">>, <<"max-age=86400, enforce">>},
-
-        % Cross-Origin policies
-        {<<"cross-origin-opener-policy">>, <<"same-origin">>},
-        {<<"cross-origin-resource-policy">>, <<"same-origin">>},
-        {<<"cross-origin-embedder-policy">>, <<"require-corp">>}
-    ] ++ additional_headers(Config).
+    [% Prevent MIME type sniffing
+     {<<"x-content-type-options">>, <<"nosniff">>},
+     % Prevent clickjacking
+     {<<"x-frame-options">>, frame_options_value(Config)},
+     % Enable XSS protection (legacy, but still useful)
+     {<<"x-xss-protection">>, <<"1; mode=block">>},
+     % Content Security Policy
+     {<<"content-security-policy">>, csp_value(Config)},
+     % HTTP Strict Transport Security (HSTS)
+     hsts_header(Config),
+     % Referrer policy
+     {<<"referrer-policy">>, referrer_policy_value(Config)},
+     % Permissions policy (formerly Feature-Policy)
+     {<<"permissions-policy">>, permissions_policy_value(Config)},
+     % Expect-CT for certificate transparency
+     {<<"expect-ct">>, <<"max-age=86400, enforce">>},
+     % Cross-Origin policies
+     {<<"cross-origin-opener-policy">>, <<"same-origin">>},
+     {<<"cross-origin-resource-policy">>, <<"same-origin">>},
+     {<<"cross-origin-embedder-policy">>, <<"require-corp">>}]
+    ++ additional_headers(Config).
 
 %% @private Get X-Frame-Options value.
 frame_options_value(Config) ->
     case maps:get(frame_options, Config, deny) of
-        deny -> <<"DENY">>;
-        sameorigin -> <<"SAMEORIGIN">>
+        deny ->
+            <<"DENY">>;
+        sameorigin ->
+            <<"SAMEORIGIN">>
     end.
 
 %% @private Get Content-Security-Policy value.
 csp_value(Config) ->
-    Default = <<"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">>,
+    Default =
+        <<"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">>,
     maps:get(csp, Config, Default).
 
 %% @private Get HSTS header if enabled.
@@ -188,10 +174,10 @@ hsts_header(Config) ->
     case maps:get(hsts, Config, true) of
         true ->
             MaxAge = maps:get(hsts_max_age, Config, 31536000),  % 1 year
-            Value = iolist_to_binary([
-                <<"max-age=">>, integer_to_binary(MaxAge),
-                <<"; includeSubDomains; preload">>
-            ]),
+            Value =
+                iolist_to_binary([<<"max-age=">>,
+                                  integer_to_binary(MaxAge),
+                                  <<"; includeSubDomains; preload">>]),
             {<<"strict-transport-security">>, Value};
         false ->
             {<<"x-hsts-disabled">>, <<"true">>}  % Placeholder, will be filtered
@@ -203,7 +189,8 @@ referrer_policy_value(Config) ->
 
 %% @private Get Permissions-Policy value.
 permissions_policy_value(Config) ->
-    Default = <<"geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()">>,
+    Default =
+        <<"geolocation=(), microphone=(), camera=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()">>,
     maps:get(permissions_policy, Config, Default).
 
 %% @private Get additional custom headers.
@@ -216,10 +203,12 @@ additional_headers(Config) ->
 merge_headers(Existing, New) ->
     ExistingKeys = [binary_to_list(K) || {K, _V} <- Existing],
     ExistingKeysLower = [string:to_lower(K) || K <- ExistingKeys],
-    Filtered = lists:filter(fun({K, _V}) ->
-        LowerKey = string:to_lower(binary_to_list(K)),
-        not lists:member(LowerKey, ExistingKeysLower)
-    end, New),
+    Filtered =
+        lists:filter(fun({K, _V}) ->
+                        LowerKey = string:to_lower(binary_to_list(K)),
+                        not lists:member(LowerKey, ExistingKeysLower)
+                     end,
+                     New),
     Existing ++ Filtered.
 
 %%====================================================================
@@ -229,7 +218,7 @@ merge_headers(Existing, New) ->
 %% @doc Cowboy middleware execute callback.
 %% Usage: Add to Cowboy env: {middlewares, [erlmcp_security_headers, cowboy_router, cowboy_handler]}
 -spec execute(cowboy_req:req(), term()) ->
-    {ok, cowboy_req:req(), term()} | {stop, cowboy_req:req()}.
+                 {ok, cowboy_req:req(), term()} | {stop, cowboy_req:req()}.
 execute(Req, Env) ->
     % Get config from application env
     Config = application:get_env(erlmcp, security_headers_config, #{}),
@@ -238,8 +227,10 @@ execute(Req, Env) ->
     SecurityHeaders = build_security_headers(Config),
 
     % Add headers to request
-    Req2 = lists:foldl(fun({Name, Value}, ReqAcc) ->
-        cowboy_req:set_resp_header(Name, Value, ReqAcc)
-    end, Req, SecurityHeaders),
+    Req2 =
+        lists:foldl(fun({Name, Value}, ReqAcc) -> cowboy_req:set_resp_header(Name, Value, ReqAcc)
+                    end,
+                    Req,
+                    SecurityHeaders),
 
     {ok, Req2, Env}.

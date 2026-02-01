@@ -18,11 +18,11 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_sup).
+
 -behaviour(supervisor).
 
 %% API
 -export([start_link/0]).
-
 %% supervisor callbacks
 -export([init/1]).
 
@@ -41,48 +41,38 @@ start_link() ->
 %%====================================================================
 
 init([]) ->
-    SupFlags = #{
-        strategy => one_for_one,         % Independent failures
-        intensity => 5,                  % Max 5 restarts
-        period => 60                     % In 60 seconds
-    },
+    SupFlags =
+        #{strategy => one_for_one,         % Independent failures
+          intensity => 5,                  % Max 5 restarts
+          period => 60},                     % In 60 seconds
 
-    ChildSpecs = [
-        %% ================================================================
-        %% REGISTRY: Plugin metadata and routing (gproc-based)
-        %% ================================================================
-        #{
-            id => erlmcp_plugin_registry,
-            start => {erlmcp_plugin_registry, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_plugin_registry]
-        },
-
-        %% ================================================================
-        %% MANAGER: Plugin lifecycle orchestration
-        %% ================================================================
-        #{
-            id => erlmcp_plugin_manager,
-            start => {erlmcp_plugin_manager, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_plugin_manager]
-        },
-
-        %% ================================================================
-        %% WORKER SUPERVISOR: Dynamic plugin instances
-        %% ================================================================
-        #{
-            id => erlmcp_plugin_worker_sup,
-            start => {erlmcp_plugin_worker_sup, start_link, []},
-            restart => permanent,
-            shutdown => infinity,        % Supervisor - wait for children
-            type => supervisor,
-            modules => [erlmcp_plugin_worker_sup]
-        }
-    ],
+    ChildSpecs =
+        [%% ================================================================
+         %% REGISTRY: Plugin metadata and routing (gproc-based)
+         %% ================================================================
+         #{id => erlmcp_plugin_registry,
+           start => {erlmcp_plugin_registry, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_plugin_registry]},
+         %% ================================================================
+         %% MANAGER: Plugin lifecycle orchestration
+         %% ================================================================
+         #{id => erlmcp_plugin_manager,
+           start => {erlmcp_plugin_manager, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_plugin_manager]},
+         %% ================================================================
+         %% WORKER SUPERVISOR: Dynamic plugin instances
+         %% ================================================================
+         #{id => erlmcp_plugin_worker_sup,
+           start => {erlmcp_plugin_worker_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,        % Supervisor - wait for children
+           type => supervisor,
+           modules => [erlmcp_plugin_worker_sup]}],
 
     {ok, {SupFlags, ChildSpecs}}.

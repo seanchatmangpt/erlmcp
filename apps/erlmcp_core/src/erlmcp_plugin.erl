@@ -31,28 +31,18 @@
 -module(erlmcp_plugin).
 
 %% Plugin metadata
--export([
-    plugin_name/1,
-    plugin_version/1,
-    plugin_type/1,
-    plugin_description/1,
-    plugin_author/1
-]).
+-export([plugin_name/1, plugin_version/1, plugin_type/1, plugin_description/1, plugin_author/1]).
 
 %% Behavior definition
--callback init(Opts :: map()) ->
-    {ok, State :: term()} | {error, Reason :: term()}.
-
+-callback init(Opts :: map()) -> {ok, State :: term()} | {error, Reason :: term()}.
 -callback terminate(Reason :: term(), State :: term()) -> ok.
-
--callback metadata() -> #{
-    name := binary(),
-    version := binary(),
-    type := validator | formatter | exporter | command | middleware,
-    description := binary(),
-    author => binary(),
-    dependencies => [atom()]
-}.
+-callback metadata() ->
+                      #{name := binary(),
+                        version := binary(),
+                        type := validator | formatter | exporter | command | middleware,
+                        description := binary(),
+                        author => binary(),
+                        dependencies => [atom()]}.
 
 -optional_callbacks([terminate/2]).
 

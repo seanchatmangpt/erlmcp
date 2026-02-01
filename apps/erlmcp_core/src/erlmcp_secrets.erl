@@ -13,22 +13,12 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_secrets).
+
 -behaviour(gen_server).
 
 %% API exports
--export([
-    start_link/0,
-    start_link/1,
-    get_secret/1,
-    set_secret/2,
-    delete_secret/1,
-    rotate_secret/1,
-    list_secrets/0,
-    configure_vault/1,
-    configure_aws/1,
-    stop/0
-]).
-
+-export([start_link/0, start_link/1, get_secret/1, set_secret/2, delete_secret/1, rotate_secret/1,
+         list_secrets/0, configure_vault/1, configure_aws/1, stop/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -40,14 +30,13 @@
 -export_type([secret_key/0, secret_value/0, backend/0]).
 
 %% State record
--record(state, {
-    cache :: ets:tid(),              % secret_key -> {value, expires_at}
-    backend :: backend(),
-    backend_config :: map(),
-    encryption_key :: binary(),
-    ttl_seconds :: pos_integer(),
-    storage_path :: file:filename()
-}).
+-record(state,
+        {cache :: ets:tid(),              % secret_key -> {value, expires_at}
+         backend :: backend(),
+         backend_config :: map(),
+         encryption_key :: binary(),
+         ttl_seconds :: pos_integer(),
+         storage_path :: file:filename()}).
 
 -type state() :: #state{}.
 
@@ -118,14 +107,13 @@ init([Config]) ->
 
     % SECURITY FIX (P1): Move blocking file I/O to async init to prevent supervisor delays.
     % Generate or load encryption key asynchronously after init returns.
-    State = #state{
-        cache = ets:new(secrets_cache, [set, protected]),
-        backend = Backend,
-        backend_config = BackendConfig,
-        encryption_key = undefined,  % Will be set in async init
-        ttl_seconds = TtlSeconds,
-        storage_path = StoragePath
-    },
+    State =
+        #state{cache = ets:new(secrets_cache, [set, protected]),
+               backend = Backend,
+               backend_config = BackendConfig,
+               encryption_key = undefined,  % Will be set in async init
+               ttl_seconds = TtlSeconds,
+               storage_path = StoragePath},
 
     % Start cache cleanup timer
     erlang:send_after(60000, self(), cleanup_cache),
@@ -137,37 +125,28 @@ init([Config]) ->
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} | {noreply, state()}.
+                     {reply, term(), state()} | {noreply, state()}.
 handle_call({get_secret, Key}, _From, State) ->
     Result = do_get_secret(Key, State),
     {reply, Result, State};
-
 handle_call({set_secret, Key, Value}, _From, State) ->
     Result = do_set_secret(Key, Value, State),
     {reply, Result, State};
-
 handle_call({delete_secret, Key}, _From, State) ->
     Result = do_delete_secret(Key, State),
     % Also clear cache
     ets:delete(State#state.cache, Key),
     {reply, Result, State};
-
 handle_call({rotate_secret, Key}, _From, State) ->
     Result = do_rotate_secret(Key, State),
     {reply, Result, State};
-
 handle_call(list_secrets, _From, State) ->
     Result = do_list_secrets(State),
     {reply, Result, State};
-
 handle_call({configure_backend, Backend, Config}, _From, State) ->
-    NewState = State#state{
-        backend = Backend,
-        backend_config = Config
-    },
+    NewState = State#state{backend = Backend, backend_config = Config},
     logger:info("Backend configured: ~p", [Backend]),
     {reply, ok, NewState};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -184,19 +163,21 @@ handle_info({init_async, Config}, State) ->
     ok = filelib:ensure_dir(StorageDir ++ "/"),
     logger:info("Async initialization complete, encryption key loaded"),
     {noreply, State#state{encryption_key = EncryptionKey}};
-
 handle_info(cleanup_cache, State) ->
     Now = erlang:system_time(second),
     ets:foldl(fun({Key, {_Value, ExpiresAt}}, Acc) ->
-        case ExpiresAt < Now of
-            true -> ets:delete(State#state.cache, Key);
-            false -> ok
-        end,
-        Acc
-    end, ok, State#state.cache),
+                 case ExpiresAt < Now of
+                     true ->
+                         ets:delete(State#state.cache, Key);
+                     false ->
+                         ok
+                 end,
+                 Acc
+              end,
+              ok,
+              State#state.cache),
     erlang:send_after(60000, self(), cleanup_cache),
     {noreply, State};
-
 handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
     % Handle gun connection process death
     % These are temporary monitors created during HTTP requests to Vault/AWS
@@ -204,7 +185,6 @@ handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
     logger:warning("Gun connection process ~p died during request: ~p (monitor: ~p)",
                    [Pid, Reason, MonitorRef]),
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -256,7 +236,9 @@ do_delete_secret(Key, State) ->
 %% @private Rotate secret (generate new value).
 do_rotate_secret(Key, State) ->
     % Generate new random secret (32 bytes)
-    NewValue = base64:encode(crypto:strong_rand_bytes(32)),
+    NewValue =
+        base64:encode(
+            crypto:strong_rand_bytes(32)),
 
     case store_in_backend(Key, NewValue, State) of
         ok ->
@@ -309,33 +291,31 @@ list_from_backend(#state{backend = local_encrypted} = State) ->
 %%====================================================================
 
 %% Vault state record for tracking connection and auth
--record(vault_state, {
-    url :: binary(),
-    token :: binary() | undefined,
-    auth_method :: token | approle | kubernetes,
-    mount :: binary(),
-    namespace :: binary() | undefined,
-    timeout :: pos_integer(),
-    circuit_breaker :: closed | open | half_open,
-    failure_count :: non_neg_integer(),
-    last_failure :: erlang:timestamp() | undefined,
-    token_expiry :: erlang:timestamp() | undefined,
-    role_id :: binary() | undefined,
-    secret_id :: binary() | undefined,
-    k8s_jwt_path :: binary() | undefined
-}).
+-record(vault_state,
+        {url :: binary(),
+         token :: binary() | undefined,
+         auth_method :: token | approle | kubernetes,
+         mount :: binary(),
+         namespace :: binary() | undefined,
+         timeout :: pos_integer(),
+         circuit_breaker :: closed | open | half_open,
+         failure_count :: non_neg_integer(),
+         last_failure :: erlang:timestamp() | undefined,
+         token_expiry :: erlang:timestamp() | undefined,
+         role_id :: binary() | undefined,
+         secret_id :: binary() | undefined,
+         k8s_jwt_path :: binary() | undefined}).
 
 -type vault_state() :: #vault_state{}.
--type vault_config() :: #{
-    url => binary(),
-    token => binary(),
-    auth_method => token | approle | kubernetes,
-    role_id => binary(),
-    secret_id => binary(),
-    mount => binary(),
-    namespace => binary(),
-    timeout => pos_integer()
-}.
+-type vault_config() ::
+    #{url => binary(),
+      token => binary(),
+      auth_method => token | approle | kubernetes,
+      role_id => binary(),
+      secret_id => binary(),
+      mount => binary(),
+      namespace => binary(),
+      timeout => pos_integer()}.
 
 %% @private Get secret from Vault KV v2 engine.
 -spec vault_get(secret_key(), vault_config()) -> {ok, secret_value()} | {error, term()}.
@@ -413,7 +393,8 @@ vault_list(Config) ->
         {ok, VaultState} ->
             case ensure_authenticated(VaultState) of
                 {ok, AuthenticatedState} ->
-                    Path = build_vault_path(<<"metadata">>, <<>>, AuthenticatedState) ++ "?list=true",
+                    Path =
+                        build_vault_path(<<"metadata">>, <<>>, AuthenticatedState) ++ "?list=true",
                     case vault_http_request(get, Path, <<>>, AuthenticatedState) of
                         {ok, ResponseBody} ->
                             parse_vault_list_response(ResponseBody);
@@ -441,56 +422,61 @@ parse_vault_config(Config) ->
         token ->
             Token = maps:get(token, Config, <<>>),
             case Token of
-                <<>> -> {error, missing_token};
-                _ -> {ok, #vault_state{
-                    url = Url,
-                    token = Token,
-                    auth_method = token,
-                    mount = Mount,
-                    namespace = Namespace,
-                    timeout = Timeout,
-                    circuit_breaker = closed,
-                    failure_count = 0,
-                    last_failure = undefined,
-                    token_expiry = undefined
-                }}
+                <<>> ->
+                    {error, missing_token};
+                _ ->
+                    {ok,
+                     #vault_state{url = Url,
+                                  token = Token,
+                                  auth_method = token,
+                                  mount = Mount,
+                                  namespace = Namespace,
+                                  timeout = Timeout,
+                                  circuit_breaker = closed,
+                                  failure_count = 0,
+                                  last_failure = undefined,
+                                  token_expiry = undefined}}
             end;
         approle ->
             RoleId = maps:get(role_id, Config, <<>>),
             SecretId = maps:get(secret_id, Config, <<>>),
             case {RoleId, SecretId} of
-                {<<>>, _} -> {error, missing_role_id};
-                {_, <<>>} -> {error, missing_secret_id};
-                _ -> {ok, #vault_state{
-                    url = Url,
-                    token = undefined,
-                    auth_method = approle,
-                    mount = Mount,
-                    namespace = Namespace,
-                    timeout = Timeout,
-                    circuit_breaker = closed,
-                    failure_count = 0,
-                    last_failure = undefined,
-                    token_expiry = undefined,
-                    role_id = RoleId,
-                    secret_id = SecretId
-                }}
+                {<<>>, _} ->
+                    {error, missing_role_id};
+                {_, <<>>} ->
+                    {error, missing_secret_id};
+                _ ->
+                    {ok,
+                     #vault_state{url = Url,
+                                  token = undefined,
+                                  auth_method = approle,
+                                  mount = Mount,
+                                  namespace = Namespace,
+                                  timeout = Timeout,
+                                  circuit_breaker = closed,
+                                  failure_count = 0,
+                                  last_failure = undefined,
+                                  token_expiry = undefined,
+                                  role_id = RoleId,
+                                  secret_id = SecretId}}
             end;
         kubernetes ->
-            JwtPath = maps:get(k8s_jwt_path, Config, <<"/var/run/secrets/kubernetes.io/serviceaccount/token">>),
-            {ok, #vault_state{
-                url = Url,
-                token = undefined,
-                auth_method = kubernetes,
-                mount = Mount,
-                namespace = Namespace,
-                timeout = Timeout,
-                circuit_breaker = closed,
-                failure_count = 0,
-                last_failure = undefined,
-                token_expiry = undefined,
-                k8s_jwt_path = JwtPath
-            }}
+            JwtPath =
+                maps:get(k8s_jwt_path,
+                         Config,
+                         <<"/var/run/secrets/kubernetes.io/serviceaccount/token">>),
+            {ok,
+             #vault_state{url = Url,
+                          token = undefined,
+                          auth_method = kubernetes,
+                          mount = Mount,
+                          namespace = Namespace,
+                          timeout = Timeout,
+                          circuit_breaker = closed,
+                          failure_count = 0,
+                          last_failure = undefined,
+                          token_expiry = undefined,
+                          k8s_jwt_path = JwtPath}}
     end.
 
 %% @private Ensure we have a valid Vault token.
@@ -504,8 +490,10 @@ ensure_authenticated(#vault_state{token = Token, token_expiry = Expiry} = State)
             {ok, State};
         {_, ExpiryTime} ->
             case Now < ExpiryTime of
-                true -> {ok, State};
-                false -> authenticate(State)
+                true ->
+                    {ok, State};
+                false ->
+                    authenticate(State)
             end
     end.
 
@@ -513,16 +501,19 @@ ensure_authenticated(#vault_state{token = Token, token_expiry = Expiry} = State)
 -spec authenticate(vault_state()) -> {ok, vault_state()} | {error, term()}.
 authenticate(#vault_state{auth_method = token} = State) ->
     {ok, State};
-authenticate(#vault_state{auth_method = approle, url = Url, role_id = RoleId, secret_id = SecretId, timeout = Timeout} = State) ->
+authenticate(#vault_state{auth_method = approle,
+                          url = Url,
+                          role_id = RoleId,
+                          secret_id = SecretId,
+                          timeout = Timeout} =
+                 State) ->
     Path = <<"/v1/auth/approle/login">>,
-    Body = jsx:encode(#{
-        <<"role_id">> => RoleId,
-        <<"secret_id">> => SecretId
-    }),
+    Body = jsx:encode(#{<<"role_id">> => RoleId, <<"secret_id">> => SecretId}),
     case vault_http_request_raw(post, Url, Path, Body, #{}, Timeout) of
         {ok, ResponseBody} ->
             case jsx:decode(ResponseBody, [return_maps]) of
-                #{<<"auth">> := #{<<"client_token">> := Token, <<"lease_duration">> := LeaseDuration}} ->
+                #{<<"auth">> :=
+                      #{<<"client_token">> := Token, <<"lease_duration">> := LeaseDuration}} ->
                     Expiry = seconds_to_future_timestamp(LeaseDuration - 60), % Refresh 1min early
                     {ok, State#vault_state{token = Token, token_expiry = Expiry}};
                 Error ->
@@ -532,22 +523,26 @@ authenticate(#vault_state{auth_method = approle, url = Url, role_id = RoleId, se
         {error, Reason} ->
             {error, {auth_failed, Reason}}
     end;
-authenticate(#vault_state{auth_method = kubernetes, url = Url, k8s_jwt_path = JwtPath, timeout = Timeout} = State) ->
+authenticate(#vault_state{auth_method = kubernetes,
+                          url = Url,
+                          k8s_jwt_path = JwtPath,
+                          timeout = Timeout} =
+                 State) ->
     case file:read_file(JwtPath) of
         {ok, Jwt} ->
             Role = maps:get(k8s_role, State, undefined),
             case Role of
-                undefined -> {error, missing_k8s_role};
+                undefined ->
+                    {error, missing_k8s_role};
                 _ ->
                     Path = <<"/v1/auth/kubernetes/login">>,
-                    Body = jsx:encode(#{
-                        <<"jwt">> => Jwt,
-                        <<"role">> => Role
-                    }),
+                    Body = jsx:encode(#{<<"jwt">> => Jwt, <<"role">> => Role}),
                     case vault_http_request_raw(post, Url, Path, Body, #{}, Timeout) of
                         {ok, ResponseBody} ->
                             case jsx:decode(ResponseBody, [return_maps]) of
-                                #{<<"auth">> := #{<<"client_token">> := Token, <<"lease_duration">> := LeaseDuration}} ->
+                                #{<<"auth">> :=
+                                      #{<<"client_token">> := Token,
+                                        <<"lease_duration">> := LeaseDuration}} ->
                                     Expiry = seconds_to_future_timestamp(LeaseDuration - 60),
                                     {ok, State#vault_state{token = Token, token_expiry = Expiry}};
                                 Error ->
@@ -570,12 +565,16 @@ build_vault_path(Endpoint, Key, #vault_state{mount = Mount, namespace = Namespac
     iolist_to_binary([<<"/v1/">>, Namespace, <<"/">>, Mount, <<"/">>, Endpoint, <<"/">>, Key]).
 
 %% @private Execute HTTP request to Vault with auth headers.
--spec vault_http_request(get | post | delete, binary(), binary(), vault_state()) -> {ok, binary()} | {error, term()}.
-vault_http_request(Method, Path, Body, #vault_state{url = Url, token = Token, timeout = Timeout} = State) ->
-    Headers = #{
-        <<"X-Vault-Token">> => Token,
-        <<"Content-Type">> => <<"application/json">>
-    },
+-spec vault_http_request(get | post | delete, binary(), binary(), vault_state()) ->
+                            {ok, binary()} | {error, term()}.
+vault_http_request(Method,
+                   Path,
+                   Body,
+                   #vault_state{url = Url,
+                                token = Token,
+                                timeout = Timeout} =
+                       State) ->
+    Headers = #{<<"X-Vault-Token">> => Token, <<"Content-Type">> => <<"application/json">>},
     case vault_http_request_raw(Method, Url, Path, Body, Headers, Timeout) of
         {ok, ResponseBody} ->
             {ok, ResponseBody};
@@ -584,7 +583,13 @@ vault_http_request(Method, Path, Body, #vault_state{url = Url, token = Token, ti
     end.
 
 %% @private Execute raw HTTP request to Vault using gun.
--spec vault_http_request_raw(get | post | delete, binary(), binary(), binary(), map(), pos_integer()) -> {ok, binary()} | {error, term()}.
+-spec vault_http_request_raw(get | post | delete,
+                             binary(),
+                             binary(),
+                             binary(),
+                             map(),
+                             pos_integer()) ->
+                                {ok, binary()} | {error, term()}.
 vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
     % Parse URL
     UriMap = uri_string:parse(VaultUrl),
@@ -592,22 +597,31 @@ vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
     Host = maps:get(host, UriMap),
 
     % Determine port (use default if not specified)
-    Port = case maps:get(port, UriMap, undefined) of
-        undefined ->
-            case Scheme of
-                <<"https">> -> 443;
-                <<"http">> -> 8200;  % Vault default port
-                _ -> 8200
-            end;
-        P -> P
-    end,
+    Port =
+        case maps:get(port, UriMap, undefined) of
+            undefined ->
+                case Scheme of
+                    <<"https">> ->
+                        443;
+                    <<"http">> ->
+                        8200;  % Vault default port
+                    _ ->
+                        8200
+                end;
+            P ->
+                P
+        end,
 
     % Open gun connection
-    Transport = case Scheme of
-        <<"https">> -> tls;
-        <<"http">> -> tcp;
-        _ -> tcp
-    end,
+    Transport =
+        case Scheme of
+            <<"https">> ->
+                tls;
+            <<"http">> ->
+                tcp;
+            _ ->
+                tcp
+        end,
 
     % Convert host to list for gun (gun 2.0.1 accepts both binary and list, but list is safer)
     HostStr = binary_to_list(Host),
@@ -620,11 +634,15 @@ vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
             case gun:await_up(ConnPid, Timeout) of
                 {up, _Protocol} ->
                     % Make request
-                    StreamRef = case Method of
-                        get -> gun:get(ConnPid, Path, maps:to_list(Headers));
-                        post -> gun:post(ConnPid, Path, maps:to_list(Headers), Body);
-                        delete -> gun:delete(ConnPid, Path, maps:to_list(Headers))
-                    end,
+                    StreamRef =
+                        case Method of
+                            get ->
+                                gun:get(ConnPid, Path, maps:to_list(Headers));
+                            post ->
+                                gun:post(ConnPid, Path, maps:to_list(Headers), Body);
+                            delete ->
+                                gun:delete(ConnPid, Path, maps:to_list(Headers))
+                        end,
 
                     % Wait for response
                     case gun:await(ConnPid, StreamRef, Timeout) of
@@ -650,10 +668,13 @@ vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
                             {error, {http_error, Status, <<>>}};
                         {response, nofin, Status, _RespHeaders} ->
                             % Get error body for non-2xx responses
-                            ErrorBody = case gun:await_body(ConnPid, StreamRef, Timeout) of
-                                {ok, ErrBody} -> ErrBody;
-                                {error, _} -> <<>>
-                            end,
+                            ErrorBody =
+                                case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                    {ok, ErrBody} ->
+                                        ErrBody;
+                                    {error, _} ->
+                                        <<>>
+                                end,
                             demonitor(MonRef, [flush]),
                             gun:close(ConnPid),
                             {error, {http_error, Status, ErrorBody}};
@@ -703,7 +724,7 @@ parse_vault_list_response(ResponseBody) ->
         _ ->
             {error, invalid_response_format}
     catch
-        _:_:_ ->
+        _:_ ->
             {error, json_decode_failed}
     end.
 
@@ -721,12 +742,11 @@ seconds_to_future_timestamp(Seconds) ->
 %%====================================================================
 
 %% AWS credential record
--record(aws_credentials, {
-    access_key_id :: binary(),
-    secret_access_key :: binary(),
-    token :: binary() | undefined,
-    expiration :: integer() | undefined  % Unix timestamp
-}).
+-record(aws_credentials,
+        {access_key_id :: binary(),
+         secret_access_key :: binary(),
+         token :: binary() | undefined,
+         expiration :: integer() | undefined}).  % Unix timestamp
 
 -type aws_credentials() :: #aws_credentials{}.
 
@@ -741,18 +761,22 @@ aws_secrets_get(SecretId, Config) ->
     case get_aws_credentials(AuthMethod, Config) of
         {ok, Creds} ->
             % Build request payload
-            RequestBody = jsx:encode(#{
-                <<"SecretId">> => SecretId,
-                <<"VersionStage">> => <<"AWSCURRENT">>  % Get current version
-            }),
+            RequestBody =
+                jsx:encode(#{<<"SecretId">> => SecretId,
+                             <<"VersionStage">> => <<"AWSCURRENT">>}),  % Get current version
 
-            case do_aws_request(Region, <<"secretsmanager">>, Creds,
-                               <<"secretsmanager.GetSecretValue">>,
-                               RequestBody, Config) of
+            case do_aws_request(Region,
+                                <<"secretsmanager">>,
+                                Creds,
+                                <<"secretsmanager.GetSecretValue">>,
+                                RequestBody,
+                                Config)
+            of
                 {ok, ResponseBody} ->
                     parse_get_secret_response(SecretId, ResponseBody);
                 {error, Reason} = Error ->
-                    logger:error("AWS Secrets Manager GetSecretValue failed for ~s: ~p", [SecretId, Reason]),
+                    logger:error("AWS Secrets Manager GetSecretValue failed for ~s: ~p",
+                                 [SecretId, Reason]),
                     Error
             end;
         {error, Reason} = Error ->
@@ -771,14 +795,15 @@ aws_secrets_set(SecretId, SecretValue, Config) ->
     case get_aws_credentials(AuthMethod, Config) of
         {ok, Creds} ->
             % Try to create secret first
-            CreateParams = #{
-                <<"Name">> => SecretId,
-                <<"SecretString">> => SecretValue
-            },
+            CreateParams = #{<<"Name">> => SecretId, <<"SecretString">> => SecretValue},
 
-            case do_aws_request(Region, <<"secretsmanager">>, Creds,
-                               <<"secretsmanager.CreateSecret">>,
-                               jsx:encode(CreateParams), Config) of
+            case do_aws_request(Region,
+                                <<"secretsmanager">>,
+                                Creds,
+                                <<"secretsmanager.CreateSecret">>,
+                                jsx:encode(CreateParams),
+                                Config)
+            of
                 {ok, _ResponseBody} ->
                     logger:info("AWS Secrets Manager: Created secret ~s", [SecretId]),
                     ok;
@@ -787,7 +812,8 @@ aws_secrets_set(SecretId, SecretValue, Config) ->
                     logger:info("AWS Secrets Manager: Secret ~s exists, updating", [SecretId]),
                     update_aws_secret(SecretId, SecretValue, Region, Creds, Config);
                 {error, Reason} = Error ->
-                    logger:error("AWS Secrets Manager: Failed to create secret ~s: ~p", [SecretId, Reason]),
+                    logger:error("AWS Secrets Manager: Failed to create secret ~s: ~p",
+                                 [SecretId, Reason]),
                     Error
             end;
         {error, Reason} = Error ->
@@ -802,23 +828,27 @@ aws_secrets_delete(SecretId, Config) ->
     AuthMethod = maps_get(auth_method, Config, access_key),
     RecoveryWindow = maps_get(recovery_window, Config, 30),
 
-    logger:info("AWS Secrets Manager: Deleting secret ~s (recovery window: ~p days)", [SecretId, RecoveryWindow]),
+    logger:info("AWS Secrets Manager: Deleting secret ~s (recovery window: ~p days)",
+                [SecretId, RecoveryWindow]),
 
     case get_aws_credentials(AuthMethod, Config) of
         {ok, Creds} ->
-            DeleteParams = #{
-                <<"SecretId">> => SecretId,
-                <<"RecoveryWindowInDays">> => RecoveryWindow
-            },
+            DeleteParams =
+                #{<<"SecretId">> => SecretId, <<"RecoveryWindowInDays">> => RecoveryWindow},
 
-            case do_aws_request(Region, <<"secretsmanager">>, Creds,
-                               <<"secretsmanager.DeleteSecret">>,
-                               jsx:encode(DeleteParams), Config) of
+            case do_aws_request(Region,
+                                <<"secretsmanager">>,
+                                Creds,
+                                <<"secretsmanager.DeleteSecret">>,
+                                jsx:encode(DeleteParams),
+                                Config)
+            of
                 {ok, _ResponseBody} ->
                     logger:info("AWS Secrets Manager: Deleted secret ~s", [SecretId]),
                     ok;
                 {error, Reason} = Error ->
-                    logger:error("AWS Secrets Manager: Failed to delete secret ~s: ~p", [SecretId, Reason]),
+                    logger:error("AWS Secrets Manager: Failed to delete secret ~s: ~p",
+                                 [SecretId, Reason]),
                     Error
             end;
         {error, Reason} = Error ->
@@ -844,14 +874,21 @@ aws_secrets_list(Config) ->
 
 %% @private List all secrets with pagination.
 list_all_secrets(Region, Creds, Config, Acc, NextToken) ->
-    ListParams = case NextToken of
-        undefined -> #{};
-        _ -> #{<<"NextToken">> => NextToken}
-    end,
+    ListParams =
+        case NextToken of
+            undefined ->
+                #{};
+            _ ->
+                #{<<"NextToken">> => NextToken}
+        end,
 
-    case do_aws_request(Region, <<"secretsmanager">>, Creds,
-                       <<"secretsmanager.ListSecrets">>,
-                       jsx:encode(ListParams), Config) of
+    case do_aws_request(Region,
+                        <<"secretsmanager">>,
+                        Creds,
+                        <<"secretsmanager.ListSecrets">>,
+                        jsx:encode(ListParams),
+                        Config)
+    of
         {ok, ResponseBody} ->
             try jsx:decode(ResponseBody, [return_maps]) of
                 #{<<"SecretList">> := SecretList} = Response ->
@@ -879,7 +916,8 @@ list_all_secrets(Region, Creds, Config, Acc, NextToken) ->
     end.
 
 %% @private Get AWS credentials based on auth method.
--spec get_aws_credentials(iam_role | access_key, map()) -> {ok, aws_credentials()} | {error, term()}.
+-spec get_aws_credentials(iam_role | access_key, map()) ->
+                             {ok, aws_credentials()} | {error, term()}.
 get_aws_credentials(iam_role, Config) ->
     % Try to retrieve credentials from IAM role metadata service
     case maps_get(role_arn, Config, undefined) of
@@ -906,19 +944,21 @@ get_aws_credentials(access_key, Config) ->
         {_, <<>>} ->
             {error, missing_secret_key};
         {_, _} ->
-            {ok, #aws_credentials{
-                access_key_id = AccessKey,
-                secret_access_key = SecretKey,
-                token = undefined,
-                expiration = undefined
-            }}
+            {ok,
+             #aws_credentials{access_key_id = AccessKey,
+                              secret_access_key = SecretKey,
+                              token = undefined,
+                              expiration = undefined}}
     end.
 
 %% @private Get credentials from EC2/ECS IAM role metadata service.
 -spec get_iam_role_credentials(map()) -> {ok, aws_credentials()} | {error, term()}.
 get_iam_role_credentials(Config) ->
     % First, get the role name
-    MetadataUrl = maps_get(metadata_url, Config, <<"http://169.254.169.254/latest/meta-data/iam/security-credentials/">>),
+    MetadataUrl =
+        maps_get(metadata_url,
+                 Config,
+                 <<"http://169.254.169.254/latest/meta-data/iam/security-credentials/">>),
 
     case httpc_request(get, {MetadataUrl, []}, [], Config) of
         {ok, {{_, 200, _}, _, RoleName}} ->
@@ -933,17 +973,16 @@ get_iam_role_credentials(Config) ->
                           <<"Expiration">> := ExpirationISO8601} ->
                             % Parse ISO8601 expiration timestamp
                             Expiration = parse_iso8601(ExpirationISO8601),
-                            {ok, #aws_credentials{
-                                access_key_id = AccessKey,
-                                secret_access_key = SecretKey,
-                                token = Token,
-                                expiration = Expiration
-                            }};
+                            {ok,
+                             #aws_credentials{access_key_id = AccessKey,
+                                              secret_access_key = SecretKey,
+                                              token = Token,
+                                              expiration = Expiration}};
                         Other ->
                             logger:error("Unexpected IAM credentials response: ~p", [Other]),
                             {error, invalid_credentials_response}
                     catch
-                        _:_:_ ->
+                        _:_ ->
                             {error, invalid_credentials_json}
                     end;
                 {ok, {{_, Code, _}, _, _}} ->
@@ -963,34 +1002,37 @@ assume_role(BaseCreds, RoleArn, Config) ->
     Region = maps_get(region, Config, <<"us-east-1">>),
     Duration = maps_get(role_duration, Config, 3600),
 
-    AssumeParams = #{
-        <<"RoleArn">> => RoleArn,
-        <<"RoleSessionName">> => <<"erlmcp-secrets-", (integer_to_binary(erlang:unique_integer([positive])))/binary>>,
-        <<"DurationSeconds">> => Duration
-    },
+    AssumeParams =
+        #{<<"RoleArn">> => RoleArn,
+          <<"RoleSessionName">> =>
+              <<"erlmcp-secrets-", (integer_to_binary(erlang:unique_integer([positive])))/binary>>,
+          <<"DurationSeconds">> => Duration},
 
-    case do_aws_request(Region, <<"sts">>, BaseCreds,
-                         <<"sts.AssumeRole">>, jsx:encode(AssumeParams), Config) of
+    case do_aws_request(Region,
+                        <<"sts">>,
+                        BaseCreds,
+                        <<"sts.AssumeRole">>,
+                        jsx:encode(AssumeParams),
+                        Config)
+    of
         {ok, ResponseBody} ->
             try jsx:decode(ResponseBody, [return_maps]) of
-                #{<<"Credentials">> := #{
-                    <<"AccessKeyId">> := AccessKey,
-                    <<"SecretAccessKey">> := SecretKey,
-                    <<"SessionToken">> := Token,
-                    <<"Expiration">> := ExpirationISO8601
-                }} ->
+                #{<<"Credentials">> :=
+                      #{<<"AccessKeyId">> := AccessKey,
+                        <<"SecretAccessKey">> := SecretKey,
+                        <<"SessionToken">> := Token,
+                        <<"Expiration">> := ExpirationISO8601}} ->
                     Expiration = parse_iso8601(ExpirationISO8601),
-                    {ok, #aws_credentials{
-                        access_key_id = AccessKey,
-                        secret_access_key = SecretKey,
-                        token = Token,
-                        expiration = Expiration
-                    }};
+                    {ok,
+                     #aws_credentials{access_key_id = AccessKey,
+                                      secret_access_key = SecretKey,
+                                      token = Token,
+                                      expiration = Expiration}};
                 Other ->
                     logger:error("Unexpected assume role response: ~p", [Other]),
                     {error, invalid_assume_role_response}
             catch
-                _:_:_ ->
+                _:_ ->
                     {error, invalid_assume_role_json}
             end;
         {error, Reason} ->
@@ -999,7 +1041,7 @@ assume_role(BaseCreds, RoleArn, Config) ->
 
 %% @private Execute AWS Secrets Manager request using gun HTTP client.
 -spec do_aws_request(binary(), binary(), aws_credentials(), binary(), binary(), map()) ->
-    {ok, binary()} | {error, term()}.
+                        {ok, binary()} | {error, term()}.
 do_aws_request(Region, Service, Creds, Target, Body, Config) ->
     Timeout = maps_get(timeout, Config, 5000),
 
@@ -1014,25 +1056,27 @@ do_aws_request(Region, Service, Creds, Target, Body, Config) ->
     DateStamp = format_date_stamp(Now),
 
     % Build headers for signing
-    BaseHeaders = #{
-        <<"X-Amz-Target">> => Target,
-        <<"Content-Type">> => <<"application/x-amz-json-1.1">>
-    },
+    BaseHeaders =
+        #{<<"X-Amz-Target">> => Target, <<"Content-Type">> => <<"application/x-amz-json-1.1">>},
 
     % Calculate AWS Signature v4
-    SigV4Headers = calculate_sigv4(
-        post, Host, Path, BaseHeaders, Body,
-        Region, Service, Creds, AmzDate, DateStamp
-    ),
+    SigV4Headers =
+        calculate_sigv4(post,
+                        Host,
+                        Path,
+                        BaseHeaders,
+                        Body,
+                        Region,
+                        Service,
+                        Creds,
+                        AmzDate,
+                        DateStamp),
 
     % Combine all headers
     AllHeaders = maps:merge(BaseHeaders, SigV4Headers),
 
     % Open gun connection
-    case gun:open(binary_to_list(Host), Port, #{
-        transport => tls,
-        protocols => [http]
-    }) of
+    case gun:open(binary_to_list(Host), Port, #{transport => tls, protocols => [http]}) of
         {ok, ConnPid} ->
             MonRef = monitor(process, ConnPid),
 
@@ -1046,28 +1090,31 @@ do_aws_request(Region, Service, Creds, Target, Body, Config) ->
                     StreamRef = gun:post(ConnPid, binary_to_list(Path), GunHeaders, Body),
 
                     % Wait for response
-                    Result = case gun:await(ConnPid, StreamRef, Timeout) of
-                        {response, fin, Status, _RespHeaders} when Status >= 200, Status < 300 ->
-                            {ok, <<>>};
-                        {response, nofin, Status, RespHeaders} when Status >= 200, Status < 300 ->
-                            case gun:await_body(ConnPid, StreamRef, Timeout) of
-                                {ok, ResponseBody} ->
-                                    {ok, ResponseBody};
-                                {error, Reason} ->
-                                    {error, {body_read_failed, Reason}}
-                            end;
-                        {response, fin, Status, RespHeaders} ->
-                            parse_aws_error(Status, <<>>, RespHeaders);
-                        {response, nofin, Status, RespHeaders} ->
-                            case gun:await_body(ConnPid, StreamRef, Timeout) of
-                                {ok, ErrorBody} ->
-                                    parse_aws_error(Status, ErrorBody, RespHeaders);
-                                {error, Reason} ->
-                                    {error, {error_body_read_failed, Reason}}
-                            end;
-                        {error, Reason} ->
-                            {error, {request_failed, Reason}}
-                    end,
+                    Result =
+                        case gun:await(ConnPid, StreamRef, Timeout) of
+                            {response, fin, Status, _RespHeaders}
+                                when Status >= 200, Status < 300 ->
+                                {ok, <<>>};
+                            {response, nofin, Status, RespHeaders}
+                                when Status >= 200, Status < 300 ->
+                                case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                    {ok, ResponseBody} ->
+                                        {ok, ResponseBody};
+                                    {error, Reason} ->
+                                        {error, {body_read_failed, Reason}}
+                                end;
+                            {response, fin, Status, RespHeaders} ->
+                                parse_aws_error(Status, <<>>, RespHeaders);
+                            {response, nofin, Status, RespHeaders} ->
+                                case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                    {ok, ErrorBody} ->
+                                        parse_aws_error(Status, ErrorBody, RespHeaders);
+                                    {error, Reason} ->
+                                        {error, {error_body_read_failed, Reason}}
+                                end;
+                            {error, Reason} ->
+                                {error, {request_failed, Reason}}
+                        end,
 
                     demonitor(MonRef, [flush]),
                     gun:close(ConnPid),
@@ -1082,27 +1129,47 @@ do_aws_request(Region, Service, Creds, Target, Body, Config) ->
     end.
 
 %% @private Calculate AWS SigV4 signature.
--spec calculate_sigv4(get | post, binary(), binary(), map(), binary(),
-                      binary(), binary(), aws_credentials(), binary(), binary()) -> map().
-calculate_sigv4(Method, Host, Path, ExtraHeaders, Body,
-                Region, Service, Creds, AmzDate, DateStamp) ->
+-spec calculate_sigv4(get | post,
+                      binary(),
+                      binary(),
+                      map(),
+                      binary(),
+                      binary(),
+                      binary(),
+                      aws_credentials(),
+                      binary(),
+                      binary()) ->
+                         map().
+calculate_sigv4(Method,
+                Host,
+                Path,
+                ExtraHeaders,
+                Body,
+                Region,
+                Service,
+                Creds,
+                AmzDate,
+                DateStamp) ->
     % Canonical query string (empty for our use case)
     CanonicalQueryString = <<>>,
 
     % Canonical headers
-    CanonicalHeadersList = [
-        {<<"content-type">>, <<"application/x-amz-json-1.1">>},
-        {<<"host">>, Host},
-        {<<"x-amz-date">>, AmzDate}
-    ] ++ maps:to_list(ExtraHeaders),
+    CanonicalHeadersList =
+        [{<<"content-type">>, <<"application/x-amz-json-1.1">>},
+         {<<"host">>, Host},
+         {<<"x-amz-date">>, AmzDate}]
+        ++ maps:to_list(ExtraHeaders),
 
     % Sort headers (lowercase keys)
-    SortedHeaders = lists:sort(fun({A, _}, {B, _}) ->
-            string:lowercase(binary_to_list(A)) =< string:lowercase(binary_to_list(B))
-        end, CanonicalHeadersList),
+    SortedHeaders =
+        lists:sort(fun({A, _}, {B, _}) ->
+                      string:lowercase(binary_to_list(A)) =< string:lowercase(binary_to_list(B))
+                   end,
+                   CanonicalHeadersList),
 
-    CanonicalHeaders = <<<< (list_to_binary(string:lowercase(binary_to_list(K))))/binary, ":", V/binary, "\n" >>
-        || {K, V} <- SortedHeaders>>,
+    CanonicalHeaders =
+        << <<(list_to_binary(string:lowercase(binary_to_list(K))))/binary, ":", V/binary, "\n">>
+           || {K, V} <- SortedHeaders >>,
 
     % Build signed headers (lowercase, semicolon-separated)
     SignedHeadersList = [string:lowercase(binary_to_list(K)) || {K, _} <- SortedHeaders],
@@ -1112,23 +1179,31 @@ calculate_sigv4(Method, Host, Path, ExtraHeaders, Body,
     PayloadHash = crypto:hash(sha256, Body),
 
     % Canonical request
-    CanonicalRequest = iolist_to_binary([
-        string:uppercase(atom_to_list(Method)), "\n",
-        Path, "\n",
-        CanonicalQueryString, "\n",
-        CanonicalHeaders, "\n",
-        SignedHeaders, "\n",
-        hex_encode(PayloadHash)
-    ]),
+    CanonicalRequest =
+        iolist_to_binary([string:uppercase(atom_to_list(Method)),
+                          "\n",
+                          Path,
+                          "\n",
+                          CanonicalQueryString,
+                          "\n",
+                          CanonicalHeaders,
+                          "\n",
+                          SignedHeaders,
+                          "\n",
+                          hex_encode(PayloadHash)]),
 
     % String to sign
     Algorithm = <<"AWS4-HMAC-SHA256">>,
-    CredentialScope = <<DateStamp/binary, "/", Region/binary, "/",
-                        Service/binary, "/aws4_request">>,
-    StringToSign = <<Algorithm/binary, "\n",
-                     AmzDate/binary, "\n",
-                     CredentialScope/binary, "\n",
-                     (hex_encode(crypto:hash(sha256, CanonicalRequest)))/binary>>,
+    CredentialScope =
+        <<DateStamp/binary, "/", Region/binary, "/", Service/binary, "/aws4_request">>,
+    StringToSign =
+        <<Algorithm/binary,
+          "\n",
+          AmzDate/binary,
+          "\n",
+          CredentialScope/binary,
+          "\n",
+          (hex_encode(crypto:hash(sha256, CanonicalRequest)))/binary>>,
 
     % Calculate signature
     KDate = hmac_sha256(<<"AWS4", (Creds#aws_credentials.secret_access_key)/binary>>, DateStamp),
@@ -1140,21 +1215,27 @@ calculate_sigv4(Method, Host, Path, ExtraHeaders, Body,
     % Authorization header
     Credential = <<(Creds#aws_credentials.access_key_id)/binary, "/", CredentialScope/binary>>,
 
-    Authorization = <<Algorithm/binary, " Credential=", Credential/binary,
-                      ", SignedHeaders=", SignedHeaders/binary,
-                      ", Signature=", (hex_encode(Signature))/binary>>,
+    Authorization =
+        <<Algorithm/binary,
+          " Credential=",
+          Credential/binary,
+          ", SignedHeaders=",
+          SignedHeaders/binary,
+          ", Signature=",
+          (hex_encode(Signature))/binary>>,
 
     % Return headers
-    Headers = #{
-        <<"Authorization">> => Authorization,
-        <<"X-Amz-Date">> => AmzDate,
-        <<"Content-Type">> => <<"application/x-amz-json-1.1">>
-    },
+    Headers =
+        #{<<"Authorization">> => Authorization,
+          <<"X-Amz-Date">> => AmzDate,
+          <<"Content-Type">> => <<"application/x-amz-json-1.1">>},
 
     % Add session token if present
     case Creds#aws_credentials.token of
-        undefined -> Headers;
-        Token -> maps:put(<<"X-Amz-Security-Token">>, Token, Headers)
+        undefined ->
+            Headers;
+        Token ->
+            maps:put(<<"X-Amz-Security-Token">>, Token, Headers)
     end.
 
 %% @private Parse AWS error response.
@@ -1167,17 +1248,23 @@ parse_aws_error(Status, Body, _Headers) ->
             try jsx:decode(Body, [return_maps]) of
                 #{<<"__type">> := ErrorType, <<"message">> := ErrorMsg} ->
                     % Extract error type (remove prefix if present)
-                    CleanType = case binary:split(ErrorType, <<"#">>) of
-                        [_, Type] -> Type;
-                        [Type] -> Type
-                    end,
+                    CleanType =
+                        case binary:split(ErrorType, <<"#">>) of
+                            [_, Type] ->
+                                Type;
+                            [Type] ->
+                                Type
+                        end,
                     logger:error("AWS error ~p: ~s - ~s", [Status, CleanType, ErrorMsg]),
                     {error, {aws_error, CleanType, ErrorMsg}};
                 #{<<"__type">> := ErrorType} ->
-                    CleanType = case binary:split(ErrorType, <<"#">>) of
-                        [_, Type] -> Type;
-                        [Type] -> Type
-                    end,
+                    CleanType =
+                        case binary:split(ErrorType, <<"#">>) of
+                            [_, Type] ->
+                                Type;
+                            [Type] ->
+                                Type
+                        end,
                     logger:error("AWS error ~p: ~s", [Status, CleanType]),
                     {error, {aws_error, CleanType, <<>>}};
                 #{<<"message">> := ErrorMsg} ->
@@ -1187,7 +1274,7 @@ parse_aws_error(Status, Body, _Headers) ->
                     logger:error("AWS error ~p: ~p", [Status, Other]),
                     {error, {http_error, Status, Body}}
             catch
-                _:_:_ ->
+                _:_ ->
                     logger:error("AWS error ~p (failed to parse): ~s", [Status, Body]),
                     {error, {http_error, Status, Body}}
             end
@@ -1207,7 +1294,8 @@ parse_get_secret_response(SecretId, ResponseBody) ->
         #{<<"ARN">> := _} = Response ->
             % Response might not have the secret value
             case {maps:get(<<"SecretString">>, Response, undefined),
-                  maps:get(<<"SecretBinary">>, Response, undefined)} of
+                  maps:get(<<"SecretBinary">>, Response, undefined)}
+            of
                 {undefined, undefined} ->
                     logger:error("AWS response missing secret value for ~s", [SecretId]),
                     {error, secret_value_missing};
@@ -1227,16 +1315,17 @@ parse_get_secret_response(SecretId, ResponseBody) ->
 
 %% @private Update existing secret.
 -spec update_aws_secret(binary(), binary(), binary(), aws_credentials(), map()) ->
-    ok | {error, term()}.
+                           ok | {error, term()}.
 update_aws_secret(SecretId, SecretValue, Region, Creds, Config) ->
-    UpdateParams = #{
-        <<"SecretId">> => SecretId,
-        <<"SecretString">> => SecretValue
-    },
+    UpdateParams = #{<<"SecretId">> => SecretId, <<"SecretString">> => SecretValue},
 
-    case do_aws_request(Region, <<"secretsmanager">>, Creds,
-                       <<"secretsmanager.UpdateSecret">>,
-                       jsx:encode(UpdateParams), Config) of
+    case do_aws_request(Region,
+                        <<"secretsmanager">>,
+                        Creds,
+                        <<"secretsmanager.UpdateSecret">>,
+                        jsx:encode(UpdateParams),
+                        Config)
+    of
         {ok, _ResponseBody} ->
             logger:info("AWS Secrets Manager: Updated secret ~s", [SecretId]),
             ok;
@@ -1246,31 +1335,33 @@ update_aws_secret(SecretId, SecretValue, Region, Creds, Config) ->
     end.
 
 %% @private HTTP client wrapper.
--spec httpc_request(get | post, tuple() | list(), list(), map()) ->
-    {ok, tuple()} | {error, term()}.
+-spec httpc_request(get | post, tuple() | list(), list(), map()) -> {ok, tuple()} | {error, term()}.
 httpc_request(Method, Request, Options, _Config) ->
     % Start inets if not already started
     case whereis(inets) of
-        undefined -> inets:start();
-        _ -> ok
+        undefined ->
+            inets:start();
+        _ ->
+            ok
     end,
 
     % Start ssl if not already started
     case whereis(ssl_sup) of
-        undefined -> ssl:start();
-        _ -> ok
+        undefined ->
+            ssl:start();
+        _ ->
+            ok
     end,
 
     % SECURITY FIX (P0): Enable SSL certificate verification to prevent MITM attacks.
     % Changed from verify_none to verify_peer with proper certificate validation.
-    SslOpts = [
-        {ssl, [
-            {verify, verify_peer},  % Enable peer verification (was verify_none - VULNERABLE)
-            {cacerts, public_key:cacerts_get()},  % Use system CA certificates
-            {depth, 3},  % Maximum certificate chain depth
-            {customize_hostname_check, [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}
-        ]}
-    ],
+    SslOpts =
+        [{ssl,
+          [{verify, verify_peer},  % Enable peer verification (was verify_none - VULNERABLE)
+           {cacerts, public_key:cacerts_get()},  % Use system CA certificates
+           {depth, 3},  % Maximum certificate chain depth
+           {customize_hostname_check,
+            [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}]}],
 
     case httpc:request(Method, Request, SslOpts ++ Options, []) of
         {ok, Result} ->
@@ -1304,8 +1395,10 @@ format_amz_date({{Year, Month, Day}, {Hour, Min, Sec}}) ->
 -spec parse_iso8601(binary()) -> integer().
 parse_iso8601(Iso8601) ->
     % Parse format: "2025-01-30T12:34:56Z"
-    case re:run(Iso8601, <<"^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z$">>,
-                [{capture, all_but_first, list}]) of
+    case re:run(Iso8601,
+                <<"^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})Z$">>,
+                [{capture, all_but_first, list}])
+    of
         {match, [YearStr, MonthStr, DayStr, HourStr, MinStr, SecStr]} ->
             Year = list_to_integer(YearStr),
             Month = list_to_integer(MonthStr),
@@ -1314,8 +1407,9 @@ parse_iso8601(Iso8601) ->
             Min = list_to_integer(MinStr),
             Sec = list_to_integer(SecStr),
             % Convert to Unix timestamp (seconds since epoch)
-            Secs = calendar:datetime_to_gregorian_seconds({{Year, Month, Day}, {Hour, Min, Sec}}) -
-                    calendar:datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}}),
+            Secs =
+                calendar:datetime_to_gregorian_seconds({{Year, Month, Day}, {Hour, Min, Sec}})
+                - calendar:datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}}),
             Secs;
         _ ->
             logger:warning("Failed to parse ISO8601 timestamp: ~s", [Iso8601]),
@@ -1326,8 +1420,10 @@ parse_iso8601(Iso8601) ->
 %% @private Safe maps:get with default.
 maps_get(Key, Map, Default) ->
     case maps:find(Key, Map) of
-        {ok, Value} -> Value;
-        error -> Default
+        {ok, Value} ->
+            Value;
+        error ->
+            Default
     end.
 
 %%====================================================================
@@ -1344,8 +1440,10 @@ local_get(Key, State) ->
             case load_encrypted_storage(State) of
                 {ok, Secrets} ->
                     case maps:get(Key, Secrets, undefined) of
-                        undefined -> {error, not_found};
-                        Value -> {ok, Value}
+                        undefined ->
+                            {error, not_found};
+                        Value ->
+                            {ok, Value}
                     end;
                 {error, enoent} ->
                     {error, not_found};
@@ -1361,11 +1459,15 @@ local_set(Key, Value, State) ->
         undefined ->
             {error, initializing};
         _ ->
-            Secrets = case load_encrypted_storage(State) of
-                {ok, S} -> S;
-                {error, enoent} -> #{};
-                {error, Reason} -> error({failed_to_load_secrets, Reason})
-            end,
+            Secrets =
+                case load_encrypted_storage(State) of
+                    {ok, S} ->
+                        S;
+                    {error, enoent} ->
+                        #{};
+                    {error, Reason} ->
+                        error({failed_to_load_secrets, Reason})
+                end,
 
             NewSecrets = maps:put(Key, Value, Secrets),
             save_encrypted_storage(NewSecrets, State)
@@ -1453,9 +1555,11 @@ load_or_generate_encryption_key(Config) ->
             % The previous os:cmd("chmod 600 " ++ KeyPath) was vulnerable to shell injection attacks.
             % Mode 8#600 = rw------- (owner read/write only).
             case file:change_mode(KeyPath, 8#600) of
-                ok -> ok;
+                ok ->
+                    ok;
                 {error, Reason} ->
-                    logger:warning("Failed to set restrictive permissions on ~s: ~p", [KeyPath, Reason])
+                    logger:warning("Failed to set restrictive permissions on ~s: ~p",
+                                   [KeyPath, Reason])
             end,
             logger:warning("Generated new encryption key: ~s", [KeyPath]),
             NewKey

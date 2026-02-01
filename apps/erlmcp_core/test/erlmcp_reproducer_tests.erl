@@ -21,17 +21,15 @@ reproducer_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(State) ->
-         [
-          ?_test(capture_protocol_failure_test(State)),
-          ?_test(capture_transport_failure_test(State)),
-          ?_test(capture_sse_failure_test(State)),
-          ?_test(list_all_reproducers_test(State)),
-          ?_test(list_unfixed_reproducers_test(State)),
-          ?_test(mark_reproducer_fixed_test(State)),
-          ?_test(generate_reproducer_module_test(State)),
-          ?_test(replay_protocol_test(State)),
-          ?_test(audit_report_test(State))
-         ]
+        [?_test(capture_protocol_failure_test(State)),
+         ?_test(capture_transport_failure_test(State)),
+         ?_test(capture_sse_failure_test(State)),
+         ?_test(list_all_reproducers_test(State)),
+         ?_test(list_unfixed_reproducers_test(State)),
+         ?_test(mark_reproducer_fixed_test(State)),
+         ?_test(generate_reproducer_module_test(State)),
+         ?_test(replay_protocol_test(State)),
+         ?_test(audit_report_test(State))]
      end}.
 
 setup() ->
@@ -54,12 +52,11 @@ capture_protocol_failure_test(_State) ->
     Expected = {error, {wrong_version, <<"1.0">>}},
     Actual = {error, {wrong_version, <<"1.0">>}},
 
-    {ok, Id} = erlmcp_reproducer:capture_protocol_failure(
-        <<"TEST_WRONG_VERSION">>,
-        Input,
-        Expected,
-        Actual
-    ),
+    {ok, Id} =
+        erlmcp_reproducer:capture_protocol_failure(<<"TEST_WRONG_VERSION">>,
+                                                   Input,
+                                                   Expected,
+                                                   Actual),
 
     %% Verify: Reproducer was created (state-based)
     {ok, _Reproducer} = erlmcp_reproducer:get_reproducer(Id),
@@ -72,12 +69,11 @@ capture_transport_failure_test(_State) ->
     Expected = {error, invalid_frame},
     Actual = {ok, accepted},
 
-    {ok, Id} = erlmcp_reproducer:capture_transport_failure(
-        <<"TEST_INVALID_FRAME">>,
-        Input,
-        Expected,
-        Actual
-    ),
+    {ok, Id} =
+        erlmcp_reproducer:capture_transport_failure(<<"TEST_INVALID_FRAME">>,
+                                                    Input,
+                                                    Expected,
+                                                    Actual),
 
     %% Verify: Reproducer was created
     {ok, _Reproducer} = erlmcp_reproducer:get_reproducer(Id),
@@ -89,12 +85,8 @@ capture_sse_failure_test(_State) ->
     Expected = {error, invalid_resume_id},
     Actual = {error, {bad_type, integer}},
 
-    {ok, Id} = erlmcp_reproducer:capture_sse_failure(
-        <<"TEST_SSE_RESUME_ID">>,
-        Input,
-        Expected,
-        Actual
-    ),
+    {ok, Id} =
+        erlmcp_reproducer:capture_sse_failure(<<"TEST_SSE_RESUME_ID">>, Input, Expected, Actual),
 
     %% Verify: Reproducer was created
     {ok, _Reproducer} = erlmcp_reproducer:get_reproducer(Id),
@@ -102,10 +94,8 @@ capture_sse_failure_test(_State) ->
 
 list_all_reproducers_test(_State) ->
     %% Setup: Capture multiple failures
-    erlmcp_reproducer:capture_protocol_failure(
-        <<"TEST_1">>, <<>>, undefined, undefined),
-    erlmcp_reproducer:capture_protocol_failure(
-        <<"TEST_2">>, <<>>, undefined, undefined),
+    erlmcp_reproducer:capture_protocol_failure(<<"TEST_1">>, <<>>, undefined, undefined),
+    erlmcp_reproducer:capture_protocol_failure(<<"TEST_2">>, <<>>, undefined, undefined),
 
     %% Exercise: List all reproducers
     {ok, Reproducers} = erlmcp_reproducer:list_all(),
@@ -115,8 +105,8 @@ list_all_reproducers_test(_State) ->
 
 list_unfixed_reproducers_test(_State) ->
     %% Setup: Capture a failure
-    {ok, _Id} = erlmcp_reproducer:capture_protocol_failure(
-        <<"TEST_UNFIXED">>, <<>>, undefined, undefined),
+    {ok, _Id} =
+        erlmcp_reproducer:capture_protocol_failure(<<"TEST_UNFIXED">>, <<>>, undefined, undefined),
 
     %% Exercise: List unfixed reproducers
     {ok, Unfixed} = erlmcp_reproducer:list_unfixed(),
@@ -126,8 +116,8 @@ list_unfixed_reproducers_test(_State) ->
 
 mark_reproducer_fixed_test(_State) ->
     %% Setup: Capture a failure
-    {ok, Id} = erlmcp_reproducer:capture_protocol_failure(
-        <<"TEST_TO_FIX">>, <<>>, undefined, undefined),
+    {ok, Id} =
+        erlmcp_reproducer:capture_protocol_failure(<<"TEST_TO_FIX">>, <<>>, undefined, undefined),
 
     %% Exercise: Mark as fixed
     ok = erlmcp_reproducer:mark_fixed(Id),
@@ -138,12 +128,11 @@ mark_reproducer_fixed_test(_State) ->
 
 generate_reproducer_module_test(_State) ->
     %% Setup: Capture a failure
-    {ok, Id} = erlmcp_reproducer:capture_protocol_failure(
-        <<"TEST_MODULE_GEN">>,
-        <<"{\"jsonrpc\":\"2.0\"}">>,
-        {ok, valid},
-        {error, invalid}
-    ),
+    {ok, Id} =
+        erlmcp_reproducer:capture_protocol_failure(<<"TEST_MODULE_GEN">>,
+                                                   <<"{\"jsonrpc\":\"2.0\"}">>,
+                                                   {ok, valid},
+                                                   {error, invalid}),
 
     %% Exercise: Generate module file (Chicago School: real file system)
     {ok, Reproducer} = erlmcp_reproducer:get_reproducer(Id),
@@ -157,27 +146,30 @@ generate_reproducer_module_test(_State) ->
 
 replay_protocol_test(_State) ->
     %% Setup: Create a protocol scenario
-    Scenario = #{
-        rule_id => <<"TEST_REPLAY">>,
-        description => <<"Test replay">>,
-        category => protocol,
-        input => [<<"{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"id\":1}">>],
-        expected => {ok, valid},
-        actual => {ok, valid}
-    },
+    Scenario =
+        #{rule_id => <<"TEST_REPLAY">>,
+          description => <<"Test replay">>,
+          category => protocol,
+          input => [<<"{\"jsonrpc\":\"2.0\",\"method\":\"ping\",\"id\":1}">>],
+          expected => {ok, valid},
+          actual => {ok, valid}},
 
     %% Exercise: Replay scenario (Chicago School: real execution)
     Result = erlmcp_reproducer:replay(Scenario),
 
     %% Verify: Replay executes (state-based)
-    ?assertMatch({ok, _} | {error, _}, Result).
+    case Result of
+        {ok, _} ->
+            ok;
+        {error, _} ->
+            ok
+    end.
 
 audit_report_test(_State) ->
     %% Setup: Capture some failures
-    erlmcp_reproducer:capture_protocol_failure(
-        <<"AUDIT_1">>, <<>>, undefined, undefined),
-    {ok, Id} = erlmcp_reproducer:capture_protocol_failure(
-        <<"AUDIT_2">>, <<>>, undefined, undefined),
+    erlmcp_reproducer:capture_protocol_failure(<<"AUDIT_1">>, <<>>, undefined, undefined),
+    {ok, Id} =
+        erlmcp_reproducer:capture_protocol_failure(<<"AUDIT_2">>, <<>>, undefined, undefined),
     erlmcp_reproducer:mark_fixed(Id),
 
     %% Exercise: Generate audit report

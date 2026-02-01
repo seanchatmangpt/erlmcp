@@ -17,29 +17,27 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_transport_stdio).
+
 %% -behaviour(erlmcp_transport_behavior).  % Conflicts with gen_server init/1
 -behaviour(gen_server).
 
 %% Transport behavior callbacks
 -export([transport_init/1, send/2, close/1, get_info/1, handle_transport_call/2]).
-
 %% API exports
 -export([start_link/1, start_link/2, validate_message_size/2, get_max_message_size/0]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 
--record(state, {
-    owner :: pid(),
-    owner_monitor :: reference() | undefined,
-    reader :: pid() | undefined,
-    buffer = <<>> :: binary(),
-    test_mode = false :: boolean(),
-    max_message_size :: pos_integer(),  % Maximum allowed message size in bytes
-    transport_id :: atom() | binary() | undefined  % Transport ID for gproc registration
-}).
+-record(state,
+        {owner :: pid(),
+         owner_monitor :: reference() | undefined,
+         reader :: pid() | undefined,
+         buffer = <<>> :: binary(),
+         test_mode = false :: boolean(),
+         max_message_size :: pos_integer(),  % Maximum allowed message size in bytes
+         transport_id :: atom() | binary() | undefined}).  % Transport ID for gproc registration
 
 -type state() :: #state{}.
 
@@ -61,30 +59,24 @@ transport_init(Config) when is_map(Config) ->
 get_info(Pid) when is_pid(Pid) ->
     case gen_server:call(Pid, get_state, 5000) of
         {ok, State} ->
-            #{
-                transport_id => State#state.transport_id,
-                type => stdio,
-                status => running,
-                test_mode => State#state.test_mode,
-                max_message_size => State#state.max_message_size
-            };
+            #{transport_id => State#state.transport_id,
+              type => stdio,
+              status => running,
+              test_mode => State#state.test_mode,
+              max_message_size => State#state.max_message_size};
         _ ->
-            #{
-                transport_id => undefined,
-                type => stdio,
-                status => error
-            }
+            #{transport_id => undefined,
+              type => stdio,
+              status => error}
     end;
 get_info(_) ->
-    #{
-        transport_id => undefined,
-        type => stdio,
-        status => unknown
-    }.
+    #{transport_id => undefined,
+      type => stdio,
+      status => unknown}.
 
 %% @doc Handle transport-specific calls
 -spec handle_transport_call(term(), pid() | term()) ->
-    {reply, term(), pid() | term()} | {error, term()}.
+                               {reply, term(), pid() | term()} | {error, term()}.
 handle_transport_call(_Request, State) ->
     {error, unknown_request}.
 
@@ -138,12 +130,13 @@ init([Owner, Opts]) when is_map(Opts) ->
     % Register with registry if transport_id is provided
     TransportId = maps:get(transport_id, Opts, undefined),
     case TransportId of
-        undefined -> ok;
+        undefined ->
+            ok;
         _ ->
-            ok = erlmcp_registry:register_transport(TransportId, self(), #{
-                type => stdio,
-                config => Opts
-            })
+            ok =
+                erlmcp_registry:register_transport(TransportId,
+                                                   self(),
+                                                   #{type => stdio, config => Opts})
     end,
 
     % Check if we're in test mode by looking at the process dictionary
@@ -153,13 +146,12 @@ init([Owner, Opts]) when is_map(Opts) ->
     % Get max message size from config, default to 16MB
     MaxMessageSize = get_max_message_size(),
 
-    State = #state{
-        owner = Owner,
-        owner_monitor = OwnerMonitor,
-        test_mode = TestMode,
-        max_message_size = MaxMessageSize,
-        transport_id = TransportId
-    },
+    State =
+        #state{owner = Owner,
+               owner_monitor = OwnerMonitor,
+               test_mode = TestMode,
+               max_message_size = MaxMessageSize,
+               transport_id = TransportId},
 
     % Only start the reader if we're not in test mode
     case TestMode of
@@ -174,12 +166,10 @@ init([Owner, Opts]) when is_map(Opts) ->
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
 handle_call(get_state, _From, State) ->
     {reply, {ok, State}, State};
-
 handle_call({simulate_input, Line}, _From, #state{test_mode = true, owner = Owner} = State) ->
     % Allow tests to simulate input
     Owner ! {transport_message, Line},
     {reply, ok, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -191,7 +181,6 @@ handle_cast(_Msg, State) ->
 handle_info({line, Line}, #state{owner = Owner} = State) ->
     Owner ! {transport_message, Line},
     {noreply, State};
-
 handle_info({'EXIT', Pid, Reason}, #state{reader = Pid, test_mode = false} = State) ->
     case Reason of
         normal ->
@@ -203,33 +192,38 @@ handle_info({'EXIT', Pid, Reason}, #state{reader = Pid, test_mode = false} = Sta
             logger:error("Reader process died: ~p", [Reason]),
             {stop, {reader_died, Reason}, State}
     end;
-
-handle_info({'DOWN', MonitorRef, process, Owner, Reason}, #state{owner_monitor = MonitorRef, owner = Owner} = State) ->
+handle_info({'DOWN', MonitorRef, process, Owner, Reason},
+            #state{owner_monitor = MonitorRef, owner = Owner} = State) ->
     logger:info("Owner process ~p died: ~p", [Owner, Reason]),
     {stop, {owner_died, Reason}, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, #state{reader = Reader, transport_id = TransportId, owner_monitor = OwnerMonitor}) ->
+terminate(_Reason,
+          #state{reader = Reader,
+                 transport_id = TransportId,
+                 owner_monitor = OwnerMonitor}) ->
     % Unregister from registry if registered
     case TransportId of
-        undefined -> ok;
+        undefined ->
+            ok;
         _ ->
             erlmcp_registry:unregister_transport(TransportId)
     end,
 
     % Demonitor owner process to avoid DOWN messages during shutdown
     case OwnerMonitor of
-        undefined -> ok;
+        undefined ->
+            ok;
         MonitorRef when is_reference(MonitorRef) ->
             erlang:demonitor(MonitorRef, [flush])
     end,
 
     % Stop reader process
     case Reader of
-        undefined -> ok;
+        undefined ->
+            ok;
         Pid when is_pid(Pid) ->
             exit(Pid, shutdown)
     end,
@@ -249,15 +243,18 @@ code_change(_OldVsn, State, _Extra) ->
 is_test_environment() ->
     % Check various indicators that we're in a test environment
     case get(test_mode) of
-        true -> true;
+        true ->
+            true;
         _ ->
             % Check if EUnit is running
             case whereis(eunit_proc) of
                 undefined ->
                     % Check if we can read from stdin without blocking
                     case stdin_available() of
-                        true -> false;
-                        false -> true  % Assume test mode if stdin not available
+                        true ->
+                            false;
+                        false ->
+                            true  % Assume test mode if stdin not available
                     end;
                 _ ->
                     true  % EUnit is running
@@ -269,9 +266,12 @@ stdin_available() ->
     % Try to check if stdin is available without blocking
     % This is a heuristic - in a real application you might want more sophisticated detection
     case io:get_chars("", 0) of
-        eof -> false;
-        {error, _} -> false;
-        _ -> true
+        eof ->
+            false;
+        {error, _} ->
+            false;
+        _ ->
+            true
     end.
 
 %% Main read loop with message size validation
@@ -292,7 +292,7 @@ read_loop(Parent, Owner, MaxMessageSize) ->
                     read_loop(Parent, Owner, MaxMessageSize);
                 {error, size_exceeded} ->
                     logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
-                        [byte_size(BinaryLine), MaxMessageSize]),
+                                 [byte_size(BinaryLine), MaxMessageSize]),
                     % Send proper JSON-RPC error response with MESSAGE_TOO_LARGE code (-32012)
                     ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
                     io:format("~s~n", [ErrorMsg]),
@@ -305,7 +305,7 @@ read_loop(Parent, Owner, MaxMessageSize) ->
                     read_loop(Parent, Owner, MaxMessageSize);
                 {error, size_exceeded} ->
                     logger:error("Message size exceeded (~p bytes > ~p bytes limit)",
-                        [byte_size(Line), MaxMessageSize]),
+                                 [byte_size(Line), MaxMessageSize]),
                     % Send proper JSON-RPC error response with MESSAGE_TOO_LARGE code (-32012)
                     ErrorMsg = erlmcp_json_rpc:error_message_too_large(null, MaxMessageSize),
                     io:format("~s~n", [ErrorMsg]),
@@ -317,8 +317,11 @@ read_loop(Parent, Owner, MaxMessageSize) ->
 process_line(Parent, Line) ->
     CleanLine = trim_line(Line),
     case byte_size(CleanLine) of
-        0 -> ok;  %% Skip empty lines
-        _ -> Parent ! {line, CleanLine}, ok  %% Send and return ok
+        0 ->
+            ok;  %% Skip empty lines
+        _ ->
+            Parent ! {line, CleanLine},
+            ok  %% Send and return ok
     end.
 
 -spec trim_line(binary()) -> binary().
@@ -338,11 +341,11 @@ trim_end(<<>>) ->
 trim_end(Binary) ->
     Size = byte_size(Binary),
     case Binary of
-        <<Content:(Size-2)/binary, "\r\n">> ->
+        <<Content:(Size - 2)/binary, "\r\n">> ->
             trim_end(Content);
-        <<Content:(Size-1)/binary, "\n">> ->
+        <<Content:(Size - 1)/binary, "\n">> ->
             trim_end(Content);
-        <<Content:(Size-1)/binary, "\r">> ->
+        <<Content:(Size - 1)/binary, "\r">> ->
             trim_end(Content);
         _ ->
             Binary
@@ -363,8 +366,10 @@ get_max_message_size() ->
 -spec validate_message_size(binary(), pos_integer()) -> ok | {error, size_exceeded}.
 validate_message_size(Message, MaxSize) when is_binary(Message), is_integer(MaxSize), MaxSize > 0 ->
     case byte_size(Message) =< MaxSize of
-        true -> ok;
-        false -> {error, size_exceeded}
+        true ->
+            ok;
+        false ->
+            {error, size_exceeded}
     end;
 validate_message_size(_Message, _MaxSize) ->
     ok.

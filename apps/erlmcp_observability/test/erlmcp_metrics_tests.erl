@@ -26,15 +26,13 @@ metrics_test_() ->
     {setup,
      fun setup_metrics/0,
      fun cleanup_metrics/1,
-     [
-         {"Record transport operation", fun test_record_transport_operation/0},
-         {"Record server operation", fun test_record_server_operation/0},
-         {"Record registry operation", fun test_record_registry_operation/0},
-         {"Get all metrics", fun test_get_metrics/0},
-         {"Get metrics by name", fun test_get_metrics_by_name/0},
-         {"Reset metrics", fun test_reset_metrics/0},
-         {"With metrics helper", fun test_with_metrics/0}
-     ]}.
+     [{"Record transport operation", fun test_record_transport_operation/0},
+      {"Record server operation", fun test_record_server_operation/0},
+      {"Record registry operation", fun test_record_registry_operation/0},
+      {"Get all metrics", fun test_get_metrics/0},
+      {"Get metrics by name", fun test_get_metrics_by_name/0},
+      {"Reset metrics", fun test_reset_metrics/0},
+      {"With metrics helper", fun test_with_metrics/0}]}.
 
 setup_metrics() ->
     % Start metrics gen_server
@@ -145,26 +143,28 @@ metrics_lifecycle_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Record multiple metric types
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
-              ok = erlmcp_metrics:record_server_operation(<<"server_1">>, call, 20, #{<<"result">> => ok}),
-              ok = erlmcp_metrics:record_registry_operation(lookup, 5, #{}),
+        [?_test(begin
+                    % Record multiple metric types
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, 15),
+                    ok =
+                        erlmcp_metrics:record_server_operation(<<"server_1">>,
+                                                               call,
+                                                               20,
+                                                               #{<<"result">> => ok}),
+                    ok = erlmcp_metrics:record_registry_operation(lookup, 5, #{}),
 
-              % Query all metrics
-              Metrics = erlmcp_metrics:get_metrics(),
-              ?assert(is_list(Metrics)),
-              ?assertEqual(3, length(Metrics)),
+                    % Query all metrics
+                    Metrics = erlmcp_metrics:get_metrics(),
+                    ?assert(is_list(Metrics)),
+                    ?assertEqual(3, length(Metrics)),
 
-              % Reset
-              ok = erlmcp_metrics:reset_metrics(),
+                    % Reset
+                    ok = erlmcp_metrics:reset_metrics(),
 
-              % Verify cleared
-              EmptyMetrics = erlmcp_metrics:get_metrics(),
-              ?assertEqual(0, length(EmptyMetrics))
-          end)
-         ]
+                    % Verify cleared
+                    EmptyMetrics = erlmcp_metrics:get_metrics(),
+                    ?assertEqual(0, length(EmptyMetrics))
+                end)]
      end}.
 
 %%====================================================================
@@ -177,10 +177,13 @@ test_with_metrics() ->
     Labels = #{<<"test">> => true},
 
     % Execute function with metrics recording
-    Result = erlmcp_metrics:with_metrics(<<"test_operation">>, Labels, fun() ->
-        timer:sleep(10),
-        success
-    end),
+    Result =
+        erlmcp_metrics:with_metrics(<<"test_operation">>,
+                                    Labels,
+                                    fun() ->
+                                       timer:sleep(10),
+                                       success
+                                    end),
 
     % Verify function result is returned
     ?assertEqual(success, Result),
@@ -206,14 +209,12 @@ record_empty_labels_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Record with empty labels
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp">>, tcp, send, 10),
-              Metrics = erlmcp_metrics:get_metrics(),
-              ?assertEqual(1, length(Metrics))
-          end)
-         ]
+        [?_test(begin
+                    % Record with empty labels
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp">>, tcp, send, 10),
+                    Metrics = erlmcp_metrics:get_metrics(),
+                    ?assertEqual(1, length(Metrics))
+                end)]
      end}.
 
 %% Test multiple recordings of same metric
@@ -222,18 +223,16 @@ multiple_recordings_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Record same metric multiple times
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp_1">>, tcp, send, 10),
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp_2">>, tcp, recv, 15),
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp_3">>, tcp, send, 20),
+        [?_test(begin
+                    % Record same metric multiple times
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp_1">>, tcp, send, 10),
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp_2">>, tcp, recv, 15),
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp_3">>, tcp, send, 20),
 
-              % All should be recorded
-              Metrics = erlmcp_metrics:get_metrics(),
-              ?assertEqual(3, length(Metrics))
-          end)
-         ]
+                    % All should be recorded
+                    Metrics = erlmcp_metrics:get_metrics(),
+                    ?assertEqual(3, length(Metrics))
+                end)]
      end}.
 
 %% Test with_metrics with exception
@@ -242,19 +241,18 @@ with_metrics_exception_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Function that throws an error
-              ErrorFun = fun() -> throw(test_error) end,
+        [?_test(begin
+                    % Function that throws an error
+                    ErrorFun = fun() -> throw(test_error) end,
 
-              % Error should be re-raised
-              ?assertThrow(test_error, erlmcp_metrics:with_metrics(<<"error_op">>, #{}, ErrorFun)),
+                    % Error should be re-raised
+                    ?assertThrow(test_error,
+                                 erlmcp_metrics:with_metrics(<<"error_op">>, #{}, ErrorFun)),
 
-              % Metric should still be recorded despite error
-              Metrics = erlmcp_metrics:get_metrics(<<"error_op">>),
-              ?assertEqual(1, length(Metrics))
-          end)
-         ]
+                    % Metric should still be recorded despite error
+                    Metrics = erlmcp_metrics:get_metrics(<<"error_op">>),
+                    ?assertEqual(1, length(Metrics))
+                end)]
      end}.
 
 %%====================================================================
@@ -267,51 +265,48 @@ metrics_workflow_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Simulate a complete request workflow with metrics
+        [?_test(begin
+                    % Simulate a complete request workflow with metrics
+                    % Record transport operation
+                    ok = erlmcp_metrics:record_transport_operation(<<"conn_1">>, tcp, send, 5),
 
-              % Record transport operation
-              ok = erlmcp_metrics:record_transport_operation(<<"conn_1">>, tcp, send, 5),
+                    % Record server operation
+                    ok =
+                        erlmcp_metrics:record_server_operation(<<"server_1">>,
+                                                               initialize,
+                                                               10,
+                                                               #{<<"result">> => ok}),
 
-              % Record server operation
-              ok = erlmcp_metrics:record_server_operation(
-                  <<"server_1">>,
-                  initialize,
-                  10,
-                  #{<<"result">> => ok}
-              ),
+                    % Use with_metrics helper
+                    Result =
+                        erlmcp_metrics:with_metrics(<<"process_request">>,
+                                                    #{<<"request_type">> => <<"tool_call">>},
+                                                    fun() ->
+                                                       timer:sleep(5),
+                                                       {ok, processed}
+                                                    end),
+                    ?assertEqual({ok, processed}, Result),
 
-              % Use with_metrics helper
-              Result = erlmcp_metrics:with_metrics(
-                  <<"process_request">>,
-                  #{<<"request_type">> => <<"tool_call">>},
-                  fun() ->
-                          timer:sleep(5),
-                          {ok, processed}
-                  end
-              ),
-              ?assertEqual({ok, processed}, Result),
+                    % Record registry operation
+                    ok = erlmcp_metrics:record_registry_operation(lookup, 3, #{}),
 
-              % Record registry operation
-              ok = erlmcp_metrics:record_registry_operation(lookup, 3, #{}),
+                    % Verify all metrics were recorded
+                    AllMetrics = erlmcp_metrics:get_metrics(),
+                    ?assertEqual(4, length(AllMetrics)),
 
-              % Verify all metrics were recorded
-              AllMetrics = erlmcp_metrics:get_metrics(),
-              ?assertEqual(4, length(AllMetrics)),
+                    % Verify specific metric types
+                    TransportMetrics =
+                        erlmcp_metrics:get_metrics(<<"transport_operation_duration_ms">>),
+                    ?assertEqual(1, length(TransportMetrics)),
 
-              % Verify specific metric types
-              TransportMetrics = erlmcp_metrics:get_metrics(<<"transport_operation_duration_ms">>),
-              ?assertEqual(1, length(TransportMetrics)),
+                    ServerMetrics = erlmcp_metrics:get_metrics(<<"server_operation_duration_ms">>),
+                    ?assertEqual(1, length(ServerMetrics)),
 
-              ServerMetrics = erlmcp_metrics:get_metrics(<<"server_operation_duration_ms">>),
-              ?assertEqual(1, length(ServerMetrics)),
+                    RequestMetrics = erlmcp_metrics:get_metrics(<<"process_request">>),
+                    ?assertEqual(1, length(RequestMetrics)),
 
-              RequestMetrics = erlmcp_metrics:get_metrics(<<"process_request">>),
-              ?assertEqual(1, length(RequestMetrics)),
-
-              RegistryMetrics = erlmcp_metrics:get_metrics(<<"registry_operation_duration_ms">>),
-              ?assertEqual(1, length(RegistryMetrics))
-          end)
-         ]
+                    RegistryMetrics =
+                        erlmcp_metrics:get_metrics(<<"registry_operation_duration_ms">>),
+                    ?assertEqual(1, length(RegistryMetrics))
+                end)]
      end}.

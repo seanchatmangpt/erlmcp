@@ -20,6 +20,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_registry_distributed).
+
 -behaviour(gen_server).
 -behaviour(erlmcp_registry_behavior).
 
@@ -32,19 +33,8 @@
 -type transport_id() :: atom() | binary().
 
 %% API exports
--export([
-    start_link/0,
-    register/4,
-    unregister/2,
-    whereis/2,
-    list/1,
-    update/3,
-    join_group/2,
-    leave_group/2,
-    get_group_members/1,
-    is_distributed/0
-]).
-
+-export([start_link/0, register/4, unregister/2, whereis/2, list/1, update/3, join_group/2,
+         leave_group/2, get_group_members/1, is_distributed/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -60,9 +50,8 @@
 -define(GROUP_PROMPT_SERVERS, mcp_prompt_servers).
 
 %% State record
--record(state, {
-    monitors = #{} :: #{reference() => {Type :: atom(), Id :: term(), Groups :: [atom()]}}
-}).
+-record(state,
+        {monitors = #{} :: #{reference() => {Type :: atom(), Id :: term(), Groups :: [atom()]}}}).
 
 -type state() :: #state{}.
 
@@ -125,7 +114,7 @@ unregister(Type, Id) when is_atom(Type) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec whereis(entity_type(), entity_id()) ->
-    {ok, {node(), pid(), entity_config()}} | {error, not_found}.
+                 {ok, {node(), pid(), entity_config()}} | {error, not_found}.
 whereis(Type, Id) when is_atom(Type) ->
     GlobalName = make_global_name(Type, Id),
     case global:whereis_name(GlobalName) of
@@ -148,29 +137,35 @@ list(Type) when is_atom(Type) ->
     AllNames = global:registered_names(),
 
     %% Filter out any stale entries from previous test runs
-    MatchingNames = lists:filter(fun(Name) ->
-        case matches_pattern(Name, Pattern) of
-            true ->
-                %% Verify the process is actually alive
-                case global:whereis_name(Name) of
-                    undefined -> false;
-                    _Pid -> true
-                end;
-            false ->
-                false
-        end
-    end, AllNames),
+    MatchingNames =
+        lists:filter(fun(Name) ->
+                        case matches_pattern(Name, Pattern) of
+                            true ->
+                                %% Verify the process is actually alive
+                                case global:whereis_name(Name) of
+                                    undefined ->
+                                        false;
+                                    _Pid ->
+                                        true
+                                end;
+                            false ->
+                                false
+                        end
+                     end,
+                     AllNames),
 
     %% Build result list
     lists:filtermap(fun(GlobalName) ->
-        case global:whereis_name(GlobalName) of
-            undefined -> false;
-            Pid ->
-                Id = extract_id_from_global_name(GlobalName, Type),
-                Config = get_entity_config(Type, Id),
-                {true, {Id, {node(Pid), Pid, Config}}}
-        end
-    end, MatchingNames).
+                       case global:whereis_name(GlobalName) of
+                           undefined ->
+                               false;
+                           Pid ->
+                               Id = extract_id_from_global_name(GlobalName, Type),
+                               Config = get_entity_config(Type, Id),
+                               {true, {Id, {node(Pid), Pid, Config}}}
+                       end
+                    end,
+                    MatchingNames).
 
 %%--------------------------------------------------------------------
 %% @doc Update entity configuration
@@ -236,48 +231,50 @@ init([]) ->
     {ok, #state{}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
-
 handle_call({monitor_process, Type, Id, Pid, Groups}, _From, State) ->
     Ref = monitor(process, Pid),
     NewMonitors = maps:put(Ref, {Type, Id, Groups}, State#state.monitors),
     {reply, ok, State#state{monitors = NewMonitors}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
-
 handle_cast({stop_monitoring, Type, Id}, State) ->
     %% Find and remove monitor for this entity
-    NewMonitors = maps:filter(fun(_, {T, I, _}) -> not (T =:= Type andalso I =:= Id) end,
-                              State#state.monitors),
+    NewMonitors =
+        maps:filter(fun(_, {T, I, _}) -> not (T =:= Type andalso I =:= Id) end,
+                    State#state.monitors),
     {noreply, State#state{monitors = NewMonitors}};
-
 handle_cast({add_group, Pid, Group}, State) ->
     %% Update groups for monitored process
-    NewMonitors = maps:map(fun(Ref, {Type, Id, Groups}) ->
-        case monitor_info(Ref, pid) of
-            {pid, Pid} -> {Type, Id, lists:usort([Group | Groups])};
-            _ -> {Type, Id, Groups}
-        end
-    end, State#state.monitors),
+    NewMonitors =
+        maps:map(fun(Ref, {Type, Id, Groups}) ->
+                    case monitor_info(Ref, pid) of
+                        {pid, Pid} ->
+                            {Type, Id, lists:usort([Group | Groups])};
+                        _ ->
+                            {Type, Id, Groups}
+                    end
+                 end,
+                 State#state.monitors),
     {noreply, State#state{monitors = NewMonitors}};
-
 handle_cast({remove_group, Pid, Group}, State) ->
     %% Remove group from monitored process
-    NewMonitors = maps:map(fun(Ref, {Type, Id, Groups}) ->
-        case monitor_info(Ref, pid) of
-            {pid, Pid} -> {Type, Id, lists:delete(Group, Groups)};
-            _ -> {Type, Id, Groups}
-        end
-    end, State#state.monitors),
+    NewMonitors =
+        maps:map(fun(Ref, {Type, Id, Groups}) ->
+                    case monitor_info(Ref, pid) of
+                        {pid, Pid} ->
+                            {Type, Id, lists:delete(Group, Groups)};
+                        _ ->
+                            {Type, Id, Groups}
+                    end
+                 end,
+                 State#state.monitors),
     {noreply, State#state{monitors = NewMonitors}};
-
 handle_cast(_Request, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
-
 handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
     %% Process died - clean up global registration and pg groups
     case maps:get(Ref, State#state.monitors, undefined) of
@@ -285,7 +282,7 @@ handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
             {noreply, State};
         {Type, Id, Groups} ->
             logger:warning("Process ~p died (reason: ~p), cleaning up ~p ~p",
-                          [Pid, Reason, Type, Id]),
+                           [Pid, Reason, Type, Id]),
 
             %% Unregister from global
             GlobalName = make_global_name(Type, Id),
@@ -301,7 +298,6 @@ handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
             NewMonitors = maps:remove(Ref, State#state.monitors),
             {noreply, State#state{monitors = NewMonitors}}
     end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -322,8 +318,10 @@ code_change(_OldVsn, State, _Extra) ->
 -spec ensure_pg_scope() -> ok.
 ensure_pg_scope() ->
     case pg:start(?PG_SCOPE) of
-        {ok, _Pid} -> ok;
-        {error, {already_started, _Pid}} -> ok
+        {ok, _Pid} ->
+            ok;
+        {error, {already_started, _Pid}} ->
+            ok
     end.
 
 %% @doc Make a global name for an entity
@@ -333,7 +331,11 @@ make_global_name(Type, Id) when is_atom(Type), is_atom(Id) ->
 make_global_name(Type, Id) when is_atom(Type), is_binary(Id) ->
     list_to_atom("erlmcp_" ++ atom_to_list(Type) ++ "_" ++ binary_to_list(Id));
 make_global_name(Type, Id) when is_atom(Type) ->
-    list_to_atom("erlmcp_" ++ atom_to_list(Type) ++ "_" ++ lists:flatten(io_lib:format("~p", [Id]))).
+    list_to_atom("erlmcp_"
+                 ++ atom_to_list(Type)
+                 ++ "_"
+                 ++ lists:flatten(
+                        io_lib:format("~p", [Id]))).
 
 %% @doc Make a pattern for matching global names
 -spec make_global_pattern(entity_type()) -> string().
@@ -356,7 +358,8 @@ extract_id_from_global_name(GlobalName, Type) when is_atom(GlobalName), is_atom(
     try
         list_to_existing_atom(IdStr)
     catch
-        error:badarg -> list_to_binary(IdStr)
+        error:badarg ->
+            list_to_binary(IdStr)
     end.
 
 %% @doc Determine which groups an entity should join
@@ -365,13 +368,19 @@ determine_groups(server, Config) ->
     BaseGroups = [?GROUP_ALL_SERVERS],
     %% Add type-specific groups based on capabilities
     case maps:get(capabilities, Config, undefined) of
-        #mcp_server_capabilities{tools = Tools, resources = Resources, prompts = Prompts} ->
+        #mcp_server_capabilities{tools = Tools,
+                                 resources = Resources,
+                                 prompts = Prompts} ->
             TypeGroups =
                 case {Tools, Resources, Prompts} of
-                    {#{}, _, _} -> [?GROUP_TOOL_SERVERS];
-                    {_, #{}, _} -> [?GROUP_RESOURCE_SERVERS];
-                    {_, _, #{}} -> [?GROUP_PROMPT_SERVERS];
-                    _ -> []
+                    {#{}, _, _} ->
+                        [?GROUP_TOOL_SERVERS];
+                    {_, #{}, _} ->
+                        [?GROUP_RESOURCE_SERVERS];
+                    {_, _, #{}} ->
+                        [?GROUP_PROMPT_SERVERS];
+                    _ ->
+                        []
                 end,
             BaseGroups ++ TypeGroups;
         _ ->
@@ -385,8 +394,10 @@ determine_groups(transport, _Config) ->
 get_entity_config(Type, Id) ->
     Key = {erlmcp_config, Type, Id},
     case get(Key) of
-        undefined -> #{};
-        Config -> Config
+        undefined ->
+            #{};
+        Config ->
+            Config
     end.
 
 %% @doc Put entity config into process dictionary
@@ -414,8 +425,10 @@ monitor_info(Ref, Item) ->
             case erlang:process_info(self(), monitors) of
                 {monitors, Monitors} ->
                     case lists:keyfind(Ref, 1, Monitors) of
-                        {Ref, Pid} when Item =:= pid -> {pid, Pid};
-                        _ -> undefined
+                        {Ref, Pid} when Item =:= pid ->
+                            {pid, Pid};
+                        _ ->
+                            undefined
                     end;
                 _ ->
                     undefined

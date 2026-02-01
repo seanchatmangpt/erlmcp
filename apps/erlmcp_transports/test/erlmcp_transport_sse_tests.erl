@@ -24,34 +24,28 @@ cleanup(_) ->
 
 sse_transport_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            ?_test(test_init_sse()),
-            ?_test(test_send_event()),
-            ?_test(test_close_stream()),
-            ?_test(test_format_sse_event()),
-            ?_test(test_post_message()),
-            ?_test(test_get_stream()),
-            ?_test(test_keepalive_ping()),
-            ?_test(test_stream_timeout()),
-            ?_test(test_concurrent_streams()),
-            ?_test(test_delete_with_session()),
-            ?_test(test_delete_without_session()),
-            ?_test(test_cleanup_sse_session()),
-            ?_test(test_delete_with_cleanup_error())
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [?_test(test_init_sse()),
+      ?_test(test_send_event()),
+      ?_test(test_close_stream()),
+      ?_test(test_format_sse_event()),
+      ?_test(test_post_message()),
+      ?_test(test_get_stream()),
+      ?_test(test_keepalive_ping()),
+      ?_test(test_stream_timeout()),
+      ?_test(test_concurrent_streams()),
+      ?_test(test_delete_with_session()),
+      ?_test(test_delete_without_session()),
+      ?_test(test_cleanup_sse_session()),
+      ?_test(test_delete_with_cleanup_error())]}.
 
 %%====================================================================
 %% Individual Tests
 %%====================================================================
 
 test_init_sse() ->
-    Config = #{
-        port => 8081,
-        path => "/mcp/sse"
-    },
+    Config = #{port => 8081, path => "/mcp/sse"},
     TransportId = <<"sse_test_1">>,
 
     {ok, Pid} = erlmcp_transport_sse:init(TransportId, Config),
@@ -59,19 +53,30 @@ test_init_sse() ->
 
 test_send_event() ->
     _TransportId = <<"sse_test_2">>,
-    ClientPid = spawn(fun() -> receive stop -> ok end end),
+    ClientPid =
+        spawn(fun() ->
+                 receive
+                     stop ->
+                         ok
+                 end
+              end),
 
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"id">> => 1}),
 
     Result = erlmcp_transport_sse:send(ClientPid, Message),
-    ?assert(Result =:= ok orelse (is_tuple(Result) andalso element(1, Result) =:= error)).
+    ?assert(Result =:= ok orelse is_tuple(Result) andalso element(1, Result) =:= error).
 
 test_close_stream() ->
-    ClientPid = spawn(fun() -> receive stop -> ok end end),
+    ClientPid =
+        spawn(fun() ->
+                 receive
+                     stop ->
+                         ok
+                 end
+              end),
 
     Result = erlmcp_transport_sse:close(ClientPid),
     ?assert(Result =:= ok).
@@ -86,12 +91,11 @@ test_format_sse_event() ->
 
 test_post_message() ->
     %% POST request to /mcp/sse should accept JSON
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{<<"name">> => <<"test">>},
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"tools/call">>,
+                     <<"params">> => #{<<"name">> => <<"test">>},
+                     <<"id">> => 1}),
 
     ?assert(is_binary(Message)),
     ?assert(byte_size(Message) > 0).
@@ -114,20 +118,21 @@ test_stream_timeout() ->
 
 test_concurrent_streams() ->
     %% Test multiple concurrent SSE streams
-    Pids = [spawn(fun() -> receive stop -> ok end end) || _ <- lists:seq(1, 3)],
+    Pids =
+        [spawn(fun() ->
+                  receive
+                      stop ->
+                          ok
+                  end
+               end)
+         || _ <- lists:seq(1, 3)],
 
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"id">> => 1}),
 
-    lists:foreach(
-        fun(Pid) ->
-            erlmcp_transport_sse:send(Pid, Message)
-        end,
-        Pids
-    ),
+    lists:foreach(fun(Pid) -> erlmcp_transport_sse:send(Pid, Message) end, Pids),
 
     ?assert(length(Pids) =:= 3).
 
@@ -211,12 +216,7 @@ test_concurrent_deletes() ->
     SessionIds = [<<"session_", (integer_to_binary(N))/binary>> || N <- lists:seq(1, 5)],
 
     %% Verify all sessions can be cleaned up
-    lists:foreach(
-        fun(SessionId) ->
-            ?assert(is_binary(SessionId))
-        end,
-        SessionIds
-    ),
+    lists:foreach(fun(SessionId) -> ?assert(is_binary(SessionId)) end, SessionIds),
 
     ?assert(length(SessionIds) =:= 5).
 

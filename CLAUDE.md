@@ -52,6 +52,7 @@ make benchmark-quick               # regression < 0.1 | 💻 300s
 | 6 | cloud(command) → idempotent(command) — Cloud Safety |
 | 7 | **NEVER REBASE EVER — Merge only (merge over rebase)** |
 | 8 | **ALWAYS use agents — Never appropriate to work without Task()** |
+| 9 | **NEVER USE --no-verify — All quality gates must pass, fix the root cause** |
 
 ---
 
@@ -167,7 +168,7 @@ TIER₃ (isolated)           : erlmcp_observability_sup ⊃ {metrics, dashboard,
 **Workflow & Operations (7)**:
 | Agent | Domain | Purpose |
 |-------|--------|---------|
-| erlang-github-ops | Git, PR, CI/CD (MERGE ONLY - NEVER REBASE) | Release workflow |
+| erlang-github-ops | Git, PR, CI/CD (MERGE ONLY - NEVER REBASE - NEVER --no-verify) | Release workflow |
 | sparc-orchestrator | SPARC methodology | Feature workflow |
 | plan-designer | Implementation planning | Research→Plan→Execute |
 | agent-17-poka-yoke | Error-proofing | Mistake-proofing |
@@ -244,7 +245,7 @@ Grep "handle_call" "apps/**/*.erl"
 
 **Kanban** : ∀agent. |WIP(agent)| ≤ 1
 
-**Lifecycle** : Queue → Acquire → Execute (unique branch) → Complete → **Merge (NEVER rebase)**
+**Lifecycle** : Queue → Acquire → Execute (unique branch) → Complete → **Quality gates PASS → Merge (NEVER rebase, NEVER --no-verify)**
 
 ### Subagent Configuration
 
@@ -368,7 +369,7 @@ See `.claude/settings.json` for 13 configured subagents with:
 
 ## Error Recovery
 
-**Auto-Recovery**: Network timeout (retry 3x) | Dependency fetch (clear cache) | Git conflict (rebase) | OTP crash (supervisor restart) | Rate limit (wait + retry)
+**Auto-Recovery**: Network timeout (retry 3x) | Dependency fetch (clear cache) | Git conflict (merge) | OTP crash (supervisor restart) | Rate limit (wait + retry)
 
 **Manual Intervention**: API design decisions | Breaking changes | Security credentials | Semantic merge conflicts | Budget exceeded
 

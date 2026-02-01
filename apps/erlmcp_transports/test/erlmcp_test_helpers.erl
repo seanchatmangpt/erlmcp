@@ -1,4 +1,5 @@
 -module(erlmcp_test_helpers).
+
 -behaviour(gen_server).
 
 %% Test helper utilities for Chicago School TDD
@@ -6,22 +7,11 @@
 %% NO MOCKS, NO DUMMY PROCESSES, NO STATE INSPECTION
 
 %% Public API
--export([
-    start_test_server/1,
-    start_test_client/1,
-    stop_test_process/1,
-    wait_for_transport_message/2,
-    wait_for_transport_connected/1,
-    wait_for_transport_disconnected/1,
-    send_transport_data/3,
-    get_transport_port/1,
-    make_unique_id/0,
-    make_unique_name/1,
-    with_test_server/2,
-    with_test_client/2,
-    with_test_transport_pair/3
-]).
-
+-export([start_test_server/1, start_test_client/1, stop_test_process/1,
+         wait_for_transport_message/2, wait_for_transport_connected/1,
+         wait_for_transport_disconnected/1, send_transport_data/3, get_transport_port/1,
+         make_unique_id/0, make_unique_name/1, with_test_server/2, with_test_client/2,
+         with_test_transport_pair/3]).
 %% gen_server callbacks (for test helper process)
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -36,23 +26,19 @@
 %% Returns {ok, ServerPid, Port} or {error, Reason}
 -spec start_test_server(map()) -> {ok, pid(), inet:port_number()} | {error, term()}.
 start_test_server(Opts) when is_map(Opts) ->
-    BaseOpts = #{
-        mode => server,
-        port => 0,  % Random port
-        owner => self(),
-        num_acceptors => maps:get(num_acceptors, Opts, 5),
-        max_connections => maps:get(max_connections, Opts, 100)
-    },
+    BaseOpts =
+        #{mode => server,
+          port => 0,  % Random port
+          owner => self(),
+          num_acceptors => maps:get(num_acceptors, Opts, 5),
+          max_connections => maps:get(max_connections, Opts, 100)},
 
     % Add unique IDs to avoid conflicts
     UniqueId = make_unique_id(),
     TransportId = maps:get(transport_id, Opts, make_unique_name("test_transport")),
     ServerId = maps:get(server_id, Opts, make_unique_name("test_server")),
 
-    FinalOpts = BaseOpts#{
-        transport_id => TransportId,
-        server_id => ServerId
-    },
+    FinalOpts = BaseOpts#{transport_id => TransportId, server_id => ServerId},
 
     case erlmcp_transport_tcp:start_server(FinalOpts) of
         {ok, Pid} ->
@@ -68,18 +54,15 @@ start_test_server(Opts) when is_map(Opts) ->
 %% Returns {ok, ClientPid} or {error, Reason}
 -spec start_test_client(map()) -> {ok, pid()} | {error, term()}.
 start_test_client(Opts) when is_map(Opts) ->
-    BaseOpts = #{
-        mode => client,
-        host => maps:get(host, Opts, "localhost"),
-        port => maps:get(port, Opts, 9999),
-        owner => self(),
-        max_reconnect_attempts => maps:get(max_reconnect_attempts, Opts, 3)
-    },
+    BaseOpts =
+        #{mode => client,
+          host => maps:get(host, Opts, "localhost"),
+          port => maps:get(port, Opts, 9999),
+          owner => self(),
+          max_reconnect_attempts => maps:get(max_reconnect_attempts, Opts, 3)},
 
     TransportId = maps:get(transport_id, Opts, make_unique_name("test_client")),
-    FinalOpts = BaseOpts#{
-        transport_id => TransportId
-    },
+    FinalOpts = BaseOpts#{transport_id => TransportId},
 
     erlmcp_transport_tcp:start_client(FinalOpts).
 
@@ -103,8 +86,10 @@ wait_for_transport_message(Timeout, ExpectedPattern) ->
     receive
         {transport_message, Data} when is_binary(Data) ->
             case ExpectedPattern of
-                undefined -> {ok, Data};
-                _ -> {ok, Data}
+                undefined ->
+                    {ok, Data};
+                _ ->
+                    {ok, Data}
             end
     after Timeout ->
         {error, timeout}
@@ -182,7 +167,8 @@ with_test_client(Opts, TestFun) ->
     end.
 
 %% @doc Execute test with server and client pair
--spec with_test_transport_pair(map(), map(), fun((pid(), inet:port_number(), pid()) -> any())) -> any().
+-spec with_test_transport_pair(map(), map(), fun((pid(), inet:port_number(), pid()) -> any())) ->
+                                  any().
 with_test_transport_pair(ServerOpts, ClientOpts, TestFun) ->
     {ok, ServerPid, Port} = start_test_server(ServerOpts),
     UpdatedClientOpts = ClientOpts#{port => Port},

@@ -1,4 +1,5 @@
 -module(erlmcp_validation_app).
+
 -behaviour(application).
 
 %% Application callbacks

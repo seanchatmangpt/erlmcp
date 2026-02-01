@@ -10,21 +10,17 @@
 %%% @end
 %%%====================================================================
 -module(erlmcp_cache_warmer).
+
 -behaviour(gen_server).
 
 -include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([start_link/3]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {
-    key :: term(),
-    value_fun :: fun(() -> term()),
-    ttl_seconds :: pos_integer()
-}).
+-record(state, {key :: term(), value_fun :: fun(() -> term()), ttl_seconds :: pos_integer()}).
 
 %%====================================================================
 %% API Functions
@@ -42,7 +38,10 @@ start_link(Key, ValueFun, TTLSeconds) ->
 init([Key, ValueFun, TTLSeconds]) ->
     %% Trigger async warming immediately
     gen_server:cast(self(), warm_cache),
-    {ok, #state{key = Key, value_fun = ValueFun, ttl_seconds = TTLSeconds}}.
+    {ok,
+     #state{key = Key,
+            value_fun = ValueFun,
+            ttl_seconds = TTLSeconds}}.
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -58,11 +57,10 @@ handle_cast(warm_cache, State) ->
     catch
         Class:Reason:Stack ->
             ?LOG_WARNING("Cache warm failed for ~p: ~p:~p~n~p",
-                        [State#state.key, Class, Reason, Stack]),
+                         [State#state.key, Class, Reason, Stack]),
             %% Stop worker after failure
             {stop, {warming_failed, Class, Reason}, State}
     end;
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

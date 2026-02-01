@@ -11,6 +11,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_websocket_compliance_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
@@ -49,22 +50,11 @@ websocket_compliance_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"WebSocket required callbacks - init, send, close",
-       fun test_required_callbacks/0},
-
-      {"WebSocket message validation - UTF-8 checking",
-       fun test_utf8_validation/0},
-
-      {"WebSocket message size validation - 16MB limit",
-       fun test_size_validation/0},
-
-      {"WebSocket session ID generation - unique",
-       fun test_session_id/0},
-
-      {"WebSocket ping/pong handling",
-       fun test_ping_pong/0}
-     ]}.
+     [{"WebSocket required callbacks - init, send, close", fun test_required_callbacks/0},
+      {"WebSocket message validation - UTF-8 checking", fun test_utf8_validation/0},
+      {"WebSocket message size validation - 16MB limit", fun test_size_validation/0},
+      {"WebSocket session ID generation - unique", fun test_session_id/0},
+      {"WebSocket ping/pong handling", fun test_ping_pong/0}]}.
 
 %%====================================================================
 %% Required Callbacks Tests
@@ -75,9 +65,7 @@ test_required_callbacks() ->
     Exports = ?WS_TRANSPORT:module_info(exports),
     Callbacks = [init, send, close],
 
-    lists:foreach(fun(Callback) ->
-        ?assert(lists:keymember(Callback, 1, Exports))
-    end, Callbacks).
+    lists:foreach(fun(Callback) -> ?assert(lists:keymember(Callback, 1, Exports)) end, Callbacks).
 
 %%====================================================================
 %% UTF-8 Validation Tests
@@ -156,9 +144,10 @@ test_session_id() ->
 
     %% Verify format (observable behavior)
     lists:foreach(fun(Id) ->
-        ?assert(is_binary(Id)),
-        ?assert(byte_size(Id) > 0)
-    end, SessionIds),
+                     ?assert(is_binary(Id)),
+                     ?assert(byte_size(Id) > 0)
+                  end,
+                  SessionIds),
 
     %% Verify uniqueness across multiple calls
     Id1 = ?WS_TRANSPORT:generate_session_id(),

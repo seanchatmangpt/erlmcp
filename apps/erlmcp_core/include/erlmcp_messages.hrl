@@ -1,4 +1,5 @@
 -ifndef(ERLMCP_MESSAGES_HRL).
+
 -define(ERLMCP_MESSAGES_HRL, 1).
 
 %%% ====================================================================
@@ -34,13 +35,18 @@
 %%% ====================================================================
 
 -type circuit_breaker_action() :: open | close | half_open | query.
--type circuit_breaker_data() :: #{
-    action := circuit_breaker_action(),
-    component := atom(),           % Component ID (e.g., http_transport, tool_executor)
-    reason => term(),               % Why circuit opened
-    timestamp => integer(),         % When event occurred
-    from => pid() | reference()     % Reply destination
-}.
+-type circuit_breaker_data() ::
+    #{action := circuit_breaker_action(),
+      component := atom(),
+      reason => term(),
+      timestamp => integer(),
+      from => pid() | reference()}.
+
+                                   % Component ID (e.g., http_transport, tool_executor)
+               % Why circuit opened
+
+                                    % When event occurred
+     % Reply destination
 
 %%% ====================================================================
 %%% Health Check (Priority Level 2 - SLO <100ms)
@@ -50,12 +56,16 @@
 %%% ====================================================================
 
 -type health_check_type() :: liveness | readiness | full.
--type health_check_data() :: #{
-    type := health_check_type(),
-    timeout_ms => pos_integer(),    % Max wait time (default: 100ms)
-    from => pid() | reference(),    % Reply destination
-    requested_at => integer()       % Timestamp for latency tracking
-}.
+-type health_check_data() ::
+    #{type := health_check_type(),
+      timeout_ms => pos_integer(),
+      from => pid() | reference(),
+      requested_at => integer()}.
+
+                                    % Max wait time (default: 100ms)
+    % Reply destination
+
+                                    % Timestamp for latency tracking
 
 %%% ====================================================================
 %%% Drain Session (Priority Level 3 - PREEMPTS DATA)
@@ -65,13 +75,17 @@
 %%% ====================================================================
 
 -type drain_reason() :: shutdown | maintenance | overload | error.
--type drain_session_data() :: #{
-    session_id := binary() | atom(),
-    reason := drain_reason(),
-    timeout_ms => pos_integer(),    % Max time to wait for completion (default: 5000ms)
-    force => boolean(),             % Force immediate termination if timeout exceeded
-    from => pid() | reference()     % Reply destination
-}.
+-type drain_session_data() ::
+    #{session_id := binary() | atom(),
+      reason := drain_reason(),
+      timeout_ms => pos_integer(),
+      force => boolean(),
+      from => pid() | reference()}.
+
+                                    % Max time to wait for completion (default: 5000ms)
+             % Force immediate termination if timeout exceeded
+
+                                    % Reply destination
 
 %%% ====================================================================
 %%% Cancel Task (Priority Level 4 - BYPASS QUEUE)
@@ -80,12 +94,18 @@
 %%% Must be delivered even if process mailbox is at capacity
 %%% ====================================================================
 
--type cancel_task_data() :: #{
-    task_id := term(),              % Request ID or task identifier
-    reason => term(),               % Cancellation reason
-    timeout_ms => pos_integer(),    % Max wait for cancellation (default: 1000ms)
-    from => pid() | reference()     % Reply destination
-}.
+-type cancel_task_data() ::
+    #{task_id := term(),
+      reason => term(),
+      timeout_ms => pos_integer(),
+      from => pid() | reference()}.
+
+                                                 % Request ID or task identifier
+
+                                    % Cancellation reason
+    % Max wait for cancellation (default: 1000ms)
+
+                                    % Reply destination
 
 %%% ====================================================================
 %%% Priority Message Metadata
@@ -94,12 +114,16 @@
 %%% ====================================================================
 
 -type priority_level() :: 1..4.
--type priority_metadata() :: #{
-    level := priority_level(),
-    queued_at := integer(),         % Timestamp when queued (microseconds)
-    delivered_at => integer(),      % Timestamp when delivered (microseconds)
-    latency_us => non_neg_integer() % Delivery latency in microseconds
-}.
+-type priority_metadata() ::
+    #{level := priority_level(),
+      queued_at := integer(),
+      delivered_at => integer(),
+      latency_us => non_neg_integer()}.
+
+                                    % Timestamp when queued (microseconds)
+      % Timestamp when delivered (microseconds)
+
+                                    % Delivery latency in microseconds
 
 %%% ====================================================================
 %%% Control Plane Statistics
@@ -107,19 +131,19 @@
 %%% Metrics for monitoring priority message handling
 %%% ====================================================================
 
--type control_plane_stats() :: #{
-    total_delivered := non_neg_integer(),
-    by_type := #{
-        health_check := non_neg_integer(),
-        drain_session := non_neg_integer(),
-        cancel_task := non_neg_integer(),
-        circuit_breaker := non_neg_integer()
-    },
-    latency_p50_us := non_neg_integer(),
-    latency_p95_us := non_neg_integer(),
-    latency_p99_us := non_neg_integer(),
-    max_latency_us := non_neg_integer(),
-    slo_violations := non_neg_integer()  % Health checks > 100ms
-}.
+-type control_plane_stats() ::
+    #{total_delivered := non_neg_integer(),
+      by_type :=
+          #{health_check := non_neg_integer(),
+            drain_session := non_neg_integer(),
+            cancel_task := non_neg_integer(),
+            circuit_breaker := non_neg_integer()},
+      latency_p50_us := non_neg_integer(),
+      latency_p95_us := non_neg_integer(),
+      latency_p99_us := non_neg_integer(),
+      max_latency_us := non_neg_integer(),
+      slo_violations := non_neg_integer()}.
+
+                                         % Health checks > 100ms
 
 -endif.

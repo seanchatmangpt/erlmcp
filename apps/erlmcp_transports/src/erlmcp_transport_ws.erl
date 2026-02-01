@@ -1,38 +1,20 @@
 -module(erlmcp_transport_ws).
 
 -include("erlmcp.hrl").
+
 -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 %% Note: This module does NOT implement erlmcp_transport_behavior
 %% It is a Cowboy WebSocket handler with its own init/2 interface
 
 %% WebSocket-specific exports (NOT erlmcp_transport_behavior callbacks)
--export([
-    init/2,
-    send/2,
-    close/1
-]).
-
+-export([init/2, send/2, close/1]).
 %% WebSocket handler exports
--export([
-    init/3,  % Cowboy WebSocket handler callback
-    websocket_handle/2,
-    websocket_info/2
-]).
-
+-export([init/3, websocket_handle/2, websocket_info/2]).  % Cowboy WebSocket handler callback
 %% Internal/test exports
--export([
-    validate_utf8/1,
-    validate_message_size/1,
-    process_messages/2,
-    generate_session_id/0,
-    check_backpressure/1,
-    update_buffer_usage/3,
-    resume_reading/1,
-    handle_ping_frame/2,
-    handle_pong_frame/2,
-    handle_close_frame/3
-]).
+-export([validate_utf8/1, validate_message_size/1, process_messages/2, generate_session_id/0,
+         check_backpressure/1, update_buffer_usage/3, resume_reading/1, handle_ping_frame/2,
+         handle_pong_frame/2, handle_close_frame/3]).
 
 %% Configuration constants
 -define(PING_INTERVAL, 30000). %% 30 seconds
@@ -40,12 +22,10 @@
 -define(DEFAULT_MAX_MESSAGE_SIZE, 16777216). %% 16MB
 -define(MESSAGE_DELIMITER, <<"\n">>).
 -define(FRAGMENT_TIMEOUT, 30000). %% 30 seconds for fragment reassembly
-
 %% Backpressure and flow control
 -define(DEFAULT_FRAME_BUFFER_SIZE, 102400). %% 100KB default buffer
 -define(BUFFER_DRAIN_THRESHOLD, 0.5). %% Resume at 50% of max
 -define(BACKPRESSURE_TIMEOUT, 5000). %% 5 second backpressure timeout
-
 %% WebSocket close codes (RFC 6455)
 -define(WS_CLOSE_NORMAL, 1000).
 -define(WS_CLOSE_GOING_AWAY, 1001).
@@ -53,38 +33,36 @@
 -define(WS_CLOSE_UNSUPPORTED_DATA, 1003).
 -define(WS_CLOSE_MESSAGE_TOO_BIG, 1009).
 -define(WS_CLOSE_INTERNAL_ERROR, 1011).
-
 %% Backpressure states
 -define(BACKPRESSURE_INACTIVE, inactive).
 -define(BACKPRESSURE_ACTIVE, active).
 
--record(state, {
-    transport_id :: binary(),
-    registry_pid :: pid(),
-    connection_info :: map(),
-    session_id :: binary(),
-    ping_timer :: reference() | undefined,
-    fragment_buffer :: binary() | undefined,
-    fragment_start_time :: integer() | undefined,
-    max_message_size :: integer(),
-    strict_delimiter_check :: boolean(),
-    validate_utf8 :: boolean(),
-    %% Backpressure and flow control fields
-    frame_buffer_size :: integer(),
-    frame_buffer_used :: integer(),
-    backpressure_state :: atom(),
-    backpressure_timer :: reference() | undefined,
-    messages_pending :: non_neg_integer(),
-    bytes_buffered :: non_neg_integer(),
-    %% Statistics
-    messages_received = 0 :: non_neg_integer(),
-    messages_sent = 0 :: non_neg_integer(),
-    bytes_received = 0 :: non_neg_integer(),
-    bytes_sent = 0 :: non_neg_integer(),
-    ping_count = 0 :: non_neg_integer(),
-    pong_count = 0 :: non_neg_integer(),
-    connection_start_time :: integer()
-}).
+-record(state,
+        {transport_id :: binary(),
+         registry_pid :: pid(),
+         connection_info :: map(),
+         session_id :: binary(),
+         ping_timer :: reference() | undefined,
+         fragment_buffer :: binary() | undefined,
+         fragment_start_time :: integer() | undefined,
+         max_message_size :: integer(),
+         strict_delimiter_check :: boolean(),
+         validate_utf8 :: boolean(),
+         %% Backpressure and flow control fields
+         frame_buffer_size :: integer(),
+         frame_buffer_used :: integer(),
+         backpressure_state :: atom(),
+         backpressure_timer :: reference() | undefined,
+         messages_pending :: non_neg_integer(),
+         bytes_buffered :: non_neg_integer(),
+         %% Statistics
+         messages_received = 0 :: non_neg_integer(),
+         messages_sent = 0 :: non_neg_integer(),
+         bytes_received = 0 :: non_neg_integer(),
+         bytes_sent = 0 :: non_neg_integer(),
+         ping_count = 0 :: non_neg_integer(),
+         pong_count = 0 :: non_neg_integer(),
+         connection_start_time :: integer()}).
 
 %%====================================================================
 %% Transport Behavior Implementation
@@ -102,33 +80,26 @@ init(TransportId, Config) ->
         MaxConnections = maps:get(max_connections, Config, 1000),
         ConnectTimeout = maps:get(connect_timeout, Config, 5000),
 
-        erlmcp_tracing:set_attributes(SpanCtx, #{
-            <<"transport_id">> => TransportId,
-            <<"port">> => Port,
-            <<"path">> => Path,
-            <<"max_message_size">> => MaxMessageSize,
-            <<"max_connections">> => MaxConnections,
-            <<"strict_delimiter_check">> => StrictDelimiterCheck,
-            <<"validate_utf8">> => ValidateUtf8
-        }),
+        erlmcp_tracing:set_attributes(SpanCtx,
+                                      #{<<"transport_id">> => TransportId,
+                                        <<"port">> => Port,
+                                        <<"path">> => Path,
+                                        <<"max_message_size">> => MaxMessageSize,
+                                        <<"max_connections">> => MaxConnections,
+                                        <<"strict_delimiter_check">> => StrictDelimiterCheck,
+                                        <<"validate_utf8">> => ValidateUtf8}),
 
-        Dispatch = cowboy_router:compile([
-            {'_', [
-                {Path, ?MODULE, [TransportId, Config]}
-            ]}
-        ]),
+        Dispatch = cowboy_router:compile([{'_', [{Path, ?MODULE, [TransportId, Config]}]}]),
 
         %% Cowboy listener configuration with connection limits
-        ListenerOpts = [
-            {port, Port},
-            {max_connections, MaxConnections},
-            {connection_type, supervisor},
-            {connection_timeout, ConnectTimeout}
-        ],
+        ListenerOpts =
+            [{port, Port},
+             {max_connections, MaxConnections},
+             {connection_type, supervisor},
+             {connection_timeout, ConnectTimeout}],
 
-        {ok, _} = cowboy:start_clear(erlmcp_ws_listener,
-            ListenerOpts,
-            #{env => #{dispatch => Dispatch}}),
+        {ok, _} =
+            cowboy:start_clear(erlmcp_ws_listener, ListenerOpts, #{env => #{dispatch => Dispatch}}),
 
         erlmcp_tracing:set_status(SpanCtx, ok),
         {ok, self()}
@@ -144,9 +115,7 @@ init(TransportId, Config) ->
 send(Handler, Data) when is_pid(Handler), is_binary(Data) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.send">>),
     try
-        erlmcp_tracing:set_attributes(SpanCtx, #{
-            <<"data_size">> => byte_size(Data)
-        }),
+        erlmcp_tracing:set_attributes(SpanCtx, #{<<"data_size">> => byte_size(Data)}),
 
         Handler ! {send_frame, Data},
         erlmcp_tracing:set_status(SpanCtx, ok),
@@ -158,7 +127,6 @@ send(Handler, Data) when is_pid(Handler), is_binary(Data) ->
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
-
 send(_Handler, _Data) ->
     {error, invalid_arguments}.
 
@@ -166,7 +134,6 @@ send(_Handler, _Data) ->
 close(Handler) when is_pid(Handler) ->
     Handler ! close,
     ok;
-
 close(_) ->
     ok.
 
@@ -184,57 +151,56 @@ init(Req, [TransportId, Config], _Opts) ->
     SessionId = generate_session_id(),
     ConnectionStartTime = erlang:system_time(millisecond),
 
-    erlmcp_tracing:set_attributes(SpanCtx, #{
-        <<"transport_id">> => TransportId,
-        <<"session_id">> => SessionId,
-        <<"max_message_size">> => MaxMessageSize,
-        <<"frame_buffer_size">> => FrameBufferSize
-    }),
+    erlmcp_tracing:set_attributes(SpanCtx,
+                                  #{<<"transport_id">> => TransportId,
+                                    <<"session_id">> => SessionId,
+                                    <<"max_message_size">> => MaxMessageSize,
+                                    <<"frame_buffer_size">> => FrameBufferSize}),
 
     %% Collect connection info
     PeerAddr = cowboy_req:peer(Req),
     % Note: cowboy_req:certificates/1 not available in this version
     Certificates = undefined,
-    ConnectionInfo = #{
-        peer => PeerAddr,
-        certificates => Certificates,
-        path => cowboy_req:path(Req),
-        qs => cowboy_req:qs(Req),
-        headers => cowboy_req:headers(Req)
-    },
+    ConnectionInfo =
+        #{peer => PeerAddr,
+          certificates => Certificates,
+          path => cowboy_req:path(Req),
+          qs => cowboy_req:qs(Req),
+          headers => cowboy_req:headers(Req)},
 
     %% Start ping timer for keepalive
     PingTimer = erlang:send_after(?PING_INTERVAL, self(), send_ping),
 
-    {cowboy_websocket, Req, #state{
-        transport_id = TransportId,
-        registry_pid = erlmcp_registry:get_pid(),
-        session_id = SessionId,
-        connection_info = ConnectionInfo,
-        ping_timer = PingTimer,
-        fragment_buffer = undefined,
-        fragment_start_time = undefined,
-        max_message_size = MaxMessageSize,
-        strict_delimiter_check = StrictDelimiterCheck,
-        validate_utf8 = ValidateUtf8,
-        frame_buffer_size = FrameBufferSize,
-        frame_buffer_used = 0,
-        backpressure_state = ?BACKPRESSURE_INACTIVE,
-        backpressure_timer = undefined,
-        messages_pending = 0,
-        bytes_buffered = 0,
-        connection_start_time = ConnectionStartTime
-    }, #{idle_timeout => ?IDLE_TIMEOUT}}.
+    {cowboy_websocket,
+     Req,
+     #state{transport_id = TransportId,
+            registry_pid = erlmcp_registry:get_pid(),
+            session_id = SessionId,
+            connection_info = ConnectionInfo,
+            ping_timer = PingTimer,
+            fragment_buffer = undefined,
+            fragment_start_time = undefined,
+            max_message_size = MaxMessageSize,
+            strict_delimiter_check = StrictDelimiterCheck,
+            validate_utf8 = ValidateUtf8,
+            frame_buffer_size = FrameBufferSize,
+            frame_buffer_used = 0,
+            backpressure_state = ?BACKPRESSURE_INACTIVE,
+            backpressure_timer = undefined,
+            messages_pending = 0,
+            bytes_buffered = 0,
+            connection_start_time = ConnectionStartTime},
+     #{idle_timeout => ?IDLE_TIMEOUT}}.
 
 websocket_handle({text, Data}, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_text_message">>),
     try
         DataSize = byte_size(Data),
-        erlmcp_tracing:set_attributes(SpanCtx, #{
-            <<"data_size">> => DataSize,
-            <<"session_id">> => State#state.session_id,
-            <<"backpressure_state">> => State#state.backpressure_state
-        }),
+        erlmcp_tracing:set_attributes(SpanCtx,
+                                      #{<<"data_size">> => DataSize,
+                                        <<"session_id">> => State#state.session_id,
+                                        <<"backpressure_state">> =>
+                                            State#state.backpressure_state}),
 
         %% Update statistics
         NewMessagesReceived = State#state.messages_received + 1,
@@ -251,10 +217,9 @@ websocket_handle({text, Data}, State) ->
                         %% Handle fragmented or complete messages
                         case handle_text_frame(Data, NewState2) of
                             {ok, NewState3} ->
-                                FinalState = NewState3#state{
-                                    messages_received = NewMessagesReceived,
-                                    bytes_received = NewBytesReceived
-                                },
+                                FinalState =
+                                    NewState3#state{messages_received = NewMessagesReceived,
+                                                    bytes_received = NewBytesReceived},
                                 erlmcp_tracing:set_status(SpanCtx, ok),
                                 {ok, FinalState};
                             {error, Reason, NewState3} ->
@@ -276,48 +241,36 @@ websocket_handle({text, Data}, State) ->
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
-
 websocket_handle({binary, _Data}, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_binary">>),
-    erlmcp_tracing:set_attributes(SpanCtx, #{
-        <<"session_id">> => State#state.session_id
-    }),
+    erlmcp_tracing:set_attributes(SpanCtx, #{<<"session_id">> => State#state.session_id}),
     erlmcp_tracing:record_error_details(SpanCtx, binary_frame_not_supported, <<>>),
     erlmcp_tracing:end_span(SpanCtx),
     {reply, {close, ?WS_CLOSE_UNSUPPORTED_DATA, <<"Binary frames not supported">>}, State};
-
 %% Handle ping frames (RFC 6455)
 websocket_handle(ping, State) ->
     handle_ping_frame(<<>>, State);
-
 websocket_handle({ping, Payload}, State) when is_binary(Payload) ->
     handle_ping_frame(Payload, State);
-
 %% Handle pong frames (RFC 6455) - response to our pings
 websocket_handle(pong, State) ->
     handle_pong_frame(<<>>, State);
-
 websocket_handle({pong, Payload}, State) when is_binary(Payload) ->
     handle_pong_frame(Payload, State);
-
 %% Handle close frames (RFC 6455)
 websocket_handle({close, <<>>}, State) ->
     %% Close without status code
     handle_close_frame(undefined, undefined, State);
-
 websocket_handle({close, <<Code:16>>}, State) when Code >= 1000, Code =< 4999 ->
     %% Close with status code only
     handle_close_frame(Code, undefined, State);
-
 websocket_handle({close, <<Code:16, Reason/binary>>}, State) when Code >= 1000, Code =< 4999 ->
     %% Close with status code and reason
     handle_close_frame(Code, Reason, State);
-
 websocket_handle({close, _Payload}, State) ->
     %% Invalid close frame
     logger:warning("Received invalid close frame from client"),
     {reply, {close, ?WS_CLOSE_PROTOCOL_ERROR, <<"Invalid close frame">>}, State};
-
 websocket_handle(_Frame, State) ->
     {ok, State}.
 
@@ -325,9 +278,7 @@ websocket_info({send_frame, Data}, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.send_frame">>),
     try
         DataSize = byte_size(Data),
-        erlmcp_tracing:set_attributes(SpanCtx, #{
-            <<"data_size">> => DataSize
-        }),
+        erlmcp_tracing:set_attributes(SpanCtx, #{<<"data_size">> => DataSize}),
 
         %% Update statistics
         NewMessagesSent = State#state.messages_sent + 1,
@@ -339,10 +290,7 @@ websocket_info({send_frame, Data}, State) ->
         %% Check if we should resume reading after backpressure
         ResumeState = resume_reading(NewState),
 
-        FinalState = ResumeState#state{
-            messages_sent = NewMessagesSent,
-            bytes_sent = NewBytesSent
-        },
+        FinalState = ResumeState#state{messages_sent = NewMessagesSent, bytes_sent = NewBytesSent},
 
         {reply, {text, Data}, FinalState}
     catch
@@ -352,7 +300,6 @@ websocket_info({send_frame, Data}, State) ->
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
-
 %% Send periodic ping for keepalive
 websocket_info(send_ping, State) ->
     %% Send ping frame
@@ -360,29 +307,28 @@ websocket_info(send_ping, State) ->
     %% Reschedule ping timer
     NewPingTimer = erlang:send_after(?PING_INTERVAL, self(), send_ping),
     {reply, ping, State#state{ping_timer = NewPingTimer, ping_count = NewPingCount}};
-
 %% Resume reading after backpressure timeout
 websocket_info(resume_reading, State) ->
-    NewState = State#state{
-        backpressure_state = ?BACKPRESSURE_INACTIVE,
-        backpressure_timer = undefined
-    },
+    NewState =
+        State#state{backpressure_state = ?BACKPRESSURE_INACTIVE, backpressure_timer = undefined},
     {ok, NewState};
-
 %% Close connection
 websocket_info(close, State) ->
     %% Cancel backpressure timer if active
     case State#state.backpressure_timer of
-        undefined -> ok;
-        TimerRef -> erlang:cancel_timer(TimerRef)
+        undefined ->
+            ok;
+        TimerRef ->
+            erlang:cancel_timer(TimerRef)
     end,
     %% Cancel ping timer if active
     case State#state.ping_timer of
-        undefined -> ok;
-        PingTimerRef -> erlang:cancel_timer(PingTimerRef)
+        undefined ->
+            ok;
+        PingTimerRef ->
+            erlang:cancel_timer(PingTimerRef)
     end,
     {stop, State};
-
 websocket_info(_Info, State) ->
     {ok, State}.
 
@@ -421,16 +367,14 @@ process_messages(Data, State) ->
 -spec process_lines([binary()], #state{}, [binary()]) -> {ok, #state{}} | {error, atom(), #state{}}.
 process_lines([], State, _Processed) ->
     {ok, State};
-
 process_lines([<<>>], State, _Processed) ->
     %% Last empty line after final delimiter is normal
     {ok, State};
-
 process_lines([LastLine], State, _Processed) when State#state.strict_delimiter_check ->
     %% Last line without trailing newline in strict mode - buffer it
-    NewState = State#state{fragment_buffer = LastLine, fragment_start_time = erlang:monotonic_time()},
+    NewState =
+        State#state{fragment_buffer = LastLine, fragment_start_time = erlang:monotonic_time()},
     {ok, NewState};
-
 process_lines([Line | Rest], State, Processed) ->
     case process_single_message(Line, State) of
         {ok, NewState} ->
@@ -443,7 +387,6 @@ process_lines([Line | Rest], State, Processed) ->
 -spec process_single_message(binary(), #state{}) -> {ok, #state{}} | {error, atom()}.
 process_single_message(<<>>, State) ->
     {ok, State};
-
 process_single_message(Message, State) ->
     %% Validate UTF-8
     case State#state.validate_utf8 of
@@ -465,11 +408,13 @@ parse_and_route(Message, State) ->
         true ->
             case jsx:decode(Message, [return_maps]) of
                 {error, Reason} ->
-                    logger:warning("JSON parse error in WebSocket message: ~p, reason: ~p", [Message, Reason]),
+                    logger:warning("JSON parse error in WebSocket message: ~p, reason: ~p",
+                                   [Message, Reason]),
                     {error, parse_error};
                 ParsedMessage ->
                     %% Route to registry
-                    State#state.registry_pid ! {transport_data, State#state.transport_id, ParsedMessage},
+                    State#state.registry_pid
+                    ! {transport_data, State#state.transport_id, ParsedMessage},
                     {ok, State}
             end;
         false ->
@@ -513,8 +458,10 @@ check_fragment_timeout(State) ->
             Elapsed = erlang:monotonic_time() - StartTime,
             ElapsedMs = erlang:convert_time_unit(Elapsed, native, millisecond),
             case ElapsedMs > ?FRAGMENT_TIMEOUT of
-                true -> {error, timeout};
-                false -> ok
+                true ->
+                    {error, timeout};
+                false ->
+                    ok
             end
     end.
 
@@ -526,18 +473,20 @@ check_fragment_timeout(State) ->
 -spec handle_ping_frame(binary(), #state{}) -> {reply, pong | {pong, binary()}, #state{}}.
 handle_ping_frame(Payload, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_ping">>),
-    erlmcp_tracing:set_attributes(SpanCtx, #{
-        <<"payload_size">> => byte_size(Payload),
-        <<"session_id">> => State#state.session_id
-    }),
+    erlmcp_tracing:set_attributes(SpanCtx,
+                                  #{<<"payload_size">> => byte_size(Payload),
+                                    <<"session_id">> => State#state.session_id}),
 
     logger:debug("WebSocket ping received, sending pong response"),
 
     %% RFC 6455: Respond with pong frame containing same payload
-    Reply = case Payload of
-        <<>> -> pong;
-        _ -> {pong, Payload}
-    end,
+    Reply =
+        case Payload of
+            <<>> ->
+                pong;
+            _ ->
+                {pong, Payload}
+        end,
 
     erlmcp_tracing:end_span(SpanCtx),
     {reply, Reply, State}.
@@ -546,10 +495,9 @@ handle_ping_frame(Payload, State) ->
 -spec handle_pong_frame(binary(), #state{}) -> {ok, #state{}}.
 handle_pong_frame(Payload, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_pong">>),
-    erlmcp_tracing:set_attributes(SpanCtx, #{
-        <<"payload_size">> => byte_size(Payload),
-        <<"session_id">> => State#state.session_id
-    }),
+    erlmcp_tracing:set_attributes(SpanCtx,
+                                  #{<<"payload_size">> => byte_size(Payload),
+                                    <<"session_id">> => State#state.session_id}),
 
     %% Update pong count for statistics
     NewPongCount = State#state.pong_count + 1,
@@ -562,37 +510,44 @@ handle_pong_frame(Payload, State) ->
 
 %% Handle close frame (RFC 6455 Section 5.5.1)
 -spec handle_close_frame(integer() | undefined, binary() | undefined, #state{}) ->
-    {reply, {close, integer(), binary()}, #state{}} | {stop, #state{}}.
+                            {reply, {close, integer(), binary()}, #state{}} | {stop, #state{}}.
 handle_close_frame(Code, Reason, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_close">>),
-    erlmcp_tracing:set_attributes(SpanCtx, #{
-        <<"close_code">> => case Code of undefined -> null; C -> C end,
-        <<"session_id">> => State#state.session_id
-    }),
+    erlmcp_tracing:set_attributes(SpanCtx,
+                                  #{<<"close_code">> =>
+                                        case Code of
+                                            undefined ->
+                                                null;
+                                            C ->
+                                                C
+                                        end,
+                                    <<"session_id">> => State#state.session_id}),
 
     %% Log connection statistics
     ConnectionDuration = erlang:system_time(millisecond) - State#state.connection_start_time,
     logger:info("WebSocket closed by client: code=~p reason=~p duration=~pms stats=~p",
-        [Code, Reason, ConnectionDuration, #{
-            messages_sent => State#state.messages_sent,
-            messages_received => State#state.messages_received,
-            bytes_sent => State#state.bytes_sent,
-            bytes_received => State#state.bytes_received,
-            ping_count => State#state.ping_count,
-            pong_count => State#state.pong_count
-        }]),
+                [Code,
+                 Reason,
+                 ConnectionDuration,
+                 #{messages_sent => State#state.messages_sent,
+                   messages_received => State#state.messages_received,
+                   bytes_sent => State#state.bytes_sent,
+                   bytes_received => State#state.bytes_received,
+                   ping_count => State#state.ping_count,
+                   pong_count => State#state.pong_count}]),
 
     %% Respond with close frame echoing the code (RFC 6455)
-    Reply = case {Code, Reason} of
-        {undefined, undefined} ->
-            {close, ?WS_CLOSE_NORMAL, <<>>};
-        {undefined, _} ->
-            {close, ?WS_CLOSE_NORMAL, <<>>};
-        {CodeVal, undefined} ->
-            {close, CodeVal, <<>>};
-        {CodeVal, ReasonVal} ->
-            {close, CodeVal, ReasonVal}
-    end,
+    Reply =
+        case {Code, Reason} of
+            {undefined, undefined} ->
+                {close, ?WS_CLOSE_NORMAL, <<>>};
+            {undefined, _} ->
+                {close, ?WS_CLOSE_NORMAL, <<>>};
+            {CodeVal, undefined} ->
+                {close, CodeVal, <<>>};
+            {CodeVal, ReasonVal} ->
+                {close, CodeVal, ReasonVal}
+        end,
 
     erlmcp_tracing:end_span(SpanCtx),
     {reply, Reply, State}.
@@ -607,8 +562,10 @@ validate_message_size(Data) ->
     MaxSize = application:get_env(erlmcp, max_ws_message_size, ?DEFAULT_MAX_MESSAGE_SIZE),
     Size = byte_size(Data),
     case Size =< MaxSize of
-        true -> {ok, Size};
-        false -> {error, too_big}
+        true ->
+            {ok, Size};
+        false ->
+            {error, too_big}
     end.
 
 %% Validate UTF-8 encoding (RFC 3629)
@@ -632,30 +589,27 @@ validate_utf8(Data) ->
 %% Generate unique session ID
 -spec generate_session_id() -> binary().
 generate_session_id() ->
-    Base64 = base64:encode(crypto:strong_rand_bytes(32)),
+    Base64 =
+        base64:encode(
+            crypto:strong_rand_bytes(32)),
     Base64.
 
 %% Close connection with error code
 -spec close_with_error(atom(), #state{}) -> {reply, {close, integer(), binary()}, #state{}}.
 close_with_error(message_too_big, State) ->
     MaxSize = application:get_env(erlmcp, max_ws_message_size, ?DEFAULT_MAX_MESSAGE_SIZE),
-    Reason = erlang:iolist_to_binary(
-        io_lib:format("Message exceeds maximum size of ~p bytes", [MaxSize])
-    ),
+    Reason =
+        erlang:iolist_to_binary(
+            io_lib:format("Message exceeds maximum size of ~p bytes", [MaxSize])),
     {reply, {close, ?WS_CLOSE_MESSAGE_TOO_BIG, Reason}, State};
-
 close_with_error(invalid_utf8, State) ->
     {reply, {close, ?WS_CLOSE_PROTOCOL_ERROR, <<"Invalid UTF-8 encoding">>}, State};
-
 close_with_error(parse_error, State) ->
     {reply, {close, ?WS_CLOSE_PROTOCOL_ERROR, <<"JSON-RPC parse error">>}, State};
-
 close_with_error(fragment_timeout, State) ->
     {reply, {close, ?WS_CLOSE_PROTOCOL_ERROR, <<"Fragment reassembly timeout">>}, State};
-
 close_with_error(backpressure_failed, State) ->
     {reply, {close, ?WS_CLOSE_GOING_AWAY, <<"Backpressure limit exceeded">>}, State};
-
 close_with_error(_Reason, State) ->
     {reply, {close, ?WS_CLOSE_INTERNAL_ERROR, <<"Internal error">>}, State}.
 
@@ -679,10 +633,9 @@ check_backpressure(State) ->
                 true ->
                     %% Activate backpressure
                     TimerRef = erlang:send_after(?BACKPRESSURE_TIMEOUT, self(), resume_reading),
-                    NewState = State#state{
-                        backpressure_state = ?BACKPRESSURE_ACTIVE,
-                        backpressure_timer = TimerRef
-                    },
+                    NewState =
+                        State#state{backpressure_state = ?BACKPRESSURE_ACTIVE,
+                                    backpressure_timer = TimerRef},
                     {error, backpressure_active, NewState};
                 false ->
                     {ok, State}
@@ -693,8 +646,8 @@ check_backpressure(State) ->
 -spec update_buffer_usage(#state{}, integer(), add | subtract) -> #state{}.
 update_buffer_usage(State, Bytes, add) ->
     NewBytesBuffered = State#state.bytes_buffered + Bytes,
-    State#state{bytes_buffered = NewBytesBuffered, messages_pending = State#state.messages_pending + 1};
-
+    State#state{bytes_buffered = NewBytesBuffered,
+                messages_pending = State#state.messages_pending + 1};
 update_buffer_usage(State, Bytes, subtract) ->
     NewBytesBuffered = max(0, State#state.bytes_buffered - Bytes),
     NewMessagesPending = max(0, State#state.messages_pending - 1),
@@ -711,14 +664,14 @@ resume_reading(State) ->
         ?BACKPRESSURE_ACTIVE when BytesBuffered =< DrainThreshold ->
             %% Cancel existing timer if any
             case State#state.backpressure_timer of
-                undefined -> ok;
-                TimerRef -> erlang:cancel_timer(TimerRef)
+                undefined ->
+                    ok;
+                TimerRef ->
+                    erlang:cancel_timer(TimerRef)
             end,
             %% Resume reading
-            State#state{
-                backpressure_state = ?BACKPRESSURE_INACTIVE,
-                backpressure_timer = undefined
-            };
+            State#state{backpressure_state = ?BACKPRESSURE_INACTIVE,
+                        backpressure_timer = undefined};
         _ ->
             State
     end.

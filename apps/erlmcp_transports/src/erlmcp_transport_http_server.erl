@@ -1,51 +1,50 @@
 -module(erlmcp_transport_http_server).
+
 -behaviour(gen_server).
 
 %% API
 -export([start_link/1]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Re-use types from erlmcp_transport_http
 -include_lib("kernel/include/logger.hrl").
 
--record(state, {
-    url :: string(),
-    owner :: pid(),
-    method :: get | post,
-    headers :: [{binary(), binary()}],
-    timeout :: timeout(),
-    connect_timeout :: timeout(),
-    max_retries :: non_neg_integer(),
-    retry_delay :: pos_integer(),
-    gun_pid :: pid() | undefined,
-    gun_monitor :: reference() | undefined,
-    gun_stream_ref :: reference() | undefined,
-    pending_requests = #{} :: #{reference() => {pid(), reference(), binary(), non_neg_integer()}},
-    message_queue :: queue:queue({binary(), {pid(), reference()}}),
-    pool_size :: non_neg_integer(),
-    active_requests :: non_neg_integer(),
-    ssl_options :: [ssl:tls_client_option()],
-    host :: string(),
-    port :: pos_integer(),
-    path :: string(),
-    scheme :: http | https
-}).
+-record(state,
+        {url :: string(),
+         owner :: pid(),
+         method :: get | post,
+         headers :: [{binary(), binary()}],
+         timeout :: timeout(),
+         connect_timeout :: timeout(),
+         max_retries :: non_neg_integer(),
+         retry_delay :: pos_integer(),
+         gun_pid :: pid() | undefined,
+         gun_monitor :: reference() | undefined,
+         gun_stream_ref :: reference() | undefined,
+         pending_requests = #{} ::
+             #{reference() => {pid(), reference(), binary(), non_neg_integer()}},
+         message_queue :: queue:queue({binary(), {pid(), reference()}}),
+         pool_size :: non_neg_integer(),
+         active_requests :: non_neg_integer(),
+         ssl_options :: [ssl:tls_client_option()],
+         host :: string(),
+         port :: pos_integer(),
+         path :: string(),
+         scheme :: http | https}).
 
 -type state() :: #state{}.
--type http_opts() :: #{
-    url := binary() | string(),
-    owner := pid(),
-    method => get | post,
-    headers => [{string() | binary(), string() | binary()}],
-    timeout => timeout(),
-    connect_timeout => timeout(),
-    max_retries => non_neg_integer(),
-    retry_delay => pos_integer(),
-    ssl_options => [ssl:tls_client_option()],
-    pool_size => non_neg_integer()
-}.
+-type http_opts() ::
+    #{url := binary() | string(),
+      owner := pid(),
+      method => get | post,
+      headers => [{string() | binary(), string() | binary()}],
+      timeout => timeout(),
+      connect_timeout => timeout(),
+      max_retries => non_neg_integer(),
+      retry_delay => pos_integer(),
+      ssl_options => [ssl:tls_client_option()],
+      pool_size => non_neg_integer()}.
 
 %% Default values
 -define(DEFAULT_TIMEOUT, 30000).
@@ -90,22 +89,18 @@ init(Opts) when is_map(Opts) ->
     end.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} | {noreply, state()}.
-
+                     {reply, term(), state()} | {noreply, state()}.
 handle_call({send, Data}, From, State) ->
     %% Queue the request
     NewState = enqueue_request(Data, From, State),
     %% Try to process queue
     {noreply, process_request_queue(NewState)};
-
 handle_call(get_state, _From, State) ->
     {reply, {ok, State}, State};
-
 handle_call({extract_session_id, Req}, _From, State) ->
     %% Extract session ID from request headers
     SessionId = cowboy_req:header(<<"mcp-session-id">>, Req, undefined),
     {reply, SessionId, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -113,18 +108,14 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
--spec handle_info(term(), state()) ->
-    {noreply, state()} | {stop, term(), state()}.
-
+-spec handle_info(term(), state()) -> {noreply, state()} | {stop, term(), state()}.
 %% Gun connection established
 handle_info({gun_up, GunPid, _Protocol}, #state{gun_pid = GunPid} = State) ->
     logger:info("Gun connection established to ~s://~s:~p",
                 [State#state.scheme, State#state.host, State#state.port]),
     {noreply, process_request_queue(State)};
-
 %% Gun connection down
-handle_info({gun_down, GunPid, _Protocol, Reason, _},
-            #state{gun_pid = GunPid} = State) ->
+handle_info({gun_down, GunPid, _Protocol, Reason, _}, #state{gun_pid = GunPid} = State) ->
     logger:warning("Gun connection down: ~p", [Reason]),
     %% Attempt reconnect
     case connect(State) of
@@ -134,73 +125,65 @@ handle_info({gun_down, GunPid, _Protocol, Reason, _},
             %% Will retry on next request
             {noreply, State#state{gun_pid = undefined, gun_monitor = undefined}}
     end;
-
 %% Gun response headers
 handle_info({gun_response, GunPid, StreamRef, fin, StatusCode, Headers},
             #state{gun_pid = GunPid} = State) ->
     %% Response with no body
     {noreply, handle_gun_response(StreamRef, StatusCode, Headers, <<>>, State)};
-
 handle_info({gun_response, GunPid, StreamRef, nofin, StatusCode, Headers},
             #state{gun_pid = GunPid} = State) ->
     %% Response with body coming
     %% Store headers and status, wait for data
-    NewPending = case maps:get(StreamRef, State#state.pending_requests, undefined) of
-        {From, FromRef, Data, Attempts} ->
-            maps:put(StreamRef, {From, FromRef, Data, Attempts, StatusCode, Headers},
-                     State#state.pending_requests);
-        _ ->
-            State#state.pending_requests
-    end,
+    NewPending =
+        case maps:get(StreamRef, State#state.pending_requests, undefined) of
+            {From, FromRef, Data, Attempts} ->
+                maps:put(StreamRef,
+                         {From, FromRef, Data, Attempts, StatusCode, Headers},
+                         State#state.pending_requests);
+            _ ->
+                State#state.pending_requests
+        end,
     {noreply, State#state{pending_requests = NewPending}};
-
 %% Gun response data
-handle_info({gun_data, GunPid, StreamRef, fin, Data},
-            #state{gun_pid = GunPid} = State) ->
+handle_info({gun_data, GunPid, StreamRef, fin, Data}, #state{gun_pid = GunPid} = State) ->
     %% Final data chunk
     case maps:take(StreamRef, State#state.pending_requests) of
         {{From, FromRef, ReqData, Attempts, StatusCode, Headers}, NewPending} ->
-            NewState = State#state{
-                pending_requests = NewPending,
-                active_requests = max(0, State#state.active_requests - 1)
-            },
-            FinalState = handle_gun_response(StreamRef, StatusCode, Headers, Data,
-                                            NewState#state{pending_requests =
-                                                maps:put(StreamRef, {From, FromRef, ReqData, Attempts},
-                                                        NewPending)}),
+            NewState =
+                State#state{pending_requests = NewPending,
+                            active_requests = max(0, State#state.active_requests - 1)},
+            FinalState =
+                handle_gun_response(StreamRef,
+                                    StatusCode,
+                                    Headers,
+                                    Data,
+                                    NewState#state{pending_requests =
+                                                       maps:put(StreamRef,
+                                                                {From, FromRef, ReqData, Attempts},
+                                                                NewPending)}),
             {noreply, process_request_queue(FinalState)};
         error ->
             logger:warning("Received data for unknown stream: ~p", [StreamRef]),
             {noreply, State}
     end;
-
-handle_info({gun_data, GunPid, _StreamRef, nofin, _Data},
-            #state{gun_pid = GunPid} = State) ->
+handle_info({gun_data, GunPid, _StreamRef, nofin, _Data}, #state{gun_pid = GunPid} = State) ->
     %% More data coming, accumulate if needed
     %% For simplicity, we handle single chunk responses
     {noreply, State};
-
 %% Gun error
-handle_info({gun_error, GunPid, StreamRef, Reason},
-            #state{gun_pid = GunPid} = State) ->
+handle_info({gun_error, GunPid, StreamRef, Reason}, #state{gun_pid = GunPid} = State) ->
     logger:error("Gun stream error ~p: ~p", [StreamRef, Reason]),
     {noreply, handle_gun_error(StreamRef, Reason, State)};
-
-handle_info({gun_error, GunPid, Reason},
-            #state{gun_pid = GunPid} = State) ->
+handle_info({gun_error, GunPid, Reason}, #state{gun_pid = GunPid} = State) ->
     logger:error("Gun connection error: ~p", [Reason]),
     {noreply, State};
-
 %% Retry request
 handle_info({retry_request, Data, From, Attempts}, State) ->
     {noreply, retry_request(Data, From, Attempts, State)};
-
 %% Owner process down
-handle_info({'DOWN', _MonitorRef, process, Owner, Reason},
-            #state{owner = Owner} = State) ->
+handle_info({'DOWN', _MonitorRef, process, Owner, Reason}, #state{owner = Owner} = State) ->
     logger:info("Owner process ~p died: ~p", [Owner, Reason]),
     {stop, {owner_died, Reason}, State};
-
 %% Gun monitor down
 handle_info({'DOWN', MonitorRef, process, GunPid, Reason},
             #state{gun_pid = GunPid, gun_monitor = MonitorRef} = State) ->
@@ -212,7 +195,6 @@ handle_info({'DOWN', MonitorRef, process, GunPid, Reason},
         {error, _} ->
             {noreply, State#state{gun_pid = undefined, gun_monitor = undefined}}
     end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -235,20 +217,26 @@ code_change(_OldVsn, State, _Extra) ->
 ensure_apps_started() ->
     %% Start gun and all its dependencies
     case application:ensure_all_started(gun) of
-        {ok, _Started1} -> ok;
-        {error, {already_started, gun}} -> ok
+        {ok, _Started1} ->
+            ok;
+        {error, {already_started, gun}} ->
+            ok
     end,
 
     %% Start SSL if needed
     case application:ensure_all_started(ssl) of
-        {ok, _Started2} -> ok;
-        {error, {already_started, ssl}} -> ok
+        {ok, _Started2} ->
+            ok;
+        {error, {already_started, ssl}} ->
+            ok
     end,
 
     %% Start crypto (dependency of SSL)
     case application:ensure_started(crypto) of
-        ok -> ok;
-        {error, {already_started, crypto}} -> ok
+        ok ->
+            ok;
+        {error, {already_started, crypto}} ->
+            ok
     end,
 
     ok.
@@ -258,25 +246,23 @@ build_initial_state(Opts) ->
     Url = normalize_url(maps:get(url, Opts)),
     {Scheme, Host, Port, Path} = parse_url(Url),
 
-    #state{
-        url = Url,
-        owner = maps:get(owner, Opts),
-        method = maps:get(method, Opts, ?DEFAULT_METHOD),
-        headers = normalize_headers(maps:get(headers, Opts, [])),
-        timeout = maps:get(timeout, Opts, ?DEFAULT_TIMEOUT),
-        connect_timeout = maps:get(connect_timeout, Opts, ?DEFAULT_CONNECT_TIMEOUT),
-        max_retries = maps:get(max_retries, Opts, ?DEFAULT_MAX_RETRIES),
-        retry_delay = maps:get(retry_delay, Opts, ?DEFAULT_RETRY_DELAY),
-        pending_requests = #{},
-        message_queue = queue:new(),
-        pool_size = maps:get(pool_size, Opts, ?DEFAULT_POOL_SIZE),
-        active_requests = 0,
-        ssl_options = maps:get(ssl_options, Opts, []),
-        host = Host,
-        port = Port,
-        path = Path,
-        scheme = Scheme
-    }.
+    #state{url = Url,
+           owner = maps:get(owner, Opts),
+           method = maps:get(method, Opts, ?DEFAULT_METHOD),
+           headers = normalize_headers(maps:get(headers, Opts, [])),
+           timeout = maps:get(timeout, Opts, ?DEFAULT_TIMEOUT),
+           connect_timeout = maps:get(connect_timeout, Opts, ?DEFAULT_CONNECT_TIMEOUT),
+           max_retries = maps:get(max_retries, Opts, ?DEFAULT_MAX_RETRIES),
+           retry_delay = maps:get(retry_delay, Opts, ?DEFAULT_RETRY_DELAY),
+           pending_requests = #{},
+           message_queue = queue:new(),
+           pool_size = maps:get(pool_size, Opts, ?DEFAULT_POOL_SIZE),
+           active_requests = 0,
+           ssl_options = maps:get(ssl_options, Opts, []),
+           host = Host,
+           port = Port,
+           path = Path,
+           scheme = Scheme}.
 
 -spec normalize_url(binary() | string()) -> string().
 normalize_url(Url) when is_binary(Url) ->
@@ -293,7 +279,7 @@ parse_url(Rest) ->
     parse_url_parts(http, 80, Rest).
 
 -spec parse_url_parts(http | https, pos_integer(), string()) ->
-    {http | https, string(), pos_integer(), string()}.
+                         {http | https, string(), pos_integer(), string()}.
 parse_url_parts(Scheme, DefaultPort, Rest) ->
     case string:split(Rest, "/", leading) of
         [HostPort, Path] ->
@@ -316,36 +302,40 @@ parse_host_port(HostPort, DefaultPort) ->
 
 -spec normalize_headers([{term(), term()}]) -> [{binary(), binary()}].
 normalize_headers(Headers) ->
-    DefaultHeaders = [
-        {<<"content-type">>, <<"application/json">>},
-        {<<"accept">>, <<"application/json">>},
-        {<<"user-agent">>, <<"erlmcp/1.0">>}
-    ],
+    DefaultHeaders =
+        [{<<"content-type">>, <<"application/json">>},
+         {<<"accept">>, <<"application/json">>},
+         {<<"user-agent">>, <<"erlmcp/1.0">>}],
 
     %% Convert and merge headers
-    UserHeaders = lists:map(fun({K, V}) ->
-        {to_binary(K), to_binary(V)}
-    end, Headers),
+    UserHeaders = lists:map(fun({K, V}) -> {to_binary(K), to_binary(V)} end, Headers),
 
     %% User headers override defaults
     merge_headers(DefaultHeaders, UserHeaders).
 
 -spec to_binary(term()) -> binary().
-to_binary(B) when is_binary(B) -> B;
-to_binary(L) when is_list(L) -> list_to_binary(L);
-to_binary(A) when is_atom(A) -> atom_to_binary(A, utf8);
-to_binary(I) when is_integer(I) -> integer_to_binary(I).
+to_binary(B) when is_binary(B) ->
+    B;
+to_binary(L) when is_list(L) ->
+    list_to_binary(L);
+to_binary(A) when is_atom(A) ->
+    atom_to_binary(A, utf8);
+to_binary(I) when is_integer(I) ->
+    integer_to_binary(I).
 
--spec merge_headers([{binary(), binary()}], [{binary(), binary()}]) ->
-    [{binary(), binary()}].
+-spec merge_headers([{binary(), binary()}], [{binary(), binary()}]) -> [{binary(), binary()}].
 merge_headers(Defaults, User) ->
     %% Create a map from user headers for efficient lookup
     UserMap = maps:from_list([{string:lowercase(K), {K, V}} || {K, V} <- User]),
 
     %% Filter defaults and add all user headers
-    Filtered = lists:filter(fun({K, _}) ->
-        not maps:is_key(string:lowercase(K), UserMap)
-    end, Defaults),
+    Filtered =
+        lists:filter(fun({K, _}) ->
+                        not
+                            maps:is_key(
+                                string:lowercase(K), UserMap)
+                     end,
+                     Defaults),
 
     Filtered ++ User.
 
@@ -357,11 +347,14 @@ merge_headers(Defaults, User) ->
 connect(#state{gun_pid = OldPid, gun_monitor = OldMon} = State) ->
     %% Close old connection if exists
     case OldPid of
-        undefined -> ok;
+        undefined ->
+            ok;
         _ ->
             case OldMon of
-                undefined -> ok;
-                _ -> demonitor(OldMon, [flush])
+                undefined ->
+                    ok;
+                _ ->
+                    demonitor(OldMon, [flush])
             end,
             gun:close(OldPid)
     end,
@@ -372,10 +365,7 @@ connect(#state{gun_pid = OldPid, gun_monitor = OldMon} = State) ->
     case gun:open(State#state.host, State#state.port, GunOpts) of
         {ok, GunPid} ->
             MonitorRef = monitor(process, GunPid),
-            NewState = State#state{
-                gun_pid = GunPid,
-                gun_monitor = MonitorRef
-            },
+            NewState = State#state{gun_pid = GunPid, gun_monitor = MonitorRef},
 
             %% Wait for connection
             case gun:await_up(GunPid, State#state.connect_timeout) of
@@ -396,50 +386,46 @@ connect(#state{gun_pid = OldPid, gun_monitor = OldMon} = State) ->
     end.
 
 -spec build_gun_opts(state()) -> map().
-build_gun_opts(#state{scheme = https, ssl_options = SslOpts,
-                      connect_timeout = ConnTimeout, timeout = Timeout,
+build_gun_opts(#state{scheme = https,
+                      ssl_options = SslOpts,
+                      connect_timeout = ConnTimeout,
+                      timeout = Timeout,
                       host = Host}) ->
     %% CRITICAL SECURITY FIX (CVSS 9.8): Enable TLS certificate validation
-    ValidatedOpts = case erlmcp_tls_validation:build_tls_options(SslOpts, Host) of
-        {ok, Opts} ->
-            Opts;
-        {error, Reason} ->
-            logger:error("TLS validation failed: ~p - using strict defaults", [Reason]),
-            %% Use strict defaults on validation failure
-            build_strict_tls_options(Host)
-    end,
+    ValidatedOpts =
+        case erlmcp_tls_validation:build_tls_options(SslOpts, Host) of
+            {ok, Opts} ->
+                Opts;
+            {error, Reason} ->
+                logger:error("TLS validation failed: ~p - using strict defaults", [Reason]),
+                %% Use strict defaults on validation failure
+                build_strict_tls_options(Host)
+        end,
 
-    #{
-        protocols => [http2, http],
-        transport => ssl,
-        tls_opts => ValidatedOpts,
-        connect_timeout => ConnTimeout,
-        http_opts => #{keepalive => Timeout},
-        http2_opts => #{keepalive => Timeout}
-    };
+    #{protocols => [http2, http],
+      transport => ssl,
+      tls_opts => ValidatedOpts,
+      connect_timeout => ConnTimeout,
+      http_opts => #{keepalive => Timeout},
+      http2_opts => #{keepalive => Timeout}};
 build_gun_opts(#state{connect_timeout = ConnTimeout, timeout = Timeout}) ->
-    #{
-        protocols => [http2, http],
-        transport => tcp,
-        connect_timeout => ConnTimeout,
-        http_opts => #{keepalive => Timeout},
-        http2_opts => #{keepalive => Timeout}
-    }.
+    #{protocols => [http2, http],
+      transport => tcp,
+      connect_timeout => ConnTimeout,
+      http_opts => #{keepalive => Timeout},
+      http2_opts => #{keepalive => Timeout}}.
 
 -spec build_strict_tls_options(string()) -> [ssl:tls_client_option()].
 build_strict_tls_options(Hostname) ->
     %% Strict TLS defaults: verify_peer REQUIRED
-    [
-        {verify, verify_peer},
-        {server_name_indication, Hostname},
-        {versions, ['tlsv1.2', 'tlsv1.3']},
-        {depth, 3},
-        {ciphers, [
-            "ECDHE-RSA-AES256-GCM-SHA384",
-            "ECDHE-RSA-AES128-GCM-SHA256",
-            "ECDHE-RSA-CHACHA20-POLY1305"
-        ]}
-    ].
+    [{verify, verify_peer},
+     {server_name_indication, Hostname},
+     {versions, ['tlsv1.2', 'tlsv1.3']},
+     {depth, 3},
+     {ciphers,
+      ["ECDHE-RSA-AES256-GCM-SHA384",
+       "ECDHE-RSA-AES128-GCM-SHA256",
+       "ECDHE-RSA-CHACHA20-POLY1305"]}].
 
 %%====================================================================
 %% Internal functions - Request Handling
@@ -465,9 +451,8 @@ enqueue_request(Data, From, State) ->
     end.
 
 -spec process_request_queue(state()) -> state().
-process_request_queue(#state{active_requests = Active,
-                             pool_size = PoolSize} = State)
-  when Active >= PoolSize ->
+process_request_queue(#state{active_requests = Active, pool_size = PoolSize} = State)
+    when Active >= PoolSize ->
     %% Pool is full, wait for completions
     State;
 process_request_queue(#state{message_queue = Queue} = State) ->
@@ -496,12 +481,10 @@ send_request(Data, From, State) ->
         {ok, StreamRef} ->
             %% Track pending request
             {_, FromRef} = From,
-            NewPending = maps:put(StreamRef, {From, FromRef, Data, 0},
-                                  State#state.pending_requests),
-            State#state{
-                pending_requests = NewPending,
-                active_requests = State#state.active_requests + 1
-            };
+            NewPending =
+                maps:put(StreamRef, {From, FromRef, Data, 0}, State#state.pending_requests),
+            State#state{pending_requests = NewPending,
+                        active_requests = State#state.active_requests + 1};
         {error, Reason} = Error ->
             %% Immediate failure
             gen_server:reply(From, Error),
@@ -510,17 +493,21 @@ send_request(Data, From, State) ->
     end.
 
 -spec perform_request(binary(), state()) -> {ok, reference()} | {error, term()}.
-perform_request(Data, #state{gun_pid = GunPid, path = Path, headers = Headers,
-                             method = Method}) ->
+perform_request(Data,
+                #state{gun_pid = GunPid,
+                       path = Path,
+                       headers = Headers,
+                       method = Method}) ->
     try
-        StreamRef = case Method of
-            post ->
-                gun:post(GunPid, Path, Headers, Data);
-            get ->
-                %% For GET, append data as query parameters
-                QueryPath = Path ++ "?" ++ binary_to_list(Data),
-                gun:get(GunPid, QueryPath, Headers)
-        end,
+        StreamRef =
+            case Method of
+                post ->
+                    gun:post(GunPid, Path, Headers, Data);
+                get ->
+                    %% For GET, append data as query parameters
+                    QueryPath = Path ++ "?" ++ binary_to_list(Data),
+                    gun:get(GunPid, QueryPath, Headers)
+            end,
         {ok, StreamRef}
     catch
         error:Reason ->
@@ -528,8 +515,12 @@ perform_request(Data, #state{gun_pid = GunPid, path = Path, headers = Headers,
             {error, Reason}
     end.
 
--spec handle_gun_response(reference(), non_neg_integer(),
-                         [{binary(), binary()}], binary(), state()) -> state().
+-spec handle_gun_response(reference(),
+                          non_neg_integer(),
+                          [{binary(), binary()}],
+                          binary(),
+                          state()) ->
+                             state().
 handle_gun_response(StreamRef, StatusCode, Headers, Body, State) ->
     %% Validate response body size before processing
     BodySize = byte_size(Body),
@@ -537,10 +528,9 @@ handle_gun_response(StreamRef, StatusCode, Headers, Body, State) ->
         ok ->
             case maps:take(StreamRef, State#state.pending_requests) of
                 {{From, _FromRef, Data, Attempts}, NewPending} ->
-                    NewState = State#state{
-                        pending_requests = NewPending,
-                        active_requests = max(0, State#state.active_requests - 1)
-                    },
+                    NewState =
+                        State#state{pending_requests = NewPending,
+                                    active_requests = max(0, State#state.active_requests - 1)},
 
                     %% Process the response
                     case process_response(StatusCode, Headers, Body) of
@@ -568,10 +558,9 @@ handle_gun_response(StreamRef, StatusCode, Headers, Body, State) ->
             %% Clean up the pending request
             case maps:take(StreamRef, State#state.pending_requests) of
                 {{From, _FromRef, _Data, _Attempts}, NewPending} ->
-                    NewState = State#state{
-                        pending_requests = NewPending,
-                        active_requests = max(0, State#state.active_requests - 1)
-                    },
+                    NewState =
+                        State#state{pending_requests = NewPending,
+                                    active_requests = max(0, State#state.active_requests - 1)},
                     gen_server:reply(From, {error, {response_too_large, BodySize}}),
                     NewState;
                 error ->
@@ -581,10 +570,9 @@ handle_gun_response(StreamRef, StatusCode, Headers, Body, State) ->
             logger:error("System memory exhausted, cannot process HTTP response"),
             case maps:take(StreamRef, State#state.pending_requests) of
                 {{From, _FromRef, _Data, _Attempts}, NewPending} ->
-                    NewState = State#state{
-                        pending_requests = NewPending,
-                        active_requests = max(0, State#state.active_requests - 1)
-                    },
+                    NewState =
+                        State#state{pending_requests = NewPending,
+                                    active_requests = max(0, State#state.active_requests - 1)},
                     gen_server:reply(From, {error, resource_exhausted}),
                     NewState;
                 error ->
@@ -596,10 +584,9 @@ handle_gun_response(StreamRef, StatusCode, Headers, Body, State) ->
 handle_gun_error(StreamRef, Reason, State) ->
     case maps:take(StreamRef, State#state.pending_requests) of
         {{From, _FromRef, Data, Attempts}, NewPending} ->
-            NewState = State#state{
-                pending_requests = NewPending,
-                active_requests = max(0, State#state.active_requests - 1)
-            },
+            NewState =
+                State#state{pending_requests = NewPending,
+                            active_requests = max(0, State#state.active_requests - 1)},
 
             %% Check if we should retry
             Error = {error, {gun_error, Reason}},
@@ -616,9 +603,8 @@ handle_gun_error(StreamRef, Reason, State) ->
     end.
 
 -spec process_response(non_neg_integer(), [{binary(), binary()}], binary()) ->
-    {ok, binary()} | {error, term()}.
-process_response(StatusCode, Headers, Body)
-  when StatusCode >= 200, StatusCode < 300 ->
+                          {ok, binary()} | {error, term()}.
+process_response(StatusCode, Headers, Body) when StatusCode >= 200, StatusCode < 300 ->
     %% Success response
     process_body(Body, Headers);
 process_response(StatusCode, _Headers, Body) ->
@@ -629,8 +615,7 @@ process_response(StatusCode, _Headers, Body) ->
 -spec process_body(binary(), [{binary(), binary()}]) -> {ok, binary()} | {error, term()}.
 process_body(Body, Headers) when is_binary(Body) ->
     %% Check content type
-    case lists:keyfind(<<"content-type">>, 1,
-                       [{string:lowercase(K), V} || {K, V} <- Headers]) of
+    case lists:keyfind(<<"content-type">>, 1, [{string:lowercase(K), V} || {K, V} <- Headers]) of
         {_, ContentType} ->
             case binary:match(ContentType, <<"application/json">>) of
                 nomatch ->
@@ -646,8 +631,7 @@ process_body(Body, _Headers) ->
     {error, {invalid_body_format, Body}}.
 
 -spec should_retry(term(), non_neg_integer(), state()) -> boolean().
-should_retry(_Reason, Attempts, #state{max_retries = MaxRetries})
-  when Attempts >= MaxRetries ->
+should_retry(_Reason, Attempts, #state{max_retries = MaxRetries}) when Attempts >= MaxRetries ->
     false;
 should_retry({http_error, StatusCode, _}, _Attempts, _State) ->
     %% Retry on server errors and rate limiting

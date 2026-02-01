@@ -1,0 +1,105 @@
+╔═══════════════════════════════════════════════════════════╗
+║  JIDOKA QUALITY GATE DIAGNOSTIC REPORT                    ║
+║  Agent 16 - 自働化 (Built-in Quality)                      ║
+╚═══════════════════════════════════════════════════════════╝
+
+Date: $(date)
+Work Order: 1769976106
+Status: 🔴 ANDON CORD PULLED - LINE STOPPED
+
+═══════════════════════════════════════════════════════════
+ROOT CAUSE ANALYSIS (5 Whys)
+═══════════════════════════════════════════════════════════
+
+WHY #1: Why did compilation fail?
+→ erlmcp_tasks_tests.erl includes proper.hrl but proper is not available
+
+WHY #2: Why is proper not available?
+→ Test file is being compiled in default profile, but proper is only in test profile
+
+WHY #3: Why is test file compiled in default profile?
+→ rebar3 compile uses default profile; test files should only compile with test profile
+
+WHY #4: Why does test file include proper.hrl?
+→ File uses Proper macros (?FORALL) for property-based testing
+
+WHY #5: Why is this happening now?
+→ Test structure issue: file with Proper macros should not be in default compilation path
+
+═══════════════════════════════════════════════════════════
+FAILURE DETAILS
+═══════════════════════════════════════════════════════════
+
+Gate 1/8: Schema Validation (Compile)
+Status: ❌ FAILED
+
+File: apps/erlmcp_core/test/erlmcp_tasks_tests.erl
+Line 10: -include_lib("proper/include/proper.hrl")
+
+Error: can't find include lib "proper/include/proper.hrl"
+Impact: 3 undefined macros: ?FORALL (lines 533, 555, 581)
+
+═══════════════════════════════════════════════════════════
+CORRECTIVE ACTIONS (Poka-Yoke Prevention)
+═══════════════════════════════════════════════════════════
+
+Option A: Guard Proper includes with test macro
+-----------------------------------------------
+-include_lib("proper/include/proper.hrl"). →
+-ifdef(TEST).
+-include_lib("proper/include/proper.hrl").
+-endif.
+
+Option B: Use rebar3's test profile correctly
+----------------------------------------------
+Compile test files only with: rebar3 compile -DTEST
+Or use: rebar3 ct (which loads test profile)
+
+Option C: Split property tests into separate files
+--------------------------------------------------
+Separate EUnit tests from Proper tests:
+- erlmcp_tasks_tests.erl (EUnit only)
+- erlmcp_tasks_proper_tests.erl (Proper tests)
+
+═══════════════════════════════════════════════════════════
+JIDOKA PRINCIPLE APPLIED: YES
+═══════════════════════════════════════════════════════════
+
+✅ Detected defect immediately
+✅ Stopped the line (ANDON cord)
+✅ Created failure receipt
+✅ Root cause identified
+✅ Prevented defective code from advancing
+❌ Yet to implement corrective action
+❌ Yet to verify fix
+❌ Yet to resume production
+
+═══════════════════════════════════════════════════════════
+QUALITY GATES STATUS
+═══════════════════════════════════════════════════════════
+
+Gate 1: Schema Validation (Compile)     ❌ BLOCKED
+Gate 2: EUnit Tests                     ⏸️ SKIPPED
+Gate 3: Common Test Suites              ⏸️ SKIPPED
+Gate 4: Coverage (≥80%)                 ⏸️ SKIPPED
+Gate 5: Dialyzer (type checking)        ⏸️ SKIPPED
+Gate 6: Xref (undefined functions)      ⏸️ SKIPPED
+Gate 7: Format verification             ⏸️ SKIPPED
+Gate 8: Benchmark regression            ⏸️ SKIPPED
+
+═══════════════════════════════════════════════════════════
+RECOMMENDATION
+═══════════════════════════════════════════════════════════
+
+Implement Option C (Split tests) to:
+✅ Maintain test isolation
+✅ Clear separation of concerns
+✅ Faster compile cycles
+✅ Better CI/CD pipeline integration
+
+File structure:
+  test/
+    ├── erlmcp_tasks_tests.erl          (EUnit only)
+    └── erlmcp_tasks_proper_tests.erl   (Proper properties)
+
+═══════════════════════════════════════════════════════════

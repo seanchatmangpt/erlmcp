@@ -1,19 +1,12 @@
 -module(erlmcp_apps_server).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/0,
-    register_app/3,
-    get_apps/0,
-    start_app/2,
-    stop_app/1,
-    get_app_status/1,
-    unregister_app/1
-]).
-
+-export([start_link/0, register_app/3, get_apps/0, start_app/2, stop_app/1, get_app_status/1,
+         unregister_app/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -22,30 +15,28 @@
 -type permissions() :: [binary()].
 
 %% State record
--record(state, {
-    apps_ets :: ets:tid(),
-    app_list = [] :: [app_id()],
-    app_policies :: ets:tid(),
-    running_apps = #{} :: #{app_id() => {pid(), reference()}},
-    max_apps = 100 :: pos_integer(),
-    manifest_validation = true :: boolean()
-}).
+-record(state,
+        {apps_ets :: ets:tid(),
+         app_list = [] :: [app_id()],
+         app_policies :: ets:tid(),
+         running_apps = #{} :: #{app_id() => {pid(), reference()}},
+         max_apps = 100 :: pos_integer(),
+         manifest_validation = true :: boolean()}).
 
 -type state() :: #state{}.
 
 %% App record stored in ETS
--record(app, {
-    id :: app_id(),
-    manifest :: app_manifest(),
-    permissions :: permissions(),
-    status :: app_status(),
-    pid :: pid() | undefined,
-    started_at :: integer() | undefined,
-    stopped_at :: integer() | undefined,
-    error_count = 0 :: non_neg_integer(),
-    last_error :: term() | undefined,
-    metadata :: map()
-}).
+-record(app,
+        {id :: app_id(),
+         manifest :: app_manifest(),
+         permissions :: permissions(),
+         status :: app_status(),
+         pid :: pid() | undefined,
+         started_at :: integer() | undefined,
+         stopped_at :: integer() | undefined,
+         error_count = 0 :: non_neg_integer(),
+         last_error :: term() | undefined,
+         metadata :: map()}).
 
 %%====================================================================
 %% API Functions
@@ -56,9 +47,9 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 -spec register_app(app_id(), app_manifest(), permissions()) ->
-    ok | {error, invalid_manifest | already_registered | too_many_apps}.
+                      ok | {error, invalid_manifest | already_registered | too_many_apps}.
 register_app(AppId, AppManifest, Permissions)
-  when is_binary(AppId), is_map(AppManifest), is_list(Permissions) ->
+    when is_binary(AppId), is_map(AppManifest), is_list(Permissions) ->
     gen_server:call(?MODULE, {register_app, AppId, AppManifest, Permissions}, 5000).
 
 -spec get_apps() -> {ok, [map()]}.
@@ -90,31 +81,30 @@ init([]) ->
     process_flag(trap_exit, true),
 
     %% Create ETS table for apps with heir pattern
-    AppsTid = ets:new(erlmcp_apps, [
-        set,
-        public,
-        named_table,
-        {keypos, #app.id},
-        {read_concurrency, true},
-        {write_concurrency, false},
-        {heir, whereis(erlmcp_core_sup), []}
-    ]),
+    AppsTid =
+        ets:new(erlmcp_apps,
+                [set,
+                 public,
+                 named_table,
+                 {keypos, #app.id},
+                 {read_concurrency, true},
+                 {write_concurrency, false},
+                 {heir, whereis(erlmcp_core_sup), []}]),
 
     %% Create ETS table for app policies (separate sandboxing)
-    PoliciesTid = ets:new(erlmcp_app_policies, [
-        set,
-        public,
-        {read_concurrency, true},
-        {write_concurrency, false},
-        {heir, whereis(erlmcp_core_sup), []}
-    ]),
+    PoliciesTid =
+        ets:new(erlmcp_app_policies,
+                [set,
+                 public,
+                 {read_concurrency, true},
+                 {write_concurrency, false},
+                 {heir, whereis(erlmcp_core_sup), []}]),
 
     logger:info("Starting apps server with ETS tables ~p, ~p", [AppsTid, PoliciesTid]),
     {ok, #state{apps_ets = AppsTid, app_policies = PoliciesTid}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} | {noreply, state()}.
-
+                     {reply, term(), state()} | {noreply, state()}.
 handle_call({register_app, AppId, AppManifest, Permissions}, _From, State) ->
     %% Check if we've hit max apps limit
     case length(State#state.app_list) >= State#state.max_apps of
@@ -140,13 +130,9 @@ handle_call({register_app, AppId, AppManifest, Permissions}, _From, State) ->
                     end
             end
     end;
-
 handle_call(get_apps, _From, State) ->
-    Apps = ets:foldl(fun(App, Acc) ->
-        [app_to_map(App) | Acc]
-    end, [], State#state.apps_ets),
+    Apps = ets:foldl(fun(App, Acc) -> [app_to_map(App) | Acc] end, [], State#state.apps_ets),
     {reply, {ok, Apps}, State};
-
 handle_call({start_app, AppId, Config}, _From, State) ->
     case ets:lookup(State#state.apps_ets, AppId) of
         [] ->
@@ -159,7 +145,6 @@ handle_call({start_app, AppId, Config}, _From, State) ->
                     start_app_internal(App, Config, State)
             end
     end;
-
 handle_call({stop_app, AppId}, _From, State) ->
     case ets:lookup(State#state.apps_ets, AppId) of
         [] ->
@@ -174,22 +159,19 @@ handle_call({stop_app, AppId}, _From, State) ->
                     stop_app_internal(App, State)
             end
     end;
-
 handle_call({get_app_status, AppId}, _From, State) ->
     case ets:lookup(State#state.apps_ets, AppId) of
         [] ->
             {reply, {error, not_found}, State};
         [App] ->
-            StatusMetadata = #{
-                status => App#app.status,
-                started_at => App#app.started_at,
-                stopped_at => App#app.stopped_at,
-                error_count => App#app.error_count,
-                last_error => App#app.last_error
-            },
+            StatusMetadata =
+                #{status => App#app.status,
+                  started_at => App#app.started_at,
+                  stopped_at => App#app.stopped_at,
+                  error_count => App#app.error_count,
+                  last_error => App#app.last_error},
             {reply, {ok, App#app.status, StatusMetadata}, State}
     end;
-
 handle_call({unregister_app, AppId}, _From, State) ->
     case ets:lookup(State#state.apps_ets, AppId) of
         [] ->
@@ -205,13 +187,9 @@ handle_call({unregister_app, AppId}, _From, State) ->
                     ets:delete(State#state.app_policies, AppId),
                     NewAppList = lists:delete(AppId, State#state.app_list),
                     NewRunningApps = maps:remove(AppId, State#state.running_apps),
-                    {reply, ok, State#state{
-                        app_list = NewAppList,
-                        running_apps = NewRunningApps
-                    }}
+                    {reply, ok, State#state{app_list = NewAppList, running_apps = NewRunningApps}}
             end
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -227,13 +205,12 @@ handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
             case ets:lookup(State#state.apps_ets, AppId) of
                 [App] ->
                     logger:warning("App ~p crashed: ~p", [AppId, Reason]),
-                    UpdatedApp = App#app{
-                        status = crashed,
-                        pid = undefined,
-                        stopped_at = erlang:system_time(millisecond),
-                        error_count = App#app.error_count + 1,
-                        last_error = Reason
-                    },
+                    UpdatedApp =
+                        App#app{status = crashed,
+                                pid = undefined,
+                                stopped_at = erlang:system_time(millisecond),
+                                error_count = App#app.error_count + 1,
+                                last_error = Reason},
                     ets:insert(State#state.apps_ets, UpdatedApp),
                     NewRunningApps = maps:remove(AppId, State#state.running_apps),
                     {noreply, State#state{running_apps = NewRunningApps}};
@@ -244,7 +221,6 @@ handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
             logger:warning("Received DOWN for unknown app process ~p", [Pid]),
             {noreply, State}
     end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -254,9 +230,10 @@ terminate(_Reason, State) ->
 
     %% Stop all running apps gracefully
     maps:foreach(fun(AppId, {Pid, _MonitorRef}) ->
-        logger:info("Stopping app ~p (pid: ~p)", [AppId, Pid]),
-        catch gen_server:stop(Pid, normal, 5000)
-    end, State#state.running_apps),
+                    logger:info("Stopping app ~p (pid: ~p)", [AppId, Pid]),
+                    catch gen_server:stop(Pid, normal, 5000)
+                 end,
+                 State#state.running_apps),
 
     %% Clean up ETS tables
     catch ets:delete(State#state.apps_ets),
@@ -275,9 +252,7 @@ code_change(_OldVsn, State, _Extra) ->
 validate_manifest(Manifest) ->
     %% Required fields
     RequiredFields = [<<"name">>, <<"version">>],
-    HasRequired = lists:all(fun(Field) ->
-        maps:is_key(Field, Manifest)
-    end, RequiredFields),
+    HasRequired = lists:all(fun(Field) -> maps:is_key(Field, Manifest) end, RequiredFields),
 
     case HasRequired of
         false ->
@@ -305,8 +280,10 @@ validate_version(Version) when is_binary(Version) ->
     case binary:split(Version, <<".">>, [global]) of
         [Major, Minor, Patch] ->
             case {is_numeric(Major), is_numeric(Minor), is_numeric(Patch)} of
-                {true, true, true} -> ok;
-                _ -> error
+                {true, true, true} ->
+                    ok;
+                _ ->
+                    error
             end;
         _ ->
             error
@@ -317,43 +294,37 @@ validate_version(_) ->
 -spec is_numeric(binary()) -> boolean().
 is_numeric(Bin) ->
     try binary_to_integer(Bin) of
-        _ -> true
+        _ ->
+            true
     catch
-        _:_ -> false
+        _:_ ->
+            false
     end.
 
 -spec register_app_internal(app_id(), app_manifest(), permissions(), state()) ->
-    {reply, ok, state()}.
+                               {reply, ok, state()}.
 register_app_internal(AppId, AppManifest, Permissions, State) ->
-    App = #app{
-        id = AppId,
-        manifest = AppManifest,
-        permissions = Permissions,
-        status = stopped,
-        metadata = #{
-            registered_at => erlang:system_time(millisecond)
-        }
-    },
+    App = #app{id = AppId,
+               manifest = AppManifest,
+               permissions = Permissions,
+               status = stopped,
+               metadata = #{registered_at => erlang:system_time(millisecond)}},
 
     ets:insert(State#state.apps_ets, App),
 
     %% Create sandbox policy entry
-    Policy = #{
-        app_id => AppId,
-        permissions => Permissions,
-        sandbox_ets => ets:new(list_to_atom("app_sandbox_" ++ binary_to_list(AppId)), [
-            set,
-            public,
-            {read_concurrency, true}
-        ])
-    },
+    Policy =
+        #{app_id => AppId,
+          permissions => Permissions,
+          sandbox_ets =>
+              ets:new(list_to_atom("app_sandbox_" ++ binary_to_list(AppId)),
+                      [set, public, {read_concurrency, true}])},
     ets:insert(State#state.app_policies, {AppId, Policy}),
 
     NewAppList = [AppId | State#state.app_list],
     {reply, ok, State#state{app_list = NewAppList}}.
 
--spec start_app_internal(#app{}, map(), state()) ->
-    {reply, {ok, pid()} | {error, term()}, state()}.
+-spec start_app_internal(#app{}, map(), state()) -> {reply, {ok, pid()} | {error, term()}, state()}.
 start_app_internal(App, Config, State) ->
     AppId = App#app.id,
 
@@ -364,39 +335,33 @@ start_app_internal(App, Config, State) ->
             MonitorRef = monitor(process, Pid),
 
             %% Update app status
-            UpdatedApp = App#app{
-                status = running,
-                pid = Pid,
-                started_at = erlang:system_time(millisecond),
-                stopped_at = undefined
-            },
+            UpdatedApp =
+                App#app{status = running,
+                        pid = Pid,
+                        started_at = erlang:system_time(millisecond),
+                        stopped_at = undefined},
             ets:insert(State#state.apps_ets, UpdatedApp),
 
             NewRunningApps = maps:put(AppId, {Pid, MonitorRef}, State#state.running_apps),
             {reply, {ok, Pid}, State#state{running_apps = NewRunningApps}};
         {error, Reason} ->
             %% Update error count
-            UpdatedApp = App#app{
-                error_count = App#app.error_count + 1,
-                last_error = Reason
-            },
+            UpdatedApp = App#app{error_count = App#app.error_count + 1, last_error = Reason},
             ets:insert(State#state.apps_ets, UpdatedApp),
             {reply, {error, Reason}, State}
     end.
 
--spec stop_app_internal(#app{}, state()) ->
-    {reply, ok, state()}.
+-spec stop_app_internal(#app{}, state()) -> {reply, ok, state()}.
 stop_app_internal(App, State) ->
     AppId = App#app.id,
 
     case maps:get(AppId, State#state.running_apps, undefined) of
         undefined ->
             %% Not in running apps, just update status
-            UpdatedApp = App#app{
-                status = stopped,
-                pid = undefined,
-                stopped_at = erlang:system_time(millisecond)
-            },
+            UpdatedApp =
+                App#app{status = stopped,
+                        pid = undefined,
+                        stopped_at = erlang:system_time(millisecond)},
             ets:insert(State#state.apps_ets, UpdatedApp),
             {reply, ok, State};
         {Pid, MonitorRef} ->
@@ -405,27 +370,25 @@ stop_app_internal(App, State) ->
             catch gen_server:stop(Pid, normal, 5000),
 
             %% Update app status
-            UpdatedApp = App#app{
-                status = stopped,
-                pid = undefined,
-                stopped_at = erlang:system_time(millisecond)
-            },
+            UpdatedApp =
+                App#app{status = stopped,
+                        pid = undefined,
+                        stopped_at = erlang:system_time(millisecond)},
             ets:insert(State#state.apps_ets, UpdatedApp),
 
             NewRunningApps = maps:remove(AppId, State#state.running_apps),
             {reply, ok, State#state{running_apps = NewRunningApps}}
     end.
 
--spec start_app_process(app_id(), app_manifest(), map()) ->
-    {ok, pid()} | {error, term()}.
+-spec start_app_process(app_id(), app_manifest(), map()) -> {ok, pid()} | {error, term()}.
 start_app_process(AppId, Manifest, Config) ->
     %% Simplified app process starter
     %% In production, this would use a proper supervisor
     try
         Pid = spawn_link(fun() ->
-            logger:info("App ~p started with config ~p", [AppId, Config]),
-            app_loop(AppId, Manifest, Config)
-        end),
+                            logger:info("App ~p started with config ~p", [AppId, Config]),
+                            app_loop(AppId, Manifest, Config)
+                         end),
         {ok, Pid}
     catch
         _:Reason ->
@@ -448,36 +411,39 @@ app_loop(AppId, Manifest, Config) ->
 
 -spec handle_app_call(term(), app_manifest(), map()) -> term().
 handle_app_call(status, Manifest, _Config) ->
-    {ok, #{
-        name => maps:get(<<"name">>, Manifest, <<"unknown">>),
-        version => maps:get(<<"version">>, Manifest, <<"0.0.0">>),
-        status => running
-    }};
+    {ok,
+     #{name => maps:get(<<"name">>, Manifest, <<"unknown">>),
+       version => maps:get(<<"version">>, Manifest, <<"0.0.0">>),
+       status => running}};
 handle_app_call(_Request, _Manifest, _Config) ->
     {error, unknown_request}.
 
--spec find_app_by_monitor(reference(), state()) ->
-    {ok, app_id()} | not_found.
+-spec find_app_by_monitor(reference(), state()) -> {ok, app_id()} | not_found.
 find_app_by_monitor(MonitorRef, State) ->
     case maps:fold(fun(AppId, {_Pid, MRef}, Acc) ->
-        case MRef =:= MonitorRef of
-            true -> {ok, AppId};
-            false -> Acc
-        end
-    end, not_found, State#state.running_apps) of
-        {ok, AppId} -> {ok, AppId};
-        not_found -> not_found
+                      case MRef =:= MonitorRef of
+                          true ->
+                              {ok, AppId};
+                          false ->
+                              Acc
+                      end
+                   end,
+                   not_found,
+                   State#state.running_apps)
+    of
+        {ok, AppId} ->
+            {ok, AppId};
+        not_found ->
+            not_found
     end.
 
 -spec app_to_map(#app{}) -> map().
 app_to_map(App) ->
-    #{
-        id => App#app.id,
-        manifest => App#app.manifest,
-        permissions => App#app.permissions,
-        status => App#app.status,
-        started_at => App#app.started_at,
-        stopped_at => App#app.stopped_at,
-        error_count => App#app.error_count,
-        metadata => App#app.metadata
-    }.
+    #{id => App#app.id,
+      manifest => App#app.manifest,
+      permissions => App#app.permissions,
+      status => App#app.status,
+      started_at => App#app.started_at,
+      stopped_at => App#app.stopped_at,
+      error_count => App#app.error_count,
+      metadata => App#app.metadata}.

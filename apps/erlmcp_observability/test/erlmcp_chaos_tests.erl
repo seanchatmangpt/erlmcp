@@ -23,15 +23,13 @@ chaos_test_() ->
     {setup,
      fun setup_chaos/0,
      fun cleanup_chaos/1,
-     [
-         {"Start chaos framework", fun test_start_chaos_framework/0},
-         {"Dry run experiment", fun test_dry_run/0},
-         {"Run experiment", fun test_run_experiment/0},
-         {"Stop experiment", fun test_stop_experiment/0},
-         {"Get experiment status", fun test_get_experiment_status/0},
-         {"Get active experiments", fun test_get_active_experiments/0},
-         {"Stop all experiments", fun test_stop_all_experiments/0}
-     ]}.
+     [{"Start chaos framework", fun test_start_chaos_framework/0},
+      {"Dry run experiment", fun test_dry_run/0},
+      {"Run experiment", fun test_run_experiment/0},
+      {"Stop experiment", fun test_stop_experiment/0},
+      {"Get experiment status", fun test_get_experiment_status/0},
+      {"Get active experiments", fun test_get_active_experiments/0},
+      {"Stop all experiments", fun test_stop_all_experiments/0}]}.
 
 setup_chaos() ->
     % Start chaos framework with safety enabled
@@ -63,23 +61,21 @@ test_start_chaos_framework() ->
 test_dry_run() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
-    Config = #{
-        experiment => kill_servers,
-        target => erlmcp_server,
-        rate => 0.1,
-        duration => 5000
-    },
+    Config =
+        #{experiment => kill_servers,
+          target => erlmcp_server,
+          rate => 0.1,
+          duration => 5000},
 
     {ok, Result} = erlmcp_chaos:dry_run(Config),
 
     % Verify dry run returns safety analysis
-    ?assertMatch(#{
-        experiment_type := kill_servers,
-        estimated_blast_radius := _,
-        safety_checks := _,
-        risks := _,
-        recommendations := _
-    }, Result),
+    ?assertMatch(#{experiment_type := kill_servers,
+                   estimated_blast_radius := _,
+                   safety_checks := _,
+                   risks := _,
+                   recommendations := _},
+                 Result),
 
     erlmcp_chaos:stop_all_experiments(),
     gen_server:stop(whereis(erlmcp_chaos)).
@@ -92,13 +88,12 @@ test_dry_run() ->
 test_run_experiment() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
-    Config = #{
-        experiment => network_latency,
-        latency => 100,
-        rate => 0.2,
-        duration => 2000,
-        max_blast_radius => 0.3
-    },
+    Config =
+        #{experiment => network_latency,
+          latency => 100,
+          rate => 0.2,
+          duration => 2000,
+          max_blast_radius => 0.3},
 
     {ok, ExperimentId} = erlmcp_chaos:run(Config),
 
@@ -115,12 +110,11 @@ test_run_experiment() ->
 test_stop_experiment() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
-    Config = #{
-        experiment => network_latency,
-        latency => 50,
-        rate => 0.1,
-        duration => 5000
-    },
+    Config =
+        #{experiment => network_latency,
+          latency => 50,
+          rate => 0.1,
+          duration => 5000},
 
     {ok, ExperimentId} = erlmcp_chaos:run(Config),
 
@@ -146,12 +140,11 @@ test_stop_experiment() ->
 test_get_experiment_status() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
-    Config = #{
-        experiment => kill_random,
-        rate => 0.05,
-        interval => 1000,
-        duration => 3000
-    },
+    Config =
+        #{experiment => kill_random,
+          rate => 0.05,
+          interval => 1000,
+          duration => 3000},
 
     {ok, ExperimentId} = erlmcp_chaos:run(Config),
 
@@ -159,15 +152,14 @@ test_get_experiment_status() ->
     {ok, Status} = erlmcp_chaos:get_experiment_status(ExperimentId),
 
     % Verify status structure (observable behavior)
-    ?assertMatch(#{
-        id := ExperimentId,
-        type := kill_random,
-        state := running,
-        start_time := _,
-        targets_affected := _,
-        total_targets := _,
-        blast_radius := _
-    }, Status),
+    ?assertMatch(#{id := ExperimentId,
+                   type := kill_random,
+                   state := running,
+                   start_time := _,
+                   targets_affected := _,
+                   total_targets := _,
+                   blast_radius := _},
+                 Status),
 
     % Stop experiment
     ok = erlmcp_chaos:stop_experiment(ExperimentId),
@@ -179,12 +171,11 @@ test_get_experiment_status() ->
 test_get_active_experiments() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
-    Config = #{
-        experiment => network_latency,
-        latency => 50,
-        rate => 0.1,
-        duration => 3000
-    },
+    Config =
+        #{experiment => network_latency,
+          latency => 50,
+          rate => 0.1,
+          duration => 3000},
 
     {ok, _ExperimentId} = erlmcp_chaos:run(Config),
 
@@ -208,18 +199,16 @@ test_stop_all_experiments() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
     % Run multiple experiments
-    Config1 = #{
-        experiment => network_latency,
-        latency => 50,
-        rate => 0.1,
-        duration => 10000
-    },
+    Config1 =
+        #{experiment => network_latency,
+          latency => 50,
+          rate => 0.1,
+          duration => 10000},
 
-    Config2 = #{
-        experiment => kill_random,
-        rate => 0.05,
-        duration => 10000
-    },
+    Config2 =
+        #{experiment => kill_random,
+          rate => 0.05,
+          duration => 10000},
 
     {ok, _Exp1} = erlmcp_chaos:run(Config1),
     {ok, _Exp2} = erlmcp_chaos:run(Config2),
@@ -242,33 +231,15 @@ test_stop_all_experiments() ->
 %%====================================================================
 
 %% Test experiment lifecycle (run to completion)
-experiment_lifecycle_test_() ->
-    {setup,
-     fun setup_chaos/0,
-     fun cleanup_chaos/1,
-     fun(_Pid) ->
-         [
-          ?_test(begin
-              % Run short experiment that completes on its own
-              Config = #{
-                  experiment => network_latency,
-                  latency => 50,
-                  rate => 0.1,
-                  duration => 1000  % Short duration
-              },
+experiment_lifecycle_test_( ) -> { setup , fun setup_chaos/ 0 , fun cleanup_chaos/ 1 , fun ( _Pid ) -> [ ?_test( begin Config = #{ experiment => network_latency , latency => 50 , rate => 0.1 , duration => 1000 } , { ok , ExperimentId } = erlmcp_chaos : run( Config ) , timer : sleep( 1500 ) , { ok , FinalStatus } = erlmcp_chaos : get_experiment_status( ExperimentId ) , ?assertMatch( #{ state := State } when State =:= completed orelse State =:= stopped , FinalStatus ) end ) ] end } .
 
-              {ok, ExperimentId} = erlmcp_chaos:run(Config),
+              % Run short experiment that completes on its own
+
+                                    % Short duration
 
               % Wait for completion
-              timer:sleep(1500),
 
               % Should be completed
-              {ok, FinalStatus} = erlmcp_chaos:get_experiment_status(ExperimentId),
-              ?assertMatch(#{state := State} when State =:= completed orelse State =:= stopped,
-                           FinalStatus)
-          end)
-         ]
-     end}.
 
 %% Test getting status of non-existent experiment
 nonexistent_experiment_test_() ->
@@ -276,13 +247,11 @@ nonexistent_experiment_test_() ->
      fun setup_chaos/0,
      fun cleanup_chaos/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Query non-existent experiment
-              Result = erlmcp_chaos:get_experiment_status(<<"nonexistent_exp">>),
-              ?assertEqual({error, not_found}, Result)
-          end)
-         ]
+        [?_test(begin
+                    % Query non-existent experiment
+                    Result = erlmcp_chaos:get_experiment_status(<<"nonexistent_exp">>),
+                    ?assertEqual({error, not_found}, Result)
+                end)]
      end}.
 
 %% Test stopping non-existent experiment
@@ -291,17 +260,17 @@ stop_nonexistent_experiment_test_() ->
      fun setup_chaos/0,
      fun cleanup_chaos/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Stop non-existent experiment
-              Result = erlmcp_chaos:stop_experiment(<<"nonexistent_exp">>),
-              % Should return ok or error, but not crash
-              case Result of
-                  ok -> ?assert(true);
-                  {error, _} -> ?assert(true)
-              end
-          end)
-         ]
+        [?_test(begin
+                    % Stop non-existent experiment
+                    Result = erlmcp_chaos:stop_experiment(<<"nonexistent_exp">>),
+                    % Should return ok or error, but not crash
+                    case Result of
+                        ok ->
+                            ?assert(true);
+                        {error, _} ->
+                            ?assert(true)
+                    end
+                end)]
      end}.
 
 %%====================================================================
@@ -314,38 +283,35 @@ chaos_workflow_test_() ->
      fun setup_chaos/0,
      fun cleanup_chaos/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Dry run first
-              Config = #{
-                  experiment => network_latency,
-                  latency => 100,
-                  rate => 0.2,
-                  duration => 2000,
-                  max_blast_radius => 0.3
-              },
+        [?_test(begin
+                    % Dry run first
+                    Config =
+                        #{experiment => network_latency,
+                          latency => 100,
+                          rate => 0.2,
+                          duration => 2000,
+                          max_blast_radius => 0.3},
 
-              {ok, DryRunResult} = erlmcp_chaos:dry_run(Config),
-              ?assertMatch(#{experiment_type := network_latency}, DryRunResult),
+                    {ok, DryRunResult} = erlmcp_chaos:dry_run(Config),
+                    ?assertMatch(#{experiment_type := network_latency}, DryRunResult),
 
-              % Run experiment
-              {ok, ExperimentId} = erlmcp_chaos:run(Config),
+                    % Run experiment
+                    {ok, ExperimentId} = erlmcp_chaos:run(Config),
 
-              % Verify it's running
-              {ok, Status} = erlmcp_chaos:get_experiment_status(ExperimentId),
-              ?assertEqual(running, maps:get(state, Status)),
+                    % Verify it's running
+                    {ok, Status} = erlmcp_chaos:get_experiment_status(ExperimentId),
+                    ?assertEqual(running, maps:get(state, Status)),
 
-              % Check active experiments
-              ActiveExperiments = erlmcp_chaos:get_active_experiments(),
-              ?assert(length(ActiveExperiments) > 0),
+                    % Check active experiments
+                    ActiveExperiments = erlmcp_chaos:get_active_experiments(),
+                    ?assert(length(ActiveExperiments) > 0),
 
-              % Stop experiment
-              ok = erlmcp_chaos:stop_experiment(ExperimentId),
+                    % Stop experiment
+                    ok = erlmcp_chaos:stop_experiment(ExperimentId),
 
-              % Verify stopped
-              {ok, StoppedStatus} = erlmcp_chaos:get_experiment_status(ExperimentId),
-              StoppedState = maps:get(state, StoppedStatus),
-              ?assert(lists:member(StoppedState, [stopped, completed, failed]))
-          end)
-         ]
+                    % Verify stopped
+                    {ok, StoppedStatus} = erlmcp_chaos:get_experiment_status(ExperimentId),
+                    StoppedState = maps:get(state, StoppedStatus),
+                    ?assert(lists:member(StoppedState, [stopped, completed, failed]))
+                end)]
      end}.

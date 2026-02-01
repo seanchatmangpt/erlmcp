@@ -1,5 +1,7 @@
 -module(erlmcp_error_response_SUITE).
+
 -compile(export_all).
+
 -include_lib("common_test/include/ct.hrl").
 
 %%%====================================================================
@@ -7,8 +9,7 @@
 %%%====================================================================
 
 all() ->
-    [
-     %% JSON-RPC 2.0 Standard Error Tests
+    [%% JSON-RPC 2.0 Standard Error Tests
      parse_error_minus_32700_test,
      invalid_request_minus_32600_test,
      invalid_request_missing_jsonrpc_test,
@@ -16,29 +17,24 @@ all() ->
      method_not_found_minus_32601_test,
      invalid_params_minus_32602_test,
      internal_error_minus_32603_test,
-
      %% MCP Core Error Tests (-32001 to -32010)
      mcp_resource_not_found_minus_32001_test,
      mcp_tool_not_found_minus_32002_test,
      mcp_prompt_not_found_minus_32003_test,
      mcp_not_initialized_minus_32004_test,
      mcp_validation_failed_minus_32007_test,
-
      %% Error Structure Tests
      error_response_has_required_fields_test,
      error_response_code_is_integer_test,
      error_response_message_is_string_test,
      error_response_data_is_optional_test,
-
      %% Error Message Format Tests
      error_message_not_empty_test,
      error_code_matches_error_type_test,
-
      %% Edge Case Tests
      null_id_in_error_response_test,
      batch_error_response_test,
-     error_with_data_field_test
-    ].
+     error_with_data_field_test].
 
 init_per_suite(Config) ->
     %% Start erlmcp application for testing
@@ -75,8 +71,10 @@ parse_error_minus_32700_test(_Config) ->
     %% Validate specific error code
     ct:log("Parse error code: ~p", [Code]),
     ct:log("Parse error message: ~p", [Message]),
-    if Code =:= -32700 -> ok;
-       true -> ct:fail("Parse error MUST have code -32700, got ~p", [Code])
+    if Code =:= -32700 ->
+           ok;
+       true ->
+           ct:fail("Parse error MUST have code -32700, got ~p", [Code])
     end,
 
     true = is_binary(Message),
@@ -87,12 +85,8 @@ parse_error_minus_32700_test(_Config) ->
 %% Spec: The JSON sent is not a valid Request object
 invalid_request_minus_32600_test(_Config) ->
     %% Create a request with invalid structure (missing 'method' field)
-    InvalidRequest = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1
-        %% Missing 'method' field
-    }),
-
+    InvalidRequest = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 1}),
+    %% Missing 'method' field
     case erlmcp_json_rpc:decode_message(InvalidRequest) of
         {error, {invalid_request, _}} ->
             %% Expected error
@@ -103,7 +97,7 @@ invalid_request_minus_32600_test(_Config) ->
             ResponseMap = jsx:decode(ErrorResponse, [return_maps]),
             ErrorObj = maps:get(<<"error">>, ResponseMap),
             Code = maps:get(<<"code">>, ErrorObj),
-            true = (Code < 0),
+            true = Code < 0,
             ok
     end,
     ok.
@@ -111,10 +105,7 @@ invalid_request_minus_32600_test(_Config) ->
 %% @doc Test Invalid Request - Missing jsonrpc field
 invalid_request_missing_jsonrpc_test(_Config) ->
     %% Request without jsonrpc version field
-    RequestNoVersion = jsx:encode(#{
-        <<"id">> => 1,
-        <<"method">> => <<"tools/list">>
-    }),
+    RequestNoVersion = jsx:encode(#{<<"id">> => 1, <<"method">> => <<"tools/list">>}),
 
     case erlmcp_json_rpc:decode_message(RequestNoVersion) of
         {error, {invalid_request, missing_jsonrpc}} ->
@@ -130,11 +121,10 @@ invalid_request_missing_jsonrpc_test(_Config) ->
 %% @doc Test Invalid Request - Wrong jsonrpc version
 invalid_request_wrong_version_test(_Config) ->
     %% Request with wrong jsonrpc version
-    RequestWrongVersion = jsx:encode(#{
-        <<"jsonrpc">> => <<"1.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"tools/list">>
-    }),
+    RequestWrongVersion =
+        jsx:encode(#{<<"jsonrpc">> => <<"1.0">>,
+                     <<"id">> => 1,
+                     <<"method">> => <<"tools/list">>}),
 
     case erlmcp_json_rpc:decode_message(RequestWrongVersion) of
         {error, {invalid_request, {wrong_version, _}}} ->
@@ -162,8 +152,10 @@ method_not_found_minus_32601_test(_Config) ->
 
     %% Validate error code
     ct:log("Method not found code: ~p", [Code]),
-    if Code =:= -32601 -> ok;
-       true -> ct:fail("Method not found MUST have code -32601, got ~p", [Code])
+    if Code =:= -32601 ->
+           ok;
+       true ->
+           ct:fail("Method not found MUST have code -32601, got ~p", [Code])
     end,
 
     true = is_binary(Message),
@@ -183,8 +175,10 @@ invalid_params_minus_32602_test(_Config) ->
     Data1 = maps:get(<<"data">>, ErrorObj3),
 
     ct:log("Invalid params code: ~p", [Code1]),
-    if Code1 =:= -32602 -> ok;
-       true -> ct:fail("Invalid params MUST have code -32602, got ~p", [Code1])
+    if Code1 =:= -32602 ->
+           ok;
+       true ->
+           ct:fail("Invalid params MUST have code -32602, got ~p", [Code1])
     end,
 
     true = maps:is_key(<<"details">>, Data1),
@@ -219,8 +213,10 @@ internal_error_minus_32603_test(_Config) ->
     Message = maps:get(<<"message">>, ErrorObj6),
 
     ct:log("Internal error code: ~p", [Code]),
-    if Code =:= -32603 -> ok;
-       true -> ct:fail("Internal error MUST have code -32603, got ~p", [Code])
+    if Code =:= -32603 ->
+           ok;
+       true ->
+           ct:fail("Internal error MUST have code -32603, got ~p", [Code])
     end,
 
     true = is_binary(Message),
@@ -246,8 +242,10 @@ mcp_resource_not_found_minus_32001_test(_Config) ->
     Data = maps:get(<<"data">>, ErrorObj7),
 
     ct:log("Resource not found code: ~p", [Code]),
-    if Code =:= -32001 -> ok;
-       true -> ct:fail("Resource not found MUST have code -32001, got ~p", [Code])
+    if Code =:= -32001 ->
+           ok;
+       true ->
+           ct:fail("Resource not found MUST have code -32001, got ~p", [Code])
     end,
 
     true = is_binary(Message),
@@ -267,8 +265,10 @@ mcp_tool_not_found_minus_32002_test(_Config) ->
     Data = maps:get(<<"data">>, ErrorObj8),
 
     ct:log("Tool not found code: ~p", [Code]),
-    if Code =:= -32002 -> ok;
-       true -> ct:fail("Tool not found MUST have code -32002, got ~p", [Code])
+    if Code =:= -32002 ->
+           ok;
+       true ->
+           ct:fail("Tool not found MUST have code -32002, got ~p", [Code])
     end,
 
     true = maps:is_key(<<"tool">>, Data),
@@ -287,8 +287,10 @@ mcp_prompt_not_found_minus_32003_test(_Config) ->
     Data = maps:get(<<"data">>, ErrorObj9),
 
     ct:log("Prompt not found code: ~p", [Code]),
-    if Code =:= -32003 -> ok;
-       true -> ct:fail("Prompt not found MUST have code -32003, got ~p", [Code])
+    if Code =:= -32003 ->
+           ok;
+       true ->
+           ct:fail("Prompt not found MUST have code -32003, got ~p", [Code])
     end,
 
     true = maps:is_key(<<"prompt">>, Data),
@@ -306,7 +308,7 @@ mcp_not_initialized_minus_32004_test(_Config) ->
     Message = maps:get(<<"message">>, ErrorObj10),
 
     ct:log("Not initialized code: ~p", [Code]),
-    true = (Code < 0),
+    true = Code < 0,
     true = is_binary(Message),
     ok.
 
@@ -322,8 +324,10 @@ mcp_validation_failed_minus_32007_test(_Config) ->
     Data = maps:get(<<"data">>, ErrorObj11),
 
     ct:log("Validation failed code: ~p", [Code]),
-    if Code =:= -32007 -> ok;
-       true -> ct:fail("Validation failed MUST have code -32007, got ~p", [Code])
+    if Code =:= -32007 ->
+           ok;
+       true ->
+           ct:fail("Validation failed MUST have code -32007, got ~p", [Code])
     end,
 
     true = maps:is_key(<<"details">>, Data),
@@ -337,60 +341,60 @@ mcp_validation_failed_minus_32007_test(_Config) ->
 %% @doc Test that error responses have required fields
 error_response_has_required_fields_test(_Config) ->
     %% Test multiple error types
-    ErrorResponses = [
-        erlmcp_json_rpc:error_parse(1),
-        erlmcp_json_rpc:error_method_not_found(1, <<"test">>),
-        erlmcp_json_rpc:error_invalid_params(1, <<"test">>),
-        erlmcp_json_rpc:error_internal(1),
-        erlmcp_json_rpc:error_resource_not_found(1, <<"uri">>)
-    ],
+    ErrorResponses =
+        [erlmcp_json_rpc:error_parse(1),
+         erlmcp_json_rpc:error_method_not_found(1, <<"test">>),
+         erlmcp_json_rpc:error_invalid_params(1, <<"test">>),
+         erlmcp_json_rpc:error_internal(1),
+         erlmcp_json_rpc:error_resource_not_found(1, <<"uri">>)],
 
     lists:foreach(fun(Response) ->
-        ResponseMap = jsx:decode(Response, [return_maps]),
-        %% Must have jsonrpc, id, and error fields
-        true = maps:is_key(<<"jsonrpc">>, ResponseMap),
-        true = maps:is_key(<<"id">>, ResponseMap),
-        true = maps:is_key(<<"error">>, ResponseMap),
+                     ResponseMap = jsx:decode(Response, [return_maps]),
+                     %% Must have jsonrpc, id, and error fields
+                     true = maps:is_key(<<"jsonrpc">>, ResponseMap),
+                     true = maps:is_key(<<"id">>, ResponseMap),
+                     true = maps:is_key(<<"error">>, ResponseMap),
 
-        %% Error object must have code and message
-        ErrorObj = maps:get(<<"error">>, ResponseMap),
-        true = maps:is_key(<<"code">>, ErrorObj),
-        true = maps:is_key(<<"message">>, ErrorObj)
-    end, ErrorResponses),
+                     %% Error object must have code and message
+                     ErrorObj = maps:get(<<"error">>, ResponseMap),
+                     true = maps:is_key(<<"code">>, ErrorObj),
+                     true = maps:is_key(<<"message">>, ErrorObj)
+                  end,
+                  ErrorResponses),
     ok.
 
 %% @doc Test that error code is always an integer
 error_response_code_is_integer_test(_Config) ->
-    ErrorResponses = [
-        erlmcp_json_rpc:error_parse(1),
-        erlmcp_json_rpc:error_method_not_found(2, <<"test">>),
-        erlmcp_json_rpc:error_invalid_params(3, <<"test">>),
-        erlmcp_json_rpc:error_internal(4)
-    ],
+    ErrorResponses =
+        [erlmcp_json_rpc:error_parse(1),
+         erlmcp_json_rpc:error_method_not_found(2, <<"test">>),
+         erlmcp_json_rpc:error_invalid_params(3, <<"test">>),
+         erlmcp_json_rpc:error_internal(4)],
 
     lists:foreach(fun(Response) ->
-        ResponseMap = jsx:decode(Response, [return_maps]),
-        ErrorObj = maps:get(<<"error">>, ResponseMap),
-        Code = maps:get(<<"code">>, ErrorObj),
-        true = is_integer(Code)
-    end, ErrorResponses),
+                     ResponseMap = jsx:decode(Response, [return_maps]),
+                     ErrorObj = maps:get(<<"error">>, ResponseMap),
+                     Code = maps:get(<<"code">>, ErrorObj),
+                     true = is_integer(Code)
+                  end,
+                  ErrorResponses),
     ok.
 
 %% @doc Test that error message is always a string
 error_response_message_is_string_test(_Config) ->
-    ErrorResponses = [
-        erlmcp_json_rpc:error_parse(1),
-        erlmcp_json_rpc:error_method_not_found(1, <<"test">>),
-        erlmcp_json_rpc:error_invalid_params(1, <<"test">>),
-        erlmcp_json_rpc:error_internal(1)
-    ],
+    ErrorResponses =
+        [erlmcp_json_rpc:error_parse(1),
+         erlmcp_json_rpc:error_method_not_found(1, <<"test">>),
+         erlmcp_json_rpc:error_invalid_params(1, <<"test">>),
+         erlmcp_json_rpc:error_internal(1)],
 
     lists:foreach(fun(Response) ->
-        ResponseMap = jsx:decode(Response, [return_maps]),
-        ErrorObj = maps:get(<<"error">>, ResponseMap),
-        Message = maps:get(<<"message">>, ErrorObj),
-        true = is_binary(Message)
-    end, ErrorResponses),
+                     ResponseMap = jsx:decode(Response, [return_maps]),
+                     ErrorObj = maps:get(<<"error">>, ResponseMap),
+                     Message = maps:get(<<"message">>, ErrorObj),
+                     true = is_binary(Message)
+                  end,
+                  ErrorResponses),
     ok.
 
 %% @doc Test that data field is optional
@@ -415,19 +419,19 @@ error_response_data_is_optional_test(_Config) ->
 
 %% @doc Test that error messages are not empty
 error_message_not_empty_test(_Config) ->
-    ErrorResponses = [
-        erlmcp_json_rpc:error_parse(1),
-        erlmcp_json_rpc:error_method_not_found(1, <<"test">>),
-        erlmcp_json_rpc:error_invalid_params(1, <<"test">>),
-        erlmcp_json_rpc:error_internal(1)
-    ],
+    ErrorResponses =
+        [erlmcp_json_rpc:error_parse(1),
+         erlmcp_json_rpc:error_method_not_found(1, <<"test">>),
+         erlmcp_json_rpc:error_invalid_params(1, <<"test">>),
+         erlmcp_json_rpc:error_internal(1)],
 
     lists:foreach(fun(Response) ->
-        ResponseMap = jsx:decode(Response, [return_maps]),
-        ErrorObj = maps:get(<<"error">>, ResponseMap),
-        Message = maps:get(<<"message">>, ErrorObj),
-        true = (byte_size(Message) > 0)
-    end, ErrorResponses),
+                     ResponseMap = jsx:decode(Response, [return_maps]),
+                     ErrorObj = maps:get(<<"error">>, ResponseMap),
+                     Message = maps:get(<<"message">>, ErrorObj),
+                     true = byte_size(Message) > 0
+                  end,
+                  ErrorResponses),
     ok.
 
 %% @doc Test that error code matches error type
@@ -495,20 +499,18 @@ null_id_in_error_response_test(_Config) ->
 %% @doc Test batch error response
 batch_error_response_test(_Config) ->
     %% Create a batch with invalid requests
-    BatchJson = jsx:encode([
-        #{<<"jsonrpc">> => <<"2.0">>,
-          <<"id">> => 1,
-          <<"method">> => <<"valid_method">>},
-        #{<<"jsonrpc">> => <<"2.0">>,
-          <<"id">> => 2},
-        #{<<"invalid">> => <<"request">>}
-    ]),
+    BatchJson =
+        jsx:encode([#{<<"jsonrpc">> => <<"2.0">>,
+                      <<"id">> => 1,
+                      <<"method">> => <<"valid_method">>},
+                    #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 2},
+                    #{<<"invalid">> => <<"request">>}]),
 
     case erlmcp_json_rpc:decode_batch(BatchJson) of
         {ok, Messages} when is_list(Messages) ->
             %% Check that we got responses for each request
             ct:log("Batch produced ~p responses", [length(Messages)]),
-            true = (length(Messages) >= 1);
+            true = length(Messages) >= 1;
         {error, _Reason} ->
             %% Some validation might fail at batch level
             ok

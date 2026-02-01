@@ -11,12 +11,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_chaos_resource).
 
--export([
-    exhaust_memory/1,
-    saturate_cpu/1,
-    fill_disk/1,
-    exhaust_file_descriptors/1
-]).
+-export([exhaust_memory/1, saturate_cpu/1, fill_disk/1, exhaust_file_descriptors/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -33,25 +28,25 @@ exhaust_memory(Config) ->
     ?LOG_INFO("Exhausting memory to ~.1f% for ~pms", [TargetPercent * 100, Duration]),
 
     % Get current memory usage (with fallback if memsup not available)
-    CurrentPercent = try memsup:get_memory_data() of
-        {Total, Allocated, _Worst} when is_number(Total), Total > 0 ->
-            Allocated / Total;
-        _ ->
-            0.5  % Fallback to 50% if memsup unavailable
-    catch
-        _:_ ->
-            0.5  % Fallback to 50% if memsup not started
-    end,
+    CurrentPercent =
+        try memsup:get_memory_data() of
+            {Total, Allocated, _Worst} when is_number(Total), Total > 0 ->
+                Allocated / Total;
+            _ ->
+                0.5  % Fallback to 50% if memsup unavailable
+        catch
+            _:_ ->
+                0.5  % Fallback to 50% if memsup not started
+        end,
 
-    if
-        CurrentPercent >= TargetPercent ->
-            ?LOG_INFO("Already at target memory usage: ~.1f%", [CurrentPercent * 100]),
-            timer:sleep(Duration);
-        true ->
-            % Simulate memory pressure without actual allocation (safer for tests)
-            ?LOG_INFO("Simulating memory pressure from ~.1f% to ~.1f%",
+    if CurrentPercent >= TargetPercent ->
+           ?LOG_INFO("Already at target memory usage: ~.1f%", [CurrentPercent * 100]),
+           timer:sleep(Duration);
+       true ->
+           % Simulate memory pressure without actual allocation (safer for tests)
+           ?LOG_INFO("Simulating memory pressure from ~.1f% to ~.1f%",
                      [CurrentPercent * 100, TargetPercent * 100]),
-            timer:sleep(Duration)
+           timer:sleep(Duration)
     end,
 
     ok.
@@ -61,10 +56,9 @@ allocate_memory_gradually(TargetBytes, Duration) ->
     ChunkSize = 10 * 1024 * 1024,  % 10MB chunks
     ChunkCount = TargetBytes div ChunkSize,
     SleepInterval = Duration div max(1, ChunkCount),
-    
-    ?LOG_INFO("Allocating ~p MB in ~p chunks", 
-             [TargetBytes div (1024*1024), ChunkCount]),
-    
+
+    ?LOG_INFO("Allocating ~p MB in ~p chunks", [TargetBytes div (1024 * 1024), ChunkCount]),
+
     allocate_chunks(ChunkCount, ChunkSize, SleepInterval, []).
 
 -spec allocate_chunks(non_neg_integer(), pos_integer(), pos_integer(), [binary()]) -> ok.
@@ -76,7 +70,7 @@ allocate_chunks(0, _ChunkSize, _SleepInterval, Chunks) ->
     _ = Chunks,  % Let GC collect
     ok;
 allocate_chunks(N, ChunkSize, SleepInterval, Chunks) ->
-    Chunk = <<0:(ChunkSize*8)>>,
+    Chunk = <<0:(ChunkSize * 8)>>,
     timer:sleep(SleepInterval),
     allocate_chunks(N - 1, ChunkSize, SleepInterval, [Chunk | Chunks]).
 
@@ -85,21 +79,20 @@ allocate_chunks(N, ChunkSize, SleepInterval, Chunks) ->
 saturate_cpu(Config) ->
     TargetLoad = maps:get(target_load, Config, 1.0),
     Duration = maps:get(duration, Config, 60000),
-    
+
     SchedulerCount = erlang:system_info(schedulers_online),
     WorkerCount = round(SchedulerCount * TargetLoad),
-    
-    ?LOG_INFO("Saturating ~p/~p CPU schedulers for ~pms", 
-             [WorkerCount, SchedulerCount, Duration]),
-    
+
+    ?LOG_INFO("Saturating ~p/~p CPU schedulers for ~pms", [WorkerCount, SchedulerCount, Duration]),
+
     % Spawn CPU-intensive workers
     Workers = [spawn(fun() -> cpu_burn_loop() end) || _ <- lists:seq(1, WorkerCount)],
-    
+
     timer:sleep(Duration),
-    
+
     % Kill workers
     lists:foreach(fun(Pid) -> exit(Pid, kill) end, Workers),
-    
+
     ?LOG_INFO("CPU saturation complete", []),
     ok.
 
@@ -115,19 +108,19 @@ fill_disk(Config) ->
     TargetPercent = maps:get(target_percent, Config, 0.90),
     TempFile = maps:get(temp_file, Config, "/tmp/erlmcp_chaos_disk_fill"),
     Duration = maps:get(duration, Config, 60000),
-    
+
     ?LOG_INFO("Filling disk to ~.1f% for ~pms", [TargetPercent * 100, Duration]),
-    
+
     % Get disk info
     DiskData = disksup:get_disk_data(),
     ?LOG_INFO("Current disk data: ~p", [DiskData]),
-    
+
     % In production, would calculate and write actual data
     % For safety in tests, just log the intent
     ?LOG_INFO("Would write to temp file: ~s", [TempFile]),
-    
+
     timer:sleep(Duration),
-    
+
     ?LOG_INFO("Disk fill simulation complete", []),
     ok.
 
@@ -136,17 +129,17 @@ fill_disk(Config) ->
 exhaust_file_descriptors(Config) ->
     TargetCount = maps:get(target_count, Config, 1000),
     Duration = maps:get(duration, Config, 60000),
-    
+
     ?LOG_INFO("Opening ~p file descriptors for ~pms", [TargetCount, Duration]),
-    
+
     % Open many files (ports)
     Ports = open_many_ports(TargetCount, []),
-    
+
     timer:sleep(Duration),
-    
+
     % Close ports
     lists:foreach(fun(Port) -> erlang:port_close(Port) end, Ports),
-    
+
     ?LOG_INFO("File descriptor exhaustion complete", []),
     ok.
 
@@ -162,4 +155,3 @@ open_many_ports(N, Ports) ->
             ?LOG_WARNING("Failed to open port, stopping at ~p ports", [length(Ports)]),
             Ports
     end.
-

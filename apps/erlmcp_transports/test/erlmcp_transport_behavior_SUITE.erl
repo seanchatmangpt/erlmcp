@@ -15,20 +15,17 @@
 -include("erlmcp.hrl").
 
 %% Suite callbacks
--export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2,
-         end_per_group/2, init_per_testcase/2, end_per_testcase/2]).
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
 %% Test cases
--export([behavior_module_exists/1, behavior_callbacks_defined/1,
-         behavior_types_exported/1, behavior_optional_callbacks/1,
-         validate_json_rpc_message/1, validate_transport_opts/1,
-         message_creation_functions/1, error_message_creation/1,
-         stdio_opts_validation/1, tcp_opts_validation/1, http_opts_validation/1,
-         websocket_opts_validation/1, json_rpc_structure/1, notification_format/1,
-         response_format/1, error_response_format/1, stdio_behavior_compliance/1,
-         tcp_behavior_compliance/1, http_behavior_compliance/1,
-         url_validation_functions/1, host_validation_functions/1,
-         message_content_validation/1, error_structure_validation/1,
-         behavior_error_handling/1, behavior_lifecycle/1]).
+-export([behavior_module_exists/1, behavior_callbacks_defined/1, behavior_types_exported/1,
+         behavior_optional_callbacks/1, validate_json_rpc_message/1, validate_transport_opts/1,
+         message_creation_functions/1, error_message_creation/1, stdio_opts_validation/1,
+         tcp_opts_validation/1, http_opts_validation/1, websocket_opts_validation/1,
+         json_rpc_structure/1, notification_format/1, response_format/1, error_response_format/1,
+         stdio_behavior_compliance/1, tcp_behavior_compliance/1, http_behavior_compliance/1,
+         url_validation_functions/1, host_validation_functions/1, message_content_validation/1,
+         error_structure_validation/1, behavior_error_handling/1, behavior_lifecycle/1]).
 
 %%====================================================================
 %% Suite Configuration
@@ -74,9 +71,7 @@ groups() ->
        host_validation_functions,
        message_content_validation,
        error_structure_validation]},
-     {integration,
-      [sequential],
-      [behavior_error_handling, behavior_lifecycle]}].
+     {integration, [sequential], [behavior_error_handling, behavior_lifecycle]}].
 
 %%====================================================================
 %% Suite Setup/Teardown
@@ -127,7 +122,8 @@ end_per_testcase(TestCase, _Config) ->
 behavior_module_exists(Config) ->
     % Verify the behavior module exists and can be loaded
     ?assert(code:is_loaded(erlmcp_transport_behavior) =/= false
-            orelse code:load_file(erlmcp_transport_behavior) =:= {module, erlmcp_transport_behavior}),
+            orelse code:load_file(erlmcp_transport_behavior)
+                   =:= {module, erlmcp_transport_behavior}),
 
     % Verify it has expected exports (validation and creation functions)
     Exports = erlmcp_transport_behavior:module_info(exports),
@@ -138,25 +134,31 @@ behavior_module_exists(Config) ->
 behavior_callbacks_defined(Config) ->
     % Verify required callback functions exist as helper functions
     % The transport_behavior module provides validation and creation functions
-    RequiredHelpers = [
-        validate_message,
-        validate_transport_opts,
-        create_message,
-        create_notification,
-        create_response,
-        create_error_response
-    ],
+    RequiredHelpers =
+        [validate_message,
+         validate_transport_opts,
+         create_message,
+         create_notification,
+         create_response,
+         create_error_response],
 
     lists:foreach(fun(Helper) ->
-                     ?assert(erlang:function_exported(erlmcp_transport_behavior, Helper,
-                         case Helper of
-                             validate_message -> 1;
-                             validate_transport_opts -> 2;
-                             create_message -> 3;
-                             create_notification -> 2;
-                             create_response -> 2;
-                             create_error_response -> 4
-                         end))
+                     ?assert(erlang:function_exported(erlmcp_transport_behavior,
+                                                      Helper,
+                                                      case Helper of
+                                                          validate_message ->
+                                                              1;
+                                                          validate_transport_opts ->
+                                                              2;
+                                                          create_message ->
+                                                              3;
+                                                          create_notification ->
+                                                              2;
+                                                          create_response ->
+                                                              2;
+                                                          create_error_response ->
+                                                              4
+                                                      end))
                   end,
                   RequiredHelpers),
 
@@ -210,7 +212,8 @@ validate_json_rpc_message(Config) ->
            <<"error">> => #{<<"code">> => -32600, <<"message">> => <<"Invalid Request">>},
            <<"id">> => null}],
 
-    lists:foreach(fun(Message) -> ?assertEqual(ok, erlmcp_transport_behavior:validate_message(Message))
+    lists:foreach(fun(Message) ->
+                     ?assertEqual(ok, erlmcp_transport_behavior:validate_message(Message))
                   end,
                   ValidMessages),
 
@@ -298,7 +301,8 @@ error_message_creation(Config) ->
     ?assertEqual(Data, maps:get(<<"data">>, ErrorObj)),
 
     % Test without data
-    ErrorWithoutData = erlmcp_transport_behavior:create_error_response(Id, Code, Message, undefined),
+    ErrorWithoutData =
+        erlmcp_transport_behavior:create_error_response(Id, Code, Message, undefined),
     ErrorObj2 = maps:get(<<"error">>, ErrorWithoutData),
     ?assertNot(maps:is_key(<<"data">>, ErrorObj2)),
     ok.
@@ -315,7 +319,8 @@ stdio_opts_validation(Config) ->
          #{owner => self(), test_mode => false}],
 
     lists:foreach(fun(Opts) ->
-                     ?assertEqual(ok, erlmcp_transport_behavior:validate_transport_opts(stdio, Opts))
+                     ?assertEqual(ok,
+                                  erlmcp_transport_behavior:validate_transport_opts(stdio, Opts))
                   end,
                   ValidOpts),
 
@@ -326,7 +331,8 @@ stdio_opts_validation(Config) ->
          #{owner => "not_a_pid"}], % Invalid owner type (must be pid)
 
     lists:foreach(fun(Opts) ->
-                     ?assertMatch({error, _}, erlmcp_transport_behavior:validate_transport_opts(stdio, Opts))
+                     ?assertMatch({error, _},
+                                  erlmcp_transport_behavior:validate_transport_opts(stdio, Opts))
                   end,
                   InvalidOpts),
     ok.
@@ -365,7 +371,8 @@ tcp_opts_validation(Config) ->
            owner => self()}], % Invalid host
 
     lists:foreach(fun(Opts) ->
-                     ?assertMatch({error, _}, erlmcp_transport_behavior:validate_transport_opts(tcp, Opts))
+                     ?assertMatch({error, _},
+                                  erlmcp_transport_behavior:validate_transport_opts(tcp, Opts))
                   end,
                   InvalidOpts),
     ok.
@@ -391,7 +398,8 @@ http_opts_validation(Config) ->
          #{url => "", owner => self()}], % Empty URL
 
     lists:foreach(fun(Opts) ->
-                     ?assertMatch({error, _}, erlmcp_transport_behavior:validate_transport_opts(http, Opts))
+                     ?assertMatch({error, _},
+                                  erlmcp_transport_behavior:validate_transport_opts(http, Opts))
                   end,
                   InvalidOpts),
     ok.
@@ -404,7 +412,9 @@ websocket_opts_validation(Config) ->
          #{url => <<"ws://example.com/ws">>, owner => self()}],
 
     lists:foreach(fun(Opts) ->
-                     ?assertEqual(ok, erlmcp_transport_behavior:validate_transport_opts(websocket, Opts))
+                     ?assertEqual(ok,
+                                  erlmcp_transport_behavior:validate_transport_opts(websocket,
+                                                                                    Opts))
                   end,
                   ValidOpts),
 
@@ -417,7 +427,8 @@ websocket_opts_validation(Config) ->
 
     lists:foreach(fun(Opts) ->
                      ?assertMatch({error, _},
-                                  erlmcp_transport_behavior:validate_transport_opts(websocket, Opts))
+                                  erlmcp_transport_behavior:validate_transport_opts(websocket,
+                                                                                    Opts))
                   end,
                   InvalidOpts),
     ok.
@@ -539,7 +550,6 @@ stdio_behavior_compliance(Config) ->
             % Verify process stopped after close
             timer:sleep(50),
             ?assertNot(is_process_alive(Pid));
-
         {error, Reason} ->
             ct:fail("Stdio transport failed to start: ~p", [Reason])
     end,
@@ -580,11 +590,10 @@ tcp_behavior_compliance(Config) ->
 http_behavior_compliance(Config) ->
     % Test that HTTP transport implements the behavior correctly
     % NOTE: HTTP transport uses start_link/1 with an opts map
-    HttpOpts = #{
-        url => "http://example.com/api",
-        owner => self(),
-        test_mode => true
-    },
+    HttpOpts =
+        #{url => "http://example.com/api",
+          owner => self(),
+          test_mode => true},
 
     case catch erlmcp_transport_http:start_link(HttpOpts) of
         {ok, Pid} when is_pid(Pid) ->
@@ -626,28 +635,31 @@ url_validation_functions(Config) ->
     % Note: These are internal functions, so we test through public interface
     lists:foreach(fun(Url) ->
                      HttpOpts = #{url => Url, owner => self()},
-                     ?assertEqual(ok, erlmcp_transport_behavior:validate_transport_opts(http, HttpOpts))
+                     ?assertEqual(ok,
+                                  erlmcp_transport_behavior:validate_transport_opts(http, HttpOpts))
                   end,
                   ValidHttpUrls),
 
     lists:foreach(fun(Url) ->
                      WsOpts = #{url => Url, owner => self()},
-                     ?assertEqual(ok, erlmcp_transport_behavior:validate_transport_opts(websocket, WsOpts))
+                     ?assertEqual(ok,
+                                  erlmcp_transport_behavior:validate_transport_opts(websocket,
+                                                                                    WsOpts))
                   end,
                   ValidWsUrls),
     ok.
 
 host_validation_functions(Config) ->
     % Test host validation helper functions
-    ValidHosts =
-        ["localhost", "example.com", "192.168.1.1", {127, 0, 0, 1}, {192, 168, 1, 1}],
+    ValidHosts = ["localhost", "example.com", "192.168.1.1", {127, 0, 0, 1}, {192, 168, 1, 1}],
 
     lists:foreach(fun(Host) ->
                      TcpOpts =
                          #{host => Host,
                            port => 8080,
                            owner => self()},
-                     ?assertEqual(ok, erlmcp_transport_behavior:validate_transport_opts(tcp, TcpOpts))
+                     ?assertEqual(ok,
+                                  erlmcp_transport_behavior:validate_transport_opts(tcp, TcpOpts))
                   end,
                   ValidHosts),
 
@@ -683,7 +695,8 @@ message_content_validation(Config) ->
            <<"error">> => #{<<"code">> => -32600, <<"message">> => <<"Error">>},
            <<"id">> => 1}],
 
-    lists:foreach(fun(Message) -> ?assertEqual(ok, erlmcp_transport_behavior:validate_message(Message))
+    lists:foreach(fun(Message) ->
+                     ?assertEqual(ok, erlmcp_transport_behavior:validate_message(Message))
                   end,
                   ValidMessages),
 
@@ -702,35 +715,33 @@ message_content_validation(Config) ->
 error_structure_validation(Config) ->
     % Test error structure validation
     % Valid error objects
-    ValidErrors = [
-        #{<<"code">> => -32600, <<"message">> => <<"Invalid Request">>},
-        #{<<"code">> => -32700, <<"message">> => <<"Parse error">>, <<"data">> => #{<<"detail">> => <<"expected">>}}
-    ],
+    ValidErrors =
+        [#{<<"code">> => -32600, <<"message">> => <<"Invalid Request">>},
+         #{<<"code">> => -32700,
+           <<"message">> => <<"Parse error">>,
+           <<"data">> => #{<<"detail">> => <<"expected">>}}],
 
     % Test that error responses validate correctly
     lists:foreach(fun(Error) ->
-                     Message = #{
-                         <<"jsonrpc">> => <<"2.0">>,
-                         <<"error">> => Error,
-                         <<"id">> => 1
-                     },
+                     Message =
+                         #{<<"jsonrpc">> => <<"2.0">>,
+                           <<"error">> => Error,
+                           <<"id">> => 1},
                      ?assertEqual(ok, erlmcp_transport_behavior:validate_message(Message))
                   end,
                   ValidErrors),
 
     % Invalid error objects
-    InvalidErrors = [
-        #{<<"message">> => <<"Error">>}, % Missing code
-        #{<<"code">> => -32600}, % Missing message
-        #{<<"code">> => "not_an_int", <<"message">> => <<"Error">>} % Code not integer
-    ],
+    InvalidErrors =
+        [#{<<"message">> => <<"Error">>}, % Missing code
+         #{<<"code">> => -32600}, % Missing message
+         #{<<"code">> => "not_an_int", <<"message">> => <<"Error">>}], % Code not integer
 
     lists:foreach(fun(Error) ->
-                     Message = #{
-                         <<"jsonrpc">> => <<"2.0">>,
-                         <<"error">> => Error,
-                         <<"id">> => 1
-                     },
+                     Message =
+                         #{<<"jsonrpc">> => <<"2.0">>,
+                           <<"error">> => Error,
+                           <<"id">> => 1},
                      ?assertMatch({error, _}, erlmcp_transport_behavior:validate_message(Message))
                   end,
                   InvalidErrors),
@@ -743,12 +754,7 @@ error_structure_validation(Config) ->
 behavior_error_handling(Config) ->
     % Test error handling in behavior functions
     % Test validate_message with various invalid inputs
-    InvalidInputs = [
-        not_a_map,
-        123,
-        [],
-        <<"not_a_map">>
-    ],
+    InvalidInputs = [not_a_map, 123, [], <<"not_a_map">>],
 
     lists:foreach(fun(Input) ->
                      ?assertMatch({error, _}, erlmcp_transport_behavior:validate_message(Input))

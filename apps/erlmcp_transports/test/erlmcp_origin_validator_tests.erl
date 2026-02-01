@@ -244,11 +244,10 @@ case_sensitive_origin_test() ->
 multiple_allowed_origins_test() ->
     %% Test with multiple allowed origins
     Origin = <<"http://app2.example.com">>,
-    AllowedOrigins = [
-        <<"http://app1.example.com">>,
-        <<"http://app2.example.com">>,
-        <<"http://app3.example.com">>
-    ],
+    AllowedOrigins =
+        [<<"http://app1.example.com">>,
+         <<"http://app2.example.com">>,
+         <<"http://app3.example.com">>],
 
     Result = erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins),
 

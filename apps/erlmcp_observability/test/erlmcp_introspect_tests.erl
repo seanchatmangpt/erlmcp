@@ -19,14 +19,12 @@ introspect_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-         {"status/0 returns system health map", fun test_status/0},
-         {"health_check/0 runs immediate health probe", fun test_health_check/0},
-         {"tasks/0 returns task status", fun test_tasks/0},
-         {"queues/0 returns queue depths", fun test_queues/0},
-         {"session_dump/1 returns error for nonexistent session", fun test_session_dump_not_found/0},
-         {"streams/1 returns error for nonexistent session", fun test_streams_not_found/0}
-     ]}.
+     [{"status/0 returns system health map", fun test_status/0},
+      {"health_check/0 runs immediate health probe", fun test_health_check/0},
+      {"tasks/0 returns task status", fun test_tasks/0},
+      {"queues/0 returns queue depths", fun test_queues/0},
+      {"session_dump/1 returns error for nonexistent session", fun test_session_dump_not_found/0},
+      {"streams/1 returns error for nonexistent session", fun test_streams_not_found/0}]}.
 
 setup() ->
     %% Ensure required applications are started
@@ -60,7 +58,10 @@ test_status() ->
 
     %% Verify memory map has expected fields
     Memory = maps:get(memory, Status),
-    ?assertMatch(#{heap_mb := _, rss_mb := _, processes := _}, Memory),
+    ?assertMatch(#{heap_mb := _,
+                   rss_mb := _,
+                   processes := _},
+                 Memory),
 
     %% Verify throughput map has expected fields
     Throughput = maps:get(throughput, Status),
@@ -74,11 +75,17 @@ test_health_check() ->
     ?assert(lists:member(HealthStatus, [healthy, degraded, critical])),
 
     %% Verify metrics map has expected keys
-    ?assertMatch(#{checks := _, overall := _, timestamp := _}, Metrics),
+    ?assertMatch(#{checks := _,
+                   overall := _,
+                   timestamp := _},
+                 Metrics),
 
     %% Verify individual checks
     Checks = maps:get(checks, Metrics),
-    ?assertMatch(#{registry := _, session_backend := _, supervisors := _}, Checks),
+    ?assertMatch(#{registry := _,
+                   session_backend := _,
+                   supervisors := _},
+                 Checks),
 
     %% Verify overall matches the returned status
     Overall = maps:get(overall, Metrics),
@@ -89,7 +96,10 @@ test_tasks() ->
     Tasks = erlmcp_introspect:tasks(),
 
     %% Verify map has expected keys
-    ?assertMatch(#{total := _, by_status := _, by_type := _}, Tasks),
+    ?assertMatch(#{total := _,
+                   by_status := _,
+                   by_type := _},
+                 Tasks),
 
     %% Verify total is a non-negative integer
     Total = maps:get(total, Tasks),
@@ -105,7 +115,10 @@ test_queues() ->
     Queues = erlmcp_introspect:queues(),
 
     %% Verify map has expected keys
-    ?assertMatch(#{top_10 := _, by_type := _, control_plane := _}, Queues),
+    ?assertMatch(#{top_10 := _,
+                   by_type := _,
+                   control_plane := _},
+                 Queues),
 
     %% Verify top_10 is a list
     Top10 = maps:get(top_10, Queues),
@@ -113,12 +126,13 @@ test_queues() ->
     ?assert(length(Top10) =< 10),
 
     %% Verify each entry in top_10 has expected structure
-    lists:foreach(
-        fun(Entry) ->
-            ?assertMatch(#{id := _, type := _, depth := _}, Entry)
-        end,
-        Top10
-    ),
+    lists:foreach(fun(Entry) ->
+                     ?assertMatch(#{id := _,
+                                    type := _,
+                                    depth := _},
+                                  Entry)
+                  end,
+                  Top10),
 
     %% Verify control_plane is a list of tuples
     ControlPlane = maps:get(control_plane, Queues),
@@ -146,11 +160,10 @@ integration_test_() ->
     {setup,
      fun integration_setup/0,
      fun integration_cleanup/1,
-     {timeout, 30,
-      [
-          {"status reflects real system state", fun test_status_with_server/0},
-          {"session_dump returns data for real session", fun test_session_dump_with_session/0}
-      ]}}.
+     {timeout,
+      30,
+      [{"status reflects real system state", fun test_status_with_server/0},
+       {"session_dump returns data for real session", fun test_session_dump_with_session/0}]}}.
 
 integration_setup() ->
     %% Start all required applications
@@ -160,10 +173,7 @@ integration_setup() ->
 
     %% Create a test server
     ServerId = test_server_introspect,
-    Capabilities = #{
-        tools => #{enabled => true},
-        resources => #{enabled => true}
-    },
+    Capabilities = #{tools => #{enabled => true}, resources => #{enabled => true}},
 
     case erlmcp_registry:find_server(ServerId) of
         {error, not_found} ->
@@ -218,34 +228,27 @@ test_session_dump_with_session() ->
 %%====================================================================
 
 structure_test_() ->
-    [
-        {"status/0 always returns valid structure",
-         fun() ->
-             %% Run multiple times to ensure consistency
-             lists:foreach(
-                 fun(_) ->
-                     Status = erlmcp_introspect:status(),
-                     ?assertMatch(#{status := _}, Status),
-                     %% Verify timestamp is reasonable
-                     Timestamp = maps:get(timestamp, Status),
-                     Now = erlang:system_time(millisecond),
-                     ?assert(Timestamp =< Now),
-                     ?assert(Timestamp > Now - 1000)  % Within last second
-                 end,
-                 lists:seq(1, 10)
-             )
-         end},
-
-        {"health_check/0 always returns consistent format",
-         fun() ->
-             lists:foreach(
-                 fun(_) ->
-                     {Status, Metrics} = erlmcp_introspect:health_check(),
-                     ?assert(is_atom(Status)),
-                     ?assert(is_map(Metrics)),
-                     ?assertMatch(#{checks := _}, Metrics)
-                 end,
-                 lists:seq(1, 10)
-             )
-         end}
-    ].
+    [{"status/0 always returns valid structure",
+      fun() ->
+         %% Run multiple times to ensure consistency
+         lists:foreach(fun(_) ->
+                          Status = erlmcp_introspect:status(),
+                          ?assertMatch(#{status := _}, Status),
+                          %% Verify timestamp is reasonable
+                          Timestamp = maps:get(timestamp, Status),
+                          Now = erlang:system_time(millisecond),
+                          ?assert(Timestamp =< Now),
+                          ?assert(Timestamp > Now - 1000)  % Within last second
+                       end,
+                       lists:seq(1, 10))
+      end},
+     {"health_check/0 always returns consistent format",
+      fun() ->
+         lists:foreach(fun(_) ->
+                          {Status, Metrics} = erlmcp_introspect:health_check(),
+                          ?assert(is_atom(Status)),
+                          ?assert(is_map(Metrics)),
+                          ?assertMatch(#{checks := _}, Metrics)
+                       end,
+                       lists:seq(1, 10))
+      end}].

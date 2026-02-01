@@ -14,31 +14,34 @@
 -module(erlmcp_cli_completer).
 
 %% API exports
--export([
-    complete/1,
-    complete/2,
-    get_completions/1,
-    get_completions/2,
-    register_command/2,
-    register_resource/1,
-    register_tool/1,
-    clear_dynamic_completions/0
-]).
+-export([complete/1, complete/2, get_completions/1, get_completions/2, register_command/2,
+         register_resource/1, register_tool/1, clear_dynamic_completions/0]).
 
 %% ETS table for dynamic completions
 -define(COMPLETIONS_TABLE, erlmcp_cli_completions).
-
 %% Built-in commands
--define(COMMANDS, [
-    "help", "exit", "quit",
-    "connect", "disconnect", "connections",
-    "list-resources", "list-tools", "list-prompts",
-    "read-resource", "call-tool", "get-prompt",
-    "subscribe", "unsubscribe",
-    "history", "clear",
-    "status", "version",
-    "validate", "spec-check", "transport-check"
-]).
+-define(COMMANDS,
+        ["help",
+         "exit",
+         "quit",
+         "connect",
+         "disconnect",
+         "connections",
+         "list-resources",
+         "list-tools",
+         "list-prompts",
+         "read-resource",
+         "call-tool",
+         "get-prompt",
+         "subscribe",
+         "unsubscribe",
+         "history",
+         "clear",
+         "status",
+         "version",
+         "validate",
+         "spec-check",
+         "transport-check"]).
 
 %%====================================================================
 %% API Functions
@@ -48,18 +51,24 @@
 -spec complete(string()) -> {ok, string()} | {error, no_match} | {ambiguous, [string()]}.
 complete(Partial) ->
     case get_completions(Partial) of
-        [] -> {error, no_match};
-        [Single] -> {ok, Single};
-        Multiple -> {ambiguous, Multiple}
+        [] ->
+            {error, no_match};
+        [Single] ->
+            {ok, Single};
+        Multiple ->
+            {ambiguous, Multiple}
     end.
 
 %% @doc Complete with context (command, argument, resource, tool)
 -spec complete(atom(), string()) -> {ok, string()} | {error, no_match} | {ambiguous, [string()]}.
 complete(Context, Partial) ->
     case get_completions(Context, Partial) of
-        [] -> {error, no_match};
-        [Single] -> {ok, Single};
-        Multiple -> {ambiguous, Multiple}
+        [] ->
+            {error, no_match};
+        [Single] ->
+            {ok, Single};
+        Multiple ->
+            {ambiguous, Multiple}
     end.
 
 %% @doc Get all possible completions for a partial input
@@ -84,23 +93,18 @@ get_completions(Partial) ->
 -spec get_completions(atom(), string()) -> [string()].
 get_completions(command, Partial) ->
     filter_completions(Partial, ?COMMANDS);
-
 get_completions(resource, Partial) ->
     Resources = get_dynamic_completions(resources),
     filter_completions(Partial, Resources);
-
 get_completions(tool, Partial) ->
     Tools = get_dynamic_completions(tools),
     filter_completions(Partial, Tools);
-
 get_completions(transport, Partial) ->
     Transports = ["stdio", "tcp", "http", "websocket"],
     filter_completions(Partial, Transports);
-
 get_completions(format, Partial) ->
     Formats = ["text", "json", "markdown", "html"],
     filter_completions(Partial, Formats);
-
 get_completions(_Context, _Partial) ->
     [].
 
@@ -117,7 +121,8 @@ register_resource(ResourceName) ->
     ensure_table(),
     Resources = get_dynamic_completions(resources),
     case lists:member(ResourceName, Resources) of
-        true -> ok;
+        true ->
+            ok;
         false ->
             ets:insert(?COMPLETIONS_TABLE, {resources, [ResourceName | Resources]}),
             ok
@@ -129,7 +134,8 @@ register_tool(ToolName) ->
     ensure_table(),
     Tools = get_dynamic_completions(tools),
     case lists:member(ToolName, Tools) of
-        true -> ok;
+        true ->
+            ok;
         false ->
             ets:insert(?COMPLETIONS_TABLE, {tools, [ToolName | Tools]}),
             ok
@@ -152,62 +158,73 @@ clear_dynamic_completions() ->
 filter_completions(Prefix, Candidates) ->
     PrefixLower = string:lowercase(Prefix),
     lists:filter(fun(Candidate) ->
-        CandidateLower = string:lowercase(Candidate),
-        string:prefix(CandidateLower, PrefixLower) =/= nomatch
-    end, Candidates).
+                    CandidateLower = string:lowercase(Candidate),
+                    string:prefix(CandidateLower, PrefixLower) =/= nomatch
+                 end,
+                 Candidates).
 
 %% @doc Get argument completions based on command
 -spec get_argument_completions(string(), [string()]) -> [string()].
 get_argument_completions("connect", Args) ->
     case length(Args) of
-        0 -> ["stdio://", "tcp://", "http://", "ws://"];
-        _ -> []
+        0 ->
+            ["stdio://", "tcp://", "http://", "ws://"];
+        _ ->
+            []
     end;
-
 get_argument_completions("disconnect", Args) ->
     case length(Args) of
-        0 -> get_active_connections();
-        _ -> []
+        0 ->
+            get_active_connections();
+        _ ->
+            []
     end;
-
 get_argument_completions("read-resource", Args) ->
     case length(Args) of
-        0 -> get_dynamic_completions(resources);
-        _ -> []
+        0 ->
+            get_dynamic_completions(resources);
+        _ ->
+            []
     end;
-
 get_argument_completions("call-tool", Args) ->
     case length(Args) of
-        0 -> get_dynamic_completions(tools);
-        _ -> []
+        0 ->
+            get_dynamic_completions(tools);
+        _ ->
+            []
     end;
-
 get_argument_completions("subscribe", Args) ->
     case length(Args) of
-        0 -> get_dynamic_completions(resources);
-        _ -> []
+        0 ->
+            get_dynamic_completions(resources);
+        _ ->
+            []
     end;
-
 get_argument_completions("unsubscribe", Args) ->
     case length(Args) of
-        0 -> get_dynamic_completions(resources);
-        _ -> []
+        0 ->
+            get_dynamic_completions(resources);
+        _ ->
+            []
     end;
-
 get_argument_completions("transport-check", Args) ->
     case length(Args) of
-        0 -> ["stdio", "tcp", "http", "websocket"];
-        1 -> get_flag_completions();
-        _ -> []
+        0 ->
+            ["stdio", "tcp", "http", "websocket"];
+        1 ->
+            get_flag_completions();
+        _ ->
+            []
     end;
-
 get_argument_completions("validate", Args) ->
     case length(Args) of
-        0 -> ["stdio://", "tcp://", "http://"];
-        1 -> get_flag_completions();
-        _ -> []
+        0 ->
+            ["stdio://", "tcp://", "http://"];
+        1 ->
+            get_flag_completions();
+        _ ->
+            []
     end;
-
 get_argument_completions(_Command, _Args) ->
     [].
 
@@ -228,8 +245,10 @@ get_active_connections() ->
 get_dynamic_completions(Key) ->
     ensure_table(),
     case ets:lookup(?COMPLETIONS_TABLE, Key) of
-        [{Key, List}] -> List;
-        [] -> []
+        [{Key, List}] ->
+            List;
+        [] ->
+            []
     end.
 
 %% @doc Ensure ETS table exists

@@ -1,9 +1,9 @@
 -module(erlmcp_notification_handler).
+
 -behaviour(gen_server).
 
 %% API
 -export([start_link/3]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -14,18 +14,18 @@
 %%%====================================================================
 
 -type notification_handler() :: fun((binary(), map()) -> any()) | {module(), atom()} | pid().
+
 -export_type([notification_handler/0]).
 
 %%====================================================================
 %%% Records
 %%%====================================================================
 
--record(state, {
-    method :: binary(),
-    handler :: notification_handler(),
-    params :: map(),
-    client_pid :: pid()
-}).
+-record(state,
+        {method :: binary(),
+         handler :: notification_handler(),
+         params :: map(),
+         client_pid :: pid()}).
 
 -type state() :: #state{}.
 
@@ -47,21 +47,21 @@ init([Method, Handler, Params]) ->
     process_flag(trap_exit, true),
 
     %% Get client PID from params or caller
-    ClientPid = case maps:get(<<"client_pid">>, Params, undefined) of
-        undefined ->
-            %% If not in params, assume the calling process is the client
-            self();
-        Pid when is_pid(Pid) ->
-            Pid
-    end,
+    ClientPid =
+        case maps:get(<<"client_pid">>, Params, undefined) of
+            undefined ->
+                %% If not in params, assume the calling process is the client
+                self();
+            Pid when is_pid(Pid) ->
+                Pid
+        end,
 
     %% Initialize state and execute handler immediately
-    State = #state{
-        method = Method,
-        handler = Handler,
-        params = Params,
-        client_pid = ClientPid
-    },
+    State =
+        #state{method = Method,
+               handler = Handler,
+               params = Params,
+               client_pid = ClientPid},
 
     %% Execute the handler function
     execute_handler(State),
@@ -70,7 +70,7 @@ init([Method, Handler, Params]) ->
     {ok, State}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()} | {noreply, state()}.
+                     {reply, term(), state()} | {noreply, state()}.
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -95,7 +95,10 @@ code_change(_OldVsn, State, _Extra) ->
 %%====================================================================
 
 -spec execute_handler(state()) -> ok.
-execute_handler(#state{handler = Handler, method = Method, params = Params}) when is_function(Handler, 2) ->
+execute_handler(#state{handler = Handler,
+                       method = Method,
+                       params = Params})
+    when is_function(Handler, 2) ->
     try
         Handler(Method, Params)
     catch
@@ -103,7 +106,9 @@ execute_handler(#state{handler = Handler, method = Method, params = Params}) whe
             logger:error("Notification handler crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
             error(handler_crashed)
     end;
-execute_handler(#state{handler = {Module, Function}, method = Method, params = Params}) ->
+execute_handler(#state{handler = {Module, Function},
+                       method = Method,
+                       params = Params}) ->
     try
         Module:Function(Method, Params)
     catch
@@ -111,12 +116,16 @@ execute_handler(#state{handler = {Module, Function}, method = Method, params = P
             logger:error("Notification handler crashed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
             error(handler_crashed)
     end;
-execute_handler(#state{handler = Pid, method = Method, params = Params}) when is_pid(Pid) ->
+execute_handler(#state{handler = Pid,
+                       method = Method,
+                       params = Params})
+    when is_pid(Pid) ->
     try
         Pid ! {sampling_request, Method, Params},
         ok
     catch
         Class:Reason:Stacktrace ->
-            logger:error("Notification handler send failed: ~p:~p~n~p", [Class, Reason, Stacktrace]),
+            logger:error("Notification handler send failed: ~p:~p~n~p",
+                         [Class, Reason, Stacktrace]),
             error(handler_send_failed)
     end.

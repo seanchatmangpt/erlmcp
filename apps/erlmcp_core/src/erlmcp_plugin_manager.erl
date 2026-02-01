@@ -25,37 +25,19 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_manager).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    discover_and_load_plugins/0,
-    load_plugin/1,
-    load_plugin/2,
-    unload_plugin/1,
-    reload_plugin/1,
-    list_loaded_plugins/0,
-    execute_pre_command_hooks/1,
-    execute_post_command_hooks/2,
-    call_plugin/3
-]).
-
+-export([start_link/0, discover_and_load_plugins/0, load_plugin/1, load_plugin/2, unload_plugin/1,
+         reload_plugin/1, list_loaded_plugins/0, execute_pre_command_hooks/1,
+         execute_post_command_hooks/2, call_plugin/3]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(SERVER, ?MODULE).
 
--record(state, {
-    loaded_plugins :: #{module() => pid()},
-    auto_discover :: boolean()
-}).
+-record(state, {loaded_plugins :: #{module() => pid()}, auto_discover :: boolean()}).
 
 %%====================================================================
 %% API
@@ -118,10 +100,7 @@ init([]) ->
     %% Check if auto-discovery is enabled
     AutoDiscover = application:get_env(erlmcp_core, plugin_auto_discover, true),
 
-    State = #state{
-        loaded_plugins = #{},
-        auto_discover = AutoDiscover
-    },
+    State = #state{loaded_plugins = #{}, auto_discover = AutoDiscover},
 
     %% Schedule auto-discovery if enabled
     case AutoDiscover of
@@ -140,7 +119,6 @@ handle_call(discover_and_load_plugins, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({load_plugin, Module, Opts}, _From, State) ->
     case do_load_plugin(Module, Opts, State) of
         {ok, Pid, NewState} ->
@@ -148,7 +126,6 @@ handle_call({load_plugin, Module, Opts}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({unload_plugin, Module}, _From, State) ->
     case do_unload_plugin(Module, State) of
         {ok, NewState} ->
@@ -156,7 +133,6 @@ handle_call({unload_plugin, Module}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({reload_plugin, Module}, _From, State) ->
     case do_reload_plugin(Module, State) of
         {ok, Pid, NewState} ->
@@ -164,11 +140,9 @@ handle_call({reload_plugin, Module}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call(list_loaded_plugins, _From, State) ->
     Modules = maps:keys(State#state.loaded_plugins),
     {reply, {ok, Modules}, State};
-
 handle_call({execute_pre_command_hooks, Request}, _From, State) ->
     case do_execute_pre_hooks(Request, State) of
         {ok, ModifiedRequest} ->
@@ -176,7 +150,6 @@ handle_call({execute_pre_command_hooks, Request}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({execute_post_command_hooks, Request, Response}, _From, State) ->
     case do_execute_post_hooks(Request, Response, State) of
         {ok, ModifiedResponse} ->
@@ -184,7 +157,6 @@ handle_call({execute_post_command_hooks, Request, Response}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({call_plugin, Module, Function, Args}, _From, State) ->
     case maps:get(Module, State#state.loaded_plugins, undefined) of
         undefined ->
@@ -209,23 +181,18 @@ handle_info(discover_plugins, State) ->
         {error, _Reason} ->
             {noreply, State}
     end;
-
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
     %% Plugin worker died - remove from loaded plugins
     LoadedPlugins = State#state.loaded_plugins,
-    NewLoadedPlugins = maps:filter(fun(_Module, WorkerPid) ->
-        WorkerPid =/= Pid
-    end, LoadedPlugins),
+    NewLoadedPlugins = maps:filter(fun(_Module, WorkerPid) -> WorkerPid =/= Pid end, LoadedPlugins),
     {noreply, State#state{loaded_plugins = NewLoadedPlugins}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->
     %% Gracefully unload all plugins
-    maps:foreach(fun(Module, _Pid) ->
-        do_unload_plugin(Module, State)
-    end, State#state.loaded_plugins),
+    maps:foreach(fun(Module, _Pid) -> do_unload_plugin(Module, State) end,
+                 State#state.loaded_plugins),
     ok.
 
 %%====================================================================
@@ -239,15 +206,18 @@ do_discover_and_load(State) ->
         case erlmcp_plugin_loader:discover_plugins() of
             {ok, Modules} ->
                 %% Load each discovered plugin
-                {LoadedModules, NewState} = lists:foldl(fun(Module, {Acc, StateAcc}) ->
-                    case do_load_plugin(Module, #{}, StateAcc) of
-                        {ok, _Pid, NewStateAcc} ->
-                            {[Module | Acc], NewStateAcc};
-                        {error, _Reason} ->
-                            %% Skip plugins that fail to load
-                            {Acc, StateAcc}
-                    end
-                end, {[], State}, Modules),
+                {LoadedModules, NewState} =
+                    lists:foldl(fun(Module, {Acc, StateAcc}) ->
+                                   case do_load_plugin(Module, #{}, StateAcc) of
+                                       {ok, _Pid, NewStateAcc} ->
+                                           {[Module | Acc], NewStateAcc};
+                                       {error, _Reason} ->
+                                           %% Skip plugins that fail to load
+                                           {Acc, StateAcc}
+                                   end
+                                end,
+                                {[], State},
+                                Modules),
 
                 {ok, lists:reverse(LoadedModules), NewState};
             {error, Reason} ->
@@ -282,7 +252,8 @@ do_load_plugin(Module, Opts, State) ->
                                 erlang:monitor(process, Pid),
 
                                 %% Update state
-                                NewLoadedPlugins = maps:put(Module, Pid, State#state.loaded_plugins),
+                                NewLoadedPlugins =
+                                    maps:put(Module, Pid, State#state.loaded_plugins),
                                 NewState = State#state{loaded_plugins = NewLoadedPlugins},
 
                                 {ok, Pid, NewState};
@@ -350,21 +321,25 @@ do_execute_pre_hooks(Request, State) ->
     case erlmcp_plugin_registry:list_plugins_by_type(middleware) of
         {ok, Plugins} ->
             %% Execute each middleware's pre_execute hook
-            lists:foldl(fun(#{module := Module, pid := Pid}, {ok, Req}) ->
-                try
-                    case erlang:is_process_alive(Pid) of
-                        true ->
-                            gen_server:call(Pid, {call_function, pre_execute, [Req]}, 5000);
-                        false ->
-                            {ok, Req}  %% Skip dead plugins
-                    end
-                catch
-                    _:_Error ->
-                        {ok, Req}  %% Skip failed plugins
-                end;
-            (_, {error, _} = Error) ->
-                Error
-            end, {ok, Request}, Plugins);
+            lists:foldl(fun (#{module := Module, pid := Pid}, {ok, Req}) ->
+                                try
+                                    case erlang:is_process_alive(Pid) of
+                                        true ->
+                                            gen_server:call(Pid,
+                                                            {call_function, pre_execute, [Req]},
+                                                            5000);
+                                        false ->
+                                            {ok, Req}  %% Skip dead plugins
+                                    end
+                                catch
+                                    _:_Error ->
+                                        {ok, Req}  %% Skip failed plugins
+                                end;
+                            (_, {error, _} = Error) ->
+                                Error
+                        end,
+                        {ok, Request},
+                        Plugins);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -375,21 +350,25 @@ do_execute_post_hooks(_Request, Response, State) ->
     case erlmcp_plugin_registry:list_plugins_by_type(middleware) of
         {ok, Plugins} ->
             %% Execute each middleware's post_execute hook
-            lists:foldl(fun(#{module := Module, pid := Pid}, {ok, Resp}) ->
-                try
-                    case erlang:is_process_alive(Pid) of
-                        true ->
-                            gen_server:call(Pid, {call_function, post_execute, [Resp]}, 5000);
-                        false ->
-                            {ok, Resp}  %% Skip dead plugins
-                    end
-                catch
-                    _:_Error ->
-                        {ok, Resp}  %% Skip failed plugins
-                end;
-            (_, {error, _} = Error) ->
-                Error
-            end, {ok, Response}, Plugins);
+            lists:foldl(fun (#{module := Module, pid := Pid}, {ok, Resp}) ->
+                                try
+                                    case erlang:is_process_alive(Pid) of
+                                        true ->
+                                            gen_server:call(Pid,
+                                                            {call_function, post_execute, [Resp]},
+                                                            5000);
+                                        false ->
+                                            {ok, Resp}  %% Skip dead plugins
+                                    end
+                                catch
+                                    _:_Error ->
+                                        {ok, Resp}  %% Skip failed plugins
+                                end;
+                            (_, {error, _} = Error) ->
+                                Error
+                        end,
+                        {ok, Response},
+                        Plugins);
         {error, Reason} ->
             {error, Reason}
     end.

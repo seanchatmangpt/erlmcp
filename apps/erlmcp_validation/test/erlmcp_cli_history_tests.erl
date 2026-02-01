@@ -5,6 +5,7 @@
 %%% Tests for CLI command history functionality
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_history_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %% Simple placeholder test

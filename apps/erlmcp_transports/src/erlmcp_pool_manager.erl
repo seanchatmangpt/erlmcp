@@ -18,80 +18,60 @@
 %%%====================================================================
 
 -module(erlmcp_pool_manager).
+
 -behaviour(gen_server).
 
 -include("erlmcp_pool.hrl").
 
 %% Public API
--export([
-    start_link/1,
-    start_link/2,
-    checkout/1,
-    checkout/2,
-    checkin/2,
-    get_metrics/1,
-    get_status/1,
-    resize/2,
-    stop/1
-]).
-
+-export([start_link/1, start_link/2, checkout/1, checkout/2, checkin/2, get_metrics/1, get_status/1,
+         resize/2, stop/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
--type pool_opts() :: #{
-    name => atom(),
-    min_size => pos_integer(),
-    max_size => pos_integer(),
-    strategy => round_robin | least_loaded | random,
-    health_check_interval => pos_integer(),
-    checkout_timeout => timeout(),
-    worker_module => module(),
-    worker_opts => map()
-}.
+-type pool_opts() ::
+    #{name => atom(),
+      min_size => pos_integer(),
+      max_size => pos_integer(),
+      strategy => round_robin | least_loaded | random,
+      health_check_interval => pos_integer(),
+      checkout_timeout => timeout(),
+      worker_module => module(),
+      worker_opts => map()}.
+-type pool_metrics() ::
+    #{total_checkouts => non_neg_integer(),
+      active_connections => non_neg_integer(),
+      idle_connections => non_neg_integer(),
+      failed_checkouts => non_neg_integer(),
+      avg_checkout_time_us => float(),
+      pool_utilization_percent => float(),
+      health_check_failures => non_neg_integer(),
+      current_size => pos_integer(),
+      max_size => pos_integer(),
+      strategy => atom()}.
 
--type pool_metrics() :: #{
-    total_checkouts => non_neg_integer(),
-    active_connections => non_neg_integer(),
-    idle_connections => non_neg_integer(),
-    failed_checkouts => non_neg_integer(),
-    avg_checkout_time_us => float(),
-    pool_utilization_percent => float(),
-    health_check_failures => non_neg_integer(),
-    current_size => pos_integer(),
-    max_size => pos_integer(),
-    strategy => atom()
-}.
-
--record(state, {
-    name :: atom() | undefined,
-    min_size :: pos_integer(),
-    max_size :: pos_integer(),
-    strategy :: erlmcp_pool_strategy:strategy(),
-    health_check_interval :: pos_integer(),
-    checkout_timeout :: timeout(),
-    worker_module :: module(),
-    worker_opts :: map(),
-
-    %% Pool state
-    connections = [] :: [#connection{}],
-    idle_connections = [] :: [pid()],
-    active_connections = #{} :: #{pid() => connection_info()},
-
-    %% Metrics
-    total_checkouts = 0 :: non_neg_integer(),
-    failed_checkouts = 0 :: non_neg_integer(),
-    checkout_times = [] :: [non_neg_integer()],
-    health_check_failures = 0 :: non_neg_integer(),
-
-    %% Health check timer
-    health_timer :: reference() | undefined
-}).
-
--record(connection_info, {
-    conn :: #connection{},
-    checkout_time :: integer()
-}).
+-record(state,
+        {name :: atom() | undefined,
+         min_size :: pos_integer(),
+         max_size :: pos_integer(),
+         strategy :: erlmcp_pool_strategy:strategy(),
+         health_check_interval :: pos_integer(),
+         checkout_timeout :: timeout(),
+         worker_module :: module(),
+         worker_opts :: map(),
+         %% Pool state
+         connections = [] :: [#connection{}],
+         idle_connections = [] :: [pid()],
+         active_connections = #{} :: #{pid() => connection_info()},
+         %% Metrics
+         total_checkouts = 0 :: non_neg_integer(),
+         failed_checkouts = 0 :: non_neg_integer(),
+         checkout_times = [] :: [non_neg_integer()],
+         health_check_failures = 0 :: non_neg_integer(),
+         %% Health check timer
+         health_timer :: reference() | undefined}).
+-record(connection_info, {conn :: #connection{}, checkout_time :: integer()}).
 
 -type connection_info() :: #connection_info{}.
 
@@ -173,16 +153,15 @@ init(Opts) ->
     %% Validate strategy
     StrategyMod = erlmcp_pool_strategy:get_strategy_module(Strategy),
 
-    State = #state{
-        name = Name,
-        min_size = MinSize,
-        max_size = MaxSize,
-        strategy = StrategyMod,
-        health_check_interval = HealthCheckInterval,
-        checkout_timeout = CheckoutTimeout,
-        worker_module = WorkerModule,
-        worker_opts = WorkerOpts
-    },
+    State =
+        #state{name = Name,
+               min_size = MinSize,
+               max_size = MaxSize,
+               strategy = StrategyMod,
+               health_check_interval = HealthCheckInterval,
+               checkout_timeout = CheckoutTimeout,
+               worker_module = WorkerModule,
+               worker_opts = WorkerOpts},
 
     %% Pre-warm pool with minimum connections
     State2 = prewarm_pool(State, MinSize),
@@ -205,24 +184,20 @@ handle_call({checkout, Timeout}, From, State) ->
             FinalState = NewState#state{failed_checkouts = NewState#state.failed_checkouts + 1},
             {reply, {error, Reason}, FinalState}
     end;
-
 handle_call(get_metrics, _From, State) ->
     Metrics = calculate_metrics(State),
     {reply, Metrics, State};
-
 handle_call(get_status, _From, State) ->
-    Status = #{
-        name => State#state.name,
-        min_size => State#state.min_size,
-        max_size => State#state.max_size,
-        current_size => length(State#state.connections),
-        idle_count => length(State#state.idle_connections),
-        active_count => maps:size(State#state.active_connections),
-        strategy => erlmcp_pool_strategy:strategy_name(State#state.strategy),
-        health_status => pool_health_status(State)
-    },
+    Status =
+        #{name => State#state.name,
+          min_size => State#state.min_size,
+          max_size => State#state.max_size,
+          current_size => length(State#state.connections),
+          idle_count => length(State#state.idle_connections),
+          active_count => maps:size(State#state.active_connections),
+          strategy => erlmcp_pool_strategy:strategy_name(State#state.strategy),
+          health_status => pool_health_status(State)},
     {reply, Status, State};
-
 handle_call({resize, NewSize}, _From, State) ->
     case resize_pool(State, NewSize) of
         {ok, NewState} ->
@@ -230,14 +205,12 @@ handle_call({resize, NewSize}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast({checkin, ConnPid}, State) ->
     NewState = do_checkin(State, ConnPid),
     {noreply, NewState};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -249,26 +222,25 @@ handle_info(health_check, State) ->
     FinalState = NewState#state{health_timer = Timer},
 
     {noreply, FinalState};
-
 handle_info({'DOWN', MonitorRef, process, ConnPid, Reason}, State) ->
     logger:warning("Connection ~p died: ~p", [ConnPid, Reason]),
     NewState = handle_connection_down(State, ConnPid, MonitorRef),
     {noreply, NewState};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->
     %% Cancel health check timer
     case State#state.health_timer of
-        undefined -> ok;
-        Timer -> erlang:cancel_timer(Timer)
+        undefined ->
+            ok;
+        Timer ->
+            erlang:cancel_timer(Timer)
     end,
 
     %% Close all connections
-    lists:foreach(fun(#connection{pid = Pid}) ->
-        catch exit(Pid, shutdown)
-    end, State#state.connections),
+    lists:foreach(fun(#connection{pid = Pid}) -> catch exit(Pid, shutdown) end,
+                  State#state.connections),
 
     ok.
 
@@ -284,22 +256,17 @@ prewarm_pool(State, Count) ->
     Connections = [create_connection(State) || _ <- lists:seq(1, Count)],
     IdleConnections = [Conn#connection.pid || Conn <- Connections],
 
-    State#state{
-        connections = Connections,
-        idle_connections = IdleConnections
-    }.
+    State#state{connections = Connections, idle_connections = IdleConnections}.
 
 %% @doc Create a new connection
 create_connection(#state{worker_module = Module, worker_opts = Opts}) ->
     case Module:start_link(Opts) of
         {ok, Pid} ->
             MonitorRef = monitor(process, Pid),
-            #connection{
-                pid = Pid,
-                monitor_ref = MonitorRef,
-                created_at = erlang:monotonic_time(millisecond),
-                last_used = erlang:monotonic_time(millisecond)
-            };
+            #connection{pid = Pid,
+                        monitor_ref = MonitorRef,
+                        created_at = erlang:monotonic_time(millisecond),
+                        last_used = erlang:monotonic_time(millisecond)};
         {error, Reason} ->
             logger:error("Failed to create connection: ~p", [Reason]),
             error({connection_creation_failed, Reason})
@@ -307,8 +274,8 @@ create_connection(#state{worker_module = Module, worker_opts = Opts}) ->
 
 %% @doc Check out a connection using the configured strategy
 do_checkout(State, Timeout) ->
-    HealthyConns = [Conn || Conn <- State#state.connections,
-                            Conn#connection.health_status =:= healthy],
+    HealthyConns =
+        [Conn || Conn <- State#state.connections, Conn#connection.health_status =:= healthy],
 
     case HealthyConns of
         [] ->
@@ -317,9 +284,7 @@ do_checkout(State, Timeout) ->
                 true ->
                     try
                         NewConn = create_connection(State),
-                        NewState = State#state{
-                            connections = [NewConn | State#state.connections]
-                        },
+                        NewState = State#state{connections = [NewConn | State#state.connections]},
                         checkout_connection(NewState, NewConn)
                     catch
                         _:Error ->
@@ -330,7 +295,10 @@ do_checkout(State, Timeout) ->
             end;
         _ ->
             %% Select connection using strategy
-            case erlmcp_pool_strategy:select_connection(State#state.strategy, HealthyConns, State#state.idle_connections) of
+            case erlmcp_pool_strategy:select_connection(State#state.strategy,
+                                                        HealthyConns,
+                                                        State#state.idle_connections)
+            of
                 {ok, ConnPid} ->
                     case lists:keyfind(ConnPid, #connection.pid, State#state.connections) of
                         #connection{} = Conn ->
@@ -344,9 +312,8 @@ do_checkout(State, Timeout) ->
                         true ->
                             try
                                 NewConn = create_connection(State),
-                                NewState = State#state{
-                                    connections = [NewConn | State#state.connections]
-                                },
+                                NewState =
+                                    State#state{connections = [NewConn | State#state.connections]},
                                 checkout_connection(NewState, NewConn)
                             catch
                                 _:Error ->
@@ -363,21 +330,21 @@ do_checkout(State, Timeout) ->
 %% @doc Mark connection as checked out
 checkout_connection(State, #connection{pid = ConnPid} = Conn) ->
     Now = erlang:monotonic_time(millisecond),
-    UpdatedConn = Conn#connection{
-        last_used = Now,
-        request_count = Conn#connection.request_count + 1
-    },
+    UpdatedConn =
+        Conn#connection{last_used = Now, request_count = Conn#connection.request_count + 1},
 
-    ConnInfo = #connection_info{
-        conn = UpdatedConn,
-        checkout_time = erlang:monotonic_time(microsecond)
-    },
+    ConnInfo =
+        #connection_info{conn = UpdatedConn, checkout_time = erlang:monotonic_time(microsecond)},
 
-    NewState = State#state{
-        connections = lists:keyreplace(ConnPid, #connection.pid, State#state.connections, UpdatedConn),
-        idle_connections = lists:delete(ConnPid, State#state.idle_connections),
-        active_connections = maps:put(ConnPid, ConnInfo, State#state.active_connections)
-    },
+    NewState =
+        State#state{connections =
+                        lists:keyreplace(ConnPid,
+                                         #connection.pid,
+                                         State#state.connections,
+                                         UpdatedConn),
+                    idle_connections = lists:delete(ConnPid, State#state.idle_connections),
+                    active_connections =
+                        maps:put(ConnPid, ConnInfo, State#state.active_connections)},
 
     {ok, ConnPid, NewState}.
 
@@ -388,10 +355,8 @@ do_checkin(State, ConnPid) ->
             logger:warning("Checkin of unknown connection: ~p", [ConnPid]),
             State;
         #connection_info{conn = Conn} ->
-            State#state{
-                idle_connections = [ConnPid | State#state.idle_connections],
-                active_connections = maps:remove(ConnPid, State#state.active_connections)
-            }
+            State#state{idle_connections = [ConnPid | State#state.idle_connections],
+                        active_connections = maps:remove(ConnPid, State#state.active_connections)}
     end.
 
 %% @doc Handle connection process termination
@@ -401,21 +366,18 @@ handle_connection_down(State, ConnPid, MonitorRef) ->
     NewIdle = lists:delete(ConnPid, State#state.idle_connections),
     NewActive = maps:remove(ConnPid, State#state.active_connections),
 
-    NewState = State#state{
-        connections = NewConnections,
-        idle_connections = NewIdle,
-        active_connections = NewActive
-    },
+    NewState =
+        State#state{connections = NewConnections,
+                    idle_connections = NewIdle,
+                    active_connections = NewActive},
 
     %% Replace connection if under min_size
     case length(NewConnections) < State#state.min_size of
         true ->
             try
                 NewConn = create_connection(State),
-                NewState#state{
-                    connections = [NewConn | NewConnections],
-                    idle_connections = [NewConn#connection.pid | NewIdle]
-                }
+                NewState#state{connections = [NewConn | NewConnections],
+                               idle_connections = [NewConn#connection.pid | NewIdle]}
             catch
                 _:Error ->
                     logger:error("Failed to replace dead connection: ~p", [Error]),
@@ -431,23 +393,23 @@ handle_connection_down(State, ConnPid, MonitorRef) ->
 
 %% @doc Perform health checks on all connections
 perform_health_checks(State) ->
-    UpdatedConnections = lists:map(fun(Conn) ->
-        check_connection_health(Conn)
-    end, State#state.connections),
+    UpdatedConnections =
+        lists:map(fun(Conn) -> check_connection_health(Conn) end, State#state.connections),
 
     %% Count failures
     Failures = length([C || C <- UpdatedConnections, C#connection.health_status =:= unhealthy]),
 
     %% Update idle list to exclude unhealthy connections
-    HealthyIdle = [Pid || Pid <- State#state.idle_connections,
-                          lists:keyfind(Pid, #connection.pid, UpdatedConnections) =/= false,
-                          (lists:keyfind(Pid, #connection.pid, UpdatedConnections))#connection.health_status =:= healthy],
+    HealthyIdle =
+        [Pid
+         || Pid <- State#state.idle_connections,
+            lists:keyfind(Pid, #connection.pid, UpdatedConnections) =/= false,
+            (lists:keyfind(Pid, #connection.pid, UpdatedConnections))#connection.health_status
+            =:= healthy],
 
-    State#state{
-        connections = UpdatedConnections,
-        idle_connections = HealthyIdle,
-        health_check_failures = State#state.health_check_failures + Failures
-    }.
+    State#state{connections = UpdatedConnections,
+                idle_connections = HealthyIdle,
+                health_check_failures = State#state.health_check_failures + Failures}.
 
 %% @doc Check health of a single connection
 check_connection_health(#connection{pid = Pid} = Conn) ->
@@ -457,10 +419,8 @@ check_connection_health(#connection{pid = Pid} = Conn) ->
             %% Can be extended with ping/pong protocol
             Conn#connection{health_status = healthy, failure_count = 0};
         false ->
-            Conn#connection{
-                health_status = unhealthy,
-                failure_count = Conn#connection.failure_count + 1
-            }
+            Conn#connection{health_status = unhealthy,
+                            failure_count = Conn#connection.failure_count + 1}
     end.
 
 %% @doc Calculate overall pool health status
@@ -469,13 +429,16 @@ pool_health_status(State) ->
     Healthy = length([C || C <- State#state.connections, C#connection.health_status =:= healthy]),
 
     case Total of
-        0 -> empty;
+        0 ->
+            empty;
         _ ->
-            HealthPercent = (Healthy / Total) * 100,
-            if
-                HealthPercent >= 80 -> healthy;
-                HealthPercent >= 50 -> degraded;
-                true -> unhealthy
+            HealthPercent = Healthy / Total * 100,
+            if HealthPercent >= 80 ->
+                   healthy;
+               HealthPercent >= 50 ->
+                   degraded;
+               true ->
+                   unhealthy
             end
     end.
 
@@ -486,15 +449,16 @@ pool_health_status(State) ->
 %% @doc Record checkout time
 record_checkout(State, CheckoutTime) ->
     CheckoutTimes = State#state.checkout_times,
-    NewCheckoutTimes = case length(CheckoutTimes) >= ?MAX_CHECKOUT_TIMES of
-        true -> lists:sublist([CheckoutTime | CheckoutTimes], ?MAX_CHECKOUT_TIMES);
-        false -> [CheckoutTime | CheckoutTimes]
-    end,
+    NewCheckoutTimes =
+        case length(CheckoutTimes) >= ?MAX_CHECKOUT_TIMES of
+            true ->
+                lists:sublist([CheckoutTime | CheckoutTimes], ?MAX_CHECKOUT_TIMES);
+            false ->
+                [CheckoutTime | CheckoutTimes]
+        end,
 
-    State#state{
-        total_checkouts = State#state.total_checkouts + 1,
-        checkout_times = NewCheckoutTimes
-    }.
+    State#state{total_checkouts = State#state.total_checkouts + 1,
+                checkout_times = NewCheckoutTimes}.
 
 %% @doc Calculate pool metrics
 calculate_metrics(State) ->
@@ -502,28 +466,32 @@ calculate_metrics(State) ->
     IdleConns = length(State#state.idle_connections),
     ActiveConns = maps:size(State#state.active_connections),
 
-    AvgCheckoutTime = case State#state.checkout_times of
-        [] -> 0.0;
-        Times -> lists:sum(Times) / length(Times)
-    end,
+    AvgCheckoutTime =
+        case State#state.checkout_times of
+            [] ->
+                0.0;
+            Times ->
+                lists:sum(Times) / length(Times)
+        end,
 
-    Utilization = case TotalConns of
-        0 -> 0.0;
-        _ -> (ActiveConns / TotalConns) * 100
-    end,
+    Utilization =
+        case TotalConns of
+            0 ->
+                0.0;
+            _ ->
+                ActiveConns / TotalConns * 100
+        end,
 
-    #{
-        total_checkouts => State#state.total_checkouts,
-        active_connections => ActiveConns,
-        idle_connections => IdleConns,
-        failed_checkouts => State#state.failed_checkouts,
-        avg_checkout_time_us => AvgCheckoutTime,
-        pool_utilization_percent => Utilization,
-        health_check_failures => State#state.health_check_failures,
-        current_size => TotalConns,
-        max_size => State#state.max_size,
-        strategy => erlmcp_pool_strategy:strategy_name(State#state.strategy)
-    }.
+    #{total_checkouts => State#state.total_checkouts,
+      active_connections => ActiveConns,
+      idle_connections => IdleConns,
+      failed_checkouts => State#state.failed_checkouts,
+      avg_checkout_time_us => AvgCheckoutTime,
+      pool_utilization_percent => Utilization,
+      health_check_failures => State#state.health_check_failures,
+      current_size => TotalConns,
+      max_size => State#state.max_size,
+      strategy => erlmcp_pool_strategy:strategy_name(State#state.strategy)}.
 
 %%====================================================================
 %% Internal Functions - Pool Sizing
@@ -532,43 +500,38 @@ calculate_metrics(State) ->
 %% @doc Resize pool to target size
 resize_pool(State, NewSize) when NewSize < State#state.min_size ->
     {error, {below_minimum, State#state.min_size}};
-
 resize_pool(State, NewSize) when NewSize > State#state.max_size ->
     {error, {above_maximum, State#state.max_size}};
-
 resize_pool(State, NewSize) ->
     CurrentSize = length(State#state.connections),
 
-    if
-        NewSize > CurrentSize ->
-            %% Grow pool
-            Additional = NewSize - CurrentSize,
-            NewConns = [create_connection(State) || _ <- lists:seq(1, Additional)],
-            NewIdle = [C#connection.pid || C <- NewConns] ++ State#state.idle_connections,
-            {ok, State#state{
-                connections = NewConns ++ State#state.connections,
-                idle_connections = NewIdle
-            }};
-        NewSize < CurrentSize ->
-            %% Shrink pool (remove only idle connections)
-            ToRemove = CurrentSize - NewSize,
-            {RemovedConns, RemainingIdle} = remove_idle_connections(State#state.idle_connections, State#state.connections, ToRemove),
+    if NewSize > CurrentSize ->
+           %% Grow pool
+           Additional = NewSize - CurrentSize,
+           NewConns = [create_connection(State) || _ <- lists:seq(1, Additional)],
+           NewIdle = [C#connection.pid || C <- NewConns] ++ State#state.idle_connections,
+           {ok,
+            State#state{connections = NewConns ++ State#state.connections,
+                        idle_connections = NewIdle}};
+       NewSize < CurrentSize ->
+           %% Shrink pool (remove only idle connections)
+           ToRemove = CurrentSize - NewSize,
+           {RemovedConns, RemainingIdle} =
+               remove_idle_connections(State#state.idle_connections,
+                                       State#state.connections,
+                                       ToRemove),
 
-            %% Close removed connections
-            lists:foreach(fun(#connection{pid = Pid}) ->
-                catch exit(Pid, shutdown)
-            end, RemovedConns),
+           %% Close removed connections
+           lists:foreach(fun(#connection{pid = Pid}) -> catch exit(Pid, shutdown) end,
+                         RemovedConns),
 
-            RemainingConns = lists:filter(fun(Conn) ->
-                not lists:member(Conn, RemovedConns)
-            end, State#state.connections),
+           RemainingConns =
+               lists:filter(fun(Conn) -> not lists:member(Conn, RemovedConns) end,
+                            State#state.connections),
 
-            {ok, State#state{
-                connections = RemainingConns,
-                idle_connections = RemainingIdle
-            }};
-        true ->
-            {ok, State}
+           {ok, State#state{connections = RemainingConns, idle_connections = RemainingIdle}};
+       true ->
+           {ok, State}
     end.
 
 %% @doc Remove idle connections for pool shrinking

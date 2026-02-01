@@ -14,7 +14,9 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_spec_parser_tests).
+
 -include_lib("eunit/include/eunit.hrl").
+
 -include("erlmcp_spec_parser.hrl").
 
 %%%====================================================================
@@ -26,60 +28,72 @@ spec_parser_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Spec Parsing Tests", {spawn, fun() -> [
-          ?_test(parse_spec_returns_correct_structure()),
-          ?_test(version_is_2025_11_25()),
-          ?_test(methods_are_parsed_correctly()),
-          ?_test(error_codes_are_parsed_correctly()),
-          ?_test(transports_are_parsed_correctly())
-      ] end}},
-      {"Method Requirements Tests", {spawn, fun() -> [
-          ?_test(get_method_requirements_returns_all_methods()),
-          ?_test(get_method_requirements_returns_specific_method()),
-          ?_test(initialize_method_has_correct_params()),
-          ?_test(tools_call_method_has_correct_params()),
-          ?_test(resources_read_method_has_correct_params())
-      ] end}},
-      {"Error Code Requirements Tests", {spawn, fun() -> [
-          ?_test(get_error_requirements_returns_all_error_codes()),
-          ?_test(get_error_requirements_returns_specific_error_code()),
-          ?_test(json_rpc_error_codes_are_valid()),
-          ?_test(mcp_error_codes_are_valid()),
-          ?_test(refusal_codes_are_valid())
-      ] end}},
-      {"Validation Tests", {spawn, fun() -> [
-          ?_test(validate_message_validates_json_rpc_structure()),
-          ?_test(validate_method_call_validates_parameters()),
-          ?_test(validate_error_code_validates_error_codes()),
-          ?_test(check_capability_support_checks_capabilities()),
-          ?_test(generate_validation_rules_returns_all_rules())
-      ] end}},
-      {"Transport Requirements Tests", {spawn, fun() -> [
-          ?_test(get_transport_requirements_returns_all_transports()),
-          ?_test(get_transport_requirements_returns_specific_transport()),
-          ?_test(stdio_transport_has_correct_requirements())
-      ] end}},
-      {"Capability Requirements Tests", {spawn, fun() -> [
-          ?_test(get_capability_requirements_returns_all_capabilities()),
-          ?_test(get_capability_requirements_returns_specific_capability()),
-          ?_test(resources_capability_has_correct_features())
-      ] end}},
-      {"Schema and Metadata Functions Tests", {spawn, fun() -> [
-          ?_test(protocol_version_returns_2_0()),
-          ?_test(supported_capabilities_returns_map()),
-          ?_test(supported_transports_returns_list()),
-          ?_test(required_error_codes_returns_range()),
-          ?_test(message_schema_request_returns_valid_schema()),
-          ?_test(message_schema_response_returns_valid_schema()),
-          ?_test(message_schema_error_returns_valid_schema()),
-          ?_test(message_schema_notification_returns_valid_schema()),
-          ?_test(message_schema_unknown_type_returns_error()),
-          ?_test(resource_schema_returns_valid_structure()),
-          ?_test(tool_schema_returns_valid_structure()),
-          ?_test(prompt_schema_returns_valid_structure())
-      ] end}}
-     ]}.
+     [{"Spec Parsing Tests",
+       {spawn,
+        fun() ->
+           [?_test(parse_spec_returns_correct_structure()),
+            ?_test(version_is_2025_11_25()),
+            ?_test(methods_are_parsed_correctly()),
+            ?_test(error_codes_are_parsed_correctly()),
+            ?_test(transports_are_parsed_correctly())]
+        end}},
+      {"Method Requirements Tests",
+       {spawn,
+        fun() ->
+           [?_test(get_method_requirements_returns_all_methods()),
+            ?_test(get_method_requirements_returns_specific_method()),
+            ?_test(initialize_method_has_correct_params()),
+            ?_test(tools_call_method_has_correct_params()),
+            ?_test(resources_read_method_has_correct_params())]
+        end}},
+      {"Error Code Requirements Tests",
+       {spawn,
+        fun() ->
+           [?_test(get_error_requirements_returns_all_error_codes()),
+            ?_test(get_error_requirements_returns_specific_error_code()),
+            ?_test(json_rpc_error_codes_are_valid()),
+            ?_test(mcp_error_codes_are_valid()),
+            ?_test(refusal_codes_are_valid())]
+        end}},
+      {"Validation Tests",
+       {spawn,
+        fun() ->
+           [?_test(validate_message_validates_json_rpc_structure()),
+            ?_test(validate_method_call_validates_parameters()),
+            ?_test(validate_error_code_validates_error_codes()),
+            ?_test(check_capability_support_checks_capabilities()),
+            ?_test(generate_validation_rules_returns_all_rules())]
+        end}},
+      {"Transport Requirements Tests",
+       {spawn,
+        fun() ->
+           [?_test(get_transport_requirements_returns_all_transports()),
+            ?_test(get_transport_requirements_returns_specific_transport()),
+            ?_test(stdio_transport_has_correct_requirements())]
+        end}},
+      {"Capability Requirements Tests",
+       {spawn,
+        fun() ->
+           [?_test(get_capability_requirements_returns_all_capabilities()),
+            ?_test(get_capability_requirements_returns_specific_capability()),
+            ?_test(resources_capability_has_correct_features())]
+        end}},
+      {"Schema and Metadata Functions Tests",
+       {spawn,
+        fun() ->
+           [?_test(protocol_version_returns_2_0()),
+            ?_test(supported_capabilities_returns_map()),
+            ?_test(supported_transports_returns_list()),
+            ?_test(required_error_codes_returns_range()),
+            ?_test(message_schema_request_returns_valid_schema()),
+            ?_test(message_schema_response_returns_valid_schema()),
+            ?_test(message_schema_error_returns_valid_schema()),
+            ?_test(message_schema_notification_returns_valid_schema()),
+            ?_test(message_schema_unknown_type_returns_error()),
+            ?_test(resource_schema_returns_valid_structure()),
+            ?_test(tool_schema_returns_valid_structure()),
+            ?_test(prompt_schema_returns_valid_structure())]
+        end}}]}.
 
 %% Setup function - start the spec parser gen_server
 setup() ->
@@ -100,15 +114,14 @@ cleanup(_Pid) ->
 parse_spec_returns_correct_structure() ->
     {ok, Spec} = erlmcp_spec_parser:parse_spec(),
     ?assert(is_record(Spec, mcp_spec)),
-    ?assertMatch(#mcp_spec{
-        version = _,
-        specification_date = _,
-        protocol_type = _,
-        methods = _,
-        error_codes = _,
-        transports = _,
-        capabilities = _
-    }, Spec).
+    ?assertMatch(#mcp_spec{version = _,
+                           specification_date = _,
+                           protocol_type = _,
+                           methods = _,
+                           error_codes = _,
+                           transports = _,
+                           capabilities = _},
+                 Spec).
 
 %% @doc Test that version is correctly set to 2025-11-25
 version_is_2025_11_25() ->
@@ -232,35 +245,37 @@ json_rpc_error_codes_are_valid() ->
     ?assert(length(JsonRpcErrors) >= 5),
     %% Verify all JSON-RPC codes are in valid range
     lists:foreach(fun(E) ->
-        Code = E#error_code_req.code,
-        ?assert(Code >= -32700 andalso Code =< -32600)
-    end, JsonRpcErrors).
+                     Code = E#error_code_req.code,
+                     ?assert(Code >= -32700 andalso Code =< -32600)
+                  end,
+                  JsonRpcErrors).
 
 %% @doc Test that MCP error codes are valid (-32001 to -32010)
 mcp_error_codes_are_valid() ->
     {ok, Errors} = erlmcp_spec_parser:get_error_requirements(),
-    McpErrors = [E || E <- Errors,
-                      E#error_code_req.category =:= mcp_protocol,
-                      E#error_code_req.code < 0],
+    McpErrors =
+        [E || E <- Errors, E#error_code_req.category =:= mcp_protocol, E#error_code_req.code < 0],
     ?assert(length(McpErrors) >= 3),
     %% Verify all MCP error codes are in valid range
     lists:foreach(fun(E) ->
-        Code = E#error_code_req.code,
-        ?assert(Code >= -32099 andalso Code =< -32000)
-    end, McpErrors).
+                     Code = E#error_code_req.code,
+                     ?assert(Code >= -32099 andalso Code =< -32000)
+                  end,
+                  McpErrors).
 
 %% @doc Test that refusal codes are valid (1001-1089)
 refusal_codes_are_valid() ->
     {ok, Errors} = erlmcp_spec_parser:get_error_requirements(),
-    RefusalCodes = [E || E <- Errors,
-                         E#error_code_req.category =:= mcp_protocol,
-                         E#error_code_req.code >= 1000],
+    RefusalCodes =
+        [E
+         || E <- Errors, E#error_code_req.category =:= mcp_protocol, E#error_code_req.code >= 1000],
     ?assert(length(RefusalCodes) >= 2),
     %% Verify all refusal codes are in valid range
     lists:foreach(fun(E) ->
-        Code = E#error_code_req.code,
-        ?assert(Code >= 1001 andalso Code =< 1089)
-    end, RefusalCodes).
+                     Code = E#error_code_req.code,
+                     ?assert(Code >= 1001 andalso Code =< 1089)
+                  end,
+                  RefusalCodes).
 
 %%%====================================================================
 %%% 4. Validation Tests (5 tests)
@@ -269,15 +284,17 @@ refusal_codes_are_valid() ->
 %% @doc Test validate_message/1 validates JSON-RPC structure
 validate_message_validates_json_rpc_structure() ->
     %% Valid message
-    ValidMsg = #{
-        jsonrpc => <<"2.0">>,
-        method => <<"initialize">>,
-        id => 1
-    },
+    ValidMsg =
+        #{jsonrpc => <<"2.0">>,
+          method => <<"initialize">>,
+          id => 1},
     ?assertEqual({ok, valid_message}, erlmcp_spec_parser:validate_message(ValidMsg)),
 
     %% Invalid version
-    InvalidVersion = #{jsonrpc => <<"1.0">>, method => <<"test">>, id => 1},
+    InvalidVersion =
+        #{jsonrpc => <<"1.0">>,
+          method => <<"test">>,
+          id => 1},
     ?assertEqual({error, invalid_jsonrpc_version},
                  erlmcp_spec_parser:validate_message(InvalidVersion)),
 
@@ -305,34 +322,31 @@ validate_method_call_validates_parameters() ->
 %% @doc Test validate_error_code/1 validates error codes
 validate_error_code_validates_error_codes() ->
     %% Valid error code
-    ?assertEqual({ok, valid_error_code},
-                 erlmcp_spec_parser:validate_error_code(-32700)),
-    ?assertEqual({ok, valid_error_code},
-                 erlmcp_spec_parser:validate_error_code(-32001)),
+    ?assertEqual({ok, valid_error_code}, erlmcp_spec_parser:validate_error_code(-32700)),
+    ?assertEqual({ok, valid_error_code}, erlmcp_spec_parser:validate_error_code(-32001)),
 
     %% Unknown error code
-    ?assertEqual({error, unknown_error_code},
-                 erlmcp_spec_parser:validate_error_code(-99999)).
+    ?assertEqual({error, unknown_error_code}, erlmcp_spec_parser:validate_error_code(-99999)).
 
 %% @doc Test check_capability_support/2 checks capabilities
 check_capability_support_checks_capabilities() ->
     %% Full support
     ?assertEqual({ok, capability_supported},
-                 erlmcp_spec_parser:check_capability_support(
-                     <<"resources">>, [<<"subscribe">>, <<"list">>, <<"read">>])),
+                 erlmcp_spec_parser:check_capability_support(<<"resources">>,
+                                                             [<<"subscribe">>,
+                                                              <<"list">>,
+                                                              <<"read">>])),
     ?assertEqual({ok, capability_supported},
-                 erlmcp_spec_parser:check_capability_support(
-                     <<"tools">>, [<<"list">>, <<"call">>])),
+                 erlmcp_spec_parser:check_capability_support(<<"tools">>,
+                                                             [<<"list">>, <<"call">>])),
 
     %% Missing features
     ?assertMatch({error, {missing_features, _}},
-                 erlmcp_spec_parser:check_capability_support(
-                     <<"resources">>, [<<"list">>])),
+                 erlmcp_spec_parser:check_capability_support(<<"resources">>, [<<"list">>])),
 
     %% Unknown capability
     ?assertEqual({error, unknown_capability},
-                 erlmcp_spec_parser:check_capability_support(
-                     <<"unknown_cap">>, [])).
+                 erlmcp_spec_parser:check_capability_support(<<"unknown_cap">>, [])).
 
 %% @doc Test generate_validation_rules/0 returns all rules
 generate_validation_rules_returns_all_rules() ->
@@ -410,136 +424,137 @@ list_operations_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun(_) -> [
+     fun(_) ->
+        [?_test(begin
+                    {ok, Methods} = erlmcp_spec_parser:list_methods(),
+                    ?assert(is_list(Methods)),
+                    ?assert(length(Methods) >= 7),
+                    ?assert(lists:member(<<"initialize">>, Methods)),
+                    ?assert(lists:member(<<"tools/list">>, Methods))
+                end),
          ?_test(begin
-             {ok, Methods} = erlmcp_spec_parser:list_methods(),
-             ?assert(is_list(Methods)),
-             ?assert(length(Methods) >= 7),
-             ?assert(lists:member(<<"initialize">>, Methods)),
-             ?assert(lists:member(<<"tools/list">>, Methods))
-         end),
+                    {ok, ErrorCodes} = erlmcp_spec_parser:list_error_codes(),
+                    ?assert(is_list(ErrorCodes)),
+                    ?assert(lists:member(-32700, ErrorCodes)),
+                    ?assert(lists:member(-32001, ErrorCodes))
+                end),
          ?_test(begin
-             {ok, ErrorCodes} = erlmcp_spec_parser:list_error_codes(),
-             ?assert(is_list(ErrorCodes)),
-             ?assert(lists:member(-32700, ErrorCodes)),
-             ?assert(lists:member(-32001, ErrorCodes))
-         end),
+                    {ok, Transports} = erlmcp_spec_parser:list_transports(),
+                    ?assert(is_list(Transports)),
+                    ?assert(lists:member(<<"stdio">>, Transports))
+                end),
          ?_test(begin
-             {ok, Transports} = erlmcp_spec_parser:list_transports(),
-             ?assert(is_list(Transports)),
-             ?assert(lists:member(<<"stdio">>, Transports))
-         end),
-         ?_test(begin
-             {ok, Capabilities} = erlmcp_spec_parser:list_capabilities(),
-             ?assert(is_list(Capabilities)),
-             ?assert(lists:member(<<"resources">>, Capabilities)),
-             ?assert(lists:member(<<"tools">>, Capabilities))
-         end)
-     ] end}.
+                    {ok, Capabilities} = erlmcp_spec_parser:list_capabilities(),
+                    ?assert(is_list(Capabilities)),
+                    ?assert(lists:member(<<"resources">>, Capabilities)),
+                    ?assert(lists:member(<<"tools">>, Capabilities))
+                end)]
+     end}.
 
 %% @doc Test error cases for not found
 not_found_errors_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun(_) -> [
-         ?_assertEqual({error, not_found},
+     fun(_) ->
+        [?_assertEqual({error, not_found},
                        erlmcp_spec_parser:get_method_requirements(<<"nonexistent">>)),
-         ?_assertEqual({error, not_found},
-                       erlmcp_spec_parser:get_error_requirements(-99999)),
+         ?_assertEqual({error, not_found}, erlmcp_spec_parser:get_error_requirements(-99999)),
          ?_assertEqual({error, not_found},
                        erlmcp_spec_parser:get_transport_requirements(<<"nonexistent">>)),
          ?_assertEqual({error, not_found},
-                       erlmcp_spec_parser:get_capability_requirements(<<"nonexistent">>))
-     ] end}.
+                       erlmcp_spec_parser:get_capability_requirements(<<"nonexistent">>))]
+     end}.
 
 %% @doc Test method result specifications
 method_result_spec_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun(_) -> [
+     fun(_) ->
+        [?_test(begin
+                    {ok, ToolsList} = erlmcp_spec_parser:get_method_requirements(<<"tools/list">>),
+                    ResultSpec = ToolsList#method_req.result_spec,
+                    ?assert(is_map(ResultSpec)),
+                    ?assert(maps:is_key(tools, ResultSpec))
+                end),
          ?_test(begin
-             {ok, ToolsList} = erlmcp_spec_parser:get_method_requirements(<<"tools/list">>),
-             ResultSpec = ToolsList#method_req.result_spec,
-             ?assert(is_map(ResultSpec)),
-             ?assert(maps:is_key(tools, ResultSpec))
-         end),
-         ?_test(begin
-             {ok, ResourcesList} = erlmcp_spec_parser:get_method_requirements(<<"resources/list">>),
-             ResultSpec2 = ResourcesList#method_req.result_spec,
-             ?assert(is_map(ResultSpec2)),
-             ?assert(maps:is_key(resources, ResultSpec2))
-         end)
-     ] end}.
+                    {ok, ResourcesList} =
+                        erlmcp_spec_parser:get_method_requirements(<<"resources/list">>),
+                    ResultSpec2 = ResourcesList#method_req.result_spec,
+                    ?assert(is_map(ResultSpec2)),
+                    ?assert(maps:is_key(resources, ResultSpec2))
+                end)]
+     end}.
 
 %% @doc Test error code retry strategies
 error_retry_strategy_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun(_) -> [
+     fun(_) ->
+        [?_test(begin
+                    {ok, ParseError} = erlmcp_spec_parser:get_error_requirements(-32700),
+                    ?assertEqual(abort, ParseError#error_code_req.retry_strategy)
+                end),
          ?_test(begin
-             {ok, ParseError} = erlmcp_spec_parser:get_error_requirements(-32700),
-             ?assertEqual(abort, ParseError#error_code_req.retry_strategy)
-         end),
+                    {ok, InternalError} = erlmcp_spec_parser:get_error_requirements(-32603),
+                    ?assertEqual(retry, InternalError#error_code_req.retry_strategy)
+                end),
          ?_test(begin
-             {ok, InternalError} = erlmcp_spec_parser:get_error_requirements(-32603),
-             ?assertEqual(retry, InternalError#error_code_req.retry_strategy)
-         end),
-         ?_test(begin
-             {ok, OverloadError} = erlmcp_spec_parser:get_error_requirements(-32010),
-             ?assertEqual(retry, OverloadError#error_code_req.retry_strategy)
-         end)
-     ] end}.
+                    {ok, OverloadError} = erlmcp_spec_parser:get_error_requirements(-32010),
+                    ?assertEqual(retry, OverloadError#error_code_req.retry_strategy)
+                end)]
+     end}.
 
 %% @doc Test transport multiplexing support
 transport_multiplexing_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun(_) -> [
+     fun(_) ->
+        [?_test(begin
+                    {ok, Stdio} = erlmcp_spec_parser:get_transport_requirements(<<"stdio">>),
+                    ?assertEqual(false, Stdio#transport_req.multiplexing_support)
+                end),
          ?_test(begin
-             {ok, Stdio} = erlmcp_spec_parser:get_transport_requirements(<<"stdio">>),
-             ?assertEqual(false, Stdio#transport_req.multiplexing_support)
-         end),
-         ?_test(begin
-             {ok, Sse} = erlmcp_spec_parser:get_transport_requirements(<<"sse">>),
-             ?assertEqual(true, Sse#transport_req.multiplexing_support)
-         end)
-     ] end}.
+                    {ok, Sse} = erlmcp_spec_parser:get_transport_requirements(<<"sse">>),
+                    ?assertEqual(true, Sse#transport_req.multiplexing_support)
+                end)]
+     end}.
 
 %% @doc Test capability dependencies
 capability_dependencies_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun(_) -> [
+     fun(_) ->
+        [?_test(begin
+                    {ok, Resources} =
+                        erlmcp_spec_parser:get_capability_requirements(<<"resources">>),
+                    ?assertEqual([], Resources#capability_req.dependencies)
+                end),
          ?_test(begin
-             {ok, Resources} = erlmcp_spec_parser:get_capability_requirements(<<"resources">>),
-             ?assertEqual([], Resources#capability_req.dependencies)
-         end),
-         ?_test(begin
-             {ok, Tools} = erlmcp_spec_parser:get_capability_requirements(<<"tools">>),
-             ?assertEqual([], Tools#capability_req.dependencies)
-         end)
-     ] end}.
+                    {ok, Tools} = erlmcp_spec_parser:get_capability_requirements(<<"tools">>),
+                    ?assertEqual([], Tools#capability_req.dependencies)
+                end)]
+     end}.
 
 %% @doc Test method deprecation status
 method_deprecation_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     fun(_) -> [
+     fun(_) ->
+        [?_test(begin
+                    {ok, Init} = erlmcp_spec_parser:get_method_requirements(<<"initialize">>),
+                    ?assertEqual(stable, Init#method_req.deprecation_status)
+                end),
          ?_test(begin
-             {ok, Init} = erlmcp_spec_parser:get_method_requirements(<<"initialize">>),
-             ?assertEqual(stable, Init#method_req.deprecation_status)
-         end),
-         ?_test(begin
-             {ok, ToolsCall} = erlmcp_spec_parser:get_method_requirements(<<"tools/call">>),
-             ?assertEqual(stable, ToolsCall#method_req.deprecation_status)
-         end)
-     ] end}.
+                    {ok, ToolsCall} = erlmcp_spec_parser:get_method_requirements(<<"tools/call">>),
+                    ?assertEqual(stable, ToolsCall#method_req.deprecation_status)
+                end)]
+     end}.
 
 %%%====================================================================
 %%% 7. Schema and Metadata Functions Tests (12 tests)

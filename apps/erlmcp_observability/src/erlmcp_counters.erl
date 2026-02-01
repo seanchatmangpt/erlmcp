@@ -28,26 +28,15 @@
 -module(erlmcp_counters).
 
 %% API
--export([
-    init/0,
-    ref/0,
+-export([init/0, ref/0, inc_requests/0, inc_success/0, inc_error/0, inc_connections/0,
+         dec_connections/0, inc_tools_executed/0, inc_resources_read/0, inc_prompts_used/0,
+         add_bytes_sent/1, add_bytes_received/1, get_all/0, get_prometheus/0, reset/0]).
+
     % Increment operations
-    inc_requests/0,
-    inc_success/0,
-    inc_error/0,
-    inc_connections/0,
-    dec_connections/0,
-    inc_tools_executed/0,
-    inc_resources_read/0,
-    inc_prompts_used/0,
-    add_bytes_sent/1,
-    add_bytes_received/1,
+
     % Read operations
-    get_all/0,
-    get_prometheus/0,
+
     % Reset operation
-    reset/0
-]).
 
 %% Counter indices
 -define(REQUESTS_TOTAL, 1).
@@ -61,7 +50,6 @@
 -define(BYTES_SENT, 9).
 -define(BYTES_RECEIVED, 10).
 -define(COUNTER_SIZE, 10).
-
 %% Persistent term for the counters reference
 -define(COUNTERS_KEY, erlmcp_counters_ref).
 
@@ -156,65 +144,52 @@ add_bytes_received(N) when is_integer(N), N >= 0 ->
 -spec get_all() -> map().
 get_all() ->
     Ref = ref(),
-    #{
-        requests_total => counters:get(Ref, ?REQUESTS_TOTAL),
-        requests_success => counters:get(Ref, ?REQUESTS_SUCCESS),
-        requests_error => counters:get(Ref, ?REQUESTS_ERROR),
-        connections_active => counters:get(Ref, ?CONNECTIONS_ACTIVE),
-        connections_total => counters:get(Ref, ?CONNECTIONS_TOTAL),
-        tools_executed => counters:get(Ref, ?TOOLS_EXECUTED),
-        resources_read => counters:get(Ref, ?RESOURCES_READ),
-        prompts_used => counters:get(Ref, ?PROMPTS_USED),
-        bytes_sent => counters:get(Ref, ?BYTES_SENT),
-        bytes_received => counters:get(Ref, ?BYTES_RECEIVED)
-    }.
+    #{requests_total => counters:get(Ref, ?REQUESTS_TOTAL),
+      requests_success => counters:get(Ref, ?REQUESTS_SUCCESS),
+      requests_error => counters:get(Ref, ?REQUESTS_ERROR),
+      connections_active => counters:get(Ref, ?CONNECTIONS_ACTIVE),
+      connections_total => counters:get(Ref, ?CONNECTIONS_TOTAL),
+      tools_executed => counters:get(Ref, ?TOOLS_EXECUTED),
+      resources_read => counters:get(Ref, ?RESOURCES_READ),
+      prompts_used => counters:get(Ref, ?PROMPTS_USED),
+      bytes_sent => counters:get(Ref, ?BYTES_SENT),
+      bytes_received => counters:get(Ref, ?BYTES_RECEIVED)}.
 
 %% @doc Export metrics in Prometheus text format
 %% Format: https://prometheus.io/docs/instrumenting/exposition_formats/
 -spec get_prometheus() -> iolist().
 get_prometheus() ->
     Metrics = get_all(),
-    [
-        "# HELP erlmcp_requests_total Total number of MCP requests\n",
-        "# TYPE erlmcp_requests_total counter\n",
-        io_lib:format("erlmcp_requests_total ~p~n", [maps:get(requests_total, Metrics)]),
-        "\n",
-        "# HELP erlmcp_requests_success_total Total number of successful MCP requests\n",
-        "# TYPE erlmcp_requests_success_total counter\n",
-        io_lib:format("erlmcp_requests_success_total ~p~n", [maps:get(requests_success, Metrics)]),
-        "\n",
-        "# HELP erlmcp_requests_error_total Total number of failed MCP requests\n",
-        "# TYPE erlmcp_requests_error_total counter\n",
-        io_lib:format("erlmcp_requests_error_total ~p~n", [maps:get(requests_error, Metrics)]),
-        "\n",
-        "# HELP erlmcp_connections_active Current number of active connections\n",
-        "# TYPE erlmcp_connections_active gauge\n",
-        io_lib:format("erlmcp_connections_active ~p~n", [maps:get(connections_active, Metrics)]),
-        "\n",
-        "# HELP erlmcp_connections_total Total number of connections established\n",
-        "# TYPE erlmcp_connections_total counter\n",
-        io_lib:format("erlmcp_connections_total ~p~n", [maps:get(connections_total, Metrics)]),
-        "\n",
-        "# HELP erlmcp_tools_executed_total Total number of tools executed\n",
-        "# TYPE erlmcp_tools_executed_total counter\n",
-        io_lib:format("erlmcp_tools_executed_total ~p~n", [maps:get(tools_executed, Metrics)]),
-        "\n",
-        "# HELP erlmcp_resources_read_total Total number of resources read\n",
-        "# TYPE erlmcp_resources_read_total counter\n",
-        io_lib:format("erlmcp_resources_read_total ~p~n", [maps:get(resources_read, Metrics)]),
-        "\n",
-        "# HELP erlmcp_prompts_used_total Total number of prompts used\n",
-        "# TYPE erlmcp_prompts_used_total counter\n",
-        io_lib:format("erlmcp_prompts_used_total ~p~n", [maps:get(prompts_used, Metrics)]),
-        "\n",
-        "# HELP erlmcp_bytes_sent_total Total bytes sent\n",
-        "# TYPE erlmcp_bytes_sent_total counter\n",
-        io_lib:format("erlmcp_bytes_sent_total ~p~n", [maps:get(bytes_sent, Metrics)]),
-        "\n",
-        "# HELP erlmcp_bytes_received_total Total bytes received\n",
-        "# TYPE erlmcp_bytes_received_total counter\n",
-        io_lib:format("erlmcp_bytes_received_total ~p~n", [maps:get(bytes_received, Metrics)])
-    ].
+    ["# HELP erlmcp_requests_total Total number of MCP requests\n",
+     "# TYPE erlmcp_requests_total counter\n",
+     io_lib:format("erlmcp_requests_total ~p~n", [maps:get(requests_total, Metrics)]), "\n",
+     "# HELP erlmcp_requests_success_total Total number of successful MCP requests\n",
+     "# TYPE erlmcp_requests_success_total counter\n",
+     io_lib:format("erlmcp_requests_success_total ~p~n", [maps:get(requests_success, Metrics)]),
+     "\n", "# HELP erlmcp_requests_error_total Total number of failed MCP requests\n",
+     "# TYPE erlmcp_requests_error_total counter\n",
+     io_lib:format("erlmcp_requests_error_total ~p~n", [maps:get(requests_error, Metrics)]), "\n",
+     "# HELP erlmcp_connections_active Current number of active connections\n",
+     "# TYPE erlmcp_connections_active gauge\n",
+     io_lib:format("erlmcp_connections_active ~p~n", [maps:get(connections_active, Metrics)]), "\n",
+     "# HELP erlmcp_connections_total Total number of connections established\n",
+     "# TYPE erlmcp_connections_total counter\n",
+     io_lib:format("erlmcp_connections_total ~p~n", [maps:get(connections_total, Metrics)]), "\n",
+     "# HELP erlmcp_tools_executed_total Total number of tools executed\n",
+     "# TYPE erlmcp_tools_executed_total counter\n",
+     io_lib:format("erlmcp_tools_executed_total ~p~n", [maps:get(tools_executed, Metrics)]), "\n",
+     "# HELP erlmcp_resources_read_total Total number of resources read\n",
+     "# TYPE erlmcp_resources_read_total counter\n",
+     io_lib:format("erlmcp_resources_read_total ~p~n", [maps:get(resources_read, Metrics)]), "\n",
+     "# HELP erlmcp_prompts_used_total Total number of prompts used\n",
+     "# TYPE erlmcp_prompts_used_total counter\n",
+     io_lib:format("erlmcp_prompts_used_total ~p~n", [maps:get(prompts_used, Metrics)]), "\n",
+     "# HELP erlmcp_bytes_sent_total Total bytes sent\n",
+     "# TYPE erlmcp_bytes_sent_total counter\n",
+     io_lib:format("erlmcp_bytes_sent_total ~p~n", [maps:get(bytes_sent, Metrics)]), "\n",
+     "# HELP erlmcp_bytes_received_total Total bytes received\n",
+     "# TYPE erlmcp_bytes_received_total counter\n",
+     io_lib:format("erlmcp_bytes_received_total ~p~n", [maps:get(bytes_received, Metrics)])].
 
 %%====================================================================
 %% Reset Operation

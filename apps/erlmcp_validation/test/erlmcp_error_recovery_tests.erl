@@ -18,50 +18,26 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_error_recovery_tests).
+
 -behavior(ct_suite).
 
 %% CT callbacks
 -export([all/0, init_per_suite/1, end_per_suite/1]).
 -export([init_per_testcase/2, end_per_testcase/2]).
-
 %% Test cases - Automatic Retry
--export([
-    test_automatic_retry_on_transient_failure/1,
-    test_exponential_backoff/1,
-    test_max_retry_limit/1,
-    test_retry_with_different_transport/1
-]).
-
+-export([test_automatic_retry_on_transient_failure/1, test_exponential_backoff/1,
+         test_max_retry_limit/1, test_retry_with_different_transport/1]).
 %% Test cases - Circuit Breaker
--export([
-    test_circuit_breaker_opens_on_failures/1,
-    test_circuit_breaker_half_open_state/1,
-    test_circuit_breaker_closes_on_success/1,
-    test_circuit_breaker_prevents_cascade/1
-]).
-
+-export([test_circuit_breaker_opens_on_failures/1, test_circuit_breaker_half_open_state/1,
+         test_circuit_breaker_closes_on_success/1, test_circuit_breaker_prevents_cascade/1]).
 %% Test cases - Graceful Degradation
--export([
-    test_degrade_to_read_only/1,
-    test_degrade_to_cached_responses/1,
-    test_degrade_to_limited_functionality/1,
-    test_full_recovery_after_degradation/1
-]).
-
+-export([test_degrade_to_read_only/1, test_degrade_to_cached_responses/1,
+         test_degrade_to_limited_functionality/1, test_full_recovery_after_degradation/1]).
 %% Test cases - State Restoration
--export([
-    test_restore_state_after_restart/1,
-    test_restore_pending_requests/1,
-    test_restore_subscriptions/1,
-    test_restore_session_data/1
-]).
-
+-export([test_restore_state_after_restart/1, test_restore_pending_requests/1,
+         test_restore_subscriptions/1, test_restore_session_data/1]).
 %% Test cases - Recovery Time Objectives
--export([
-    test_rto_connection_loss/1,
-    test_rto_server_restart/1,
-    test_rto_network_partition/1
-]).
+-export([test_rto_connection_loss/1, test_rto_server_restart/1, test_rto_network_partition/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -71,36 +47,30 @@
 %%%====================================================================
 
 all() ->
-    [
-        %% Automatic Retry Tests
-        test_automatic_retry_on_transient_failure,
-        test_exponential_backoff,
-        test_max_retry_limit,
-        test_retry_with_different_transport,
-
-        %% Circuit Breaker Tests
-        test_circuit_breaker_opens_on_failures,
-        test_circuit_breaker_half_open_state,
-        test_circuit_breaker_closes_on_success,
-        test_circuit_breaker_prevents_cascade,
-
-        %% Graceful Degradation Tests
-        test_degrade_to_read_only,
-        test_degrade_to_cached_responses,
-        test_degrade_to_limited_functionality,
-        test_full_recovery_after_degradation,
-
-        %% State Restoration Tests
-        test_restore_state_after_restart,
-        test_restore_pending_requests,
-        test_restore_subscriptions,
-        test_restore_session_data,
-
-        %% Recovery Time Objective Tests
-        test_rto_connection_loss,
-        test_rto_server_restart,
-        test_rto_network_partition
-    ].
+    [%% Automatic Retry Tests
+     test_automatic_retry_on_transient_failure,
+     test_exponential_backoff,
+     test_max_retry_limit,
+     test_retry_with_different_transport,
+     %% Circuit Breaker Tests
+     test_circuit_breaker_opens_on_failures,
+     test_circuit_breaker_half_open_state,
+     test_circuit_breaker_closes_on_success,
+     test_circuit_breaker_prevents_cascade,
+     %% Graceful Degradation Tests
+     test_degrade_to_read_only,
+     test_degrade_to_cached_responses,
+     test_degrade_to_limited_functionality,
+     test_full_recovery_after_degradation,
+     %% State Restoration Tests
+     test_restore_state_after_restart,
+     test_restore_pending_requests,
+     test_restore_subscriptions,
+     test_restore_session_data,
+     %% Recovery Time Objective Tests
+     test_rto_connection_loss,
+     test_rto_server_restart,
+     test_rto_network_partition].
 
 init_per_suite(Config) ->
     ct:pal("Starting Error Recovery Tests"),
@@ -133,14 +103,17 @@ test_automatic_retry_on_transient_failure(_Config) ->
     %% Add a tool that fails initially then succeeds
     AttemptCount = atomics:new(1, [{atomic, [{0, 0}]}]),
 
-    FailingTool = fun(_Args) ->
-        Attempts = atomics:get(AttemptCount, 1),
-        atomics:put(AttemptCount, 1, Attempts + 1),
-        case Attempts of
-            1 -> error(transient_failure);
-            2 -> #{result => <<"success after retry">>}
-        end
-    end,
+    FailingTool =
+        fun(_Args) ->
+           Attempts = atomics:get(AttemptCount, 1),
+           atomics:put(AttemptCount, 1, Attempts + 1),
+           case Attempts of
+               1 ->
+                   error(transient_failure);
+               2 ->
+                   #{result => <<"success after retry">>}
+           end
+        end,
 
     ok = erlmcp:add_tool(test_server, <<"failing_tool">>, FailingTool),
 
@@ -186,11 +159,12 @@ test_max_retry_limit(_Config) ->
     MaxRetries = 3,
     AttemptCount = atomics:new(1, [{atomic, [{0, 0}]}]),
 
-    AlwaysFailingTool = fun(_Args) ->
-        Attempts = atomics:get(AttemptCount, 1),
-        atomics:put(AttemptCount, 1, Attempts + 1),
-        error(permanent_failure)
-    end,
+    AlwaysFailingTool =
+        fun(_Args) ->
+           Attempts = atomics:get(AttemptCount, 1),
+           atomics:put(AttemptCount, 1, Attempts + 1),
+           error(permanent_failure)
+        end,
 
     ok = erlmcp:add_tool(test_server, <<"always_failing">>, AlwaysFailingTool),
 
@@ -246,9 +220,10 @@ test_circuit_breaker_opens_on_failures(_Config) ->
 
     %% Trigger failures to open circuit
     lists:foreach(fun(I) ->
-        call_circuit_breaker(CBPid, fail),
-        ct:log("Failure ~p sent to circuit breaker", [I])
-    end, lists:seq(1, 5)),
+                     call_circuit_breaker(CBPid, fail),
+                     ct:log("Failure ~p sent to circuit breaker", [I])
+                  end,
+                  lists:seq(1, 5)),
 
     %% Circuit should be open now
     timer:sleep(100),
@@ -269,9 +244,7 @@ test_circuit_breaker_half_open_state(_Config) ->
     ?assert(is_process_alive(CBPid)),
 
     %% Open the circuit
-    lists:foreach(fun(_) ->
-        call_circuit_breaker(CBPid, fail)
-    end, lists:seq(1, 5)),
+    lists:foreach(fun(_) -> call_circuit_breaker(CBPid, fail) end, lists:seq(1, 5)),
 
     %% Wait for timeout to half-open
     timer:sleep(200),
@@ -292,9 +265,7 @@ test_circuit_breaker_closes_on_success(_Config) ->
     ?assert(is_process_alive(CBPid)),
 
     %% Open the circuit
-    lists:foreach(fun(_) ->
-        call_circuit_breaker(CBPid, fail)
-    end, lists:seq(1, 5)),
+    lists:foreach(fun(_) -> call_circuit_breaker(CBPid, fail) end, lists:seq(1, 5)),
 
     %% Wait for half-open
     timer:sleep(200),
@@ -323,9 +294,7 @@ test_circuit_breaker_prevents_cascade(_Config) ->
     ?assert(is_process_alive(CB3)),
 
     %% Trigger failure in CB1
-    lists:foreach(fun(_) ->
-        call_circuit_breaker(CB1, fail)
-    end, lists:seq(1, 5)),
+    lists:foreach(fun(_) -> call_circuit_breaker(CB1, fail) end, lists:seq(1, 5)),
 
     %% Verify CB2 and CB3 are not affected
     ?assert(is_process_alive(CB2)),
@@ -350,9 +319,7 @@ test_degrade_to_read_only(_Config) ->
     ?assert(is_process_alive(ServerPid)),
 
     %% Add resources (read-only should still work)
-    Resource = fun(_Uri) ->
-        #{content => <<"test content">>, mimeType => <<"text/plain">>}
-    end,
+    Resource = fun(_Uri) -> #{content => <<"test content">>, mimeType => <<"text/plain">>} end,
     ok = erlmcp:add_resource(test_server, <<"test://resource">>, Resource),
 
     %% Simulate degradation
@@ -374,9 +341,7 @@ test_degrade_to_cached_responses(_Config) ->
     ?assert(is_process_alive(ServerPid)),
 
     %% Add cacheable resource
-    Resource = fun(_Uri) ->
-        #{content => <<"cached content">>, mimeType => <<"text/plain">>}
-    end,
+    Resource = fun(_Uri) -> #{content => <<"cached content">>, mimeType => <<"text/plain">>} end,
     ok = erlmcp:add_resource(test_server, <<"test://cached">>, Resource),
 
     %% Simulate degradation with cache
@@ -419,9 +384,7 @@ test_full_recovery_after_degradation(_Config) ->
     Tool = fun(_) -> #{result => <<"ok">>} end,
     ok = erlmcp:add_tool(test_server, <<"test_tool">>, Tool),
 
-    Resource = fun(_Uri) ->
-        #{content => <<"test">>, mimeType => <<"text/plain">>}
-    end,
+    Resource = fun(_Uri) -> #{content => <<"test">>, mimeType => <<"text/plain">>} end,
     ok = erlmcp:add_resource(test_server, <<"test://resource">>, Resource),
 
     %% Record initial state
@@ -493,18 +456,19 @@ test_restore_pending_requests(_Config) ->
     ?assert(is_process_alive(ServerPid)),
 
     %% Add slow tool
-    SlowTool = fun(_Args) ->
-        timer:sleep(500),
-        #{result => <<"slow">>}
-    end,
+    SlowTool =
+        fun(_Args) ->
+           timer:sleep(500),
+           #{result => <<"slow">>}
+        end,
     ok = erlmcp:add_tool(test_server, <<"slow_tool">>, SlowTool),
 
     %% Simulate pending requests
     Pid = spawn(fun() ->
-        %% Simulate in-flight request
-        timer:sleep(100),
-        ct:log("Pending request completed", [])
-    end),
+                   %% Simulate in-flight request
+                   timer:sleep(100),
+                   ct:log("Pending request completed", [])
+                end),
 
     timer:sleep(50),
 
@@ -533,9 +497,7 @@ test_restore_subscriptions(_Config) ->
     ?assert(is_process_alive(ServerPid)),
 
     %% Add subscribable resource
-    Resource = fun(_Uri) ->
-        #{content => <<"subscribable">>, mimeType => <<"text/plain">>}
-    end,
+    Resource = fun(_Uri) -> #{content => <<"subscribable">>, mimeType => <<"text/plain">>} end,
     ok = erlmcp:add_resource(test_server, <<"test://sub">>, Resource),
 
     %% Simulate subscription
@@ -567,10 +529,11 @@ test_restore_session_data(_Config) ->
 
     %% Add session data
     lists:foreach(fun(I) ->
-        Tool = fun(_) -> #{result => I} end,
-        Name = list_to_binary(["tool_", integer_to_list(I)]),
-        ok = erlmcp:add_tool(test_server, Name, Tool)
-    end, lists:seq(1, 10)),
+                     Tool = fun(_) -> #{result => I} end,
+                     Name = list_to_binary(["tool_", integer_to_list(I)]),
+                     ok = erlmcp:add_tool(test_server, Name, Tool)
+                  end,
+                  lists:seq(1, 10)),
 
     %% Record session data
     SessionData = get_server_state(ServerPid),
@@ -584,10 +547,11 @@ test_restore_session_data(_Config) ->
 
     %% Restore session data
     lists:foreach(fun(I) ->
-        Tool = fun(_) -> #{result => I} end,
-        Name = list_to_binary(["tool_", integer_to_list(I)]),
-        ok = erlmcp:add_tool(test_server, Name, Tool)
-    end, lists:seq(1, 10)),
+                     Tool = fun(_) -> #{result => I} end,
+                     Name = list_to_binary(["tool_", integer_to_list(I)]),
+                     ok = erlmcp:add_tool(test_server, Name, Tool)
+                  end,
+                  lists:seq(1, 10)),
 
     %% Verify session restored
     RestoredData = get_server_state(NewServerPid),
@@ -719,44 +683,59 @@ test_rto_network_partition(_Config) ->
 %% Start test server
 start_test_server() ->
     case erlmcp:start_server(test_server, #{}) of
-        {ok, Pid} -> {ok, Pid};
-        {error, {already_started, Pid}} -> {ok, Pid};
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            {ok, Pid};
+        {error, {already_started, Pid}} ->
+            {ok, Pid};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% Start second test server
 start_test_server_2() ->
     case erlmcp:start_server(test_server_2, #{}) of
-        {ok, Pid} -> {ok, Pid};
-        {error, {already_started, Pid}} -> {ok, Pid};
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            {ok, Pid};
+        {error, {already_started, Pid}} ->
+            {ok, Pid};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% Start test transport
 start_test_transport() ->
     case erlmcp:start_transport(test_transport, stdio, #{server_id => test_server}) of
-        {ok, Pid} -> {ok, Pid};
-        {error, {already_started, Pid}} -> {ok, Pid};
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            {ok, Pid};
+        {error, {already_started, Pid}} ->
+            {ok, Pid};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% Start circuit breaker
 start_circuit_breaker() ->
     case erlmcp_circuit_breaker:start_link(test_breaker, #{}) of
-        {ok, Pid} -> {ok, Pid};
-        {error, {already_started, Pid}} -> {ok, Pid};
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            {ok, Pid};
+        {error, {already_started, Pid}} ->
+            {ok, Pid};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% Call circuit breaker
 call_circuit_breaker(CBPid, Action) ->
     try
         case Action of
-            success -> gen_server:call(CBPid, {call, success});
-            fail -> gen_server:call(CBPid, {call, fail})
+            success ->
+                gen_server:call(CBPid, {call, success});
+            fail ->
+                gen_server:call(CBPid, {call, fail})
         end
     catch
-        _:_ -> {error, circuit_open}
+        _:_ ->
+            {error, circuit_open}
     end.
 
 %% Get server state
@@ -765,5 +744,6 @@ get_server_state(ServerPid) ->
         {ok, State} = erlmcp_server:get_state(ServerPid),
         State
     catch
-        _:_ -> #{}
+        _:_ ->
+            #{}
     end.

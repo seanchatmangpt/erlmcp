@@ -13,62 +13,44 @@
 -module(erlmcp_transport_pipeline).
 
 %% API exports
--export([
-    % HTTP/2 multiplexing
-    create_http2_pipeline/1,
-    send_http2_batch/2,
-    get_http2_stats/1,
+-export([create_http2_pipeline/1, send_http2_batch/2, get_http2_stats/1, create_ws_pipeline/1,
+         send_ws_batch/2, flush_ws_pipeline/1, set_tcp_nodelay/2, set_tcp_buffer_size/2,
+         get_tcp_info/1, send_pipelined/2, flush_pipeline/1]).
+
+                                                                  % HTTP/2 multiplexing
 
     % WebSocket frame batching
-    create_ws_pipeline/1,
-    send_ws_batch/2,
-    flush_ws_pipeline/1,
 
     % TCP optimization
-    set_tcp_nodelay/2,
-    set_tcp_buffer_size/2,
-    get_tcp_info/1,
 
     % Generic pipeline operations
-    send_pipelined/2,
-    flush_pipeline/1
-]).
 
 %% Types
--type pipeline() :: #{
-    type := http2 | websocket | tcp,
-    state := term(),
-    buffer := [iodata()],
-    buffer_size := non_neg_integer(),
-    max_buffer_size := pos_integer(),
-    stats := pipeline_stats()
-}.
-
--type pipeline_stats() :: #{
-    messages_sent := non_neg_integer(),
-    bytes_sent := non_neg_integer(),
-    batches_sent := non_neg_integer(),
-    avg_batch_size := float()
-}.
-
--type http2_opts() :: #{
-    max_concurrent_streams => pos_integer(),
-    initial_window_size => pos_integer(),
-    max_frame_size => pos_integer(),
-    priority => boolean()
-}.
-
--type ws_opts() :: #{
-    max_batch_size => pos_integer(),
-    flush_interval => pos_integer(),
-    compression => boolean()
-}.
-
--type tcp_opts() :: #{
-    nodelay => boolean(),
-    buffer_size => pos_integer(),
-    keepalive => boolean()
-}.
+-type pipeline() ::
+    #{type := http2 | websocket | tcp,
+      state := term(),
+      buffer := [iodata()],
+      buffer_size := non_neg_integer(),
+      max_buffer_size := pos_integer(),
+      stats := pipeline_stats()}.
+-type pipeline_stats() ::
+    #{messages_sent := non_neg_integer(),
+      bytes_sent := non_neg_integer(),
+      batches_sent := non_neg_integer(),
+      avg_batch_size := float()}.
+-type http2_opts() ::
+    #{max_concurrent_streams => pos_integer(),
+      initial_window_size => pos_integer(),
+      max_frame_size => pos_integer(),
+      priority => boolean()}.
+-type ws_opts() ::
+    #{max_batch_size => pos_integer(),
+      flush_interval => pos_integer(),
+      compression => boolean()}.
+-type tcp_opts() ::
+    #{nodelay => boolean(),
+      buffer_size => pos_integer(),
+      keepalive => boolean()}.
 
 -export_type([pipeline/0, pipeline_stats/0, http2_opts/0, ws_opts/0, tcp_opts/0]).
 
@@ -92,31 +74,29 @@ create_http2_pipeline(Opts) ->
     MaxFrameSize = maps:get(max_frame_size, Opts, ?DEFAULT_HTTP2_FRAME_SIZE),
     Priority = maps:get(priority, Opts, false),
 
-    State = #{
-        max_streams => MaxStreams,
-        window_size => WindowSize,
-        max_frame_size => MaxFrameSize,
-        priority => Priority,
-        active_streams => #{},
-        next_stream_id => 1,
-        pending_frames => []
-    },
+    State =
+        #{max_streams => MaxStreams,
+          window_size => WindowSize,
+          max_frame_size => MaxFrameSize,
+          priority => Priority,
+          active_streams => #{},
+          next_stream_id => 1,
+          pending_frames => []},
 
-    Pipeline = #{
-        type => http2,
-        state => State,
-        buffer => [],
-        buffer_size => 0,
-        max_buffer_size => MaxFrameSize * 10,
-        stats => init_stats()
-    },
+    Pipeline =
+        #{type => http2,
+          state => State,
+          buffer => [],
+          buffer_size => 0,
+          max_buffer_size => MaxFrameSize * 10,
+          stats => init_stats()},
 
     {ok, Pipeline}.
 
 %% @doc Send batch of HTTP/2 requests
 %% Uses HTTP/2 multiplexing to send multiple requests concurrently
 -spec send_http2_batch(pipeline(), [{binary(), map()}]) ->
-    {ok, [stream_id()], pipeline()} | {error, term()}.
+                          {ok, [stream_id()], pipeline()} | {error, term()}.
 send_http2_batch(Pipeline, Requests) ->
     State = maps:get(state, Pipeline),
     MaxStreams = maps:get(max_streams, State),
@@ -137,17 +117,18 @@ send_http2_batch(Pipeline, Requests) ->
     end.
 
 %% @doc Get HTTP/2 pipeline statistics
--spec get_http2_stats(pipeline()) -> #{
-    active_streams := non_neg_integer(),
-    pending_frames := non_neg_integer(),
-    stats := pipeline_stats()
-}.
-get_http2_stats(#{type := http2, state := State, stats := Stats}) ->
-    #{
-        active_streams => maps:size(maps:get(active_streams, State)),
-        pending_frames => length(maps:get(pending_frames, State)),
-        stats => Stats
-    }.
+-spec get_http2_stats(pipeline()) ->
+                         #{active_streams := non_neg_integer(),
+                           pending_frames := non_neg_integer(),
+                           stats := pipeline_stats()}.
+get_http2_stats(#{type := http2,
+                  state := State,
+                  stats := Stats}) ->
+    #{active_streams =>
+          maps:size(
+              maps:get(active_streams, State)),
+      pending_frames => length(maps:get(pending_frames, State)),
+      stats => Stats}.
 
 %%====================================================================
 %% WebSocket Frame Batching
@@ -160,20 +141,18 @@ create_ws_pipeline(Opts) ->
     FlushInterval = maps:get(flush_interval, Opts, ?DEFAULT_WS_FLUSH_INTERVAL),
     Compression = maps:get(compression, Opts, false),
 
-    State = #{
-        compression => Compression,
-        flush_interval => FlushInterval,
-        last_flush => erlang:monotonic_time(millisecond)
-    },
+    State =
+        #{compression => Compression,
+          flush_interval => FlushInterval,
+          last_flush => erlang:monotonic_time(millisecond)},
 
-    Pipeline = #{
-        type => websocket,
-        state => State,
-        buffer => [],
-        buffer_size => 0,
-        max_buffer_size => MaxBatchSize,
-        stats => init_stats()
-    },
+    Pipeline =
+        #{type => websocket,
+          state => State,
+          buffer => [],
+          buffer_size => 0,
+          max_buffer_size => MaxBatchSize,
+          stats => init_stats()},
 
     {ok, Pipeline}.
 
@@ -189,10 +168,7 @@ send_ws_batch(Pipeline, Messages) ->
     NewBuffer = lists:reverse(Messages) ++ Buffer,
     NewBufferSize = BufferSize + length(Messages),
 
-    NewPipeline = Pipeline#{
-        buffer => NewBuffer,
-        buffer_size => NewBufferSize
-    },
+    NewPipeline = Pipeline#{buffer => NewBuffer, buffer_size => NewBufferSize},
 
     % Flush if buffer is full
     case NewBufferSize >= MaxBufferSize of
@@ -204,7 +180,10 @@ send_ws_batch(Pipeline, Messages) ->
 
 %% @doc Force flush WebSocket pipeline
 -spec flush_ws_pipeline(pipeline()) -> {ok, pipeline()}.
-flush_ws_pipeline(#{type := websocket, buffer := [], buffer_size := 0} = Pipeline) ->
+flush_ws_pipeline(#{type := websocket,
+                    buffer := [],
+                    buffer_size := 0} =
+                      Pipeline) ->
     {ok, Pipeline};
 flush_ws_pipeline(#{type := websocket} = Pipeline) ->
     Buffer = maps:get(buffer, Pipeline),
@@ -212,33 +191,33 @@ flush_ws_pipeline(#{type := websocket} = Pipeline) ->
     Stats = maps:get(stats, Pipeline),
 
     % Build batched frame (using iolist for zero-copy)
-    BatchFrame = case maps:get(compression, State) of
-        true ->
-            % Would compress here if implemented
-            Buffer;
-        false ->
-            Buffer
-    end,
+    BatchFrame =
+        case maps:get(compression, State) of
+            true ->
+                % Would compress here if implemented
+                Buffer;
+            false ->
+                Buffer
+        end,
 
     % Update statistics
     BatchSize = length(Buffer),
     MessagesSent = maps:get(messages_sent, Stats),
     BatchesSent = maps:get(batches_sent, Stats),
-    NewAvgBatchSize = ((maps:get(avg_batch_size, Stats) * BatchesSent) + BatchSize) / (BatchesSent + 1),
+    NewAvgBatchSize =
+        (maps:get(avg_batch_size, Stats) * BatchesSent + BatchSize) / (BatchesSent + 1),
 
-    NewStats = Stats#{
-        messages_sent => MessagesSent + BatchSize,
-        batches_sent => BatchesSent + 1,
-        avg_batch_size => NewAvgBatchSize
-    },
+    NewStats =
+        Stats#{messages_sent => MessagesSent + BatchSize,
+               batches_sent => BatchesSent + 1,
+               avg_batch_size => NewAvgBatchSize},
 
     % Clear buffer and update state
-    NewPipeline = Pipeline#{
-        buffer => [],
-        buffer_size => 0,
-        stats => NewStats,
-        state => State#{last_flush => erlang:monotonic_time(millisecond)}
-    },
+    NewPipeline =
+        Pipeline#{buffer => [],
+                  buffer_size => 0,
+                  stats => NewStats,
+                  state => State#{last_flush => erlang:monotonic_time(millisecond)}},
 
     % Actual send would happen here via transport
     _ = BatchFrame,  % Suppress unused warning
@@ -259,19 +238,14 @@ set_tcp_nodelay(Socket, Enabled) ->
 %% @doc Set TCP buffer sizes for optimal throughput
 -spec set_tcp_buffer_size(gen_tcp:socket(), pos_integer()) -> ok | {error, term()}.
 set_tcp_buffer_size(Socket, BufferSize) ->
-    inet:setopts(Socket, [
-        {sndbuf, BufferSize},
-        {recbuf, BufferSize},
-        {buffer, BufferSize}
-    ]).
+    inet:setopts(Socket, [{sndbuf, BufferSize}, {recbuf, BufferSize}, {buffer, BufferSize}]).
 
 %% @doc Get TCP socket information
 -spec get_tcp_info(gen_tcp:socket()) -> {ok, map()} | {error, term()}.
 get_tcp_info(Socket) ->
-    case inet:getstat(Socket, [
-        recv_oct, recv_cnt, send_oct, send_cnt,
-        recv_avg, send_avg, send_pend
-    ]) of
+    case inet:getstat(Socket,
+                      [recv_oct, recv_cnt, send_oct, send_cnt, recv_avg, send_avg, send_pend])
+    of
         {ok, Stats} ->
             {ok, maps:from_list(Stats)};
         {error, Reason} ->
@@ -319,27 +293,25 @@ flush_pipeline(#{type := tcp} = Pipeline) ->
 -type stream_id() :: pos_integer().
 
 %% @doc Allocate HTTP/2 stream IDs and build frames
--spec allocate_streams([{binary(), map()}], map()) ->
-    {[stream_id()], map(), [iodata()]}.
+-spec allocate_streams([{binary(), map()}], map()) -> {[stream_id()], map(), [iodata()]}.
 allocate_streams(Requests, State) ->
     NextStreamId = maps:get(next_stream_id, State),
     ActiveStreams = maps:get(active_streams, State),
 
     {StreamIds, NewNextId, NewActiveStreams, Frames} =
         lists:foldl(fun({_Method, _Params}, {AccIds, StreamId, AccStreams, AccFrames}) ->
-            % Build HTTP/2 HEADERS frame
-            Frame = build_http2_headers_frame(StreamId),
+                       % Build HTTP/2 HEADERS frame
+                       Frame = build_http2_headers_frame(StreamId),
 
-            % Track stream
-            NewAccStreams = maps:put(StreamId, #{status => active}, AccStreams),
+                       % Track stream
+                       NewAccStreams = maps:put(StreamId, #{status => active}, AccStreams),
 
-            {[StreamId | AccIds], StreamId + 2, NewAccStreams, [Frame | AccFrames]}
-        end, {[], NextStreamId, ActiveStreams, []}, Requests),
+                       {[StreamId | AccIds], StreamId + 2, NewAccStreams, [Frame | AccFrames]}
+                    end,
+                    {[], NextStreamId, ActiveStreams, []},
+                    Requests),
 
-    NewState = State#{
-        next_stream_id => NewNextId,
-        active_streams => NewActiveStreams
-    },
+    NewState = State#{next_stream_id => NewNextId, active_streams => NewActiveStreams},
 
     {lists:reverse(StreamIds), NewState, lists:reverse(Frames)}.
 
@@ -348,12 +320,7 @@ allocate_streams(Requests, State) ->
 build_http2_headers_frame(StreamId) ->
     % Simplified HTTP/2 frame format
     % Real implementation would use proper HTTP/2 framing
-    [
-        <<StreamId:32>>,
-        <<":method POST\r\n">>,
-        <<":path /mcp\r\n">>,
-        <<"\r\n">>
-    ].
+    [<<StreamId:32>>, <<":method POST\r\n">>, <<":path /mcp\r\n">>, <<"\r\n">>].
 
 %% @doc Send frames through pipeline
 -spec send_frames([iodata()], pipeline()) -> {ok, pipeline()}.
@@ -362,16 +329,13 @@ send_frames(Frames, Pipeline) ->
     FrameCount = length(Frames),
 
     % Calculate bytes
-    TotalBytes = lists:foldl(fun(Frame, Acc) ->
-        Acc + iolist_size(Frame)
-    end, 0, Frames),
+    TotalBytes = lists:foldl(fun(Frame, Acc) -> Acc + iolist_size(Frame) end, 0, Frames),
 
     % Update stats
-    NewStats = Stats#{
-        messages_sent => maps:get(messages_sent, Stats) + FrameCount,
-        bytes_sent => maps:get(bytes_sent, Stats) + TotalBytes,
-        batches_sent => maps:get(batches_sent, Stats) + 1
-    },
+    NewStats =
+        Stats#{messages_sent => maps:get(messages_sent, Stats) + FrameCount,
+               bytes_sent => maps:get(bytes_sent, Stats) + TotalBytes,
+               batches_sent => maps:get(batches_sent, Stats) + 1},
 
     % Actual send would happen here
     _ = Frames,  % Suppress unused warning
@@ -381,9 +345,7 @@ send_frames(Frames, Pipeline) ->
 %% @doc Initialize pipeline statistics
 -spec init_stats() -> pipeline_stats().
 init_stats() ->
-    #{
-        messages_sent => 0,
-        bytes_sent => 0,
-        batches_sent => 0,
-        avg_batch_size => 0.0
-    }.
+    #{messages_sent => 0,
+      bytes_sent => 0,
+      batches_sent => 0,
+      avg_batch_size => 0.0}.

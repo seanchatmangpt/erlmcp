@@ -26,66 +26,55 @@ cleanup(_) ->
 
 websocket_transport_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            {"Initialization and Connection", [
-                ?_test(test_init_websocket()),
-                ?_test(test_init_with_custom_config()),
-                ?_test(test_session_id_generation()),
-                ?_test(test_unique_session_ids())
-            ]},
-            {"Message Delimiter Validation", [
-                ?_test(test_message_with_delimiter()),
-                ?_test(test_message_without_delimiter()),
-                ?_test(test_multiple_messages_with_delimiters()),
-                ?_test(test_empty_messages_ignored()),
-                ?_test(test_delimiter_at_end_only())
-            ]},
-            {"UTF-8 Validation", [
-                ?_test(test_valid_utf8_message()),
-                ?_test(test_invalid_utf8_sequence()),
-                ?_test(test_utf8_multibyte_characters()),
-                ?_test(test_utf8_emoji_support()),
-                ?_test(test_utf8_disabled_mode())
-            ]},
-            {"Message Size Limits", [
-                ?_test(test_message_under_limit()),
-                ?_test(test_message_at_limit()),
-                ?_test(test_message_over_limit()),
-                ?_test(test_configurable_message_size()),
-                ?_test(test_size_check_before_utf8())
-            ]},
-            {"Fragmented Messages", [
-                ?_test(test_two_part_fragment()),
-                ?_test(test_multipart_fragment()),
-                ?_test(test_incomplete_fragment_buffering()),
-                ?_test(test_fragment_reassembly()),
-                ?_test(test_fragment_timeout_handling())
-            ]},
-            {"WebSocket Close Codes", [
-                ?_test(test_close_normal_shutdown()),
-                ?_test(test_close_protocol_error()),
-                ?_test(test_close_message_too_big()),
-                ?_test(test_close_utf8_error()),
-                ?_test(test_close_parse_error())
-            ]},
-            {"Connection Management", [
-                ?_test(test_send_message()),
-                ?_test(test_close_connection()),
-                ?_test(test_ping_pong()),
-                ?_test(test_concurrent_connections()),
-                ?_test(test_binary_frame_rejection())
-            ]},
-            {"Integration Tests", [
-                ?_test(test_complete_request_response_cycle()),
-                ?_test(test_mixed_valid_invalid_messages()),
-                ?_test(test_large_message_handling()),
-                ?_test(test_rapid_message_stream()),
-                ?_test(test_fragmented_large_message())
-            ]}
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [{"Initialization and Connection",
+       [?_test(test_init_websocket()),
+        ?_test(test_init_with_custom_config()),
+        ?_test(test_session_id_generation()),
+        ?_test(test_unique_session_ids())]},
+      {"Message Delimiter Validation",
+       [?_test(test_message_with_delimiter()),
+        ?_test(test_message_without_delimiter()),
+        ?_test(test_multiple_messages_with_delimiters()),
+        ?_test(test_empty_messages_ignored()),
+        ?_test(test_delimiter_at_end_only())]},
+      {"UTF-8 Validation",
+       [?_test(test_valid_utf8_message()),
+        ?_test(test_invalid_utf8_sequence()),
+        ?_test(test_utf8_multibyte_characters()),
+        ?_test(test_utf8_emoji_support()),
+        ?_test(test_utf8_disabled_mode())]},
+      {"Message Size Limits",
+       [?_test(test_message_under_limit()),
+        ?_test(test_message_at_limit()),
+        ?_test(test_message_over_limit()),
+        ?_test(test_configurable_message_size()),
+        ?_test(test_size_check_before_utf8())]},
+      {"Fragmented Messages",
+       [?_test(test_two_part_fragment()),
+        ?_test(test_multipart_fragment()),
+        ?_test(test_incomplete_fragment_buffering()),
+        ?_test(test_fragment_reassembly()),
+        ?_test(test_fragment_timeout_handling())]},
+      {"WebSocket Close Codes",
+       [?_test(test_close_normal_shutdown()),
+        ?_test(test_close_protocol_error()),
+        ?_test(test_close_message_too_big()),
+        ?_test(test_close_utf8_error()),
+        ?_test(test_close_parse_error())]},
+      {"Connection Management",
+       [?_test(test_send_message()),
+        ?_test(test_close_connection()),
+        ?_test(test_ping_pong()),
+        ?_test(test_concurrent_connections()),
+        ?_test(test_binary_frame_rejection())]},
+      {"Integration Tests",
+       [?_test(test_complete_request_response_cycle()),
+        ?_test(test_mixed_valid_invalid_messages()),
+        ?_test(test_large_message_handling()),
+        ?_test(test_rapid_message_stream()),
+        ?_test(test_fragmented_large_message())]}]}.
 
 %%====================================================================
 %% Initialization and Connection Tests
@@ -94,35 +83,29 @@ websocket_transport_test_() ->
 test_init_websocket() ->
     %% Note: This test requires ranch/cowboy to be running
     %% In unit test environment without ranch, init will fail
-    Config = #{
-        port => 8080,
-        path => "/mcp/ws"
-    },
+    Config = #{port => 8080, path => "/mcp/ws"},
     TransportId = <<"ws_test_1">>,
 
     %% Cowboy listener requires ranch application to be running
     %% Test that init function exists and handles the error gracefully
     Result = erlmcp_transport_ws:init(TransportId, Config),
-    ?assert(Result =:= {ok, self()} orelse
-             (is_tuple(Result) andalso element(1, Result) =:= error)).
+    ?assert(Result =:= {ok, self()} orelse is_tuple(Result) andalso element(1, Result) =:= error).
 
 test_init_with_custom_config() ->
     %% Note: This test requires ranch/cowboy to be running
     %% In unit test environment without ranch, init will fail
-    Config = #{
-        port => 8081,
-        path => "/custom/ws",
-        max_message_size => 1048576,
-        strict_delimiter_check => false,
-        validate_utf8 => false
-    },
+    Config =
+        #{port => 8081,
+          path => "/custom/ws",
+          max_message_size => 1048576,
+          strict_delimiter_check => false,
+          validate_utf8 => false},
     TransportId = <<"ws_custom_config">>,
 
     %% Cowboy listener requires ranch application to be running
     %% Test that init function exists and handles the error gracefully
     Result = erlmcp_transport_ws:init(TransportId, Config),
-    ?assert(Result =:= {ok, self()} orelse
-             (is_tuple(Result) andalso element(1, Result) =:= error)).
+    ?assert(Result =:= {ok, self()} orelse is_tuple(Result) andalso element(1, Result) =:= error).
 
 test_session_id_generation() ->
     SessionId = erlmcp_transport_ws:generate_session_id(),
@@ -295,19 +278,28 @@ test_close_parse_error() ->
 %%====================================================================
 
 test_send_message() ->
-    Pid = spawn(fun() -> receive stop -> ok end end),
+    Pid = spawn(fun() ->
+                   receive
+                       stop ->
+                           ok
+                   end
+                end),
 
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"id">> => 1}),
 
     Result = erlmcp_transport_ws:send(Pid, Message),
-    ?assert(Result =:= ok orelse (is_tuple(Result) andalso element(1, Result) =:= error)).
+    ?assert(Result =:= ok orelse is_tuple(Result) andalso element(1, Result) =:= error).
 
 test_close_connection() ->
-    Pid = spawn(fun() -> receive stop -> ok end end),
+    Pid = spawn(fun() ->
+                   receive
+                       stop ->
+                           ok
+                   end
+                end),
     Result = erlmcp_transport_ws:close(Pid),
     ?assert(Result =:= ok).
 
@@ -317,20 +309,21 @@ test_ping_pong() ->
 
 test_concurrent_connections() ->
     %% Test multiple concurrent WebSocket connections
-    Pids = [spawn(fun() -> receive stop -> ok end end) || _ <- lists:seq(1, 5)],
+    Pids =
+        [spawn(fun() ->
+                  receive
+                      stop ->
+                          ok
+                  end
+               end)
+         || _ <- lists:seq(1, 5)],
 
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"id">> => 1}),
 
-    lists:foreach(
-        fun(Pid) ->
-            erlmcp_transport_ws:send(Pid, Message)
-        end,
-        Pids
-    ),
+    lists:foreach(fun(Pid) -> erlmcp_transport_ws:send(Pid, Message) end, Pids),
 
     ?assertEqual(5, length(Pids)).
 
@@ -344,11 +337,10 @@ test_binary_frame_rejection() ->
 
 test_complete_request_response_cycle() ->
     %% Full cycle: send valid JSON-RPC message with delimiter
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"tools/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"tools/list">>,
+                     <<"id">> => 1}),
     DelimitedMsg = <<Message/binary, "\n">>,
     ?assertEqual(ok, erlmcp_transport_ws:validate_utf8(DelimitedMsg)).
 
@@ -361,35 +353,31 @@ test_mixed_valid_invalid_messages() ->
 test_large_message_handling() ->
     %% Test handling of large but valid messages
     LargeData = binary:copy(<<"x">>, 10000),
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"data">> => LargeData,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"data">> => LargeData,
+                     <<"id">> => 1}),
     DelimitedMsg = <<Message/binary, "\n">>,
     ?assertMatch({ok, _}, erlmcp_transport_ws:validate_message_size(Message)).
 
 test_rapid_message_stream() ->
     %% Rapid succession of messages
-    Messages = [
-        jsx:encode(#{<<"id">> => I}) || I <- lists:seq(1, 100)
-    ],
-    Stream = binary:list_to_bin(
-        [<<M/binary, "\n">> || M <- Messages]
-    ),
+    Messages = [jsx:encode(#{<<"id">> => I}) || I <- lists:seq(1, 100)],
+    Stream = binary:list_to_bin([<<M/binary, "\n">> || M <- Messages]),
     ?assertEqual(ok, erlmcp_transport_ws:validate_utf8(Stream)).
 
 test_fragmented_large_message() ->
     %% Large message split across fragments
     LargeData = binary:copy(<<"x">>, 5000),
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"data">> => LargeData,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"data">> => LargeData,
+                     <<"id">> => 1}),
     %% Simulate fragmentation
     Part1 = binary:part(Message, {0, byte_size(Message) div 2}),
-    Part2 = binary:part(Message, {byte_size(Message) div 2, byte_size(Message) - byte_size(Message) div 2}),
+    Part2 =
+        binary:part(Message,
+                    {byte_size(Message) div 2, byte_size(Message) - byte_size(Message) div 2}),
     Reassembled = <<Part1/binary, Part2/binary>>,
     ?assertEqual(Message, Reassembled).

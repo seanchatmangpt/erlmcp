@@ -10,6 +10,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_http_compliance_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
@@ -40,16 +41,9 @@ http_compliance_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"HTTP required callbacks - init, send, close",
-       fun test_required_callbacks/0},
-
-      {"HTTP transport option validation",
-       fun test_option_validation/0},
-
-      {"HTTP server lifecycle",
-       fun test_server_lifecycle/0}
-     ]}.
+     [{"HTTP required callbacks - init, send, close", fun test_required_callbacks/0},
+      {"HTTP transport option validation", fun test_option_validation/0},
+      {"HTTP server lifecycle", fun test_server_lifecycle/0}]}.
 
 %%====================================================================
 %% Required Callbacks Tests
@@ -60,9 +54,7 @@ test_required_callbacks() ->
     Exports = ?HTTP_TRANSPORT:module_info(exports),
     Callbacks = [init, send, close],
 
-    lists:foreach(fun(Callback) ->
-        ?assert(lists:keymember(Callback, 1, Exports))
-    end, Callbacks).
+    lists:foreach(fun(Callback) -> ?assert(lists:keymember(Callback, 1, Exports)) end, Callbacks).
 
 %%====================================================================
 %% Option Validation Tests
@@ -70,10 +62,7 @@ test_required_callbacks() ->
 
 test_option_validation() ->
     %% Valid options
-    ValidOpts = #{
-        url => <<"http://localhost:8080/mcp">>,
-        owner => self()
-    },
+    ValidOpts = #{url => <<"http://localhost:8080/mcp">>, owner => self()},
 
     ?assertMatch(ok, erlmcp_transport_behavior:validate_transport_opts(http, ValidOpts)),
 
@@ -86,19 +75,15 @@ test_option_validation() ->
     ?assertMatch({error, _}, erlmcp_transport_behavior:validate_transport_opts(http, InvalidOpts2)),
 
     %% Valid options with timeout
-    ValidOpts3 = #{
-        url => <<"http://localhost:8080/mcp">>,
-        owner => self(),
-        connect_timeout => 5000
-    },
+    ValidOpts3 =
+        #{url => <<"http://localhost:8080/mcp">>,
+          owner => self(),
+          connect_timeout => 5000},
 
     ?assertMatch(ok, erlmcp_transport_behavior:validate_transport_opts(http, ValidOpts3)),
 
     %% Invalid URL format
-    InvalidOpts4 = #{
-        url => <<"not-a-url">>,
-        owner => self()
-    },
+    InvalidOpts4 = #{url => <<"not-a-url">>, owner => self()},
 
     Result = erlmcp_transport_behavior:validate_transport_opts(http, InvalidOpts4),
     ?assertMatch({error, _}, Result).
@@ -110,7 +95,6 @@ test_option_validation() ->
 test_server_lifecycle() ->
     %% Note: Full HTTP server test requires Cowboy setup
     %% This is a basic lifecycle check
-
     %% Verify the HTTP transport module is available
     ?assert(is_list(?HTTP_TRANSPORT:module_info(exports))),
 

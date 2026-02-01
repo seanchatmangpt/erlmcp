@@ -14,6 +14,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_validator_accuracy_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
@@ -22,75 +23,47 @@
 
 %% @doc Returns a compliant initialize request
 compliant_initialize_request() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            <<"protocolVersion">> => <<"2025-11-25">>,
-            <<"capabilities">> => #{
-                <<"roots">> => #{<<"listChanged">> => true},
-                <<"sampling">> => #{}
-            },
-            <<"clientInfo">> => #{
-                <<"name">> => <<"test-client">>,
-                <<"version">> => <<"1.0.0">>
-            }
-        }
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"method">> => <<"initialize">>,
+      <<"params">> =>
+          #{<<"protocolVersion">> => <<"2025-11-25">>,
+            <<"capabilities">> =>
+                #{<<"roots">> => #{<<"listChanged">> => true}, <<"sampling">> => #{}},
+            <<"clientInfo">> => #{<<"name">> => <<"test-client">>, <<"version">> => <<"1.0.0">>}}}.
 
 %% @doc Returns a compliant tools/list request
 compliant_tools_list_request() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 2,
-        <<"method">> => <<"tools/list">>,
-        <<"params">> => #{}
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 2,
+      <<"method">> => <<"tools/list">>,
+      <<"params">> => #{}}.
 
 %% @doc Returns a compliant tools/call request
 compliant_tools_call_request() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 3,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{
-            <<"name">> => <<"test_tool">>,
-            <<"arguments">> => #{
-                <<"param1">> => <<"value1">>
-            }
-        }
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 3,
+      <<"method">> => <<"tools/call">>,
+      <<"params">> =>
+          #{<<"name">> => <<"test_tool">>, <<"arguments">> => #{<<"param1">> => <<"value1">>}}}.
 
 %% @doc Returns a compliant success response
 compliant_success_response() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"result">> => #{
-            <<"protocolVersion">> => <<"2025-11-25">>,
-            <<"capabilities">> => #{
-                <<"tools">> => #{},
-                <<"resources">> => #{}
-            },
-            <<"serverInfo">> => #{
-                <<"name">> => <<"test-server">>,
-                <<"version">> => <<"1.0.0">>
-            }
-        }
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"result">> =>
+          #{<<"protocolVersion">> => <<"2025-11-25">>,
+            <<"capabilities">> => #{<<"tools">> => #{}, <<"resources">> => #{}},
+            <<"serverInfo">> => #{<<"name">> => <<"test-server">>, <<"version">> => <<"1.0.0">>}}}.
 
 %% @doc Returns a compliant error response
 compliant_error_response() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32601,
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"error">> =>
+          #{<<"code">> => -32601,
             <<"message">> => <<"Method not found">>,
-            <<"data">> => <<"The method 'unknown_method' does not exist">>
-        }
-    }.
+            <<"data">> => <<"The method 'unknown_method' does not exist">>}}.
 
 %%%====================================================================
 %%% Test Data - Known Non-Compliant Implementations
@@ -98,72 +71,53 @@ compliant_error_response() ->
 
 %% @doc Missing jsonrpc version - NON-COMPLIANT
 non_compliant_missing_jsonrpc() ->
-    #{
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>
-    }.
+    #{<<"id">> => 1, <<"method">> => <<"initialize">>}.
 
 %% @doc Wrong jsonrpc version - NON-COMPLIANT
 non_compliant_wrong_jsonrpc_version() ->
-    #{
-        <<"jsonrpc">> => <<"1.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>
-    }.
+    #{<<"jsonrpc">> => <<"1.0">>,
+      <<"id">> => 1,
+      <<"method">> => <<"initialize">>}.
 
 %% @doc Invalid method name - NON-COMPLIANT
 non_compliant_invalid_method() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"invalid_method_name">>,
-        <<"params">> => #{}
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"method">> => <<"invalid_method_name">>,
+      <<"params">> => #{}}.
 
 %% @doc Tools call before initialize - NON-COMPLIANT
 %% (This would need stateful validation to detect)
 non_compliant_missing_initialize() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"tools/list">>,
-        <<"params">> => #{}
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"method">> => <<"tools/list">>,
+      <<"params">> => #{}}.
 
 %% @doc Invalid error code (out of JSON-RPC range) - NON-COMPLIANT
 non_compliant_invalid_error_code() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -99999,  % Invalid: outside -32700 to -32000 range
-            <<"message">> => <<"Custom error">>
-        }
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"error">> =>
+          #{<<"code">> => -99999,  % Invalid: outside -32700 to -32000 range
+            <<"message">> => <<"Custom error">>}}.
 
 %% @doc Missing required capabilities field - NON-COMPLIANT
 non_compliant_missing_capabilities() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            <<"protocolVersion">> => <<"2025-11-25">>
-            % Missing: capabilities
-        }
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"method">> => <<"initialize">>,
+      <<"params">> =>
+          #{<<"protocolVersion">> => <<"2025-11-25">>}}.            % Missing: capabilities
 
 %% @doc Wrong protocol version - NON-COMPLIANT
 non_compliant_wrong_protocol_version() ->
-    #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            <<"protocolVersion">> => <<"2024-11-05">>,  % Wrong version
-            <<"capabilities">> => #{}
-        }
-    }.
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"id">> => 1,
+      <<"method">> => <<"initialize">>,
+      <<"params">> =>
+          #{<<"protocolVersion">> => <<"2024-11-05">>,  % Wrong version
+            <<"capabilities">> => #{}}}.
 
 %%%====================================================================
 %%% Validator Accuracy Tests
@@ -172,9 +126,7 @@ non_compliant_wrong_protocol_version() ->
 %% @doc Test that compliant initialize request passes validation
 compliant_initialize_should_pass_test() ->
     Request = compliant_initialize_request(),
-    Rules = #{
-        required_fields => [<<"jsonrpc">>, <<"id">>, <<"method">>, <<"params">>]
-    },
+    Rules = #{required_fields => [<<"jsonrpc">>, <<"id">>, <<"method">>, <<"params">>]},
 
     Result = erlmcp_test_client:validate_response(Request, Rules),
 
@@ -185,10 +137,9 @@ compliant_initialize_should_pass_test() ->
 %% @doc Test that compliant tools/list request passes validation
 compliant_tools_list_should_pass_test() ->
     Request = compliant_tools_list_request(),
-    Rules = #{
-        required_fields => [<<"jsonrpc">>],  % Minimal rules
-        allowed_methods => [<<"tools/list">>, <<"tools/call">>]
-    },
+    Rules =
+        #{required_fields => [<<"jsonrpc">>],  % Minimal rules
+          allowed_methods => [<<"tools/list">>, <<"tools/call">>]},
 
     Result = erlmcp_test_client:validate_response(Request, Rules),
 
@@ -219,18 +170,15 @@ valid_error_codes_should_pass_test() ->
     ValidCodes = [-32700, -32600, -32601, -32602, -32603],  % JSON-RPC standard
 
     lists:foreach(fun(Code) ->
-        Response = #{
-            <<"jsonrpc">> => <<"2.0">>,
-            <<"id">> => 1,
-            <<"error">> => #{
-                <<"code">> => Code,
-                <<"message">> => <<"Error">>
-            }
-        },
-        Rules = #{required_fields => []},
-        Result = erlmcp_test_client:validate_response(Response, Rules),
-        ?assertEqual({compliant, Response}, Result)
-    end, ValidCodes).
+                     Response =
+                         #{<<"jsonrpc">> => <<"2.0">>,
+                           <<"id">> => 1,
+                           <<"error">> => #{<<"code">> => Code, <<"message">> => <<"Error">>}},
+                     Rules = #{required_fields => []},
+                     Result = erlmcp_test_client:validate_response(Response, Rules),
+                     ?assertEqual({compliant, Response}, Result)
+                  end,
+                  ValidCodes).
 
 %% @doc Test that validator rejects invalid error codes
 %% NOTE: SKIPPED - current validator doesn't check error codes (false negative)
@@ -240,12 +188,11 @@ invalid_error_code_should_fail_test_() ->
 
 %% @doc Test edge case: Empty params object (should be allowed)
 empty_params_should_pass_test() ->
-    Request = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"tools/list">>,
-        <<"params">> => #{}
-    },
+    Request =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"tools/list">>,
+          <<"params">> => #{}},
     Rules = #{required_fields => []},
 
     Result = erlmcp_test_client:validate_response(Request, Rules),
@@ -253,11 +200,10 @@ empty_params_should_pass_test() ->
 
 %% @doc Test edge case: Missing params object (should be allowed)
 missing_params_should_pass_test() ->
-    Request = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"ping">>
-    },
+    Request =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"ping">>},
     Rules = #{required_fields => []},
 
     Result = erlmcp_test_client:validate_response(Request, Rules),
@@ -296,48 +242,53 @@ initialize_sequencing_test() ->
 %% @doc Measure false positive rate
 %% (Compliant code incorrectly rejected)
 measure_false_positive_rate_test() ->
-    CompliantSamples = [
-        compliant_initialize_request(),
-        compliant_tools_list_request(),
-        compliant_tools_call_request(),
-        compliant_success_response(),
-        compliant_error_response()
-    ],
+    CompliantSamples =
+        [compliant_initialize_request(),
+         compliant_tools_list_request(),
+         compliant_tools_call_request(),
+         compliant_success_response(),
+         compliant_error_response()],
 
     Rules = #{required_fields => [<<"jsonrpc">>]},
 
-    FalsePositives = lists:foldl(fun(Sample, Count) ->
-        case erlmcp_test_client:validate_response(Sample, Rules) of
-            {compliant, _} -> Count;  % Correct
-            {non_compliant, _} -> Count + 1  % False positive
-        end
-    end, 0, CompliantSamples),
+    FalsePositives =
+        lists:foldl(fun(Sample, Count) ->
+                       case erlmcp_test_client:validate_response(Sample, Rules) of
+                           {compliant, _} ->
+                               Count;  % Correct
+                           {non_compliant, _} ->
+                               Count + 1  % False positive
+                       end
+                    end,
+                    0,
+                    CompliantSamples),
 
     Total = length(CompliantSamples),
-    Rate = (FalsePositives / Total) * 100,
+    Rate = FalsePositives / Total * 100,
 
     ?assert(Rate < 5.0, io_lib:format("False positive rate too high: ~.2f%", [Rate])).
 
 %% @doc Measure false negative rate
 %% (Non-compliant code incorrectly accepted)
 measure_false_negative_rate_test() ->
-    NonCompliantSamples = [
-        non_compliant_missing_jsonrpc(),
-        non_compliant_wrong_jsonrpc_version()
-        % Note: Can't include others because validator doesn't check them
-    ],
-
+    NonCompliantSamples = [non_compliant_missing_jsonrpc(), non_compliant_wrong_jsonrpc_version()],
+    % Note: Can't include others because validator doesn't check them
     Rules = #{required_fields => [<<"jsonrpc">>]},
 
-    FalseNegatives = lists:foldl(fun(Sample, Count) ->
-        case erlmcp_test_client:validate_response(Sample, Rules) of
-            {compliant, _} -> Count + 1;  % False negative
-            {non_compliant, _} -> Count  % Correct
-        end
-    end, 0, NonCompliantSamples),
+    FalseNegatives =
+        lists:foldl(fun(Sample, Count) ->
+                       case erlmcp_test_client:validate_response(Sample, Rules) of
+                           {compliant, _} ->
+                               Count + 1;  % False negative
+                           {non_compliant, _} ->
+                               Count  % Correct
+                       end
+                    end,
+                    0,
+                    NonCompliantSamples),
 
     Total = length(NonCompliantSamples),
-    Rate = (FalseNegatives / Total) * 100,
+    Rate = FalseNegatives / Total * 100,
 
     % NOTE: This will fail because validator doesn't check many things
     ?assert(Rate < 5.0, io_lib:format("False negative rate too high: ~.2f%", [Rate])).
@@ -348,12 +299,11 @@ measure_false_negative_rate_test() ->
 
 %% @doc Verify validator references correct spec version
 spec_version_alignment_test() ->
-    Data = #{
-        spec_version => <<"2025-11-25">>,
-        timestamp => <<"2026-01-30T12:00:00Z">>,
-        test_results => [],
-        spec_requirements => []
-    },
+    Data =
+        #{spec_version => <<"2025-11-25">>,
+          timestamp => <<"2026-01-30T12:00:00Z">>,
+          test_results => [],
+          spec_requirements => []},
 
     {ok, Compliance, _Details} = erlmcp_compliance_report:calculate_compliance(Data),
 
@@ -364,11 +314,10 @@ spec_version_alignment_test() ->
 %% @doc Verify compliance report mentions correct spec version
 compliance_report_spec_version_test() ->
     Request = compliant_initialize_request(),
-    Data = #{
-        spec_version => <<"2025-11-25">>,
-        test_results => [#{name => <<"test">>, status => <<"passed">>}],
-        spec_requirements => []
-    },
+    Data =
+        #{spec_version => <<"2025-11-25">>,
+          test_results => [#{name => <<"test">>, status => <<"passed">>}],
+          spec_requirements => []},
 
     % Generate report without starting gen_server (function works standalone)
     {ok, Markdown} = erlmcp_compliance_report:generate_report(markdown, Data),
@@ -383,19 +332,16 @@ compliance_report_spec_version_test() ->
 
 %% @doc Generate validator accuracy summary
 validator_accuracy_summary_test() ->
-    Summary = #{
-        total_tests => 15,
-        compliant_tests => 5,
-        non_compliant_tests => 5,
-        edge_case_tests => 3,
-        accuracy_tests => 2,
-
-        false_positive_rate => unknown,  % Needs implementation
-        false_negative_rate => high,     % ~90% (most checks not done)
-
-        spec_version => <<"2025-11-25">>,
-        overall_accuracy => partial  % ~45%
-    },
+    Summary =
+        #{total_tests => 15,
+          compliant_tests => 5,
+          non_compliant_tests => 5,
+          edge_case_tests => 3,
+          accuracy_tests => 2,
+          false_positive_rate => unknown,  % Needs implementation
+          false_negative_rate => high,     % ~90% (most checks not done)
+          spec_version => <<"2025-11-25">>,
+          overall_accuracy => partial},  % ~45%
 
     ?assert(is_map(Summary)),
     ?assert(maps:is_key(spec_version, Summary)),

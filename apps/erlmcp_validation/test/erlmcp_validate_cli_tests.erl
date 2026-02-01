@@ -7,6 +7,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_validate_cli_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
@@ -18,8 +19,7 @@ cli_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Parse help command", fun test_parse_help/0},
+     [{"Parse help command", fun test_parse_help/0},
       {"Parse version command", fun test_parse_version/0},
       {"Parse validate spec command", fun test_parse_validate_spec/0},
       {"Parse validate protocol command", fun test_parse_validate_protocol/0},
@@ -88,8 +88,7 @@ cli_test_() ->
       {"Exit code failed", fun test_exit_code_failed/0},
       {"Transport to module mapping", fun test_transport_to_module/0},
       {"Transport to type mapping", fun test_transport_to_type/0},
-      {"Format to atom mapping", fun test_format_to_atom/0}
-     ]}.
+      {"Format to atom mapping", fun test_format_to_atom/0}]}.
 
 setup() ->
     %% Start required applications
@@ -161,8 +160,7 @@ test_parse_report_output_file() ->
                  erlmcp_validate_cli:parse_args(["report", "generate", "--output", "report.md"])).
 
 test_parse_invalid_command() ->
-    ?assertMatch({error, "Unknown command:" ++ _},
-                 erlmcp_validate_cli:parse_args(["unknown"])).
+    ?assertMatch({error, "Unknown command:" ++ _}, erlmcp_validate_cli:parse_args(["unknown"])).
 
 test_parse_invalid_validate_type() ->
     ?assertMatch({error, "Unknown validation type:" ++ _},
@@ -261,7 +259,8 @@ test_execute_validate_security_stdio() ->
 
 test_execute_validate_performance_stdio() ->
     %% Test that validate performance executes
-    Result = erlmcp_validate_cli:execute_validate(performance, #{transport => stdio, format => text}),
+    Result =
+        erlmcp_validate_cli:execute_validate(performance, #{transport => stdio, format => text}),
     ?assertMatch({ok, _}, Result).
 
 test_execute_validate_all_default() ->
@@ -292,7 +291,8 @@ test_execute_report_generate_html() ->
 test_execute_report_generate_with_output() ->
     %% Test that report generate writes to file
     OutputFile = "/tmp/test_report.md",
-    Result = erlmcp_validate_cli:execute_report_generate(#{format => markdown, output => OutputFile}),
+    Result =
+        erlmcp_validate_cli:execute_report_generate(#{format => markdown, output => OutputFile}),
     ?assertMatch({ok, _}, Result),
     %% Verify file was created
     ?assert(filelib:is_file(OutputFile)),
@@ -305,102 +305,162 @@ test_execute_report_generate_with_output() ->
 
 test_validate_spec_version() ->
     %% Test that spec version validation returns proper format
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_spec_validation(text)).
 
 test_validate_lifecycle() ->
     %% Test that lifecycle validation returns proper format
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_protocol_validation(text)).
 
 test_validate_tools_api() ->
     %% Test that tools API validation returns proper format
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_spec_validation(text)).
 
 test_validate_resources_api() ->
     %% Test that resources API validation returns proper format
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_spec_validation(text)).
 
 test_validate_prompts_api() ->
     %% Test that prompts API validation returns proper format
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_spec_validation(text)).
 
 test_validate_jsonrpc_structure() ->
     %% Test JSON-RPC structure validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_protocol_validation(text)).
 
 test_validate_request_format() ->
     %% Test request format validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_protocol_validation(text)).
 
 test_validate_response_format() ->
     %% Test response format validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_protocol_validation(text)).
 
 test_validate_notification_format() ->
     %% Test notification format validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_protocol_validation(text)).
 
 test_validate_error_codes() ->
     %% Test error codes validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_protocol_validation(text)).
 
 test_validate_transport_callbacks() ->
     %% Test transport callbacks validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_transport_validation(stdio, text)).
 
 test_validate_transport_framing() ->
     %% Test transport framing validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_transport_validation(stdio, text)).
 
 test_validate_transport_registry() ->
     %% Test transport registry validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_transport_validation(stdio, text)).
 
 test_validate_transport_lifecycle() ->
     %% Test transport lifecycle validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_transport_validation(stdio, text)).
 
 test_validate_security_authentication() ->
     %% Test security authentication validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_security_validation(stdio, text)).
 
 test_validate_security_input_validation() ->
     %% Test security input validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_security_validation(stdio, text)).
 
 test_validate_security_secrets() ->
     %% Test security secrets validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_security_validation(stdio, text)).
 
 test_validate_security_jwt() ->
     %% Test security JWT validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_security_validation(stdio, text)).
 
 test_validate_security_rate_limiting() ->
     %% Test security rate limiting validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_security_validation(stdio, text)).
 
 test_validate_security_cors() ->
     %% Test security CORS validation
-    ?assertMatch({ok, #{passed := _, failed := _, status := _}},
+    ?assertMatch({ok,
+                  #{passed := _,
+                    failed := _,
+                    status := _}},
                  erlmcp_validate_cli:run_security_validation(stdio, text)).
 
 %%%====================================================================
@@ -409,10 +469,7 @@ test_validate_security_cors() ->
 
 test_summarize_all_passed() ->
     %% Test summary with all passed results
-    Results = [
-        {test1, {ok, #{status => passed}}},
-        {test2, {ok, #{status => passed}}}
-    ],
+    Results = [{test1, {ok, #{status => passed}}}, {test2, {ok, #{status => passed}}}],
     Summary = erlmcp_validate_cli:summarize_validation_results(Results),
     ?assertEqual(2, maps:get(total, Summary)),
     ?assertEqual(2, maps:get(passed, Summary)),
@@ -421,10 +478,7 @@ test_summarize_all_passed() ->
 
 test_summarize_all_failed() ->
     %% Test summary with all failed results
-    Results = [
-        {test1, {ok, #{status => failed}}},
-        {test2, {ok, #{status => failed}}}
-    ],
+    Results = [{test1, {ok, #{status => failed}}}, {test2, {ok, #{status => failed}}}],
     Summary = erlmcp_validate_cli:summarize_validation_results(Results),
     ?assertEqual(2, maps:get(total, Summary)),
     ?assertEqual(0, maps:get(passed, Summary)),
@@ -433,11 +487,10 @@ test_summarize_all_failed() ->
 
 test_summarize_mixed() ->
     %% Test summary with mixed results
-    Results = [
-        {test1, {ok, #{status => passed}}},
-        {test2, {ok, #{status => failed}}},
-        {test3, {ok, #{status => warning}}}
-    ],
+    Results =
+        [{test1, {ok, #{status => passed}}},
+         {test2, {ok, #{status => failed}}},
+         {test3, {ok, #{status => warning}}}],
     Summary = erlmcp_validate_cli:summarize_validation_results(Results),
     ?assertEqual(3, maps:get(total, Summary)),
     ?assertEqual(1, maps:get(passed, Summary)),
@@ -481,13 +534,11 @@ integration_test_() ->
     {setup,
      fun setup_integration/0,
      fun cleanup_integration/1,
-     [
-      {"Full validate spec workflow", fun test_full_validate_spec_workflow/0},
+     [{"Full validate spec workflow", fun test_full_validate_spec_workflow/0},
       {"Full validate protocol workflow", fun test_full_validate_protocol_workflow/0},
       {"Full report generate workflow", fun test_full_report_generate_workflow/0},
       {"Error handling for missing applications", fun test_error_handling_missing_apps/0},
-      {"Output format verification text", fun test_output_format_verification_text/0}
-     ]}.
+      {"Output format verification text", fun test_output_format_verification_text/0}]}.
 
 setup_integration() ->
     application:ensure_all_started(crypto),

@@ -1,5 +1,7 @@
 -module(erlmcp_error_handling_robustness_SUITE).
+
 -compile(export_all).
+
 -include_lib("common_test/include/ct.hrl").
 
 %%%====================================================================
@@ -7,45 +9,36 @@
 %%%====================================================================
 
 all() ->
-    [
-     %% Network Timeout Tests
+    [%% Network Timeout Tests
      network_timeout_during_request_test,
      network_timeout_cleanup_test,
      configurable_timeout_test,
-
      %% Malformed Response Tests
      malformed_json_response_test,
      oversized_response_test,
      invalid_utf8_response_test,
-
      %% Transport Failure Tests
      transport_disconnect_during_validation_test,
      transport_reconnect_after_failure_test,
      transport_failure_notification_test,
-
      %% Error Message Clarity Tests
      error_message_includes_context_test,
      error_message_actionable_test,
      error_response_with_remediation_test,
-
      %% Cleanup on Failure Tests
      cleanup_resources_on_timeout_test,
      cleanup_monitors_on_error_test,
      cleanup_no_resource_leaks_test,
-
      %% Concurrent Error Scenarios
      concurrent_request_timeout_test,
      concurrent_transport_failure_test,
-
      %% Large Response Handling
      large_response_memory_management_test,
      chunked_response_handling_test,
-
      %% Spec Compliance Edge Cases
      null_id_error_response_test,
      batch_error_handling_test,
-     error_data_field_validation_test
-    ].
+     error_data_field_validation_test].
 
 init_per_suite(Config) ->
     application:ensure_all_started(erlmcp),
@@ -65,11 +58,9 @@ network_timeout_during_request_test(_Config) ->
     {ok, Client} = start_test_client_with_timeout(100),  % 100ms timeout
 
     %% Create a request that will take longer than timeout
-    Request = #{<<"method">> => <<"slow_operation">>,
-                <<"params">> => #{<<"delay_ms">> => 500}},
+    Request = #{<<"method">> => <<"slow_operation">>, <<"params">> => #{<<"delay_ms">> => 500}},
     %% Note: This test verifies timeout handling exists
     %% Actual slow_operation should be implemented in test server
-
     %% Send request and expect timeout
     case catch erlmcp_test_client:send_request(Client, Request) of
         {error, timeout} ->
@@ -96,9 +87,8 @@ network_timeout_cleanup_test(_Config) ->
     InitialPending = maps:get(pending_requests, InitialState, #{}),
 
     %% Send request that will timeout
-    Request = #{<<"method">> => <<"slow_operation">>,
-                <<"params">> => #{<<"delay_ms">> => 500}},
-    _ = catch erlmcp_test_client:send_request(Client, Request),
+    Request = #{<<"method">> => <<"slow_operation">>, <<"params">> => #{<<"delay_ms">> => 500}},
+    _ = (catch erlmcp_test_client:send_request(Client, Request)),
 
     %% Allow timeout to occur
     timer:sleep(200),
@@ -113,7 +103,6 @@ network_timeout_cleanup_test(_Config) ->
 
     %% Note: This test verifies cleanup mechanism exists
     %% Actual cleanup may need to be implemented
-
     erlmcp_test_client:stop_test_server(Client),
     ok.
 
@@ -227,17 +216,12 @@ transport_disconnect_during_validation_test(_Config) ->
 transport_reconnect_after_failure_test(_Config) ->
     %% This test verifies reconnection logic exists
     %% Actual implementation may need to be added
-
-    {ok, Client} = erlmcp_test_client:start_test_server(tcp,
-                                                          #{host => "localhost",
-                                                            port => 9999}),
+    {ok, Client} = erlmcp_test_client:start_test_server(tcp, #{host => "localhost", port => 9999}),
 
     %% Simulate connection failure
     %% (In real test, would kill connection and trigger reconnect)
-
     %% Verify client attempts reconnection
     %% (Implementation dependent)
-
     erlmcp_test_client:stop_test_server(Client),
     {comment, "Reconnection logic needs implementation"}.
 
@@ -248,7 +232,6 @@ transport_failure_notification_test(_Config) ->
 
     %% Subscribe to transport events
     %% (Implementation dependent)
-
     %% Simulate failure
     Pid = get_server_pid(Client),
     MonitorRef = monitor(process, Pid),
@@ -272,47 +255,47 @@ transport_failure_notification_test(_Config) ->
 %% @doc Test that error messages include context
 error_message_includes_context_test(_Config) ->
     %% Trigger various errors and check for context
-    ErrorCases = [
-        {<<"nonexistent_method">>, -32601},
-        {<<"invalid_params">>, -32602}
-    ],
+    ErrorCases = [{<<"nonexistent_method">>, -32601}, {<<"invalid_params">>, -32602}],
 
     lists:foreach(fun({Method, ExpectedCode}) ->
-        ErrorResponse = erlmcp_json_rpc:error_method_not_found(1, Method),
-        ResponseMap = jsx:decode(ErrorResponse, [return_maps]),
+                     ErrorResponse = erlmcp_json_rpc:error_method_not_found(1, Method),
+                     ResponseMap = jsx:decode(ErrorResponse, [return_maps]),
 
-        ErrorObj = maps:get(<<"error">>, ResponseMap),
-        Code = maps:get(<<"code">>, ErrorObj),
-        Message = maps:get(<<"message">>, ErrorObj),
+                     ErrorObj = maps:get(<<"error">>, ResponseMap),
+                     Code = maps:get(<<"code">>, ErrorObj),
+                     Message = maps:get(<<"message">>, ErrorObj),
 
-        ct:log("Error ~p: code=~p, message=~p", [Method, Code, Message]),
+                     ct:log("Error ~p: code=~p, message=~p", [Method, Code, Message]),
 
-        %% Verify error code matches
-        case Code of
-            ExpectedCode -> ok;
-            _ -> ct:fail("Expected code ~p, got ~p", [ExpectedCode, Code])
-        end,
+                     %% Verify error code matches
+                     case Code of
+                         ExpectedCode ->
+                             ok;
+                         _ ->
+                             ct:fail("Expected code ~p, got ~p", [ExpectedCode, Code])
+                     end,
 
-        %% Verify message is not empty
-        true = (byte_size(Message) > 0),
+                     %% Verify message is not empty
+                     true = byte_size(Message) > 0,
 
-        %% Verify data field has context
-        Data = maps:get(<<"data">>, ErrorObj, #{}),
-        case Method of
-            <<"nonexistent_method">> ->
-                true = maps:is_key(<<"method">>, Data);
-            _ ->
-                ok
-        end
-    end, ErrorCases),
+                     %% Verify data field has context
+                     Data = maps:get(<<"data">>, ErrorObj, #{}),
+                     case Method of
+                         <<"nonexistent_method">> ->
+                             true = maps:is_key(<<"method">>, Data);
+                         _ ->
+                             ok
+                     end
+                  end,
+                  ErrorCases),
 
     ok.
 
 %% @doc Test that error messages are actionable
 error_message_actionable_test(_Config) ->
     %% Check if error messages provide actionable guidance
-    ErrorResponse = erlmcp_json_rpc:error_invalid_params(
-        1, <<"Missing required parameter: 'name'">>),
+    ErrorResponse =
+        erlmcp_json_rpc:error_invalid_params(1, <<"Missing required parameter: 'name'">>),
     ResponseMap = jsx:decode(ErrorResponse, [return_maps]),
 
     ErrorObj = maps:get(<<"error">>, ResponseMap),
@@ -320,8 +303,9 @@ error_message_actionable_test(_Config) ->
     Data = maps:get(<<"data">>, ErrorObj),
 
     %% Message should indicate what's wrong
-    true = binary:match(Message, <<"Missing">>) =/= nomatch orelse
-            binary:match(Message, <<"required">>) =/= nomatch,
+    true =
+        binary:match(Message, <<"Missing">>) =/= nomatch
+        orelse binary:match(Message, <<"required">>) =/= nomatch,
 
     %% Data should provide details
     Details = maps:get(<<"details">>, Data, <<>>),
@@ -333,24 +317,23 @@ error_message_actionable_test(_Config) ->
 error_response_with_remediation_test(_Config) ->
     %% Verify error responses include remediation hints
     %% (This is a proposed feature - checking if implemented)
-
-    UriError = erlmcp_json_rpc:error_resource_not_found(
-        1, <<"file:///missing/resource.txt">>),
+    UriError = erlmcp_json_rpc:error_resource_not_found(1, <<"file:///missing/resource.txt">>),
     UriMap = jsx:decode(UriError, [return_maps]),
 
     UriErrorObj = maps:get(<<"error">>, UriMap),
     UriData = maps:get(<<"data">>, UriErrorObj),
 
     %% Check if remediation information exists
-    _RemediationStatus = case maps:get(<<"remediation">>, UriData, undefined) of
-        undefined ->
-            {comment, "Remediation information not yet implemented"};
-        Remediation ->
-            ct:log("Remediation provided: ~s", [Remediation]),
-            true = is_binary(Remediation),
-            true = byte_size(Remediation) > 0,
-            {ok, Remediation}
-    end,
+    _RemediationStatus =
+        case maps:get(<<"remediation">>, UriData, undefined) of
+            undefined ->
+                {comment, "Remediation information not yet implemented"};
+            Remediation ->
+                ct:log("Remediation provided: ~s", [Remediation]),
+                true = is_binary(Remediation),
+                true = byte_size(Remediation) > 0,
+                {ok, Remediation}
+        end,
 
     ok.
 
@@ -368,10 +351,8 @@ cleanup_resources_on_timeout_test(_Config) ->
 
     %% Simulate operation that times out
     %% (Implementation dependent)
-
     %% Verify cleanup
     %% (Should check: monitors, timers, sockets, etc.)
-
     erlmcp_test_client:stop_test_server(Client),
     {comment, "Resource cleanup verification needs implementation"}.
 
@@ -387,13 +368,16 @@ cleanup_no_resource_leaks_test(_Config) ->
 
     %% Perform multiple operations
     lists:foreach(fun(I) ->
-        Request = #{<<"method">> => <<"ping">>, <<"id">> => I},
-        try erlmcp_test_client:send_request(Client, Request) of
-            {ok, _} -> ok
-        catch
-            _:_ -> ok
-        end
-    end, lists:seq(1, 100)),
+                     Request = #{<<"method">> => <<"ping">>, <<"id">> => I},
+                     try erlmcp_test_client:send_request(Client, Request) of
+                         {ok, _} ->
+                             ok
+                     catch
+                         _:_ ->
+                             ok
+                     end
+                  end,
+                  lists:seq(1, 100)),
 
     %% Check for leaks
     {ok, State} = erlmcp_test_client:get_server_info(Client),
@@ -411,15 +395,20 @@ concurrent_request_timeout_test(_Config) ->
     {ok, Client} = start_test_client_with_timeout(100),
 
     %% Spawn multiple concurrent requests
-    Pids = [spawn_link(fun() ->
-        Request = #{<<"method">> => <<"slow_operation">>,
-                    <<"params">> => #{<<"delay_ms">> => 500}},
-        try erlmcp_test_client:send_request(Client, Request) of
-            Result -> Result
-        catch
-            _:{error, timeout} -> timeout
-        end
-    end) || _ <- lists:seq(1, 10)],
+    Pids =
+        [spawn_link(fun() ->
+                       Request =
+                           #{<<"method">> => <<"slow_operation">>,
+                             <<"params">> => #{<<"delay_ms">> => 500}},
+                       try erlmcp_test_client:send_request(Client, Request) of
+                           Result ->
+                               Result
+                       catch
+                           _:{error, timeout} ->
+                               timeout
+                       end
+                    end)
+         || _ <- lists:seq(1, 10)],
 
     %% Wait for all to complete/timeout
     timer:sleep(300),
@@ -486,18 +475,18 @@ null_id_error_response_test(_Config) ->
 %% @doc Test batch error handling
 batch_error_handling_test(_Config) ->
     %% Create a batch with some invalid requests
-    BatchJson = jsx:encode([
-        #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 1,
-          <<"method">> => <<"valid_method">>},
-        #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 2},
-        %% Missing method
-        #{<<"invalid">> => <<"request">>}
-    ]),
+    BatchJson =
+        jsx:encode([#{<<"jsonrpc">> => <<"2.0">>,
+                      <<"id">> => 1,
+                      <<"method">> => <<"valid_method">>},
+                    #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 2},
+                    %% Missing method
+                    #{<<"invalid">> => <<"request">>}]),
 
     case erlmcp_json_rpc:decode_batch(BatchJson) of
         {ok, Messages} when is_list(Messages) ->
             ct:log("Batch produced ~p responses", [length(Messages)]),
-            true = (length(Messages) >= 1);
+            true = length(Messages) >= 1;
         {error, _Reason} ->
             %% Batch-level validation failed
             ok
@@ -508,23 +497,23 @@ batch_error_handling_test(_Config) ->
 %% @doc Test error data field validation
 error_data_field_validation_test(_Config) ->
     %% Test various data field types
-    ErrorCases = [
-        fun() -> erlmcp_json_rpc:error_invalid_params(1, <<"string details">>) end,
-        fun() -> erlmcp_json_rpc:error_tool_not_found(1, <<"test_tool">>) end,
-        fun() -> erlmcp_json_rpc:error_resource_not_found(1, <<"file:///test.txt">>) end
-    ],
+    ErrorCases =
+        [fun() -> erlmcp_json_rpc:error_invalid_params(1, <<"string details">>) end,
+         fun() -> erlmcp_json_rpc:error_tool_not_found(1, <<"test_tool">>) end,
+         fun() -> erlmcp_json_rpc:error_resource_not_found(1, <<"file:///test.txt">>) end],
 
     lists:foreach(fun(ErrorFun) ->
-        Response = ErrorFun(),
-        ResponseMap = jsx:decode(Response, [return_maps]),
-        ErrorObj = maps:get(<<"error">>, ResponseMap),
+                     Response = ErrorFun(),
+                     ResponseMap = jsx:decode(Response, [return_maps]),
+                     ErrorObj = maps:get(<<"error">>, ResponseMap),
 
-        %% Verify data field exists and is valid
-        Data = maps:get(<<"data">>, ErrorObj),
-        true = is_map(Data),
+                     %% Verify data field exists and is valid
+                     Data = maps:get(<<"data">>, ErrorObj),
+                     true = is_map(Data),
 
-        ct:log("Error data: ~p", [Data])
-    end, ErrorCases),
+                     ct:log("Error data: ~p", [Data])
+                  end,
+                  ErrorCases),
 
     ok.
 
@@ -548,8 +537,6 @@ get_server_pid(Client) ->
 create_large_response(Size) ->
     %% Create a response of approximately Size bytes
     Data = << <<X>> || <<X>> <= <<0:(Size * 8)>> >>,
-    jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"result">> => #{<<"data">> => Data}
-    }).
+    jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                 <<"id">> => 1,
+                 <<"result">> => #{<<"data">> => Data}}).

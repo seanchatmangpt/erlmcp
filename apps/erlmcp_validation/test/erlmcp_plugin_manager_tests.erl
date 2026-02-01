@@ -13,6 +13,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_manager_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
@@ -23,8 +24,7 @@ plugin_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Initialize plugin manager", fun test_init_plugin_manager/0},
+     [{"Initialize plugin manager", fun test_init_plugin_manager/0},
       {"Load plugin", fun test_load_plugin/0},
       {"Unload plugin", fun test_unload_plugin/0},
       {"List loaded plugins", fun test_list_plugins/0},
@@ -38,8 +38,7 @@ plugin_test_() ->
       {"Plugin hooks", fun test_plugin_hooks/0},
       {"Plugin discovery", fun test_plugin_discovery/0},
       {"Plugin validation", fun test_plugin_validation/0},
-      {"Plugin sandboxing", fun test_plugin_sandboxing/0}
-     ]}.
+      {"Plugin sandboxing", fun test_plugin_sandboxing/0}]}.
 
 setup() ->
     application:ensure_all_started(erlmcp),
@@ -273,7 +272,8 @@ test_plugin_sandboxing() ->
     PluginPath = "/tmp/sandboxed_plugin.erl",
     ok = create_test_plugin(PluginPath),
     {ok, PluginId} = erlmcp_plugin_manager:load_plugin(Manager, PluginPath),
-    Result = erlmcp_plugin_manager:execute(Manager, PluginId, "file_write", #{path => "/etc/passwd"}),
+    Result =
+        erlmcp_plugin_manager:execute(Manager, PluginId, "file_write", #{path => "/etc/passwd"}),
     ?assertMatch({error, permission_denied}, Result),
     ok = erlmcp_plugin_manager:stop(Manager),
     file:delete(PluginPath).
@@ -283,7 +283,8 @@ test_plugin_sandboxing() ->
 %%%====================================================================
 
 create_test_plugin(Path) ->
-    Code = <<"-module(test_plugin).
+    Code =
+        <<"-module(test_plugin).
 -export([init/1, execute/2]).
 
 init(_Config) -> {ok, #{}}.
@@ -292,27 +293,32 @@ execute(_Command, _Args) -> {ok, #{status => success}}.
     file:write_file(Path, Code).
 
 create_plugin_with_deps(Path, Deps) ->
-    Code = io_lib:format("-module(main_plugin).
+    Code =
+        io_lib:format("-module(main_plugin).
 -export([init/1, execute/2, dependencies/0]).
 
 dependencies() -> ~p.
 init(_Config) -> {ok, #{}}.
 execute(_Command, _Args) -> {ok, #{status => success}}.
-", [Deps]),
+",
+                      [Deps]),
     file:write_file(Path, Code).
 
 create_versioned_plugin(Path, Version) ->
-    Code = io_lib:format("-module(versioned_plugin).
+    Code =
+        io_lib:format("-module(versioned_plugin).
 -export([init/1, execute/2, version/0]).
 
 version() -> ~p.
 init(_Config) -> {ok, #{}}.
 execute(_Command, _Args) -> {ok, #{status => success}}.
-", [Version]),
+",
+                      [Version]),
     file:write_file(Path, Code).
 
 create_plugin_with_hooks(Path) ->
-    Code = <<"-module(hook_plugin).
+    Code =
+        <<"-module(hook_plugin).
 -export([init/1, execute/2, hooks/0, handle_hook/2]).
 
 hooks() -> [pre_command, post_command].
@@ -323,7 +329,8 @@ handle_hook(Hook, State) -> {ok, State#{hooks_called => [Hook | maps:get(hooks_c
     file:write_file(Path, Code).
 
 modify_test_plugin(Path) ->
-    Code = <<"-module(test_plugin).
+    Code =
+        <<"-module(test_plugin).
 -export([init/1, execute/2]).
 
 init(_Config) -> {ok, #{version => 2}}.

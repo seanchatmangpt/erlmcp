@@ -42,10 +42,6 @@
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    erlmcp_plugin:behaviour_info(callbacks) ++
-    [
-        {pre_execute, 2},
-        {post_execute, 2}
-    ];
+    erlmcp_plugin:behaviour_info(callbacks) ++ [{pre_execute, 2}, {post_execute, 2}];
 behaviour_info(_) ->
     undefined.

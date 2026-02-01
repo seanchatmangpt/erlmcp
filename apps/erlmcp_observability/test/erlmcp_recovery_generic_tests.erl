@@ -1,4 +1,5 @@
 -module(erlmcp_recovery_generic_tests).
+
 -author("erlmcp").
 
 -include_lib("eunit/include/eunit.hrl").
@@ -50,16 +51,9 @@ find_supervisor_for_core_component_test() ->
 %%% Generic Component Restart Tests
 %%%===================================================================
 
-restart_generic_component_success_test() ->
-    RM = setup(),
-    case whereis(erlmcp_observability_sup) of
-        undefined ->
-            ?assert(true); % Skip if not running
-        _ ->
-            Result = erlmcp_recovery_manager:restart_generic_component(erlmcp_metrics),
-            ?assertMatch({ok, _} when is_tuple(Result), Result)
-    end,
-    cleanup(RM).
+restart_generic_component_success_test( ) -> RM = setup( ) , case whereis( erlmcp_observability_sup ) of undefined -> ?assert( true ) ; _ -> Result = erlmcp_recovery_manager : restart_generic_component( erlmcp_metrics ) , ?assertMatch( { ok , _ } when is_tuple( Result ) , Result ) end , cleanup( RM ) .
+
+                           % Skip if not running
 
 restart_generic_nonexistent_component_test() ->
     RM = setup(),
@@ -192,11 +186,10 @@ integration_restart_workflow_test() ->
     {ok, Sup} = erlmcp_recovery_test_sup:start_link(),
     {ok, Pid} = erlmcp_recovery_test_sup:start_child(integration_worker, []),
 
-    Policy = #{
-        strategy => restart,
-        max_failures => 3,
-        recovery_timeout => 5000
-    },
+    Policy =
+        #{strategy => restart,
+          max_failures => 3,
+          recovery_timeout => 5000},
 
     ok = erlmcp_recovery_manager:register_component(integration_worker, Pid, Policy),
 

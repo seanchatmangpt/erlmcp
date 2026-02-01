@@ -6,6 +6,7 @@
 %%% HTTP server behaviors for testing the HTTP transport layer.
 %%%-------------------------------------------------------------------
 -module(test_http_mcp_handler).
+
 -export([init/2]).
 
 %%====================================================================
@@ -55,36 +56,28 @@ handle_mcp_request(Req0) ->
     {ok, Body, Req1} = cowboy_req:read_body(Req0),
 
     %% Echo the request as response
-    Response = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"result">> => #{
-            <<"status">> => <<"ok">>,
-            <<"echo">> => Body
-        },
-        <<"id">> => 1
-    }),
+    Response =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"result">> => #{<<"status">> => <<"ok">>, <<"echo">> => Body},
+                     <<"id">> => 1}),
 
-    cowboy_req:reply(200, #{
-        <<"content-type">> => <<"application/json">>
-    }, Response, Req1).
+    cowboy_req:reply(200, #{<<"content-type">> => <<"application/json">>}, Response, Req1).
 
 %% Handle MCP GET request
 handle_mcp_get(Req0) ->
-    Response = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"result">> => #{<<"status">> => <<"ok">>},
-        <<"id">> => 1
-    }),
+    Response =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"result">> => #{<<"status">> => <<"ok">>},
+                     <<"id">> => 1}),
 
-    cowboy_req:reply(200, #{
-        <<"content-type">> => <<"application/json">>
-    }, Response, Req0).
+    cowboy_req:reply(200, #{<<"content-type">> => <<"application/json">>}, Response, Req0).
 
 %% Handle error response (500)
 handle_error_response(Req0) ->
-    cowboy_req:reply(500, #{
-        <<"content-type">> => <<"application/json">>
-    }, jsx:encode(#{<<"error">> => <<"Internal Server Error">>}), Req0).
+    cowboy_req:reply(500,
+                     #{<<"content-type">> => <<"application/json">>},
+                     jsx:encode(#{<<"error">> => <<"Internal Server Error">>}),
+                     Req0).
 
 %% Handle retry scenario (succeed after first attempt)
 handle_retry_request(Req0) ->
@@ -92,29 +85,28 @@ handle_retry_request(Req0) ->
 
     case jsx:is_json(Body) of
         true ->
-            Response = jsx:encode(#{
-                <<"jsonrpc">> => <<"2.0">>,
-                <<"result">> => #{<<"status">> => <<"ok">>},
-                <<"id">> => 1
-            }),
-            cowboy_req:reply(200, #{
-                <<"content-type">> => <<"application/json">>
-            }, Response, Req1);
+            Response =
+                jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                             <<"result">> => #{<<"status">> => <<"ok">>},
+                             <<"id">> => 1}),
+            cowboy_req:reply(200, #{<<"content-type">> => <<"application/json">>}, Response, Req1);
         false ->
             cowboy_req:reply(500, #{}, <<"Server Error">>, Req1)
     end.
 
 %% Handle fail request (always fail for retry testing)
 handle_fail_request(Req0) ->
-    cowboy_req:reply(500, #{
-        <<"content-type">> => <<"application/json">>
-    }, jsx:encode(#{<<"error">> => <<"Server Error">>}), Req0).
+    cowboy_req:reply(500,
+                     #{<<"content-type">> => <<"application/json">>},
+                     jsx:encode(#{<<"error">> => <<"Server Error">>}),
+                     Req0).
 
 %% Handle invalid JSON response
 handle_invalid_response(Req0) ->
-    cowboy_req:reply(200, #{
-        <<"content-type">> => <<"application/json">>
-    }, <<"{invalid json}">>, Req0).
+    cowboy_req:reply(200,
+                     #{<<"content-type">> => <<"application/json">>},
+                     <<"{invalid json}">>,
+                     Req0).
 
 %% Handle slow request (for timeout testing)
 handle_slow_request(Req0) ->
@@ -127,6 +119,7 @@ handle_empty_response(Req0) ->
 
 %% Handle not found
 handle_not_found(Req0) ->
-    cowboy_req:reply(404, #{
-        <<"content-type">> => <<"application/json">>
-    }, jsx:encode(#{<<"error">> => <<"Not Found">>}), Req0).
+    cowboy_req:reply(404,
+                     #{<<"content-type">> => <<"application/json">>},
+                     jsx:encode(#{<<"error">> => <<"Not Found">>}),
+                     Req0).

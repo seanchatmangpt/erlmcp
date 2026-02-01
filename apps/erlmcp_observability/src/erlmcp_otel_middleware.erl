@@ -49,16 +49,8 @@
 -include("erlmcp.hrl").
 
 %% Public API
--export([
-    trace_transport/4,
-    trace_handler/3,
-    trace_handler/4,
-    annotate_request/2,
-    annotate_response/2,
-    record_transport_error/3,
-    wrap_rpc_call/3,
-    wrap_rpc_response/3
-]).
+-export([trace_transport/4, trace_handler/3, trace_handler/4, annotate_request/2,
+         annotate_response/2, record_transport_error/3, wrap_rpc_call/3, wrap_rpc_response/3]).
 
 %% =============================================================================
 %% Type Definitions
@@ -67,13 +59,12 @@
 -type transport_type() :: tcp | http | stdio | websocket.
 -type operation_name() :: binary().
 -type handler_fun() :: fun(() -> term()).
--type middleware_opts() :: #{
-    transport => transport_type(),
-    operation => operation_name(),
-    request_id => binary(),
-    method => binary(),
-    attributes => #{binary() => term()}
-}.
+-type middleware_opts() ::
+    #{transport => transport_type(),
+      operation => operation_name(),
+      request_id => binary(),
+      method => binary(),
+      attributes => #{binary() => term()}}.
 
 %% =============================================================================
 %% Public API - Transport Tracing
@@ -83,44 +74,48 @@
 %% Creates a span, executes the operation, and handles errors
 -spec trace_transport(transport_type(), operation_name(), handler_fun(), map()) -> term().
 trace_transport(TransportType, Operation, HandlerFun, Attributes) ->
-    SpanName = iolist_to_binary([
-        <<"mcp.transport.">>,
-        atom_to_binary(TransportType),
-        <<".">>,
-        Operation
-    ]),
+    SpanName =
+        iolist_to_binary([<<"mcp.transport.">>, atom_to_binary(TransportType), <<".">>, Operation]),
 
-    SpanAttributes = maps:merge(#{
-        <<"transport.type">> => atom_to_binary(TransportType),
-        <<"transport.operation">> => Operation,
-        <<"span.kind">> => <<"internal">>
-    }, Attributes),
+    SpanAttributes =
+        maps:merge(#{<<"transport.type">> => atom_to_binary(TransportType),
+                     <<"transport.operation">> => Operation,
+                     <<"span.kind">> => <<"internal">>},
+                   Attributes),
 
-    erlmcp_otel:with_span(SpanName, SpanAttributes, fun() ->
-        %% Add start event
-        SpanCtx = erlmcp_otel:get_current_context(),
-        case SpanCtx of
-            undefined -> ok;
-            _ -> erlmcp_otel:add_event(SpanCtx, <<"transport.operation_started">>, #{
-                <<"operation">> => Operation,
-                <<"timestamp">> => erlang:system_time(nanosecond)
-            })
-        end,
+    erlmcp_otel:with_span(SpanName,
+                          SpanAttributes,
+                          fun() ->
+                             %% Add start event
+                             SpanCtx = erlmcp_otel:get_current_context(),
+                             case SpanCtx of
+                                 undefined ->
+                                     ok;
+                                 _ ->
+                                     erlmcp_otel:add_event(SpanCtx,
+                                                           <<"transport.operation_started">>,
+                                                           #{<<"operation">> => Operation,
+                                                             <<"timestamp">> =>
+                                                                 erlang:system_time(nanosecond)})
+                             end,
 
-        %% Execute operation
-        Result = HandlerFun(),
+                             %% Execute operation
+                             Result = HandlerFun(),
 
-        %% Add completion event
-        case SpanCtx of
-            undefined -> ok;
-            _ -> erlmcp_otel:add_event(SpanCtx, <<"transport.operation_completed">>, #{
-                <<"operation">> => Operation,
-                <<"timestamp">> => erlang:system_time(nanosecond)
-            })
-        end,
+                             %% Add completion event
+                             case SpanCtx of
+                                 undefined ->
+                                     ok;
+                                 _ ->
+                                     erlmcp_otel:add_event(SpanCtx,
+                                                           <<"transport.operation_completed">>,
+                                                           #{<<"operation">> => Operation,
+                                                             <<"timestamp">> =>
+                                                                 erlang:system_time(nanosecond)})
+                             end,
 
-        Result
-    end).
+                             Result
+                          end).
 
 %% @doc Trace a handler execution (server-side)
 -spec trace_handler(binary(), binary(), handler_fun()) -> term().
@@ -132,71 +127,84 @@ trace_handler(Method, RequestId, HandlerFun) ->
 trace_handler(Method, RequestId, HandlerFun, CustomAttrs) ->
     SpanName = <<"mcp.handler.", Method/binary>>,
 
-    Attributes = maps:merge(#{
-        <<"rpc.method">> => Method,
-        <<"rpc.request_id">> => RequestId,
-        <<"span.kind">> => <<"server">>,
-        <<"handler.type">> => classify_method(Method)
-    }, CustomAttrs),
+    Attributes =
+        maps:merge(#{<<"rpc.method">> => Method,
+                     <<"rpc.request_id">> => RequestId,
+                     <<"span.kind">> => <<"server">>,
+                     <<"handler.type">> => classify_method(Method)},
+                   CustomAttrs),
 
-    erlmcp_otel:with_span(SpanName, Attributes, fun() ->
-        SpanCtx = erlmcp_otel:get_current_context(),
+    erlmcp_otel:with_span(SpanName,
+                          Attributes,
+                          fun() ->
+                             SpanCtx = erlmcp_otel:get_current_context(),
 
-        %% Event: request received
-        case SpanCtx of
-            undefined -> ok;
-            _ -> erlmcp_otel:add_event(SpanCtx, <<"server.request_received">>, #{
-                <<"request_id">> => RequestId,
-                <<"method">> => Method
-            })
-        end,
+                             %% Event: request received
+                             case SpanCtx of
+                                 undefined ->
+                                     ok;
+                                 _ ->
+                                     erlmcp_otel:add_event(SpanCtx,
+                                                           <<"server.request_received">>,
+                                                           #{<<"request_id">> => RequestId,
+                                                             <<"method">> => Method})
+                             end,
 
-        %% Event: processing started
-        case SpanCtx of
-            undefined -> ok;
-            _ -> erlmcp_otel:add_event(SpanCtx, <<"server.processing_started">>, #{
-                <<"timestamp">> => erlang:system_time(nanosecond)
-            })
-        end,
+                             %% Event: processing started
+                             case SpanCtx of
+                                 undefined ->
+                                     ok;
+                                 _ ->
+                                     erlmcp_otel:add_event(SpanCtx,
+                                                           <<"server.processing_started">>,
+                                                           #{<<"timestamp">> =>
+                                                                 erlang:system_time(nanosecond)})
+                             end,
 
-        %% Execute handler
-        Result = HandlerFun(),
+                             %% Execute handler
+                             Result = HandlerFun(),
 
-        %% Event: processing completed
-        case SpanCtx of
-            undefined -> ok;
-            _ -> erlmcp_otel:add_event(SpanCtx, <<"server.processing_completed">>, #{
-                <<"timestamp">> => erlang:system_time(nanosecond),
-                <<"result_type">> => classify_result(Result)
-            })
-        end,
+                             %% Event: processing completed
+                             case SpanCtx of
+                                 undefined ->
+                                     ok;
+                                 _ ->
+                                     erlmcp_otel:add_event(SpanCtx,
+                                                           <<"server.processing_completed">>,
+                                                           #{<<"timestamp">> =>
+                                                                 erlang:system_time(nanosecond),
+                                                             <<"result_type">> =>
+                                                                 classify_result(Result)})
+                             end,
 
-        %% Event: response sent
-        case SpanCtx of
-            undefined -> ok;
-            _ -> erlmcp_otel:add_event(SpanCtx, <<"server.response_sent">>, #{
-                <<"request_id">> => RequestId
-            })
-        end,
+                             %% Event: response sent
+                             case SpanCtx of
+                                 undefined ->
+                                     ok;
+                                 _ ->
+                                     erlmcp_otel:add_event(SpanCtx,
+                                                           <<"server.response_sent">>,
+                                                           #{<<"request_id">> => RequestId})
+                             end,
 
-        Result
-    end).
+                             Result
+                          end).
 
 %% @doc Annotate span with request details
 -spec annotate_request(map(), binary()) -> ok.
 annotate_request(Request, RequestId) ->
     case erlmcp_otel:get_current_context() of
-        undefined -> ok;
+        undefined ->
+            ok;
         SpanCtx ->
             Method = maps:get(<<"method">>, Request, <<"unknown">>),
             Params = maps:get(<<"params">>, Request, #{}),
 
-            Attributes = #{
-                <<"request.method">> => Method,
-                <<"request.id">> => RequestId,
-                <<"request.has_params">> => map_size(Params) > 0,
-                <<"request.param_count">> => map_size(Params)
-            },
+            Attributes =
+                #{<<"request.method">> => Method,
+                  <<"request.id">> => RequestId,
+                  <<"request.has_params">> => map_size(Params) > 0,
+                  <<"request.param_count">> => map_size(Params)},
 
             erlmcp_otel:add_attributes(SpanCtx, Attributes)
     end.
@@ -205,13 +213,13 @@ annotate_request(Request, RequestId) ->
 -spec annotate_response(term(), binary()) -> ok.
 annotate_response(Response, RequestId) ->
     case erlmcp_otel:get_current_context() of
-        undefined -> ok;
+        undefined ->
+            ok;
         SpanCtx ->
-            Attributes = #{
-                <<"response.id">> => RequestId,
-                <<"response.type">> => classify_response(Response),
-                <<"response.success">> => is_success_response(Response)
-            },
+            Attributes =
+                #{<<"response.id">> => RequestId,
+                  <<"response.type">> => classify_response(Response),
+                  <<"response.success">> => is_success_response(Response)},
 
             erlmcp_otel:add_attributes(SpanCtx, Attributes)
     end.
@@ -220,12 +228,12 @@ annotate_response(Response, RequestId) ->
 -spec record_transport_error(transport_type(), term(), list()) -> ok.
 record_transport_error(TransportType, Reason, Stacktrace) ->
     case erlmcp_otel:get_current_context() of
-        undefined -> ok;
+        undefined ->
+            ok;
         SpanCtx ->
-            ExtraAttrs = #{
-                <<"transport.type">> => atom_to_binary(TransportType),
-                <<"transport.error">> => true
-            },
+            ExtraAttrs =
+                #{<<"transport.type">> => atom_to_binary(TransportType),
+                  <<"transport.error">> => true},
             erlmcp_otel:record_error(SpanCtx, {error, Reason, Stacktrace}, ExtraAttrs)
     end.
 
@@ -243,11 +251,10 @@ wrap_rpc_call(Method, RequestId, Params) ->
         %% Create trace context for propagation
         TraceCtx = erlmcp_otel:create_trace_ctx(SpanCtx),
 
-        {ok, #{
-            span_context => SpanCtx,
-            trace_context => TraceCtx,
-            headers => erlmcp_otel:propagate_context(SpanCtx)
-        }}
+        {ok,
+         #{span_context => SpanCtx,
+           trace_context => TraceCtx,
+           headers => erlmcp_otel:propagate_context(SpanCtx)}}
     catch
         Class:Reason:Stack ->
             error_logger:error_msg("Failed to wrap RPC call: ~p:~p~n~p~n", [Class, Reason, Stack]),
@@ -262,16 +269,18 @@ wrap_rpc_response(#{span_context := SpanCtx}, Response, RequestId) ->
         ok = annotate_response(Response, RequestId),
 
         %% Add response received event
-        ok = erlmcp_otel:add_event(SpanCtx, <<"client.response_received">>, #{
-            <<"request_id">> => RequestId,
-            <<"timestamp">> => erlang:system_time(nanosecond)
-        }),
+        ok =
+            erlmcp_otel:add_event(SpanCtx,
+                                  <<"client.response_received">>,
+                                  #{<<"request_id">> => RequestId,
+                                    <<"timestamp">> => erlang:system_time(nanosecond)}),
 
         %% End span
         erlmcp_otel:end_span(SpanCtx)
     catch
         Class:Reason:Stack ->
-            error_logger:error_msg("Failed to wrap RPC response: ~p:~p~n~p~n", [Class, Reason, Stack]),
+            error_logger:error_msg("Failed to wrap RPC response: ~p:~p~n~p~n",
+                                   [Class, Reason, Stack]),
             ok
     end;
 wrap_rpc_response(_, _, _) ->
@@ -284,34 +293,53 @@ wrap_rpc_response(_, _, _) ->
 %% @private
 %% Classify method by category
 -spec classify_method(binary()) -> binary().
-classify_method(<<"tools/", _/binary>>) -> <<"tool">>;
-classify_method(<<"resources/", _/binary>>) -> <<"resource">>;
-classify_method(<<"prompts/", _/binary>>) -> <<"prompt">>;
-classify_method(<<"initialize">>) -> <<"lifecycle">>;
-classify_method(<<"notifications/", _/binary>>) -> <<"notification">>;
-classify_method(_) -> <<"other">>.
+classify_method(<<"tools/", _/binary>>) ->
+    <<"tool">>;
+classify_method(<<"resources/", _/binary>>) ->
+    <<"resource">>;
+classify_method(<<"prompts/", _/binary>>) ->
+    <<"prompt">>;
+classify_method(<<"initialize">>) ->
+    <<"lifecycle">>;
+classify_method(<<"notifications/", _/binary>>) ->
+    <<"notification">>;
+classify_method(_) ->
+    <<"other">>.
 
 %% @private
 %% Classify result type
 -spec classify_result(term()) -> binary().
-classify_result({ok, _}) -> <<"success">>;
-classify_result({error, _}) -> <<"error">>;
-classify_result(#mcp_content{}) -> <<"content">>;
-classify_result(List) when is_list(List) -> <<"list">>;
-classify_result(Map) when is_map(Map) -> <<"map">>;
-classify_result(_) -> <<"unknown">>.
+classify_result({ok, _}) ->
+    <<"success">>;
+classify_result({error, _}) ->
+    <<"error">>;
+classify_result(#mcp_content{}) ->
+    <<"content">>;
+classify_result(List) when is_list(List) ->
+    <<"list">>;
+classify_result(Map) when is_map(Map) ->
+    <<"map">>;
+classify_result(_) ->
+    <<"unknown">>.
 
 %% @private
 %% Classify response type
 -spec classify_response(term()) -> binary().
-classify_response(#{<<"result">> := _}) -> <<"result">>;
-classify_response(#{<<"error">> := _}) -> <<"error">>;
-classify_response(#{<<"method">> := _}) -> <<"notification">>;
-classify_response(_) -> <<"unknown">>.
+classify_response(#{<<"result">> := _}) ->
+    <<"result">>;
+classify_response(#{<<"error">> := _}) ->
+    <<"error">>;
+classify_response(#{<<"method">> := _}) ->
+    <<"notification">>;
+classify_response(_) ->
+    <<"unknown">>.
 
 %% @private
 %% Check if response is successful
 -spec is_success_response(term()) -> boolean().
-is_success_response(#{<<"result">> := _}) -> true;
-is_success_response({ok, _}) -> true;
-is_success_response(_) -> false.
+is_success_response(#{<<"result">> := _}) ->
+    true;
+is_success_response({ok, _}) ->
+    true;
+is_success_response(_) ->
+    false.
