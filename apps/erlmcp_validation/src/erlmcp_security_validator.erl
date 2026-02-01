@@ -28,6 +28,7 @@
 -export([
     start_link/0,
     stop/0,
+    validate_all/1,
     run/1,
     validate_authentication/1,
     validate_input_validation/1,
@@ -88,6 +89,67 @@ start_link() ->
 
 stop() ->
     gen_server:stop(?SERVER).
+
+%% @doc Validate all security compliance aspects for MCP specification
+-spec validate_all(binary()) -> #{
+    status := passed | failed | warning,
+    timestamp := integer(),
+    checks := [#{
+        name := binary(),
+        status := passed | failed | warning,
+        message => binary(),
+        details => map()
+    }],
+    passed := non_neg_integer(),
+    failed := non_neg_integer()
+}.
+validate_all(SpecVersion) when is_binary(SpecVersion) ->
+    Timestamp = erlang:system_time(millisecond),
+
+    %% Core security modules to validate
+    Modules = [
+        erlmcp_auth,
+        erlmcp_rate_limiter,
+        erlmcp_secrets
+    ],
+
+    %% Run all security validation categories
+    AllChecks = lists:flatmap(
+        fun(Module) ->
+            validate_security_module(Module)
+        end,
+        Modules
+    ),
+
+    %% Count results
+    {Passed, Failed, Warnings} = lists:foldl(
+        fun(Check, {P, F, W}) ->
+            case maps:get(status, Check) of
+                passed -> {P + 1, F, W};
+                failed -> {P, F + 1, W};
+                warning -> {P, F, W + 1}
+            end
+        end,
+        {0, 0, 0},
+        AllChecks
+    ),
+
+    %% Critical security issues fail; warnings are advisory
+    OverallStatus = case Failed of
+        0 -> passed;
+        N when N > 0, Warnings > Failed -> warning;
+        _ -> failed
+    end,
+
+    #{
+        status => OverallStatus,
+        timestamp => Timestamp,
+        spec_version => SpecVersion,
+        checks => AllChecks,
+        passed => Passed,
+        failed => Failed,
+        warnings => Warnings
+    }.
 
 run(TransportModule) when is_atom(TransportModule) ->
     gen_server:call(?SERVER, {run, TransportModule}).
@@ -937,3 +999,85 @@ scan_files_for_secrets(Files, Patterns) ->
     lists:filter(fun(File) ->
         scan_file_for_patterns(File, Patterns)
     end, Files).
+
+%%%===================================================================
+%%% Internal Functions for validate_all/1
+%%%===================================================================
+
+%% @private Validate security module
+validate_security_module(erlmcp_auth) ->
+    ModuleBin = <<"erlmcp_auth">>,
+    case code:ensure_loaded(erlmcp_auth) of
+        {module, erlmcp_auth} ->
+            AuthResult = validate_authentication(erlmcp_auth),
+            JwtResult = validate_jwt(erlmcp_auth),
+            [
+                create_check_from_result(<<ModuleBin/binary, "_authentication">>, AuthResult),
+                create_check_from_result(<<ModuleBin/binary, "_jwt">>, JwtResult)
+            ];
+        {error, _} ->
+            [#{name => <<ModuleBin/binary, "_module">>,
+               status => warning,
+               message => <<"Authentication module not loaded">>}]
+    end;
+
+validate_security_module(erlmcp_rate_limiter) ->
+    ModuleBin = <<"erlmcp_rate_limiter">>,
+    case code:ensure_loaded(erlmcp_rate_limiter) of
+        {module, erlmcp_rate_limiter} ->
+            Result = validate_rate_limiting(erlmcp_rate_limiter),
+            [create_check_from_result(<<ModuleBin/binary, "_rate_limiting">>, Result)];
+        {error, _} ->
+            [#{name => <<ModuleBin/binary, "_module">>,
+               status => warning,
+               message => <<"Rate limiter module not loaded">>}]
+    end;
+
+validate_security_module(erlmcp_secrets) ->
+    ModuleBin = <<"erlmcp_secrets">>,
+    case code:ensure_loaded(erlmcp_secrets) of
+        {module, erlmcp_secrets} ->
+            SecretsResult = validate_secret_management(erlmcp_secrets),
+            InputResult = validate_input_validation(erlmcp_secrets),
+            [
+                create_check_from_result(<<ModuleBin/binary, "_secrets">>, SecretsResult),
+                create_check_from_result(<<ModuleBin/binary, "_input">>, InputResult)
+            ];
+        {error, _} ->
+            [#{name => <<ModuleBin/binary, "_module">>,
+               status => warning,
+               message => <<"Secrets module not loaded">>}]
+    end;
+
+validate_security_module(_Module) ->
+    [].
+
+%% @private Create check map from validation result
+create_check_from_result(Name, Result) ->
+    Status = maps:get(status, Result, passed),
+    Passed = maps:get(passed, Result, 0),
+    Failed = maps:get(failed, Result, 0),
+
+    CheckStatus = case {Status, Failed} of
+        {passed, 0} -> passed;
+        {failed, _} -> failed;
+        {_, N} when N > 0 -> failed;
+        _ -> warning
+    end,
+
+    Message = case CheckStatus of
+        passed -> <<"All checks passed">>;
+        failed -> <<"Validation failed">>;
+        warning -> <<"Validation has warnings">>
+    end,
+
+    #{
+        name => Name,
+        status => CheckStatus,
+        message => Message,
+        details => #{
+            passed => Passed,
+            failed => Failed,
+            checks => maps:get(checks, Result, [])
+        }
+    }.

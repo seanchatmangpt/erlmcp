@@ -2,6 +2,8 @@
 
 A comprehensive documentation framework following the Diátaxis methodology, designed to guide developers through understanding, implementing, and optimizing erlmcp - the Erlang/OTP MCP SDK.
 
+> **Want to run erlmcp locally?** Start with **[README_RUN_LOCAL.md](README_RUN_LOCAL.md)** for all entry points with exact commands and expected output.
+
 ## 📚 What You'll Find
 
 ### 🎯 For Every User Type

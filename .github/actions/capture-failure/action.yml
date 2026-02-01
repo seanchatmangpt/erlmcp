@@ -1,0 +1,388 @@
+name: 'Capture Failure Artifacts and Reproducer'
+description: 'Captures test failures, validation output, and benchmark data with exact reproduction commands'
+author: 'erlmcp'
+
+inputs:
+  failure-type:
+    description: 'Type of failure (compile, eunit, ct, dialyzer, xref, benchmark, validation, security)'
+    required: true
+  otp-version:
+    description: 'Erlang/OTP version used'
+    required: false
+    default: '27'
+  test-suite:
+    description: 'Specific test suite that failed (for CT/EUnit)'
+    required: false
+    default: ''
+  workload-id:
+    description: 'Benchmark workload ID (for performance tests)'
+    required: false
+    default: ''
+  failure-id:
+    description: 'Unique failure ID (defaults to timestamp-based)'
+    required: false
+    default: ''
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate Failure ID
+      id: gen_id
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.failure-id }}" ]; then
+          FAILURE_ID="${{ inputs.failure-id }}"
+        else
+          FAILURE_ID="$(date +%Y%m%d-%H%M%S)-${{ inputs.failure-type }}-${{ github.run_number }}"
+        fi
+        echo "failure_id=${FAILURE_ID}" >> $GITHUB_OUTPUT
+        echo "artifact_dir=reports/failure-${FAILURE_ID}" >> $GITHUB_OUTPUT
+        mkdir -p "reports/failure-${FAILURE_ID}"
+
+    - name: Capture Failure Artifacts
+      shell: bash
+      run: |
+        ARTIFACT_DIR="${{ steps.gen_id.outputs.artifact_dir }}"
+        FAILURE_TYPE="${{ inputs.failure-type }}"
+
+        echo "Capturing ${FAILURE_TYPE} failure artifacts..."
+
+        # Capture common artifacts
+        cp rebar.config "${ARTIFACT_DIR}/" 2>/dev/null || true
+        cp rebar.lock "${ARTIFACT_DIR}/" 2>/dev/null || true
+
+        # Capture build environment info
+        cat > "${ARTIFACT_DIR}/environment.txt" << EOF
+        Failure Type: ${FAILURE_TYPE}
+        OTP Version: ${{ inputs.otp-version }}
+        Rebar3 Version: $(rebar3 --version 2>&1 || echo "unknown")
+        Git SHA: ${{ github.sha }}
+        Git Ref: ${{ github.ref }}
+        Workflow: ${{ github.workflow }}
+        Run ID: ${{ github.run_id }}
+        Run Number: ${{ github.run_number }}
+        Actor: ${{ github.actor }}
+        Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        OS: $(uname -a)
+        EOF
+
+        # Type-specific artifact capture
+        case "${FAILURE_TYPE}" in
+          compile)
+            # Capture compilation errors
+            TERM=dumb rebar3 compile 2>&1 | tee "${ARTIFACT_DIR}/compile_output.txt" || true
+            cp -r _build/default/lib/*/ebin/*.beam "${ARTIFACT_DIR}/" 2>/dev/null || true
+            find _build -name "*.app.src" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+            ;;
+
+          eunit)
+            # Capture EUnit test results
+            cp -r _build/test/logs/* "${ARTIFACT_DIR}/" 2>/dev/null || true
+            cp -r _build/test/cover/* "${ARTIFACT_DIR}/" 2>/dev/null || true
+            find . -name "eunit.coverdata" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+
+            # Extract failed test cases
+            if [ -n "${{ inputs.test-suite }}" ]; then
+              grep -A 10 "Failed:" _build/test/logs/*.log > "${ARTIFACT_DIR}/failed_tests.txt" 2>/dev/null || true
+            fi
+            ;;
+
+          ct)
+            # Capture Common Test results
+            CT_LOGS=$(find _build/test/logs -type d -name "ct_run*" | sort | tail -1)
+            if [ -n "${CT_LOGS}" ]; then
+              cp -r "${CT_LOGS}" "${ARTIFACT_DIR}/ct_logs/" 2>/dev/null || true
+              find "${CT_LOGS}" -name "*.html" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+            fi
+            ;;
+
+          dialyzer)
+            # Capture Dialyzer warnings
+            rebar3 dialyzer 2>&1 | tee "${ARTIFACT_DIR}/dialyzer_output.txt" || true
+            find _build -name "dialyzer.log" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+            find ~/.cache/rebar3 -name "*_dialyzer_plt" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+            ;;
+
+          xref)
+            # Capture xref analysis
+            rebar3 xref 2>&1 | tee "${ARTIFACT_DIR}/xref_output.txt" || true
+            ;;
+
+          benchmark)
+            # Capture benchmark data
+            cp -r bench/reports/* "${ARTIFACT_DIR}/" 2>/dev/null || true
+            cp -r bench/baselines/* "${ARTIFACT_DIR}/" 2>/dev/null || true
+            if [ -n "${{ inputs.workload-id }}" ]; then
+              find bench -name "*${{ inputs.workload-id }}*" -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+            fi
+            ;;
+
+          validation)
+            # Capture validation output
+            cp -r reports/validation/* "${ARTIFACT_DIR}/" 2>/dev/null || true
+            find _build/test -name "*validator*" -type f -exec cp {} "${ARTIFACT_DIR}/" \; 2>/dev/null || true
+            ;;
+
+          security)
+            # Capture security scan results
+            cp -r reports/security/* "${ARTIFACT_DIR}/" 2>/dev/null || true
+            ;;
+        esac
+
+        # Capture system state
+        ps aux | grep beam > "${ARTIFACT_DIR}/processes.txt" 2>/dev/null || true
+        free -h > "${ARTIFACT_DIR}/memory.txt" 2>/dev/null || true
+        df -h > "${ARTIFACT_DIR}/disk.txt" 2>/dev/null || true
+
+    - name: Generate Reproduction Command
+      shell: bash
+      run: |
+        ARTIFACT_DIR="${{ steps.gen_id.outputs.artifact_dir }}"
+        FAILURE_TYPE="${{ inputs.failure-type }}"
+        OTP_VERSION="${{ inputs.otp-version }}"
+
+        cat > "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        #!/bin/bash
+        # Automatic failure reproducer generated by CI
+        # Failure ID: ${{ steps.gen_id.outputs.failure_id }}
+        # Generated: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        set -e
+
+        echo "=== REPRODUCER FOR ${{ inputs.failure-type }} FAILURE ==="
+        echo ""
+        echo "Failure ID: ${{ steps.gen_id.outputs.failure_id }}"
+        echo "OTP Version: ${OTP_VERSION}"
+        echo "Git SHA: ${{ github.sha }}"
+        echo "Git Ref: ${{ github.ref }}"
+        echo ""
+        echo "Prerequisites:"
+        echo "  - Erlang/OTP ${OTP_VERSION} installed"
+        echo "  - rebar3 $(rebar3 --version 2>&1 | head -1)"
+        echo "  - Git repository at commit ${{ github.sha }}"
+        echo ""
+
+        REPRO_EOF
+
+        # Add type-specific reproduction commands
+        case "${FAILURE_TYPE}" in
+          compile)
+            cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Clean build directory"
+        rm -rf _build
+
+        echo "Step 2: Run compilation"
+        TERM=dumb rebar3 compile
+
+        echo "Step 3: Verify all apps compiled"
+        for app in erlmcp_core erlmcp_transports erlmcp_observability tcps_erlmcp; do
+          if [ ! -d "_build/default/lib/$app/ebin" ]; then
+            echo "ERROR: $app did not compile"
+            exit 1
+          fi
+        done
+        REPRO_EOF
+            ;;
+
+          eunit)
+            if [ -n "${{ inputs.test-suite }}" ]; then
+              cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << REPRO_EOF
+        echo "Step 1: Run specific test suite"
+        rebar3 eunit --module=${{ inputs.test-suite }} --verbose
+
+        echo "Step 2: Run with coverage"
+        rebar3 eunit --module=${{ inputs.test-suite }} --cover --cover_export_name=coverage
+
+        echo "Step 3: Generate coverage report"
+        rebar3 cover --verbose
+        REPRO_EOF
+            else
+              cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Run all EUnit tests"
+        rebar3 eunit --cover --verbose
+
+        echo "Step 2: Check coverage threshold"
+        ./scripts/check_coverage_threshold.sh 80
+        REPRO_EOF
+            fi
+            ;;
+
+          ct)
+            if [ -n "${{ inputs.test-suite }}" ]; then
+              cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << REPRO_EOF
+        echo "Step 1: Run specific CT suite"
+        rebar3 ct --suite=${{ inputs.test-suite }} --verbose
+
+        echo "Step 2: View results"
+        find _build/test/logs -name "index.html" -exec echo "Results: {}" \;
+        REPRO_EOF
+            else
+              cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Run all CT suites"
+        rebar3 ct --verbose
+        REPRO_EOF
+            fi
+            ;;
+
+          dialyzer)
+            cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Clean PLT"
+        rm -rf _build/default/rebar3_*_plt
+
+        echo "Step 2: Build fresh PLT"
+        rebar3 dialyzer --build_plt
+
+        echo "Step 3: Run Dialyzer"
+        rebar3 dialyzer --get_warnings --error_descriptions
+        REPRO_EOF
+            ;;
+
+          xref)
+            cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Compile project"
+        TERM=dumb rebar3 compile
+
+        echo "Step 2: Run xref analysis"
+        rebar3 xref
+        REPRO_EOF
+            ;;
+
+          benchmark)
+            if [ -n "${{ inputs.workload-id }}" ]; then
+              cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << REPRO_EOF
+        echo "Step 1: Compile project"
+        TERM=dumb rebar3 compile
+
+        echo "Step 2: Run benchmark workload"
+        rebar3 shell --eval "
+          application:ensure_all_started(erlmcp_core),
+          application:ensure_all_started(erlmcp_transports),
+          erlmcp_bench_core_ops:run(<<\"${{ inputs.workload-id }}\">>),
+          init:stop().
+        " --name ci_test@localhost --setcookie ci_cookie
+
+        echo "Step 3: Compare with baseline"
+        ./tools/baseline-compare.sh --threshold 10 --workload ${{ inputs.workload-id }}
+        REPRO_EOF
+            else
+              cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Run performance regression suite"
+        rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_performance_validator_SUITE
+        REPRO_EOF
+            fi
+            ;;
+
+          validation)
+            cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Run validation suite"
+        ./scripts/validation/run-ci.sh --profile ci --output reports/validation/
+
+        echo "Step 2: Check compliance"
+        rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_protocol_validator_SUITE
+        REPRO_EOF
+            ;;
+
+          security)
+            cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+        echo "Step 1: Run security validation"
+        rebar3 eunit --module=erlmcp_security_validator_tests
+
+        echo "Step 2: Check for secrets"
+        grep -rE "(password|secret|token|api_key)\s*=\s*\"[^\"]+\"" apps/*/src/ || echo "No secrets found"
+        REPRO_EOF
+            ;;
+        esac
+
+        cat >> "${ARTIFACT_DIR}/REPRODUCER.sh" << 'REPRO_EOF'
+
+        echo ""
+        echo "=== REPRODUCTION COMPLETE ==="
+        echo "Check artifacts in: ${{ steps.gen_id.outputs.artifact_dir }}"
+        REPRO_EOF
+
+        chmod +x "${ARTIFACT_DIR}/REPRODUCER.sh"
+
+    - name: Print Reproduction Instructions
+      shell: bash
+      run: |
+        ARTIFACT_DIR="${{ steps.gen_id.outputs.artifact_dir }}"
+
+        echo ""
+        echo "╔═══════════════════════════════════════════════════════════════════════╗"
+        echo "║                      FAILURE REPRODUCER                               ║"
+        echo "╚═══════════════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Failure ID: ${{ steps.gen_id.outputs.failure_id }}"
+        echo "Failure Type: ${{ inputs.failure-type }}"
+        echo "OTP Version: ${{ inputs.otp-version }}"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "LOCAL REPRODUCTION:"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "1. Checkout the failing commit:"
+        echo "   git checkout ${{ github.sha }}"
+        echo ""
+        echo "2. Download the failure artifact from GitHub Actions:"
+        echo "   https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        echo ""
+        echo "3. Extract and run the reproducer:"
+        echo "   unzip failure-${{ steps.gen_id.outputs.failure_id }}.zip"
+        echo "   cd ${ARTIFACT_DIR}"
+        echo "   ./REPRODUCER.sh"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "QUICK REPRODUCTION (without artifact download):"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        cat "${ARTIFACT_DIR}/REPRODUCER.sh" | grep -A 100 "^echo \"Step" || true
+        echo ""
+        echo "╚═══════════════════════════════════════════════════════════════════════╝"
+        echo ""
+
+    - name: Upload Failure Artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: failure-${{ steps.gen_id.outputs.failure_id }}
+        path: ${{ steps.gen_id.outputs.artifact_dir }}
+        retention-days: 30
+
+    - name: Add to Step Summary
+      shell: bash
+      if: always()
+      run: |
+        cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY_EOF'
+        ## 🔴 Failure Captured
+
+        **Failure ID:** `${{ steps.gen_id.outputs.failure_id }}`
+        **Type:** ${{ inputs.failure-type }}
+        **OTP Version:** ${{ inputs.otp-version }}
+
+        ### Quick Reproduction
+
+        ```bash
+        # Clone and checkout
+        git clone https://github.com/${{ github.repository }}
+        cd erlmcp
+        git checkout ${{ github.sha }}
+
+        # Run reproducer
+        SUMMARY_EOF
+
+        cat "${ARTIFACT_DIR}/REPRODUCER.sh" | grep "^rebar3\|^./\|^TERM=" | head -5 >> $GITHUB_STEP_SUMMARY || true
+
+        cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY_EOF'
+        ```
+
+        ### Artifacts
+
+        Download the complete failure bundle: `failure-${{ steps.gen_id.outputs.failure_id }}.zip`
+
+        Contains:
+        - Environment details
+        - Test/build logs
+        - Reproduction script
+        - System state snapshot
+
+        SUMMARY_EOF

@@ -59,6 +59,13 @@ jobs:
         fi
         echo "compile_status=success" >> $GITHUB_OUTPUT
 
+    - name: Capture compilation failure
+      if: failure() && steps.compile.outcome == 'failure'
+      uses: ./.github/actions/capture-failure
+      with:
+        failure-type: compile
+        otp-version: ${{ matrix.otp_version }}
+
     - name: Verify umbrella apps compiled
       run: |
         echo "Checking compiled umbrella applications..."
@@ -118,6 +125,13 @@ jobs:
         fi
       continue-on-error: true
 
+    - name: Capture xref failure
+      if: failure() && steps.xref.outcome == 'failure'
+      uses: ./.github/actions/capture-failure
+      with:
+        failure-type: xref
+        otp-version: ${{ matrix.otp_version }}
+
     # ========================================================================
     # BLOCKING GATE 3: DIALYZER - MUST PASS (type checking)
     # ========================================================================
@@ -138,6 +152,13 @@ jobs:
         echo "dialyzer_status=success" >> $GITHUB_OUTPUT
       continue-on-error: ${{ matrix.otp_version == 28 }}
 
+    - name: Capture dialyzer failure
+      if: failure() && steps.dialyzer.outcome == 'failure'
+      uses: ./.github/actions/capture-failure
+      with:
+        failure-type: dialyzer
+        otp-version: ${{ matrix.otp_version }}
+
     # ========================================================================
     # BLOCKING GATE 4: TESTS - MUST PASS (≥90% pass rate)
     # ========================================================================
@@ -152,10 +173,17 @@ jobs:
         if [ $EUNIT_EXIT -ne 0 ]; then
           echo "::error::EUnit tests FAILED - This BLOCKS the merge"
           echo "eunit_status=failed" >> $GITHUB_OUTPUT
-          # Don't exit yet, let coverage gate handle it
+          exit 1
         else
           echo "eunit_status=success" >> $GITHUB_OUTPUT
         fi
+
+    - name: Capture EUnit failure
+      if: failure() && steps.eunit.outcome == 'failure'
+      uses: ./.github/actions/capture-failure
+      with:
+        failure-type: eunit
+        otp-version: ${{ matrix.otp_version }}
 
     - name: Run Common Test integration tests
       id: ct
@@ -172,6 +200,13 @@ jobs:
           echo "ct_status=success" >> $GITHUB_OUTPUT
         fi
       continue-on-error: true
+
+    - name: Capture CT failure
+      if: failure() && steps.ct.outcome == 'failure'
+      uses: ./.github/actions/capture-failure
+      with:
+        failure-type: ct
+        otp-version: ${{ matrix.otp_version }}
 
     # ========================================================================
     # BLOCKING GATE 5: COVERAGE - MUST BE ≥80%
@@ -202,6 +237,13 @@ jobs:
           echo "::endgroup::"
           echo "coverage_status=skipped" >> $GITHUB_OUTPUT
         fi
+
+    - name: Capture coverage failure
+      if: failure() && steps.coverage.outcome == 'failure'
+      uses: ./.github/actions/capture-failure
+      with:
+        failure-type: eunit
+        otp-version: ${{ matrix.otp_version }}
 
     - name: Upload coverage HTML report
       if: always()
@@ -254,6 +296,14 @@ jobs:
         fi
       timeout-minutes: 5
       continue-on-error: true
+
+    - name: Capture benchmark failure
+      if: failure() && steps.benchmark.outcome == 'failure'
+      uses: ./.github/actions/capture-failure
+      with:
+        failure-type: benchmark
+        otp-version: ${{ matrix.otp_version }}
+        workload-id: core_ops_1k
 
     # ========================================================================
     # FINAL GATE STATUS - Fail entire job if any blocking gate failed

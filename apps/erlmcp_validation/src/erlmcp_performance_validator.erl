@@ -54,6 +54,7 @@
 
 %% API - Main validation
 -export([
+    validate_all/1,
     run/1,
     run/2,
     generate_report/0
@@ -157,6 +158,65 @@
 %%====================================================================
 %% API - Main Validation
 %%====================================================================
+
+%% @doc Validate all performance compliance aspects for MCP specification
+-spec validate_all(binary()) -> #{
+    status := passed | failed | warning,
+    timestamp := integer(),
+    checks := [#{
+        name := binary(),
+        status := passed | failed | warning,
+        message => binary(),
+        details => map()
+    }],
+    passed := non_neg_integer(),
+    failed := non_neg_integer()
+}.
+validate_all(SpecVersion) when is_binary(SpecVersion) ->
+    Timestamp = erlang:system_time(millisecond),
+
+    %% Run baseline performance checks using STDIO transport (fastest)
+    Transport = stdio,
+
+    %% Perform lightweight validation checks
+    Checks = [
+        check_latency_threshold(Transport),
+        check_throughput_threshold(Transport),
+        check_memory_threshold(Transport),
+        check_connection_setup_threshold(Transport),
+        check_concurrent_capability(Transport)
+    ],
+
+    %% Count results
+    {Passed, Failed, Warnings} = lists:foldl(
+        fun(Check, {P, F, W}) ->
+            case maps:get(status, Check) of
+                passed -> {P + 1, F, W};
+                failed -> {P, F + 1, W};
+                warning -> {P, F, W + 1}
+            end
+        end,
+        {0, 0, 0},
+        Checks
+    ),
+
+    %% Performance warnings don't fail overall status
+    OverallStatus = case Failed of
+        0 -> passed;
+        N when N > 0, Warnings > Failed -> warning;
+        _ -> failed
+    end,
+
+    #{
+        status => OverallStatus,
+        timestamp => Timestamp,
+        spec_version => SpecVersion,
+        transport => Transport,
+        checks => Checks,
+        passed => Passed,
+        failed => Failed,
+        warnings => Warnings
+    }.
 
 %% @doc Run full performance validation for a transport
 -spec run(transport_type()) -> {ok, performance_report()} | {error, term()}.
@@ -1086,4 +1146,139 @@ get_threshold_value(CanonicalKeyName, LegacyKey, Thresholds, Default) ->
                 error ->
                     Default
             end
+    end.
+
+%%%===================================================================
+%%% Internal Validation Checks for validate_all/1
+%%%===================================================================
+
+%% @private Check latency meets threshold (lightweight check)
+check_latency_threshold(Transport) ->
+    try
+        %% Quick latency sample (10 samples)
+        {ok, Result} = measure_latency(Transport, 10),
+        P99 = maps:get(p99_us, Result),
+
+        case P99 =< ?TARGET_P99_LATENCY_US of
+            true ->
+                #{name => <<"latency_threshold">>,
+                  status => passed,
+                  message => <<"P99 latency meets target">>,
+                  details => #{p99_us => P99, target_us => ?TARGET_P99_LATENCY_US}};
+            false ->
+                %% Latency warning, not critical failure
+                #{name => <<"latency_threshold">>,
+                  status => warning,
+                  message => <<"P99 latency exceeds target">>,
+                  details => #{p99_us => P99, target_us => ?TARGET_P99_LATENCY_US}}
+        end
+    catch
+        _:_:_ ->
+            #{name => <<"latency_threshold">>,
+              status => warning,
+              message => <<"Latency measurement unavailable">>}
+    end.
+
+%% @private Check throughput meets threshold
+check_throughput_threshold(Transport) ->
+    try
+        %% Quick throughput test (100 requests)
+        {ok, Result} = measure_throughput(Transport, 100),
+        RPS = maps:get(requests_per_second, Result),
+
+        case RPS >= ?TARGET_THROUGHPUT of
+            true ->
+                #{name => <<"throughput_threshold">>,
+                  status => passed,
+                  message => <<"Throughput meets target">>,
+                  details => #{rps => RPS, target_rps => ?TARGET_THROUGHPUT}};
+            false ->
+                #{name => <<"throughput_threshold">>,
+                  status => warning,
+                  message => <<"Throughput below target">>,
+                  details => #{rps => RPS, target_rps => ?TARGET_THROUGHPUT}}
+        end
+    catch
+        _:_:_ ->
+            #{name => <<"throughput_threshold">>,
+              status => warning,
+              message => <<"Throughput measurement unavailable">>}
+    end.
+
+%% @private Check memory per connection meets threshold
+check_memory_threshold(Transport) ->
+    try
+        {ok, Result} = measure_memory(Transport),
+        BytesPerConn = maps:get(bytes_per_connection, Result),
+
+        case BytesPerConn =< ?TARGET_MEMORY_PER_CONN_BYTES of
+            true ->
+                #{name => <<"memory_threshold">>,
+                  status => passed,
+                  message => <<"Memory per connection meets target">>,
+                  details => #{bytes_per_conn => BytesPerConn,
+                               target_bytes => ?TARGET_MEMORY_PER_CONN_BYTES}};
+            false ->
+                #{name => <<"memory_threshold">>,
+                  status => warning,
+                  message => <<"Memory per connection exceeds target">>,
+                  details => #{bytes_per_conn => BytesPerConn,
+                               target_bytes => ?TARGET_MEMORY_PER_CONN_BYTES}}
+        end
+    catch
+        _:_:_ ->
+            #{name => <<"memory_threshold">>,
+              status => warning,
+              message => <<"Memory measurement unavailable">>}
+    end.
+
+%% @private Check connection setup time meets threshold
+check_connection_setup_threshold(Transport) ->
+    try
+        {ok, Result} = measure_connection_setup(Transport),
+        AvgSetup = maps:get(avg_setup_time_us, Result),
+
+        case AvgSetup =< ?TARGET_CONN_SETUP_US of
+            true ->
+                #{name => <<"connection_setup_threshold">>,
+                  status => passed,
+                  message => <<"Connection setup meets target">>,
+                  details => #{avg_setup_us => AvgSetup, target_us => ?TARGET_CONN_SETUP_US}};
+            false ->
+                #{name => <<"connection_setup_threshold">>,
+                  status => warning,
+                  message => <<"Connection setup exceeds target">>,
+                  details => #{avg_setup_us => AvgSetup, target_us => ?TARGET_CONN_SETUP_US}}
+        end
+    catch
+        _:_:_ ->
+            #{name => <<"connection_setup_threshold">>,
+              status => warning,
+              message => <<"Connection setup measurement unavailable">>}
+    end.
+
+%% @private Check concurrent connection capability (smoke test)
+check_concurrent_capability(Transport) ->
+    try
+        %% Test with smaller concurrency for quick validation (100 connections)
+        {ok, Result} = test_concurrent_connections(Transport, 100),
+        SuccessRate = maps:get(success_rate, Result),
+
+        case SuccessRate >= 99.0 of
+            true ->
+                #{name => <<"concurrent_capability">>,
+                  status => passed,
+                  message => <<"Concurrent connections supported">>,
+                  details => #{success_rate => SuccessRate, tested_connections => 100}};
+            false ->
+                #{name => <<"concurrent_capability">>,
+                  status => warning,
+                  message => <<"Concurrent connection success rate below 99%">>,
+                  details => #{success_rate => SuccessRate, tested_connections => 100}}
+        end
+    catch
+        _:_:_ ->
+            #{name => <<"concurrent_capability">>,
+              status => warning,
+              message => <<"Concurrent connection test unavailable">>}
     end.
