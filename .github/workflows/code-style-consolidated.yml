@@ -1,0 +1,290 @@
+name: Code Style and Formatting
+
+on:
+  push:
+    branches: [main, 'release/**', 'feature/**']
+    paths:
+      - 'apps/*/src/**/*.erl'
+      - 'apps/*/include/**/*.hrl'
+      - 'apps/*/test/**/*.erl'
+  pull_request:
+    branches: [main, 'release/**']
+    paths:
+      - 'apps/*/src/**/*.erl'
+      - 'apps/*/include/**/*.hrl'
+      - 'apps/*/test/**/*.erl'
+  workflow_dispatch:
+
+env:
+  OTP_VERSION: '26'
+  REBAR3_VERSION: '3.25'
+
+jobs:
+  # =============================================================================
+  # JOB 1: Code Formatting
+  # =============================================================================
+  code-formatting:
+    name: Code Formatting Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-format-${{ hashFiles('rebar.lock') }}
+
+      - name: Check code formatting
+        id: format
+        run: |
+          echo "::group::Code Formatting Check"
+
+          # Check if rebar3 format plugin is configured
+          if grep -q "rebar3_format" rebar.config; then
+            echo "Running rebar3 format --verify..."
+            if rebar3 format --verify 2>&1 | tee format_output.log; then
+              echo "format_status=success" >> $GITHUB_OUTPUT
+              echo "✅ All code is properly formatted"
+            else
+              echo "format_status=failed" >> $GITHUB_OUTPUT
+              echo "::error::Code formatting issues found"
+
+              # Show diff of unformatted files
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "## Formatting Issues" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              cat format_output.log >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+
+              echo "::endgroup::"
+              exit 1
+            fi
+          else
+            echo "::warning::rebar3_format plugin not configured"
+            echo "format_status=skipped" >> $GITHUB_OUTPUT
+          fi
+
+          echo "::endgroup::"
+
+      - name: Generate formatting report
+        if: always()
+        run: |
+          echo "## Code Formatting Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.format.outputs.format_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.format.outputs.format_status }}" = "success" ]; then
+            echo "✅ All Erlang source files are properly formatted." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.format.outputs.format_status }}" = "failed" ]; then
+            echo "❌ Formatting issues detected. Run \`rebar3 format\` locally to fix." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Formatting check skipped (plugin not configured)." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # =============================================================================
+  # JOB 2: Linting
+  # =============================================================================
+  linting:
+    name: Code Linting
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-lint-${{ hashFiles('rebar.lock') }}
+
+      - name: Run linter
+        id: lint
+        run: |
+          echo "::group::Code Linting"
+
+          # Check if rebar3 lint plugin is configured
+          if grep -q "rebar3_lint" rebar.config; then
+            echo "Running rebar3 lint..."
+            if rebar3 lint 2>&1 | tee lint_output.log; then
+              echo "lint_status=success" >> $GITHUB_OUTPUT
+              echo "✅ Linting passed"
+            else
+              echo "lint_status=warning" >> $GITHUB_OUTPUT
+              echo "::warning::Linting found issues"
+            fi
+          else
+            echo "::warning::rebar3_lint plugin not configured"
+            echo "lint_status=skipped" >> $GITHUB_OUTPUT
+          fi
+
+          echo "::endgroup::"
+        continue-on-error: true
+
+      - name: Generate linting report
+        if: always()
+        run: |
+          echo "## Code Linting Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.lint.outputs.lint_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.lint.outputs.lint_status }}" = "success" ]; then
+            echo "✅ No linting issues detected." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ steps.lint.outputs.lint_status }}" = "warning" ]; then
+            echo "⚠️ Linting issues detected. Review workflow logs for details." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Linting skipped (plugin not configured)." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # =============================================================================
+  # JOB 3: Anti-Patterns Detection
+  # =============================================================================
+  anti-patterns:
+    name: Anti-Patterns Detection
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect anti-patterns
+        id: antipatterns
+        run: |
+          echo "::group::Anti-Patterns Detection"
+
+          ISSUES_FOUND=false
+
+          # Check for mock usage (violates Chicago TDD)
+          echo "Checking for mock usage..."
+          if git ls-files '*.erl' | xargs grep -nH -E '(meck:|test_server:|mock_)' 2>/dev/null; then
+            echo "::warning::Mock usage detected (violates Chicago TDD principle)"
+            ISSUES_FOUND=true
+          fi
+
+          # Check for large init/1 functions (should be async)
+          echo "Checking for blocking init/1..."
+          if git ls-files 'apps/*/src/*.erl' | xargs grep -A 10 "^init(" 2>/dev/null | grep -E "(timer:sleep|receive|httpc:request)" 2>/dev/null; then
+            echo "::warning::Potentially blocking init/1 detected"
+            ISSUES_FOUND=true
+          fi
+
+          # Check for unsupervised spawn
+          echo "Checking for unsupervised spawn..."
+          if git ls-files 'apps/*/src/*.erl' | xargs grep -nH "spawn(" 2>/dev/null | grep -v "supervisor:" | grep -v "%.*spawn"; then
+            echo "::warning::Unsupervised spawn detected (should use supervisor)"
+            ISSUES_FOUND=true
+          fi
+
+          # Check for missing timeouts in gen_server calls
+          echo "Checking for gen_server:call without timeout..."
+          if git ls-files 'apps/*/src/*.erl' | xargs grep -nH "gen_server:call(" 2>/dev/null | grep -v ", [0-9]" | grep -v ", infinity"; then
+            echo "::warning::gen_server:call without timeout detected"
+            ISSUES_FOUND=true
+          fi
+
+          echo "::endgroup::"
+
+          if [ "$ISSUES_FOUND" = true ]; then
+            echo "antipatterns_status=warning" >> $GITHUB_OUTPUT
+            echo "⚠️ Anti-patterns detected"
+          else
+            echo "antipatterns_status=success" >> $GITHUB_OUTPUT
+            echo "✅ No anti-patterns detected"
+          fi
+
+      - name: Generate anti-patterns report
+        if: always()
+        run: |
+          echo "## Anti-Patterns Detection Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.antipatterns.outputs.antipatterns_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Checks Performed" >> $GITHUB_STEP_SUMMARY
+          echo "- ❌ Mock usage (violates Chicago TDD)" >> $GITHUB_STEP_SUMMARY
+          echo "- ❌ Blocking init/1 (should be async)" >> $GITHUB_STEP_SUMMARY
+          echo "- ❌ Unsupervised spawn (should use supervisor)" >> $GITHUB_STEP_SUMMARY
+          echo "- ❌ gen_server:call without timeout" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.antipatterns.outputs.antipatterns_status }}" = "warning" ]; then
+            echo "⚠️ Review workflow logs for specific line numbers and files." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Code follows OTP best practices." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # =============================================================================
+  # JOB 4: Code Style Summary
+  # =============================================================================
+  style-summary:
+    name: Code Style Summary
+    runs-on: ubuntu-22.04
+    needs: [code-formatting, linting, anti-patterns]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Code Style Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Formatting | ${{ needs.code-formatting.result == 'success' && '✅ PASS' || needs.code-formatting.result == 'skipped' && '⚠️ SKIPPED' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linting | ${{ needs.linting.result == 'success' && '✅ PASS' || '⚠️ WARNINGS' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Anti-Patterns | ${{ needs.anti-patterns.result == 'success' && '✅ PASS' || '⚠️ WARNINGS' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.code-formatting.result }}" = "success" ]; then
+            echo "✅ **Overall Status:** PASS" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Code style and formatting meets project standards." >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.code-formatting.result }}" = "failure" ]; then
+            echo "❌ **Overall Status:** FAIL" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Fix formatting issues by running \`rebar3 format\` locally." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ **Overall Status:** WARNINGS" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Review linting and anti-pattern warnings." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment on PR with results
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Code formatting check failed.\n\nTo fix formatting issues:\n```bash\nrebar3 format\ngit add .\ngit commit -m "fix: code formatting"\ngit push\n```\n\nFor linting warnings, review the CI logs for specific issues.'
+            })
+
+      - name: Fail if formatting failed
+        if: needs.code-formatting.result == 'failure'
+        run: |
+          echo "❌ Code formatting failed - blocking merge"
+          exit 1
