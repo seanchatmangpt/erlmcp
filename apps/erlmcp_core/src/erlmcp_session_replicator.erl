@@ -37,6 +37,7 @@
     handle_call/3,
     handle_cast/2,
     handle_info/2,
+    handle_continue/2,
     terminate/2,
     code_change/3
 ]).
@@ -143,26 +144,18 @@ init([]) ->
     LocalNode = node(),
     ReplicaNodes = get_replica_nodes(),
 
-    %% Initialize Mnesia tables
-    case init_mnesia_tables(LocalNode, ReplicaNodes) of
-        ok ->
-            %% Initialize replication queue
-            Queue = queue:new(),
+    %% Fast init - return immediately without blocking Mnesia table creation
+    %% Tables will be initialized asynchronously in handle_continue
+    State = #state{
+        local_node = LocalNode,
+        replica_nodes = ReplicaNodes,
+        replication_queue = queue:new(),
+        queue_timer = undefined,
+        batch_size = 100,
+        batch_interval = 1000
+    },
 
-            %% Start batch replication timer
-            {ok, Timer} = timer:send_interval(1000, flush_queue),
-
-            {ok, #state{
-                local_node = LocalNode,
-                replica_nodes = ReplicaNodes,
-                replication_queue = Queue,
-                queue_timer = Timer,
-                batch_size = 100,
-                batch_interval = 1000
-            }};
-        {error, Reason} ->
-            {stop, Reason}
-    end.
+    {ok, State, {continue, init_mnesia_tables}}.
 
 %% @private
 handle_call({sync_replicate, SessionId, Session}, _From, State) ->
@@ -213,18 +206,20 @@ handle_call(get_replication_status, _From, State) ->
     {reply, {ok, Status}, State};
 
 handle_call({bootstrap_node, Node}, _From, State) ->
-    %% Bootstrap a new node by sending all sessions
-    case net_adm:ping(Node) of
-        pong ->
-            %% Get all local sessions
-            Sessions = get_all_local_sessions(),
+    %% Bootstrap a new node asynchronously to avoid blocking handle_call
+    %% Spawn async worker to perform bootstrap (prevents blocking on network I/O)
+    Self = self(),
+    spawn(fun() ->
+        %% Check node availability with timeout (non-blocking for caller)
+        case rpc:call(Node, erlang, node, [], 1000) of
+            Node ->
+                %% Node is reachable, proceed with bootstrap
+                Sessions = get_all_local_sessions(),
+                BatchSize = 100,
+                Batches = partition_list(Sessions, BatchSize),
 
-            %% Send batches to bootstrap node
-            BatchSize = 100,
-            Batches = partition_list(Sessions, BatchSize),
-
-            BootstrapFun = fun() ->
-                lists:foreach(fun(Batch) ->
+                %% Bootstrap with RPC timeouts per batch
+                Results = lists:map(fun(Batch) ->
                     rpc:call(Node, mnesia, transaction, [fun() ->
                         lists:foreach(fun({SessId, Sess, VClock}) ->
                             Record = #replica_state{
@@ -236,21 +231,28 @@ handle_call({bootstrap_node, Node}, _From, State) ->
                             },
                             mnesia:write(?REPLICA_TABLE, Record, write)
                         end, Batch)
-                    end])
-                end, Batches)
-            end,
+                    end], 3000)  % 3 second timeout per batch
+                end, Batches),
 
-            case BootstrapFun() of
-                ok ->
-                    %% Add node to replica list
-                    NewReplicaNodes = lists:usort([Node | State#state.replica_nodes]),
-                    {reply, {ok, length(Sessions)}, State#state{replica_nodes = NewReplicaNodes}};
-                {error, Reason} ->
-                    {reply, {error, Reason}, State}
-            end;
-        pang ->
-            {reply, {error, node_unreachable}, State}
-    end;
+                %% Check if any batch succeeded
+                case lists:any(fun({atomic, ok}) -> true; (_) -> false end, Results) of
+                    true ->
+                        %% Notify replicator to add node to replica list
+                        gen_server:cast(Self, {bootstrap_complete, Node, length(Sessions)});
+                    false ->
+                        ?LOG_ERROR("Bootstrap failed for node ~p: all batches failed", [Node])
+                end;
+            {error, timeout} ->
+                ?LOG_ERROR("Bootstrap failed for node ~p: timeout", [Node]);
+            {badrpc, Reason} ->
+                ?LOG_ERROR("Bootstrap failed for node ~p: ~p", [Node, Reason]);
+            _Other ->
+                ?LOG_ERROR("Bootstrap failed for node ~p: node unreachable", [Node])
+        end
+    end),
+
+    %% Return immediately - bootstrap happens asynchronously
+    {reply, {ok, bootstrap_started}, State};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -275,6 +277,12 @@ handle_cast({replicate_async, SessionId, Session}, State) ->
     end,
 
     {noreply, NewState};
+
+handle_cast({bootstrap_complete, Node, SessionCount}, State) ->
+    %% Bootstrap completed successfully, add node to replica list
+    NewReplicaNodes = lists:usort([Node | State#state.replica_nodes]),
+    ?LOG_INFO("Bootstrap complete for node ~p: ~p sessions replicated", [Node, SessionCount]),
+    {noreply, State#state{replica_nodes = NewReplicaNodes}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -318,6 +326,21 @@ handle_info({'DOWN', _Ref, process, _Pid, _Reason}, State) ->
 
 handle_info(_Info, State) ->
     {noreply, State}.
+
+%% @private
+handle_continue(init_mnesia_tables, State) ->
+    %% Initialize Mnesia tables asynchronously (after init/1 returns)
+    case init_mnesia_tables(State#state.local_node, State#state.replica_nodes) of
+        ok ->
+            %% Start batch replication timer
+            {ok, Timer} = timer:send_interval(State#state.batch_interval, flush_queue),
+            ?LOG_INFO("Session replicator initialized successfully with Mnesia tables", []),
+            {noreply, State#state{queue_timer = Timer}};
+        {error, Reason} ->
+            %% Log error but continue in degraded mode (no replication)
+            ?LOG_ERROR("Failed to initialize Mnesia tables: ~p. Replication disabled.", [Reason]),
+            {noreply, State}
+    end.
 
 %% @private
 terminate(_Reason, #state{queue_timer = Timer}) ->
@@ -416,37 +439,38 @@ increment_vector_clock(VClock, Node) ->
     maps:put(Node, CurrentVersion + 1, VClock).
 
 %% @doc Replicate session to all replica nodes
+%% Uses RPC with timeout instead of blocking net_adm:ping
 -spec replicate_to_nodes(session_id(), session(), vector_clock(), #state{}) ->
     {ok, [node()]} | {error, term()}.
 replicate_to_nodes(_SessionId, _Session, _VClock, State) ->
     ReplicaNodes = State#state.replica_nodes,
     LocalNode = State#state.local_node,
 
-    %% Filter out local node and unavailable nodes
-    AvailableNodes = lists:filter(fun(Node) ->
-        Node =/= LocalNode andalso net_adm:ping(Node) =:= pong
-    end, ReplicaNodes),
+    %% Filter out local node
+    RemoteNodes = lists:filter(fun(Node) -> Node =/= LocalNode end, ReplicaNodes),
 
-    %% If no replica nodes available, return empty list (success)
-    case AvailableNodes of
+    %% If no replica nodes configured, return empty list (success)
+    case RemoteNodes of
         [] ->
             {ok, []};
         _ ->
-            %% Replicate to available nodes
+            %% Replicate to remote nodes with RPC timeout (non-blocking check)
             Results = lists:map(fun(Node) ->
-                rpc:call(Node, mnesia, transaction, [fun() ->
+                {Node, rpc:call(Node, mnesia, transaction, [fun() ->
                     %% Just verify node is accessible
                     {atomic, ok}
-                end], 3000)
-            end, AvailableNodes),
+                end], 3000)}  % 3 second timeout per node
+            end, RemoteNodes),
 
-            %% Collect successful replications
+            %% Collect successful replications (includes implicit availability check)
             SuccessfulNodes = lists:foldl(fun({Node, Result}, Acc) ->
                 case Result of
                     {atomic, ok} -> [Node | Acc];
+                    {badrpc, _} -> Acc;  % Node unreachable
+                    {error, _} -> Acc;   % RPC error
                     _ -> Acc
                 end
-            end, [], lists:zip(AvailableNodes, Results)),
+            end, [], Results),
 
             case SuccessfulNodes of
                 [] ->
@@ -466,7 +490,8 @@ store_replica_state(ReplicaState) ->
         mnesia:write(?VECTOR_CLOCK_TABLE, {SessionId, VClock}, write)
     end,
 
-    case mnesia:transaction(Transaction) of
+    %% Write replication state - 5000ms timeout
+    case transaction_with_timeout(Transaction, 5000) of
         {atomic, ok} -> ok;
         {aborted, Reason} -> {error, Reason}
     end.
@@ -509,4 +534,24 @@ maybe_flush_queue(Queue, State) ->
             ok;
         false ->
             ok
+    end.
+
+%% @private Execute Mnesia transaction with timeout to prevent indefinite hangs.
+%% Mnesia transactions don't have built-in timeout support, so we wrap them
+%% in a process with a timeout to prevent lock contention or network partition hangs.
+-spec transaction_with_timeout(fun(() -> term()), timeout()) ->
+    {atomic, term()} | {aborted, term()}.
+transaction_with_timeout(Fun, Timeout) ->
+    Parent = self(),
+    Ref = make_ref(),
+    Pid = spawn_link(fun() ->
+        Result = mnesia:transaction(Fun),
+        Parent ! {Ref, Result}
+    end),
+
+    receive
+        {Ref, Result} -> Result
+    after Timeout ->
+        exit(Pid, kill),
+        {aborted, timeout}
     end.

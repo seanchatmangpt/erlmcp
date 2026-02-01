@@ -44,9 +44,10 @@
     cache :: ets:tid(),              % secret_key -> {value, expires_at}
     backend :: backend(),
     backend_config :: map(),
-    encryption_key :: binary(),
+    encryption_key :: binary() | undefined,
     ttl_seconds :: pos_integer(),
-    storage_path :: file:filename()
+    storage_path :: file:filename(),
+    pending_requests = [] :: [{term(), {pid(), term()}}]  % Queued requests during async init
 }).
 
 -type state() :: #state{}.
@@ -138,27 +139,62 @@ init([Config]) ->
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()} | {noreply, state()}.
-handle_call({get_secret, Key}, _From, State) ->
-    Result = do_get_secret(Key, State),
-    {reply, Result, State};
+handle_call({get_secret, Key} = Request, From, State) ->
+    case State#state.encryption_key of
+        undefined ->
+            %% Queue request until async init completes
+            NewPending = [{Request, From} | State#state.pending_requests],
+            {noreply, State#state{pending_requests = NewPending}};
+        _Key ->
+            Result = do_get_secret(Key, State),
+            {reply, Result, State}
+    end;
 
-handle_call({set_secret, Key, Value}, _From, State) ->
-    Result = do_set_secret(Key, Value, State),
-    {reply, Result, State};
+handle_call({set_secret, Key, Value} = Request, From, State) ->
+    case State#state.encryption_key of
+        undefined ->
+            %% Queue request until async init completes
+            NewPending = [{Request, From} | State#state.pending_requests],
+            {noreply, State#state{pending_requests = NewPending}};
+        _Key ->
+            Result = do_set_secret(Key, Value, State),
+            {reply, Result, State}
+    end;
 
-handle_call({delete_secret, Key}, _From, State) ->
-    Result = do_delete_secret(Key, State),
-    % Also clear cache
-    ets:delete(State#state.cache, Key),
-    {reply, Result, State};
+handle_call({delete_secret, Key} = Request, From, State) ->
+    case State#state.encryption_key of
+        undefined ->
+            %% Queue request until async init completes
+            NewPending = [{Request, From} | State#state.pending_requests],
+            {noreply, State#state{pending_requests = NewPending}};
+        _Key ->
+            Result = do_delete_secret(Key, State),
+            % Also clear cache
+            ets:delete(State#state.cache, Key),
+            {reply, Result, State}
+    end;
 
-handle_call({rotate_secret, Key}, _From, State) ->
-    Result = do_rotate_secret(Key, State),
-    {reply, Result, State};
+handle_call({rotate_secret, Key} = Request, From, State) ->
+    case State#state.encryption_key of
+        undefined ->
+            %% Queue request until async init completes
+            NewPending = [{Request, From} | State#state.pending_requests],
+            {noreply, State#state{pending_requests = NewPending}};
+        _Key ->
+            Result = do_rotate_secret(Key, State),
+            {reply, Result, State}
+    end;
 
-handle_call(list_secrets, _From, State) ->
-    Result = do_list_secrets(State),
-    {reply, Result, State};
+handle_call(list_secrets = Request, From, State) ->
+    case State#state.encryption_key of
+        undefined ->
+            %% Queue request until async init completes
+            NewPending = [{Request, From} | State#state.pending_requests],
+            {noreply, State#state{pending_requests = NewPending}};
+        _Key ->
+            Result = do_list_secrets(State),
+            {reply, Result, State}
+    end;
 
 handle_call({configure_backend, Backend, Config}, _From, State) ->
     NewState = State#state{
@@ -183,7 +219,10 @@ handle_info({init_async, Config}, State) ->
     StorageDir = filename:dirname(State#state.storage_path),
     ok = filelib:ensure_dir(StorageDir ++ "/"),
     logger:info("Async initialization complete, encryption key loaded"),
-    {noreply, State#state{encryption_key = EncryptionKey}};
+
+    %% Process queued requests now that encryption key is available
+    NewState = State#state{encryption_key = EncryptionKey},
+    process_pending_requests(NewState);
 
 handle_info(cleanup_cache, State) ->
     Now = erlang:system_time(second),
@@ -271,6 +310,32 @@ do_rotate_secret(Key, State) ->
 %% @private List secrets from backend.
 do_list_secrets(State) ->
     list_from_backend(State).
+
+%% @private Process pending requests after async initialization completes.
+-spec process_pending_requests(state()) -> {noreply, state()}.
+process_pending_requests(State) ->
+    PendingRequests = lists:reverse(State#state.pending_requests),
+    logger:info("Processing ~p pending requests after async init", [length(PendingRequests)]),
+
+    %% Process each queued request
+    lists:foreach(fun({Request, From}) ->
+        Result = case Request of
+            {get_secret, Key} ->
+                do_get_secret(Key, State);
+            {set_secret, Key, Value} ->
+                do_set_secret(Key, Value, State);
+            {delete_secret, Key} ->
+                ets:delete(State#state.cache, Key),
+                do_delete_secret(Key, State);
+            {rotate_secret, Key} ->
+                do_rotate_secret(Key, State);
+            list_secrets ->
+                do_list_secrets(State)
+        end,
+        gen_server:reply(From, Result)
+    end, PendingRequests),
+
+    {noreply, State#state{pending_requests = []}}.
 
 %% @private Fetch secret from configured backend.
 fetch_from_backend(Key, #state{backend = vault, backend_config = Config}) ->
@@ -615,57 +680,47 @@ vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
     case gun:open(HostStr, Port, #{transport => Transport, protocols => [http]}) of
         {ok, ConnPid} ->
             MonRef = monitor(process, ConnPid),
+            try
+                % Wait for connection up
+                case gun:await_up(ConnPid, Timeout) of
+                    {up, _Protocol} ->
+                        % Make request
+                        StreamRef = case Method of
+                            get -> gun:get(ConnPid, Path, maps:to_list(Headers));
+                            post -> gun:post(ConnPid, Path, maps:to_list(Headers), Body);
+                            delete -> gun:delete(ConnPid, Path, maps:to_list(Headers))
+                        end,
 
-            % Wait for connection up
-            case gun:await_up(ConnPid, Timeout) of
-                {up, _Protocol} ->
-                    % Make request
-                    StreamRef = case Method of
-                        get -> gun:get(ConnPid, Path, maps:to_list(Headers));
-                        post -> gun:post(ConnPid, Path, maps:to_list(Headers), Body);
-                        delete -> gun:delete(ConnPid, Path, maps:to_list(Headers))
-                    end,
-
-                    % Wait for response
-                    case gun:await(ConnPid, StreamRef, Timeout) of
-                        {response, fin, Status, _RespHeaders} when Status >= 200, Status < 300 ->
-                            demonitor(MonRef, [flush]),
-                            gun:close(ConnPid),
-                            {ok, <<>>};
-                        {response, nofin, Status, _RespHeaders} when Status >= 200, Status < 300 ->
-                            % Get body
-                            case gun:await_body(ConnPid, StreamRef, Timeout) of
-                                {ok, ResponseBody} ->
-                                    demonitor(MonRef, [flush]),
-                                    gun:close(ConnPid),
-                                    {ok, ResponseBody};
-                                {error, Reason} ->
-                                    demonitor(MonRef, [flush]),
-                                    gun:close(ConnPid),
-                                    {error, {body_read_failed, Reason}}
-                            end;
-                        {response, fin, Status, _RespHeaders} ->
-                            demonitor(MonRef, [flush]),
-                            gun:close(ConnPid),
-                            {error, {http_error, Status, <<>>}};
-                        {response, nofin, Status, _RespHeaders} ->
-                            % Get error body for non-2xx responses
-                            ErrorBody = case gun:await_body(ConnPid, StreamRef, Timeout) of
-                                {ok, ErrBody} -> ErrBody;
-                                {error, _} -> <<>>
-                            end,
-                            demonitor(MonRef, [flush]),
-                            gun:close(ConnPid),
-                            {error, {http_error, Status, ErrorBody}};
-                        {error, Reason} ->
-                            demonitor(MonRef, [flush]),
-                            gun:close(ConnPid),
-                            {error, {request_failed, Reason}}
-                    end;
-                {error, Reason} ->
-                    demonitor(MonRef, [flush]),
-                    gun:close(ConnPid),
-                    {error, {connection_failed, Reason}}
+                        % Wait for response
+                        case gun:await(ConnPid, StreamRef, Timeout) of
+                            {response, fin, Status, _RespHeaders} when Status >= 200, Status < 300 ->
+                                {ok, <<>>};
+                            {response, nofin, Status, _RespHeaders} when Status >= 200, Status < 300 ->
+                                % Get body
+                                case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                    {ok, ResponseBody} ->
+                                        {ok, ResponseBody};
+                                    {error, Reason} ->
+                                        {error, {body_read_failed, Reason}}
+                                end;
+                            {response, fin, Status, _RespHeaders} ->
+                                {error, {http_error, Status, <<>>}};
+                            {response, nofin, Status, _RespHeaders} ->
+                                % Get error body for non-2xx responses
+                                ErrorBody = case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                    {ok, ErrBody} -> ErrBody;
+                                    {error, _} -> <<>>
+                                end,
+                                {error, {http_error, Status, ErrorBody}};
+                            {error, Reason} ->
+                                {error, {request_failed, Reason}}
+                        end;
+                    {error, Reason} ->
+                        {error, {connection_failed, Reason}}
+                end
+            after
+                catch demonitor(MonRef, [flush]),
+                catch gun:close(ConnPid)
             end;
         {error, Reason} ->
             {error, {gun_open_failed, Reason}}
@@ -1272,7 +1327,11 @@ httpc_request(Method, Request, Options, _Config) ->
         ]}
     ],
 
-    case httpc:request(Method, Request, SslOpts ++ Options, []) of
+    %% CRITICAL: Add HTTP timeout to prevent indefinite hangs in secrets retrieval
+    %% 5000ms total timeout, 2000ms connect timeout
+    %% This is in the critical path for application startup and runtime secret fetches
+    HttpOptions = [{timeout, 5000}, {connect_timeout, 2000}],
+    case httpc:request(Method, Request, SslOpts ++ Options, HttpOptions) of
         {ok, Result} ->
             {ok, Result};
         {error, Reason} ->

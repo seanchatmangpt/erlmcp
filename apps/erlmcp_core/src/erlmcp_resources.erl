@@ -15,7 +15,7 @@
 ]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, handle_continue/2, terminate/2, code_change/3]).
 
 %% Types
 -type root_uri() :: binary().
@@ -85,16 +85,11 @@ read_resource_with_roots(Uri, _ServerState) ->
 %%% gen_server callbacks
 %%%====================================================================
 
--spec init([]) -> {ok, state()}.
+-spec init([]) -> {ok, state(), {continue, load_default_root}}.
 init([]) ->
-    %% Initialize with default root (current working directory)
-    {ok, Cwd} = file:get_cwd(),
-    DefaultRoot = #{
-        uri => list_to_binary(["file://", Cwd]),
-        name => <<"Current Working Directory">>
-    },
-    InitialRoots = #{list_to_binary(["file://", Cwd]) => DefaultRoot},
-    {ok, #state{roots = InitialRoots}}.
+    %% Fast init - return immediately without blocking file I/O
+    %% Default root will be loaded asynchronously in handle_continue
+    {ok, #state{roots = #{}}, {continue, load_default_root}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()} | {noreply, state()}.
@@ -132,6 +127,24 @@ handle_cast(_Msg, State) ->
 -spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info(_Info, State) ->
     {noreply, State}.
+
+-spec handle_continue(load_default_root, state()) -> {noreply, state()}.
+handle_continue(load_default_root, State) ->
+    %% Load default root asynchronously (after init/1 returns)
+    case file:get_cwd() of
+        {ok, Cwd} ->
+            DefaultRoot = #{
+                uri => list_to_binary(["file://", Cwd]),
+                name => <<"Current Working Directory">>
+            },
+            InitialRoots = #{list_to_binary(["file://", Cwd]) => DefaultRoot},
+            {noreply, State#state{roots = InitialRoots}};
+        {error, Reason} ->
+            %% If we can't get CWD, start with empty roots
+            %% This allows the server to start even if filesystem is unavailable
+            logger:warning("Failed to get current working directory: ~p. Starting with no default roots.", [Reason]),
+            {noreply, State}
+    end.
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, _State) ->
@@ -180,6 +193,7 @@ check_file_exists(FilePath) ->
     end.
 
 %% @doc Read a resource by URI (supports file:// scheme)
+%% Protects against blocking on large files by checking size first
 -spec do_read_resource(binary()) -> {ok, binary()} | {error, atom()}.
 do_read_resource(<<"file://", Path/binary>>) ->
     %% Extract path and read file
@@ -187,9 +201,20 @@ do_read_resource(<<"file://", Path/binary>>) ->
         <<"/", AbsolutePath/binary>> -> binary_to_list(AbsolutePath);
         _ -> binary_to_list(Path)
     end,
-    case file:read_file(FilePath) of
-        {ok, Content} -> {ok, Content};
-        {error, Reason} -> {error, Reason}
+    %% Check file size before reading to prevent blocking on large files
+    %% Max size: 10MB (prevents handle_call blocking for extended periods)
+    case file:read_file_info(FilePath) of
+        {ok, #file_info{size = Size}} when Size > 10485760 ->
+            %% File too large (>10MB) - would block handle_call too long
+            {error, file_too_large};
+        {ok, _FileInfo} ->
+            %% Safe to read synchronously
+            case file:read_file(FilePath) of
+                {ok, Content} -> {ok, Content};
+                {error, Reason} -> {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end;
 
 do_read_resource(_) ->
