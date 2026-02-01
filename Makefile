@@ -7,12 +7,8 @@
         test-strict benchmark-strict coverage-strict quality-strict \
         jidoka andon poka-yoke tcps-quality-gates release-validate \
         doctor quick verify ci-local \
-        run-stdio run-http run-http-sse validate-cli compliance-report \
         example-mcp-complete example-help andon-clear andon-watch \
-        setup-profile check-erlang-version \
-        test-cli test-cli-eunit test-cli-ct test-cli-coverage \
-        test-cli-interactive test-cli-plugins test-cli-completion \
-        test-cli-diagnostics test-cli-performance test-cli-regression
+        setup-profile check-erlang-version
 
 SHELL := /bin/bash
 
@@ -142,77 +138,6 @@ ci-local: ## Reproduce exact CI workflow locally (matches .github/workflows/ci.y
 	@echo "CI logs saved to /tmp/erlmcp_ci_*.log"
 	@echo ""
 
-# ============================================================================
-# PLUGIN SYSTEM TARGETS
-# ============================================================================
-# Targets for managing the erlmcp plugin system:
-#   create-plugin-scaffold : Generate a new plugin skeleton
-#   compile-plugin         : Compile a plugin module
-#   test-plugins           : Run plugin system tests
-#   load-plugin            : Dynamically load a plugin
-#   list-plugins           : List all loaded plugins
-#   example-avro-plugin    : Build example AVRO formatter plugin
-# ============================================================================
-
-create-plugin-scaffold: ## Create a new plugin skeleton
-	@echo "$(BLUE)Creating plugin scaffold...$(NC)"
-	@read -p "Plugin name (e.g., my_validator): " plugin_name; \
-	read -p "Plugin type (validator|formatter|exporter|command|middleware): " plugin_type; \
-	mkdir -p ~/.erlmcp/plugins; \
-	plugin_file=~/.erlmcp/plugins/erlmcp_plugin_$${plugin_name}.erl; \
-	echo "Creating $${plugin_file}..."; \
-	./scripts/dev/create_plugin_scaffold.sh $${plugin_name} $${plugin_type} > $${plugin_file}; \
-	echo "$(GREEN)✓ Plugin scaffold created: $${plugin_file}$(NC)"; \
-	echo "$(BLUE)Edit the file and compile with: make compile-plugin PLUGIN=$${plugin_name}$(NC)"
-
-compile-plugin: ## Compile a plugin module (usage: make compile-plugin PLUGIN=my_validator)
-	@if [ -z "$(PLUGIN)" ]; then \
-		echo "$(RED)Error: PLUGIN variable not set$(NC)"; \
-		echo "Usage: make compile-plugin PLUGIN=my_validator"; \
-		exit 1; \
-	fi
-	@echo "$(BLUE)Compiling plugin: $(PLUGIN)...$(NC)"
-	@mkdir -p ~/.erlmcp/plugins/ebin
-	@erlc -o ~/.erlmcp/plugins/ebin ~/.erlmcp/plugins/erlmcp_plugin_$(PLUGIN).erl
-	@echo "$(GREEN)✓ Plugin compiled: ~/.erlmcp/plugins/ebin/erlmcp_plugin_$(PLUGIN).beam$(NC)"
-
-test-plugins: ## Run plugin system tests
-	@echo "$(BLUE)Testing plugin system...$(NC)"
-	@rebar3 eunit --module=erlmcp_plugin_tests
-	@echo "$(GREEN)✓ Plugin tests passed$(NC)"
-
-load-plugin: ## Load a plugin dynamically (usage: make load-plugin PLUGIN=my_validator)
-	@if [ -z "$(PLUGIN)" ]; then \
-		echo "$(RED)Error: PLUGIN variable not set$(NC)"; \
-		echo "Usage: make load-plugin PLUGIN=my_validator"; \
-		exit 1; \
-	fi
-	@echo "$(BLUE)Loading plugin: $(PLUGIN)...$(NC)"
-	@erl -pa _build/default/lib/*/ebin -pa ~/.erlmcp/plugins/ebin -noshell -eval \
-		"application:ensure_all_started(erlmcp_core), \
-		 {ok, _} = erlmcp_plugin_manager:load_plugin(erlmcp_plugin_$(PLUGIN)), \
-		 {ok, Plugins} = erlmcp_plugin_manager:list_loaded_plugins(), \
-		 io:format(\"Loaded plugins: ~p~n\", [Plugins]), \
-		 halt(0)."
-
-list-plugins: ## List all loaded plugins
-	@echo "$(BLUE)Listing loaded plugins...$(NC)"
-	@erl -pa _build/default/lib/*/ebin -noshell -eval \
-		"application:ensure_all_started(erlmcp_core), \
-		 timer:sleep(100), \
-		 case erlmcp_plugin_registry:list_plugins() of \
-		     {ok, Plugins} -> io:format(\"~p~n\", [Plugins]); \
-		     {error, Reason} -> io:format(\"Error: ~p~n\", [Reason]) \
-		 end, \
-		 halt(0)."
-
-example-avro-plugin: ## Build example AVRO formatter plugin
-	@echo "$(BLUE)Building example AVRO formatter plugin...$(NC)"
-	@mkdir -p _build/default/plugins
-	@erlc -o _build/default/plugins examples/plugins/erlmcp_plugin_avro_formatter.erl
-	@echo "$(GREEN)✓ AVRO formatter plugin built: _build/default/plugins/erlmcp_plugin_avro_formatter.beam$(NC)"
-	@echo "$(BLUE)To use: cp _build/default/plugins/erlmcp_plugin_avro_formatter.beam ~/.erlmcp/plugins/$(NC)"
-
 help:
 	@echo "$(BOLD)$(BLUE)erlmcp Makefile - Umbrella Build System$(NC)"
 	@echo ""
@@ -284,23 +209,6 @@ help:
 	@echo "  make deps                  - Fetch dependencies"
 	@echo "  make info                  - Show project info"
 	@echo ""
-	@echo "$(BOLD)$(GREEN)Run Servers (One-Command Starts):$(NC)"
-	@echo "  make run-stdio             - Start STDIO MCP server"
-	@echo "  make run-http              - Start HTTP MCP server on http://localhost:3000"
-	@echo "  make run-http-sse          - Start HTTP + SSE MCP server on http://localhost:3000"
-	@echo ""
-	@echo "$(BOLD)$(GREEN)Validation CLI & Compliance:$(NC)"
-	@echo "  make validate-cli          - Build validation CLI escript"
-	@echo "  make compliance-report     - Generate MCP compliance report (JSON)"
-	@echo "  make cli-version          - Show CLI version information"
-	@echo "  make cli-release           - Create CLI release (VERSION=X.Y.Z)"
-	@echo "  make cli-release-dry-run   - Test CLI release process"
-	@echo "  make cli-benchmark-baseline - Establish CLI performance baseline"
-	@echo "  make cli-test-startup      - Quick CLI startup test"
-	@echo "  make cli-checksum          - Generate CLI checksum"
-	@echo "  make cli-install           - Install CLI to /usr/local/bin (sudo)"
-	@echo "  make cli-uninstall         - Uninstall CLI from /usr/local/bin (sudo)"
-	@echo ""
 	@echo "$(BOLD)$(GREEN)Release:$(NC)"
 	@echo "  make release               - Build production release"
 	@echo "  make benchmark             - Run benchmarks"
@@ -314,20 +222,12 @@ help:
 # ============================================================================
 # ERLANG VERSION ENFORCEMENT (BLOCKING GATE)
 # ============================================================================
-# CRITICAL: This project requires Erlang/OTP 28.3.1 (custom-built from source).
-# The build system enforces this via pre-compile hook and version check script.
+# CRITICAL: This project requires Erlang/OTP 28 or higher.
+# Lower versions will fail with a clear error message.
+# This gate runs BEFORE any compilation to provide immediate feedback.
 # ============================================================================
 
-# Custom OTP 28.3.1 binary path (built from GitHub source)
-ERLMCP_OTP_BIN := /Users/sac/.erlmcp/otp-28.3.1/bin
-
-# Ensure asdf shims are available for rebar3
-ASDF_SHIMS := $(HOME)/.asdf/shims
-
-# Export PATH: custom OTP first, then asdf shims for rebar3, then rest of PATH
-export PATH := $(ERLMCP_OTP_BIN):$(ASDF_SHIMS):$(PATH)
-
-check-erlang-version: ## Enforce Erlang/OTP 28.3.1 requirement (BLOCKING)
+check-erlang-version: ## Enforce Erlang/OTP 28+ requirement (BLOCKING)
 	@./scripts/check_erlang_version.sh
 
 # ============================================================================
@@ -1000,37 +900,6 @@ auto-fix-help: ## Show auto-fix system help
 	@echo "For detailed help: ./tools/auto-fix/orchestrator.sh help"
 
 # ============================================================================
-# RUN SERVERS (One-Command Starts)
-# ============================================================================
-
-run-stdio: compile
-	@echo "$(BLUE)Starting STDIO MCP server...$(NC)"
-	@erl -pa _build/default/lib/*/ebin -eval "erlmcp_examples:start_stdio_server()."
-
-run-http: compile
-	@echo "$(BLUE)Starting HTTP MCP server on http://localhost:3000...$(NC)"
-	@erl -pa _build/default/lib/*/ebin -eval "erlmcp_examples:start_http_server()."
-
-run-http-sse: compile
-	@echo "$(BLUE)Starting HTTP + SSE MCP server on http://localhost:3000...$(NC)"
-	@erl -pa _build/default/lib/*/ebin -eval "erlmcp_examples:start_http_sse_server()."
-
-# ============================================================================
-# VALIDATION CLI & COMPLIANCE
-# ============================================================================
-
-validate-cli:
-	@echo "$(BLUE)Building validation CLI...$(NC)"
-	@rebar3 as validation escriptize
-	@echo "$(GREEN)✓ Validator built: ./_build/validation/bin/erlmcp_validate$(NC)"
-	@echo "$(YELLOW)Usage: ./_build/validation/bin/erlmcp_validate run --help$(NC)"
-
-compliance-report: validate-cli
-	@echo "$(BLUE)Generating MCP compliance report...$(NC)"
-	@./_build/validation/bin/erlmcp_validate run --all --output-file=reports/compliance.json
-	@echo "$(GREEN)✓ Report saved to: reports/compliance.json$(NC)"
-
-# ============================================================================
 # EXAMPLES
 # ============================================================================
 
@@ -1119,6 +988,285 @@ validate-spec:
 			fi; \
 		else \
 			echo "     ⚠ Could not build validation CLI (non-blocking)$(NC)"; \
+		fi; \
+	fi
+	@echo ""
+	@echo "$(GREEN)✅ MCP spec validation PASSED$(NC)"
+	@echo ""
+
+# ============================================================================
+# NINE-NINES PERFORMANCE VALIDATION
+# ============================================================================
+
+.PHONY: benchmark-nine-nines benchmark-nine-nines-baseline benchmark-nine-nines-overload benchmark-nine-nines-full
+
+benchmark-nine-nines: benchmark-nine-nines-full
+
+benchmark-nine-nines-baseline: ## Run baseline nine-nines benchmarks
+	@echo "$(BLUE)Running nine-nines baseline benchmarks...$(NC)"
+	@./scripts/bench/run_nine_nines_validation.sh baseline
+
+benchmark-nine-nines-overload: ## Run nine-nines overload profiling
+	@echo "$(BLUE)Running nine-nines overload profiling...$(NC)"
+	@./scripts/bench/run_nine_nines_validation.sh overload
+
+benchmark-nine-nines-full: ## Run complete nine-nines validation
+	@echo "$(BLUE)Running complete nine-nines validation...$(NC)"
+	@./scripts/bench/run_nine_nines_validation.sh full
+
+
+# ============================================================================
+# GOVERNANCE SYSTEM (Claude Code Web v3.0.0)
+# ============================================================================
+# Armstrong-style governance using Claude Code Web native primitives
+# (hooks, skills, subagents, settings scopes).
+#
+# Pattern: Policy → Execution → Verification → Receipt
+#
+# Architecture:
+#   Layer 1: Sandbox + Network Policy (product enforced)
+#   Layer 2: Hook-Based Runtime Governor (.claude/hooks + settings.json)
+#   Layer 3: Skills + Subagents (reusable procedures + role-based execution)
+#
+# References:
+#   - CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md (specification)
+#   - AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md (WO-010)
+#   - .claude/settings.json (governance configuration)
+# ============================================================================
+
+.PHONY: hooks-validate settings-validate governance-test receipts-list governance-status governance-validate
+
+hooks-validate: ## Validate all hooks exist, are executable, and have valid bash syntax
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🔍 Hook Validation$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(BLUE)[1/3] Checking hook files exist...$(NC)"
+	@HOOK_ERRORS=0; \
+	HOOKS_DIR=".claude/hooks"; \
+	if [ ! -d "$$HOOKS_DIR" ]; then \
+		echo "  $(RED)✗ Hooks directory missing: $$HOOKS_DIR$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "  $(GREEN)✓ Hooks directory exists$(NC)"; \
+	echo ""; \
+	echo "$(BLUE)[2/3] Checking hook files are executable...$(NC)"; \
+	for hook in $$HOOKS_DIR/*.sh; do \
+		if [ -f "$$hook" ]; then \
+			if [ -x "$$hook" ]; then \
+				echo "  $(GREEN)✓ $$(basename $$hook) (executable)$(NC)"; \
+			else \
+				echo "  $(RED)✗ $$(basename $$hook) (not executable)$(NC)"; \
+				HOOK_ERRORS=$$((HOOK_ERRORS + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "$(BLUE)[3/3] Validating bash syntax...$(NC)"; \
+	for hook in $$HOOKS_DIR/*.sh; do \
+		if [ -f "$$hook" ]; then \
+			if bash -n "$$hook" 2>/dev/null; then \
+				echo "  $(GREEN)✓ $$(basename $$hook) (valid syntax)$(NC)"; \
+			else \
+				echo "  $(RED)✗ $$(basename $$hook) (syntax error)$(NC)"; \
+				bash -n "$$hook" 2>&1 | sed 's/^/    /'; \
+				HOOK_ERRORS=$$((HOOK_ERRORS + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	if [ $$HOOK_ERRORS -eq 0 ]; then \
+		echo "$(BOLD)$(GREEN)✅ All hooks validated successfully$(NC)"; \
+		echo ""; \
+	else \
+		echo "$(BOLD)$(RED)❌ Hook validation FAILED ($$HOOK_ERRORS errors)$(NC)"; \
+		echo "$(RED)Action: Fix hook files listed above$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
+
+settings-validate: ## Validate .claude/settings.json schema and hook references
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🔍 Settings Validation$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@SETTINGS_FILE=".claude/settings.json"; \
+	if [ ! -f "$$SETTINGS_FILE" ]; then \
+		echo "$(RED)✗ Settings file missing: $$SETTINGS_FILE$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "$(BLUE)[1/3] Checking JSON syntax...$(NC)"; \
+	if command -v jq >/dev/null 2>&1; then \
+		if jq empty "$$SETTINGS_FILE" 2>/dev/null; then \
+			echo "  $(GREEN)✓ Valid JSON syntax$(NC)"; \
+		else \
+			echo "  $(RED)✗ Invalid JSON syntax$(NC)"; \
+			jq empty "$$SETTINGS_FILE" 2>&1 | sed 's/^/    /'; \
+			exit 1; \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ jq not available, skipping JSON validation$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[2/3] Validating hook file references...$(NC)"; \
+	if command -v jq >/dev/null 2>&1; then \
+		HOOK_REF_ERRORS=0; \
+		jq -r '.. | .command? // empty | select(startswith("./.claude/hooks/"))' "$$SETTINGS_FILE" 2>/dev/null | sort -u | while read -r hook_path; do \
+			if [ -f "$$hook_path" ]; then \
+				echo "  $(GREEN)✓ $$hook_path exists$(NC)"; \
+			else \
+				echo "  $(RED)✗ $$hook_path missing$(NC)"; \
+				HOOK_REF_ERRORS=$$((HOOK_REF_ERRORS + 1)); \
+			fi; \
+		done; \
+	else \
+		echo "  $(YELLOW)⚠ jq not available, skipping hook reference validation$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[3/3] Validating subagent definitions...$(NC)"; \
+	if command -v jq >/dev/null 2>&1; then \
+		SUBAGENT_COUNT=$$(jq '.subagents | keys | length' "$$SETTINGS_FILE" 2>/dev/null); \
+		echo "  $(GREEN)✓ Found $$SUBAGENT_COUNT subagent definitions$(NC)"; \
+		jq -r '.subagents | keys[]' "$$SETTINGS_FILE" 2>/dev/null | while read -r subagent; do \
+			echo "    - $$subagent"; \
+		done; \
+	else \
+		echo "  $(YELLOW)⚠ jq not available, skipping subagent validation$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BOLD)$(GREEN)✅ Settings validation PASSED$(NC)"; \
+	echo ""
+
+governance-test: ## Run all hook test suites and governance validation
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🧪 Governance Test Suite$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@TEST_ERRORS=0; \
+	TESTS_PASSED=0; \
+	TESTS_FAILED=0; \
+	echo "$(BOLD)Running governance tests...$(NC)"; \
+	echo ""; \
+	echo "$(BLUE)[1/5] Hook validation...$(NC)"; \
+	if $(MAKE) -s hooks-validate; then \
+		echo "  $(GREEN)✓ Hook validation passed$(NC)"; \
+		TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+	else \
+		echo "  $(RED)✗ Hook validation failed$(NC)"; \
+		TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+		TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[2/5] Settings validation...$(NC)"; \
+	if $(MAKE) -s settings-validate; then \
+		echo "  $(GREEN)✓ Settings validation passed$(NC)"; \
+		TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+	else \
+		echo "  $(RED)✗ Settings validation failed$(NC)"; \
+		TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+		TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[3/5] Hook test suite (policy-bash)...$(NC)"; \
+	if [ -x ".claude/hooks/test_policy_bash.sh" ]; then \
+		if ./.claude/hooks/test_policy_bash.sh > /tmp/governance_test_policy_bash.log 2>&1; then \
+			echo "  $(GREEN)✓ policy-bash tests passed$(NC)"; \
+			TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+		else \
+			echo "  $(RED)✗ policy-bash tests failed$(NC)"; \
+			echo "  $(YELLOW)See /tmp/governance_test_policy_bash.log for details$(NC)"; \
+			TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+			TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ test_policy_bash.sh not found or not executable$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[4/5] SessionStart hook test...$(NC)"; \
+	if [ -x ".claude/hooks/SessionStart.sh" ]; then \
+		if ./.claude/hooks/SessionStart.sh --dry-run > /tmp/governance_test_sessionstart.log 2>&1; then \
+			echo "  $(GREEN)✓ SessionStart hook test passed$(NC)"; \
+			TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+		else \
+			echo "  $(YELLOW)⚠ SessionStart hook test skipped (no --dry-run support)$(NC)"; \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ SessionStart.sh not found or not executable$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[5/5] Receipt generation test...$(NC)"; \
+	if [ -x ".claude/hooks/receipt.sh" ]; then \
+		if bash -n ./.claude/hooks/receipt.sh 2>/dev/null; then \
+			echo "  $(GREEN)✓ Receipt.sh syntax valid$(NC)"; \
+			TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+		else \
+			echo "  $(RED)✗ Receipt.sh syntax error$(NC)"; \
+			TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+			TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ receipt.sh not found or not executable$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BOLD)Test Summary:$(NC)"; \
+	echo "  Passed: $(GREEN)$$TESTS_PASSED$(NC)"; \
+	echo "  Failed: $(RED)$$TESTS_FAILED$(NC)"; \
+	echo ""; \
+	if [ $$TEST_ERRORS -eq 0 ]; then \
+		echo "$(BOLD)$(GREEN)✅ All governance tests PASSED$(NC)"; \
+		echo ""; \
+	else \
+		echo "$(BOLD)$(RED)❌ Governance tests FAILED ($$TEST_ERRORS errors)$(NC)"; \
+		echo "$(RED)Action: Fix failing tests listed above$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
+
+receipts-list: ## List recent session receipts (default: 10 most recent)
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)📋 Recent Session Receipts$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@./.claude/commands/governance.sh receipts 10
+	@echo ""
+
+governance-status: ## Show governance system status
+	@./.claude/commands/governance.sh status
+
+governance-validate: ## Run full governance configuration validation
+	@./.claude/commands/governance.sh validate
+
+# ============================================================================
+# GOVERNANCE CLI HELP
+# ============================================================================
+
+governance-help: ## Show governance system help
+	@echo "$(BOLD)$(BLUE)Governance System Targets$(NC)"
+	@echo ""
+	@echo "$(BOLD)Makefile Targets:$(NC)"
+	@echo "  make hooks-validate       - Validate all hooks (existence, permissions, syntax)"
+	@echo "  make settings-validate    - Validate .claude/settings.json schema"
+	@echo "  make governance-test      - Run all hook test suites"
+	@echo "  make receipts-list        - List 10 most recent session receipts"
+	@echo "  make governance-status    - Show governance system status"
+	@echo "  make governance-validate  - Run full governance validation"
+	@echo ""
+	@echo "$(BOLD)CLI Commands:$(NC)"
+	@echo "  ./.claude/commands/governance.sh hooks       - List active hooks"
+	@echo "  ./.claude/commands/governance.sh receipts    - Show recent receipts"
+	@echo "  ./.claude/commands/governance.sh verify      - Run manual verification"
+	@echo "  ./.claude/commands/governance.sh status      - Show system status"
+	@echo "  ./.claude/commands/governance.sh validate    - Validate configuration"
+	@echo "  ./.claude/commands/governance.sh help        - Show CLI help"
+	@echo ""
+	@echo "$(BOLD)Hook Lifecycle:$(NC)"
+	@echo "  SessionStart → PreToolUse* → PostToolUse* → Stop → SessionEnd"
+	@echo ""
+	@echo "$(BOLD)References:$(NC)"
+	@echo "  - CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md"
+	@echo "  - AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md (WO-010)"
+	@echo "  - DEVELOPMENT.md (Hook Lifecycle section)"
+	@echo ""
 		fi; \
 	fi
 	@echo ""

@@ -37,7 +37,18 @@
     update_transport_config/2,
     validate_transport_config/2,
     %% Registry operations
-    find_server/1
+    find_server/1,
+    %% Introspection API (Armstrong-style)
+    status/0,
+    session/1,
+    streams/1,
+    tasks/0,
+    queues/0,
+    health/0,
+    sessions/0,
+    servers/0,
+    transports/0,
+    help/0
 ]).
 
 %%--------------------------------------------------------------------
@@ -298,3 +309,172 @@ validate_transport_config(Type, _Config) ->
     {ok, {pid(), map()}} | {error, not_found}.
 find_server(ServerId) ->
     erlmcp_registry:find_server(ServerId).
+
+%%====================================================================
+%% Armstrong-Style Introspection API
+%% Shell convenience functions for live system interrogation
+%%====================================================================
+
+%% @doc Get overall system status
+%% Returns health, session count, TPS, memory usage
+-spec status() -> map().
+status() ->
+    erlmcp_introspect:status().
+
+%% @doc Dump detailed session information
+%% Returns session state, capabilities, in-flight requests, subscriptions
+-spec session(SessionId :: binary()) -> {ok, map()} | {error, not_found}.
+session(SessionId) when is_binary(SessionId) ->
+    erlmcp_introspect:session_dump(SessionId).
+
+%% @doc Get stream/subscription information for a session
+%% Returns active SSE subscriptions, last event IDs, buffer depths
+-spec streams(SessionId :: binary()) -> {ok, [map()]} | {error, not_found}.
+streams(SessionId) when is_binary(SessionId) ->
+    erlmcp_introspect:streams(SessionId).
+
+%% @doc Get task status across the system
+%% Returns tasks by status, latencies, stuck detectors
+-spec tasks() -> map().
+tasks() ->
+    erlmcp_introspect:tasks().
+
+%% @doc Get mailbox queue depths
+%% Returns top 10 processes by queue depth, grouped by type
+-spec queues() -> map().
+queues() ->
+    erlmcp_introspect:queues().
+
+%% @doc Run immediate health check
+%% Returns health status and detailed metrics
+-spec health() -> {erlmcp_introspect:health_status(), map()}.
+health() ->
+    erlmcp_introspect:health_check().
+
+%% @doc Show help for introspection commands
+-spec help() -> ok.
+help() ->
+    io:format("~n"),
+    io:format("erlmcp Shell Introspection Commands~n"),
+    io:format("=====================================~n"),
+    io:format("~n"),
+    io:format("  erlmcp:status().      - Overall system health and metrics~n"),
+    io:format("  erlmcp:session(Id).   - Detailed session dump~n"),
+    io:format("  erlmcp:streams(Id).   - Stream subscriptions for session~n"),
+    io:format("  erlmcp:tasks().       - Active tasks and their status~n"),
+    io:format("  erlmcp:queues().      - Message queue depths (find bottlenecks)~n"),
+    io:format("  erlmcp:health().      - Run health check now~n"),
+    io:format("~n"),
+    io:format("Additional Commands:~n"),
+    io:format("~n"),
+    io:format("  erlmcp:sessions().    - List all sessions~n"),
+    io:format("  erlmcp:servers().     - List all MCP servers~n"),
+    io:format("  erlmcp:transports().  - List all transports~n"),
+    io:format("  erlmcp:help().        - Show this help~n"),
+    io:format("~n"),
+    io:format("Examples:~n"),
+    io:format("~n"),
+    io:format("  %% Check system health~n"),
+    io:format("  1> erlmcp:status().~n"),
+    io:format("~n"),
+    io:format("  %% List all sessions~n"),
+    io:format("  2> erlmcp:sessions().~n"),
+    io:format("~n"),
+    io:format("  %% Inspect a specific session~n"),
+    io:format("  3> erlmcp:session(<<\"session-123\">>).~n"),
+    io:format("~n"),
+    io:format("  %% Find message queue bottlenecks~n"),
+    io:format("  4> erlmcp:queues().~n"),
+    io:format("~n"),
+    ok.
+
+%% @doc List all active sessions
+%% Convenience wrapper around session manager
+-spec sessions() -> [map()].
+sessions() ->
+    case whereis(erlmcp_session_manager) of
+        undefined ->
+            io:format("Session manager not running~n"),
+            [];
+        _Pid ->
+            case erlmcp_session_manager:list_sessions() of
+                Sessions when is_list(Sessions) ->
+                    io:format("~nActive Sessions (~p total):~n", [length(Sessions)]),
+                    io:format("~s~n", [lists:duplicate(60, $=)]),
+                    lists:foreach(
+                        fun(Session) ->
+                            SessionId = maps:get(id, Session, <<"unknown">>),
+                            CreatedAt = maps:get(created_at, Session, 0),
+                            LastAccessed = maps:get(last_accessed, Session, 0),
+                            Now = erlang:system_time(millisecond),
+                            Age = Now - CreatedAt,
+                            Idle = Now - LastAccessed,
+                            io:format("  ~s~n", [SessionId]),
+                            io:format("    Age: ~p ms, Idle: ~p ms~n", [Age, Idle])
+                        end,
+                        Sessions
+                    ),
+                    io:format("~n"),
+                    Sessions;
+                Error ->
+                    io:format("Error listing sessions: ~p~n", [Error]),
+                    []
+            end
+    end.
+
+%% @doc List all MCP servers
+%% Convenience wrapper around registry
+-spec servers() -> [{binary(), {pid(), map()}}].
+servers() ->
+    case whereis(erlmcp_registry) of
+        undefined ->
+            io:format("Registry not running~n"),
+            [];
+        _Pid ->
+            Servers = erlmcp_registry:list_servers(),
+            io:format("~nMCP Servers (~p total):~n", [length(Servers)]),
+            io:format("~s~n", [lists:duplicate(60, $=)]),
+            lists:foreach(
+                fun({ServerId, {Pid, Config}}) ->
+                    QueueLen = case erlang:process_info(Pid, message_queue_len) of
+                        {message_queue_len, Len} -> Len;
+                        undefined -> 0
+                    end,
+                    Caps = maps:get(capabilities, Config, #{}),
+                    io:format("  ~p~n", [ServerId]),
+                    io:format("    Pid: ~p, Queue: ~p~n", [Pid, QueueLen]),
+                    io:format("    Capabilities: ~p~n", [Caps])
+                end,
+                Servers
+            ),
+            io:format("~n"),
+            Servers
+    end.
+
+%% @doc List all transports
+%% Convenience wrapper around registry
+-spec transports() -> [{binary(), {pid(), map()}}].
+transports() ->
+    case whereis(erlmcp_registry) of
+        undefined ->
+            io:format("Registry not running~n"),
+            [];
+        _Pid ->
+            Transports = erlmcp_registry:list_transports(),
+            io:format("~nTransports (~p total):~n", [length(Transports)]),
+            io:format("~s~n", [lists:duplicate(60, $=)]),
+            lists:foreach(
+                fun({TransportId, {Pid, Config}}) ->
+                    Type = maps:get(type, Config, unknown),
+                    QueueLen = case erlang:process_info(Pid, message_queue_len) of
+                        {message_queue_len, Len} -> Len;
+                        undefined -> 0
+                    end,
+                    io:format("  ~p~n", [TransportId]),
+                    io:format("    Type: ~p, Pid: ~p, Queue: ~p~n", [Type, Pid, QueueLen])
+                end,
+                Transports
+            ),
+            io:format("~n"),
+            Transports
+    end.

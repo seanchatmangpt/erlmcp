@@ -1,0 +1,177 @@
+{
+  "$comment": [
+    "Local Settings Override Example",
+    "",
+    "This file demonstrates how to override project-wide settings.json",
+    "for local development preferences.",
+    "",
+    "Usage:",
+    "  1. Copy this file to .claude/settings.local.json",
+    "  2. Modify values as needed",
+    "  3. .claude/settings.local.json is gitignored (not committed)",
+    "",
+    "Precedence:",
+    "  settings.local.json > settings.json (local overrides project)",
+    "",
+    "Common use cases:",
+    "  - Disable specific hooks for local development",
+    "  - Adjust timeout values for slower machines",
+    "  - Add personal allowlist domains",
+    "  - Enable verbose logging",
+    "  - Override environment variables"
+  ],
+
+  "permissions": {
+    "$comment": [
+      "Local permission overrides",
+      "Example: Allow access to local-only files"
+    ],
+    "allow": [
+      {
+        "pattern": ".local/**",
+        "reason": "Local-only development files"
+      },
+      {
+        "pattern": "tmp/**",
+        "reason": "Temporary test files"
+      }
+    ]
+  },
+
+  "hooks": {
+    "$comment": [
+      "Local hook overrides",
+      "Example: Disable expensive hooks for faster development"
+    ],
+
+    "SessionStart": [
+      {
+        "$comment": "Keep SessionStart enabled - OTP required",
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/hooks/SessionStart.sh",
+            "timeout": 900,
+            "$comment": "Increased timeout for local builds (slower hardware)"
+          }
+        ]
+      }
+    ],
+
+    "PreToolUse": [
+      {
+        "$comment": "Optional: Disable policy checks for trusted local environment",
+        "matcher": "Bash",
+        "hooks": [],
+        "$disabled": true,
+        "$comment_disabled": "Uncomment to disable Bash policy checks locally"
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "$comment": "Optional: Disable async CI for faster iteration",
+        "matcher": "Write|Edit",
+        "hooks": [],
+        "$disabled": true,
+        "$comment_disabled": "Uncomment to disable async CI locally"
+      }
+    ],
+
+    "Stop": [
+      {
+        "$comment": "Optional: Use simpler verification for local development",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rebar3 compile && rebar3 eunit --application=erlmcp_core",
+            "timeout": 60,
+            "$comment": "Faster local verification (compile + tests only)"
+          }
+        ]
+      }
+    ]
+  },
+
+  "environment": {
+    "$comment": "Local environment variable overrides",
+    "variables": {
+      "ERLMCP_PROFILE": {
+        "value": "local",
+        "description": "Use local profile (not cloud-optimized)"
+      },
+      "ERLMCP_CACHE": {
+        "value": "/tmp/erlmcp-cache/",
+        "description": "Use /tmp for cache (faster on some systems)"
+      },
+      "ERLMCP_VERBOSE": {
+        "value": "true",
+        "description": "Enable verbose logging for debugging"
+      },
+      "REBAR_COLOR": {
+        "value": "auto",
+        "description": "Enable colors for local terminal"
+      }
+    }
+  },
+
+  "debugging": {
+    "$comment": [
+      "Local debugging options (not available in project settings)",
+      "These settings are ignored by cloud runtime"
+    ],
+    "verboseHooks": true,
+    "logHookOutput": true,
+    "hookLogPath": ".erlmcp/logs/hooks.log",
+    "skipVerification": false,
+    "$warning": "Set skipVerification=true ONLY for debugging (bypasses quality gates)"
+  },
+
+  "personalPreferences": {
+    "$comment": [
+      "Developer-specific preferences",
+      "Customize your local workflow"
+    ],
+    "autoCommit": false,
+    "preferredEditor": "emacs",
+    "preferredShell": "bash",
+    "customAliases": {
+      "test-quick": "rebar3 eunit --module=$1",
+      "compile-fast": "TERM=dumb rebar3 compile"
+    }
+  },
+
+  "localHooks": {
+    "$comment": [
+      "Personal hooks (run in addition to project hooks)",
+      "Useful for custom linting, formatting, etc."
+    ],
+    "PreCommit": [
+      {
+        "type": "command",
+        "command": "./scripts/local/pre-commit-format.sh",
+        "timeout": 30,
+        "$comment": "Run local formatter before commit"
+      }
+    ]
+  },
+
+  "allowlistedDomains": {
+    "$comment": "Additional domains allowed for local development",
+    "domains": [
+      "localhost",
+      "127.0.0.1",
+      "internal-package-mirror.local",
+      "company-vpn.internal"
+    ]
+  },
+
+  "metadata": {
+    "$comment": "Local configuration metadata",
+    "author": "your-username",
+    "description": "Personal settings overrides for local development",
+    "machine": "local-dev-machine",
+    "last_updated": "2026-02-01"
+  }
+}
