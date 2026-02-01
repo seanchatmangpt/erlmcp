@@ -13,6 +13,8 @@
 
 %% API exports
 -export([
+    run/1,
+    validate_error_codes/1,
     validate_all/1,
     validate_json_rpc/1,
     validate_mcp_message/1,

@@ -1202,7 +1202,7 @@ handle_request(Id, ?MCP_METHOD_RESOURCES_UNSUBSCRIBE, Params, TransportId, State
 %% Roots/list - MCP 2025-11-25 spec
 %% "List roots, then read" - two-phase resource access
 handle_request(Id, ?MCP_METHOD_ROOTS_LIST, _Params, TransportId, State) ->
-    case erlmcp_resources:list_roots(State) of
+    case erlmcp_resources:list_roots_with_state(State) of
         {ok, Roots} ->
             Response = #{?MCP_PARAM_ROOTS => Roots},
             send_response_via_registry(State, TransportId, Id, Response),

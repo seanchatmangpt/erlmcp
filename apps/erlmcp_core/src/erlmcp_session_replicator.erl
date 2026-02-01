@@ -481,7 +481,7 @@ is_fully_replicated(ReplicaState, State) ->
 %% @doc Get all local sessions for bootstrap
 -spec get_all_local_sessions() -> [{session_id(), session(), vector_clock()}].
 get_all_local_sessions() ->
-    ets:fold(fun(_Key, #replica_state{
+    ets:foldl(fun(_Key, #replica_state{
         session_id = SessId,
         session = Sess,
         vector_clock = VClock
