@@ -18,6 +18,21 @@ We welcome contributions! This guide explains how to contribute code, documentat
 3. **Explore examples**: Check [examples/README.md](examples/README.md)
 4. **Join discussions**: GitHub Discussions for questions
 
+## Essential Reading
+
+Before starting work, familiarize yourself with:
+
+- **Architecture**: [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) - System design, supervision trees, OTP patterns
+- **Code Standards**: [CLAUDE.md](CLAUDE.md) - Mandatory development patterns, quality gates, TDD requirements
+- **Testing Standards**: [archive/quality-reports/](archive/quality-reports/) - Quality gate results, test coverage reports
+- **PR Template**: [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) - Required PR format and checklist
+
+**Key Standards**:
+- Test-Driven Development (TDD) - tests written FIRST
+- Chicago School testing - NO mocks/fakes, real processes only
+- Quality gates MUST pass: compile, test, coverage ≥80%, lint
+- OTP patterns enforced: gen_server, supervision, let-it-crash
+
 ## Making Changes
 
 ### 1. Create an Issue
@@ -459,6 +474,6 @@ We appreciate:
 
 ---
 
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-01-31
 **Status**: Ready for contributions
 **Maintainers**: See GitHub for current list

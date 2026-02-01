@@ -6,7 +6,7 @@ This guide covers setting up and working with the erlmcp workspace, which coordi
 
 ## Prerequisites
 
-- **Erlang/OTP 25+** (required)
+- **Erlang/OTP 28.3.1+** (required - OTP 28+ features exclusive)
 - **rebar3** (package manager and build tool)
 - **git** (version control)
 - Optional but recommended:
@@ -56,6 +56,62 @@ direnv allow                    # Enable automatic environment loading
 make workspace-build            # Compile erlmcp + taiea
 make workspace-test             # Run all tests
 make workspace-check            # Full validation (build + lint + test)
+```
+
+## Documentation
+
+### Primary Documentation Resources
+
+**Complete Documentation Guide:**
+- See [DOCUMENTATION_GUIDE.md](DOCUMENTATION_GUIDE.md) for full documentation organization and navigation
+
+**System Architecture and Standards:**
+- [CLAUDE.md](CLAUDE.md) - Formal specification, OTP patterns, quality gates, module topology
+- [docs/architecture.md](docs/architecture.md) - System design and supervision hierarchy
+- [docs/otp-patterns.md](docs/otp-patterns.md) - OTP design patterns and behaviors
+- [docs/protocol.md](docs/protocol.md) - MCP protocol specification
+
+**Code Standards and Quality Gates:**
+- Quality gates in [CLAUDE.md § Quality Gates](CLAUDE.md#quality-gates-mandatory-gate-sequence)
+  - Gate₁: Compilation (errors = 0)
+  - Gate₂: Tests (pass_rate = 1.0)
+  - Gate₃: Coverage (≥80%)
+  - Gate₄: Benchmarks (regression < 10%)
+- OTP compliance in [CLAUDE.md § OTP Pattern Enforcement](CLAUDE.md#otp-pattern-enforcement)
+- Chicago School TDD methodology in [CLAUDE.md § Development Invariants](CLAUDE.md#development-invariants-chicago-school-tdd)
+
+**Testing Procedures and Benchmarks:**
+- Test infrastructure: [CLAUDE.md § Module Taxonomy → Testing](CLAUDE.md#testing)
+- Benchmark suite: [CLAUDE.md § Benchmark Suite](CLAUDE.md#benchmark-suite-v150)
+  - `erlmcp_bench_core_ops` - Registry/queue/pool operations
+  - `erlmcp_bench_network_real` - Real socket testing
+  - `erlmcp_bench_stress` - Sustained load testing
+  - `erlmcp_bench_chaos` - Failure injection
+  - `erlmcp_bench_integration` - End-to-end MCP workflows
+- Performance baselines: [CLAUDE.md § Performance Baseline](CLAUDE.md#performance-baseline-jan-2026)
+
+**Archive Structure:**
+- Active documentation in `docs/` (architecture, APIs, guides)
+- Historical/deprecated content in `docs/archive/` (preserved for reference)
+- Version-specific specs archived by date (e.g., `mcp-spec-2025-11-25/`)
+- Archive reasoning explained in [DOCUMENTATION_GUIDE.md § Archive](DOCUMENTATION_GUIDE.md#archive)
+
+**Quick References:**
+```bash
+# Find architecture documentation
+ls docs/architecture.md docs/otp-patterns.md
+
+# Find API reference
+ls docs/api-reference.md
+
+# Find testing guides
+ls docs/testing-guide.md
+
+# Browse examples
+ls examples/
+
+# Review quality requirements
+grep -A 10 "Quality Gates" CLAUDE.md
 ```
 
 ## Development Workflow
@@ -497,6 +553,6 @@ rebar3 ct --num_parallel_processes 4
 
 ---
 
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-01-31
 **Erlang/OTP Version**: 25+
 **rebar3 Version**: 3.22+
