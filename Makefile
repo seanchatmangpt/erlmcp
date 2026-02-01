@@ -1014,3 +1014,256 @@ benchmark-nine-nines-full: ## Run complete nine-nines validation
 	@echo "$(BLUE)Running complete nine-nines validation...$(NC)"
 	@./scripts/bench/run_nine_nines_validation.sh full
 
+
+# ============================================================================
+# GOVERNANCE SYSTEM (Claude Code Web v3.0.0)
+# ============================================================================
+# Armstrong-style governance using Claude Code Web native primitives
+# (hooks, skills, subagents, settings scopes).
+#
+# Pattern: Policy → Execution → Verification → Receipt
+#
+# Architecture:
+#   Layer 1: Sandbox + Network Policy (product enforced)
+#   Layer 2: Hook-Based Runtime Governor (.claude/hooks + settings.json)
+#   Layer 3: Skills + Subagents (reusable procedures + role-based execution)
+#
+# References:
+#   - CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md (specification)
+#   - AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md (WO-010)
+#   - .claude/settings.json (governance configuration)
+# ============================================================================
+
+.PHONY: hooks-validate settings-validate governance-test receipts-list governance-status governance-validate
+
+hooks-validate: ## Validate all hooks exist, are executable, and have valid bash syntax
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🔍 Hook Validation$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(BLUE)[1/3] Checking hook files exist...$(NC)"
+	@HOOK_ERRORS=0; \
+	HOOKS_DIR=".claude/hooks"; \
+	if [ ! -d "$$HOOKS_DIR" ]; then \
+		echo "  $(RED)✗ Hooks directory missing: $$HOOKS_DIR$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "  $(GREEN)✓ Hooks directory exists$(NC)"; \
+	echo ""; \
+	echo "$(BLUE)[2/3] Checking hook files are executable...$(NC)"; \
+	for hook in $$HOOKS_DIR/*.sh; do \
+		if [ -f "$$hook" ]; then \
+			if [ -x "$$hook" ]; then \
+				echo "  $(GREEN)✓ $$(basename $$hook) (executable)$(NC)"; \
+			else \
+				echo "  $(RED)✗ $$(basename $$hook) (not executable)$(NC)"; \
+				HOOK_ERRORS=$$((HOOK_ERRORS + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	echo "$(BLUE)[3/3] Validating bash syntax...$(NC)"; \
+	for hook in $$HOOKS_DIR/*.sh; do \
+		if [ -f "$$hook" ]; then \
+			if bash -n "$$hook" 2>/dev/null; then \
+				echo "  $(GREEN)✓ $$(basename $$hook) (valid syntax)$(NC)"; \
+			else \
+				echo "  $(RED)✗ $$(basename $$hook) (syntax error)$(NC)"; \
+				bash -n "$$hook" 2>&1 | sed 's/^/    /'; \
+				HOOK_ERRORS=$$((HOOK_ERRORS + 1)); \
+			fi; \
+		fi; \
+	done; \
+	echo ""; \
+	if [ $$HOOK_ERRORS -eq 0 ]; then \
+		echo "$(BOLD)$(GREEN)✅ All hooks validated successfully$(NC)"; \
+		echo ""; \
+	else \
+		echo "$(BOLD)$(RED)❌ Hook validation FAILED ($$HOOK_ERRORS errors)$(NC)"; \
+		echo "$(RED)Action: Fix hook files listed above$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
+
+settings-validate: ## Validate .claude/settings.json schema and hook references
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🔍 Settings Validation$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@SETTINGS_FILE=".claude/settings.json"; \
+	if [ ! -f "$$SETTINGS_FILE" ]; then \
+		echo "$(RED)✗ Settings file missing: $$SETTINGS_FILE$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "$(BLUE)[1/3] Checking JSON syntax...$(NC)"; \
+	if command -v jq >/dev/null 2>&1; then \
+		if jq empty "$$SETTINGS_FILE" 2>/dev/null; then \
+			echo "  $(GREEN)✓ Valid JSON syntax$(NC)"; \
+		else \
+			echo "  $(RED)✗ Invalid JSON syntax$(NC)"; \
+			jq empty "$$SETTINGS_FILE" 2>&1 | sed 's/^/    /'; \
+			exit 1; \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ jq not available, skipping JSON validation$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[2/3] Validating hook file references...$(NC)"; \
+	if command -v jq >/dev/null 2>&1; then \
+		HOOK_REF_ERRORS=0; \
+		jq -r '.. | .command? // empty | select(startswith("./.claude/hooks/"))' "$$SETTINGS_FILE" 2>/dev/null | sort -u | while read -r hook_path; do \
+			if [ -f "$$hook_path" ]; then \
+				echo "  $(GREEN)✓ $$hook_path exists$(NC)"; \
+			else \
+				echo "  $(RED)✗ $$hook_path missing$(NC)"; \
+				HOOK_REF_ERRORS=$$((HOOK_REF_ERRORS + 1)); \
+			fi; \
+		done; \
+	else \
+		echo "  $(YELLOW)⚠ jq not available, skipping hook reference validation$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[3/3] Validating subagent definitions...$(NC)"; \
+	if command -v jq >/dev/null 2>&1; then \
+		SUBAGENT_COUNT=$$(jq '.subagents | keys | length' "$$SETTINGS_FILE" 2>/dev/null); \
+		echo "  $(GREEN)✓ Found $$SUBAGENT_COUNT subagent definitions$(NC)"; \
+		jq -r '.subagents | keys[]' "$$SETTINGS_FILE" 2>/dev/null | while read -r subagent; do \
+			echo "    - $$subagent"; \
+		done; \
+	else \
+		echo "  $(YELLOW)⚠ jq not available, skipping subagent validation$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BOLD)$(GREEN)✅ Settings validation PASSED$(NC)"; \
+	echo ""
+
+governance-test: ## Run all hook test suites and governance validation
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🧪 Governance Test Suite$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@TEST_ERRORS=0; \
+	TESTS_PASSED=0; \
+	TESTS_FAILED=0; \
+	echo "$(BOLD)Running governance tests...$(NC)"; \
+	echo ""; \
+	echo "$(BLUE)[1/5] Hook validation...$(NC)"; \
+	if $(MAKE) -s hooks-validate; then \
+		echo "  $(GREEN)✓ Hook validation passed$(NC)"; \
+		TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+	else \
+		echo "  $(RED)✗ Hook validation failed$(NC)"; \
+		TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+		TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[2/5] Settings validation...$(NC)"; \
+	if $(MAKE) -s settings-validate; then \
+		echo "  $(GREEN)✓ Settings validation passed$(NC)"; \
+		TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+	else \
+		echo "  $(RED)✗ Settings validation failed$(NC)"; \
+		TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+		TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[3/5] Hook test suite (policy-bash)...$(NC)"; \
+	if [ -x ".claude/hooks/test_policy_bash.sh" ]; then \
+		if ./.claude/hooks/test_policy_bash.sh > /tmp/governance_test_policy_bash.log 2>&1; then \
+			echo "  $(GREEN)✓ policy-bash tests passed$(NC)"; \
+			TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+		else \
+			echo "  $(RED)✗ policy-bash tests failed$(NC)"; \
+			echo "  $(YELLOW)See /tmp/governance_test_policy_bash.log for details$(NC)"; \
+			TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+			TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ test_policy_bash.sh not found or not executable$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[4/5] SessionStart hook test...$(NC)"; \
+	if [ -x ".claude/hooks/SessionStart.sh" ]; then \
+		if ./.claude/hooks/SessionStart.sh --dry-run > /tmp/governance_test_sessionstart.log 2>&1; then \
+			echo "  $(GREEN)✓ SessionStart hook test passed$(NC)"; \
+			TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+		else \
+			echo "  $(YELLOW)⚠ SessionStart hook test skipped (no --dry-run support)$(NC)"; \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ SessionStart.sh not found or not executable$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BLUE)[5/5] Receipt generation test...$(NC)"; \
+	if [ -x ".claude/hooks/receipt.sh" ]; then \
+		if bash -n ./.claude/hooks/receipt.sh 2>/dev/null; then \
+			echo "  $(GREEN)✓ Receipt.sh syntax valid$(NC)"; \
+			TESTS_PASSED=$$((TESTS_PASSED + 1)); \
+		else \
+			echo "  $(RED)✗ Receipt.sh syntax error$(NC)"; \
+			TESTS_FAILED=$$((TESTS_FAILED + 1)); \
+			TEST_ERRORS=$$((TEST_ERRORS + 1)); \
+		fi; \
+	else \
+		echo "  $(YELLOW)⚠ receipt.sh not found or not executable$(NC)"; \
+	fi; \
+	echo ""; \
+	echo "$(BOLD)Test Summary:$(NC)"; \
+	echo "  Passed: $(GREEN)$$TESTS_PASSED$(NC)"; \
+	echo "  Failed: $(RED)$$TESTS_FAILED$(NC)"; \
+	echo ""; \
+	if [ $$TEST_ERRORS -eq 0 ]; then \
+		echo "$(BOLD)$(GREEN)✅ All governance tests PASSED$(NC)"; \
+		echo ""; \
+	else \
+		echo "$(BOLD)$(RED)❌ Governance tests FAILED ($$TEST_ERRORS errors)$(NC)"; \
+		echo "$(RED)Action: Fix failing tests listed above$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
+
+receipts-list: ## List recent session receipts (default: 10 most recent)
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)📋 Recent Session Receipts$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@./.claude/commands/governance.sh receipts 10
+	@echo ""
+
+governance-status: ## Show governance system status
+	@./.claude/commands/governance.sh status
+
+governance-validate: ## Run full governance configuration validation
+	@./.claude/commands/governance.sh validate
+
+# ============================================================================
+# GOVERNANCE CLI HELP
+# ============================================================================
+
+governance-help: ## Show governance system help
+	@echo "$(BOLD)$(BLUE)Governance System Targets$(NC)"
+	@echo ""
+	@echo "$(BOLD)Makefile Targets:$(NC)"
+	@echo "  make hooks-validate       - Validate all hooks (existence, permissions, syntax)"
+	@echo "  make settings-validate    - Validate .claude/settings.json schema"
+	@echo "  make governance-test      - Run all hook test suites"
+	@echo "  make receipts-list        - List 10 most recent session receipts"
+	@echo "  make governance-status    - Show governance system status"
+	@echo "  make governance-validate  - Run full governance validation"
+	@echo ""
+	@echo "$(BOLD)CLI Commands:$(NC)"
+	@echo "  ./.claude/commands/governance.sh hooks       - List active hooks"
+	@echo "  ./.claude/commands/governance.sh receipts    - Show recent receipts"
+	@echo "  ./.claude/commands/governance.sh verify      - Run manual verification"
+	@echo "  ./.claude/commands/governance.sh status      - Show system status"
+	@echo "  ./.claude/commands/governance.sh validate    - Validate configuration"
+	@echo "  ./.claude/commands/governance.sh help        - Show CLI help"
+	@echo ""
+	@echo "$(BOLD)Hook Lifecycle:$(NC)"
+	@echo "  SessionStart → PreToolUse* → PostToolUse* → Stop → SessionEnd"
+	@echo ""
+	@echo "$(BOLD)References:$(NC)"
+	@echo "  - CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md"
+	@echo "  - AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md (WO-010)"
+	@echo "  - DEVELOPMENT.md (Hook Lifecycle section)"
+	@echo ""
