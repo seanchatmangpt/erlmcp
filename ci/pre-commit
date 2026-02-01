@@ -12,6 +12,13 @@ echo "========================================="
 echo "TCPS Pre-Commit Quality Gate"
 echo "========================================="
 
+# Setup custom OTP 28.3.1 binary path
+ERLMCP_OTP_BIN="/Users/sac/.erlmcp/otp-28.3.1/bin"
+ASDF_SHIMS="$HOME/.asdf/shims"
+
+# Export PATH for rebar3 commands
+export PATH="${ERLMCP_OTP_BIN}:${ASDF_SHIMS}:${PATH}"
+
 ERRORS=0
 
 # ============================================================================

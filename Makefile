@@ -314,12 +314,20 @@ help:
 # ============================================================================
 # ERLANG VERSION ENFORCEMENT (BLOCKING GATE)
 # ============================================================================
-# CRITICAL: This project requires Erlang/OTP 28 or higher.
-# Lower versions will fail with a clear error message.
-# This gate runs BEFORE any compilation to provide immediate feedback.
+# CRITICAL: This project requires Erlang/OTP 28.3.1 (custom-built from source).
+# The build system enforces this via pre-compile hook and version check script.
 # ============================================================================
 
-check-erlang-version: ## Enforce Erlang/OTP 28+ requirement (BLOCKING)
+# Custom OTP 28.3.1 binary path (built from GitHub source)
+ERLMCP_OTP_BIN := /Users/sac/.erlmcp/otp-28.3.1/bin
+
+# Ensure asdf shims are available for rebar3
+ASDF_SHIMS := $(HOME)/.asdf/shims
+
+# Export PATH: custom OTP first, then asdf shims for rebar3, then rest of PATH
+export PATH := $(ERLMCP_OTP_BIN):$(ASDF_SHIMS):$(PATH)
+
+check-erlang-version: ## Enforce Erlang/OTP 28.3.1 requirement (BLOCKING)
 	@./scripts/check_erlang_version.sh
 
 # ============================================================================
