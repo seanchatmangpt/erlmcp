@@ -1267,3 +1267,233 @@ governance-help: ## Show governance system help
 	@echo "  - AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md (WO-010)"
 	@echo "  - DEVELOPMENT.md (Hook Lifecycle section)"
 	@echo ""
+		fi; \
+	fi
+	@echo ""
+	@echo "$(GREEN)✅ MCP spec validation PASSED$(NC)"
+	@echo ""
+# ============================================================================
+# CLI VERSIONING & RELEASE TARGETS
+# ============================================================================
+
+.PHONY: cli-version cli-release cli-release-dry-run cli-benchmark-baseline \
+        cli-test-startup cli-checksum cli-install
+
+cli-version: ## Show current CLI version
+	@echo "$(BLUE)CLI Version Information:$(NC)"
+	@echo ""
+	@grep "define(VERSION" apps/erlmcp_validation/src/erlmcp_validate_cli.erl | \
+		sed 's/.*"\(.*\)".*/  CLI Module: v\1/'
+	@grep "{vsn," apps/erlmcp_validation/src/erlmcp_validation.app.src | \
+		sed 's/.*"\(.*\)".*/  App Version: v\1/'
+	@echo ""
+	@if [ -f _build/validation/bin/erlmcp_validate ]; then \
+		echo "  Escript Version:"; \
+		./_build/validation/bin/erlmcp_validate --version | sed 's/^/    /'; \
+	else \
+		echo "  Escript: Not built (run 'make validate-cli')"; \
+	fi
+	@echo ""
+
+cli-release: ## Create CLI release (usage: make cli-release VERSION=1.0.0)
+	@if [ -z "$(VERSION)" ]; then \
+		echo "$(RED)❌ Error: VERSION not specified$(NC)"; \
+		echo "Usage: make cli-release VERSION=1.0.0"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)Creating CLI release v$(VERSION)...$(NC)"
+	@./scripts/release-cli.sh $(VERSION)
+
+cli-release-dry-run: ## Test CLI release process (usage: make cli-release-dry-run VERSION=1.0.0)
+	@if [ -z "$(VERSION)" ]; then \
+		echo "$(RED)❌ Error: VERSION not specified$(NC)"; \
+		echo "Usage: make cli-release-dry-run VERSION=1.0.0"; \
+		exit 1; \
+	fi
+	@echo "$(YELLOW)DRY RUN: Testing CLI release v$(VERSION)...$(NC)"
+	@./scripts/release-cli.sh $(VERSION) --dry-run
+
+cli-benchmark-baseline: validate-cli ## Establish CLI performance baseline
+	@echo "$(BLUE)CLI Performance Baseline Benchmarking$(NC)"
+	@echo ""
+	@echo "$(BOLD)Test 1: Startup Time (--version)$(NC)"
+	@TOTAL=0; \
+	RUNS=10; \
+	for i in $$(seq 1 $$RUNS); do \
+		START=$$(date +%s%N); \
+		./_build/validation/bin/erlmcp_validate --version > /dev/null 2>&1; \
+		END=$$(date +%s%N); \
+		ELAPSED=$$((($${END} - $${START}) / 1000000)); \
+		TOTAL=$$(($$TOTAL + $$ELAPSED)); \
+		echo "  Run $$i: $${ELAPSED}ms"; \
+	done; \
+	AVG=$$(($$TOTAL / $$RUNS)); \
+	echo "  Average: $${AVG}ms"; \
+	if [ $$AVG -gt 2000 ]; then \
+		echo "$(RED)❌ Startup time regression: $${AVG}ms > 2000ms$(NC)"; \
+	else \
+		echo "$(GREEN)✓ Startup time acceptable: $${AVG}ms$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(BOLD)Test 2: Help Command Time$(NC)"
+	@START=$$(date +%s%N); \
+	./_build/validation/bin/erlmcp_validate --help > /dev/null 2>&1; \
+	END=$$(date +%s%N); \
+	ELAPSED=$$((($${END} - $${START}) / 1000000)); \
+	echo "  Elapsed: $${ELAPSED}ms"; \
+	if [ $$ELAPSED -gt 3000 ]; then \
+		echo "$(RED)❌ Help command slow: $${ELAPSED}ms > 3000ms$(NC)"; \
+	else \
+		echo "$(GREEN)✓ Help command acceptable: $${ELAPSED}ms$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(GREEN)✓ Baseline benchmarking complete$(NC)"
+	@echo ""
+	@echo "Thresholds:"
+	@echo "  - Startup time: < 2000ms"
+	@echo "  - Help command: < 3000ms"
+	@echo ""
+
+cli-test-startup: validate-cli ## Quick CLI startup test
+	@echo "$(BLUE)Testing CLI startup...$(NC)"
+	@if ./_build/validation/bin/erlmcp_validate --version; then \
+		echo "$(GREEN)✓ CLI starts successfully$(NC)"; \
+	else \
+		echo "$(RED)❌ CLI failed to start$(NC)"; \
+		exit 1; \
+	fi
+
+cli-checksum: validate-cli ## Generate CLI checksum
+	@echo "$(BLUE)Generating CLI checksum...$(NC)"
+	@cd _build/validation/bin && \
+		sha256sum erlmcp_validate > erlmcp_validate.sha256 && \
+		echo "$(GREEN)✓ Checksum generated:$(NC)" && \
+		cat erlmcp_validate.sha256
+
+cli-install: validate-cli ## Install CLI to /usr/local/bin (requires sudo)
+	@echo "$(BLUE)Installing CLI to /usr/local/bin...$(NC)"
+	@if [ ! -f _build/validation/bin/erlmcp_validate ]; then \
+		echo "$(RED)❌ CLI not built$(NC)"; \
+		exit 1; \
+	fi
+	@sudo cp _build/validation/bin/erlmcp_validate /usr/local/bin/erlmcp-validate
+	@sudo chmod +x /usr/local/bin/erlmcp-validate
+	@echo "$(GREEN)✓ CLI installed to /usr/local/bin/erlmcp-validate$(NC)"
+	@echo ""
+	@echo "Usage:"
+	@echo "  erlmcp-validate --help"
+	@echo "  erlmcp-validate --version"
+	@echo ""
+
+cli-uninstall: ## Uninstall CLI from /usr/local/bin (requires sudo)
+	@echo "$(BLUE)Uninstalling CLI from /usr/local/bin...$(NC)"
+	@if [ -f /usr/local/bin/erlmcp-validate ]; then \
+		sudo rm /usr/local/bin/erlmcp-validate; \
+		echo "$(GREEN)✓ CLI uninstalled$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ CLI not installed at /usr/local/bin/erlmcp-validate$(NC)"; \
+	fi
+
+# ============================================================================
+# CLI PERFORMANCE TARGETS
+# ============================================================================
+
+bench-cli-startup: ## Benchmark CLI startup time (target: <100ms)
+	@echo "$(BLUE)Benchmarking CLI startup performance...$(NC)"
+	@rebar3 shell --config config/sys.config --eval "erlmcp_cli_startup_bench:run(#{iterations => 100}), init:stop()." --sname cli_bench_startup
+
+bench-cli-commands: ## Benchmark CLI command execution (target: <500ms)
+	@echo "$(BLUE)Benchmarking CLI command execution...$(NC)"
+	@rebar3 shell --config config/sys.config --eval "erlmcp_cli_command_bench:run(#{iterations => 10}), init:stop()." --sname cli_bench_commands
+
+bench-cli: bench-cli-startup bench-cli-commands ## Run all CLI benchmarks
+	@echo "$(GREEN)✓ CLI benchmarks complete$(NC)"
+	@echo "Results in bench/results/"
+
+profile-cli: ## Profile CLI with fprof to find bottlenecks
+	@echo "$(BLUE)Profiling CLI startup...$(NC)"
+	@./scripts/bench/cli_profile.sh
+
+bench-cli-quick: ## Quick CLI performance check
+	@echo "$(BLUE)Quick CLI performance check...$(NC)"
+	@rebar3 shell --config config/sys.config --eval "erlmcp_cli_startup_bench:run(#{iterations => 10}), init:stop()." --sname cli_bench_quick
+
+.PHONY: bench-cli-startup bench-cli-commands bench-cli profile-cli bench-cli-quick
+
+# ============================================================================
+# CLI FEATURE TESTS (Interactive, Plugins, Completion, Diagnostics)
+# ============================================================================
+
+test-cli: test-cli-eunit test-cli-ct ## Run all CLI feature tests
+	@echo "$(GREEN)✓ All CLI tests passed$(NC)"
+
+test-cli-eunit: ## Run EUnit tests for CLI modules
+	@echo "$(BLUE)Running CLI EUnit tests...$(NC)"
+	@rebar3 eunit --module=erlmcp_cli_interactive_tests
+	@rebar3 eunit --module=erlmcp_cli_completer_tests
+	@rebar3 eunit --module=erlmcp_cli_formatter_tests
+	@rebar3 eunit --module=erlmcp_cli_suggester_tests
+	@rebar3 eunit --module=erlmcp_plugin_manager_tests
+	@rebar3 eunit --module=erlmcp_cli_diagnostics_tests
+	@echo "$(GREEN)✓ CLI EUnit tests passed$(NC)"
+
+test-cli-ct: ## Run Common Test suites for CLI integration
+	@echo "$(BLUE)Running CLI Common Test suites...$(NC)"
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_interactive_SUITE
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_plugins_SUITE
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_completion_SUITE
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_diagnostics_SUITE
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_performance_SUITE
+	@echo "$(GREEN)✓ CLI Common Test suites passed$(NC)"
+
+test-cli-coverage: test-cli ## Run CLI tests with coverage analysis
+	@echo "$(BLUE)Generating CLI test coverage report...$(NC)"
+	@rebar3 eunit --cover --module=erlmcp_cli_interactive_tests
+	@rebar3 eunit --cover --module=erlmcp_cli_completer_tests
+	@rebar3 eunit --cover --module=erlmcp_cli_formatter_tests
+	@rebar3 eunit --cover --module=erlmcp_cli_suggester_tests
+	@rebar3 eunit --cover --module=erlmcp_plugin_manager_tests
+	@rebar3 eunit --cover --module=erlmcp_cli_diagnostics_tests
+	@rebar3 cover --verbose
+	@echo "$(GREEN)✓ CLI coverage report generated$(NC)"
+	@echo "$(YELLOW)Coverage report: _build/test/cover/index.html$(NC)"
+
+test-cli-interactive: ## Run only interactive CLI tests
+	@echo "$(BLUE)Running interactive CLI tests...$(NC)"
+	@rebar3 eunit --module=erlmcp_cli_interactive_tests
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_interactive_SUITE
+	@echo "$(GREEN)✓ Interactive CLI tests passed$(NC)"
+
+test-cli-plugins: ## Run only plugin system tests
+	@echo "$(BLUE)Running plugin system tests...$(NC)"
+	@rebar3 eunit --module=erlmcp_plugin_manager_tests
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_plugins_SUITE
+	@echo "$(GREEN)✓ Plugin system tests passed$(NC)"
+
+test-cli-completion: ## Run only completion tests
+	@echo "$(BLUE)Running completion tests...$(NC)"
+	@rebar3 eunit --module=erlmcp_cli_completer_tests
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_completion_SUITE
+	@echo "$(GREEN)✓ Completion tests passed$(NC)"
+
+test-cli-diagnostics: ## Run only diagnostics tests
+	@echo "$(BLUE)Running diagnostics tests...$(NC)"
+	@rebar3 eunit --module=erlmcp_cli_diagnostics_tests
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_diagnostics_SUITE
+	@echo "$(GREEN)✓ Diagnostics tests passed$(NC)"
+
+test-cli-performance: ## Run CLI performance tests
+	@echo "$(BLUE)Running CLI performance tests...$(NC)"
+	@rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_cli_performance_SUITE
+	@echo "$(GREEN)✓ CLI performance tests passed$(NC)"
+
+test-cli-regression: test-cli-performance ## Check for performance regressions in CLI
+	@echo "$(BLUE)Checking for CLI performance regressions...$(NC)"
+	@if [ -f .baseline_cli_performance.txt ]; then \
+		echo "Comparing against baseline..."; \
+		./scripts/check_cli_performance_regression.sh || exit 1; \
+		echo "$(GREEN)✓ No performance regressions detected$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ No baseline found, creating baseline...$(NC)"; \
+		./scripts/save_cli_performance_baseline.sh; \
+	fi
