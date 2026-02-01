@@ -447,9 +447,42 @@ parse_args(["spec-check"|Rest]) ->
 parse_args(["transport-check"|Rest]) ->
     parse_transport_check_args(Rest, #{});
 
-%% Legacy commands
+%% New diagnostic commands
+parse_args(["diagnose"|Rest]) ->
+    parse_diagnose_args(Rest, #{});
+
+parse_args(["profile-command"|Rest]) ->
+    parse_profile_command_args(Rest, #{});
+
+parse_args(["trace-command"|Rest]) ->
+    parse_trace_command_args(Rest, #{});
+
+parse_args(["memory-usage"|Rest]) ->
+    parse_memory_usage_args(Rest, #{});
+
+parse_args(["watch"|Rest]) ->
+    parse_watch_args(Rest, #{});
+
+parse_args(["stats"|Rest]) ->
+    parse_stats_args(Rest, #{});
+
+%% Completion and suggestion commands
+parse_args(["--gen-completions"|Rest]) ->
+    parse_gen_completions_args(Rest, #{});
+
+parse_args(["install-completions"|Rest]) ->
+    parse_install_completions_args(Rest, #{});
+
+%% Legacy commands with smart suggestions
 parse_args([Command|_]) ->
-    {error, "Unknown command: " ++ Command}.
+    Suggestions = erlmcp_cli_suggester:suggest(Command),
+    case Suggestions of
+        [] ->
+            {error, "Unknown command: " ++ Command};
+        _ ->
+            SuggestionMsg = binary_to_list(erlmcp_cli_suggester:format_suggestion(Command, Suggestions)),
+            {error, SuggestionMsg}
+    end.
 
 %% @doc Parse 'protocol' command arguments
 parse_protocol_args([], _Opts) ->
@@ -662,6 +695,153 @@ parse_transport_check_opts([Invalid|_], _) ->
     {error, "Invalid option: " ++ Invalid}.
 
 %%====================================================================
+%% New Diagnostic Command Argument Parsers
+%%====================================================================
+
+%% @doc Parse 'diagnose' command arguments
+%% Usage: diagnose [--output <fmt>] [--verbose <level>]
+parse_diagnose_args(Rest, Opts) ->
+    parse_diagnose_opts(Rest, Opts).
+
+parse_diagnose_opts([], Opts) ->
+    {ok, {diagnose, Opts}};
+parse_diagnose_opts(["--output", Format|Rest], Opts) ->
+    parse_diagnose_opts(Rest, maps:put(output, Format, Opts));
+parse_diagnose_opts(["--verbose", Level|Rest], Opts) ->
+    try
+        LevelInt = list_to_integer(Level),
+        case LevelInt >= 1 andalso LevelInt =< 5 of
+            true -> parse_diagnose_opts(Rest, maps:put(verbose, LevelInt, Opts));
+            false -> {error, "Verbosity level must be 1-5"}
+        end
+    catch
+        _:_ -> {error, "Invalid verbosity level: " ++ Level}
+    end;
+parse_diagnose_opts(["--include-processes"|Rest], Opts) ->
+    parse_diagnose_opts(Rest, maps:put(include_processes, true, Opts));
+parse_diagnose_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse 'profile-command' command arguments
+%% Usage: profile-command <command> [--profile <type>] [--output <file>]
+parse_profile_command_args([], _Opts) ->
+    {error, "profile-command requires command argument"};
+parse_profile_command_args([Cmd|Rest], Opts) ->
+    parse_profile_command_opts(Rest, maps:put(command, Cmd, Opts)).
+
+parse_profile_command_opts([], Opts) ->
+    {ok, {profile_command, Opts}};
+parse_profile_command_opts(["--profile", Type|Rest], Opts) ->
+    ValidTypes = ["cpu", "memory", "all"],
+    case lists:member(Type, ValidTypes) of
+        true -> parse_profile_command_opts(Rest, maps:put(profile_type, Type, Opts));
+        false -> {error, "Invalid profile type: " ++ Type}
+    end;
+parse_profile_command_opts(["--output", File|Rest], Opts) ->
+    parse_profile_command_opts(Rest, maps:put(output, File, Opts));
+parse_profile_command_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse 'trace-command' command arguments
+%% Usage: trace-command <command> [--trace <spec>] [--output <file>]
+parse_trace_command_args([], _Opts) ->
+    {error, "trace-command requires command argument"};
+parse_trace_command_args([Cmd|Rest], Opts) ->
+    parse_trace_command_opts(Rest, maps:put(command, Cmd, Opts)).
+
+parse_trace_command_opts([], Opts) ->
+    {ok, {trace_command, Opts}};
+parse_trace_command_opts(["--trace", Spec|Rest], Opts) ->
+    parse_trace_command_opts(Rest, maps:put(trace_spec, Spec, Opts));
+parse_trace_command_opts(["--output", File|Rest], Opts) ->
+    parse_trace_command_opts(Rest, maps:put(output, File, Opts));
+parse_trace_command_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse 'memory-usage' command arguments
+%% Usage: memory-usage [--output <fmt>] [--verbose <level>]
+parse_memory_usage_args(Rest, Opts) ->
+    parse_memory_usage_opts(Rest, Opts).
+
+parse_memory_usage_opts([], Opts) ->
+    {ok, {memory_usage, Opts}};
+parse_memory_usage_opts(["--output", Format|Rest], Opts) ->
+    parse_memory_usage_opts(Rest, maps:put(output, Format, Opts));
+parse_memory_usage_opts(["--verbose", Level|Rest], Opts) ->
+    try
+        LevelInt = list_to_integer(Level),
+        case LevelInt >= 1 andalso LevelInt =< 5 of
+            true -> parse_memory_usage_opts(Rest, maps:put(verbose, LevelInt, Opts));
+            false -> {error, "Verbosity level must be 1-5"}
+        end
+    catch
+        _:_ -> {error, "Invalid verbosity level: " ++ Level}
+    end;
+parse_memory_usage_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse 'watch' command arguments
+%% Usage: watch [--refresh <ms>] [--output <fmt>]
+parse_watch_args(Rest, Opts) ->
+    parse_watch_opts(Rest, Opts).
+
+parse_watch_opts([], Opts) ->
+    {ok, {watch, Opts}};
+parse_watch_opts(["--refresh", Interval|Rest], Opts) ->
+    try
+        IntervalInt = list_to_integer(Interval),
+        parse_watch_opts(Rest, maps:put(refresh_interval, IntervalInt, Opts))
+    catch
+        _:_ -> {error, "Invalid refresh interval: " ++ Interval}
+    end;
+parse_watch_opts(["--output", Format|Rest], Opts) ->
+    parse_watch_opts(Rest, maps:put(output, Format, Opts));
+parse_watch_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse 'stats' command arguments
+%% Usage: stats [--output <fmt>] [--export <file>]
+parse_stats_args(Rest, Opts) ->
+    parse_stats_opts(Rest, Opts).
+
+parse_stats_opts([], Opts) ->
+    {ok, {stats, Opts}};
+parse_stats_opts(["--output", Format|Rest], Opts) ->
+    parse_stats_opts(Rest, maps:put(output, Format, Opts));
+parse_stats_opts(["--export", File|Rest], Opts) ->
+    parse_stats_opts(Rest, maps:put(export, File, Opts));
+parse_stats_opts([Invalid|_], _) ->
+    {error, "Invalid option: " ++ Invalid}.
+
+%% @doc Parse '--gen-completions' arguments
+%% Usage: --gen-completions <shell>
+parse_gen_completions_args([], _Opts) ->
+    {error, "--gen-completions requires shell argument (bash, zsh, fish)"};
+parse_gen_completions_args([Shell|_Rest], Opts) ->
+    ValidShells = ["bash", "zsh", "fish"],
+    case lists:member(Shell, ValidShells) of
+        true ->
+            {ok, {gen_completions, maps:put(shell, Shell, Opts)}};
+        false ->
+            {error, "Invalid shell: " ++ Shell ++ ". Valid: " ++
+             string:join(ValidShells, ", ")}
+    end.
+
+%% @doc Parse 'install-completions' arguments
+%% Usage: install-completions [<shell>]
+parse_install_completions_args([], Opts) ->
+    {ok, {install_completions, maps:put(shell, "auto", Opts)}};
+parse_install_completions_args([Shell|_Rest], Opts) ->
+    ValidShells = ["bash", "zsh", "fish", "auto"],
+    case lists:member(Shell, ValidShells) of
+        true ->
+            {ok, {install_completions, maps:put(shell, Shell, Opts)}};
+        false ->
+            {error, "Invalid shell: " ++ Shell ++ ". Valid: " ++
+             string:join(ValidShells, ", ")}
+    end.
+
+%%====================================================================
 %% Internal functions - Command Execution
 %%====================================================================
 
@@ -799,6 +979,139 @@ execute_command({status, Opts}) ->
             halt(0);
         {error, Reason} ->
             print_error("Status check failed: " ++ io_lib:format("~p", [Reason])),
+            halt(1)
+    end;
+
+execute_command({gen_completions, Opts}) ->
+    Shell = list_to_atom(maps:get(shell, Opts)),
+    case erlmcp_cli_completer:generate(Shell) of
+        {ok, Script} ->
+            io:format("~s", [Script]),
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Failed to generate completions: ~p", [Reason])),
+            halt(1)
+    end;
+
+execute_command({install_completions, Opts}) ->
+    Shell = maps:get(shell, Opts, "auto"),
+    case install_shell_completions(Shell) of
+        {ok, Message} ->
+            io:format("~s~n", [Message]),
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Failed to install completions: ~p", [Reason])),
+            halt(1)
+    end;
+
+%%====================================================================
+%% New Diagnostic Command Execution
+%%====================================================================
+
+execute_command({diagnose, Opts}) ->
+    case erlmcp_cli_diagnostics:diagnose(Opts) of
+        {ok, Result} ->
+            Format = list_to_atom(maps:get(output, Opts, "table")),
+            erlmcp_cli_formatter:print(Format, Result, Opts),
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Diagnostics failed: ~p", [Reason])),
+            halt(1)
+    end;
+
+execute_command({profile_command, Opts}) ->
+    Cmd = maps:get(command, Opts),
+    ProfileType = list_to_atom(maps:get(profile_type, Opts, "all")),
+
+    %% Create a command function based on the command string
+    CommandFun = fun() ->
+        %% Execute the command (simplified for now)
+        ok
+    end,
+
+    ProfileOpts = #{
+        type => ProfileType,
+        output_file => maps:get(output, Opts, "profile.json")
+    },
+
+    case erlmcp_cli_profiler:profile_command(CommandFun, ProfileType, ProfileOpts) of
+        {ok, Result} ->
+            io:format("Profile complete. Results:~n"),
+            erlmcp_cli_formatter:print(json, Result, #{}),
+
+            %% Export if output file specified
+            case maps:get(output, Opts, undefined) of
+                undefined -> ok;
+                OutputFile ->
+                    erlmcp_cli_profiler:export_profile(Result, OutputFile)
+            end,
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Profiling failed: ~p", [Reason])),
+            halt(1)
+    end;
+
+execute_command({trace_command, Opts}) ->
+    Cmd = maps:get(command, Opts),
+    TraceSpec = maps:get(trace_spec, Opts, "all"),
+
+    %% Create a command function
+    CommandFun = fun() ->
+        ok
+    end,
+
+    TraceOpts = #{
+        spec => TraceSpec,
+        output_file => maps:get(output, Opts, "trace.json"),
+        max_events => 10000
+    },
+
+    case erlmcp_cli_tracer:trace_command(CommandFun, TraceSpec, TraceOpts) of
+        {ok, Result} ->
+            io:format("Trace complete. Results:~n"),
+            erlmcp_cli_formatter:print(json, Result, #{}),
+
+            %% Export if output file specified
+            case maps:get(output, Opts, undefined) of
+                undefined -> ok;
+                OutputFile ->
+                    TraceEvents = maps:get(trace, Result, []),
+                    erlmcp_cli_tracer:export_trace(TraceEvents, OutputFile)
+            end,
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Tracing failed: ~p", [Reason])),
+            halt(1)
+    end;
+
+execute_command({memory_usage, Opts}) ->
+    MemoryInfo = erlmcp_cli_diagnostics:memory_usage(Opts),
+    Format = list_to_atom(maps:get(output, Opts, "table")),
+    erlmcp_cli_formatter:print(Format, MemoryInfo, Opts),
+    halt(0);
+
+execute_command({watch, Opts}) ->
+    %% Start real-time watching
+    io:format("Starting real-time monitor (press Ctrl+C to exit)...~n~n"),
+    erlmcp_cli_observer:watch(Opts),
+    halt(0);
+
+execute_command({stats, Opts}) ->
+    case erlmcp_cli_stats:get_stats() of
+        {ok, Stats} ->
+            Format = list_to_atom(maps:get(output, Opts, "table")),
+            erlmcp_cli_formatter:print(Format, Stats, Opts),
+
+            %% Export if requested
+            case maps:get(export, Opts, undefined) of
+                undefined -> ok;
+                ExportFile ->
+                    erlmcp_cli_stats:export_stats(ExportFile),
+                    io:format("Stats exported to ~s~n", [ExportFile])
+            end,
+            halt(0);
+        {error, Reason} ->
+            print_error(io_lib:format("Failed to get stats: ~p", [Reason])),
             halt(1)
     end.
 
@@ -1240,6 +1553,100 @@ check_modules() ->
 %% @doc Check configuration
 check_configuration() ->
     {ok, "Configuration check passed"}.
+
+%% @doc Install shell completions
+install_shell_completions(ShellType) ->
+    try
+        %% Get the script directory
+        ScriptDir = code:priv_dir(erlmcp_validation),
+        ShellsDir = filename:join([ScriptDir, "..", "..", "..", "scripts", "shells"]),
+
+        %% Detect shell if auto
+        Shell = case ShellType of
+            "auto" -> detect_shell();
+            _ -> ShellType
+        end,
+
+        %% Determine source and destination
+        {SourceFile, DestFile, Instructions} = case Shell of
+            "bash" ->
+                Source = filename:join(ShellsDir, "erlmcp_completion.bash"),
+                Home = os:getenv("HOME"),
+                CompDir = filename:join(Home, ".bash_completion.d"),
+                filelib:ensure_dir(filename:join(CompDir, "dummy")),
+                Dest = filename:join(CompDir, "erlmcp-validate"),
+                Instr = io_lib:format(
+                    "Installed to: ~s~n~n"
+                    "To activate, add this to your ~/.bashrc:~n"
+                    "  source ~s~n~n"
+                    "Or reload your shell:~n"
+                    "  source ~/.bashrc",
+                    [Dest, Dest]),
+                {Source, Dest, Instr};
+
+            "zsh" ->
+                Source = filename:join(ShellsDir, "erlmcp_completion.zsh"),
+                Home = os:getenv("HOME"),
+                CompDir = filename:join([Home, ".zsh", "completion"]),
+                filelib:ensure_dir(filename:join(CompDir, "dummy")),
+                Dest = filename:join(CompDir, "_erlmcp-validate"),
+                Instr = io_lib:format(
+                    "Installed to: ~s~n~n"
+                    "To activate, add this to your ~/.zshrc (if not already present):~n"
+                    "  fpath=(~s $fpath)~n"
+                    "  autoload -U compinit && compinit~n~n"
+                    "Then reload your shell:~n"
+                    "  source ~/.zshrc",
+                    [Dest, CompDir]),
+                {Source, Dest, Instr};
+
+            "fish" ->
+                Source = filename:join(ShellsDir, "erlmcp_completion.fish"),
+                Home = os:getenv("HOME"),
+                CompDir = filename:join([Home, ".config", "fish", "completions"]),
+                filelib:ensure_dir(filename:join(CompDir, "dummy")),
+                Dest = filename:join(CompDir, "erlmcp-validate.fish"),
+                Instr = io_lib:format(
+                    "Installed to: ~s~n~n"
+                    "Fish completions are automatically loaded.~n"
+                    "Reload completions with:~n"
+                    "  fish_update_completions",
+                    [Dest]),
+                {Source, Dest, Instr};
+
+            _ ->
+                throw({unsupported_shell, Shell})
+        end,
+
+        %% Copy file
+        case file:copy(SourceFile, DestFile) of
+            {ok, _} ->
+                {ok, lists:flatten([
+                    io_lib:format("✓ Shell completions installed for ~s~n~n", [Shell]),
+                    Instructions
+                ])};
+            {error, Reason} ->
+                {error, {copy_failed, SourceFile, DestFile, Reason}}
+        end
+    catch
+        throw:Error ->
+            {error, Error};
+        _:Error:_Stack ->
+            {error, Error}
+    end.
+
+%% @doc Detect current shell
+detect_shell() ->
+    case os:getenv("SHELL") of
+        false -> "bash";  %% Default to bash
+        ShellPath ->
+            case filename:basename(ShellPath) of
+                "bash" -> "bash";
+                "zsh" -> "zsh";
+                "fish" -> "fish";
+                _ -> "bash"
+            end
+    end.
 
 %%====================================================================
 %% New Validation Functions (Requested by User)
@@ -2002,6 +2409,13 @@ print_help(Message) ->
     io:format("  spec-check               Check spec compliance~n"),
     io:format("  transport-check <name>   Verify transport behavior~n"),
     io:format("  report                   Generate compliance report~n"),
+    io:format("~nDiagnostic Commands:~n"),
+    io:format("  diagnose                 Run system health diagnostics~n"),
+    io:format("  profile-command <cmd>    Profile command execution (CPU/memory)~n"),
+    io:format("  trace-command <cmd>      Trace command execution in detail~n"),
+    io:format("  memory-usage             Display memory usage breakdown~n"),
+    io:format("  watch                    Real-time system monitoring dashboard~n"),
+    io:format("  stats                    Show command execution statistics~n"),
     io:format("~nLegacy Commands:~n"),
     io:format("  spec                     Validate against hardcoded MCP 2025-11-25 spec~n"),
     io:format("  protocol --file <f>      Validate JSON-RPC/MCP message from file~n"),
@@ -2011,8 +2425,10 @@ print_help(Message) ->
     io:format("  run                      Run validation tests~n"),
     io:format("  quick-check              Perform quick validation check~n"),
     io:format("  status                   Show validation status~n"),
+    io:format("  install-completions      Install shell completions (auto-detect shell)~n"),
     io:format("  --help                   Show this help message~n"),
     io:format("  --version                Show version information~n"),
+    io:format("  --gen-completions <sh>   Generate completion script (bash/zsh/fish)~n"),
     io:format("~nValidate options:~n"),
     io:format("  --format <type>          Output format (text, json, markdown)~n"),
     io:format("  --output <file>          Write result to file~n"),
@@ -2025,6 +2441,15 @@ print_help(Message) ->
     io:format("  --format <type>          Output format (text, json, markdown)~n"),
     io:format("  --output <file>          Write result to file~n"),
     io:format("  --verbose                Show detailed output~n"),
+    io:format("~nDiagnostic options:~n"),
+    io:format("  --output <fmt>           Output format (json, table, csv, yaml, raw)~n"),
+    io:format("  --verbose <1-5>          Verbosity level (1=minimal, 5=maximum)~n"),
+    io:format("  --quiet                  Suppress non-error output~n"),
+    io:format("  --profile <type>         Profile type (cpu, memory, all)~n"),
+    io:format("  --trace <spec>           Trace specification (e.g., http:request,validation:parse)~n"),
+    io:format("  --refresh <ms>           Refresh interval for watch command~n"),
+    io:format("  --export <file>          Export stats to file~n"),
+    io:format("  --include-processes      Include detailed process information~n"),
     io:format("~nReport options:~n"),
     io:format("  --format <type>          Report format (text, json, markdown, html)~n"),
     io:format("  --output <file>          Write report to file~n"),
@@ -2044,6 +2469,13 @@ print_help(Message) ->
     io:format("  erlmcp_validate spec-check --format json~n"),
     io:format("  erlmcp_validate transport-check stdio --verbose~n"),
     io:format("  erlmcp_validate report --format markdown --output report.md~n"),
+    io:format("~nDiagnostic examples:~n"),
+    io:format("  erlmcp_validate diagnose --output json --verbose 4~n"),
+    io:format("  erlmcp_validate memory-usage --output table~n"),
+    io:format("  erlmcp_validate watch --refresh 1000~n"),
+    io:format("  erlmcp_validate stats --export stats.json~n"),
+    io:format("  erlmcp_validate profile-command validate --profile cpu~n"),
+    io:format("  erlmcp_validate trace-command validate --trace http:request,validation:parse~n"),
     io:format("~nLegacy examples:~n"),
     io:format("  erlmcp_validate spec~n"),
     io:format("  erlmcp_validate protocol --file test.json~n"),

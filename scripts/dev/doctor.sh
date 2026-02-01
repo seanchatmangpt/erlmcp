@@ -50,7 +50,7 @@ command_exists() {
 
 print_header "Environment Health Check"
 
-# Check Erlang/OTP - STRICT: OTP 28+ REQUIRED
+# Check Erlang/OTP - STRICT: OTP 28.3.1+ REQUIRED
 print_check "Erlang/OTP installation"
 if command_exists erl; then
     OTP_VERSION=$(erl -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' -noshell 2>/dev/null)
@@ -58,19 +58,35 @@ if command_exists erl; then
     print_ok "Erlang/OTP $OTP_VERSION installed"
 
     if [ "$OTP_MAJOR" -ge 28 ]; then
-        print_ok "OTP version $OTP_VERSION is supported (28+)"
+        # Check for recommended 28.3.1
+        if [ "$OTP_VERSION" = "28" ]; then
+            # Get full version for OTP 28
+            FULL_VERSION=$(erl -eval '{ok, V} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("~s", [V]), halt().' -noshell 2>/dev/null | tr -d '\n')
+            if [ -n "$FULL_VERSION" ]; then
+                print_ok "OTP version $FULL_VERSION detected"
+                if [ "$FULL_VERSION" = "28.3.1" ]; then
+                    print_ok "OTP $FULL_VERSION matches recommended version"
+                else
+                    print_warn "OTP $FULL_VERSION: recommended version is 28.3.1"
+                fi
+            else
+                print_ok "OTP version $OTP_VERSION is supported (28+)"
+            fi
+        else
+            print_ok "OTP version $OTP_VERSION is supported (28+)"
+        fi
     else
         echo ""
         echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
         echo -e "${RED}  ERROR: Erlang/OTP $OTP_VERSION is NOT supported${NC}"
         echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
         echo ""
-        echo -e "${RED}  This project requires Erlang/OTP 28 or higher.${NC}"
+        echo -e "${RED}  This project requires Erlang/OTP 28.3.1 or higher.${NC}"
         echo -e "${RED}  You are using OTP $OTP_VERSION.${NC}"
         echo ""
         echo -e "${YELLOW}  To upgrade:${NC}"
-        echo "    asdf: asdf install erlang 28.0 && asdf local erlang 28.0"
-        echo "    kerl: kerl build 28.0 28.0 && kerl install 28.0 ~/erlang/28.0"
+        echo "    asdf: asdf install erlang 28.3.1 && asdf local erlang 28.3.1"
+        echo "    kerl: kerl build 28.3.1 28.3.1 && kerl install 28.3.1 ~/erlang/28.3.1"
         echo ""
         echo -e "${RED}  Refusal Code: OTP_VERSION_TOO_LOW${NC}"
         echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
@@ -98,6 +114,68 @@ if command_exists git; then
     print_ok "git $GIT_VERSION installed"
 else
     print_warn "git not found (recommended for development)"
+fi
+
+# Check OpenSSL (optional but recommended for crypto/TLS)
+print_check "OpenSSL installation"
+if command_exists openssl; then
+    OPENSSL_VERSION=$(openssl version | awk '{print $2}')
+    print_ok "OpenSSL $OPENSSL_VERSION installed"
+else
+    print_warn "OpenSSL not found (recommended for TLS support)"
+    echo "         Install: apt-get install openssl / brew install openssl"
+fi
+
+# Check ulimits for load testing
+print_header "System Limits"
+
+print_check "File descriptor limits (ulimit -n)"
+FD_LIMIT=$(ulimit -n 2>/dev/null || echo "unknown")
+if [ "$FD_LIMIT" != "unknown" ]; then
+    if [ "$FD_LIMIT" -ge 65536 ]; then
+        print_ok "File descriptors: $FD_LIMIT (excellent for load testing)"
+    elif [ "$FD_LIMIT" -ge 10000 ]; then
+        print_ok "File descriptors: $FD_LIMIT (adequate for load testing)"
+    elif [ "$FD_LIMIT" -ge 1024 ]; then
+        print_warn "File descriptors: $FD_LIMIT (low for high-load testing, recommend 65536+)"
+        echo "         Fix: ulimit -n 65536  (or set in /etc/security/limits.conf)"
+    else
+        print_warn "File descriptors: $FD_LIMIT (too low for load testing, recommend 65536+)"
+        echo "         Fix: ulimit -n 65536  (or set in /etc/security/limits.conf)"
+    fi
+else
+    print_warn "Could not determine file descriptor limit"
+fi
+
+print_check "Process limits (ulimit -u)"
+PROC_LIMIT=$(ulimit -u 2>/dev/null || echo "unknown")
+if [ "$PROC_LIMIT" != "unknown" ]; then
+    if [ "$PROC_LIMIT" -ge 50000 ]; then
+        print_ok "Process limit: $PROC_LIMIT (excellent)"
+    elif [ "$PROC_LIMIT" -ge 10000 ]; then
+        print_ok "Process limit: $PROC_LIMIT (adequate)"
+    else
+        print_warn "Process limit: $PROC_LIMIT (may be low for large-scale testing)"
+        echo "         Note: Erlang can handle 100K+ lightweight processes"
+    fi
+else
+    print_warn "Could not determine process limit"
+fi
+
+# Check for native JSON support in Erlang
+print_header "Erlang Features"
+
+print_check "Native JSON support"
+if command_exists erl; then
+    HAS_JSON=$(erl -eval 'try json:encode(#{test => true}), io:format("true"), halt() catch _:_ -> io:format("false"), halt() end.' -noshell 2>/dev/null)
+    if [ "$HAS_JSON" = "true" ]; then
+        print_ok "Native json module available (OTP 27+)"
+    else
+        print_ok "Using jsx library for JSON (native json requires OTP 27+)"
+        echo "         Note: erlmcp uses jsx for compatibility"
+    fi
+else
+    print_warn "Could not check JSON support"
 fi
 
 # Check project structure

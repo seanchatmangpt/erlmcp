@@ -4,7 +4,11 @@ CODE LIKE A JOE ARMSTRONG AGI SWARM!!!
 
 ## Σ : System Kernel
 
-**erlmcp** := Erlang/OTP MCP SDK | JSON-RPC 2.0 | Client⊕Server | OTP 28+ (STRICT)
+**erlmcp** := Erlang/OTP MCP SDK | JSON-RPC 2.0 | Client⊕Server | OTP 28.3.1 (STRICT, custom-built)
+
+**Custom OTP Installation** : `/Users/sac/.erlmcp/otp-28.3.1/` (built from GitHub source)
+**Binary Path** : `ERLMCP_OTP_BIN="/Users/sac/.erlmcp/otp-28.3.1/bin"`
+**Enforcement** : `.claude/hooks/pre-compile-otp28.sh` + `scripts/check_erlang_version.sh`
 
 | App | |Σ| | Purpose | Tests |
 |-----|-----|---------|-------|

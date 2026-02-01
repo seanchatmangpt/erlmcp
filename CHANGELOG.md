@@ -18,8 +18,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Queue Behavior**: Bounded queues enforced - returns HTTP 429 instead of timeout on capacity
 - **FSM-Based Protocol**: Client/server now use gen_statem (internal only, no API changes)
 
+### New Features - Governance System (Claude Code Web v3.0.0)
+- **Claude Code Web Governance** - Armstrong-style governance using native primitives (hooks, skills, subagents)
+  - SessionStart hook for OTP 28.3.1 bootstrap (WO-001)
+  - Policy-bash hook for network governance (WO-002)
+  - Post-write CI hook for async testing (WO-004)
+  - Receipt hook for audit trails (WO-005)
+  - OTP manager skill for reusable operations (WO-006)
+  - Verifier, build-engineer, release-scout subagents (WO-007-009)
+  - Makefile integration and governance CLI (WO-010)
+  - Settings.json with complete governance configuration
+- **NEW**: `CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md` - Complete governance architecture specification
+- **NEW**: `AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md` - 10 work orders for autonomous implementation
+
+### New Features - CLI Documentation & Release Automation
+- **Comprehensive CLI Documentation Suite**:
+  - `CLI_REFERENCE.md` - Complete command reference with all options, examples, exit codes, and performance characteristics
+  - `CLI_INTERACTIVE_GUIDE.md` - REPL workflow guide with 30+ interactive examples
+  - `SHELL_COMPLETIONS_GUIDE.md` - Tab completion installation for bash, zsh, and fish
+  - `DIAGNOSTICS_GUIDE.md` - Advanced profiling, tracing, and monitoring tools
+  - `PLUGIN_DEVELOPMENT_GUIDE.md` - Complete plugin architecture and creation guide
+  - Example CLI scripts: `validate-spec.sh`, `connect-server.sh`, interactive session recordings
+  - Example plugins: JSON-to-CSV transformer, custom security validator
+
+### Enhancements
+- CLI documentation focused on <30 minute learning curve for new users
+- Shell script examples for common workflows
+- Plugin examples with full test coverage
+- Integration with external tools (Jaeger, Prometheus, flame-graphs)
+
+### CLI & Release Automation
+- **NEW**: Automated CLI versioning and release process
+  - `.github/workflows/cli-validation.yml` - 7-gate CLI CI/CD pipeline
+  - `scripts/release-cli.sh` - One-command release automation
+  - Semantic versioning validation
+  - Pre-flight checks and quality gate execution
+  - Escript build and checksum generation
+  - GitHub release with artifacts
+- **NEW**: Makefile targets for CLI operations
+  - `make cli-version` - Display CLI version information
+  - `make cli-release VERSION=X.Y.Z` - Create CLI release
+  - `make cli-release-dry-run VERSION=X.Y.Z` - Test release process
+  - `make cli-benchmark-baseline` - CLI performance baseline
+  - CLI startup tests, checksums, installation targets
+
+### Performance Baselines (CLI)
+- **Startup time**: < 2000ms (enforced by CI)
+- **Help command**: < 3000ms
+- **Benchmarking**: 10 runs averaged for consistent measurements
+
 ### Documentation
 - **NEW**: `docs/ARMSTRONG_INNOVATIONS.md` - Comprehensive guide to nine Armstrong-style innovations
+- **NEW**: `GOVERNANCE_SYSTEM.md` - Claude Code Web governance system (hooks as runtime governor)
+- **Repository Documentation Reorganization**: Major cleanup and restructuring
+  - Archived 372 interim/transient files from root directory to `archive/`
+  - Removed 222 files after comprehensive audit
+  - Retained 150 high-value reference files in structured archive
+  - Root-level files reduced from 382 to 10 essential files
 - **Updated**: Release Strategy, tools (release.sh, changelog-generator.sh)
 
 ---

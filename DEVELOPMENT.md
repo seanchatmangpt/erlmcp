@@ -6,31 +6,41 @@ This guide covers setting up and working with the erlmcp workspace, which coordi
 
 ## Prerequisites
 
-- **Erlang/OTP 28.3.1+** (required - OTP 28+ features exclusive)
+- **Erlang/OTP 28.3.1** (required - custom-built from GitHub source)
 - **rebar3** (package manager and build tool)
 - **git** (version control)
 - Optional but recommended:
   - **direnv** (automatic environment setup)
-  - **asdf** (version manager for Erlang)
   - **Observer** (Erlang GUI debugger)
 
-### Installation
+### Custom OTP 28.3.1 Installation (REQUIRED)
 
-**macOS with Homebrew:**
+This project uses a **custom-built OTP 28.3.1** located at `/Users/sac/.erlmcp/otp-28.3.1/`. The build system enforces this requirement via:
+- `.claude/hooks/pre-compile-otp28.sh` - PATH configuration
+- `scripts/check_erlang_version.sh` - Version validation
+
+**To build OTP 28.3.1 from source:**
 ```bash
-brew install erlang rebar3 direnv
+cd /Users/sac
+curl -LO https://github.com/erlang/otp/releases/download/OTP-28.3.1/otp_src_28.3.1.tar.gz
+tar xzf otp_src_28.3.1.tar.gz
+cd otp_src_28.3.1
+./configure --prefix=/Users/sac/.erlmcp/otp-28.3.1
+make -j$(sysctl -n hw.ncpu)
+make install
 ```
 
-**Ubuntu/Debian:**
+**Verify installation:**
 ```bash
-sudo apt-get install erlang rebar3 direnv
+make check-erlang-version
+# Output: ✓ OTP 28.3.1 found at /Users/sac/.erlmcp/otp-28.3.1/bin
 ```
 
-**Using asdf (version-agnostic):**
+### Additional Dependencies
+
+**rebar3:**
 ```bash
-asdf plugin add erlang
-asdf plugin add rebar
-asdf install                    # Reads .tool-versions
+brew install rebar3
 ```
 
 ## Quick Start

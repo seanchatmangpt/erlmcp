@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Erlang/OTP Version Enforcement Script
 #
-# This script enforces that only OTP 28+ is used for erlmcp development.
-# It provides clear error messages when a lower version is detected.
+# This script enforces that only OTP 28.3.1 (custom-built) is used for erlmcp.
+# It sources the pre-compile hook to set up the correct PATH to the custom OTP.
 #
 # Usage:
 #   ./scripts/check_erlang_version.sh
 #
 # Exit codes:
-#   0 - OTP 28+ detected, ready to proceed
-#   1 - OTP version too low or Erlang not found
+#   0 - OTP 28.3.1 detected, ready to proceed
+#   1 - OTP version incorrect or Erlang not found
 
 set -euo pipefail
 
@@ -21,8 +21,24 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Required minimum version
+# Custom OTP 28.3.1 installation (built from GitHub source)
+ERLMCP_OTP_BIN="/Users/sac/.erlmcp/otp-28.3.1/bin"
+ERLMCP_OTP_VERSION="28.3.1"
 REQUIRED_OTP_MAJOR=28
+
+# Source the pre-compile hook if available (sets up PATH)
+ERLMCP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PRE_COMPILE_HOOK="${ERLMCP_ROOT}/.claude/hooks/pre-compile-otp28.sh"
+
+if [[ -f "$PRE_COMPILE_HOOK" ]]; then
+    # Source the hook to export PATH variables
+    source "$PRE_COMPILE_HOOK" 2>/dev/null || true
+fi
+
+# Verify custom OTP installation exists
+if [[ -d "$ERLMCP_OTP_BIN" ]]; then
+    export PATH="${ERLMCP_OTP_BIN}:$PATH"
+fi
 
 print_error_banner() {
     echo ""
@@ -36,30 +52,42 @@ print_success_banner() {
     echo -e "${GREEN}✓${NC} Erlang/OTP version check passed: OTP $1"
 }
 
-# Check if Erlang is installed
-if ! command -v erl >/dev/null 2>&1; then
+# Check if custom OTP is installed
+if [[ ! -d "$ERLMCP_OTP_BIN" ]]; then
     print_error_banner
-    echo -e "${RED}  ERROR: Erlang/OTP is not installed or not in PATH${NC}"
+    echo -e "${RED}  ERROR: Custom OTP ${ERLMCP_OTP_VERSION} not found at ${ERLMCP_OTP_BIN}${NC}"
     echo ""
-    echo -e "${YELLOW}  This project requires Erlang/OTP ${REQUIRED_OTP_MAJOR} or higher.${NC}"
+    echo -e "${YELLOW}  This project requires Erlang/OTP ${ERLMCP_OTP_VERSION} (built from GitHub source).${NC}"
     echo ""
-    echo -e "${BLUE}  Installation instructions:${NC}"
+    echo -e "${BLUE}  To build and install OTP ${ERLMCP_OTP_VERSION} from source:${NC}"
     echo ""
-    echo "    macOS (Homebrew):"
-    echo "      brew install erlang"
+    echo "    cd /Users/sac"
+    echo "    curl -LO https://github.com/erlang/otp/releases/download/OTP-${ERLMCP_OTP_VERSION}/otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
+    echo "    tar xzf otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
+    echo "    cd otp_src_${ERLMCP_OTP_VERSION}"
+    echo "    ./configure --prefix=/Users/sac/.erlmcp/otp-${ERLMCP_OTP_VERSION}"
+    echo "    make -j\$(sysctl -n hw.ncpu)"
+    echo "    make install"
     echo ""
-    echo "    Ubuntu/Debian:"
-    echo "      sudo apt-get install erlang"
+    echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo "    asdf version manager (recommended):"
-    echo "      asdf plugin add erlang"
-    echo "      asdf install erlang ${REQUIRED_OTP_MAJOR}.0"
-    echo "      asdf global erlang ${REQUIRED_OTP_MAJOR}.0"
+    exit 1
+fi
+
+# Check if erl binary exists
+if [[ ! -x "${ERLMCP_OTP_BIN}/erl" ]]; then
+    print_error_banner
+    echo -e "${RED}  ERROR: erl binary not found at ${ERLMCP_OTP_BIN}/erl${NC}"
     echo ""
-    echo "    kerl (Erlang version manager):"
-    echo "      kerl build ${REQUIRED_OTP_MAJOR}.0 ${REQUIRED_OTP_MAJOR}.0"
-    echo "      kerl install ${REQUIRED_OTP_MAJOR}.0 ~/erlang/${REQUIRED_OTP_MAJOR}.0"
-    echo "      . ~/erlang/${REQUIRED_OTP_MAJOR}.0/activate"
+    echo -e "${YELLOW}  Your OTP installation may be incomplete.${NC}"
+    echo ""
+    echo -e "${BLUE}  Rebuild OTP ${ERLMCP_OTP_VERSION} from source:${NC}"
+    echo ""
+    echo "    cd /Users/sac/otp_src_${ERLMCP_OTP_VERSION}"
+    echo "    make clean"
+    echo "    ./configure --prefix=/Users/sac/.erlmcp/otp-${ERLMCP_OTP_VERSION}"
+    echo "    make -j\$(sysctl -n hw.ncpu)"
+    echo "    make install"
     echo ""
     echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
     echo ""
@@ -84,47 +112,38 @@ if ! [[ "$OTP_MAJOR" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-# Check version requirement
-if [ "$OTP_MAJOR" -lt "$REQUIRED_OTP_MAJOR" ]; then
+# Check version requirement - must be exactly OTP 28
+if [ "$OTP_MAJOR" -ne "$REQUIRED_OTP_MAJOR" ]; then
     print_error_banner
-    echo -e "${RED}  ERROR: Erlang/OTP version ${OTP_VERSION} is not supported${NC}"
+    echo -e "${RED}  ERROR: Erlang/OTP version mismatch${NC}"
     echo ""
-    echo -e "${YELLOW}  This project requires Erlang/OTP ${REQUIRED_OTP_MAJOR} or higher.${NC}"
+    echo -e "${YELLOW}  This project requires OTP ${ERLMCP_OTP_VERSION} (custom-built from source).${NC}"
     echo -e "${YELLOW}  You are currently using OTP ${OTP_VERSION}.${NC}"
     echo ""
-    echo -e "${BLUE}  Why OTP ${REQUIRED_OTP_MAJOR}+ is required:${NC}"
+    echo -e "${BLUE}  The custom OTP ${ERLMCP_OTP_VERSION} is located at:${NC}"
+    echo "    ${ERLMCP_OTP_BIN}"
     echo ""
-    echo "    - Latest JIT compiler performance optimizations"
-    echo "    - Critical security patches and hardening"
-    echo "    - Modern Erlang language features"
-    echo "    - Improved diagnostics and error messages"
-    echo "    - Better memory management and GC"
+    echo -e "${BLUE}  Your PATH may be pointing to a different Erlang installation.${NC}"
     echo ""
-    echo -e "${BLUE}  How to upgrade:${NC}"
+    echo -e "${BLUE}  To rebuild OTP ${ERLMCP_OTP_VERSION} from source:${NC}"
     echo ""
-    echo "    asdf (recommended):"
-    echo "      asdf install erlang ${REQUIRED_OTP_MAJOR}.0"
-    echo "      asdf local erlang ${REQUIRED_OTP_MAJOR}.0"
+    echo "    cd /Users/sac"
+    echo "    curl -LO https://github.com/erlang/otp/releases/download/OTP-${ERLMCP_OTP_VERSION}/otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
+    echo "    tar xzf otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
+    echo "    cd otp_src_${ERLMCP_OTP_VERSION}"
+    echo "    ./configure --prefix=/Users/sac/.erlmcp/otp-${ERLMCP_OTP_VERSION}"
+    echo "    make -j\$(sysctl -n hw.ncpu)"
+    echo "    make install"
     echo ""
-    echo "    kerl:"
-    echo "      kerl build ${REQUIRED_OTP_MAJOR}.0 ${REQUIRED_OTP_MAJOR}.0"
-    echo "      kerl install ${REQUIRED_OTP_MAJOR}.0 ~/erlang/${REQUIRED_OTP_MAJOR}.0"
-    echo "      . ~/erlang/${REQUIRED_OTP_MAJOR}.0/activate"
-    echo ""
-    echo "    Homebrew (macOS):"
-    echo "      brew upgrade erlang"
-    echo ""
-    echo "    Package manager (Linux):"
-    echo "      Check https://www.erlang.org/downloads for latest packages"
-    echo ""
-    echo -e "${RED}  Refusal Code: OTP_VERSION_TOO_LOW${NC}"
-    echo -e "${RED}  Current: OTP ${OTP_VERSION} | Required: OTP ${REQUIRED_OTP_MAJOR}+${NC}"
+    echo -e "${RED}  Refusal Code: OTP_VERSION_MISMATCH${NC}"
+    echo -e "${RED}  Current: OTP ${OTP_VERSION} | Required: OTP ${ERLMCP_OTP_VERSION}${NC}"
     echo ""
     echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
     echo ""
     exit 1
 fi
 
-# Success
-print_success_banner "$OTP_VERSION"
+# Success - using custom OTP 28.3.1
+print_success_banner "${ERLMCP_OTP_VERSION} (custom-built)"
+echo -e "${BLUE}  Binary: ${ERLMCP_OTP_BIN}/erl${NC}"
 exit 0
