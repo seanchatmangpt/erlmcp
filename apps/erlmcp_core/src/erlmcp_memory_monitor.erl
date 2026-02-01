@@ -140,11 +140,18 @@ force_binary_gc() ->
 
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
-    %% Load configuration
-    CheckInterval = load_config(check_interval, ?DEFAULT_CHECK_INTERVAL),
-    MemoryThreshold = load_config(memory_threshold, ?DEFAULT_MEMORY_THRESHOLD),
-    BinaryThreshold = load_config(binary_threshold, ?DEFAULT_BINARY_THRESHOLD),
-    AutoGC = load_config(auto_gc, ?DEFAULT_AUTO_GC),
+    %% Load configuration with fallback chain:
+    %% 1. Top-level application environment variables (preferred)
+    %% 2. Nested memory_monitoring config (legacy)
+    %% 3. Built-in defaults
+    CheckInterval = application:get_env(erlmcp_core, memory_monitor_check_interval_ms,
+        load_config(check_interval, ?DEFAULT_CHECK_INTERVAL)),
+    MemoryThreshold = application:get_env(erlmcp_core, memory_monitor_threshold,
+        load_config(memory_threshold, ?DEFAULT_MEMORY_THRESHOLD)),
+    BinaryThreshold = application:get_env(erlmcp_core, memory_monitor_binary_threshold_bytes,
+        load_config(binary_threshold, ?DEFAULT_BINARY_THRESHOLD)),
+    AutoGC = application:get_env(erlmcp_core, memory_monitor_auto_gc,
+        load_config(auto_gc, ?DEFAULT_AUTO_GC)),
 
     %% Start periodic memory check timer
     CheckTimer = erlang:send_after(CheckInterval, self(), check_memory),

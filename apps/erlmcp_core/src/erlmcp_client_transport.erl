@@ -47,7 +47,8 @@ start_link(TransportOpts) ->
 %% @doc Send data through transport
 -spec send(pid(), binary()) -> ok | {error, term()}.
 send(TransportPid, Data) when is_pid(TransportPid), is_binary(Data) ->
-    gen_server:call(TransportPid, {send, Data}, 5000);
+    Timeout = application:get_env(erlmcp_core, rpc_call_timeout_ms, 5000),
+    gen_server:call(TransportPid, {send, Data}, Timeout);
 send(_, _) ->
     {error, invalid_arguments}.
 
@@ -61,7 +62,8 @@ close(_) ->
 %% @doc Connect to remote endpoint (for client-mode transports)
 -spec connect(pid(), map()) -> ok | {error, term()}.
 connect(TransportPid, Opts) when is_pid(TransportPid), is_map(Opts) ->
-    gen_server:call(TransportPid, {connect, Opts});
+    Timeout = application:get_env(erlmcp_core, rpc_call_timeout_ms, 5000),
+    gen_server:call(TransportPid, {connect, Opts}, Timeout);
 connect(_, _) ->
     {error, invalid_arguments}.
 

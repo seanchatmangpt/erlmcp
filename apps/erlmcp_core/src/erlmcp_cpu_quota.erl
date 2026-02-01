@@ -103,12 +103,14 @@ check_quota(ClientId) ->
 -spec check_quota(client_id(), operation_type() | undefined) ->
     ok | {error, quota_exceeded, cpu_time} | {error, quota_exceeded, operations}.
 check_quota(ClientId, OperationType) ->
-    gen_server:call(?MODULE, {check_quota, ClientId, OperationType}, 5000).
+    Timeout = application:get_env(erlmcp_core, cpu_quota_timeout_ms, 5000),
+    gen_server:call(?MODULE, {check_quota, ClientId, OperationType}, Timeout).
 
 %% @doc Record a CPU-intensive operation (by client_id and operation type)
 -spec record_operation(client_id(), operation_type(), cpu_time_ms()) -> ok.
 record_operation(ClientId, OperationType, CpuTimeMs) ->
-    gen_server:call(?MODULE, {record_operation, ClientId, OperationType, CpuTimeMs}, 5000).
+    Timeout = application:get_env(erlmcp_core, cpu_quota_timeout_ms, 5000),
+    gen_server:call(?MODULE, {record_operation, ClientId, OperationType, CpuTimeMs}, Timeout).
 
 %% @doc Record a CPU-intensive operation (by client_id only)
 -spec record_operation(client_id(), cpu_time_ms()) -> ok.
@@ -148,19 +150,35 @@ stop() ->
 init([Config]) ->
     process_flag(trap_exit, true),
 
+    %% Load configuration from application environment, with fallback to Config map and defaults
+    MaxCpuTimePerSec = maps_get(max_cpu_time_per_sec, Config,
+        application:get_env(erlmcp_core, cpu_quota_max_cpu_time_per_sec_ms, ?DEFAULT_MAX_CPU_TIME_PER_SEC)),
+    MaxOpsPerSec = maps_get(max_ops_per_sec, Config,
+        application:get_env(erlmcp_core, cpu_quota_max_ops_per_sec, ?DEFAULT_MAX_OPS_PER_SEC)),
+    WindowMs = maps_get(window_ms, Config,
+        application:get_env(erlmcp_core, cpu_quota_window_ms, ?DEFAULT_WINDOW_MS)),
+    CleanupIntervalMs = maps_get(cleanup_interval_ms, Config,
+        application:get_env(erlmcp_core, cpu_quota_cleanup_interval_ms, ?DEFAULT_CLEANUP_INTERVAL_MS)),
+
+    %% Merge configuration
+    FinalConfig = Config#{
+        max_cpu_time_per_sec => MaxCpuTimePerSec,
+        max_ops_per_sec => MaxOpsPerSec,
+        window_ms => WindowMs,
+        cleanup_interval_ms => CleanupIntervalMs
+    },
+
     State = #state{
         quotas = ets:new(cpu_quotas, [set, protected]),
         client_stats = ets:new(cpu_client_stats, [set, protected]),
-        config = Config
+        config = FinalConfig
     },
 
     % Start cleanup timer
-    erlang:send_after(maps_get(cleanup_interval_ms, Config, ?DEFAULT_CLEANUP_INTERVAL_MS),
-                      self(), cleanup_expired),
+    erlang:send_after(CleanupIntervalMs, self(), cleanup_expired),
 
-    logger:info("CPU quota manager started: max ~pms CPU/sec, ~p ops/sec",
-                [maps_get(max_cpu_time_per_sec, Config, ?DEFAULT_MAX_CPU_TIME_PER_SEC),
-                 maps_get(max_ops_per_sec, Config, ?DEFAULT_MAX_OPS_PER_SEC)]),
+    logger:info("CPU quota manager started: max ~pms CPU/sec, ~p ops/sec, window=~pms, cleanup=~pms",
+                [MaxCpuTimePerSec, MaxOpsPerSec, WindowMs, CleanupIntervalMs]),
 
     {ok, State}.
 

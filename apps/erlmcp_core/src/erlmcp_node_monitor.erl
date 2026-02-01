@@ -15,7 +15,7 @@
 %% State record
 -record(node_monitor_state, {
     monitored_nodes = #{} :: #{node() => #{status => up | down, last_seen => integer()}},
-    check_interval = 5000 :: pos_integer(),
+    check_interval :: pos_integer(),
     check_ref :: reference() | undefined
 }).
 

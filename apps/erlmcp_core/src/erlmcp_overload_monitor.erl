@@ -72,19 +72,17 @@
 
 %% State record
 -record(state, {
-    check_interval = 5000 :: pos_integer(),  % 5 seconds default
+    check_interval :: pos_integer(),
     timer_ref :: reference() | undefined,
     alert_history = [] :: [alert()],
-    max_alert_history = 100 :: pos_integer(),
+    max_alert_history :: pos_integer(),
+    warning_threshold :: float(),
+    critical_threshold :: float(),
+    overload_threshold :: float(),
     last_check :: integer() | undefined
 }).
 
 -type state() :: #state{}.
-
-%% Alert thresholds
--define(WARNING_THRESHOLD, 0.80).   % 80% utilization
--define(CRITICAL_THRESHOLD, 0.90).  % 90% utilization
--define(OVERLOAD_THRESHOLD, 1.00).  % 100% utilization
 
 %%====================================================================
 %% API Functions
@@ -149,26 +147,40 @@ force_check() ->
 
 -spec init(list()) -> {ok, state()}.
 init(Opts) ->
-    CheckInterval = proplists:get_value(check_interval, Opts, 5000),
-    MaxAlertHistory = proplists:get_value(max_alert_history, Opts, 100),
+    %% Load configuration values with fallbacks
+    CheckInterval = application:get_env(erlmcp_core, overload_check_interval_ms, 5000),
+    MaxAlertHistory = application:get_env(erlmcp_core, overload_max_alert_history, 100),
+    WarningThreshold = application:get_env(erlmcp_core, overload_warning_threshold, 0.80),
+    CriticalThreshold = application:get_env(erlmcp_core, overload_critical_threshold, 0.90),
+    OverloadThreshold = application:get_env(erlmcp_core, overload_threshold, 1.00),
+
+    %% Allow runtime override via options (for testing)
+    FinalCheckInterval = proplists:get_value(check_interval, Opts, CheckInterval),
+    FinalMaxAlertHistory = proplists:get_value(max_alert_history, Opts, MaxAlertHistory),
+    FinalWarningThreshold = proplists:get_value(warning_threshold, Opts, WarningThreshold),
+    FinalCriticalThreshold = proplists:get_value(critical_threshold, Opts, CriticalThreshold),
+    FinalOverloadThreshold = proplists:get_value(overload_threshold, Opts, OverloadThreshold),
 
     %% Start periodic health check timer
-    TimerRef = erlang:send_after(CheckInterval, self(), health_check),
+    TimerRef = erlang:send_after(FinalCheckInterval, self(), health_check),
 
     {ok, #state{
-        check_interval = CheckInterval,
+        check_interval = FinalCheckInterval,
         timer_ref = TimerRef,
-        max_alert_history = MaxAlertHistory
+        max_alert_history = FinalMaxAlertHistory,
+        warning_threshold = FinalWarningThreshold,
+        critical_threshold = FinalCriticalThreshold,
+        overload_threshold = FinalOverloadThreshold
     }}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.
 handle_call(queues, _From, State) ->
-    QueueInfos = collect_queue_info(),
+    QueueInfos = collect_queue_info(State),
     {reply, QueueInfos, State};
 
 handle_call({queues, Role}, _From, State) ->
-    AllQueues = collect_queue_info(),
+    AllQueues = collect_queue_info(State),
     RoleQueues = lists:filter(
         fun(#{role := R}) -> R =:= Role end,
         AllQueues
@@ -176,7 +188,7 @@ handle_call({queues, Role}, _From, State) ->
     {reply, RoleQueues, State};
 
 handle_call(get_overloaded, _From, State) ->
-    AllQueues = collect_queue_info(),
+    AllQueues = collect_queue_info(State),
     Overloaded = lists:filter(
         fun(#{status := Status}) ->
             Status =:= critical orelse Status =:= overload
@@ -186,7 +198,7 @@ handle_call(get_overloaded, _From, State) ->
     {reply, Overloaded, State};
 
 handle_call({get_overloaded, Role}, _From, State) ->
-    AllQueues = collect_queue_info(),
+    AllQueues = collect_queue_info(State),
     Overloaded = lists:filter(
         fun(#{role := R, status := Status}) ->
             R =:= Role andalso (Status =:= critical orelse Status =:= overload)
@@ -289,7 +301,7 @@ perform_health_check(State) ->
     }.
 
 %% @doc Collect queue information for all roles
-collect_queue_info() ->
+collect_queue_info(State) ->
     case whereis(erlmcp_queue_limits) of
         undefined ->
             [];
@@ -307,7 +319,7 @@ collect_queue_info() ->
                         _ -> Depth / Limit
                     end,
 
-                    Status = determine_status(Utilization),
+                    Status = determine_status(Utilization, State),
 
                     Info = #{
                         role => Role,
@@ -325,11 +337,18 @@ collect_queue_info() ->
             )
     end.
 
-%% @doc Determine status based on utilization
-determine_status(Utilization) when Utilization >= ?OVERLOAD_THRESHOLD -> overload;
-determine_status(Utilization) when Utilization >= ?CRITICAL_THRESHOLD -> critical;
-determine_status(Utilization) when Utilization >= ?WARNING_THRESHOLD -> warning;
-determine_status(_Utilization) -> ok.
+%% @doc Determine status based on utilization and thresholds
+determine_status(Utilization, State) ->
+    OverloadThreshold = State#state.overload_threshold,
+    CriticalThreshold = State#state.critical_threshold,
+    WarningThreshold = State#state.warning_threshold,
+
+    if
+        Utilization >= OverloadThreshold -> overload;
+        Utilization >= CriticalThreshold -> critical;
+        Utilization >= WarningThreshold -> warning;
+        true -> ok
+    end.
 
 %% @doc Check if queue info exceeds thresholds
 check_thresholds(#{status := ok}, _Timestamp) ->

@@ -66,32 +66,38 @@ start_link() ->
 %% @doc Register a plugin with the registry
 -spec register_plugin(module(), map(), pid()) -> ok | {error, term()}.
 register_plugin(Module, Metadata, Pid) ->
-    gen_server:call(?SERVER, {register_plugin, Module, Metadata, Pid}, 5000).
+    Timeout = application:get_env(erlmcp_core, plugin_registry_timeout_ms, 5000),
+    gen_server:call(?SERVER, {register_plugin, Module, Metadata, Pid}, Timeout).
 
 %% @doc Unregister a plugin from the registry
 -spec unregister_plugin(module()) -> ok | {error, term()}.
 unregister_plugin(Module) ->
-    gen_server:call(?SERVER, {unregister_plugin, Module}, 5000).
+    Timeout = application:get_env(erlmcp_core, plugin_registry_timeout_ms, 5000),
+    gen_server:call(?SERVER, {unregister_plugin, Module}, Timeout).
 
 %% @doc Get plugin information
 -spec get_plugin(module()) -> {ok, map()} | {error, not_found}.
 get_plugin(Module) ->
-    gen_server:call(?SERVER, {get_plugin, Module}, 5000).
+    Timeout = application:get_env(erlmcp_core, plugin_registry_timeout_ms, 5000),
+    gen_server:call(?SERVER, {get_plugin, Module}, Timeout).
 
 %% @doc List all registered plugins
 -spec list_plugins() -> {ok, [map()]}.
 list_plugins() ->
-    gen_server:call(?SERVER, list_plugins, 5000).
+    Timeout = application:get_env(erlmcp_core, plugin_registry_timeout_ms, 5000),
+    gen_server:call(?SERVER, list_plugins, Timeout).
 
 %% @doc List plugins by type
 -spec list_plugins_by_type(atom()) -> {ok, [map()]}.
 list_plugins_by_type(Type) ->
-    gen_server:call(?SERVER, {list_plugins_by_type, Type}, 5000).
+    Timeout = application:get_env(erlmcp_core, plugin_registry_timeout_ms, 5000),
+    gen_server:call(?SERVER, {list_plugins_by_type, Type}, Timeout).
 
 %% @doc Check if plugin exists
 -spec plugin_exists(module()) -> boolean().
 plugin_exists(Module) ->
-    gen_server:call(?SERVER, {plugin_exists, Module}, 5000).
+    Timeout = application:get_env(erlmcp_core, plugin_registry_timeout_ms, 5000),
+    gen_server:call(?SERVER, {plugin_exists, Module}, Timeout).
 
 %%====================================================================
 %% gen_server callbacks
