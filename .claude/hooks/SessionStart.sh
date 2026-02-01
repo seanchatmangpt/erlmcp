@@ -1,388 +1,425 @@
 #!/usr/bin/env bash
 # .claude/hooks/SessionStart.sh
-# SessionStart Hook for erlmcp - OTP 28.3.1 Bootstrap
+# Purpose: Autonomous OTP 28.3.1 initialization via source build (Joe Armstrong style)
+# Spec: CLAUDE.md v2.1.0
+# Architecture: Build-from-source strategy (deterministic, self-contained, no package mgr)
 #
-# Purpose: Idempotent OTP detection, installation, and environment setup for cloud sessions
-# Spec: AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md:WO-001
-# Reference: CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md:103-189
+# State Machine:
+#   Phase 1: Cache check (use cached OTP if available)
+#   Phase 2: Download OTP source from GitHub (if not cached)
+#   Phase 3: Build OTP from source (./configure && make)
+#   Phase 4: Cache the built binaries
+#   Phase 5: Environment setup
+#   Phase 6: Lock file creation
 #
-# Behavior:
-#   1. Detect OTP version (erl -eval)
-#   2. Install OTP 28.3.1 if missing or version < 28
-#   3. Persist environment variables (CLAUDE_CODE_REMOTE, ERLMCP_PROFILE, ERLMCP_OTP_BIN, etc.)
-#   4. Pre-compile erlmcp_core (warm cache)
-#   5. Error recovery: if OTP install fails, clear cache and retry
-#
-# Idempotency: Safe to run multiple times - checks before installing
-# Cloud-safe: Uses official Erlang Solutions package repository
-# Error-resistant: Handles missing erl, apt failures, network timeouts
+# Strategy: DOWNLOAD → BUILD → CACHE → LOCK
+# Idempotency: If cache exists with valid version, skip build entirely
+# Performance: First run ~60s (build), second run <1s (cache check)
 
 set -euo pipefail
 
-#------------------------------------------------------------------------------
-# Configuration
-#------------------------------------------------------------------------------
+#==============================================================================
+# Constants & Configuration
+#==============================================================================
 
-OTP_REQUIRED_MAJOR=28
-OTP_REQUIRED_MINOR=3
-OTP_REQUIRED_PATCH=1
-OTP_REQUIRED_VERSION="${OTP_REQUIRED_MAJOR}.${OTP_REQUIRED_MINOR}.${OTP_REQUIRED_PATCH}"
+readonly REQUIRED_OTP_VERSION="28.3.1"
+readonly ERLMCP_ROOT="${ERLMCP_ROOT:-.}"
+readonly OTP_CACHE_DIR="${ERLMCP_ROOT}/.erlmcp/otp-${REQUIRED_OTP_VERSION}"
+readonly OTP_BIN="${OTP_CACHE_DIR}/bin/erl"
+readonly LOCK_FILE="${ERLMCP_ROOT}/.erlmcp/cache/sessionstart.lock"
+readonly LOG_FILE="${ERLMCP_ROOT}/.erlmcp/sessionstart.log"
+readonly BUILD_TEMP_DIR="/tmp/otp-build-$$"
+readonly SCRIPT_VERSION="2.1.0"
 
-# Test mode: skip installation if set (for testing purposes)
-TEST_MODE="${SESSIONSTART_TEST_MODE:-false}"
+# Pre-built OTP distribution (fast path, ~30s)
+readonly OTP_PREBUILT_URL="https://github.com/seanchatmangpt/erlmcp/releases/download/erlang-28.3.1/erlang-28.3.1-linux-x86_64.tar.gz"
+readonly OTP_PREBUILT_SHA256="58f91a25499d962664dc8a5e94f52164524671d385baeebee72741c7748c57d8"
 
-ERLANG_SOLUTIONS_DEB="https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb"
-ERLANG_PACKAGE="esl-erlang=1:${OTP_REQUIRED_VERSION}-1"
+# Fallback: Build from GitHub source (slow path, ~6m)
+readonly OTP_GITHUB_SOURCE_URL="https://github.com/erlang/otp.git"
+readonly OTP_RELEASE_URL="https://github.com/erlang/otp/releases/download/OTP-${REQUIRED_OTP_VERSION}/otp_src_${REQUIRED_OTP_VERSION}.tar.gz"
 
-ERLMCP_ROOT="${ERLMCP_ROOT:-/home/user/erlmcp}"
-ERLMCP_CACHE="${ERLMCP_CACHE:-${ERLMCP_ROOT}/.erlmcp/cache}"
-ERLMCP_LOG="${ERLMCP_LOG:-${ERLMCP_ROOT}/.erlmcp/sessionstart.log}"
+# CPU count for parallel build
+readonly CPU_COUNT=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
 
-# Lock file for idempotency
-LOCK_FILE="${ERLMCP_CACHE}/sessionstart.lock"
+#==============================================================================
+# Logging & Output
+#==============================================================================
 
-# Retry configuration
-MAX_RETRIES=3
-RETRY_DELAY=5
+log_info() {
+    echo "[INFO] $*" | tee -a "$LOG_FILE"
+}
 
-#------------------------------------------------------------------------------
-# Logging
-#------------------------------------------------------------------------------
+log_error() {
+    echo "[ERROR] $*" | tee -a "$LOG_FILE" >&2
+}
 
-log() {
-    local level="$1"
+log_success() {
+    echo "[SUCCESS] $*" | tee -a "$LOG_FILE"
+}
+
+log_phase() {
+    local phase=$1
     shift
-    local message="$*"
-    local timestamp=$(date -Iseconds)
-    local log_message="[${timestamp}] [${level}] ${message}"
-    echo "$log_message"
-    # Only append to log file if directory exists
-    if [[ -d "$(dirname "$ERLMCP_LOG")" ]]; then
-        echo "$log_message" >> "${ERLMCP_LOG}"
-    fi
+    echo "" | tee -a "$LOG_FILE"
+    echo "================================================================================" | tee -a "$LOG_FILE"
+    echo "[PHASE $phase/6] $*" | tee -a "$LOG_FILE"
+    echo "================================================================================" | tee -a "$LOG_FILE"
 }
 
-log_info() { log "INFO" "$@"; }
-log_warn() { log "WARN" "$@"; }
-log_error() { log "ERROR" "$@"; }
+init_logging() {
+    mkdir -p "$(dirname "$LOG_FILE")"
+    {
+        echo "================================================================================"
+        echo "[SessionStart] Timestamp: $(date -Iseconds)"
+        echo "[SessionStart] Version: $SCRIPT_VERSION"
+        echo "[SessionStart] Strategy: Build OTP from source (GitHub releases)"
+        echo "[SessionStart] Working dir: $(pwd)"
+        echo "[SessionStart] OTP version: $REQUIRED_OTP_VERSION"
+        echo "[SessionStart] Cache dir: $OTP_CACHE_DIR"
+        echo "================================================================================"
+    } >> "$LOG_FILE"
+}
 
-#------------------------------------------------------------------------------
-# OTP Version Detection
-#------------------------------------------------------------------------------
+#==============================================================================
+# Phase 1: Cache Check (Idempotency)
+#==============================================================================
 
-get_otp_version() {
-    if ! command -v erl &> /dev/null; then
-        echo "0.0.0"
+is_otp_cached() {
+    if [[ ! -f "$OTP_BIN" ]]; then
         return 1
     fi
 
-    local version
-    version=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt(0).' 2>/dev/null || echo "0")
+    local cached_version
+    cached_version=$("$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null || echo "")
 
-    # Version format: "28" or "28.3.1" (varies by OTP version)
-    # For OTP 28+, we get full version from system_info
-    if [[ "$version" =~ ^[0-9]+$ ]]; then
-        # Only major version available, get full version differently
-        version=$(erl -noshell -eval '
-            {ok, Version} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])),
-            io:format("~s", [string:trim(Version)]),
-            halt(0).
-        ' 2>/dev/null || echo "${version}.0.0")
-    fi
-
-    echo "$version"
-}
-
-compare_versions() {
-    local current="$1"
-    local required="$2"
-
-    # Parse versions
-    IFS='.' read -r -a current_parts <<< "$current"
-    IFS='.' read -r -a required_parts <<< "$required"
-
-    # Compare major
-    if [[ ${current_parts[0]:-0} -lt ${required_parts[0]:-0} ]]; then
-        return 1
-    elif [[ ${current_parts[0]:-0} -gt ${required_parts[0]:-0} ]]; then
+    if [[ "$cached_version" == "$REQUIRED_OTP_VERSION" ]]; then
+        log_success "OTP $cached_version found in cache"
         return 0
-    fi
-
-    # Compare minor
-    if [[ ${current_parts[1]:-0} -lt ${required_parts[1]:-0} ]]; then
-        return 1
-    elif [[ ${current_parts[1]:-0} -gt ${required_parts[1]:-0} ]]; then
-        return 0
-    fi
-
-    # Compare patch
-    if [[ ${current_parts[2]:-0} -lt ${required_parts[2]:-0} ]]; then
+    else
+        log_info "Cached OTP version $cached_version does not match required $REQUIRED_OTP_VERSION"
         return 1
     fi
+}
+
+#==============================================================================
+# Phase 2A: Download Pre-built OTP (Fast Path)
+#==============================================================================
+
+download_prebuilt_otp() {
+    log_phase "2A/6" "Attempting pre-built OTP download (fast path)"
+
+    log_info "URL: $OTP_PREBUILT_URL"
+    log_info "Expected SHA256: $OTP_PREBUILT_SHA256"
+
+    mkdir -p "$OTP_CACHE_DIR"
+    local tarball="$OTP_CACHE_DIR/erlang-prebuilt.tar.gz"
+
+    log_info "Downloading pre-built OTP (this may take ~30s)..."
+    if ! wget -q --show-progress -O "$tarball" "$OTP_PREBUILT_URL" 2>&1 | tee -a "$LOG_FILE"; then
+        log_info "Pre-built download failed (will try source build)"
+        rm -f "$tarball"
+        return 1
+    fi
+
+    log_info "Verifying SHA256 checksum..."
+    local actual_sha256
+    actual_sha256=$(sha256sum "$tarball" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$tarball" 2>/dev/null | awk '{print $1}')
+
+    if [[ "$actual_sha256" != "$OTP_PREBUILT_SHA256" ]]; then
+        log_error "SHA256 mismatch!"
+        log_error "  Expected: $OTP_PREBUILT_SHA256"
+        log_error "  Actual:   $actual_sha256"
+        rm -f "$tarball"
+        return 1
+    fi
+
+    log_success "SHA256 verified: $actual_sha256"
+
+    log_info "Extracting OTP to cache directory..."
+    if ! tar xzf "$tarball" -C "$(dirname "$OTP_CACHE_DIR")"; then
+        log_error "Failed to extract pre-built OTP"
+        rm -f "$tarball"
+        return 1
+    fi
+
+    # Move extracted directory to expected location if needed
+    local extracted_dir
+    extracted_dir="$(dirname "$OTP_CACHE_DIR")/otp-28.3.1"
+    if [[ -d "$extracted_dir" && ! -e "$OTP_CACHE_DIR" ]]; then
+        mv "$extracted_dir" "$OTP_CACHE_DIR"
+    fi
+
+    rm -f "$tarball"
+    log_success "Pre-built OTP installed successfully"
+    return 0
+}
+
+#==============================================================================
+# Phase 2B: Download OTP Source (Fallback)
+#==============================================================================
+
+download_otp_source() {
+    log_phase "2/6" "Downloading OTP source from GitHub"
+
+    log_info "URL: $OTP_RELEASE_URL"
+    log_info "Destination: $BUILD_TEMP_DIR"
+
+    mkdir -p "$BUILD_TEMP_DIR"
+    cd "$BUILD_TEMP_DIR"
+
+    log_info "Downloading otp_src_${REQUIRED_OTP_VERSION}.tar.gz..."
+    if ! wget -q --show-progress "$OTP_RELEASE_URL" 2>&1 | tee -a "$LOG_FILE"; then
+        log_error "Failed to download OTP source"
+        return 1
+    fi
+
+    log_success "Downloaded $(ls -lh otp_src_*.tar.gz | awk '{print $5}')"
+
+    log_info "Extracting archive..."
+    if ! tar xzf otp_src_*.tar.gz; then
+        log_error "Failed to extract OTP source"
+        return 1
+    fi
+
+    log_success "OTP source ready for compilation"
+    return 0
+}
+
+#==============================================================================
+# Phase 3: Build OTP from Source
+#==============================================================================
+
+build_otp_from_source() {
+    log_phase "3/6" "Building OTP from source"
+
+    local src_dir
+    src_dir=$(ls -d otp_src_*/ 2>/dev/null | head -1)
+
+    if [[ -z "$src_dir" ]]; then
+        log_error "OTP source directory not found"
+        return 1
+    fi
+
+    cd "$src_dir"
+    log_info "Build directory: $(pwd)"
+
+    # Configure
+    log_info "Step 1/3: Running ./configure..."
+    log_info "  Prefix: $OTP_CACHE_DIR"
+    log_info "  CPUs: $CPU_COUNT"
+
+    if ! ./configure \
+        --prefix="$OTP_CACHE_DIR" \
+        --disable-debug \
+        --disable-documentation \
+        2>&1 | tee -a "$LOG_FILE" | tail -20; then
+        log_error "Configuration failed"
+        return 1
+    fi
+    log_success "Configuration complete"
+
+    # Build (parallel)
+    log_info "Step 2/3: Running make (using $CPU_COUNT CPUs)..."
+    if ! make -j "$CPU_COUNT" 2>&1 | tee -a "$LOG_FILE" | tail -20; then
+        log_error "Build failed"
+        return 1
+    fi
+    log_success "Build complete"
+
+    # Install
+    log_info "Step 3/3: Running make install..."
+    if ! make install 2>&1 | tee -a "$LOG_FILE" | tail -20; then
+        log_error "Installation failed"
+        return 1
+    fi
+    log_success "Installation complete"
 
     return 0
 }
 
-#------------------------------------------------------------------------------
-# OTP Installation
-#------------------------------------------------------------------------------
+#==============================================================================
+# Phase 4: Verify & Cache
+#==============================================================================
 
-install_otp() {
-    log_info "Installing OTP ${OTP_REQUIRED_VERSION}..."
+verify_otp_build() {
+    log_phase "4/6" "Verifying OTP build"
 
-    local retry_count=0
-    local install_success=false
-
-    while [[ $retry_count -lt $MAX_RETRIES ]]; do
-        if attempt_otp_install; then
-            install_success=true
-            break
-        fi
-
-        retry_count=$((retry_count + 1))
-        if [[ $retry_count -lt $MAX_RETRIES ]]; then
-            log_warn "OTP installation failed (attempt ${retry_count}/${MAX_RETRIES}). Retrying in ${RETRY_DELAY}s..."
-            sleep $RETRY_DELAY
-
-            # Clear cache on retry
-            log_info "Clearing cache for retry..."
-            rm -rf "${ERLMCP_CACHE}"/*
-            sudo apt-get clean || true
-        fi
-    done
-
-    if [[ "$install_success" = false ]]; then
-        log_error "OTP installation failed after ${MAX_RETRIES} attempts"
+    if [[ ! -f "$OTP_BIN" ]]; then
+        log_error "OTP binary not found at $OTP_BIN"
         return 1
     fi
 
-    log_info "OTP ${OTP_REQUIRED_VERSION} installation complete"
-    return 0
-}
+    log_info "Verifying OTP binary: $OTP_BIN"
+    local built_version
+    built_version=$("$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null || echo "")
 
-attempt_otp_install() {
-    local temp_deb="/tmp/erlang-solutions.deb"
-
-    # Download Erlang Solutions repository package
-    log_info "Downloading Erlang Solutions repository package..."
-    if ! wget -q -O "$temp_deb" "$ERLANG_SOLUTIONS_DEB"; then
-        log_error "Failed to download Erlang Solutions package"
+    if [[ -z "$built_version" ]]; then
+        log_error "Failed to detect OTP version"
         return 1
     fi
 
-    # Install repository package
-    log_info "Installing Erlang Solutions repository..."
-    if ! sudo dpkg -i "$temp_deb" 2>&1 | tee -a "${ERLMCP_LOG}"; then
-        log_error "Failed to install Erlang Solutions repository"
-        rm -f "$temp_deb"
+    if [[ "$built_version" != "$REQUIRED_OTP_VERSION" ]]; then
+        log_error "OTP version mismatch: built=$built_version, required=$REQUIRED_OTP_VERSION"
         return 1
     fi
 
-    rm -f "$temp_deb"
+    log_success "OTP $built_version verified and cached at $OTP_CACHE_DIR"
 
-    # Update package list
-    log_info "Updating package list..."
-    if ! sudo apt-get update 2>&1 | tee -a "${ERLMCP_LOG}"; then
-        log_error "Failed to update package list"
-        return 1
-    fi
-
-    # Install OTP
-    log_info "Installing ${ERLANG_PACKAGE}..."
-    if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$ERLANG_PACKAGE" 2>&1 | tee -a "${ERLMCP_LOG}"; then
-        log_error "Failed to install OTP package"
-        return 1
-    fi
-
-    # Verify installation
-    local installed_version
-    installed_version=$(get_otp_version)
-    log_info "Installed OTP version: ${installed_version}"
-
-    if ! compare_versions "$installed_version" "$OTP_REQUIRED_VERSION"; then
-        log_error "Installed version ${installed_version} is less than required ${OTP_REQUIRED_VERSION}"
-        return 1
-    fi
+    # Show build info
+    local erts_version
+    erts_version=$("$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(version)]), halt().' 2>/dev/null || echo "unknown")
+    log_info "ERTS Version: $erts_version"
 
     return 0
 }
 
-#------------------------------------------------------------------------------
-# Environment Setup
-#------------------------------------------------------------------------------
+#==============================================================================
+# Phase 5: Environment Setup
+#==============================================================================
 
 setup_environment() {
-    log_info "Setting up environment variables..."
+    log_phase "5/6" "Environment setup"
 
-    # Create cache directory
+    # Export OTP path for rebar3
+    export PATH="${OTP_CACHE_DIR}/bin:${PATH}"
+    log_info "Added to PATH: ${OTP_CACHE_DIR}/bin"
+
+    # Cloud environment variables
+    export CLAUDE_CODE_REMOTE=true
+    export ERLMCP_PROFILE=cloud
+    export ERLMCP_CACHE="${ERLMCP_ROOT}/.erlmcp/cache/"
+    export TERM=dumb
+    export REBAR_COLOR=none
+    export ERL_AFLAGS="-kernel shell_history enabled"
+
     mkdir -p "$ERLMCP_CACHE"
-    mkdir -p "${ERLMCP_ROOT}/.erlmcp/receipts"
-    mkdir -p "${ERLMCP_ROOT}/.erlmcp/transcripts"
 
-    # Detect OTP bin directory
-    local otp_bin=""
-    if command -v erl &> /dev/null; then
-        local erl_path
-        erl_path=$(which erl)
-        otp_bin="$(dirname "$erl_path")"
-    fi
+    log_success "Environment variables set"
+    log_info "  CLAUDE_CODE_REMOTE=$CLAUDE_CODE_REMOTE"
+    log_info "  ERLMCP_PROFILE=$ERLMCP_PROFILE"
+    log_info "  ERLMCP_CACHE=$ERLMCP_CACHE"
+    log_info "  PATH includes ${OTP_CACHE_DIR}/bin"
 
-    # Persist environment variables
-    # Note: In real Claude Code Web, this would use CLAUDE_ENV_FILE
-    # For testing, we'll export to a sourceable file
-    local env_file="${ERLMCP_CACHE}/session.env"
-
-    cat > "$env_file" << ENVEOF
-export CLAUDE_CODE_REMOTE=true
-export ERLMCP_PROFILE=cloud
-export ERLMCP_CACHE="${ERLMCP_CACHE}"
-export ERLMCP_OTP_BIN="${otp_bin}"
-export TERM=dumb
-export REBAR_COLOR=none
-export ERL_AFLAGS="-kernel shell_history enabled"
-ENVEOF
-
-    # Add build hash if in git repo
-    if [[ -d "${ERLMCP_ROOT}/.git" ]]; then
-        echo "export ERLMCP_BUILD_HASH=\"$(cd "$ERLMCP_ROOT" && git rev-parse HEAD 2>/dev/null || echo 'unknown')\"" >> "$env_file"
-    fi
-
-    # Source environment file
-    source "$env_file"
-
-    log_info "Environment variables set:"
-    log_info "  CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE}"
-    log_info "  ERLMCP_PROFILE=${ERLMCP_PROFILE}"
-    log_info "  ERLMCP_CACHE=${ERLMCP_CACHE}"
-    log_info "  ERLMCP_OTP_BIN=${ERLMCP_OTP_BIN}"
-    log_info "  ERLMCP_BUILD_HASH=${ERLMCP_BUILD_HASH:-unknown}"
+    return 0
 }
 
-#------------------------------------------------------------------------------
-# Pre-compilation
-#------------------------------------------------------------------------------
-
-precompile_core() {
-    log_info "Pre-compiling erlmcp_core..."
-
-    cd "$ERLMCP_ROOT"
-
-    # Fetch dependencies if needed
-    if [[ ! -d "_build/default/lib" ]]; then
-        log_info "Fetching dependencies..."
-        if ! TERM=dumb rebar3 get-deps 2>&1 | tee -a "${ERLMCP_LOG}"; then
-            log_warn "Failed to fetch dependencies (continuing anyway)"
-        fi
-    fi
-
-    # Compile erlmcp_core (attempt, but non-fatal if fails)
-    log_info "Compiling erlmcp_core application..."
-    if command -v rebar3 &> /dev/null; then
-        # Try to compile, redirecting output to log
-        if TERM=dumb rebar3 compile 2>&1 | tee -a "${ERLMCP_LOG}"; then
-            log_info "erlmcp_core compilation successful"
-            return 0
-        else
-            log_warn "erlmcp_core compilation failed (non-fatal)"
-            return 1
-        fi
-    else
-        log_warn "rebar3 not found, skipping compilation (non-fatal)"
-        return 1
-    fi
-}
-
-#------------------------------------------------------------------------------
-# Idempotency Check
-#------------------------------------------------------------------------------
-
-is_already_initialized() {
-    if [[ ! -f "$LOCK_FILE" ]]; then
-        return 1
-    fi
-
-    local lock_version
-    lock_version=$(cat "$LOCK_FILE" 2>/dev/null || echo "0.0.0")
-
-    if compare_versions "$lock_version" "$OTP_REQUIRED_VERSION"; then
-        log_info "SessionStart already completed (OTP ${lock_version} >= ${OTP_REQUIRED_VERSION})"
-        return 0
-    fi
-
-    log_info "Lock file exists but OTP version ${lock_version} < ${OTP_REQUIRED_VERSION}, re-initializing..."
-    return 1
-}
+#==============================================================================
+# Phase 6: Lock File Creation
+#==============================================================================
 
 create_lock_file() {
-    local current_version
-    current_version=$(get_otp_version)
-    echo "$current_version" > "$LOCK_FILE"
-    log_info "Lock file created with OTP version ${current_version}"
+    log_phase "6/6" "Lock file creation"
+
+    mkdir -p "$(dirname "$LOCK_FILE")"
+
+    echo "$REQUIRED_OTP_VERSION" > "$LOCK_FILE"
+    log_success "Lock file created: $LOCK_FILE"
+
+    return 0
 }
 
-#------------------------------------------------------------------------------
-# Main Execution
-#------------------------------------------------------------------------------
+#==============================================================================
+# Cleanup
+#==============================================================================
+
+cleanup() {
+    if [[ -d "$BUILD_TEMP_DIR" ]]; then
+        log_info "Cleaning up temporary build directory: $BUILD_TEMP_DIR"
+        rm -rf "$BUILD_TEMP_DIR"
+    fi
+}
+
+#==============================================================================
+# Main Orchestration
+#==============================================================================
 
 main() {
-    log_info "====== SessionStart Hook Starting ======"
-    log_info "erlmcp root: ${ERLMCP_ROOT}"
-    log_info "Required OTP version: ${OTP_REQUIRED_VERSION}"
+    init_logging
 
-    # Create directories
-    mkdir -p "$(dirname "$ERLMCP_LOG")"
-    mkdir -p "$ERLMCP_CACHE"
+    log_info "Starting SessionStart.sh (v$SCRIPT_VERSION)"
+    log_info "Strategy: Pre-built OTP (fast) → Source build (fallback)"
 
-    # Check if already initialized
-    if is_already_initialized; then
-        log_info "SessionStart hook already completed (idempotent check passed)"
-        log_info "====== SessionStart Hook Complete (cached) ======"
+    # Phase 1: Check cache
+    log_phase "1/6" "Cache check"
+    if is_otp_cached; then
+        log_success "Using cached OTP $REQUIRED_OTP_VERSION"
+        export PATH="${OTP_CACHE_DIR}/bin:${PATH}"
+        setup_environment
+        create_lock_file
+        log_success "SessionStart complete (cached, 0s)"
         exit 0
     fi
 
-    # Detect current OTP version
-    local current_version
-    current_version=$(get_otp_version)
-    log_info "Current OTP version: ${current_version}"
+    log_info "OTP not cached, attempting acquisition..."
 
-    # Check if OTP upgrade needed
-    if compare_versions "$current_version" "$OTP_REQUIRED_VERSION"; then
-        log_info "OTP version ${current_version} >= ${OTP_REQUIRED_VERSION} (satisfies requirement)"
-    else
-        log_info "OTP version ${current_version} < ${OTP_REQUIRED_VERSION}, installation required"
-
-        if [[ "$TEST_MODE" = "true" ]]; then
-            log_warn "TEST_MODE enabled: skipping OTP installation"
-            log_warn "Continuing with current OTP version ${current_version}"
-        else
-            if ! install_otp; then
-                log_error "Failed to install OTP ${OTP_REQUIRED_VERSION}"
-                exit 1
-            fi
-
-            # Verify installation
-            current_version=$(get_otp_version)
-            if ! compare_versions "$current_version" "$OTP_REQUIRED_VERSION"; then
-                log_error "OTP installation verification failed: ${current_version} < ${OTP_REQUIRED_VERSION}"
-                exit 1
-            fi
+    # Phase 2A: Try pre-built (fast path, ~30s)
+    if download_prebuilt_otp; then
+        # Phase 4: Verify pre-built
+        if verify_otp_build; then
+            setup_environment
+            create_lock_file
+            log_success "SessionStart complete (pre-built, ~30s)"
+            exit 0
         fi
     fi
 
-    # Setup environment
-    setup_environment
+    # Phase 2B-3: Fallback to source build (slow path, ~6m)
+    log_info "Pre-built unavailable, building from source..."
 
-    # Pre-compile core
-    precompile_core || true  # Non-fatal
+    # Phase 2B: Download source
+    if ! download_otp_source; then
+        log_error "FATAL: OTP download failed"
+        cleanup
+        exit 1
+    fi
 
-    # Create lock file
-    create_lock_file
+    # Phase 3: Build
+    if ! build_otp_from_source; then
+        log_error "FATAL: OTP build failed"
+        cleanup
+        exit 1
+    fi
 
-    log_info "====== SessionStart Hook Complete ======"
-    echo "SessionStart complete. OTP $(get_otp_version) ready. Build hash: ${ERLMCP_BUILD_HASH:-unknown}"
+    # Phase 4: Verify
+    if ! verify_otp_build; then
+        log_error "FATAL: OTP verification failed"
+        cleanup
+        exit 1
+    fi
+
+    # Phase 5: Environment
+    if ! setup_environment; then
+        log_error "FATAL: Environment setup failed"
+        cleanup
+        exit 1
+    fi
+
+    # Phase 6: Lock
+    if ! create_lock_file; then
+        log_error "FATAL: Lock file creation failed"
+        cleanup
+        exit 1
+    fi
+
+    # Cleanup
+    cleanup
+
+    log_success "SessionStart complete (built from source)"
+    log_info "OTP: $(get_otp_version)"
+    log_info "Path: ${OTP_CACHE_DIR}/bin"
 
     exit 0
 }
 
-# Execute main function
+# Helper to get OTP version
+get_otp_version() {
+    if [[ -f "$OTP_BIN" ]]; then
+        "$OTP_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' 2>/dev/null || echo "unknown"
+    else
+        echo "not installed"
+    fi
+}
+
+# Execute
 main "$@"
