@@ -103,6 +103,8 @@ reports/bench/latest/
 .erlmcp/test.log
 .erlmcp/sessionstart.log
 .erlmcp/otp-manager.log
+.erlmcp/otp-*/
+.erlmcp/._otp-*/
 
 # Documentation structure (TRACKED - DO NOT IGNORE)
 # The following directories are TRACKED and contain important project documentation:
