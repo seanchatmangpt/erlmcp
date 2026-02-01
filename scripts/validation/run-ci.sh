@@ -33,6 +33,44 @@ COVERAGE_THRESHOLD="${COVERAGE_THRESHOLD:-80}"
 COMPLIANCE_THRESHOLD="${COMPLIANCE_THRESHOLD:-95}"
 VALIDATION_LEVEL="${VALIDATION_LEVEL:-standard}"
 
+# ==============================================================================
+# Profile Configuration (ERLMCP_PROFILE Integration)
+# ==============================================================================
+
+# Map VALIDATION_LEVEL to ERLMCP_PROFILE for backward compatibility
+# - quick/standard -> test (strict mode, no secrets)
+# - full -> test (same strict mode)
+# - strict -> test (explicit strict mode)
+# Allow ERLMCP_PROFILE override if explicitly set
+
+if [ -z "${ERLMCP_PROFILE:-}" ]; then
+    case "$VALIDATION_LEVEL" in
+        strict)
+            ERLMCP_PROFILE="test"
+            ;;
+        quick|standard|full)
+            ERLMCP_PROFILE="test"
+            ;;
+        *)
+            ERLMCP_PROFILE="test"
+            ;;
+    esac
+fi
+
+# Validate profile (with graceful fallback)
+VALIDATE_SCRIPT="$PROJECT_ROOT/scripts/validate_profile.sh"
+
+if [ -f "$VALIDATE_SCRIPT" ]; then
+    if ! "$VALIDATE_SCRIPT" "$ERLMCP_PROFILE" 2>/dev/null; then
+        log_warning "Invalid profile '$ERLMCP_PROFILE', falling back to 'test'"
+        ERLMCP_PROFILE=test
+    fi
+else
+    log_warning "validate_profile.sh not found, using profile: $ERLMCP_PROFILE"
+fi
+
+export ERLMCP_PROFILE
+
 # Parse arguments
 QUICK_MODE=false
 FULL_MODE=false
@@ -161,6 +199,10 @@ preflight_checks() {
     local rebar_version=$(rebar3 --version 2>/dev/null | head -1 || echo "unknown")
     log_info "rebar3 version: $rebar_version"
   fi
+
+  # Show profile configuration
+  log_info "ERLMCP_PROFILE: $ERLMCP_PROFILE"
+  log_info "VALIDATION_LEVEL: $VALIDATION_LEVEL"
 
   # Check project structure
   if [ ! -f "$PROJECT_ROOT/rebar.config" ]; then

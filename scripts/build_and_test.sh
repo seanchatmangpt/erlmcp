@@ -8,6 +8,29 @@
 #   --dialyzer      Run Dialyzer analysis only
 #   --proper        Run PropEr tests only
 #   --quick         Skip most tests, just compile and basic checks
+#
+# Environment:
+#   ERLMCP_PROFILE  Profile to use (dev|test|staging|prod), defaults to 'dev'
+
+# ==============================================================================
+# Profile Configuration
+# ==============================================================================
+
+# Set default profile for development builds
+ERLMCP_PROFILE="${ERLMCP_PROFILE:-dev}"
+
+# Validate profile (with graceful fallback to dev)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/validate_profile.sh" ]; then
+    if ! "$SCRIPT_DIR/validate_profile.sh" "$ERLMCP_PROFILE" 2>/dev/null; then
+        echo "WARNING: Invalid profile '$ERLMCP_PROFILE', falling back to 'dev'"
+        ERLMCP_PROFILE=dev
+    fi
+else
+    echo "WARNING: validate_profile.sh not found, using profile: $ERLMCP_PROFILE"
+fi
+
+export ERLMCP_PROFILE
 
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "Enhanced Build and Test Script for erlmcp"
@@ -21,10 +44,14 @@ if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     echo "  --proper    Include PropEr property-based tests"
     echo "  --quick     Quick build - compile only, skip most tests"
     echo ""
+    echo "Environment Variables:"
+    echo "  ERLMCP_PROFILE  Profile to use (dev|test|staging|prod), default: dev"
+    echo ""
     echo "Examples:"
-    echo "  $0             # Standard build and test"
-    echo "  $0 --full     # Complete analysis including Dialyzer"
-    echo "  $0 --quick    # Fast compilation check"
+    echo "  $0                        # Standard build and test (dev profile)"
+    echo "  $0 --full                 # Complete analysis including Dialyzer"
+    echo "  $0 --quick                # Fast compilation check"
+    echo "  ERLMCP_PROFILE=test $0    # Run with test profile"
     echo ""
     exit 0
 fi
@@ -70,6 +97,7 @@ if ! command_exists erl; then
 fi
 
 print_status "Starting build and test process..."
+print_status "Using profile: $ERLMCP_PROFILE"
 
 # Clean previous builds
 print_status "Cleaning previous builds..."
