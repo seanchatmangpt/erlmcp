@@ -25,11 +25,24 @@
 %%====================================================================
 
 %% @doc Validate Origin header against allowed origins
+%% Armstrong Principle: Secure by default - undefined origins are REJECTED
+%% unless explicitly allowed in the whitelist.
 -spec validate_origin(origin(), origins()) -> validation_result().
-validate_origin(undefined, _AllowedOrigins) ->
-    %% No origin header - allow for local development
-    logger:debug("Origin validation: no origin header provided, allowing for local development"),
-    {ok, <<"undefined">>};
+validate_origin(undefined, AllowedOrigins) ->
+    %% SECURITY FIX (P0): Reject undefined origins by default
+    %% Armstrong principle: "make unsafe defaults unrepresentable"
+    %% Previous behavior allowed ANY undefined origin (DNS rebinding attack vector)
+    %% New behavior: undefined is only allowed if explicitly in whitelist
+    case lists:member(<<"undefined">>, AllowedOrigins) orelse
+         lists:member(<<"null">>, AllowedOrigins) of
+        true ->
+            logger:debug("Origin validation: undefined origin explicitly allowed by whitelist"),
+            {ok, <<"undefined">>};
+        false ->
+            logger:warning("Origin validation DENIED: undefined origin not in allowed list (DNS rebinding protection)"),
+            log_security_violation(<<"undefined">>, AllowedOrigins),
+            {error, forbidden}
+    end;
 validate_origin(Origin, AllowedOrigins) when is_binary(Origin), is_list(AllowedOrigins) ->
     case is_origin_allowed(Origin, AllowedOrigins) of
         true ->
@@ -44,22 +57,31 @@ validate_origin(Origin, AllowedOrigins) when is_binary(Origin), is_list(AllowedO
     end.
 
 %% @doc Get default allowed origins from configuration
-%% Returns localhost origins for development
+%% SECURITY FIX (P0): Armstrong principle - empty list by default
+%% Origins must be explicitly whitelisted by configuration.
+%% Previous behavior: Permissive localhost list (development convenience)
+%% New behavior: Empty list (production security)
+%%
+%% To enable localhost for development, configure explicitly:
+%%   application:set_env(erlmcp, allowed_origins, [
+%%       <<"http://localhost:8080">>, <<"http://127.0.0.1:8080">>
+%%   ]).
 -spec get_default_allowed_origins() -> origins().
 get_default_allowed_origins() ->
-    %% Default to allowing localhost origins for development
-    [
-        <<"http://localhost">>,
-        <<"http://localhost:8080">>,
-        <<"http://localhost:8081">>,
-        <<"http://localhost:3000">>,
-        <<"http://127.0.0.1">>,
-        <<"http://127.0.0.1:8080">>,
-        <<"http://127.0.0.1:8081">>,
-        <<"http://127.0.0.1:3000">>,
-        <<"http://[::1]">>,
-        <<"null">>  %% For same-origin policy
-    ].
+    %% SECURITY: Empty by default - explicit whitelist required
+    %% Read from application environment if configured
+    case application:get_env(erlmcp, allowed_origins, undefined) of
+        undefined ->
+            %% No configuration - return empty list (deny all)
+            logger:warning("No origin whitelist configured - all origins will be rejected. "
+                          "Set 'allowed_origins' in app config to allow specific origins."),
+            [];
+        Origins when is_list(Origins) ->
+            Origins;
+        InvalidConfig ->
+            logger:error("Invalid allowed_origins configuration: ~p (expected list)", [InvalidConfig]),
+            []
+    end.
 
 %%====================================================================
 %% Internal Functions

@@ -44,11 +44,15 @@ new() ->
 
 -spec new(map()) -> session().
 new(Metadata) ->
+    %% SECURITY FIX (P1): Armstrong principle - "make unsafe defaults unrepresentable"
+    %% Changed default timeout from 'infinity' to 1 hour (3600000ms)
+    %% Previous behavior: sessions never expired (resource exhaustion attack vector)
+    %% New behavior: sessions have finite lifetime by default
     #{
         id => generate_session_id(),
         created_at => erlang:system_time(millisecond),
         last_accessed => erlang:system_time(millisecond),
-        timeout_ms => infinity,
+        timeout_ms => 3600000,  % 1 hour default (was: infinity)
         metadata => Metadata
     }.
 

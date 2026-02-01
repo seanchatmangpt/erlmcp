@@ -993,3 +993,24 @@ validate-spec:
 	@echo ""
 	@echo "$(GREEN)✅ MCP spec validation PASSED$(NC)"
 	@echo ""
+
+# ============================================================================
+# NINE-NINES PERFORMANCE VALIDATION
+# ============================================================================
+
+.PHONY: benchmark-nine-nines benchmark-nine-nines-baseline benchmark-nine-nines-overload benchmark-nine-nines-full
+
+benchmark-nine-nines: benchmark-nine-nines-full
+
+benchmark-nine-nines-baseline: ## Run baseline nine-nines benchmarks
+	@echo "$(BLUE)Running nine-nines baseline benchmarks...$(NC)"
+	@./scripts/bench/run_nine_nines_validation.sh baseline
+
+benchmark-nine-nines-overload: ## Run nine-nines overload profiling
+	@echo "$(BLUE)Running nine-nines overload profiling...$(NC)"
+	@./scripts/bench/run_nine_nines_validation.sh overload
+
+benchmark-nine-nines-full: ## Run complete nine-nines validation
+	@echo "$(BLUE)Running complete nine-nines validation...$(NC)"
+	@./scripts/bench/run_nine_nines_validation.sh full
+
