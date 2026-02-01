@@ -50,22 +50,36 @@ command_exists() {
 
 print_header "Environment Health Check"
 
-# Check Erlang/OTP
+# Check Erlang/OTP - STRICT: OTP 28+ REQUIRED
 print_check "Erlang/OTP installation"
 if command_exists erl; then
     OTP_VERSION=$(erl -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' -noshell 2>/dev/null)
-    OTP_MAJOR=$(echo "$OTP_VERSION" | sed 's/[^0-9]//g')
+    OTP_MAJOR=$(echo "$OTP_VERSION" | sed 's/[^0-9].*//' | sed 's/^0*//')
     print_ok "Erlang/OTP $OTP_VERSION installed"
 
-    if [ "$OTP_MAJOR" -ge 25 ] && [ "$OTP_MAJOR" -le 28 ]; then
-        print_ok "OTP version is supported (25-28)"
-    elif [ "$OTP_MAJOR" -lt 25 ]; then
-        print_warn "OTP version $OTP_VERSION is below recommended (25-28)"
+    if [ "$OTP_MAJOR" -ge 28 ]; then
+        print_ok "OTP version $OTP_VERSION is supported (28+)"
     else
-        print_warn "OTP version $OTP_VERSION is untested (recommended: 25-28)"
+        echo ""
+        echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
+        echo -e "${RED}  ERROR: Erlang/OTP $OTP_VERSION is NOT supported${NC}"
+        echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
+        echo ""
+        echo -e "${RED}  This project requires Erlang/OTP 28 or higher.${NC}"
+        echo -e "${RED}  You are using OTP $OTP_VERSION.${NC}"
+        echo ""
+        echo -e "${YELLOW}  To upgrade:${NC}"
+        echo "    asdf: asdf install erlang 28.0 && asdf local erlang 28.0"
+        echo "    kerl: kerl build 28.0 28.0 && kerl install 28.0 ~/erlang/28.0"
+        echo ""
+        echo -e "${RED}  Refusal Code: OTP_VERSION_TOO_LOW${NC}"
+        echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
+        echo ""
+        exit 1
     fi
 else
     print_error "Erlang/OTP not found in PATH"
+    exit 1
 fi
 
 # Check rebar3
