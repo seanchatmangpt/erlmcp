@@ -1421,6 +1421,131 @@ rebar3 eunit --module=module_name
 rebar3 ct --num_parallel_processes 4
 ```
 
+## Dependency Management
+
+### Dependency Update Lifecycle
+
+erlmcp follows a structured quarterly dependency review cycle to ensure security, performance, and stability.
+
+**Review Schedule**:
+- **Q1 2026**: Gun 2.2.0 evaluation, Gproc 1.0.0 assessment
+- **Q2 2026**: Gun/Ranch updates, Gproc decision
+- **Q3 2026**: Major version migrations (Gproc 1.0.0 if approved)
+- **Q4 2026**: Comprehensive audit, OTP 29.0 planning
+
+**Comprehensive Strategy**: See [docs/DEPENDENCY_UPDATE_STRATEGY.md](docs/DEPENDENCY_UPDATE_STRATEGY.md)
+
+### Current Dependency Status
+
+| Package | Version | Status | Notes |
+|---------|---------|--------|-------|
+| gun | 2.0.1 | ⚠️ UPDATE | 2.2.0 available (backward compatible) |
+| gproc | 0.9.0 | ⚠️ MONITOR | 1.0.0 available (breaking changes) |
+| cowboy | 2.10.0 | ✓ SAFE | 2.14.2 available (point releases only) |
+| ranch | 2.1.0 | ✓ SAFE | 2.2.0 available (low risk) |
+| jsx | 3.1.0 | ✓ CURRENT | Latest version |
+| jesse | 1.8.1 | ✓ CURRENT | Latest version |
+| jose | 1.11.12 | ✓ SECURE | Security updates applied ✓ |
+| poolboy | 1.5.2 | ✓ STABLE | Mature, stable (last update 2019) |
+| bbmustache | 1.12.2 | ✓ CURRENT | Latest version |
+| opentelemetry | 1.7.0 | ✓ CURRENT | Latest version |
+
+### Checking for Updates
+
+```bash
+# View all dependencies
+rebar3 deps
+
+# Show dependency tree
+rebar3 tree
+
+# Check for newer versions (manual - hex.pm)
+# https://hex.pm/packages/gun (example)
+```
+
+### Adding or Updating Dependencies
+
+**Update a dependency**:
+```erlang
+%% In rebar.config
+{deps, [
+    {gun, "2.2.0"}  % Update from 2.0.1
+]}.
+```
+
+**Fetch new versions**:
+```bash
+rebar3 unlock
+rebar3 get-deps
+rebar3 compile
+```
+
+### Dependency Testing Workflow
+
+**Before committing a dependency update**:
+
+```bash
+# 1. Compile with new versions
+TERM=dumb rebar3 compile
+
+# 2. Run full test suite
+make check  # This runs: compile, eunit, ct, dialyzer, xref, coverage
+
+# 3. Benchmark critical paths (for performance-sensitive updates)
+make benchmark-quick
+
+# 4. Verify coverage >= 80%
+make coverage-report
+
+# 5. Check for type errors
+rebar3 dialyzer
+
+# 6. Check for undefined calls
+rebar3 xref
+```
+
+**If any gate fails**:
+1. Fix the issue (update code if necessary)
+2. Re-run `make check`
+3. Do NOT commit until all gates pass
+4. Document any compatibility changes
+
+### Security Update Priority
+
+**Critical (IMMEDIATE)**:
+- CVE-announced vulnerabilities
+- Security patch releases
+- Examples: JOSE 1.11.12 (applied immediately)
+
+**High (THIS QUARTER)**:
+- Major security fixes (non-breaking)
+- Performance-critical updates (HTTP/TLS)
+- Examples: Gun 2.2.0 TLS fixes
+
+**Medium (NEXT QUARTER)**:
+- Minor version updates (backward compatible)
+- Point releases for stable libraries
+- Examples: Cowboy 2.11-2.14, Ranch 2.2.0
+
+**Low (ANNUAL REVIEW)**:
+- Major version migrations (breaking)
+- Deprecated dependencies (plan replacement)
+- Examples: Gproc 1.0.0 (assess and plan)
+
+### Monitoring Strategy
+
+**Automated**:
+- GitHub release notifications (critical packages)
+- Hex.pm security alerts (subscribe to packages)
+- CI/CD failure alerts (dependency issues)
+
+**Manual**:
+- Monthly: Review new hex.pm releases
+- Quarterly: Comprehensive dependency audit
+- Annually: Major version assessment
+
+---
+
 ## Resources
 
 - [Erlang Documentation](https://www.erlang.org/doc/)
@@ -1429,6 +1554,7 @@ rebar3 ct --num_parallel_processes 4
 - [PropEr Testing](https://proper-testing.github.io/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 - [Claude Code Web Documentation](https://claude.ai/code/docs)
+- **[Dependency Update Strategy](docs/DEPENDENCY_UPDATE_STRATEGY.md)** - Comprehensive Q1-Q4 2026 planning
 
 ## Getting Help
 

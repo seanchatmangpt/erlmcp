@@ -1,0 +1,261 @@
+name: Documentation Validation
+
+on:
+  push:
+    branches: [main, 'release/**', 'feature/**']
+    paths:
+      - 'docs/**'
+      - '**.md'
+      - 'README.md'
+      - 'CLAUDE.md'
+      - 'DEVELOPMENT.md'
+  pull_request:
+    branches: [main, 'release/**']
+    paths:
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+jobs:
+  # =============================================================================
+  # JOB 1: Documentation Linting
+  # =============================================================================
+  docs-lint:
+    name: Documentation Linter
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run documentation linter
+        id: lint
+        run: |
+          echo "::group::Documentation Linting"
+
+          # Check if linter script exists
+          if [ -f "tools/docs_lint.sh" ]; then
+            chmod +x tools/docs_lint.sh
+            ./tools/docs_lint.sh
+            LINT_EXIT=$?
+
+            if [ $LINT_EXIT -ne 0 ]; then
+              echo "lint_status=failed" >> $GITHUB_OUTPUT
+              echo "::error::Documentation linting failed"
+              echo "::endgroup::"
+              exit 1
+            else
+              echo "lint_status=success" >> $GITHUB_OUTPUT
+              echo "✅ Documentation linting passed"
+            fi
+          else
+            echo "::warning::Documentation linter not found at tools/docs_lint.sh"
+            echo "lint_status=skipped" >> $GITHUB_OUTPUT
+          fi
+
+          echo "::endgroup::"
+
+      - name: Generate lint summary
+        if: always()
+        run: |
+          echo "## Documentation Lint Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.lint.outputs.lint_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Checks Performed" >> $GITHUB_STEP_SUMMARY
+          echo "- Legacy file references (benchmark_100k, throughput_SUITE, etc.)" >> $GITHUB_STEP_SUMMARY
+          echo "- Ambiguous metric terms (req/s without qualification)" >> $GITHUB_STEP_SUMMARY
+          echo "- Invalid or hardcoded workload IDs" >> $GITHUB_STEP_SUMMARY
+          echo "- Broken internal links" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================================================
+  # JOB 2: Markdown Link Validation
+  # =============================================================================
+  link-validation:
+    name: Markdown Link Checker
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check markdown links
+        id: links
+        run: |
+          echo "::group::Markdown Link Validation"
+
+          BROKEN_LINKS=false
+
+          # Find all markdown files
+          MARKDOWN_FILES=$(find . -name "*.md" -not -path "./_build/*" -not -path "./deps/*")
+
+          echo "Checking markdown files for broken links..."
+          for file in $MARKDOWN_FILES; do
+            echo "Checking: $file"
+
+            # Extract local file links (relative paths)
+            grep -oE '\[.*\]\(([^)]+)\)' "$file" | grep -oE '\(([^)]+)\)' | tr -d '()' | while read -r link; do
+              # Skip external URLs
+              if [[ "$link" =~ ^https?:// ]]; then
+                continue
+              fi
+
+              # Skip anchors
+              if [[ "$link" =~ ^# ]]; then
+                continue
+              fi
+
+              # Resolve relative path
+              base_dir=$(dirname "$file")
+              full_path="${base_dir}/${link}"
+
+              # Check if file exists
+              if [ ! -f "$full_path" ] && [ ! -d "$full_path" ]; then
+                echo "::warning file=${file}::Broken link: ${link}"
+                BROKEN_LINKS=true
+              fi
+            done
+          done
+
+          echo "::endgroup::"
+
+          if [ "$BROKEN_LINKS" = true ]; then
+            echo "links_status=warning" >> $GITHUB_OUTPUT
+            echo "⚠️ Broken links detected"
+          else
+            echo "links_status=success" >> $GITHUB_OUTPUT
+            echo "✅ All links valid"
+          fi
+
+      - name: Generate link validation report
+        if: always()
+        run: |
+          echo "## Link Validation Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.links.outputs.links_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ steps.links.outputs.links_status }}" = "warning" ]; then
+            echo "⚠️ Some broken links detected. Review workflow logs for details." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ All markdown links are valid." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # =============================================================================
+  # JOB 3: Documentation Consistency
+  # =============================================================================
+  docs-consistency:
+    name: Documentation Consistency Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check documentation consistency
+        id: consistency
+        run: |
+          echo "::group::Documentation Consistency"
+
+          INCONSISTENT=false
+
+          # Check for consistent terminology
+          echo "Checking terminology consistency..."
+
+          # Example: Check for consistent use of "erlmcp" vs "ERLMCP"
+          if grep -r "ERLMCP SDK" docs/ README.md 2>/dev/null | grep -v "\.git"; then
+            echo "::warning::Found 'ERLMCP SDK' - should be 'erlmcp SDK' (lowercase)"
+            INCONSISTENT=true
+          fi
+
+          # Check for outdated version references
+          echo "Checking for outdated version references..."
+          if grep -r "v1\." docs/ 2>/dev/null | grep -v "\.git" | grep -v "archive"; then
+            echo "::warning::Found v1.x references in docs (current version is v2.x)"
+            INCONSISTENT=true
+          fi
+
+          # Check for required sections in README
+          echo "Checking README.md structure..."
+          if [ -f "README.md" ]; then
+            for section in "Installation" "Usage" "Documentation" "License"; do
+              if ! grep -q "## $section" README.md && ! grep -q "# $section" README.md; then
+                echo "::warning::README.md missing section: $section"
+                INCONSISTENT=true
+              fi
+            done
+          fi
+
+          echo "::endgroup::"
+
+          if [ "$INCONSISTENT" = true ]; then
+            echo "consistency_status=warning" >> $GITHUB_OUTPUT
+            echo "⚠️ Documentation inconsistencies detected"
+          else
+            echo "consistency_status=success" >> $GITHUB_OUTPUT
+            echo "✅ Documentation is consistent"
+          fi
+
+      - name: Generate consistency report
+        if: always()
+        run: |
+          echo "## Documentation Consistency Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ steps.consistency.outputs.consistency_status }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Checks Performed" >> $GITHUB_STEP_SUMMARY
+          echo "- Terminology consistency (erlmcp vs ERLMCP)" >> $GITHUB_STEP_SUMMARY
+          echo "- Version references (v1 vs v2)" >> $GITHUB_STEP_SUMMARY
+          echo "- README structure completeness" >> $GITHUB_STEP_SUMMARY
+
+  # =============================================================================
+  # JOB 4: Documentation Summary
+  # =============================================================================
+  docs-summary:
+    name: Documentation Validation Summary
+    runs-on: ubuntu-22.04
+    needs: [docs-lint, link-validation, docs-consistency]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Documentation Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Linting | ${{ needs.docs-lint.result == 'success' && '✅ PASS' || needs.docs-lint.result == 'skipped' && '⚠️ SKIPPED' || '❌ FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Link Validation | ${{ needs.link-validation.result == 'success' && '✅ PASS' || '⚠️ WARNINGS' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Consistency | ${{ needs.docs-consistency.result == 'success' && '✅ PASS' || '⚠️ WARNINGS' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.docs-lint.result }}" != "failure" ]; then
+            echo "✅ **Overall Status:** PASS" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Documentation is valid and ready for use." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Overall Status:** FAIL" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Fix documentation linting errors before merging." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment on PR with results
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '❌ Documentation validation failed. Please fix the issues reported in the CI logs and re-push.\n\nCommon issues:\n- Legacy file references (benchmark_100k, throughput_SUITE, etc.)\n- Ambiguous metric terms (req/s without qualification)\n- Broken internal links\n- Inconsistent terminology\n\nRun `./tools/docs_lint.sh` locally to debug.'
+            })
+
+      - name: Fail if linting failed
+        if: needs.docs-lint.result == 'failure'
+        run: |
+          echo "❌ Documentation linting failed - blocking merge"
+          exit 1
