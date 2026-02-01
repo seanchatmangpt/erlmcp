@@ -223,8 +223,8 @@ handle_introspect_session(SessionId, Req) ->
                 respond_json(Req, 500, #{error => <<"Internal server error">>})
         end
     catch
-        Error:Reason ->
-            ?LOG_ERROR("Failed to get session dump: ~p:~p", [Error, Reason]),
+        _E:R ->
+            ?LOG_ERROR("Failed to get session dump: ~p:~p", [_E, R]),
             respond_json(Req, 500, #{error => <<"Internal server error">>})
     end.
 
@@ -242,8 +242,8 @@ handle_introspect_streams(SessionId, Req) ->
                 respond_json(Req, 500, #{error => <<"Internal server error">>})
         end
     catch
-        Error:Reason ->
-            ?LOG_ERROR("Failed to get streams: ~p:~p", [Error, Reason]),
+        _E:R ->
+            ?LOG_ERROR("Failed to get streams: ~p:~p", [_E, R]),
             respond_json(Req, 500, #{error => <<"Internal server error">>})
     end.
 

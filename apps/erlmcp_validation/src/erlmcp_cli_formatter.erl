@@ -130,11 +130,11 @@ format_table(Rows, Columns) ->
     ColWidths = calculate_column_widths(Rows, Columns),
 
     % Build header
-    Header = format_table_row(Columns, ColWidths, fun(H) -> bold(atom_to_list(H)) end),
+    Header = format_table_row_header(Columns, ColWidths, fun(H) -> bold(atom_to_list(H)) end),
     Separator = format_table_separator(ColWidths),
 
     % Build data rows
-    DataRows = [format_table_row(Row, Columns, ColWidths) || Row <- Rows],
+    DataRows = [format_table_row_data(Row, Columns, ColWidths) || Row <- Rows],
 
     [Header, "\n", Separator, "\n", string:join(DataRows, "\n")].
 
@@ -810,14 +810,14 @@ calculate_column_widths(Rows, Columns) ->
                 Rows).
 
 %% @doc Format table row (header)
--spec format_table_row([atom()], map(), fun((atom()) -> iolist())) -> iolist().
-format_table_row(Columns, ColWidths, Formatter) ->
+-spec format_table_row_header([atom()], map(), fun((atom()) -> iolist())) -> iolist().
+format_table_row_header(Columns, ColWidths, Formatter) ->
     Cells = [pad_right(Formatter(Col), maps:get(Col, ColWidths)) || Col <- Columns],
     string:join(Cells, " │ ").
 
 %% @doc Format table row (data)
--spec format_table_row(map(), [atom()], map()) -> iolist().
-format_table_row(Row, Columns, ColWidths) ->
+-spec format_table_row_data(map(), [atom()], map()) -> iolist().
+format_table_row_data(Row, Columns, ColWidths) ->
     Cells =
         [pad_right(format_cell_value(maps:get(Col, Row, "")), maps:get(Col, ColWidths))
          || Col <- Columns],

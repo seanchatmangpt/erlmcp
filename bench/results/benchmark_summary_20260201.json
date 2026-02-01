@@ -1,0 +1,44 @@
+{
+  "benchmark_date": "2026-02-01",
+  "workload": "10K operations",
+  "environment": {
+    "otp_version": "28",
+    "os": "darwin",
+    "erlang_version": "OTP-28"
+  },
+  "metrics": {
+    "throughput_ops_per_sec": 2204221,
+    "throughput_baseline": 1000000,
+    "throughput_improvement_pct": 120.4,
+    "latency": {
+      "p50_us": 1,
+      "p95_us": 82,
+      "p99_us": 98,
+      "baseline_p50_us": 10,
+      "baseline_p95_us": 50,
+      "baseline_p99_us": 100
+    },
+    "components": {
+      "registry_avg_us": 51.9,
+      "queue_avg_us": 0.1,
+      "pool_avg_us": 0.6,
+      "session_avg_us": 1.8
+    }
+  },
+  "regression_analysis": {
+    "p50_status": "improved",
+    "p95_status": "regressed_64pct",
+    "p99_status": "improved",
+    "throughput_status": "improved_120pct",
+    "overall_status": "PASS"
+  },
+  "bottlenecks": [
+    "gproc registry operations (51 us avg)",
+    "session operations (1.8 us avg)"
+  ],
+  "recommendations": [
+    "Consider batching gproc registry lookups",
+    "Cache registry results where possible",
+    "Monitor p95 latency in production"
+  ]
+}

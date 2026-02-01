@@ -1,0 +1,19 @@
+{
+  "agents": {
+    "agent-1769979041050-dul1fl": {
+      "agentId": "agent-1769979041050-dul1fl",
+      "agentType": "erlang-otp-developer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-02-01T20:50:41.050Z",
+      "domain": "erlmcp_observability_compilation",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    }
+  },
+  "version": "3.0.0"
+}

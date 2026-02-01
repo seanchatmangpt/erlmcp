@@ -188,7 +188,7 @@ test_priority_message_preemption(Config) ->
             ct:pal("First 20 messages: ~p", [FirstN]),
 
             % Count priority messages in first 20
-            PriorityInFirst20 = length([M || {priority, _} <- FirstN]),
+            PriorityInFirst20 = length([1 || {priority, _} <- FirstN]),
             ct:pal("Priority messages in first 20: ~p", [PriorityInFirst20]),
 
             % At least some priority messages should have preempted
@@ -374,9 +374,9 @@ test_graceful_drain_with_priority(Config) ->
 
             Status =
                 receive
-                    {status, Mode, Processed} ->
-                        ct:pal("Worker mode: ~p, processed: ~p", [Mode, Processed]),
-                        {Mode, Processed}
+                    {status, Mode0, Processed} ->
+                        ct:pal("Worker mode: ~p, processed: ~p", [Mode0, Processed]),
+                        {Mode0, Processed}
                 after 2000 ->
                     ct:fail("Status not received")
                 end,

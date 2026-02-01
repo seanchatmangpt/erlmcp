@@ -41,25 +41,46 @@ cleanup({Pid, _Config}) ->
 %% Priority State Transition Tests
 %%====================================================================
 
-test_priority_state_transition_closed_to_open( { Pid , _Config } ) -> { "State transition CLOSED -> OPEN should be immediate with priority" , fun ( ) -> ?assertEqual( closed , erlmcp_circuit_breaker : get_state( Pid ) ) , StartTime = erlang : monotonic_time( microsecond ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , State = erlmcp_circuit_breaker : get_state( Pid ) , EndTime = erlang : monotonic_time( microsecond ) , TransitionLatencyUs = EndTime - StartTime , ?assertEqual( open , State ) , end } .
+test_priority_state_transition_closed_to_open({Pid, _Config}) ->
+    {"State transition CLOSED -> OPEN should be immediate with priority",
+     fun() ->
+        % Verify initial state
+        ?assertEqual(closed, erlmcp_circuit_breaker:get_state(Pid)),
 
-         % Verify initial state
+        % Measure latency of transition to OPEN
+        StartTime = erlang:monotonic_time(microsecond),
 
-         % Measure latency of transition to OPEN
+        % Force failures to trip breaker
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
 
-         % Force failures to trip breaker
+        % Verify state is now OPEN
+        State = erlmcp_circuit_breaker:get_state(Pid),
+        EndTime = erlang:monotonic_time(microsecond),
+        TransitionLatencyUs = EndTime - StartTime,
+        ?assertEqual(open, State)
+     end}.
 
-         % Verify state is now OPEN
+test_priority_state_transition_open_to_half_open({Pid, _Config}) ->
+    {"State transition OPEN -> HALF_OPEN should be immediate with priority",
+     fun() ->
+        % Trip breaker to OPEN
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        ?assertEqual(open, erlmcp_circuit_breaker:get_state(Pid)),
 
-test_priority_state_transition_open_to_half_open( { Pid , _Config } ) -> { "State transition OPEN -> HALF_OPEN should be immediate with priority" , fun ( ) -> _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , ?assertEqual( open , erlmcp_circuit_breaker : get_state( Pid ) ) , StartTime = erlang : monotonic_time( microsecond ) , timer : sleep( 1100 ) , State = erlmcp_circuit_breaker : get_state( Pid ) , EndTime = erlang : monotonic_time( microsecond ) , TransitionLatencyUs = EndTime - StartTime , ?assertEqual( half_open , State ) , end } .
+        % Wait for timeout to trigger HALF_OPEN transition
+        % Slightly longer than timeout
+        StartTime = erlang:monotonic_time(microsecond),
+        timer:sleep(1100),
 
-         % Trip breaker to OPEN
-
-         % Wait for timeout to trigger HALF_OPEN transition
-
-                            % Slightly longer than timeout
-
-         % Verify state is HALF_OPEN
+        State = erlmcp_circuit_breaker:get_state(Pid),
+        EndTime = erlang:monotonic_time(microsecond),
+        TransitionLatencyUs = EndTime - StartTime,
+        ?assertEqual(half_open, State)
+     end}.
 
 test_priority_state_transition_half_open_to_closed({Pid, _Config}) ->
     {"State transition HALF_OPEN -> CLOSED should be immediate with priority",
@@ -122,27 +143,47 @@ test_priority_level_configuration(_Setup) ->
 %% Metrics Tests
 %%====================================================================
 
-test_priority_metrics_tracking( { Pid , _Config } ) -> { "Priority metrics should be tracked for state transitions" , fun ( ) -> { ok , Stats1 } = erlmcp_circuit_breaker : get_stats( Pid ) , InitialCount = maps : get( priority_messages_delivered , Stats1 , 0 ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , { ok , Stats2 } = erlmcp_circuit_breaker : get_stats( Pid ) , FinalCount = maps : get( priority_messages_delivered , Stats2 , 0 ) , end } .
+test_priority_metrics_tracking({Pid, _Config}) ->
+    {"Priority metrics should be tracked for state transitions",
+     fun() ->
+        % Get initial stats
+        {ok, Stats1} = erlmcp_circuit_breaker:get_stats(Pid),
+        InitialCount = maps:get(priority_messages_delivered, Stats1, 0),
 
-         % Get initial stats
+        % Force state transitions
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
 
-         % Force state transitions
-
-         % Get updated stats
+        % Get updated stats
+        {ok, Stats2} = erlmcp_circuit_breaker:get_stats(Pid),
+        FinalCount = maps:get(priority_messages_delivered, Stats2, 0)
+     end}.
 
 %%====================================================================
 %% Notification Tests
 %%====================================================================
 
-test_state_change_notification_latency( { Pid , _Config } ) -> { "State change notifications should have low latency" , fun ( ) -> { ok , _MonitorPid } = erlmcp_health_monitor : start_link( [ ] ) , StartTime = erlang : monotonic_time( microsecond ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , _ = erlmcp_circuit_breaker : call( Pid , fun ( ) -> { error , failed } end ) , timer : sleep( 10 ) , EndTime = erlang : monotonic_time( microsecond ) , NotificationLatencyUs = EndTime - StartTime , end } .
+test_state_change_notification_latency({Pid, _Config}) ->
+    {"State change notifications should have low latency",
+     fun() ->
+        % Start health monitor to receive notifications
+        {ok, _MonitorPid} = erlmcp_health_monitor:start_link([]),
 
-         % Start health monitor to receive notifications
+        % Measure notification latency by triggering state change
+        StartTime = erlang:monotonic_time(microsecond),
 
-         % Measure notification latency by triggering state change
+        % Trip breaker
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
+        _ = erlmcp_circuit_breaker:call(Pid, fun() -> {error, failed} end),
 
-         % Trip breaker
-
-         % Give time for notification to propagate
+        % Give time for notification to propagate
+        timer:sleep(10),
+        EndTime = erlang:monotonic_time(microsecond),
+        NotificationLatencyUs = EndTime - StartTime,
+        ?assert(NotificationLatencyUs < 1000000)  % Should be < 1 second
+     end}.
 
 %%====================================================================
 %% Concurrency Tests
