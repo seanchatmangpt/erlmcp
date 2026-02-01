@@ -1,137 +1,30 @@
 {
-  "$schema": "https://claude.ai/schemas/settings-v1.json",
-  "$comment": [
-    "Claude Code Web Governance Configuration for erlmcp v3.0.0",
-    "",
-    "This configuration implements the 4-layer governance pattern:",
-    "  1. Policy (PreToolUse): Network + filesystem governance",
-    "  2. Execution (SessionStart): OTP 28 bootstrap + env persistence",
-    "  3. Verification (Stop): Agent-based quality gates",
-    "  4. Receipt (SessionEnd): Audit trail generation",
-    "",
-    "Architecture:",
-    "  - Hooks: Declarative lifecycle interception (5 events)",
-    "  - Subagents: Role-based execution with tool constraints",
-    "  - Skills: Reusable procedures (slash commands)",
-    "",
-    "Hook execution order:",
-    "  SessionStart → PreToolUse* → PostToolUse* → Stop → SessionEnd",
-    "",
-    "Subagent tool access:",
-    "  - verifier: Read + Bash (execute only, no write)",
-    "  - build-engineer: Read + Write + Bash (constrained to apps/erlmcp_*/src)",
-    "  - release-scout: Read + WebSearch (no execution)",
-    "",
-    "Policy enforcement:",
-    "  - Deny: .env, secrets/, deployment scripts",
-    "  - Allow: .erl, .hrl, test/ files",
-    "  - Ask: Unknown network domains, non-deterministic commands",
-    "",
-    "Timeout defaults:",
-    "  - SessionStart: 600s (OTP build can take time)",
-    "  - PreToolUse: 10s (policy checks are fast)",
-    "  - PostToolUse: 120s (async CI, non-blocking)",
-    "  - Stop: 120s (verification subagent execution)",
-    "  - SessionEnd: 30s (receipt generation)",
-    "",
-    "References:",
-    "  - Specification: CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md",
-    "  - Work Order: AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md (WO-003)",
-    "  - Armstrong Principle: Make incorrect behavior unrepresentable",
-    "",
-    "Version: 3.0.0",
-    "Last Updated: 2026-02-01"
-  ],
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
 
   "permissions": {
-    "$comment": [
-      "File-level permission rules (product-enforced)",
-      "Pattern syntax: glob patterns with tool restrictions",
-      "Deny takes precedence over allow"
-    ],
     "deny": [
-      {
-        "pattern": ".env",
-        "reason": "Contains secrets (API keys, credentials)"
-      },
-      {
-        "pattern": ".env.local",
-        "reason": "Local environment secrets"
-      },
-      {
-        "pattern": ".env.*.local",
-        "reason": "Environment-specific secrets"
-      },
-      {
-        "pattern": "secrets/**",
-        "reason": "Secrets directory (Vault storage)"
-      },
-      {
-        "pattern": ".claude/secrets/**",
-        "reason": "Claude-specific secrets"
-      },
-      {
-        "pattern": "scripts/deploy.sh",
-        "reason": "Production deployment (requires manual review)"
-      },
-      {
-        "pattern": "scripts/release.sh",
-        "reason": "Release script (requires manual review)"
-      },
-      {
-        "pattern": ".git/config",
-        "reason": "Git config (remote URLs, credentials)"
-      },
-      {
-        "pattern": "**/*.pem",
-        "reason": "Private keys"
-      },
-      {
-        "pattern": "**/*.key",
-        "reason": "Private keys"
-      },
-      {
-        "pattern": "**/id_rsa*",
-        "reason": "SSH keys"
-      }
+      ".env",
+      ".env.local",
+      ".env.*.local",
+      "secrets/**",
+      ".claude/secrets/**",
+      "scripts/deploy.sh",
+      "scripts/release.sh",
+      ".git/config",
+      "**/*.pem",
+      "**/*.key",
+      "**/id_rsa*"
     ],
     "allow": [
-      {
-        "pattern": "**/*.erl",
-        "reason": "Erlang source files (primary development)"
-      },
-      {
-        "pattern": "**/*.hrl",
-        "reason": "Erlang header files"
-      },
-      {
-        "pattern": "**/*.app.src",
-        "reason": "OTP application resource files"
-      },
-      {
-        "pattern": "test/**",
-        "reason": "Test files (EUnit, CT, Proper)"
-      },
-      {
-        "pattern": "apps/*/test/**",
-        "reason": "Application-specific test files"
-      },
-      {
-        "pattern": "docs/**/*.md",
-        "reason": "Documentation"
-      },
-      {
-        "pattern": "examples/**",
-        "reason": "Example code"
-      },
-      {
-        "pattern": "scripts/quality-*.sh",
-        "reason": "Quality gate scripts (read-only execution)"
-      },
-      {
-        "pattern": ".claude/**",
-        "reason": "Claude configuration (hooks, skills, agents)"
-      }
+      "**/*.erl",
+      "**/*.hrl",
+      "**/*.app.src",
+      "test/**",
+      "apps/*/test/**",
+      "docs/**/*.md",
+      "examples/**",
+      "scripts/quality-*.sh",
+      ".claude/**"
     ]
   },
 
@@ -157,25 +50,6 @@
 
     "SessionStart": [
       {
-        "$comment": [
-          "OTP 28 bootstrap + environment persistence",
-          "Runs once per session (idempotent)",
-          "Responsibilities:",
-          "  1. Detect/install OTP 28.3.1+ (from erlang-solutions.com or GitHub)",
-          "  2. Persist env vars via CLAUDE_ENV_FILE",
-          "  3. Pre-compile erlmcp_core (warm cache)",
-          "  4. Verify rebar3 available",
-          "  5. Set ERLMCP_PROFILE=cloud",
-          "",
-          "Environment variables set:",
-          "  - PATH: Add /opt/erlang-28/bin",
-          "  - ERLMCP_PROFILE: cloud",
-          "  - ERLMCP_BUILD_HASH: git rev-parse HEAD",
-          "  - ERLMCP_CACHE: /home/user/erlmcp/.erlmcp/cache/",
-          "  - TERM: dumb (rebar3 compatibility)",
-          "",
-          "Implementation: WO-001 (erlang-otp-developer)"
-        ],
         "matcher": "startup|resume",
         "hooks": [
           {
@@ -190,23 +64,6 @@
 
     "PreToolUse": [
       {
-        "$comment": [
-          "Bash command governance (network + filesystem safety)",
-          "Intercepts all Bash tool calls before execution",
-          "Returns permission decision + optional input rewrite",
-          "",
-          "Allowlist (auto-allow):",
-          "  - github.com, hex.pm, erlang-solutions.com (package sources)",
-          "  - erl, rebar3, make, git (build commands)",
-          "  - Deterministic filesystem operations",
-          "",
-          "Denylist (auto-deny):",
-          "  - sudo, rm -rf /, destructive operations",
-          "  - Non-deterministic commands (without explicit approval)",
-          "  - Unknown network domains (ask user)",
-          "",
-          "Implementation: WO-002 (erlang-transport-builder)"
-        ],
         "matcher": "Bash",
         "hooks": [
           {
@@ -218,14 +75,6 @@
         ]
       },
       {
-        "$comment": [
-          "WebSearch governance (domain filtering)",
-          "Restricts search to technical domains",
-          "Auto-allow: erlang.org, hex.pm, github.com, stackoverflow.com",
-          "Ask: General web searches (user confirmation)",
-          "",
-          "Implementation: Future (not in current WO scope)"
-        ],
         "matcher": "WebSearch",
         "hooks": [
           {
@@ -237,15 +86,6 @@
         ]
       },
       {
-        "$comment": [
-          "Write/Edit governance (file pattern validation)",
-          "Ensures writes only target approved locations",
-          "Auto-allow: apps/erlmcp_*/src, apps/erlmcp_*/test, docs/",
-          "Ask: Root-level files, scripts/",
-          "Deny: .env, secrets/, .git/",
-          "",
-          "Implementation: Future (not in current WO scope)"
-        ],
         "matcher": "Write|Edit",
         "hooks": [
           {
@@ -260,24 +100,6 @@
 
     "PostToolUse": [
       {
-        "$comment": [
-          "Async CI triggering (compile + incremental tests)",
-          "Fires after Write/Edit tool completes",
-          "Non-blocking (async: true) - returns immediately",
-          "",
-          "Behavior:",
-          "  1. Detect file type (.erl, .hrl, .app.src)",
-          "  2. Trigger incremental compile (TERM=dumb rebar3 compile)",
-          "  3. Run module-specific EUnit tests",
-          "  4. Log to .erlmcp/build.log and .erlmcp/test.log",
-          "  5. Rotate logs (max 10MB)",
-          "",
-          "Logs:",
-          "  - .erlmcp/build.log: Compilation output",
-          "  - .erlmcp/test.log: Test results",
-          "",
-          "Implementation: WO-004 (erlang-test-engineer)"
-        ],
         "matcher": "Write|Edit",
         "hooks": [
           {
@@ -290,13 +112,6 @@
         ]
       },
       {
-        "$comment": [
-          "Git commit logging (audit trail)",
-          "Fires after git commit (via Bash tool)",
-          "Records commit hash, message, timestamp to receipt",
-          "",
-          "Implementation: Future (integrated with receipt.sh)"
-        ],
         "matcher": "Bash",
         "hooks": [
           {
@@ -312,25 +127,6 @@
 
     "Stop": [
       {
-        "$comment": [
-          "Agent-based verification (quality gates)",
-          "Spawns verifier subagent before allowing agent to stop",
-          "Blocks completion if verification fails",
-          "",
-          "Verification checklist:",
-          "  1. OTP version >= 28.3.1 (erl -noshell -eval)",
-          "  2. Compilation succeeds (TERM=dumb rebar3 compile)",
-          "  3. Unit tests pass (rebar3 eunit --application=erlmcp_core)",
-          "  4. No regressions (compare with baseline)",
-          "",
-          "Subagent: verifier (Read + Bash execute-only)",
-          "",
-          "Returns:",
-          "  - {\"ok\": true, \"checks\": {...}} → Allow stop",
-          "  - {\"ok\": false, \"reason\": \"...\"} → Block stop (agent continues)",
-          "",
-          "Implementation: WO-007 (verifier subagent)"
-        ],
         "hooks": [
           {
             "type": "agent",
@@ -345,33 +141,6 @@
 
     "SessionEnd": [
       {
-        "$comment": [
-          "Receipt generation (audit trail)",
-          "Fires at session end (normal or error)",
-          "Captures session metadata + quality gate results",
-          "",
-          "Receipt format (JSON):",
-          "  {",
-          "    \"session_id\": \"session_015...\",",
-          "    \"timestamp\": \"ISO-8601\",",
-          "    \"otp_version\": \"28.3.1\",",
-          "    \"erlmcp_version\": \"v3.0.0\",",
-          "    \"build_hash\": \"abc123...\",",
-          "    \"quality_gates\": {",
-          "      \"compile\": \"pass|fail\",",
-          "      \"eunit\": \"pass|fail\",",
-          "      \"ct\": \"pass|fail\"",
-          "    },",
-          "    \"cost_estimate\": \"$0.XX\",",
-          "    \"time_seconds\": 480",
-          "  }",
-          "",
-          "Outputs:",
-          "  - .erlmcp/receipts/<timestamp>.json (receipt)",
-          "  - .erlmcp/transcripts/session_<id>.log (transcript copy)",
-          "",
-          "Implementation: WO-005 (erlang-github-ops)"
-        ],
         "hooks": [
           {
             "type": "command",
@@ -385,18 +154,6 @@
 
     "PreCompact": [
       {
-        "$comment": [
-          "Re-inject invariants before conversation compaction",
-          "Ensures agent remembers critical constraints after context window reset",
-          "",
-          "Invariants to re-inject:",
-          "  - OTP >= 28.3.1 required (strict)",
-          "  - Chicago TDD (no mocks, real processes)",
-          "  - Coverage >= 80% (blocking gate)",
-          "  - Armstrong principle (illegal states unrepresentable)",
-          "",
-          "Implementation: Future (not in current WO scope)"
-        ],
         "hooks": [
           {
             "type": "prompt",
@@ -409,46 +166,7 @@
   },
 
   "subagents": {
-    "$comment": [
-      "Role-based execution with tool access constraints",
-      "Subagents are permission-scoped at product level",
-      "",
-      "Tool access enforcement:",
-      "  - allow: Explicit tool allowlist",
-      "  - deny: Explicit tool denylist (overrides allow)",
-      "  - constraint: Additional restrictions (e.g., file patterns)",
-      "",
-      "Permission modes:",
-      "  - read: Read-only access",
-      "  - execute: Can run commands, but not modify code",
-      "  - write: Can modify code (with constraints)",
-      "",
-      "Skills:",
-      "  - preload: Skills available to subagent (slash commands)"
-    ],
-
     "verifier": {
-      "$comment": [
-        "Locked-down verification subagent",
-        "Used by Stop hook for quality gate enforcement",
-        "",
-        "Responsibilities:",
-        "  1. Check OTP version (erl -noshell)",
-        "  2. Verify compilation (rebar3 compile)",
-        "  3. Run unit tests (rebar3 eunit)",
-        "  4. Return JSON decision ({\"ok\": true|false})",
-        "",
-        "Tool access:",
-        "  - Bash: Execute-only (no destructive operations)",
-        "  - Read: Logs, config files",
-        "  - NO Write/Edit/Delete",
-        "",
-        "Bash constraints:",
-        "  - Allow: erl, rebar3, make, git status",
-        "  - Deny: sudo, rm, apt-get, curl, wget",
-        "",
-        "Implementation: WO-007 (erlang-architect)"
-      ],
       "description": "Verification specialist (read-only + execute tests)",
       "toolAccess": {
         "allow": ["Bash", "Read"],
@@ -477,29 +195,6 @@
     },
 
     "build-engineer": {
-      "$comment": [
-        "Code editing specialist",
-        "Can implement features, write tests, modify source",
-        "",
-        "Responsibilities:",
-        "  1. Implement Erlang/OTP code (gen_server, supervision)",
-        "  2. Write EUnit/CT tests (Chicago TDD)",
-        "  3. Run compile + test cycles",
-        "  4. Commit changes with quality reports",
-        "",
-        "Tool access:",
-        "  - Bash: Full access (compile, test, git)",
-        "  - Read: All files",
-        "  - Write: Constrained to apps/erlmcp_*/src and test/",
-        "",
-        "Write constraints:",
-        "  - Allow: apps/erlmcp_core/src/*.erl",
-        "  - Allow: apps/erlmcp_transports/src/*.erl",
-        "  - Allow: apps/*/test/*.erl",
-        "  - Deny: scripts/, .env, secrets/",
-        "",
-        "Implementation: WO-008 (erlang-otp-developer)"
-      ],
       "description": "Code editing specialist (constrained writes)",
       "toolAccess": {
         "allow": ["Bash", "Read", "Write", "Edit"],
@@ -533,27 +228,6 @@
     },
 
     "release-scout": {
-      "$comment": [
-        "Read-only research specialist",
-        "Searches GitHub, hex.pm for new releases",
-        "",
-        "Responsibilities:",
-        "  1. Find new OTP releases (GitHub erlang/otp)",
-        "  2. Check hex.pm for dependency updates",
-        "  3. Generate release reports",
-        "  4. NO code modification",
-        "",
-        "Tool access:",
-        "  - Read: All files",
-        "  - WebSearch: Technical domains only",
-        "  - NO Bash/Write/Edit/Delete",
-        "",
-        "Search constraints:",
-        "  - Allow: github.com, hex.pm, erlang.org",
-        "  - Ask: General web searches",
-        "",
-        "Implementation: WO-009 (erlang-researcher)"
-      ],
       "description": "Read-only research specialist (WebSearch enabled)",
       "toolAccess": {
         "allow": ["Read", "WebSearch"],
@@ -579,18 +253,6 @@
   },
 
   "skills": {
-    "$comment": [
-      "Reusable procedures (slash commands)",
-      "Skills are defined in .claude/skills/<name>/SKILL.md",
-      "Can be preloaded into subagents",
-      "",
-      "Skill structure:",
-      "  - SKILL.md: Markdown frontmatter + documentation",
-      "  - Supporting scripts: Bash, Python, etc.",
-      "",
-      "Available skills:",
-      "  - otp-manager: OTP install/verify/clean (WO-006)"
-    ],
     "otp-manager": {
       "path": ".claude/skills/otp-manager/SKILL.md",
       "description": "Manage Erlang/OTP installation and verification",
@@ -615,15 +277,6 @@
   },
 
   "environment": {
-    "$comment": [
-      "Environment-specific settings",
-      "Can be overridden in .claude/settings.local.json",
-      "",
-      "Variables:",
-      "  - ERLMCP_PROFILE: cloud|local (runtime profile)",
-      "  - ERLMCP_CACHE: Cache directory path",
-      "  - CLAUDE_CODE_REMOTE: true|false (cloud execution flag)"
-    ],
     "variables": {
       "ERLMCP_PROFILE": {
         "value": "cloud",
@@ -645,10 +298,6 @@
   },
 
   "metadata": {
-    "$comment": [
-      "Configuration metadata (non-functional)",
-      "Used for documentation and tooling"
-    ],
     "version": "3.0.0",
     "project": "erlmcp",
     "description": "Erlang/OTP MCP SDK governance configuration",
