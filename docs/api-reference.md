@@ -1,5 +1,199 @@
 # erlmcp API Reference
 
+## API Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Client API"
+        C_START[erlmcp_client:start_link<br/>TransportOpts, Options]
+        C_INIT[initialize<br/>Capabilities]
+        C_RES_LIST[list_resources]
+        C_RES_READ[read_resource<br/>Uri]
+        C_RES_SUB[subscribe_to_resource<br/>Uri]
+        C_RES_UNSUB[unsubscribe_from_resource<br/>Uri]
+        C_TOOL_LIST[list_tools]
+        C_TOOL_CALL[call_tool<br/>Name, Arguments]
+        C_PROMPT_LIST[list_prompts]
+        C_PROMPT_GET[get_prompt<br/>Name, Arguments]
+
+        C_START --> C_INIT
+        C_INIT --> C_RES_LIST
+        C_INIT --> C_TOOL_LIST
+        C_INIT --> C_PROMPT_LIST
+        C_RES_LIST --> C_RES_READ
+        C_RES_LIST --> C_RES_SUB
+        C_RES_SUB --> C_RES_UNSUB
+        C_TOOL_LIST --> C_TOOL_CALL
+        C_PROMPT_LIST --> C_PROMPT_GET
+    end
+
+    subgraph "Server API"
+        S_START[erlmcp_server:start_link<br/>TransportOpts, Capabilities]
+        S_RES_ADD[add_resource<br/>Uri, Handler]
+        S_RES_TEMP[add_resource_template<br/>UriTemplate, Name, Handler]
+        S_TOOL_ADD[add_tool<br/>Name, Handler]
+        S_TOOL_SCHEMA[add_tool_with_schema<br/>Name, Handler, Schema]
+        S_PROMPT_ADD[add_prompt<br/>Name, Handler]
+        S_PROMPT_ARGS[add_prompt_with_args<br/>Name, Handler, Arguments]
+        S_RES_SUB[subscribe_resource<br/>Uri, Subscriber]
+        S_NOTIFY[notify_resource_updated<br/>Uri, Metadata]
+        S_PROGRESS[report_progress<br/>Token, Progress, Total]
+
+        S_START --> S_RES_ADD
+        S_START --> S_RES_TEMP
+        S_START --> S_TOOL_ADD
+        S_START --> S_TOOL_SCHEMA
+        S_START --> S_PROMPT_ADD
+        S_START --> S_PROMPT_ARGS
+        S_RES_ADD --> S_RES_SUB
+        S_RES_TEMP --> S_RES_SUB
+        S_RES_SUB --> S_NOTIFY
+        S_TOOL_ADD --> S_PROGRESS
+        S_TOOL_SCHEMA --> S_PROGRESS
+    end
+
+    subgraph "Transport Layer"
+        T_STDIO[erlmcp_transport_stdio<br/>Standard I/O]
+        T_TCP[erlmcp_transport_tcp<br/>TCP with ranch]
+        T_HTTP[erlmcp_transport_http<br/>HTTP/2 with gun]
+        T_WS[erlmcp_transport_ws<br/>WebSocket]
+        T_SSE[erlmcp_transport_sse<br/>Server-Sent Events]
+    end
+
+    subgraph "Registry API (gproc-based)"
+        R_REG_SRV[register_server<br/>ServerId, ServerPid, Config]
+        R_REG_TRANS[register_transport<br/>TransportId, TransportPid, Config]
+        R_FIND_SRV[find_server<br/>ServerId]
+        R_FIND_TRANS[find_transport<br/>TransportId]
+        R_LIST_SRV[list_servers]
+        R_LIST_TRANS[list_transports]
+        R_BIND[bind_transport_to_server<br/>TransportId, ServerId]
+        R_GET_SRV[get_server_for_transport<br/>TransportId]
+
+        R_REG_SRV --> R_FIND_SRV
+        R_REG_SRV --> R_LIST_SRV
+        R_REG_TRANS --> R_FIND_TRANS
+        R_REG_TRANS --> R_LIST_TRANS
+        R_BIND --> R_GET_SRV
+    end
+
+    C_START -.->|uses| T_STDIO
+    C_START -.->|uses| T_TCP
+    C_START -.->|uses| T_HTTP
+    S_START -.->|uses| T_STDIO
+    S_START -.->|uses| T_TCP
+    S_START -.->|uses| T_HTTP
+    C_START -.->|registers with| R_REG_SRV
+    S_START -.->|registers with| R_REG_SRV
+    T_STDIO -.->|registers with| R_REG_TRANS
+    T_TCP -.->|registers with| R_REG_TRANS
+    T_HTTP -.->|registers with| R_REG_TRANS
+
+    style C_START fill:#e1f5fe
+    style S_START fill:#e1f5fe
+    style T_STDIO fill:#fff3e0
+    style T_TCP fill:#fff3e0
+    style T_HTTP fill:#fff3e0
+    style R_REG_SRV fill:#f3e5f5
+    style R_REG_TRANS fill:#f3e5f5
+```
+
+**See also:** [Detailed API Architecture Diagram](./diagrams/api/api-endpoints.mmd)
+
+### Request-Response Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as erlmcp_client
+    participant Registry as erlmcp_registry<br/>(gproc)
+    participant Transport as Transport Layer<br/>(stdio/tcp/http)
+    participant Server as erlmcp_server
+    participant Handler as Handler Function
+    participant Observability as erlmcp_observability<br/>(metrics/otel)
+
+    Note over Client,Observability: Client Request Flow
+
+    Client->>Client: API call<br/>(e.g., call_tool/3)
+    activate Client
+
+    Client->>Client: Encode JSON-RPC request<br/>(erlmcp_json_rpc)
+    Client->>Registry: Lookup transport<br/>gproc:lookup_local_name({mcp, transport, Id})
+    activate Registry
+    Registry-->>Client: TransportPid
+    deactivate Registry
+
+    Client->>Transport: Send encoded message<br/>transport:send(Data)
+    activate Transport
+
+    Transport->>Transport: Transport-specific send<br/>(gun/ranch/stdio)
+
+    Note over Transport,Server: Network transmission
+
+    Transport-->>Server: Raw JSON-RPC data
+    deactivate Transport
+
+    Server->>Registry: Lookup server<br/>gproc:lookup_local_name({mcp, server, Id})
+    activate Registry
+    Registry-->>Server: ServerPid
+    deactivate Registry
+
+    Server->>Server: Decode JSON-RPC request<br/>erlmcp_json_rpc:decode()
+    Server->>Server: Route to handler<br/>(resource/tool/prompt)
+
+    Server->>Observability: Start OTEL span<br/>erlmcp_otel:start_span()
+    activate Observability
+    Observability-->>Server: Span context
+    deactivate Observability
+
+    Server->>Handler: Execute handler<br/>(user-provided function)
+    activate Handler
+
+    Handler-->>Server: Result<br/>(#mcp_content{} | binary())
+    deactivate Handler
+
+    Server->>Observability: End OTEL span<br/>erlmcp_otel:end_span()
+    Server->>Server: Encode JSON-RPC response<br/>erlmcp_json_rpc:encode()
+
+    Server->>Transport: Send response<br/>transport:send(Data)
+    activate Transport
+
+    Transport->>Transport: Transport-specific send
+
+    Transport-->>Client: Raw response data
+    deactivate Transport
+
+    Client->>Client: Decode JSON-RPC response<br/>erlmcp_json_rpc:decode()
+    Client->>Client: Match to pending request<br/>(State.pending_requests)
+
+    Client->>Observability: Record metrics<br/>erlmcp_metrics:record_request()
+    activate Observability
+    Observability-->>Client: ok
+    deactivate Observability
+
+    Client-->>Client: Return result to caller
+    deactivate Client
+
+    Note over Client,Observability: Resource Subscription Flow
+
+    Client->>Server: resources/subscribe request
+    activate Server
+    Server->>Server: Add subscriber to resource<br/>State.subscriptions
+    Server-->>Client: Subscribe success
+    deactivate Server
+
+    Note over Server,Client: Resource changes
+
+    Server->>Server: Resource updated
+    Server->>Server: notify_resource_updated/3
+    Server->>Server: Broadcast to subscribers<br/>resources/updated notification
+    Server-->>Client: Notification<br/>(async)
+    activate Client
+    Client->>Client: Invoke notification handler
+    deactivate Client
+```
+
+**See also:** [Detailed Request-Response Flow](./diagrams/api/request-response-flow.mmd)
+
 ## Client API
 
 ### Starting a Client
@@ -59,6 +253,48 @@ Handler :: fun((Method :: binary(), Params :: map()) -> any()) |
 ```
 
 ## Server API
+
+### Server Architecture Flow
+
+```mermaid
+graph LR
+    subgraph "Server Start Flow"
+        START[start_link] --> CONFIG[Load Config]
+        CONFIG --> CAPS[Parse Capabilities]
+        CAPS --> REG[Register with Registry]
+        REG --> INIT[Initialize Transport]
+        INIT --> READY[Ready State]
+    end
+
+    subgraph "Request Handling"
+        READY --> RECEIVE[Receive Request]
+        RECEIVE --> VALIDATE[Validate JSON-RPC]
+        VALIDATE --> ROUTE[Route to Handler]
+        ROUTE --> RESOURCE{Resource?}
+        ROUTE --> TOOL{Tool?}
+        ROUTE --> PROMPT{Prompt?}
+
+        RESOURCE --> RES_HANDLE[Resource Handler]
+        TOOL --> TOOL_HANDLE[Tool Handler]
+        PROMPT --> PROMPT_HANDLE[Prompt Handler]
+
+        RES_HANDLE --> RESPONSE[Encode Response]
+        TOOL_HANDLE --> RESPONSE
+        PROMPT_HANDLE --> RESPONSE
+
+        RESPONSE --> SEND[Send Response]
+    end
+
+    subgraph "Notification System"
+        RESOURCE_CHANGE[Resource Change] --> NOTIFY[Notify Subscribers]
+        NOTIFY --> BROADCAST[Broadcast Notifications]
+    end
+
+    style START fill:#e1f5fe
+    style READY fill:#c8e6c9
+    style VALIDATE fill:#fff9c4
+    style RESPONSE fill:#c8e6c9
+```
 
 ### Starting a Server
 

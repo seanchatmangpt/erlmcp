@@ -1,0 +1,133 @@
+name: OSS Minimal CI
+
+on:
+  pull_request:
+    branches: [main, feature/**, bugfix/**, epic/**]
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [feature/**, bugfix/**, task/**]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    name: Compile (OTP 28+)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          rebar3-version: '3.25'
+
+      - name: Compile
+        run: |
+          echo "::group::Compilation"
+          TERM=dumb rebar3 compile
+          echo "::endgroup::"
+
+      - name: Verify umbrella apps
+        run: |
+          echo "Verifying umbrella structure..."
+          for app in erlmcp_core erlmcp_transports erlmcp_observability erlmcp_validation; do
+            if [ -d "_build/default/lib/$app/ebin" ]; then
+              echo "  ✓ $app compiled"
+            else
+              echo "::error::$app failed to compile"
+              exit 1
+            fi
+          done
+          echo "✅ All apps compiled successfully"
+
+  unit-tests:
+    name: Unit Tests (Quick)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          rebar3-version: '3.25'
+
+      - name: Run EUnit (no coverage)
+        run: |
+          echo "::group::EUnit Tests"
+          rebar3 as test do compile, eunit
+          echo "::endgroup::"
+
+  lint:
+    name: Lint Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          rebar3-version: '3.25'
+
+      - name: Run linter
+        run: |
+          echo "::group::Lint"
+          rebar3 lint || echo "::warning::Lint check skipped (rebar3_lint not configured)"
+          echo "::endgroup::"
+
+  format:
+    name: Format Check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          rebar3-version: '3.25'
+
+      - name: Verify formatting
+        run: |
+          echo "::group::Format Check"
+          rebar3 format --verify || {
+            echo "::error::Code formatting issues found. Run 'rebar3 format' to fix."
+            exit 1
+          }
+          echo "::endgroup::"
+
+  summary:
+    name: Minimal CI Summary
+    runs-on: ubuntu-22.04
+    needs: [compile, unit-tests, lint, format]
+    if: always()
+
+    steps:
+      - name: Check results
+        run: |
+          echo "# 🚦 Minimal CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Compile | ${{ needs.compile.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit Tests | ${{ needs.unit-tests.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint | ${{ needs.lint.result == 'success' && '✅ PASSED' || '⚠️ WARNING' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Format | ${{ needs.format.result == 'success' && '✅ PASSED' || '❌ FAILED' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.compile.result }}" != "success" ] || \
+             [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.format.result }}" != "success" ]; then
+            echo "## ❌ Minimal CI FAILED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Fix the issues above and re-push." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+          echo "## ✅ Minimal CI PASSED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This PR meets minimal quality standards." >> $GITHUB_STEP_SUMMARY

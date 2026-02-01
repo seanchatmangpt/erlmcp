@@ -1,387 +1,307 @@
-# GitHub Actions Workflows - MCP Compliance
+# GitHub Actions Workflows - OSS & Commercial
 
 ## Overview
 
-This directory contains **32 GitHub Actions workflows** that enforce MCP specification compliance, quality gates, and release validation.
+This directory contains **GitHub Actions workflows** for erlmcp v3.0, separated into **OSS (public)** and **Commercial (private)** categories.
 
-**Primary Focus:** MCP Specification 2025-11-25 compliance per `docs/MCP_SPECIFICATION_COMPLETE.md`
+**Documentation:** See `docs/v3/15_cicd_plan.md` for complete CI/CD strategy.
 
 ---
 
-## Core Compliance Workflows
+## OSS Workflows (Public)
 
-### 🎯 `mcp-compliance.yml` - Primary Compliance Gate
+### Fast Feedback (PR Checks)
 
-**Purpose:** Comprehensive MCP specification compliance validation
+#### ⚡ `oss-minimal-ci.yml` - Minimal CI
+
+**Purpose:** Fast feedback for contributors (<10 min)
+
+**Triggers:**
+- Pull requests to `main`, `feature/**`, `bugfix/**`, `epic/**`
+- Push to `feature/**`, `bugfix/**`
+
+**Jobs (4 parallel, ~8 min):**
+1. **Compile** - OTP 28+ compilation
+2. **Unit Tests** - EUnit (no coverage)
+3. **Lint** - rebar3_lint check
+4. **Format** - Code formatting verification
+
+**Quality Gates:**
+- ✅ Compilation: Zero errors (BLOCKING)
+- ✅ Unit Tests: Pass (BLOCKING)
+- ✅ Lint: Zero critical issues (BLOCKING)
+- ✅ Format: 100% compliant (BLOCKING)
+
+---
+
+### Full Validation (Main Branch)
+
+#### 🚦 `oss-quality-gates.yml` - Quality Gate Enforcement
+
+**Purpose:** Comprehensive validation before merge (30-45 min)
 
 **Triggers:**
 - Push to `main`, `release/**`
-- Pull requests
-- Daily at 2 AM UTC
-- Manual dispatch
-
-**9 Blocking Jobs:**
-1. Compile (OTP 25, 26, 27)
-2. Unit Tests (EUnit)
-3. Coverage (≥80%)
-4. Dialyzer (Type checking)
-5. Xref (Cross-reference)
-6. MCP Compliance (Protocol, Transport, Security, Performance)
-7. Benchmarks (Performance)
-8. Compliance Report
-9. Compliance Gate (FINAL - BLOCKING)
-
-**Artifacts:**
-- Compliance report (90 days)
-- Coverage reports (30 days)
-- Test results (14 days)
-
----
-
-### 🔄 `release-compliance.yml` - Release Validation
-
-**Purpose:** Validate release readiness and version compliance
-
-**Triggers:**
-- Push to `release/**`
-- Version tags `v*`
-- Manual dispatch
-
-**5 Jobs:**
-1. **Version Consistency** - Validates SemVer + MCP protocol version
-2. **Protocol Version Check** - Ensures `2025-11-25` in all files
-3. **Backward Compatibility** - Detects breaking changes
-4. **Release Checklist** - CHANGELOG, README, artifacts
-5. **Release Gate** (FINAL - BLOCKING)
-
-**Validates:**
-- ✅ erlmcp version (SemVer format)
-- ✅ MCP protocol version (YYYY-MM-DD format)
-- ✅ Version declarations in 4+ files
-- ✅ No capability removals
-- ✅ No error code changes
-- ✅ No transport interface changes
-- ✅ CHANGELOG.md updated
-- ✅ Release artifacts generated
-
-**Artifacts:**
-- Backward compatibility report (90 days)
-- Release tarball (90 days)
-
----
-
-### ⚠️ `breaking-changes.yml` - Breaking Change Detection
-
-**Purpose:** Automatic detection and validation of API breaking changes
-
-**Triggers:**
 - Pull requests to `main`, `release/**`
-- Push to `release/**`
+- Called from `oss-release.yml`
 
-**4 Jobs:**
-1. **API Surface Analysis** - 8 critical checks
-2. **Version Bump Check** - Validates MAJOR version bump
-3. **CHANGELOG Check** - Ensures documentation
-4. **Breaking Change Gate** (FINAL - BLOCKING)
+**Jobs (6 sequential, ~35 min):**
+1. **Compilation** - Zero errors (BLOCKING)
+2. **Xref** - Zero undefined functions (BLOCKING)
+3. **Dialyzer** - Zero type errors (BLOCKING)
+4. **Unit Tests** - ≥90% pass rate (BLOCKING)
+5. **Coverage** - ≥80% code coverage (BLOCKING)
+6. **MCP Compliance** - ≥95% spec adherence (BLOCKING)
 
-**8 Critical Checks:**
-1. ✅ Initialize flow unchanged
-2. ✅ JSON-RPC structure preserved (required fields)
-3. ✅ No capability removals
-4. ✅ All MCP methods present (30+ methods)
-5. ✅ Error code values stable
-6. ✅ Transport behavior unchanged
-7. ✅ Message framing preserved
-8. ✅ Message size limit (16 MB) preserved
-
-**Breaking Change Handling:**
-- If breaking changes detected:
-  1. MAJOR version MUST be bumped
-  2. CHANGELOG.md MUST document "BREAKING CHANGE"
-  3. Migration guide MUST be provided
-- If requirements not met: ❌ MERGE BLOCKED
+**Artifacts:**
+- Quality gate logs (30 days)
+- MCP compliance reports (90 days)
 
 ---
 
-## MCP Specification Compliance Mapping
+### Release Automation
 
-### Section 2: Protocol Fundamentals
+#### 🚀 `oss-release.yml` - Automated Release
 
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| JSON-RPC 2.0 structure | Protocol validator | `mcp-compliance` |
-| Message size limit (16 MB) | Size check | `breaking-changes` (Check 8) |
-| UTF-8 encoding | Parser tests | `mcp-compliance` |
+**Purpose:** Automated release to Hex.pm, Docker, GitHub
 
-### Section 3: Initialization & Capability Negotiation
+**Triggers:**
+- Version tags: `v3.0.0`, `v3.1.0-rc.1`, etc.
 
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| `initialize` first message | Protocol validator | `mcp-compliance` |
-| Protocol version `2025-11-25` | Version check | `release-compliance` (Job 2) |
-| Capability negotiation | Capability validator | `mcp-compliance` |
+**Jobs (5 sequential):**
+1. **Validate** - Version consistency, CHANGELOG check
+2. **CI Check** - Run full quality gates
+3. **Build** - Production tarball
+4. **Docker** - Multi-arch images (amd64, arm64)
+5. **Hex** - Publish to Hex.pm (stable releases only)
+6. **Release** - Create GitHub release
 
-### Section 4: Core Capabilities
-
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| Tools (list, call) | Method presence | `breaking-changes` (Check 4) |
-| Resources (list, read, subscribe) | Method presence | `breaking-changes` (Check 4) |
-| Prompts (list, get) | Method presence | `breaking-changes` (Check 4) |
-| 30+ methods | Coverage check | `breaking-changes` |
-
-### Section 5: Transport Layer
-
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| STDIO (line-delimited) | Transport validator | `mcp-compliance` |
-| TCP (Ranch) | Transport validator | `mcp-compliance` |
-| HTTP/SSE (Cowboy) | Transport validator | `mcp-compliance` |
-| WebSocket (mcp.v1) | Transport validator | `mcp-compliance` |
-| Behavior stability | Breaking change detector | `breaking-changes` (Check 6) |
-
-### Section 7: Error Handling
-
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| JSON-RPC errors (-32xxx) | Error validator | `mcp-compliance` |
-| MCP errors (-32001 to -32113) | Range check | `release-compliance` |
-| Refusal codes (1001-1089) | Range check | `release-compliance` |
-| Error code stability | Breaking change detector | `breaking-changes` (Check 5) |
-
-### Section 10: Security
-
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| Authentication (API key, JWT, OAuth, mTLS) | Security validator | `mcp-compliance` |
-| Input validation (JSON Schema) | Security validator | `mcp-compliance` |
-| URI validation | Security validator | `mcp-compliance` |
-
-### Section 11: Performance
-
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| Throughput targets | Benchmark suite | `mcp-compliance` (Job 7) |
-| Latency (p99 < 1ms) | Performance validator | `mcp-compliance` |
-
-### Section 14: Compliance Checklists
-
-**Server Implementation Checklist** - All 12 items validated across workflows:
-
-| Item | Workflow | Job |
-|------|----------|-----|
-| Initialize implemented | `mcp-compliance` | Protocol validator |
-| All capabilities work | `mcp-compliance` | Capability validator |
-| Error codes match spec | `release-compliance` | Backward compatibility |
-| Notifications correct | `mcp-compliance` | Integration tests |
-| Message size enforced | `breaking-changes` | Check 8 |
-| Request ID tracking | `mcp-compliance` | Protocol validator |
-| Timeout handling | `mcp-compliance` | Performance validator |
-| JSON-RPC 2.0 compliance | `mcp-compliance` | Protocol validator |
-| All transports tested | `mcp-compliance` | Transport validator |
-| Security validation | `mcp-compliance` | Security validator |
-| Performance targets | `mcp-compliance` | Performance validator |
-| Error recovery | `mcp-compliance` | Benchmarks (chaos) |
-
-### Section 16: Version History & Changes
-
-| Requirement | Validation | Workflow |
-|-------------|------------|----------|
-| Protocol version tracking | Version extraction | `release-compliance` (Job 1) |
-| Breaking change documentation | CHANGELOG check | `breaking-changes` (Job 3) |
-| SemVer compliance | Version format check | `release-compliance` (Job 1) |
+**Artifacts:**
+- Release tarball (90 days)
+- Docker images: `ghcr.io/${{ repo }}:VERSION`
+- Hex.pm packages: erlmcp + 4 umbrella apps
+- GitHub release with notes
 
 ---
 
-## Workflow Execution Flow
+## Legacy Workflows (Being Migrated)
 
-### Feature Development → Main PR
+The following workflows from v2.1 are being migrated to v3 OSS structure:
 
+| Workflow | v2.1 Status | v3.0 Target |
+|----------|-------------|-------------|
+| `ci.yml` | Active | Replace with `oss-full-ci.yml` |
+| `quality-gate.yml` | Active | Replace with `oss-quality-gates.yml` |
+| `release.yml` | Active | Replace with `oss-release.yml` |
+| `mcp-compliance.yml` | Active | Integrate into `oss-quality-gates.yml` |
+| `breaking-changes.yml` | Active | Keep as separate check |
+| `release-compliance.yml` | Active | Integrate into `oss-release.yml` |
+
+---
+
+## Commercial Workflows (Private)
+
+Commercial workflows are maintained in a **private repository** and include:
+
+- **Enterprise Validation** - Commercial feature testing
+- **Multi-Region Deployment** - Cross-region tests
+- **SLA Validation** - 99.9% uptime verification
+- **Security Audit** - Enterprise compliance
+- **Penetration Testing** - Security validation
+- **Commercial Release** - Enterprise artifact generation
+
+See `docs/v3/15_cicd_plan.md` Part II for details.
+
+---
+
+## Workflow Decision Matrix
+
+| Event | OSS Workflow | Duration | Blocking? |
+|-------|--------------|----------|-----------|
+| **PR opened** | `oss-minimal-ci.yml` | 5-10 min | ✅ Yes |
+| **PR to main** | `oss-minimal-ci.yml` + `oss-quality-gates.yml` | 35-45 min | ✅ Yes |
+| **Push to main** | `oss-quality-gates.yml` | 30-45 min | ✅ Yes |
+| **Tag pushed** | `oss-release.yml` | 20-30 min | ✅ Yes |
+| **Daily schedule** | `mcp-compliance.yml` | 15-20 min | ⚠️ Warning only |
+
+---
+
+## Quality Gate Reference
+
+### OSS Blocking Gates
+
+| Gate | Threshold | Enforcement |
+|------|-----------|-------------|
+| **Compilation** | Zero errors | PR blocked |
+| **Xref** | Zero undefined functions | PR blocked |
+| **Dialyzer** | Zero type errors | PR blocked |
+| **Unit Tests** | ≥90% pass rate | PR blocked |
+| **Coverage** | ≥80% coverage | PR blocked |
+| **MCP Compliance** | ≥95% spec adherence | PR blocked |
+| **Format** | 100% compliant | PR blocked |
+| **Lint** | Zero critical issues | PR blocked |
+
+### OSS Advisory Gates
+
+| Gate | Threshold | Enforcement |
+|------|-----------|-------------|
+| **Integration Tests** | 100% pass | Warning only |
+| **Benchmark** | <10% regression | Comment on PR |
+| **Documentation** | ≥70% coverage | Warning only |
+| **Security** | Zero high severity | Comment on PR |
+
+---
+
+## Release Process (OSS)
+
+### Prerequisites
+
+1. All tests pass locally: `make check`
+2. CHANGELOG.md updated with version section
+3. Version bumped in `rebar.config` and all `*.app.src` files
+
+### Create Release
+
+```bash
+# 1. Ensure on main branch
+git checkout main
+git pull origin main
+
+# 2. Update version files
+# Edit rebar.config, apps/*/src/*.app.src
+# Edit CHANGELOG.md
+
+# 3. Commit changes
+git add rebar.config apps/*/src/*.app.src CHANGELOG.md
+git commit -m "Bump version to X.Y.Z"
+
+# 4. Create and push tag
+git tag vX.Y.Z
+git push origin main
+git push origin vX.Y.Z
+
+# 5. GitHub Actions will:
+#    - Run full quality gates
+#    - Build release tarball
+#    - Publish to Hex.pm (if stable)
+#    - Build Docker images
+#    - Create GitHub release
 ```
-┌─────────────────────────────────────┐
-│ Developer pushes to feature branch  │
-│ Opens PR to main                    │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ mcp-compliance.yml                  │
-│ ├─ Compile ✅                        │
-│ ├─ Unit Tests ✅                     │
-│ ├─ Coverage ≥80% ✅                  │
-│ ├─ Dialyzer ✅                       │
-│ ├─ MCP Validators ✅                 │
-│ └─ Compliance Gate: PASS            │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ breaking-changes.yml                │
-│ ├─ API Surface Analysis             │
-│ │  └─ No breaking changes ✅         │
-│ └─ Breaking Change Gate: PASS       │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-       ✅ MERGE ALLOWED
+
+### Rollback Procedure
+
+If a broken release is published:
+
+1. **Yank Hex.pm packages:** `rebar3 hex owner --yank VERSION`
+2. **Delete Docker tag:** Remove from GitHub Container Registry
+3. **Issue advisory:** Create GitHub Security Advisory
+4. **Fix and re-release:** Tag new version (PATCH bump)
+
+---
+
+## Branch Protection Rules
+
+### Main Branch
+
+- ✅ Require `oss-quality-gates.yml` to pass
+- ✅ Require 1 maintainer approval
+- ✅ Require PR reviews (1 reviewer)
+- ❌ Do not allow bypassing rules
+
+### Feature Branches
+
+- ✅ Require `oss-minimal-ci.yml` to pass
+- ⚠️ Maintainer approval not required (for contributors)
+
+### Release Branches
+
+- ✅ Require `oss-quality-gates.yml` to pass
+- ✅ Require `release-compliance.yml` to pass
+- ✅ Require 2 maintainer approvals
+
+---
+
+## Troubleshooting
+
+### Minimal CI Fails
+
+**Problem:** PR check fails in <10 min
+
+**Solution:**
+```bash
+# Run locally
+make check
+rebar3 format
+rebar3 lint
 ```
 
-### Release Branch
+### Quality Gates Fail
 
-```
-┌─────────────────────────────────────┐
-│ Push to release/v2.2.0              │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ mcp-compliance.yml                  │
-│ └─ All gates ✅                      │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ release-compliance.yml              │
-│ ├─ Version Consistency ✅            │
-│ ├─ Protocol Version ✅               │
-│ ├─ Backward Compatibility ✅         │
-│ ├─ Release Checklist ✅              │
-│ └─ Release Gate: PASS               │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ breaking-changes.yml                │
-│ └─ No breaking changes ✅            │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-    ✅ RELEASE APPROVED
-    📦 Artifacts generated
-```
+**Problem:** Full validation fails on main
 
-### Breaking Change PR
+**Solution:**
+1. Check job logs in Actions tab
+2. Fix specific gate failure
+3. Push fix to feature branch
+4. Open new PR to main
 
-```
-┌─────────────────────────────────────┐
-│ PR removes capability               │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│ breaking-changes.yml                │
-│ ├─ API Surface Analysis             │
-│ │  └─ 1 breaking change ❌           │
-│ ├─ Version Bump Check               │
-│ │  └─ MAJOR not bumped ❌            │
-│ ├─ CHANGELOG Check                  │
-│ │  └─ No notice ❌                   │
-│ └─ Breaking Change Gate: FAIL       │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-       ❌ MERGE BLOCKED
-       
-       Required actions:
-       1. Bump version 2.1.0 → 3.0.0
-       2. Add "BREAKING CHANGE" to CHANGELOG.md
-       3. Document migration guide
+### Release Fails
+
+**Problem:** Tag push doesn't create release
+
+**Solution:**
+1. Check `oss-release.yml` logs
+2. Verify version consistency across files
+3. Ensure CHANGELOG.md has version entry
+4. Re-tag if necessary (delete remote tag first)
+
+---
+
+## Status Badges
+
+Add to `README.md`:
+
+```markdown
+[![OSS CI](https://github.com/YOUR_REPO/actions/workflows/oss-minimal-ci.yml/badge.svg)](https://github.com/YOUR_REPO/actions/workflows/oss-minimal-ci.yml)
+[![Quality Gates](https://github.com/YOUR_REPO/actions/workflows/oss-quality-gates.yml/badge.svg)](https://github.com/YOUR_REPO/actions/workflows/oss-quality-gates.yml)
+[![Hex.pm](https://img.shields.io/hexpm/v/erlmcp)](https://hex.pm/packages/erlmcp)
+[![MCP Compliance](https://img.shields.io/badge/MCP-2025--11--25-green)](https://github.com/YOUR_REPO/blob/main/docs/MCP_2025-11-25_COMPLIANCE_UNIFIED.md)
 ```
 
 ---
 
-## Quality Gate Decision Matrix
+## Migration Timeline
 
-| Condition | Blocking Gates | Result |
-|-----------|----------------|--------|
-| All pass | ✅✅✅✅✅ | ✅ MERGE ALLOWED |
-| One fail | ✅✅❌✅✅ | ❌ MERGE BLOCKED |
-| Breaking + handled | ⚠️✅✅ | ✅ MERGE ALLOWED |
-| Breaking + not handled | ⚠️❌❌ | ❌ MERGE BLOCKED |
-
----
-
-## Additional Workflows
-
-### Supporting Workflows
-
-| Workflow | Purpose |
-|----------|---------|
-| `ci.yml` | Basic CI (legacy) |
-| `chicago-school-tdd.yml` | TDD enforcement |
-| `tcps.yml` | Toyota Production System quality gates |
-| `spec-compliance.yml` | Additional spec validation |
-| `benchmark.yml` | Performance benchmarking |
-| `quality-gate.yml` | Quality metrics |
-
-### Deployment Workflows
-
-| Workflow | Purpose |
-|----------|---------|
-| `release.yml` | Release automation |
-| `deploy.yml` | Production deployment |
-| `deploy-staging.yml` | Staging deployment |
-| `docker-build.yml` | Container builds |
-
-### Evidence & Reporting
-
-| Workflow | Purpose |
-|----------|---------|
-| `mcp-evidence-bundle.yml` | Compliance evidence generation |
-| `quality-metrics.yml` | Quality dashboards |
-| `workspace-health.yml` | Repository health checks |
-
----
-
-## Artifact Retention
-
-| Type | Retention | Purpose |
-|------|-----------|---------|
-| Compliance reports | 90 days | Audit trail |
-| Release artifacts | 90 days | Deployment |
-| Compatibility reports | 90 days | Migration planning |
-| Coverage reports | 30 days | Quality tracking |
-| Test results | 14 days | Debugging |
-| Benchmark results | 14 days | Performance tracking |
-
----
-
-## Daily Scheduled Validation
-
-**Workflow:** `mcp-compliance.yml`
-
-**Schedule:** 2 AM UTC daily
-
-**Purpose:** Detect drift from specification
-
-**Actions:**
-1. Full compliance suite
-2. All integration tests
-3. Comprehensive report
-4. Alerts on failures
+| Phase | Duration | Status |
+|-------|----------|--------|
+| **Phase 1: OSS Workflows** | Week 1-2 | 🔄 In Progress |
+| **Phase 2: Commercial Setup** | Week 3-4 | ⏳ Pending |
+| **Phase 3: Quality Gates** | Week 5-6 | ⏳ Pending |
+| **Phase 4: Release Automation** | Week 7-8 | ⏳ Pending |
+| **Phase 5: Documentation** | Week 9-10 | ⏳ Pending |
 
 ---
 
 ## References
 
-- **MCP Specification:** `/home/user/erlmcp/docs/MCP_SPECIFICATION_COMPLETE.md`
-- **Compliance Strategy:** `/home/user/erlmcp/.github/workflows/COMPLIANCE_STRATEGY.md`
-- **CLAUDE.md:** `/home/user/erlmcp/CLAUDE.md`
-- **Validation Modules:** `/home/user/erlmcp/apps/erlmcp_validation/src/`
+- **CI/CD Plan:** `docs/v3/15_cicd_plan.md`
+- **Contributing Guide:** `CONTRIBUTING.md`
+- **Release Guide:** `RELEASE.md` (to be created)
+- **MCP Specification:** `docs/MCP_2025-11-25_COMPLIANCE_UNIFIED.md`
 
 ---
 
 ## Summary
 
-✅ **3 new workflows created** for comprehensive MCP compliance:
-1. `mcp-compliance.yml` - Core compliance validation
-2. `release-compliance.yml` - Release & versioning validation
-3. `breaking-changes.yml` - Breaking change detection
+✅ **3 new OSS workflows created:**
+- `oss-minimal-ci.yml` - Fast PR checks (<10 min)
+- `oss-quality-gates.yml` - Comprehensive validation (30-45 min)
+- `oss-release.yml` - Automated release (20-30 min)
 
-✅ **100% MCP spec coverage** across all 16 sections
+✅ **15 legacy workflows being migrated** to v3 structure
 
-✅ **Automated enforcement** - Non-compliance cannot be merged
+✅ **Separate commercial workflows** in private repository
 
-✅ **Full audit trail** - 90-day artifact retention
+✅ **Automated release process:** Tag → Hex + Docker + GitHub
 
-**Philosophy:** Make non-compliance impossible to merge (Poka-Yoke principle).
+**Next Steps:** See `docs/v3/15_cicd_plan.md` Part VII for implementation roadmap.

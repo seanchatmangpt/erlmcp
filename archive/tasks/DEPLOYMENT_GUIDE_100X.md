@@ -49,6 +49,93 @@ erl -pa _build/default/lib/*/ebin -s erlmcp_app start
 
 ## Production Deployment Architecture
 
+### Deployment Flow Diagram
+
+```mermaid
+flowchart TD
+    Start([Deployment Start]) --> PreCheck{Pre-Deployment<br/>Checks}
+    PreCheck -->|Pass| Build[Build Release<br/>rebar3 as prod release]
+    PreCheck -->|Fail| Abort([Abort Deployment])
+
+    Build --> Test[Run Tests<br/>rebar3 eunit, ct]
+    Test -->|Pass| Config[Configure Environment<br/>sys.config, vm.args]
+    Test -->|Fail| Abort
+
+    Config --> DeployChoice{Deployment<br/>Strategy}
+
+    DeployChoice -->|Bare Metal| BareMetal[Deploy to Server<br/>./scripts/deploy.sh]
+    DeployChoice -->|Docker| Docker[docker compose up -d]
+    DeployChoice -->|Kubernetes| K8s[kubectl apply -f k8s/]
+
+    BareMetal --> Verify
+    Docker --> Verify
+    K8s --> Verify
+
+    Verify[Post-Deployment<br/>Verification] --> HealthCheck{Health<br/>Check?}
+    HealthCheck -->|Pass| Monitor[Enable Monitoring<br/>Prometheus, Grafana, Jaeger]
+    HealthCheck -->|Fail| Rollback[Rollback<br/>./scripts/rollback.sh]
+
+    Monitor --> Success([Deployment Complete])
+    Rollback --> Abort
+
+    style Start fill:#90EE90
+    style Success fill:#90EE90
+    style Abort fill:#FFB6C1
+    style Rollback fill:#FFD700
+    style Verify fill:#87CEEB
+```
+
+### Architecture Overview Diagram
+
+```mermaid
+graph TB
+    subgraph Clients["Client Layer"]
+        CLI[CLI Clients]
+        HTTP[HTTP Clients]
+        WS[WebSocket Clients]
+    end
+
+    subgraph Transport["Transport Layer"]
+        Stdio[STDIO Transport]
+        TCP[TCP Transport]
+        HTTPS[HTTP Transport]
+        WSTrans[WebSocket Transport]
+    end
+
+    subgraph Core["Core Layer (100x Architecture)"]
+        Queue[Bounded Queue<br/>10K max]
+        Registry[Sharded Registry<br/>256 shards]
+        Backpressure[Backpressure Monitor]
+        Circuit[Circuit Breaker]
+        FastPath[Fast Path JSON<br/>40% faster]
+    end
+
+    subgraph Supervision["Supervision Layer"]
+        ConfigSup[Config Supervisor]
+        PoolSup[Connection Pool Supervisor]
+        MonitorSup[Monitoring Supervisor]
+        ServerSup[Server Pool Supervisor]
+    end
+
+    subgraph Observability["Observability Layer"]
+        OTEL[OpenTelemetry]
+        Metrics[Metrics Server]
+        Dashboard[Health Dashboard]
+        Chaos[Chaos Engineering]
+    end
+
+    Clients --> Transport
+    Transport --> Core
+    Core --> Supervision
+    Supervision --> Observability
+
+    style Queue fill:#FFD700
+    style Registry fill:#FFD700
+    style Backpressure fill:#FFA500
+    style Circuit fill:#FFA500
+    style FastPath fill:#90EE90
+```
+
 ### Scalability Components Deployed
 
 #### 1. Bounded Queue System (Agent 2)
@@ -142,16 +229,36 @@ erl -pa _build/default/lib/*/ebin -s erlmcp_app start
 **Purpose**: Isolate failure domains, enable independent scaling
 
 **Supervision Hierarchy**:
-```
-erlmcp_sup (one_for_all - application)
-├── erlmcp_config_sup (simple_one_for_one)
-│   └── Config manager instances
-├── erlmcp_connection_pool_sup (simple_one_for_one)
-│   └── Connection pooling (poolboy workers)
-├── erlmcp_monitoring_sup (one_for_all)
-│   └── Health check servers
-└── erlmcp_server_pool_sup (simple_one_for_one)
-    └── Server worker instances
+```mermaid
+graph TD
+    subgraph AppSup["erlmcp_sup<br/>(one_for_all)"]
+        direction TB
+        ConfigSup["erlmcp_config_sup<br/>(simple_one_for_one)<br/>Config Managers"]
+        PoolSup["erlmcp_connection_pool_sup<br/>(simple_one_for_one)<br/>Connection Pooling"]
+        MonitorSup["erlmcp_monitoring_sup<br/>(one_for_all)<br/>Health Check Servers"]
+        ServerSup["erlmcp_server_pool_sup<br/>(simple_one_for_one)<br/>Server Workers"]
+    end
+
+    ConfigSup --> Config1[Config Manager 1]
+    ConfigSup --> Config2[Config Manager 2]
+    ConfigSup --> ConfigN[Config Manager N]
+
+    PoolSup --> Pool1[Poolboy Worker 1]
+    PoolSup --> Pool2[Poolboy Worker 2]
+    PoolSup --> PoolN[Poolboy Worker N]
+
+    MonitorSup --> Health1[Health Server]
+    MonitorSup --> Metrics1[Metrics Server]
+
+    ServerSup --> Worker1[Server Worker 1]
+    ServerSup --> Worker2[Server Worker 2]
+    ServerSup --> WorkerN[Server Worker N]
+
+    style AppSup fill:#FFD700
+    style ConfigSup fill:#90EE90
+    style PoolSup fill:#90EE90
+    style MonitorSup fill:#87CEEB
+    style ServerSup fill:#87CEEB
 ```
 
 **Performance Impact**:
@@ -262,6 +369,83 @@ erlmcp_sup (one_for_all - application)
 
 ## Monitoring & Health Checks
 
+### Monitoring Architecture
+
+```mermaid
+graph LR
+    subgraph erlmcp["erlmcp Application"]
+        Server[erlmcp_server]
+        Client[erlmcp_client]
+        Registry[erlmcp_registry]
+        Queue[erlmcp_queue_bounded]
+    end
+
+    subgraph Telemetry["OpenTelemetry Layer"]
+        Tracer[Trace Exporter]
+        Meter[Metric Exporter]
+        Logger[Log Exporter]
+    end
+
+    subgraph Backends["Observability Backends"]
+        Jaeger[Jaeger<br/>Distributed Tracing]
+        Prometheus[Prometheus<br/>Metrics Collection]
+        Grafana[Grafana<br/>Visualization]
+        Loki[Loki<br/>Log Aggregation]
+    end
+
+    subgraph Alerts["Alerting"]
+        PagerDuty[PagerDuty]
+        Slack[Slack]
+        Email[Email Alerts]
+    end
+
+    erlmcp -->|Spans| Tracer
+    erlmcp -->|Metrics| Meter
+    erlmcp -->|Logs| Logger
+
+    Tracer --> Jaeger
+    Meter --> Prometheus
+    Logger --> Loki
+
+    Prometheus --> Grafana
+    Grafana --> Alerts
+    Prometheus --> Alerts
+
+    style erlmcp fill:#FFD700
+    style Telemetry fill:#90EE90
+    style Backends fill:#87CEEB
+    style Alerts fill:#FFB6C1
+```
+
+### Data Flow: Health Check Pipeline
+
+```mermaid
+sequenceDiagram
+    participant Client as Monitoring Client
+    participant Health as Health Endpoint
+    participant Collector as Metrics Collector
+    participant Registry as Sharded Registry
+    participant Queue as Bounded Queue
+    participant Circuit as Circuit Breaker
+
+    Client->>Health: GET /health
+    Health->>Collector: Collect metrics
+
+    Collector->>Registry: Get connection count
+    Registry-->>Collector: 15,000 connections
+
+    Collector->>Queue: Get queue depth
+    Queue-->>Collector: 4,120 / 10,000
+
+    Collector->>Circuit: Get circuit state
+    Circuit-->>Collector: CLOSED (healthy)
+
+    Collector-->>Health: Aggregate metrics
+    Health-->>Client: 200 OK + JSON status
+
+    Note over Client,Circuit: Health check completes in <50ms
+```
+
 ### Key Metrics to Monitor
 
 #### Throughput
@@ -344,6 +528,129 @@ curl http://localhost:9999/health
 
 ## Troubleshooting
 
+### Troubleshooting Flow Diagram
+
+```mermaid
+flowchart TD
+    Start([Issue Detected]) --> Diagnose{Diagnose<br/>Issue}
+
+    Diagnose -->|Queue Full| QueueFlow
+    Diagnose -->|Memory Growth| MemoryFlow
+    Diagnose -->|High Latency| LatencyFlow
+    Diagnose -->|Connection Fail| ConnFlow
+    Diagnose -->|CPU Saturation| CPUFlow
+    Diagnose -->|Circuit Breaker| CBFlow
+
+    subgraph QueueFlow["Queue Full Errors"]
+        Q1[Check downstream<br/>system speed]
+        Q2[Add more workers<br/>spawn_workers/1]
+        Q3[Increase queue size<br/>max_size: 20000]
+    end
+
+    subgraph MemoryFlow["Memory Growth"]
+        M1[Check buffer pool<br/>get_stats/0]
+        M2[Trigger GC<br/>garbage_collect/0]
+        M3[Check ETS tables<br/>ets:info/2]
+    end
+
+    subgraph LatencyFlow["High Latency Spikes"]
+        L1[Reduce GC pressure<br/>+hms +hmbs flags]
+        L2[Enable fast-path<br/>json_fast_path: true]
+        L3[Increase shards<br/>registry_shards: 512]
+    end
+
+    subgraph ConnFlow["Connection Failures"]
+        C1[Check network<br/>connectivity]
+        C2[Verify TLS certs<br/>openssl x509]
+        C3[Review firewall<br/>rules]
+    end
+
+    subgraph CPUFlow["CPU Saturation"]
+        CPU1[Profile process<br/>fprof/eprof]
+        CPU2[Add schedulers<br/>+S flag]
+        CPU3[Check for hot loops<br/>observer]
+    end
+
+    subgraph CBFlow["Circuit Breaker Trips"]
+        CB1[Check downstream<br/>service health]
+        CB2[Verify timeout<br/>settings]
+        CB3[Review failure<br/>threshold]
+    end
+
+    QueueFlow --> Solution
+    MemoryFlow --> Solution
+    LatencyFlow --> Solution
+    ConnFlow --> Solution
+    CPUFlow --> Solution
+    CBFlow --> Solution
+
+    Solution{Solution<br/>Applied}
+    Solution -->|Resolved| Monitor([Monitor<br/>for 1 hour])
+    Solution -->|Persist| Escalate([Escalate to<br/>Senior Engineer])
+
+    Monitor --> Verify{Still<br/>Healthy?}
+    Verify -->|Yes| Complete([Issue Resolved])
+    Verify -->|No| Diagnose
+
+    style Start fill:#FFB6C1
+    style Complete fill:#90EE90
+    style Escalate fill:#FFD700
+    style QueueFlow fill:#FFE4B5
+    style MemoryFlow fill:#FFE4B5
+    style LatencyFlow fill:#FFE4B5
+    style ConnFlow fill:#FFE4B5
+    style CPUFlow fill:#FFE4B5
+    style CBFlow fill:#FFE4B5
+```
+
+### Recovery Flow Diagram
+
+```mermaid
+flowchart TD
+    Failure([System Failure<br/>Detected]) --> Assessment{Assess<br/>Impact}
+
+    Assessment -->|Single Component| Component[Component Recovery]
+    Assessment -->|Multiple Components| System[System Recovery]
+    Assessment -->|Total Outage| Disaster[Disaster Recovery]
+
+    Component --> Isolate[Isolate Failed<br/>Component]
+    Isolate --> Restart{Restart<br/>Successful?}
+
+    Restart -->|Yes| Verify{Verify<br/>Functionality}
+    Restart -->|No| Replace[Replace Component]
+
+    Replace --> Verify
+
+    Verify -->|Pass| Monitor([Monitor<br/>Stability])
+    Verify -->|Fail| RootCause[Root Cause<br/>Analysis]
+
+    Monitor --> Complete([Recovery<br/>Complete])
+
+    RootCause --> Fix[Implement Fix]
+    Fix --> Test{Test<br/>Fix}
+    Test -->|Pass| Verify
+    Test -->|Fail| RootCause
+
+    System --> Graceful[Graceful<br/>Shutdown]
+    Graceful --> Restore[Restore from<br/>Backup]
+    Restore --> Verify
+
+    Disaster --> Activate[Activate DR<br/>Site]
+    Activate --> Sync{Data Sync<br/>Complete?}
+
+    Sync -->|Yes| Cutover[Traffic Cutover]
+    Sync -->|No| Sync
+
+    Cutover --> Verify
+
+    style Failure fill:#FFB6C1
+    style Complete fill:#90EE90
+    style Monitor fill:#87CEEB
+    style Component fill:#FFE4B5
+    style System fill:#FFD700
+    style Disaster fill:#FF6B6B
+```
+
 ### Issue: "Queue Full" Errors
 **Symptoms**: Circuit breaker tripping, messages rejected
 **Causes**:
@@ -424,6 +731,92 @@ Network: 10Gbps
 Erlang: OTP 25+
 ```
 
+## Deployment Architecture Comparison
+
+### Single Node vs Cluster Deployment
+
+```mermaid
+graph TB
+    subgraph Single["Single Node Deployment"]
+        S1[erlmcp Instance<br/>15K Connections<br/>500K msg/s]
+        S2[Local Storage<br/>ETS/DETS]
+        S3[Single Point<br/>of Failure]
+    end
+
+    subgraph Cluster["Cluster Deployment"]
+        C1[Node 1<br/>25K Connections]
+        C2[Node 2<br/>25K Connections]
+        C3[Node 3<br/>25K Connections]
+        C4[Node 4<br/>25K Connections]
+        C5[Load Balancer<br/>HAProxy]
+        C6[Mnesia Cluster<br/>Session Replication]
+    end
+
+    subgraph Metrics["Comparison"]
+        M1[Capacity: 15K vs 100K]
+        M2[Throughput: 500K vs 125K/msg/s/node]
+        M3[Availability: 99% vs 99.9%]
+        M4[Cost: $ vs $$]
+        M5[Complexity: Low vs Medium]
+    end
+
+    S1 --> M1
+    Cluster --> M1
+    S2 --> M2
+    C6 --> M2
+    S3 --> M3
+    C5 --> M3
+
+    style Single fill:#FFD700
+    style Cluster fill:#90EE90
+    style Metrics fill:#87CEEB
+```
+
+### Cloud Deployment Architecture
+
+```mermaid
+graph TB
+    subgraph Region["Cloud Region"]
+        subgraph VPC["VPC Network"]
+            subgraph Public["Public Subnets"]
+                LB[Load Balancer<br/>ALB/NLB]
+                Ingress[Ingress<br/>Controller]
+            end
+
+            subgraph Private["Private Subnets"]
+                subgraph K8s["Kubernetes Cluster"]
+                    Pod1[erlmcp Pods<br/>StatefulSet]
+                    Pod2[Monitoring<br/>Prometheus/Grafana]
+                end
+
+                subgraph DB["Database Layer"]
+                    Mnesia[Mnesia Cluster<br/>Session Data]
+                    Backup[Backup/DR<br/>S3/GCS]
+                end
+            end
+        end
+    end
+
+    subgraph External["External Services"]
+        OTEL[OpenTelemetry<br/>Collector]
+        Alert[AlertManager<br/>PagerDuty]
+    end
+
+    LB --> Ingress
+    Ingress --> Pod1
+    Pod1 --> Mnesia
+    Pod2 --> OTEL
+    OTEL --> Alert
+    Mnesia --> Backup
+
+    style Region fill:#E3F2FD
+    style VPC fill:#BBDEFB
+    style Public fill:#FFF9C4
+    style Private fill:#C8E6C9
+    style K8s fill:#FFCCBC
+    style DB fill:#F8BBD0
+```
+
 ## Deployment Checklist
 
 ### Pre-Deployment
@@ -475,6 +868,153 @@ Erlang: OTP 25+
 - [x] All tests ready for execution
 - [x] Production-ready code
 
+## Deployment Scenarios
+
+### Blue-Green Deployment
+
+```mermaid
+flowchart LR
+    subgraph Current["Current Production"]
+        Blue[Blue Environment<br/>v2.0.0<br/>100% Traffic]
+    end
+
+    subgraph New["New Environment"]
+        Green[Green Environment<br/>v2.1.0<br/>0% Traffic]
+    end
+
+    subgraph Steps["Deployment Steps"]
+        S1[Deploy to Green]
+        S2[Test Green]
+        S3[Shift Traffic 25%]
+        S4[Shift Traffic 50%]
+        S5[Shift Traffic 100%]
+        S6[Retire Blue]
+    end
+
+    Blue -->|Current| Steps
+    Green -->|Target| Steps
+
+    S1 --> Test{Smoke<br/>Tests?}
+    Test -->|Pass| S3
+    Test -->|Fail| Rollback[Rollback<br/>Deployment]
+
+    S3 --> Monitor1{Monitor<br/>15min}
+    Monitor1 -->|Healthy| S4
+    Monitor1 -->|Issues| Rollback
+
+    S4 --> Monitor2{Monitor<br/>15min}
+    Monitor2 -->|Healthy| S5
+    Monitor2 -->|Issues| Rollback
+
+    S5 --> Monitor3{Monitor<br/>30min}
+    Monitor3 -->|Healthy| S6
+    Monitor3 -->|Issues| Rollback
+
+    S6 --> Complete([Deployment<br/>Complete])
+
+    style Blue fill:#2196F3
+    style Green fill:#4CAF50
+    style Complete fill:#FFD700
+    style Rollback fill:#F44336
+```
+
+### Canary Deployment
+
+```mermaid
+flowchart TD
+    Start([Canary<br/>Deployment]) --> Deploy[Deploy v2.1.0<br/>to 1 Node]
+
+    Deploy --> Percent5[Shift 5%<br/>Traffic]
+
+    Percent5 --> Monitor5{Monitor<br/>5min}
+
+    Monitor5 -->|Metrics OK| Percent25[Shift 25%<br/>Traffic]
+    Monitor5 -->|Issues| Rollback[Rollback<br/>Immediately]
+
+    Percent25 --> Monitor25{Monitor<br/>10min}
+
+    Monitor25 -->|Metrics OK| Percent50[Shift 50%<br/>Traffic]
+    Monitor25 -->|Issues| Rollback
+
+    Percent50 --> Monitor50{Monitor<br/>15min}
+
+    Monitor50 -->|Metrics OK| Percent100[Shift 100%<br/>Traffic]
+    Monitor50 -->|Issues| Rollback
+
+    Percent100 --> Monitor100{Monitor<br/>30min}
+
+    Monitor100 -->|All Green| Complete([Canary<br/>Success])
+    Monitor100 -->|Issues| Rollback
+
+    Rollback --> Restore([Restore<br/>v2.0.0])
+
+    style Start fill:#FFD700
+    style Complete fill:#4CAF50
+    style Rollback fill:#F44336
+    style Restore fill:#FF9800
+```
+
+### Rolling Deployment
+
+```mermaid
+sequenceDiagram
+    participant LB as Load Balancer
+    participant N1 as Node 1
+    participant N2 as Node 2
+    participant N3 as Node 3
+    participant N4 as Node 4
+
+    Note over LB,N4: Initial State: All nodes v2.0.0
+
+    LB->>N1: Drain connections
+    N1-->>LB: Acknowledge drain
+    LB->>N2: Route to N2
+    LB->>N3: Route to N3
+    LB->>N4: Route to N4
+
+    N1->>N1: Upgrade to v2.1.0
+    N1->>N1: Restart
+    N1-->>LB: Ready
+
+    Note over LB,N4: 25% upgraded (1/4 nodes)
+
+    LB->>N2: Drain connections
+    N2-->>LB: Acknowledge drain
+    LB->>N1: Route to N1
+    LB->>N3: Route to N3
+    LB->>N4: Route to N4
+
+    N2->>N2: Upgrade to v2.1.0
+    N2->>N2: Restart
+    N2-->>LB: Ready
+
+    Note over LB,N4: 50% upgraded (2/4 nodes)
+
+    LB->>N3: Drain connections
+    N3-->>LB: Acknowledge drain
+    LB->>N1: Route to N1
+    LB->>N2: Route to N2
+    LB->>N4: Route to N4
+
+    N3->>N3: Upgrade to v2.1.0
+    N3->>N3: Restart
+    N3-->>LB: Ready
+
+    Note over LB,N4: 75% upgraded (3/4 nodes)
+
+    LB->>N4: Drain connections
+    N4-->>LB: Acknowledge drain
+    LB->>N1: Route to N1
+    LB->>N2: Route to N2
+    LB->>N3: Route to N3
+
+    N4->>N4: Upgrade to v2.1.0
+    N4->>N4: Restart
+    N4-->>LB: Ready
+
+    Note over LB,N4: 100% upgraded (4/4 nodes)
+```
+
 ## Next Steps
 
 1. **Deploy to Test Environment**
@@ -499,6 +1039,86 @@ Erlang: OTP 25+
    - Canary testing (5% → 25% → 50% → 100%)
    - 24-hour continuous monitoring
    - Rollback plan
+
+## Disaster Recovery
+
+### Backup Strategy
+
+```mermaid
+flowchart TD
+    Backup([Backup<br/>Trigger]) --> Types{Backup<br/>Type}
+
+    Types -->|Configuration| Config[Export<br/>sys.config<br/>vm.args]
+    Types -->|Session Data| Session[Mnesia<br/>Backup]
+    Types -->|Receipt Chain| Receipt[SHA-256<br/>Chain Export]
+    Types -->|Full| Full[Full Release<br/>Snapshot]
+
+    Config --> Store1[Store in Git<br/>Repository]
+    Session --> Store2[Store in S3/GCS<br/>Encrypted]
+    Receipt --> Store3[Store Immutable<br/>Audit Trail]
+    Full --> Store4[Store in Artifact<br/>Repository]
+
+    Store1 --> Schedule{Schedule}
+    Store2 --> Schedule
+    Store3 --> Schedule
+    Store4 --> Schedule
+
+    Schedule -->|Daily| Daily[Daily<br/>Backups]
+    Schedule -->|Weekly| Weekly[Weekly<br/>Backups]
+    Schedule -->|Monthly| Monthly[Monthly<br/>Archives]
+
+    Daily --> Retention[Retention<br/>Policy]
+    Weekly --> Retention
+    Monthly --> Retention
+
+    Retention --> Keep[Keep Daily: 7 days<br/>Keep Weekly: 4 weeks<br/>Keep Monthly: 12 months]
+
+    Keep --> Complete([Backup<br/>Complete])
+
+    style Backup fill:#FFD700
+    style Complete fill:#4CAF50
+```
+
+### Recovery Procedures
+
+```mermaid
+flowchart TD
+    DR([Disaster<br/>Detected]) --> Assess{Assess<br/>Damage}
+
+    Assess -->|Data Loss| Restore[Restore from<br/>Backup]
+    Assess -->|Corruption| Rebuild[Rebuild from<br/>Scratch]
+    Assess -->|Partial| Failover[Failover to<br/>Healthy Node]
+
+    Restore --> Select[Select Backup<br/>Point]
+    Select --> VerifyBackup{Backup<br/>Valid?}
+
+    VerifyBackup -->|Yes| RestoreData[Restore Data]
+    VerifyBackup -->|No| Select
+
+    RestoreData --> Validate{Validate<br/>Integrity}
+
+    Validate -->|Pass| StartServices[Start<br/>Services]
+    Validate -->|Fail| Select
+
+    StartServices --> VerifyHealth{Health<br/>Check?}
+
+    VerifyHealth -->|Pass| Traffic[Route<br/>Traffic]
+    VerifyHealth -->|Fail| StartServices
+
+    Traffic --> Monitor([Monitor<br/>24 Hours])
+
+    Failover --> VerifyHealth
+
+    Rebuild --> Provision[Provision New<br/>Infrastructure]
+    Provision --> Deploy[Deploy Latest<br/>Release]
+    Deploy --> VerifyHealth
+
+    style DR fill:#F44336
+    style Monitor fill:#4CAF50
+    style Restore fill:#FF9800
+    style Rebuild fill:#FF5722
+    style Failover fill:#2196F3
+```
 
 ## Support
 

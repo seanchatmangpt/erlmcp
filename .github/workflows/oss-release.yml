@@ -1,0 +1,306 @@
+name: OSS Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+      is_prerelease: ${{ steps.extract.outputs.is_prerelease }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: extract
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          if [[ $VERSION =~ -(alpha|beta|rc) ]]; then
+            echo "is-prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is-prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify version consistency
+        run: |
+          VERSION=${{ steps.extract.outputs.version }}
+          echo "Verifying version $VERSION..."
+
+          if grep -q "{release, {erlmcp, \"$VERSION\"}" rebar.config; then
+            echo "  ✓ rebar.config version matches"
+          else
+            echo "::error::rebar.config version mismatch (expected $VERSION)"
+            exit 1
+          fi
+
+          for app in erlmcp_core erlmcp_transports erlmcp_observability erlmcp_validation; do
+            APP_FILE="apps/$app/src/${app}.app.src"
+            if [ -f "$APP_FILE" ]; then
+              if grep -q "{vsn, \"$VERSION\"}" "$APP_FILE"; then
+                echo "  ✓ $app version matches"
+              else
+                echo "::error::$app version mismatch"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: Check CHANGELOG
+        run: |
+          VERSION=${{ steps.extract.outputs.version }}
+          if grep -q "## \[$VERSION\]" CHANGELOG.md; then
+            echo "  ✓ CHANGELOG.md has entry for $VERSION"
+          else
+            echo "::error::CHANGELOG.md missing entry for $VERSION"
+            exit 1
+          fi
+
+  ci-check:
+    name: Run Full CI
+    needs: validate
+    uses: ./.github/workflows/oss-quality-gates.yml
+
+  build:
+    name: Build Release Artifacts
+    needs: [validate, ci-check]
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          rebar3-version: '3.25'
+
+      - name: Build production release
+        run: |
+          echo "Building erlmcp v${{ needs.validate.outputs.version }}..."
+          rebar3 as prod compile
+          rebar3 as prod release
+
+      - name: Verify release structure
+        run: |
+          RELEASE_DIR="_build/prod/rel/erlmcp"
+
+          if [ -d "$RELEASE_DIR" ]; then
+            echo "  ✓ Release directory exists"
+
+            [ -f "$RELEASE_DIR/bin/erlmcp" ] && echo "  ✓ Start script exists"
+            [ -d "$RELEASE_DIR/lib" ] && echo "  ✓ lib directory exists"
+            [ -f "$RELEASE_DIR/releases/${{ needs.validate.outputs.version }}/erlmcp.rel" ] && echo "  ✓ Release file exists"
+          else
+            echo "::error::Release build failed"
+            exit 1
+          fi
+
+      - name: Create tarball
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+          tar -czf erlmcp-${VERSION}.tar.gz -C _build/prod/rel erlmcp
+          sha256sum erlmcp-${VERSION}.tar.gz > erlmcp-${VERSION}.tar.gz.sha256
+          md5sum erlmcp-${VERSION}.tar.gz > erlmcp-${VERSION}.tar.gz.md5
+
+          ls -lh erlmcp-${VERSION}.tar.gz*
+          cat erlmcp-${VERSION}.tar.gz.sha256
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: release-tarball
+          path: |
+            erlmcp-${{ needs.validate.outputs.version }}.tar.gz
+            erlmcp-${{ needs.validate.outputs.version }}.tar.gz.sha256
+            erlmcp-${{ needs.validate.outputs.version }}.tar.gz.md5
+          retention-days: 90
+
+  docker:
+    name: Build Docker Images
+    needs: [validate, ci-check]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v2
+
+      - uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.validate.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.validate.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.validate.outputs.is_prerelease == 'false' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
+          build-args: |
+            VERSION=${{ needs.validate.outputs.version }}
+            OTP_VERSION=28
+
+  hex:
+    name: Publish to Hex.pm
+    needs: [validate, build, ci-check]
+    if: ${{ needs.validate.outputs.is_prerelease == 'false' }}
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          rebar3-version: '3.25'
+
+      - name: Publish umbrella apps
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: |
+          for app in erlmcp_core erlmcp_transports erlmcp_observability erlmcp_validation; do
+            echo "Publishing $app..."
+            cd apps/$app
+            rebar3 hex publish --yes || echo "  ⚠ $app already published"
+            cd ../..
+          done
+
+      - name: Publish umbrella package
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: |
+          echo "Publishing erlmcp umbrella..."
+          rebar3 hex publish --yes || echo "  ⚠ erlmcp already published"
+
+  release:
+    name: Create GitHub Release
+    needs: [validate, build, docker, ci-check]
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v3
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          VERSION=${{ needs.validate.outputs.version }}
+
+          if [ -f CHANGELOG.md ]; then
+            NOTES=$(sed -n "/^## \[$VERSION\]/,/^## \[/p" CHANGELOG.md | sed '$d')
+          fi
+
+          if [ -z "$NOTES" ]; then
+            NOTES="## erlmcp v$VERSION
+
+See [CHANGELOG.md](CHANGELOG.md) for full details."
+          fi
+
+          {
+            echo "content<<EOF"
+            echo "$NOTES"
+            echo ""
+            echo "### Installation"
+            echo ""
+            echo "\`\`\`erlang"
+            echo "{deps, [{erlmcp, \"$VERSION\"}]}."
+            echo "\`\`\`"
+            echo ""
+            echo "### Docker"
+            echo ""
+            echo "\`\`\`bash"
+            echo "docker pull ghcr.io/${{ github.repository }}:$VERSION"
+            echo "\`\`\`"
+            echo ""
+            echo "### Artifacts"
+            echo ""
+            echo "- Tarball: [erlmcp-$VERSION.tar.gz](erlmcp-$VERSION.tar.gz)"
+            echo "- SHA256: [erlmcp-$VERSION.tar.gz.sha256](erlmcp-$VERSION.tar.gz.sha256)"
+            echo "- Hex: [erlmcp on Hex.pm](https://hex.pm/packages/erlmcp)"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.validate.outputs.version }}
+          name: erlmcp v${{ needs.validate.outputs.version }}
+          body: ${{ steps.notes.outputs.content }}
+          draft: false
+          prerelease: ${{ needs.validate.outputs.is_prerelease }}
+          files: |
+            release-tarball/erlmcp-${{ needs.validate.outputs.version }}.tar.gz
+            release-tarball/erlmcp-${{ needs.validate.outputs.version }}.tar.gz.sha256
+            release-tarball/erlmcp-${{ needs.validate.outputs.version }}.tar.gz.md5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    name: Release Summary
+    needs: [validate, build, docker, hex, release, ci-check]
+    if: always()
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Print summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          ## 🚀 erlmcp Release Complete
+
+          **Version:** v${{ needs.validate.outputs.version }}
+          **Type:** ${{ needs.validate.outputs.is_prerelease == 'true' && 'Pre-release' || 'Stable' }}
+
+          ### Components
+          - ✅ Validation: ${{ needs.validate.result }}
+          - ✅ CI Check: ${{ needs.ci-check.result }}
+          - ✅ Build: ${{ needs.build.result }}
+          - ✅ Docker: ${{ needs.docker.result }}
+          - ✅ Hex: ${{ needs.hex.result || 'skipped (pre-release)' }}
+          - ✅ GitHub Release: ${{ needs.release.result }}
+
+          ### Artifacts
+          - **Tarball:** erlmcp-${{ needs.validate.outputs.version }}.tar.gz
+          - **Docker:** ghcr.io/${{ github.repository }}:${{ needs.validate.outputs.version }}
+          - **Hex:** https://hex.pm/packages/erlmcp
+          - **GitHub:** https://github.com/${{ github.repository }}/releases/tag/v${{ needs.validate.outputs.version }}
+
+          ### Next Steps
+          1. Review release notes
+          2. Test Docker image
+          3. Verify Hex packages
+          4. Announce release
+          EOF

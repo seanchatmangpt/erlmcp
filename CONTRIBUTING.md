@@ -365,7 +365,92 @@ my_function(Input) ->
 - Prerequisites clearly stated
 - Estimated time to read/complete
 
-## PR Review Checklist
+## Code Review Process
+
+### Review Workflow
+
+```mermaid
+graph TB
+    A[Submit PR] --> B{Automated Checks}
+    B -->|Failing| C[Fix Issues]
+    B -->|Passing| D[Assign Reviewers]
+    C --> B
+    D --> E[Review Started]
+    E --> F{Code Quality}
+    F -->|Needs Work| G[Request Changes]
+    F -->|Looks Good| H{Tests Quality}
+    G --> C
+    H -->|Insufficient| I[Request More Tests]
+    H -->|Comprehensive| J{Coverage ≥80%?}
+    I --> C
+    J -->|No| I
+    J -->|Yes| K{Documentation?}
+    K -->|Missing| L[Request Docs]
+    K -->|Complete| M[Approve PR]
+    L --> C
+    M --> N[Merge to Main]
+
+    style C fill:#ff6b6b
+    style N fill:#51cf66
+    style M fill:#339af0
+```
+
+### Code Review Decision Tree
+
+```mermaid
+graph TB
+    A[Review PR] --> B{Automated Checks Pass?}
+    B -->|No| C[❌ Request Fixes<br/>Wait for CI]
+    B -->|Yes| D{Code Quality OK?}
+
+    D -->|No| E[❌ Request Changes<br/>OTP patterns, error handling]
+    D -->|Yes| F{Tests Quality OK?}
+
+    F -->|No| G[❌ Request More Tests<br/>Coverage, edge cases]
+    F -->|Yes| H{Documentation OK?}
+
+    H -->|No| I[⚠️ Request Docs<br/>@doc, examples]
+    H -->|Yes| J{TDD Compliance?}
+
+    J -->|No| K[❌ Tests Not First<br/>Check git history]
+    J -->|Yes| L{Chicago School?}
+
+    L -->|No| M[❌ Mocks Detected<br/>Use real processes]
+    L -->|Yes| N[✅ Approve PR]
+
+    style C fill:#ff6b6b
+    style E fill:#ff6b6b
+    style G fill:#ff922b
+    style I fill:#fab005
+    style K fill:#ff6b6b
+    style M fill:#ff6b6b
+    style N fill:#51cf66
+```
+
+### Review Criteria
+
+**Code Quality**:
+- Follows OTP patterns (gen_server, supervisor)
+- Proper error handling (Result types, no throws)
+- Type hints present (-spec declarations)
+- No code duplication
+- Clear naming and structure
+
+**Testing Quality** (Chicago School TDD):
+- Tests written FIRST (confirmed by git history)
+- Real processes only (NO mocks/fakes)
+- Black-box tests (behavior, not implementation)
+- All error paths covered
+- Edge cases tested
+- Property-based tests for complex logic
+
+**Documentation**:
+- Public functions have @doc comments
+- Complex logic explained
+- API docs updated (if applicable)
+- Examples provided
+
+### PR Review Checklist
 
 Before submitting PR, verify:
 
@@ -377,6 +462,41 @@ Before submitting PR, verify:
 - [ ] No breaking changes (or documented)
 - [ ] Commit messages clear
 - [ ] PR description complete
+- [ ] Tests written FIRST (TDD compliance)
+- [ ] No mocks/fakes in tests (Chicago School)
+- [ ] All reviewers approved
+
+### Reviewer Responsibilities
+
+```mermaid
+graph TB
+    A[Reviewer Assigned] --> B{Time to Review}
+    B -->|Within 24h| C[Thorough Review]
+    B -->|After 48h| D[⚠️ Remind Reviewer]
+
+    C --> E{Review Type}
+    E -->|Code| F[Check OTP Patterns<br/>Error Handling<br/>Type Specs]
+    E -->|Tests| G[Check TDD Order<br/>No Mocks<br/>Coverage]
+    E -->|Docs| H[Check @doc<br/>Examples<br/>Clarity]
+
+    F --> I{Quality OK?}
+    G --> I
+    H --> I
+
+    I -->|No| J[Request Changes]
+    I -->|Yes| K{All Categories OK?}
+
+    J --> L[Provide Feedback]
+    L --> M[Author Updates]
+    M --> C
+
+    K -->|No| N[Partial Approval<br/>Continue Review]
+    K -->|Yes| O[Approve PR]
+
+    style D fill:#fab005
+    style J fill:#ff922b
+    style O fill:#51cf66
+```
 
 ## Merging Policy
 
