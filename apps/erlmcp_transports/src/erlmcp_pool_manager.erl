@@ -78,7 +78,13 @@
     idle_connections = [] :: [pid()],
     active_connections = #{} :: #{pid() => connection_info()},
 
-    %% Metrics
+    %% Metrics (per-pool, safe in state)
+    %% IDEMPOTENCY NOTE: These counters are per-pool statistics stored in
+    %% process state. This is SAFE because:
+    %% 1. Each pool has its own manager process (no cross-pool race conditions)
+    %% 2. If the pool manager crashes, the pool is being recreated anyway
+    %% 3. Metrics reset to 0 on pool recreation, which is correct behavior
+    %% 4. For persistent metrics across restarts, use external metrics system (OTEL)
     total_checkouts = 0 :: non_neg_integer(),
     failed_checkouts = 0 :: non_neg_integer(),
     checkout_times = [] :: [non_neg_integer()],

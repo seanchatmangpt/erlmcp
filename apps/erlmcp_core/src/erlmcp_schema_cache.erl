@@ -25,6 +25,12 @@
 
 %% State record
 -record(state, {
+    %% Cache statistics (ephemeral, safe in state)
+    %% IDEMPOTENCY NOTE: These are global cache statistics (singleton process).
+    %% They are safe in state because:
+    %% 1. Cache statistics are ephemeral and reset on cache restart is acceptable
+    %% 2. For persistent metrics, use external metrics system (erlmcp_metrics)
+    %% 3. If precise statistics are needed across restarts, consider moving to ETS
     cache_hits :: non_neg_integer(),
     cache_misses :: non_neg_integer(),
     validations :: non_neg_integer(),

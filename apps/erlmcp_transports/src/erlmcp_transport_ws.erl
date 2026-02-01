@@ -70,6 +70,10 @@
     strict_delimiter_check :: boolean(),
     validate_utf8 :: boolean(),
     %% Backpressure and flow control fields
+    %% IDEMPOTENCY NOTE: messages_pending and bytes_buffered are per-connection
+    %% state counters. These are SAFE in process state (not ETS) because they
+    %% track buffer state for a single WebSocket connection and should reset
+    %% when the connection process restarts (connection dies).
     frame_buffer_size :: integer(),
     frame_buffer_used :: integer(),
     backpressure_state :: atom(),

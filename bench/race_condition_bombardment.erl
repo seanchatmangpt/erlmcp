@@ -126,12 +126,15 @@ worker_loop(RemainingOps) ->
     worker_loop(RemainingOps - 1).
 
 %% @doc Perform operation WITHOUT LOCKING (classic race condition)
+%% NON-IDEMPOTENT: This function INTENTIONALLY demonstrates a race condition.
+%% This is a TEST/BENCHMARK function to verify race condition detection.
+%% DO NOT use this pattern in production code - use ets:update_counter/3 instead.
 perform_op(increment) ->
     % Non-atomic increment (classic lost update bug)
     case ets:lookup(?ETS_TABLE, count) of
         [{count, Current}] when Current >= 0 ->
             NewVal = Current + 1,
-            ets:insert(?ETS_TABLE, {count, NewVal}),
+            ets:insert(?ETS_TABLE, {count, NewVal}),  % RACE CONDITION: Not atomic!
             ets:update_counter(?ETS_TABLE, total_increments, {2, 1}, {total_increments, 0});
         [{count, Current}] when Current < 0 ->
             % Negative value detected - CORRUPTION!

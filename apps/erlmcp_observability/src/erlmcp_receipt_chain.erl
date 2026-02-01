@@ -36,16 +36,24 @@ ensure_table() ->
 %% === Public API ===
 
 %% @doc Add event to receipt chain
--spec add_event(Event :: map()) -> ok.
+-spec add_event(Event :: map()) -> {ok, pos_integer()} | {error, duplicate_event_id}.
 add_event(Event) ->
     ensure_table(),
-    EventId = erlang:system_time(microsecond),
+    % Use monotonic counter for guaranteed unique IDs (idempotent operation)
+    % This ensures no ID collisions even on retries or concurrent calls
+    EventId = erlang:unique_integer([positive, monotonic]),
     EventWithId = Event#{
         id => EventId,
         recorded_at => erlang:system_time(millisecond)
     },
-    ets:insert(?EVENT_TABLE, {EventId, EventWithId}),
-    ok.
+    % Use insert_new to detect duplicate IDs (shouldn't happen with unique_integer, but defensive)
+    case ets:insert_new(?EVENT_TABLE, {EventId, EventWithId}) of
+        true -> {ok, EventId};
+        false ->
+            % Extremely unlikely with unique_integer, but handle gracefully
+            logger:warning("Duplicate event ID ~p detected (retry)", [EventId]),
+            {error, duplicate_event_id}
+    end.
 
 %% @doc Get all events of a specific type
 -spec get_events_by_type(Type :: atom()) -> {ok, [map()]} | {error, not_found}.
@@ -77,15 +85,26 @@ get_all_events() ->
     lists:reverse(Events).  %% Return in reverse chronological order
 
 %% @doc Restore receipt chain state from snapshot
--spec restore_state(State :: map()) -> ok.
+%% Idempotent operation - safe to call multiple times with same state
+-spec restore_state(State :: map()) -> ok | {error, term()}.
 restore_state(State) ->
     ensure_table(),
     ets:delete_all_objects(?EVENT_TABLE),
-    maps:fold(
-        fun(EventId, Event, Acc) ->
-            ets:insert(?EVENT_TABLE, {EventId, Event}),
-            Acc
-        end,
-        ok,
-        State
-    ).
+    try
+        maps:fold(
+            fun(EventId, Event, Acc) ->
+                % Use insert_new to detect duplicate event IDs in restore data
+                case ets:insert_new(?EVENT_TABLE, {EventId, Event}) of
+                    true -> Acc;
+                    false ->
+                        logger:error("Duplicate event ID ~p during restore", [EventId]),
+                        throw({duplicate_event_id, EventId})
+                end
+            end,
+            ok,
+            State
+        )
+    catch
+        throw:{duplicate_event_id, DupId} ->
+            {error, {duplicate_event_id, DupId}}
+    end.

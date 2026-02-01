@@ -30,6 +30,11 @@
 
 %% State record
 -record(state, {
+    %% IDEMPOTENCY NOTE: All counters are per-handler statistics (gen_event handler)
+    %% These are safe in state because:
+    %% 1. Each handler instance has its own state (no cross-handler race conditions)
+    %% 2. If handler crashes/restarts, counters reset (acceptable for ephemeral metrics)
+    %% 3. For persistent metrics across restarts, use ETS or external metrics (OTEL)
     tool_executions = #{} :: #{binary() => non_neg_integer()},
     resource_updates = #{} :: #{binary() => non_neg_integer()},
     error_counts = #{} :: #{atom() => non_neg_integer()},

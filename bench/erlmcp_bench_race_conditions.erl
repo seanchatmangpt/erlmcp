@@ -501,9 +501,11 @@ read_write_worker_loop(Table, N) ->
             % Read
             [{count, _}] = ets:lookup(Table, count);
         2 ->
-            % Write
+            % Write (NON-IDEMPOTENT: Intentional race condition for testing)
+            % This demonstrates the classic read-modify-write race condition.
+            % DO NOT use this pattern in production - use ets:update_counter/3 instead.
             [{count, Current}] = ets:lookup(Table, count),
-            ets:insert(Table, {count, Current + 1})
+            ets:insert(Table, {count, Current + 1})  % RACE CONDITION: Not atomic!
     end,
     read_write_worker_loop(Table, N - 1).
 

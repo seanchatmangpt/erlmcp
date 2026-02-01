@@ -200,11 +200,14 @@ test_buggy_pattern_data_loss() ->
     StartRef = make_ref(),
 
     % Buggy pattern: read-modify-write
+    % NON-IDEMPOTENT: This is an INTENTIONAL race condition for testing.
+    % This test verifies that race condition detection works correctly.
+    % DO NOT use this pattern in production - use ets:update_counter/3 instead.
     BuggyIncrement = fun() ->
         receive StartRef -> ok end,
         lists:foreach(fun(_) ->
             [{counter, Current}] = ets:lookup(Table, counter),
-            ets:insert(Table, {counter, Current + 1})
+            ets:insert(Table, {counter, Current + 1})  % RACE CONDITION: Not atomic!
         end, lists:seq(1, IncrementsPerProcess)),
         Parent ! {done, self()}
     end,

@@ -34,6 +34,11 @@
 -record(state, {
     enabled = true :: boolean(),
     log_all_events = false :: boolean(),  % If true, log all events; if false, only critical ones
+    %% IDEMPOTENCY NOTE: event_count is a per-handler statistic (gen_event handler)
+    %% This is safe in state because:
+    %% 1. Each handler instance has its own state (no cross-handler race conditions)
+    %% 2. If handler crashes/restarts, event count resets (acceptable for ephemeral metrics)
+    %% 3. For persistent event counting, use ETS or external metrics system
     event_count = 0 :: non_neg_integer(),
     start_time :: integer()
 }).

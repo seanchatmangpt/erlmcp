@@ -208,16 +208,17 @@ calculate_latency_stats([]) ->
 
 calculate_latency_stats(Latencies) ->
     Sorted = lists:sort(Latencies),
+    SortedTuple = list_to_tuple(Sorted),
     Count = length(Sorted),
     P50Index = max(1, round(Count * 0.50)),
     P95Index = max(1, round(Count * 0.95)),
     P99Index = max(1, round(Count * 0.99)),
 
-    P50 = lists:nth(P50Index, Sorted),
-    P95 = lists:nth(P95Index, Sorted),
-    P99 = lists:nth(P99Index, Sorted),
-    Min = lists:nth(1, Sorted),
-    Max = lists:nth(Count, Sorted),
+    P50 = element(P50Index, SortedTuple),
+    P95 = element(P95Index, SortedTuple),
+    P99 = element(P99Index, SortedTuple),
+    Min = element(1, SortedTuple),
+    Max = element(Count, SortedTuple),
     Avg = round(lists:sum(Sorted) / Count),
 
     #{

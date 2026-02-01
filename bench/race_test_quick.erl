@@ -63,8 +63,11 @@ worker(0) -> ok;
 worker(N) ->
     case rand:uniform(100) of
         X when X =< 70 ->
+            % NON-IDEMPOTENT: Intentional race condition for testing
+            % This demonstrates lost updates in concurrent ETS operations.
+            % DO NOT use this pattern in production - use ets:update_counter/3 instead.
             [{count, Val}] = ets:lookup(race_counter, count),
-            ets:insert(race_counter, {count, Val + 1}),
+            ets:insert(race_counter, {count, Val + 1}),  % RACE CONDITION: Not atomic!
             ets:update_counter(race_counter, total_ops, {2, 1});
         _ ->
             case ets:lookup(race_counter, count) of
