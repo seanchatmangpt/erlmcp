@@ -10,7 +10,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_tasks_lifecycle_tests).
 -include_lib("eunit/include/eunit.hrl").
--include("erlmcp.hrl").
+-include("../include/erlmcp.hrl").
 
 %%%===================================================================
 %%% Test Setup and Cleanup
