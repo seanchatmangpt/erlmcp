@@ -8,7 +8,7 @@
         jidoka andon poka-yoke tcps-quality-gates release-validate \
         doctor quick verify ci-local \
         example-mcp-complete example-help andon-clear andon-watch \
-        setup-profile
+        setup-profile check-erlang-version
 
 SHELL := /bin/bash
 
@@ -148,7 +148,8 @@ help:
 	@echo "  make ci-local      - Reproduce exact CI workflow locally"
 	@echo ""
 	@echo "$(BOLD)$(GREEN)Main targets:$(NC)"
-	@echo "  make compile       - Compile all apps"
+	@echo "  make check-erlang-version - Verify OTP 28+ (BLOCKING)"
+	@echo "  make compile       - Compile all apps (requires OTP 28+)"
 	@echo "  make test          - Run all tests (eunit + ct)"
 	@echo "  make check         - Full quality check (compile + xref + dialyzer + tests)"
 	@echo "  make clean         - Clean build artifacts"
@@ -219,6 +220,17 @@ help:
 	@echo "  No compromises on quality (Lean Six Sigma 99.99966% defect-free)."
 
 # ============================================================================
+# ERLANG VERSION ENFORCEMENT (BLOCKING GATE)
+# ============================================================================
+# CRITICAL: This project requires Erlang/OTP 28 or higher.
+# Lower versions will fail with a clear error message.
+# This gate runs BEFORE any compilation to provide immediate feedback.
+# ============================================================================
+
+check-erlang-version: ## Enforce Erlang/OTP 28+ requirement (BLOCKING)
+	@./scripts/check_erlang_version.sh
+
+# ============================================================================
 # COMPILATION
 # ============================================================================
 
@@ -237,7 +249,7 @@ setup-profile:
 	ln -sf "sys.config.$$ERLMCP_PROFILE" "$$CONFIG_TARGET"; \
 	echo "$(GREEN)✓ Config symlink: $$CONFIG_TARGET -> sys.config.$$ERLMCP_PROFILE$(NC)"
 
-compile: setup-profile
+compile: check-erlang-version setup-profile
 	@echo "$(BLUE)Compiling all apps...$(NC)"
 	@TERM=dumb rebar3 compile
 	@echo "$(GREEN)✓ Compilation complete$(NC)"

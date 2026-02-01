@@ -7,7 +7,7 @@ CODE LIKE A JOE ARMSTRONG AGI SWARM!!!
 **erlmcp** := Erlang/OTP Model Context Protocol SDK. Bidirectional AI-to-service message bridge. Client⊕Server duality over JSON-RPC 2.0.
 
 **Basis** : B ≔ ⟨Σ, τ, O, Δ, Λ⟩
-- Σ = {core, transports, observability, validation} : 164 modules : OTP 25-28
+- Σ = {core, transports, observability, validation} : 164 modules : OTP 28+ (STRICT)
 - Build = rebar3 (umbrella) : Test ∈ {EUnit, CommonTest, Proper}
 - Version = 2.1.0 : Status = ProductionReady
 
@@ -762,7 +762,7 @@ Violations → impossible to commit (Poka-Yoke principle)
 | erlmcp_transports | 2.1.0 | Production |
 | erlmcp_observability | 2.1.0 | Production |
 | erlmcp_validation | 2.1.0 | Production |
-| Erlang/OTP | 25-28 | Supported |
+| Erlang/OTP | 28+ | Required (STRICT) |
 | Release | 2.1.0 | Production Ready |
 
 ## Critical Rules (Invariant Enforcement)
