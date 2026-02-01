@@ -61,28 +61,46 @@
 %%====================================================================
 
 %% @doc Extract plugin name from metadata
--spec plugin_name(module()) -> binary().
+-spec plugin_name(module()) -> {ok, binary()} | {error, missing_field}.
 plugin_name(Module) ->
     Metadata = Module:metadata(),
-    maps:get(name, Metadata).
+    case maps:find(name, Metadata) of
+        {ok, Name} when is_binary(Name) -> {ok, Name};
+        {ok, _} -> {error, invalid_name_type};
+        error -> {error, missing_name}
+    end.
 
 %% @doc Extract plugin version from metadata
--spec plugin_version(module()) -> binary().
+-spec plugin_version(module()) -> {ok, binary()} | {error, missing_field}.
 plugin_version(Module) ->
     Metadata = Module:metadata(),
-    maps:get(version, Metadata).
+    case maps:find(version, Metadata) of
+        {ok, Version} when is_binary(Version) -> {ok, Version};
+        {ok, _} -> {error, invalid_version_type};
+        error -> {error, missing_version}
+    end.
 
 %% @doc Extract plugin type from metadata
--spec plugin_type(module()) -> validator | formatter | exporter | command | middleware.
+-spec plugin_type(module()) -> {ok, validator | formatter | exporter | command | middleware} | {error, missing_field}.
 plugin_type(Module) ->
     Metadata = Module:metadata(),
-    maps:get(type, Metadata).
+    case maps:find(type, Metadata) of
+        {ok, Type} when Type =:= validator; Type =:= formatter; Type =:= exporter;
+                        Type =:= command; Type =:= middleware ->
+            {ok, Type};
+        {ok, _} -> {error, invalid_type};
+        error -> {error, missing_type}
+    end.
 
 %% @doc Extract plugin description from metadata
--spec plugin_description(module()) -> binary().
+-spec plugin_description(module()) -> {ok, binary()} | {error, missing_field}.
 plugin_description(Module) ->
     Metadata = Module:metadata(),
-    maps:get(description, Metadata).
+    case maps:find(description, Metadata) of
+        {ok, Desc} when is_binary(Desc) -> {ok, Desc};
+        {ok, _} -> {error, invalid_description_type};
+        error -> {error, missing_description}
+    end.
 
 %% @doc Extract plugin author from metadata
 -spec plugin_author(module()) -> binary() | undefined.

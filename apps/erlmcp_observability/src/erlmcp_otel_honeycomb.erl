@@ -242,7 +242,10 @@ send_batch(Spans, #{endpoint := Endpoint, api_key := ApiKey, dataset := Dataset}
 
     URL = binary_to_list(<<Endpoint/binary, "/1/batch/", Dataset/binary>>),
 
-    case httpc:request(post, {URL, Headers, "application/json", Payload}, [], []) of
+    %% Send HTTP POST with timeout to prevent indefinite hangs
+    %% 5000ms total timeout, 2000ms connect timeout - adequate for network round-trip
+    HttpOptions = [{timeout, 5000}, {connect_timeout, 2000}],
+    case httpc:request(post, {URL, Headers, "application/json", Payload}, HttpOptions, []) of
         {ok, {{_, 200, _}, _, _}} -> ok;
         {ok, {{_, Code, _}, _, Body}} ->
             error_logger:error_msg("Honeycomb export failed: HTTP ~p~n~p~n", [Code, Body]),

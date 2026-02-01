@@ -40,6 +40,9 @@
 
 -export_type([server_id/0, transport_id/0]).
 
+%% Timeout for gen_server:call operations
+-define(REGISTRY_TIMEOUT, 2000).
+
 %% State record - significantly simplified with gproc
 -record(registry_state, {
     server_transport_map = #{} :: #{transport_id() => server_id()}
@@ -61,7 +64,7 @@ register_server(ServerId, ServerPid, Config) when is_pid(ServerPid) ->
 
 -spec register_server(local | global, server_id(), pid(), server_config()) -> ok | {error, term()}.
 register_server(local, ServerId, ServerPid, Config) when is_pid(ServerPid) ->
-    gen_server:call(?MODULE, {register_server, ServerId, ServerPid, Config});
+    gen_server:call(?MODULE, {register_server, ServerId, ServerPid, Config}, ?REGISTRY_TIMEOUT);
 register_server(global, ServerId, ServerPid, Config) when is_pid(ServerPid) ->
     ConfigWithPid = Config#{pid => ServerPid},
     erlmcp_registry_dist:register_global(server, ServerId, ServerPid, ConfigWithPid).
@@ -72,7 +75,7 @@ register_transport(TransportId, TransportPid, Config) when is_pid(TransportPid) 
 
 -spec register_transport(local | global, transport_id(), pid(), transport_config()) -> ok | {error, term()}.
 register_transport(local, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
-    gen_server:call(?MODULE, {register_transport, TransportId, TransportPid, Config});
+    gen_server:call(?MODULE, {register_transport, TransportId, TransportPid, Config}, ?REGISTRY_TIMEOUT);
 register_transport(global, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
     ConfigWithPid = Config#{pid => TransportPid},
     erlmcp_registry_dist:register_global(transport, TransportId, TransportPid, ConfigWithPid).
@@ -83,7 +86,7 @@ unregister_server(ServerId) ->
 
 -spec unregister_server(local | global, server_id()) -> ok.
 unregister_server(local, ServerId) ->
-    gen_server:call(?MODULE, {unregister_server, ServerId});
+    gen_server:call(?MODULE, {unregister_server, ServerId}, ?REGISTRY_TIMEOUT);
 unregister_server(global, ServerId) ->
     erlmcp_registry_dist:unregister_global({server, ServerId}).
 
@@ -93,7 +96,7 @@ unregister_transport(TransportId) ->
 
 -spec unregister_transport(local | global, transport_id()) -> ok.
 unregister_transport(local, TransportId) ->
-    gen_server:call(?MODULE, {unregister_transport, TransportId});
+    gen_server:call(?MODULE, {unregister_transport, TransportId}, ?REGISTRY_TIMEOUT);
 unregister_transport(global, TransportId) ->
     erlmcp_registry_dist:unregister_global({transport, TransportId}).
 
@@ -103,7 +106,7 @@ unregister_transport(global, TransportId) ->
 %%--------------------------------------------------------------------
 -spec update_server(server_id(), server_config()) -> ok | {error, term()}.
 update_server(ServerId, Config) ->
-    gen_server:call(?MODULE, {update_server, ServerId, Config}).
+    gen_server:call(?MODULE, {update_server, ServerId, Config}, ?REGISTRY_TIMEOUT).
 
 -spec route_to_server(server_id(), transport_id(), term()) -> ok | {error, term()}.
 route_to_server(ServerId, TransportId, Message) ->
@@ -121,7 +124,7 @@ find_server(ServerId) ->
 
 -spec find_server(local | global, server_id()) -> {ok, {pid(), server_config()}} | {ok, {node(), pid(), server_config()}} | {error, not_found}.
 find_server(local, ServerId) ->
-    gen_server:call(?MODULE, {find_server, ServerId});
+    gen_server:call(?MODULE, {find_server, ServerId}, ?REGISTRY_TIMEOUT);
 find_server(global, ServerId) ->
     erlmcp_registry_dist:whereis_global({server, ServerId}).
 
@@ -131,7 +134,7 @@ find_transport(TransportId) ->
 
 -spec find_transport(local | global, transport_id()) -> {ok, {pid(), transport_config()}} | {ok, {node(), pid(), transport_config()}} | {error, not_found}.
 find_transport(local, TransportId) ->
-    gen_server:call(?MODULE, {find_transport, TransportId});
+    gen_server:call(?MODULE, {find_transport, TransportId}, ?REGISTRY_TIMEOUT);
 find_transport(global, TransportId) ->
     erlmcp_registry_dist:whereis_global({transport, TransportId}).
 
@@ -141,7 +144,7 @@ list_servers() ->
 
 -spec list_servers(local | global) -> [{server_id(), {pid(), server_config()}}] | [{server_id(), {node(), pid(), server_config()}}].
 list_servers(local) ->
-    gen_server:call(?MODULE, list_servers);
+    gen_server:call(?MODULE, list_servers, ?REGISTRY_TIMEOUT);
 list_servers(global) ->
     erlmcp_registry_dist:list_global_servers().
 
@@ -151,21 +154,21 @@ list_transports() ->
 
 -spec list_transports(local | global) -> [{transport_id(), {pid(), transport_config()}}] | [{transport_id(), {node(), pid(), transport_config()}}].
 list_transports(local) ->
-    gen_server:call(?MODULE, list_transports);
+    gen_server:call(?MODULE, list_transports, ?REGISTRY_TIMEOUT);
 list_transports(global) ->
     erlmcp_registry_dist:list_global_transports().
 
 -spec bind_transport_to_server(transport_id(), server_id()) -> ok | {error, term()}.
 bind_transport_to_server(TransportId, ServerId) ->
-    gen_server:call(?MODULE, {bind_transport_to_server, TransportId, ServerId}).
+    gen_server:call(?MODULE, {bind_transport_to_server, TransportId, ServerId}, ?REGISTRY_TIMEOUT).
 
 -spec unbind_transport(transport_id()) -> ok.
 unbind_transport(TransportId) ->
-    gen_server:call(?MODULE, {unbind_transport, TransportId}).
+    gen_server:call(?MODULE, {unbind_transport, TransportId}, ?REGISTRY_TIMEOUT).
 
 -spec get_server_for_transport(transport_id()) -> {ok, server_id()} | {error, not_found}.
 get_server_for_transport(TransportId) ->
-    gen_server:call(?MODULE, {get_server_for_transport, TransportId}).
+    gen_server:call(?MODULE, {get_server_for_transport, TransportId}, ?REGISTRY_TIMEOUT).
 
 %%--------------------------------------------------------------------
 %% @doc Get complete registry state for debugging/inspection.
@@ -173,7 +176,7 @@ get_server_for_transport(TransportId) ->
 %%--------------------------------------------------------------------
 -spec get_all_state() -> {ok, state()} | {error, term()}.
 get_all_state() ->
-    gen_server:call(?MODULE, get_all_state).
+    gen_server:call(?MODULE, get_all_state, ?REGISTRY_TIMEOUT).
 
 %%--------------------------------------------------------------------
 %% @doc Get the registry process PID.
@@ -203,7 +206,7 @@ get_queue_depth() ->
 %%--------------------------------------------------------------------
 -spec restore_state(state()) -> ok | {error, term()}.
 restore_state(State) ->
-    gen_server:call(?MODULE, {restore_state, State}).
+    gen_server:call(?MODULE, {restore_state, State}, ?REGISTRY_TIMEOUT).
 
 %%--------------------------------------------------------------------
 %% @doc Route a message to a destination (server or transport).

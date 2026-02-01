@@ -247,7 +247,12 @@ add_refusal(ReceiptId, Code, Reason, AttemptedAction)
         {ok, Receipt} = get_receipt(ReceiptId),
 
         % Get current hash for chain continuity
-        CurrentHash = maps:get(current_hash, maps:get(hash_chain, Receipt)),
+        CurrentHash = case Receipt of
+            #{hash_chain := #{current_hash := Hash}} -> Hash;
+            _ ->
+                logger:error("Invalid receipt structure: missing hash_chain or current_hash"),
+                throw({error, invalid_receipt_structure})
+        end,
 
         % For refusal addition, we create new hash based on previous
         OldHash = CurrentHash,
@@ -335,11 +340,17 @@ verify_receipt(ReceiptId) when is_binary(ReceiptId) ->
     try
         {ok, Receipt} = get_receipt(ReceiptId),
 
-        % Verify hash
-        StoredHash = maps:get(current_hash, maps:get(hash_chain, Receipt)),
+        % Verify hash - safely extract nested fields
+        {StoredHash, PrevHash} = case Receipt of
+            #{hash_chain := #{current_hash := CH, previous_receipt_hash := PH}} ->
+                {CH, PH};
+            _ ->
+                logger:error("Invalid receipt structure for verification: ~p", [ReceiptId]),
+                throw({error, invalid_receipt_structure})
+        end,
         _ComputedHash = compute_hash(Receipt#{
             hash_chain => #{
-                previous_receipt_hash => maps:get(previous_receipt_hash, maps:get(hash_chain, Receipt)),
+                previous_receipt_hash => PrevHash,
                 current_hash => <<"verify">>
             }
         }),
@@ -511,13 +522,16 @@ get_previous_receipt_hash(PlanId, Version) ->
             _ ->
                 LastReceipt = lists:last(lists:sort(
                     fun(R1, R2) ->
-                        T1 = maps:get(timestamp, R1),
-                        T2 = maps:get(timestamp, R2),
+                        T1 = maps:get(timestamp, R1, 0),
+                        T2 = maps:get(timestamp, R2, 0),
                         T1 =< T2
                     end,
                     Receipts
                 )),
-                maps:get(current_hash, maps:get(hash_chain, LastReceipt))
+                case LastReceipt of
+                    #{hash_chain := #{current_hash := Hash}} -> Hash;
+                    _ -> null
+                end
         end
     catch
         _ -> null
@@ -528,41 +542,62 @@ get_previous_receipt_hash(PlanId, Version) ->
 %% @end
 -spec compute_hash(Receipt :: receipt()) -> binary().
 compute_hash(Receipt) ->
-    % Extract immutable fields
-    ImmutableData = #{
-        receipt_id => maps:get(receipt_id, Receipt),
-        plan_id => maps:get(plan_id, Receipt),
-        version => maps:get(version, Receipt),
-        timestamp => maps:get(timestamp, Receipt),
-        envelope_claim => maps:get(envelope_claim, Receipt),
-        audit_fields => maps:get(audit_fields, Receipt),
-        previous_receipt_hash => maps:get(previous_receipt_hash, maps:get(hash_chain, Receipt))
-    },
+    % Extract immutable fields - with proper error handling
+    try
+        PrevHash = case Receipt of
+            #{hash_chain := #{previous_receipt_hash := PH}} -> PH;
+            _ -> throw({error, missing_hash_chain})
+        end,
 
-    % Include refusal if present
-    Data = case maps:get(refusal_trigger, Receipt, undefined) of
-        undefined -> ImmutableData;
-        Refusal -> ImmutableData#{refusal_trigger => Refusal}
-    end,
+        ImmutableData = #{
+            receipt_id => maps:get(receipt_id, Receipt),
+            plan_id => maps:get(plan_id, Receipt),
+            version => maps:get(version, Receipt),
+            timestamp => maps:get(timestamp, Receipt),
+            envelope_claim => maps:get(envelope_claim, Receipt),
+            audit_fields => maps:get(audit_fields, Receipt),
+            previous_receipt_hash => PrevHash
+        },
 
-    % Serialize to JSON for hashing
-    Json = jsx:encode(Data),
+        % Include refusal if present
+        Data = case maps:get(refusal_trigger, Receipt, undefined) of
+            undefined -> ImmutableData;
+            Refusal -> ImmutableData#{refusal_trigger => Refusal}
+        end,
 
-    % SHA-256 hash
-    Hash = crypto:hash(sha256, Json),
+        % Serialize to JSON for hashing
+        Json = jsx:encode(Data),
 
-    % Return as hex string
-    list_to_binary(lists:flatten([io_lib:format("~2.16.0b", [X]) || X <- binary_to_list(Hash)])).
+        % SHA-256 hash
+        Hash = crypto:hash(sha256, Json),
+
+        % Return as hex string
+        list_to_binary(lists:flatten([io_lib:format("~2.16.0b", [X]) || X <- binary_to_list(Hash)]))
+    catch
+        error:{badkey, Key} ->
+            logger:error("Missing required field in receipt: ~p", [Key]),
+            throw({error, {missing_field, Key}});
+        Class:Reason:Stack ->
+            logger:error("Failed to compute hash: ~p:~p~n~p", [Class, Reason, Stack]),
+            throw({error, hash_computation_failed})
+    end.
 
 %% Verify chain integrity
 verify_chain_integrity([]) ->
     ok;
 verify_chain_integrity([Receipt | Rest]) ->
-    % Verify this receipt's hash
-    StoredHash = maps:get(current_hash, maps:get(hash_chain, Receipt)),
+    % Verify this receipt's hash - safely extract nested fields
+    {StoredHash, PrevHash} = case Receipt of
+        #{hash_chain := #{current_hash := CH, previous_receipt_hash := PH}} ->
+            {CH, PH};
+        _ ->
+            logger:error("Invalid receipt structure in chain verification"),
+            {error, invalid_receipt_structure}
+    end,
+
     _ComputedHash = compute_hash(Receipt#{
         hash_chain => #{
-            previous_receipt_hash => maps:get(previous_receipt_hash, maps:get(hash_chain, Receipt)),
+            previous_receipt_hash => PrevHash,
             current_hash => <<"verify">>
         }
     }),

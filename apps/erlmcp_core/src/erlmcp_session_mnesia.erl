@@ -119,7 +119,8 @@ store(SessionId, Session, State) ->
 
     Transaction = fun() -> mnesia:write(TableName, Record, write) end,
 
-    case mnesia:transaction(Transaction) of
+    %% Simple write operation - 5000ms timeout
+    case transaction_with_timeout(Transaction, 5000) of
         {atomic, ok} -> {ok, State};
         {aborted, Reason} -> {error, Reason}
     end.
@@ -142,7 +143,8 @@ fetch(SessionId, State) ->
         end
     end,
 
-    case mnesia:transaction(Transaction) of
+    %% Read + write operation - 5000ms timeout
+    case transaction_with_timeout(Transaction, 5000) of
         {atomic, {ok, Session}} -> {ok, Session, State};
         {atomic, {error, not_found}} -> {error, not_found, State};
         {aborted, Reason} -> {error, Reason, State}
@@ -153,7 +155,8 @@ fetch(SessionId, State) ->
 delete(SessionId, State) ->
     Transaction = fun() -> mnesia:delete(maps:get(table_name, State), SessionId, write) end,
 
-    case mnesia:transaction(Transaction) of
+    %% Simple delete operation - 5000ms timeout
+    case transaction_with_timeout(Transaction, 5000) of
         {atomic, ok} -> {ok, State};
         {aborted, Reason} -> {error, Reason, State}
     end.
@@ -165,7 +168,8 @@ list(State) ->
         mnesia:all_keys(maps:get(table_name, State))
     end,
 
-    case mnesia:transaction(Transaction) of
+    %% List all keys operation - 5000ms timeout
+    case transaction_with_timeout(Transaction, 5000) of
         {atomic, SessionIds} -> {ok, SessionIds, State};
         {aborted, Reason} -> {error, Reason, State}
     end.
@@ -198,7 +202,8 @@ cleanup_expired(State) ->
         length(ExpiredSessions)
     end,
 
-    case mnesia:transaction(Transaction) of
+    %% Cleanup operation (may involve multiple records) - 10000ms timeout
+    case transaction_with_timeout(Transaction, 10000) of
         {atomic, Count} -> {ok, Count, State};
         {aborted, Reason} -> {ok, 0, State}
     end.
@@ -212,3 +217,24 @@ is_expired(#{timeout_ms := infinity}, _Now) ->
     false;
 is_expired(#{last_accessed := LastAccessed, timeout_ms := TimeoutMs}, Now) ->
     (Now - LastAccessed) > TimeoutMs.
+
+%% @private Execute Mnesia transaction with timeout to prevent indefinite hangs.
+%% Mnesia transactions don't have built-in timeout support, so we wrap them
+%% in a process with a timeout to prevent lock contention or network partition hangs.
+%% Timeout: 5000ms for simple read/write, 10000ms for complex operations.
+-spec transaction_with_timeout(fun(() -> term()), timeout()) ->
+    {atomic, term()} | {aborted, term()}.
+transaction_with_timeout(Fun, Timeout) ->
+    Parent = self(),
+    Ref = make_ref(),
+    Pid = spawn_link(fun() ->
+        Result = mnesia:transaction(Fun),
+        Parent ! {Ref, Result}
+    end),
+
+    receive
+        {Ref, Result} -> Result
+    after Timeout ->
+        exit(Pid, kill),
+        {aborted, timeout}
+    end.

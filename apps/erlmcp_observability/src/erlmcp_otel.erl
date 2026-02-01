@@ -647,7 +647,11 @@ set_span_attributes(OtelSpan, Attributes) when is_map(Attributes) ->
         AtomKey = case is_binary(K) of
             true ->
                 try binary_to_existing_atom(K, utf8)
-                catch _:_ -> binary_to_atom(K, utf8)
+                catch
+                    error:badarg ->
+                        %% Don't create new atoms from user input to prevent atom table exhaustion
+                        logger:debug("Unknown attribute key (keeping as binary): ~p", [K]),
+                        K
                 end;
             false -> K
         end,
@@ -697,7 +701,11 @@ add_span_event(OtelSpan, Event) ->
         AtomKey = case is_binary(K) of
             true ->
                 try binary_to_existing_atom(K, utf8)
-                catch _:_ -> binary_to_atom(K, utf8)
+                catch
+                    error:badarg ->
+                        %% Don't create new atoms from user input to prevent atom table exhaustion
+                        logger:debug("Unknown event attribute key (keeping as binary): ~p", [K]),
+                        K
                 end;
             false -> K
         end,
@@ -1182,7 +1190,14 @@ format_attribute_value(V) when is_boolean(V) -> V;
 format_attribute_value(V) when is_atom(V) -> atom_to_binary(V, utf8);
 format_attribute_value(V) when is_list(V) ->
     try list_to_binary(V)
-    catch _:_ -> list_to_binary(io_lib:format("~p", [V]))
+    catch
+        error:badarg ->
+            %% Not a valid UTF-8 string, use debug format
+            logger:debug("List attribute value is not valid UTF-8, using debug format"),
+            list_to_binary(io_lib:format("~p", [V]));
+        error:Reason ->
+            logger:warning("Failed to convert list attribute value: ~p", [Reason]),
+            list_to_binary(io_lib:format("~p", [V]))
     end;
 format_attribute_value(V) ->
     list_to_binary(io_lib:format("~p", [V])).

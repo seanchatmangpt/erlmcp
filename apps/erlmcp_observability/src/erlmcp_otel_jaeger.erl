@@ -192,8 +192,10 @@ send_batch(Spans, #{endpoint := Endpoint, protocol := Protocol, headers := Heade
         | Headers
     ],
 
-    %% Send HTTP POST
-    case httpc:request(post, {binary_to_list(Endpoint), AllHeaders, ContentType, Payload}, [], []) of
+    %% Send HTTP POST with timeout to prevent indefinite hangs
+    %% 5000ms total timeout, 2000ms connect timeout - adequate for network round-trip
+    HttpOptions = [{timeout, 5000}, {connect_timeout, 2000}],
+    case httpc:request(post, {binary_to_list(Endpoint), AllHeaders, ContentType, Payload}, HttpOptions, []) of
         {ok, {{_, 200, _}, _, _}} ->
             ok;
         {ok, {{_, Code, _}, _, Body}} ->

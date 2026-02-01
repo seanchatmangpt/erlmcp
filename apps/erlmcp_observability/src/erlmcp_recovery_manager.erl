@@ -741,9 +741,9 @@ find_component_by_pid(Pid, Components) ->
     end, Components)) of
         [{ComponentId, _Component}] -> {ok, ComponentId};
         [] -> error;
-        Multiple -> 
+        [{FirstId, _} | _] = Multiple ->
             ?LOG_WARNING("Multiple components with same PID: ~p", [Multiple]),
-            {ok, element(1, hd(Multiple))}
+            {ok, FirstId}
     end.
 
 -spec check_and_update_recoveries(#state{}) -> #state{}.

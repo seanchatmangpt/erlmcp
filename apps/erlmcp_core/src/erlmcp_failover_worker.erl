@@ -77,11 +77,11 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Execute session replication to backup node
 execute_replication(SessionId, _FailoverState, BackupNode) ->
     try
-        %% Retrieve session data from Mnesia
+        %% Retrieve session data from Mnesia with 5000ms timeout
         TableName = erlmcp_session,
-        case mnesia:transaction(fun() ->
+        case transaction_with_timeout(fun() ->
             mnesia:read(TableName, SessionId)
-        end) of
+        end, 5000) of
             {atomic, [SessionRec]} ->
                 %% Extract session data from record
                 SessionData = element(3, SessionRec),  % Assuming 3rd field is session_data
@@ -139,4 +139,24 @@ execute_notification(SessionId, NewPrimary, BackupNode) ->
             logger:error("Exception notifying backup ~p: ~p:~p~n~p",
                         [BackupNode, Type, Error, Stacktrace]),
             {error, {exception, {Type, Error}}}
+    end.
+
+%% @private Execute Mnesia transaction with timeout to prevent indefinite hangs.
+%% Mnesia transactions don't have built-in timeout support, so we wrap them
+%% in a process with a timeout to prevent lock contention or network partition hangs.
+-spec transaction_with_timeout(fun(() -> term()), timeout()) ->
+    {atomic, term()} | {aborted, term()}.
+transaction_with_timeout(Fun, Timeout) ->
+    Parent = self(),
+    Ref = make_ref(),
+    Pid = spawn_link(fun() ->
+        Result = mnesia:transaction(Fun),
+        Parent ! {Ref, Result}
+    end),
+
+    receive
+        {Ref, Result} -> Result
+    after Timeout ->
+        exit(Pid, kill),
+        {aborted, timeout}
     end.
