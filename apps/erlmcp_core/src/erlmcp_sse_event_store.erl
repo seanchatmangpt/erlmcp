@@ -119,11 +119,13 @@ handle_call({get_events_since, SessionId, LastEventId}, _From, State) ->
                 undefined -> 0;
                 _ -> parse_event_id(LastEventId)
             end,
-            AllEvents = ets:tab2list(TableName),
-            FilteredEvents = [E#event.data || E <- AllEvents,
-                                             E#event.event_number > StartEventNum],
-            SortedEvents = lists:sort(FilteredEvents),
-            {reply, {ok, SortedEvents}, State}
+            MatchSpec = [
+                {#event{event_number = '$1', data = '$2', _ = '_'},
+                 [{'>', '$1', StartEventNum}],
+                 ['$2']}
+            ],
+            Events = ets:select(TableName, MatchSpec),
+            {reply, {ok, Events}, State}
     end;
 
 handle_call({clear_session, SessionId}, _From, State) ->
@@ -200,7 +202,7 @@ get_or_create_table(SessionId) ->
         undefined ->
             ets:new(TableName, [
                 named_table,
-                set,
+                ordered_set,
                 public,
                 {keypos, #event.event_number},
                 {read_concurrency, true},

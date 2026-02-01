@@ -112,7 +112,10 @@ initialize(Client, Capabilities) ->
 -spec initialize(client(), #mcp_client_capabilities{}, map()) ->
     {ok, map()} | {error, term()}.
 initialize(Client, Capabilities, Options) ->
-    gen_server:call(Client, {initialize, Capabilities, Options}, infinity).
+    %% Use configurable timeout (default 30s) instead of infinity
+    %% Prevents indefinite blocking if server crashes or hangs
+    Timeout = maps:get(initialization_timeout, Options, 30000),
+    gen_server:call(Client, {initialize, Capabilities, Options}, Timeout).
 
 %% Ping method (MCP 2025-11-25)
 %% Simplest possible request - returns empty object on success
@@ -126,7 +129,7 @@ list_resources(Client) ->
 
 -spec read_resource(client(), binary()) -> {ok, map()} | {error, term()}.
 read_resource(Client, Uri) when is_binary(Uri) ->
-    gen_server:call(Client, {read_resource, Uri}).
+    gen_server:call(Client, {read_resource, Uri}, 5000).
 
 -spec list_prompts(client()) -> {ok, [map()]} | {error, term()}.
 list_prompts(Client) ->
@@ -138,7 +141,7 @@ get_prompt(Client, Name) when is_binary(Name) ->
 
 -spec get_prompt(client(), binary(), map()) -> {ok, map()} | {error, term()}.
 get_prompt(Client, Name, Arguments) when is_binary(Name), is_map(Arguments) ->
-    gen_server:call(Client, {get_prompt, Name, Arguments}).
+    gen_server:call(Client, {get_prompt, Name, Arguments}, 5000).
 
 -spec list_tools(client()) -> {ok, [map()]} | {error, term()}.
 list_tools(Client) ->
@@ -146,7 +149,7 @@ list_tools(Client) ->
 
 -spec call_tool(client(), binary(), map()) -> {ok, map()} | {error, term()}.
 call_tool(Client, Name, Arguments) when is_binary(Name), is_map(Arguments) ->
-    gen_server:call(Client, {call_tool, Name, Arguments}).
+    gen_server:call(Client, {call_tool, Name, Arguments}, 5000).
 
 -spec complete(client(), binary(), binary()) -> {ok, map()} | {error, term()}.
 complete(Client, Ref, Argument) ->
@@ -167,11 +170,11 @@ list_resource_templates(Client) ->
 
 -spec subscribe_to_resource(client(), binary()) -> ok | {error, term()}.
 subscribe_to_resource(Client, Uri) when is_binary(Uri) ->
-    gen_server:call(Client, {subscribe_resource, Uri}).
+    gen_server:call(Client, {subscribe_resource, Uri}, 5000).
 
 -spec unsubscribe_from_resource(client(), binary()) -> ok | {error, term()}.
 unsubscribe_from_resource(Client, Uri) when is_binary(Uri) ->
-    gen_server:call(Client, {unsubscribe_resource, Uri}).
+    gen_server:call(Client, {unsubscribe_resource, Uri}, 5000).
 
 %%--------------------------------------------------------------------
 %% @doc List all roots (MCP 2025-11-25)
@@ -1226,19 +1229,23 @@ delete_correlation(Table, RequestId) ->
 -spec recover_correlations(state()) -> state().
 recover_correlations(#state{correlation_table = undefined} = State) ->
     State;
+recover_correlations(#state{correlation_table = undefined} = State) ->
+    State;
 recover_correlations(#state{correlation_table = Table, pending_requests = Pending} = State) ->
     Now = erlang:system_time(millisecond),
-    %% Get all correlations from ETS table
-    Correlations = ets:tab2list(Table),
-    %% Filter out stale correlations (> 5 minutes old) and dead PIDs
-    ValidCorrelations = lists:filter(
-        fun({_RequestId, #{timestamp := TS, from_pid := Pid}}) ->
-            Age = Now - TS,
-            Age < 300000 andalso is_process_alive(Pid)
-        end,
-        Correlations
-    ),
-    %% Update pending requests map with recovered correlations
+    MaxAge = Now - 300000,
+    
+    MatchSpec = [{
+        {'$1', #{timestamp => '$2', request_type => '$3', from_pid => '$4'}},
+        [{'>', '$2', MaxAge}],
+        [{{'$1', #{timestamp => '$2', request_type => '$3', from_pid => '$4'}}}]
+    }],
+    
+    Correlations = ets:select(Table, MatchSpec),
+    
+    ValidCorrelations = [{ReqId, Info} || {ReqId, #{from_pid := Pid} = Info} <- Correlations,
+                                           is_process_alive(Pid)],
+    
     RecoveredPending = lists:foldl(
         fun({RequestId, #{request_type := Type, from_pid := Pid}}, Acc) ->
             maps:put(RequestId, {Type, Pid}, Acc)

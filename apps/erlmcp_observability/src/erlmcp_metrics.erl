@@ -5,8 +5,16 @@
     record_transport_operation/4,
     record_server_operation/4, 
     record_registry_operation/3,
+    record_client_operation/3,
+    record_session_operation/4,
+    record_json_rpc_operation/3,
+    increment_counter/1,
+    increment_counter/2,
+    set_gauge/2,
+    set_gauge/3,
     get_metrics/0,
     get_metrics/1,
+    get_percentile/2,
     reset_metrics/0,
     get_performance_summary/0,
     with_metrics/3
@@ -74,6 +82,49 @@ record_registry_operation(Operation, Duration, ExtraLabels) ->
     },
     gen_server:cast(?MODULE, {record_metric, <<"registry_operation_duration_ms">>, Duration, Labels}).
 
+-spec record_client_operation(pid(), binary(), metric_value()) -> ok.
+record_client_operation(ClientPid, Operation, Duration) ->
+    Labels = #{
+        <<"component">> => <<"client">>,
+        <<"operation">> => Operation,
+        <<"client_pid">> => ClientPid
+    },
+    gen_server:cast(?MODULE, {record_metric, <<"client_operation_duration_ms">>, Duration, Labels}).
+
+-spec record_session_operation(binary(), binary(), metric_value(), metric_labels()) -> ok.
+record_session_operation(SessionId, Operation, Duration, ExtraLabels) ->
+    Labels = ExtraLabels#{
+        <<"component">> => <<"session">>,
+        <<"operation">> => Operation,
+        <<"session_id">> => SessionId
+    },
+    gen_server:cast(?MODULE, {record_metric, <<"session_operation_duration_ms">>, Duration, Labels}).
+
+-spec record_json_rpc_operation(binary(), metric_value(), non_neg_integer()) -> ok.
+record_json_rpc_operation(Direction, Duration, MessageSize) ->
+    Labels = #{
+        <<"component">> => <<"json_rpc">>,
+        <<"direction">> => Direction,
+        <<"message_size_bytes">> => MessageSize
+    },
+    gen_server:cast(?MODULE, {record_metric, <<"json_rpc_operation_duration_ms">>, Duration, Labels}).
+
+-spec increment_counter(metric_name()) -> ok.
+increment_counter(CounterName) ->
+    increment_counter(CounterName, #{}).
+
+-spec increment_counter(metric_name(), metric_labels()) -> ok.
+increment_counter(CounterName, Labels) ->
+    gen_server:cast(?MODULE, {increment_counter, CounterName, Labels}).
+
+-spec set_gauge(metric_name(), metric_value()) -> ok.
+set_gauge(GaugeName, Value) ->
+    set_gauge(GaugeName, Value, #{}).
+
+-spec set_gauge(metric_name(), metric_value(), metric_labels()) -> ok.
+set_gauge(GaugeName, Value, Labels) ->
+    gen_server:cast(?MODULE, {set_gauge, GaugeName, Value, Labels}).
+
 -spec get_metrics() -> [#metric{}].
 get_metrics() ->
     gen_server:call(?MODULE, get_metrics).
@@ -81,6 +132,10 @@ get_metrics() ->
 -spec get_metrics(metric_name()) -> [#metric{}].
 get_metrics(MetricName) ->
     gen_server:call(?MODULE, {get_metrics, MetricName}).
+
+-spec get_percentile(metric_name(), float()) -> number() | undefined.
+get_percentile(MetricName, Percentile) ->
+    gen_server:call(?MODULE, {get_percentile, MetricName, Percentile}).
 
 -spec reset_metrics() -> ok.
 reset_metrics() ->
@@ -113,6 +168,16 @@ handle_call({get_metrics, MetricName}, _From, #state{metrics = Metrics} = State)
     end, Metrics),
     {reply, Filtered, State};
 
+handle_call({get_percentile, MetricName, Percentile}, _From, #state{histograms = Histograms} = State) ->
+    Result = case maps:get(MetricName, Histograms, undefined) of
+        undefined -> undefined;
+        [] -> undefined;
+        Values ->
+            SortedValues = lists:sort(Values),
+            percentile(SortedValues, round(Percentile * 100))
+    end,
+    {reply, Result, State};
+
 handle_call(reset_metrics, _From, State) ->
     NewState = State#state{
         metrics = [],
@@ -134,6 +199,14 @@ handle_call(_Request, _From, State) ->
 
 handle_cast({record_metric, Name, Value, Labels}, State) ->
     NewState = record_metric_internal(Name, Value, Labels, State),
+    {noreply, NewState};
+
+handle_cast({increment_counter, Name, Labels}, State) ->
+    NewState = increment_counter_internal(Name, Labels, State),
+    {noreply, NewState};
+
+handle_cast({set_gauge, Name, Value, Labels}, State) ->
+    NewState = set_gauge_internal(Name, Value, Labels, State),
     {noreply, NewState};
 
 handle_cast(_Msg, State) ->
@@ -181,6 +254,17 @@ record_metric_internal(Name, Value, Labels, #state{metrics = Metrics, counters =
         histograms = NewHistograms,
         gauges = NewGauges
     }.
+
+-spec increment_counter_internal(metric_name(), metric_labels(), #state{}) -> #state{}.
+increment_counter_internal(Name, _Labels, #state{counters = Counters} = State) ->
+    CurrentValue = maps:get(Name, Counters, 0),
+    NewCounters = maps:put(Name, CurrentValue + 1, Counters),
+    State#state{counters = NewCounters}.
+
+-spec set_gauge_internal(metric_name(), metric_value(), metric_labels(), #state{}) -> #state{}.
+set_gauge_internal(Name, Value, _Labels, #state{gauges = Gauges} = State) ->
+    NewGauges = maps:put(Name, Value, Gauges),
+    State#state{gauges = NewGauges}.
 
 -spec update_counter(metric_name(), metric_labels(), map()) -> map().
 update_counter(Name, _Labels, Counters) ->

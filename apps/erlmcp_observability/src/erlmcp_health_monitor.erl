@@ -425,16 +425,20 @@ execute_with_timeout(Fun, Timeout) ->
     Parent = self(),
     Ref = make_ref(),
 
-    Pid = spawn(fun() ->
+    {Pid, MonRef} = spawn_monitor(fun() ->
                    Result = Fun(),
                    Parent ! {Ref, Result}
                 end),
 
     receive
         {Ref, Result} ->
-            Result
+            erlang:demonitor(MonRef, [flush]),
+            Result;
+        {'DOWN', MonRef, process, Pid, Reason} ->
+            {unhealthy, {executor_died, Reason}}
     after Timeout ->
         exit(Pid, kill),
+        erlang:demonitor(MonRef, [flush]),
         {unhealthy, timeout}
     end.
 
@@ -576,6 +580,19 @@ perform_system_health_check(State) ->
     State#state{system_health = SystemHealth,
                 system_metrics = SystemMetrics,
                 alerts = Alerts}.
+
+    % Update erlmcp_flags based on system health
+    case SystemHealth of
+        healthy ->
+            erlmcp_flags:mark_healthy();
+        degraded ->
+            erlmcp_flags:mark_unhealthy();
+        unhealthy ->
+            erlmcp_flags:mark_unhealthy();
+        unknown ->
+            % Do not change flag if unknown
+            ok
+    end,
 
 -spec collect_system_metrics() -> map().
 collect_system_metrics() ->
@@ -745,9 +762,9 @@ find_component_by_pid(Pid, Components) ->
             {ok, ComponentId};
         [] ->
             error;
-        Multiple ->
+        [{FirstId, _} | _] = Multiple ->
             ?LOG_WARNING("Multiple components with same PID: ~p", [Multiple]),
-            {ok, element(1, hd(Multiple))}
+            {ok, FirstId}
     end.
 
 -spec schedule_health_check(component_id(), pos_integer()) -> ok.

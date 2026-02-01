@@ -232,7 +232,7 @@ handle_call(clear_all_blocks, _From, State) ->
     {reply, ok, State};
 
 handle_call(get_blocked_clients, _From, State) ->
-    Blocked = [ClientId || {ClientId, _} <- ets:tab2list(State#state.blocks)],
+    Blocked = ets:select(State#state.blocks, [{'$1', [], ['$1']}]),
     {reply, {ok, Blocked}, State};
 
 handle_call(_Request, _From, State) ->
@@ -293,6 +293,9 @@ do_check_rate_limit(ClientId, IpAddress, State) ->
     end.
 
 %% @private Check rate limit window
+%% CONCURRENCY SAFETY: Uses ets:update_counter for atomic increments to prevent
+%% lost update anomalies. The window expiry check still requires a lookup, but
+%% the critical increment operation is atomic.
 check_rate_limit_window(ClientId, Now, State) ->
     MaxAttempts = maps_get(max_attempts_per_second, State#state.config,
                             ?DEFAULT_MAX_ATTEMPTS_PER_SECOND),
@@ -308,14 +311,24 @@ check_rate_limit_window(ClientId, Now, State) ->
                               {ClientId, #rate_limit_state{count = 1, window_start = Now}}),
                     ok;
                 Count >= MaxAttempts ->
-                    % Rate limit exceeded
+                    % Rate limit exceeded - check BEFORE incrementing to prevent bypass
                     {error, rate_limited};
                 true ->
-                    % Within limit, increment count
-                    NewCount = Count + 1,
-                    ets:insert(State#state.rate_limits,
-                              {ClientId, #rate_limit_state{count = NewCount, window_start = Start}}),
-                    ok
+                    % Within limit, use atomic increment
+                    % Record field position: #rate_limit_state.count is position 2 in the record
+                    % Atomically increment the count field
+                    NewCount = ets:update_counter(
+                        State#state.rate_limits,
+                        ClientId,
+                        {#rate_limit_state.count, 1}  % Increment count field by 1
+                    ),
+                    % Double-check after increment (defense in depth)
+                    if
+                        NewCount > MaxAttempts ->
+                            {error, rate_limited};
+                        true ->
+                            ok
+                    end
             end;
         [] ->
             % First attempt in window
