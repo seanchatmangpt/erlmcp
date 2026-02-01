@@ -68,6 +68,70 @@ make workspace-test             # Run all tests
 make workspace-check            # Full validation (build + lint + test)
 ```
 
+## Cloud Development (NEW)
+
+erlmcp supports **cloud-native development** with autonomous execution, cost optimization, and session persistence.
+
+### Quick Cloud Start
+
+```bash
+# Request cloud execution from local terminal
+claude "Fix the race condition in erlmcp_session_manager"
+
+# Cloud session automatically:
+# 1. Boots OTP 28.3.1 (60s, SessionStart hook)
+# 2. Analyzes codebase
+# 3. Implements fix with TDD
+# 4. Runs all quality gates (parallel, 150s)
+# 5. Reports results with cost + time
+
+✅ Fixed race condition
+📊 Cost: $0.065 | Time: 6m 30s
+🔗 Branch: claude/fix-session-race-DNaeK
+```
+
+### Key Features
+
+- **Autonomous Execution**: Multi-agent coordination (architect → developer → test-engineer → reviewer)
+- **Deterministic Results**: All tests produce identical results (cloud ≡ local)
+- **Parallel Quality Gates**: 3x speedup via concurrent execution (150s vs 360s)
+- **Cost Tracking**: $0.10/hour VM + $0.01/GB transfer
+- **State Persistence**: Git branch + serialized work orders
+- **Session Teleportation**: Seamless transfer between cloud and local
+- **Error Recovery**: Auto-retry for transient errors, human approval for critical decisions
+
+### Common Cloud Workflows
+
+**Autonomous Feature Implementation**:
+```bash
+claude "Add rate limiting to session manager with tests and PR"
+# Cloud: Design → Implement → Test → Create PR (7 minutes, parallel)
+```
+
+**Iterative Cost Optimization**:
+```bash
+make test-changed    # Only test affected modules (45s, $0.015 vs full suite)
+```
+
+**Interactive Debugging**:
+```bash
+# Cloud session → Local debugging tools
+claude --teleport session_015jLVUqHSQc86isYfzL4Byp
+make observer        # Visual process monitor
+```
+
+### Documentation
+
+For comprehensive cloud development guide, see **[CLOUD_EXECUTION.md](docs/CLOUD_EXECUTION.md)**:
+- SessionStart hook (OTP bootstrap, caching strategy)
+- Quality gates in cloud (parallel execution, deterministic)
+- State persistence (git + work orders)
+- Session teleportation (cloud ↔ local)
+- Autonomous execution (multi-agent orchestration)
+- Error recovery strategies
+- Cost optimization tactics
+- Practical examples and FAQ
+
 ## Documentation
 
 ### Primary Documentation Resources

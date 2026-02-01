@@ -20,6 +20,7 @@ Start here for project orientation:
 
 | Topic | Location |
 |-------|----------|
+| Cloud Execution & Autonomous Development | `docs/CLOUD_EXECUTION.md` |
 | API Reference (MCP endpoints) | `archive/misc/MCP_ENDPOINTS_AND_CAPABILITIES_GUIDE.md` |
 | Quality Gates & Testing | `archive/quality-reports/` (22 files) |
 | Performance/Benchmarks | `archive/benchmarks/` (16 files) |
