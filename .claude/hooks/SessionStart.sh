@@ -344,10 +344,18 @@ main() {
     log_phase "1/6" "Cache check"
     if is_otp_cached; then
         log_success "Using cached OTP $REQUIRED_OTP_VERSION"
+        export ERLMCP_OTP_BIN="${OTP_CACHE_DIR}/bin"
         export PATH="${OTP_CACHE_DIR}/bin:${PATH}"
         setup_environment
         create_lock_file
         log_success "SessionStart complete (cached, 0s)"
+        # Export the environment for subsequent hooks/commands
+        export ERLMCP_OTP_BIN
+        export ERLMCP_PROFILE
+        export ERLMCP_CACHE
+        export CLAUDE_CODE_REMOTE
+        export TERM
+        export REBAR_COLOR
         exit 0
     fi
 
@@ -408,6 +416,15 @@ main() {
     log_success "SessionStart complete (built from source)"
     log_info "OTP: $(get_otp_version)"
     log_info "Path: ${OTP_CACHE_DIR}/bin"
+
+    # Export the environment for subsequent hooks/commands
+    export ERLMCP_OTP_BIN="${OTP_CACHE_DIR}/bin"
+    export ERLMCP_PROFILE
+    export ERLMCP_CACHE
+    export CLAUDE_CODE_REMOTE
+    export TERM
+    export REBAR_COLOR
+    export PATH
 
     exit 0
 }

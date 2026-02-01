@@ -1,0 +1,123 @@
+%% Cloud system configuration for ErlMCP
+%% Optimized for autonomous cloud execution on Claude Code
+%% Based on test configuration with cloud-specific optimizations
+
+[
+    {erlmcp, [
+        %% Logging configuration - INFO for cloud, minimal overhead
+        {log_level, info},
+        {logger_level, info},
+
+        %% Client defaults - cloud-optimized with reasonable timeouts
+        {client_defaults, #{
+            timeout => 5000,                % 5 seconds (cloud network latency)
+            strict_mode => true,            % Strict validation
+            max_pending_requests => 100,
+            retry_attempts => 2,
+            retry_backoff_ms => 100
+        }},
+
+        %% Server defaults - cloud-optimized limits
+        {server_defaults, #{
+            max_subscriptions_per_resource => 100,
+            max_progress_tokens => 1000,
+            enable_debug_endpoints => false  % Disabled in cloud for security
+        }},
+
+        %% Transport settings - all enabled for comprehensive testing
+        {transport_defaults, #{
+            tcp => #{
+                connect_timeout => 5000,
+                keepalive => true,           % Enable for cloud reliability
+                nodelay => true,
+                listen_backlog => 32
+            },
+            http => #{
+                connect_timeout => 5000,
+                request_timeout => 10000,
+                max_connections => 50
+            },
+            stdio => #{
+                enabled => true,
+                buffer_size => 256
+            }
+        }},
+
+        %% Connection pooling - cloud-optimized
+        {connection_pooling, #{
+            enabled => true,
+            pool_size => 4,
+            max_overflow => 4,
+            pool_timeout => 5000
+        }},
+
+        %% Caching enabled in cloud (deterministic behavior expected)
+        {cache_enabled => true,
+         cache_ttl => 3600},
+
+        %% Feature toggles - production-safe settings
+        {features, #{
+            rate_limiting => true,          % Enabled for cloud protection
+            async_processing => false,      % Synchronous for test consistency
+            webhook_delivery => false,      % Disabled in cloud (no external endpoints)
+            experimental => false           % Stable features only
+        }},
+
+        %% Cloud-specific options
+        {cloud, #{
+            enable_console_logging => true,
+            enable_file_logging => false,   % No persistent storage in cloud
+            enable_profiling => false,
+            fast_shutdown => true,
+            random_ports => true            % Avoid port conflicts
+        }}
+    ]},
+
+    {kernel, [
+        {logger_level, info},
+        {logger, [
+            %% Console handler - structured logging for cloud
+            {handler, default, logger_std_h, #{
+                config => #{
+                    type => standard_error,
+                    sync_mode_qlen => 100,
+                    drop_mode_qlen => 1000,
+                    flush_qlen => 2000
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", {mfa, ["N/A"]}, ":", line, " ", msg, "\n"],
+                    time_offset => "",
+                    time_designator => $T,
+                    single_line => false,
+                    max_size => 2048
+                }},
+                level => info
+            }}
+        ]},
+        %% Disable distributed Erlang in cloud (single-node)
+        {distributed, []},
+        %% Standard net tick time for cloud
+        {net_ticktime, 60}
+    ]},
+
+    {sasl, [
+        {sasl_error_logger, false},
+        {errlog_type, error},
+        {error_logger_format_depth, 20}
+    ]},
+
+    %% Common Test configuration
+    {common_test, [
+        {auto_compile, false},
+        {create_priv_dir, auto_per_tc},
+        {include, ["include"]},
+        {logdir, "log/ct"},
+        {cover_spec, "test/cover.spec"}
+    ]},
+
+    %% EUnit configuration
+    {eunit, [
+        {report, {eunit_surefire, [{dir, "log/eunit"}]}},
+        {verbose => true}
+    ]}
+].
