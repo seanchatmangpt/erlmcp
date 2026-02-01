@@ -5,35 +5,19 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_pagination).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    paginate/4,
-    encode_cursor/1,
-    decode_cursor/1,
-    calculate_has_more/3,
-    validate_page_size/1,
-    get_default_page_size/0,
-    get_max_page_size/0,
-    set_page_size_limits/2
-]).
-
+-export([start_link/0, paginate/4, encode_cursor/1, decode_cursor/1, calculate_has_more/3,
+         validate_page_size/1, get_default_page_size/0, get_max_page_size/0,
+         set_page_size_limits/2]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Type definitions
--record(cursor, {
-    offset = 0 :: non_neg_integer(),
-    timestamp :: integer()
-}).
-
--record(state, {
-    default_page_size = 50 :: pos_integer(),
-    max_page_size = 1000 :: pos_integer()
-}).
+-record(cursor, {offset = 0 :: non_neg_integer(), timestamp :: integer()}).
+-record(state, {default_page_size = 50 :: pos_integer(), max_page_size = 1000 :: pos_integer()}).
 
 -type state() :: #state{}.
 -type cursor() :: #cursor{}.
@@ -42,10 +26,7 @@
 %%   - <<"hasMore">> => boolean()
 %%   - <<"total">> => integer() | undefined
 -type page_info() :: map().
--type config() :: #{
-    default_page_size => pos_integer(),
-    max_page_size => pos_integer()
-}.
+-type config() :: #{default_page_size => pos_integer(), max_page_size => pos_integer()}.
 
 -export_type([cursor/0, page_info/0, config/0, state/0]).
 
@@ -69,7 +50,7 @@ start_link() ->
 %% Returns:
 %%   - {PageItems, PageInfo}: Page items and pagination metadata
 -spec paginate([term()], pos_integer() | undefined, binary() | null, integer() | undefined) ->
-    {[term()], page_info()}.
+                  {[term()], page_info()}.
 paginate(Items, PageSize, CursorBin, TotalCount) ->
     %% Get configuration
     DefaultPageSize = get_default_page_size(),
@@ -86,32 +67,37 @@ paginate(Items, PageSize, CursorBin, TotalCount) ->
     StartOffset = Cursor#cursor.offset,
     EndOffset = min(StartOffset + ValidPageSize, TotalItems),
 
-    PageItems = case StartOffset < TotalItems of
-        true -> lists:sublist(Items, StartOffset + 1, EndOffset - StartOffset);
-        false -> []
-    end,
+    PageItems =
+        case StartOffset < TotalItems of
+            true ->
+                lists:sublist(Items, StartOffset + 1, EndOffset - StartOffset);
+            false ->
+                []
+        end,
 
     %% Calculate next cursor
-    NextCursor = if
-        EndOffset >= TotalItems -> null;
-        true -> encode_cursor(#cursor{
-            offset = EndOffset,
-            timestamp = erlang:system_time(millisecond)
-        })
-    end,
+    NextCursor =
+        if EndOffset >= TotalItems ->
+               null;
+           true ->
+               encode_cursor(#cursor{offset = EndOffset,
+                                     timestamp = erlang:system_time(millisecond)})
+        end,
 
     %% Calculate hasMore flag
     HasMore = EndOffset < TotalItems,
 
     %% Build page info
-    PageInfo = #{
-        <<"cursor">> => NextCursor,
-        <<"hasMore">> => HasMore,
-        <<"total">> => case TotalCount of
-            undefined -> undefined;
-            _ -> TotalCount
-        end
-    },
+    PageInfo =
+        #{<<"cursor">> => NextCursor,
+          <<"hasMore">> => HasMore,
+          <<"total">> =>
+              case TotalCount of
+                  undefined ->
+                      undefined;
+                  _ ->
+                      TotalCount
+              end},
 
     {PageItems, PageInfo}.
 
@@ -139,11 +125,11 @@ decode_cursor(CursorBin) when is_binary(CursorBin) ->
 
 %% @doc Calculate if more pages available.
 -spec calculate_has_more(non_neg_integer(), pos_integer(), integer() | undefined) ->
-    boolean() | undefined.
+                            boolean() | undefined.
 calculate_has_more(_Offset, _PageSize, undefined) ->
     undefined;
 calculate_has_more(Offset, PageSize, Total) when is_integer(Total) ->
-    (Offset + PageSize) < Total.
+    Offset + PageSize < Total.
 
 %% @doc Validate page size parameter.
 -spec validate_page_size(term()) -> boolean().
@@ -157,22 +143,26 @@ validate_page_size(_) ->
 -spec get_default_page_size() -> pos_integer().
 get_default_page_size() ->
     case gen_server:call(?MODULE, get_default_page_size) of
-        {ok, PageSize} -> PageSize;
-        _ -> 50
+        {ok, PageSize} ->
+            PageSize;
+        _ ->
+            50
     end.
 
 %% @doc Get maximum page size from configuration.
 -spec get_max_page_size() -> pos_integer().
 get_max_page_size() ->
     case gen_server:call(?MODULE, get_max_page_size) of
-        {ok, PageSize} -> PageSize;
-        _ -> 1000
+        {ok, PageSize} ->
+            PageSize;
+        _ ->
+            1000
     end.
 
 %% @doc Set page size limits.
 -spec set_page_size_limits(pos_integer(), pos_integer()) -> ok | {error, term()}.
-set_page_size_limits(Default, Max) when is_integer(Default), Default > 0,
-                                         is_integer(Max), Max >= Default ->
+set_page_size_limits(Default, Max)
+    when is_integer(Default), Default > 0, is_integer(Max), Max >= Default ->
     gen_server:call(?MODULE, {set_limits, Default, Max});
 set_page_size_limits(_Default, _Max) ->
     {error, invalid_limits}.
@@ -188,10 +178,7 @@ init([]) ->
     DefaultPageSize = application:get_env(erlmcp, default_page_size, 50),
     MaxPageSize = application:get_env(erlmcp, max_page_size, 1000),
 
-    State = #state{
-        default_page_size = DefaultPageSize,
-        max_page_size = MaxPageSize
-    },
+    State = #state{default_page_size = DefaultPageSize, max_page_size = MaxPageSize},
 
     logger:info("Pagination module initialized: default=~p, max=~p",
                 [DefaultPageSize, MaxPageSize]),
@@ -199,22 +186,15 @@ init([]) ->
     {ok, State}.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()}.
+-spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
 handle_call(get_default_page_size, _From, State) ->
     {reply, {ok, State#state.default_page_size}, State};
-
 handle_call(get_max_page_size, _From, State) ->
     {reply, {ok, State#state.max_page_size}, State};
-
 handle_call({set_limits, Default, Max}, _From, State) ->
-    NewState = State#state{
-        default_page_size = Default,
-        max_page_size = Max
-    },
+    NewState = State#state{default_page_size = Default, max_page_size = Max},
     logger:info("Pagination limits updated: default=~p, max=~p", [Default, Max]),
     {reply, ok, NewState};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 

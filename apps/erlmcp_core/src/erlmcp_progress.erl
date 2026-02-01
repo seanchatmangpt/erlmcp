@@ -15,6 +15,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_progress).
+
 -behaviour(gen_server).
 
 %% API
@@ -23,39 +24,32 @@
 -export([get_progress/1, generate_token/0]).
 -export([track_tool_call/3, cleanup_completed/1]).
 -export([encode_progress_notification/3]).
-
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 
 %% Records
--record(progress_info, {
-    token :: reference(),
-    client_pid :: pid() | undefined,
-    total :: number() | undefined,
-    current :: number(),
-    message :: binary() | undefined,
-    start_time :: integer(),
-    operation :: binary() | undefined,
-    metadata :: map()
-}).
-
+-record(progress_info,
+        {token :: reference(),
+         client_pid :: pid() | undefined,
+         total :: number() | undefined,
+         current :: number(),
+         message :: binary() | undefined,
+         start_time :: integer(),
+         operation :: binary() | undefined,
+         metadata :: map()}).
 %% State record
--record(state, {
-    progress :: #{reference() => #progress_info{}},
-    next_token_id = 1 :: non_neg_integer()
-}).
+-record(state,
+        {progress :: #{reference() => #progress_info{}}, next_token_id = 1 :: non_neg_integer()}).
 
 %% Type definitions
 -type progress_token() :: reference().
--type progress_update() :: #{
-    increment => number(),
-    current => number(),
-    total => number(),
-    message => binary()
-}.
+-type progress_update() ::
+    #{increment => number(),
+      current => number(),
+      total => number(),
+      message => binary()}.
 -type progress_info() :: #progress_info{}.
 
 -export_type([progress_token/0, progress_update/0, progress_info/0]).
@@ -126,15 +120,12 @@ cleanup_completed(Token) when is_reference(Token) ->
 %% @doc Encode a progress notification for sending to client.
 -spec encode_progress_notification(progress_token(), number(), number()) -> map().
 encode_progress_notification(Token, Progress, Total) ->
-    #{
-        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
-        ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
-        ?JSONRPC_FIELD_PARAMS => #{
-            ?MCP_PARAM_PROGRESS_TOKEN => Token,
+    #{?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+      ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
+      ?JSONRPC_FIELD_PARAMS =>
+          #{?MCP_PARAM_PROGRESS_TOKEN => Token,
             ?MCP_PARAM_PROGRESS => Progress,
-            ?MCP_PARAM_TOTAL => Total
-        }
-    }.
+            ?MCP_PARAM_TOTAL => Total}}.
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -144,40 +135,36 @@ encode_progress_notification(Token, Progress, Total) ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     logger:info("Starting progress tracker server"),
-    {ok, #state{
-        progress = #{},
-        next_token_id = 1
-    }}.
+    {ok, #state{progress = #{}, next_token_id = 1}}.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
 handle_call({get_progress, Token}, _From, State) ->
-    Reply = case maps:get(Token, State#state.progress, undefined) of
-        undefined -> {error, not_found};
-        Progress -> {ok, format_progress(Progress)}
-    end,
+    Reply =
+        case maps:get(Token, State#state.progress, undefined) of
+            undefined ->
+                {error, not_found};
+            Progress ->
+                {ok, format_progress(Progress)}
+        end,
     {reply, Reply, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 handle_cast({create, Token, ClientPid, Message}, State) ->
-    Progress = #progress_info{
-        token = Token,
-        client_pid = ClientPid,
-        total = undefined,
-        current = 0,
-        message = Message,
-        start_time = erlang:system_time(millisecond),
-        operation = undefined,
-        metadata = #{}
-    },
+    Progress =
+        #progress_info{token = Token,
+                       client_pid = ClientPid,
+                       total = undefined,
+                       current = 0,
+                       message = Message,
+                       start_time = erlang:system_time(millisecond),
+                       operation = undefined,
+                       metadata = #{}},
     send_progress_notification(ClientPid, Token, 0, undefined, Message),
     {noreply, State#state{progress = (State#state.progress)#{Token => Progress}}};
-
 handle_cast({update, Token, Update}, State) ->
     case maps:get(Token, State#state.progress, undefined) of
         undefined ->
@@ -186,16 +173,13 @@ handle_cast({update, Token, Update}, State) ->
         Progress ->
             Progress1 = update_progress_info(Progress, Update),
             Percent = calc_percent(Progress1),
-            send_progress_notification(
-                Progress1#progress_info.client_pid,
-                Token,
-                Percent,
-                Progress1#progress_info.total,
-                Progress1#progress_info.message
-            ),
+            send_progress_notification(Progress1#progress_info.client_pid,
+                                       Token,
+                                       Percent,
+                                       Progress1#progress_info.total,
+                                       Progress1#progress_info.message),
             {noreply, State#state{progress = (State#state.progress)#{Token => Progress1}}}
     end;
-
 handle_cast({complete, Token}, State) ->
     case maps:get(Token, State#state.progress, undefined) of
         undefined ->
@@ -205,7 +189,6 @@ handle_cast({complete, Token}, State) ->
             send_complete_notification(Progress),
             {noreply, State#state{progress = maps:remove(Token, State#state.progress)}}
     end;
-
 handle_cast({cancel, Token}, State) ->
     case maps:get(Token, State#state.progress, undefined) of
         undefined ->
@@ -215,7 +198,6 @@ handle_cast({cancel, Token}, State) ->
             logger:debug("Progress token cancelled: ~p", [Token]),
             {noreply, State#state{progress = maps:remove(Token, State#state.progress)}}
     end;
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -245,26 +227,34 @@ code_change(_OldVsn, State, _Extra) ->
 -spec update_progress_info(#progress_info{}, progress_update()) -> #progress_info{}.
 update_progress_info(Progress, Update) when is_map(Update) ->
     %% Apply all updates in sequence
-    Progress1 = case maps:get(increment, Update, undefined) of
-        undefined -> Progress;
-        Inc when is_number(Inc) ->
-            Progress#progress_info{current = Progress#progress_info.current + Inc}
-    end,
-    Progress2 = case maps:get(current, Update, undefined) of
-        undefined -> Progress1;
-        Cur when is_number(Cur) ->
-            Progress1#progress_info{current = Cur}
-    end,
-    Progress3 = case maps:get(total, Update, undefined) of
-        undefined -> Progress2;
-        Total when is_number(Total) ->
-            Progress2#progress_info{total = Total}
-    end,
-    Progress4 = case maps:get(message, Update, undefined) of
-        undefined -> Progress3;
-        Msg when is_binary(Msg) ->
-            Progress3#progress_info{message = Msg}
-    end,
+    Progress1 =
+        case maps:get(increment, Update, undefined) of
+            undefined ->
+                Progress;
+            Inc when is_number(Inc) ->
+                Progress#progress_info{current = Progress#progress_info.current + Inc}
+        end,
+    Progress2 =
+        case maps:get(current, Update, undefined) of
+            undefined ->
+                Progress1;
+            Cur when is_number(Cur) ->
+                Progress1#progress_info{current = Cur}
+        end,
+    Progress3 =
+        case maps:get(total, Update, undefined) of
+            undefined ->
+                Progress2;
+            Total when is_number(Total) ->
+                Progress2#progress_info{total = Total}
+        end,
+    Progress4 =
+        case maps:get(message, Update, undefined) of
+            undefined ->
+                Progress3;
+            Msg when is_binary(Msg) ->
+                Progress3#progress_info{message = Msg}
+        end,
     Progress4.
 
 %% @private
@@ -275,44 +265,47 @@ calc_percent(#progress_info{total = undefined}) ->
 calc_percent(#progress_info{total = 0}) ->
     undefined;
 calc_percent(#progress_info{total = Total, current = Cur}) when is_number(Total), is_number(Cur) ->
-    trunc((Cur / Total) * 100).
+    trunc(Cur / Total * 100).
 
 %% @private
 %% Send progress notification to client
--spec send_progress_notification(pid() | undefined, progress_token(),
-                                  number() | undefined, number() | undefined, binary()) -> ok.
+-spec send_progress_notification(pid() | undefined,
+                                 progress_token(),
+                                 number() | undefined,
+                                 number() | undefined,
+                                 binary()) ->
+                                    ok.
 send_progress_notification(undefined, _Token, _Percent, _Total, _Message) ->
     ok;
 send_progress_notification(ClientPid, Token, Percent, Total, Message) when is_pid(ClientPid) ->
-    Notification = #{
-        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
-        ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
-        ?JSONRPC_FIELD_PARAMS => #{
-            ?MCP_PARAM_PROGRESS_TOKEN => Token,
-            ?MCP_PARAM_PROGRESS => Percent,
-            ?MCP_PARAM_TOTAL => Total,
-            <<"message">> => Message
-        }
-    },
+    Notification =
+        #{?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+          ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
+          ?JSONRPC_FIELD_PARAMS =>
+              #{?MCP_PARAM_PROGRESS_TOKEN => Token,
+                ?MCP_PARAM_PROGRESS => Percent,
+                ?MCP_PARAM_TOTAL => Total,
+                <<"message">> => Message}},
     ClientPid ! {mcp_notification, Notification},
     ok.
 
 %% @private
 %% Send complete notification (100% progress)
 -spec send_complete_notification(#progress_info{}) -> ok.
-send_complete_notification(#progress_info{token = Token, client_pid = ClientPid, message = Message}) ->
-    Notification = #{
-        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
-        ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
-        ?JSONRPC_FIELD_PARAMS => #{
-            ?MCP_PARAM_PROGRESS_TOKEN => Token,
-            ?MCP_PARAM_PROGRESS => 100,
-            ?MCP_PARAM_TOTAL => 100,
-            <<"message">> => <<Message/binary, " - Complete">>
-        }
-    },
+send_complete_notification(#progress_info{token = Token,
+                                          client_pid = ClientPid,
+                                          message = Message}) ->
+    Notification =
+        #{?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+          ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_NOTIFICATIONS_PROGRESS,
+          ?JSONRPC_FIELD_PARAMS =>
+              #{?MCP_PARAM_PROGRESS_TOKEN => Token,
+                ?MCP_PARAM_PROGRESS => 100,
+                ?MCP_PARAM_TOTAL => 100,
+                <<"message">> => <<Message/binary, " - Complete">>}},
     case ClientPid of
-        undefined -> ok;
+        undefined ->
+            ok;
         _ when is_pid(ClientPid) ->
             ClientPid ! {mcp_notification, Notification},
             ok
@@ -321,20 +314,16 @@ send_complete_notification(#progress_info{token = Token, client_pid = ClientPid,
 %% @private
 %% Format progress info for API response
 -spec format_progress(#progress_info{}) -> map().
-format_progress(#progress_info{
-    token = Token,
-    current = Current,
-    total = Total,
-    message = Message,
-    start_time = StartTime
-}) ->
+format_progress(#progress_info{token = Token,
+                               current = Current,
+                               total = Total,
+                               message = Message,
+                               start_time = StartTime}) ->
     Elapsed = erlang:system_time(millisecond) - StartTime,
     Percent = calc_percent(#progress_info{total = Total, current = Current}),
-    #{
-        token => Token,
-        current => Current,
-        total => Total,
-        progress => Percent,
-        message => Message,
-        elapsed_ms => Elapsed
-    }.
+    #{token => Token,
+      current => Current,
+      total => Total,
+      progress => Percent,
+      message => Message,
+      elapsed_ms => Elapsed}.

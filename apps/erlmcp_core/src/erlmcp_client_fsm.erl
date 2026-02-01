@@ -7,31 +7,16 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_client_fsm).
+
 -behaviour(gen_statem).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/1,
-    start_link/2,
-    connect/1,
-    initialize/2,
-    disconnect/1,
-    reconnect/1,
-    state_name/1,
-    stop/1
-]).
-
+-export([start_link/1, start_link/2, connect/1, initialize/2, disconnect/1, reconnect/1,
+         state_name/1, stop/1]).
 %% gen_statem callbacks
--export([
-    init/1,
-    callback_mode/0,
-    handle_event/4,
-    terminate/3,
-    code_change/4,
-    format_status/2
-]).
+-export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/2]).
 
 %% State names for type specs
 -type client_state() :: pre_initialization | initializing | initialized | error | disconnected.
@@ -40,21 +25,20 @@
 -export_type([client_state/0, client_id/0]).
 
 %% State data record
--record(data, {
-    client_id :: client_id(),
-    transport :: module() | undefined,
-    transport_state :: term() | undefined,
-    capabilities :: #mcp_server_capabilities{} | undefined,
-    protocol_version :: binary() | undefined,
-    init_params :: map() | undefined,
-    error_reason :: term() | undefined,
-    reconnect_attempts = 0 :: non_neg_integer(),
-    max_reconnect_attempts = 5 :: pos_integer(),
-    reconnect_delay_ms = 1000 :: pos_integer(),
-    auto_reconnect = true :: boolean(),
-    timeout_ref :: reference() | undefined,
-    options :: map()
-}).
+-record(data,
+        {client_id :: client_id(),
+         transport :: module() | undefined,
+         transport_state :: term() | undefined,
+         capabilities :: #mcp_server_capabilities{} | undefined,
+         protocol_version :: binary() | undefined,
+         init_params :: map() | undefined,
+         error_reason :: term() | undefined,
+         reconnect_attempts = 0 :: non_neg_integer(),
+         max_reconnect_attempts = 5 :: pos_integer(),
+         reconnect_delay_ms = 1000 :: pos_integer(),
+         auto_reconnect = true :: boolean(),
+         timeout_ref :: reference() | undefined,
+         options :: map()}).
 
 -type state_data() :: #data{}.
 
@@ -107,13 +91,12 @@ init([ClientId, Options]) ->
     %% No blocking operations in init/1 - Armstrong principle
     logger:info("Client FSM ~p initializing", [ClientId]),
 
-    Data = #data{
-        client_id = ClientId,
-        options = Options,
-        max_reconnect_attempts = maps:get(max_reconnect_attempts, Options, 5),
-        reconnect_delay_ms = maps:get(reconnect_delay_ms, Options, 1000),
-        auto_reconnect = maps:get(auto_reconnect, Options, true)
-    },
+    Data =
+        #data{client_id = ClientId,
+              options = Options,
+              max_reconnect_attempts = maps:get(max_reconnect_attempts, Options, 5),
+              reconnect_delay_ms = maps:get(reconnect_delay_ms, Options, 1000),
+              auto_reconnect = maps:get(auto_reconnect, Options, true)},
 
     %% Emit state transition event for debugging
     emit_state_transition(undefined, pre_initialization, Data),
@@ -162,40 +145,33 @@ handle_event(enter, OldState, State, Data) ->
         _ ->
             {keep_state_and_data, []}
     end;
-
 %% Priority messages (OTP 28) - bypass normal queue for control signals
 %% Health check signal
 handle_event({call, From}, {health_check}, _State, _Data) ->
     {keep_state_and_data, [{reply, From, ok}]};
-
 %% Drain signal (graceful shutdown)
 handle_event({call, From}, drain, State, Data) ->
     logger:info("Client ~p draining from state ~p", [Data#data.client_id, State]),
     cleanup_transport(Data),
     emit_state_transition(State, disconnected, Data),
     {next_state, disconnected, Data, [{reply, From, ok}]};
-
 %% Cancel signal (immediate abort)
 handle_event({call, From}, cancel, State, Data) ->
     logger:warning("Client ~p cancelled from state ~p", [Data#data.client_id, State]),
     cleanup_transport(Data),
     emit_state_transition(State, disconnected, Data),
     {next_state, disconnected, Data, [{reply, From, ok}]};
-
 %% State name query
 handle_event({call, From}, state_name, State, _Data) ->
     {keep_state_and_data, [{reply, From, State}]};
-
 %% pre_initialization state events
 handle_event({call, From}, connect, pre_initialization, Data) ->
     %% Transition to initializing and perform connection
     logger:info("Client ~p connecting", [Data#data.client_id]),
     emit_state_transition(pre_initialization, initializing, Data),
     {next_state, initializing, Data, [{reply, From, ok}]};
-
 handle_event({call, From}, connect, State, _Data) ->
     {keep_state_and_data, [{reply, From, {error, {invalid_state, State}}}]};
-
 %% initializing state events
 handle_event({call, From}, {initialize, Params}, initializing, Data) ->
     %% Perform initialization (should be delegated to async process in real implementation)
@@ -210,37 +186,33 @@ handle_event({call, From}, {initialize, Params}, initializing, Data) ->
             emit_state_transition(initializing, error, ErrorData),
             {next_state, error, ErrorData, [{reply, From, Error}]}
     end;
-
 handle_event({call, From}, {initialize, _Params}, State, _Data) ->
     {keep_state_and_data, [{reply, From, {error, {invalid_state, State}}}]};
-
 %% Initialization timeout
 handle_event(info, init_timeout, initializing, Data) ->
     logger:error("Client ~p initialization timeout", [Data#data.client_id]),
     ErrorData = Data#data{error_reason = init_timeout},
     emit_state_transition(initializing, error, ErrorData),
     {next_state, error, ErrorData};
-
 %% initialized state events
 handle_event({call, From}, disconnect, initialized, Data) ->
     logger:info("Client ~p disconnecting", [Data#data.client_id]),
     cleanup_transport(Data),
     emit_state_transition(initialized, disconnected, Data),
     {next_state, disconnected, Data, [{reply, From, ok}]};
-
 %% disconnected state events
 handle_event({call, From}, reconnect, disconnected, Data) ->
     logger:info("Client ~p reconnecting", [Data#data.client_id]),
     emit_state_transition(disconnected, initializing, Data),
     {next_state, initializing, Data, [{reply, From, ok}]};
-
 %% error state events
 handle_event(info, retry_connect, error, Data) ->
     case Data#data.reconnect_attempts < Data#data.max_reconnect_attempts of
         true ->
             logger:info("Client ~p retrying connection (attempt ~p/~p)",
-                       [Data#data.client_id, Data#data.reconnect_attempts + 1,
-                        Data#data.max_reconnect_attempts]),
+                        [Data#data.client_id,
+                         Data#data.reconnect_attempts + 1,
+                         Data#data.max_reconnect_attempts]),
             NewData = Data#data{reconnect_attempts = Data#data.reconnect_attempts + 1},
             emit_state_transition(error, initializing, NewData),
             {next_state, initializing, NewData};
@@ -248,36 +220,32 @@ handle_event(info, retry_connect, error, Data) ->
             logger:error("Client ~p max reconnect attempts exceeded", [Data#data.client_id]),
             {keep_state_and_data, []}
     end;
-
 %% Catch-all for unhandled events
 handle_event(EventType, Event, State, Data) ->
     logger:warning("Client ~p unhandled event ~p in state ~p: ~p",
-                  [Data#data.client_id, EventType, State, Event]),
+                   [Data#data.client_id, EventType, State, Event]),
     {keep_state_and_data, []}.
 
 -spec terminate(term(), client_state(), state_data()) -> ok.
 terminate(Reason, State, Data) ->
-    logger:info("Client ~p terminating in state ~p: ~p",
-               [Data#data.client_id, State, Reason]),
+    logger:info("Client ~p terminating in state ~p: ~p", [Data#data.client_id, State, Reason]),
     cleanup_transport(Data),
     cancel_timeout(Data),
     ok.
 
 -spec code_change(term(), client_state(), state_data(), term()) ->
-    {ok, client_state(), state_data()}.
+                     {ok, client_state(), state_data()}.
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
--spec format_status(Opt, Status) -> term() when
-    Opt :: normal | terminate,
-    Status :: list().
+-spec format_status(Opt, Status) -> term()
+    when Opt :: normal | terminate,
+         Status :: list().
 format_status(_Opt, [_PDict, State, Data]) ->
-    #{
-        state => State,
-        client_id => Data#data.client_id,
-        reconnect_attempts => Data#data.reconnect_attempts,
-        error_reason => Data#data.error_reason
-    }.
+    #{state => State,
+      client_id => Data#data.client_id,
+      reconnect_attempts => Data#data.reconnect_attempts,
+      error_reason => Data#data.error_reason}.
 
 %%====================================================================
 %% Internal functions
@@ -286,14 +254,13 @@ format_status(_Opt, [_PDict, State, Data]) ->
 -spec emit_state_transition(client_state() | undefined, client_state(), state_data()) -> ok.
 emit_state_transition(OldState, NewState, Data) ->
     %% Emit state transition event for debugging/observability
-    Event = #{
-        type => state_transition,
-        module => ?MODULE,
-        client_id => Data#data.client_id,
-        from_state => OldState,
-        to_state => NewState,
-        timestamp => erlang:system_time(millisecond)
-    },
+    Event =
+        #{type => state_transition,
+          module => ?MODULE,
+          client_id => Data#data.client_id,
+          from_state => OldState,
+          to_state => NewState,
+          timestamp => erlang:system_time(millisecond)},
     logger:debug("State transition event: ~p", [Event]),
     %% Could also send to telemetry/OTEL here
     ok.
@@ -305,14 +272,12 @@ perform_initialization(Params, Data) ->
     %% 2. Negotiate protocol version
     %% 3. Exchange capabilities
     %% 4. Validate initialization parameters
-
     %% For now, just store the params
     try
-        NewData = Data#data{
-            init_params = Params,
-            capabilities = maps:get(capabilities, Params, #mcp_server_capabilities{}),
-            protocol_version = maps:get(protocol_version, Params, ?MCP_VERSION)
-        },
+        NewData =
+            Data#data{init_params = Params,
+                      capabilities = maps:get(capabilities, Params, #mcp_server_capabilities{}),
+                      protocol_version = maps:get(protocol_version, Params, ?MCP_VERSION)},
         {ok, NewData}
     catch
         _:Reason ->
@@ -326,11 +291,14 @@ cleanup_transport(#data{transport = Transport, transport_state = State}) when St
     %% Call transport cleanup if available
     try
         case erlang:function_exported(Transport, close, 1) of
-            true -> Transport:close(State);
-            false -> ok
+            true ->
+                Transport:close(State);
+            false ->
+                ok
         end
     catch
-        _:_ -> ok
+        _:_ ->
+            ok
     end,
     ok;
 cleanup_transport(_) ->

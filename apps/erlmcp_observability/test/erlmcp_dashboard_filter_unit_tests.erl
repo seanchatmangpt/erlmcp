@@ -17,23 +17,18 @@
 
 %% @doc Test that empty filter returns original message
 filter_empty_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{cpu_percent => 50, memory_mb => 1024}
-    }),
+    Message = jsx:encode(#{type => <<"metrics">>, data => #{cpu_percent => 50, memory_mb => 1024}}),
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, #{}),
     ?assertEqual(Message, Result).
 
 %% @doc Test filtering by CPU metric type
 filter_cpu_only_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{
-            <<"cpu_percent">> => 75.5,
-            <<"memory_mb">> => 2048,
-            <<"throughput">> => 1000
-        }
-    }),
+    Message =
+        jsx:encode(#{type => <<"metrics">>,
+                     data =>
+                         #{<<"cpu_percent">> => 75.5,
+                           <<"memory_mb">> => 2048,
+                           <<"throughput">> => 1000}}),
     Filter = #{<<"types">> => [<<"cpu_percent">>]},
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, Filter),
     Decoded = jsx:decode(Result, [return_maps]),
@@ -45,15 +40,13 @@ filter_cpu_only_test() ->
 
 %% @doc Test filtering by multiple metric types
 filter_multiple_types_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{
-            <<"cpu_percent">> => 60.0,
-            <<"memory_mb">> => 1536,
-            <<"throughput">> => 2000,
-            <<"connections">> => 50
-        }
-    }),
+    Message =
+        jsx:encode(#{type => <<"metrics">>,
+                     data =>
+                         #{<<"cpu_percent">> => 60.0,
+                           <<"memory_mb">> => 1536,
+                           <<"throughput">> => 2000,
+                           <<"connections">> => 50}}),
     Filter = #{<<"types">> => [<<"cpu_percent">>, <<"memory_mb">>]},
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, Filter),
     Decoded = jsx:decode(Result, [return_maps]),
@@ -66,16 +59,14 @@ filter_multiple_types_test() ->
 
 %% @doc Test filtering reduces message size
 filter_reduces_size_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{
-            <<"cpu_percent">> => 55.0,
-            <<"memory_mb">> => 1024,
-            <<"throughput">> => 1500,
-            <<"connections">> => 100,
-            <<"errors">> => 5
-        }
-    }),
+    Message =
+        jsx:encode(#{type => <<"metrics">>,
+                     data =>
+                         #{<<"cpu_percent">> => 55.0,
+                           <<"memory_mb">> => 1024,
+                           <<"throughput">> => 1500,
+                           <<"connections">> => 100,
+                           <<"errors">> => 5}}),
     OriginalSize = byte_size(Message),
 
     Filter = #{<<"types">> => [<<"cpu_percent">>]},
@@ -89,10 +80,7 @@ filter_reduces_size_test() ->
 
 %% @doc Test filtering preserves message structure
 filter_preserves_structure_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{<<"cpu_percent">> => 45.0}
-    }),
+    Message = jsx:encode(#{type => <<"metrics">>, data => #{<<"cpu_percent">> => 45.0}}),
     Filter = #{<<"types">> => [<<"cpu_percent">>]},
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, Filter),
     Decoded = jsx:decode(Result, [return_maps]),
@@ -102,13 +90,9 @@ filter_preserves_structure_test() ->
 
 %% @doc Test filtering non-existent metric type
 filter_nonexistent_type_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{
-            <<"cpu_percent">> => 65.0,
-            <<"memory_mb">> => 768
-        }
-    }),
+    Message =
+        jsx:encode(#{type => <<"metrics">>,
+                     data => #{<<"cpu_percent">> => 65.0, <<"memory_mb">> => 768}}),
     Filter = #{<<"types">> => [<<"nonexistent_metric">>]},
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, Filter),
     Decoded = jsx:decode(Result, [return_maps]),
@@ -119,15 +103,13 @@ filter_nonexistent_type_test() ->
 
 %% @doc Test filtering with latency metrics
 filter_latency_metrics_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{
-            <<"latency_p50_us">> => 15000,
-            <<"latency_p95_us">> => 25000,
-            <<"latency_p99_us">> => 50000,
-            <<"cpu_percent">> => 50.0
-        }
-    }),
+    Message =
+        jsx:encode(#{type => <<"metrics">>,
+                     data =>
+                         #{<<"latency_p50_us">> => 15000,
+                           <<"latency_p95_us">> => 25000,
+                           <<"latency_p99_us">> => 50000,
+                           <<"cpu_percent">> => 50.0}}),
     Filter = #{<<"types">> => [<<"latency_p50_us">>, <<"latency_p95_us">>, <<"latency_p99_us">>]},
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, Filter),
     Decoded = jsx:decode(Result, [return_maps]),
@@ -140,10 +122,9 @@ filter_latency_metrics_test() ->
 
 %% @doc Test filtering with no types specified
 filter_no_types_key_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{<<"cpu_percent">> => 70.0, <<"memory_mb">> => 512}
-    }),
+    Message =
+        jsx:encode(#{type => <<"metrics">>,
+                     data => #{<<"cpu_percent">> => 70.0, <<"memory_mb">> => 512}}),
     Filter = #{<<"other_key">> => <<"value">>},
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, Filter),
     Decoded = jsx:decode(Result, [return_maps]),
@@ -154,14 +135,12 @@ filter_no_types_key_test() ->
 
 %% @doc Test filtering preserves data types
 filter_preserves_types_test() ->
-    Message = jsx:encode(#{
-        type => <<"metrics">>,
-        data => #{
-            <<"cpu_percent">> => 55.5,  % float
-            <<"throughput">> => 1000,     % integer
-            <<"timestamp">> => 1234567890 % integer
-        }
-    }),
+    Message =
+        jsx:encode(#{type => <<"metrics">>,
+                     data =>
+                         #{<<"cpu_percent">> => 55.5,  % float
+                           <<"throughput">> => 1000,     % integer
+                           <<"timestamp">> => 1234567890}}), % integer
     Filter = #{<<"types">> => [<<"cpu_percent">>, <<"throughput">>, <<"timestamp">>]},
     Result = erlmcp_dashboard_server:filter_metrics_message(Message, Filter),
     Decoded = jsx:decode(Result, [return_maps]),
@@ -184,19 +163,21 @@ apply_filter_empty_list_test() ->
 
 %% @doc Test apply_metric_filter with single type
 apply_filter_single_type_test() ->
-    Metrics = #{<<"cpu_percent">> => 60.0, <<"memory_mb">> => 768, <<"throughput">> => 500},
+    Metrics =
+        #{<<"cpu_percent">> => 60.0,
+          <<"memory_mb">> => 768,
+          <<"throughput">> => 500},
     Filter = #{<<"types">> => [<<"throughput">>]},
     Result = erlmcp_dashboard_server:apply_metric_filter(Metrics, Filter),
     ?assertEqual(#{<<"throughput">> => 500}, Result).
 
 %% @doc Test apply_metric_filter preserves values
 apply_filter_preserves_values_test() ->
-    Metrics = #{
-        <<"cpu_percent">> => 45.5,
-        <<"memory_mb">> => 2048.0,
-        <<"throughput">> => 2500,
-        <<"connections">> => 75
-    },
+    Metrics =
+        #{<<"cpu_percent">> => 45.5,
+          <<"memory_mb">> => 2048.0,
+          <<"throughput">> => 2500,
+          <<"connections">> => 75},
     Filter = #{<<"types">> => [<<"cpu_percent">>, <<"memory_mb">>]},
     Result = erlmcp_dashboard_server:apply_metric_filter(Metrics, Filter),
 

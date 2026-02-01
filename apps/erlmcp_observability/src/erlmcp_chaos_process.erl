@@ -11,12 +11,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_chaos_process).
 
--export([
-    kill_random/1,
-    kill_servers/1,
-    kill_supervisor_tree/1,
-    inject_clock_skew/1
-]).
+-export([kill_random/1, kill_servers/1, kill_supervisor_tree/1, inject_clock_skew/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -29,16 +24,15 @@
 kill_random(Config) ->
     Rate = maps:get(rate, Config, 0.1),
     Interval = maps:get(interval, Config, 30000),
-    
-    ?LOG_INFO("Killing random processes at ~.1f% rate every ~pms", 
-             [Rate * 100, Interval]),
-    
+
+    ?LOG_INFO("Killing random processes at ~.1f% rate every ~pms", [Rate * 100, Interval]),
+
     kill_random_loop(Rate, Interval).
 
 -spec kill_random_loop(float(), pos_integer()) -> ok.
 kill_random_loop(Rate, Interval) ->
     timer:sleep(Interval),
-    
+
     case rand:uniform() < Rate of
         true ->
             case find_killable_process() of
@@ -51,7 +45,7 @@ kill_random_loop(Rate, Interval) ->
         false ->
             ok
     end,
-    
+
     kill_random_loop(Rate, Interval).
 
 %% @doc Kill server processes of specific type
@@ -60,16 +54,15 @@ kill_servers(Config) ->
     Target = maps:get(target, Config),
     Rate = maps:get(rate, Config, 0.1),
     Interval = maps:get(interval, Config, 30000),
-    
-    ?LOG_INFO("Killing ~p servers at ~.1f% rate every ~pms", 
-             [Target, Rate * 100, Interval]),
-    
+
+    ?LOG_INFO("Killing ~p servers at ~.1f% rate every ~pms", [Target, Rate * 100, Interval]),
+
     kill_servers_loop(Target, Rate, Interval).
 
 -spec kill_servers_loop(atom(), float(), pos_integer()) -> ok.
 kill_servers_loop(Target, Rate, Interval) ->
     timer:sleep(Interval),
-    
+
     case rand:uniform() < Rate of
         true ->
             case find_target_processes(Target) of
@@ -78,27 +71,25 @@ kill_servers_loop(Target, Rate, Interval) ->
                 Processes ->
                     VictimCount = max(1, round(length(Processes) * Rate)),
                     Victims = lists:sublist(Processes, VictimCount),
-                    lists:foreach(
-                        fun(Pid) ->
-                            ?LOG_INFO("Killing ~p process: ~p", [Target, Pid]),
-                            exit(Pid, kill)
-                        end,
-                        Victims
-                    )
+                    lists:foreach(fun(Pid) ->
+                                     ?LOG_INFO("Killing ~p process: ~p", [Target, Pid]),
+                                     exit(Pid, kill)
+                                  end,
+                                  Victims)
             end;
         false ->
             ok
     end,
-    
+
     kill_servers_loop(Target, Rate, Interval).
 
 %% @doc Kill supervisor tree to test recovery
 -spec kill_supervisor_tree(map()) -> ok.
 kill_supervisor_tree(Config) ->
     Target = maps:get(target, Config),
-    
+
     ?LOG_INFO("Killing supervisor tree: ~p", [Target]),
-    
+
     case whereis(Target) of
         undefined ->
             ?LOG_WARNING("Supervisor ~p not found", [Target]),
@@ -115,9 +106,9 @@ kill_supervisor_tree(Config) ->
 inject_clock_skew(Config) ->
     SkewMs = maps:get(skew_ms, Config, 5000),
     Duration = maps:get(duration, Config, 60000),
-    
+
     ?LOG_INFO("Injecting ~pms clock skew for ~pms", [SkewMs, Duration]),
-    
+
     % In real implementation, would manipulate time-related functions
     % This is simulation only
     timer:sleep(Duration),
@@ -131,10 +122,14 @@ inject_clock_skew(Config) ->
 find_killable_process() ->
     Processes = erlang:processes(),
     KillableProcesses = lists:filter(fun is_killable/1, Processes),
-    
+
     case KillableProcesses of
-        [] -> error;
-        List -> {ok, lists:nth(rand:uniform(length(List)), List)}
+        [] ->
+            error;
+        List ->
+            {ok,
+             lists:nth(
+                 rand:uniform(length(List)), List)}
     end.
 
 -spec is_killable(pid()) -> boolean().
@@ -143,8 +138,8 @@ is_killable(Pid) ->
         {registered_name, Name} ->
             NameStr = atom_to_list(Name),
             % Only kill erlmcp_server or erlmcp_client processes
-            string:prefix(NameStr, "erlmcp_server") =/= nomatch orelse
-            string:prefix(NameStr, "erlmcp_client") =/= nomatch;
+            string:prefix(NameStr, "erlmcp_server") =/= nomatch
+            orelse string:prefix(NameStr, "erlmcp_client") =/= nomatch;
         _ ->
             false
     end.
@@ -153,17 +148,14 @@ is_killable(Pid) ->
 find_target_processes(Target) ->
     TargetStr = atom_to_list(Target),
     Processes = erlang:processes(),
-    
-    lists:filter(
-        fun(Pid) ->
-            case erlang:process_info(Pid, registered_name) of
-                {registered_name, Name} ->
-                    NameStr = atom_to_list(Name),
-                    string:prefix(NameStr, TargetStr) =/= nomatch;
-                _ ->
-                    false
-            end
-        end,
-        Processes
-    ).
 
+    lists:filter(fun(Pid) ->
+                    case erlang:process_info(Pid, registered_name) of
+                        {registered_name, Name} ->
+                            NameStr = atom_to_list(Name),
+                            string:prefix(NameStr, TargetStr) =/= nomatch;
+                        _ ->
+                            false
+                    end
+                 end,
+                 Processes).

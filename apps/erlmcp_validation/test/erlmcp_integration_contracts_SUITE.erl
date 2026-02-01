@@ -1,81 +1,69 @@
 -module(erlmcp_integration_contracts_SUITE).
+
 -compile(export_all).
+
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp.hrl").
+
+-include("../../../include/erlmcp.hrl").
 
 %% Export 20+ test functions (10 original + 10 performance)
--export([
-    %% Original integration contract tests
-    test_valid_initialize_stdio/1,
-    test_capability_exchange/1,
-    test_version_negotiation/1,
-    test_invalid_init_rejection/1,
-    test_request_id_correlation/1,
-    test_response_format/1,
-    test_error_contracts/1,
-    test_tools_contract/1,
-    test_resources_contract/1,
-    test_prompts_contract/1,
+-export([test_valid_initialize_stdio/1, test_capability_exchange/1, test_version_negotiation/1,
+         test_invalid_init_rejection/1, test_request_id_correlation/1, test_response_format/1,
+         test_error_contracts/1, test_tools_contract/1, test_resources_contract/1,
+         test_prompts_contract/1, test_request_latency_p95_below_100ms/1,
+         test_throughput_above_1000_req_per_sec/1, test_connection_setup_below_50ms/1,
+         test_memory_per_connection_below_1mb/1, test_concurrent_1000_connections/1,
+         test_connection_limit_enforcement/1, test_rate_limiting_enforcement/1,
+         test_memory_leak_detection/1, test_resource_recovery/1]).
+
+                                        %% Original integration contract tests
+
     %% Performance contract tests
-    test_request_latency_p95_below_100ms/1,
-    test_throughput_above_1000_req_per_sec/1,
-    test_connection_setup_below_50ms/1,
-    test_memory_per_connection_below_1mb/1,
-    test_concurrent_1000_connections/1,
-    test_connection_limit_enforcement/1,
-    test_rate_limiting_enforcement/1,
-    test_memory_leak_detection/1,
-    test_resource_recovery/1
-]).
 
-all() -> [
-    {group, init_handshake},
-    {group, req_resp},
-    {group, msg_types},
-    {group, performance_contracts},
-    {group, load_testing},
-    {group, stress_testing}
-].
+all() ->
+    [{group, init_handshake},
+     {group, req_resp},
+     {group, msg_types},
+     {group, performance_contracts},
+     {group, load_testing},
+     {group, stress_testing}].
 
-groups() -> [
-    {init_handshake, [sequence], [
-        test_valid_initialize_stdio,
-        test_capability_exchange,
-        test_version_negotiation,
-        test_invalid_init_rejection
-    ]},
-    {req_resp, [sequence], [
-        test_request_id_correlation,
-        test_response_format,
-        test_error_contracts
-    ]},
-    {msg_types, [parallel], [
-        test_tools_contract,
-        test_resources_contract,
-        test_prompts_contract
-    ]},
-    {performance_contracts, [parallel], [
-        test_request_latency_p95_below_100ms,
-        test_throughput_above_1000_req_per_sec,
-        test_connection_setup_below_50ms,
-        test_memory_per_connection_below_1mb
-    ]},
-    {load_testing, [sequence], [
-        test_concurrent_1000_connections,
-        test_connection_limit_enforcement,
-        test_rate_limiting_enforcement
-    ]},
-    {stress_testing, [sequence], [
-        test_memory_leak_detection,
-        test_resource_recovery
-    ]}
-].
+groups() ->
+    [{init_handshake,
+      [sequence],
+      [test_valid_initialize_stdio,
+       test_capability_exchange,
+       test_version_negotiation,
+       test_invalid_init_rejection]},
+     {req_resp,
+      [sequence],
+      [test_request_id_correlation, test_response_format, test_error_contracts]},
+     {msg_types, [parallel], [test_tools_contract, test_resources_contract, test_prompts_contract]},
+     {performance_contracts,
+      [parallel],
+      [test_request_latency_p95_below_100ms,
+       test_throughput_above_1000_req_per_sec,
+       test_connection_setup_below_50ms,
+       test_memory_per_connection_below_1mb]},
+     {load_testing,
+      [sequence],
+      [test_concurrent_1000_connections,
+       test_connection_limit_enforcement,
+       test_rate_limiting_enforcement]},
+     {stress_testing, [sequence], [test_memory_leak_detection, test_resource_recovery]}].
 
 init_per_suite(C) ->
     Apps = [crypto, ssl, gproc, jsx, jesse],
-    lists:foreach(fun(A) -> case application:start(A) of
-        ok -> ok; {error, {already_started, _}} -> ok end end, Apps),
+    lists:foreach(fun(A) ->
+                     case application:start(A) of
+                         ok ->
+                             ok;
+                         {error, {already_started, _}} ->
+                             ok
+                     end
+                  end,
+                  Apps),
     {ok, _} = erlmcp_core_sup:start_link(),
     {ok, _} = erlmcp_server_sup:start_link(),
     C.
@@ -85,10 +73,17 @@ end_per_suite(_) ->
     supervisor:stop(erlmcp_core_sup),
     ok.
 
-init_per_group(_, C) -> C.
-end_per_group(_, _) -> ok.
-init_per_testcase(_, C) -> C.
-end_per_testcase(_, _) -> ok.
+init_per_group(_, C) ->
+    C.
+
+end_per_group(_, _) ->
+    ok.
+
+init_per_testcase(_, C) ->
+    C.
+
+end_per_testcase(_, _) ->
+    ok.
 
 %% Tests
 test_valid_initialize_stdio(C) ->
@@ -96,16 +91,14 @@ test_valid_initialize_stdio(C) ->
     {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
     erlmcp_server:add_tool(Pid, <<"echo">>, fun(A) -> A end),
     {ok, TPid} = erlmcp_transport_stdio:start_link(Pid, #{}),
-    InitReq = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            <<"protocolVersion">> => ?MCP_VERSION,
-            <<"capabilities">> => #{},
-            <<"clientInfo">> => #{<<"name">> => <<"test">>, <<"version">> => <<"1.0">>}
-        }
-    },
+    InitReq =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"initialize">>,
+          <<"params">> =>
+              #{<<"protocolVersion">> => ?MCP_VERSION,
+                <<"capabilities">> => #{},
+                <<"clientInfo">> => #{<<"name">> => <<"test">>, <<"version">> => <<"1.0">>}}},
     TPid ! {simulate_input, jsx:encode(InitReq)},
     timer:sleep(100),
     %% Verify server is still alive (observable behavior)
@@ -116,16 +109,14 @@ test_valid_initialize_stdio(C) ->
 
 test_capability_exchange(C) ->
     ClientCaps = #mcp_client_capabilities{roots = #{}},
-    InitReq = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{
-            <<"protocolVersion">> => ?MCP_VERSION,
-            <<"capabilities">> => caps_to_map(ClientCaps),
-            <<"clientInfo">> => #{}
-        }
-    },
+    InitReq =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"initialize">>,
+          <<"params">> =>
+              #{<<"protocolVersion">> => ?MCP_VERSION,
+                <<"capabilities">> => caps_to_map(ClientCaps),
+                <<"clientInfo">> => #{}}},
     ?assert(maps:is_key(<<"capabilities">>, maps:get(<<"params">>, InitReq))),
     C.
 
@@ -134,12 +125,11 @@ test_version_negotiation(C) ->
     C.
 
 test_invalid_init_rejection(C) ->
-    InitReq = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"initialize">>,
-        <<"params">> => #{<<"capabilities">> => #{}, <<"clientInfo">> => #{}}  % Missing version
-    },
+    InitReq =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"initialize">>,
+          <<"params">> => #{<<"capabilities">> => #{}, <<"clientInfo">> => #{}}},  % Missing version
     ?assertNot(maps:is_key(<<"protocolVersion">>, maps:get(<<"params">>, InitReq))),
     C.
 
@@ -149,10 +139,16 @@ test_request_id_correlation(C) ->
     C.
 
 test_response_format(C) ->
-    SuccessResp = #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 1, <<"result">> => #{}},
+    SuccessResp =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"result">> => #{}},
     ?assert(maps:is_key(<<"result">>, SuccessResp)),
     ?assertNot(maps:is_key(<<"error">>, SuccessResp)),
-    ErrorResp = #{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 2, <<"error">> => #{<<"code">> => -32005}},
+    ErrorResp =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 2,
+          <<"error">> => #{<<"code">> => -32005}},
     ?assert(maps:is_key(<<"error">>, ErrorResp)),
     ?assertNot(maps:is_key(<<"result">>, ErrorResp)),
     C.
@@ -160,23 +156,30 @@ test_response_format(C) ->
 test_error_contracts(C) ->
     ErrCodes = [?JSONRPC_PARSE_ERROR, ?MCP_ERROR_NOT_INITIALIZED, ?MCP_ERROR_TOOL_NOT_FOUND],
     lists:foreach(fun(Code) ->
-        Err = #{<<"error">> => #{<<"code">> => Code, <<"message">> => <<"Err">>}},
-        ?assert(maps:is_key(<<"error">>, Err))
-    end, ErrCodes),
+                     Err = #{<<"error">> => #{<<"code">> => Code, <<"message">> => <<"Err">>}},
+                     ?assert(maps:is_key(<<"error">>, Err))
+                  end,
+                  ErrCodes),
     C.
 
 test_tools_contract(C) ->
-    Req = #{<<"method">> => <<"tools/list">>, <<"id">> => 1, <<"jsonrpc">> => <<"2.0">>},
+    Req = #{<<"method">> => <<"tools/list">>,
+            <<"id">> => 1,
+            <<"jsonrpc">> => <<"2.0">>},
     ?assertMatch(#{<<"method">> := <<"tools/list">>}, Req),
     C.
 
 test_resources_contract(C) ->
-    Req = #{<<"method">> => <<"resources/list">>, <<"id">> => 1, <<"jsonrpc">> => <<"2.0">>},
+    Req = #{<<"method">> => <<"resources/list">>,
+            <<"id">> => 1,
+            <<"jsonrpc">> => <<"2.0">>},
     ?assertMatch(#{<<"method">> := <<"resources/list">>}, Req),
     C.
 
 test_prompts_contract(C) ->
-    Req = #{<<"method">> => <<"prompts/list">>, <<"id">> => 1, <<"jsonrpc">> => <<"2.0">>},
+    Req = #{<<"method">> => <<"prompts/list">>,
+            <<"id">> => 1,
+            <<"jsonrpc">> => <<"2.0">>},
     ?assertMatch(#{<<"method">> := <<"prompts/list">>}, Req),
     C.
 
@@ -193,15 +196,20 @@ test_request_latency_p95_below_100ms(_Config) ->
 
     %% Measure latency for 100 requests
     NumRequests = 100,
-    Latencies = lists:map(fun(_) ->
-        StartTime = erlang:monotonic_time(microsecond),
+    Latencies =
+        lists:map(fun(_) ->
+                     StartTime = erlang:monotonic_time(microsecond),
 
-        %% Make direct gen_server call (Chicago School: real process)
-        {ok, _} = erlmcp_server:call_tool(ServerPid, <<"echo">>, #{<<"test">> => <<"data">>}),
+                     %% Make direct gen_server call (Chicago School: real process)
+                     {ok, _} =
+                         erlmcp_server:call_tool(ServerPid,
+                                                 <<"echo">>,
+                                                 #{<<"test">> => <<"data">>}),
 
-        EndTime = erlang:monotonic_time(microsecond),
-        EndTime - StartTime
-    end, lists:seq(1, NumRequests)),
+                     EndTime = erlang:monotonic_time(microsecond),
+                     EndTime - StartTime
+                  end,
+                  lists:seq(1, NumRequests)),
 
     %% Calculate P95 latency
     SortedLatencies = lists:sort(Latencies),
@@ -229,9 +237,8 @@ test_throughput_above_1000_req_per_sec(_Config) ->
     NumRequests = 1000,
     StartTime = erlang:monotonic_time(millisecond),
 
-    lists:foreach(fun(_) ->
-        {ok, _} = erlmcp_server:call_tool(ServerPid, <<"fast">>, #{})
-    end, lists:seq(1, NumRequests)),
+    lists:foreach(fun(_) -> {ok, _} = erlmcp_server:call_tool(ServerPid, <<"fast">>, #{}) end,
+                  lists:seq(1, NumRequests)),
 
     EndTime = erlang:monotonic_time(millisecond),
     DurationS = (EndTime - StartTime) / 1000,
@@ -277,11 +284,13 @@ test_memory_per_connection_below_1mb(_Config) ->
 
     %% Start 10 connections
     NumConns = 10,
-    ServerPids = lists:map(fun(_) ->
-        ServerCaps = #mcp_server_capabilities{},
-        {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
-        Pid
-    end, lists:seq(1, NumConns)),
+    ServerPids =
+        lists:map(fun(_) ->
+                     ServerCaps = #mcp_server_capabilities{},
+                     {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
+                     Pid
+                  end,
+                  lists:seq(1, NumConns)),
 
     %% Force garbage collection to get accurate measurement
     erlang:garbage_collect(),
@@ -298,7 +307,8 @@ test_memory_per_connection_below_1mb(_Config) ->
     lists:foreach(fun(Pid) -> erlmcp_server:stop(Pid) end, ServerPids),
 
     %% Log result
-    ct:log("Memory per connection: ~p bytes (~.2f MB)", [MemoryPerConnection, MemoryPerConnection / 1048576]),
+    ct:log("Memory per connection: ~p bytes (~.2f MB)",
+           [MemoryPerConnection, MemoryPerConnection / 1048576]),
     {comment, io_lib:format("Memory: ~.2f MB/conn", [MemoryPerConnection / 1048576])}.
 
 %%====================================================================
@@ -311,17 +321,20 @@ test_concurrent_1000_connections(_Config) ->
     BatchSize = 100,
     NumBatches = 10,
 
-    ServerPids = lists:map(fun(_) ->
-        ServerCaps = #mcp_server_capabilities{},
-        {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
-        erlmcp_server:add_tool(Pid, <<"echo">>, fun(Args) -> Args end),
-        Pid
-    end, lists:seq(1, BatchSize)),
+    ServerPids =
+        lists:map(fun(_) ->
+                     ServerCaps = #mcp_server_capabilities{},
+                     {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
+                     erlmcp_server:add_tool(Pid, <<"echo">>, fun(Args) -> Args end),
+                     Pid
+                  end,
+                  lists:seq(1, BatchSize)),
 
     %% Verify all connections are operational
     lists:foreach(fun(Pid) ->
-        {ok, _} = erlmcp_server:call_tool(Pid, <<"echo">>, #{<<"test">> => <<"data">>})
-    end, ServerPids),
+                     {ok, _} = erlmcp_server:call_tool(Pid, <<"echo">>, #{<<"test">> => <<"data">>})
+                  end,
+                  ServerPids),
 
     %% Cleanup
     lists:foreach(fun(Pid) -> erlmcp_server:stop(Pid) end, ServerPids),
@@ -339,9 +352,10 @@ test_connection_limit_enforcement(_Config) ->
 
     %% Accept connections up to limit
     lists:foreach(fun(N) ->
-        ServerId = list_to_binary("server_" ++ integer_to_list(N)),
-        accept = erlmcp_connection_limiter:accept_connection(ServerId)
-    end, lists:seq(1, 5)),
+                     ServerId = list_to_binary("server_" ++ integer_to_list(N)),
+                     accept = erlmcp_connection_limiter:accept_connection(ServerId)
+                  end,
+                  lists:seq(1, 5)),
 
     %% Try to exceed limit
     ServerId = <<"server_overflow">>,
@@ -359,27 +373,27 @@ test_connection_limit_enforcement(_Config) ->
 %% @doc Test rate limiting enforcement
 test_rate_limiting_enforcement(_Config) ->
     %% Start rate limiter
-    application:set_env(erlmcp_core, rate_limiting, #{
-        client_max_messages_per_sec => 100,
-        enabled => true
-    }),
+    application:set_env(erlmcp_core,
+                        rate_limiting,
+                        #{client_max_messages_per_sec => 100, enabled => true}),
     {ok, _} = erlmcp_rate_limiter:start_link(),
 
     ClientId = <<"rate_limit_test">>,
 
     %% Send messages at rate limit
     TimeMs = erlang:system_time(millisecond),
-    lists:foreach(fun(_) ->
-        ok = erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs)
-    end, lists:seq(1, 100)),
+    lists:foreach(fun(_) -> ok = erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs) end,
+                  lists:seq(1, 100)),
 
     %% Try to exceed rate limit (101st message)
     Result = erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs),
 
     %% Should eventually be limited
     case Result of
-        {error, rate_limit_exceeded} -> ok;
-        _ -> ok  % Rate limiter may allow burst
+        {error, rate_limit_exceeded} ->
+            ok;
+        _ ->
+            ok  % Rate limiter may allow burst
     end,
 
     %% Cleanup
@@ -400,18 +414,23 @@ test_memory_leak_detection(_Config) ->
     %% Create and destroy connections repeatedly
     NumIterations = 10,
     lists:foreach(fun(_) ->
-        ServerCaps = #mcp_server_capabilities{},
-        {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
-        erlmcp_server:add_tool(Pid, <<"echo">>, fun(Args) -> Args end),
+                     ServerCaps = #mcp_server_capabilities{},
+                     {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
+                     erlmcp_server:add_tool(Pid, <<"echo">>, fun(Args) -> Args end),
 
-        %% Make some requests
-        lists:foreach(fun(_) ->
-            {ok, _} = erlmcp_server:call_tool(Pid, <<"echo">>, #{<<"data">> => <<"value">>})
-        end, lists:seq(1, 10)),
+                     %% Make some requests
+                     lists:foreach(fun(_) ->
+                                      {ok, _} =
+                                          erlmcp_server:call_tool(Pid,
+                                                                  <<"echo">>,
+                                                                  #{<<"data">> => <<"value">>})
+                                   end,
+                                   lists:seq(1, 10)),
 
-        %% Stop and force GC
-        erlmcp_server:stop(Pid)
-    end, lists:seq(1, NumIterations)),
+                     %% Stop and force GC
+                     erlmcp_server:stop(Pid)
+                  end,
+                  lists:seq(1, NumIterations)),
 
     %% Force garbage collection
     erlang:garbage_collect(),
@@ -424,7 +443,7 @@ test_memory_leak_detection(_Config) ->
     ?assert(MemoryGrowth < 10485760),  % 10MB
 
     ct:log("Memory growth after ~p iterations: ~p bytes (~.2f MB)",
-            [NumIterations, MemoryGrowth, MemoryGrowth / 1048576]),
+           [NumIterations, MemoryGrowth, MemoryGrowth / 1048576]),
     {comment, io_lib:format("Memory growth: ~.2f MB", [MemoryGrowth / 1048576])}.
 
 %% @doc Test resource recovery after process crashes
@@ -434,13 +453,14 @@ test_resource_recovery(_Config) ->
 
     %% Start and crash server processes
     lists:foreach(fun(_) ->
-        ServerCaps = #mcp_server_capabilities{},
-        {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
+                     ServerCaps = #mcp_server_capabilities{},
+                     {ok, Pid} = erlmcp_server:start_link(make_id(), ServerCaps),
 
-        %% Simulate crash
-        exit(Pid, kill),
-        timer:sleep(10)  % Let cleanup happen
-    end, lists:seq(1, 10)),
+                     %% Simulate crash
+                     exit(Pid, kill),
+                     timer:sleep(10)  % Let cleanup happen
+                  end,
+                  lists:seq(1, 10)),
 
     %% Force cleanup
     erlang:garbage_collect(),
@@ -457,5 +477,8 @@ test_resource_recovery(_Config) ->
     {comment, io_lib:format("Process growth: ~p", [ProcessGrowth])}.
 
 %% Helpers
-make_id() -> list_to_atom("int_" ++ integer_to_list(erlang:unique_integer([positive]))).
-caps_to_map(#mcp_client_capabilities{}) -> #{}.
+make_id() ->
+    list_to_atom("int_" ++ integer_to_list(erlang:unique_integer([positive]))).
+
+caps_to_map(#mcp_client_capabilities{}) ->
+    #{}.

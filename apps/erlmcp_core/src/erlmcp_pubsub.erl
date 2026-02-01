@@ -15,27 +15,13 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_pubsub).
+
 -behaviour(gen_server).
 
 %% API exports
--export([
-    start_link/0,
-    stop/0,
-    subscribe/2,
-    unsubscribe/2,
-    broadcast/2,
-    list_subscribers/1
-]).
-
+-export([start_link/0, stop/0, subscribe/2, unsubscribe/2, broadcast/2, list_subscribers/1]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
 -define(PG_SCOPE, erlmcp_pubsub_scope).
@@ -92,8 +78,10 @@ init([]) ->
     %% pg is automatically started by kernel application in OTP 23+
     %% We just need to create our scope
     case pg:start(?PG_SCOPE) of
-        {ok, _Pid} -> ok;
-        {error, {already_started, _Pid}} -> ok
+        {ok, _Pid} ->
+            ok;
+        {error, {already_started, _Pid}} ->
+            ok
     end,
     logger:info("Started erlmcp_pubsub with pg scope ~p", [?PG_SCOPE]),
     {ok, #state{}}.
@@ -103,16 +91,13 @@ handle_call({subscribe, Topic, Pid}, _From, State) ->
     ok = pg:join(?PG_SCOPE, Topic, Pid),
     logger:debug("Subscribed ~p to topic ~p", [Pid, Topic]),
     {reply, ok, State};
-
 handle_call({unsubscribe, Topic, Pid}, _From, State) ->
     ok = pg:leave(?PG_SCOPE, Topic, Pid),
     logger:debug("Unsubscribed ~p from topic ~p", [Pid, Topic]),
     {reply, ok, State};
-
 handle_call({list_subscribers, Topic}, _From, State) ->
     Subscribers = pg:get_members(?PG_SCOPE, Topic),
     {reply, Subscribers, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -122,13 +107,10 @@ handle_cast({broadcast, Topic, Message}, State) ->
     Subscribers = pg:get_members(?PG_SCOPE, Topic),
 
     %% Broadcast to all subscribers
-    lists:foreach(fun(Pid) ->
-        Pid ! {erlmcp_pubsub, Topic, Message}
-    end, Subscribers),
+    lists:foreach(fun(Pid) -> Pid ! {erlmcp_pubsub, Topic, Message} end, Subscribers),
 
     logger:debug("Broadcast to ~p subscribers on topic ~p", [length(Subscribers), Topic]),
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

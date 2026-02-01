@@ -31,19 +31,10 @@
 -include("erlmcp.hrl").
 
 %% API
--export([
-    get_limit/1,
-    validate_message_size/2,
-    validate_message_size/3,
-    validate_http_body_size/1,
-    validate_sse_event_size/1,
-    validate_websocket_size/1,
-    validate_tcp_size/1,
-    validate_stdio_size/1,
-    get_max_size_error/1,
-    get_http_413_error/0,
-    get_size_limit_config/0
-]).
+-export([get_limit/1, validate_message_size/2, validate_message_size/3, validate_http_body_size/1,
+         validate_sse_event_size/1, validate_websocket_size/1, validate_tcp_size/1,
+         validate_stdio_size/1, get_max_size_error/1, get_http_413_error/0,
+         get_size_limit_config/0]).
 
 %% Types
 -export_type([transport_type/0, validation_result/0]).
@@ -61,12 +52,18 @@
 get_limit(Transport) ->
     Config = get_size_limit_config(),
     case Transport of
-        http -> maps:get(http_body, Config, ?MCP_DEFAULT_HTTP_BODY_SIZE_LIMIT);
-        sse -> maps:get(sse_event, Config, ?MCP_DEFAULT_SSE_EVENT_SIZE_LIMIT);
-        websocket -> maps:get(websocket, Config, ?MCP_DEFAULT_WS_MESSAGE_SIZE_LIMIT);
-        tcp -> maps:get(tcp, Config, ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT);
-        stdio -> maps:get(stdio, Config, ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT);
-        default -> maps:get(default, Config, ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT)
+        http ->
+            maps:get(http_body, Config, ?MCP_DEFAULT_HTTP_BODY_SIZE_LIMIT);
+        sse ->
+            maps:get(sse_event, Config, ?MCP_DEFAULT_SSE_EVENT_SIZE_LIMIT);
+        websocket ->
+            maps:get(websocket, Config, ?MCP_DEFAULT_WS_MESSAGE_SIZE_LIMIT);
+        tcp ->
+            maps:get(tcp, Config, ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT);
+        stdio ->
+            maps:get(stdio, Config, ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT);
+        default ->
+            maps:get(default, Config, ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT)
     end.
 
 %% @doc Validate message size with transport type
@@ -84,7 +81,8 @@ validate_message_size(Transport, Message) ->
 
 %% @doc Validate message size with custom limit
 -spec validate_message_size(binary(), non_neg_integer(), transport_type()) -> validation_result().
-validate_message_size(Message, CustomLimit, _Transport) when is_binary(Message), is_integer(CustomLimit), CustomLimit > 0 ->
+validate_message_size(Message, CustomLimit, _Transport)
+    when is_binary(Message), is_integer(CustomLimit), CustomLimit > 0 ->
     Size = byte_size(Message),
     case Size > CustomLimit of
         true ->
@@ -124,17 +122,14 @@ validate_stdio_size(Message) when is_binary(Message) ->
 %% Returns JSON-encoded error response
 -spec get_max_size_error(non_neg_integer()) -> binary().
 get_max_size_error(MaxSize) ->
-    Data = #{
-        <<"maxSize">> => MaxSize,
-        <<"unit">> => <<"bytes">>,
-        <<"maxSizeReadable">> => format_size(MaxSize)
-    },
-    erlmcp_json_rpc:encode_error_response(
-        null,
-        ?MCP_ERROR_MESSAGE_TOO_LARGE,
-        ?MCP_MSG_MESSAGE_TOO_LARGE,
-        Data
-    ).
+    Data =
+        #{<<"maxSize">> => MaxSize,
+          <<"unit">> => <<"bytes">>,
+          <<"maxSizeReadable">> => format_size(MaxSize)},
+    erlmcp_json_rpc:encode_error_response(null,
+                                          ?MCP_ERROR_MESSAGE_TOO_LARGE,
+                                          ?MCP_MSG_MESSAGE_TOO_LARGE,
+                                          Data).
 
 %% @doc Generate HTTP 413 Payload Too Large error response
 %% Returns formatted error message suitable for HTTP response
@@ -148,24 +143,21 @@ get_size_limit_config() ->
     case application:get_env(erlmcp, message_size_limits, undefined) of
         undefined ->
             %% Return defaults if not configured
-            #{
-                default => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
-                http_body => ?MCP_DEFAULT_HTTP_BODY_SIZE_LIMIT,
-                sse_event => ?MCP_DEFAULT_SSE_EVENT_SIZE_LIMIT,
-                websocket => ?MCP_DEFAULT_WS_MESSAGE_SIZE_LIMIT,
-                tcp => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
-                stdio => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT
-            };
+            #{default => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
+              http_body => ?MCP_DEFAULT_HTTP_BODY_SIZE_LIMIT,
+              sse_event => ?MCP_DEFAULT_SSE_EVENT_SIZE_LIMIT,
+              websocket => ?MCP_DEFAULT_WS_MESSAGE_SIZE_LIMIT,
+              tcp => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
+              stdio => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT};
         Config when is_map(Config) ->
             %% Merge with defaults for missing keys
-            Defaults = #{
-                default => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
-                http_body => ?MCP_DEFAULT_HTTP_BODY_SIZE_LIMIT,
-                sse_event => ?MCP_DEFAULT_SSE_EVENT_SIZE_LIMIT,
-                websocket => ?MCP_DEFAULT_WS_MESSAGE_SIZE_LIMIT,
-                tcp => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
-                stdio => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT
-            },
+            Defaults =
+                #{default => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
+                  http_body => ?MCP_DEFAULT_HTTP_BODY_SIZE_LIMIT,
+                  sse_event => ?MCP_DEFAULT_SSE_EVENT_SIZE_LIMIT,
+                  websocket => ?MCP_DEFAULT_WS_MESSAGE_SIZE_LIMIT,
+                  tcp => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT,
+                  stdio => ?MCP_DEFAULT_MESSAGE_SIZE_LIMIT},
             maps:merge(Defaults, Config)
     end.
 

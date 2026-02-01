@@ -21,15 +21,13 @@
 %%====================================================================
 
 all() ->
-    [
-     application_startup,
+    [application_startup,
      supervisor_integration,
      gproc_registration,
      multi_transport_coordination,
      transport_message_routing,
      tcp_client_server_integration,
-     transport_failover
-    ].
+     transport_failover].
 
 init_per_suite(Config) ->
     %% Start dependencies
@@ -81,14 +79,13 @@ supervisor_integration(_Config) ->
     put(test_mode, true),
 
     %% Start stdio transport as supervised child
-    ChildSpec = #{
-        id => integration_stdio,
-        start => {erlmcp_transport_stdio, start_link, [Owner]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_stdio]
-    },
+    ChildSpec =
+        #{id => integration_stdio,
+          start => {erlmcp_transport_stdio, start_link, [Owner]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_stdio]},
 
     {ok, StdioPid} = supervisor:start_child(erlmcp_transport_sup, ChildSpec),
 
@@ -128,7 +125,6 @@ gproc_registration(_Config) ->
 
     %% Note: Actual gproc lookup depends on registration key implementation
     %% This is a placeholder for the mechanism
-
     %% Cleanup
     erlmcp_transport_stdio:close(TransportPid),
     erase(test_mode).
@@ -142,13 +138,12 @@ multi_transport_coordination(_Config) ->
     {ok, StdioPid} = erlmcp_transport_stdio:start_link(Owner),
 
     %% Start TCP server transport
-    TcpOpts = #{
-        mode => server,
-        port => 0,  % Random port
-        owner => Owner,
-        transport_id => ct_tcp_transport,
-        server_id => ct_tcp_server
-    },
+    TcpOpts =
+        #{mode => server,
+          port => 0,  % Random port
+          owner => Owner,
+          transport_id => ct_tcp_transport,
+          server_id => ct_tcp_server},
     {ok, TcpPid} = erlmcp_transport_tcp:start_server(TcpOpts),
 
     ct:pal("Started stdio: ~p, TCP: ~p", [StdioPid, TcpPid]),
@@ -201,13 +196,12 @@ tcp_client_server_integration(_Config) ->
     Owner = self(),
 
     %% Start TCP server
-    ServerOpts = #{
-        mode => server,
-        port => 0,
-        owner => Owner,
-        transport_id => ct_integration_server_transport,
-        server_id => ct_integration_server
-    },
+    ServerOpts =
+        #{mode => server,
+          port => 0,
+          owner => Owner,
+          transport_id => ct_integration_server_transport,
+          server_id => ct_integration_server},
     {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
     {ok, ServerState} = gen_server:call(ServerPid, get_state),
     Port = element(14, ServerState),
@@ -215,15 +209,14 @@ tcp_client_server_integration(_Config) ->
     ct:pal("TCP server started on port: ~p", [Port]),
 
     %% Start TCP client
-    ClientOpts = #{
-        mode => client,
-        host => "localhost",
-        port => Port,
-        owner => Owner,
-        transport_id => ct_integration_client_transport,
-        server_id => ct_integration_server,
-        max_reconnect_attempts => 3
-    },
+    ClientOpts =
+        #{mode => client,
+          host => "localhost",
+          port => Port,
+          owner => Owner,
+          transport_id => ct_integration_client_transport,
+          server_id => ct_integration_server,
+          max_reconnect_attempts => 3},
     {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
 
     ct:pal("TCP client started: ~p", [ClientPid]),
@@ -237,13 +230,14 @@ tcp_client_server_integration(_Config) ->
     end,
 
     %% Wait for server handler
-    ServerHandler = receive
-        {transport_connected, Handler} when is_pid(Handler), Handler =/= ClientPid ->
-            ct:pal("Server accepted connection: ~p", [Handler]),
-            Handler
-    after 3000 ->
-        ct:fail("Server did not accept connection")
-    end,
+    ServerHandler =
+        receive
+            {transport_connected, Handler} when is_pid(Handler), Handler =/= ClientPid ->
+                ct:pal("Server accepted connection: ~p", [Handler]),
+                Handler
+        after 3000 ->
+            ct:fail("Server did not accept connection")
+        end,
 
     %% Send message from client
     Message = <<"integration test message">>,
@@ -269,39 +263,43 @@ transport_failover(_Config) ->
     Owner = self(),
 
     %% Start TCP server
-    ServerOpts = #{
-        mode => server,
-        port => 0,
-        owner => Owner,
-        transport_id => ct_failover_server_transport,
-        server_id => ct_failover_server
-    },
+    ServerOpts =
+        #{mode => server,
+          port => 0,
+          owner => Owner,
+          transport_id => ct_failover_server_transport,
+          server_id => ct_failover_server},
     {ok, ServerPid} = erlmcp_transport_tcp:start_server(ServerOpts),
     {ok, ServerState} = gen_server:call(ServerPid, get_state),
     Port = element(14, ServerState),
 
     %% Start TCP client with reconnection
-    ClientOpts = #{
-        mode => client,
-        host => "localhost",
-        port => Port,
-        owner => Owner,
-        transport_id => ct_failover_client_transport,
-        server_id => ct_failover_server,
-        max_reconnect_attempts => 5
-    },
+    ClientOpts =
+        #{mode => client,
+          host => "localhost",
+          port => Port,
+          owner => Owner,
+          transport_id => ct_failover_client_transport,
+          server_id => ct_failover_server,
+          max_reconnect_attempts => 5},
     {ok, ClientPid} = erlmcp_transport_tcp:start_client(ClientOpts),
 
     %% Wait for connection
-    receive {transport_connected, ClientPid} -> ok
-    after 5000 -> ct:fail("Initial connection timeout")
+    receive
+        {transport_connected, ClientPid} ->
+            ok
+    after 5000 ->
+        ct:fail("Initial connection timeout")
     end,
 
     %% Get server handler
-    ServerHandler = receive
-        {transport_connected, H} -> H
-    after 3000 -> ct:fail("No server handler")
-    end,
+    ServerHandler =
+        receive
+            {transport_connected, H} ->
+                H
+        after 3000 ->
+            ct:fail("No server handler")
+        end,
 
     ct:pal("Connection established. Client: ~p, Handler: ~p", [ClientPid, ServerHandler]),
 
@@ -318,13 +316,14 @@ transport_failover(_Config) ->
     end,
 
     %% Wait for reconnection
-    NewHandler = receive
-        {transport_connected, NewH} when is_pid(NewH), NewH =/= ServerHandler ->
-            ct:pal("Client reconnected, new handler: ~p", [NewH]),
-            NewH
-    after 10000 ->
-        ct:fail("Client did not reconnect")
-    end,
+    NewHandler =
+        receive
+            {transport_connected, NewH} when is_pid(NewH), NewH =/= ServerHandler ->
+                ct:pal("Client reconnected, new handler: ~p", [NewH]),
+                NewH
+        after 10000 ->
+            ct:fail("Client did not reconnect")
+        end,
 
     %% Verify client can send message after reconnection
     Message = <<"failover test">>,

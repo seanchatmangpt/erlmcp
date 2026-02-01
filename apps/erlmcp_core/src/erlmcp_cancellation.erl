@@ -22,6 +22,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cancellation).
+
 -behaviour(gen_server).
 
 %% API
@@ -30,30 +31,23 @@
 -export([check/1, is_cancelled/1]).
 -export([set_cleanup_handler/2]).
 -export([get_operation_info/1, list_operations/0]).
-
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 
 %% Records
--record(operation_info, {
-    token :: reference(),
-    pid :: pid(),
-    monitor :: reference(),
-    start_time :: integer(),
-    client_pid :: pid(),
-    operation_type :: binary(),
-    reason :: term() | undefined,
-    metadata :: map()
-}).
-
+-record(operation_info,
+        {token :: reference(),
+         pid :: pid(),
+         monitor :: reference(),
+         start_time :: integer(),
+         client_pid :: pid(),
+         operation_type :: binary(),
+         reason :: term() | undefined,
+         metadata :: map()}).
 %% State record
--record(state, {
-    operations :: #{reference() => #operation_info{}},
-    cleanup_handlers :: map()
-}).
+-record(state, {operations :: #{reference() => #operation_info{}}, cleanup_handlers :: map()}).
 
 %% Type definitions
 -type cancellation_token() :: reference().
@@ -81,7 +75,7 @@ register(ClientPid, OperationPid) ->
 %% Returns a cancellation token that can be used to cancel the operation.
 -spec register(pid(), pid(), operation_type()) -> cancellation_token().
 register(ClientPid, OperationPid, OperationType)
-  when is_pid(ClientPid), is_pid(OperationPid), is_binary(OperationType) ->
+    when is_pid(ClientPid), is_pid(OperationPid), is_binary(OperationType) ->
     Token = make_ref(),
     Monitor = erlang:monitor(process, OperationPid),
     gen_server:cast(?MODULE, {register, Token, ClientPid, OperationPid, Monitor, OperationType}),
@@ -114,20 +108,21 @@ check(Token) when is_reference(Token) ->
 -spec is_cancelled(cancellation_token()) -> boolean().
 is_cancelled(Token) when is_reference(Token) ->
     case check(Token) of
-        {error, cancelled} -> true;
-        _ -> false
+        {error, cancelled} ->
+            true;
+        _ ->
+            false
     end.
 
 %% @doc Set cleanup handler for operation type.
 %% Handler module must implement cleanup_operation(Token, Reason) -> ok.
 -spec set_cleanup_handler(operation_type(), module()) -> ok.
 set_cleanup_handler(OperationType, HandlerModule)
-  when is_binary(OperationType), is_atom(HandlerModule) ->
+    when is_binary(OperationType), is_atom(HandlerModule) ->
     gen_server:call(?MODULE, {set_cleanup_handler, OperationType, HandlerModule}).
 
 %% @doc Get detailed information about an operation.
--spec get_operation_info(cancellation_token()) ->
-    {ok, map()} | {error, not_found}.
+-spec get_operation_info(cancellation_token()) -> {ok, map()} | {error, not_found}.
 get_operation_info(Token) when is_reference(Token) ->
     gen_server:call(?MODULE, {get_operation_info, Token}).
 
@@ -144,66 +139,59 @@ list_operations() ->
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
     logger:info("Starting cancellation manager server"),
-    {ok, #state{
-        operations = #{},
-        cleanup_handlers = #{}
-    }}.
+    {ok, #state{operations = #{}, cleanup_handlers = #{}}}.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
 handle_call({check, Token}, _From, State) ->
-    Reply = case maps:get(Token, State#state.operations, undefined) of
-        undefined -> {error, not_found};
-        OpInfo ->
-            case OpInfo#operation_info.reason of
-                undefined -> ok;
-                _Reason -> {error, cancelled}
-            end
-    end,
-    {reply, Reply, State};
-
-handle_call({get_operation_info, Token}, _From, State) ->
-    Reply = case maps:get(Token, State#state.operations, undefined) of
-        undefined -> {error, not_found};
-        OpInfo ->
-            {ok, format_operation_info(OpInfo)}
-    end,
-    {reply, Reply, State};
-
-handle_call(list_operations, _From, State) ->
-    Operations = maps:fold(
-        fun(_Token, OpInfo, Acc) ->
-            [format_operation_info(OpInfo) | Acc]
+    Reply =
+        case maps:get(Token, State#state.operations, undefined) of
+            undefined ->
+                {error, not_found};
+            OpInfo ->
+                case OpInfo#operation_info.reason of
+                    undefined ->
+                        ok;
+                    _Reason ->
+                        {error, cancelled}
+                end
         end,
-        [],
-        State#state.operations
-    ),
+    {reply, Reply, State};
+handle_call({get_operation_info, Token}, _From, State) ->
+    Reply =
+        case maps:get(Token, State#state.operations, undefined) of
+            undefined ->
+                {error, not_found};
+            OpInfo ->
+                {ok, format_operation_info(OpInfo)}
+        end,
+    {reply, Reply, State};
+handle_call(list_operations, _From, State) ->
+    Operations =
+        maps:fold(fun(_Token, OpInfo, Acc) -> [format_operation_info(OpInfo) | Acc] end,
+                  [],
+                  State#state.operations),
     {reply, lists:reverse(Operations), State};
-
 handle_call({set_cleanup_handler, OpType, HandlerModule}, _From, State) ->
     Handlers = State#state.cleanup_handlers,
     {reply, ok, State#state{cleanup_handlers = Handlers#{OpType => HandlerModule}}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 %% @private
 -spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 handle_cast({register, Token, ClientPid, OperationPid, Monitor, OpType}, State) ->
-    OpInfo = #operation_info{
-        token = Token,
-        pid = OperationPid,
-        monitor = Monitor,
-        start_time = erlang:system_time(millisecond),
-        client_pid = ClientPid,
-        operation_type = OpType,
-        reason = undefined,
-        metadata = #{}
-    },
+    OpInfo =
+        #operation_info{token = Token,
+                        pid = OperationPid,
+                        monitor = Monitor,
+                        start_time = erlang:system_time(millisecond),
+                        client_pid = ClientPid,
+                        operation_type = OpType,
+                        reason = undefined,
+                        metadata = #{}},
     logger:debug("Registered operation ~p for ~p", [Token, OpType]),
     {noreply, State#state{operations = (State#state.operations)#{Token => OpInfo}}};
-
 handle_cast({cancel, Token, Reason}, State) ->
     case maps:get(Token, State#state.operations, undefined) of
         undefined ->
@@ -228,11 +216,13 @@ handle_cast({cancel, Token, Reason}, State) ->
             send_cancellation_notification(OpInfo#operation_info.client_pid, Token, Reason),
 
             %% Call cleanup handler if registered
-            call_cleanup_handler(OpInfo#operation_info.operation_type, Token, Reason, State#state.cleanup_handlers),
+            call_cleanup_handler(OpInfo#operation_info.operation_type,
+                                 Token,
+                                 Reason,
+                                 State#state.cleanup_handlers),
 
             {noreply, State#state{operations = NewOps}}
     end;
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -241,16 +231,17 @@ handle_cast(_Msg, State) ->
 handle_info({'DOWN', Monitor, process, _Pid, Reason}, State) ->
     %% Clean up completed operations (normal or abnormal termination)
     Ops = maps:filter(fun(_Token, OpInfo) ->
-        case OpInfo#operation_info.monitor of
-            Monitor ->
-                logger:debug("Operation ~p terminated: ~p", [OpInfo#operation_info.token, Reason]),
-                false;  % Remove from operations map
-            _Monitor ->
-                true
-        end
-    end, State#state.operations),
+                         case OpInfo#operation_info.monitor of
+                             Monitor ->
+                                 logger:debug("Operation ~p terminated: ~p",
+                                              [OpInfo#operation_info.token, Reason]),
+                                 false;  % Remove from operations map
+                             _Monitor ->
+                                 true
+                         end
+                      end,
+                      State#state.operations),
     {noreply, State#state{operations = Ops}};
-
 handle_info(Info, State) ->
     logger:warning("Unexpected handle_info message: ~p", [Info]),
     {noreply, State}.
@@ -262,14 +253,17 @@ terminate(_Reason, #state{operations = Ops}) ->
 
     %% Cancel all active operations on shutdown
     maps:foreach(fun(Token, OpInfo) ->
-        case is_process_alive(OpInfo#operation_info.pid) of
-            true ->
-                exit(OpInfo#operation_info.pid, server_shutdown),
-                send_cancellation_notification(OpInfo#operation_info.client_pid, Token, server_shutdown);
-            false ->
-                ok
-        end
-    end, Ops),
+                    case is_process_alive(OpInfo#operation_info.pid) of
+                        true ->
+                            exit(OpInfo#operation_info.pid, server_shutdown),
+                            send_cancellation_notification(OpInfo#operation_info.client_pid,
+                                                           Token,
+                                                           server_shutdown);
+                        false ->
+                            ok
+                    end
+                 end,
+                 Ops),
 
     ok.
 
@@ -285,15 +279,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Send cancellation notification to client
 -spec send_cancellation_notification(pid(), cancellation_token(), cancellation_reason()) -> ok.
 send_cancellation_notification(ClientPid, Token, Reason) when is_pid(ClientPid) ->
-    Notification = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"notifications/cancelled">>,
-        <<"params">> => #{
-            <<"requestId">> => format_token(Token),
-            <<"reason">> => format_cancellation_reason(Reason),
-            <<"timestamp">> => erlang:system_time(millisecond)
-        }
-    },
+    Notification =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"method">> => <<"notifications/cancelled">>,
+          <<"params">> =>
+              #{<<"requestId">> => format_token(Token),
+                <<"reason">> => format_cancellation_reason(Reason),
+                <<"timestamp">> => erlang:system_time(millisecond)}},
 
     %% Send notification to client process
     try
@@ -302,7 +294,7 @@ send_cancellation_notification(ClientPid, Token, Reason) when is_pid(ClientPid) 
     catch
         Class:Error:Stack ->
             logger:error("Failed to send cancellation notification: ~p:~p~n~p",
-                        [Class, Error, Stack]),
+                         [Class, Error, Stack]),
             ok
     end.
 
@@ -314,20 +306,27 @@ format_token(Token) when is_reference(Token) ->
 
 %% @doc Format cancellation reason for JSON encoding
 -spec format_cancellation_reason(cancellation_reason()) -> binary().
-format_cancellation_reason(client_requested) -> <<"client_requested">>;
-format_cancellation_reason(timeout) -> <<"timeout">>;
-format_cancellation_reason(server_shutdown) -> <<"server_shutdown">>;
+format_cancellation_reason(client_requested) ->
+    <<"client_requested">>;
+format_cancellation_reason(timeout) ->
+    <<"timeout">>;
+format_cancellation_reason(server_shutdown) ->
+    <<"server_shutdown">>;
 format_cancellation_reason({error, Reason}) ->
-    ReasonBin = case Reason of
-        Binary when is_binary(Binary) -> Binary;
-        Atom when is_atom(Atom) -> atom_to_binary(Atom, utf8);
-        Term ->
-            list_to_binary(io_lib:format("~p", [Term]))
-    end,
+    ReasonBin =
+        case Reason of
+            Binary when is_binary(Binary) ->
+                Binary;
+            Atom when is_atom(Atom) ->
+                atom_to_binary(Atom, utf8);
+            Term ->
+                list_to_binary(io_lib:format("~p", [Term]))
+        end,
     <<"error:", ReasonBin/binary>>.
 
 %% @doc Call cleanup handler for operation type
--spec call_cleanup_handler(operation_type(), cancellation_token(), cancellation_reason(), map()) -> ok.
+-spec call_cleanup_handler(operation_type(), cancellation_token(), cancellation_reason(), map()) ->
+                              ok.
 call_cleanup_handler(OperationType, Token, Reason, Handlers) ->
     case maps:get(OperationType, Handlers, undefined) of
         undefined ->
@@ -339,13 +338,12 @@ call_cleanup_handler(OperationType, Token, Reason, Handlers) ->
                         HandlerModule:cleanup_operation(Token, Reason);
                     false ->
                         logger:warning("Cleanup handler ~p does not export cleanup_operation/2",
-                                     [HandlerModule]),
+                                       [HandlerModule]),
                         ok
                 end
             catch
                 Class:Error:Stack ->
-                    logger:error("Cleanup handler failed: ~p:~p~n~p",
-                                [Class, Error, Stack]),
+                    logger:error("Cleanup handler failed: ~p:~p~n~p", [Class, Error, Stack]),
                     ok
             end
     end.
@@ -353,17 +351,21 @@ call_cleanup_handler(OperationType, Token, Reason, Handlers) ->
 %% @doc Format operation info for API responses
 -spec format_operation_info(#operation_info{}) -> map().
 format_operation_info(OpInfo) ->
-    #{
-        <<"token">> => format_token(OpInfo#operation_info.token),
-        <<"operationType">> => OpInfo#operation_info.operation_type,
-        <<"startTime">> => OpInfo#operation_info.start_time,
-        <<"duration">> => erlang:system_time(millisecond) - OpInfo#operation_info.start_time,
-        <<"status">> => case OpInfo#operation_info.reason of
-            undefined -> <<"active">>;
-            _ -> <<"cancelled">>
-        end,
-        <<"reason">> => case OpInfo#operation_info.reason of
-            undefined -> null;
-            Reason -> format_cancellation_reason(Reason)
-        end
-    }.
+    #{<<"token">> => format_token(OpInfo#operation_info.token),
+      <<"operationType">> => OpInfo#operation_info.operation_type,
+      <<"startTime">> => OpInfo#operation_info.start_time,
+      <<"duration">> => erlang:system_time(millisecond) - OpInfo#operation_info.start_time,
+      <<"status">> =>
+          case OpInfo#operation_info.reason of
+              undefined ->
+                  <<"active">>;
+              _ ->
+                  <<"cancelled">>
+          end,
+      <<"reason">> =>
+          case OpInfo#operation_info.reason of
+              undefined ->
+                  null;
+              Reason ->
+                  format_cancellation_reason(Reason)
+          end}.

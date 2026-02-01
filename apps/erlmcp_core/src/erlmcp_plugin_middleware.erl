@@ -38,21 +38,10 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_middleware).
 
-%% Behavior definition
--callback pre_execute(Request :: term(), State :: term()) ->
-    {ok, ModifiedRequest :: term(), NewState :: term()} | {error, Reason :: term()}.
-
--callback post_execute(Response :: term(), State :: term()) ->
-    {ok, ModifiedResponse :: term(), NewState :: term()} | {error, Reason :: term()}.
-
 %% Re-export plugin behavior
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    erlmcp_plugin:behaviour_info(callbacks) ++
-    [
-        {pre_execute, 2},
-        {post_execute, 2}
-    ];
+    erlmcp_plugin:behaviour_info(callbacks) ++ [{pre_execute, 2}, {post_execute, 2}];
 behaviour_info(_) ->
     undefined.

@@ -28,7 +28,9 @@ OTP_REQUIRED_MINOR=3
 OTP_REQUIRED_PATCH=1
 OTP_REQUIRED_VERSION="${OTP_REQUIRED_MAJOR}.${OTP_REQUIRED_MINOR}.${OTP_REQUIRED_PATCH}"
 
-ERLMCP_ROOT="${ERLMCP_ROOT:-/home/user/erlmcp}"
+# Find project root (parent of .claude directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ERLMCP_ROOT="${ERLMCP_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 ERLMCP_LOG="${ERLMCP_LOG:-${ERLMCP_ROOT}/.erlmcp/otp-manager.log}"
 
 #------------------------------------------------------------------------------

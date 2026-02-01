@@ -9,11 +9,7 @@
 -module(erlmcp_http_header_validator).
 
 %% API exports
--export([
-    validate_request_headers/2,
-    format_error_response/3,
-    validate_header_security/2
-]).
+-export([validate_request_headers/2, format_error_response/3, validate_header_security/2]).
 
 %% Security constants
 -define(MAX_HEADER_SIZE, 8192). %% 8KB max per header
@@ -56,16 +52,14 @@ validate_request_headers(Headers, Method) when is_list(Headers), is_atom(Method)
     end.
 
 %% @doc Format error response for HTTP header validation failures
--spec format_error_response(integer(), binary(), term()) -> {integer(), [{binary(), binary()}], binary()}.
+-spec format_error_response(integer(), binary(), term()) ->
+                               {integer(), [{binary(), binary()}], binary()}.
 format_error_response(StatusCode, Message, Data) ->
-    Headers = [
-        {<<"content-type">>, <<"application/json">>}
-    ],
-    Body = jsx:encode(#{
-        <<"error">> => <<"header_validation_failed">>,
-        <<"message">> => Message,
-        <<"data">> => format_error_data(Data)
-    }),
+    Headers = [{<<"content-type">>, <<"application/json">>}],
+    Body =
+        jsx:encode(#{<<"error">> => <<"header_validation_failed">>,
+                     <<"message">> => Message,
+                     <<"data">> => format_error_data(Data)}),
     {StatusCode, Headers, Body}.
 
 %%====================================================================
@@ -75,18 +69,14 @@ format_error_response(StatusCode, Message, Data) ->
 %% @private Validate GET request headers
 validate_get_headers(HeaderMap) ->
     %% GET requests for SSE must have specific headers
-    RequiredHeaders = [
-        {<<"accept">>, fun validate_accept_header/1}
-    ],
+    RequiredHeaders = [{<<"accept">>, fun validate_accept_header/1}],
 
     validate_headers(HeaderMap, RequiredHeaders).
 
 %% @private Validate POST request headers
 validate_post_headers(HeaderMap) ->
     %% POST requests must have content-type
-    RequiredHeaders = [
-        {<<"content-type">>, fun validate_content_type_header/1}
-    ],
+    RequiredHeaders = [{<<"content-type">>, fun validate_content_type_header/1}],
 
     validate_headers(HeaderMap, RequiredHeaders).
 
@@ -124,9 +114,12 @@ validate_required_headers(HeaderMap, [{HeaderName, ValidatorFun} | Rest], Acc) -
         Value ->
             case ValidatorFun(Value) of
                 {ok, ValidatedValue} ->
-                    validate_required_headers(HeaderMap, Rest, [{HeaderName, ValidatedValue} | Acc]);
+                    validate_required_headers(HeaderMap,
+                                              Rest,
+                                              [{HeaderName, ValidatedValue} | Acc]);
                 {error, Reason} ->
-                    {error, {400, <<"Invalid header value">>, #{header => HeaderName, reason => Reason}}}
+                    {error,
+                     {400, <<"Invalid header value">>, #{header => HeaderName, reason => Reason}}}
             end
     end.
 
@@ -173,32 +166,30 @@ format_error_data(Data) ->
 validate_header_security(Name, Value) when is_binary(Name), is_binary(Value) ->
     %% Check header name size
     NameSize = byte_size(Name),
-    if
-        NameSize > ?MAX_HEADER_SIZE ->
-            logger:warning("HTTP header name too large: ~p bytes (max ~p)",
-                [NameSize, ?MAX_HEADER_SIZE]),
-            {error, {header_name_too_large, #{
-                header => Name,
-                size => NameSize,
-                max_size => ?MAX_HEADER_SIZE
-            }}};
-        true ->
-            ok
+    if NameSize > ?MAX_HEADER_SIZE ->
+           logger:warning("HTTP header name too large: ~p bytes (max ~p)",
+                          [NameSize, ?MAX_HEADER_SIZE]),
+           {error,
+            {header_name_too_large,
+             #{header => Name,
+               size => NameSize,
+               max_size => ?MAX_HEADER_SIZE}}};
+       true ->
+           ok
     end,
 
     %% Check header value size
     ValueSize = byte_size(Value),
-    if
-        ValueSize > ?MAX_HEADER_SIZE ->
-            logger:warning("HTTP header value too large for ~s: ~p bytes (max ~p)",
-                [Name, ValueSize, ?MAX_HEADER_SIZE]),
-            {error, {header_value_too_large, #{
-                header => Name,
-                size => ValueSize,
-                max_size => ?MAX_HEADER_SIZE
-            }}};
-        true ->
-            ok
+    if ValueSize > ?MAX_HEADER_SIZE ->
+           logger:warning("HTTP header value too large for ~s: ~p bytes (max ~p)",
+                          [Name, ValueSize, ?MAX_HEADER_SIZE]),
+           {error,
+            {header_value_too_large,
+             #{header => Name,
+               size => ValueSize,
+               max_size => ?MAX_HEADER_SIZE}}};
+       true ->
+           ok
     end,
 
     %% Check for CRLF injection in header name
@@ -207,10 +198,8 @@ validate_header_security(Name, Value) when is_binary(Name), is_binary(Value) ->
             ok;
         _ ->
             logger:error("CRLF injection attempt in header name: ~p", [Name]),
-            {error, {crlf_injection_in_name, #{
-                header => Name,
-                attack_type => <<"crlf_injection">>
-            }}}
+            {error,
+             {crlf_injection_in_name, #{header => Name, attack_type => <<"crlf_injection">>}}}
     end,
 
     %% Check for CRLF injection in header value
@@ -219,37 +208,33 @@ validate_header_security(Name, Value) when is_binary(Name), is_binary(Value) ->
             ok;
         _ ->
             logger:error("CRLF injection attempt in header value for ~s: ~p", [Name, Value]),
-            {error, {crlf_injection_in_value, #{
-                header => Name,
+            {error,
+             {crlf_injection_in_value,
+              #{header => Name,
                 attack_type => <<"crlf_injection">>,
-                value_preview => truncate_for_log(Value, 100)
-            }}}
+                value_preview => truncate_for_log(Value, 100)}}}
     end.
 
 %% @private Validate security constraints on all headers
 -spec validate_all_headers_security(headers()) -> ok | {error, {integer(), binary(), term()}}.
 validate_all_headers_security(Headers) ->
     %% Calculate total headers size
-    TotalSize = lists:foldl(
-        fun({Name, Value}, Acc) ->
-            Acc + byte_size(Name) + byte_size(Value)
-        end,
-        0,
-        Headers
-    ),
+    TotalSize =
+        lists:foldl(fun({Name, Value}, Acc) -> Acc + byte_size(Name) + byte_size(Value) end,
+                    0,
+                    Headers),
 
     %% Check total size
-    if
-        TotalSize > ?MAX_TOTAL_HEADERS_SIZE ->
-            logger:warning("Total HTTP headers size too large: ~p bytes (max ~p)",
-                [TotalSize, ?MAX_TOTAL_HEADERS_SIZE]),
-            {error, {400, <<"Request headers too large">>, #{
-                total_size => TotalSize,
-                max_size => ?MAX_TOTAL_HEADERS_SIZE
-            }}};
-        true ->
-            %% Validate each header individually
-            validate_each_header_security(Headers)
+    if TotalSize > ?MAX_TOTAL_HEADERS_SIZE ->
+           logger:warning("Total HTTP headers size too large: ~p bytes (max ~p)",
+                          [TotalSize, ?MAX_TOTAL_HEADERS_SIZE]),
+           {error,
+            {400,
+             <<"Request headers too large">>,
+             #{total_size => TotalSize, max_size => ?MAX_TOTAL_HEADERS_SIZE}}};
+       true ->
+           %% Validate each header individually
+           validate_each_header_security(Headers)
     end.
 
 %% @private Validate security on each header

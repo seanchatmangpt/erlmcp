@@ -22,50 +22,44 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_pricing_plan).
 
--export([
-    load_plan/1,
-    validate_plan/1,
-    get_envelope/1,
-    check_refusal/2,
-    list_available_plans/0,
-    get_plan_spec/1
-]).
+-export([load_plan/1, validate_plan/1, get_envelope/1, check_refusal/2, list_available_plans/0,
+         get_plan_spec/1]).
 
 -type tier() :: team | enterprise | gov.
--type refusal_type() :: throughput_exceeded | queue_depth_exceeded |
-                        connection_limit_exceeded | message_size_exceeded |
-                        unsupported_feature | fips_compliance_violation |
-                        encryption_failure.
-
--type envelope() :: #{
-    throughput_req_s := integer(),
-    concurrent_connections := integer(),
-    queue_depth_messages := integer(),
-    p99_latency_ms := integer(),
-    failover_sla_seconds := integer(),
-    connection_timeout_seconds := integer()
-}.
-
--type plan_spec() :: #{
-    tier := tier(),
-    name := binary() | string(),
-    description := binary() | string(),
-    pricing := map(),
-    envelope := envelope(),
-    limits := map(),
-    features := map(),
-    refusal_behavior := map(),
-    evidence := map(),
-    compliance := map(),
-    sla => map(),
-    audit => map()
-}.
-
+-type refusal_type() ::
+    throughput_exceeded |
+    queue_depth_exceeded |
+    connection_limit_exceeded |
+    message_size_exceeded |
+    unsupported_feature |
+    fips_compliance_violation |
+    encryption_failure.
+-type envelope() ::
+    #{throughput_req_s := integer(),
+      concurrent_connections := integer(),
+      queue_depth_messages := integer(),
+      p99_latency_ms := integer(),
+      failover_sla_seconds := integer(),
+      connection_timeout_seconds := integer()}.
+-type plan_spec() ::
+    #{tier := tier(),
+      name := binary() | string(),
+      description := binary() | string(),
+      pricing := map(),
+      envelope := envelope(),
+      limits := map(),
+      features := map(),
+      refusal_behavior := map(),
+      evidence := map(),
+      compliance := map(),
+      sla => map(),
+      audit => map()}.
 -type validation_result() :: ok | {error, validation_error()}.
--type validation_error() :: {schema_error, term()} |
-                            {file_not_found, file:name()} |
-                            {json_decode_error, term()} |
-                            {invalid_tier, term()}.
+-type validation_error() ::
+    {schema_error, term()} |
+    {file_not_found, file:name()} |
+    {json_decode_error, term()} |
+    {invalid_tier, term()}.
 
 -spec load_plan(Tier :: tier()) -> {ok, plan_spec()} | {error, term()}.
 %% @doc Load pricing plan specification from JSON file
@@ -159,8 +153,7 @@ get_envelope(Tier) ->
             Error
     end.
 
--spec check_refusal(Tier :: tier(), RefusalType :: refusal_type()) ->
-    {ok, map()} | {error, term()}.
+-spec check_refusal(Tier :: tier(), RefusalType :: refusal_type()) -> {ok, map()} | {error, term()}.
 %% @doc Get deterministic refusal response for limit exceedance
 %%
 %% Returns the exact refusal response that should be sent when a limit
@@ -217,10 +210,7 @@ list_available_plans() ->
         PlansDir = get_plans_dir(),
         case file:list_dir(PlansDir) of
             {ok, Files} ->
-                Tiers = lists:filtermap(
-                    fun(F) -> parse_plan_filename(F) end,
-                    Files
-                ),
+                Tiers = lists:filtermap(fun(F) -> parse_plan_filename(F) end, Files),
                 {ok, lists:sort(Tiers)};
             {error, enoent} ->
                 {error, {directory_not_found, PlansDir}};
@@ -272,8 +262,10 @@ find_project_root() ->
         Beam when is_list(Beam) ->
             Parts = filename:split(Beam),
             case find_build_marker(Parts) of
-                {ok, Root} -> Root;
-                error -> "."
+                {ok, Root} ->
+                    Root;
+                error ->
+                    "."
             end;
         _Other ->
             "."
@@ -284,9 +276,7 @@ find_project_root() ->
 find_build_marker(Parts) ->
     case lists:member("_build", Parts) of
         true ->
-            Index = length(Parts) - length(lists:dropwhile(
-                fun(X) -> X =/= "_build" end, Parts
-            )),
+            Index = length(Parts) - length(lists:dropwhile(fun(X) -> X =/= "_build" end, Parts)),
             {Prefix, _BuildRest} = lists:split(Index, Parts),
             {ok, filename:join(Prefix)};
         false ->
@@ -301,24 +291,26 @@ find_build_marker(Parts) ->
 %% @private Normalize plan map to standard format
 %% Converts all string keys to atoms, ensures required fields present
 normalize_plan(RawPlan) ->
-    maps:map(
-        fun(_Key, Value) when is_binary(Value) -> Value;
-           (_Key, Value) when is_map(Value) -> normalize_value(Value);
-           (_Key, Value) -> Value
-        end,
-        RawPlan
-    ).
+    maps:map(fun (_Key, Value) when is_binary(Value) ->
+                     Value;
+                 (_Key, Value) when is_map(Value) ->
+                     normalize_value(Value);
+                 (_Key, Value) ->
+                     Value
+             end,
+             RawPlan).
 
 -spec normalize_value(term()) -> term().
 %% @private Recursively normalize nested values
 normalize_value(Map) when is_map(Map) ->
-    maps:map(
-        fun(_K, V) when is_binary(V) -> V;
-           (_K, V) when is_map(V) -> normalize_value(V);
-           (_K, V) -> V
-        end,
-        Map
-    );
+    maps:map(fun (_K, V) when is_binary(V) ->
+                     V;
+                 (_K, V) when is_map(V) ->
+                     normalize_value(V);
+                 (_K, V) ->
+                     V
+             end,
+             Map);
 normalize_value(Value) ->
     Value.
 
@@ -375,20 +367,21 @@ load_schema() ->
 -spec validate_envelope(envelope()) -> ok | {error, term()}.
 %% @private Validate envelope has all required fields with proper types
 validate_envelope(Envelope) when is_map(Envelope) ->
-    RequiredFields = [
-        throughput_req_s,
-        concurrent_connections,
-        queue_depth_messages,
-        p99_latency_ms,
-        failover_sla_seconds,
-        connection_timeout_seconds
-    ],
+    RequiredFields =
+        [throughput_req_s,
+         concurrent_connections,
+         queue_depth_messages,
+         p99_latency_ms,
+         failover_sla_seconds,
+         connection_timeout_seconds],
     case check_required_fields(Envelope, RequiredFields) of
         ok ->
             % Validate types and ranges
             case maps:get(throughput_req_s, Envelope) of
-                V when is_integer(V), V > 0 -> ok;
-                _ -> {error, {invalid_throughput, Envelope}}
+                V when is_integer(V), V > 0 ->
+                    ok;
+                _ ->
+                    {error, {invalid_throughput, Envelope}}
             end;
         Error ->
             Error
@@ -399,14 +392,13 @@ validate_envelope(_) ->
 -spec validate_limits(map()) -> ok | {error, term()}.
 %% @private Validate limits section
 validate_limits(Limits) when is_map(Limits) ->
-    RequiredFields = [
-        max_message_size_bytes,
-        max_payload_size_mb,
-        max_concurrent_requests_per_conn,
-        memory_limit_mb,
-        cpu_time_limit_seconds,
-        backpressure_threshold_bytes
-    ],
+    RequiredFields =
+        [max_message_size_bytes,
+         max_payload_size_mb,
+         max_concurrent_requests_per_conn,
+         memory_limit_mb,
+         cpu_time_limit_seconds,
+         backpressure_threshold_bytes],
     check_required_fields(Limits, RequiredFields);
 validate_limits(_) ->
     {error, limits_not_map}.
@@ -414,19 +406,18 @@ validate_limits(_) ->
 -spec validate_features(map()) -> ok | {error, term()}.
 %% @private Validate features section
 validate_features(Features) when is_map(Features) ->
-    RequiredFeatures = [
-        client,
-        server,
-        stdio_transport,
-        tcp_transport,
-        http_transport,
-        rate_limiting,
-        circuit_breaker,
-        otel_observability,
-        audit_logging,
-        fips_140_2,
-        high_availability
-    ],
+    RequiredFeatures =
+        [client,
+         server,
+         stdio_transport,
+         tcp_transport,
+         http_transport,
+         rate_limiting,
+         circuit_breaker,
+         otel_observability,
+         audit_logging,
+         fips_140_2,
+         high_availability],
     check_required_fields(Features, RequiredFeatures);
 validate_features(_) ->
     {error, features_not_map}.
@@ -434,12 +425,7 @@ validate_features(_) ->
 -spec validate_evidence(map()) -> ok | {error, term()}.
 %% @private Validate evidence bundle requirements
 validate_evidence(Evidence) when is_map(Evidence) ->
-    RequiredEvidence = [
-        sbom,
-        provenance,
-        chaos_report,
-        benchmark_report
-    ],
+    RequiredEvidence = [sbom, provenance, chaos_report, benchmark_report],
     check_required_fields(Evidence, RequiredEvidence);
 validate_evidence(_) ->
     {error, evidence_not_map}.
@@ -462,7 +448,9 @@ check_required_fields(Map, RequiredFields) ->
 -spec parse_plan_filename(string()) -> {true, tier()} | false.
 %% @private Extract tier from filename (e.g., "team.plan.json" -> team)
 parse_plan_filename(Filename) ->
-    case string:split(filename:basename(Filename, ".json"), ".plan") of
+    case string:split(
+             filename:basename(Filename, ".json"), ".plan")
+    of
         [TierStr, ""] ->
             try
                 case list_to_atom(TierStr) of
@@ -472,7 +460,8 @@ parse_plan_filename(Filename) ->
                         false
                 end
             catch
-                error:_ -> false
+                error:_ ->
+                    false
             end;
         _Other ->
             false

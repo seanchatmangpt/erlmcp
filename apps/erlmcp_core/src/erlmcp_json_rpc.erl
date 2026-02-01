@@ -3,57 +3,22 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    encode_request/3,
-    encode_response/2,
-    encode_error_response/3,
-    encode_error_response/4,
-    encode_notification/2,
-    decode_message/1,
-    decode_message/2,
-    decode_batch/1,
-    encode_batch/1,
-    is_batch_request/1,
-    create_error/3,
-    create_error_with_data/4,
-    validate_error_code/1,
-    error_method_not_found/2,
-    error_invalid_params/2,
-    error_resource_not_found/2,
-    error_tool_not_found/2,
-    error_prompt_not_found/2,
-    error_capability_not_supported/2,
-    error_not_initialized/1,
-    error_validation_failed/2,
-    error_message_too_large/2,
-    error_internal/1,
-    error_parse/1,
-    create_batch_error_response/3,
-    error_severity/1,
-    error_category/1,
-    is_jsonrpc_standard_error/1,
-    is_mcp_core_error/1,
-    is_mcp_content_error/1,
-    is_mcp_resource_error/1,
-    is_mcp_tool_error/1,
-    is_mcp_prompt_error/1,
-    is_mcp_auth_error/1,
-    is_mcp_protocol_error/1,
-    is_mcp_pagination_error/1,
-    is_mcp_task_error/1,
-    is_mcp_progress_error/1,
-    is_mcp_completion_error/1,
-    error_elicitation_failed/2,
-    error_elicitation_timeout/2,
-    error_elicitation_cancelled/1,
-    error_invalid_elicitation_mode/2,
-    error_elicitation_security_error/2,
-    error_experimental_task_not_found/2,
-    error_task_dependency_failed/3,
-    error_experimental_task_cancelled/2,
-    error_experimental_task_timeout/3,
-    error_invalid_task_state/4
-]).
+-export([encode_request/3, encode_response/2, encode_error_response/3, encode_error_response/4,
+         encode_notification/2, decode_message/1, decode_message/2, decode_batch/1, encode_batch/1,
+         is_batch_request/1, create_error/3, create_error_with_data/4, validate_error_code/1,
+         error_method_not_found/2, error_invalid_params/2, error_resource_not_found/2,
+         error_tool_not_found/2, error_prompt_not_found/2, error_capability_not_supported/2,
+         error_not_initialized/1, error_validation_failed/2, error_message_too_large/2,
+         error_internal/1, error_parse/1, create_batch_error_response/3, error_severity/1,
+         error_category/1, is_jsonrpc_standard_error/1, is_mcp_core_error/1, is_mcp_content_error/1,
+         is_mcp_resource_error/1, is_mcp_tool_error/1, is_mcp_prompt_error/1, is_mcp_auth_error/1,
+         is_mcp_protocol_error/1, is_mcp_pagination_error/1, is_mcp_task_error/1,
+         is_mcp_progress_error/1, is_mcp_completion_error/1, error_elicitation_failed/2,
+         error_elicitation_timeout/2, error_elicitation_cancelled/1,
+         error_invalid_elicitation_mode/2, error_elicitation_security_error/2,
+         error_experimental_task_not_found/2, error_task_dependency_failed/3,
+         error_experimental_task_cancelled/2, error_experimental_task_timeout/3,
+         error_invalid_task_state/4]).
 
 %% Types
 -type json_rpc_message() :: #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}.
@@ -69,19 +34,15 @@
 
 -spec encode_request(json_rpc_id(), binary(), json_rpc_params()) -> binary().
 encode_request(Id, Method, Params) when is_binary(Method) ->
-    Request = #json_rpc_request{
-        id = Id,
-        method = Method,
-        params = Params
-    },
+    Request =
+        #json_rpc_request{id = Id,
+                          method = Method,
+                          params = Params},
     encode_message(Request).
 
 -spec encode_response(json_rpc_id(), term()) -> binary().
 encode_response(Id, Result) ->
-    Response = #json_rpc_response{
-        id = Id,
-        result = Result
-    },
+    Response = #json_rpc_response{id = Id, result = Result},
     encode_message(Response).
 
 -spec encode_error_response(json_rpc_id(), integer(), binary()) -> binary().
@@ -91,25 +52,21 @@ encode_error_response(Id, Code, Message) when is_integer(Code), is_binary(Messag
 -spec encode_error_response(json_rpc_id(), integer(), binary(), term()) -> binary().
 encode_error_response(Id, Code, Message, Data) when is_integer(Code), is_binary(Message) ->
     %% Validate error code - use internal error if invalid
-    FinalCode = case validate_error_code(Code) of
-        true -> Code;
-        false ->
-            logger:warning("Invalid error code ~p, using internal error", [Code]),
-            ?JSONRPC_INTERNAL_ERROR
-    end,
+    FinalCode =
+        case validate_error_code(Code) of
+            true ->
+                Code;
+            false ->
+                logger:warning("Invalid error code ~p, using internal error", [Code]),
+                ?JSONRPC_INTERNAL_ERROR
+        end,
     Error = build_error_object(FinalCode, Message, Data),
-    Response = #json_rpc_response{
-        id = Id,
-        error = Error
-    },
+    Response = #json_rpc_response{id = Id, error = Error},
     encode_message(Response).
 
 -spec encode_notification(binary(), json_rpc_params()) -> binary().
 encode_notification(Method, Params) when is_binary(Method) ->
-    Notification = #json_rpc_notification{
-        method = Method,
-        params = Params
-    },
+    Notification = #json_rpc_notification{method = Method, params = Params},
     encode_message(Notification).
 
 -spec decode_message(binary()) -> decode_result().
@@ -149,8 +106,10 @@ decode_batch(Json) when is_binary(Json) ->
         Data when is_map(Data) ->
             %% Single request, wrap in list
             case erlmcp_message_parser:parse_json_rpc(Data) of
-                {ok, Message} -> {ok, [Message]};
-                Error -> Error
+                {ok, Message} ->
+                    {ok, [Message]};
+                Error ->
+                    Error
             end;
         _ ->
             {error, {invalid_json, not_array_or_object}}
@@ -170,29 +129,28 @@ encode_batch(Messages) when is_list(Messages) ->
 is_batch_request(Json) when is_binary(Json) ->
     try
         case jsx:decode(Json, [return_maps]) of
-            L when is_list(L) -> true;
-            _ -> false
+            L when is_list(L) ->
+                true;
+            _ ->
+                false
         end
     catch
-        _:_ -> false
+        _:_ ->
+            false
     end.
 
 -spec create_error(integer(), binary(), term()) -> #mcp_error{}.
 create_error(Code, Message, Data) when is_integer(Code), is_binary(Message) ->
-    #mcp_error{
-        code = Code,
-        message = Message,
-        data = Data
-    }.
+    #mcp_error{code = Code,
+               message = Message,
+               data = Data}.
 
 -spec create_error_with_data(integer(), binary(), atom(), term()) -> #mcp_error{}.
 create_error_with_data(Code, Message, DataKey, DataValue)
-  when is_integer(Code), is_binary(Message), is_atom(DataKey) ->
-    #mcp_error{
-        code = Code,
-        message = Message,
-        data = #{atom_to_binary(DataKey, utf8) => DataValue}
-    }.
+    when is_integer(Code), is_binary(Message), is_atom(DataKey) ->
+    #mcp_error{code = Code,
+               message = Message,
+               data = #{atom_to_binary(DataKey, utf8) => DataValue}}.
 
 %%====================================================================
 %% Error Code Validation
@@ -225,9 +183,20 @@ error_severity(_Code) ->
 %% @doc Get error category for an error code
 %% Returns: jsonrpc | mcp_core | content | resource | tool | prompt |
 %%          auth | protocol | pagination | task | progress | completion | unknown
--spec error_category(integer()) -> jsonrpc | mcp_core | content | resource | tool |
-                                   prompt | auth | protocol | pagination |
-                                   task | progress | completion | unknown.
+-spec error_category(integer()) ->
+                        jsonrpc |
+                        mcp_core |
+                        content |
+                        resource |
+                        tool |
+                        prompt |
+                        auth |
+                        protocol |
+                        pagination |
+                        task |
+                        progress |
+                        completion |
+                        unknown.
 error_category(Code) when Code >= -32700, Code =< -32600 ->
     jsonrpc;   % JSON-RPC 2.0 standard errors
 error_category(Code) when Code >= -32010, Code =< -32001 ->
@@ -259,64 +228,89 @@ error_category(_Code) ->
 
 %% @doc Check if error code is a JSON-RPC 2.0 standard error
 -spec is_jsonrpc_standard_error(integer()) -> boolean().
-is_jsonrpc_standard_error(Code) when Code >= -32700, Code =< -32600 -> true;
-is_jsonrpc_standard_error(_Code) -> false.
+is_jsonrpc_standard_error(Code) when Code >= -32700, Code =< -32600 ->
+    true;
+is_jsonrpc_standard_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a core MCP error
 -spec is_mcp_core_error(integer()) -> boolean().
-is_mcp_core_error(Code) when Code >= -32010, Code =< -32001 -> true;
-is_mcp_core_error(-32000) -> true;  % Custom server error
-is_mcp_core_error(_Code) -> false.
+is_mcp_core_error(Code) when Code >= -32010, Code =< -32001 ->
+    true;
+is_mcp_core_error(-32000) ->
+    true;  % Custom server error
+is_mcp_core_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a content error
 -spec is_mcp_content_error(integer()) -> boolean().
-is_mcp_content_error(Code) when Code >= -32020, Code =< -32011 -> true;
-is_mcp_content_error(_Code) -> false.
+is_mcp_content_error(Code) when Code >= -32020, Code =< -32011 ->
+    true;
+is_mcp_content_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a resource error
 -spec is_mcp_resource_error(integer()) -> boolean().
-is_mcp_resource_error(Code) when Code >= -32030, Code =< -32021 -> true;
-is_mcp_resource_error(_Code) -> false.
+is_mcp_resource_error(Code) when Code >= -32030, Code =< -32021 ->
+    true;
+is_mcp_resource_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a tool error
 -spec is_mcp_tool_error(integer()) -> boolean().
-is_mcp_tool_error(Code) when Code >= -32040, Code =< -32031 -> true;
-is_mcp_tool_error(_Code) -> false.
+is_mcp_tool_error(Code) when Code >= -32040, Code =< -32031 ->
+    true;
+is_mcp_tool_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a prompt error
 -spec is_mcp_prompt_error(integer()) -> boolean().
-is_mcp_prompt_error(Code) when Code >= -32050, Code =< -32041 -> true;
-is_mcp_prompt_error(_Code) -> false.
+is_mcp_prompt_error(Code) when Code >= -32050, Code =< -32041 ->
+    true;
+is_mcp_prompt_error(_Code) ->
+    false.
 
 %% @doc Check if error code is an auth error
 -spec is_mcp_auth_error(integer()) -> boolean().
-is_mcp_auth_error(Code) when Code >= -32060, Code =< -32051 -> true;
-is_mcp_auth_error(_Code) -> false.
+is_mcp_auth_error(Code) when Code >= -32060, Code =< -32051 ->
+    true;
+is_mcp_auth_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a protocol error
 -spec is_mcp_protocol_error(integer()) -> boolean().
-is_mcp_protocol_error(Code) when Code >= -32070, Code =< -32061 -> true;
-is_mcp_protocol_error(_Code) -> false.
+is_mcp_protocol_error(Code) when Code >= -32070, Code =< -32061 ->
+    true;
+is_mcp_protocol_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a pagination error
 -spec is_mcp_pagination_error(integer()) -> boolean().
-is_mcp_pagination_error(Code) when Code >= -32080, Code =< -32071 -> true;
-is_mcp_pagination_error(_Code) -> false.
+is_mcp_pagination_error(Code) when Code >= -32080, Code =< -32071 ->
+    true;
+is_mcp_pagination_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a task error
 -spec is_mcp_task_error(integer()) -> boolean().
-is_mcp_task_error(Code) when Code >= -32090, Code =< -32081 -> true;
-is_mcp_task_error(_Code) -> false.
+is_mcp_task_error(Code) when Code >= -32090, Code =< -32081 ->
+    true;
+is_mcp_task_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a progress error
 -spec is_mcp_progress_error(integer()) -> boolean().
-is_mcp_progress_error(Code) when Code >= -32100, Code =< -32091 -> true;
-is_mcp_progress_error(_Code) -> false.
+is_mcp_progress_error(Code) when Code >= -32100, Code =< -32091 ->
+    true;
+is_mcp_progress_error(_Code) ->
+    false.
 
 %% @doc Check if error code is a completion error
 -spec is_mcp_completion_error(integer()) -> boolean().
-is_mcp_completion_error(Code) when Code >= -32113, Code =< -32110 -> true;
-is_mcp_completion_error(_Code) -> false.
+is_mcp_completion_error(Code) when Code >= -32113, Code =< -32110 ->
+    true;
+is_mcp_completion_error(_Code) ->
+    false.
 
 %%====================================================================
 %% Experimental Error Helper Functions (1090-1099)
@@ -360,11 +354,8 @@ error_experimental_task_not_found(Id, TaskId) when is_binary(TaskId) ->
 %% Task dependency failed error
 -spec error_task_dependency_failed(json_rpc_id(), binary(), binary()) -> binary().
 error_task_dependency_failed(Id, TaskId, DependencyId)
-  when is_binary(TaskId), is_binary(DependencyId) ->
-    Data = #{
-        <<"taskId">> => TaskId,
-        <<"dependencyId">> => DependencyId
-    },
+    when is_binary(TaskId), is_binary(DependencyId) ->
+    Data = #{<<"taskId">> => TaskId, <<"dependencyId">> => DependencyId},
     encode_error_response(Id, ?TASK_DEPENDENCY_FAILED, ?MSG_TASK_DEPENDENCY_FAILED, Data).
 
 %% Experimental task cancelled error (positive code 1097)
@@ -376,22 +367,18 @@ error_experimental_task_cancelled(Id, TaskId) when is_binary(TaskId) ->
 %% Experimental task timeout error (positive code 1098)
 -spec error_experimental_task_timeout(json_rpc_id(), binary(), pos_integer()) -> binary().
 error_experimental_task_timeout(Id, TaskId, TimeoutMs)
-  when is_binary(TaskId), is_integer(TimeoutMs) ->
-    Data = #{
-        <<"taskId">> => TaskId,
-        <<"timeoutMs">> => TimeoutMs
-    },
+    when is_binary(TaskId), is_integer(TimeoutMs) ->
+    Data = #{<<"taskId">> => TaskId, <<"timeoutMs">> => TimeoutMs},
     encode_error_response(Id, ?TASK_TIMEOUT, ?MSG_TASK_TIMEOUT, Data).
 
 %% Invalid task state error
 -spec error_invalid_task_state(json_rpc_id(), binary(), binary(), binary()) -> binary().
 error_invalid_task_state(Id, TaskId, CurrentState, ExpectedState)
-  when is_binary(TaskId), is_binary(CurrentState), is_binary(ExpectedState) ->
-    Data = #{
-        <<"taskId">> => TaskId,
-        <<"currentState">> => CurrentState,
-        <<"expectedState">> => ExpectedState
-    },
+    when is_binary(TaskId), is_binary(CurrentState), is_binary(ExpectedState) ->
+    Data =
+        #{<<"taskId">> => TaskId,
+          <<"currentState">> => CurrentState,
+          <<"expectedState">> => ExpectedState},
     encode_error_response(Id, ?INVALID_TASK_STATE, ?MSG_INVALID_TASK_STATE, Data).
 
 %%====================================================================
@@ -436,7 +423,10 @@ error_prompt_not_found(Id, PromptName) when is_binary(PromptName) ->
 -spec error_capability_not_supported(json_rpc_id(), binary()) -> binary().
 error_capability_not_supported(Id, Capability) when is_binary(Capability) ->
     Data = #{<<"capability">> => Capability},
-    encode_error_response(Id, ?MCP_ERROR_CAPABILITY_NOT_SUPPORTED, ?MCP_MSG_CAPABILITY_NOT_SUPPORTED, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_CAPABILITY_NOT_SUPPORTED,
+                          ?MCP_MSG_CAPABILITY_NOT_SUPPORTED,
+                          Data).
 
 %% Not initialized error
 -spec error_not_initialized(json_rpc_id()) -> binary().
@@ -466,10 +456,7 @@ error_parse(Id) ->
 %% Message too large error (Gap #45: Message Size Limits)
 -spec error_message_too_large(json_rpc_id(), non_neg_integer()) -> binary().
 error_message_too_large(Id, MaxSize) when is_integer(MaxSize), MaxSize > 0 ->
-    Data = #{
-        <<"maxSize">> => MaxSize,
-        <<"unit">> => <<"bytes">>
-    },
+    Data = #{<<"maxSize">> => MaxSize, <<"unit">> => <<"bytes">>},
     encode_error_response(Id, ?MCP_ERROR_MESSAGE_TOO_LARGE, ?MCP_MSG_MESSAGE_TOO_LARGE, Data).
 
 %%====================================================================
@@ -479,38 +466,30 @@ error_message_too_large(Id, MaxSize) when is_integer(MaxSize), MaxSize > 0 ->
 %% Tool description too long error
 -spec error_tool_description_too_large(json_rpc_id(), pos_integer(), pos_integer()) -> binary().
 error_tool_description_too_large(Id, ActualSize, MaxSize)
-  when is_integer(ActualSize), is_integer(MaxSize) ->
-    Data = #{
-        <<"actualSize">> => ActualSize,
-        <<"maxSize">> => MaxSize
-    },
-    encode_error_response(Id, ?MCP_ERROR_TOOL_DESCRIPTION_TOO_LONG,
-                          ?MCP_MSG_TOOL_DESCRIPTION_TOO_LONG, Data).
+    when is_integer(ActualSize), is_integer(MaxSize) ->
+    Data = #{<<"actualSize">> => ActualSize, <<"maxSize">> => MaxSize},
+    encode_error_response(Id,
+                          ?MCP_ERROR_TOOL_DESCRIPTION_TOO_LONG,
+                          ?MCP_MSG_TOOL_DESCRIPTION_TOO_LONG,
+                          Data).
 
 %% Invalid content type error
 -spec error_invalid_content_type(json_rpc_id(), binary()) -> binary().
 error_invalid_content_type(Id, ContentType) when is_binary(ContentType) ->
     Data = #{<<"contentType">> => ContentType},
-    encode_error_response(Id, ?MCP_ERROR_INVALID_CONTENT_TYPE,
-                          ?MCP_MSG_INVALID_CONTENT_TYPE, Data).
+    encode_error_response(Id, ?MCP_ERROR_INVALID_CONTENT_TYPE, ?MCP_MSG_INVALID_CONTENT_TYPE, Data).
 
 %% Content too large error
 -spec error_content_too_large(json_rpc_id(), pos_integer(), pos_integer()) -> binary().
-error_content_too_large(Id, ActualSize, MaxSize)
-  when is_integer(ActualSize), is_integer(MaxSize) ->
-    Data = #{
-        <<"actualSize">> => ActualSize,
-        <<"maxSize">> => MaxSize
-    },
-    encode_error_response(Id, ?MCP_ERROR_CONTENT_TOO_LARGE,
-                          ?MCP_MSG_CONTENT_TOO_LARGE, Data).
+error_content_too_large(Id, ActualSize, MaxSize) when is_integer(ActualSize), is_integer(MaxSize) ->
+    Data = #{<<"actualSize">> => ActualSize, <<"maxSize">> => MaxSize},
+    encode_error_response(Id, ?MCP_ERROR_CONTENT_TOO_LARGE, ?MCP_MSG_CONTENT_TOO_LARGE, Data).
 
 %% Invalid encoding error
 -spec error_invalid_encoding(json_rpc_id(), binary()) -> binary().
 error_invalid_encoding(Id, Encoding) when is_binary(Encoding) ->
     Data = #{<<"encoding">> => Encoding},
-    encode_error_response(Id, ?MCP_ERROR_INVALID_ENCODING,
-                          ?MCP_MSG_INVALID_ENCODING, Data).
+    encode_error_response(Id, ?MCP_ERROR_INVALID_ENCODING, ?MCP_MSG_INVALID_ENCODING, Data).
 
 %%====================================================================
 %% Resource Error Helper Functions (-32021 to -32030)
@@ -520,8 +499,10 @@ error_invalid_encoding(Id, Encoding) when is_binary(Encoding) ->
 -spec error_resource_template_not_found(json_rpc_id(), binary()) -> binary().
 error_resource_template_not_found(Id, TemplateUri) when is_binary(TemplateUri) ->
     Data = #{<<"templateUri">> => TemplateUri},
-    encode_error_response(Id, ?MCP_ERROR_RESOURCE_TEMPLATE_NOT_FOUND,
-                          ?MCP_MSG_RESOURCE_TEMPLATE_NOT_FOUND, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_RESOURCE_TEMPLATE_NOT_FOUND,
+                          ?MCP_MSG_RESOURCE_TEMPLATE_NOT_FOUND,
+                          Data).
 
 %% Invalid URI error
 -spec error_invalid_uri(json_rpc_id(), binary()) -> binary().
@@ -532,30 +513,27 @@ error_invalid_uri(Id, Uri) when is_binary(Uri) ->
 %% URI syntax error
 -spec error_uri_syntax_error(json_rpc_id(), binary(), binary()) -> binary().
 error_uri_syntax_error(Id, Uri, Reason) when is_binary(Uri), is_binary(Reason) ->
-    Data = #{
-        <<"uri">> => Uri,
-        <<"reason">> => Reason
-    },
-    encode_error_response(Id, ?MCP_ERROR_URI_SYNTAX_ERROR,
-                          ?MCP_MSG_URI_SYNTAX_ERROR, Data).
+    Data = #{<<"uri">> => Uri, <<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_URI_SYNTAX_ERROR, ?MCP_MSG_URI_SYNTAX_ERROR, Data).
 
 %% Resource access denied error
 -spec error_resource_access_denied(json_rpc_id(), binary()) -> binary().
 error_resource_access_denied(Id, Uri) when is_binary(Uri) ->
     Data = #{<<"uri">> => Uri},
-    encode_error_response(Id, ?MCP_ERROR_RESOURCE_ACCESS_DENIED,
-                          ?MCP_MSG_RESOURCE_ACCESS_DENIED, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_RESOURCE_ACCESS_DENIED,
+                          ?MCP_MSG_RESOURCE_ACCESS_DENIED,
+                          Data).
 
 %% Template render failed error
 -spec error_template_render_failed(json_rpc_id(), binary(), binary()) -> binary().
 error_template_render_failed(Id, TemplateUri, Reason)
-  when is_binary(TemplateUri), is_binary(Reason) ->
-    Data = #{
-        <<"templateUri">> => TemplateUri,
-        <<"reason">> => Reason
-    },
-    encode_error_response(Id, ?MCP_ERROR_TEMPLATE_RENDER_FAILED,
-                          ?MCP_MSG_TEMPLATE_RENDER_FAILED, Data).
+    when is_binary(TemplateUri), is_binary(Reason) ->
+    Data = #{<<"templateUri">> => TemplateUri, <<"reason">> => Reason},
+    encode_error_response(Id,
+                          ?MCP_ERROR_TEMPLATE_RENDER_FAILED,
+                          ?MCP_MSG_TEMPLATE_RENDER_FAILED,
+                          Data).
 
 %%====================================================================
 %% Tool Error Helper Functions (-32031 to -32040)
@@ -563,23 +541,17 @@ error_template_render_failed(Id, TemplateUri, Reason)
 
 %% Tool execution failed error
 -spec error_tool_execution_failed(json_rpc_id(), binary(), binary()) -> binary().
-error_tool_execution_failed(Id, ToolName, Reason)
-  when is_binary(ToolName), is_binary(Reason) ->
-    Data = #{
-        <<"tool">> => ToolName,
-        <<"reason">> => Reason
-    },
-    encode_error_response(Id, ?MCP_ERROR_TOOL_EXECUTION_FAILED,
-                          ?MCP_MSG_TOOL_EXECUTION_FAILED, Data).
+error_tool_execution_failed(Id, ToolName, Reason) when is_binary(ToolName), is_binary(Reason) ->
+    Data = #{<<"tool">> => ToolName, <<"reason">> => Reason},
+    encode_error_response(Id,
+                          ?MCP_ERROR_TOOL_EXECUTION_FAILED,
+                          ?MCP_MSG_TOOL_EXECUTION_FAILED,
+                          Data).
 
 %% Tool timeout error
 -spec error_tool_timeout(json_rpc_id(), binary(), pos_integer()) -> binary().
-error_tool_timeout(Id, ToolName, TimeoutMs)
-  when is_binary(ToolName), is_integer(TimeoutMs) ->
-    Data = #{
-        <<"tool">> => ToolName,
-        <<"timeoutMs">> => TimeoutMs
-    },
+error_tool_timeout(Id, ToolName, TimeoutMs) when is_binary(ToolName), is_integer(TimeoutMs) ->
+    Data = #{<<"tool">> => ToolName, <<"timeoutMs">> => TimeoutMs},
     encode_error_response(Id, ?MCP_ERROR_TOOL_TIMEOUT, ?MCP_MSG_TOOL_TIMEOUT, Data).
 
 %% Tool cancelled error
@@ -590,14 +562,12 @@ error_tool_cancelled(Id, ToolName) when is_binary(ToolName) ->
 
 %% Invalid tool arguments error
 -spec error_invalid_tool_arguments(json_rpc_id(), binary(), binary()) -> binary().
-error_invalid_tool_arguments(Id, ToolName, Details)
-  when is_binary(ToolName), is_binary(Details) ->
-    Data = #{
-        <<"tool">> => ToolName,
-        <<"details">> => Details
-    },
-    encode_error_response(Id, ?MCP_ERROR_INVALID_TOOL_ARGUMENTS,
-                          ?MCP_MSG_INVALID_TOOL_ARGUMENTS, Data).
+error_invalid_tool_arguments(Id, ToolName, Details) when is_binary(ToolName), is_binary(Details) ->
+    Data = #{<<"tool">> => ToolName, <<"details">> => Details},
+    encode_error_response(Id,
+                          ?MCP_ERROR_INVALID_TOOL_ARGUMENTS,
+                          ?MCP_MSG_INVALID_TOOL_ARGUMENTS,
+                          Data).
 
 %%====================================================================
 %% Prompt Error Helper Functions (-32041 to -32050)
@@ -606,35 +576,28 @@ error_invalid_tool_arguments(Id, ToolName, Details)
 %% Prompt argument missing error
 -spec error_prompt_argument_missing(json_rpc_id(), binary(), binary()) -> binary().
 error_prompt_argument_missing(Id, PromptName, ArgName)
-  when is_binary(PromptName), is_binary(ArgName) ->
-    Data = #{
-        <<"prompt">> => PromptName,
-        <<"argument">> => ArgName
-    },
-    encode_error_response(Id, ?MCP_ERROR_PROMPT_ARGUMENT_MISSING,
-                          ?MCP_MSG_PROMPT_ARGUMENT_MISSING, Data).
+    when is_binary(PromptName), is_binary(ArgName) ->
+    Data = #{<<"prompt">> => PromptName, <<"argument">> => ArgName},
+    encode_error_response(Id,
+                          ?MCP_ERROR_PROMPT_ARGUMENT_MISSING,
+                          ?MCP_MSG_PROMPT_ARGUMENT_MISSING,
+                          Data).
 
 %% Prompt render failed error
 -spec error_prompt_render_failed(json_rpc_id(), binary(), binary()) -> binary().
-error_prompt_render_failed(Id, PromptName, Reason)
-  when is_binary(PromptName), is_binary(Reason) ->
-    Data = #{
-        <<"prompt">> => PromptName,
-        <<"reason">> => Reason
-    },
-    encode_error_response(Id, ?MCP_ERROR_PROMPT_RENDER_FAILED,
-                          ?MCP_MSG_PROMPT_RENDER_FAILED, Data).
+error_prompt_render_failed(Id, PromptName, Reason) when is_binary(PromptName), is_binary(Reason) ->
+    Data = #{<<"prompt">> => PromptName, <<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_PROMPT_RENDER_FAILED, ?MCP_MSG_PROMPT_RENDER_FAILED, Data).
 
 %% Invalid prompt arguments error
 -spec error_invalid_prompt_arguments(json_rpc_id(), binary(), binary()) -> binary().
 error_invalid_prompt_arguments(Id, PromptName, Details)
-  when is_binary(PromptName), is_binary(Details) ->
-    Data = #{
-        <<"prompt">> => PromptName,
-        <<"details">> => Details
-    },
-    encode_error_response(Id, ?MCP_ERROR_INVALID_PROMPT_ARGUMENTS,
-                          ?MCP_MSG_INVALID_PROMPT_ARGUMENTS, Data).
+    when is_binary(PromptName), is_binary(Details) ->
+    Data = #{<<"prompt">> => PromptName, <<"details">> => Details},
+    encode_error_response(Id,
+                          ?MCP_ERROR_INVALID_PROMPT_ARGUMENTS,
+                          ?MCP_MSG_INVALID_PROMPT_ARGUMENTS,
+                          Data).
 
 %% Sampling failed error
 -spec error_sampling_failed(json_rpc_id(), binary()) -> binary().
@@ -650,21 +613,24 @@ error_sampling_failed(Id, Reason) when is_binary(Reason) ->
 -spec error_authentication_failed(json_rpc_id(), binary()) -> binary().
 error_authentication_failed(Id, Reason) when is_binary(Reason) ->
     Data = #{<<"reason">> => Reason},
-    encode_error_response(Id, ?MCP_ERROR_AUTHENTICATION_FAILED,
-                          ?MCP_MSG_AUTHENTICATION_FAILED, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_AUTHENTICATION_FAILED,
+                          ?MCP_MSG_AUTHENTICATION_FAILED,
+                          Data).
 
 %% Authorization failed error
 -spec error_authorization_failed(json_rpc_id(), binary()) -> binary().
 error_authorization_failed(Id, Reason) when is_binary(Reason) ->
     Data = #{<<"reason">> => Reason},
-    encode_error_response(Id, ?MCP_ERROR_AUTHORIZATION_FAILED,
-                          ?MCP_MSG_AUTHORIZATION_FAILED, Data).
+    encode_error_response(Id, ?MCP_ERROR_AUTHORIZATION_FAILED, ?MCP_MSG_AUTHORIZATION_FAILED, Data).
 
 %% Invalid credentials error
 -spec error_invalid_credentials(json_rpc_id()) -> binary().
 error_invalid_credentials(Id) ->
-    encode_error_response(Id, ?MCP_ERROR_INVALID_CREDENTIALS,
-                          ?MCP_MSG_INVALID_CREDENTIALS, undefined).
+    encode_error_response(Id,
+                          ?MCP_ERROR_INVALID_CREDENTIALS,
+                          ?MCP_MSG_INVALID_CREDENTIALS,
+                          undefined).
 
 %% Token expired error
 -spec error_token_expired(json_rpc_id()) -> binary().
@@ -685,33 +651,35 @@ error_access_denied(Id, Resource) when is_binary(Resource) ->
 -spec error_unsupported_protocol_version(json_rpc_id(), binary()) -> binary().
 error_unsupported_protocol_version(Id, Version) when is_binary(Version) ->
     Data = #{<<"version">> => Version},
-    encode_error_response(Id, ?MCP_ERROR_UNSUPPORTED_PROTOCOL_VERSION,
-                          ?MCP_MSG_UNSUPPORTED_PROTOCOL_VERSION, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_UNSUPPORTED_PROTOCOL_VERSION,
+                          ?MCP_MSG_UNSUPPORTED_PROTOCOL_VERSION,
+                          Data).
 
 %% Protocol version mismatch error
 -spec error_protocol_version_mismatch(json_rpc_id(), binary(), binary()) -> binary().
 error_protocol_version_mismatch(Id, ClientVersion, ServerVersion)
-  when is_binary(ClientVersion), is_binary(ServerVersion) ->
-    Data = #{
-        <<"clientVersion">> => ClientVersion,
-        <<"serverVersion">> => ServerVersion
-    },
-    encode_error_response(Id, ?MCP_ERROR_PROTOCOL_VERSION_MISMATCH,
-                          ?MCP_MSG_PROTOCOL_VERSION_MISMATCH, Data).
+    when is_binary(ClientVersion), is_binary(ServerVersion) ->
+    Data = #{<<"clientVersion">> => ClientVersion, <<"serverVersion">> => ServerVersion},
+    encode_error_response(Id,
+                          ?MCP_ERROR_PROTOCOL_VERSION_MISMATCH,
+                          ?MCP_MSG_PROTOCOL_VERSION_MISMATCH,
+                          Data).
 
 %% Capability negotiation failed error
 -spec error_capability_negotiation_failed(json_rpc_id(), binary()) -> binary().
 error_capability_negotiation_failed(Id, Reason) when is_binary(Reason) ->
     Data = #{<<"reason">> => Reason},
-    encode_error_response(Id, ?MCP_ERROR_CAPABILITY_NEGOTIATION_FAILED,
-                          ?MCP_MSG_CAPABILITY_NEGOTIATION_FAILED, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_CAPABILITY_NEGOTIATION_FAILED,
+                          ?MCP_MSG_CAPABILITY_NEGOTIATION_FAILED,
+                          Data).
 
 %% Method not supported error
 -spec error_method_not_supported(json_rpc_id(), binary()) -> binary().
 error_method_not_supported(Id, Method) when is_binary(Method) ->
     Data = #{<<"method">> => Method},
-    encode_error_response(Id, ?MCP_ERROR_METHOD_NOT_SUPPORTED,
-                          ?MCP_MSG_METHOD_NOT_SUPPORTED, Data).
+    encode_error_response(Id, ?MCP_ERROR_METHOD_NOT_SUPPORTED, ?MCP_MSG_METHOD_NOT_SUPPORTED, Data).
 
 %%====================================================================
 %% Pagination Error Helper Functions (-32071 to -32080)
@@ -733,19 +701,17 @@ error_cursor_expired(Id, Cursor) when is_binary(Cursor) ->
 -spec error_pagination_not_supported(json_rpc_id(), binary()) -> binary().
 error_pagination_not_supported(Id, Method) when is_binary(Method) ->
     Data = #{<<"method">> => Method},
-    encode_error_response(Id, ?MCP_ERROR_PAGINATION_NOT_SUPPORTED,
-                          ?MCP_MSG_PAGINATION_NOT_SUPPORTED, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_PAGINATION_NOT_SUPPORTED,
+                          ?MCP_MSG_PAGINATION_NOT_SUPPORTED,
+                          Data).
 
 %% Page size too large error
 -spec error_page_size_too_large(json_rpc_id(), pos_integer(), pos_integer()) -> binary().
 error_page_size_too_large(Id, ActualSize, MaxSize)
-  when is_integer(ActualSize), is_integer(MaxSize) ->
-    Data = #{
-        <<"actualSize">> => ActualSize,
-        <<"maxSize">> => MaxSize
-    },
-    encode_error_response(Id, ?MCP_ERROR_PAGE_SIZE_TOO_LARGE,
-                          ?MCP_MSG_PAGE_SIZE_TOO_LARGE, Data).
+    when is_integer(ActualSize), is_integer(MaxSize) ->
+    Data = #{<<"actualSize">> => ActualSize, <<"maxSize">> => MaxSize},
+    encode_error_response(Id, ?MCP_ERROR_PAGE_SIZE_TOO_LARGE, ?MCP_MSG_PAGE_SIZE_TOO_LARGE, Data).
 
 %%====================================================================
 %% Task Error Helper Functions (-32081 to -32090)
@@ -761,16 +727,12 @@ error_task_not_found(Id, TaskId) when is_binary(TaskId) ->
 -spec error_task_already_exists(json_rpc_id(), binary()) -> binary().
 error_task_already_exists(Id, TaskId) when is_binary(TaskId) ->
     Data = #{<<"taskId">> => TaskId},
-    encode_error_response(Id, ?MCP_ERROR_TASK_ALREADY_EXISTS,
-                          ?MCP_MSG_TASK_ALREADY_EXISTS, Data).
+    encode_error_response(Id, ?MCP_ERROR_TASK_ALREADY_EXISTS, ?MCP_MSG_TASK_ALREADY_EXISTS, Data).
 
 %% Task failed error
 -spec error_task_failed(json_rpc_id(), binary(), binary()) -> binary().
 error_task_failed(Id, TaskId, Reason) when is_binary(TaskId), is_binary(Reason) ->
-    Data = #{
-        <<"taskId">> => TaskId,
-        <<"reason">> => Reason
-    },
+    Data = #{<<"taskId">> => TaskId, <<"reason">> => Reason},
     encode_error_response(Id, ?MCP_ERROR_TASK_FAILED, ?MCP_MSG_TASK_FAILED, Data).
 
 %% Task cancelled error
@@ -782,10 +744,7 @@ error_task_cancelled(Id, TaskId) when is_binary(TaskId) ->
 %% Task timeout error
 -spec error_task_timeout(json_rpc_id(), binary(), pos_integer()) -> binary().
 error_task_timeout(Id, TaskId, TimeoutMs) when is_binary(TaskId), is_integer(TimeoutMs) ->
-    Data = #{
-        <<"taskId">> => TaskId,
-        <<"timeoutMs">> => TimeoutMs
-    },
+    Data = #{<<"taskId">> => TaskId, <<"timeoutMs">> => TimeoutMs},
     encode_error_response(Id, ?MCP_ERROR_TASK_TIMEOUT, ?MCP_MSG_TASK_TIMEOUT, Data).
 
 %%====================================================================
@@ -796,44 +755,45 @@ error_task_timeout(Id, TaskId, TimeoutMs) when is_binary(TaskId), is_integer(Tim
 -spec error_invalid_progress_token(json_rpc_id(), binary() | integer()) -> binary().
 error_invalid_progress_token(Id, Token) when is_binary(Token); is_integer(Token) ->
     Data = #{<<"progressToken">> => Token},
-    encode_error_response(Id, ?MCP_ERROR_INVALID_PROGRESS_TOKEN,
-                          ?MCP_MSG_INVALID_PROGRESS_TOKEN, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_INVALID_PROGRESS_TOKEN,
+                          ?MCP_MSG_INVALID_PROGRESS_TOKEN,
+                          Data).
 
 %% Progress token expired error
 -spec error_progress_token_expired(json_rpc_id(), binary() | integer()) -> binary().
 error_progress_token_expired(Id, Token) when is_binary(Token); is_integer(Token) ->
     Data = #{<<"progressToken">> => Token},
-    encode_error_response(Id, ?MCP_ERROR_PROGRESS_TOKEN_EXPIRED,
-                          ?MCP_MSG_PROGRESS_TOKEN_EXPIRED, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_PROGRESS_TOKEN_EXPIRED,
+                          ?MCP_MSG_PROGRESS_TOKEN_EXPIRED,
+                          Data).
 
 %% Progress update failed error
 -spec error_progress_update_failed(json_rpc_id(), binary() | integer(), binary()) -> binary().
 error_progress_update_failed(Id, Token, Reason)
-  when is_binary(Token); is_integer(Token), is_binary(Reason) ->
-    Data = #{
-        <<"progressToken">> => Token,
-        <<"reason">> => Reason
-    },
-    encode_error_response(Id, ?MCP_ERROR_PROGRESS_UPDATE_FAILED,
-                          ?MCP_MSG_PROGRESS_UPDATE_FAILED, Data).
+    when is_binary(Token); is_integer(Token), is_binary(Reason) ->
+    Data = #{<<"progressToken">> => Token, <<"reason">> => Reason},
+    encode_error_response(Id,
+                          ?MCP_ERROR_PROGRESS_UPDATE_FAILED,
+                          ?MCP_MSG_PROGRESS_UPDATE_FAILED,
+                          Data).
 
 %% Notification failed error
 -spec error_notification_failed(json_rpc_id(), binary(), binary()) -> binary().
 error_notification_failed(Id, NotificationType, Reason)
-  when is_binary(NotificationType), is_binary(Reason) ->
-    Data = #{
-        <<"notificationType">> => NotificationType,
-        <<"reason">> => Reason
-    },
-    encode_error_response(Id, ?MCP_ERROR_NOTIFICATION_FAILED,
-                          ?MCP_MSG_NOTIFICATION_FAILED, Data).
+    when is_binary(NotificationType), is_binary(Reason) ->
+    Data = #{<<"notificationType">> => NotificationType, <<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_NOTIFICATION_FAILED, ?MCP_MSG_NOTIFICATION_FAILED, Data).
 
 %% Notification queue full error
 -spec error_notification_queue_full(json_rpc_id(), pos_integer()) -> binary().
 error_notification_queue_full(Id, QueueSize) when is_integer(QueueSize) ->
     Data = #{<<"queueSize">> => QueueSize},
-    encode_error_response(Id, ?MCP_ERROR_NOTIFICATION_QUEUE_FULL,
-                          ?MCP_MSG_NOTIFICATION_QUEUE_FULL, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_NOTIFICATION_QUEUE_FULL,
+                          ?MCP_MSG_NOTIFICATION_QUEUE_FULL,
+                          Data).
 
 %%====================================================================
 %% Completion Error Helper Functions (-32110 to -32113)
@@ -843,37 +803,32 @@ error_notification_queue_full(Id, QueueSize) when is_integer(QueueSize) ->
 -spec error_completion_not_found(json_rpc_id(), binary()) -> binary().
 error_completion_not_found(Id, CompletionId) when is_binary(CompletionId) ->
     Data = #{<<"completionId">> => CompletionId},
-    encode_error_response(Id, ?MCP_ERROR_COMPLETION_NOT_FOUND,
-                          ?MCP_MSG_COMPLETION_NOT_FOUND, Data).
+    encode_error_response(Id, ?MCP_ERROR_COMPLETION_NOT_FOUND, ?MCP_MSG_COMPLETION_NOT_FOUND, Data).
 
 %% Invalid completion reference error
 -spec error_invalid_completion_reference(json_rpc_id(), binary()) -> binary().
 error_invalid_completion_reference(Id, Reference) when is_binary(Reference) ->
     Data = #{<<"reference">> => Reference},
-    encode_error_response(Id, ?MCP_ERROR_INVALID_COMPLETION_REFERENCE,
-                          ?MCP_MSG_INVALID_COMPLETION_REFERENCE, Data).
+    encode_error_response(Id,
+                          ?MCP_ERROR_INVALID_COMPLETION_REFERENCE,
+                          ?MCP_MSG_INVALID_COMPLETION_REFERENCE,
+                          Data).
 
 %% Invalid completion argument error
 -spec error_invalid_completion_argument(json_rpc_id(), binary(), binary()) -> binary().
 error_invalid_completion_argument(Id, Argument, Details)
-  when is_binary(Argument), is_binary(Details) ->
-    Data = #{
-        <<"argument">> => Argument,
-        <<"details">> => Details
-    },
-    encode_error_response(Id, ?MCP_ERROR_INVALID_COMPLETION_ARGUMENT,
-                          ?MCP_MSG_INVALID_COMPLETION_ARGUMENT, Data).
+    when is_binary(Argument), is_binary(Details) ->
+    Data = #{<<"argument">> => Argument, <<"details">> => Details},
+    encode_error_response(Id,
+                          ?MCP_ERROR_INVALID_COMPLETION_ARGUMENT,
+                          ?MCP_MSG_INVALID_COMPLETION_ARGUMENT,
+                          Data).
 
 %% Completion failed error
 -spec error_completion_failed(json_rpc_id(), binary(), binary()) -> binary().
-error_completion_failed(Id, CompletionId, Reason)
-  when is_binary(CompletionId), is_binary(Reason) ->
-    Data = #{
-        <<"completionId">> => CompletionId,
-        <<"reason">> => Reason
-    },
-    encode_error_response(Id, ?MCP_ERROR_COMPLETION_FAILED,
-                          ?MCP_MSG_COMPLETION_FAILED, Data).
+error_completion_failed(Id, CompletionId, Reason) when is_binary(CompletionId), is_binary(Reason) ->
+    Data = #{<<"completionId">> => CompletionId, <<"reason">> => Reason},
+    encode_error_response(Id, ?MCP_ERROR_COMPLETION_FAILED, ?MCP_MSG_COMPLETION_FAILED, Data).
 
 %%====================================================================
 %% Batch Error Response Functions
@@ -886,24 +841,20 @@ error_completion_failed(Id, CompletionId, Reason)
 create_batch_error_response(Request, Reason, Details) when is_map(Request) ->
     %% Try to extract ID from the request for the error response
     Id = case maps:get(<<"id">>, Request, undefined) of
-        undefined -> null;
-        IdVal -> IdVal
-    end,
+             undefined ->
+                 null;
+             IdVal ->
+                 IdVal
+         end,
     %% Map error reason to JSON-RPC error codes
     {Code, Message} = map_batch_error_to_code(Reason, Details),
     Error = build_error_object(Code, Message, Details),
-    #json_rpc_response{
-        id = Id,
-        error = Error
-    };
+    #json_rpc_response{id = Id, error = Error};
 create_batch_error_response(_Request, Reason, Details) ->
     %% Completely invalid request (not a map), use null ID
     {Code, Message} = map_batch_error_to_code(Reason, Details),
     Error = build_error_object(Code, Message, Details),
-    #json_rpc_response{
-        id = null,
-        error = Error
-    }.
+    #json_rpc_response{id = null, error = Error}.
 
 %% @doc Map batch error reasons to JSON-RPC error codes and messages
 -spec map_batch_error_to_code(atom(), term()) -> {integer(), binary()}.
@@ -929,11 +880,16 @@ map_batch_error_to_code(Reason, _) ->
 
 %% @doc Convert various types to binary for error messages
 -spec binify(term()) -> binary().
-binify(Bin) when is_binary(Bin) -> Bin;
-binify(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
-binify(Int) when is_integer(Int) -> integer_to_binary(Int);
-binify(List) when is_list(List) -> list_to_binary(List);
-binify(Term) -> term_to_binary(Term).
+binify(Bin) when is_binary(Bin) ->
+    Bin;
+binify(Atom) when is_atom(Atom) ->
+    atom_to_binary(Atom, utf8);
+binify(Int) when is_integer(Int) ->
+    integer_to_binary(Int);
+binify(List) when is_list(List) ->
+    list_to_binary(List);
+binify(Term) ->
+    term_to_binary(Term).
 
 %%====================================================================
 %% Batch Processing Functions
@@ -949,8 +905,10 @@ parse_batch(Requests) when is_list(Requests) ->
         ok ->
             %% Process each request in the batch
             case parse_batch_requests(Requests, []) of
-                {ok, Messages} -> {ok, Messages};
-                Error -> Error
+                {ok, Messages} ->
+                    {ok, Messages};
+                Error ->
+                    Error
             end;
         {error, Reason} ->
             {error, Reason}
@@ -963,8 +921,10 @@ validate_batch_version([]) ->
     ok;
 validate_batch_version([Request | Rest]) when is_map(Request) ->
     case validate_single_request_version(Request) of
-        ok -> validate_batch_version(Rest);
-        Error -> Error
+        ok ->
+            validate_batch_version(Rest);
+        Error ->
+            Error
     end;
 validate_batch_version([_ | _]) ->
     %% Not a map - invalid request structure
@@ -980,7 +940,7 @@ validate_single_request_version(_) ->
     {error, {invalid_request, missing_jsonrpc}}.
 
 -spec parse_batch_requests(list(), [json_rpc_message()]) ->
-    {ok, [json_rpc_message()]} | {error, {atom(), term()}}.
+                              {ok, [json_rpc_message()]} | {error, {atom(), term()}}.
 parse_batch_requests([], Acc) ->
     %% All requests processed successfully, return in original order
     {ok, lists:reverse(Acc)};
@@ -1008,32 +968,30 @@ encode_message(Message) ->
     jsx:encode(Map).
 
 -spec build_message_map(json_rpc_message()) -> map().
-build_message_map(#json_rpc_request{id = Id, method = Method, params = Params}) ->
-    Base = #{
-        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
-        ?JSONRPC_FIELD_ID => encode_id(Id),
-        ?JSONRPC_FIELD_METHOD => Method
-    },
+build_message_map(#json_rpc_request{id = Id,
+                                    method = Method,
+                                    params = Params}) ->
+    Base =
+        #{?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+          ?JSONRPC_FIELD_ID => encode_id(Id),
+          ?JSONRPC_FIELD_METHOD => Method},
     maybe_add_params(Base, Params);
-
-build_message_map(#json_rpc_response{id = Id, result = Result, error = Error}) ->
-    Base = #{
-        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
-        ?JSONRPC_FIELD_ID => encode_id(Id)
-    },
+build_message_map(#json_rpc_response{id = Id,
+                                     result = Result,
+                                     error = Error}) ->
+    Base = #{?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION, ?JSONRPC_FIELD_ID => encode_id(Id)},
     add_result_or_error(Base, Result, Error);
-
 build_message_map(#json_rpc_notification{method = Method, params = Params}) ->
-    Base = #{
-        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
-        ?JSONRPC_FIELD_METHOD => Method
-    },
+    Base = #{?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION, ?JSONRPC_FIELD_METHOD => Method},
     maybe_add_params(Base, Params).
 
 -spec encode_id(json_rpc_id()) -> json_rpc_id().
-encode_id(null) -> null;
-encode_id(Id) when is_binary(Id) -> Id;
-encode_id(Id) when is_integer(Id) -> Id.
+encode_id(null) ->
+    null;
+encode_id(Id) when is_binary(Id) ->
+    Id;
+encode_id(Id) when is_integer(Id) ->
+    Id.
 
 -spec maybe_add_params(map(), json_rpc_params()) -> map().
 maybe_add_params(Map, undefined) ->
@@ -1049,38 +1007,26 @@ add_result_or_error(Map, Result, undefined) ->
 
 -spec build_error_object(integer(), binary(), term() | undefined) -> map().
 build_error_object(Code, Message, undefined) ->
-    #{
-        ?JSONRPC_ERROR_FIELD_CODE => Code,
-        ?JSONRPC_ERROR_FIELD_MESSAGE => Message
-    };
+    #{?JSONRPC_ERROR_FIELD_CODE => Code, ?JSONRPC_ERROR_FIELD_MESSAGE => Message};
 build_error_object(Code, Message, null) ->
     %% Explicit null, don't include data field
-    #{
-        ?JSONRPC_ERROR_FIELD_CODE => Code,
-        ?JSONRPC_ERROR_FIELD_MESSAGE => Message
-    };
+    #{?JSONRPC_ERROR_FIELD_CODE => Code, ?JSONRPC_ERROR_FIELD_MESSAGE => Message};
 build_error_object(Code, Message, Data) when is_map(Data) ->
     %% Valid map data, include it
-    #{
-        ?JSONRPC_ERROR_FIELD_CODE => Code,
-        ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
-        ?JSONRPC_ERROR_FIELD_DATA => Data
-    };
+    #{?JSONRPC_ERROR_FIELD_CODE => Code,
+      ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
+      ?JSONRPC_ERROR_FIELD_DATA => Data};
 build_error_object(Code, Message, Data) when is_binary(Data) ->
     %% Binary data, wrap in details field
-    #{
-        ?JSONRPC_ERROR_FIELD_CODE => Code,
-        ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
-        ?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => Data}
-    };
+    #{?JSONRPC_ERROR_FIELD_CODE => Code,
+      ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
+      ?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => Data}};
 build_error_object(Code, Message, Data) ->
     %% Other data types - convert to binary and wrap in details
     DataBin = erlang:term_to_binary(Data),
-    #{
-        ?JSONRPC_ERROR_FIELD_CODE => Code,
-        ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
-        ?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => DataBin}
-    }.
+    #{?JSONRPC_ERROR_FIELD_CODE => Code,
+      ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
+      ?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => DataBin}}.
 
 %% Parsing functions moved to erlmcp_message_parser.erl for hot path optimization
 %% Import directly from erlmcp_message_parser module

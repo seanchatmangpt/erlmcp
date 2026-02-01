@@ -21,30 +21,15 @@
 %% Behavior definition
 -callback init() -> State :: term().
 -callback select(State :: term(), Connections :: [#connection{}], IdleList :: [pid()]) ->
-    {ok, pid(), NewState :: term()} | {error, term()}.
+                    {ok, pid(), NewState :: term()} | {error, term()}.
 -callback name() -> atom().
 
 %% Public API
--export([
-    get_strategy_module/1,
-    select_connection/3,
-    strategy_name/1
-]).
-
+-export([get_strategy_module/1, select_connection/3, strategy_name/1]).
 %% Strategy modules
--export([
-    round_robin_init/0,
-    round_robin_select/3,
-    round_robin_name/0,
-
-    least_loaded_init/0,
-    least_loaded_select/3,
-    least_loaded_name/0,
-
-    random_init/0,
-    random_select/3,
-    random_name/0
-]).
+-export([round_robin_init/0, round_robin_select/3, round_robin_name/0, least_loaded_init/0,
+         least_loaded_select/3, least_loaded_name/0, random_init/0, random_select/3,
+         random_name/0]).
 
 %% Types
 -type strategy() :: {module(), State :: term()}.
@@ -67,50 +52,55 @@ get_strategy_module(Strategy) when is_atom(Strategy) ->
     error({unknown_strategy, Strategy}).
 
 %% @doc Select a connection using the strategy
--spec select_connection(strategy(), [#connection{}], [pid()]) ->
-    {ok, pid()} | {error, term()}.
+-spec select_connection(strategy(), [#connection{}], [pid()]) -> {ok, pid()} | {error, term()}.
 select_connection({?MODULE, #{type := round_robin} = State}, Connections, IdleList) ->
     case IdleList of
-        [] -> {error, no_idle_connections};
+        [] ->
+            {error, no_idle_connections};
         _ ->
             Index = maps:get(index, State, 0),
-            SelectedPid = lists:nth((Index rem length(IdleList)) + 1, IdleList),
+            SelectedPid = lists:nth(Index rem length(IdleList) + 1, IdleList),
             {ok, SelectedPid}
     end;
-
 select_connection({?MODULE, #{type := least_loaded}}, Connections, IdleList) ->
     case IdleList of
-        [] -> {error, no_idle_connections};
+        [] ->
+            {error, no_idle_connections};
         _ ->
             IdleConns = [C || C <- Connections, lists:member(C#connection.pid, IdleList)],
             case IdleConns of
-                [] -> {error, no_idle_connections};
+                [] ->
+                    {error, no_idle_connections};
                 _ ->
                     %% Select connection with lowest request count
-                    LeastLoaded = lists:foldl(fun(Conn, Acc) ->
-                        case Acc of
-                            undefined -> Conn;
-                            _ ->
-                                if Conn#connection.request_count < Acc#connection.request_count ->
-                                    Conn;
-                                   true ->
-                                    Acc
-                                end
-                        end
-                    end, undefined, IdleConns),
+                    LeastLoaded =
+                        lists:foldl(fun(Conn, Acc) ->
+                                       case Acc of
+                                           undefined ->
+                                               Conn;
+                                           _ ->
+                                               if Conn#connection.request_count
+                                                  < Acc#connection.request_count ->
+                                                      Conn;
+                                                  true ->
+                                                      Acc
+                                               end
+                                       end
+                                    end,
+                                    undefined,
+                                    IdleConns),
                     {ok, LeastLoaded#connection.pid}
             end
     end;
-
 select_connection({?MODULE, #{type := random}}, _Connections, IdleList) ->
     case IdleList of
-        [] -> {error, no_idle_connections};
+        [] ->
+            {error, no_idle_connections};
         _ ->
             RandomIndex = rand:uniform(length(IdleList)),
             SelectedPid = lists:nth(RandomIndex, IdleList),
             {ok, SelectedPid}
     end;
-
 select_connection(Strategy, _Connections, _IdleList) ->
     {error, {invalid_strategy, Strategy}}.
 
@@ -130,10 +120,11 @@ round_robin_init() ->
 
 round_robin_select(State, _Connections, IdleList) ->
     case IdleList of
-        [] -> {error, no_idle_connections, State};
+        [] ->
+            {error, no_idle_connections, State};
         _ ->
             Index = maps:get(index, State, 0),
-            SelectedPid = lists:nth((Index rem length(IdleList)) + 1, IdleList),
+            SelectedPid = lists:nth(Index rem length(IdleList) + 1, IdleList),
             NewState = State#{index => Index + 1},
             {ok, SelectedPid, NewState}
     end.
@@ -150,23 +141,30 @@ least_loaded_init() ->
 
 least_loaded_select(State, Connections, IdleList) ->
     case IdleList of
-        [] -> {error, no_idle_connections, State};
+        [] ->
+            {error, no_idle_connections, State};
         _ ->
             IdleConns = [C || C <- Connections, lists:member(C#connection.pid, IdleList)],
             case IdleConns of
-                [] -> {error, no_idle_connections, State};
+                [] ->
+                    {error, no_idle_connections, State};
                 _ ->
-                    LeastLoaded = lists:foldl(fun(Conn, Acc) ->
-                        case Acc of
-                            undefined -> Conn;
-                            _ ->
-                                if Conn#connection.request_count < Acc#connection.request_count ->
-                                    Conn;
-                                   true ->
-                                    Acc
-                                end
-                        end
-                    end, undefined, IdleConns),
+                    LeastLoaded =
+                        lists:foldl(fun(Conn, Acc) ->
+                                       case Acc of
+                                           undefined ->
+                                               Conn;
+                                           _ ->
+                                               if Conn#connection.request_count
+                                                  < Acc#connection.request_count ->
+                                                      Conn;
+                                                  true ->
+                                                      Acc
+                                               end
+                                       end
+                                    end,
+                                    undefined,
+                                    IdleConns),
                     {ok, LeastLoaded#connection.pid, State}
             end
     end.
@@ -183,7 +181,8 @@ random_init() ->
 
 random_select(State, _Connections, IdleList) ->
     case IdleList of
-        [] -> {error, no_idle_connections, State};
+        [] ->
+            {error, no_idle_connections, State};
         _ ->
             RandomIndex = rand:uniform(length(IdleList)),
             SelectedPid = lists:nth(RandomIndex, IdleList),

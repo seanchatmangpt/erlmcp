@@ -30,15 +30,13 @@ test_client_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Client Lifecycle Tests", {inparallel, lifecycle_tests()}},
+     [{"Client Lifecycle Tests", {inparallel, lifecycle_tests()}},
       {"Transport Configuration Tests", {inparallel, transport_tests()}},
       {"Request Handling Tests", {inparallel, request_tests()}},
       {"Error Handling Tests", {inparallel, error_tests()}},
       {"Concurrent Operations Tests", {inparallel, concurrent_tests()}},
       {"Edge Case Tests", {inparallel, edge_case_tests()}},
-      {"Integration Tests", {inparallel, integration_tests()}}
-     ]}.
+      {"Integration Tests", {inparallel, integration_tests()}}]}.
 
 setup() ->
     application:ensure_all_started(erlmcp_validation),
@@ -53,38 +51,21 @@ cleanup(_) ->
 %%%===================================================================
 
 lifecycle_tests() ->
-    [
-     ?_test(test_start_client_stdio()),
-     ?_test(test_start_client_tcp()),
-     ?_test(test_start_client_http()),
-     ?_test(test_start_client_websocket()),
-     ?_test(test_start_client_with_empty_config()),
-     ?_test(test_start_client_with_full_config()),
-     ?_test(test_start_multiple_clients()),
-     ?_test(test_stop_client()),
-     ?_test(test_stop_client_twice()),
-     ?_test(test_stop_nonexistent_client()),
-     ?_test(test_client_restart()),
-     ?_test(test_client_normal_shutdown()),
-     ?_test(test_client_crash_recovery()),
-     ?_test(test_client_process_monitoring()),
-     ?_test(test_client_linked_process()),
-     ?_test(test_client_state_after_start()),
-     ?_test(test_client_state_after_stop()),
-     ?_test(test_client_memory_cleanup()),
-     ?_test(test_client_timeout_on_start()),
-     ?_test(test_client_invalid_transport_type()),
-     ?_test(test_client_invalid_config_type()),
-     ?_test(test_client_config_validation()),
-     ?_test(test_client_gen_server_info()),
-     ?_test(test_client_process_dictionary()),
-     ?_test(test_client_trap_exit()),
-     ?_test(test_client_system_messages()),
-     ?_test(test_client_code_change()),
-     ?_test(test_client_format_status()),
-     ?_test(test_client_concurrent_start()),
-     ?_test(test_client_concurrent_stop())
-    ].
+    [?_test(test_start_client_stdio()), ?_test(test_start_client_tcp()),
+     ?_test(test_start_client_http()), ?_test(test_start_client_websocket()),
+     ?_test(test_start_client_with_empty_config()), ?_test(test_start_client_with_full_config()),
+     ?_test(test_start_multiple_clients()), ?_test(test_stop_client()),
+     ?_test(test_stop_client_twice()), ?_test(test_stop_nonexistent_client()),
+     ?_test(test_client_restart()), ?_test(test_client_normal_shutdown()),
+     ?_test(test_client_crash_recovery()), ?_test(test_client_process_monitoring()),
+     ?_test(test_client_linked_process()), ?_test(test_client_state_after_start()),
+     ?_test(test_client_state_after_stop()), ?_test(test_client_memory_cleanup()),
+     ?_test(test_client_timeout_on_start()), ?_test(test_client_invalid_transport_type()),
+     ?_test(test_client_invalid_config_type()), ?_test(test_client_config_validation()),
+     ?_test(test_client_gen_server_info()), ?_test(test_client_process_dictionary()),
+     ?_test(test_client_trap_exit()), ?_test(test_client_system_messages()),
+     ?_test(test_client_code_change()), ?_test(test_client_format_status()),
+     ?_test(test_client_concurrent_start()), ?_test(test_client_concurrent_stop())].
 
 %% Lifecycle test implementations
 test_start_client_stdio() ->
@@ -117,25 +98,26 @@ test_start_client_with_empty_config() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_start_client_with_full_config() ->
-    Config = #{
-        transport_type => tcp,
-        host => "localhost",
-        port => 9999,
-        timeout => 5000,
-        buffer_size => 4096,
-        retry_count => 3,
-        metadata => #{test => true}
-    },
+    Config =
+        #{transport_type => tcp,
+          host => "localhost",
+          port => 9999,
+          timeout => 5000,
+          buffer_size => 4096,
+          retry_count => 3,
+          metadata => #{test => true}},
     {ok, Pid} = erlmcp_test_client:start_test_client(tcp, Config),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_start_multiple_clients() ->
-    Clients = [begin
-        Config = #{index => I},
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
-        Pid
-    end || I <- lists:seq(1, 10)],
+    Clients =
+        [begin
+             Config = #{index => I},
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
+             Pid
+         end
+         || I <- lists:seq(1, 10)],
 
     ?assertEqual(10, length(Clients)),
     [?assert(is_process_alive(Pid)) || Pid <- Clients],
@@ -157,7 +139,8 @@ test_stop_client_twice() ->
         erlmcp_test_client:stop_test_server(Pid),
         ok
     catch
-        exit:{noproc, _} -> ok
+        exit:{noproc, _} ->
+            ok
     end.
 
 test_stop_nonexistent_client() ->
@@ -168,7 +151,8 @@ test_stop_nonexistent_client() ->
         erlmcp_test_client:stop_test_server(FakePid),
         ok
     catch
-        exit:{noproc, _} -> ok
+        exit:{noproc, _} ->
+            ok
     end.
 
 test_client_restart() ->
@@ -184,8 +168,10 @@ test_client_normal_shutdown() ->
     Ref = monitor(process, Pid),
     erlmcp_test_client:stop_test_server(Pid),
     receive
-        {'DOWN', Ref, process, Pid, normal} -> ok;
-        {'DOWN', Ref, process, Pid, shutdown} -> ok;
+        {'DOWN', Ref, process, Pid, normal} ->
+            ok;
+        {'DOWN', Ref, process, Pid, shutdown} ->
+            ok;
         {'DOWN', Ref, process, Pid, Reason} ->
             ?assertEqual(normal, Reason)
     after 1000 ->
@@ -197,7 +183,8 @@ test_client_crash_recovery() ->
     Ref = monitor(process, Pid),
     exit(Pid, kill),
     receive
-        {'DOWN', Ref, process, Pid, killed} -> ok
+        {'DOWN', Ref, process, Pid, killed} ->
+            ok
     after 1000 ->
         ?assert(false)
     end.
@@ -208,7 +195,8 @@ test_client_process_monitoring() ->
     ?assert(is_reference(Ref)),
     erlmcp_test_client:stop_test_server(Pid),
     receive
-        {'DOWN', Ref, process, Pid, _Reason} -> ok
+        {'DOWN', Ref, process, Pid, _Reason} ->
+            ok
     after 1000 ->
         ?assert(false)
     end.
@@ -219,7 +207,8 @@ test_client_linked_process() ->
     link(Pid),
     exit(Pid, kill),
     receive
-        {'EXIT', Pid, killed} -> ok
+        {'EXIT', Pid, killed} ->
+            ok
     after 1000 ->
         ?assert(false)
     end,
@@ -238,10 +227,12 @@ test_client_state_after_stop() ->
 
 test_client_memory_cleanup() ->
     InitialMem = erlang:memory(total),
-    Clients = [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-        Pid
-    end || _ <- lists:seq(1, 100)],
+    Clients =
+        [begin
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
+             Pid
+         end
+         || _ <- lists:seq(1, 100)],
 
     [erlmcp_test_client:stop_test_server(Pid) || Pid <- Clients],
     timer:sleep(500),
@@ -263,7 +254,8 @@ test_client_invalid_transport_type() ->
         erlmcp_test_client:start_test_client(invalid_transport, #{}),
         ?assert(false) %% Should not reach here
     catch
-        error:function_clause -> ok
+        error:function_clause ->
+            ok
     end.
 
 test_client_invalid_config_type() ->
@@ -271,20 +263,17 @@ test_client_invalid_config_type() ->
         erlmcp_test_client:start_test_client(stdio, not_a_map),
         ?assert(false)
     catch
-        error:function_clause -> ok
+        error:function_clause ->
+            ok
     end.
 
 test_client_config_validation() ->
-    ValidConfigs = [
-        #{},
-        #{key => value},
-        #{timeout => 5000},
-        #{retry => 3, buffer => 4096}
-    ],
+    ValidConfigs = [#{}, #{key => value}, #{timeout => 5000}, #{retry => 3, buffer => 4096}],
     [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
-        erlmcp_test_client:stop_test_server(Pid)
-    end || Config <- ValidConfigs].
+         {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
+         erlmcp_test_client:stop_test_server(Pid)
+     end
+     || Config <- ValidConfigs].
 
 test_client_gen_server_info() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
@@ -323,25 +312,27 @@ test_client_format_status() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_client_concurrent_start() ->
-    Pids = pmap(fun(I) ->
-        Config = #{id => I},
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
-        Pid
-    end, lists:seq(1, 50)),
+    Pids =
+        pmap(fun(I) ->
+                Config = #{id => I},
+                {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
+                Pid
+             end,
+             lists:seq(1, 50)),
 
     ?assertEqual(50, length(Pids)),
     [?assert(is_process_alive(Pid)) || Pid <- Pids],
     [erlmcp_test_client:stop_test_server(Pid) || Pid <- Pids].
 
 test_client_concurrent_stop() ->
-    Clients = [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-        Pid
-    end || _ <- lists:seq(1, 50)],
+    Clients =
+        [begin
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
+             Pid
+         end
+         || _ <- lists:seq(1, 50)],
 
-    pmap(fun(Pid) ->
-        erlmcp_test_client:stop_test_server(Pid)
-    end, Clients),
+    pmap(fun(Pid) -> erlmcp_test_client:stop_test_server(Pid) end, Clients),
 
     timer:sleep(200),
     [?assertNot(is_process_alive(Pid)) || Pid <- Clients].
@@ -351,48 +342,26 @@ test_client_concurrent_stop() ->
 %%%===================================================================
 
 transport_tests() ->
-    [
-     ?_test(test_stdio_transport_basic()),
-     ?_test(test_stdio_transport_with_options()),
-     ?_test(test_tcp_transport_basic()),
-     ?_test(test_tcp_transport_with_host_port()),
-     ?_test(test_tcp_transport_with_timeout()),
-     ?_test(test_tcp_transport_with_buffer_size()),
-     ?_test(test_tcp_transport_ipv4()),
-     ?_test(test_tcp_transport_ipv6()),
-     ?_test(test_http_transport_basic()),
-     ?_test(test_http_transport_with_url()),
-     ?_test(test_http_transport_with_headers()),
-     ?_test(test_http_transport_with_timeout()),
-     ?_test(test_http_transport_https()),
-     ?_test(test_http_transport_with_auth()),
-     ?_test(test_websocket_transport_basic()),
-     ?_test(test_websocket_transport_with_url()),
-     ?_test(test_websocket_transport_with_subprotocol()),
-     ?_test(test_websocket_transport_wss()),
-     ?_test(test_websocket_transport_with_origin()),
-     ?_test(test_transport_config_persistence()),
-     ?_test(test_transport_config_immutability()),
-     ?_test(test_transport_type_validation()),
-     ?_test(test_transport_config_merging()),
-     ?_test(test_transport_default_values()),
-     ?_test(test_transport_override_values()),
-     ?_test(test_transport_metadata_storage()),
-     ?_test(test_transport_capability_detection()),
-     ?_test(test_transport_version_negotiation()),
-     ?_test(test_transport_compression_options()),
-     ?_test(test_transport_encryption_options()),
-     ?_test(test_transport_proxy_config()),
-     ?_test(test_transport_dns_resolution()),
-     ?_test(test_transport_connection_pooling()),
-     ?_test(test_transport_keep_alive()),
-     ?_test(test_transport_idle_timeout()),
-     ?_test(test_transport_max_connections()),
-     ?_test(test_transport_retry_policy()),
-     ?_test(test_transport_backoff_strategy()),
-     ?_test(test_transport_circuit_breaker()),
-     ?_test(test_transport_health_check())
-    ].
+    [?_test(test_stdio_transport_basic()), ?_test(test_stdio_transport_with_options()),
+     ?_test(test_tcp_transport_basic()), ?_test(test_tcp_transport_with_host_port()),
+     ?_test(test_tcp_transport_with_timeout()), ?_test(test_tcp_transport_with_buffer_size()),
+     ?_test(test_tcp_transport_ipv4()), ?_test(test_tcp_transport_ipv6()),
+     ?_test(test_http_transport_basic()), ?_test(test_http_transport_with_url()),
+     ?_test(test_http_transport_with_headers()), ?_test(test_http_transport_with_timeout()),
+     ?_test(test_http_transport_https()), ?_test(test_http_transport_with_auth()),
+     ?_test(test_websocket_transport_basic()), ?_test(test_websocket_transport_with_url()),
+     ?_test(test_websocket_transport_with_subprotocol()), ?_test(test_websocket_transport_wss()),
+     ?_test(test_websocket_transport_with_origin()), ?_test(test_transport_config_persistence()),
+     ?_test(test_transport_config_immutability()), ?_test(test_transport_type_validation()),
+     ?_test(test_transport_config_merging()), ?_test(test_transport_default_values()),
+     ?_test(test_transport_override_values()), ?_test(test_transport_metadata_storage()),
+     ?_test(test_transport_capability_detection()), ?_test(test_transport_version_negotiation()),
+     ?_test(test_transport_compression_options()), ?_test(test_transport_encryption_options()),
+     ?_test(test_transport_proxy_config()), ?_test(test_transport_dns_resolution()),
+     ?_test(test_transport_connection_pooling()), ?_test(test_transport_keep_alive()),
+     ?_test(test_transport_idle_timeout()), ?_test(test_transport_max_connections()),
+     ?_test(test_transport_retry_policy()), ?_test(test_transport_backoff_strategy()),
+     ?_test(test_transport_circuit_breaker()), ?_test(test_transport_health_check())].
 
 %% Transport test implementations (representative samples)
 test_stdio_transport_basic() ->
@@ -419,25 +388,37 @@ test_tcp_transport_with_host_port() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_tcp_transport_with_timeout() ->
-    Config = #{host => "localhost", port => 9999, timeout => 10000},
+    Config =
+        #{host => "localhost",
+          port => 9999,
+          timeout => 10000},
     {ok, Pid} = erlmcp_test_client:start_test_client(tcp, Config),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_tcp_transport_with_buffer_size() ->
-    Config = #{host => "localhost", port => 9999, buffer_size => 16384},
+    Config =
+        #{host => "localhost",
+          port => 9999,
+          buffer_size => 16384},
     {ok, Pid} = erlmcp_test_client:start_test_client(tcp, Config),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_tcp_transport_ipv4() ->
-    Config = #{host => "127.0.0.1", port => 9999, inet_family => inet},
+    Config =
+        #{host => "127.0.0.1",
+          port => 9999,
+          inet_family => inet},
     {ok, Pid} = erlmcp_test_client:start_test_client(tcp, Config),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_tcp_transport_ipv6() ->
-    Config = #{host => "::1", port => 9999, inet_family => inet6},
+    Config =
+        #{host => "::1",
+          port => 9999,
+          inet_family => inet6},
     {ok, Pid} = erlmcp_test_client:start_test_client(tcp, Config),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
@@ -455,13 +436,11 @@ test_http_transport_with_url() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_http_transport_with_headers() ->
-    Config = #{
-        url => "http://localhost:8080",
-        headers => #{
-            <<"content-type">> => <<"application/json">>,
-            <<"authorization">> => <<"Bearer token123">>
-        }
-    },
+    Config =
+        #{url => "http://localhost:8080",
+          headers =>
+              #{<<"content-type">> => <<"application/json">>,
+                <<"authorization">> => <<"Bearer token123">>}},
     {ok, Pid} = erlmcp_test_client:start_test_client(http, Config),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
@@ -479,10 +458,12 @@ test_http_transport_https() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_http_transport_with_auth() ->
-    Config = #{
-        url => "http://localhost:8080",
-        auth => #{type => basic, user => <<"admin">>, password => <<"secret">>}
-    },
+    Config =
+        #{url => "http://localhost:8080",
+          auth =>
+              #{type => basic,
+                user => <<"admin">>,
+                password => <<"secret">>}},
     {ok, Pid} = erlmcp_test_client:start_test_client(http, Config),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
@@ -532,9 +513,10 @@ test_transport_config_immutability() ->
 test_transport_type_validation() ->
     ValidTypes = [stdio, tcp, http, websocket],
     [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(Type, #{}),
-        erlmcp_test_client:stop_test_server(Pid)
-    end || Type <- ValidTypes].
+         {ok, Pid} = erlmcp_test_client:start_test_client(Type, #{}),
+         erlmcp_test_client:stop_test_server(Pid)
+     end
+     || Type <- ValidTypes].
 
 test_transport_config_merging() ->
     Base = #{timeout => 5000},
@@ -633,58 +615,31 @@ test_transport_health_check() ->
 %%%===================================================================
 
 request_tests() ->
-    [
-     ?_test(test_send_empty_request()),
-     ?_test(test_send_simple_request()),
-     ?_test(test_send_request_with_params()),
-     ?_test(test_send_request_with_id()),
-     ?_test(test_send_request_without_id()),
-     ?_test(test_send_notification()),
-     ?_test(test_send_batch_request()),
-     ?_test(test_send_large_request()),
-     ?_test(test_send_binary_request()),
-     ?_test(test_send_unicode_request()),
-     ?_test(test_request_response_correlation()),
-     ?_test(test_request_timeout()),
-     ?_test(test_request_retry()),
-     ?_test(test_request_cancellation()),
-     ?_test(test_request_priority()),
-     ?_test(test_request_ordering()),
-     ?_test(test_request_deduplication()),
-     ?_test(test_request_validation()),
-     ?_test(test_request_serialization()),
-     ?_test(test_request_deserialization()),
-     ?_test(test_response_success()),
-     ?_test(test_response_error()),
-     ?_test(test_response_partial()),
-     ?_test(test_response_streaming()),
-     ?_test(test_response_compression()),
-     ?_test(test_response_timeout()),
-     ?_test(test_response_validation()),
-     ?_test(test_multiple_requests()),
-     ?_test(test_concurrent_requests()),
-     ?_test(test_sequential_requests()),
-     ?_test(test_pipelined_requests()),
-     ?_test(test_request_queue()),
-     ?_test(test_request_throttling()),
-     ?_test(test_request_rate_limiting()),
-     ?_test(test_request_backpressure()),
-     ?_test(test_request_flow_control()),
-     ?_test(test_request_metadata()),
-     ?_test(test_request_tracing()),
-     ?_test(test_request_logging()),
-     ?_test(test_request_metrics()),
-     ?_test(test_request_auth_header()),
-     ?_test(test_request_content_type()),
-     ?_test(test_request_accept_header()),
-     ?_test(test_request_custom_headers()),
-     ?_test(test_request_body_encoding()),
-     ?_test(test_request_chunked_transfer()),
-     ?_test(test_request_keepalive()),
-     ?_test(test_request_connection_reuse()),
-     ?_test(test_request_connection_pooling()),
-     ?_test(test_request_circuit_breaker())
-    ].
+    [?_test(test_send_empty_request()), ?_test(test_send_simple_request()),
+     ?_test(test_send_request_with_params()), ?_test(test_send_request_with_id()),
+     ?_test(test_send_request_without_id()), ?_test(test_send_notification()),
+     ?_test(test_send_batch_request()), ?_test(test_send_large_request()),
+     ?_test(test_send_binary_request()), ?_test(test_send_unicode_request()),
+     ?_test(test_request_response_correlation()), ?_test(test_request_timeout()),
+     ?_test(test_request_retry()), ?_test(test_request_cancellation()),
+     ?_test(test_request_priority()), ?_test(test_request_ordering()),
+     ?_test(test_request_deduplication()), ?_test(test_request_validation()),
+     ?_test(test_request_serialization()), ?_test(test_request_deserialization()),
+     ?_test(test_response_success()), ?_test(test_response_error()),
+     ?_test(test_response_partial()), ?_test(test_response_streaming()),
+     ?_test(test_response_compression()), ?_test(test_response_timeout()),
+     ?_test(test_response_validation()), ?_test(test_multiple_requests()),
+     ?_test(test_concurrent_requests()), ?_test(test_sequential_requests()),
+     ?_test(test_pipelined_requests()), ?_test(test_request_queue()),
+     ?_test(test_request_throttling()), ?_test(test_request_rate_limiting()),
+     ?_test(test_request_backpressure()), ?_test(test_request_flow_control()),
+     ?_test(test_request_metadata()), ?_test(test_request_tracing()),
+     ?_test(test_request_logging()), ?_test(test_request_metrics()),
+     ?_test(test_request_auth_header()), ?_test(test_request_content_type()),
+     ?_test(test_request_accept_header()), ?_test(test_request_custom_headers()),
+     ?_test(test_request_body_encoding()), ?_test(test_request_chunked_transfer()),
+     ?_test(test_request_keepalive()), ?_test(test_request_connection_reuse()),
+     ?_test(test_request_connection_pooling()), ?_test(test_request_circuit_breaker())].
 
 %% Request test implementations (representative samples)
 test_send_empty_request() ->
@@ -702,10 +657,9 @@ test_send_simple_request() ->
 
 test_send_request_with_params() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-    Request = #{
-        method => <<"tools/call">>,
-        params => #{name => <<"calculator">>, arguments => #{a => 1, b => 2}}
-    },
+    Request =
+        #{method => <<"tools/call">>,
+          params => #{name => <<"calculator">>, arguments => #{a => 1, b => 2}}},
     Result = erlmcp_test_client:send_request(Pid, Request),
     ?assertMatch({ok, _}, Result),
     erlmcp_test_client:stop_test_server(Pid).
@@ -733,11 +687,10 @@ test_send_notification() ->
 
 test_send_batch_request() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-    Requests = [
-        #{id => 1, method => <<"ping">>},
-        #{id => 2, method => <<"ping">>},
-        #{id => 3, method => <<"ping">>}
-    ],
+    Requests =
+        [#{id => 1, method => <<"ping">>},
+         #{id => 2, method => <<"ping">>},
+         #{id => 3, method => <<"ping">>}],
     Results = [erlmcp_test_client:send_request(Pid, Req) || Req <- Requests],
     ?assertEqual(3, length([ok || {ok, _} <- Results])),
     erlmcp_test_client:stop_test_server(Pid).
@@ -752,7 +705,7 @@ test_send_large_request() ->
 
 test_send_binary_request() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-    Request = #{method => <<"binary">>, params => #{data => <<1,2,3,4,5>>}},
+    Request = #{method => <<"binary">>, params => #{data => <<1, 2, 3, 4, 5>>}},
     Result = erlmcp_test_client:send_request(Pid, Request),
     ?assertMatch({ok, _}, Result),
     erlmcp_test_client:stop_test_server(Pid).
@@ -892,21 +845,30 @@ test_multiple_requests() ->
 test_concurrent_requests() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
     Parent = self(),
-    Pids = [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
-        Parent ! {self(), Result}
-    end) || _ <- lists:seq(1, 10)],
+    Pids =
+        [spawn(fun() ->
+                  Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
+                  Parent ! {self(), Result}
+               end)
+         || _ <- lists:seq(1, 10)],
 
-    Results = [receive {P, R} -> R end || P <- Pids],
+    Results =
+        [receive
+             {P, R} ->
+                 R
+         end
+         || P <- Pids],
     ?assertEqual(10, length([ok || {ok, _} <- Results])),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_sequential_requests() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-    Results = [begin
-        Request = #{method => <<"ping">>, id => I},
-        erlmcp_test_client:send_request(Pid, Request)
-    end || I <- lists:seq(1, 10)],
+    Results =
+        [begin
+             Request = #{method => <<"ping">>, id => I},
+             erlmcp_test_client:send_request(Pid, Request)
+         end
+         || I <- lists:seq(1, 10)],
     ?assertEqual(10, length([ok || {ok, _} <- Results])),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -972,94 +934,94 @@ test_request_metrics() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_auth_header() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        headers => #{<<"authorization">> => <<"Bearer token">>}
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080",
+                                               headers =>
+                                                   #{<<"authorization">> => <<"Bearer token">>}}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_content_type() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        headers => #{<<"content-type">> => <<"application/json">>}
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080",
+                                               headers =>
+                                                   #{<<"content-type">> =>
+                                                         <<"application/json">>}}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_accept_header() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        headers => #{<<"accept">> => <<"application/json">>}
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080",
+                                               headers =>
+                                                   #{<<"accept">> => <<"application/json">>}}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_custom_headers() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        headers => #{
-            <<"x-request-id">> => <<"req-123">>,
-            <<"x-trace-id">> => <<"trace-456">>
-        }
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080",
+                                               headers =>
+                                                   #{<<"x-request-id">> => <<"req-123">>,
+                                                     <<"x-trace-id">> => <<"trace-456">>}}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_body_encoding() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        encoding => utf8
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080", encoding => utf8}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_chunked_transfer() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        chunked => true
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080", chunked => true}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_keepalive() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        keepalive => true
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080", keepalive => true}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_connection_reuse() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        connection_reuse => true
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080",
+                                               connection_reuse => true}),
     [erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}) || _ <- lists:seq(1, 3)],
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_connection_pooling() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        pool_size => 5
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080", pool_size => 5}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_request_circuit_breaker() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(http, #{
-        url => "http://localhost:8080",
-        circuit_breaker => #{enabled => true, threshold => 5}
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(http,
+                                             #{url => "http://localhost:8080",
+                                               circuit_breaker =>
+                                                   #{enabled => true, threshold => 5}}),
     Request = #{method => <<"ping">>},
     erlmcp_test_client:send_request(Pid, Request),
     erlmcp_test_client:stop_test_server(Pid).
@@ -1069,38 +1031,20 @@ test_request_circuit_breaker() ->
 %%%===================================================================
 
 error_tests() ->
-    [
-     ?_test(test_invalid_pid()),
-     ?_test(test_stopped_client()),
-     ?_test(test_crashed_client()),
-     ?_test(test_timeout_error()),
-     ?_test(test_connection_error()),
-     ?_test(test_network_error()),
-     ?_test(test_protocol_error()),
-     ?_test(test_serialization_error()),
-     ?_test(test_deserialization_error()),
-     ?_test(test_validation_error()),
-     ?_test(test_authorization_error()),
-     ?_test(test_rate_limit_error()),
-     ?_test(test_resource_exhausted()),
-     ?_test(test_service_unavailable()),
-     ?_test(test_internal_server_error()),
-     ?_test(test_bad_request()),
-     ?_test(test_not_found()),
-     ?_test(test_method_not_allowed()),
-     ?_test(test_unsupported_media_type()),
-     ?_test(test_payload_too_large()),
-     ?_test(test_uri_too_long()),
-     ?_test(test_too_many_requests()),
-     ?_test(test_request_header_too_large()),
-     ?_test(test_malformed_request()),
-     ?_test(test_invalid_json()),
-     ?_test(test_missing_required_field()),
-     ?_test(test_type_mismatch()),
-     ?_test(test_constraint_violation()),
-     ?_test(test_concurrent_error_handling()),
-     ?_test(test_error_recovery())
-    ].
+    [?_test(test_invalid_pid()), ?_test(test_stopped_client()), ?_test(test_crashed_client()),
+     ?_test(test_timeout_error()), ?_test(test_connection_error()), ?_test(test_network_error()),
+     ?_test(test_protocol_error()), ?_test(test_serialization_error()),
+     ?_test(test_deserialization_error()), ?_test(test_validation_error()),
+     ?_test(test_authorization_error()), ?_test(test_rate_limit_error()),
+     ?_test(test_resource_exhausted()), ?_test(test_service_unavailable()),
+     ?_test(test_internal_server_error()), ?_test(test_bad_request()), ?_test(test_not_found()),
+     ?_test(test_method_not_allowed()), ?_test(test_unsupported_media_type()),
+     ?_test(test_payload_too_large()), ?_test(test_uri_too_long()),
+     ?_test(test_too_many_requests()), ?_test(test_request_header_too_large()),
+     ?_test(test_malformed_request()), ?_test(test_invalid_json()),
+     ?_test(test_missing_required_field()), ?_test(test_type_mismatch()),
+     ?_test(test_constraint_violation()), ?_test(test_concurrent_error_handling()),
+     ?_test(test_error_recovery())].
 
 %% Error test implementations (representative samples)
 test_invalid_pid() ->
@@ -1109,8 +1053,10 @@ test_invalid_pid() ->
         erlmcp_test_client:send_request(FakePid, #{method => <<"ping">>}),
         ?assert(false)
     catch
-        exit:{noproc, _} -> ok;
-        error:badarg -> ok
+        exit:{noproc, _} ->
+            ok;
+        error:badarg ->
+            ok
     end.
 
 test_stopped_client() ->
@@ -1121,7 +1067,8 @@ test_stopped_client() ->
         erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
         ?assert(false)
     catch
-        exit:{noproc, _} -> ok
+        exit:{noproc, _} ->
+            ok
     end.
 
 test_crashed_client() ->
@@ -1132,7 +1079,8 @@ test_crashed_client() ->
         erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
         ?assert(false)
     catch
-        exit:{noproc, _} -> ok
+        exit:{noproc, _} ->
+            ok
     end.
 
 test_timeout_error() ->
@@ -1247,10 +1195,7 @@ test_too_many_requests() ->
 
 test_request_header_too_large() ->
     LargeHeader = binary:copy(<<"x">>, 10000),
-    Config = #{
-        url => "http://localhost:8080",
-        headers => #{<<"x-large-header">> => LargeHeader}
-    },
+    Config = #{url => "http://localhost:8080", headers => #{<<"x-large-header">> => LargeHeader}},
     {ok, Pid} = erlmcp_test_client:start_test_client(http, Config),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1286,9 +1231,9 @@ test_constraint_violation() ->
 
 test_concurrent_error_handling() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-    Pids = [spawn(fun() ->
-        erlmcp_test_client:send_request(Pid, #{method => <<"error_prone">>})
-    end) || _ <- lists:seq(1, 10)],
+    Pids =
+        [spawn(fun() -> erlmcp_test_client:send_request(Pid, #{method => <<"error_prone">>}) end)
+         || _ <- lists:seq(1, 10)],
     timer:sleep(500),
     [?assertNot(is_process_alive(P)) || P <- Pids],
     erlmcp_test_client:stop_test_server(Pid).
@@ -1307,8 +1252,7 @@ test_error_recovery() ->
 %%%===================================================================
 
 concurrent_tests() ->
-    [
-     ?_test(test_concurrent_client_start()),
+    [?_test(test_concurrent_client_start()),
      ?_test(test_concurrent_client_stop()),
      ?_test(test_concurrent_requests_same_client()),
      ?_test(test_concurrent_requests_different_clients()),
@@ -1332,29 +1276,30 @@ concurrent_tests() ->
      ?_test(test_busy_waiting()),
      ?_test(test_lock_contention()),
      ?_test(test_atomic_operations()),
-     ?_test(test_consistency_guarantees())
-    ].
+     ?_test(test_consistency_guarantees())].
 
 %% Concurrent test implementations (representative samples)
 test_concurrent_client_start() ->
-    Pids = pmap(fun(I) ->
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
-        Pid
-    end, lists:seq(1, 100)),
+    Pids =
+        pmap(fun(I) ->
+                {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
+                Pid
+             end,
+             lists:seq(1, 100)),
 
     ?assertEqual(100, length(Pids)),
     [?assert(is_process_alive(Pid)) || Pid <- Pids],
     [erlmcp_test_client:stop_test_server(Pid) || Pid <- Pids].
 
 test_concurrent_client_stop() ->
-    Clients = [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-        Pid
-    end || _ <- lists:seq(1, 100)],
+    Clients =
+        [begin
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
+             Pid
+         end
+         || _ <- lists:seq(1, 100)],
 
-    pmap(fun(Pid) ->
-        erlmcp_test_client:stop_test_server(Pid)
-    end, Clients),
+    pmap(fun(Pid) -> erlmcp_test_client:stop_test_server(Pid) end, Clients),
 
     timer:sleep(200),
     [?assertNot(is_process_alive(Pid)) || Pid <- Clients].
@@ -1363,28 +1308,44 @@ test_concurrent_requests_same_client() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
     Parent = self(),
 
-    Requesters = [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
-        Parent ! {self(), Result}
-    end) || _ <- lists:seq(1, 50)],
+    Requesters =
+        [spawn(fun() ->
+                  Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
+                  Parent ! {self(), Result}
+               end)
+         || _ <- lists:seq(1, 50)],
 
-    Results = [receive {P, R} -> R end || P <- Requesters],
+    Results =
+        [receive
+             {P, R} ->
+                 R
+         end
+         || P <- Requesters],
     ?assertEqual(50, length([ok || {ok, _} <- Results])),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_concurrent_requests_different_clients() ->
-    Clients = [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-        Pid
-    end || _ <- lists:seq(1, 20)],
+    Clients =
+        [begin
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
+             Pid
+         end
+         || _ <- lists:seq(1, 20)],
 
     Parent = self(),
-    Requesters = [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(C, #{method => <<"ping">>}),
-        Parent ! {self(), Result}
-    end) || C <- Clients],
+    Requesters =
+        [spawn(fun() ->
+                  Result = erlmcp_test_client:send_request(C, #{method => <<"ping">>}),
+                  Parent ! {self(), Result}
+               end)
+         || C <- Clients],
 
-    Results = [receive {P, R} -> R end || P <- Requesters],
+    Results =
+        [receive
+             {P, R} ->
+                 R
+         end
+         || P <- Requesters],
     ?assertEqual(20, length([ok || {ok, _} <- Results])),
     [erlmcp_test_client:stop_test_server(Pid) || Pid <- Clients].
 
@@ -1392,18 +1353,31 @@ test_concurrent_read_write() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
     Parent = self(),
 
-    Writers = [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"write">>, data => I}),
-        Parent ! {write, I, Result}
-    end) || I <- lists:seq(1, 10)],
+    Writers =
+        [spawn(fun() ->
+                  Result =
+                      erlmcp_test_client:send_request(Pid, #{method => <<"write">>, data => I}),
+                  Parent ! {write, I, Result}
+               end)
+         || I <- lists:seq(1, 10)],
 
-    Readers = [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"read">>}),
-        Parent ! {read, I, Result}
-    end) || I <- lists:seq(1, 10)],
+    Readers =
+        [spawn(fun() ->
+                  Result = erlmcp_test_client:send_request(Pid, #{method => <<"read">>}),
+                  Parent ! {read, I, Result}
+               end)
+         || I <- lists:seq(1, 10)],
 
-    [receive {write, _, _} -> ok end || _ <- Writers],
-    [receive {read, _, _} -> ok end || _ <- Readers],
+    [receive
+         {write, _, _} ->
+             ok
+     end
+     || _ <- Writers],
+    [receive
+         {read, _, _} ->
+             ok
+     end
+     || _ <- Readers],
     erlmcp_test_client:stop_test_server(Pid).
 
 test_race_condition_handling() ->
@@ -1412,11 +1386,17 @@ test_race_condition_handling() ->
 
     %% Simulate race condition
     [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"increment">>}),
-        Parent ! {self(), Result}
-    end) || _ <- lists:seq(1, 100)],
+              Result = erlmcp_test_client:send_request(Pid, #{method => <<"increment">>}),
+              Parent ! {self(), Result}
+           end)
+     || _ <- lists:seq(1, 100)],
 
-    Results = [receive {P, R} -> R end || P <- lists:seq(1, 100)],
+    Results =
+        [receive
+             {P, R} ->
+                 R
+         end
+         || P <- lists:seq(1, 100)],
     ?assertEqual(100, length(Results)),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1441,31 +1421,44 @@ test_starvation_prevention() ->
 
     %% High priority requests
     [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{priority => high}),
-        Parent ! {high, Result}
-    end) || _ <- lists:seq(1, 10)],
+              Result = erlmcp_test_client:send_request(Pid, #{priority => high}),
+              Parent ! {high, Result}
+           end)
+     || _ <- lists:seq(1, 10)],
 
     %% Low priority request should not starve
     spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{priority => low}),
-        Parent ! {low, Result}
-    end),
+             Result = erlmcp_test_client:send_request(Pid, #{priority => low}),
+             Parent ! {low, Result}
+          end),
 
-    receive {low, _} -> ok after 5000 -> ?assert(false) end,
+    receive
+        {low, _} ->
+            ok
+    after 5000 ->
+        ?assert(false)
+    end,
     erlmcp_test_client:stop_test_server(Pid).
 
 test_fairness() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
     Parent = self(),
 
-    Clients = [spawn(fun() ->
-        StartTime = erlang:monotonic_time(millisecond),
-        erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
-        EndTime = erlang:monotonic_time(millisecond),
-        Parent ! {self(), EndTime - StartTime}
-    end) || _ <- lists:seq(1, 10)],
+    Clients =
+        [spawn(fun() ->
+                  StartTime = erlang:monotonic_time(millisecond),
+                  erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
+                  EndTime = erlang:monotonic_time(millisecond),
+                  Parent ! {self(), EndTime - StartTime}
+               end)
+         || _ <- lists:seq(1, 10)],
 
-    Latencies = [receive {C, L} -> L end || C <- Clients],
+    Latencies =
+        [receive
+             {C, L} ->
+                 L
+         end
+         || C <- Clients],
     AvgLatency = lists:sum(Latencies) / length(Latencies),
 
     %% Check fairness: no client should have latency > 2x average
@@ -1473,20 +1466,28 @@ test_fairness() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_load_balancing() ->
-    Clients = [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
-        Pid
-    end || I <- lists:seq(1, 5)],
+    Clients =
+        [begin
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
+             Pid
+         end
+         || I <- lists:seq(1, 5)],
 
     %% Distribute requests across clients
     Parent = self(),
     [spawn(fun() ->
-        Client = lists:nth((I rem 5) + 1, Clients),
-        Result = erlmcp_test_client:send_request(Client, #{method => <<"ping">>}),
-        Parent ! {I, Result}
-    end) || I <- lists:seq(1, 50)],
+              Client = lists:nth(I rem 5 + 1, Clients),
+              Result = erlmcp_test_client:send_request(Client, #{method => <<"ping">>}),
+              Parent ! {I, Result}
+           end)
+     || I <- lists:seq(1, 50)],
 
-    Results = [receive {I, R} -> R end || I <- lists:seq(1, 50)],
+    Results =
+        [receive
+             {I, R} ->
+                 R
+         end
+         || I <- lists:seq(1, 50)],
     ?assertEqual(50, length([ok || {ok, _} <- Results])),
     [erlmcp_test_client:stop_test_server(Pid) || Pid <- Clients].
 
@@ -1494,19 +1495,20 @@ test_backpressure_propagation() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{backpressure => true}),
 
     %% Flood with requests
-    [spawn(fun() ->
-        erlmcp_test_client:send_request(Pid, #{method => <<"heavy_operation">>})
-    end) || _ <- lists:seq(1, 1000)],
+    [spawn(fun() -> erlmcp_test_client:send_request(Pid, #{method => <<"heavy_operation">>}) end)
+     || _ <- lists:seq(1, 1000)],
 
     timer:sleep(100),
     ?assert(is_process_alive(Pid)),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_cascading_failures() ->
-    Clients = [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
-        Pid
-    end || I <- lists:seq(1, 5)],
+    Clients =
+        [begin
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
+             Pid
+         end
+         || I <- lists:seq(1, 5)],
 
     %% Kill one client
     [First | Rest] = Clients,
@@ -1523,12 +1525,19 @@ test_thundering_herd() ->
 
     %% Simulate thundering herd
     StartTime = erlang:monotonic_time(millisecond),
-    Herd = [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
-        Parent ! {self(), Result}
-    end) || _ <- lists:seq(1, 1000)],
+    Herd =
+        [spawn(fun() ->
+                  Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
+                  Parent ! {self(), Result}
+               end)
+         || _ <- lists:seq(1, 1000)],
 
-    Results = [receive {P, R} -> R end || P <- Herd],
+    Results =
+        [receive
+             {P, R} ->
+                 R
+         end
+         || P <- Herd],
     EndTime = erlang:monotonic_time(millisecond),
 
     ?assertEqual(1000, length(Results)),
@@ -1550,11 +1559,11 @@ test_split_brain() ->
     erlmcp_test_client:stop_test_server(Pid2).
 
 test_network_partition() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(tcp, #{
-        host => "localhost",
-        port => 9999,
-        network_partition_tolerance => true
-    }),
+    {ok, Pid} =
+        erlmcp_test_client:start_test_client(tcp,
+                                             #{host => "localhost",
+                                               port => 9999,
+                                               network_partition_tolerance => true}),
 
     %% Client should handle network partition gracefully
     erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
@@ -1581,11 +1590,17 @@ test_shared_state_access() ->
 
     %% Concurrent access to shared state
     [spawn(fun() ->
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"read_state">>}),
-        Parent ! {self(), Result}
-    end) || _ <- lists:seq(1, 50)],
+              Result = erlmcp_test_client:send_request(Pid, #{method => <<"read_state">>}),
+              Parent ! {self(), Result}
+           end)
+     || _ <- lists:seq(1, 50)],
 
-    Results = [receive {P, R} -> R end || P <- lists:seq(1, 50)],
+    Results =
+        [receive
+             {P, R} ->
+                 R
+         end
+         || P <- lists:seq(1, 50)],
     ?assertEqual(50, length(Results)),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1599,9 +1614,8 @@ test_message_queue_overflow() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
 
     %% Flood message queue
-    [spawn(fun() ->
-        erlmcp_test_client:send_request(Pid, #{method => <<"ping">>})
-    end) || _ <- lists:seq(1, 10000)],
+    [spawn(fun() -> erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}) end)
+     || _ <- lists:seq(1, 10000)],
 
     timer:sleep(1000),
     ?assert(is_process_alive(Pid)),
@@ -1611,7 +1625,8 @@ test_selective_receive() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
 
     %% Send multiple requests
-    [erlmcp_test_client:send_request(Pid, #{id => I, method => <<"ping">>}) || I <- lists:seq(1, 10)],
+    [erlmcp_test_client:send_request(Pid, #{id => I, method => <<"ping">>})
+     || I <- lists:seq(1, 10)],
 
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1638,7 +1653,7 @@ test_busy_waiting() ->
     {reductions, Final} = FinalReductions,
 
     %% Reductions should not increase significantly during idle
-    ?assert((Final - Init) < 1000),
+    ?assert(Final - Init < 1000),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_lock_contention() ->
@@ -1647,11 +1662,16 @@ test_lock_contention() ->
 
     %% Concurrent requests that might contend for locks
     [spawn(fun() ->
-        erlmcp_test_client:send_request(Pid, #{method => <<"locked_operation">>}),
-        Parent ! {self(), done}
-    end) || _ <- lists:seq(1, 20)],
+              erlmcp_test_client:send_request(Pid, #{method => <<"locked_operation">>}),
+              Parent ! {self(), done}
+           end)
+     || _ <- lists:seq(1, 20)],
 
-    [receive {_, done} -> ok end || _ <- lists:seq(1, 20)],
+    [receive
+         {_, done} ->
+             ok
+     end
+     || _ <- lists:seq(1, 20)],
     erlmcp_test_client:stop_test_server(Pid).
 
 test_atomic_operations() ->
@@ -1680,8 +1700,7 @@ test_consistency_guarantees() ->
 %%%===================================================================
 
 edge_case_tests() ->
-    [
-     ?_test(test_zero_timeout()),
+    [?_test(test_zero_timeout()),
      ?_test(test_infinite_timeout()),
      ?_test(test_negative_timeout()),
      ?_test(test_empty_config()),
@@ -1705,8 +1724,7 @@ edge_case_tests() ->
      ?_test(test_escape_sequences()),
      ?_test(test_boundary_values()),
      ?_test(test_overflow_conditions()),
-     ?_test(test_underflow_conditions())
-    ].
+     ?_test(test_underflow_conditions())].
 
 %% Edge case test implementations (representative samples)
 test_zero_timeout() ->
@@ -1722,7 +1740,8 @@ test_negative_timeout() ->
         erlmcp_test_client:start_test_client(stdio, #{timeout => -1}),
         ?assert(true) %% May succeed if validation doesn't check
     catch
-        _:_ -> ok %% Or may fail, both acceptable
+        _:_ ->
+            ok %% Or may fail, both acceptable
     end.
 
 test_empty_config() ->
@@ -1750,12 +1769,11 @@ test_min_integer() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_float_values() ->
-    Config = #{
-        pi => 3.14159,
-        e => 2.71828,
-        infinity => 1.0e308,
-        tiny => 1.0e-308
-    },
+    Config =
+        #{pi => 3.14159,
+          e => 2.71828,
+          infinity => 1.0e308,
+          tiny => 1.0e-308},
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1780,15 +1798,7 @@ test_tuple_values() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_nested_maps() ->
-    Config = #{
-        level1 => #{
-            level2 => #{
-                level3 => #{
-                    value => deep
-                }
-            }
-        }
-    },
+    Config = #{level1 => #{level2 => #{level3 => #{value => deep}}}},
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1799,9 +1809,7 @@ test_circular_references() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_very_deep_nesting() ->
-    DeepMap = lists:foldl(fun(I, Acc) ->
-        #{I => Acc}
-    end, #{value => deep}, lists:seq(1, 100)),
+    DeepMap = lists:foldl(fun(I, Acc) -> #{I => Acc} end, #{value => deep}, lists:seq(1, 100)),
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, DeepMap),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1836,12 +1844,11 @@ test_escape_sequences() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_boundary_values() ->
-    Config = #{
-        max_int => (1 bsl 63) - 1,
-        min_int => -(1 bsl 63),
-        empty => <<>>,
-        single => <<1>>
-    },
+    Config =
+        #{max_int => 1 bsl 63 - 1,
+          min_int => -(1 bsl 63),
+          empty => <<>>,
+          single => <<1>>},
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1861,38 +1868,21 @@ test_underflow_conditions() ->
 %%%===================================================================
 
 integration_tests() ->
-    [
-     ?_test(test_full_lifecycle()),
-     ?_test(test_request_response_cycle()),
-     ?_test(test_multi_transport_workflow()),
-     ?_test(test_error_recovery_workflow()),
-     ?_test(test_reconnection_workflow()),
-     ?_test(test_failover_workflow()),
-     ?_test(test_load_balancing_workflow()),
-     ?_test(test_circuit_breaker_workflow()),
-     ?_test(test_retry_workflow()),
-     ?_test(test_timeout_workflow()),
-     ?_test(test_backpressure_workflow()),
-     ?_test(test_streaming_workflow()),
-     ?_test(test_batching_workflow()),
-     ?_test(test_pipelining_workflow()),
-     ?_test(test_multiplexing_workflow()),
-     ?_test(test_compression_workflow()),
-     ?_test(test_encryption_workflow()),
-     ?_test(test_authentication_workflow()),
-     ?_test(test_authorization_workflow()),
-     ?_test(test_rate_limiting_workflow()),
-     ?_test(test_caching_workflow()),
-     ?_test(test_monitoring_workflow()),
-     ?_test(test_logging_workflow()),
-     ?_test(test_tracing_workflow()),
-     ?_test(test_metrics_workflow()),
-     ?_test(test_health_check_workflow()),
-     ?_test(test_graceful_shutdown_workflow()),
-     ?_test(test_hot_code_upgrade_workflow()),
-     ?_test(test_distributed_workflow()),
-     ?_test(test_end_to_end_workflow())
-    ].
+    [?_test(test_full_lifecycle()), ?_test(test_request_response_cycle()),
+     ?_test(test_multi_transport_workflow()), ?_test(test_error_recovery_workflow()),
+     ?_test(test_reconnection_workflow()), ?_test(test_failover_workflow()),
+     ?_test(test_load_balancing_workflow()), ?_test(test_circuit_breaker_workflow()),
+     ?_test(test_retry_workflow()), ?_test(test_timeout_workflow()),
+     ?_test(test_backpressure_workflow()), ?_test(test_streaming_workflow()),
+     ?_test(test_batching_workflow()), ?_test(test_pipelining_workflow()),
+     ?_test(test_multiplexing_workflow()), ?_test(test_compression_workflow()),
+     ?_test(test_encryption_workflow()), ?_test(test_authentication_workflow()),
+     ?_test(test_authorization_workflow()), ?_test(test_rate_limiting_workflow()),
+     ?_test(test_caching_workflow()), ?_test(test_monitoring_workflow()),
+     ?_test(test_logging_workflow()), ?_test(test_tracing_workflow()),
+     ?_test(test_metrics_workflow()), ?_test(test_health_check_workflow()),
+     ?_test(test_graceful_shutdown_workflow()), ?_test(test_hot_code_upgrade_workflow()),
+     ?_test(test_distributed_workflow()), ?_test(test_end_to_end_workflow())].
 
 %% Integration test implementations (representative samples)
 test_full_lifecycle() ->
@@ -1914,10 +1904,11 @@ test_request_response_cycle() ->
 
     %% Multiple request-response cycles
     lists:foreach(fun(I) ->
-        Request = #{id => I, method => <<"ping">>},
-        Result = erlmcp_test_client:send_request(Pid, Request),
-        ?assertMatch({ok, _}, Result)
-    end, lists:seq(1, 10)),
+                     Request = #{id => I, method => <<"ping">>},
+                     Result = erlmcp_test_client:send_request(Pid, Request),
+                     ?assertMatch({ok, _}, Result)
+                  end,
+                  lists:seq(1, 10)),
 
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -1925,18 +1916,24 @@ test_multi_transport_workflow() ->
     Transports = [stdio, tcp, http, websocket],
 
     lists:foreach(fun(Transport) ->
-        Config = case Transport of
-            tcp -> #{host => "localhost", port => 9999};
-            http -> #{url => "http://localhost:8080"};
-            websocket -> #{url => "ws://localhost:8080/ws"};
-            _ -> #{}
-        end,
+                     Config =
+                         case Transport of
+                             tcp ->
+                                 #{host => "localhost", port => 9999};
+                             http ->
+                                 #{url => "http://localhost:8080"};
+                             websocket ->
+                                 #{url => "ws://localhost:8080/ws"};
+                             _ ->
+                                 #{}
+                         end,
 
-        {ok, Pid} = erlmcp_test_client:start_test_client(Transport, Config),
-        Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
-        ?assertMatch({ok, _}, Result),
-        erlmcp_test_client:stop_test_server(Pid)
-    end, Transports).
+                     {ok, Pid} = erlmcp_test_client:start_test_client(Transport, Config),
+                     Result = erlmcp_test_client:send_request(Pid, #{method => <<"ping">>}),
+                     ?assertMatch({ok, _}, Result),
+                     erlmcp_test_client:stop_test_server(Pid)
+                  end,
+                  Transports).
 
 test_error_recovery_workflow() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
@@ -1951,7 +1948,10 @@ test_error_recovery_workflow() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_reconnection_workflow() ->
-    Config = #{host => "localhost", port => 9999, reconnect => true},
+    Config =
+        #{host => "localhost",
+          port => 9999,
+          reconnect => true},
     {ok, Pid} = erlmcp_test_client:start_test_client(tcp, Config),
 
     %% Simulate disconnection and reconnection
@@ -1960,25 +1960,27 @@ test_reconnection_workflow() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_failover_workflow() ->
-    Config = #{
-        hosts => ["host1", "host2", "host3"],
-        port => 9999,
-        failover => true
-    },
+    Config =
+        #{hosts => ["host1", "host2", "host3"],
+          port => 9999,
+          failover => true},
     {ok, Pid} = erlmcp_test_client:start_test_client(tcp, Config),
     erlmcp_test_client:stop_test_server(Pid).
 
 test_load_balancing_workflow() ->
-    Clients = [begin
-        {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
-        Pid
-    end || I <- lists:seq(1, 3)],
+    Clients =
+        [begin
+             {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{id => I}),
+             Pid
+         end
+         || I <- lists:seq(1, 3)],
 
     %% Round-robin requests
     lists:foreach(fun(I) ->
-        Client = lists:nth((I rem 3) + 1, Clients),
-        erlmcp_test_client:send_request(Client, #{method => <<"ping">>})
-    end, lists:seq(1, 30)),
+                     Client = lists:nth(I rem 3 + 1, Clients),
+                     erlmcp_test_client:send_request(Client, #{method => <<"ping">>})
+                  end,
+                  lists:seq(1, 30)),
 
     [erlmcp_test_client:stop_test_server(Pid) || Pid <- Clients].
 
@@ -2014,9 +2016,8 @@ test_backpressure_workflow() ->
     Config = #{backpressure => #{enabled => true, threshold => 100}},
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
 
-    [spawn(fun() ->
-        erlmcp_test_client:send_request(Pid, #{method => <<"heavy">>})
-    end) || _ <- lists:seq(1, 200)],
+    [spawn(fun() -> erlmcp_test_client:send_request(Pid, #{method => <<"heavy">>}) end)
+     || _ <- lists:seq(1, 200)],
 
     timer:sleep(1000),
     erlmcp_test_client:stop_test_server(Pid).
@@ -2051,11 +2052,16 @@ test_multiplexing_workflow() ->
 
     Parent = self(),
     [spawn(fun() ->
-        erlmcp_test_client:send_request(Pid, #{method => <<"concurrent">>, id => I}),
-        Parent ! {done, I}
-    end) || I <- lists:seq(1, 10)],
+              erlmcp_test_client:send_request(Pid, #{method => <<"concurrent">>, id => I}),
+              Parent ! {done, I}
+           end)
+     || I <- lists:seq(1, 10)],
 
-    [receive {done, _} -> ok end || _ <- lists:seq(1, 10)],
+    [receive
+         {done, _} ->
+             ok
+     end
+     || _ <- lists:seq(1, 10)],
     erlmcp_test_client:stop_test_server(Pid).
 
 test_compression_workflow() ->
@@ -2076,10 +2082,8 @@ test_encryption_workflow() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_authentication_workflow() ->
-    Config = #{
-        url => "http://localhost:8080",
-        auth => #{type => bearer, token => <<"secret_token">>}
-    },
+    Config =
+        #{url => "http://localhost:8080", auth => #{type => bearer, token => <<"secret_token">>}},
     {ok, Pid} = erlmcp_test_client:start_test_client(http, Config),
 
     erlmcp_test_client:send_request(Pid, #{method => <<"protected">>}),
@@ -2087,11 +2091,10 @@ test_authentication_workflow() ->
     erlmcp_test_client:stop_test_server(Pid).
 
 test_authorization_workflow() ->
-    Config = #{
-        url => "http://localhost:8080",
-        auth => #{type => bearer, token => <<"admin_token">>},
-        roles => [admin]
-    },
+    Config =
+        #{url => "http://localhost:8080",
+          auth => #{type => bearer, token => <<"admin_token">>},
+          roles => [admin]},
     {ok, Pid} = erlmcp_test_client:start_test_client(http, Config),
 
     erlmcp_test_client:send_request(Pid, #{method => <<"admin_only">>}),
@@ -2143,11 +2146,10 @@ test_tracing_workflow() ->
     Config = #{tracing => #{enabled => true, sampler => always}},
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
 
-    erlmcp_test_client:send_request(Pid, #{
-        method => <<"traced">>,
-        trace_id => <<"trace-123">>,
-        span_id => <<"span-456">>
-    }),
+    erlmcp_test_client:send_request(Pid,
+                                    #{method => <<"traced">>,
+                                      trace_id => <<"trace-123">>,
+                                      span_id => <<"span-456">>}),
 
     erlmcp_test_client:stop_test_server(Pid).
 
@@ -2172,9 +2174,7 @@ test_graceful_shutdown_workflow() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{graceful_shutdown => true}),
 
     %% Start long-running operation
-    spawn(fun() ->
-        erlmcp_test_client:send_request(Pid, #{method => <<"long_operation">>})
-    end),
+    spawn(fun() -> erlmcp_test_client:send_request(Pid, #{method => <<"long_operation">>}) end),
 
     timer:sleep(50),
 
@@ -2203,23 +2203,21 @@ test_distributed_workflow() ->
 
 test_end_to_end_workflow() ->
     %% Complete end-to-end workflow
-    Config = #{
-        transport => stdio,
-        timeout => 5000,
-        retry => 3,
-        logging => true,
-        metrics => true
-    },
+    Config =
+        #{transport => stdio,
+          timeout => 5000,
+          retry => 3,
+          logging => true,
+          metrics => true},
 
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, Config),
     ?assert(is_process_alive(Pid)),
 
     %% Send various requests
-    Requests = [
-        #{method => <<"ping">>},
-        #{method => <<"echo">>, params => #{text => <<"hello">>}},
-        #{method => <<"calculate">>, params => #{a => 1, b => 2}}
-    ],
+    Requests =
+        [#{method => <<"ping">>},
+         #{method => <<"echo">>, params => #{text => <<"hello">>}},
+         #{method => <<"calculate">>, params => #{a => 1, b => 2}}],
 
     Results = [erlmcp_test_client:send_request(Pid, Req) || Req <- Requests],
     ?assertEqual(3, length([ok || {ok, _} <- Results])),
@@ -2235,8 +2233,14 @@ test_end_to_end_workflow() ->
 %% Parallel map
 pmap(Fun, List) ->
     Parent = self(),
-    Pids = [spawn(fun() ->
-        Result = Fun(Item),
-        Parent ! {self(), Result}
-    end) || Item <- List],
-    [receive {Pid, Result} -> Result end || Pid <- Pids].
+    Pids =
+        [spawn(fun() ->
+                  Result = Fun(Item),
+                  Parent ! {self(), Result}
+               end)
+         || Item <- List],
+    [receive
+         {Pid, Result} ->
+             Result
+     end
+     || Pid <- Pids].

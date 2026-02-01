@@ -23,12 +23,10 @@ aggregation_test_() ->
     {setup,
      fun setup_metrics/0,
      fun cleanup_metrics/1,
-     [
-         {"Get performance summary", fun test_get_performance_summary/0},
-         {"Histogram calculations", fun test_histogram_calculations/0},
-         {"Percentiles calculation", fun test_percentiles/0},
-         {"Metric labels", fun test_metric_labels/0}
-     ]}.
+     [{"Get performance summary", fun test_get_performance_summary/0},
+      {"Histogram calculations", fun test_histogram_calculations/0},
+      {"Percentiles calculation", fun test_percentiles/0},
+      {"Metric labels", fun test_metric_labels/0}]}.
 
 setup_metrics() ->
     {ok, Pid} = erlmcp_metrics:start_link(),
@@ -70,8 +68,9 @@ test_histogram_calculations() ->
 
     % Record multiple operations to build histogram
     lists:foreach(fun(N) ->
-        erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, N)
-    end, [10, 20, 30, 40, 50]),
+                     erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, N)
+                  end,
+                  [10, 20, 30, 40, 50]),
 
     Summary = erlmcp_metrics:get_performance_summary(),
     Histograms = maps:get(<<"histograms">>, Summary),
@@ -99,8 +98,9 @@ test_percentiles() ->
 
     % Record 100 operations to test percentiles
     lists:foreach(fun(N) ->
-        erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, N)
-    end, lists:seq(1, 100)),
+                     erlmcp_metrics:record_transport_operation(<<"tcp_conn_1">>, tcp, send, N)
+                  end,
+                  lists:seq(1, 100)),
 
     Summary = erlmcp_metrics:get_performance_summary(),
     Percentiles = maps:get(<<"percentiles">>, Summary),
@@ -149,17 +149,15 @@ empty_summary_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Get summary without recording any metrics
-              Summary = erlmcp_metrics:get_performance_summary(),
+        [?_test(begin
+                    % Get summary without recording any metrics
+                    Summary = erlmcp_metrics:get_performance_summary(),
 
-              % Should still return valid structure
-              ?assert(is_map(Summary)),
-              ?assert(maps:is_key(<<"uptime_ms">>, Summary)),
-              ?assertEqual(0, maps:get(<<"total_metrics_recorded">>, Summary))
-          end)
-         ]
+                    % Should still return valid structure
+                    ?assert(is_map(Summary)),
+                    ?assert(maps:is_key(<<"uptime_ms">>, Summary)),
+                    ?assertEqual(0, maps:get(<<"total_metrics_recorded">>, Summary))
+                end)]
      end}.
 
 %% Test histogram with single value
@@ -168,22 +166,20 @@ single_value_histogram_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Record single metric
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp">>, tcp, send, 100),
+        [?_test(begin
+                    % Record single metric
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp">>, tcp, send, 100),
 
-              Summary = erlmcp_metrics:get_performance_summary(),
-              Histograms = maps:get(<<"histograms">>, Summary),
-              TransportHist = maps:get(<<"transport_operation_duration_ms">>, Histograms),
+                    Summary = erlmcp_metrics:get_performance_summary(),
+                    Histograms = maps:get(<<"histograms">>, Summary),
+                    TransportHist = maps:get(<<"transport_operation_duration_ms">>, Histograms),
 
-              % Single value histogram: min = max = avg
-              ?assertEqual(1, maps:get(<<"count">>, TransportHist)),
-              ?assertEqual(100, maps:get(<<"min">>, TransportHist)),
-              ?assertEqual(100, maps:get(<<"max">>, TransportHist)),
-              ?assertEqual(100.0, maps:get(<<"avg">>, TransportHist))
-          end)
-         ]
+                    % Single value histogram: min = max = avg
+                    ?assertEqual(1, maps:get(<<"count">>, TransportHist)),
+                    ?assertEqual(100, maps:get(<<"min">>, TransportHist)),
+                    ?assertEqual(100, maps:get(<<"max">>, TransportHist)),
+                    ?assertEqual(100.0, maps:get(<<"avg">>, TransportHist))
+                end)]
      end}.
 
 %% Test counters increment correctly
@@ -192,20 +188,18 @@ counter_increment_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Record multiple metrics of same type
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp1">>, tcp, send, 10),
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp2">>, tcp, send, 20),
-              ok = erlmcp_metrics:record_transport_operation(<<"tcp3">>, tcp, send, 30),
+        [?_test(begin
+                    % Record multiple metrics of same type
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp1">>, tcp, send, 10),
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp2">>, tcp, send, 20),
+                    ok = erlmcp_metrics:record_transport_operation(<<"tcp3">>, tcp, send, 30),
 
-              Summary = erlmcp_metrics:get_performance_summary(),
-              Counters = maps:get(<<"counters">>, Summary),
+                    Summary = erlmcp_metrics:get_performance_summary(),
+                    Counters = maps:get(<<"counters">>, Summary),
 
-              % Counter should be incremented
-              ?assert(maps:is_key(<<"transport_operation_duration_ms">>, Counters))
-          end)
-         ]
+                    % Counter should be incremented
+                    ?assert(maps:is_key(<<"transport_operation_duration_ms">>, Counters))
+                end)]
      end}.
 
 %%====================================================================
@@ -218,36 +212,34 @@ aggregation_workflow_test_() ->
      fun setup_metrics/0,
      fun cleanup_metrics/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Record various operations
-              ok = erlmcp_metrics:record_transport_operation(<<"conn1">>, tcp, send, 10),
-              ok = erlmcp_metrics:record_transport_operation(<<"conn2">>, tcp, recv, 20),
-              ok = erlmcp_metrics:record_server_operation(<<"srv1">>, call, 30, #{}),
-              ok = erlmcp_metrics:record_server_operation(<<"srv2">>, init, 40, #{}),
-              ok = erlmcp_metrics:record_registry_operation(register, 5, #{}),
-              ok = erlmcp_metrics:record_registry_operation(lookup, 15, #{}),
+        [?_test(begin
+                    % Record various operations
+                    ok = erlmcp_metrics:record_transport_operation(<<"conn1">>, tcp, send, 10),
+                    ok = erlmcp_metrics:record_transport_operation(<<"conn2">>, tcp, recv, 20),
+                    ok = erlmcp_metrics:record_server_operation(<<"srv1">>, call, 30, #{}),
+                    ok = erlmcp_metrics:record_server_operation(<<"srv2">>, init, 40, #{}),
+                    ok = erlmcp_metrics:record_registry_operation(register, 5, #{}),
+                    ok = erlmcp_metrics:record_registry_operation(lookup, 15, #{}),
 
-              % Get performance summary
-              Summary = erlmcp_metrics:get_performance_summary(),
+                    % Get performance summary
+                    Summary = erlmcp_metrics:get_performance_summary(),
 
-              % Verify total metrics count
-              TotalMetrics = maps:get(<<"total_metrics_recorded">>, Summary),
-              ?assertEqual(6, TotalMetrics),
+                    % Verify total metrics count
+                    TotalMetrics = maps:get(<<"total_metrics_recorded">>, Summary),
+                    ?assertEqual(6, TotalMetrics),
 
-              % Verify histograms exist for each metric type
-              Histograms = maps:get(<<"histograms">>, Summary),
-              ?assert(maps:is_key(<<"transport_operation_duration_ms">>, Histograms)),
-              ?assert(maps:is_key(<<"server_operation_duration_ms">>, Histograms)),
-              ?assert(maps:is_key(<<"registry_operation_duration_ms">>, Histograms)),
+                    % Verify histograms exist for each metric type
+                    Histograms = maps:get(<<"histograms">>, Summary),
+                    ?assert(maps:is_key(<<"transport_operation_duration_ms">>, Histograms)),
+                    ?assert(maps:is_key(<<"server_operation_duration_ms">>, Histograms)),
+                    ?assert(maps:is_key(<<"registry_operation_duration_ms">>, Histograms)),
 
-              % Verify counters
-              Counters = maps:get(<<"counters">>, Summary),
-              ?assert(maps:is_key(<<"transport_operation_duration_ms">>, Counters)),
+                    % Verify counters
+                    Counters = maps:get(<<"counters">>, Summary),
+                    ?assert(maps:is_key(<<"transport_operation_duration_ms">>, Counters)),
 
-              % Verify uptime is positive
-              Uptime = maps:get(<<"uptime_ms">>, Summary),
-              ?assert(Uptime > 0)
-          end)
-         ]
+                    % Verify uptime is positive
+                    Uptime = maps:get(<<"uptime_ms">>, Summary),
+                    ?assert(Uptime > 0)
+                end)]
      end}.

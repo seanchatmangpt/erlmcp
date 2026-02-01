@@ -31,31 +31,25 @@ cleanup(_) ->
 
 websocket_validation_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            {"UTF-8 Validation", [
-                ?_test(test_valid_utf8_message()),
-                ?_test(test_invalid_utf8_sequence()),
-                ?_test(test_utf8_multibyte_characters()),
-                ?_test(test_utf8_emoji_support())
-            ]},
-            {"Message Size Limits", [
-                ?_test(test_message_under_limit()),
-                ?_test(test_message_at_limit()),
-                ?_test(test_message_over_limit()),
-                ?_test(test_configurable_message_size()),
-                ?_test(test_size_check_before_utf8())
-            ]},
-            {"Delimiter Validation", [
-                ?_test(test_message_with_delimiter()),
-                ?_test(test_message_without_delimiter()),
-                ?_test(test_multiple_messages_with_delimiters()),
-                ?_test(test_empty_messages_ignored()),
-                ?_test(test_delimiter_at_end_only())
-            ]}
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [{"UTF-8 Validation",
+       [?_test(test_valid_utf8_message()),
+        ?_test(test_invalid_utf8_sequence()),
+        ?_test(test_utf8_multibyte_characters()),
+        ?_test(test_utf8_emoji_support())]},
+      {"Message Size Limits",
+       [?_test(test_message_under_limit()),
+        ?_test(test_message_at_limit()),
+        ?_test(test_message_over_limit()),
+        ?_test(test_configurable_message_size()),
+        ?_test(test_size_check_before_utf8())]},
+      {"Delimiter Validation",
+       [?_test(test_message_with_delimiter()),
+        ?_test(test_message_without_delimiter()),
+        ?_test(test_multiple_messages_with_delimiters()),
+        ?_test(test_empty_messages_ignored()),
+        ?_test(test_delimiter_at_end_only())]}]}.
 
 %%====================================================================
 %% UTF-8 Validation Tests (Observable Behavior)

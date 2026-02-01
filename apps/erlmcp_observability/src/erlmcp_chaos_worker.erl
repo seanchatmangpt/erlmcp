@@ -10,27 +10,33 @@
 %%% @end
 %%%====================================================================
 -module(erlmcp_chaos_worker).
+
 -behaviour(gen_server).
 
 -include_lib("kernel/include/logger.hrl").
 
 %% API
 -export([start_link/4]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -type experiment_id() :: binary() | atom().
--type experiment_type() :: network_latency | network_partition | packet_loss |
-                          kill_servers | kill_random | resource_memory |
-                          resource_cpu | resource_disk | clock_skew.
+-type experiment_type() ::
+    network_latency |
+    network_partition |
+    packet_loss |
+    kill_servers |
+    kill_random |
+    resource_memory |
+    resource_cpu |
+    resource_disk |
+    clock_skew.
 
--record(state, {
-    parent :: pid(),
-    experiment_id :: experiment_id(),
-    experiment_type :: experiment_type(),
-    config :: map()
-}).
+-record(state,
+        {parent :: pid(),
+         experiment_id :: experiment_id(),
+         experiment_type :: experiment_type(),
+         config :: map()}).
 
 %%====================================================================
 %% API Functions
@@ -48,27 +54,23 @@ start_link(Parent, ExperimentId, Type, Config) ->
 init([Parent, ExperimentId, Type, Config]) ->
     %% Start experiment execution immediately
     gen_server:cast(self(), run_experiment),
-    {ok, #state{
-        parent = Parent,
-        experiment_id = ExperimentId,
-        experiment_type = Type,
-        config = Config
-    }}.
+    {ok,
+     #state{parent = Parent,
+            experiment_id = ExperimentId,
+            experiment_type = Type,
+            config = Config}}.
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast(run_experiment, State) ->
     %% Execute experiment in handle_cast (async)
-    run_experiment_worker(
-        State#state.parent,
-        State#state.experiment_id,
-        State#state.experiment_type,
-        State#state.config
-    ),
+    run_experiment_worker(State#state.parent,
+                          State#state.experiment_id,
+                          State#state.experiment_type,
+                          State#state.config),
     %% Worker exits after experiment completes or fails
     {stop, normal, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -112,6 +114,6 @@ run_experiment_worker(Parent, ExperimentId, Type, Config) ->
     catch
         Class:Reason:Stacktrace ->
             ?LOG_ERROR("Experiment ~p failed: ~p:~p~n~p",
-                      [ExperimentId, Class, Reason, Stacktrace]),
+                       [ExperimentId, Class, Reason, Stacktrace]),
             Parent ! {experiment_failed, ExperimentId, {Class, Reason}}
     end.

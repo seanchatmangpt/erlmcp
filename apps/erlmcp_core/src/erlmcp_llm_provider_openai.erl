@@ -12,42 +12,26 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_llm_provider_openai).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    start_link/1,
-    create_message/2,
-    set_api_key/1,
-    get_api_key/0,
-    set_model/1,
-    get_model/0,
-    set_base_url/1,
-    get_base_url/0
-]).
-
+-export([start_link/0, start_link/1, create_message/2, set_api_key/1, get_api_key/0, set_model/1,
+         get_model/0, set_base_url/1, get_base_url/0]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
+
 -include_lib("kernel/include/logger.hrl").
 
 %% State record
--record(state, {
-    api_key :: binary() | undefined,
-    model :: binary(),
-    base_url :: binary(),
-    timeout :: pos_integer(),
-    organization :: binary() | undefined
-}).
+-record(state,
+        {api_key :: binary() | undefined,
+         model :: binary(),
+         base_url :: binary(),
+         timeout :: pos_integer(),
+         organization :: binary() | undefined}).
 
 %%%===================================================================
 %%% API
@@ -93,36 +77,28 @@ init([Config]) ->
 
     ?LOG_INFO("OpenAI provider initialized with model: ~s", [Model]),
 
-    {ok, #state{
-        api_key = ApiKey,
-        model = Model,
-        base_url = BaseUrl,
-        timeout = Timeout,
-        organization = Organization
-    }}.
+    {ok,
+     #state{api_key = ApiKey,
+            model = Model,
+            base_url = BaseUrl,
+            timeout = Timeout,
+            organization = Organization}}.
 
 handle_call({create_message, Messages, Params}, _From, State) ->
     Result = do_create_message(Messages, Params, State),
     {reply, Result, State};
-
 handle_call({set_api_key, ApiKey}, _From, State) ->
     {reply, ok, State#state{api_key = ApiKey}};
-
 handle_call(get_api_key, _From, State) ->
     {reply, State#state.api_key, State};
-
 handle_call({set_model, Model}, _From, State) ->
     {reply, ok, State#state{model = Model}};
-
 handle_call(get_model, _From, State) ->
     {reply, State#state.model, State};
-
 handle_call({set_base_url, Url}, _From, State) ->
     {reply, ok, State#state{base_url = Url}};
-
 handle_call(get_base_url, _From, State) ->
     {reply, State#state.base_url, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -136,7 +112,6 @@ handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
     logger:warning("Gun connection process ~p died during OpenAI API request: ~p (monitor: ~p)",
                    [Pid, Reason, MonitorRef]),
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -157,22 +132,23 @@ do_create_message(Messages, Params, State) ->
     Temperature = maps_get(<<"temperature">>, Params, 0.7),
     MaxTokens = maps_get(<<"maxTokens">>, Params, 1000),
 
-    RequestBody = #{
-        <<"model">> => Model,
-        <<"messages">> => Messages,
-        <<"temperature">> => Temperature,
-        <<"max_tokens">> => MaxTokens
-    },
+    RequestBody =
+        #{<<"model">> => Model,
+          <<"messages">> => Messages,
+          <<"temperature">> => Temperature,
+          <<"max_tokens">> => MaxTokens},
 
     Url = <<(State#state.base_url)/binary, "/v1/chat/completions">>,
 
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"Authorization">>, <<"Bearer ", (State#state.api_key)/binary>>}
-    ] ++ case State#state.organization of
-        undefined -> [];
-        Org -> [{<<"OpenAI-Organization">>, Org}]
-    end,
+    Headers =
+        [{<<"Content-Type">>, <<"application/json">>},
+         {<<"Authorization">>, <<"Bearer ", (State#state.api_key)/binary>>}]
+        ++ case State#state.organization of
+               undefined ->
+                   [];
+               Org ->
+                   [{<<"OpenAI-Organization">>, Org}]
+           end,
 
     case http_post(Url, Headers, RequestBody, State#state.timeout) of
         {ok, ResponseBody} ->
@@ -185,17 +161,15 @@ do_create_message(Messages, Params, State) ->
 parse_openai_response(ResponseBody) ->
     try jsx:decode(ResponseBody, [return_maps]) of
         #{<<"choices">> := [#{<<"message">> := Message} | _], <<"usage">> := Usage} ->
-            {ok, #{
-                <<"role">> => maps_get(<<"role">>, Message, <<"assistant">>),
-                <<"content">> => maps_get(<<"content">>, Message, <<>>),
-                <<"model">> => maps_get(<<"model">>, Usage, <<>>),
-                <<"stopReason">> => <<"end_of_turn">>,
-                <<"usage">> => #{
-                    <<"promptTokens">> => maps_get(<<"prompt_tokens">>, Usage, 0),
-                    <<"completionTokens">> => maps_get(<<"completion_tokens">>, Usage, 0),
-                    <<"totalTokens">> => maps_get(<<"total_tokens">>, Usage, 0)
-                }
-            }};
+            {ok,
+             #{<<"role">> => maps_get(<<"role">>, Message, <<"assistant">>),
+               <<"content">> => maps_get(<<"content">>, Message, <<>>),
+               <<"model">> => maps_get(<<"model">>, Usage, <<>>),
+               <<"stopReason">> => <<"end_of_turn">>,
+               <<"usage">> =>
+                   #{<<"promptTokens">> => maps_get(<<"prompt_tokens">>, Usage, 0),
+                     <<"completionTokens">> => maps_get(<<"completion_tokens">>, Usage, 0),
+                     <<"totalTokens">> => maps_get(<<"total_tokens">>, Usage, 0)}}};
         #{<<"error">> := Error} ->
             Message = maps_get(<<"message">>, Error, <<"Unknown error">>),
             Type = maps_get(<<"type">>, Error, <<"api_error">>),
@@ -204,19 +178,25 @@ parse_openai_response(ResponseBody) ->
             ?LOG_ERROR("Unexpected OpenAI response format: ~p", [Other]),
             {error, invalid_response_format}
     catch
-        _:_:_ ->
+        _:_ ->
             {error, json_decode_failed}
     end.
 
 http_post(Url, Headers, BodyMap, Timeout) ->
-    #{scheme := Scheme, host := Host, port := Port} = uri_string:parse(Url),
+    #{scheme := Scheme,
+      host := Host,
+      port := Port} =
+        uri_string:parse(Url),
     Path = maps_get(path, uri_string:parse(Url), <<"/">>),
     Body = jsx:encode(BodyMap),
 
-    Transport = case Scheme of
-        <<"https">> -> tls;
-        <<"http">> -> tcp
-    end,
+    Transport =
+        case Scheme of
+            <<"https">> ->
+                tls;
+            <<"http">> ->
+                tcp
+        end,
 
     case gun:open(Host, Port, #{transport => Transport, protocols => [http]}) of
         {ok, ConnPid} ->
@@ -258,13 +238,18 @@ http_post(Url, Headers, BodyMap, Timeout) ->
 
 get_env_api_key() ->
     case os:getenv("OPENAI_API_KEY") of
-        false -> undefined;
-        [] -> undefined;
-        Key -> list_to_binary(Key)
+        false ->
+            undefined;
+        [] ->
+            undefined;
+        Key ->
+            list_to_binary(Key)
     end.
 
 maps_get(Key, Map, Default) ->
     case maps:find(Key, Map) of
-        {ok, Value} -> Value;
-        error -> Default
+        {ok, Value} ->
+            Value;
+        error ->
+            Default
     end.

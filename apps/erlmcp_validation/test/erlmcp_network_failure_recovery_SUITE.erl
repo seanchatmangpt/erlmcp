@@ -18,93 +18,62 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_network_failure_recovery_SUITE).
+
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
--include_lib("erlmcp_core/include/erlmcp.hrl").
+
+-include("../../../include/erlmcp.hrl").
 
 %% Suite callbacks
--export([
-    all/0,
-    groups/0,
-    init_per_suite/1,
-    end_per_suite/1,
-    init_per_group/2,
-    end_per_group/2,
-    init_per_testcase/2,
-    end_per_testcase/2
-]).
-
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
 %% Test cases - Network Failure Recovery
--export([
-    test_tcp_connection_drop_recovery/1,
-    test_http_timeout_recovery/1,
-    test_websocket_disconnection_recovery/1,
-    test_sse_reconnection_after_failure/1,
-    test_multi_transport_failover/1
-]).
-
+-export([test_tcp_connection_drop_recovery/1, test_http_timeout_recovery/1,
+         test_websocket_disconnection_recovery/1, test_sse_reconnection_after_failure/1,
+         test_multi_transport_failover/1]).
 %% Test cases - Data Consistency
--export([
-    test_state_consistency_after_network_failure/1,
-    test_inflight_request_handling_on_failure/1,
-    test_resource_subscription_recovery/1
-]).
-
+-export([test_state_consistency_after_network_failure/1,
+         test_inflight_request_handling_on_failure/1, test_resource_subscription_recovery/1]).
 %% Test cases - Recovery Time Objectives (RTO)
--export([
-    test_connection_loss_rto/1,
-    test_server_restart_rto/1,
-    test_network_partition_rto/1
-]).
-
+-export([test_connection_loss_rto/1, test_server_restart_rto/1, test_network_partition_rto/1]).
 %% Test cases - State Restoration
--export([
-    test_session_state_restoration/1,
-    test_pending_request_restoration/1,
-    test_resource_list_restoration/1,
-    test_tool_list_restoration/1
-]).
+-export([test_session_state_restoration/1, test_pending_request_restoration/1,
+         test_resource_list_restoration/1, test_tool_list_restoration/1]).
 
 %%====================================================================
 %% Suite Configuration
 %%====================================================================
 
 all() ->
-    [
-        {group, network_failure_recovery},
-        {group, data_consistency},
-        {group, recovery_time_objectives},
-        {group, state_restoration}
-    ].
+    [{group, network_failure_recovery},
+     {group, data_consistency},
+     {group, recovery_time_objectives},
+     {group, state_restoration}].
 
 groups() ->
-    [
-        {network_failure_recovery, [sequence], [
-            test_tcp_connection_drop_recovery,
-            test_http_timeout_recovery,
-            test_websocket_disconnection_recovery,
-            test_sse_reconnection_after_failure,
-            test_multi_transport_failover
-        ]},
-        {data_consistency, [parallel], [
-            test_state_consistency_after_network_failure,
-            test_inflight_request_handling_on_failure,
-            test_resource_subscription_recovery
-        ]},
-        {recovery_time_objectives, [sequence], [
-            test_connection_loss_rto,
-            test_server_restart_rto,
-            test_network_partition_rto
-        ]},
-        {state_restoration, [sequence], [
-            test_session_state_restoration,
-            test_pending_request_restoration,
-            test_resource_list_restoration,
-            test_tool_list_restoration
-        ]}
-    ].
+    [{network_failure_recovery,
+      [sequence],
+      [test_tcp_connection_drop_recovery,
+       test_http_timeout_recovery,
+       test_websocket_disconnection_recovery,
+       test_sse_reconnection_after_failure,
+       test_multi_transport_failover]},
+     {data_consistency,
+      [parallel],
+      [test_state_consistency_after_network_failure,
+       test_inflight_request_handling_on_failure,
+       test_resource_subscription_recovery]},
+     {recovery_time_objectives,
+      [sequence],
+      [test_connection_loss_rto, test_server_restart_rto, test_network_partition_rto]},
+     {state_restoration,
+      [sequence],
+      [test_session_state_restoration,
+       test_pending_request_restoration,
+       test_resource_list_restoration,
+       test_tool_list_restoration]}].
 
 init_per_suite(Config) ->
     ct:pal("Starting Network Failure Recovery Test Suite"),
@@ -121,14 +90,18 @@ init_per_suite(Config) ->
 
     %% Start chaos engineering framework (if available)
     case start_chaos_framework() of
-        {ok, _ChaosPid} -> ct:pal("Chaos framework started");
-        {error, not_available} -> ct:pal("Chaos framework not available, using manual failure injection")
+        {ok, _ChaosPid} ->
+            ct:pal("Chaos framework started");
+        {error, not_available} ->
+            ct:pal("Chaos framework not available, using manual failure injection")
     end,
 
     %% Start recovery manager (if available)
     case start_recovery_manager() of
-        {ok, _RecoveryPid} -> ct:pal("Recovery manager started");
-        {error, not_available} -> ct:pal("Recovery manager not available")
+        {ok, _RecoveryPid} ->
+            ct:pal("Recovery manager started");
+        {error, not_available} ->
+            ct:pal("Recovery manager not available")
     end,
 
     %% Wait for system to stabilize
@@ -192,29 +165,27 @@ test_tcp_connection_drop_recovery(Config) ->
 
     %% Create server with TCP transport
     ServerId = make_test_server_id(tcp_drop),
-    ServerConfig = #{
-        capabilities => #mcp_server_capabilities{
-            resources = #mcp_capability{enabled = true},
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    ServerConfig =
+        #{capabilities =>
+              #mcp_server_capabilities{resources = #mcp_capability{enabled = true},
+                                       tools = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, ServerConfig),
 
     %% Add test tool
-    TestTool = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Hello, ", Name/binary, "!">>}
-    end,
+    TestTool =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Hello, ", Name/binary, "!">>}
+        end,
     ok = erlmcp:add_tool(ServerId, <<"tcp_test_tool">>, TestTool),
 
     %% Start TCP transport
     TransportId = make_test_transport_id(tcp_drop),
-    TransportConfig = #{
-        server_id => ServerId,
-        host => "localhost",
-        port => 0,  % Let OS assign port
-        mode => client
-    },
+    TransportConfig =
+        #{server_id => ServerId,
+          host => "localhost",
+          port => 0,  % Let OS assign port
+          mode => client},
 
     %% Try to start TCP transport (may not be fully implemented)
     case erlmcp:start_transport(TransportId, tcp, TransportConfig) of
@@ -254,17 +225,17 @@ test_tcp_connection_drop_recovery(Config) ->
                     %% Cleanup
                     ok = erlmcp:stop_transport(TransportId),
                     ?assertNot(is_process_alive(NewTransportPid));
-
                 {error, Reason} ->
-                    ct:pal("TCP transport restart failed: ~p (transport may not be fully implemented)", [Reason])
+                    ct:pal("TCP transport restart failed: ~p (transport may not be fully implemented)",
+                           [Reason])
             end;
-
         {error, {transport_not_implemented, _}} ->
             ct:pal("TCP transport not implemented, using STDIO for simulation"),
 
             %% Use STDIO to simulate connection drop behavior
             StdioTransportId = make_test_transport_id(tcp_drop_stdio),
-            {ok, StdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, StdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
 
             %% Simulate connection drop
             exit(StdioPid, kill),
@@ -274,12 +245,12 @@ test_tcp_connection_drop_recovery(Config) ->
             ?assert(is_process_alive(ServerPid)),
 
             %% Restart transport
-            {ok, NewStdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, NewStdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
             ?assert(is_process_alive(NewStdioPid)),
 
             %% Cleanup
             ok = erlmcp:stop_transport(StdioTransportId);
-
         {error, Reason} ->
             ct:fail("Failed to start TCP transport: ~p", [Reason])
     end,
@@ -300,21 +271,17 @@ test_http_timeout_recovery(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add test resource
-    TestResource = fun(_Uri) ->
-        #{
-            content => <<"HTTP timeout test resource">>,
-            mimeType => <<"text/plain">>
-        }
-    end,
+    TestResource =
+        fun(_Uri) -> #{content => <<"HTTP timeout test resource">>, mimeType => <<"text/plain">>}
+        end,
     ok = erlmcp:add_resource(ServerId, <<"http://test/resource">>, TestResource),
 
     %% Try HTTP transport (may not be fully implemented)
     TransportId = make_test_transport_id(http_timeout),
-    TransportConfig = #{
-        server_id => ServerId,
-        url => "http://localhost:8000",
-        timeout => 1000  % 1 second timeout
-    },
+    TransportConfig =
+        #{server_id => ServerId,
+          url => "http://localhost:8000",
+          timeout => 1000},  % 1 second timeout
 
     case erlmcp:start_transport(TransportId, http, TransportConfig) of
         {ok, TransportPid} ->
@@ -337,21 +304,23 @@ test_http_timeout_recovery(Config) ->
                     ?assertNotEqual(TransportPid, NewTransportPid),
 
                     %% Verify resource still registered
-                    ?assertEqual(ok, erlmcp:add_resource(ServerId, <<"http://test/resource2">>, TestResource)),
+                    ?assertEqual(ok,
+                                 erlmcp:add_resource(ServerId,
+                                                     <<"http://test/resource2">>,
+                                                     TestResource)),
 
                     %% Cleanup
                     ok = erlmcp:stop_transport(TransportId);
-
                 {error, Reason} ->
                     ct:pal("HTTP transport restart failed: ~p", [Reason])
             end;
-
         {error, {transport_not_implemented, _}} ->
             ct:pal("HTTP transport not implemented, using STDIO for simulation"),
 
             %% Use STDIO to simulate timeout behavior
             StdioTransportId = make_test_transport_id(http_timeout_stdio),
-            {ok, StdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, StdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
 
             %% Simulate timeout (kill transport)
             exit(StdioPid, kill),
@@ -361,12 +330,12 @@ test_http_timeout_recovery(Config) ->
             ?assert(is_process_alive(ServerPid)),
 
             %% Restart transport
-            {ok, NewStdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, NewStdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
             ?assert(is_process_alive(NewStdioPid)),
 
             %% Cleanup
             ok = erlmcp:stop_transport(StdioTransportId);
-
         {error, Reason} ->
             ct:pal("Failed to start HTTP transport: ~p (may not be implemented)", [Reason])
     end,
@@ -386,29 +355,18 @@ test_websocket_disconnection_recovery(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add test prompt
-    TestPrompt = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"User">>),
-        #{
-            messages => [
-                #{
-                    role => <<"system">>,
-                    content => <<"You are a helpful assistant">>
-                },
-                #{
-                    role => <<"user">>,
-                    content => <<"Hello, ", Name/binary>>
-                }
-            ]
-        }
-    end,
+    TestPrompt =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"User">>),
+           #{messages =>
+                 [#{role => <<"system">>, content => <<"You are a helpful assistant">>},
+                  #{role => <<"user">>, content => <<"Hello, ", Name/binary>>}]}
+        end,
     ok = erlmcp:add_prompt(ServerId, <<"ws_test_prompt">>, TestPrompt),
 
     %% Try WebSocket transport (may not be fully implemented)
     TransportId = make_test_transport_id(ws_disconnect),
-    TransportConfig = #{
-        server_id => ServerId,
-        url => "ws://localhost:8080"
-    },
+    TransportConfig = #{server_id => ServerId, url => "ws://localhost:8080"},
 
     case erlmcp:start_transport(TransportId, websocket, TransportConfig) of
         {ok, TransportPid} ->
@@ -434,21 +392,21 @@ test_websocket_disconnection_recovery(Config) ->
                     ?assertNotEqual(TransportPid, NewTransportPid),
 
                     %% Verify prompt still registered
-                    ?assertEqual(ok, erlmcp:add_prompt(ServerId, <<"ws_test_prompt_2">>, TestPrompt)),
+                    ?assertEqual(ok,
+                                 erlmcp:add_prompt(ServerId, <<"ws_test_prompt_2">>, TestPrompt)),
 
                     %% Cleanup
                     ok = erlmcp:stop_transport(TransportId);
-
                 {error, Reason} ->
                     ct:pal("WebSocket transport restart failed: ~p", [Reason])
             end;
-
         {error, {transport_not_implemented, _}} ->
             ct:pal("WebSocket transport not implemented, using STDIO for simulation"),
 
             %% Use STDIO to simulate disconnection
             StdioTransportId = make_test_transport_id(ws_disconnect_stdio),
-            {ok, StdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, StdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
 
             %% Simulate disconnection
             exit(StdioPid, kill),
@@ -458,12 +416,12 @@ test_websocket_disconnection_recovery(Config) ->
             ?assert(is_process_alive(ServerPid)),
 
             %% Restart transport
-            {ok, NewStdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, NewStdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
             ?assert(is_process_alive(NewStdioPid)),
 
             %% Cleanup
             ok = erlmcp:stop_transport(StdioTransportId);
-
         {error, Reason} ->
             ct:pal("Failed to start WebSocket transport: ~p (may not be implemented)", [Reason])
     end,
@@ -484,10 +442,7 @@ test_sse_reconnection_after_failure(Config) ->
 
     %% Try SSE transport (may not be fully implemented)
     TransportId = make_test_transport_id(sse_reconnect),
-    TransportConfig = #{
-        server_id => ServerId,
-        url => "http://localhost:8000/events"
-    },
+    TransportConfig = #{server_id => ServerId, url => "http://localhost:8000/events"},
 
     case erlmcp:start_transport(TransportId, sse, TransportConfig) of
         {ok, TransportPid} ->
@@ -511,17 +466,16 @@ test_sse_reconnection_after_failure(Config) ->
 
                     %% Cleanup
                     ok = erlmcp:stop_transport(TransportId);
-
                 {error, Reason} ->
                     ct:pal("SSE transport reconnection failed: ~p", [Reason])
             end;
-
         {error, {transport_not_implemented, _}} ->
             ct:pal("SSE transport not implemented, using STDIO for simulation"),
 
             %% Use STDIO to simulate SSE behavior
             StdioTransportId = make_test_transport_id(sse_reconnect_stdio),
-            {ok, StdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, StdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
 
             %% Simulate failure
             exit(StdioPid, kill),
@@ -531,12 +485,12 @@ test_sse_reconnection_after_failure(Config) ->
             ?assert(is_process_alive(ServerPid)),
 
             %% Reconnect
-            {ok, NewStdioPid} = erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
+            {ok, NewStdioPid} =
+                erlmcp:start_transport(StdioTransportId, stdio, #{server_id => ServerId}),
             ?assert(is_process_alive(NewStdioPid)),
 
             %% Cleanup
             ok = erlmcp:stop_transport(StdioTransportId);
-
         {error, Reason} ->
             ct:pal("Failed to start SSE transport: ~p (may not be implemented)", [Reason])
     end,
@@ -556,15 +510,15 @@ test_multi_transport_failover(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add comprehensive test data
-    TestTool = fun(Args) ->
-        Val = maps:get(<<"value">>, Args, 0),
-        #{result => Val * 2}
-    end,
+    TestTool =
+        fun(Args) ->
+           Val = maps:get(<<"value">>, Args, 0),
+           #{result => Val * 2}
+        end,
     ok = erlmcp:add_tool(ServerId, <<"failover_tool">>, TestTool),
 
-    TestResource = fun(_Uri) ->
-        #{content => <<"Failover test resource">>, mimeType => <<"text/plain">>}
-    end,
+    TestResource =
+        fun(_Uri) -> #{content => <<"Failover test resource">>, mimeType => <<"text/plain">>} end,
     ok = erlmcp:add_resource(ServerId, <<"failover://resource">>, TestResource),
 
     %% Start primary transport (STDIO)
@@ -591,7 +545,8 @@ test_multi_transport_failover(Config) ->
 
     %% Start failover transport
     FailoverTransportId = make_test_transport_id(multi_failover),
-    {ok, FailoverPid} = erlmcp:start_transport(FailoverTransportId, stdio, #{server_id => ServerId}),
+    {ok, FailoverPid} =
+        erlmcp:start_transport(FailoverTransportId, stdio, #{server_id => ServerId}),
 
     %% Verify failover transport works
     ?assert(is_process_alive(FailoverPid)),
@@ -625,22 +580,17 @@ test_state_consistency_after_network_failure(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add various state elements
-    TestTool = fun(Args) ->
-        #{result => maps:get(<<"x">>, Args, 0)}
-    end,
+    TestTool = fun(Args) -> #{result => maps:get(<<"x">>, Args, 0)} end,
     ok = erlmcp:add_tool(ServerId, <<"state_tool">>, TestTool),
 
-    TestResource = fun(_Uri) ->
-        #{content => <<"State test resource">>, mimeType => <<"text/plain">>}
-    end,
+    TestResource =
+        fun(_Uri) -> #{content => <<"State test resource">>, mimeType => <<"text/plain">>} end,
     ok = erlmcp:add_resource(ServerId, <<"state://resource">>, TestResource),
 
-    TestPrompt = fun(_Args) ->
-        #{messages => [#{
-            role => <<"system">>,
-            content => <<"You are a helpful assistant">>
-        }]}
-    end,
+    TestPrompt =
+        fun(_Args) ->
+           #{messages => [#{role => <<"system">>, content => <<"You are a helpful assistant">>}]}
+        end,
     ok = erlmcp:add_prompt(ServerId, <<"state_prompt">>, TestPrompt),
 
     %% Record initial state
@@ -685,11 +635,12 @@ test_inflight_request_handling_on_failure(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add a slow tool (simulates long-running request)
-    SlowTool = fun(Args) ->
-        %% Simulate processing delay
-        timer:sleep(500),
-        #{result => maps:get(<<"value">>, Args, 0)}
-    end,
+    SlowTool =
+        fun(Args) ->
+           %% Simulate processing delay
+           timer:sleep(500),
+           #{result => maps:get(<<"value">>, Args, 0)}
+        end,
     ok = erlmcp:add_tool(ServerId, <<"slow_tool">>, SlowTool),
 
     %% Start transport
@@ -697,14 +648,15 @@ test_inflight_request_handling_on_failure(Config) ->
     {ok, TransportPid} = erlmcp:start_transport(TransportId, stdio, #{server_id => ServerId}),
 
     %% Spawn a process to send a request (in-flight)
-    SenderPid = spawn(fun() ->
-        %% This would normally go through the transport
-        %% For testing, we simulate the request being in-flight
-        timer:sleep(100),
-        %% Simulate transport failure during request
-        exit(TransportPid, kill),
-        timer:sleep(200)
-    end),
+    SenderPid =
+        spawn(fun() ->
+                 %% This would normally go through the transport
+                 %% For testing, we simulate the request being in-flight
+                 timer:sleep(100),
+                 %% Simulate transport failure during request
+                 exit(TransportPid, kill),
+                 timer:sleep(200)
+              end),
 
     %% Wait for sender to start
     timer:sleep(50),
@@ -740,12 +692,9 @@ test_resource_subscription_recovery(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add test resource
-    TestResource = fun(_Uri) ->
-        #{
-            content => <<"Subscription test resource">>,
-            mimeType => <<"text/plain">>
-        }
-    end,
+    TestResource =
+        fun(_Uri) -> #{content => <<"Subscription test resource">>, mimeType => <<"text/plain">>}
+        end,
     ok = erlmcp:add_resource(ServerId, <<"subscription://resource">>, TestResource),
 
     %% Start transport
@@ -754,7 +703,6 @@ test_resource_subscription_recovery(Config) ->
 
     %% Simulate subscription (in real implementation, this would go through server API)
     %% For this test, we verify the server remembers subscriptions after transport failure
-
     %% Record initial state
     {ok, {ServerPid, InitialState}} = erlmcp_registry:find_server(ServerId),
 
@@ -821,7 +769,8 @@ test_connection_loss_rto(Config) ->
     ct:pal("Connection loss recovery time: ~pms", [RecoveryTime]),
 
     %% Verify RTO <5s (5000ms)
-    ?assert(RecoveryTime < 5000, io_lib:format("Recovery time ~pms exceeds 5000ms target", [RecoveryTime])),
+    ?assert(RecoveryTime < 5000,
+            io_lib:format("Recovery time ~pms exceeds 5000ms target", [RecoveryTime])),
 
     %% Cleanup
     ok = erlmcp:stop_transport(TransportId),
@@ -866,7 +815,8 @@ test_server_restart_rto(Config) ->
     ct:pal("Server restart recovery time: ~pms", [RecoveryTime]),
 
     %% Verify RTO <5s (5000ms)
-    ?assert(RecoveryTime < 5000, io_lib:format("Recovery time ~pms exceeds 5000ms target", [RecoveryTime])),
+    ?assert(RecoveryTime < 5000,
+            io_lib:format("Recovery time ~pms exceeds 5000ms target", [RecoveryTime])),
 
     %% Cleanup
     ok = erlmcp:stop_server(ServerId),
@@ -918,7 +868,8 @@ test_network_partition_rto(Config) ->
     ct:pal("Network partition recovery time: ~pms", [RecoveryTime]),
 
     %% Verify RTO <5s (5000ms)
-    ?assert(RecoveryTime < 5000, io_lib:format("Recovery time ~pms exceeds 5000ms target", [RecoveryTime])),
+    ?assert(RecoveryTime < 5000,
+            io_lib:format("Recovery time ~pms exceeds 5000ms target", [RecoveryTime])),
 
     %% Cleanup
     ok = erlmcp:stop_server(Server1Id),
@@ -940,22 +891,15 @@ test_session_state_restoration(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add session state (tools, resources, prompts)
-    TestTool = fun(Args) ->
-        #{result => maps:get(<<"value">>, Args, 0)}
-    end,
+    TestTool = fun(Args) -> #{result => maps:get(<<"value">>, Args, 0)} end,
     ok = erlmcp:add_tool(ServerId, <<"session_tool">>, TestTool),
 
-    TestResource = fun(_Uri) ->
-        #{content => <<"Session resource">>, mimeType => <<"text/plain">>}
-    end,
+    TestResource =
+        fun(_Uri) -> #{content => <<"Session resource">>, mimeType => <<"text/plain">>} end,
     ok = erlmcp:add_resource(ServerId, <<"session://resource">>, TestResource),
 
-    TestPrompt = fun(_Args) ->
-        #{messages => [#{
-            role => <<"system">>,
-            content => <<"Session prompt">>
-        }]}
-    end,
+    TestPrompt =
+        fun(_Args) -> #{messages => [#{role => <<"system">>, content => <<"Session prompt">>}]} end,
     ok = erlmcp:add_prompt(ServerId, <<"session_prompt">>, TestPrompt),
 
     %% Record initial session state
@@ -998,11 +942,12 @@ test_pending_request_restoration(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add tool
-    TestTool = fun(Args) ->
-        Value = maps:get(<<"value">>, Args, 0),
-        timer:sleep(100),  % Simulate processing
-        #{result => Value * 2}
-    end,
+    TestTool =
+        fun(Args) ->
+           Value = maps:get(<<"value">>, Args, 0),
+           timer:sleep(100),  % Simulate processing
+           #{result => Value * 2}
+        end,
     ok = erlmcp:add_tool(ServerId, <<"pending_tool">>, TestTool),
 
     %% Start transport
@@ -1011,7 +956,6 @@ test_pending_request_restoration(Config) ->
 
     %% In real implementation, pending requests would be tracked
     %% For this test, we verify the system can handle new requests after reconnection
-
     %% Simulate disconnection with pending request
     exit(TransportPid, kill),
     timer:sleep(100),
@@ -1042,16 +986,19 @@ test_resource_list_restoration(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add multiple resources
-    Resources = [
-        {<<"resource1">>, fun(_) -> #{content => <<"Resource 1">>, mimeType => <<"text/plain">>} end},
-        {<<"resource2">>, fun(_) -> #{content => <<"Resource 2">>, mimeType => <<"text/plain">>} end},
-        {<<"resource3">>, fun(_) -> #{content => <<"Resource 3">>, mimeType => <<"text/plain">>} end}
-    ],
+    Resources =
+        [{<<"resource1">>,
+          fun(_) -> #{content => <<"Resource 1">>, mimeType => <<"text/plain">>} end},
+         {<<"resource2">>,
+          fun(_) -> #{content => <<"Resource 2">>, mimeType => <<"text/plain">>} end},
+         {<<"resource3">>,
+          fun(_) -> #{content => <<"Resource 3">>, mimeType => <<"text/plain">>} end}],
 
     lists:foreach(fun({Name, Handler}) ->
-        Uri = iolist_to_binary([<<"resource://">>, Name]),
-        ok = erlmcp:add_resource(ServerId, Uri, Handler)
-    end, Resources),
+                     Uri = iolist_to_binary([<<"resource://">>, Name]),
+                     ok = erlmcp:add_resource(ServerId, Uri, Handler)
+                  end,
+                  Resources),
 
     %% Record initial resource list
     _InitialResourceCount = length(Resources),
@@ -1073,9 +1020,10 @@ test_resource_list_restoration(Config) ->
 
     %% Verify resources still accessible (in real implementation, would query resource list)
     lists:foreach(fun({Name, Handler}) ->
-        Uri = iolist_to_binary([<<"resource://">>, Name]),
-        ?assertEqual(ok, erlmcp:add_resource(ServerId, Uri, Handler))
-    end, Resources),
+                     Uri = iolist_to_binary([<<"resource://">>, Name]),
+                     ?assertEqual(ok, erlmcp:add_resource(ServerId, Uri, Handler))
+                  end,
+                  Resources),
 
     %% Cleanup
     ok = erlmcp:stop_transport(TransportId),
@@ -1093,17 +1041,14 @@ test_tool_list_restoration(Config) ->
     {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
 
     %% Add multiple tools
-    Tools = [
-        {<<"tool1">>, fun(_) -> #{result => <<"result1">>} end},
-        {<<"tool2">>, fun(_) -> #{result => <<"result2">>} end},
-        {<<"tool3">>, fun(_) -> #{result => <<"result3">>} end},
-        {<<"tool4">>, fun(_) -> #{result => <<"result4">>} end},
-        {<<"tool5">>, fun(_) -> #{result => <<"result5">>} end}
-    ],
+    Tools =
+        [{<<"tool1">>, fun(_) -> #{result => <<"result1">>} end},
+         {<<"tool2">>, fun(_) -> #{result => <<"result2">>} end},
+         {<<"tool3">>, fun(_) -> #{result => <<"result3">>} end},
+         {<<"tool4">>, fun(_) -> #{result => <<"result4">>} end},
+         {<<"tool5">>, fun(_) -> #{result => <<"result5">>} end}],
 
-    lists:foreach(fun({Name, Handler}) ->
-        ok = erlmcp:add_tool(ServerId, Name, Handler)
-    end, Tools),
+    lists:foreach(fun({Name, Handler}) -> ok = erlmcp:add_tool(ServerId, Name, Handler) end, Tools),
 
     %% Record initial tool count
     _InitialToolCount = length(Tools),
@@ -1124,9 +1069,9 @@ test_tool_list_restoration(Config) ->
     ?assert(is_process_alive(ServerPid)),
 
     %% Verify tools still accessible (in real implementation, would query tool list)
-    lists:foreach(fun({Name, Handler}) ->
-        ?assertEqual(ok, erlmcp:add_tool(ServerId, Name, Handler))
-    end, Tools),
+    lists:foreach(fun({Name, Handler}) -> ?assertEqual(ok, erlmcp:add_tool(ServerId, Name, Handler))
+                  end,
+                  Tools),
 
     %% Add a new tool to verify tool registry still works
     NewTool = fun(_) -> #{result => <<"new_result">>} end,
@@ -1146,32 +1091,40 @@ test_tool_list_restoration(Config) ->
 %% Start required applications
 start_applications(Apps) ->
     lists:foreach(fun(App) ->
-        case application:start(App) of
-            ok -> ok;
-            {error, {already_started, App}} -> ok;
-            {error, {not_started, Dep}} ->
-                %% Try to start dependency first
-                case application:start(Dep) of
-                    ok -> application:start(App);
-                    {error, {already_started, Dep}} -> application:start(App)
-                end
-        end
-    end, Apps).
+                     case application:start(App) of
+                         ok ->
+                             ok;
+                         {error, {already_started, App}} ->
+                             ok;
+                         {error, {not_started, Dep}} ->
+                             %% Try to start dependency first
+                             case application:start(Dep) of
+                                 ok ->
+                                     application:start(App);
+                                 {error, {already_started, Dep}} ->
+                                     application:start(App)
+                             end
+                     end
+                  end,
+                  Apps).
 
 %% Start optional applications (may not be available)
 start_optional_apps(Apps) ->
     lists:foreach(fun(App) ->
-        case application:start(App) of
-            ok -> ok;
-            {error, {already_started, _}} -> ok;
-            {error, {not_started, _}} ->
-                %% Optional dependency not available
-                ok;
-            {error, _} ->
-                %% Optional dependency failed to start
-                ok
-        end
-    end, Apps).
+                     case application:start(App) of
+                         ok ->
+                             ok;
+                         {error, {already_started, _}} ->
+                             ok;
+                         {error, {not_started, _}} ->
+                             %% Optional dependency not available
+                             ok;
+                         {error, _} ->
+                             %% Optional dependency failed to start
+                             ok
+                     end
+                  end,
+                  Apps).
 
 %% Start chaos engineering framework (if available)
 start_chaos_framework() ->
@@ -1180,11 +1133,14 @@ start_chaos_framework() ->
             try
                 application:ensure_all_started(erlmcp_observability),
                 case erlmcp_chaos:start_link() of
-                    {ok, Pid} -> {ok, Pid};
-                    {error, {already_started, Pid}} -> {ok, Pid}
+                    {ok, Pid} ->
+                        {ok, Pid};
+                    {error, {already_started, Pid}} ->
+                        {ok, Pid}
                 end
             catch
-                _:_ -> {error, not_available}
+                _:_ ->
+                    {error, not_available}
             end;
         Pid when is_pid(Pid) ->
             {ok, Pid}
@@ -1193,7 +1149,8 @@ start_chaos_framework() ->
 %% Stop chaos engineering framework
 stop_chaos_framework() ->
     case whereis(erlmcp_chaos) of
-        undefined -> ok;
+        undefined ->
+            ok;
         Pid when is_pid(Pid) ->
             gen_server:stop(Pid),
             ok
@@ -1206,11 +1163,14 @@ start_recovery_manager() ->
             try
                 application:ensure_all_started(erlmcp_observability),
                 case erlmcp_recovery_manager:start_link() of
-                    {ok, Pid} -> {ok, Pid};
-                    {error, {already_started, Pid}} -> {ok, Pid}
+                    {ok, Pid} ->
+                        {ok, Pid};
+                    {error, {already_started, Pid}} ->
+                        {ok, Pid}
                 end
             catch
-                _:_ -> {error, not_available}
+                _:_ ->
+                    {error, not_available}
             end;
         Pid when is_pid(Pid) ->
             {ok, Pid}
@@ -1219,7 +1179,8 @@ start_recovery_manager() ->
 %% Stop recovery manager
 stop_recovery_manager() ->
     case whereis(erlmcp_recovery_manager) of
-        undefined -> ok;
+        undefined ->
+            ok;
         Pid when is_pid(Pid) ->
             gen_server:stop(Pid),
             ok
@@ -1228,7 +1189,8 @@ stop_recovery_manager() ->
 %% Stop supervisor gracefully
 stop_supervisor(SupName) ->
     case whereis(SupName) of
-        undefined -> ok;
+        undefined ->
+            ok;
         Pid when is_pid(Pid) ->
             supervisor:stop(SupName),
             timer:sleep(100),
@@ -1238,12 +1200,14 @@ stop_supervisor(SupName) ->
 %% Create unique test server ID
 make_test_server_id(TestName) ->
     Timestamp = erlang:unique_integer([positive]),
-    list_to_atom(lists:flatten(io_lib:format("network_failure_server_~p_~p", [TestName, Timestamp]))).
+    list_to_atom(lists:flatten(
+                     io_lib:format("network_failure_server_~p_~p", [TestName, Timestamp]))).
 
 %% Create unique test transport ID
 make_test_transport_id(TestName) ->
     Timestamp = erlang:unique_integer([positive]),
-    list_to_atom(lists:flatten(io_lib:format("network_failure_transport_~p_~p", [TestName, Timestamp]))).
+    list_to_atom(lists:flatten(
+                     io_lib:format("network_failure_transport_~p_~p", [TestName, Timestamp]))).
 
 %% Cleanup test artifacts
 cleanup_test_artifacts(TestCase) ->
@@ -1254,34 +1218,40 @@ cleanup_test_artifacts(TestCase) ->
     AllServers = erlmcp:list_servers(),
 
     lists:foreach(fun({ServerId, _}) ->
-        ServerIdStr = atom_to_list(ServerId),
-        case string:find(ServerIdStr, TestServerPattern) of
-            nomatch -> ok;
-            _Index ->
-                try
-                    erlmcp:stop_server(ServerId)
-                catch
-                    _:_ -> ok
-                end
-        end
-    end, AllServers),
+                     ServerIdStr = atom_to_list(ServerId),
+                     case string:find(ServerIdStr, TestServerPattern) of
+                         nomatch ->
+                             ok;
+                         _Index ->
+                             try
+                                 erlmcp:stop_server(ServerId)
+                             catch
+                                 _:_ ->
+                                     ok
+                             end
+                     end
+                  end,
+                  AllServers),
 
     %% Clean up any test transports
     TestTransportPattern = "network_failure_transport",
     AllTransports = erlmcp:list_transports(),
 
     lists:foreach(fun({TransportId, _}) ->
-        TransportIdStr = atom_to_list(TransportId),
-        case string:find(TransportIdStr, TestTransportPattern) of
-            nomatch -> ok;
-            _Index ->
-                try
-                    erlmcp:stop_transport(TransportId)
-                catch
-                    _:_ -> ok
-                end
-        end
-    end, AllTransports),
+                     TransportIdStr = atom_to_list(TransportId),
+                     case string:find(TransportIdStr, TestTransportPattern) of
+                         nomatch ->
+                             ok;
+                         _Index ->
+                             try
+                                 erlmcp:stop_transport(TransportId)
+                             catch
+                                 _:_ ->
+                                     ok
+                             end
+                     end
+                  end,
+                  AllTransports),
 
     %% Allow cleanup to complete
     timer:sleep(100),
@@ -1290,6 +1260,8 @@ cleanup_test_artifacts(TestCase) ->
 %% Helper function (maps_get with default)
 maps_get(Key, Map, Default) ->
     case maps:find(Key, Map) of
-        {ok, Value} -> Value;
-        error -> Default
+        {ok, Value} ->
+            Value;
+        error ->
+            Default
     end.

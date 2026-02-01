@@ -18,28 +18,14 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_session_replicator).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    replicate/2,
-    replicate_async/2,
-    sync_replicate/2,
-    get_replicas/1,
-    get_replication_status/0,
-    bootstrap_node/1
-]).
-
+-export([start_link/0, replicate/2, replicate_async/2, sync_replicate/2, get_replicas/1,
+         get_replication_status/0, bootstrap_node/1]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2,
-    code_change/3
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -53,39 +39,34 @@
 %%====================================================================
 
 -type session_id() :: binary().
--type session() :: #{
-    id := session_id(),
-    created_at := integer(),
-    last_accessed := integer(),
-    timeout_ms := pos_integer() | infinity,
-    metadata := map()
-}.
+-type session() ::
+    #{id := session_id(),
+      created_at := integer(),
+      last_accessed := integer(),
+      timeout_ms := pos_integer() | infinity,
+      metadata := map()}.
 -type vector_clock() :: #{node() => integer()}.
--type replication_status() :: #{
-    total_sessions => non_neg_integer(),
-    replicated_sessions => non_neg_integer(),
-    pending_replications => non_neg_integer(),
-    replica_nodes => [node()],
-    queue_size => non_neg_integer()
-}.
+-type replication_status() ::
+    #{total_sessions => non_neg_integer(),
+      replicated_sessions => non_neg_integer(),
+      pending_replications => non_neg_integer(),
+      replica_nodes => [node()],
+      queue_size => non_neg_integer()}.
 
--record(state, {
-    local_node :: node(),
-    replica_nodes :: [node()],
-    replication_queue :: queue:queue({session_id(), session(), vector_clock()}),
-    queue_timer :: reference() | undefined,
-    batch_size :: pos_integer(),
-    batch_interval :: pos_integer()
-}).
-
+-record(state,
+        {local_node :: node(),
+         replica_nodes :: [node()],
+         replication_queue :: queue:queue({session_id(), session(), vector_clock()}),
+         queue_timer :: reference() | undefined,
+         batch_size :: pos_integer(),
+         batch_interval :: pos_integer()}).
 %% Mnesia record for replica state
--record(replica_state, {
-    session_id :: session_id(),
-    session :: session(),
-    vector_clock :: vector_clock(),
-    replica_nodes :: [node()],
-    last_replicated :: integer()
-}).
+-record(replica_state,
+        {session_id :: session_id(),
+         session :: session(),
+         vector_clock :: vector_clock(),
+         replica_nodes :: [node()],
+         last_replicated :: integer()}).
 
 %%====================================================================
 %% API
@@ -152,14 +133,13 @@ init([]) ->
             %% Start batch replication timer
             {ok, Timer} = timer:send_interval(1000, flush_queue),
 
-            {ok, #state{
-                local_node = LocalNode,
-                replica_nodes = ReplicaNodes,
-                replication_queue = Queue,
-                queue_timer = Timer,
-                batch_size = 100,
-                batch_interval = 1000
-            }};
+            {ok,
+             #state{local_node = LocalNode,
+                    replica_nodes = ReplicaNodes,
+                    replication_queue = Queue,
+                    queue_timer = Timer,
+                    batch_size = 100,
+                    batch_interval = 1000}};
         {error, Reason} ->
             {stop, Reason}
     end.
@@ -173,13 +153,12 @@ handle_call({sync_replicate, SessionId, Session}, _From, State) ->
     case replicate_to_nodes(SessionId, Session, UpdatedClock, State) of
         {ok, ReplicatedNodes} ->
             %% Store replica state
-            ReplicaState = #replica_state{
-                session_id = SessionId,
-                session = Session,
-                vector_clock = UpdatedClock,
-                replica_nodes = ReplicatedNodes,
-                last_replicated = erlang:system_time(millisecond)
-            },
+            ReplicaState =
+                #replica_state{session_id = SessionId,
+                               session = Session,
+                               vector_clock = UpdatedClock,
+                               replica_nodes = ReplicatedNodes,
+                               last_replicated = erlang:system_time(millisecond)},
             store_replica_state(ReplicaState),
 
             {reply, {ok, ReplicatedNodes}, State};
@@ -189,29 +168,29 @@ handle_call({sync_replicate, SessionId, Session}, _From, State) ->
             NewQueue = queue:in({SessionId, Session, UpdatedClock}, Queue),
             {reply, {error, replication_failed}, State#state{replication_queue = NewQueue}}
     end;
-
 handle_call(get_replication_status, _From, State) ->
     %% Calculate replication status
     TotalSessions = ets:info(?REPLICA_TABLE, size),
     PendingCount = queue:len(State#state.replication_queue),
-    QueueSize = case ets:whereis(?QUEUE_TABLE) of
-        undefined -> 0;
-        _ -> ets:info(?QUEUE_TABLE, size)
-    end,
+    QueueSize =
+        case ets:whereis(?QUEUE_TABLE) of
+            undefined ->
+                0;
+            _ ->
+                ets:info(?QUEUE_TABLE, size)
+        end,
 
     %% Count fully replicated sessions (all sessions in replica table are replicated)
     ReplicatedCount = TotalSessions,
 
-    Status = #{
-        total_sessions => TotalSessions,
-        replicated_sessions => ReplicatedCount,
-        pending_replications => PendingCount,
-        replica_nodes => State#state.replica_nodes,
-        queue_size => QueueSize
-    },
+    Status =
+        #{total_sessions => TotalSessions,
+          replicated_sessions => ReplicatedCount,
+          pending_replications => PendingCount,
+          replica_nodes => State#state.replica_nodes,
+          queue_size => QueueSize},
 
     {reply, {ok, Status}, State};
-
 handle_call({bootstrap_node, Node}, _From, State) ->
     %% Bootstrap a new node by sending all sessions
     case net_adm:ping(Node) of
@@ -223,22 +202,35 @@ handle_call({bootstrap_node, Node}, _From, State) ->
             BatchSize = 100,
             Batches = partition_list(Sessions, BatchSize),
 
-            BootstrapFun = fun() ->
-                lists:foreach(fun(Batch) ->
-                    rpc:call(Node, mnesia, transaction, [fun() ->
-                        lists:foreach(fun({SessId, Sess, VClock}) ->
-                            Record = #replica_state{
-                                session_id = SessId,
-                                session = Sess,
-                                vector_clock = VClock,
-                                replica_nodes = [node() | State#state.replica_nodes],
-                                last_replicated = erlang:system_time(millisecond)
-                            },
-                            mnesia:write(?REPLICA_TABLE, Record, write)
-                        end, Batch)
-                    end])
-                end, Batches)
-            end,
+            BootstrapFun =
+                fun() ->
+                   lists:foreach(fun(Batch) ->
+                                    rpc:call(Node,
+                                             mnesia,
+                                             transaction,
+                                             [fun() ->
+                                                 lists:foreach(fun({SessId, Sess, VClock}) ->
+                                                                  Record =
+                                                                      #replica_state{session_id =
+                                                                                         SessId,
+                                                                                     session = Sess,
+                                                                                     vector_clock =
+                                                                                         VClock,
+                                                                                     replica_nodes =
+                                                                                         [node()
+                                                                                          | State#state.replica_nodes],
+                                                                                     last_replicated
+                                                                                         =
+                                                                                         erlang:system_time(millisecond)},
+                                                                  mnesia:write(?REPLICA_TABLE,
+                                                                               Record,
+                                                                               write)
+                                                               end,
+                                                               Batch)
+                                              end])
+                                 end,
+                                 Batches)
+                end,
 
             case BootstrapFun() of
                 ok ->
@@ -251,7 +243,6 @@ handle_call({bootstrap_node, Node}, _From, State) ->
         pang ->
             {reply, {error, node_unreachable}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -270,12 +261,13 @@ handle_cast({replicate_async, SessionId, Session}, State) ->
 
     %% Trigger immediate flush for single-item queue
     case queue:len(NewQueue) of
-        1 -> erlang:send_after(0, self(), flush_queue);
-        _ -> ok
+        1 ->
+            erlang:send_after(0, self(), flush_queue);
+        _ ->
+            ok
     end,
 
     {noreply, NewState};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -290,13 +282,12 @@ handle_info(flush_queue, State) ->
             case replicate_to_nodes(SessionId, Session, VClock, State) of
                 {ok, _ReplicatedNodes} ->
                     %% Store replica state
-                    ReplicaState = #replica_state{
-                        session_id = SessionId,
-                        session = Session,
-                        vector_clock = VClock,
-                        replica_nodes = State#state.replica_nodes,
-                        last_replicated = erlang:system_time(millisecond)
-                    },
+                    ReplicaState =
+                        #replica_state{session_id = SessionId,
+                                       session = Session,
+                                       vector_clock = VClock,
+                                       replica_nodes = State#state.replica_nodes,
+                                       last_replicated = erlang:system_time(millisecond)},
                     store_replica_state(ReplicaState),
 
                     %% Continue flushing
@@ -311,11 +302,9 @@ handle_info(flush_queue, State) ->
         {empty, EmptyQueue} ->
             {noreply, State#state{replication_queue = EmptyQueue}}
     end;
-
 handle_info({'DOWN', _Ref, process, _Pid, _Reason}, State) ->
     %% Handle monitored process death
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -323,8 +312,10 @@ handle_info(_Info, State) ->
 terminate(_Reason, #state{queue_timer = Timer}) ->
     %% Cancel timer
     case Timer of
-        undefined -> ok;
-        _ -> timer:cancel(Timer)
+        undefined ->
+            ok;
+        _ ->
+            timer:cancel(Timer)
     end,
     ok.
 
@@ -342,18 +333,37 @@ init_mnesia_tables(LocalNode, ReplicaNodes) ->
     AllNodes = [LocalNode | ReplicaNodes],
 
     %% disc_copies requires a named node (not nonode@nohost)
-    UseDiscCopies = (LocalNode =/= 'nonode@nohost'),
+    UseDiscCopies = LocalNode =/= nonode@nohost,
 
     %% Create replica table
-    case mnesia:create_table(?REPLICA_TABLE, [
-        {attributes, record_info(fields, replica_state)},
-        {disc_copies, case UseDiscCopies of true -> AllNodes; false -> [] end},
-        {ram_copies, case UseDiscCopies of true -> []; false -> AllNodes end},
-        {type, set}
-    ]) of
+    case mnesia:create_table(?REPLICA_TABLE,
+                             [{attributes, record_info(fields, replica_state)},
+                              {disc_copies,
+                               case UseDiscCopies of
+                                   true ->
+                                       AllNodes;
+                                   false ->
+                                       []
+                               end},
+                              {ram_copies,
+                               case UseDiscCopies of
+                                   true ->
+                                       [];
+                                   false ->
+                                       AllNodes
+                               end},
+                              {type, set}])
+    of
         {atomic, ok} ->
-            ?LOG_INFO("Created replica table: ~p on ~p (storage: ~p)", [?REPLICA_TABLE, AllNodes,
-                case UseDiscCopies of true -> disc_copies; false -> ram_copies end]);
+            ?LOG_INFO("Created replica table: ~p on ~p (storage: ~p)",
+                      [?REPLICA_TABLE,
+                       AllNodes,
+                       case UseDiscCopies of
+                           true ->
+                               disc_copies;
+                           false ->
+                               ram_copies
+                       end]);
         {atomic, {already_exists, ?REPLICA_TABLE}} ->
             ?LOG_INFO("Replica table already exists: ~p", [?REPLICA_TABLE]);
         {aborted, CreateReason} ->
@@ -362,12 +372,24 @@ init_mnesia_tables(LocalNode, ReplicaNodes) ->
     end,
 
     %% Create queue table for pending replications
-    case mnesia:create_table(?QUEUE_TABLE, [
-        {attributes, [session_id, session, vector_clock, timestamp]},
-        {disc_copies, case UseDiscCopies of true -> AllNodes; false -> [] end},
-        {ram_copies, case UseDiscCopies of true -> []; false -> AllNodes end},
-        {type, bag}
-    ]) of
+    case mnesia:create_table(?QUEUE_TABLE,
+                             [{attributes, [session_id, session, vector_clock, timestamp]},
+                              {disc_copies,
+                               case UseDiscCopies of
+                                   true ->
+                                       AllNodes;
+                                   false ->
+                                       []
+                               end},
+                              {ram_copies,
+                               case UseDiscCopies of
+                                   true ->
+                                       [];
+                                   false ->
+                                       AllNodes
+                               end},
+                              {type, bag}])
+    of
         {atomic, ok} ->
             ?LOG_INFO("Created queue table: ~p", [?QUEUE_TABLE]);
         {atomic, {already_exists, ?QUEUE_TABLE}} ->
@@ -377,12 +399,24 @@ init_mnesia_tables(LocalNode, ReplicaNodes) ->
     end,
 
     %% Create vector clock table
-    case mnesia:create_table(?VECTOR_CLOCK_TABLE, [
-        {attributes, [session_id, vector_clock]},
-        {disc_copies, case UseDiscCopies of true -> AllNodes; false -> [] end},
-        {ram_copies, case UseDiscCopies of true -> []; false -> AllNodes end},
-        {type, set}
-    ]) of
+    case mnesia:create_table(?VECTOR_CLOCK_TABLE,
+                             [{attributes, [session_id, vector_clock]},
+                              {disc_copies,
+                               case UseDiscCopies of
+                                   true ->
+                                       AllNodes;
+                                   false ->
+                                       []
+                               end},
+                              {ram_copies,
+                               case UseDiscCopies of
+                                   true ->
+                                       [];
+                                   false ->
+                                       AllNodes
+                               end},
+                              {type, set}])
+    of
         {atomic, ok} ->
             ?LOG_INFO("Created vector clock table: ~p", [?VECTOR_CLOCK_TABLE]);
         {atomic, {already_exists, ?VECTOR_CLOCK_TABLE}} ->
@@ -397,16 +431,20 @@ init_mnesia_tables(LocalNode, ReplicaNodes) ->
 -spec get_replica_nodes() -> [node()].
 get_replica_nodes() ->
     case application:get_env(erlmcp_core, replica_nodes) of
-        {ok, Nodes} when is_list(Nodes) -> Nodes;
-        _ -> []
+        {ok, Nodes} when is_list(Nodes) ->
+            Nodes;
+        _ ->
+            []
     end.
 
 %% @doc Get vector clock for a session
 -spec get_vector_clock(session_id()) -> vector_clock().
 get_vector_clock(SessionId) ->
     case ets:lookup(?VECTOR_CLOCK_TABLE, SessionId) of
-        [{SessionId, VClock}] -> VClock;
-        [] -> #{}
+        [{SessionId, VClock}] ->
+            VClock;
+        [] ->
+            #{}
     end.
 
 %% @doc Increment vector clock for a node
@@ -417,15 +455,15 @@ increment_vector_clock(VClock, Node) ->
 
 %% @doc Replicate session to all replica nodes
 -spec replicate_to_nodes(session_id(), session(), vector_clock(), #state{}) ->
-    {ok, [node()]} | {error, term()}.
+                            {ok, [node()]} | {error, term()}.
 replicate_to_nodes(_SessionId, _Session, _VClock, State) ->
     ReplicaNodes = State#state.replica_nodes,
     LocalNode = State#state.local_node,
 
     %% Filter out local node and unavailable nodes
-    AvailableNodes = lists:filter(fun(Node) ->
-        Node =/= LocalNode andalso net_adm:ping(Node) =:= pong
-    end, ReplicaNodes),
+    AvailableNodes =
+        lists:filter(fun(Node) -> Node =/= LocalNode andalso net_adm:ping(Node) =:= pong end,
+                     ReplicaNodes),
 
     %% If no replica nodes available, return empty list (success)
     case AvailableNodes of
@@ -433,20 +471,31 @@ replicate_to_nodes(_SessionId, _Session, _VClock, State) ->
             {ok, []};
         _ ->
             %% Replicate to available nodes
-            Results = lists:map(fun(Node) ->
-                rpc:call(Node, mnesia, transaction, [fun() ->
-                    %% Just verify node is accessible
-                    {atomic, ok}
-                end], 3000)
-            end, AvailableNodes),
+            Results =
+                lists:map(fun(Node) ->
+                             rpc:call(Node,
+                                      mnesia,
+                                      transaction,
+                                      [fun() ->
+                                          %% Just verify node is accessible
+                                          {atomic, ok}
+                                       end],
+                                      3000)
+                          end,
+                          AvailableNodes),
 
             %% Collect successful replications
-            SuccessfulNodes = lists:foldl(fun({Node, Result}, Acc) ->
-                case Result of
-                    {atomic, ok} -> [Node | Acc];
-                    _ -> Acc
-                end
-            end, [], lists:zip(AvailableNodes, Results)),
+            SuccessfulNodes =
+                lists:foldl(fun({Node, Result}, Acc) ->
+                               case Result of
+                                   {atomic, ok} ->
+                                       [Node | Acc];
+                                   _ ->
+                                       Acc
+                               end
+                            end,
+                            [],
+                            lists:zip(AvailableNodes, Results)),
 
             case SuccessfulNodes of
                 [] ->
@@ -459,16 +508,19 @@ replicate_to_nodes(_SessionId, _Session, _VClock, State) ->
 %% @doc Store replica state in Mnesia
 -spec store_replica_state(#replica_state{}) -> ok | {error, term()}.
 store_replica_state(ReplicaState) ->
-    Transaction = fun() ->
-        mnesia:write(?REPLICA_TABLE, ReplicaState, write),
-        SessionId = ReplicaState#replica_state.session_id,
-        VClock = ReplicaState#replica_state.vector_clock,
-        mnesia:write(?VECTOR_CLOCK_TABLE, {SessionId, VClock}, write)
-    end,
+    Transaction =
+        fun() ->
+           mnesia:write(?REPLICA_TABLE, ReplicaState, write),
+           SessionId = ReplicaState#replica_state.session_id,
+           VClock = ReplicaState#replica_state.vector_clock,
+           mnesia:write(?VECTOR_CLOCK_TABLE, {SessionId, VClock}, write)
+        end,
 
     case mnesia:transaction(Transaction) of
-        {atomic, ok} -> ok;
-        {aborted, Reason} -> {error, Reason}
+        {atomic, ok} ->
+            ok;
+        {aborted, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Check if a replica is fully replicated
@@ -481,13 +533,15 @@ is_fully_replicated(ReplicaState, State) ->
 %% @doc Get all local sessions for bootstrap
 -spec get_all_local_sessions() -> [{session_id(), session(), vector_clock()}].
 get_all_local_sessions() ->
-    ets:fold(fun(_Key, #replica_state{
-        session_id = SessId,
-        session = Sess,
-        vector_clock = VClock
-    }, Acc) ->
-        [{SessId, Sess, VClock} | Acc]
-    end, [], ?REPLICA_TABLE).
+    ets:fold(fun(_Key,
+                 #replica_state{session_id = SessId,
+                                session = Sess,
+                                vector_clock = VClock},
+                 Acc) ->
+                [{SessId, Sess, VClock} | Acc]
+             end,
+             [],
+             ?REPLICA_TABLE).
 
 %% @doc Partition list into batches
 -spec partition_list(list(), pos_integer()) -> [list()].

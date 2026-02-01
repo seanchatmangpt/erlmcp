@@ -13,6 +13,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_diagnostics_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%====================================================================
@@ -23,8 +24,7 @@ diagnostics_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Initialize diagnostics", fun test_init_diagnostics/0},
+     [{"Initialize diagnostics", fun test_init_diagnostics/0},
       {"Check Erlang version", fun test_check_erlang_version/0},
       {"Check OTP version", fun test_check_otp_version/0},
       {"Check system memory", fun test_check_memory/0},
@@ -38,8 +38,7 @@ diagnostics_test_() ->
       {"Check supervisor trees", fun test_check_supervisors/0},
       {"Check network connectivity", fun test_check_network/0},
       {"Health check summary", fun test_health_summary/0},
-      {"Performance metrics", fun test_performance_metrics/0}
-     ]}.
+      {"Performance metrics", fun test_performance_metrics/0}]}.
 
 setup() ->
     application:ensure_all_started(erlmcp),
@@ -79,7 +78,11 @@ test_check_otp_version() ->
 
 test_check_memory() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_memory(),
-    ?assertMatch(#{total := _, used := _, free := _, status := _}, Result),
+    ?assertMatch(#{total := _,
+                   used := _,
+                   free := _,
+                   status := _},
+                 Result),
     {ok, Total} = maps:find(total, Result),
     {ok, Used} = maps:find(used, Result),
     ?assert(is_integer(Total)),
@@ -88,7 +91,10 @@ test_check_memory() ->
 
 test_check_cpu() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_cpu(),
-    ?assertMatch(#{usage_percent := _, cores := _, status := _}, Result),
+    ?assertMatch(#{usage_percent := _,
+                   cores := _,
+                   status := _},
+                 Result),
     {ok, Usage} = maps:find(usage_percent, Result),
     ?assert(is_number(Usage)),
     ?assert(Usage >= 0),
@@ -96,7 +102,11 @@ test_check_cpu() ->
 
 test_check_disk() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_disk(),
-    ?assertMatch(#{total := _, used := _, free := _, status := _}, Result),
+    ?assertMatch(#{total := _,
+                   used := _,
+                   free := _,
+                   status := _},
+                 Result),
     {ok, Total} = maps:find(total, Result),
     {ok, Free} = maps:find(free, Result),
     ?assert(is_integer(Total)),
@@ -109,7 +119,10 @@ test_check_disk() ->
 
 test_check_processes() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_processes(),
-    ?assertMatch(#{count := _, limit := _, status := _}, Result),
+    ?assertMatch(#{count := _,
+                   limit := _,
+                   status := _},
+                 Result),
     {ok, Count} = maps:find(count, Result),
     {ok, Limit} = maps:find(limit, Result),
     ?assert(is_integer(Count)),
@@ -118,7 +131,10 @@ test_check_processes() ->
 
 test_check_ports() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_ports(),
-    ?assertMatch(#{count := _, limit := _, status := _}, Result),
+    ?assertMatch(#{count := _,
+                   limit := _,
+                   status := _},
+                 Result),
     {ok, Count} = maps:find(count, Result),
     ?assert(is_integer(Count)).
 
@@ -128,7 +144,10 @@ test_check_ports() ->
 
 test_check_ets() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_ets(),
-    ?assertMatch(#{count := _, memory := _, status := _}, Result),
+    ?assertMatch(#{count := _,
+                   memory := _,
+                   status := _},
+                 Result),
     {ok, Count} = maps:find(count, Result),
     {ok, Memory} = maps:find(memory, Result),
     ?assert(is_integer(Count)),
@@ -140,7 +159,10 @@ test_check_ets() ->
 
 test_check_dependencies() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_dependencies(),
-    ?assertMatch(#{status := _, missing := _, loaded := _}, Result),
+    ?assertMatch(#{status := _,
+                   missing := _,
+                   loaded := _},
+                 Result),
     {ok, Missing} = maps:find(missing, Result),
     {ok, Loaded} = maps:find(loaded, Result),
     ?assert(is_list(Missing)),
@@ -152,7 +174,10 @@ test_check_dependencies() ->
 
 test_check_applications() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_applications(),
-    ?assertMatch(#{running := _, stopped := _, status := _}, Result),
+    ?assertMatch(#{running := _,
+                   stopped := _,
+                   status := _},
+                 Result),
     {ok, Running} = maps:find(running, Result),
     ?assert(is_list(Running)),
     ?assert(lists:member(erlmcp, Running) orelse lists:member(erlmcp_core, Running)).
@@ -163,7 +188,10 @@ test_check_applications() ->
 
 test_check_supervisors() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_supervisors(),
-    ?assertMatch(#{trees := _, healthy := _, status := _}, Result),
+    ?assertMatch(#{trees := _,
+                   healthy := _,
+                   status := _},
+                 Result),
     {ok, Healthy} = maps:find(healthy, Result),
     ?assert(is_integer(Healthy)).
 
@@ -173,7 +201,10 @@ test_check_supervisors() ->
 
 test_check_network() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_network(),
-    ?assertMatch(#{connectivity := _, latency := _, status := _}, Result).
+    ?assertMatch(#{connectivity := _,
+                   latency := _,
+                   status := _},
+                 Result).
 
 %%%====================================================================
 %%% Health Summary Tests
@@ -181,13 +212,12 @@ test_check_network() ->
 
 test_health_summary() ->
     {ok, Summary} = erlmcp_cli_diagnostics:health_summary(),
-    ?assertMatch(#{
-        overall_status := _,
-        checks := _,
-        passed := _,
-        failed := _,
-        warnings := _
-    }, Summary),
+    ?assertMatch(#{overall_status := _,
+                   checks := _,
+                   passed := _,
+                   failed := _,
+                   warnings := _},
+                 Summary),
     {ok, Passed} = maps:find(passed, Summary),
     {ok, Failed} = maps:find(failed, Summary),
     ?assert(is_integer(Passed)),
@@ -199,11 +229,10 @@ test_health_summary() ->
 
 test_performance_metrics() ->
     {ok, Metrics} = erlmcp_cli_diagnostics:performance_metrics(),
-    ?assertMatch(#{
-        throughput := _,
-        latency := _,
-        queue_depth := _
-    }, Metrics).
+    ?assertMatch(#{throughput := _,
+                   latency := _,
+                   queue_depth := _},
+                 Metrics).
 
 %%%====================================================================
 %%% Edge Cases
@@ -213,11 +242,9 @@ edge_cases_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Check with low memory", fun test_low_memory_warning/0},
+     [{"Check with low memory", fun test_low_memory_warning/0},
       {"Check with high CPU", fun test_high_cpu_warning/0},
-      {"Check missing application", fun test_missing_app/0}
-     ]}.
+      {"Check missing application", fun test_missing_app/0}]}.
 
 test_low_memory_warning() ->
     {ok, Result} = erlmcp_cli_diagnostics:check_memory(#{threshold => 99}),

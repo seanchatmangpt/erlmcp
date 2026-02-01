@@ -22,8 +22,7 @@ dashboard_filter_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Filter by CPU metrics only", fun test_filter_cpu_only/0},
+     [{"Filter by CPU metrics only", fun test_filter_cpu_only/0},
       {"Filter by memory metrics only", fun test_filter_memory_only/0},
       {"Filter by multiple metric types", fun test_filter_multiple_types/0},
       {"Filter reduces bandwidth", fun test_filter_reduces_bandwidth/0},
@@ -32,8 +31,7 @@ dashboard_filter_test_() ->
       {"Unsubscribe clears filter", fun test_unsubscribe_clears_filter/0},
       {"Invalid filter types are ignored", fun test_invalid_filter_ignored/0},
       {"Filter applies to structured metrics", fun test_filter_structured_metrics/0},
-      {"Subscribe with filter works", fun test_subscribe_with_filter/0}
-     ]}.
+      {"Subscribe with filter works", fun test_subscribe_with_filter/0}]}.
 
 setup() ->
     % Start required applications
@@ -43,12 +41,14 @@ setup() ->
     {ok, _} = application:ensure_all_started(erlmcp_core),
 
     % Start metrics aggregator
-    AggPid = case whereis(erlmcp_metrics_aggregator) of
-        undefined ->
-            {ok, Pid} = erlmcp_metrics_aggregator:start_link(),
-            Pid;
-        Pid -> Pid
-    end,
+    AggPid =
+        case whereis(erlmcp_metrics_aggregator) of
+            undefined ->
+                {ok, Pid} = erlmcp_metrics_aggregator:start_link(),
+                Pid;
+            Pid ->
+                Pid
+        end,
 
     % Start dashboard server on test port
     {ok, DashPid} = erlmcp_dashboard_server:start_link(?TEST_PORT),
@@ -81,12 +81,8 @@ test_filter_cpu_only() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe with filter
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"cpu_percent">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>, filter => #{types => [<<"cpu_percent">>]}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for metrics message (may receive connected first)
@@ -121,12 +117,8 @@ test_filter_memory_only() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe with filter
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"memory_mb">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>, filter => #{types => [<<"memory_mb">>]}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for metrics message
@@ -163,12 +155,9 @@ test_filter_multiple_types() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe with filter for CPU and memory only
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"cpu_percent">>, <<"memory_mb">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>,
+                             filter => #{types => [<<"cpu_percent">>, <<"memory_mb">>]}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for metrics message
@@ -225,12 +214,8 @@ test_filter_reduces_bandwidth() ->
     receive
         {gun_upgrade, ConnPid2, StreamRef2, [<<"websocket">>], _Headers2} ->
             % Send subscribe with CPU filter
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"cpu_percent">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>, filter => #{types => [<<"cpu_percent">>]}}),
             gun:ws_send(ConnPid2, StreamRef2, {text, SubscribeMsg})
     after 5000 ->
         gun:close(ConnPid2),
@@ -270,8 +255,7 @@ test_no_filter_sends_all() ->
             % Verify all metrics are present
             Data = maps:get(<<"data">>, Metrics),
             ?assert(maps:is_key(<<"timestamp">>, Data)),
-            ?assert(maps:is_key(<<"cpu_percent">>, Data) orelse
-                    maps:is_key(<<"memory_mb">>, Data));
+            ?assert(maps:is_key(<<"cpu_percent">>, Data) orelse maps:is_key(<<"memory_mb">>, Data));
         {gun_error, ConnPid, StreamRef, Reason} ->
             gun:close(ConnPid),
             ?assert(false, {websocket_upgrade_failed, Reason})
@@ -293,10 +277,7 @@ test_empty_filter_sends_all() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe with empty filter
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{}
-            }),
+            SubscribeMsg = jsx:encode(#{type => <<"subscribe">>, filter => #{}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for metrics message
@@ -329,12 +310,8 @@ test_unsubscribe_clears_filter() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Subscribe with CPU filter
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"cpu_percent">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>, filter => #{types => [<<"cpu_percent">>]}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for filtered metrics
@@ -343,9 +320,7 @@ test_unsubscribe_clears_filter() ->
             ?assert(maps:is_key(<<"cpu_percent">>, FilteredData)),
 
             % Unsubscribe
-            UnsubscribeMsg = jsx:encode(#{
-                type => <<"unsubscribe">>
-            }),
+            UnsubscribeMsg = jsx:encode(#{type => <<"unsubscribe">>}),
             gun:ws_send(ConnPid, StreamRef, {text, UnsubscribeMsg}),
 
             % Wait for unsubscribe response
@@ -389,12 +364,9 @@ test_invalid_filter_ignored() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe with invalid metric type
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"nonexistent_metric">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>,
+                             filter => #{types => [<<"nonexistent_metric">>]}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for metrics message
@@ -430,12 +402,13 @@ test_filter_structured_metrics() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe with latency filter
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"latency_p50_us">>, <<"latency_p95_us">>, <<"latency_p99_us">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>,
+                             filter =>
+                                 #{types =>
+                                       [<<"latency_p50_us">>,
+                                        <<"latency_p95_us">>,
+                                        <<"latency_p99_us">>]}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for metrics message
@@ -467,12 +440,9 @@ test_subscribe_with_filter() ->
     receive
         {gun_upgrade, ConnPid, StreamRef, [<<"websocket">>], _Headers} ->
             % Send subscribe with filter
-            SubscribeMsg = jsx:encode(#{
-                type => <<"subscribe">>,
-                filter => #{
-                    types => [<<"cpu_percent">>, <<"memory_mb">>]
-                }
-            }),
+            SubscribeMsg =
+                jsx:encode(#{type => <<"subscribe">>,
+                             filter => #{types => [<<"cpu_percent">>, <<"memory_mb">>]}}),
             gun:ws_send(ConnPid, StreamRef, {text, SubscribeMsg}),
 
             % Wait for subscribed response
@@ -487,7 +457,7 @@ test_subscribe_with_filter() ->
                     ?assert(maps:is_key(<<"filter">>, Response)),
                     Filter = maps:get(<<"filter">>, Response),
                     ?assertEqual([<<"cpu_percent">>, <<"memory_mb">>],
-                                maps:get(<<"types">>, Filter));
+                                 maps:get(<<"types">>, Filter));
                 {gun_error, ConnPid, StreamRef, Reason} ->
                     gun:close(ConnPid),
                     ?assert(false, {websocket_error, Reason})

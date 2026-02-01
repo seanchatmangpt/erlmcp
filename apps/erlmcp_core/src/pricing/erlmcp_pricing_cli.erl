@@ -1,4 +1,5 @@
 -module(erlmcp_pricing_cli).
+
 -export([show_plan/1, list_plans/0, check_usage/1, upgrade/2]).
 
 %% @doc Show pricing plan details
@@ -20,9 +21,7 @@ list_plans() ->
     case erlmcp_pricing_state:get_all_plans() of
         {ok, Plans} ->
             io:format("Available plans:~n"),
-            maps:fold(fun(Name, _Plan, _) ->
-                io:format("  - ~p~n", [Name])
-            end, ok, Plans);
+            maps:fold(fun(Name, _Plan, _) -> io:format("  - ~p~n", [Name]) end, ok, Plans);
         {error, Reason} ->
             io:format("Error: ~p~n", [Reason])
     end,
@@ -70,7 +69,11 @@ upgrade(User, NewPlan) ->
     end.
 
 %% @private
-plan_to_tier_id(free) -> 0;
-plan_to_tier_id(pro) -> 1;
-plan_to_tier_id(enterprise) -> 2;
-plan_to_tier_id(_) -> error(invalid_plan).
+plan_to_tier_id(free) ->
+    0;
+plan_to_tier_id(pro) ->
+    1;
+plan_to_tier_id(enterprise) ->
+    2;
+plan_to_tier_id(_) ->
+    error(invalid_plan).

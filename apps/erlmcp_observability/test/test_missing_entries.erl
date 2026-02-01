@@ -1,4 +1,5 @@
 -module(test_missing_entries).
+
 -include_lib("eunit/include/eunit.hrl").
 
 debug_missing_entries_test() ->
@@ -6,13 +7,12 @@ debug_missing_entries_test() ->
     LogDir = "/tmp/test_missing_" ++ integer_to_list(erlang:unique_integer([positive])),
     LogPath = LogDir ++ "/audit.log",
 
-    Config = #{
-        log_path => LogPath,
-        buffer_size => 5,
-        flush_interval_ms => 100
-    },
+    Config =
+        #{log_path => LogPath,
+          buffer_size => 5,
+          flush_interval_ms => 100},
 
-    {ok, Pid} = erlmcp_audit_log:start_link(Config),
+    {ok, _Pid} = erlmcp_audit_log:start_link(Config),
 
     % Log 2 events
     ok = erlmcp_audit_log:log_auth_success(<<"user1">>, #{}),

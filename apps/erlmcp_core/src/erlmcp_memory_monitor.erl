@@ -29,19 +29,9 @@
 
 -behaviour(gen_server).
 
-
 %% API
--export([
-    start_link/0,
-    stop/0,
-    get_memory_stats/0,
-    get_gc_stats/0,
-    check_memory_pressure/0,
-    check_binary_memory/0,
-    force_gc/0,
-    force_binary_gc/0
-]).
-
+-export([start_link/0, stop/0, get_memory_stats/0, get_gc_stats/0, check_memory_pressure/0,
+         check_binary_memory/0, force_gc/0, force_binary_gc/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -54,41 +44,36 @@
 -define(DEFAULT_AUTO_GC, true).              % Auto GC enabled
 
 %% Types
--type memory_stats() :: #{
-    total => non_neg_integer(),
-    processes => non_neg_integer(),
-    system => non_neg_integer(),
-    atom => non_neg_integer(),
-    binary => non_neg_integer(),
-    code => non_neg_integer(),
-    ets => non_neg_integer(),
-    used_percent => float(),
-    threshold_exceeded => boolean()
-}.
-
--type gc_stats() :: #{
-    gc_count => non_neg_integer(),
-    gc_words_reclaimed => non_neg_integer(),
-    last_gc_time => integer() | undefined,
-    binary_gc_count => non_neg_integer(),
-    last_binary_gc_time => integer() | undefined
-}.
-
+-type memory_stats() ::
+    #{total => non_neg_integer(),
+      processes => non_neg_integer(),
+      system => non_neg_integer(),
+      atom => non_neg_integer(),
+      binary => non_neg_integer(),
+      code => non_neg_integer(),
+      ets => non_neg_integer(),
+      used_percent => float(),
+      threshold_exceeded => boolean()}.
+-type gc_stats() ::
+    #{gc_count => non_neg_integer(),
+      gc_words_reclaimed => non_neg_integer(),
+      last_gc_time => integer() | undefined,
+      binary_gc_count => non_neg_integer(),
+      last_binary_gc_time => integer() | undefined}.
 -type memory_pressure() :: low | medium | high | critical.
 
 %% Server state
--record(state, {
-    check_interval :: pos_integer(),
-    memory_threshold :: float(),
-    binary_threshold :: non_neg_integer(),
-    auto_gc :: boolean(),
-    check_timer :: reference() | undefined,
-    gc_count = 0 :: non_neg_integer(),
-    binary_gc_count = 0 :: non_neg_integer(),
-    last_gc_time :: integer() | undefined,
-    last_binary_gc_time :: integer() | undefined,
-    stats = #{} :: map()
-}).
+-record(state,
+        {check_interval :: pos_integer(),
+         memory_threshold :: float(),
+         binary_threshold :: non_neg_integer(),
+         auto_gc :: boolean(),
+         check_timer :: reference() | undefined,
+         gc_count = 0 :: non_neg_integer(),
+         binary_gc_count = 0 :: non_neg_integer(),
+         last_gc_time :: integer() | undefined,
+         last_binary_gc_time :: integer() | undefined,
+         stats = #{} :: map()}).
 
 %%====================================================================
 %% API Functions
@@ -150,62 +135,52 @@ init([]) ->
     CheckTimer = erlang:send_after(CheckInterval, self(), check_memory),
 
     logger:info("Memory monitor started: check_interval=~pms, memory_threshold=~p, binary_threshold=~p bytes, auto_gc=~p",
-               [CheckInterval, MemoryThreshold, BinaryThreshold, AutoGC]),
+                [CheckInterval, MemoryThreshold, BinaryThreshold, AutoGC]),
 
-    {ok, #state{
-        check_interval = CheckInterval,
-        memory_threshold = MemoryThreshold,
-        binary_threshold = BinaryThreshold,
-        auto_gc = AutoGC,
-        check_timer = CheckTimer
-    }}.
+    {ok,
+     #state{check_interval = CheckInterval,
+            memory_threshold = MemoryThreshold,
+            binary_threshold = BinaryThreshold,
+            auto_gc = AutoGC,
+            check_timer = CheckTimer}}.
 
 handle_call(get_memory_stats, _From, State) ->
     Stats = get_memory_stats_internal(State),
     {reply, Stats, State};
-
 handle_call(get_gc_stats, _From, State) ->
-    Stats = #{
-        gc_count => State#state.gc_count,
-        gc_words_reclaimed => 0,  % Not tracked in this implementation
-        last_gc_time => State#state.last_gc_time,
-        binary_gc_count => State#state.binary_gc_count,
-        last_binary_gc_time => State#state.last_binary_gc_time
-    },
+    Stats =
+        #{gc_count => State#state.gc_count,
+          gc_words_reclaimed => 0,  % Not tracked in this implementation
+          last_gc_time => State#state.last_gc_time,
+          binary_gc_count => State#state.binary_gc_count,
+          last_binary_gc_time => State#state.last_binary_gc_time},
     {reply, Stats, State};
-
 handle_call(check_memory_pressure, _From, State) ->
     Pressure = calculate_memory_pressure(State),
     {reply, Pressure, State};
-
 handle_call(check_binary_memory, _From, State) ->
     BinaryMem = erlang:memory(binary),
-    Result = case BinaryMem > State#state.binary_threshold of
-        true -> {warning, BinaryMem};
-        false -> {ok, BinaryMem}
-    end,
+    Result =
+        case BinaryMem > State#state.binary_threshold of
+            true ->
+                {warning, BinaryMem};
+            false ->
+                {ok, BinaryMem}
+        end,
     {reply, Result, State};
-
 handle_call(force_gc, _From, State) ->
     Collected = do_force_gc(),
     Now = erlang:monotonic_time(millisecond),
-    NewState = State#state{
-        gc_count = State#state.gc_count + 1,
-        last_gc_time = Now
-    },
+    NewState = State#state{gc_count = State#state.gc_count + 1, last_gc_time = Now},
     logger:info("Forced GC across ~p processes", [Collected]),
     {reply, {ok, Collected}, NewState};
-
 handle_call(force_binary_gc, _From, State) ->
     Collected = do_force_binary_gc(),
     Now = erlang:monotonic_time(millisecond),
-    NewState = State#state{
-        binary_gc_count = State#state.binary_gc_count + 1,
-        last_binary_gc_time = Now
-    },
+    NewState =
+        State#state{binary_gc_count = State#state.binary_gc_count + 1, last_binary_gc_time = Now},
     logger:info("Forced binary GC across ~p processes", [Collected]),
     {reply, {ok, Collected}, NewState};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -220,7 +195,6 @@ handle_info(check_memory, State) ->
     NewTimer = erlang:send_after(State#state.check_interval, self(), check_memory),
 
     {noreply, NewState#state{check_timer = NewTimer}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -247,26 +221,26 @@ get_memory_stats_internal(State) ->
     Ets = erlang:memory(ets),
 
     %% Get system limit from memory guard
-    SystemLimit = try
-        erlmcp_memory_guard:get_system_limit()
-    catch
-        _:_ -> 16 * 1024 * 1024 * 1024  % 16GB fallback
-    end,
+    SystemLimit =
+        try
+            erlmcp_memory_guard:get_system_limit()
+        catch
+            _:_ ->
+                16 * 1024 * 1024 * 1024  % 16GB fallback
+        end,
 
-    UsedPercent = (Total / SystemLimit) * 100,
-    ThresholdExceeded = UsedPercent > (State#state.memory_threshold * 100),
+    UsedPercent = Total / SystemLimit * 100,
+    ThresholdExceeded = UsedPercent > State#state.memory_threshold * 100,
 
-    #{
-        total => Total,
-        processes => Processes,
-        system => System,
-        atom => Atom,
-        binary => Binary,
-        code => Code,
-        ets => Ets,
-        used_percent => UsedPercent,
-        threshold_exceeded => ThresholdExceeded
-    }.
+    #{total => Total,
+      processes => Processes,
+      system => System,
+      atom => Atom,
+      binary => Binary,
+      code => Code,
+      ets => Ets,
+      used_percent => UsedPercent,
+      threshold_exceeded => ThresholdExceeded}.
 
 %% @private Calculate memory pressure level
 -spec calculate_memory_pressure(#state{}) -> memory_pressure().
@@ -275,11 +249,14 @@ calculate_memory_pressure(State) ->
     UsedPercent = maps:get(used_percent, Stats, 0.0),
     Threshold = State#state.memory_threshold * 100,
 
-    if
-        UsedPercent >= Threshold + 10 -> critical;
-        UsedPercent >= Threshold -> high;
-        UsedPercent >= Threshold - 10 -> medium;
-        true -> low
+    if UsedPercent >= Threshold + 10 ->
+           critical;
+       UsedPercent >= Threshold ->
+           high;
+       UsedPercent >= Threshold - 10 ->
+           medium;
+       true ->
+           low
     end.
 
 %% @private Perform periodic memory check
@@ -295,26 +272,18 @@ do_memory_check(State) ->
             logger:warning("Critical memory pressure detected - forcing GC"),
             do_force_gc(),
             Now = erlang:monotonic_time(millisecond),
-            State#state{
-                gc_count = State#state.gc_count + 1,
-                last_gc_time = Now
-            };
+            State#state{gc_count = State#state.gc_count + 1, last_gc_time = Now};
         {high, true, true} ->
             logger:warning("High memory pressure and binary threshold exceeded - forcing binary GC"),
             do_force_binary_gc(),
             Now = erlang:monotonic_time(millisecond),
-            State#state{
-                binary_gc_count = State#state.binary_gc_count + 1,
-                last_binary_gc_time = Now
-            };
+            State#state{binary_gc_count = State#state.binary_gc_count + 1,
+                        last_binary_gc_time = Now};
         {high, _, true} ->
             logger:info("High memory pressure detected - forcing GC"),
             do_force_gc(),
             Now = erlang:monotonic_time(millisecond),
-            State#state{
-                gc_count = State#state.gc_count + 1,
-                last_gc_time = Now
-            };
+            State#state{gc_count = State#state.gc_count + 1, last_gc_time = Now};
         _ ->
             %% Log if memory usage is elevated but below action threshold
             case Pressure of
@@ -331,32 +300,38 @@ do_memory_check(State) ->
 do_force_gc() ->
     Processes = erlang:processes(),
     lists:foldl(fun(Pid, Count) ->
-        try
-            erlang:garbage_collect(Pid),
-            Count + 1
-        catch
-            _:_ -> Count
-        end
-    end, 0, Processes).
+                   try
+                       erlang:garbage_collect(Pid),
+                       Count + 1
+                   catch
+                       _:_ ->
+                           Count
+                   end
+                end,
+                0,
+                Processes).
 
 %% @private Force binary garbage collection
 -spec do_force_binary_gc() -> non_neg_integer().
 do_force_binary_gc() ->
     Processes = erlang:processes(),
     lists:foldl(fun(Pid, Count) ->
-        try
-            %% Check binary memory first
-            case erlang:process_info(Pid, binary) of
-                {binary, Binaries} when length(Binaries) > 0 ->
-                    erlang:garbage_collect(Pid),
-                    Count + 1;
-                _ ->
-                    Count
-            end
-        catch
-            _:_ -> Count
-        end
-    end, 0, Processes).
+                   try
+                       %% Check binary memory first
+                       case erlang:process_info(Pid, binary) of
+                           {binary, Binaries} when length(Binaries) > 0 ->
+                               erlang:garbage_collect(Pid),
+                               Count + 1;
+                           _ ->
+                               Count
+                       end
+                   catch
+                       _:_ ->
+                           Count
+                   end
+                end,
+                0,
+                Processes).
 
 %% @private Load configuration value
 -spec load_config(atom(), term()) -> term().

@@ -11,13 +11,7 @@
 -module(erlmcp_prompt_template).
 
 %% API
--export([
-    compile/1,
-    render/2,
-    render_safe/2,
-    validate/1,
-    has_template_syntax/1
-]).
+-export([compile/1, render/2, render_safe/2, validate/1, has_template_syntax/1]).
 
 %%====================================================================
 %% Constants & Macros
@@ -29,10 +23,8 @@
 -define(MAX_VARIABLE_VALUE_LEN, 10240).  % 10KB
 -define(MAX_NESTING_DEPTH, 5).
 -define(MAX_OUTPUT_SIZE, 102400).       % 100KB
-
 %% Regular expression for allowed variable names (allowlist only)
 -define(ALLOWED_VAR_PATTERN, "^[a-zA-Z_][a-zA-Z0-9_]*$").
-
 %% Error reasons
 -define(ERR_TEMPLATE_TOO_LARGE, template_too_large).
 -define(ERR_INVALID_VAR_NAME, invalid_variable_name).
@@ -114,8 +106,10 @@ validate(Template) ->
 -spec has_template_syntax(template()) -> boolean().
 has_template_syntax(Template) when is_binary(Template) ->
     case binary:match(Template, <<"{{">>) of
-        nomatch -> false;
-        _ -> true
+        nomatch ->
+            false;
+        _ ->
+            true
     end.
 
 %%====================================================================
@@ -146,7 +140,8 @@ validate_template_syntax(Template) ->
     end.
 
 %% @doc Validate nesting depth of sections.
--spec validate_nesting_depth(template(), non_neg_integer()) -> {ok, non_neg_integer()} | {error, term()}.
+-spec validate_nesting_depth(template(), non_neg_integer()) ->
+                                {ok, non_neg_integer()} | {error, term()}.
 validate_nesting_depth(<<>>, Depth) ->
     {ok, Depth};
 validate_nesting_depth(Template, Depth) ->
@@ -239,17 +234,18 @@ check_matching_tags([{_Tag, _Pos} | Rest], Stack) ->
 validate_variables(Variables) when map_size(Variables) =:= 0 ->
     ok;
 validate_variables(Variables) ->
-    maps:fold(fun
-        (Key, Value, ok) when is_binary(Key) ->
-            case validate_variable_name(Key) of
-                ok ->
-                    validate_variable_value(Key, Value);
-                {error, _} = Error ->
-                    Error
-            end;
-        (_Key, _Value, Acc) ->
-            Acc
-    end, ok, Variables).
+    maps:fold(fun (Key, Value, ok) when is_binary(Key) ->
+                      case validate_variable_name(Key) of
+                          ok ->
+                              validate_variable_value(Key, Value);
+                          {error, _} = Error ->
+                              Error
+                      end;
+                  (_Key, _Value, Acc) ->
+                      Acc
+              end,
+              ok,
+              Variables).
 
 %% @doc Validate a single variable name (allowlist only).
 -spec validate_variable_name(binary()) -> ok | {error, term()}.
@@ -281,8 +277,10 @@ validate_variable_value(_Key, Value) when is_integer(Value); is_float(Value); is
 validate_variable_value(_Key, Value) when is_list(Value) ->
     %% Validate list items
     case validate_list_items(Value) of
-        ok -> ok;
-        {error, _} = Error -> Error
+        ok ->
+            ok;
+        {error, _} = Error ->
+            Error
     end;
 validate_variable_value(Key, _Value) ->
     {error, {?ERR_INVALID_VAR_NAME, Key}}.
@@ -327,11 +325,13 @@ render_with_bbmustache(Template, Variables) ->
 -spec convert_to_mustache_data(variables()) -> map().
 convert_to_mustache_data(Variables) ->
     maps:fold(fun(Key, Value, Acc) ->
-        %% Convert binary key to string (bbmustache requirement)
-        StringKey = binary_to_list(Key),
-        ConvertedValue = convert_value(Value),
-        maps:put(StringKey, ConvertedValue, Acc)
-    end, #{}, Variables).
+                 %% Convert binary key to string (bbmustache requirement)
+                 StringKey = binary_to_list(Key),
+                 ConvertedValue = convert_value(Value),
+                 maps:put(StringKey, ConvertedValue, Acc)
+              end,
+              #{},
+              Variables).
 
 %% @doc Convert a single value to bbmustache format.
 -spec convert_value(term()) -> term().
@@ -346,12 +346,17 @@ convert_value(_Value) ->
 -spec convert_item(map()) -> map().
 convert_item(Item) when is_map(Item) ->
     maps:fold(fun(Key, Value, Acc) ->
-        %% Convert binary key to string for nested maps
-        StringKey = case is_binary(Key) of
-            true -> binary_to_list(Key);
-            false -> Key
-        end,
-        maps:put(StringKey, convert_value(Value), Acc)
-    end, #{}, Item);
+                 %% Convert binary key to string for nested maps
+                 StringKey =
+                     case is_binary(Key) of
+                         true ->
+                             binary_to_list(Key);
+                         false ->
+                             Key
+                     end,
+                 maps:put(StringKey, convert_value(Value), Acc)
+              end,
+              #{},
+              Item);
 convert_item(_Item) ->
     #{}.

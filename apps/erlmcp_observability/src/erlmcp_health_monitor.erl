@@ -1,6 +1,5 @@
 -module(erlmcp_health_monitor).
 
-
 -behaviour(gen_server).
 
 %% API
@@ -8,11 +7,10 @@
          unregister_component/1, get_system_health/0, get_component_health/1,
          get_all_component_health/0, set_health_check_config/2, get_health_check_config/1,
          report_circuit_breaker/2, report_degradation/1, reset_health_status/0,
-         trigger_health_check/1, trigger_system_health_check/0,
-         enumerate_process_health/0, find_overloaded_processes/1]).
+         trigger_health_check/1, trigger_system_health_check/0, enumerate_process_health/0,
+         find_overloaded_processes/1]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-         code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -99,8 +97,7 @@ get_all_component_health() ->
 set_health_check_config(ComponentId, Config) ->
     gen_server:call(?MODULE, {set_health_check_config, ComponentId, Config}).
 
--spec get_health_check_config(component_id()) ->
-                                 {ok, health_config()} | {error, not_found}.
+-spec get_health_check_config(component_id()) -> {ok, health_config()} | {error, not_found}.
 get_health_check_config(ComponentId) ->
     gen_server:call(?MODULE, {get_health_check_config, ComponentId}).
 
@@ -141,8 +138,7 @@ init(Opts) ->
     process_flag(priority, high),
     ?LOG_INFO("OTP 28 priority messages enabled for health monitor"),
 
-    DefaultConfig =
-        maps:merge(?DEFAULT_CONFIG, proplists:get_value(default_config, Opts, #{})),
+    DefaultConfig = maps:merge(?DEFAULT_CONFIG, proplists:get_value(default_config, Opts, #{})),
 
     % Start periodic system health checks
     {ok, Timer} = timer:send_interval(?SYSTEM_HEALTH_CHECK_INTERVAL, system_health_check),
@@ -162,8 +158,7 @@ init(Opts) ->
     {ok, State}.
 
 handle_call({register_component, ComponentId, Pid, CheckFun}, _From, State) ->
-    ?LOG_INFO("Registering component ~p with PID ~p for health monitoring",
-              [ComponentId, Pid]),
+    ?LOG_INFO("Registering component ~p with PID ~p for health monitoring", [ComponentId, Pid]),
 
     % Monitor the component process
     case Pid of
@@ -187,7 +182,8 @@ handle_call({register_component, ComponentId, Pid, CheckFun}, _From, State) ->
 
     {reply, ok, NewState};
 handle_call(get_system_health, _From, State) ->
-    AllHealth = maps:map(fun(_Id, Component) ->
+    AllHealth =
+        maps:map(fun(_Id, Component) ->
                     #{status => Component#component_health.status,
                       last_check => Component#component_health.last_check,
                       consecutive_failures => Component#component_health.consecutive_failures,
@@ -199,18 +195,19 @@ handle_call(get_system_health, _From, State) ->
                  State#state.components),
     {reply, #{system => healthy, components => AllHealth}, State};
 handle_call({get_component_health, ComponentId}, _From, State) ->
-    Result = case maps:find(ComponentId, State#state.components) of
-        {ok, Component} ->
-            #{status => Component#component_health.status,
-              last_check => Component#component_health.last_check,
-              consecutive_failures => Component#component_health.consecutive_failures,
-              total_checks => Component#component_health.total_checks,
-              successful_checks => Component#component_health.successful_checks,
-              circuit_breaker_active => Component#component_health.circuit_breaker_active,
-              degraded => Component#component_health.degraded};
-        error ->
-            {error, not_found}
-    end,
+    Result =
+        case maps:find(ComponentId, State#state.components) of
+            {ok, Component} ->
+                #{status => Component#component_health.status,
+                  last_check => Component#component_health.last_check,
+                  consecutive_failures => Component#component_health.consecutive_failures,
+                  total_checks => Component#component_health.total_checks,
+                  successful_checks => Component#component_health.successful_checks,
+                  circuit_breaker_active => Component#component_health.circuit_breaker_active,
+                  degraded => Component#component_health.degraded};
+            error ->
+                {error, not_found}
+        end,
     {reply, Result, State};
 handle_call(get_all_component_health, _From, State) ->
     AllHealth =
@@ -381,8 +378,7 @@ perform_component_health_check(ComponentId, State) ->
             State
     end.
 
--spec execute_health_check(#component_health{}) ->
-                              {health_status(), term()} | health_status().
+-spec execute_health_check(#component_health{}) -> {health_status(), term()} | health_status().
 execute_health_check(Component) ->
     Config = Component#component_health.config,
     Timeout = maps:get(timeout, Config, 5000),
@@ -472,9 +468,7 @@ update_component_health_status(Component, CheckResult, _CheckDuration) ->
                                successful_checks = NewSuccessfulChecks,
                                last_error = LastError}.
 
--spec determine_final_health_status(health_status(),
-                                    non_neg_integer(),
-                                    #component_health{}) ->
+-spec determine_final_health_status(health_status(), non_neg_integer(), #component_health{}) ->
                                        health_status().
 determine_final_health_status(CheckStatus, ConsecutiveFailures, Component) ->
     MaxFailures = maps:get(max_consecutive_failures, Component#component_health.config, 3),
@@ -543,7 +537,8 @@ handle_component_process_death(ComponentId, Reason, State) ->
             % Trigger recovery (async to avoid deadlock)
             case whereis(erlmcp_recovery_manager) of
                 undefined ->
-                    ?LOG_WARNING("Recovery manager not available for component ~p death", [ComponentId]),
+                    ?LOG_WARNING("Recovery manager not available for component ~p death",
+                                 [ComponentId]),
                     ok;
                 _Pid ->
                     erlmcp_recovery_manager:trigger_recovery(ComponentId, {process_death, Reason})
@@ -568,8 +563,7 @@ perform_system_health_check(State) ->
     SystemHealth = determine_system_health(SystemMetrics, ComponentHealthSummary),
 
     % Generate alerts if needed
-    Alerts =
-        generate_health_alerts(SystemMetrics, ComponentHealthSummary, State#state.alerts),
+    Alerts = generate_health_alerts(SystemMetrics, ComponentHealthSummary, State#state.alerts),
 
     ?LOG_INFO("System health check completed: ~p", [SystemHealth]),
 
@@ -770,25 +764,26 @@ enumerate_process_health() ->
     {Healthy, Unhealthy} = enumerate_process_iterator(Iterator, 0, 0),
     {ok, #{healthy => Healthy, unhealthy => Unhealthy}}.
 
--spec enumerate_process_iterator(term(), non_neg_integer(), non_neg_integer()) -> {non_neg_integer(), non_neg_integer()}.
+-spec enumerate_process_iterator(term(), non_neg_integer(), non_neg_integer()) ->
+                                    {non_neg_integer(), non_neg_integer()}.
 enumerate_process_iterator(Iterator, Healthy, Unhealthy) ->
     case erlang:process_next(Iterator) of
         {Pid, NewIterator} ->
-            {H, U} = case process_info(Pid, [message_queue_len, memory]) of
-                undefined ->
-                    {Healthy, Unhealthy};
-                [{message_queue_len, QLen}, {memory, _Mem}] ->
-                    if QLen > 100 ->
-                            {Healthy, Unhealthy + 1};
-                       true ->
-                            {Healthy + 1, Unhealthy}
-                    end
-            end,
+            {H, U} =
+                case process_info(Pid, [message_queue_len, memory]) of
+                    undefined ->
+                        {Healthy, Unhealthy};
+                    [{message_queue_len, QLen}, {memory, _Mem}] ->
+                        if QLen > 100 ->
+                               {Healthy, Unhealthy + 1};
+                           true ->
+                               {Healthy + 1, Unhealthy}
+                        end
+                end,
             enumerate_process_iterator(NewIterator, H, U);
         _ ->
             {Healthy, Unhealthy}
     end.
-
 
 %%--------------------------------------------------------------------
 %% @doc Find processes with excessive message queues (OTP 28 optimized)
@@ -796,8 +791,8 @@ enumerate_process_iterator(Iterator, Healthy, Unhealthy) ->
 %% Returns list of PIDs with message queue length > Threshold
 %% @end
 %%--------------------------------------------------------------------
--spec find_overloaded_processes(non_neg_integer()) -> {ok, [#{pid => pid(), queue_length => non_neg_integer()}]}.
-
+-spec find_overloaded_processes(non_neg_integer()) ->
+                                   {ok, [#{pid => pid(), queue_length => non_neg_integer()}]}.
 find_overloaded_processes(Threshold) ->
     Iterator = erlang:processes_iterator(),
     find_overloaded_iterator(Iterator, Threshold, []).
@@ -806,19 +801,23 @@ find_overloaded_processes(Threshold) ->
 find_overloaded_iterator(Iterator, Threshold, Acc) ->
     case erlang:process_next(Iterator) of
         {Pid, NewIterator} ->
-            NewAcc = case process_info(Pid, [message_queue_len, registered_name]) of
-                undefined ->
-                    Acc;
-                Info ->
-                    QLen = proplists:get_value(message_queue_len, Info, 0),
-                    case QLen > Threshold of
-                        true ->
-                            RegName = proplists:get_value(registered_name, Info, undefined),
-                            [#{pid => Pid, queue_length => QLen, registered_name => RegName} | Acc];
-                        false ->
-                            Acc
-                    end
-            end,
+            NewAcc =
+                case process_info(Pid, [message_queue_len, registered_name]) of
+                    undefined ->
+                        Acc;
+                    Info ->
+                        QLen = proplists:get_value(message_queue_len, Info, 0),
+                        case QLen > Threshold of
+                            true ->
+                                RegName = proplists:get_value(registered_name, Info, undefined),
+                                [#{pid => Pid,
+                                   queue_length => QLen,
+                                   registered_name => RegName}
+                                 | Acc];
+                            false ->
+                                Acc
+                        end
+                end,
             find_overloaded_iterator(NewIterator, Threshold, NewAcc);
         none ->
             {ok, lists:reverse(Acc)}

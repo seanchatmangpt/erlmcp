@@ -48,9 +48,20 @@ TIMESTAMP=$(date -Iseconds 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)
 RECEIPT_TS=$(date +%s 2>/dev/null || echo "$(date +%Y%m%d%H%M%S)")
 RECEIPT_FILE="$RECEIPT_DIR/${RECEIPT_TS}.json"
 
-# OTP version
+# OTP version - source env file to get OTP 28
 OTP_VERSION="unknown"
-if command -v erl &> /dev/null; then
+ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" && pwd)"
+ENV_FILE="${ERLMCP_ROOT}/.erlmcp/env.sh"
+OTP_BIN_PATH=""
+if [ -f "$ENV_FILE" ]; then
+    source "$ENV_FILE"
+    # Use explicit OTP bin path from env file
+    OTP_BIN_PATH="${ERLMCP_OTP_BIN_PATH:-}"
+fi
+# Check OTP version using explicit path OR system erl
+if [ -n "$OTP_BIN_PATH" ] && [ -x "$OTP_BIN_PATH/erl" ]; then
+    OTP_VERSION=$("$OTP_BIN_PATH/erl" -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt(0).' 2>/dev/null || echo "unknown")
+elif command -v erl &> /dev/null; then
     OTP_VERSION=$(erl -noshell -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt(0).' 2>/dev/null || echo "unknown")
 fi
 

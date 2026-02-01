@@ -19,41 +19,21 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_plugin_registry).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    register_plugin/3,
-    unregister_plugin/1,
-    get_plugin/1,
-    list_plugins/0,
-    list_plugins_by_type/1,
-    plugin_exists/1
-]).
-
+-export([start_link/0, register_plugin/3, unregister_plugin/1, get_plugin/1, list_plugins/0,
+         list_plugins_by_type/1, plugin_exists/1]).
 %% gen_server callbacks
--export([
-    init/1,
-    handle_call/3,
-    handle_cast/2,
-    handle_info/2,
-    terminate/2
-]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(SERVER, ?MODULE).
 -define(TABLE, erlmcp_plugin_registry_table).
 
--record(state, {
-    table :: ets:tid()
-}).
-
--record(plugin_entry, {
-    module :: module(),
-    metadata :: map(),
-    pid :: pid(),
-    registered_at :: integer()
-}).
+-record(state, {table :: ets:tid()}).
+-record(plugin_entry,
+        {module :: module(), metadata :: map(), pid :: pid(), registered_at :: integer()}).
 
 %%====================================================================
 %% API
@@ -99,24 +79,23 @@ plugin_exists(Module) ->
 
 init([]) ->
     %% Create ETS table for plugin metadata
-    Table = ets:new(?TABLE, [
-        set,
-        named_table,
-        protected,
-        {keypos, #plugin_entry.module},
-        {read_concurrency, true}
-    ]),
+    Table =
+        ets:new(?TABLE,
+                [set,
+                 named_table,
+                 protected,
+                 {keypos, #plugin_entry.module},
+                 {read_concurrency, true}]),
     {ok, #state{table = Table}}.
 
 handle_call({register_plugin, Module, Metadata, Pid}, _From, State) ->
     case ets:lookup(State#state.table, Module) of
         [] ->
-            Entry = #plugin_entry{
-                module = Module,
-                metadata = Metadata,
-                pid = Pid,
-                registered_at = erlang:system_time(second)
-            },
+            Entry =
+                #plugin_entry{module = Module,
+                              metadata = Metadata,
+                              pid = Pid,
+                              registered_at = erlang:system_time(second)},
             ets:insert(State#state.table, Entry),
 
             %% Register with gproc for routing
@@ -132,7 +111,6 @@ handle_call({register_plugin, Module, Metadata, Pid}, _From, State) ->
         [_Existing] ->
             {reply, {error, already_registered}, State}
     end;
-
 handle_call({unregister_plugin, Module}, _From, State) ->
     case ets:lookup(State#state.table, Module) of
         [#plugin_entry{metadata = Metadata}] ->
@@ -145,60 +123,70 @@ handle_call({unregister_plugin, Module}, _From, State) ->
                 gproc:unreg({n, l, {plugin, PluginName}}),
                 gproc:unreg({p, l, {plugin_type, PluginType}})
             catch
-                _:_ -> ok  %% Already unregistered
+                _:_ ->
+                    ok  %% Already unregistered
             end,
 
             {reply, ok, State};
         [] ->
             {reply, {error, not_found}, State}
     end;
-
 handle_call({get_plugin, Module}, _From, State) ->
     case ets:lookup(State#state.table, Module) of
-        [#plugin_entry{metadata = Metadata, pid = Pid, registered_at = RegisteredAt}] ->
-            PluginInfo = #{
-                module => Module,
-                metadata => Metadata,
-                pid => Pid,
-                registered_at => RegisteredAt,
-                alive => erlang:is_process_alive(Pid)
-            },
+        [#plugin_entry{metadata = Metadata,
+                       pid = Pid,
+                       registered_at = RegisteredAt}] ->
+            PluginInfo =
+                #{module => Module,
+                  metadata => Metadata,
+                  pid => Pid,
+                  registered_at => RegisteredAt,
+                  alive => erlang:is_process_alive(Pid)},
             {reply, {ok, PluginInfo}, State};
         [] ->
             {reply, {error, not_found}, State}
     end;
-
 handle_call(list_plugins, _From, State) ->
-    Plugins = ets:foldl(fun(#plugin_entry{module = Module, metadata = Metadata, pid = Pid, registered_at = RegisteredAt}, Acc) ->
-        PluginInfo = #{
-            module => Module,
-            metadata => Metadata,
-            pid => Pid,
-            registered_at => RegisteredAt,
-            alive => erlang:is_process_alive(Pid)
-        },
-        [PluginInfo | Acc]
-    end, [], State#state.table),
+    Plugins =
+        ets:foldl(fun(#plugin_entry{module = Module,
+                                    metadata = Metadata,
+                                    pid = Pid,
+                                    registered_at = RegisteredAt},
+                      Acc) ->
+                     PluginInfo =
+                         #{module => Module,
+                           metadata => Metadata,
+                           pid => Pid,
+                           registered_at => RegisteredAt,
+                           alive => erlang:is_process_alive(Pid)},
+                     [PluginInfo | Acc]
+                  end,
+                  [],
+                  State#state.table),
     {reply, {ok, Plugins}, State};
-
 handle_call({list_plugins_by_type, Type}, _From, State) ->
-    Plugins = ets:foldl(fun(#plugin_entry{module = Module, metadata = Metadata, pid = Pid, registered_at = RegisteredAt}, Acc) ->
-        case maps:get(type, Metadata) of
-            Type ->
-                PluginInfo = #{
-                    module => Module,
-                    metadata => Metadata,
-                    pid => Pid,
-                    registered_at => RegisteredAt,
-                    alive => erlang:is_process_alive(Pid)
-                },
-                [PluginInfo | Acc];
-            _ ->
-                Acc
-        end
-    end, [], State#state.table),
+    Plugins =
+        ets:foldl(fun(#plugin_entry{module = Module,
+                                    metadata = Metadata,
+                                    pid = Pid,
+                                    registered_at = RegisteredAt},
+                      Acc) ->
+                     case maps:get(type, Metadata) of
+                         Type ->
+                             PluginInfo =
+                                 #{module => Module,
+                                   metadata => Metadata,
+                                   pid => Pid,
+                                   registered_at => RegisteredAt,
+                                   alive => erlang:is_process_alive(Pid)},
+                             [PluginInfo | Acc];
+                         _ ->
+                             Acc
+                     end
+                  end,
+                  [],
+                  State#state.table),
     {reply, {ok, Plugins}, State};
-
 handle_call({plugin_exists, Module}, _From, State) ->
     Exists = ets:member(State#state.table, Module),
     {reply, Exists, State}.
@@ -216,7 +204,6 @@ handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
             ok
     end,
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 

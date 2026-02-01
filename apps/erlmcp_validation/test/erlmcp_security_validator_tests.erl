@@ -16,6 +16,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_security_validator_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%===================================================================
@@ -24,8 +25,10 @@
 
 setup() ->
     case erlmcp_security_validator:start_link() of
-        {ok, Pid} -> Pid;
-        {error, {already_started, Pid}} -> Pid
+        {ok, Pid} ->
+            Pid;
+        {error, {already_started, Pid}} ->
+            Pid
     end.
 
 cleanup(_Pid) ->
@@ -39,18 +42,24 @@ cleanup(_Pid) ->
 %% Helper to find a check by name (works with both map and tuple formats)
 find_check(Checks, CheckName) ->
     lists:search(fun(Check) ->
-        case Check of
-            #{name := Name} -> Name =:= CheckName;
-            {CheckName, _} -> true;
-            _ -> false
-        end
-    end, Checks).
+                    case Check of
+                        #{name := Name} ->
+                            Name =:= CheckName;
+                        {CheckName, _} ->
+                            true;
+                        _ ->
+                            false
+                    end
+                 end,
+                 Checks).
 
 %% Helper to get status from a check (works with both map and tuple formats)
 get_status(Check) ->
     case Check of
-        #{status := S} -> S;
-        {_, #{status := S}} -> S
+        #{status := S} ->
+            S;
+        {_, #{status := S}} ->
+            S
     end.
 
 %%%===================================================================
@@ -61,50 +70,48 @@ authentication_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      fun test_auth_mechanism/1,
+     [fun test_auth_mechanism/1,
       fun test_token_handling/1,
       fun test_session_management/1,
-      fun test_authorization/1
-     ]}.
+      fun test_authorization/1]}.
 
 test_auth_mechanism(_Pid) ->
     fun() ->
-        %% Test auth mechanism via observable behavior
-        Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
-        Checks = maps:get(checks, Result),
-        AuthCheck = find_check(Checks, auth_mechanism),
-        ?assertNotEqual(false, AuthCheck),
-        {value, CheckValue} = AuthCheck,
-        Status = get_status(CheckValue),
-        ?assert(Status =:= passed orelse Status =:= warning)
+       %% Test auth mechanism via observable behavior
+       Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
+       Checks = maps:get(checks, Result),
+       AuthCheck = find_check(Checks, auth_mechanism),
+       ?assertNotEqual(false, AuthCheck),
+       {value, CheckValue} = AuthCheck,
+       Status = get_status(CheckValue),
+       ?assert(Status =:= passed orelse Status =:= warning)
     end.
 
 test_token_handling(_Pid) ->
     fun() ->
-        %% Test token handling via API
-        Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
-        Checks = maps:get(checks, Result),
-        TokenCheck = find_check(Checks, token_handling),
-        ?assertNotEqual(false, TokenCheck)
+       %% Test token handling via API
+       Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
+       Checks = maps:get(checks, Result),
+       TokenCheck = find_check(Checks, token_handling),
+       ?assertNotEqual(false, TokenCheck)
     end.
 
 test_session_management(_Pid) ->
     fun() ->
-        %% Test session management via API
-        Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
-        Checks = maps:get(checks, Result),
-        SessionCheck = find_check(Checks, session_management),
-        ?assertNotEqual(false, SessionCheck)
+       %% Test session management via API
+       Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
+       Checks = maps:get(checks, Result),
+       SessionCheck = find_check(Checks, session_management),
+       ?assertNotEqual(false, SessionCheck)
     end.
 
 test_authorization(_Pid) ->
     fun() ->
-        %% Test authorization via API
-        Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
-        Checks = maps:get(checks, Result),
-        AuthzCheck = find_check(Checks, authorization),
-        ?assertNotEqual(false, AuthzCheck)
+       %% Test authorization via API
+       Result = erlmcp_security_validator:validate_authentication(erlmcp_transport_stdio),
+       Checks = maps:get(checks, Result),
+       AuthzCheck = find_check(Checks, authorization),
+       ?assertNotEqual(false, AuthzCheck)
     end.
 
 %%%===================================================================
@@ -115,13 +122,11 @@ input_validation_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      fun test_json_schema_validation/1,
+     [fun test_json_schema_validation/1,
       fun test_parameter_sanitization/1,
       fun test_sql_injection_prevention/1,
       fun test_xss_prevention/1,
-      fun test_path_traversal_prevention/1
-     ]}.
+      fun test_path_traversal_prevention/1]}.
 
 test_json_schema_validation(_Pid) ->
     %% Test JSON schema validation via API
@@ -166,12 +171,10 @@ secret_management_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      fun test_no_hardcoded_secrets/1,
+     [fun test_no_hardcoded_secrets/1,
       fun test_env_variable_usage/1,
       fun test_secret_encryption/1,
-      fun test_key_rotation/1
-     ]}.
+      fun test_key_rotation/1]}.
 
 test_no_hardcoded_secrets(_Pid) ->
     %% Test no hardcoded secrets via observable behavior
@@ -212,12 +215,10 @@ jwt_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      fun test_jwt_structure/1,
+     [fun test_jwt_structure/1,
       fun test_jwt_signature/1,
       fun test_jwt_validation/1,
-      fun test_jwt_expiration/1
-     ]}.
+      fun test_jwt_expiration/1]}.
 
 test_jwt_structure(_Pid) ->
     %% Test JWT structure via API
@@ -255,11 +256,9 @@ rate_limiting_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      fun test_rate_limit_configured/1,
+     [fun test_rate_limit_configured/1,
       fun test_rate_limit_enforcement/1,
-      fun test_rate_limit_bypass/1
-     ]}.
+      fun test_rate_limit_bypass/1]}.
 
 test_rate_limit_configured(_Pid) ->
     %% Test rate limiting configured via API
@@ -290,11 +289,7 @@ cors_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      fun test_cors_headers/1,
-      fun test_origin_validation/1,
-      fun test_cors_policies/1
-     ]}.
+     [fun test_cors_headers/1, fun test_origin_validation/1, fun test_cors_policies/1]}.
 
 test_cors_headers(_Pid) ->
     %% Test CORS headers via API
@@ -325,11 +320,7 @@ integration_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      fun test_run_validation/1,
-      fun test_generate_report/1,
-      fun test_all_22_checks_present/1
-     ]}.
+     [fun test_run_validation/1, fun test_generate_report/1, fun test_all_22_checks_present/1]}.
 
 test_run_validation(Pid) ->
     %% Test full validation run via API

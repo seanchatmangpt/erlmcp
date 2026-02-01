@@ -29,31 +29,15 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% CT exports
--export([all/0, groups/0, suite/0,
-         init_per_suite/1, end_per_suite/1,
-         init_per_group/2, end_per_group/2,
-         init_per_testcase/2, end_per_testcase/2]).
-
+-export([all/0, groups/0, suite/0, init_per_suite/1, end_per_suite/1, init_per_group/2,
+         end_per_group/2, init_per_testcase/2, end_per_testcase/2]).
 %% Test cases
--export([
-    test_baseline_loading/1,
-    test_baseline_saving/1,
-    test_regression_detection_throughput/1,
-    test_regression_detection_latency/1,
-    test_regression_detection_memory/1,
-    test_historical_comparison/1,
-    test_trend_analysis/1,
-    test_performance_gates/1,
-    test_ci_report_generation/1,
-    test_full_regression_suite/1
-]).
-
+-export([test_baseline_loading/1, test_baseline_saving/1, test_regression_detection_throughput/1,
+         test_regression_detection_latency/1, test_regression_detection_memory/1,
+         test_historical_comparison/1, test_trend_analysis/1, test_performance_gates/1,
+         test_ci_report_generation/1, test_full_regression_suite/1]).
 %% Benchmarks integration
--export([
-    run_core_ops_benchmark/1,
-    run_network_benchmark/1,
-    run_stress_benchmark/1
-]).
+-export([run_core_ops_benchmark/1, run_network_benchmark/1, run_stress_benchmark/1]).
 
 %%%====================================================================
 %%% CT Callbacks
@@ -65,8 +49,7 @@ suite() ->
      {default_config, #{baseline_path => "./bench/baselines/2026-01-28_v2.0.0.json"}}].
 
 all() ->
-    [
-     test_baseline_loading,
+    [test_baseline_loading,
      test_baseline_saving,
      test_regression_detection_throughput,
      test_regression_detection_latency,
@@ -75,24 +58,16 @@ all() ->
      test_trend_analysis,
      test_performance_gates,
      test_ci_report_generation,
-     test_full_regression_suite
-    ].
+     test_full_regression_suite].
 
 groups() ->
-    [
-     {core_ops, [], [
-         test_regression_detection_throughput,
-         test_regression_detection_latency,
-         test_regression_detection_memory
-     ]},
-     {integration, [], [
-         test_full_regression_suite
-     ]},
-     {ci, [], [
-         test_performance_gates,
-         test_ci_report_generation
-     ]}
-    ].
+    [{core_ops,
+      [],
+      [test_regression_detection_throughput,
+       test_regression_detection_latency,
+       test_regression_detection_memory]},
+     {integration, [], [test_full_regression_suite]},
+     {ci, [], [test_performance_gates, test_ci_report_generation]}].
 
 %%%====================================================================
 %%% Setup/Teardown
@@ -149,8 +124,8 @@ test_baseline_loading(Config) ->
     ct:log("Testing baseline loading"),
 
     % Load baseline
-    BaselineFile = proplists:get_value(baseline_path, Config,
-                                       "./bench/baselines/2026-01-28_v2.0.0.json"),
+    BaselineFile =
+        proplists:get_value(baseline_path, Config, "./bench/baselines/2026-01-28_v2.0.0.json"),
 
     case file:read_file(BaselineFile) of
         {ok, JsonData} ->
@@ -187,31 +162,26 @@ test_baseline_saving(Config) ->
     ct:log("Testing baseline saving"),
 
     % Create test baseline
-    TestBaseline = #{
-        <<"version">> => <<"2.1.0">>,
-        <<"timestamp">> => erlang:system_time(second),
-        <<"date">> => <<"2026-01-30T12:00:00Z">>,
-        <<"git_sha">> => <<"test_sha">>,
-        <<"environment">> => #{
-            <<"os">> => <<"test_os">>,
-            <<"otp_version">> => <<"OTP-27">>,
-            <<"cores">> => 8
-        },
-        <<"benchmarks">> => #{
-            <<"test_benchmark">> => #{
-                <<"throughput_msg_per_s">> => 1000000.0,
-                <<"latency_p50_us">> => 10.0,
-                <<"latency_p95_us">> => 50.0,
-                <<"latency_p99_us">> => 100.0,
-                <<"memory_delta_mib">> => 10.0
-            }
-        },
-        <<"regression_thresholds">> => #{
-            <<"throughput">> => -10,
-            <<"latency_p95">> => 10,
-            <<"memory">> => 20
-        }
-    },
+    TestBaseline =
+        #{<<"version">> => <<"2.1.0">>,
+          <<"timestamp">> => erlang:system_time(second),
+          <<"date">> => <<"2026-01-30T12:00:00Z">>,
+          <<"git_sha">> => <<"test_sha">>,
+          <<"environment">> =>
+              #{<<"os">> => <<"test_os">>,
+                <<"otp_version">> => <<"OTP-27">>,
+                <<"cores">> => 8},
+          <<"benchmarks">> =>
+              #{<<"test_benchmark">> =>
+                    #{<<"throughput_msg_per_s">> => 1000000.0,
+                      <<"latency_p50_us">> => 10.0,
+                      <<"latency_p95_us">> => 50.0,
+                      <<"latency_p99_us">> => 100.0,
+                      <<"memory_delta_mib">> => 10.0}},
+          <<"regression_thresholds">> =>
+              #{<<"throughput">> => -10,
+                <<"latency_p95">> => 10,
+                <<"memory">> => 20}},
 
     % Save to temporary file
     BaselineDir = proplists:get_value(baseline_dir, Config),
@@ -226,8 +196,7 @@ test_baseline_saving(Config) ->
 
             % Load and verify
             {ok, Loaded} = load_baseline(TempFile),
-            ?assertEqual(maps:get(<<"version">>, TestBaseline),
-                         maps:get(<<"version">>, Loaded)),
+            ?assertEqual(maps:get(<<"version">>, TestBaseline), maps:get(<<"version">>, Loaded)),
             ?assertEqual(maps:get(<<"benchmarks">>, TestBaseline),
                          maps:get(<<"benchmarks">>, Loaded)),
 
@@ -245,8 +214,8 @@ test_regression_detection_throughput(Config) ->
     ct:log("Testing throughput regression detection"),
 
     % Load baseline
-    BaselineFile = proplists:get_value(baseline_path, Config,
-                                       "./bench/baselines/2026-01-28_v2.0.0.json"),
+    BaselineFile =
+        proplists:get_value(baseline_path, Config, "./bench/baselines/2026-01-28_v2.0.0.json"),
     {ok, Baseline} = load_baseline(BaselineFile),
 
     % Get baseline throughput
@@ -281,8 +250,8 @@ test_regression_detection_latency(Config) ->
     ct:log("Testing latency regression detection"),
 
     % Load baseline
-    BaselineFile = proplists:get_value(baseline_path, Config,
-                                       "./bench/baselines/2026-01-28_v2.0.0.json"),
+    BaselineFile =
+        proplists:get_value(baseline_path, Config, "./bench/baselines/2026-01-28_v2.0.0.json"),
     {ok, Baseline} = load_baseline(BaselineFile),
 
     % Get baseline latency
@@ -319,8 +288,8 @@ test_regression_detection_memory(Config) ->
     ct:log("Testing memory regression detection"),
 
     % Load baseline
-    BaselineFile = proplists:get_value(baseline_path, Config,
-                                       "./bench/baselines/2026-01-28_v2.0.0.json"),
+    BaselineFile =
+        proplists:get_value(baseline_path, Config, "./bench/baselines/2026-01-28_v2.0.0.json"),
     {ok, Baseline} = load_baseline(BaselineFile),
 
     % Get baseline memory
@@ -349,59 +318,44 @@ test_historical_comparison(Config) ->
     ct:log("Testing historical comparison"),
 
     % Create synthetic history
-    History1 = #{
-        timestamp => erlang:system_time(second) - 86400 * 3  % 3 days ago
-    },
-    History2 = #{
-        timestamp => erlang:system_time(second) - 86400 * 2  % 2 days ago
-    },
-    History3 = #{
-        timestamp => erlang:system_time(second) - 86400      % 1 day ago
-    },
+    History1 =
+        #{timestamp => erlang:system_time(second) - 86400 * 3},  % 3 days ago
+    History2 =
+        #{timestamp => erlang:system_time(second) - 86400 * 2},  % 2 days ago
+    History3 =
+        #{timestamp => erlang:system_time(second) - 86400},      % 1 day ago
 
     % Add benchmark results to history
-    History1WithResults = History1#{
-        <<"benchmarks">> => #{
-            <<"core_ops_100k">> => #{
-                <<"throughput_msg_per_s">> => 2700000.0,
-                <<"latency_p95_us">> => 80.0,
-                <<"memory_delta_mib">> => 20.0
-            }
-        }
-    },
+    History1WithResults =
+        History1#{<<"benchmarks">> =>
+                      #{<<"core_ops_100k">> =>
+                            #{<<"throughput_msg_per_s">> => 2700000.0,
+                              <<"latency_p95_us">> => 80.0,
+                              <<"memory_delta_mib">> => 20.0}}},
 
-    History2WithResults = History2#{
-        <<"benchmarks">> => #{
-            <<"core_ops_100k">> => #{
-                <<"throughput_msg_per_s">> => 2720000.0,
-                <<"latency_p95_us">> => 81.0,
-                <<"memory_delta_mib">> => 21.0
-            }
-        }
-    },
+    History2WithResults =
+        History2#{<<"benchmarks">> =>
+                      #{<<"core_ops_100k">> =>
+                            #{<<"throughput_msg_per_s">> => 2720000.0,
+                              <<"latency_p95_us">> => 81.0,
+                              <<"memory_delta_mib">> => 21.0}}},
 
-    History3WithResults = History3#{
-        <<"benchmarks">> => #{
-            <<"core_ops_100k">> => #{
-                <<"throughput_msg_per_s">> => 2740000.0,
-                <<"latency_p95_us">> => 82.0,
-                <<"memory_delta_mib">> => 21.5
-            }
-        }
-    },
+    History3WithResults =
+        History3#{<<"benchmarks">> =>
+                      #{<<"core_ops_100k">> =>
+                            #{<<"throughput_msg_per_s">> => 2740000.0,
+                              <<"latency_p95_us">> => 82.0,
+                              <<"memory_delta_mib">> => 21.5}}},
 
     History = [History1WithResults, History2WithResults, History3WithResults],
 
     % Compare current run to history
-    CurrentRun = #{
-        <<"benchmarks">> => #{
-            <<"core_ops_100k">> => #{
-                <<"throughput_msg_per_s">> => 2750000.0,
-                <<"latency_p95_us">> => 83.0,
-                <<"memory_delta_mib">> => 22.0
-            }
-        }
-    },
+    CurrentRun =
+        #{<<"benchmarks">> =>
+              #{<<"core_ops_100k">> =>
+                    #{<<"throughput_msg_per_s">> => 2750000.0,
+                      <<"latency_p95_us">> => 83.0,
+                      <<"memory_delta_mib">> => 22.0}}},
 
     ComparisonResult = compare_to_history(<<"core_ops_100k">>, CurrentRun, History),
     ct:log("Historical comparison result: ~p", [ComparisonResult]),
@@ -418,13 +372,12 @@ test_trend_analysis(Config) ->
     ct:log("Testing trend analysis"),
 
     % Create trend data
-    TrendData = [
-        #{timestamp => 1, throughput => 1000000},
-        #{timestamp => 2, throughput => 1020000},
-        #{timestamp => 3, throughput => 1040000},
-        #{timestamp => 4, throughput => 1060000},
-        #{timestamp => 5, throughput => 1080000}
-    ],
+    TrendData =
+        [#{timestamp => 1, throughput => 1000000},
+         #{timestamp => 2, throughput => 1020000},
+         #{timestamp => 3, throughput => 1040000},
+         #{timestamp => 4, throughput => 1060000},
+         #{timestamp => 5, throughput => 1080000}],
 
     % Analyze trend
     Analysis = analyze_trend(<<"throughput">>, TrendData),
@@ -446,8 +399,8 @@ test_performance_gates(Config) ->
     ct:log("Testing performance gates"),
 
     % Load baseline
-    BaselineFile = proplists:get_value(baseline_path, Config,
-                                       "./bench/baselines/2026-01-28_v2.0.0.json"),
+    BaselineFile =
+        proplists:get_value(baseline_path, Config, "./bench/baselines/2026-01-28_v2.0.0.json"),
     {ok, Baseline} = load_baseline(BaselineFile),
 
     % Get thresholds
@@ -460,47 +413,47 @@ test_performance_gates(Config) ->
            [ThroughputThreshold, LatencyThreshold, MemoryThreshold]),
 
     % Test 1: All metrics pass
-    CurrentMetrics1 = #{
-        <<"throughput_msg_per_s">> => 2800000.0,
-        <<"latency_p95_us">> => 82.0,
-        <<"memory_delta_mib">> => 22.0
-    },
+    CurrentMetrics1 =
+        #{<<"throughput_msg_per_s">> => 2800000.0,
+          <<"latency_p95_us">> => 82.0,
+          <<"memory_delta_mib">> => 22.0},
 
     Benchmarks = maps:get(<<"benchmarks">>, Baseline),
     BaselineMetrics = maps:get(<<"core_ops_100k">>, Benchmarks),
 
-    GateResult1 = evaluate_performance_gate(<<"core_ops_100k">>,
-                                            CurrentMetrics1,
-                                            BaselineMetrics,
-                                            Thresholds),
+    GateResult1 =
+        evaluate_performance_gate(<<"core_ops_100k">>,
+                                  CurrentMetrics1,
+                                  BaselineMetrics,
+                                  Thresholds),
     ?assertEqual(pass, GateResult1),
     ct:log("All metrics within thresholds: PASS"),
 
     % Test 2: Throughput fails
-    CurrentMetrics2 = #{
-        <<"throughput_msg_per_s">> => 2400000.0,  % Significant degradation
-        <<"latency_p95_us">> => 82.0,
-        <<"memory_delta_mib">> => 22.0
-    },
+    CurrentMetrics2 =
+        #{<<"throughput_msg_per_s">> => 2400000.0,  % Significant degradation
+          <<"latency_p95_us">> => 82.0,
+          <<"memory_delta_mib">> => 22.0},
 
-    GateResult2 = evaluate_performance_gate(<<"core_ops_100k">>,
-                                            CurrentMetrics2,
-                                            BaselineMetrics,
-                                            Thresholds),
+    GateResult2 =
+        evaluate_performance_gate(<<"core_ops_100k">>,
+                                  CurrentMetrics2,
+                                  BaselineMetrics,
+                                  Thresholds),
     ?assertEqual(fail, GateResult2),
     ct:log("Throughput exceeds threshold: FAIL"),
 
     % Test 3: Memory fails
-    CurrentMetrics3 = #{
-        <<"throughput_msg_per_s">> => 2800000.0,
-        <<"latency_p95_us">> => 82.0,
-        <<"memory_delta_mib">> => 30.0  % Exceeds threshold
-    },
+    CurrentMetrics3 =
+        #{<<"throughput_msg_per_s">> => 2800000.0,
+          <<"latency_p95_us">> => 82.0,
+          <<"memory_delta_mib">> => 30.0},  % Exceeds threshold
 
-    GateResult3 = evaluate_performance_gate(<<"core_ops_100k">>,
-                                            CurrentMetrics3,
-                                            BaselineMetrics,
-                                            Thresholds),
+    GateResult3 =
+        evaluate_performance_gate(<<"core_ops_100k">>,
+                                  CurrentMetrics3,
+                                  BaselineMetrics,
+                                  Thresholds),
     ?assertEqual(fail, GateResult3),
     ct:log("Memory exceeds threshold: FAIL"),
 
@@ -511,32 +464,25 @@ test_ci_report_generation(Config) ->
     ct:log("Testing CI report generation"),
 
     % Create test report data
-    ReportData = #{
-        <<"suite">> => <<"performance_regression">>,
-        <<"timestamp">> => erlang:system_time(second),
-        <<"git_sha">> => <<"test_sha">>,
-        <<"results">> => [
-            #{
-                <<"benchmark">> => <<"core_ops_100k">>,
-                <<"status">> => pass,
-                <<"throughput_diff_percent">> => 1.5,
-                <<"latency_p95_diff_percent">> => 2.0,
-                <<"memory_diff_percent">> => 10.0
-            },
-            #{
-                <<"benchmark">> => <<"tcp_quick_1k">>,
-                <<"status">> => fail,
-                <<"throughput_diff_percent">> => -15.0,
-                <<"latency_p95_diff_percent">> => 25.0,
-                <<"memory_diff_percent">> => 30.0
-            }
-        ],
-        <<"summary">> => #{
-            <<"total">> => 2,
-            <<"passed">> => 1,
-            <<"failed">> => 1
-        }
-    },
+    ReportData =
+        #{<<"suite">> => <<"performance_regression">>,
+          <<"timestamp">> => erlang:system_time(second),
+          <<"git_sha">> => <<"test_sha">>,
+          <<"results">> =>
+              [#{<<"benchmark">> => <<"core_ops_100k">>,
+                 <<"status">> => pass,
+                 <<"throughput_diff_percent">> => 1.5,
+                 <<"latency_p95_diff_percent">> => 2.0,
+                 <<"memory_diff_percent">> => 10.0},
+               #{<<"benchmark">> => <<"tcp_quick_1k">>,
+                 <<"status">> => fail,
+                 <<"throughput_diff_percent">> => -15.0,
+                 <<"latency_p95_diff_percent">> => 25.0,
+                 <<"memory_diff_percent">> => 30.0}],
+          <<"summary">> =>
+              #{<<"total">> => 2,
+                <<"passed">> => 1,
+                <<"failed">> => 1}},
 
     % Generate CI report
     Report = generate_ci_report(ReportData),
@@ -556,19 +502,20 @@ test_full_regression_suite(Config) ->
     ct:log("Running full regression suite"),
 
     % Load baseline
-    BaselineFile = proplists:get_value(baseline_path, Config,
-                                       "./bench/baselines/2026-01-28_v2.0.0.json"),
+    BaselineFile =
+        proplists:get_value(baseline_path, Config, "./bench/baselines/2026-01-28_v2.0.0.json"),
     {ok, Baseline} = load_baseline(BaselineFile),
 
     % Run core ops benchmark (simplified - skip if benchmark not available)
-    BenchmarkResult = case code:load_file(erlmcp_bench_core_ops) of
-        {module, erlmcp_bench_core_ops} ->
-            ct:log("Running core_ops benchmark"),
-            run_core_ops_benchmark(#{baseline => Baseline});
-        {error, _} ->
-            ct:log("Benchmark module not available, using synthetic data"),
-            synthetic_benchmark_result()
-    end,
+    BenchmarkResult =
+        case code:load_file(erlmcp_bench_core_ops) of
+            {module, erlmcp_bench_core_ops} ->
+                ct:log("Running core_ops benchmark"),
+                run_core_ops_benchmark(#{baseline => Baseline});
+            {error, _} ->
+                ct:log("Benchmark module not available, using synthetic data"),
+                synthetic_benchmark_result()
+        end,
 
     ct:log("Benchmark result: ~p", [BenchmarkResult]),
 
@@ -578,7 +525,9 @@ test_full_regression_suite(Config) ->
 
     % Verify no critical regressions
     Regressions = maps:get(<<"regressions">>, ComparisonResult, #{}),
-    CriticalRegressions = maps:to_list(maps:filter(fun(_K, V) -> V =:= critical end, Regressions)),
+    CriticalRegressions =
+        maps:to_list(
+            maps:filter(fun(_K, V) -> V =:= critical end, Regressions)),
 
     case CriticalRegressions of
         [] ->
@@ -591,15 +540,17 @@ test_full_regression_suite(Config) ->
 
     % Generate and save report
     BaselineDir = proplists:get_value(baseline_dir, Config),
-    ReportFile = BaselineDir ++ "/regression_report_" ++
-                 integer_to_list(erlang:system_time(second)) ++ ".json",
+    ReportFile =
+        BaselineDir
+        ++ "/regression_report_"
+        ++ integer_to_list(erlang:system_time(second))
+        ++ ".json",
 
-    Report = #{
-        <<"timestamp">> => erlang:system_time(second),
-        <<"baseline_version">> => maps:get(<<"version">>, Baseline),
-        <<"comparison">> => ComparisonResult,
-        <<"benchmark_result">> => BenchmarkResult
-    },
+    Report =
+        #{<<"timestamp">> => erlang:system_time(second),
+          <<"baseline_version">> => maps:get(<<"version">>, Baseline),
+          <<"comparison">> => ComparisonResult,
+          <<"benchmark_result">> => BenchmarkResult},
 
     ok = save_baseline(Report, ReportFile),
     ct:log("Regression report saved to: ~s", [ReportFile]),
@@ -622,14 +573,12 @@ run_core_ops_benchmark(Config) ->
         Result = erlmcp_bench_core_ops:run(<<"core_ops_100k">>),
 
         % Format result for comparison
-        #{
-            <<"workload_id">> => <<"core_ops_100k">>,
-            <<"throughput_msg_per_s">> => maps:get(<<"throughput_msg_per_s">>, Result, 0),
-            <<"latency_p50_us">> => maps:get(<<"latency_p50_us">>, Result, 0),
-            <<"latency_p95_us">> => maps:get(<<"latency_p95_us">>, Result, 0),
-            <<"latency_p99_us">> => maps:get(<<"latency_p99_us">>, Result, 0),
-            <<"memory_delta_mib">> => maps:get(<<"memory_delta_mib">>, Result, 0)
-        }
+        #{<<"workload_id">> => <<"core_ops_100k">>,
+          <<"throughput_msg_per_s">> => maps:get(<<"throughput_msg_per_s">>, Result, 0),
+          <<"latency_p50_us">> => maps:get(<<"latency_p50_us">>, Result, 0),
+          <<"latency_p95_us">> => maps:get(<<"latency_p95_us">>, Result, 0),
+          <<"latency_p99_us">> => maps:get(<<"latency_p99_us">>, Result, 0),
+          <<"memory_delta_mib">> => maps:get(<<"memory_delta_mib">>, Result, 0)}
     catch
         _:Error ->
             ct:log("Benchmark failed: ~p", [Error]),
@@ -643,23 +592,19 @@ run_network_benchmark(Config) ->
     try
         Result = erlmcp_bench_network_real:run(<<"tcp_quick_1k">>),
 
-        #{
-            <<"workload_id">> => <<"tcp_quick_1k">>,
-            <<"throughput_msg_per_s">> => maps:get(<<"throughput_msg_per_s">>, Result, 0),
-            <<"latency_p95_us">> => maps:get(<<"latency_p95_us">>, Result, 0),
-            <<"latency_p99_us">> => maps:get(<<"latency_p99_us">>, Result, 0),
-            <<"memory_delta_mib">> => maps:get(<<"memory_delta_mib">>, Result, 0)
-        }
+        #{<<"workload_id">> => <<"tcp_quick_1k">>,
+          <<"throughput_msg_per_s">> => maps:get(<<"throughput_msg_per_s">>, Result, 0),
+          <<"latency_p95_us">> => maps:get(<<"latency_p95_us">>, Result, 0),
+          <<"latency_p99_us">> => maps:get(<<"latency_p99_us">>, Result, 0),
+          <<"memory_delta_mib">> => maps:get(<<"memory_delta_mib">>, Result, 0)}
     catch
         _:Error ->
             ct:log("Network benchmark failed: ~p", [Error]),
-            #{
-                <<"workload_id">> => <<"tcp_quick_1k">>,
-                <<"throughput_msg_per_s">> => 0,
-                <<"latency_p95_us">> => 0,
-                <<"latency_p99_us">> => 0,
-                <<"memory_delta_mib">> => 0
-            }
+            #{<<"workload_id">> => <<"tcp_quick_1k">>,
+              <<"throughput_msg_per_s">> => 0,
+              <<"latency_p95_us">> => 0,
+              <<"latency_p99_us">> => 0,
+              <<"memory_delta_mib">> => 0}
     end.
 
 %% @doc Run stress benchmark
@@ -669,23 +614,19 @@ run_stress_benchmark(Config) ->
     try
         Result = erlmcp_bench_stress:run(<<"stress_30s_100k_ops">>),
 
-        #{
-            <<"workload_id">> => <<"stress_30s_100k_ops">>,
-            <<"throughput_msg_per_s">> => maps:get(<<"throughput_msg_per_s">>, Result, 0),
-            <<"latency_p95_us">> => maps:get(<<"latency_p95_us">>, Result, 0),
-            <<"latency_p99_us">> => maps:get(<<"latency_p99_us">>, Result, 0),
-            <<"memory_delta_mib">> => maps:get(<<"memory_delta_mib">>, Result, 0)
-        }
+        #{<<"workload_id">> => <<"stress_30s_100k_ops">>,
+          <<"throughput_msg_per_s">> => maps:get(<<"throughput_msg_per_s">>, Result, 0),
+          <<"latency_p95_us">> => maps:get(<<"latency_p95_us">>, Result, 0),
+          <<"latency_p99_us">> => maps:get(<<"latency_p99_us">>, Result, 0),
+          <<"memory_delta_mib">> => maps:get(<<"memory_delta_mib">>, Result, 0)}
     catch
         _:Error ->
             ct:log("Stress benchmark failed: ~p", [Error]),
-            #{
-                <<"workload_id">> => <<"stress_30s_100k_ops">>,
-                <<"throughput_msg_per_s">> => 0,
-                <<"latency_p95_us">> => 0,
-                <<"latency_p99_us">> => 0,
-                <<"memory_delta_mib">> => 0
-            }
+            #{<<"workload_id">> => <<"stress_30s_100k_ops">>,
+              <<"throughput_msg_per_s">> => 0,
+              <<"latency_p95_us">> => 0,
+              <<"latency_p99_us">> => 0,
+              <<"memory_delta_mib">> => 0}
     end.
 
 %%%====================================================================
@@ -728,23 +669,24 @@ compare_throughput(BenchmarkId, CurrentThroughput, Baseline) ->
     Thresholds = maps:get(<<"regression_thresholds">>, Baseline),
     ThroughputThreshold = maps:get(<<"throughput">>, Thresholds),
 
-    DiffPercent = ((CurrentThroughput - BaselineThroughput) / BaselineThroughput) * 100,
+    DiffPercent = (CurrentThroughput - BaselineThroughput) / BaselineThroughput * 100,
 
     ct:log("Throughput comparison: Current=~p, Baseline=~p, Diff=~p%",
            [CurrentThroughput, BaselineThroughput, DiffPercent]),
 
-    if
-        DiffPercent < ThroughputThreshold ->
-            {error, {regression, #{benchmark => BenchmarkId,
-                                   metric => throughput,
-                                   baseline => BaselineThroughput,
-                                   current => CurrentThroughput,
-                                   diff_percent => DiffPercent,
-                                   threshold => ThroughputThreshold}}};
-        DiffPercent > 0 ->
-            {ok, improvement};
-        true ->
-            ok
+    if DiffPercent < ThroughputThreshold ->
+           {error,
+            {regression,
+             #{benchmark => BenchmarkId,
+               metric => throughput,
+               baseline => BaselineThroughput,
+               current => CurrentThroughput,
+               diff_percent => DiffPercent,
+               threshold => ThroughputThreshold}}};
+       DiffPercent > 0 ->
+           {ok, improvement};
+       true ->
+           ok
     end.
 
 %% @doc Compare latency to baseline
@@ -753,23 +695,24 @@ compare_latency(BenchmarkId, CurrentLatency, BaselineLatency, Baseline) ->
     Thresholds = maps:get(<<"regression_thresholds">>, Baseline),
     LatencyThreshold = maps:get(<<"latency_p95">>, Thresholds),
 
-    DiffPercent = ((CurrentLatency - BaselineLatency) / BaselineLatency) * 100,
+    DiffPercent = (CurrentLatency - BaselineLatency) / BaselineLatency * 100,
 
     ct:log("Latency comparison: Current=~p, Baseline=~p, Diff=~p%",
            [CurrentLatency, BaselineLatency, DiffPercent]),
 
-    if
-        DiffPercent > LatencyThreshold ->
-            {error, {regression, #{benchmark => BenchmarkId,
-                                   metric => latency,
-                                   baseline => BaselineLatency,
-                                   current => CurrentLatency,
-                                   diff_percent => DiffPercent,
-                                   threshold => LatencyThreshold}}};
-        DiffPercent < 0 ->
-            {ok, improvement};
-        true ->
-            ok
+    if DiffPercent > LatencyThreshold ->
+           {error,
+            {regression,
+             #{benchmark => BenchmarkId,
+               metric => latency,
+               baseline => BaselineLatency,
+               current => CurrentLatency,
+               diff_percent => DiffPercent,
+               threshold => LatencyThreshold}}};
+       DiffPercent < 0 ->
+           {ok, improvement};
+       true ->
+           ok
     end.
 
 %% @doc Compare memory to baseline
@@ -781,23 +724,24 @@ compare_memory(BenchmarkId, CurrentMemory, Baseline) ->
     Thresholds = maps:get(<<"regression_thresholds">>, Baseline),
     MemoryThreshold = maps:get(<<"memory">>, Thresholds),
 
-    DiffPercent = ((CurrentMemory - BaselineMemory) / BaselineMemory) * 100,
+    DiffPercent = (CurrentMemory - BaselineMemory) / BaselineMemory * 100,
 
     ct:log("Memory comparison: Current=~p, Baseline=~p, Diff=~p%",
            [CurrentMemory, BaselineMemory, DiffPercent]),
 
-    if
-        DiffPercent > MemoryThreshold ->
-            {error, {regression, #{benchmark => BenchmarkId,
-                                   metric => memory,
-                                   baseline => BaselineMemory,
-                                   current => CurrentMemory,
-                                   diff_percent => DiffPercent,
-                                   threshold => MemoryThreshold}}};
-        DiffPercent < 0 ->
-            {ok, improvement};
-        true ->
-            ok
+    if DiffPercent > MemoryThreshold ->
+           {error,
+            {regression,
+             #{benchmark => BenchmarkId,
+               metric => memory,
+               baseline => BaselineMemory,
+               current => CurrentMemory,
+               diff_percent => DiffPercent,
+               threshold => MemoryThreshold}}};
+       DiffPercent < 0 ->
+           {ok, improvement};
+       true ->
+           ok
     end.
 
 %% @doc Compare current run to historical runs
@@ -808,30 +752,33 @@ compare_to_history(BenchmarkId, CurrentRun, History) ->
     CurrentThroughput = maps:get(<<"throughput_msg_per_s">>, CurrentMetrics),
 
     % Calculate historical average
-    HistoricalThroughputs = lists:map(fun(H) ->
-        Benchmarks = maps:get(<<"benchmarks">>, H, #{}),
-        Metrics = maps:get(BenchmarkId, Benchmarks, #{}),
-        maps:get(<<"throughput_msg_per_s">>, Metrics, 0)
-    end, History),
+    HistoricalThroughputs =
+        lists:map(fun(H) ->
+                     Benchmarks = maps:get(<<"benchmarks">>, H, #{}),
+                     Metrics = maps:get(BenchmarkId, Benchmarks, #{}),
+                     maps:get(<<"throughput_msg_per_s">>, Metrics, 0)
+                  end,
+                  History),
 
     AvgThroughput = lists:sum(HistoricalThroughputs) / max(1, length(HistoricalThroughputs)),
-    ChangePercent = ((CurrentThroughput - AvgThroughput) / AvgThroughput) * 100,
+    ChangePercent = (CurrentThroughput - AvgThroughput) / AvgThroughput * 100,
 
     % Determine trend
-    Trend = if
-        ChangePercent > 5 -> <<"improving">>;
-        ChangePercent < -5 -> <<"degrading">>;
-        true -> <<"stable">>
-    end,
+    Trend =
+        if ChangePercent > 5 ->
+               <<"improving">>;
+           ChangePercent < -5 ->
+               <<"degrading">>;
+           true ->
+               <<"stable">>
+        end,
 
-    #{
-        benchmark_id => BenchmarkId,
-        current_throughput => CurrentThroughput,
-        avg_throughput => AvgThroughput,
-        throughput_change_percent => ChangePercent,
-        sample_count => length(HistoricalThroughputs),
-        trend => Trend
-    }.
+    #{benchmark_id => BenchmarkId,
+      current_throughput => CurrentThroughput,
+      avg_throughput => AvgThroughput,
+      throughput_change_percent => ChangePercent,
+      sample_count => length(HistoricalThroughputs),
+      trend => Trend}.
 
 %% @doc Analyze trend across multiple data points
 -spec analyze_trend(binary(), [map()]) -> map().
@@ -841,26 +788,33 @@ analyze_trend(MetricName, DataPoints) ->
 
     % Simple linear regression
     N = length(Values),
-    SumX = lists:sum(lists:seq(1, N)),
+    SumX =
+        lists:sum(
+            lists:seq(1, N)),
     SumY = lists:sum(Values),
-    SumXY = lists:sum([I * V || {I, V} <- lists:zip(lists:seq(1, N), Values)]),
+    SumXY =
+        lists:sum([I * V
+                   || {I, V}
+                          <- lists:zip(
+                                 lists:seq(1, N), Values)]),
     SumX2 = lists:sum([I * I || I <- lists:seq(1, N)]),
 
     Slope = (N * SumXY - SumX * SumY) / (N * SumX2 - SumX * SumX),
 
     % Determine direction
-    Direction = if
-        Slope > 1000 -> <<"improving">>;
-        Slope < -1000 -> <<"degrading">>;
-        true -> <<"stable">>
-    end,
+    Direction =
+        if Slope > 1000 ->
+               <<"improving">>;
+           Slope < -1000 ->
+               <<"degrading">>;
+           true ->
+               <<"stable">>
+        end,
 
-    #{
-        metric => MetricName,
-        direction => Direction,
-        slope => Slope,
-        sample_count => N
-    }.
+    #{metric => MetricName,
+      direction => Direction,
+      slope => Slope,
+      sample_count => N}.
 
 %% @doc Evaluate performance gate
 -spec evaluate_performance_gate(binary(), map(), map(), map()) -> pass | fail.
@@ -871,24 +825,27 @@ evaluate_performance_gate(BenchmarkId, CurrentMetrics, BaselineMetrics, Threshol
 
     CurrentThroughput = maps:get(<<"throughput_msg_per_s">>, CurrentMetrics),
     BaselineThroughput = maps:get(<<"throughput_msg_per_s">>, BaselineMetrics),
-    ThroughputDiff = ((CurrentThroughput - BaselineThroughput) / BaselineThroughput) * 100,
+    ThroughputDiff = (CurrentThroughput - BaselineThroughput) / BaselineThroughput * 100,
 
     CurrentLatency = maps:get(<<"latency_p95_us">>, CurrentMetrics),
     BaselineLatency = maps:get(<<"latency_p95_us">>, BaselineMetrics),
-    LatencyDiff = ((CurrentLatency - BaselineLatency) / BaselineLatency) * 100,
+    LatencyDiff = (CurrentLatency - BaselineLatency) / BaselineLatency * 100,
 
     CurrentMemory = maps:get(<<"memory_delta_mib">>, CurrentMetrics),
     BaselineMemory = maps:get(<<"memory_delta_mib">>, BaselineMetrics),
-    MemoryDiff = ((CurrentMemory - BaselineMemory) / BaselineMemory) * 100,
+    MemoryDiff = (CurrentMemory - BaselineMemory) / BaselineMemory * 100,
 
     ct:log("Gate evaluation - Throughput: ~p%, Latency: ~p%, Memory: ~p%",
            [ThroughputDiff, LatencyDiff, MemoryDiff]),
 
-    if
-        ThroughputDiff < ThroughputThreshold -> fail;
-        LatencyDiff > LatencyThreshold -> fail;
-        MemoryDiff > MemoryThreshold -> fail;
-        true -> pass
+    if ThroughputDiff < ThroughputThreshold ->
+           fail;
+       LatencyDiff > LatencyThreshold ->
+           fail;
+       MemoryDiff > MemoryThreshold ->
+           fail;
+       true ->
+           pass
     end.
 
 %% @doc Compare benchmark result to baseline
@@ -901,43 +858,53 @@ compare_to_baseline(BenchmarkResult, Baseline) ->
     Thresholds = maps:get(<<"regression_thresholds">>, Baseline),
 
     % Compare each metric
-    ThroughputResult = compare_throughput(BenchmarkId,
-                                          maps:get(<<"throughput_msg_per_s">>, BenchmarkResult),
-                                          Baseline),
-    LatencyResult = compare_latency(BenchmarkId,
-                                    maps:get(<<"latency_p95_us">>, BenchmarkResult),
-                                    maps:get(<<"latency_p95_us">>, BaselineMetrics),
-                                    Baseline),
-    MemoryResult = compare_memory(BenchmarkId,
-                                  maps:get(<<"memory_delta_mib">>, BenchmarkResult),
-                                  Baseline),
+    ThroughputResult =
+        compare_throughput(BenchmarkId,
+                           maps:get(<<"throughput_msg_per_s">>, BenchmarkResult),
+                           Baseline),
+    LatencyResult =
+        compare_latency(BenchmarkId,
+                        maps:get(<<"latency_p95_us">>, BenchmarkResult),
+                        maps:get(<<"latency_p95_us">>, BaselineMetrics),
+                        Baseline),
+    MemoryResult =
+        compare_memory(BenchmarkId, maps:get(<<"memory_delta_mib">>, BenchmarkResult), Baseline),
 
     % Count regressions
-    Regressions = #{
-        throughput => case ThroughputResult of
-            {error, _} -> critical;
-            {ok, improvement} -> improvement;
-            _ -> ok
-        end,
-        latency => case LatencyResult of
-            {error, _} -> critical;
-            {ok, improvement} -> improvement;
-            _ -> ok
-        end,
-        memory => case MemoryResult of
-            {error, _} -> warning;
-            {ok, improvement} -> improvement;
-            _ -> ok
-        end
-    },
+    Regressions =
+        #{throughput =>
+              case ThroughputResult of
+                  {error, _} ->
+                      critical;
+                  {ok, improvement} ->
+                      improvement;
+                  _ ->
+                      ok
+              end,
+          latency =>
+              case LatencyResult of
+                  {error, _} ->
+                      critical;
+                  {ok, improvement} ->
+                      improvement;
+                  _ ->
+                      ok
+              end,
+          memory =>
+              case MemoryResult of
+                  {error, _} ->
+                      warning;
+                  {ok, improvement} ->
+                      improvement;
+                  _ ->
+                      ok
+              end},
 
-    #{
-        benchmark_id => BenchmarkId,
-        regressions => Regressions,
-        throughput_result => ThroughputResult,
-        latency_result => LatencyResult,
-        memory_result => MemoryResult
-    }.
+    #{benchmark_id => BenchmarkId,
+      regressions => Regressions,
+      throughput_result => ThroughputResult,
+      latency_result => LatencyResult,
+      memory_result => MemoryResult}.
 
 %% @doc Generate CI/CD report
 -spec generate_ci_report(map()) -> binary().
@@ -951,39 +918,50 @@ generate_ci_report(ReportData) ->
     Total = maps:get(<<"total">>, Summary),
 
     % Build report sections
-    Header = io_lib:format(
-        "============================================================~n"
-        "        PERFORMANCE REGRESSION REPORT~n"
-        "============================================================~n"
-        "Timestamp: ~s~n"
-        "============================================================~n~n",
-        [format_timestamp(Timestamp)]
-    ),
+    Header =
+        io_lib:format("============================================================~n"
+                      "        PERFORMANCE REGRESSION REPORT~n"
+                      "============================================================~n"
+                      "Timestamp: ~s~n"
+                      "============================================================~n~n",
+                      [format_timestamp(Timestamp)]),
 
-    SummarySection = io_lib:format(
-        "SUMMARY~n"
-        "-------~n"
-        "Total: ~p~n"
-        "Passed: ~p~n"
-        "Failed: ~p~n"
-        "Status: ~s~n~n",
-        [Total, Passed, Failed, case Failed of 0 -> "PASS"; _ -> "FAIL" end]
-    ),
+    SummarySection =
+        io_lib:format("SUMMARY~n"
+                      "-------~n"
+                      "Total: ~p~n"
+                      "Passed: ~p~n"
+                      "Failed: ~p~n"
+                      "Status: ~s~n~n",
+                      [Total,
+                       Passed,
+                       Failed,
+                       case Failed of
+                           0 ->
+                               "PASS";
+                           _ ->
+                               "FAIL"
+                       end]),
 
-    ResultsSection = lists:map(fun(Result) ->
-        Benchmark = maps:get(<<"benchmark">>, Result),
-        Status = maps:get(<<"status">>, Result),
-        ThroughputDiff = maps:get(<<"throughput_diff_percent">>, Result),
-        LatencyDiff = maps:get(<<"latency_p95_diff_percent">>, Result),
-        MemoryDiff = maps:get(<<"memory_diff_percent">>, Result),
+    ResultsSection =
+        lists:map(fun(Result) ->
+                     Benchmark = maps:get(<<"benchmark">>, Result),
+                     Status = maps:get(<<"status">>, Result),
+                     ThroughputDiff = maps:get(<<"throughput_diff_percent">>, Result),
+                     LatencyDiff = maps:get(<<"latency_p95_diff_percent">>, Result),
+                     MemoryDiff = maps:get(<<"memory_diff_percent">>, Result),
 
-        io_lib:format(
-            "~s: ~s~n"
-            "  Throughput: ~.2f%~n"
-            "  Latency P95: ~.2f%~n"
-            "  Memory: ~.2f%~n",
-            [Benchmark, string:to_upper(atom_to_list(Status)), ThroughputDiff, LatencyDiff, MemoryDiff])
-    end, Results),
+                     io_lib:format("~s: ~s~n"
+                                   "  Throughput: ~.2f%~n"
+                                   "  Latency P95: ~.2f%~n"
+                                   "  Memory: ~.2f%~n",
+                                   [Benchmark,
+                                    string:to_upper(atom_to_list(Status)),
+                                    ThroughputDiff,
+                                    LatencyDiff,
+                                    MemoryDiff])
+                  end,
+                  Results),
 
     iolist_to_binary([Header, SummarySection, ResultsSection]).
 
@@ -992,22 +970,18 @@ generate_ci_report(ReportData) ->
 format_timestamp(UnixSeconds) ->
     {{Year, Month, Day}, {Hour, Min, Sec}} =
         calendar:system_time_to_universal_time(UnixSeconds, second),
-    iolist_to_binary(io_lib:format(
-        "~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
-        [Year, Month, Day, Hour, Min, Sec]
-    )).
+    iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
+                                   [Year, Month, Day, Hour, Min, Sec])).
 
 %% @doc Generate synthetic benchmark result for testing
 -spec synthetic_benchmark_result() -> map().
 synthetic_benchmark_result() ->
-    #{
-        <<"workload_id">> => <<"core_ops_100k">>,
-        <<"throughput_msg_per_s">> => 2750000.0,
-        <<"latency_p50_us">> => 0.0,
-        <<"latency_p95_us">> => 83.0,
-        <<"latency_p99_us">> => 98.0,
-        <<"memory_delta_mib">> => 22.0,
-        <<"duration_s">> => 0.15,
-        <<"operations">> => 400000,
-        <<"cpu_percent_avg">> => 48.0
-    }.
+    #{<<"workload_id">> => <<"core_ops_100k">>,
+      <<"throughput_msg_per_s">> => 2750000.0,
+      <<"latency_p50_us">> => 0.0,
+      <<"latency_p95_us">> => 83.0,
+      <<"latency_p99_us">> => 98.0,
+      <<"memory_delta_mib">> => 22.0,
+      <<"duration_s">> => 0.15,
+      <<"operations">> => 400000,
+      <<"cpu_percent_avg">> => 48.0}.

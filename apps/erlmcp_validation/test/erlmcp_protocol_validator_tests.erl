@@ -9,6 +9,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_protocol_validator_tests).
+
 -author("erlmcp").
 
 -include_lib("eunit/include/eunit.hrl").
@@ -19,11 +20,10 @@
 
 %% @doc Test validate_jsonrpc with valid message
 validate_jsonrpc_valid_message_test() ->
-    Message = #{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"ping">>
-    },
+    Message =
+        #{<<"jsonrpc">> => <<"2.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"ping">>},
     Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
     ?assertEqual(ok, Result).
 
@@ -35,11 +35,10 @@ validate_jsonrpc_missing_version_test() ->
 
 %% @doc Test validate_jsonrpc with wrong version
 validate_jsonrpc_wrong_version_test() ->
-    Message = #{
-        <<"jsonrpc">> => <<"1.0">>,
-        <<"id">> => 1,
-        <<"method">> => <<"ping">>
-    },
+    Message =
+        #{<<"jsonrpc">> => <<"1.0">>,
+          <<"id">> => 1,
+          <<"method">> => <<"ping">>},
     Result = erlmcp_protocol_validator:validate_jsonrpc(Message),
     ?assertMatch({error, #{reason := invalid_jsonrpc_version}}, Result).
 
@@ -164,7 +163,10 @@ validate_required_fields_not_map_test() ->
 
 %% @doc Test validate_required_fields with extra fields allowed
 validate_required_fields_extra_fields_test() ->
-    Message = #{<<"field1">> => <<"v1">>, <<"field2">> => <<"v2">>, <<"extra">> => <<"v3">>},
+    Message =
+        #{<<"field1">> => <<"v1">>,
+          <<"field2">> => <<"v2">>,
+          <<"extra">> => <<"v3">>},
     Required = [<<"field1">>, <<"field2">>],
     Result = erlmcp_protocol_validator:validate_required_fields(Message, Required),
     ?assertEqual(ok, Result).
@@ -267,10 +269,7 @@ validate_method_not_binary_test() ->
 
 %% @doc Test validate_capabilities with valid capabilities
 validate_capabilities_valid_test() ->
-    Caps = #{
-        <<"resources">> => #{},
-        <<"tools">> => #{}
-    },
+    Caps = #{<<"resources">> => #{}, <<"tools">> => #{}},
     Result = erlmcp_protocol_validator:validate_capabilities(Caps),
     ?assertEqual(ok, Result).
 
@@ -296,10 +295,7 @@ validate_capabilities_invalid_capability_test() ->
 
 %% @doc Test validate_server_info with valid info
 validate_server_info_valid_test() ->
-    Info = #{
-        <<"name">> => <<"test_server">>,
-        <<"version">> => <<"1.0.0">>
-    },
+    Info = #{<<"name">> => <<"test_server">>, <<"version">> => <<"1.0.0">>},
     Result = erlmcp_protocol_validator:validate_server_info(Info),
     ?assertEqual(ok, Result).
 
@@ -327,10 +323,7 @@ validate_server_info_invalid_name_test() ->
 
 %% @doc Test validate_client_info with valid info
 validate_client_info_valid_test() ->
-    Info = #{
-        <<"name">> => <<"test_client">>,
-        <<"version">> => <<"1.0.0">>
-    },
+    Info = #{<<"name">> => <<"test_client">>, <<"version">> => <<"1.0.0">>},
     Result = erlmcp_protocol_validator:validate_client_info(Info),
     ?assertEqual(ok, Result).
 
@@ -352,10 +345,7 @@ validate_client_info_missing_version_test() ->
 
 %% @doc Test validate_resource with valid resource
 validate_resource_valid_test() ->
-    Resource = #{
-        <<"uri">> => <<"file:///test.txt">>,
-        <<"name">> => <<"test">>
-    },
+    Resource = #{<<"uri">> => <<"file:///test.txt">>, <<"name">> => <<"test">>},
     Result = erlmcp_protocol_validator:validate_resource(Resource),
     ?assertEqual(ok, Result).
 
@@ -377,10 +367,7 @@ validate_resource_missing_name_test() ->
 
 %% @doc Test validate_tool with valid tool
 validate_tool_valid_test() ->
-    Tool = #{
-        <<"name">> => <<"test_tool">>,
-        <<"inputSchema">> => #{<<"type">> => <<"object">>}
-    },
+    Tool = #{<<"name">> => <<"test_tool">>, <<"inputSchema">> => #{<<"type">> => <<"object">>}},
     Result = erlmcp_protocol_validator:validate_tool(Tool),
     ?assertEqual(ok, Result).
 
@@ -398,10 +385,7 @@ validate_tool_missing_schema_test() ->
 
 %% @doc Test validate_tool with invalid schema type
 validate_tool_invalid_schema_test() ->
-    Tool = #{
-        <<"name">> => <<"test_tool">>,
-        <<"inputSchema">> => <<"not_a_map">>
-    },
+    Tool = #{<<"name">> => <<"test_tool">>, <<"inputSchema">> => <<"not_a_map">>},
     Result = erlmcp_protocol_validator:validate_tool(Tool),
     ?assertMatch({error, _}, Result).
 
@@ -427,29 +411,22 @@ validate_prompt_missing_name_test() ->
 
 %% @doc Test validate_content with text content
 validate_content_text_test() ->
-    Content = #{
-        <<"type">> => <<"text">>,
-        <<"text">> => <<"Hello">>
-    },
+    Content = #{<<"type">> => <<"text">>, <<"text">> => <<"Hello">>},
     Result = erlmcp_protocol_validator:validate_content(Content),
     ?assertEqual(ok, Result).
 
 %% @doc Test validate_content with image content
 validate_content_image_test() ->
-    Content = #{
-        <<"type">> => <<"image">>,
-        <<"data">> => <<"base64data">>,
-        <<"mimeType">> => <<"image/png">>
-    },
+    Content =
+        #{<<"type">> => <<"image">>,
+          <<"data">> => <<"base64data">>,
+          <<"mimeType">> => <<"image/png">>},
     Result = erlmcp_protocol_validator:validate_content(Content),
     ?assertEqual(ok, Result).
 
 %% @doc Test validate_content with resource content
 validate_content_resource_test() ->
-    Content = #{
-        <<"type">> => <<"resource">>,
-        <<"uri">> => <<"file:///test.txt">>
-    },
+    Content = #{<<"type">> => <<"resource">>, <<"uri">> => <<"file:///test.txt">>},
     Result = erlmcp_protocol_validator:validate_content(Content),
     ?assertEqual(ok, Result).
 
@@ -471,20 +448,16 @@ validate_content_text_missing_text_test() ->
 
 %% @doc Test validate_params with initialize params
 validate_params_initialize_valid_test() ->
-    Params = #{
-        <<"protocolVersion">> => <<"2025-11-25">>,
-        <<"capabilities">> => #{},
-        <<"clientInfo">> => #{<<"name">> => <<"test">>, <<"version">> => <<"1.0">>}
-    },
+    Params =
+        #{<<"protocolVersion">> => <<"2025-11-25">>,
+          <<"capabilities">> => #{},
+          <<"clientInfo">> => #{<<"name">> => <<"test">>, <<"version">> => <<"1.0">>}},
     Result = erlmcp_protocol_validator:validate_params(<<"initialize">>, Params),
     ?assertEqual(ok, Result).
 
 %% @doc Test validate_params with initialize missing required field
 validate_params_initialize_missing_field_test() ->
-    Params = #{
-        <<"protocolVersion">> => <<"2025-11-25">>,
-        <<"capabilities">> => #{}
-    },
+    Params = #{<<"protocolVersion">> => <<"2025-11-25">>, <<"capabilities">> => #{}},
     Result = erlmcp_protocol_validator:validate_params(<<"initialize">>, Params),
     ?assertMatch({error, _}, Result).
 
@@ -528,10 +501,7 @@ validate_params_undefined_test() ->
 
 %% @doc Test validate_mcp_message with valid request
 validate_mcp_message_valid_request_test() ->
-    Message = #{
-        <<"method">> => <<"ping">>,
-        <<"params">> => #{}
-    },
+    Message = #{<<"method">> => <<"ping">>, <<"params">> => #{}},
     Result = erlmcp_protocol_validator:validate_mcp_message(Message),
     ?assertMatch({ok, _}, Result).
 
@@ -543,12 +513,7 @@ validate_mcp_message_result_response_test() ->
 
 %% @doc Test validate_mcp_message with error response
 validate_mcp_message_error_response_test() ->
-    Message = #{
-        <<"error">> => #{
-            <<"code">> => -32601,
-            <<"message">> => <<"Method not found">>
-        }
-    },
+    Message = #{<<"error">> => #{<<"code">> => -32601, <<"message">> => <<"Method not found">>}},
     Result = erlmcp_protocol_validator:validate_mcp_message(Message),
     ?assertMatch({ok, _}, Result).
 
@@ -571,17 +536,18 @@ format_validation_error_invalid_method_test() ->
 
 %% @doc Test format_validation_error with type_mismatch
 format_validation_error_type_mismatch_test() ->
-    Error = #{reason => type_mismatch, field => <<"count">>, expected => integer},
+    Error =
+        #{reason => type_mismatch,
+          field => <<"count">>,
+          expected => integer},
     Result = erlmcp_protocol_validator:format_validation_error(Error),
     ?assert(is_binary(Result)),
     ?assert(byte_size(Result) > 0).
 
 %% @doc Test format_validation_error with missing_required_fields
 format_validation_error_missing_fields_test() ->
-    Error = #{
-        reason => missing_required_fields,
-        details => #{missing => [<<"field1">>, <<"field2">>]}
-    },
+    Error =
+        #{reason => missing_required_fields, details => #{missing => [<<"field1">>, <<"field2">>]}},
     Result = erlmcp_protocol_validator:format_validation_error(Error),
     ?assert(is_binary(Result)),
     ?assert(byte_size(Result) > 0).
@@ -626,7 +592,8 @@ validate_json_rpc_not_binary_test() ->
 %%%===================================================================
 
 validation_summary_test_() ->
-    {"All validation tests implemented", fun() ->
+    {"All validation tests implemented",
+     fun() ->
         %% Verify all validation functions are tested
         ?assert(true)
-    end}.
+     end}.

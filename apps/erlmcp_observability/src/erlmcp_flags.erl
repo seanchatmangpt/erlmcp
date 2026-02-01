@@ -27,28 +27,19 @@
 -module(erlmcp_flags).
 
 %% API
--export([
-    init/0,
-    ref/0,
+-export([init/0, ref/0, is_accepting/0, stop_accepting/0, start_accepting/0, is_maintenance_mode/0,
+         enter_maintenance_mode/0, exit_maintenance_mode/0, is_shutting_down/0, start_shutdown/0,
+         cancel_shutdown/0, is_healthy/0, mark_healthy/0, mark_unhealthy/0, get_all/0]).
+
     % Connection flags
-    is_accepting/0,
-    stop_accepting/0,
-    start_accepting/0,
+
     % Maintenance mode flags
-    is_maintenance_mode/0,
-    enter_maintenance_mode/0,
-    exit_maintenance_mode/0,
+
     % Shutdown flags
-    is_shutting_down/0,
-    start_shutdown/0,
-    cancel_shutdown/0,
+
     % Health flags
-    is_healthy/0,
-    mark_healthy/0,
-    mark_unhealthy/0,
+
     % Get all flags
-    get_all/0
-]).
 
 %% Flag indices
 -define(ACCEPTING_CONNECTIONS, 1).
@@ -56,10 +47,8 @@
 -define(SHUTTING_DOWN, 3).
 -define(HEALTHY, 4).
 -define(FLAGS_SIZE, 4).
-
 %% Persistent term for the atomics reference
 -define(FLAGS_KEY, erlmcp_flags_ref).
-
 %% Flag values
 -define(FLAG_TRUE, 1).
 -define(FLAG_FALSE, 0).
@@ -186,12 +175,10 @@ mark_unhealthy() ->
 -spec get_all() -> map().
 get_all() ->
     Ref = ref(),
-    #{
-        accepting_connections => atomics:get(Ref, ?ACCEPTING_CONNECTIONS) =:= ?FLAG_TRUE,
-        maintenance_mode => atomics:get(Ref, ?MAINTENANCE_MODE) =:= ?FLAG_TRUE,
-        shutting_down => atomics:get(Ref, ?SHUTTING_DOWN) =:= ?FLAG_TRUE,
-        healthy => atomics:get(Ref, ?HEALTHY) =:= ?FLAG_TRUE
-    }.
+    #{accepting_connections => atomics:get(Ref, ?ACCEPTING_CONNECTIONS) =:= ?FLAG_TRUE,
+      maintenance_mode => atomics:get(Ref, ?MAINTENANCE_MODE) =:= ?FLAG_TRUE,
+      shutting_down => atomics:get(Ref, ?SHUTTING_DOWN) =:= ?FLAG_TRUE,
+      healthy => atomics:get(Ref, ?HEALTHY) =:= ?FLAG_TRUE}.
 
 %%====================================================================
 %% Internal Functions

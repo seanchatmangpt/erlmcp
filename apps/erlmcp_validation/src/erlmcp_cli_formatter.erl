@@ -19,46 +19,26 @@
 -module(erlmcp_cli_formatter).
 
 %% API exports
--export([
-    % Color functions
-    color/2,
-    success/1, error/1, warning/1, info/1,
-    bold/1, underline/1, reset/0,
+-export([color/2, success/1, error/1, warning/1, info/1, bold/1, underline/1, reset/0,
+         format_table/2, format_tree/1, format_tree/2, format_json/1, format_list/1, format_list/2,
+         format_box/1, format_box/2, format_status/1, format_result/1, format_connection_info/1,
+         strip_colors/1, is_color_enabled/0, enable_colors/0, disable_colors/0, format/3, format/2,
+         print/3, print/2, supports_format/1, format_yaml/1, format_csv/2, format_raw/1]).
+
+                            % Color functions
 
     % Formatting functions
-    format_table/2,
-    format_tree/1, format_tree/2,
-    format_json/1,
-    format_list/1, format_list/2,
-    format_box/1, format_box/2,
 
     % Status formatting
-    format_status/1,
-    format_result/1,
-    format_connection_info/1,
 
     % Utility
-    strip_colors/1,
-    is_color_enabled/0,
-    enable_colors/0,
-    disable_colors/0,
 
     % Structured output (new)
-    format/3,
-    format/2,
-    print/3,
-    print/2,
-    supports_format/1,
-    format_yaml/1,
-    format_csv/2,
-    format_raw/1
-]).
 
 %% ANSI color codes
 -define(RESET, "\e[0m").
 -define(BOLD, "\e[1m").
 -define(UNDERLINE, "\e[4m").
-
 -define(BLACK, "\e[30m").
 -define(RED, "\e[31m").
 -define(GREEN, "\e[32m").
@@ -67,7 +47,6 @@
 -define(MAGENTA, "\e[35m").
 -define(CYAN, "\e[36m").
 -define(WHITE, "\e[37m").
-
 -define(BRIGHT_BLACK, "\e[90m").
 -define(BRIGHT_RED, "\e[91m").
 -define(BRIGHT_GREEN, "\e[92m").
@@ -76,7 +55,6 @@
 -define(BRIGHT_MAGENTA, "\e[95m").
 -define(BRIGHT_CYAN, "\e[96m").
 -define(BRIGHT_WHITE, "\e[97m").
-
 %% ETS table for color preference
 -define(COLOR_TABLE, erlmcp_cli_colors).
 
@@ -118,21 +96,26 @@ info(Text) ->
 -spec bold(iolist()) -> iolist().
 bold(Text) ->
     case is_color_enabled() of
-        true -> [?BOLD, Text, ?RESET];
-        false -> Text
+        true ->
+            [?BOLD, Text, ?RESET];
+        false ->
+            Text
     end.
 
 %% @doc Underline text
 -spec underline(iolist()) -> iolist().
 underline(Text) ->
     case is_color_enabled() of
-        true -> [?UNDERLINE, Text, ?RESET];
-        false -> Text
+        true ->
+            [?UNDERLINE, Text, ?RESET];
+        false ->
+            Text
     end.
 
 %% @doc Reset formatting
 -spec reset() -> string().
-reset() -> ?RESET.
+reset() ->
+    ?RESET.
 
 %%====================================================================
 %% API Functions - Formatting
@@ -147,11 +130,11 @@ format_table(Rows, Columns) ->
     ColWidths = calculate_column_widths(Rows, Columns),
 
     % Build header
-    Header = format_table_row(Columns, ColWidths, fun(H) -> bold(atom_to_list(H)) end),
+    Header = format_table_row_header(Columns, ColWidths, fun(H) -> bold(atom_to_list(H)) end),
     Separator = format_table_separator(ColWidths),
 
     % Build data rows
-    DataRows = [format_table_row(Row, Columns, ColWidths) || Row <- Rows],
+    DataRows = [format_table_row_data(Row, Columns, ColWidths) || Row <- Rows],
 
     [Header, "\n", Separator, "\n", string:join(DataRows, "\n")].
 
@@ -164,14 +147,22 @@ format_tree(Tree) ->
 -spec format_tree(map() | list(), non_neg_integer()) -> iolist().
 format_tree(Tree, Indent) when is_map(Tree) ->
     maps:fold(fun(Key, Value, Acc) ->
-        Line = [lists:duplicate(Indent, "  "), "├─ ", bold(format_key(Key)), ": ",
-                format_tree_value(Value, Indent + 1), "\n"],
-        [Acc, Line]
-    end, [], Tree);
+                 Line =
+                     [lists:duplicate(Indent, "  "),
+                      "├─ ",
+                      bold(format_key(Key)),
+                      ": ",
+                      format_tree_value(Value, Indent + 1),
+                      "\n"],
+                 [Acc, Line]
+              end,
+              [],
+              Tree);
 format_tree(List, Indent) when is_list(List) ->
     lists:map(fun(Item) ->
-        [lists:duplicate(Indent, "  "), "├─ ", format_tree_value(Item, Indent + 1), "\n"]
-    end, List);
+                 [lists:duplicate(Indent, "  "), "├─ ", format_tree_value(Item, Indent + 1), "\n"]
+              end,
+              List);
 format_tree(Value, _Indent) ->
     io_lib:format("~p", [Value]).
 
@@ -208,30 +199,37 @@ format_box(Content, Opts) ->
     Title = maps:get(title, Opts, undefined),
     Color = maps:get(color, Opts, white),
 
-    Lines = string:split(lists:flatten(Content), "\n", all),
+    Lines =
+        string:split(
+            lists:flatten(Content), "\n", all),
     MaxLen = lists:max([string:length(L) || L <- Lines]),
     BoxWidth = max(Width, MaxLen + 4),
 
     TopBorder = color(Color, ["╔", lists:duplicate(BoxWidth - 2, "═"), "╗"]),
     BottomBorder = color(Color, ["╚", lists:duplicate(BoxWidth - 2, "═"), "╝"]),
 
-    TitleLine = case Title of
-        undefined -> [];
-        T ->
-            TitleText = io_lib:format(" ~s ", [T]),
-            TitleLen = string:length(lists:flatten(TitleText)),
-            LeftPad = (BoxWidth - TitleLen - 2) div 2,
-            RightPad = BoxWidth - TitleLen - LeftPad - 2,
-            [color(Color, "║"), lists:duplicate(LeftPad, " "),
-             bold(TitleText), lists:duplicate(RightPad, " "),
-             color(Color, "║"), "\n"]
-    end,
+    TitleLine =
+        case Title of
+            undefined ->
+                [];
+            T ->
+                TitleText = io_lib:format(" ~s ", [T]),
+                TitleLen =
+                    string:length(
+                        lists:flatten(TitleText)),
+                LeftPad = (BoxWidth - TitleLen - 2) div 2,
+                RightPad = BoxWidth - TitleLen - LeftPad - 2,
+                [color(Color, "║"),
+                 lists:duplicate(LeftPad, " "),
+                 bold(TitleText),
+                 lists:duplicate(RightPad, " "),
+                 color(Color, "║"),
+                 "\n"]
+        end,
 
-    ContentLines = [
-        [color(Color, "║"), " ", pad_right(Line, BoxWidth - 4), " ",
-         color(Color, "║"), "\n"]
-        || Line <- Lines
-    ],
+    ContentLines =
+        [[color(Color, "║"), " ", pad_right(Line, BoxWidth - 4), " ", color(Color, "║"), "\n"]
+         || Line <- Lines],
 
     [TopBorder, "\n", TitleLine, ContentLines, BottomBorder, "\n"].
 
@@ -241,12 +239,18 @@ format_box(Content, Opts) ->
 
 %% @doc Format status (passed/failed/warning)
 -spec format_status(atom()) -> iolist().
-format_status(passed) -> success("✓ PASSED");
-format_status(failed) -> error("✗ FAILED");
-format_status(warning) -> warning("⚠ WARNING");
-format_status(pending) -> info("◷ PENDING");
-format_status(running) -> info("⟳ RUNNING");
-format_status(Status) -> io_lib:format("~p", [Status]).
+format_status(passed) ->
+    success("✓ PASSED");
+format_status(failed) ->
+    error("✗ FAILED");
+format_status(warning) ->
+    warning("⚠ WARNING");
+format_status(pending) ->
+    info("◷ PENDING");
+format_status(running) ->
+    info("⟳ RUNNING");
+format_status(Status) ->
+    io_lib:format("~p", [Status]).
 
 %% @doc Format a result map
 -spec format_result(map()) -> iolist().
@@ -259,13 +263,20 @@ format_result(Result) ->
 
 %% @doc Format connection information
 -spec format_connection_info(map()) -> iolist().
-format_connection_info(#{transport := Transport, url := Url, status := Status}) ->
-    [
-        bold("Connection: "), "\n",
-        "  Transport: ", info(io_lib:format("~p", [Transport])), "\n",
-        "  URL: ", info(Url), "\n",
-        "  Status: ", format_status(Status), "\n"
-    ];
+format_connection_info(#{transport := Transport,
+                         url := Url,
+                         status := Status}) ->
+    [bold("Connection: "),
+     "\n",
+     "  Transport: ",
+     info(io_lib:format("~p", [Transport])),
+     "\n",
+     "  URL: ",
+     info(Url),
+     "\n",
+     "  Status: ",
+     format_status(Status),
+     "\n"];
 format_connection_info(Info) ->
     format_tree(Info).
 
@@ -276,7 +287,8 @@ format_connection_info(Info) ->
 %% @doc Strip ANSI color codes from text
 -spec strip_colors(iolist()) -> string().
 strip_colors(Text) ->
-    re:replace(lists:flatten(Text), "\e\\[[0-9;]*m", "", [global, {return, list}]).
+    re:replace(
+        lists:flatten(Text), "\e\\[[0-9;]*m", "", [global, {return, list}]).
 
 %% @doc Check if colors are enabled
 -spec is_color_enabled() -> boolean().
@@ -285,14 +297,19 @@ is_color_enabled() ->
         undefined ->
             % Default: check if terminal supports colors
             case os:getenv("TERM") of
-                false -> false;
-                "dumb" -> false;
-                _ -> true
+                false ->
+                    false;
+                "dumb" ->
+                    false;
+                _ ->
+                    true
             end;
         ?COLOR_TABLE ->
             case ets:lookup(?COLOR_TABLE, colors_enabled) of
-                [{colors_enabled, Enabled}] -> Enabled;
-                [] -> true
+                [{colors_enabled, Enabled}] ->
+                    Enabled;
+                [] ->
+                    true
             end
     end.
 
@@ -340,8 +357,10 @@ print(Format, Data, Opts) ->
     Output = format(Format, Data, Opts),
     Quiet = maps:get(quiet, Opts, false),
     case Quiet of
-        true -> ok;
-        false -> io:format("~ts~n", [Output])
+        true ->
+            ok;
+        false ->
+            io:format("~ts~n", [Output])
     end.
 
 %% @doc Print formatted output with default options
@@ -351,22 +370,38 @@ print(Format, Data) ->
 
 %% @doc Check if format is supported
 -spec supports_format(atom() | string() | binary()) -> boolean().
-supports_format(json) -> true;
-supports_format(yaml) -> true;
-supports_format(csv) -> true;
-supports_format(table) -> true;
-supports_format(raw) -> true;
-supports_format("json") -> true;
-supports_format("yaml") -> true;
-supports_format("csv") -> true;
-supports_format("table") -> true;
-supports_format("raw") -> true;
-supports_format(<<"json">>) -> true;
-supports_format(<<"yaml">>) -> true;
-supports_format(<<"csv">>) -> true;
-supports_format(<<"table">>) -> true;
-supports_format(<<"raw">>) -> true;
-supports_format(_) -> false.
+supports_format(json) ->
+    true;
+supports_format(yaml) ->
+    true;
+supports_format(csv) ->
+    true;
+supports_format(table) ->
+    true;
+supports_format(raw) ->
+    true;
+supports_format("json") ->
+    true;
+supports_format("yaml") ->
+    true;
+supports_format("csv") ->
+    true;
+supports_format("table") ->
+    true;
+supports_format("raw") ->
+    true;
+supports_format(<<"json">>) ->
+    true;
+supports_format(<<"yaml">>) ->
+    true;
+supports_format(<<"csv">>) ->
+    true;
+supports_format(<<"table">>) ->
+    true;
+supports_format(<<"raw">>) ->
+    true;
+supports_format(_) ->
+    false.
 
 %% @doc Format as YAML
 -spec format_yaml(term()) -> iolist().
@@ -397,22 +432,28 @@ format_json_with_opts(Data, Opts) ->
     JsonData = normalize_for_json(FilteredData),
 
     case Indent of
-        0 -> jsx:encode(JsonData);
-        _ -> jsx:encode(JsonData, [{space, 1}, {indent, Indent}])
+        0 ->
+            jsx:encode(JsonData);
+        _ ->
+            jsx:encode(JsonData, [{space, 1}, {indent, Indent}])
     end.
 
 %% @private Normalize data for JSON encoding
 -spec normalize_for_json(term()) -> term().
 normalize_for_json(Data) when is_map(Data) ->
     maps:fold(fun(K, V, Acc) ->
-        Key = normalize_json_key(K),
-        Value = normalize_for_json(V),
-        Acc#{Key => Value}
-    end, #{}, Data);
+                 Key = normalize_json_key(K),
+                 Value = normalize_for_json(V),
+                 Acc#{Key => Value}
+              end,
+              #{},
+              Data);
 normalize_for_json(Data) when is_list(Data) ->
     case io_lib:printable_unicode_list(Data) of
-        true -> list_to_binary(Data);
-        false -> [normalize_for_json(Item) || Item <- Data]
+        true ->
+            list_to_binary(Data);
+        false ->
+            [normalize_for_json(Item) || Item <- Data]
     end;
 normalize_for_json(Data) when is_atom(Data) ->
     atom_to_binary(Data, utf8);
@@ -430,10 +471,14 @@ normalize_for_json(Data) ->
     list_to_binary(io_lib:format("~p", [Data])).
 
 -spec normalize_json_key(term()) -> binary().
-normalize_json_key(Key) when is_binary(Key) -> Key;
-normalize_json_key(Key) when is_atom(Key) -> atom_to_binary(Key, utf8);
-normalize_json_key(Key) when is_list(Key) -> list_to_binary(Key);
-normalize_json_key(Key) -> list_to_binary(io_lib:format("~p", [Key])).
+normalize_json_key(Key) when is_binary(Key) ->
+    Key;
+normalize_json_key(Key) when is_atom(Key) ->
+    atom_to_binary(Key, utf8);
+normalize_json_key(Key) when is_list(Key) ->
+    list_to_binary(Key);
+normalize_json_key(Key) ->
+    list_to_binary(io_lib:format("~p", [Key])).
 
 %% @private Format YAML with options
 -spec format_yaml_with_opts(term(), map()) -> iolist().
@@ -448,13 +493,16 @@ format_yaml_with_opts(Data, Opts) ->
 format_yaml_internal(Data, Level, Indent) when is_map(Data) ->
     IndentStr = lists:duplicate(Level * Indent, $ ),
     maps:fold(fun(K, V, Acc) ->
-        Key = format_yaml_key(K),
-        Value = format_yaml_value(V, Level + 1, Indent),
-        [Acc, IndentStr, Key, ": ", Value, "\n"]
-    end, [], Data);
+                 Key = format_yaml_key(K),
+                 Value = format_yaml_value(V, Level + 1, Indent),
+                 [Acc, IndentStr, Key, ": ", Value, "\n"]
+              end,
+              [],
+              Data);
 format_yaml_internal(Data, Level, Indent) when is_list(Data) ->
     case io_lib:printable_unicode_list(Data) of
-        true -> io_lib:format("\"~s\"", [Data]);
+        true ->
+            io_lib:format("\"~s\"", [Data]);
         false ->
             IndentStr = lists:duplicate(Level * Indent, $ ),
             [[IndentStr, "- ", format_yaml_value(Item, Level + 1, Indent), "\n"] || Item <- Data]
@@ -469,28 +517,41 @@ format_yaml_value(Data, _Level, _Indent) ->
     format_yaml_scalar(Data).
 
 -spec format_yaml_key(term()) -> iolist().
-format_yaml_key(Key) when is_binary(Key) -> Key;
-format_yaml_key(Key) when is_atom(Key) -> atom_to_list(Key);
-format_yaml_key(Key) when is_list(Key) -> Key;
-format_yaml_key(Key) -> io_lib:format("~p", [Key]).
+format_yaml_key(Key) when is_binary(Key) ->
+    Key;
+format_yaml_key(Key) when is_atom(Key) ->
+    atom_to_list(Key);
+format_yaml_key(Key) when is_list(Key) ->
+    Key;
+format_yaml_key(Key) ->
+    io_lib:format("~p", [Key]).
 
 -spec format_yaml_scalar(term()) -> iolist().
-format_yaml_scalar(Data) when is_binary(Data) -> io_lib:format("\"~s\"", [Data]);
-format_yaml_scalar(Data) when is_atom(Data) -> atom_to_list(Data);
-format_yaml_scalar(Data) when is_number(Data) -> io_lib:format("~p", [Data]);
-format_yaml_scalar(Data) when is_boolean(Data) -> atom_to_list(Data);
-format_yaml_scalar(Data) when is_pid(Data) -> io_lib:format("\"~s\"", [pid_to_list(Data)]);
-format_yaml_scalar(Data) -> io_lib:format("\"~p\"", [Data]).
+format_yaml_scalar(Data) when is_binary(Data) ->
+    io_lib:format("\"~s\"", [Data]);
+format_yaml_scalar(Data) when is_atom(Data) ->
+    atom_to_list(Data);
+format_yaml_scalar(Data) when is_number(Data) ->
+    io_lib:format("~p", [Data]);
+format_yaml_scalar(Data) when is_boolean(Data) ->
+    atom_to_list(Data);
+format_yaml_scalar(Data) when is_pid(Data) ->
+    io_lib:format("\"~s\"", [pid_to_list(Data)]);
+format_yaml_scalar(Data) ->
+    io_lib:format("\"~p\"", [Data]).
 
 %% @private Format CSV with options
 -spec format_csv_with_opts(term(), map()) -> iolist().
 format_csv_with_opts(Data, Opts) when is_list(Data) ->
     Headers = maps:get(headers, Opts, []),
 
-    HeaderRow = case Headers of
-        [] -> [];
-        _ -> [format_csv_row(Headers), "\n"]
-    end,
+    HeaderRow =
+        case Headers of
+            [] ->
+                [];
+            _ ->
+                [format_csv_row(Headers), "\n"]
+        end,
 
     Rows = [format_csv_row(row_to_list(Row)) || Row <- Data],
     [HeaderRow, lists:join("\n", Rows)];
@@ -509,8 +570,10 @@ format_csv_value(Value) when is_binary(Value) ->
     escape_csv_value(binary_to_list(Value));
 format_csv_value(Value) when is_list(Value) ->
     case io_lib:printable_unicode_list(Value) of
-        true -> escape_csv_value(Value);
-        false -> io_lib:format("\"~p\"", [Value])
+        true ->
+            escape_csv_value(Value);
+        false ->
+            io_lib:format("\"~p\"", [Value])
     end;
 format_csv_value(Value) when is_atom(Value) ->
     atom_to_list(Value);
@@ -523,20 +586,28 @@ format_csv_value(Value) ->
 escape_csv_value(Value) ->
     case lists:any(fun(C) -> C =:= $, orelse C =:= $" orelse C =:= $\n end, Value) of
         true ->
-            Escaped = lists:flatten([case C of
-                $" -> "\"\"";
-                _ -> C
-            end || C <- Value]),
+            Escaped =
+                lists:flatten([case C of
+                                   $" ->
+                                       "\"\"";
+                                   _ ->
+                                       C
+                               end
+                               || C <- Value]),
             [$", Escaped, $"];
         false ->
             Value
     end.
 
 -spec row_to_list(term()) -> list().
-row_to_list(Row) when is_map(Row) -> maps:values(Row);
-row_to_list(Row) when is_list(Row) -> Row;
-row_to_list(Row) when is_tuple(Row) -> tuple_to_list(Row);
-row_to_list(Row) -> [Row].
+row_to_list(Row) when is_map(Row) ->
+    maps:values(Row);
+row_to_list(Row) when is_list(Row) ->
+    Row;
+row_to_list(Row) when is_tuple(Row) ->
+    tuple_to_list(Row);
+row_to_list(Row) ->
+    [Row].
 
 %% @private Format table with structured output options
 -spec format_table_structured(term(), map()) -> iolist().
@@ -571,32 +642,42 @@ determine_headers(_Data, []) ->
 -spec calculate_column_widths_list(list()) -> [non_neg_integer()].
 calculate_column_widths_list(Rows) ->
     case Rows of
-        [] -> [];
+        [] ->
+            [];
         [FirstRow | _] ->
             NumCols = length(row_to_list(FirstRow)),
             InitWidths = lists:duplicate(NumCols, 0),
 
             lists:foldl(fun(Row, Widths) ->
-                RowList = row_to_list(Row),
-                lists:zipwith(fun(Value, CurrentWidth) ->
-                    ValueStr = format_table_value_str(Value),
-                    max(CurrentWidth, length(lists:flatten(ValueStr)))
-                end, RowList, Widths)
-            end, InitWidths, Rows)
+                           RowList = row_to_list(Row),
+                           lists:zipwith(fun(Value, CurrentWidth) ->
+                                            ValueStr = format_table_value_str(Value),
+                                            max(CurrentWidth, length(lists:flatten(ValueStr)))
+                                         end,
+                                         RowList,
+                                         Widths)
+                        end,
+                        InitWidths,
+                        Rows)
     end.
 
 -spec format_table_row_list(list(), [non_neg_integer()], boolean(), header | data) -> iolist().
 format_table_row_list(Row, ColWidths, Color, RowType) ->
     RowList = row_to_list(Row),
-    FormattedCells = lists:zipwith(fun(Value, Width) ->
-        ValueStr = format_table_value_str(Value),
-        Padding = Width - length(lists:flatten(ValueStr)),
-        PaddedValue = [ValueStr, lists:duplicate(Padding, $ )],
-        case {Color, RowType} of
-            {true, header} -> bold(PaddedValue);
-            _ -> PaddedValue
-        end
-    end, RowList, ColWidths),
+    FormattedCells =
+        lists:zipwith(fun(Value, Width) ->
+                         ValueStr = format_table_value_str(Value),
+                         Padding = Width - length(lists:flatten(ValueStr)),
+                         PaddedValue = [ValueStr, lists:duplicate(Padding, $ )],
+                         case {Color, RowType} of
+                             {true, header} ->
+                                 bold(PaddedValue);
+                             _ ->
+                                 PaddedValue
+                         end
+                      end,
+                      RowList,
+                      ColWidths),
 
     [$|, lists:join(" | ", FormattedCells), $|].
 
@@ -606,23 +687,28 @@ format_table_separator_list(ColWidths) ->
     [$|, lists:join("-+-", Separators), $|].
 
 -spec format_table_value_str(term()) -> iolist().
-format_table_value_str(Value) when is_binary(Value) -> binary_to_list(Value);
+format_table_value_str(Value) when is_binary(Value) ->
+    binary_to_list(Value);
 format_table_value_str(Value) when is_list(Value) ->
     case io_lib:printable_unicode_list(Value) of
-        true -> Value;
-        false -> io_lib:format("~p", [Value])
+        true ->
+            Value;
+        false ->
+            io_lib:format("~p", [Value])
     end;
-format_table_value_str(Value) when is_atom(Value) -> atom_to_list(Value);
-format_table_value_str(Value) when is_number(Value) -> io_lib:format("~p", [Value]);
-format_table_value_str(Value) when is_pid(Value) -> pid_to_list(Value);
-format_table_value_str(Value) -> io_lib:format("~p", [Value]).
+format_table_value_str(Value) when is_atom(Value) ->
+    atom_to_list(Value);
+format_table_value_str(Value) when is_number(Value) ->
+    io_lib:format("~p", [Value]);
+format_table_value_str(Value) when is_pid(Value) ->
+    pid_to_list(Value);
+format_table_value_str(Value) ->
+    io_lib:format("~p", [Value]).
 
 %% @private Filter data by verbosity level
 -spec filter_by_verbosity(term(), 1..5) -> term().
 filter_by_verbosity(Data, Verbosity) when is_map(Data) ->
-    maps:filter(fun(Key, _Value) ->
-        should_include_field(Key, Verbosity)
-    end, Data);
+    maps:filter(fun(Key, _Value) -> should_include_field(Key, Verbosity) end, Data);
 filter_by_verbosity(Data, _Verbosity) ->
     Data.
 
@@ -638,22 +724,30 @@ field_importance(Key) when is_atom(Key) ->
     field_importance(atom_to_binary(Key, utf8));
 field_importance(Key) when is_binary(Key) ->
     case Key of
-        <<"status">> -> 1;
-        <<"error">> -> 1;
-        <<"message">> -> 1;
-        <<"result">> -> 1;
+        <<"status">> ->
+            1;
+        <<"error">> ->
+            1;
+        <<"message">> ->
+            1;
+        <<"result">> ->
+            1;
         _ ->
             case binary:match(Key, [<<"time">>, <<"count">>, <<"total">>]) of
                 nomatch ->
                     case binary:match(Key, [<<"details">>, <<"summary">>, <<"metrics">>]) of
                         nomatch ->
                             case binary:match(Key, [<<"debug">>, <<"trace">>, <<"stack">>]) of
-                                nomatch -> 5;
-                                _ -> 4
+                                nomatch ->
+                                    5;
+                                _ ->
+                                    4
                             end;
-                        _ -> 3
+                        _ ->
+                            3
                     end;
-                _ -> 2
+                _ ->
+                    2
             end
     end;
 field_importance(_Key) ->
@@ -665,47 +759,68 @@ field_importance(_Key) ->
 
 %% @doc Get color code for atom
 -spec color_code(atom()) -> string().
-color_code(black) -> ?BLACK;
-color_code(red) -> ?RED;
-color_code(green) -> ?GREEN;
-color_code(yellow) -> ?YELLOW;
-color_code(blue) -> ?BLUE;
-color_code(magenta) -> ?MAGENTA;
-color_code(cyan) -> ?CYAN;
-color_code(white) -> ?WHITE;
-color_code(bright_black) -> ?BRIGHT_BLACK;
-color_code(bright_red) -> ?BRIGHT_RED;
-color_code(bright_green) -> ?BRIGHT_GREEN;
-color_code(bright_yellow) -> ?BRIGHT_YELLOW;
-color_code(bright_blue) -> ?BRIGHT_BLUE;
-color_code(bright_magenta) -> ?BRIGHT_MAGENTA;
-color_code(bright_cyan) -> ?BRIGHT_CYAN;
-color_code(bright_white) -> ?BRIGHT_WHITE;
-color_code(_) -> ?RESET.
+color_code(black) ->
+    ?BLACK;
+color_code(red) ->
+    ?RED;
+color_code(green) ->
+    ?GREEN;
+color_code(yellow) ->
+    ?YELLOW;
+color_code(blue) ->
+    ?BLUE;
+color_code(magenta) ->
+    ?MAGENTA;
+color_code(cyan) ->
+    ?CYAN;
+color_code(white) ->
+    ?WHITE;
+color_code(bright_black) ->
+    ?BRIGHT_BLACK;
+color_code(bright_red) ->
+    ?BRIGHT_RED;
+color_code(bright_green) ->
+    ?BRIGHT_GREEN;
+color_code(bright_yellow) ->
+    ?BRIGHT_YELLOW;
+color_code(bright_blue) ->
+    ?BRIGHT_BLUE;
+color_code(bright_magenta) ->
+    ?BRIGHT_MAGENTA;
+color_code(bright_cyan) ->
+    ?BRIGHT_CYAN;
+color_code(bright_white) ->
+    ?BRIGHT_WHITE;
+color_code(_) ->
+    ?RESET.
 
 %% @doc Calculate column widths for table
 -spec calculate_column_widths([map()], [atom()]) -> map().
 calculate_column_widths(Rows, Columns) ->
     InitWidths = maps:from_list([{Col, string:length(atom_to_list(Col))} || Col <- Columns]),
     lists:foldl(fun(Row, Widths) ->
-        maps:map(fun(Col, CurrentWidth) ->
-            Value = maps:get(Col, Row, ""),
-            ValueStr = format_cell_value(Value),
-            max(CurrentWidth, string:length(ValueStr))
-        end, Widths)
-    end, InitWidths, Rows).
+                   maps:map(fun(Col, CurrentWidth) ->
+                               Value = maps:get(Col, Row, ""),
+                               ValueStr = format_cell_value(Value),
+                               max(CurrentWidth, string:length(ValueStr))
+                            end,
+                            Widths)
+                end,
+                InitWidths,
+                Rows).
 
 %% @doc Format table row (header)
--spec format_table_row([atom()], map(), fun((atom()) -> iolist())) -> iolist().
-format_table_row(Columns, ColWidths, Formatter) ->
+-spec format_table_row_header([atom()], map(), fun((atom()) -> iolist())) -> iolist().
+format_table_row_header(Columns, ColWidths, Formatter) ->
     Cells = [pad_right(Formatter(Col), maps:get(Col, ColWidths)) || Col <- Columns],
     string:join(Cells, " │ ").
 
 %% @doc Format table row (data)
--spec format_table_row(map(), [atom()], map()) -> iolist().
-format_table_row(Row, Columns, ColWidths) ->
-    Cells = [pad_right(format_cell_value(maps:get(Col, Row, "")), maps:get(Col, ColWidths))
-             || Col <- Columns],
+-spec format_table_row_data(map(), [atom()], map()) -> iolist().
+format_table_row_data(Row, Columns, ColWidths) ->
+    Cells =
+        [pad_right(format_cell_value(maps:get(Col, Row, "")), maps:get(Col, ColWidths))
+         || Col <- Columns],
     string:join(Cells, " │ ").
 
 %% @doc Format table separator
@@ -716,25 +831,33 @@ format_table_separator(ColWidths) ->
 
 %% @doc Format cell value
 -spec format_cell_value(term()) -> string().
-format_cell_value(Value) when is_binary(Value) -> binary_to_list(Value);
-format_cell_value(Value) when is_atom(Value) -> atom_to_list(Value);
-format_cell_value(Value) when is_integer(Value) -> integer_to_list(Value);
-format_cell_value(Value) when is_float(Value) -> float_to_list(Value, [{decimals, 2}]);
+format_cell_value(Value) when is_binary(Value) ->
+    binary_to_list(Value);
+format_cell_value(Value) when is_atom(Value) ->
+    atom_to_list(Value);
+format_cell_value(Value) when is_integer(Value) ->
+    integer_to_list(Value);
+format_cell_value(Value) when is_float(Value) ->
+    float_to_list(Value, [{decimals, 2}]);
 format_cell_value(Value) when is_list(Value) ->
     case io_lib:printable_unicode_list(Value) of
-        true -> Value;
-        false -> io_lib:format("~p", [Value])
+        true ->
+            Value;
+        false ->
+            io_lib:format("~p", [Value])
     end;
-format_cell_value(Value) -> io_lib:format("~p", [Value]).
+format_cell_value(Value) ->
+    io_lib:format("~p", [Value]).
 
 %% @doc Pad string to the right
 -spec pad_right(iolist(), non_neg_integer()) -> string().
 pad_right(Str, Width) ->
     StrFlat = lists:flatten(Str),
     StrLen = string:length(StrFlat),
-    if
-        StrLen >= Width -> StrFlat;
-        true -> StrFlat ++ lists:duplicate(Width - StrLen, $ )
+    if StrLen >= Width ->
+           StrFlat;
+       true ->
+           StrFlat ++ lists:duplicate(Width - StrLen, $ )
     end.
 
 %% @doc Format tree value
@@ -743,27 +866,36 @@ format_tree_value(Value, Indent) when is_map(Value) ->
     ["\n", format_tree(Value, Indent)];
 format_tree_value(Value, Indent) when is_list(Value) ->
     case io_lib:printable_unicode_list(Value) of
-        true -> io_lib:format("~s", [Value]);
-        false -> ["\n", format_tree(Value, Indent)]
+        true ->
+            io_lib:format("~s", [Value]);
+        false ->
+            ["\n", format_tree(Value, Indent)]
     end;
 format_tree_value(Value, _Indent) ->
     io_lib:format("~p", [Value]).
 
 %% @doc Format map key
 -spec format_key(term()) -> string().
-format_key(Key) when is_atom(Key) -> atom_to_list(Key);
-format_key(Key) when is_binary(Key) -> binary_to_list(Key);
-format_key(Key) -> io_lib:format("~p", [Key]).
+format_key(Key) when is_atom(Key) ->
+    atom_to_list(Key);
+format_key(Key) when is_binary(Key) ->
+    binary_to_list(Key);
+format_key(Key) ->
+    io_lib:format("~p", [Key]).
 
 %% @doc Format list item
 -spec format_list_item(term()) -> iolist().
-format_list_item(Item) when is_binary(Item) -> Item;
+format_list_item(Item) when is_binary(Item) ->
+    Item;
 format_list_item(Item) when is_list(Item) ->
     case io_lib:printable_unicode_list(Item) of
-        true -> Item;
-        false -> io_lib:format("~p", [Item])
+        true ->
+            Item;
+        false ->
+            io_lib:format("~p", [Item])
     end;
-format_list_item(Item) -> io_lib:format("~p", [Item]).
+format_list_item(Item) ->
+    io_lib:format("~p", [Item]).
 
 %% @doc Ensure ETS table exists
 -spec ensure_table() -> ok.

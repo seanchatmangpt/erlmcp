@@ -1,46 +1,19 @@
 -module(erlmcp_circuit_breaker).
+
 -behaviour(gen_statem).
 
-
 %% API
--export([
-    start_link/0,
-    start_link/1,
-    start_link/2,
-    call/2,
-    call/3,
-    call_with_fallback/3,
-    call_with_fallback/4,
-    get_state/1,
-    get_stats/1,
-    reset/1,
-    force_open/1,
-    force_close/1,
-    stop/1,
+-export([start_link/0, start_link/1, start_link/2, call/2, call/3, call_with_fallback/3,
+         call_with_fallback/4, get_state/1, get_stats/1, reset/1, force_open/1, force_close/1,
+         stop/1, register_breaker/2, register_breaker/3, unregister_breaker/1, get_all_states/0,
+         get_all_stats/0, reset_all/0]).
+
     % Manager compatibility API
-    register_breaker/2,
-    register_breaker/3,
-    unregister_breaker/1,
-    get_all_states/0,
-    get_all_stats/0,
-    reset_all/0
-]).
 
 %% gen_statem callbacks
--export([
-    callback_mode/0,
-    init/1,
-    terminate/3,
-    code_change/4,
-    format_status/1
-]).
-
+-export([callback_mode/0, init/1, terminate/3, code_change/4, format_status/1]).
 %% State functions
--export([
-    closed/3,
-    open/3,
-    half_open/3
-]).
+-export([closed/3, open/3, half_open/3]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -52,51 +25,56 @@
 -type breaker_result() :: {ok, term()} | {error, term()}.
 -type breaker_fun() :: fun(() -> breaker_result()).
 -type fallback_fun() :: fun(() -> breaker_result()).
-
 -type config() ::
-    #{failure_threshold => pos_integer(),      % Failures to trip (default: 5)
-      success_threshold => pos_integer(),      % Successes in half_open to close (default: 2)
-      timeout => pos_integer(),                % Time in ms before half_open attempt (default: 60000)
-      window_size => pos_integer(),            % Rolling window for failure rate (default: 10)
-      failure_rate_threshold => float(),       % Percentage 0.0-1.0 (default: 0.5)
-      priority_level => normal | high}.        % OTP 28 priority level (default: normal)
+    #{failure_threshold => pos_integer(),
+      success_threshold => pos_integer(),
+      timeout => pos_integer(),
+      window_size => pos_integer(),
+      failure_rate_threshold => float(),
+      priority_level => normal | high}.
 
--record(data, {
-    name :: atom(),
-    config :: config(),
-    % Counters
-    consecutive_failures = 0 :: non_neg_integer(),
-    consecutive_successes = 0 :: non_neg_integer(),
-    total_calls = 0 :: non_neg_integer(),
-    total_successes = 0 :: non_neg_integer(),
-    total_failures = 0 :: non_neg_integer(),
-    total_rejected = 0 :: non_neg_integer(),
-    % Timestamps
-    last_failure_time :: undefined | integer(),
-    last_state_change :: integer(),
-    % Rolling window for failure rate
-    call_history = [] :: [{integer(), success | failure}],
-    % Priority message metrics
-    priority_messages_delivered = 0 :: non_neg_integer(),
-    priority_latency_sum_us = 0 :: non_neg_integer()
-}).
+                                             % Failures to trip (default: 5)
+
+                                               % Successes in half_open to close (default: 2)
+                % Time in ms before half_open attempt (default: 60000)
+
+                                               % Rolling window for failure rate (default: 10)
+       % Percentage 0.0-1.0 (default: 0.5)
+
+                                               % OTP 28 priority level (default: normal)
+
+-record(data,
+        {name :: atom(),
+         config :: config(),
+         % Counters
+         consecutive_failures = 0 :: non_neg_integer(),
+         consecutive_successes = 0 :: non_neg_integer(),
+         total_calls = 0 :: non_neg_integer(),
+         total_successes = 0 :: non_neg_integer(),
+         total_failures = 0 :: non_neg_integer(),
+         total_rejected = 0 :: non_neg_integer(),
+         % Timestamps
+         last_failure_time :: undefined | integer(),
+         last_state_change :: integer(),
+         % Rolling window for failure rate
+         call_history = [] :: [{integer(), success | failure}],
+         % Priority message metrics
+         priority_messages_delivered = 0 :: non_neg_integer(),
+         priority_latency_sum_us = 0 :: non_neg_integer()}).
 
 -type state_name() :: closed | open | half_open.
 -type data() :: #data{}.
 
-
 %% Hibernation configuration for idle circuit breakers
 %% Reduces memory per idle circuit breaker from ~50KB to ~5KB
 -define(HIBERNATE_AFTER_MS, 30000). % 30 seconds of inactivity triggers hibernation
--define(DEFAULT_CONFIG, #{
-    failure_threshold => 5,
-    success_threshold => 2,
-    timeout => 60000,
-    window_size => 10,
-    failure_rate_threshold => 0.5,
-    priority_level => normal
-}).
-
+-define(DEFAULT_CONFIG,
+        #{failure_threshold => 5,
+          success_threshold => 2,
+          timeout => 60000,
+          window_size => 10,
+          failure_rate_threshold => 0.5,
+          priority_level => normal}).
 -define(BREAKER_OPEN_ERROR, circuit_breaker_open).
 -define(MANAGER_TABLE, erlmcp_circuit_breaker_registry).
 
@@ -120,7 +98,10 @@ start_link(Config) ->
 -spec start_link(atom(), config()) -> {ok, pid()} | {error, term()}.
 start_link(Name, Config) when is_atom(Name) ->
     %% Enable hibernation after 30 seconds of inactivity to reduce memory usage
-    gen_statem:start_link({local, Name}, ?MODULE, {Name, Config}, [{hibernate_after, ?HIBERNATE_AFTER_MS}]);
+    gen_statem:start_link({local, Name},
+                          ?MODULE,
+                          {Name, Config},
+                          [{hibernate_after, ?HIBERNATE_AFTER_MS}]);
 start_link(Name, Config) ->
     %% Enable hibernation after 30 seconds of inactivity to reduce memory usage
     gen_statem:start_link(?MODULE, {Name, Config}, [{hibernate_after, ?HIBERNATE_AFTER_MS}]).
@@ -136,8 +117,7 @@ call(Breaker, Fun, Timeout) when is_function(Fun, 0) ->
     gen_statem:call(Breaker, {execute, Fun}, Timeout).
 
 %% @doc Execute with fallback on circuit open (5 second timeout)
--spec call_with_fallback(pid() | atom(), breaker_fun(), fallback_fun()) ->
-                            breaker_result().
+-spec call_with_fallback(pid() | atom(), breaker_fun(), fallback_fun()) -> breaker_result().
 call_with_fallback(Breaker, Fun, Fallback) ->
     call_with_fallback(Breaker, Fun, Fallback, 5000).
 
@@ -145,7 +125,7 @@ call_with_fallback(Breaker, Fun, Fallback) ->
 -spec call_with_fallback(pid() | atom(), breaker_fun(), fallback_fun(), timeout()) ->
                             breaker_result().
 call_with_fallback(Breaker, Fun, Fallback, Timeout)
-  when is_function(Fun, 0), is_function(Fallback, 0) ->
+    when is_function(Fun, 0), is_function(Fallback, 0) ->
     case call(Breaker, Fun, Timeout) of
         {error, ?BREAKER_OPEN_ERROR} ->
             ?LOG_INFO("Circuit breaker ~p open, using fallback", [Breaker]),
@@ -187,12 +167,10 @@ stop(Breaker) ->
 %% @doc Get default configuration for circuit breaker
 -spec default_config() -> config().
 default_config() ->
-    #{
-        threshold => 5,
-        timeout_ms => 60000,
-        reset_timeout_ms => 30000,
-        call_timeout_ms => 5000
-    }.
+    #{threshold => 5,
+      timeout_ms => 60000,
+      reset_timeout_ms => 30000,
+      call_timeout_ms => 5000}.
 
 %%====================================================================
 %% Manager Compatibility API (for existing tests)
@@ -237,51 +215,41 @@ unregister_breaker(Name) ->
 -spec get_all_states() -> #{atom() => state_name()}.
 get_all_states() ->
     ensure_manager_table(),
-    ets:foldl(
-        fun({Name, Pid}, Acc) ->
-            case is_process_alive(Pid) of
-                true ->
-                    State = get_state(Pid),
-                    maps:put(Name, State, Acc);
-                false ->
-                    ets:delete(?MANAGER_TABLE, Name),
-                    Acc
-            end
-        end,
-        #{},
-        ?MANAGER_TABLE
-    ).
+    ets:foldl(fun({Name, Pid}, Acc) ->
+                 case is_process_alive(Pid) of
+                     true ->
+                         State = get_state(Pid),
+                         maps:put(Name, State, Acc);
+                     false ->
+                         ets:delete(?MANAGER_TABLE, Name),
+                         Acc
+                 end
+              end,
+              #{},
+              ?MANAGER_TABLE).
 
 %% @doc Get all circuit breaker stats
 -spec get_all_stats() -> #{atom() => map()}.
 get_all_stats() ->
     ensure_manager_table(),
-    ets:foldl(
-        fun({Name, Pid}, Acc) ->
-            case is_process_alive(Pid) of
-                true ->
-                    {ok, Stats} = get_stats(Pid),
-                    maps:put(Name, Stats, Acc);
-                false ->
-                    ets:delete(?MANAGER_TABLE, Name),
-                    Acc
-            end
-        end,
-        #{},
-        ?MANAGER_TABLE
-    ).
+    ets:foldl(fun({Name, Pid}, Acc) ->
+                 case is_process_alive(Pid) of
+                     true ->
+                         {ok, Stats} = get_stats(Pid),
+                         maps:put(Name, Stats, Acc);
+                     false ->
+                         ets:delete(?MANAGER_TABLE, Name),
+                         Acc
+                 end
+              end,
+              #{},
+              ?MANAGER_TABLE).
 
 %% @doc Reset all circuit breakers
 -spec reset_all() -> ok.
 reset_all() ->
     ensure_manager_table(),
-    ets:foldl(
-        fun({_Name, Pid}, _Acc) ->
-            catch reset(Pid)
-        end,
-        ok,
-        ?MANAGER_TABLE
-    ),
+    ets:foldl(fun({_Name, Pid}, _Acc) -> catch reset(Pid) end, ok, ?MANAGER_TABLE),
     ok.
 
 %%====================================================================
@@ -306,11 +274,10 @@ init({Name, UserConfig}) ->
             ok
     end,
 
-    Data = #data{
-        name = Name,
-        config = Config,
-        last_state_change = erlang:monotonic_time(millisecond)
-    },
+    Data =
+        #data{name = Name,
+              config = Config,
+              last_state_change = erlang:monotonic_time(millisecond)},
     ?LOG_INFO("Circuit breaker ~p starting in closed state with config: ~p", [Name, Config]),
     {ok, closed, Data}.
 
@@ -322,13 +289,11 @@ code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
 format_status(#{state := State, data := Data}) ->
-    #{
-        state => State,
-        name => Data#data.name,
-        consecutive_failures => Data#data.consecutive_failures,
-        consecutive_successes => Data#data.consecutive_successes,
-        total_calls => Data#data.total_calls
-    }.
+    #{state => State,
+      name => Data#data.name,
+      consecutive_failures => Data#data.consecutive_failures,
+      consecutive_successes => Data#data.consecutive_successes,
+      total_calls => Data#data.total_calls}.
 
 %%====================================================================
 %% State Functions
@@ -345,14 +310,12 @@ closed(enter, _OldState, Data) ->
     EndTime = erlang:monotonic_time(microsecond),
     LatencyUs = EndTime - StartTime,
 
-    NewData = Data#data{
-        consecutive_failures = 0,
-        last_state_change = erlang:monotonic_time(millisecond),
-        priority_messages_delivered = Data#data.priority_messages_delivered + 1,
-        priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs
-    },
+    NewData =
+        Data#data{consecutive_failures = 0,
+                  last_state_change = erlang:monotonic_time(millisecond),
+                  priority_messages_delivered = Data#data.priority_messages_delivered + 1,
+                  priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs},
     {keep_state, NewData};
-
 closed({call, From}, {execute, Fun}, Data) ->
     try Fun() of
         {ok, _} = Result ->
@@ -363,7 +326,7 @@ closed({call, From}, {execute, Fun}, Data) ->
             case should_trip(NewData) of
                 true ->
                     ?LOG_WARNING("Circuit breaker ~p tripping to OPEN (failures: ~p)",
-                                [Data#data.name, NewData#data.consecutive_failures]),
+                                 [Data#data.name, NewData#data.consecutive_failures]),
                     {next_state, open, NewData, [{reply, From, Result}]};
                 false ->
                     {keep_state, NewData, [{reply, From, Result}]}
@@ -371,7 +334,7 @@ closed({call, From}, {execute, Fun}, Data) ->
     catch
         Class:Reason:_Stacktrace ->
             ?LOG_WARNING("Circuit breaker ~p function failed: ~p:~p",
-                        [Data#data.name, Class, Reason]),
+                         [Data#data.name, Class, Reason]),
             Result = {error, {exception, Class, Reason}},
             NewData = handle_failure(Data),
             case should_trip(NewData) of
@@ -381,25 +344,19 @@ closed({call, From}, {execute, Fun}, Data) ->
                     {keep_state, NewData, [{reply, From, Result}]}
             end
     end;
-
 closed({call, From}, get_state, _Data) ->
     {keep_state_and_data, [{reply, From, closed}]};
-
 closed({call, From}, get_stats, Data) ->
     Stats = build_stats(closed, Data),
     {keep_state_and_data, [{reply, From, {ok, Stats}}]};
-
 closed({call, From}, reset, Data) ->
     NewData = reset_data(Data),
     {keep_state, NewData, [{reply, From, ok}]};
-
 closed({call, From}, force_open, Data) ->
     ?LOG_WARNING("Circuit breaker ~p forced to OPEN state", [Data#data.name]),
     {next_state, open, Data, [{reply, From, ok}]};
-
 closed({call, From}, force_close, _Data) ->
     {keep_state_and_data, [{reply, From, ok}]};
-
 closed(EventType, EventContent, Data) ->
     handle_common(EventType, EventContent, Data).
 
@@ -416,46 +373,35 @@ open(enter, _OldState, Data) ->
 
     Config = Data#data.config,
     Timeout = maps:get(timeout, Config),
-    NewData = Data#data{
-        consecutive_successes = 0,
-        last_state_change = erlang:monotonic_time(millisecond),
-        priority_messages_delivered = Data#data.priority_messages_delivered + 1,
-        priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs
-    },
+    NewData =
+        Data#data{consecutive_successes = 0,
+                  last_state_change = erlang:monotonic_time(millisecond),
+                  priority_messages_delivered = Data#data.priority_messages_delivered + 1,
+                  priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs},
     {keep_state, NewData, [{state_timeout, Timeout, attempt_recovery}]};
-
 open(state_timeout, attempt_recovery, Data) ->
-    ?LOG_INFO("Circuit breaker ~p timeout expired, transitioning to HALF_OPEN",
-             [Data#data.name]),
+    ?LOG_INFO("Circuit breaker ~p timeout expired, transitioning to HALF_OPEN", [Data#data.name]),
     {next_state, half_open, Data};
-
 open({call, From}, {execute, _Fun}, Data) ->
     Result = {error, ?BREAKER_OPEN_ERROR},
-    NewData = Data#data{
-        total_calls = Data#data.total_calls + 1,
-        total_rejected = Data#data.total_rejected + 1
-    },
+    NewData =
+        Data#data{total_calls = Data#data.total_calls + 1,
+                  total_rejected = Data#data.total_rejected + 1},
     {keep_state, NewData, [{reply, From, Result}]};
-
 open({call, From}, get_state, _Data) ->
     {keep_state_and_data, [{reply, From, open}]};
-
 open({call, From}, get_stats, Data) ->
     Stats = build_stats(open, Data),
     {keep_state_and_data, [{reply, From, {ok, Stats}}]};
-
 open({call, From}, reset, Data) ->
     ?LOG_INFO("Circuit breaker ~p reset from OPEN to CLOSED", [Data#data.name]),
     NewData = reset_data(Data),
     {next_state, closed, NewData, [{reply, From, ok}]};
-
 open({call, From}, force_open, _Data) ->
     {keep_state_and_data, [{reply, From, ok}]};
-
 open({call, From}, force_close, Data) ->
     ?LOG_WARNING("Circuit breaker ~p forced to CLOSED state", [Data#data.name]),
     {next_state, closed, Data, [{reply, From, ok}]};
-
 open(EventType, EventContent, Data) ->
     handle_common(EventType, EventContent, Data).
 
@@ -470,15 +416,13 @@ half_open(enter, _OldState, Data) ->
     EndTime = erlang:monotonic_time(microsecond),
     LatencyUs = EndTime - StartTime,
 
-    NewData = Data#data{
-        consecutive_failures = 0,
-        consecutive_successes = 0,
-        last_state_change = erlang:monotonic_time(millisecond),
-        priority_messages_delivered = Data#data.priority_messages_delivered + 1,
-        priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs
-    },
+    NewData =
+        Data#data{consecutive_failures = 0,
+                  consecutive_successes = 0,
+                  last_state_change = erlang:monotonic_time(millisecond),
+                  priority_messages_delivered = Data#data.priority_messages_delivered + 1,
+                  priority_latency_sum_us = Data#data.priority_latency_sum_us + LatencyUs},
     {keep_state, NewData};
-
 half_open({call, From}, {execute, Fun}, Data) ->
     try Fun() of
         {ok, _} = Result ->
@@ -488,45 +432,39 @@ half_open({call, From}, {execute, Fun}, Data) ->
             case NewData#data.consecutive_successes >= SuccessThreshold of
                 true ->
                     ?LOG_INFO("Circuit breaker ~p closing after ~p successes",
-                             [Data#data.name, NewData#data.consecutive_successes]),
+                              [Data#data.name, NewData#data.consecutive_successes]),
                     {next_state, closed, NewData, [{reply, From, Result}]};
                 false ->
                     {keep_state, NewData, [{reply, From, Result}]}
             end;
         {error, _} = Result ->
             ?LOG_WARNING("Circuit breaker ~p re-opening from HALF_OPEN (failure)",
-                        [Data#data.name]),
+                         [Data#data.name]),
             NewData = handle_failure(Data),
             {next_state, open, NewData, [{reply, From, Result}]}
     catch
         Class:Reason:_Stacktrace ->
             ?LOG_WARNING("Circuit breaker ~p function failed in HALF_OPEN: ~p:~p",
-                        [Data#data.name, Class, Reason]),
+                         [Data#data.name, Class, Reason]),
             Result = {error, {exception, Class, Reason}},
             NewData = handle_failure(Data),
             {next_state, open, NewData, [{reply, From, Result}]}
     end;
-
 half_open({call, From}, get_state, _Data) ->
     {keep_state_and_data, [{reply, From, half_open}]};
-
 half_open({call, From}, get_stats, Data) ->
     Stats = build_stats(half_open, Data),
     {keep_state_and_data, [{reply, From, {ok, Stats}}]};
-
 half_open({call, From}, reset, Data) ->
     ?LOG_INFO("Circuit breaker ~p reset from HALF_OPEN to CLOSED", [Data#data.name]),
     NewData = reset_data(Data),
     {next_state, closed, NewData, [{reply, From, ok}]};
-
 half_open({call, From}, force_open, Data) ->
     ?LOG_WARNING("Circuit breaker ~p forced to OPEN state", [Data#data.name]),
     {next_state, open, Data, [{reply, From, ok}]};
-
 half_open({call, From}, force_close, Data) ->
     ?LOG_WARNING("Circuit breaker ~p forced to CLOSED state", [Data#data.name]),
     {next_state, closed, Data, [{reply, From, ok}]};
-
 half_open(EventType, EventContent, Data) ->
     handle_common(EventType, EventContent, Data).
 
@@ -543,27 +481,23 @@ handle_common(_EventType, _EventContent, _Data) ->
 handle_success(Data) ->
     Now = erlang:monotonic_time(millisecond),
     NewHistory = add_to_history(Data#data.call_history, Now, success, Data#data.config),
-    Data#data{
-        consecutive_successes = Data#data.consecutive_successes + 1,
-        consecutive_failures = 0,
-        total_calls = Data#data.total_calls + 1,
-        total_successes = Data#data.total_successes + 1,
-        call_history = NewHistory
-    }.
+    Data#data{consecutive_successes = Data#data.consecutive_successes + 1,
+              consecutive_failures = 0,
+              total_calls = Data#data.total_calls + 1,
+              total_successes = Data#data.total_successes + 1,
+              call_history = NewHistory}.
 
 %% @private Handle failed call
 -spec handle_failure(data()) -> data().
 handle_failure(Data) ->
     Now = erlang:monotonic_time(millisecond),
     NewHistory = add_to_history(Data#data.call_history, Now, failure, Data#data.config),
-    Data#data{
-        consecutive_failures = Data#data.consecutive_failures + 1,
-        consecutive_successes = 0,
-        total_calls = Data#data.total_calls + 1,
-        total_failures = Data#data.total_failures + 1,
-        last_failure_time = Now,
-        call_history = NewHistory
-    }.
+    Data#data{consecutive_failures = Data#data.consecutive_failures + 1,
+              consecutive_successes = 0,
+              total_calls = Data#data.total_calls + 1,
+              total_failures = Data#data.total_failures + 1,
+              last_failure_time = Now,
+              call_history = NewHistory}.
 
 %% @private Determine if breaker should trip to open
 -spec should_trip(data()) -> boolean().
@@ -578,14 +512,15 @@ should_trip(Data) ->
     WindowSize = maps:get(window_size, Config),
     HistorySize = length(Data#data.call_history),
 
-    FailureRateCheck = case HistorySize >= WindowSize of
-        true ->
-            FailureRateThreshold = maps:get(failure_rate_threshold, Config),
-            FailureRate = calculate_failure_rate(Data#data.call_history),
-            FailureRate >= FailureRateThreshold;
-        false ->
-            false
-    end,
+    FailureRateCheck =
+        case HistorySize >= WindowSize of
+            true ->
+                FailureRateThreshold = maps:get(failure_rate_threshold, Config),
+                FailureRate = calculate_failure_rate(Data#data.call_history),
+                FailureRate >= FailureRateThreshold;
+            false ->
+                false
+        end,
 
     ConsecutiveCheck orelse FailureRateCheck.
 
@@ -597,8 +532,10 @@ calculate_failure_rate(History) ->
     Failures = length([R || {_, R} <- History, R =:= failure]),
     Total = length(History),
     case Total of
-        0 -> 0.0;
-        _ -> Failures / Total
+        0 ->
+            0.0;
+        _ ->
+            Failures / Total
     end.
 
 %% @private Add call to rolling history window
@@ -612,45 +549,47 @@ add_to_history(History, Timestamp, Result, Config) ->
 %% @private Reset data to initial state
 -spec reset_data(data()) -> data().
 reset_data(Data) ->
-    Data#data{
-        consecutive_failures = 0,
-        consecutive_successes = 0,
-        call_history = [],
-        last_failure_time = undefined,
-        last_state_change = erlang:monotonic_time(millisecond)
-    }.
+    Data#data{consecutive_failures = 0,
+              consecutive_successes = 0,
+              call_history = [],
+              last_failure_time = undefined,
+              last_state_change = erlang:monotonic_time(millisecond)}.
 
 %% @private Build statistics map
 -spec build_stats(state_name(), data()) -> map().
 build_stats(State, Data) ->
     FailureRate = calculate_failure_rate(Data#data.call_history),
-    SuccessRate = case Data#data.total_calls of
-        0 -> 0.0;
-        Total -> Data#data.total_successes / Total
-    end,
+    SuccessRate =
+        case Data#data.total_calls of
+            0 ->
+                0.0;
+            Total ->
+                Data#data.total_successes / Total
+        end,
 
-    AvgPriorityLatencyUs = case Data#data.priority_messages_delivered of
-        0 -> 0;
-        Count -> Data#data.priority_latency_sum_us / Count
-    end,
+    AvgPriorityLatencyUs =
+        case Data#data.priority_messages_delivered of
+            0 ->
+                0;
+            Count ->
+                Data#data.priority_latency_sum_us / Count
+        end,
 
-    #{
-        name => Data#data.name,
-        state => State,
-        consecutive_failures => Data#data.consecutive_failures,
-        consecutive_successes => Data#data.consecutive_successes,
-        total_calls => Data#data.total_calls,
-        total_successes => Data#data.total_successes,
-        total_failures => Data#data.total_failures,
-        total_rejected => Data#data.total_rejected,
-        failure_rate => FailureRate,
-        success_rate => SuccessRate,
-        last_failure_time => Data#data.last_failure_time,
-        last_state_change => Data#data.last_state_change,
-        config => Data#data.config,
-        priority_messages_delivered => Data#data.priority_messages_delivered,
-        priority_latency_us => AvgPriorityLatencyUs
-    }.
+    #{name => Data#data.name,
+      state => State,
+      consecutive_failures => Data#data.consecutive_failures,
+      consecutive_successes => Data#data.consecutive_successes,
+      total_calls => Data#data.total_calls,
+      total_successes => Data#data.total_successes,
+      total_failures => Data#data.total_failures,
+      total_rejected => Data#data.total_rejected,
+      failure_rate => FailureRate,
+      success_rate => SuccessRate,
+      last_failure_time => Data#data.last_failure_time,
+      last_state_change => Data#data.last_state_change,
+      config => Data#data.config,
+      priority_messages_delivered => Data#data.priority_messages_delivered,
+      priority_latency_us => AvgPriorityLatencyUs}.
 
 %% @private Ensure manager table exists
 -spec ensure_manager_table() -> ok.
@@ -674,4 +613,3 @@ notify_state_change_priority(Name, NewState) ->
             erlang:send(Pid, {circuit_breaker_state_change, Name, NewState}, [nosuspend]),
             ok
     end.
-

@@ -1,4 +1,5 @@
 -module(erlmcp_recovery_manager_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
@@ -165,16 +166,9 @@ reset_metrics_test() ->
 %% Recovery Trigger Tests
 %%--------------------------------------------------------------------
 
-trigger_recovery_test() ->
-    {ok, Pid} = erlmcp_recovery_manager:start_link(),
-    Policy = #{strategy => restart, max_failures => 5},
-    ok = erlmcp_recovery_manager:register_component(my_comp, Pid, Policy),
-    ok = erlmcp_recovery_manager:trigger_recovery(my_comp, test_failure),
+trigger_recovery_test( ) -> { ok , Pid } = erlmcp_recovery_manager : start_link( ) , Policy = #{ strategy => restart , max_failures => 5 } , ok = erlmcp_recovery_manager : register_component( my_comp , Pid , Policy ) , ok = erlmcp_recovery_manager : trigger_recovery( my_comp , test_failure ) , timer : sleep( 100 ) , { ok , Status } = erlmcp_recovery_manager : get_recovery_status( my_comp ) , ?assertMatch( #{ failures := Failures } when Failures > 0 , Status ) , gen_server : stop( Pid ) .
+
     %% Give it time to process
-    timer:sleep(100),
-    {ok, Status} = erlmcp_recovery_manager:get_recovery_status(my_comp),
-    ?assertMatch(#{failures := Failures} when Failures > 0, Status),
-    gen_server:stop(Pid).
 
 trigger_recovery_with_options_test() ->
     {ok, Pid} = erlmcp_recovery_manager:start_link(),

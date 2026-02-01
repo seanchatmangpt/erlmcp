@@ -1,12 +1,9 @@
 -module(erlmcp_sup).
+
 -behaviour(supervisor).
 
--export([
-    start_link/0,
-    start_server/2, stop_server/1,
-    start_transport/3, stop_transport/1,
-    list_transports/0
-]).
+-export([start_link/0, start_server/2, stop_server/1, start_transport/3, stop_transport/1,
+         list_transports/0]).
 -export([init/1]).
 
 -include("erlmcp.hrl").
@@ -45,9 +42,12 @@ stop_server(ServerId) ->
         {ok, {ServerPid, _Config}} ->
             ok = erlmcp_registry:unregister_server(ServerId),
             case supervisor:terminate_child(erlmcp_server_sup, ServerPid) of
-                ok -> ok;
-                {error, not_found} -> ok;  % Already terminated
-                {error, Reason} -> {error, Reason}
+                ok ->
+                    ok;
+                {error, not_found} ->
+                    ok;  % Already terminated
+                {error, Reason} ->
+                    {error, Reason}
             end;
         {error, not_found} ->
             ok
@@ -81,8 +81,10 @@ stop_transport(TransportId) ->
                 ok ->
                     % Delete the child spec after termination
                     case supervisor:delete_child(SupPid, TransportId) of
-                        ok -> ok;
-                        {error, not_found} -> ok  % Already deleted
+                        ok ->
+                            ok;
+                        {error, not_found} ->
+                            ok  % Already deleted
                     end;
                 {error, not_found} ->
                     ok;  % Already terminated
@@ -96,23 +98,26 @@ stop_transport(TransportId) ->
 -spec list_transports() -> [{atom(), pid() | undefined, atom()}].
 list_transports() ->
     case erlang:whereis(erlmcp_transport_sup) of
-        undefined -> [];
+        undefined ->
+            [];
         SupPid ->
             Children = supervisor:which_children(SupPid),
-            lists:map(
-                fun({Id, Pid, _Type, Modules}) ->
-                    % Extract transport type from module name
-                    % Modules is typically [erlmcp_transport_stdio] or similar
-                    Module = case Modules of
-                        [Mod] -> Mod;
-                        Mod when is_atom(Mod) -> Mod;
-                        _ -> unknown
-                    end,
-                    Type = transport_type_from_module(Module),
-                    {Id, Pid, Type}
-                end,
-                Children
-            )
+            lists:map(fun({Id, Pid, _Type, Modules}) ->
+                         % Extract transport type from module name
+                         % Modules is typically [erlmcp_transport_stdio] or similar
+                         Module =
+                             case Modules of
+                                 [Mod] ->
+                                     Mod;
+                                 Mod when is_atom(Mod) ->
+                                     Mod;
+                                 _ ->
+                                     unknown
+                             end,
+                         Type = transport_type_from_module(Module),
+                         {Id, Pid, Type}
+                      end,
+                      Children)
     end.
 
 %%====================================================================
@@ -122,12 +127,18 @@ list_transports() ->
 %% @doc Extract transport type from module name
 %% e.g., erlmcp_transport_stdio -> stdio
 -spec transport_type_from_module(module()) -> atom().
-transport_type_from_module(erlmcp_transport_stdio) -> stdio;
-transport_type_from_module(erlmcp_transport_tcp) -> tcp;
-transport_type_from_module(erlmcp_transport_http) -> http;
-transport_type_from_module(erlmcp_transport_ws) -> ws;
-transport_type_from_module(erlmcp_transport_sse) -> sse;
-transport_type_from_module(_) -> unknown.
+transport_type_from_module(erlmcp_transport_stdio) ->
+    stdio;
+transport_type_from_module(erlmcp_transport_tcp) ->
+    tcp;
+transport_type_from_module(erlmcp_transport_http) ->
+    http;
+transport_type_from_module(erlmcp_transport_ws) ->
+    ws;
+transport_type_from_module(erlmcp_transport_sse) ->
+    sse;
+transport_type_from_module(_) ->
+    unknown.
 
 %%====================================================================
 %% supervisor callbacks
@@ -147,61 +158,50 @@ init([]) ->
     %% - Removed erlmcp_transport_sup (moved to erlmcp_transports app)
     %% - Renamed erlmcp_monitoring_sup -> erlmcp_observability_sup
     %% - Changed strategy: rest_for_one -> one_for_one (no cascades)
+    SupFlags =
+        #{strategy => one_for_one,  % Each subsystem fails independently
+          intensity => 5,
+          period => 60},
 
-    SupFlags = #{
-        strategy => one_for_one,  % Each subsystem fails independently
-        intensity => 5,
-        period => 60
-    },
-
-    ChildSpecs = [
-        %% ================================================================
-        %% TIER 1: CORE (Registry + Infrastructure)
-        %% Foundation layer with no external dependencies
-        %% Failure: Individual components restart in isolation
-        %% Impact: New registrations/sessions may fail during recovery
-        %% Recovery: Automatic via one_for_one strategy
-        %% ================================================================
-        #{
-            id => erlmcp_core_sup,
-            start => {erlmcp_core_sup, start_link, []},
-            restart => permanent,
-            shutdown => infinity,
-            type => supervisor,
-            modules => [erlmcp_core_sup]
-        },
-
-        %% ================================================================
-        %% TIER 2: PROTOCOL SERVERS (simple_one_for_one)
-        %% Dynamic MCP server instances
-        %% Failure: Individual server failures don't affect others
-        %% Impact: In-flight requests to failed server are lost
-        %% Recovery: Clients can reconnect to new server instance
-        %% ================================================================
-        #{
-            id => erlmcp_server_sup,
-            start => {erlmcp_server_sup, start_link, []},
-            restart => permanent,
-            shutdown => infinity,
-            type => supervisor,
-            modules => [erlmcp_server_sup]
-        },
-
-        %% ================================================================
-        %% TIER 3: OBSERVABILITY (Isolated)
-        %% Monitoring, health checks, metrics, dashboards
-        %% Failure: Does NOT affect core or protocol layers
-        %% Impact: Monitoring data may be incomplete during recovery
-        %% Recovery: Automatic via one_for_one strategy
-        %% ================================================================
-        #{
-            id => erlmcp_observability_sup,
-            start => {erlmcp_observability_sup, start_link, []},
-            restart => permanent,
-            shutdown => infinity,
-            type => supervisor,
-            modules => [erlmcp_observability_sup]
-        }
-    ],
+    ChildSpecs =
+        [%% ================================================================
+         %% TIER 1: CORE (Registry + Infrastructure)
+         %% Foundation layer with no external dependencies
+         %% Failure: Individual components restart in isolation
+         %% Impact: New registrations/sessions may fail during recovery
+         %% Recovery: Automatic via one_for_one strategy
+         %% ================================================================
+         #{id => erlmcp_core_sup,
+           start => {erlmcp_core_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,
+           type => supervisor,
+           modules => [erlmcp_core_sup]},
+         %% ================================================================
+         %% TIER 2: PROTOCOL SERVERS (simple_one_for_one)
+         %% Dynamic MCP server instances
+         %% Failure: Individual server failures don't affect others
+         %% Impact: In-flight requests to failed server are lost
+         %% Recovery: Clients can reconnect to new server instance
+         %% ================================================================
+         #{id => erlmcp_server_sup,
+           start => {erlmcp_server_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,
+           type => supervisor,
+           modules => [erlmcp_server_sup]},
+         %% ================================================================
+         %% TIER 3: OBSERVABILITY (Isolated)
+         %% Monitoring, health checks, metrics, dashboards
+         %% Failure: Does NOT affect core or protocol layers
+         %% Impact: Monitoring data may be incomplete during recovery
+         %% Recovery: Automatic via one_for_one strategy
+         %% ================================================================
+         #{id => erlmcp_observability_sup,
+           start => {erlmcp_observability_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,
+           type => supervisor,
+           modules => [erlmcp_observability_sup]}],
 
     {ok, {SupFlags, ChildSpecs}}.

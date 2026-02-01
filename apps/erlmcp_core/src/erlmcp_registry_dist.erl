@@ -1,21 +1,12 @@
 -module(erlmcp_registry_dist).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/0,
-    register_global/3,
-    register_global/4,
-    unregister_global/1,
-    whereis_global/1,
-    list_global_servers/0,
-    list_global_transports/0,
-    get_cluster_nodes/0,
-    is_distributed/0
-]).
-
+-export([start_link/0, register_global/3, register_global/4, unregister_global/1, whereis_global/1,
+         list_global_servers/0, list_global_transports/0, get_cluster_nodes/0, is_distributed/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -28,14 +19,14 @@
 -export_type([entity_type/0, entity_id/0]).
 
 %% State record
--record(dist_state, {
-    enabled = false :: boolean(),
-    nodes = [] :: [node()],
-    node_monitors = #{} :: #{node() => reference()},
-    heartbeat_interval = 10000 :: pos_integer(),
-    heartbeat_ref :: reference() | undefined,
-    split_brain_strategy = winner_takes_all :: winner_takes_all | oldest_node | configured_master
-}).
+-record(dist_state,
+        {enabled = false :: boolean(),
+         nodes = [] :: [node()],
+         node_monitors = #{} :: #{node() => reference()},
+         heartbeat_interval = 10000 :: pos_integer(),
+         heartbeat_ref :: reference() | undefined,
+         split_brain_strategy = winner_takes_all ::
+             winner_takes_all | oldest_node | configured_master}).
 
 -type state() :: #dist_state{}.
 
@@ -74,7 +65,8 @@ unregister_global(Type) when is_atom(Type) ->
     {error, missing_entity_id}.
 
 %% @doc Find the global location of an entity
--spec whereis_global({entity_type(), entity_id()}) -> {ok, {node(), pid(), entity_config()}} | {error, not_found}.
+-spec whereis_global({entity_type(), entity_id()}) ->
+                        {ok, {node(), pid(), entity_config()}} | {error, not_found}.
 whereis_global({Type, EntityId}) ->
     gen_server:call(?MODULE, {whereis_global, Type, EntityId}, 1000).
 
@@ -113,12 +105,11 @@ init([]) ->
     SplitBrainStrategy = application:get_env(erlmcp_core, split_brain_strategy, winner_takes_all),
     HeartbeatInterval = application:get_env(erlmcp_core, cluster_heartbeat_interval, 10000),
 
-    State = #dist_state{
-        enabled = Enabled,
-        nodes = ClusterNodes,
-        split_brain_strategy = SplitBrainStrategy,
-        heartbeat_interval = HeartbeatInterval
-    },
+    State =
+        #dist_state{enabled = Enabled,
+                    nodes = ClusterNodes,
+                    split_brain_strategy = SplitBrainStrategy,
+                    heartbeat_interval = HeartbeatInterval},
 
     case Enabled of
         true ->
@@ -134,7 +125,6 @@ init([]) ->
     end.
 
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
-
 handle_call({register_global, Type, EntityId, EntityPid, Config}, _From, State) ->
     case State#dist_state.enabled of
         false ->
@@ -149,7 +139,7 @@ handle_call({register_global, Type, EntityId, EntityPid, Config}, _From, State) 
                         gproc:reg_other(Key, EntityPid, Config),
                         gproc:monitor(Key),
                         logger:info("Registered global ~p ~p with pid ~p on node ~p",
-                                   [Type, EntityId, EntityPid, node(EntityPid)]),
+                                    [Type, EntityId, EntityPid, node(EntityPid)]),
                         {reply, ok, State}
                     catch
                         error:badarg ->
@@ -159,15 +149,20 @@ handle_call({register_global, Type, EntityId, EntityPid, Config}, _From, State) 
                     end;
                 ExistingPid when ExistingPid =:= EntityPid ->
                     %% Already registered by same process - this is OK (idempotent)
-                    logger:debug("Global ~p ~p already registered by same pid ~p", [Type, EntityId, EntityPid]),
+                    logger:debug("Global ~p ~p already registered by same pid ~p",
+                                 [Type, EntityId, EntityPid]),
                     {reply, ok, State};
                 ExistingPid ->
                     logger:warning("Global ~p ~p already registered with different pid ~p on node ~p (our pid: ~p on ~p)",
-                                  [Type, EntityId, ExistingPid, node(ExistingPid), EntityPid, node(EntityPid)]),
+                                   [Type,
+                                    EntityId,
+                                    ExistingPid,
+                                    node(ExistingPid),
+                                    EntityPid,
+                                    node(EntityPid)]),
                     {reply, {error, already_registered}, State}
             end
     end;
-
 handle_call({unregister_global, Type, EntityId}, _From, State) ->
     case State#dist_state.enabled of
         false ->
@@ -188,7 +183,6 @@ handle_call({unregister_global, Type, EntityId}, _From, State) ->
                     end
             end
     end;
-
 handle_call({whereis_global, Type, EntityId}, _From, State) ->
     case State#dist_state.enabled of
         false ->
@@ -204,33 +198,35 @@ handle_call({whereis_global, Type, EntityId}, _From, State) ->
                     {reply, {ok, {Node, Pid, Config}}, State}
             end
     end;
-
 handle_call(list_global_servers, _From, State) ->
     case State#dist_state.enabled of
         false ->
             {reply, [], State};
         true ->
             %% Query all global servers using gproc select
-            Pattern = {{{n, g, {mcp_global, server, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]},
+            Pattern =
+                {{{n, g, {mcp_global, server, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]},
             Servers = gproc:select(Pattern),
             %% Add node information
             ServersWithNode = [{Id, {node(Pid), Pid, Config}} || {Id, {Pid, Config}} <- Servers],
             {reply, ServersWithNode, State}
     end;
-
 handle_call(list_global_transports, _From, State) ->
     case State#dist_state.enabled of
         false ->
             {reply, [], State};
         true ->
             %% Query all global transports using gproc select
-            Pattern = {{{n, g, {mcp_global, transport, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]},
+            Pattern =
+                {{{n, g, {mcp_global, transport, '$1'}}, '$2', '$3'},
+                 [],
+                 [{{'$1', {{'$2', '$3'}}}}]},
             Transports = gproc:select(Pattern),
             %% Add node information
-            TransportsWithNode = [{Id, {node(Pid), Pid, Config}} || {Id, {Pid, Config}} <- Transports],
+            TransportsWithNode =
+                [{Id, {node(Pid), Pid, Config}} || {Id, {Pid, Config}} <- Transports],
             {reply, TransportsWithNode, State}
     end;
-
 handle_call(get_cluster_nodes, _From, State) ->
     case State#dist_state.enabled of
         false ->
@@ -240,10 +236,8 @@ handle_call(get_cluster_nodes, _From, State) ->
             AllNodes = [node() | nodes()],
             {reply, AllNodes, State}
     end;
-
 handle_call(is_distributed, _From, State) ->
     {reply, State#dist_state.enabled, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -252,10 +246,8 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
-
 handle_info(heartbeat, State = #dist_state{enabled = false}) ->
     {noreply, State};
-
 handle_info(heartbeat, State = #dist_state{enabled = true, heartbeat_interval = Interval}) ->
     %% Check node connectivity
     ConnectedNodes = nodes(),
@@ -264,31 +256,29 @@ handle_info(heartbeat, State = #dist_state{enabled = true, heartbeat_interval = 
     %% Log disconnected nodes
     DisconnectedNodes = ExpectedNodes -- ConnectedNodes,
     case DisconnectedNodes of
-        [] -> ok;
-        _ -> logger:warning("Cluster nodes disconnected: ~p", [DisconnectedNodes])
+        [] ->
+            ok;
+        _ ->
+            logger:warning("Cluster nodes disconnected: ~p", [DisconnectedNodes])
     end,
 
     %% Schedule next heartbeat
     HeartbeatRef = erlang:send_after(Interval, self(), heartbeat),
     {noreply, State#dist_state{heartbeat_ref = HeartbeatRef}};
-
 handle_info({nodedown, Node}, State) ->
     logger:warning("Cluster node down: ~p", [Node]),
     %% Remove node monitor
     NewMonitors = maps:remove(Node, State#dist_state.node_monitors),
     {noreply, State#dist_state{node_monitors = NewMonitors}};
-
 handle_info({nodeup, Node}, State) ->
     logger:info("Cluster node up: ~p", [Node]),
     %% Add node monitor
     MonitorRef = erlang:monitor_node(Node, true),
     NewMonitors = maps:put(Node, MonitorRef, State#dist_state.node_monitors),
     {noreply, State#dist_state{node_monitors = NewMonitors}};
-
 handle_info({gproc, unreg, _Ref, {n, g, {mcp_global, Type, EntityId}}}, State) ->
     logger:warning("Global ~p ~p unregistered (process died)", [Type, EntityId]),
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -296,14 +286,14 @@ handle_info(_Info, State) ->
 terminate(_Reason, State) ->
     %% Cancel heartbeat
     case State#dist_state.heartbeat_ref of
-        undefined -> ok;
-        Ref -> erlang:cancel_timer(Ref)
+        undefined ->
+            ok;
+        Ref ->
+            erlang:cancel_timer(Ref)
     end,
 
     %% Demonitor all nodes
-    lists:foreach(fun(Node) ->
-        erlang:monitor_node(Node, false)
-    end, State#dist_state.nodes),
+    lists:foreach(fun(Node) -> erlang:monitor_node(Node, false) end, State#dist_state.nodes),
 
     logger:info("Distributed registry terminating"),
     ok.
@@ -330,20 +320,24 @@ connect_to_cluster(State = #dist_state{nodes = ClusterNodes}) ->
     end,
 
     %% Connect to each node
-    Monitors = lists:foldl(fun(Node, Acc) ->
-        case net_kernel:connect_node(Node) of
-            true ->
-                logger:info("Connected to cluster node: ~p", [Node]),
-                erlang:monitor_node(Node, true),
-                MonitorRef = make_ref(),
-                maps:put(Node, MonitorRef, Acc);
-            false ->
-                logger:warning("Failed to connect to cluster node: ~p", [Node]),
-                Acc;
-            ignored ->
-                logger:warning("Node connection ignored (not distributed): ~p", [Node]),
-                Acc
-        end
-    end, #{}, ClusterNodes),
+    Monitors =
+        lists:foldl(fun(Node, Acc) ->
+                       case net_kernel:connect_node(Node) of
+                           true ->
+                               logger:info("Connected to cluster node: ~p", [Node]),
+                               erlang:monitor_node(Node, true),
+                               MonitorRef = make_ref(),
+                               maps:put(Node, MonitorRef, Acc);
+                           false ->
+                               logger:warning("Failed to connect to cluster node: ~p", [Node]),
+                               Acc;
+                           ignored ->
+                               logger:warning("Node connection ignored (not distributed): ~p",
+                                              [Node]),
+                               Acc
+                       end
+                    end,
+                    #{},
+                    ClusterNodes),
 
     State#dist_state{node_monitors = Monitors}.

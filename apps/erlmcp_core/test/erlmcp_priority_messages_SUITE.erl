@@ -23,17 +23,11 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Suite callbacks
--export([all/0, groups/0, init_per_suite/1, end_per_suite/1,
-         init_per_testcase/2, end_per_testcase/2]).
-
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2,
+         end_per_testcase/2]).
 %% Test cases
--export([
-    test_priority_flag_set/1,
-    test_priority_message_preemption/1,
-    test_priority_aliases/1,
-    test_priority_latency/1,
-    test_graceful_drain_with_priority/1
-]).
+-export([test_priority_flag_set/1, test_priority_message_preemption/1, test_priority_aliases/1,
+         test_priority_latency/1, test_graceful_drain_with_priority/1]).
 
 -define(NORMAL_MESSAGE_COUNT, 1000).
 -define(PRIORITY_MESSAGE_COUNT, 10).
@@ -44,26 +38,14 @@
 %%====================================================================
 
 all() ->
-    [
-        {group, priority_features},
-        {group, performance_tests},
-        {group, integration_tests}
-    ].
+    [{group, priority_features}, {group, performance_tests}, {group, integration_tests}].
 
 groups() ->
-    [
-        {priority_features, [sequence], [
-            test_priority_flag_set,
-            test_priority_message_preemption,
-            test_priority_aliases
-        ]},
-        {performance_tests, [sequence], [
-            test_priority_latency
-        ]},
-        {integration_tests, [sequence], [
-            test_graceful_drain_with_priority
-        ]}
-    ].
+    [{priority_features,
+      [sequence],
+      [test_priority_flag_set, test_priority_message_preemption, test_priority_aliases]},
+     {performance_tests, [sequence], [test_priority_latency]},
+     {integration_tests, [sequence], [test_graceful_drain_with_priority]}].
 
 init_per_suite(Config) ->
     ct:pal("Starting OTP 28 Priority Messages Test Suite"),
@@ -103,42 +85,45 @@ test_priority_flag_set(Config) ->
 
     ct:pal("Testing priority flag setting (OTP ~p)", [OTPVersion]),
 
-    if
-        OTPVersion >= 28 ->
-            % OTP 28+: priority flag should be available
-            ?assert(HasPriority),
+    if OTPVersion >= 28 ->
+           % OTP 28+: priority flag should be available
+           ?assert(HasPriority),
 
-            % Create a test process that sets priority flag
-            Self = self(),
-            Pid = spawn_link(fun() ->
-                % Set priority flag
-                OldValue = process_flag(priority, true),
+           % Create a test process that sets priority flag
+           Self = self(),
+           Pid = spawn_link(fun() ->
+                               % Set priority flag
+                               OldValue = process_flag(priority, true),
 
-                % Verify flag was set
-                CurrentValue = process_flag(priority, false),
+                               % Verify flag was set
+                               CurrentValue = process_flag(priority, false),
 
-                % Send results back
-                Self ! {priority_test, OldValue, CurrentValue},
+                               % Send results back
+                               Self ! {priority_test, OldValue, CurrentValue},
 
-                % Wait for shutdown
-                receive shutdown -> ok after 1000 -> ok end
-            end),
+                               % Wait for shutdown
+                               receive
+                                   shutdown ->
+                                       ok
+                               after 1000 ->
+                                   ok
+                               end
+                            end),
 
-            % Collect results
-            receive
-                {priority_test, _OldValue, CurrentValue} ->
-                    ct:pal("Priority flag was: ~p", [CurrentValue]),
-                    ?assertEqual(true, CurrentValue)
-            after 1000 ->
-                ct:fail("Priority test process did not respond")
-            end,
+           % Collect results
+           receive
+               {priority_test, _OldValue, CurrentValue} ->
+                   ct:pal("Priority flag was: ~p", [CurrentValue]),
+                   ?assertEqual(true, CurrentValue)
+           after 1000 ->
+               ct:fail("Priority test process did not respond")
+           end,
 
-            Pid ! shutdown;
-
-        true ->
-            % OTP 25-27: priority flag should not be available
-            ?assertNot(HasPriority),
-            ct:pal("Priority messages not available (expected for OTP <28)")
+           Pid ! shutdown;
+       true ->
+           % OTP 25-27: priority flag should not be available
+           ?assertNot(HasPriority),
+           ct:pal("Priority messages not available (expected for OTP <28)")
     end.
 
 %% @doc Test that priority messages preempt normal messages under load
@@ -148,25 +133,30 @@ test_priority_message_preemption(Config) ->
     case HasPriority of
         false ->
             {skip, "Priority messages not available (OTP <28)"};
-
         true ->
             ct:pal("Testing priority message preemption"),
 
             % Create receiver process
             Self = self(),
-            Receiver = spawn_link(fun() ->
-                % Enable priority messages
-                process_flag(priority, true),
+            Receiver =
+                spawn_link(fun() ->
+                              % Enable priority messages
+                              process_flag(priority, true),
 
-                % Notify ready
-                Self ! ready,
+                              % Notify ready
+                              Self ! ready,
 
-                % Process messages and track order
-                receive_and_track_messages(Self, [])
-            end),
+                              % Process messages and track order
+                              receive_and_track_messages(Self, [])
+                           end),
 
             % Wait for receiver to be ready
-            receive ready -> ok after 1000 -> ct:fail("Receiver not ready") end,
+            receive
+                ready ->
+                    ok
+            after 1000 ->
+                ct:fail("Receiver not ready")
+            end,
 
             % Flood with normal messages
             [Receiver ! {normal, N} || N <- lists:seq(1, ?NORMAL_MESSAGE_COUNT)],
@@ -182,11 +172,13 @@ test_priority_message_preemption(Config) ->
             Receiver ! {get_order, Self},
 
             % Receive results
-            Order = receive
-                {message_order, MsgOrder} -> MsgOrder
-            after 5000 ->
-                ct:fail("Did not receive message order")
-            end,
+            Order =
+                receive
+                    {message_order, MsgOrder} ->
+                        MsgOrder
+                after 5000 ->
+                    ct:fail("Did not receive message order")
+                end,
 
             ct:pal("Received ~p messages in order", [length(Order)]),
 
@@ -196,7 +188,7 @@ test_priority_message_preemption(Config) ->
             ct:pal("First 20 messages: ~p", [FirstN]),
 
             % Count priority messages in first 20
-            PriorityInFirst20 = length([M || {priority, _} <- FirstN]),
+            PriorityInFirst20 = length([1 || {priority, _} <- FirstN]),
             ct:pal("Priority messages in first 20: ~p", [PriorityInFirst20]),
 
             % At least some priority messages should have preempted
@@ -215,24 +207,29 @@ test_priority_aliases(Config) ->
     case HasPriority of
         false ->
             {skip, "Priority messages not available (OTP <28)"};
-
         true ->
             ct:pal("Testing priority aliases"),
 
             % Create receiver with priority enabled
             Self = self(),
-            Receiver = spawn_link(fun() ->
-                process_flag(priority, true),
-                Self ! ready,
-                receive
-                    {via_alias, Data} ->
-                        Self ! {received_alias, Data}
-                after 2000 ->
-                    Self ! timeout
-                end
-            end),
+            Receiver =
+                spawn_link(fun() ->
+                              process_flag(priority, true),
+                              Self ! ready,
+                              receive
+                                  {via_alias, Data} ->
+                                      Self ! {received_alias, Data}
+                              after 2000 ->
+                                  Self ! timeout
+                              end
+                           end),
 
-            receive ready -> ok after 1000 -> ct:fail("Receiver not ready") end,
+            receive
+                ready ->
+                    ok
+            after 1000 ->
+                ct:fail("Receiver not ready")
+            end,
 
             % Create alias
             Alias = erlang:monitor(process, Receiver, [{alias, explicit_unalias}]),
@@ -241,12 +238,15 @@ test_priority_aliases(Config) ->
             Alias ! {via_alias, test_data},
 
             % Verify delivery
-            Result = receive
-                {received_alias, test_data} -> ok;
-                timeout -> ct:fail("Message via alias not received")
-            after 2000 ->
-                ct:fail("No response from receiver")
-            end,
+            Result =
+                receive
+                    {received_alias, test_data} ->
+                        ok;
+                    timeout ->
+                        ct:fail("Message via alias not received")
+                after 2000 ->
+                    ct:fail("No response from receiver")
+                end,
 
             ?assertEqual(ok, Result),
 
@@ -261,31 +261,31 @@ test_priority_latency(Config) ->
     case HasPriority of
         false ->
             {skip, "Priority messages not available (OTP <28)"};
-
         true ->
             ct:pal("Testing priority message latency"),
 
             % Create a gen_server that handles health checks with priority
             Self = self(),
-            {ok, Server} = gen_server:start_link(
-                {local, priority_test_server},
-                ?MODULE,
-                [Self],
-                []
-            ),
+            {ok, Server} =
+                gen_server:start_link({local, priority_test_server}, ?MODULE, [Self], []),
 
             % Enable priority on server process
             % (Note: we can't directly set process_flag on gen_server,
             % but we can test latency with priority-enabled receiver)
-
             % Instead, create a custom receiver process
-            Receiver = spawn_link(fun() ->
-                process_flag(priority, true),
-                Self ! ready,
-                priority_latency_loop()
-            end),
+            Receiver =
+                spawn_link(fun() ->
+                              process_flag(priority, true),
+                              Self ! ready,
+                              priority_latency_loop()
+                           end),
 
-            receive ready -> ok after 1000 -> ct:fail("Receiver not ready") end,
+            receive
+                ready ->
+                    ok
+            after 1000 ->
+                ct:fail("Receiver not ready")
+            end,
 
             % Flood with work messages
             [Receiver ! {work, N} || N <- lists:seq(1, ?NORMAL_MESSAGE_COUNT)],
@@ -299,13 +299,14 @@ test_priority_latency(Config) ->
             Alias ! {health_check, Self},
 
             % Measure response time
-            Latency = receive
-                health_ok ->
-                    T2 = erlang:monotonic_time(microsecond),
-                    T2 - T1
-            after 5000 ->
-                ct:fail("Health check timeout")
-            end,
+            Latency =
+                receive
+                    health_ok ->
+                        T2 = erlang:monotonic_time(microsecond),
+                        T2 - T1
+                after 5000 ->
+                    ct:fail("Health check timeout")
+                end,
 
             ct:pal("Health check latency: ~p microseconds", [Latency]),
 
@@ -325,19 +326,24 @@ test_graceful_drain_with_priority(Config) ->
     case HasPriority of
         false ->
             {skip, "Priority messages not available (OTP <28)"};
-
         true ->
             ct:pal("Testing graceful drain with priority"),
 
             % Create a worker that processes messages
             Self = self(),
-            Worker = spawn_link(fun() ->
-                process_flag(priority, true),
-                Self ! ready,
-                drain_worker_loop(Self, normal, 0)
-            end),
+            Worker =
+                spawn_link(fun() ->
+                              process_flag(priority, true),
+                              Self ! ready,
+                              drain_worker_loop(Self, normal, 0)
+                           end),
 
-            receive ready -> ok after 1000 -> ct:fail("Worker not ready") end,
+            receive
+                ready ->
+                    ok
+            after 1000 ->
+                ct:fail("Worker not ready")
+            end,
 
             % Send normal work messages
             [Worker ! {work, N} || N <- lists:seq(1, 100)],
@@ -350,11 +356,13 @@ test_graceful_drain_with_priority(Config) ->
             Alias ! {drain, Self},
 
             % Worker should transition to drain mode quickly
-            DrainAck = receive
-                drain_started -> ok
-            after 2000 ->
-                ct:fail("Drain not acknowledged")
-            end,
+            DrainAck =
+                receive
+                    drain_started ->
+                        ok
+                after 2000 ->
+                    ct:fail("Drain not acknowledged")
+                end,
 
             ?assertEqual(ok, DrainAck),
 
@@ -364,13 +372,14 @@ test_graceful_drain_with_priority(Config) ->
             % Request status
             Worker ! {status, Self},
 
-            Status = receive
-                {status, Mode, Processed} ->
-                    ct:pal("Worker mode: ~p, processed: ~p", [Mode, Processed]),
-                    {Mode, Processed}
-            after 2000 ->
-                ct:fail("Status not received")
-            end,
+            Status =
+                receive
+                    {status, Mode0, Processed} ->
+                        ct:pal("Worker mode: ~p, processed: ~p", [Mode0, Processed]),
+                        {Mode0, Processed}
+                after 2000 ->
+                    ct:fail("Status not received")
+                end,
 
             {Mode, _Processed} = Status,
 
@@ -394,8 +403,10 @@ has_priority_messages() ->
         process_flag(priority, OldValue),
         true
     catch
-        error:badarg -> false;
-        _:_ -> false
+        error:badarg ->
+            false;
+        _:_ ->
+            false
     end.
 
 %% @doc Message tracking loop for preemption test
@@ -432,19 +443,15 @@ drain_worker_loop(Parent, Mode, Processed) ->
             % Acknowledge drain request
             From ! drain_started,
             drain_worker_loop(Parent, drain, Processed);
-
         {work, _N} when Mode =:= drain ->
             % Reject new work in drain mode
             drain_worker_loop(Parent, Mode, Processed);
-
         {work, _N} when Mode =:= normal ->
             % Process work in normal mode
             drain_worker_loop(Parent, Mode, Processed + 1);
-
         {status, From} ->
             From ! {status, Mode, Processed},
             drain_worker_loop(Parent, Mode, Processed);
-
         shutdown ->
             ok
     after 10000 ->

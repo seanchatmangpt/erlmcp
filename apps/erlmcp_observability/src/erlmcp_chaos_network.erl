@@ -11,12 +11,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_chaos_network).
 
--export([
-    inject_latency/1,
-    inject_partition/1,
-    inject_packet_loss/1,
-    throttle_connections/1
-]).
+-export([inject_latency/1, inject_partition/1, inject_packet_loss/1, throttle_connections/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -33,7 +28,7 @@ inject_latency(Config) ->
     Interval = maps:get(interval, Config, 100),
 
     ?LOG_INFO("Injecting ~pms latency to ~.1f% of traffic for ~pms",
-             [Latency, Rate * 100, Duration]),
+              [Latency, Rate * 100, Duration]),
 
     % Run latency injection loop for specified duration
     inject_latency_loop(Latency, Rate, Interval, Duration).
@@ -63,26 +58,24 @@ inject_latency_loop(Latency, Rate, Interval, Remaining) ->
 inject_partition(Config) ->
     Duration = maps:get(duration, Config, 60000),
     Nodes = maps:get(nodes, Config, nodes()),
-    
-    ?LOG_INFO("Injecting network partition for ~pms affecting nodes: ~p", 
-             [Duration, Nodes]),
-    
+
+    ?LOG_INFO("Injecting network partition for ~pms affecting nodes: ~p", [Duration, Nodes]),
+
     % In distributed setup, would disconnect nodes
-    lists:foreach(
-        fun(Node) ->
-            case Node =:= node() of
-                true -> ok;
-                false ->
-                    ?LOG_INFO("Simulating partition from ~p", [Node]),
-                    % In real implementation: net_kernel:disconnect_node(Node)
-                    ok
-            end
-        end,
-        Nodes
-    ),
-    
+    lists:foreach(fun(Node) ->
+                     case Node =:= node() of
+                         true ->
+                             ok;
+                         false ->
+                             ?LOG_INFO("Simulating partition from ~p", [Node]),
+                             % In real implementation: net_kernel:disconnect_node(Node)
+                             ok
+                     end
+                  end,
+                  Nodes),
+
     timer:sleep(Duration),
-    
+
     ?LOG_INFO("Healing network partition", []),
     ok.
 
@@ -91,15 +84,15 @@ inject_partition(Config) ->
 inject_packet_loss(Config) ->
     Rate = maps:get(rate, Config),
     Interval = maps:get(interval, Config, 30000),
-    
+
     ?LOG_INFO("Injecting ~.1f% packet loss", [Rate * 100]),
-    
+
     inject_packet_loss_loop(Rate, Interval).
 
 -spec inject_packet_loss_loop(float(), pos_integer()) -> ok.
 inject_packet_loss_loop(Rate, Interval) ->
     timer:sleep(Interval),
-    
+
     % In real implementation, would intercept and drop messages
     case rand:uniform() < Rate of
         true ->
@@ -107,7 +100,7 @@ inject_packet_loss_loop(Rate, Interval) ->
         false ->
             ok
     end,
-    
+
     inject_packet_loss_loop(Rate, Interval).
 
 %% @doc Throttle connection rate
@@ -115,9 +108,8 @@ inject_packet_loss_loop(Rate, Interval) ->
 throttle_connections(Config) ->
     MaxRate = maps:get(max_rate, Config, 100),
     Duration = maps:get(duration, Config, 60000),
-    
+
     ?LOG_INFO("Throttling connections to ~p/sec for ~pms", [MaxRate, Duration]),
-    
+
     timer:sleep(Duration),
     ok.
-

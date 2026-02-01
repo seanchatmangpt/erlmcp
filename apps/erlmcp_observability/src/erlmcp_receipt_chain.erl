@@ -3,13 +3,7 @@
 -module(erlmcp_receipt_chain).
 
 %% Public API
--export([
-    add_event/1,
-    get_events_by_type/1,
-    get_event_by_id/1,
-    get_all_events/0,
-    restore_state/1
-]).
+-export([add_event/1, get_events_by_type/1, get_event_by_id/1, get_all_events/0, restore_state/1]).
 
 -include("erlmcp.hrl").
 
@@ -22,13 +16,12 @@
 ensure_table() ->
     case ets:info(?EVENT_TABLE) of
         undefined ->
-            ets:new(?EVENT_TABLE, [
-                named_table,
-                public,
-                ordered_set,
-                {write_concurrency, true},
-                {read_concurrency, true}
-            ]);
+            ets:new(?EVENT_TABLE,
+                    [named_table,
+                     public,
+                     ordered_set,
+                     {write_concurrency, true},
+                     {read_concurrency, true}]);
         _ ->
             ok
     end.
@@ -40,10 +33,7 @@ ensure_table() ->
 add_event(Event) ->
     ensure_table(),
     EventId = erlang:system_time(microsecond),
-    EventWithId = Event#{
-        id => EventId,
-        recorded_at => erlang:system_time(millisecond)
-    },
+    EventWithId = Event#{id => EventId, recorded_at => erlang:system_time(millisecond)},
     ets:insert(?EVENT_TABLE, {EventId, EventWithId}),
     ok.
 
@@ -64,8 +54,10 @@ get_events_by_type(Type) ->
 get_event_by_id(EventId) ->
     ensure_table(),
     case ets:lookup(?EVENT_TABLE, EventId) of
-        [{_, Event}] -> {ok, Event};
-        [] -> {error, not_found}
+        [{_, Event}] ->
+            {ok, Event};
+        [] ->
+            {error, not_found}
     end.
 
 %% @doc Get all events
@@ -81,11 +73,9 @@ get_all_events() ->
 restore_state(State) ->
     ensure_table(),
     ets:delete_all_objects(?EVENT_TABLE),
-    maps:fold(
-        fun(EventId, Event, Acc) ->
-            ets:insert(?EVENT_TABLE, {EventId, Event}),
-            Acc
-        end,
-        ok,
-        State
-    ).
+    maps:fold(fun(EventId, Event, Acc) ->
+                 ets:insert(?EVENT_TABLE, {EventId, Event}),
+                 Acc
+              end,
+              ok,
+              State).

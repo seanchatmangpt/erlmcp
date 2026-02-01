@@ -8,6 +8,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_transports_app).
+
 -behaviour(application).
 
 %% Application callbacks

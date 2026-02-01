@@ -8,35 +8,16 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_session_fsm).
+
 -behaviour(gen_statem).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/1,
-    start_link/2,
-    negotiate/2,
-    activate/1,
-    suspend/1,
-    resume/1,
-    close/1,
-    state_name/1,
-    add_connection/2,
-    remove_connection/2,
-    get_connections/1,
-    stop/1
-]).
-
+-export([start_link/1, start_link/2, negotiate/2, activate/1, suspend/1, resume/1, close/1,
+         state_name/1, add_connection/2, remove_connection/2, get_connections/1, stop/1]).
 %% gen_statem callbacks
--export([
-    init/1,
-    callback_mode/0,
-    handle_event/4,
-    terminate/3,
-    code_change/4,
-    format_status/2
-]).
+-export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/2]).
 
 %% State names for type specs
 -type session_state() :: negotiation | active | suspended | closed.
@@ -46,22 +27,21 @@
 -export_type([session_state/0, session_id/0]).
 
 %% State data record
--record(data, {
-    session_id :: session_id(),
-    capabilities :: #mcp_server_capabilities{} | undefined,
-    client_capabilities :: #mcp_client_capabilities{} | undefined,
-    protocol_version :: binary() | undefined,
-    connections = #{} :: #{connection_id() => pid()},
-    monitors = #{} :: #{pid() => reference()},
-    metadata = #{} :: map(),
-    created_at :: integer(),
-    last_activity :: integer(),
-    timeout_ms :: pos_integer() | infinity,
-    suspend_reason :: term() | undefined,
-    negotiation_timeout_ref :: reference() | undefined,
-    idle_timeout_ref :: reference() | undefined,
-    options :: map()
-}).
+-record(data,
+        {session_id :: session_id(),
+         capabilities :: #mcp_server_capabilities{} | undefined,
+         client_capabilities :: #mcp_client_capabilities{} | undefined,
+         protocol_version :: binary() | undefined,
+         connections = #{} :: #{connection_id() => pid()},
+         monitors = #{} :: #{pid() => reference()},
+         metadata = #{} :: map(),
+         created_at :: integer(),
+         last_activity :: integer(),
+         timeout_ms :: pos_integer() | infinity,
+         suspend_reason :: term() | undefined,
+         negotiation_timeout_ref :: reference() | undefined,
+         idle_timeout_ref :: reference() | undefined,
+         options :: map()}).
 
 -type state_data() :: #data{}.
 
@@ -132,14 +112,13 @@ init([SessionId, Options]) ->
     logger:info("Session FSM ~p initializing", [SessionId]),
 
     Now = erlang:system_time(millisecond),
-    Data = #data{
-        session_id = SessionId,
-        created_at = Now,
-        last_activity = Now,
-        timeout_ms = maps:get(timeout_ms, Options, infinity),
-        metadata = maps:get(metadata, Options, #{}),
-        options = Options
-    },
+    Data =
+        #data{session_id = SessionId,
+              created_at = Now,
+              last_activity = Now,
+              timeout_ms = maps:get(timeout_ms, Options, infinity),
+              metadata = maps:get(metadata, Options, #{}),
+              options = Options},
 
     %% Emit state transition event for debugging
     emit_state_transition(undefined, negotiation, Data),
@@ -191,38 +170,31 @@ handle_event(enter, OldState, State, Data) ->
         _ ->
             {keep_state_and_data, []}
     end;
-
 %% Priority messages (OTP 28) - bypass normal queue for control signals
 %% Health check signal
 handle_event({call, From}, {health_check}, State, Data) ->
-    Health = #{
-        state => State,
-        session_id => Data#data.session_id,
-        connections => maps:size(Data#data.connections),
-        last_activity => Data#data.last_activity
-    },
+    Health =
+        #{state => State,
+          session_id => Data#data.session_id,
+          connections => maps:size(Data#data.connections),
+          last_activity => Data#data.last_activity},
     {keep_state_and_data, [{reply, From, {ok, Health}}]};
-
 %% Cancel signal (immediate abort) - Priority message
 handle_event({call, From}, cancel, _State, Data) ->
     logger:warning("Session ~p received cancel signal", [Data#data.session_id]),
     emit_state_transition(_State, closed, Data),
     {next_state, closed, Data, [{reply, From, ok}]};
-
 %% Close signal
 handle_event({call, From}, close, _State, Data) ->
     logger:info("Session ~p closing", [Data#data.session_id]),
     emit_state_transition(_State, closed, Data),
     {next_state, closed, Data, [{reply, From, ok}]};
-
 %% State name query
 handle_event({call, From}, state_name, State, _Data) ->
     {keep_state_and_data, [{reply, From, State}]};
-
 %% Get connections query
 handle_event({call, From}, get_connections, _State, Data) ->
     {keep_state_and_data, [{reply, From, Data#data.connections}]};
-
 %% negotiation state events
 handle_event({call, From}, {negotiate, Params}, negotiation, Data) ->
     case perform_negotiation(Params, Data) of
@@ -231,90 +203,77 @@ handle_event({call, From}, {negotiate, Params}, negotiation, Data) ->
             emit_state_transition(negotiation, active, NewData),
             {next_state, active, NewData, [{reply, From, ok}]};
         {error, Reason} = Error ->
-            logger:error("Session ~p negotiation failed: ~p",
-                        [Data#data.session_id, Reason]),
+            logger:error("Session ~p negotiation failed: ~p", [Data#data.session_id, Reason]),
             emit_state_transition(negotiation, closed, Data),
             {next_state, closed, Data, [{reply, From, Error}]}
     end;
-
 handle_event({call, From}, {negotiate, _Params}, State, _Data) ->
     {keep_state_and_data, [{reply, From, {error, {invalid_state, State}}}]};
-
 %% Negotiation timeout
 handle_event(info, negotiation_timeout, negotiation, Data) ->
     logger:error("Session ~p negotiation timeout", [Data#data.session_id]),
     emit_state_transition(negotiation, closed, Data),
     {next_state, closed, Data};
-
 %% active state events
 handle_event({call, From}, activate, negotiation, _Data) ->
     %% Can activate after successful negotiation
     {keep_state_and_data, [{reply, From, ok}]};
-
 handle_event({call, From}, activate, active, _Data) ->
     %% Already active
     {keep_state_and_data, [{reply, From, ok}]};
-
 handle_event({call, From}, suspend, active, Data) ->
     logger:info("Session ~p suspending", [Data#data.session_id]),
     emit_state_transition(active, suspended, Data),
     {next_state, suspended, Data, [{reply, From, ok}]};
-
 %% Connection management (works in any state except closed)
-handle_event({call, From}, {add_connection, ConnId, ConnPid}, State, Data)
-  when State =/= closed ->
+handle_event({call, From}, {add_connection, ConnId, ConnPid}, State, Data) when State =/= closed ->
     %% Monitor the connection process
     MonRef = erlang:monitor(process, ConnPid),
     NewConnections = maps:put(ConnId, ConnPid, Data#data.connections),
     NewMonitors = maps:put(ConnPid, MonRef, Data#data.monitors),
-    NewData = Data#data{
-        connections = NewConnections,
-        monitors = NewMonitors,
-        last_activity = erlang:system_time(millisecond)
-    },
+    NewData =
+        Data#data{connections = NewConnections,
+                  monitors = NewMonitors,
+                  last_activity = erlang:system_time(millisecond)},
     logger:debug("Session ~p added connection ~p", [Data#data.session_id, ConnId]),
     reset_idle_timeout(NewData),
     {keep_state, NewData, [{reply, From, ok}]};
-
-handle_event({call, From}, {remove_connection, ConnId}, State, Data)
-  when State =/= closed ->
+handle_event({call, From}, {remove_connection, ConnId}, State, Data) when State =/= closed ->
     case maps:get(ConnId, Data#data.connections, undefined) of
         undefined ->
             {keep_state_and_data, [{reply, From, {error, not_found}}]};
         ConnPid ->
             %% Demonitor and remove
             case maps:get(ConnPid, Data#data.monitors, undefined) of
-                undefined -> ok;
-                MonRef -> erlang:demonitor(MonRef, [flush])
+                undefined ->
+                    ok;
+                MonRef ->
+                    erlang:demonitor(MonRef, [flush])
             end,
             NewConnections = maps:remove(ConnId, Data#data.connections),
             NewMonitors = maps:remove(ConnPid, Data#data.monitors),
-            NewData = Data#data{
-                connections = NewConnections,
-                monitors = NewMonitors,
-                last_activity = erlang:system_time(millisecond)
-            },
+            NewData =
+                Data#data{connections = NewConnections,
+                          monitors = NewMonitors,
+                          last_activity = erlang:system_time(millisecond)},
             logger:debug("Session ~p removed connection ~p", [Data#data.session_id, ConnId]),
             {keep_state, NewData, [{reply, From, ok}]}
     end;
-
 %% Handle connection process death
-handle_event(info, {'DOWN', MonRef, process, ConnPid, Reason}, State, Data)
-  when State =/= closed ->
+handle_event(info, {'DOWN', MonRef, process, ConnPid, Reason}, State, Data) when State =/= closed ->
     %% Find and remove the dead connection
     ConnId = find_connection_id(ConnPid, Data#data.connections),
-    logger:info("Session ~p connection ~p terminated: ~p",
-               [Data#data.session_id, ConnId, Reason]),
+    logger:info("Session ~p connection ~p terminated: ~p", [Data#data.session_id, ConnId, Reason]),
 
-    NewConnections = case ConnId of
-        undefined -> Data#data.connections;
-        _ -> maps:remove(ConnId, Data#data.connections)
-    end,
+    NewConnections =
+        case ConnId of
+            undefined ->
+                Data#data.connections;
+            _ ->
+                maps:remove(ConnId, Data#data.connections)
+        end,
     NewMonitors = maps:remove(ConnPid, Data#data.monitors),
-    NewData = Data#data{
-        connections = NewConnections,
-        monitors = NewMonitors
-    },
+    NewData = Data#data{connections = NewConnections, monitors = NewMonitors},
 
     %% If no more connections, might want to close session
     case {State, maps:size(NewConnections)} of
@@ -326,50 +285,44 @@ handle_event(info, {'DOWN', MonRef, process, ConnPid, Reason}, State, Data)
         _ ->
             {keep_state, NewData}
     end;
-
 %% suspended state events
 handle_event({call, From}, resume, suspended, Data) ->
     logger:info("Session ~p resuming", [Data#data.session_id]),
     emit_state_transition(suspended, active, Data),
     {next_state, active, Data, [{reply, From, ok}]};
-
 %% Idle timeout
 handle_event(info, idle_timeout, active, Data) ->
     logger:info("Session ~p idle timeout, suspending", [Data#data.session_id]),
     emit_state_transition(active, suspended, Data),
     {next_state, suspended, Data};
-
 %% Catch-all for unhandled events
 handle_event(EventType, Event, State, Data) ->
     logger:warning("Session ~p unhandled event ~p in state ~p: ~p",
-                  [Data#data.session_id, EventType, State, Event]),
+                   [Data#data.session_id, EventType, State, Event]),
     {keep_state_and_data, []}.
 
 -spec terminate(term(), session_state(), state_data()) -> ok.
 terminate(Reason, State, Data) ->
-    logger:info("Session ~p terminating in state ~p: ~p",
-               [Data#data.session_id, State, Reason]),
+    logger:info("Session ~p terminating in state ~p: ~p", [Data#data.session_id, State, Reason]),
     close_all_connections(Data),
     cancel_negotiation_timeout(Data),
     cancel_idle_timeout(Data),
     ok.
 
 -spec code_change(term(), session_state(), state_data(), term()) ->
-    {ok, session_state(), state_data()}.
+                     {ok, session_state(), state_data()}.
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
--spec format_status(Opt, Status) -> term() when
-    Opt :: normal | terminate,
-    Status :: list().
+-spec format_status(Opt, Status) -> term()
+    when Opt :: normal | terminate,
+         Status :: list().
 format_status(_Opt, [_PDict, State, Data]) ->
-    #{
-        state => State,
-        session_id => Data#data.session_id,
-        connections => maps:size(Data#data.connections),
-        created_at => Data#data.created_at,
-        last_activity => Data#data.last_activity
-    }.
+    #{state => State,
+      session_id => Data#data.session_id,
+      connections => maps:size(Data#data.connections),
+      created_at => Data#data.created_at,
+      last_activity => Data#data.last_activity}.
 
 %%====================================================================
 %% Internal functions
@@ -378,15 +331,14 @@ format_status(_Opt, [_PDict, State, Data]) ->
 -spec emit_state_transition(session_state() | undefined, session_state(), state_data()) -> ok.
 emit_state_transition(OldState, NewState, Data) ->
     %% Emit state transition event for debugging/observability
-    Event = #{
-        type => state_transition,
-        module => ?MODULE,
-        session_id => Data#data.session_id,
-        from_state => OldState,
-        to_state => NewState,
-        connections => maps:size(Data#data.connections),
-        timestamp => erlang:system_time(millisecond)
-    },
+    Event =
+        #{type => state_transition,
+          module => ?MODULE,
+          session_id => Data#data.session_id,
+          from_state => OldState,
+          to_state => NewState,
+          connections => maps:size(Data#data.connections),
+          timestamp => erlang:system_time(millisecond)},
     logger:debug("State transition event: ~p", [Event]),
     %% Could also send to telemetry/OTEL here
     ok.
@@ -395,12 +347,13 @@ emit_state_transition(OldState, NewState, Data) ->
 perform_negotiation(Params, Data) ->
     %% Perform capability negotiation
     try
-        NewData = Data#data{
-            capabilities = maps:get(server_capabilities, Params, #mcp_server_capabilities{}),
-            client_capabilities = maps:get(client_capabilities, Params, #mcp_client_capabilities{}),
-            protocol_version = maps:get(protocol_version, Params, ?MCP_VERSION),
-            last_activity = erlang:system_time(millisecond)
-        },
+        NewData =
+            Data#data{capabilities =
+                          maps:get(server_capabilities, Params, #mcp_server_capabilities{}),
+                      client_capabilities =
+                          maps:get(client_capabilities, Params, #mcp_client_capabilities{}),
+                      protocol_version = maps:get(protocol_version, Params, ?MCP_VERSION),
+                      last_activity = erlang:system_time(millisecond)},
         {ok, NewData}
     catch
         _:Reason ->
@@ -410,45 +363,42 @@ perform_negotiation(Params, Data) ->
 -spec close_all_connections(state_data()) -> ok.
 close_all_connections(#data{connections = Connections, monitors = Monitors}) ->
     %% Demonitor all
-    maps:foreach(
-        fun(_Pid, MonRef) ->
-            erlang:demonitor(MonRef, [flush])
-        end,
-        Monitors
-    ),
+    maps:foreach(fun(_Pid, MonRef) -> erlang:demonitor(MonRef, [flush]) end, Monitors),
 
     %% Close all connections gracefully
-    maps:foreach(
-        fun(_ConnId, ConnPid) ->
-            case is_process_alive(ConnPid) of
-                true ->
-                    try
-                        gen_statem:stop(ConnPid, normal, 5000)
-                    catch
-                        _:_ -> ok
-                    end;
-                false ->
-                    ok
-            end
-        end,
-        Connections
-    ),
+    maps:foreach(fun(_ConnId, ConnPid) ->
+                    case is_process_alive(ConnPid) of
+                        true ->
+                            try
+                                gen_statem:stop(ConnPid, normal, 5000)
+                            catch
+                                _:_ ->
+                                    ok
+                            end;
+                        false ->
+                            ok
+                    end
+                 end,
+                 Connections),
     ok.
 
 -spec find_connection_id(pid(), #{connection_id() => pid()}) -> connection_id() | undefined.
 find_connection_id(Pid, Connections) ->
-    case maps:fold(
-        fun(ConnId, ConnPid, Acc) ->
-            case ConnPid of
-                Pid -> ConnId;
-                _ -> Acc
-            end
-        end,
-        undefined,
-        Connections
-    ) of
-        undefined -> undefined;
-        ConnId -> ConnId
+    case maps:fold(fun(ConnId, ConnPid, Acc) ->
+                      case ConnPid of
+                          Pid ->
+                              ConnId;
+                          _ ->
+                              Acc
+                      end
+                   end,
+                   undefined,
+                   Connections)
+    of
+        undefined ->
+            undefined;
+        ConnId ->
+            ConnId
     end.
 
 -spec cancel_negotiation_timeout(state_data()) -> ok.
@@ -474,7 +424,8 @@ reset_idle_timeout(Data) ->
     %% Cancel existing timeout and set new one
     cancel_idle_timeout(Data),
     case Data#data.timeout_ms of
-        infinity -> ok;
+        infinity ->
+            ok;
         TimeoutMs when is_integer(TimeoutMs) ->
             _IdleRef = erlang:send_after(TimeoutMs, self(), idle_timeout),
             ok

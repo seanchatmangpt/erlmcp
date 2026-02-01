@@ -10,11 +10,14 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cross_transport_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %% Include proper conditionally
 -ifdef(PROPER).
+
 -include_lib("proper/include/proper.hrl").
+
 -endif.
 
 %%====================================================================
@@ -25,7 +28,6 @@
 -define(TCP_TRANSPORT, erlmcp_transport_tcp).
 -define(WS_TRANSPORT, erlmcp_transport_ws).
 -define(HTTP_TRANSPORT, erlmcp_transport_http).
-
 -define(TEST_TIMEOUT, 5000).
 
 %%====================================================================
@@ -60,19 +62,10 @@ cross_transport_compliance_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"All transports support JSON-RPC messages",
-       fun test_json_rpc_support/0},
-
-      {"All transports handle message size limits",
-       fun test_message_size_limits/0},
-
-      {"All transports support concurrent operations",
-       fun test_concurrent_operations/0},
-
-      {"All transports handle graceful shutdown",
-       fun test_graceful_shutdown/0}
-     ]}.
+     [{"All transports support JSON-RPC messages", fun test_json_rpc_support/0},
+      {"All transports handle message size limits", fun test_message_size_limits/0},
+      {"All transports support concurrent operations", fun test_concurrent_operations/0},
+      {"All transports handle graceful shutdown", fun test_graceful_shutdown/0}]}.
 
 %%====================================================================
 %% JSON-RPC Support Tests
@@ -83,8 +76,7 @@ test_json_rpc_support() ->
     JsonRpc = <<"{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"id\":1}">>,
 
     %% Verify it's valid JSON (observable behavior)
-    ?assertMatch(#{<<"jsonrpc">> := <<"2.0">>},
-                 jsx:decode(JsonRpc, [return_maps])),
+    ?assertMatch(#{<<"jsonrpc">> := <<"2.0">>}, jsx:decode(JsonRpc, [return_maps])),
 
     %% Verify it has required fields
     Decoded = jsx:decode(JsonRpc, [return_maps]),
@@ -117,9 +109,14 @@ test_concurrent_operations() ->
     NumOps = 10,
 
     %% Spawn concurrent processes (observable behavior)
-    Pids = [spawn(fun() ->
-        receive stop -> ok end
-    end) || _ <- lists:seq(1, NumOps)],
+    Pids =
+        [spawn(fun() ->
+                  receive
+                      stop ->
+                          ok
+                  end
+               end)
+         || _ <- lists:seq(1, NumOps)],
 
     ?assertEqual(NumOps, length(Pids)),
 
@@ -128,9 +125,10 @@ test_concurrent_operations() ->
 
     %% Cleanup
     lists:foreach(fun(Pid) ->
-        unlink(Pid),
-        exit(Pid, kill)
-    end, Pids).
+                     unlink(Pid),
+                     exit(Pid, kill)
+                  end,
+                  Pids).
 
 %%====================================================================
 %% Graceful Shutdown Tests
@@ -139,8 +137,11 @@ test_concurrent_operations() ->
 test_graceful_shutdown() ->
     %% Test graceful shutdown (observable behavior)
     Pid = spawn(fun() ->
-        receive stop -> ok end
-    end),
+                   receive
+                       stop ->
+                           ok
+                   end
+                end),
 
     ?assert(is_process_alive(Pid)),
 
@@ -157,52 +158,54 @@ test_graceful_shutdown() ->
 -ifdef(PROPER).
 
 prop_stdio_message_roundtrip() ->
-    ?FORALL(Message, proper_types:binary(),
-        begin
-            Owner = self(),
-            {ok, Transport} = ?STDIO_TRANSPORT:start_link(Owner),
+    ?FORALL(Message,
+            proper_types:binary(),
+            begin
+                Owner = self(),
+                {ok, Transport} = ?STDIO_TRANSPORT:start_link(Owner),
 
-            gen_server:call(Transport, {simulate_input, Message}),
+                gen_server:call(Transport, {simulate_input, Message}),
 
-            Result = receive
-                {transport_message, Received} ->
-                    Received =:= Message;
-                _ ->
-                    false
-            after 500 ->
-                false
-            end,
+                Result =
+                    receive
+                        {transport_message, Received} ->
+                            Received =:= Message;
+                        _ ->
+                            false
+                    after 500 ->
+                        false
+                    end,
 
-            catch gen_server:stop(Transport, normal, 500),
-            Result
-        end).
+                catch gen_server:stop(Transport, normal, 500),
+                Result
+            end).
 
 prop_websocket_utf8_validation() ->
-    ?FORALL(Text, proper_types:binary(),
-        begin
-            case ?WS_TRANSPORT:validate_utf8(Text) of
-                ok -> true;
-                {error, invalid_utf8} ->
-                    %% Verify it's actually invalid
-                    case unicode:characters_to_list(Text, utf8) of
-                        {error, _, _} -> true;
-                        {incomplete, _, _} -> true;
-                        _ -> false
-                    end
-            end
-        end).
+    ?FORALL(Text,
+            proper_types:binary(),
+            begin
+                case ?WS_TRANSPORT:validate_utf8(Text) of
+                    ok ->
+                        true;
+                    {error, invalid_utf8} ->
+                        %% Verify it's actually invalid
+                        case unicode:characters_to_list(Text, utf8) of
+                            {error, _, _} ->
+                                true;
+                            {incomplete, _, _} ->
+                                true;
+                            _ ->
+                                false
+                        end
+                end
+            end).
 
-prop_tcp_message_extraction() ->
-    ?FORALL(Messages, proper_types:list(proper_types:binary()),
-        begin
+prop_tcp_message_extraction( ) -> ?FORALL( Messages , proper_types : list( proper_types : binary( ) ) , begin Buffer = iolist_to_binary( [ M , "\n" || M <- Messages ] ) , Parts = binary : split( Buffer , << "\n" >> , [ global ] ) , length( Parts ) >= length( Messages ) end ) .
+
             %% Create buffer with messages separated by newlines
-            Buffer = iolist_to_binary([M, "\n" || M <- Messages]),
 
             %% Extract messages
-            Parts = binary:split(Buffer, <<"\n">>, [global]),
 
             %% Verify all messages extracted
-            length(Parts) >= length(Messages)
-        end).
 
 -endif.

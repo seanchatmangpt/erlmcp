@@ -34,44 +34,29 @@ cleanup(_) ->
 
 sse_real_transport_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        {timeout, 30, [
-            {"Initialization", [
-                ?_test(test_init_sse_starts_manager()),
-                ?_test(test_init_returns_pid()),
-                ?_test(test_init_multiple_transports())
-            ]},
-            {"SSE Event Streaming", [
-                ?_test(test_send_event_format()),
-                ?_test(test_keepalive_ping_format()),
-                ?_test(test_retry_field_format())
-            ]},
-            {"HTTP Connection", [
-                ?_test(test_http_get_returns_stream_headers()),
-                ?_test(test_http_post_accepts_json())
-            ]}
-        ]}
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     {timeout,
+      30,
+      [{"Initialization",
+        [?_test(test_init_sse_starts_manager()),
+         ?_test(test_init_returns_pid()),
+         ?_test(test_init_multiple_transports())]},
+       {"SSE Event Streaming",
+        [?_test(test_send_event_format()),
+         ?_test(test_keepalive_ping_format()),
+         ?_test(test_retry_field_format())]},
+       {"HTTP Connection",
+        [?_test(test_http_get_returns_stream_headers()), ?_test(test_http_post_accepts_json())]}]}}.
 
 %%====================================================================
 %% Initialization Tests (Observable Behavior)
 %%====================================================================
 
-test_init_sse_starts_manager() ->
+test_init_sse_starts_manager( ) -> Config = #{ port => 18081 , path => "/mcp/sse" } , TransportId = << "sse_test_1" >> , Result = erlmcp_transport_sse : init( TransportId , Config ) , ?assertMatch( { ok , Pid } when is_pid( Pid ) , Result ) , { ok , Pid } = Result , erlmcp_transport_sse : close( Pid ) .
+
     %% Test API: init returns {ok, ManagerPid}
-    Config = #{
-        port => 18081,
-        path => "/mcp/sse"
-    },
-    TransportId = <<"sse_test_1">>,
-
-    Result = erlmcp_transport_sse:init(TransportId, Config),
-    ?assertMatch({ok, Pid} when is_pid(Pid), Result),
-
     %% Clean up
-    {ok, Pid} = Result,
-    erlmcp_transport_sse:close(Pid).
 
 test_init_returns_pid() ->
     %% Test API: init returns actual Pid, not self()
@@ -112,14 +97,13 @@ test_send_event_format() ->
 
     {ok, ManagerPid} = erlmcp_transport_sse:init(TransportId, Config),
 
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"id">> => 1}),
 
     Result = erlmcp_transport_sse:send(ManagerPid, Message),
-    ?assert(Result =:= ok orelse (is_tuple(Result) andalso element(1, Result) =:= error)),
+    ?assert(Result =:= ok orelse is_tuple(Result) andalso element(1, Result) =:= error),
 
     %% Clean up
     erlmcp_transport_sse:close(ManagerPid).
@@ -164,9 +148,7 @@ test_http_get_returns_stream_headers() ->
     case gun:open("localhost", 18086) of
         {ok, ConnPid} ->
             {ok, _} = gun:await_up(ConnPid),
-            StreamRef = gun:get(ConnPid, "/mcp/sse", [
-                {<<"accept">>, <<"text/event-stream">>}
-            ]),
+            StreamRef = gun:get(ConnPid, "/mcp/sse", [{<<"accept">>, <<"text/event-stream">>}]),
 
             %% Wait for response
             case gun:await(ConnPid, StreamRef, 2000) of
@@ -206,19 +188,20 @@ test_http_post_accepts_json() ->
     timer:sleep(100),
 
     %% Make HTTP POST request with JSON
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{<<"name">> => <<"test">>},
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"tools/call">>,
+                     <<"params">> => #{<<"name">> => <<"test">>},
+                     <<"id">> => 1}),
 
     case gun:open("localhost", 18087) of
         {ok, ConnPid} ->
             {ok, _} = gun:await_up(ConnPid),
-            StreamRef = gun:post(ConnPid, "/mcp/sse", [
-                {<<"content-type">>, <<"application/json">>}
-            ], Message),
+            StreamRef =
+                gun:post(ConnPid,
+                         "/mcp/sse",
+                         [{<<"content-type">>, <<"application/json">>}],
+                         Message),
 
             %% Wait for response
             case gun:await(ConnPid, StreamRef, 2000) of

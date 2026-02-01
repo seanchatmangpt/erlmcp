@@ -8,6 +8,38 @@
 
 set -euo pipefail
 
+# Source shared utilities (with fallback)
+HOOK_LIB="$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
+if [[ -f "$HOOK_LIB" ]]; then
+    source "$HOOK_LIB"
+else
+    # Fallback implementations
+    hook_log() {
+        echo "[$(date -Iseconds)] [$1] $*" >> "${ERLMCP_ROOT:-$(pwd)}/.erlmcp/hook.log"
+    }
+    output_decision() {
+        local decision="$1"
+        local reason="$2"
+        local modified_command="${3:-}"
+        if command -v jq &> /dev/null; then
+            if [[ -n "$modified_command" ]]; then
+                jq -n --arg decision "$decision" --arg reason "$reason" --arg cmd "$modified_command" \
+                    '{permissionDecision: $decision, reason: $reason, input: {command: $cmd}}'
+            else
+                jq -n --arg decision "$decision" --arg reason "$reason" \
+                    '{permissionDecision: $decision, reason: $reason}'
+            fi
+        else
+            if [[ -n "$modified_command" ]]; then
+                echo "{\"permissionDecision\": \"${decision}\", \"reason\": \"${reason}\", \"input\": {\"command\": \"${modified_command}\"}}"
+            else
+                echo "{\"permissionDecision\": \"${decision}\", \"reason\": \"${reason}\"}"
+            fi
+        fi
+    }
+    has_jq() { command -v jq &> /dev/null; }
+fi
+
 # Allowlisted domains (network access)
 ALLOWLISTED_DOMAINS=(
     "github.com"
@@ -24,6 +56,8 @@ ALLOWLISTED_COMMANDS=(
     "^make"
     "^git"
     "^TERM="
+    "^source"  # Allow source commands for environment setup
+    "^\\."     # Allow dot commands (e.g., ./script.sh)
 )
 
 # Dangerous command patterns (always deny)
@@ -73,12 +107,22 @@ parse_json() {
 output_decision() {
     local decision="$1"
     local reason="$2"
+    local modified_command="${3:-}"
 
     if has_jq; then
-        jq -n --arg decision "$decision" --arg reason "$reason" \
-            '{permissionDecision: $decision, reason: $reason}'
+        if [ -n "$modified_command" ]; then
+            jq -n --arg decision "$decision" --arg reason "$reason" --arg cmd "$modified_command" \
+                '{permissionDecision: $decision, reason: $reason, input: {command: $cmd}}'
+        else
+            jq -n --arg decision "$decision" --arg reason "$reason" \
+                '{permissionDecision: $decision, reason: $reason}'
+        fi
     else
-        echo "{\"permissionDecision\": \"${decision}\", \"reason\": \"${reason}\"}"
+        if [ -n "$modified_command" ]; then
+            echo "{\"permissionDecision\": \"${decision}\", \"reason\": \"${reason}\", \"input\": {\"command\": \"${modified_command}\"}}"
+        else
+            echo "{\"permissionDecision\": \"${decision}\", \"reason\": \"${reason}\"}"
+        fi
     fi
 }
 
@@ -190,6 +234,15 @@ main() {
     # This handles: git status, git push, git pull, git commit, etc.
     for pattern in "${ALLOWLISTED_COMMANDS[@]}"; do
         if echo "$command" | grep -qE "$pattern"; then
+            # Special handling for rebar3 and erl commands - inject OTP 28 environment
+            if echo "$command" | grep -qE '^(rebar3|erl)'; then
+                local env_file="${ERLMCP_ROOT:-$(pwd)}/.erlmcp/env.sh"
+                if [ -f "$env_file" ]; then
+                    local modified_cmd="source \"$env_file\" && $command"
+                    output_decision "allow" "Allowlisted build command with OTP 28" "$modified_cmd"
+                    exit 0
+                fi
+            fi
             output_decision "allow" "Allowlisted build command"
             exit 0
         fi

@@ -32,26 +32,26 @@ init(Req0, State) ->
     Path = cowboy_req:path(Req0),
 
     Req = case {Method, Path} of
-        {<<"GET">>, <<"/api/metrics">>} ->
-            handle_get_metrics(Req0);
-        {<<"GET">>, <<"/api/metrics/historical">>} ->
-            handle_get_historical(Req0);
-        {<<"GET">>, <<"/api/metrics/export">>} ->
-            handle_export_metrics(Req0);
-        {<<"GET">>, <<"/api/introspect/status">>} ->
-            handle_introspect_status(Req0);
-        {<<"GET">>, <<"/api/introspect/tasks">>} ->
-            handle_introspect_tasks(Req0);
-        {<<"GET">>, <<"/api/introspect/queues">>} ->
-            handle_introspect_queues(Req0);
-        {<<"GET">>, <<"/api/introspect/health">>} ->
-            handle_introspect_health(Req0);
-        {<<"GET">>, _} ->
-            %% Check for parameterized routes
-            handle_parameterized_route(Method, Path, Req0);
-        _ ->
-            respond_json(Req0, 404, #{error => <<"Not found">>})
-    end,
+              {<<"GET">>, <<"/api/metrics">>} ->
+                  handle_get_metrics(Req0);
+              {<<"GET">>, <<"/api/metrics/historical">>} ->
+                  handle_get_historical(Req0);
+              {<<"GET">>, <<"/api/metrics/export">>} ->
+                  handle_export_metrics(Req0);
+              {<<"GET">>, <<"/api/introspect/status">>} ->
+                  handle_introspect_status(Req0);
+              {<<"GET">>, <<"/api/introspect/tasks">>} ->
+                  handle_introspect_tasks(Req0);
+              {<<"GET">>, <<"/api/introspect/queues">>} ->
+                  handle_introspect_queues(Req0);
+              {<<"GET">>, <<"/api/introspect/health">>} ->
+                  handle_introspect_health(Req0);
+              {<<"GET">>, _} ->
+                  %% Check for parameterized routes
+                  handle_parameterized_route(Method, Path, Req0);
+              _ ->
+                  respond_json(Req0, 404, #{error => <<"Not found">>})
+          end,
 
     {ok, Req, State}.
 
@@ -75,23 +75,29 @@ handle_get_metrics(Req) ->
 handle_get_historical(Req) ->
     QsVals = cowboy_req:parse_qs(Req),
 
-    StartTime = case proplists:get_value(<<"start">>, QsVals) of
-        undefined -> erlang:system_time(millisecond) - 3600000; % Default: 1 hour ago
-        StartBin -> binary_to_integer(StartBin)
-    end,
+    StartTime =
+        case proplists:get_value(<<"start">>, QsVals) of
+            undefined ->
+                erlang:system_time(millisecond) - 3600000; % Default: 1 hour ago
+            StartBin ->
+                binary_to_integer(StartBin)
+        end,
 
-    EndTime = case proplists:get_value(<<"end">>, QsVals) of
-        undefined -> erlang:system_time(millisecond); % Default: now
-        EndBin -> binary_to_integer(EndBin)
-    end,
+    EndTime =
+        case proplists:get_value(<<"end">>, QsVals) of
+            undefined ->
+                erlang:system_time(millisecond); % Default: now
+            EndBin ->
+                binary_to_integer(EndBin)
+        end,
 
     case erlmcp_metrics_aggregator:get_historical_metrics(StartTime, EndTime) of
         {ok, Metrics} ->
-            respond_json(Req, 200, #{
-                start_time => StartTime,
-                end_time => EndTime,
-                metrics => Metrics
-            });
+            respond_json(Req,
+                         200,
+                         #{start_time => StartTime,
+                           end_time => EndTime,
+                           metrics => Metrics});
         {error, Reason} ->
             ?LOG_ERROR("Failed to get historical metrics: ~p", [Reason]),
             respond_json(Req, 500, #{error => <<"Internal server error">>})
@@ -101,21 +107,31 @@ handle_get_historical(Req) ->
 -spec handle_export_metrics(cowboy_req:req()) -> cowboy_req:req().
 handle_export_metrics(Req) ->
     QsVals = cowboy_req:parse_qs(Req),
-    Format = case proplists:get_value(<<"format">>, QsVals) of
-        <<"csv">> -> csv;
-        _ -> json
-    end,
+    Format =
+        case proplists:get_value(<<"format">>, QsVals) of
+            <<"csv">> ->
+                csv;
+            _ ->
+                json
+        end,
 
     case erlmcp_metrics_aggregator:export_metrics(Format) of
         {ok, Data} ->
-            ContentType = case Format of
-                csv -> <<"text/csv">>;
-                json -> <<"application/json">>
-            end,
-            cowboy_req:reply(200, #{
-                <<"content-type">> => ContentType,
-                <<"content-disposition">> => <<"attachment; filename=\"metrics.", (atom_to_binary(Format))/binary, "\"">>
-            }, Data, Req);
+            ContentType =
+                case Format of
+                    csv ->
+                        <<"text/csv">>;
+                    json ->
+                        <<"application/json">>
+                end,
+            cowboy_req:reply(200,
+                             #{<<"content-type">> => ContentType,
+                               <<"content-disposition">> =>
+                                   <<"attachment; filename=\"metrics.",
+                                     (atom_to_binary(Format))/binary,
+                                     "\"">>},
+                             Data,
+                             Req);
         {error, Reason} ->
             ?LOG_ERROR("Failed to export metrics: ~p", [Reason]),
             respond_json(Req, 500, #{error => <<"Internal server error">>})
@@ -163,11 +179,15 @@ handle_introspect_health(Req) ->
     try
         {HealthStatus, Metrics} = erlmcp_introspect:health_check(),
         Response = Metrics#{status => HealthStatus},
-        StatusCode = case HealthStatus of
-            healthy -> 200;
-            degraded -> 200;
-            critical -> 503
-        end,
+        StatusCode =
+            case HealthStatus of
+                healthy ->
+                    200;
+                degraded ->
+                    200;
+                critical ->
+                    503
+            end,
         respond_json(Req, StatusCode, Response)
     catch
         Error:Reason ->
@@ -203,8 +223,8 @@ handle_introspect_session(SessionId, Req) ->
                 respond_json(Req, 500, #{error => <<"Internal server error">>})
         end
     catch
-        Error:Reason ->
-            ?LOG_ERROR("Failed to get session dump: ~p:~p", [Error, Reason]),
+        _E:R ->
+            ?LOG_ERROR("Failed to get session dump: ~p:~p", [_E, R]),
             respond_json(Req, 500, #{error => <<"Internal server error">>})
     end.
 
@@ -222,14 +242,15 @@ handle_introspect_streams(SessionId, Req) ->
                 respond_json(Req, 500, #{error => <<"Internal server error">>})
         end
     catch
-        Error:Reason ->
-            ?LOG_ERROR("Failed to get streams: ~p:~p", [Error, Reason]),
+        _E:R ->
+            ?LOG_ERROR("Failed to get streams: ~p:~p", [_E, R]),
             respond_json(Req, 500, #{error => <<"Internal server error">>})
     end.
 
 %% @doc Send JSON response
 -spec respond_json(cowboy_req:req(), pos_integer(), map()) -> cowboy_req:req().
 respond_json(Req, StatusCode, Body) ->
-    cowboy_req:reply(StatusCode, #{
-        <<"content-type">> => <<"application/json">>
-    }, jsx:encode(Body), Req).
+    cowboy_req:reply(StatusCode,
+                     #{<<"content-type">> => <<"application/json">>},
+                     jsx:encode(Body),
+                     Req).

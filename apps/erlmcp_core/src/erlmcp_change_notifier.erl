@@ -1,16 +1,13 @@
 -module(erlmcp_change_notifier).
+
 -behaviour(gen_server).
 
 %% API
 -export([start_link/0, notify_list_changed/1]).
-
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {
-    subscribers = sets:new() :: sets:set(pid())
-}).
+-record(state, {subscribers = sets:new() :: sets:set(pid())}).
 
 %%%===================================================================
 %%% API Functions
@@ -36,7 +33,6 @@ handle_cast({notify_list_changed, _Feature}, State) ->
     % In a real implementation, this would notify subscribers
     % For now, just log and continue
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
