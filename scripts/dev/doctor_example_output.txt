@@ -1,0 +1,143 @@
+═══════════════════════════════════════════════════
+  Environment Health Check
+═══════════════════════════════════════════════════
+
+→ Checking Erlang/OTP installation...
+✓ Erlang/OTP 28 installed
+✓ OTP version 28.3.1 detected
+✓ OTP 28.3.1 matches recommended version
+→ Checking rebar3 installation...
+✓ rebar3 installed: rebar 3.24.0 on Erlang/OTP 28 Erts 15.2.1
+→ Checking git installation...
+✓ git 2.43.0 installed
+→ Checking OpenSSL installation...
+✓ OpenSSL 3.0.13 installed
+
+═══════════════════════════════════════════════════
+  System Limits
+═══════════════════════════════════════════════════
+
+→ Checking File descriptor limits (ulimit -n)...
+✓ File descriptors: 65536 (excellent for load testing)
+→ Checking Process limits (ulimit -u)...
+✓ Process limit: 127418 (excellent)
+
+═══════════════════════════════════════════════════
+  Erlang Features
+═══════════════════════════════════════════════════
+
+→ Checking Native JSON support...
+✓ Using jsx library for JSON (native json requires OTP 27+)
+         Note: erlmcp uses jsx for compatibility
+
+═══════════════════════════════════════════════════
+  Project Structure
+═══════════════════════════════════════════════════
+
+→ Checking Umbrella apps...
+✓ apps/erlmcp_core: 97 modules
+✓ apps/erlmcp_transports: 23 modules
+✓ apps/erlmcp_observability: 31 modules
+✓ apps/tcps_erlmcp: 13 modules
+→ Checking rebar configuration...
+✓ rebar.config has umbrella configuration
+
+═══════════════════════════════════════════════════
+  Directory Structure
+═══════════════════════════════════════════════════
+
+✓ scripts/: 85 files
+✓ tools/: 12 files
+✓ examples/: 40 files
+✓ docs/: 850 files
+✓ .claude/: 45 files
+
+═══════════════════════════════════════════════════
+  Dependencies
+═══════════════════════════════════════════════════
+
+→ Checking Dependency status...
+✓ rebar.lock exists
+✓ 28 dependencies locked
+
+═══════════════════════════════════════════════════
+  Build Status
+═══════════════════════════════════════════════════
+
+✓ _build directory exists: 32 apps built
+✓ erlmcp_core: 97 compiled modules
+✓ erlmcp_transports: 23 compiled modules
+✓ erlmcp_observability: 31 compiled modules
+✓ tcps_erlmcp: 13 compiled modules
+
+═══════════════════════════════════════════════════
+  Quality Gate Tools
+═══════════════════════════════════════════════════
+
+✓ scripts/build_and_test.sh (executable)
+✓ scripts/validation/run-ci.sh (executable)
+✓ tools/test-runner.sh (executable)
+✓ bin/erlmcp-validate (executable)
+
+═══════════════════════════════════════════════════
+  Summary
+═══════════════════════════════════════════════════
+
+✅ Environment is healthy - ready for development
+
+Next steps:
+  make compile      # Compile all apps
+  make quick        # Fast quality check (< 5min)
+  make verify       # Full validation (< 15min)
+  make ci-local     # Reproduce CI workflow
+
+EXIT CODE: 0
+
+
+═══════════════════════════════════════════════════
+  EXAMPLE WITH WARNINGS (OTP version mismatch)
+═══════════════════════════════════════════════════
+
+→ Checking Erlang/OTP installation...
+✓ Erlang/OTP 28 installed
+✓ OTP version 28.2.0 detected
+⚠ OTP 28.2.0: recommended version is 28.3.1
+→ Checking File descriptor limits (ulimit -n)...
+⚠ File descriptors: 4096 (low for high-load testing, recommend 65536+)
+         Fix: ulimit -n 65536  (or set in /etc/security/limits.conf)
+
+═══════════════════════════════════════════════════
+  Summary
+═══════════════════════════════════════════════════
+
+⚠ Found 2 issue(s)
+
+Recommended actions:
+  1. Upgrade to Erlang/OTP 28.3.1
+  2. Increase file descriptor limit to 65536+
+
+EXIT CODE: 1
+
+
+═══════════════════════════════════════════════════
+  EXAMPLE WITH FAILURE (OTP too old)
+═══════════════════════════════════════════════════
+
+→ Checking Erlang/OTP installation...
+✓ Erlang/OTP 27 installed
+
+════════════════════════════════════════════════════════════════════
+  ERROR: Erlang/OTP 27 is NOT supported
+════════════════════════════════════════════════════════════════════
+
+  This project requires Erlang/OTP 28.3.1 or higher.
+  You are using OTP 27.
+
+  To upgrade:
+    asdf: asdf install erlang 28.3.1 && asdf local erlang 28.3.1
+    kerl: kerl build 28.3.1 28.3.1 && kerl install 28.3.1 ~/erlang/28.3.1
+
+  Refusal Code: OTP_VERSION_TOO_LOW
+════════════════════════════════════════════════════════════════════
+
+EXIT CODE: 1
