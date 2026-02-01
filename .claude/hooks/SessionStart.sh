@@ -319,6 +319,20 @@ setup_environment() {
 
     mkdir -p "$ERLMCP_CACHE"
 
+    # Persist environment variables across shell invocations (Claude Code on the web)
+    if [[ -n "${CLAUDE_ENV_FILE:-}" ]]; then
+        {
+            echo "export PATH=\"${OTP_CACHE_DIR}/bin:\$PATH\""
+            echo "export CLAUDE_CODE_REMOTE=true"
+            echo "export ERLMCP_PROFILE=cloud"
+            echo "export ERLMCP_CACHE=\"${ERLMCP_CACHE}\""
+            echo "export TERM=dumb"
+            echo "export REBAR_COLOR=none"
+            echo "export ERL_AFLAGS=\"-kernel shell_history enabled\""
+        } >> "$CLAUDE_ENV_FILE"
+        log_info "Environment variables persisted to CLAUDE_ENV_FILE"
+    fi
+
     log_success "Environment variables set"
     log_info "  CLAUDE_CODE_REMOTE=$CLAUDE_CODE_REMOTE"
     log_info "  ERLMCP_PROFILE=$ERLMCP_PROFILE"
