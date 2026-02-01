@@ -36,6 +36,10 @@
             "command": "./.claude/hooks/SessionStart.sh",
             "timeout": 600,
             "description": "Bootstrap OTP 28.3.1+ and persist environment"
+          },
+          {
+            "type": "prompt",
+            "prompt": "Session initialized. erlmcp v2.1.0. Read CLAUDE.md. Rules: Chicago TDD, Coverage >= 80%, Armstrong OTP principles, Let-it-crash. CODE LIKE A JOE ARMSTRONG AGI SWARM!!!"
           }
         ]
       }
@@ -83,7 +87,7 @@
             "type": "command",
             "command": "./.claude/hooks/post-write-ci.sh",
             "async": true,
-            "timeout": 120,
+            "timeout": 600,
             "description": "Async CI: compile + incremental tests"
           }
         ]
@@ -101,7 +105,16 @@
         ]
       }
     ],
-    "Stop": [],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Before stop: tests pass? (rebar3 eunit, rebar3 ct) lint clean? (rebar3 dialyzer, rebar3 xref) coverage >= 80%? uncommitted work?"
+          }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [
@@ -116,33 +129,129 @@
     ],
     "PreCompact": [
       {
+        "matcher": "manual",
         "hooks": [
           {
-            "type": "prompt",
-            "prompt": "**Critical Invariants (Re-injected Post-Compaction):**\n\n1. OTP >= 28.3.1 (strict requirement)\n2. Chicago TDD (no mocks, real processes only)\n3. Coverage >= 80% (blocking quality gate)\n4. Armstrong principle (illegal states unrepresentable)\n5. Let-it-crash (supervision, not defensive programming)\n\nContinue with these constraints.",
-            "description": "Re-inject invariants after context compaction"
+            "type": "command",
+            "command": "/bin/bash -c 'echo \"🔄 PreCompact Guidance:\"; echo \"📋 IMPORTANT: Review CLAUDE.md in project root for:\"; echo \"   • 10 core agents for Erlang/OTP development\"; echo \"   • Chicago TDD methodology (no mocks, real processes)\"; echo \"   • Armstrong principles: illegal states unrepresentable\"; echo \"   • Let-it-crash supervision patterns\"; echo \"   • SPARC methodology workflows\"; echo \"⚡ GOLDEN RULE: Batch all operations in single message\"; echo \"✅ Ready for compact operation\"'"
+          }
+        ]
+      },
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash -c 'echo \"🔄 Auto-Compact Guidance (Context Window Full):\"; echo \"📋 CRITICAL: Before compacting, ensure you understand:\"; echo \"   • All 10 core agents available in .claude/agents/ directory\"; echo \"   • Chicago TDD: tests first, real processes only\"; echo \"   • Armstrong principles: supervision trees, let-it-crash\"; echo \"   • SPARC methodology workflows\"; echo \"⚡ GOLDEN RULE: Always batch operations in single messages\"; echo \"✅ Auto-compact proceeding with full agent context\"'"
           }
         ]
       }
     ]
   },
   "subagents": {
+    "erlang-otp-developer": {
+      "description": "Implements Erlang/OTP behaviors (gen_server, supervisor, application)",
+      "toolAccess": {
+        "allow": ["Read", "Write", "Edit", "Glob", "Grep", "Bash(rebar3 *)", "Task"],
+        "deny": ["Delete", "WebSearch"]
+      },
+      "permissionMode": "write",
+      "preload": [".claude/agents/erlang-otp-developer.md", "CLAUDE.md"]
+    },
+    "erlang-transport-builder": {
+      "description": "Creates transport implementations (stdio, tcp, http, ws, sse)",
+      "toolAccess": {
+        "allow": ["Read", "Write", "Edit", "Glob", "Grep", "Bash(rebar3 *)", "Task"],
+        "deny": ["Delete"]
+      },
+      "permissionMode": "write",
+      "preload": [".claude/agents/erlang-transport-builder.md"]
+    },
+    "erlang-test-engineer": {
+      "description": "Chicago TDD testing (EUnit, CT, Proper) - tests first, real processes",
+      "toolAccess": {
+        "allow": ["Read", "Write", "Edit", "Bash(rebar3 eunit:*)", "Bash(rebar3 ct:*)", "Bash(rebar3 proper:*)", "Task"],
+        "deny": ["Delete"]
+      },
+      "permissionMode": "write",
+      "preload": [".claude/agents/erlang-test-engineer.md"]
+    },
+    "erlang-researcher": {
+      "description": "Codebase research and context preservation",
+      "toolAccess": {
+        "allow": ["Read", "Glob", "Grep"],
+        "deny": ["Write", "Edit", "Delete", "Bash", "Task"]
+      },
+      "permissionMode": "read",
+      "preload": [".claude/agents/erlang-researcher.md"]
+    },
+    "erlang-architect": {
+      "description": "System architecture and OTP design (no implementation)",
+      "toolAccess": {
+        "allow": ["Read", "Glob", "Grep", "Task"],
+        "deny": ["Write", "Edit", "Delete", "Bash"]
+      },
+      "permissionMode": "read",
+      "preload": [".claude/agents/erlang-architect.md"]
+    },
+    "erlang-performance": {
+      "description": "Benchmarking and optimization",
+      "toolAccess": {
+        "allow": ["Read", "Bash(rebar3 proper:*)", "Bash(make benchmark*)", "Grep"],
+        "deny": ["Write", "Edit", "Delete"]
+      },
+      "permissionMode": "execute",
+      "preload": [".claude/agents/erlang-performance.md"]
+    },
+    "code-reviewer": {
+      "description": "Quality gates and pre-completion validation",
+      "toolAccess": {
+        "allow": ["Read", "Grep", "Bash(rebar3 *)"],
+        "deny": ["Write", "Edit", "Delete"]
+      },
+      "permissionMode": "read",
+      "preload": [".claude/agents/code-reviewer.md"]
+    },
+    "erlang-github-ops": {
+      "description": "Git, PR, CI/CD workflows",
+      "toolAccess": {
+        "allow": ["Bash(git *)", "Bash(gh *)", "Read", "Write"],
+        "deny": ["Delete", "Edit"]
+      },
+      "permissionMode": "execute",
+      "preload": [".claude/agents/erlang-github-ops.md"]
+    },
+    "sparc-orchestrator": {
+      "description": "SPARC methodology coordination (Specification, Pseudocode, Architecture, Refinement, Completion)",
+      "toolAccess": {
+        "allow": ["Read", "Write", "Edit", "Glob", "Grep", "Task"],
+        "deny": ["Delete", "Bash(rebar3 *)"]
+      },
+      "permissionMode": "write",
+      "preload": [".claude/agents/sparc-orchestrator.md"]
+    },
+    "plan-designer": {
+      "description": "Implementation planning (Research → Plan → Execute)",
+      "toolAccess": {
+        "allow": ["Read", "Write", "Edit", "Glob", "Grep", "Task"],
+        "deny": ["Delete", "Bash(rebar3 *)"]
+      },
+      "permissionMode": "write",
+      "preload": [".claude/agents/plan-designer.md"]
+    },
     "verifier": {
       "description": "Verification specialist (read-only + execute tests)",
       "toolAccess": {
-        "allow": ["Bash", "Read"],
-        "deny": ["Write", "Edit", "Delete", "WebSearch", "WebFetch", "Glob", "Grep", "Task", "Skill", "NotebookEdit"]
+        "allow": ["Bash(rebar3 eunit:*)", "Bash(rebar3 ct:*)", "Read"],
+        "deny": ["Write", "Edit", "Delete", "WebSearch", "Glob", "Grep", "Task"]
       },
       "permissionMode": "execute",
-      "skills": ["otp-manager"],
-      "preload": [
-        ".claude/skills/otp-manager/SKILL.md"
-      ]
+      "preload": [".claude/skills/otp-manager/SKILL.md"]
     },
     "build-engineer": {
-      "description": "Code editing specialist (constrained writes)",
+      "description": "Code editing specialist (constrained writes to erlmcp source)",
       "toolAccess": {
-        "allow": ["Bash", "Read", "Write", "Edit"],
+        "allow": ["Bash(rebar3 compile)", "Read", "Write", "Edit"],
         "deny": ["Delete", "WebSearch"]
       },
       "writeConstraints": {
@@ -157,39 +266,23 @@
           "docs/**/*.md",
           "examples/**"
         ],
-        "deny": [
-          ".env*",
-          "secrets/**",
-          "scripts/deploy.sh",
-          "scripts/release.sh",
-          ".git/**"
-        ]
+        "deny": [".env*", "secrets/**", "scripts/deploy.sh", ".git/**"]
       },
       "permissionMode": "write",
-      "skills": ["otp-manager"],
-      "preload": [
-        ".claude/skills/otp-manager/SKILL.md"
-      ]
+      "preload": [".claude/skills/otp-manager/SKILL.md"]
     },
     "release-scout": {
-      "description": "Read-only research specialist (WebSearch enabled)",
+      "description": "Read-only research (WebSearch for OTP releases)",
       "toolAccess": {
         "allow": ["Read", "WebSearch"],
         "deny": ["Bash", "Write", "Edit", "Delete"]
       },
       "webSearchConstraints": {
-        "allowDomains": [
-          "github.com",
-          "hex.pm",
-          "erlang.org",
-          "hexdocs.pm",
-          "stackoverflow.com"
-        ],
+        "allowDomains": ["github.com", "hex.pm", "erlang.org", "hexdocs.pm", "stackoverflow.com"],
         "denyDomains": ["*"],
         "askForOthers": true
       },
       "permissionMode": "read",
-      "skills": [],
       "preload": []
     }
   },
@@ -198,22 +291,18 @@
       "path": ".claude/skills/otp-manager/SKILL.md",
       "description": "Manage Erlang/OTP installation and verification",
       "commands": [
-        {
-          "name": "fetch-build",
-          "description": "Download and build OTP 28.3.1",
-          "timeout": 600
-        },
-        {
-          "name": "verify",
-          "description": "Check OTP version and compilation",
-          "timeout": 30
-        },
-        {
-          "name": "clean",
-          "description": "Remove OTP build artifacts",
-          "timeout": 60
-        }
+        {"name": "fetch-build", "description": "Download and build OTP 28.3.1", "timeout": 600},
+        {"name": "verify", "description": "Check OTP version and compilation", "timeout": 30},
+        {"name": "clean", "description": "Remove OTP build artifacts", "timeout": 60}
       ]
+    },
+    "chicago-tdd-erlang": {
+      "path": ".claude/skills/chicago-tdd-erlang/SKILL.md",
+      "description": "Chicago School TDD for Erlang - state-based, real processes, AAA pattern"
+    },
+    "sparc": {
+      "path": ".claude/skills/sparc/SKILL.md",
+      "description": "SPARC methodology workflows for erlmcp development"
     }
   },
   "environment": {
@@ -233,27 +322,84 @@
       "REBAR_COLOR": {
         "value": "none",
         "description": "Disable ANSI colors in rebar3 output"
+      },
+      "CLAUDE_CODE_REMOTE": {
+        "value": "true",
+        "description": "Running in cloud environment"
       }
     }
   },
-  "metadata": {
-    "version": "3.1.0",
-    "project": "erlmcp",
-    "description": "Erlang/OTP MCP SDK governance configuration",
-    "architecture": "4-layer governance (Policy to Execution to Verification to Receipt)",
+  "tools_and_model": {
+    "model": "claude-sonnet-4-5-20250929",
+    "output_style": "structured",
+    "temperature": 0.0,
+    "tool_preferences": {
+      "prefer_parallel_calls": true,
+      "max_parallel_tools": 10
+    }
+  },
+  "epic9": {
+    "enabled": true,
+    "default_agents": 10,
+    "mandatory_phases": ["fan_out", "independent_construction", "collision_detection", "convergence", "refactoring", "closure"],
+    "speedup_target": "2.8x-4.4x"
+  },
+  "slo_targets": {
+    "rebar3_compile": "<30s",
+    "rebar3_eunit": "<60s",
+    "rebar3_ct": "<120s",
+    "rebar3_dialyzer": "<90s",
+    "make_check": "<180s (parallel)",
+    "make_verify_fast": "<90s"
+  },
+  "andon_signals": {
+    "RED": {
+      "triggers": ["error[E", "FAILED", "panicked", "compilation error"],
+      "action": "STOP immediately"
+    },
+    "YELLOW": {
+      "triggers": ["warning:", "deprecated:", "TODO"],
+      "action": "Investigate before release"
+    },
+    "GREEN": {
+      "triggers": ["test result: ok", "0 violations", "all tests passed"],
+      "action": "Continue"
+    }
+  },
+  "project_metadata": {
+    "name": "erlmcp",
+    "version": "2.1.0",
+    "description": "Erlang/OTP MCP SDK - JSON-RPC 2.0 Client & Server",
+    "otp_version": "28.3.1",
+    "architecture": "4-app umbrella (core, transports, observability, validation)",
+    "tech_stack": ["Erlang/OTP 28.3.1", "rebar3", "jsx", "jesse", "gproc", "gun", "ranch", "cowboy", "opentelemetry"],
+    "quality_gates": {
+      "compile": "errors = 0",
+      "tests": "failures = 0",
+      "coverage": ">= 80%",
+      "dialyzer": "warnings -> 0",
+      "xref": "undefined_functions = 0"
+    },
     "armstrong_principles": [
       "Illegal states unrepresentable",
       "Let-it-crash supervision",
       "Chicago TDD (no mocks, real processes)",
-      "Coverage >= 80% (blocking gate)",
-      "OTP >= 28.3.1 (strict requirement)"
+      "Coverage >= 80%",
+      "OTP >= 28.3.1"
     ],
+    "last_updated": "2026-02-01",
+    "authors": ["erlmcp core team"]
+  },
+  "includeCoAuthoredBy": true,
+  "metadata": {
+    "version": "3.2.0",
+    "project": "erlmcp",
+    "description": "Erlang/OTP MCP SDK governance configuration",
+    "architecture": "4-layer governance (Policy to Execution to Verification to Receipt)",
     "references": {
       "specification": "CLAUDE_CODE_WEB_GOVERNANCE_SYSTEM.md",
       "work_order": "AUTONOMOUS_IMPLEMENTATION_WORK_ORDER.md (WO-003)",
       "project_rules": "CLAUDE.md"
-    },
-    "last_updated": "2026-02-01",
-    "authors": ["code-reviewer (WO-003)"]
+    }
   }
 }
