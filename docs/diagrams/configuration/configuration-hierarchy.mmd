@@ -1,0 +1,74 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff9900', 'primaryTextColor':'#fff', 'primaryBorderColor':'#8B4500', 'lineColor':'#ff9900', 'sectionBkgColor':'#ffcc00', 'altSectionBkgColor':'#ffe6a6'}}}%%
+flowchart TB
+    subgraph "Erlang/OTP Configuration Hierarchy"
+        direction TB
+
+        subgraph Layer1["Layer 1: Application Defaults (Hard-coded)"]
+            AppSrc["sys.config.src<br/>(.app.src files)"]
+            Defaults["module defaults<br/>(#record{})"]
+        end
+
+        subgraph Layer2["Layer 2: System Configuration (sys.config)"]
+            SysConfig["sys.config<br/>(Release build)"]
+            VMArgs["vm.args<br/>(VM parameters)"]
+        end
+
+        subgraph Layer3["Layer 3: Runtime Configuration"]
+            EnvVars["Environment Variables<br/>(ERLMCP_*)"]
+            CLIArgs["Command-line Arguments<br/>(erl -config)"]
+        end
+
+        subgraph Layer4["Layer 4: Runtime Overrides"]
+            RPC["RPC Configuration Updates<br/>(erlmcp_config:set/2)"]
+            Admin["Admin API Changes<br/>(HTTP endpoints)"]
+        end
+
+        subgraph Layer5["Layer 5: Process State"]
+            PState["Process State<br/>(gen_server:State)"]
+            ETS["ETS Tables<br/>(Runtime cache)"]
+        end
+
+        subgraph Outputs["Effective Configuration"]
+            Effective["Effective Config<br/>(merged hierarchy)"]
+            Process["Process Config<br/>(per-instance)"]
+        end
+
+        %% Flow: Layer 1 → Layer 2 → Layer 3 → Layer 4 → Layer 5 → Outputs
+        AppSrc --> SysConfig
+        Defaults --> SysConfig
+        SysConfig --> EnvVars
+        VMArgs --> EnvVars
+        EnvVars --> RPC
+        CLIArgs --> RPC
+        RPC --> PState
+        Admin --> ETS
+        PState --> Effective
+        ETS --> Process
+
+        %% Merge semantics
+        Effective -.->|"inheritance<br/>(lower wins)"| Process
+        SysConfig -.->|"baseline<br/>configuration"| EnvVars
+        EnvVars -.->|"overrides<br/>(higher wins)"| RPC
+        RPC -.->|"dynamic<br/>updates"| PState
+
+        %% Legend
+        subgraph Legend["Inheritance Priority"]
+            Priority["Higher layers override lower layers"]
+            Direction["Top = Lowest Priority (Base)<br/>Bottom = Highest Priority (Runtime)"]
+        end
+    end
+
+    style AppSrc fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    style SysConfig fill:#ffe6a6,stroke:#8B4500,stroke-width:2px
+    style EnvVars fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    style RPC fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    style Effective fill:#00ff00,stroke:#006600,stroke-width:3px
+    style Process fill:#00ff00,stroke:#006600,stroke-width:3px
+
+    classDef defaultLayer fill:#ffe6a6,stroke:#ff9900,stroke-width:2px
+    classDef overrideLayer fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    classDef outputLayer fill:#00ff00,stroke:#006600,stroke-width:3px
+
+    class AppSrc,Defaults,SysConfig,VMArgs defaultLayer
+    class EnvVars,CLIArgs,RPC,Admin,PState,ETS overrideLayer
+    class Effective,Process outputLayer

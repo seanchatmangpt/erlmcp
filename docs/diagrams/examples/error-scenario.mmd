@@ -1,0 +1,191 @@
+sequenceDiagram
+    participant AI as AI Application
+    participant Client as erlmcp_client
+    participant Transport as erlmcp_transport_tcp
+    participant Server as erlmcp_server
+    participant Validator as JSON Schema Validator
+    participant Circuit as Circuit Breaker
+    participant Metrics as erlmcp_metrics
+    participant OTEL as erlmcp_otel
+    participant Recovery as Recovery Manager
+
+    Note over AI,Recovery: Error Handling Scenario: Cascading Failures & Recovery
+
+    %% Normal operation begins
+    AI->>Client: call_tool(<<"database_query">>, #{query => "SELECT * FROM users"})
+    Client->>Transport: send(tools/call)
+    Transport->>Server: TCP stream
+
+    %% Error 1: Invalid tool name (protocol error)
+    Note over AI,Recovery: Error Type 1: Protocol Error - Tool Not Found
+
+    Server->>Server: Decode JSON-RPC request
+    Server->>Server: Lookup tool: <<"database_query">>
+    Server->>Server: Tool not found in registry
+    Server->>Server: erlmcp_errors:protocol_error(-32601, "Tool not found")
+    Server-->>Transport: JSON-RPC Error Response
+    Note left of Server: {<br/>  "jsonrpc": "2.0",<br/>  "id": "uuid-001",<br/>  "error": {<br/>    "code": -32601,<br/>    "message": "Method not found",<br/>    "data": "Tool 'database_query' not found"<br/>  }<br/>}
+
+    Transport-->>Client: Error response
+    Client->>Client: Match uuid-001 from State.pending
+    Client-->>AI: {error, {tool_not_found, "database_query"}}
+
+    %% Record error metrics
+    Client->>Metrics: erlmcp_metrics:increment_error(<<"tool_not_found">>)
+    Metrics->>Metrics: Update error counters
+    Metrics->>OTEL: Record error span
+    Note over Metrics: Error rate: 0.1%<br/>Below threshold
+
+    %% Error 2: Schema validation failure (business logic error)
+    Note over AI,Recovery: Error Type 2: Schema Validation Error
+
+    AI->>Client: call_tool(<<"execute_query">>, #{
+        query => "SELECT *",
+        limit => "invalid"  %% Should be integer
+    })
+    Client->>Transport: send(tools/call)
+    Transport->>Server: TCP stream
+    Server->>Validator: jesse:validate(Schema, Arguments)
+    Validator->>Validator: Validate arguments against schema
+    Note right of Validator: Schema expects:<br/>limit: integer<br/>Got: "invalid"
+
+    Validator-->>Server: {error, validation_failed}
+    Server->>Server: erlmcp_errors:app_error(-32602, "Invalid params")
+    Server-->>Transport: JSON-RPC Error
+    Note left of Server: {<br/>  "error": {<br/>    "code": -32602,<br/>    "message": "Invalid params",<br/>    "data": {<br/>      "field": "limit",<br/>      "expected": "integer",<br/>      "got": "string"<br/>    }<br/>  }<br/>}
+
+    Transport-->>Client: Error response
+    Client-->>AI: {error, {invalid_params, #{
+        field => <<"limit">>,
+        expected => integer,
+        got => string
+    }}}
+
+    %% Record validation error
+    Client->>Metrics: erlmcp_metrics:increment_error(<<"validation_failed">>)
+
+    %% Error 3: Transport failure (network error)
+    Note over AI,Recovery: Error Type 3: Transport Failure - Connection Lost
+
+    AI->>Client: call_tool(<<"long_running_task">>, #{duration => 60000})
+    Client->>Transport: send(tools/call)
+
+    Transport->>Transport: Network timeout
+    Note right of Transport: Connection lost<br/>during request
+
+    Transport->>Transport: erlmcp_transport_tcp:handle_disconnect()
+    Transport->>Circuit: Check circuit state
+    Circuit->>Circuit: Track failure count
+    Note right of Circuit: Failures: 1/5<br/>Circuit: CLOSED
+
+    Transport-->>Client: {error, transport_disconnected}
+    Client->>Client: Detect transport failure
+    Client-->>AI: {error, {transport_failed, disconnected}}
+
+    %% Record transport error
+    Client->>Metrics: erlmcp_metrics:increment_error(<<"transport_disconnected">>)
+
+    %% Automatic retry with exponential backoff
+    Note over AI,Recovery: Recovery Strategy: Automatic Retry
+
+    Client->>Client: Check retry policy for transport errors
+    Client->>Client: Calculate backoff: 2^0 * 1000ms = 1s
+    Client->>Client: Schedule retry
+
+    Note over Client: Wait 1s (exponential backoff)
+
+    Client->>Transport: Reconnect attempt 1
+    Transport->>Transport: erlmcp_transport_tcp:reconnect()
+    Transport->>Transport: Establish new TCP connection
+    Transport-->>Client: {ok, reconnected}
+
+    %% Retry the request
+    Client->>Transport: send(tools/call) - retry
+    Transport->>Server: TCP stream
+    Server-->>Transport: Response
+    Transport-->>Client: {ok, Result}
+    Client-->>AI: {ok, Result} (after retry)
+
+    %% Record successful recovery
+    Client->>Metrics: erlmcp_metrics:record_recovery(<<"transport_disconnected">>)
+
+    %% Error 4: Circuit breaker activation (cascading failures)
+    Note over AI,Recovery: Error Type 4: Circuit Breaker - Service Degradation
+
+    loop Multiple rapid failures
+        AI->>Client: call_tool(<<"external_api">>, Args)
+        Client->>Transport: send(tools/call)
+        Transport->>Transport: Request timeout
+        Transport-->>Client: {error, timeout}
+
+        Client->>Metrics: increment_error(<<"timeout">>)
+        Client->>Circuit: record_failure(<<"external_api">>)
+
+        Note over Circuit: Failures: 2/5<br/>Circuit: CLOSED
+    end
+
+    %% Threshold reached, circuit opens
+    Client->>Client: call_tool(<<"external_api">>, Args)
+    Client->>Circuit: check_circuit(<<"external_api">>)
+    Circuit->>Circuit: Failure count: 5/5
+    Circuit->>Circuit: Open circuit
+    Note over Circuit: Circuit: HALF_OPEN → OPEN<br/>Block requests for 30s
+
+    Circuit-->>Client: {error, circuit_open}
+    Client-->>AI: {error, {service_degraded, refusal_code => 1089}}
+    Note left of Client: Refusal Code 1089:<br/>Service temporarily unavailable<br/>due to degradation
+
+    %% Record circuit breaker event
+    Client->>Metrics: erlmcp_metrics:record_circuit_open(<<"external_api">>)
+    Metrics->>Recovery: Trigger recovery manager
+    Recovery->>Recovery: Schedule health check in 30s
+
+    %% Alternative: Fallback to cached response
+    Note over AI,Recovery: Recovery Strategy: Graceful Degradation
+
+    AI->>Client: call_tool(<<"external_api">>, #{
+        use_fallback => true
+    })
+    Client->>Client: Check circuit state
+    Client->>Client: Circuit is OPEN
+    Client->>Client: Return cached data
+    Note right of Client: Return last known<br/>good response from cache
+
+    Client-->>AI: {ok, CachedResult}
+    Note over AI: Stale data accepted<br/>while circuit is open
+
+    %% Circuit breaker recovery test
+    Note over AI,Recovery: Recovery Strategy: Circuit Breaker Recovery
+
+    Recovery->>Recovery: 30s elapsed
+    Recovery->>Circuit: Attempt recovery
+    Circuit->>Circuit: Transition to HALF_OPEN
+    Note over Circuit: Circuit: OPEN → HALF_OPEN<br/>Allow 1 test request
+
+    Recovery->>Client: Test request to external_api
+    Client->>Transport: send(test request)
+    Transport->>Server: TCP stream
+    Server-->>Transport: Success response
+    Transport-->>Client: {ok, Success}
+    Client-->>Recovery: Test successful
+
+    Recovery->>Circuit: Record success
+    Circuit->>Circuit: Reset failure count
+    Circuit->>Circuit: Close circuit
+    Note over Circuit: Circuit: HALF_OPEN → CLOSED<br/>Normal operation resumed
+
+    %% Full recovery achieved
+    AI->>Client: call_tool(<<"external_api">>, Args)
+    Client->>Transport: send(tools/call)
+    Transport->>Server: TCP stream
+    Server-->>Transport: Response
+    Transport-->>Client: {ok, Result}
+    Client-->>AI: {ok, Result}
+
+    %% Record recovery metrics
+    Client->>Metrics: erlmcp_metrics:record_recovery(<<"circuit_breaker">>)
+    Metrics->>OTEL: Record recovery span
+    Note over Metrics: Recovery time: 32s<br/>Errors during outage: 5<br/>Fallback usage: 12
+
+    %% Summary: Error handling effectiveness
+    Note over AI,Recovery: Error Handling Summary<br/>========================<br/>Total Errors: 8<br/>  - Protocol: 1 (no retry)<br/>  - Validation: 1 (no retry)<br/>  - Transport: 1 (retry success)<br/>  - Timeout: 5 (circuit breaker)<br/>Recovery: Automatic<br/>User Impact: Minimal<br/>Fallback: Cached responses

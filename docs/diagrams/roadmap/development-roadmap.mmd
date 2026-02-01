@@ -1,0 +1,26 @@
+gantt
+    title erlmcp Development Roadmap - 12 Week Timeline to 100K Concurrent Connections
+    dateFormat YYYY-MM-DD
+    section Phase 1: Foundation & Stabilization
+    Message Queue Bounding           :p1-1, 2026-02-03, 3d
+    Connection Limiting              :p1-2, after p1-1, 2d
+    Prometheus Alerting Rules        :p1-3, after p1-2, 5d
+    Phase 1 Validation               :p1-4, after p1-3, 2d
+
+    section Phase 2: Capacity Increase
+    Partition Count 16→64            :p2-1, 2026-02-17, 1d
+    Local Lookup Cache               :p2-2, after p2-1, 5d
+    Message Batching                 :p2-3, after p2-1, 5d
+    GC Tuning                        :p2-4, after p2-2, 3d
+    Phase 2 Validation               :p2-5, after p2-4, 2d
+
+    section Phase 3: Full Scaling to 100K
+    Hierarchical Registry            :p3-1, 2026-03-10, 4w
+    Multi-Node Clustering            :p3-2, 2026-03-24, 3w
+    Integration & Production Testing :p3-3, 2026-04-14, 2w
+    Documentation & Training         :p3-4, after p3-3, 1w
+
+    section Milestones
+    M1: Production Stable            :milestone, 2026-02-13, 0d
+    M2: 5K Capacity                  :milestone, 2026-03-09, 0d
+    M3: 100K Production              :milestone, 2026-04-28, 0d

@@ -1,0 +1,97 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#e1f5fe'}}}}%%
+graph TB
+    subgraph Transports["Transport Types"]
+        STDIO["<b>STDIO</b><br/>Process I/O"]
+        TCP["<b>TCP</b><br/>Raw Sockets"]
+        HTTP["<b>HTTP</b><br/>REST Client"]
+        WS["<b>WebSocket</b><br/>Full-Duplex"]
+        SSE["<b>SSE</b><br/>Server Push"]
+    end
+
+    subgraph TransportSecurity["Transport-Level Security"]
+        direction TB
+
+        TLS["<b>TLS/SSL Layer</b><br/>___________________<br/>• SSL/TLS options<br/>• Certificate validation<br/>• erlmcp_tls_validation<br/><br/>TCP: ssl_options<br/>HTTP: ssl_options<br/>WS: wss:// scheme"]
+        MTL["<b>mTLS Support</b><br/>erlmcp_auth_mtls<br/>___________________<br/>• Client certificates<br/>• Mutual authentication<br/>• Certificate chain<br/>• CRL checking"]
+    end
+
+    subgraph MessageSecurity["Message-Level Security"]
+        direction TB
+
+        SIZE["<b>Message Size Limits</b><br/>___________________<br/>• Global: 16MB default<br/>• Per-transport config<br/>• Memory guard enforcement<br/><br/>Validates BEFORE parsing"]
+        MEMORY["<b>Memory Guard</b><br/>erlmcp_memory_guard<br/>___________________<br/>• System allocation check<br/>• Circuit breaker<br/>• Backpressure activation"]
+        ENCODING["<b>Encoding Validation</b><br/>___________________<br/>• UTF-8 validation (WS)<br/>• Binary frame rejection<br/>• Character encoding checks"]
+    end
+
+    subgraph AuthSecurity["Authentication & Authorization"]
+        direction TB
+
+        AUTH["<b>Auth Framework</b><br/>erlmcp_auth<br/>___________________<br/>• API key validation<br/>• JWT token support<br/>• OAuth 2.0 integration"]
+        SECRETS["<b>Secrets Management</b><br/>erlmcp_secrets<br/>___________________<br/>• Vault integration<br/>• AWS Secrets Manager<br/>• Local encrypted storage<br/>• TTL: 300s default"]
+        RATE["<b>Rate Limiting</b><br/>erlmcp_auth_rate_limiter<br/>___________________<br/>• Per-auth limits<br/>• Token bucket<br/>• Sliding window"]
+    end
+
+    subgraph NetworkSecurity["Network-Level Security"]
+        direction TB
+
+        CONN_LIMIT["<b>Connection Limiting</b><br/>erlmcp_connection_limiter<br/>___________________<br/>• Max: 10K connections<br/>• Per-server tracking<br/>• 70% alert threshold<br/>• gproc distributed counter"]
+        ORIGIN["<b>Origin Validation</b><br/>erlmcp_origin_validator<br/>___________________<br/>• CORS checks<br/>• Whitelist origins<br/>• WebSocket origin verification"]
+        HEADERS["<b>Security Headers</b><br/>erlmcp_security_headers<br/>___________________<br/>• X-Frame-Options<br/>• X-Content-Type-Options<br/>• Strict-Transport-Security<br/>• Content-Security-Policy"]
+    end
+
+    subgraph Validation["Input Validation"]
+        direction TB
+
+        URI["<b>URI Validator</b><br/>erlmcp_uri_validator<br/>___________________<br/>• Path traversal prevention<br/>• URL encoding checks<br/>• Scheme validation"]
+        SCHEMA["<b>JSON Schema</b><br/>jesse validation<br/>___________________<br/>• Structural validation<br/>• Type checking<br/>• Required fields"]
+        INJECTION["<b>Injection Prevention</b><br/>___________________<br/>• SQL injection protection<br/>• Command injection checks<br/>• XSS prevention"]
+    end
+
+    %% Transport to security layers
+    STDIO --> SIZE
+    STDIO --> MEMORY
+
+    TCP --> TLS
+    TCP --> CONN_LIMIT
+    TCP --> SIZE
+    TCP --> MEMORY
+
+    HTTP --> TLS
+    HTTP --> AUTH
+    HTTP --> RATE
+    HTTP --> SECRETS
+    HTTP --> HEADERS
+
+    WS --> TLS
+    WS --> ORIGIN
+    WS --> AUTH
+    WS --> ENCODING
+    WS --> HEADERS
+
+    SSE --> AUTH
+    SSE --> RATE
+    SSE --> HEADERS
+
+    %% Security cross-dependencies
+    TLS --> MTL
+    AUTH --> SECRETS
+    SIZE --> MEMORY
+    NETWORK --> CONN_LIMIT
+
+    %% All transports benefit from input validation
+    VALIDATION_ALL["All Transports"]
+    VALIDATION_ALL --> URI
+    VALIDATION_ALL --> SCHEMA
+    VALIDATION_ALL --> INJECTION
+
+    style TransportSecurity fill:#ffebee,stroke:#c62828,stroke-width:2px
+    style MessageSecurity fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style AuthSecurity fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style NetworkSecurity fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style Validation fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    classDef transportStyle fill:#ffffff,stroke:#424242,stroke-width:1px
+    class STDIO,TCP,HTTP,WS,SSE transportStyle
+
+    classDef securityStyle fill:#ffffff,stroke:#c62828,stroke-width:1px
+    class TLS,MTL,SIZE,MEMORY,ENCODING,AUTH,SECRETS,RATE,CONN_LIMIT,ORIGIN,HEADERS,URI,SCHEMA,INJECTION securityStyle

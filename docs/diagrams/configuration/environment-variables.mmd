@@ -1,0 +1,108 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff9900', 'primaryTextColor':'#fff', 'primaryBorderColor':'#8B4500', 'lineColor':'#ff9900', 'sectionBkgColor':'#ffcc00', 'altSectionBkgColor':'#ffe6a6'}}}%%
+flowchart LR
+    subgraph "Environment Variable Mapping"
+        direction LR
+
+        subgraph Environment["Environment Variables (OS Shell)"]
+            direction TB
+            ERLMCP_LOG_LEVEL["ERLMCP_LOG_LEVEL"]
+            ERLMCP_TRANSPORT["ERLMCP_TRANSPORT"]
+            ERLMCP_PORT["ERLMCP_PORT"]
+            ERLMCP_HOST["ERLMCP_HOST"]
+            ERLMCP_TLS_CERT["ERLMCP_TLS_CERT"]
+            ERLMCP_TLS_KEY["ERLMCP_TLS_KEY"]
+            ERLMCP_SECRETS_BACKEND["ERLMCP_SECRETS_BACKEND"]
+            ERLMCP_SESSION_BACKEND["ERLMCP_SESSION_BACKEND"]
+            ERLMCP_OTEL_EXPORTER["ERLMCP_OTEL_EXPORTER"]
+            ERLMCP_MAX_CONNECTIONS["ERLMCP_MAX_CONNECTIONS"]
+        end
+
+        subgraph Parser["erlmcp_config_env"]
+            direction TB
+            ParseEnv["parse_env/0"]
+            ValidateEnv["validate_env/1"]
+            NormalizeEnv["normalize_env/1"]
+        end
+
+        subgraph ApplicationConfig["Application Configuration (application:set_env/3)"]
+            direction TB
+            AppConfig["erlmcp (core app)"]
+            TransportsConfig["erlmcp_transports"]
+            ObservabilityConfig["erlmcp_observability"]
+            ValidationConfig["erlmcp_validation"]
+        end
+
+        subgraph Schema["Configuration Schema (jesse)"]
+            LogLevelSchema["log_level: enum<br/>{debug,info,warning,error}"]
+            TransportSchema["transport: enum<br/>{stdio,tcp,http,ws,sse}"]
+            PortSchema["port: integer<br/>min=1024,max=65535"]
+            TLSSchema["tls_cert: path<br/>exists=true,readable=true"]
+            SecretsSchema["secrets_backend:<br/>enum{vault,aws,local}"]
+        end
+
+        subgraph Validation["Validation Gates"]
+            TypeCheck["Type Validation"]
+            RangeCheck["Range Validation"]
+            PathCheck["Path Validation"]
+            EnumCheck["Enum Validation"]
+        end
+
+        subgraph Runtime["Runtime Access"]
+            GetEnv["erlmcp_config:get/1"]
+            GetEnvOpt["erlmcp_config:get/2<br/>(with default)"]
+        end
+
+        %% Flow: Environment → Parser → Schema → Validation → Application Config → Runtime
+        ERLMCP_LOG_LEVEL --> ParseEnv
+        ERLMCP_TRANSPORT --> ParseEnv
+        ERLMCP_PORT --> ParseEnv
+        ERLMCP_HOST --> ParseEnv
+        ERLMCP_TLS_CERT --> ParseEnv
+        ERLMCP_TLS_KEY --> ParseEnv
+        ERLMCP_SECRETS_BACKEND --> ParseEnv
+        ERLMCP_SESSION_BACKEND --> ParseEnv
+        ERLMCP_OTEL_EXPORTER --> ParseEnv
+        ERLMCP_MAX_CONNECTIONS --> ParseEnv
+
+        ParseEnv --> ValidateEnv
+        ValidateEnv --> NormalizeEnv
+
+        NormalizeEnv --> LogLevelSchema
+        NormalizeEnv --> TransportSchema
+        NormalizeEnv --> PortSchema
+        NormalizeEnv --> TLSSchema
+        NormalizeEnv --> SecretsSchema
+
+        LogLevelSchema --> TypeCheck
+        LogLevelSchema --> EnumCheck
+        PortSchema --> TypeCheck
+        PortSchema --> RangeCheck
+        TLSSchema --> TypeCheck
+        TLSSchema --> PathCheck
+
+        TypeCheck --> AppConfig
+        EnumCheck --> AppConfig
+        RangeCheck --> TransportsConfig
+        PathCheck --> ObservabilityConfig
+        Validation --> ValidationConfig
+
+        AppConfig --> GetEnv
+        TransportsConfig --> GetEnvOpt
+        ObservabilityConfig --> GetEnv
+        ValidationConfig --> GetEnvOpt
+    end
+
+    style ERLMCP_LOG_LEVEL fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    style ParseEnv fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    style AppConfig fill:#00ff00,stroke:#006600,stroke-width:3px
+    style GetEnv fill:#00ccff,stroke:#0066cc,stroke-width:3px
+
+    classDef envVar fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    classDef parser fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    classDef config fill:#00ff00,stroke:#006600,stroke-width:3px
+    classDef runtime fill:#00ccff,stroke:#0066cc,stroke-width:3px
+
+    class ERLMCP_LOG_LEVEL,ERLMCP_TRANSPORT,ERLMCP_PORT,ERLMCP_HOST,ERLMCP_TLS_CERT,ERLMCP_TLS_KEY,ERLMCP_SECRETS_BACKEND,ERLMCP_SESSION_BACKEND,ERLMCP_OTEL_EXPORTER,ERLMCP_MAX_CONNECTIONS envVar
+    class ParseEnv,ValidateEnv,NormalizeEnv parser
+    class AppConfig,TransportsConfig,ObservabilityConfig,ValidationConfig config
+    class GetEnv,GetEnvOpt runtime

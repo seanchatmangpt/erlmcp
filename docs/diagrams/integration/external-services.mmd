@@ -1,0 +1,184 @@
+```mermaid
+flowchart TB
+    subgraph ERLMCP["erlmcp System"]
+        subgraph CORE["erlmcp_core"]
+            REGISTRY["erlmcp_registry<br/>(gproc)"]
+            CLIENT["erlmcp_client"]
+            SERVER["erlmcp_server"]
+        end
+
+        subgraph SECRETS["erlmcp_secrets"]
+            SECRETS_MGR["secrets_manager<br/>(gen_server)"]
+            CACHE["ETS Cache<br/>(5 min TTL)"]
+        end
+
+        subgraph OBSERVABILITY["erlmcp_observability"]
+            METRICS["erlmcp_metrics"]
+            OTEL["erlmcp_otel"]
+            RECEIPTS["erlmcp_receipt_chain"]
+        end
+    end
+
+    subgraph EXTERNAL["External Services"]
+        subgraph VAULT["HashiCorp Vault"]
+            VAULT_KV["KV Secrets Engine"]
+            VAULT_AUTH["Authentication<br/>(Token/AppRole/K8s)"]
+        end
+
+        subgraph AWS["AWS Secrets Manager"]
+            AWS_KMS["KMS Encryption"]
+            AWS_SECRETS["Secrets Storage"]
+            AWS_IAM["IAM Authentication"]
+        end
+
+        subgraph OTEL_BACKEND["OpenTelemetry Backends"]
+            DATADOG["Datadog"]
+            HONEYCOMB["Honeycomb"]
+            JAEGER["Jaeger"]
+        end
+
+        subgraph STORAGE["Persistence Backends"]
+            MNESIA["Mnesia Cluster"]
+            DETS["DETS Disk"]
+            ETS["ETS Memory"]
+        end
+    end
+
+    %% Secrets Integration
+    SECRETS_MGR -->|"Auth/Token"| VAULT_AUTH
+    SECRETS_MGR -->|"HTTPS"| VAULT_KV
+    SECRETS_MGR -->|"Auth/Token"| AWS_IAM
+    SECRETS_MGR -->|"HTTPS"| AWS_SECRETS
+    SECRETS_MGR -->|"Encryption"| AWS_KMS
+    CACHE -->|"Cached Values"| SECRETS_MGR
+
+    %% Session Persistence
+    REGISTRY -->|"Session Data"| MNESIA
+    REGISTRY -->|"Session Data"| DETS
+    REGISTRY -->|"Session Data"| ETS
+
+    %% Observability Integration
+    OTEL -->|"OTLP/HTTP"| DATADOG
+    OTEL -->|"OTLP/HTTP"| HONEYCOMB
+    OTEL -->|"OTLP/HTTP"| JAEGER
+    METRICS -->|"Aggregation"| OTEL
+
+    %% Internal Communication
+    CLIENT -->|"Secret Lookup"| SECRETS_MGR
+    SERVER -->|"Secret Lookup"| SECRETS_MGR
+    CLIENT -->|"Metrics"| METRICS
+    SERVER -->|"Traces"| OTEL
+    SERVER -->|"Receipts"| RECEIPTS
+
+    style ERLMCP fill:#e1f5fe
+    style EXTERNAL fill:#f3e5f5
+    style SECRETS fill:#fff3e0
+    style OBSERVABILITY fill:#e8f5e9
+    style VAULT fill:#8e24aa,color:#fff
+    style AWS fill:#ff9800,color:#fff
+    style OTEL_BACKEND fill:#4caf50,color:#fff
+```
+
+## External Service Integration Patterns
+
+### Integration Points
+
+| Service | Purpose | Protocol | Fallback |
+|---------|---------|----------|----------|
+| **HashiCorp Vault** | Secrets management | HTTPS (8200) | Local encrypted |
+| **AWS Secrets Manager** | Cloud secrets | HTTPS (API Gateway) | Vault/Local |
+| **OpenTelemetry** | Distributed tracing | OTLP/HTTP | None |
+| **Mnesia** | Distributed sessions | Erlang dist protocol | DETS/ETS |
+
+### Integration Flows
+
+#### 1. Secrets Retrieval Flow
+```
+erlmcp_client/server
+    ↓ (get_secret)
+erlmcp_secrets:check_cache
+    ↓ (cache miss)
+Backend Auth (Vault/AWS)
+    ↓ (authenticated)
+Fetch Secret
+    ↓ (decrypt)
+Cache in ETS (5 min TTL)
+    ↓ (return)
+Caller receives secret
+```
+
+#### 2. Observability Flow
+```
+MCP Operation
+    ↓ (start_span)
+erlmcp_otel:start_span
+    ↓ (inject context)
+Process Request
+    ↓ (end_span)
+erlmcp_otel:end_span
+    ↓ (batch export)
+OTLP/HTTP to Backend
+    ↓ (store)
+Datadog/Honeycomb/Jaeger
+```
+
+#### 3. Session Persistence Flow
+```
+Session Create
+    ↓ (store)
+erlmcp_session_backend
+    ↓ (choose backend)
+├─ ETS (fastest, in-memory)
+├─ DETS (persistent, single-node)
+└─ Mnesia (distributed, cluster)
+    ↓ (confirm)
+Session ID returned
+```
+
+### Configuration Examples
+
+**Vault Integration:**
+```erlang
+{erlmcp_secrets, [
+    {backend, vault},
+    {backend_config, #{
+        address => "https://vault.example.com:8200",
+        auth_method => approle,
+        role_id => "12345678-1234-1234-1234-123456789012",
+        secret_id => "87654321-4321-4321-4321-210987654321"
+    }},
+    {ttl_seconds => 300}
+]}.
+```
+
+**AWS Secrets Manager:**
+```erlang
+{erlmcp_secrets, [
+    {backend, aws_secrets_manager},
+    {backend_config, #{
+        region => "us-east-1",
+        use_iam_role => true
+    }},
+    {ttl_seconds => 300}
+]}.
+```
+
+**OpenTelemetry:**
+```erlang
+{erlmcp_otel, [
+    {service_name => <<"erlmcp">>},
+    {exporter, {otlp, #{
+        endpoint => "http://localhost:4318",
+        protocol => http_protobuf
+    }}},
+    {sampling_rate => 1.0}
+]}.
+```
+
+### Security Considerations
+
+1. **TLS Everywhere**: All external communications use HTTPS
+2. **Authentication**: Token/AppRole (Vault), IAM (AWS)
+3. **Encryption at Rest**: AES-256-GCM for local fallback
+4. **Secret Rotation**: Automatic rotation with TTL cache invalidation
+5. **Audit Logging**: All secret accesses logged

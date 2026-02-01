@@ -1,0 +1,151 @@
+```mermaid
+graph TB
+    subgraph "API Versioning Overview"
+        direction TB
+        V1[MCP v2024-11-05<br/>Current Production] --> V2[MCP v2025-XX-XX<br/>Next Version]
+        V2 --> V3[Future Versions<br/>Backward Compatible]
+
+        V1 -->|Supported| Clients[Clients]
+        V1 -->|Supported| Servers[Servers]
+        V2 -->|Opt-in| Clients
+        V2 -->|Opt-in| Servers
+    end
+
+    subgraph "Version Negotiation Flow"
+        direction TB
+        ClientInit[Client Initialize] --> InitRequest[initialize request<br/>protocolVersion: 2024-11-05]
+        InitRequest --> ServerCheck{Server Support?}
+
+        ServerCheck -->|Yes| ServerAccept[Accept Version<br/>serverCapabilities]
+        ServerCheck -->|No| VersionNegotiation[Version Negotiation]
+
+        VersionNegotiation --> SupportedVersions[Return Supported Versions<br/>protocolVersions array]
+        SupportedVersions --> ClientSelect[Client Select Version<br/>highest compatible]
+        ClientSelect --> RetryInit[Retry Initialize<br/>with selected version]
+
+        ServerAccept --> CapabilityExchange[Capability Exchange<br/>resources, tools, prompts]
+        CapabilityExchange --> ConnectionEstablished[Connection Established<br/>version locked]
+    end
+
+    subgraph "Backward Compatibility Strategy"
+        direction LR
+        Compatibility[Backward Compatibility] --> Additive[Additive Changes<br/>New fields optional]
+        Compatibility --> Deprecation[Deprecation Process<br/>Graceful migration]
+        Compatibility --> Versioning[Versioned Endpoints<br/>/v1/, /v2/]
+
+        Additive --> OldClients[Old Clients<br/>ignore new fields]
+        Additive --> NewClients[New Clients<br/>use new fields]
+
+        Deprecation --> DeprecationWarning[Deprecation Warning<br/>X-Deprecation header]
+        DeprecationWarning --> SunsetPeriod[Sunset Period<br/>minimum 6 months]
+        SunsetPeriod --> Removal[Removal<br/>after deprecation period]
+    end
+
+    subgraph "Evolution Patterns"
+        direction TB
+        Pattern1[Pattern 1: Add New Field] --> Example1[Example: Add<br/>optional metadata field]
+        Example1 --> Impact1[Impact: Old clients ignore<br/>new clients use]
+
+        Pattern2[Pattern 2: Add New Method] --> Example2[Example: Add<br/>tools/call_batch method]
+        Example2 --> Impact2[Impact: Old clients unaffected<br/>opt-in for new clients]
+
+        Pattern3[Pattern 3: Extend Enum] --> Example3[Example: Add<br/>new resource type]
+        Example3 --> Impact3[Impact: Forward compatible<br/>clients handle unknown]
+
+        Pattern4[Pattern 4: Breaking Change] --> Example4[Example: Rename<br/>required field]
+        Example4 --> Impact4[Impact: New major version<br/>maintain old version]
+    end
+
+    subgraph "Version Detection"
+        direction LR
+        Detection[Version Detection] --> ClientVersion[Client Version<br/>User-Agent header]
+        Detection --> ServerVersion[Server Version<br/>initialize response]
+        Detection --> ProtocolVersion[Protocol Version<br/>protocolVersion field]
+
+        ClientVersion --> VersionRouting[Version Routing<br/>select implementation]
+        ServerVersion --> VersionRouting
+        ProtocolVersion --> VersionRouting
+
+        VersionRouting --> V1Impl[v1 Implementation<br/>legacy behavior]
+        VersionRouting --> V2Impl[v2 Implementation<br/>new features]
+    end
+
+    subgraph "Migration Path"
+        direction TB
+        Migration[Migration Process] --> Announce[Announce New Version<br/>documentation, blog]
+        Announce --> Beta[Beta Period<br/>testing, feedback]
+        Beta --> Stable[Stable Release<br/>parallel support]
+        Stable --> Transition[Transition Period<br/>6-12 months]
+        Transition --> DeprecateOld[Deprecate Old Version<br/>warnings, alerts]
+        DeprecateOld --> SunsetOld[Sunset Old Version<br/>remove support]
+
+        Beta --> BetaClients[Beta Clients<br/>early adopters]
+        Stable --> ProductionClients[Production Clients<br/>gradual migration]
+        Transition --> LateAdopters[Late Adopters<br/>final push]
+    end
+
+    subgraph "Feature Flags"
+        direction LR
+        FeatureFlag[Feature Flags] --> FlagConfig[Flag Configuration<br/>per-client, per-feature]
+        FlagConfig --> FlagCheck[Flag Check<br/>at request time]
+
+        FlagCheck --> Enabled[Enabled<br/>execute new feature]
+        FlagCheck --> Disabled[Disabled<br/>use legacy behavior]
+
+        Enabled --> Telemetry[Telemetry<br/>track usage, errors]
+        Disabled --> Telemetry
+
+        Telemetry --> RollbackDecision{Rollback?}
+        RollbackDecision -->|Yes| DisableFlag[Disable Flag<br/>instant revert]
+        RollbackDecision -->|No| GradualRollout[Gradual Rollout<br/>increase percentage]
+    end
+
+    subgraph "Client Compatibility Matrix"
+        direction TB
+        Matrix[Compatibility Matrix] --> ClientV1[Client v1.x]
+        Matrix --> ClientV2[Client v2.x]
+        Matrix --> ClientV3[Client v3.x]
+
+        ClientV1 --> ServerV1[Server v1.x: ✓ Full Support]
+        ClientV1 --> ServerV2[Server v2.x: ✓ Compatible<br/>new fields ignored]
+        ClientV1 --> ServerV3[Server v3.x: ⚠ Negotiation required]
+
+        ClientV2 --> ServerV1[Server v1.x: ✓ Compatible<br/>optional fields]
+        ClientV2 --> ServerV2[Server v2.x: ✓ Full Support]
+        ClientV2 --> ServerV3[Server v3.x: ✓ Compatible<br/>new features ignored]
+
+        ClientV3 --> ServerV1[Server v1.x: ⚠ Degraded<br/>use v1 features]
+        ClientV3 --> ServerV2[Server v2.x: ✓ Compatible<br/>new features optional]
+        ClientV3 --> ServerV3[Server v3.x: ✓ Full Support]
+    end
+
+    subgraph "Implementation Strategy"
+        direction TB
+        Implementation[Implementation] --> CodeBase[Codebase Structure]
+        CodeBase --> VersionedModules[Versioned Modules<br/>erlmcp_v1, erlmcp_v2]
+        CodeBase --> SharedCode[Shared Code<br/>common utilities]
+        CodeBase --> Adapter[Adapter Pattern<br/>version-specific adapters]
+
+        VersionedModules --> Dispatch[Version Dispatch<br/>select implementation]
+        SharedCode --> Dispatch
+        Adapter --> Dispatch
+
+        Dispatch --> V1Handler[v1 Handler<br/>legacy behavior]
+        Dispatch --> V2Handler[v2 Handler<br/>new features]
+        Dispatch --> Fallback[Fallback<br/>degrade gracefully]
+    end
+
+    ConnectionEstablished -.->|enables| BackwardCompatibility
+    VersionRouting -.->|uses| EvolutionPatterns
+    Migration -.->|uses| FeatureFlags
+    Implementation -.->|supports| ClientCompatibilityMatrix
+
+    style V1 fill:#c8e6c9
+    style V2 fill:#fff9c4
+    style V3 fill:#e1f5fe
+    style ServerCheck fill:#fff9c4
+    style VersionNegotiation fill:#ffe0b2
+    style RollbackDecision fill:#ffcdd2
+    style DeprecateOld fill:#ffe0b2
+    style SunsetOld fill:#ffcdd2
+```

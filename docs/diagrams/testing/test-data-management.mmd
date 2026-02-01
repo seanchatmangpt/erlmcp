@@ -1,0 +1,176 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ffd700', 'primaryTextColor':'#000', 'primaryBorderColor':'#ff8c00', 'lineColor':'#ff8c00', 'sectionBkgColor':'#fffacd', 'altSectionBkgColor':'#ffe4b5', 'gridColor':'#ffd700'}}}%%
+flowchart TB
+    subgraph TestData["Test Data Management"]
+        direction TB
+
+        subgraph Generators["Data Generators"]
+            direction LR
+
+            subgraph Primitive["Primitive Generators"]
+                PG1["int()<br/>Random integers"]
+                PG2["binary()<br/>Random binaries"]
+                PG3["list(G)<br/>Random lists"]
+                PG4["atom()<br/>Random atoms"]
+                PG5["float()<br/>Random floats"]
+            end
+
+            subgraph Protocol["Protocol Generators"]
+                PL1["json_rpc_request()<br/>Valid JSON-RPC 2.0"]
+                PL2["json_rpc_response()<br/>Response messages"]
+                PL3["json_rpc_error()<br/>Error responses"]
+                PL4["mcp_capability()<br/>MCP capabilities"]
+                PL5["mcp_resource()<br/>Resource objects"]
+                PL6["mcp_tool()<br/>Tool definitions"]
+            end
+
+            subgraph State["State Generators"]
+                ST1["server_state()<br/>Server state record"]
+                ST2["client_state()<br/>Client state record"]
+                ST3["registry_state()<br/>Registry state"]
+                ST4["session_state()<br/>Session data"]
+            end
+
+            subgraph Transport["Transport Generators"]
+                TR1["transport_config()<br/>Transport configs"]
+                TR2["transport_type()<br/>stdio, tcp, http, ws, sse"]
+                TR3["transport_message()<br/>Transport messages"]
+            end
+        end
+
+        subgraph Factories["Test Factories"]
+            direction TB
+
+            subgraph ServerFactory["Server Factory"]
+                SF1["start_test_server()<br/>Start server with caps"]
+                SF2["start_test_client()<br/>Start client instance"]
+                SF3["start_test_registry()<br/>Start registry"]
+                SF4["start_test_transport()<br/>Start transport"]
+            end
+
+            subgraph DataFactory["Data Factory"]
+                DF1["create_test_resource()<br/>Resource with URI"]
+                DF2["create_test_tool()<br/>Tool with handler"]
+                DF3["create_test_prompt()<br/>Prompt with args"]
+                DF4["create_test_session()<br/>Session data"]
+            end
+
+            subgraph MessageFactory["Message Factory"]
+                MF1["create_init_request()<br/>Initialize message"]
+                MF2["create_tool_call()<br/>Tool invocation"]
+                MF3["create_resource_list()<br/>Resource query"]
+                MF4["create_subscribe()<br/>Subscription message"]
+            end
+        end
+
+        subgraph Fixtures["Test Fixtures"]
+            direction LR
+
+            subgraph EUnitFixtures["EUnit Fixtures"]
+                EF1["setup() → #{registry, pid}"]
+                EF2["cleanup(State) → stop processes"]
+                EF3["foreach → per-test isolation"]
+                EF4["setup/0, cleanup/1"]
+            end
+
+            subgraph CTFixtures["Common Test Fixtures"]
+                CF1["init_per_suite/1 → start apps"]
+                CF2["end_per_suite/1 → stop apps"]
+                CF3["init_per_testcase/2 → setup"]
+                CF4["end_per_testcase/2 → cleanup"]
+                CF5["Config proplist → state sharing"]
+            end
+        end
+
+        subgraph TestDataSets["Test Data Sets"]
+            direction TB
+
+            subgraph ValidData["Valid Data Sets"]
+                VD1["Valid URIs<br/>file:///, http://, custom://"]
+                VD2["Valid JSON schemas<br/>Tool schemas"]
+                VD3["Valid capabilities<br/>Enabled/disabled"]
+                VD4["Valid error codes<br/>-32700 to -32000"]
+            end
+
+            subgraph InvalidData["Invalid Data Sets"]
+                ID1["Malformed JSON<br/>Parse errors"]
+                ID2["Invalid URIs<br/>Missing scheme"]
+                ID3["Invalid types<br/>Type mismatches"]
+                ID4["Out of range<br/>Size violations"]
+            end
+
+            subgraph EdgeCases["Edge Cases"]
+                EC1["Empty strings<br/>&lt;&lt;&gt;&gt;"]
+                EC2["Maximum sizes<br/>2MB messages"]
+                EC3["Unicode<br/>Multi-byte chars"]
+                EC4["Special chars<br/>Null, escapes"]
+            end
+        end
+
+        subgraph Cleanup["Data Cleanup"]
+            direction TB
+            CL1["Process cleanup<br/>Kill all test processes"]
+            CL2["ETS cleanup<br/>Delete test tables"]
+            CL3["Registry cleanup<br/>Unregister names"]
+            CL4["File cleanup<br/>Delete test files"]
+            CL5["Network cleanup<br/>Close sockets"]
+        end
+    end
+
+    subgraph DataFlow["Test Data Flow"]
+        direction LR
+        DF1["Generate → Factory → Fixture → Test"]
+        DF2["Valid → Invalid → Edge Cases"]
+        DF3["Setup → Exercise → Verify → Cleanup"]
+    end
+
+    subgraph BestPractices["Best Practices"]
+        direction TB
+        BP1["Isolation<br/>Each test independent"]
+        BP2["Reproducibility<br/>Deterministic with seed"]
+        BP3["Realism<br/>Production-like data"]
+        BP4["Variety<br/>Cover all cases"]
+        BP5["Cleanup<br/>No side effects"]
+    end
+
+    %% Flow connections
+    Generators --> Factories
+    Factories --> Fixtures
+    Fixtures --> TestDataSets
+    TestDataSets --> Cleanup
+
+    DataFlow --> Generators
+    DataFlow --> TestDataSets
+    DataFlow --> Cleanup
+
+    BestPractices --> Factories
+    BestPractices --> Fixtures
+
+    %% Styling
+    classDef generatorStyle fill:#ffd700,stroke:#ff8c00,stroke-width:3px,color:#000
+    classDef factoryStyle fill:#00bfff,stroke:#0080ff,stroke-width:2px,color:#fff
+    classDef fixtureStyle fill:#32cd32,stroke:#228b22,stroke-width:2px,color:#fff
+    classDef dataSetStyle fill:#ff69b4,stroke:#ff1493,stroke-width:2px,color:#fff
+    classDef cleanupStyle fill:#ff6347,stroke:#ff4500,stroke-width:2px,color:#fff
+    classDef flowStyle fill:#9370db,stroke:#8a2be2,stroke-width:2px,color:#fff
+    classDef bestStyle fill:#20b2aa,stroke:#008b8b,stroke-width:2px,color:#fff
+
+    class PG1,PG2,PG3,PG4,PG5,PL1,PL2,PL3,PL4,PL5,PL6,ST1,ST2,ST3,ST4,TR1,TR2,TR3 generatorStyle
+    class SF1,SF2,SF3,SF4,DF1,DF2,DF3,DF4,MF1,MF2,MF3,MF4 factoryStyle
+    class EF1,EF2,EF3,EF4,CF1,CF2,CF3,CF4,CF5 fixtureStyle
+    class VD1,VD2,VD3,VD4,ID1,ID2,ID3,ID4,EC1,EC2,EC3,EC4 dataSetStyle
+    class CL1,CL2,CL3,CL4,CL5 cleanupStyle
+    class DF1,DF2,DF3 flowStyle
+    class BP1,BP2,BP3,BP4,BP5 bestStyle
+
+    %% Example Usage
+    subgraph Example["Example: Test Data Usage"]
+        EX1["1. Generator: create_test_resource()"]
+        EX2["2. Factory: start_test_server()"]
+        EX3["3. Setup: Server + Resource"]
+        EX4["4. Exercise: server:add_resource(Uri, Handler)"]
+        EX5["5. Verify: Resource in list"]
+        EX6["6. Cleanup: stop(Server)"]
+    end
+
+    Factories --> Example
+    Fixtures --> Example

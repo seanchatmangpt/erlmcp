@@ -1,0 +1,184 @@
+graph TB
+    %% Data Encryption and Protection Layers for erlmcp
+    %% Shows: Encryption at rest, in transit, field-level encryption, key management
+
+    subgraph "Data Protection Layers"
+        AtRest["Data at Rest<br/>(Encryption on Disk)"]
+        InTransit["Data in Transit<br/>(Encryption on Network)"]
+        InUse["Data in Use<br/>(Memory Protection)"]
+        FieldLevel["Field-Level Encryption<br/>(Sensitive Fields)"]
+    end
+
+    subgraph "Encryption at Rest"
+        Disk["Disk Encryption<br/>(LUKS / BitLocker)"]
+        DB["Database Encryption<br/>(Mnesia encryption)"]
+        File["File Encryption<br/>(AES-256-GCM)"]
+        SecretStore["Secrets Storage<br/>(Vault / AWS / Local)"]
+    end
+
+    subgraph "Encryption in Transit"
+        TLS1["TLS 1.2 / 1.3<br/>(All network traffic)"]
+        WSS["WebSocket Secure<br/>(wss:// only)"]
+        HTTPS["HTTPS Only<br/>(HTTP/2 over TLS)"]
+        VPNLayer["VPN Tunnel<br/>(Private network)"]
+    end
+
+    subgraph "Encryption Algorithms"
+        AES256["AES-256-GCM<br/>(Authenticated Encryption)"]
+        ChaCha20["ChaCha20-Poly1305<br/>(Mobile optimized)"]
+        RSA["RSA-4096 / OAEP<br/>(Asymmetric encryption)"]
+        ECDSA["ECDSA / Ed25519<br/>(Digital signatures)"]
+        SHA256["SHA-256 / SHA-512<br/>(Hashing)"]
+    end
+
+    subgraph "Key Management"
+        KMS["Key Management Service<br/>(AWS KMS / Vault)"]
+        KeyRotation["Key Rotation<br/>(Every 90 days)"]
+        KeyEscrow["Key Escrow<br/>(Backup keys)"]
+        HSM["HSM / TPM<br/>(Hardware Security Module)"]
+    end
+
+    subgraph "Cryptographic Operations"
+        Encrypt["Encryption Operation<br/>crypto:crypto_one_time_aead/6"]
+        Decrypt["Decryption Operation<br/>crypto:crypto_one_time_aead/6"]
+        Sign["Signing Operation<br/>public_key:sign/4"]
+        Verify["Verification<br/>public_key:verify/5"]
+        Hash["Hashing<br/>crypto:hash/2"]
+    end
+
+    subgraph "Secrets Encryption Flow"
+        PlainSecret["Plain Secret<br/>(Sensitive Data)"]
+        MasterKey["Master Key<br/>(256-bit random)"]
+        IV["IV / Nonce<br/>(12-byte random)"]
+        AAD["Additional Authenticated Data<br/>(Metadata)"]
+        Tag["Auth Tag<br/>(16-byte)"]
+        CipherText["Cipher Text<br/>(Encrypted Data)"]
+    end
+
+    subgraph "Memory Protection"
+        SecureErase["Secure Erase<br/>(Zero memory after use)"]
+        Locking["Memory Locking<br/>(mlock / VirtualLock)"]
+        ASLR["ASLR<br/>(Address Space Layout Randomization)"]
+        StackGuard["Stack Guard<br/>(Canaries)"]
+    end
+
+    subgraph "Data Classification"
+        Public["Public Data<br/>(No encryption required)"]
+        Internal["Internal Data<br/>(Encrypt at rest)"]
+        Confidential["Confidential Data<br/>(Encrypt at rest + in transit)"]
+        Restricted["Restricted Data<br/>(Field-level encryption)"]
+    end
+
+    subgraph "Compliance & Standards"
+        GDPR["GDPR<br/>(EU Data Protection)"]
+        PCI["PCI DSS<br/>(Payment Card Industry)"]
+        HIPAA["HIPAA<br/>(Health Insurance)"]
+        SOC2["SOC 2<br/>(Security Audits)"]
+        FIPS["FIPS 140-2<br/>(Cryptographic Modules)"]
+    end
+
+    %% Connections
+    AtRest --> Disk
+    AtRest --> DB
+    AtRest --> File
+    AtRest --> SecretStore
+
+    InTransit --> TLS1
+    InTransit --> WSS
+    InTransit --> HTTPS
+    InTransit --> VPNLayer
+
+    InUse --> SecureErase
+    InUse --> Locking
+    InUse --> ASLR
+    InUse --> StackGuard
+
+    FieldLevel --> Restricted
+
+    %% Encryption Algorithms
+    AES256 --> AtRest
+    ChaCha20 --> InTransit
+    RSA --> KeyManagement["Key Management"]
+    ECDSA --> Sign
+    SHA256 --> Hash
+
+    %% Key Management
+    KMS --> MasterKey
+    KeyRotation --> KMS
+    KeyEscrow --> KMS
+    HSM --> KMS
+
+    %% Crypto Operations
+    Encrypt --> AES256
+    Decrypt --> AES256
+    Sign --> ECDSA
+    Verify --> ECDSA
+    Hash --> SHA256
+
+    %% Secrets Encryption Flow
+    PlainSecret -->|1. Generate IV| IV
+    MasterKey -->|2. Load from KMS| Encrypt
+    IV -->|3. Encrypt| Encrypt
+    AAD -->|4. Add Metadata| Encrypt
+    Encrypt -->|5. Produce Tag| Tag
+    Encrypt -->|6. Produce CipherText| CipherText
+
+    CipherText -->|Store| File
+    Tag -->|Store with CipherText| File
+    IV -->|Store with CipherText| File
+
+    %% Decryption Flow
+    File -->|Load| Decrypt
+    CipherText -->|Decrypt| Decrypt
+    IV -->|Decrypt| Decrypt
+    Tag -->|Verify| Decrypt
+    MasterKey -->|Decrypt| Decrypt
+    Decrypt -->|Verify Tag| Tag
+    Tag -->|Valid| PlainSecret
+
+    %% Data Classification
+    Public -->|No Protection| Public
+    Internal -->|AES-256-GCM| Internal
+    Confidential -->|AES-256-GCM + TLS| Confidential
+    Restricted -->|Field-Level + HSM| Restricted
+
+    %% Compliance
+    GDPR -->|Requires| AtRest
+    GDPR -->|Requires| InTransit
+    PCI -->|Requires| FieldLevel
+    HIPAA -->|Requires| AtRest
+    SOC2 -->|Requires| KeyRotation
+    FIPS -->|Validates| AES256
+
+    %% Styling
+    classDef layers fill:#e3f2fd,stroke:#0277bd,stroke-width:3px
+    classDef atrest fill="#f3e5f5",stroke="#7b1fa2",stroke-width:2px
+    classDef transit fill="#e8f5e9",stroke="#2e7d32",stroke-width:2px
+    classDef inuse fill="#fff3e0",stroke="#ef6c00",stroke-width:2px
+    classDef field fill="#fce4ec",stroke="#c2185b",stroke-width:2px
+    classDef crypto fill="#e0f2f1",stroke="#00695c",stroke-width:2px
+    classDef keys fill="#ffebee",stroke="#c62828",stroke-width:2px
+    classDef ops fill="#e1f5fe",stroke:#0277bd,stroke-width:2px
+    classDef mem fill="#f5f5f5",stroke:#424242,stroke-width:2px
+    classDef class fill="#fff9c4",stroke="#f57f17",stroke-width:2px
+    classDef compliance fill="#e8eaf6",stroke="#3f51b5",stroke-width:2px
+
+    class AtRest,InTransit,InUse,FieldLevel layers
+    class Disk,DB,File,SecretStore atrest
+    class TLS1,WSS,HTTPS,VPNLayer transit
+    class SecureErase,Locking,ASLR,StackGuard inuse
+    class AES256,ChaCha20,RSA,ECDSA,SHA256 crypto
+    class KMS,KeyRotation,KeyEscrow,HSM keys
+    class Encrypt,Decrypt,Sign,Verify,Hash ops
+    class PlainSecret,MasterKey,IV,AAD,Tag,CipherText ops
+    class Public,Internal,Confidential,Restricted class
+    class GDPR,PCI,HIPAA,SOC2,FIPS compliance
+
+    %% Notes
+    Note1["<b>Encryption at Rest:</b><br/>✅ AES-256-GCM (authenticated encryption)<br/>✅ 12-byte random IV (never reuse)<br/>✅ 16-byte authentication tag<br/>✅ Master key stored in KMS/Vault<br/>✅ Key rotation every 90 days"]
+    Note2["<b>Encryption in Transit:</b><br/>✅ TLS 1.2+ (TLS 1.0/1.1 disabled)<br/>✅ Forward secrecy (ECDHE key exchange)<br/>✅ Strong cipher suites (no RC4, DES)<br/>✅ Certificate validation (verify_peer)<br/>✅ HSTS enabled"]
+    Note3["<b>Field-Level Encryption:</b><br/>• Encrypt sensitive fields before DB storage<br/>• Separate encryption keys per field<br/>• Application-side encryption<br/>• KMS-managed keys<br/>• Searchable encryption (if needed)"]
+    Note4["<b>Key Management:</b><br/>• Centralized KMS (AWS KMS / Vault)<br/>• Automatic rotation (90-day default)<br/>• Key escrow for recovery<br/>• Hardware-backed keys (HSM/TPM)<br/>• Audit logging (all key usage)"]
+    Note5["<b>Memory Protection:</b><br/>• Secure erase (zero memory after use)<br/>• Memory locking (prevent swap to disk)<br/>• ASLR (randomize memory addresses)<br/>• Stack guards (detect buffer overflow)<br/>• No sensitive data in logs"]
+    Note6["<b>Data Classification:</b><br/>🟢 Public: No encryption required<br/>🟡 Internal: Encrypt at rest<br/>🟠 Confidential: Encrypt at rest + in transit<br/>🔴 Restricted: Field-level encryption + HSM"]
+    Note7["<b>Compliance:</b><br/>• GDPR: EU personal data protection<br/>• PCI DSS: Payment card security<br/>• HIPAA: Healthcare data privacy<br/>• SOC 2: Security controls audit<br/>• FIPS 140-2: Cryptographic modules"]

@@ -1,0 +1,156 @@
+graph TB
+    %% Transport-Level Security Mechanisms for erlmcp
+    %% Shows: TLS, mTLS, WebSocket security, HTTP headers, CORS
+
+    subgraph "Transport Layer"
+        STDIO["STDIO Transport<br/>(erlmcp_transport_stdio)<br/>Local pipe I/O"]
+        TCP["TCP Transport<br/>(erlmcp_transport_tcp)<br/>ranch acceptor pool"]
+        HTTP["HTTP/2 Transport<br/>(erlmcp_transport_http)<br/>gun HTTP client"]
+        WS["WebSocket Transport<br/>(erlmcp_transport_ws)<br/>gun WebSocket"]
+        SSE["SSE Transport<br/>(erlmcp_transport_sse)<br/>Cowboy SSE"]
+    end
+
+    subgraph "TLS Configuration"
+        TLS["TLS/SSL Layer<br/>(ssl module)"]
+        Certs["Certificate Chain<br/>Server Cert + Intermediate + Root"]
+        Ciphers["Cipher Suites<br/>TLS 1.2 / TLS 1.3"]
+        Verify["Certificate Verification<br/>verify_peer (not verify_none)"]
+        CACerts["System CA Certificates<br/>public_key:cacerts_get/0"]
+        Hostname["Hostname Verification<br/>pkix_verify_hostname_match_fun"]
+    end
+
+    subgraph "mTLS (Mutual TLS)"
+        MTLSReq["mTLS Required<br/>(verify = verify_peer)"]
+        ClientCert["Client Certificate<br/>X.509 cert validation"]
+        CRL["Certificate Revocation<br/>OCSP / CRL checking"]
+        Depth["Chain Depth Limit<br/>Maximum: 3 levels"]
+        CertExtraction["Certificate Extraction<br/>From SSL socket"]
+    end
+
+    subgraph "WebSocket Security"
+        WSOrigin["Origin Validation<br/>Check Origin header"]
+        WSSProtocol["wss:// Protocol<br/>WebSocket over TLS"]
+        WSFrame["Frame Validation<br/>Max frame size: 1MB"]
+        WSPing["Ping/Pong<br/>Connection health check"]
+    end
+
+    subgraph "HTTP Security Headers"
+        HSTS["Strict-Transport-Security<br/>max-age=31536000"]
+        CSP["Content-Security-Policy<br/>default-src 'self'"]
+        XFrame["X-Frame-Options<br/>DENY or SAMEORIGIN"]
+        XContentType["X-Content-Type-Options<br/>nosniff"]
+        XSSProtection["X-XSS-Protection<br/>1; mode=block"]
+    end
+
+    subgraph "CORS (Cross-Origin Resource Sharing)"
+        CORSOrigins["Allowed Origins<br/>Whitelist pattern"]
+        CORSMethods["Allowed Methods<br/>GET, POST, OPTIONS"]
+        CORSHeaders["Allowed Headers<br/>Authorization, Content-Type"]
+        CORSCreds["Credentials<br/>Access-Control-Allow-Credentials"]
+        CORSMaxAge["Preflight Cache<br/>Access-Control-Max-Age"]
+    end
+
+    subgraph "Input Validation"
+        URIV["URI Validator<br/>(erlmcp_uri_validator)"]
+        HeaderV["Header Validator<br/>(erlmcp_http_header_validator)"]
+        SizeV["Message Size Validator<br/>Max: 10MB default"]
+        SchemaV["JSON Schema Validator<br/>(jesse library)"]
+    end
+
+    subgraph "Rate Limiting & DoS Protection"
+        RateLimit["Rate Limiter<br/>(erlmcp_rate_limiter)"]
+        ConnLimit["Connection Limiter<br/>(erlmcp_connection_limiter)"]
+        Circuit["Circuit Breaker<br/>(erlmcp_circuit_breaker)"]
+    end
+
+    subgraph "Network Security"
+        Firewall["Firewall Rules<br/>IP whitelist"]
+        VPN["VPN Required<br/>Private network only"]
+        VPC["VPC Endpoints<br/>AWS PrivateLink"]
+    end
+
+    %% Connections
+    STDIO -->|No network exposure| STDIO
+    TCP -->|TLS Wrap| TLS
+    HTTP -->|HTTPS Only| TLS
+    WS -->|WSS Only| TLS
+    SSE -->|HTTPS Only| TLS
+
+    TLS -->|Certificate Chain| Certs
+    TLS -->|Strong Ciphers| Ciphers
+    TLS -->|Peer Verification| Verify
+    Verify -->|CA Bundle| CACerts
+    Verify -->|Hostname Check| Hostname
+
+    %% mTLS Flow
+    Verify -->|Optional mTLS| MTLSReq
+    MTLSReq -->|Extract Cert| CertExtraction
+    CertExtraction -->|Validate| ClientCert
+    ClientCert -->|Revocation Check| CRL
+    ClientCert -->|Depth Check| Depth
+    CertExtraction -->|erlmcp_auth_mtls| MTLSReq
+
+    %% WebSocket Security
+    WS -->|Origin Check| WSOrigin
+    WS -->|WSS Protocol| WSSProtocol
+    WS -->|Frame Size| WSFrame
+    WS -->|Keepalive| WSPing
+
+    %% HTTP Headers
+    HTTP -->|Set Headers| HSTS
+    HTTP -->|Set Headers| CSP
+    HTTP -->|Set Headers| XFrame
+    HTTP -->|Set Headers| XContentType
+    HTTP -->|Set Headers| XSSProtection
+
+    %% CORS
+    HTTP -->|Preflight| CORSOrigins
+    HTTP -->|Methods| CORSMethods
+    HTTP -->|Headers| CORSHeaders
+    HTTP -->|Credentials| CORSCreds
+    HTTP -->|Cache| CORSMaxAge
+
+    %% Input Validation
+    TCP -->|Validate URIs| URIV
+    HTTP -->|Validate Headers| HeaderV
+    AllTransports["All Transports"] -->|Size Check| SizeV
+    AllTransports -->|Schema Validation| SchemaV
+
+    %% Rate Limiting
+    AllTransports -->|Rate Check| RateLimit
+    AllTransports -->|Connection Limit| ConnLimit
+    AllTransports -->|Failure Threshold| Circuit
+
+    %% Network Security
+    TCP -->|Firewall| Firewall
+    TCP -->|VPN| VPN
+    HTTP -->|VPC| VPC
+
+    %% Styling
+    classDef transport fill:#e3f2fd,stroke:#0277bd,stroke-width:2px
+    classDef tls fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef mtls fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef ws fill="#fff3e0",stroke="#ef6c00",stroke-width:2px
+    classDef headers fill="#fce4ec",stroke="#c2185b",stroke-width:2px
+    classDef cors fill="#e0f2f1",stroke="#00695c",stroke-width:2px
+    classDef validation fill="#e1f5fe",stroke="#0277bd",stroke-width:2px
+    classDef dos fill="#ffebee",stroke="#c62828",stroke-width:2px
+    classDef network fill="#f5f5f5",stroke="#424242",stroke-width:2px
+
+    class STDIO,TCP,HTTP,WS,SSE transport
+    class TLS,Certs,Ciphers,Verify,CACerts,Hostname tls
+    class MTLSReq,ClientCert,CRL,Depth,CertExtraction mtls
+    class WSOrigin,WSSProtocol,WSFrame,WSPing ws
+    class HSTS,CSP,XFrame,XContentType,XSSProtection headers
+    class CORSOrigins,CORSMethods,CORSHeaders,CORSCreds,CORSMaxAge cors
+    class URIV,HeaderV,SizeV,SchemaV validation
+    class RateLimit,ConnLimit,Circuit dos
+    class Firewall,VPN,VPC network
+
+    %% Notes
+    Note1["<b>TLS Best Practices:</b><br/>✅ TLS 1.2+ (TLS 1.0/1.1 disabled)<br/>✅ Strong cipher suites only<br/>✅ verify_peer (never verify_none)<br/>✅ System CA certificates<br/>✅ Hostname verification enabled"]
+    Note2["<b>mTLS Flow:</b><br/>1. Client presents certificate<br/>2. Server validates cert chain<br/>3. Check CRL/OCSP for revocation<br/>4. Verify depth ≤ 3<br/>5. Extract subject CN for auth"]
+    Note3["<b>WebSocket Security:</b><br/>• wss:// only (no ws://)<br/>• Strict Origin validation<br/>• Frame size limit: 1MB<br/>• Ping/Pong every 30s"]
+    Note4["<b>HTTP Headers (Security):</b><br/>• HSTS: Force HTTPS (1 year)<br/>• CSP: Restrict resources<br/>• X-Frame-Options: Prevent clickjacking<br/>• X-Content-Type: Prevent MIME sniffing"]
+    Note5["<b>DoS Protection:</b><br/>• Rate limit: 100 req/min per IP<br/>• Connection limit: 1000 concurrent<br/>• Circuit breaker: 50% failure rate<br/>• Auto-recovery after 60s"]
+    Note6["<b>Input Validation:</b><br/>• URI length: 2048 chars max<br/>• Header size: 8KB max<br/>• Message body: 10MB default<br/>• JSON Schema: strict validation"]

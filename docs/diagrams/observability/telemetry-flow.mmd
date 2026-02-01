@@ -1,0 +1,60 @@
+---
+title: erlmcp OpenTelemetry Data Flow
+---
+flowchart TD
+    subgraph Application["Application Layer (erlmcp)"]
+        Core["erlmcp_server<br/>GenServer"]
+        Client["erlmcp_client<br/>GenServer"]
+        Transport["erlmcp_transport_*<br/>Transport Modules"]
+        Handlers["Message Handlers<br/>Resources/Tools/Prompts"]
+    end
+
+    subgraph OTEL["OpenTelemetry SDK"]
+        API["opentelemetry_api<br/>Span Creation"]
+        SDK["opentelemetry<br/>Processor Pipeline"]
+        BatchSpan["Batch Span Processor<br/>Buffer 500 spans / 5s"]
+    end
+
+    subgraph Exporters["Exporters (Pluggable)"]
+        Datadog["OTLP Datadog<br/>otel_collector_datadog"]
+        Honeycomb["OTLP Honeycomb<br/>otel_collector_honeycomb"]
+        Jaeger["OTLP Jaeger<br/>otel_collector_jaeger"]
+        Console["Console Exporter<br/>Development Only"]
+    end
+
+    subgraph Backends["Observability Backends"]
+        DD["Datadog APM<br/>Trace Search & Analytics"]
+        HC["Honeycomb<br/>Query & Visualization"]
+        JJ["Jaeger UI<br/>Dependency Graphs"]
+    end
+
+    Application -->|"create_span"| API
+    Transport -->|"transport events"| API
+    Handlers -->|"handler events"| API
+
+    API -->|"start_span/end_span<br/>add_event/add_attribute"| SDK
+    SDK -->|"batch spans"| BatchSpan
+
+    BatchSpan -->|"OTLP/HTTP"| Datadog
+    BatchSpan -->|"OTLP/HTTP"| Honeycomb
+    BatchSpan -->|"OTLP/UDP"| Jaeger
+    BatchSpan -->|"stdout"| Console
+
+    Datadog -->|"trace data"| DD
+    Honeycomb -->|"trace data"| HC
+    Jaeger -->|"trace data"| JJ
+
+    style Application fill:#e1f5fe
+    style OTEL fill:#fff3e0
+    style Exporters fill:#f3e5f5
+    style Backends fill:#e8f5e9
+
+    classDef erlmcpModule fill:#0277bd,stroke:#01579b,color:#fff
+    classDef otelComponent fill:#ef6c00,stroke:#e65100,color:#fff
+    classDef exporter fill:#7b1fa2,stroke:#4a148c,color:#fff
+    classDef backend fill:#388e3c,stroke:#1b5e20,color:#fff
+
+    class Core,Client,Transport,Handlers erlmcpModule
+    class API,SDK,BatchSpan otelComponent
+    class Datadog,Honeycomb,Jaeger,Console exporter
+    class DD,HC,JJ backend

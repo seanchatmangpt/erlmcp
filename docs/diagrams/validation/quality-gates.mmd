@@ -1,0 +1,32 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff0000', 'edgeLabelBackground':'#ffffff'}}}%%
+gantt
+    title erlmcp Quality Gates - Build Pipeline (TPS Jidoka)
+    dateFormat YYYY-MM-DD HH:mm
+    axisFormat %H:%M
+
+    section Pre-Commit (Poka-Yoke)
+    Code Formatting              :active, p1, 2026-01-31 00:00, 5m
+    Linting (400+ Ruff Rules)    :crit, p2, after p1, 10m
+    Type Checking (Dialyzer)     :crit, p3, after p2, 15m
+    Security Scan (Bandit)       :crit, p4, after p3, 10m
+
+    section Compilation (Gate 1)
+    rebar3 compile               :crit, comp1, 2026-01-31 00:40, 10m
+    Xref Analysis                :comp2, after comp1, 5m
+
+    section Unit Testing (Gate 2)
+    EUnit Tests                  :crit, test1, after comp2, 20m
+    Coverage Analysis (≥80%)     :crit, test2, after test1, 5m
+
+    section Integration Testing (Gate 3)
+    CommonTest Suites            :crit, integ1, after test2, 30m
+    Property-Based (Proper)      :integ2, after integ1, 15m
+
+    section Performance (Gate 4)
+    Benchmarking (if changed)    :bench1, after integ2, 15m
+    Regression Analysis (<10%)   :crit, bench2, after bench1, 5m
+
+    section Compliance (Final)
+    Compliance Report Generation :comp1, 2026-01-31 02:00, 10m
+    Evidence Bundle Creation     :crit, comp2, after comp1, 10m
+    Release Certification        :milestone, comp3, after comp2, 0m

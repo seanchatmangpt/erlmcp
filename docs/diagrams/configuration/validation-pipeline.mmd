@@ -1,0 +1,144 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff9900', 'primaryTextColor':'#fff', 'primaryBorderColor':'#8B4500', 'lineColor':'#ff9900', 'sectionBkgColor':'#ffcc00', 'altSectionBkgColor':'#ffe6a6'}}}%%
+flowchart TB
+    subgraph "Configuration Validation Pipeline"
+        direction TB
+
+        subgraph Input["Configuration Input Sources"]
+            direction TB
+            SysConfigInput["sys.config<br/>(compile-time)"]
+            EnvVarsInput["Environment Variables<br/>(runtime)"]
+            CLIInput["Command-line Args<br/>(runtime)"]
+            RPCInput["RPC Updates<br/>(dynamic)"]
+        end
+
+        subgraph Stage1["Stage 1: Schema Validation"]
+            direction TB
+            SchemaLoad["Load JSON Schema<br/>(jesse)"]
+            StructCheck["Structural Validation<br/>(required fields)"]
+            TypeCheck["Type Validation<br/>(integer, string, etc)"]
+            EnumCheck["Enum Validation<br/>(allowed values)"]
+        end
+
+        subgraph Stage2["Stage 2: Business Logic Validation"]
+            direction TB
+            RangeCheck["Range Validation<br/>(min/max)"]
+            PathCheck["Path Validation<br/>(exists, readable)"]
+            DepCheck["Dependency Check<br/>(conflicts, requires)"]
+            SecCheck["Security Validation<br/>(no secrets in config)"]
+        end
+
+        subgraph Stage3["Stage 3: Runtime Validation"]
+            direction TB
+            ConnCheck["Connectivity Check<br/>(database, network)"]
+            ResCheck["Resource Check<br/>(memory, file handles)"]
+            PermCheck["Permission Check<br/>(file access)"]
+            HealthCheck["Health Check<br/>(external services)"]
+        end
+
+        subgraph Gates["Validation Gates"]
+            direction TB
+            Gate1["Gate 1: Schema<br/>(blocking)"]
+            Gate2["Gate 2: Logic<br/>(blocking)"]
+            Gate3["Gate 3: Runtime<br/>(warning only)"]
+        end
+
+        subgraph Output["Validation Outcomes"]
+            direction TB
+            Success["✓ Valid Configuration<br/>(proceed to startup)"]
+            Warnings["⚠ Valid with Warnings<br/>(log, proceed)"]
+            Errors["✗ Invalid Configuration<br/>(halt startup)"]
+        end
+
+        subgraph ErrorHandling["Error Handling"]
+            direction TB
+            SchemaError["Schema Validation Error<br/>+ field location"]
+            LogicError["Business Logic Error<br/>+ constraint details"]
+            RuntimeError["Runtime Validation Error<br/>+ remediation hint"]
+        end
+
+        subgraph Observability["Validation Observability"]
+            direction TB
+            Metrics["Metrics: config_validation_total<br/>(label: stage, result)"]
+            Logging["Logging: validation_events<br/>(structured logs)"]
+            Tracing["Tracing: validation_spans<br/>(OpenTelemetry)"]
+        end
+
+        %% Flow: Input → Stage 1 → Stage 2 → Stage 3 → Output
+        SysConfigInput --> SchemaLoad
+        EnvVarsInput --> SchemaLoad
+        CLIInput --> SchemaLoad
+        RPCInput --> SchemaLoad
+
+        SchemaLoad --> StructCheck
+        StructCheck --> TypeCheck
+        TypeCheck --> EnumCheck
+
+        EnumCheck --> Gate1
+        Gate1 -->|"PASS"| RangeCheck
+        Gate1 -->|"FAIL"| SchemaError
+
+        RangeCheck --> PathCheck
+        PathCheck --> DepCheck
+        DepCheck --> SecCheck
+
+        SecCheck --> Gate2
+        Gate2 -->|"PASS"| ConnCheck
+        Gate2 -->|"FAIL"| LogicError
+
+        ConnCheck --> ResCheck
+        ResCheck --> PermCheck
+        PermCheck --> HealthCheck
+
+        HealthCheck --> Gate3
+        Gate3 -->|"PASS"| Success
+        Gate3 -->|"WARN"| Warnings
+        Gate3 -->|"FAIL"| RuntimeError
+
+        SchemaError --> Errors
+        LogicError --> Errors
+        RuntimeError --> Errors
+
+        %% Observability integration
+        SchemaLoad --> Metrics
+        RangeCheck --> Metrics
+        ConnCheck --> Metrics
+        Success --> Logging
+        Errors --> Logging
+        SchemaLoad --> Tracing
+
+        %% Error aggregation
+        SchemaError -.->|"aggregate"| Logging
+        LogicError -.->|"aggregate"| Logging
+        RuntimeError -.->|"aggregate"| Metrics
+
+        %% Validation modes
+        subgraph Modes["Validation Modes"]
+            StrictMode["Strict Mode<br/>(all gates blocking)"]
+            LenientMode["Lenient Mode<br/>(runtime gates = warnings)"]
+            TestMode["Test Mode<br/>(skip runtime checks)"]
+        end
+
+        StrictMode --> Gate1
+        LenientMode --> Gate3
+        TestMode --> HealthCheck
+    end
+
+    style SysConfigInput fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    style SchemaLoad fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    style Gate1 fill:#ff0000,stroke:#8B0000,stroke-width:3px
+    style Success fill:#00ff00,stroke:#006600,stroke-width:3px
+    style Errors fill:#ff0000,stroke:#8B0000,stroke-width:3px
+
+    classDef input fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    classDef stage fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    classDef gate fill:#ff0000,stroke:#8B0000,stroke-width:3px,color:#fff
+    classDef output fill:#00ff00,stroke:#006600,stroke-width:3px
+    classDef error fill:#ff6666,stroke:#8B0000,stroke-width:2px
+    classDef obs fill:#ff69b4,stroke:#c71585,stroke-width:2px
+
+    class SysConfigInput,EnvVarsInput,CLIInput,RPCInput input
+    class SchemaLoad,StructCheck,TypeCheck,EnumCheck,RangeCheck,PathCheck,DepCheck,SecCheck,ConnCheck,ResCheck,PermCheck,HealthCheck stage
+    class Gate1,Gate2,Gate3 gate
+    class Success,Warnings output
+    class SchemaError,LogicError,RuntimeError,Errors error
+    class Metrics,Logging,Tracing obs

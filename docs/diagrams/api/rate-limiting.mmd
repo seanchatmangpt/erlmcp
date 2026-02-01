@@ -1,0 +1,127 @@
+```mermaid
+graph TB
+    subgraph "Rate Limiting Architecture"
+        direction TB
+        Request[Incoming Request] --> AuthCheck[Authentication Check]
+        AuthCheck -->|Valid| IdentityExtraction[Extract Identity<br/>client_id, api_key, cert]
+        AuthCheck -->|Invalid| AuthFail[Return 401 Unauthorized]
+
+        IdentityExtraction --> RateLimitCheck[erlmcp_rate_limiter<br/>Check Rate Limit]
+
+        RateLimitCheck -->|Within Limit| RequestProcessing[Process Request]
+        RateLimitCheck -->|Exceeded| RateLimit Enforcement
+
+        RequestProcessing --> UpdateCounter[Update Rate Counter<br/>ETS table]
+        UpdateCounter --> Response[Return Response]
+
+        RateLimitCheck -.->|gproc lookup| RateLimiterRegistry[Rate Limiter Registry]
+    end
+
+    subgraph "Rate Limit Enforcement"
+        direction LR
+        RateLimit Enforcement -->|Default| RateLimitResponse[Return 429 Too Many Requests]
+        RateLimit Enforcement -->|With Circuit Breaker| CircuitBreaker{Circuit Breaker<br/>State?}
+
+        CircuitBreaker -->|Closed| RateLimitResponse
+        CircuitBreaker -->|Open| CircuitOpen[Immediate Rejection<br/>Without Check]
+        CircuitBreaker -->|Half-Open| HalfOpen[Allow Test Request<br/>To Verify Recovery]
+    end
+
+    subgraph "Rate Limit Strategies"
+        direction LR
+        Strategy1[Fixed Window<br/>Requests per time window]
+        Strategy2[Sliding Window<br/>Rolling time window]
+        Strategy3[Token Bucket<br/>Burst allowance]
+        Strategy4[Leaky Bucket<br/>Smooth rate limiting]
+
+        Strategy1 --> RateLimitAlgorithm[Rate Limit Algorithm<br/>erlmcp_rate_limiter]
+        Strategy2 --> RateLimitAlgorithm
+        Strategy3 --> RateLimitAlgorithm
+        Strategy4 --> RateLimitAlgorithm
+
+        RateLimitAlgorithm -->|Store| ETSStore[ETS Table<br/>Rate Counters]
+        RateLimitAlgorithm -->|Distributed| MnesiaStore[Mnesia Table<br/>Cluster-wide Limits]
+    end
+
+    subgraph "Throttling Mechanisms"
+        direction TB
+        Throttling[Throttling Check] -->|Per-Client| ClientThrottle[Client Quota<br/>max_requests per window]
+        Throttling -->|Per-Endpoint| EndpointThrottle[Endpoint Quota<br/>max calls per tool/resource]
+        Throttling -->|System-Wide| SystemThrottle[Global Limit<br/>max requests system-wide]
+
+        ClientThrottle --> ThrottleDecision{Throttle?}
+        EndpointThrottle --> ThrottleDecision
+        SystemThrottle --> ThrottleDecision
+
+        ThrottleDecision -->|Yes| ThrottleAction[Throttle Action]
+        ThrottleDecision -->|No| Proceed[Proceed to Request]
+
+        ThrottleAction -->|Queue| RequestQueue[Request Queue<br/>poolboy pool]
+        ThrottleAction -->|Reject| ThrottleReject[Return 429<br/>retry-after header]
+        ThrottleAction -->|Slow Down| SlowDown[Add Delay<br/>exponential backoff]
+    end
+
+    subgraph "Circuit Breaker Integration"
+        direction TB
+        CircuitBreakerState[erlmcp_circuit_breaker] --> BreakerCheck{Breaker State?}
+
+        BreakerCheck -->|Closed| NormalOperation[Normal Operation<br/>Requests pass through]
+        BreakerCheck -->|Open| BlockRequests[Block Requests<br/>Fail fast]
+        BreakerCheck -->|Half-Open| TestRequests[Allow Test Requests<br/>Check recovery]
+
+        NormalOperation --> MonitorFailures[Monitor Failures<br/>error rate threshold]
+        MonitorFailures -->|Threshold Exceeded| TripBreaker[Trip to Open State]
+
+        BlockRequests --> CooldownPeriod[Cooldown Period<br/>wait before half-open]
+        CooldownPeriod --> TransitionHalfOpen[Transition to Half-Open]
+
+        TestRequests -->|Success| CloseBreaker[Close Breaker<br/>Normal operation]
+        TestRequests -->|Failure| Reopen[Reopen<br/>Back to open state]
+    end
+
+    subgraph "Metrics & Monitoring"
+        direction LR
+        RateLimitMetrics[erlmcp_metrics] --> CollectMetrics[Collect Metrics]
+        CollectMetrics --> RateLimitHits[Rate Limit Hits<br/>requests rejected]
+        CollectMetrics --> CurrentLimits[Current Limits<br/>active quotas]
+        CollectMetrics --> WaitTime[Wait Time<br/>queue/backoff duration]
+        CollectMetrics --> RejectionRate[Rejection Rate<br/>rejected/total ratio]
+
+        RateLimitHits --> Dashboard[erlmcp_dashboard_server<br/>/metrics endpoint]
+        CurrentLimits --> Dashboard
+        WaitTime --> Dashboard
+        RejectionRate --> Dashboard
+
+        Dashboard --> AlertThreshold{Alert Threshold?}
+        AlertThreshold -->|Yes| AlertTrigger[Trigger Alert<br/>Andon event]
+        AlertThreshold -->|No| NormalMonitoring[Continue Monitoring]
+    end
+
+    subgraph "Configuration"
+        direction TB
+        RateLimitConfig[Rate Limit Config] --> ClientConfig[Client Limits<br/>max_requests, window_size]
+        RateLimitConfig --> EndpointConfig[Endpoint Limits<br/>per-tool/resource quotas]
+        RateLimitConfig --> GlobalConfig[Global Limits<br/>system-wide max]
+        RateLimitConfig --> BurstConfig[Burst Allowance<br/>token bucket size]
+
+        ClientConfig --> ApplyConfig[Apply to<br/>erlmcp_rate_limiter]
+        EndpointConfig --> ApplyConfig
+        GlobalConfig --> ApplyConfig
+        BurstConfig --> ApplyConfig
+    end
+
+    RequestProcessing -.->|updates| RateLimitMetrics
+    Enforcement -.->|triggers| CircuitBreakerIntegration
+    RateLimitCheck -.->|uses| RateLimitStrategies
+    RateLimitCheck -.->|checks| ThrottlingMechanisms
+    CircuitBreakerIntegration -.->|reports| MetricsMonitoring
+
+    style Request fill:#e1f5fe
+    style Response fill:#c8e6c9
+    style RateLimitResponse fill:#ffcdd2
+    style CircuitOpen fill:#ffcdd2
+    style ThrottleReject fill:#ffcdd2
+    style AlertTrigger fill:#ffcdd2
+    style NormalOperation fill:#c8e6c9
+    style Proceed fill:#c8e6c9
+```

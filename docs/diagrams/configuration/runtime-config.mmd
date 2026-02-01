@@ -1,0 +1,143 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff9900', 'primaryTextColor':'#fff', 'primaryBorderColor':'#8B4500', 'lineColor':'#ff9900', 'sectionBkgColor':'#ffcc00', 'altSectionBkgColor':'#ffe6a6'}}}%%
+flowchart TB
+    subgraph "Runtime Configuration Management"
+        direction TB
+
+        subgraph Init["Configuration Initialization"]
+            direction TB
+            AppStart["application:start/1<br/>(erlmcp app launch)"]
+            ConfigLoad["Load Configuration<br/>(sys.config + env vars)"]
+            Validation["Validate Configuration<br/>(schema + logic)"]
+            InitETS["Initialize ETS Tables<br/>(config cache)"]
+        end
+
+        subgraph Storage["Runtime Storage Layers"]
+            direction TB
+            AppEnv["application:get_env/3<br/>(Kernel storage)"]
+            ETSCache["ETS Cache<br/>(fast read path)"]
+            ProcessState["Process State<br/>(gen_server:State)"]
+        end
+
+        subgraph API["Configuration API"]
+            direction TB
+            GetConfig["erlmcp_config:get/1<br/>(read single value)"]
+            GetAllConfig["erlmcp_config:get_all/0<br/>(read entire config)"]
+            SetConfig["erlmcp_config:set/2<br/>(update value)"]
+            SubscribeConfig["erlmcp_config:subscribe/1<br/>(watch for changes)"]
+            ValidateConfig["erlmcp_config:validate/1<br/>(validate changes)"]
+        end
+
+        subgraph Updates["Configuration Update Flow"]
+            direction TB
+            UpdateReq["Update Request<br/>(API/RPC/Admin)"]
+            ValidateUpdate["Validate Update<br/>(schema + logic)"]
+            ApplyUpdate["Apply Update<br/>(atomic transaction)"]
+            NotifyUpdate["Notify Subscribers<br/>(pub/sub)"]
+            PersistUpdate["Persist Update<br/>(if needed)"]
+        end
+
+        subgraph Subscribers["Configuration Subscribers"]
+            direction TB
+            ServerSub["erlmcp_server<br/>(tool/resource configs)"]
+            TransportSub["erlmcp_transport_*<br/>(connection configs)"]
+            OTELSub["erlmcp_otel<br/>(telemetry configs)"]
+            SessionSub["erlmcp_session<br/>(persistence configs)"]
+        end
+
+        subgraph HotReload["Hot Code Reload"]
+            direction TB
+            CodeChange["code_change/3<br/>(gen_server callback)"]
+            StateTransform["Transform State<br/>(old → new format)"]
+            ConfigMigrate["Migrate Config<br/》(backward compat)"]
+        end
+
+        subgraph Observability["Configuration Observability"]
+            direction TB
+            ConfigMetrics["Metrics: config_change_total<br/>(label: key, result)"]
+            ConfigLogging["Logging: config_access_log<br/>(audit trail)"]
+            ConfigTracing["Tracing: config_operations<br/>(spans)"]
+        end
+
+        subgraph AdminInterfaces["Admin Interfaces"]
+            direction TB
+            HTTPAPI["HTTP Admin API<br/>(/admin/config)"]
+            RPCAPI["RPC Interface<br/>(erlmcp_config_rpc)"]
+            CLI["CLI Tools<br/>(erlmcp_admin_cli)"]
+        end
+
+        %% Flow: Init → Storage → API → Updates → Subscribers
+        AppStart --> ConfigLoad
+        ConfigLoad --> Validation
+        Validation --> InitETS
+        InitETS --> AppEnv
+        InitETS --> ETSCache
+
+        AppEnv --> GetConfig
+        ETSCache --> GetConfig
+        ProcessState --> GetConfig
+
+        GetConfig --> GetAllConfig
+        GetAllConfig --> SubscribeConfig
+        SubscribeConfig --> ValidateConfig
+
+        SetConfig --> UpdateReq
+        UpdateReq --> ValidateUpdate
+        ValidateUpdate --> ApplyUpdate
+        ApplyUpdate --> NotifyUpdate
+        NotifyUpdate --> PersistUpdate
+
+        NotifyUpdate --> ServerSub
+        NotifyUpdate --> TransportSub
+        NotifyUpdate --> OTELSub
+        NotifyUpdate --> SessionSub
+
+        ApplyUpdate --> AppEnv
+        ApplyUpdate --> ETSCache
+        ApplyUpdate --> ProcessState
+
+        %% Hot reload integration
+        CodeChange --> StateTransform
+        StateTransform --> ConfigMigrate
+        ConfigMigrate --> ValidateUpdate
+
+        %% Observability integration
+        GetConfig --> ConfigMetrics
+        SetConfig --> ConfigMetrics
+        UpdateReq --> ConfigLogging
+        ValidateUpdate --> ConfigTracing
+
+        %% Admin interfaces
+        HTTPAPI --> UpdateReq
+        RPCAPI --> UpdateReq
+        CLI --> UpdateReq
+        HTTPAPI --> GetConfig
+        RPCAPI --> GetConfig
+
+        %% Read optimization
+        ETSCache -.->|"fast path<br/>(O(1))"| GetConfig
+        AppEnv -.->|"fallback<br/>(O(log N))"| GetConfig
+        ProcessState -.->|"local copy<br/>(O(1))"| GetConfig
+    end
+
+    style AppStart fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    style GetConfig fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    style ETSCache fill:#00ff00,stroke:#006600,stroke-width:2px
+    style ServerSub fill:#00ccff,stroke:#0066cc,stroke-width:3px
+
+    classDef init fill:#ffcc00,stroke:#8B4500,stroke-width:2px
+    classDef storage fill:#00ff00,stroke:#006600,stroke-width:2px
+    classDef api fill:#ffffff,stroke:#ff9900,stroke-width:3px
+    classDef update fill:#ffa500,stroke:#ff6600,stroke-width:2px
+    classDef subscriber fill:#00ccff,stroke:#0066cc,stroke-width:3px
+    classDef reload fill:#ff69b4,stroke:#c71585,stroke-width:2px
+    classDef obs fill:#9932cc,stroke:#4b0082,stroke-width:2px
+    classDef admin fill:#20b2aa,stroke:#006666,stroke-width:2px
+
+    class AppStart,ConfigLoad,Validation,InitETS init
+    class AppEnv,ETSCache,ProcessState storage
+    class GetConfig,GetAllConfig,SetConfig,SubscribeConfig,ValidateConfig api
+    class UpdateReq,ValidateUpdate,ApplyUpdate,NotifyUpdate,PersistUpdate update
+    class ServerSub,TransportSub,OTELSub,SessionSub subscriber
+    class CodeChange,StateTransform,ConfigMigrate reload
+    class ConfigMetrics,ConfigLogging,ConfigTracing obs
+    class HTTPAPI,RPCAPI,CLI admin

@@ -1,0 +1,202 @@
+graph TB
+    subgraph "Deployment Architecture: Production erlmcp Cluster"
+        A[Load Balancer<br/>nginx/HAProxy] --> B{Region: US-East}
+    end
+
+    subgraph "Kubernetes Cluster: us-east-1"
+        B --> C[Kubernetes Service<br/>erlmcp-service:3000]
+    end
+
+    subgraph "erlmcp StatefulSet: 3 Nodes"
+        C --> D[Pod: erlmcp-0<br/>Node: node-1.us-east]
+        C --> E[Pod: erlmcp-1<br/>Node: node-2.us-east]
+        C --> F[Pod: erlmcp-2<br/>Node: node-3.us-east]
+    end
+
+    subgraph "Pod: erlmcp-0 (Primary Node)"
+        D --> D1[erlmcp Release<br/>v2.1.0]
+
+        D1 --> D2[erlmcp_core App<br/>Supervisor: erlmcp_sup]
+        D2 --> D3[erlmcp_registry<br/>gproc cluster: distributed]
+        D2 --> D4[erlmcp_server<br/>MCP protocol handlers]
+        D2 --> D5[erlmcp_client<br/>AI integrations]
+
+        D1 --> D6[erlmcp_transports App<br/>Supervisor: erlmcp_transport_sup]
+        D6 --> D7[erlmcp_transport_tcp<br/>Port: 3000<br/>ranch listener]
+        D6 --> D8[erlmcp_transport_http<br/>Port: 3001<br/>gun HTTP/2 client]
+        D6 --> D9[erlmcp_transport_ws<br/>Port: 3002<br/>WebSocket]
+
+        D1 --> D10[erlmcp_observability App<br/>Supervisor: erlmcp_observability_sup]
+        D10 --> D11[erlmcp_metrics<br/>OpenTelemetry metrics]
+        D10 --> D12[erlmcp_otel<br/>Distributed tracing]
+        D10 --> D13[erlmcp_health_monitor<br/>Health check server]
+        D10 --> D14[erlmcp_dashboard_server<br/>Real-time dashboard]
+
+        D1 --> D15[tcps_erlmcp App<br/>Optional Quality System]
+        D15 --> D16[tcps_quality_gates<br/>8 quality gates]
+        D15 --> D17[tcps_dashboard<br/>Quality visualization]
+        D15 --> D18[tcps_receipt_chain<br/>SHA-256 audit trail]
+    end
+
+    subgraph "Pod: erlmcp-1 (Secondary Node)"
+        E --> E1[erlmcp Release<br/>v2.1.0]
+
+        E1 --> E2[erlmcp_core App<br/>Supervisor: erlmcp_sup]
+        E2 --> E3[erlmcp_registry<br/>gproc cluster: distributed]
+        E2 --> E4[erlmcp_server<br/>MCP protocol handlers]
+        E2 --> E5[erlmcp_client<br/>AI integrations]
+
+        E1 --> E6[erlmcp_transports App<br/>Supervisor: erlmcp_transport_sup]
+        E6 --> E7[erlmcp_transport_tcp<br/>Port: 3000]
+        E6 --> E8[erlmcp_transport_http<br/>Port: 3001]
+        E6 --> E9[erlmcp_transport_ws<br/>Port: 3002]
+
+        E1 --> E10[erlmcp_observability App<br/>Supervisor: erlmcp_observability_sup]
+        E10 --> E11[erlmcp_metrics<br/>OpenTelemetry metrics]
+        E10 --> E12[erlmcp_otel<br/>Distributed tracing]
+        E10 --> E13[erlmcp_health_monitor<br/>Health check server]
+        E10 --> E14[erlmcp_dashboard_server<br/>Real-time dashboard]
+
+        E1 --> E15[tcps_erlmcp App<br/>Optional Quality System]
+        E15 --> E16[tcps_quality_gates<br/>8 quality gates]
+        E15 --> E17[tcps_dashboard<br/>Quality visualization]
+        E15 --> E18[tcps_receipt_chain<br/>SHA-256 audit trail]
+    end
+
+    subgraph "Pod: erlmcp-2 (Tertiary Node)"
+        F --> F1[erlmcp Release<br/>v2.1.0]
+
+        F1 --> F2[erlmcp_core App<br/>Supervisor: erlmcp_sup]
+        F2 --> F3[erlmcp_registry<br/>gproc cluster: distributed]
+        F2 --> F4[erlmcp_server<br/>MCP protocol handlers]
+        F2 --> F5[erlmcp_client<br/>AI integrations]
+
+        F1 --> F6[erlmcp_transports App<br/>Supervisor: erlmcp_transport_sup]
+        F6 --> F7[erlmcp_transport_tcp<br/>Port: 3000]
+        F6 --> F8[erlmcp_transport_http<br/>Port: 3001]
+        F6 --> F9[erlmcp_transport_ws<br/>Port: 3002]
+
+        F1 --> F10[erlmcp_observability App<br/>Supervisor: erlmcp_observability_sup]
+        F10 --> F11[erlmcp_metrics<br/>OpenTelemetry metrics]
+        F10 --> F12[erlmcp_otel<br/>Distributed tracing]
+        F10 --> F13[erlmcp_health_monitor<br/>Health check server]
+        F10 --> F14[erlmcp_dashboard_server<br/>Real-time dashboard]
+
+        F1 --> F15[tcps_erlmcp App<br/>Optional Quality System]
+        F15 --> F16[tcps_quality_gates<br/>8 quality gates]
+        F15 --> F17[tcps_dashboard<br/>Quality visualization]
+        F15 --> F18[tcps_receipt_chain<br/>SHA-256 audit trail]
+    end
+
+    subgraph "Distributed Coordination: gproc Cluster"
+        D3 --> E3
+        E3 --> F3
+        F3 --> D3
+
+        Note over D3,E3,F3: gproc_dist<br/>Distributed registry<br/>Node discovery<br/>Failover
+    end
+
+    subgraph "Session Replication: Mnesia"
+        D2 -.->|replicate| E2
+        E2 -.->|replicate| F2
+        F2 -.->|replicate| D2
+
+        Note over D2,E2,F2: Mnesia<br/>Distributed session storage<br/>Disc_copies: 3 nodes<br/>Auto-failover
+    end
+
+    subgraph "External Dependencies"
+        D11 --> GA[OpenTelemetry Collector<br/>otel-collector:4318]
+        E11 --> GA
+        F11 --> GA
+
+        GA --> GB[Datadog<br/>APM & Metrics]
+        GA --> GC[Jaeger<br/>Distributed Tracing]
+
+        D13 --> GD[Health Check Endpoint<br/>/health]
+        E13 --> GD
+        F13 --> GD
+
+        D14 --> GE[Dashboard WebSocket<br/>/dashboard]
+        E14 --> GE
+        F14 --> GE
+    end
+
+    subgraph "Infrastructure: Kubernetes Resources"
+        A --> HA[Ingress Controller<br/>nginx-ingress]
+
+        HA --> HB[Service: erlmcp-service<br/>ClusterIP<br/>Port: 3000]
+
+        HB --> HC[StatefulSet: erlmcp<br/>Replicas: 3<br/>Strategy: RollingUpdate]
+
+        HC --> HD[ConfigMap: erlmcp-config<br/>sys.config<br/>vm.args]
+
+        HC --> HE[Secret: erlmcp-secrets<br/>TLS certificates<br/>API keys]
+
+        HC --> HF[PersistentVolumeClaim<br/>data-volume<br/>Mnesia storage]
+    end
+
+    subgraph "Monitoring & Observability"
+        GD --> IA[Readiness Probe<br/>HTTP /health/ready<br/>Interval: 10s]
+        GD --> IB[Liveness Probe<br/>HTTP /health/live<br/>Interval: 30s]
+        GD --> IC[Startup Probe<br/>HTTP /health/startup<br/>Interval: 5s]
+
+        GA --> ID[Prometheus Operator<br/>Scrape metrics<br/>/metrics endpoint]
+
+        ID --> IE[Prometheus Server<br/>Time-series database]
+
+        IE --> IF[Grafana<br/>Dashboards:<br/>  - MCP throughput<br/>  - Latency percentiles<br/>  - Error rates<br/>  - Resource usage]
+
+        D12 --> IG[Jaeger Agent<br/>Trace ingestion]
+        IG --> IH[Jaeger Collector<br/>Trace storage]
+        IH --> II[Jaeger UI<br/>Trace visualization]
+    end
+
+    subgraph "Scaling Strategy"
+        HC --> JA[Horizontal Pod Autoscaler<br/>Min: 3, Max: 10<br/>Target CPU: 70%]
+
+        JA --> JB[Scale Decision Logic<br/>  - CPU > 70% → Scale up<br/>  - CPU < 30% → Scale down<br/>  - Stabilization window: 5min]
+
+        JB --> JC[Pod Disruption Budget<br/>Min available: 2<br/>Max unavailable: 1]
+
+        JC --> JD[Node Affinity<br/>Spread across zones:<br/>  - us-east-1a<br/>  - us-east-1b<br/>  - us-east-1c]
+    end
+
+    subgraph "Deployment Pipeline: GitOps"
+        KA[Git Push<br/>main branch] --> KB[GitHub Actions<br/>CI/CD Pipeline]
+
+        KB --> KC[Quality Gates<br/>  - Compile<br/>  - Tests (EUnit/CT)<br/>  - Coverage ≥ 80%<br/>  - Dialyzer<br/>  - Security scan]
+
+        KC --> KD[Build Release<br/>rebar3 as prod release]
+
+        KD --> KE[Docker Build<br/>Dockerfile:<br/>FROM erlang:25<br/>COPY _build/prod/rel/<br/>EXPOSE 3000]
+
+        KE --> KF[Push to Registry<br/>docker.io/org/erlmcp:v2.1.0]
+
+        KF --> KG[Update Kubernetes Manifest<br/>kubectl set image<br/>statefulset/erlmcp<br/>erlmcp=org/erlmcp:v2.1.0]
+
+        KG --> KH[Rolling Update<br/>  - Update erlmcp-2<br/>  - Verify health<br/>  - Update erlmcp-1<br/>  - Verify health<br/>  - Update erlmcp-0<br/>  - Verify health]
+
+        KH --> KI[Post-Deploy Validation<br/>  - Smoke tests<br/>  - Performance baseline<br/>  - Error rate check]
+    end
+
+    subgraph "Traffic Flow: AI Client → MCP Server"
+        LA[AI Application<br/>Claude/GPT] --> LB[TCP Connection<br/>localhost:3000]
+        LB --> D7[ranch acceptor pool<br/>10 acceptors]
+        D7 --> D4[erlmcp_server<br/>gen_server]
+        D4 --> D3[gproc registry<br/>Route to handler]
+        D4 --> D2[Session state<br/>Mnesia replicated]
+        D4 --> D11[Metrics recording<br/>OpenTelemetry]
+        D4 --> D12[Trace span<br/>Distributed context]
+        D4 --> D7[Response via TCP]
+    end
+
+    style A fill:#e1f5ff
+    style D fill:#d4edda
+    style E fill:#d4edda
+    style F fill:#d4edda
+    style GA fill:#fff4e1
+    style GD fill:#fff4e1
+    style HC fill:#e1ccff
+    style KA fill:#ffe1e1
+    style KH fill:#d4edda
+    style KI fill:#d4edda

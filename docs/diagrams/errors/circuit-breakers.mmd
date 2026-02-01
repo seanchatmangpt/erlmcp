@@ -1,0 +1,64 @@
+```mermaid
+stateDiagram-v2
+    [*] --> Closed
+
+    state Closed {
+        [*] --> Monitoring
+        Monitoring --> CheckFailure: Request Arrives
+        CheckFailure --> Success: Success
+        CheckFailure --> IncrementCounter: Failure
+        IncrementCounter --> CheckThreshold: Count++
+        CheckThreshold --> ResetCount: Count < Threshold
+        CheckThreshold --> OpenCircuit: Count ≥ Threshold
+        Success --> Monitoring: Reset Count
+    }
+
+    state Open {
+        [*] --> Rejection
+        Rejection --> CheckTimeout: Request Arrives
+        CheckTimeout --> RemainOpen: Timeout Not Expired
+        CheckTimeout --> HalfOpen: Timeout Expired
+        RemainOpen --> Rejection
+    }
+
+    state HalfOpen {
+        [*] --> TestRequest
+        TestRequest --> SuccessHalfOpen: Success
+        TestRequest --> OpenAgain: Failure
+        SuccessHalfOpen --> Closed: Consecutive Successes
+        OpenAgain --> Open
+    }
+
+    Closed --> Open: Circuit Tripped
+    Open --> HalfOpen: Timeout Expires
+    HalfOpen --> Closed: Recovery Verified
+    HalfOpen --> Open: Test Failed
+
+    note right of Closed
+        Normal Operation
+        All requests pass through
+        Failure counter active
+        Threshold: 5 failures
+        Window: 60 seconds
+    end note
+
+    note right of Open
+        Circuit Tripped
+        All requests rejected immediately
+        Refusal code: 1089 (Service Unavailable)
+        Timeout: 30 seconds (configurable)
+        No actual calls to downstream service
+    end note
+
+    note right of HalfOpen
+        Testing Recovery
+        Single request allowed through
+        Monitor response carefully
+        Success → Close circuit
+        Failure → Reopen immediately
+    end note
+
+    Closed --> [*]: System Shutdown
+    Open --> [*]: System Shutdown
+    HalfOpen --> [*]: System Shutdown
+```

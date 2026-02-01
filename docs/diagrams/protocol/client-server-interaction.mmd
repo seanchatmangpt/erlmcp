@@ -1,0 +1,161 @@
+sequenceDiagram
+    participant AI as AI Application
+    participant Client as erlmcp_client
+    participant Transport as Transport Layer
+    participant Server as erlmcp_server
+    participant Resources as Resource Handler
+    participant Tools as Tool Handler
+    participant Prompts as Prompt Handler
+
+    Note over AI,Prompts: MCP Client-Server Interaction Patterns
+
+    %% Initialization
+    AI->>Client: start_link(Transport, Options)
+    Client->>Transport: erlmcp_transport:init(stdio, Options)
+    Transport-->>Client: {ok, TransportState}
+    Client->>Server: Send initialize request
+    Note right of Client: {<br/>  "jsonrpc": "2.0",<br/>  "id": "init-1",<br/>  "method": "initialize",<br/>  "params": {<br/>    "protocolVersion": "2025-11-25",<br/>    "capabilities": {...},<br/>    "clientInfo": {...}<br/>  }<br/>}
+
+    %% Capability Negotiation
+    Server-->>Client: initialized notification
+    Note left of Server: {<br/>  "jsonrpc": "2.0",<br/>  "method": "notifications/initialized"<br/>}
+
+    %% Resource Operations
+    Note over AI,Prompts: Resource List Pattern
+
+    AI->>Client: erlmcp_client:list_resources()
+    Client->>Server: resources/list request
+    Server->>Resources: handle_list_resources()
+    Resources-->>Server: {ok, [Resource1, Resource2, ...]}
+    Server-->>Client: {ok, ResourceList}
+    Client-->>AI: {ok, [#resource{}, ...]}
+
+    %% Resource Read
+    AI->>Client: erlmcp_client:read_resource(URI)
+    Client->>Server: resources/read request
+    Note right of Client: {<br/>  "uri": "file:///path/to/file.txt"<br/>}
+    Server->>Resources: handle_read_resource(URI)
+    Resources->>Resources: Fetch resource content
+    Resources-->>Server: {ok, Content}
+    Server-->>Client: {ok, ResourceContents}
+    Client-->>AI: {ok, #resource_contents{}}
+
+    %% Resource Subscription
+    AI->>Client: erlmcp_client:subscribe_resource(URI)
+    Client->>Server: resources/subscribe request
+    Server->>Resources: subscribe_resource(URI, ClientPID)
+    Resources->>Resources: Add to subscription list
+    Resources-->>Server: {ok, subscribed}
+    Server-->>Client: {ok, {}}
+
+    %% Resource Update Notification
+    Note over AI,Prompts: Resource Change Notification
+
+    Resources->>Resources: Detect resource change
+    Resources->>Server: send_notification(clients)
+    Server-->>Client: resources/list_updated notification
+    Client->>AI: notify change event
+    Note left of Client: Callback or message
+
+    %% Tool Invocation
+    Note over AI,Prompts: Tool Call Pattern
+
+    AI->>Client: erlmcp_client:call_tool(ToolId, Arguments)
+    Client->>Client: Generate request ID (UUID)
+    Client->>Client: Store in State.pending (UUID -> Request)
+    Client->>Server: tools/call request
+    Note right of Client: {<br/>  "name": "my_tool",<br/>  "arguments": {...}<br/>}
+
+    Server->>Tools: handle_call_tool(ToolId, Arguments)
+    Tools->>Tools: Validate arguments against schema
+    Tools->>Tools: Execute tool logic
+
+    %% Long-running tool with progress
+    opt Tool supports progress
+        Tools-->>Client: progress notification
+        Note left of Tools: {<br/>  "progressToken": "uuid",<br/>  "progress": 0.5,<br/>  "total": 100,<br/>  "message": "Processing..."<br/>}
+        Client->>AI: Update progress indicator
+    end
+
+    Tools-->>Server: {ok, ToolResult}
+    Server-->>Client: {ok, Result}
+    Client->>Client: Remove from State.pending
+    Client-->>AI: {ok, #tool_result{}}
+
+    %% Prompt Template Operations
+    Note over AI,Prompts: Prompt Template Pattern
+
+    AI->>Client: erlmcp_client:list_prompts()
+    Client->>Server: prompts/list request
+    Server->>Prompts: handle_list_prompts()
+    Prompts-->>Server: {ok, [Prompt1, Prompt2, ...]}
+    Server-->>Client: {ok, PromptList}
+
+    %% Get Prompt Template
+    AI->>Client: erlmcp_client:get_prompt(PromptName, Args)
+    Client->>Server: prompts/get request
+    Server->>Prompts: handle_get_prompt(Name, Args)
+    Prompts->>Prompts: Render template with arguments
+    Prompts-->>Server: {ok, RenderedMessages}
+    Server-->>Client: {ok, Messages}
+    Client-->>AI: {ok, [#message{}, ...]}
+
+    %% Prompt List Change Notification
+    Note over AI,Prompts: Prompt List Updated Notification
+
+    Prompts->>Prompts: Prompt list changes
+    Prompts->>Server: send_notification(list_updated)
+    Server-->>Client: prompts/list_updated notification
+    Client->>AI: Notify prompt list change
+
+    %% Sampling Pattern (Optional)
+    opt Server supports sampling
+        AI->>Client: erlmcp_client:call_tool_with_sampling(ToolId, Args)
+        Client->>Server: tools/call with sampling hint
+        Server->>Server: Invoke LLM sampling
+        Server-->>Client: {ok, SampledResult}
+    end
+
+    %% Error Flow
+    Note over AI,Prompts: Error Handling Pattern
+
+    AI->>Client: erlmcp_client:call_tool(InvalidTool, Args)
+    Client->>Server: tools/call request
+    Server->>Tools: handle_call_tool(InvalidTool, Args)
+    Tools-->>Server: {error, tool_not_found}
+    Server-->>Client: {error, {code, -32601, message, "Tool not found"}}
+    Client-->>AI: {error, tool_not_found}
+
+    %% Shutdown Flow
+    Note over AI,Prompts: Graceful Shutdown
+
+    AI->>Client: stop()
+    Client->>Server: shutdown notification
+    Server->>Resources: Cleanup subscriptions
+    Server->>Tools: Cleanup active operations
+    Server-->>Client: shutdown acknowledgment
+    Client->>Transport: close()
+    Transport-->>Client: {ok, closed}
+    Client-->>AI: {ok, stopped}
+
+    %% Concurrent Requests Pattern
+    Note over AI,Prompts: Concurrent Request Handling
+
+    par Request 1
+        AI->>Client: call_tool(tool1, args1)
+        Client->>Server: tools/call (id=uuid-1)
+    and Request 2
+        AI->>Client: call_tool(tool2, args2)
+        Client->>Server: tools/call (id=uuid-2)
+    and Request 3
+        AI->>Client: read_resource(uri3)
+        Client->>Server: resources/read (id=uuid-3)
+    end
+
+    Server->>Server: Process requests in parallel
+    Server-->>Client: Response for uuid-1
+    Server-->>Client: Response for uuid-2
+    Server-->>Client: Response for uuid-3
+
+    Client->>Client: Correlate responses via request IDs
+    Client-->>AI: Deliver results in completion order

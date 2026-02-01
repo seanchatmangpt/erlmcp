@@ -1,0 +1,445 @@
+graph TB
+    subgraph "erlmcp Function Signature Relationships - Core API Surface"
+        direction TB
+
+        %% ========================================================================
+        %% SECTION 1: Client API (19 functions)
+        %% ========================================================================
+        subgraph "Client API - erlmcp_client"
+            direction TB
+
+            %% Lifecycle (3 functions)
+            subgraph "Lifecycle Functions"
+                START_LINK["start_link/1<br/>start_link/2<br/>→ {ok, Pid} | {error, Reason}"]
+                INIT["initialize/2<br/>initialize/3<br/>→ {ok, Capabilities} | {error, Reason}"]
+                STOP["stop/1<br/>→ ok"]
+
+                START_LINK --> INIT
+                INIT --> STOP
+            end
+
+            %% Resources API (4 functions)
+            subgraph "Resources Functions"
+                LIST_RES["list_resources/1<br/>→ {ok, [ResourceMap]}"]
+                LIST_RES_TEMPL["list_resource_templates/1<br/>→ {ok, [TemplateMap]}"]
+                READ_RES["read_resource/2<br/>→ {ok, ContentMap} | {error, Reason}"]
+                SUB_RES["subscribe_to_resource/2<br/>→ ok | {error, Reason}"]
+                UNSUB_RES["unsubscribe_from_resource/2<br/>→ ok"]
+
+                LIST_RES -.returns. LIST_RES
+                LIST_RES_TEMPL -.returns. LIST_RES_TEMPL
+                READ_RES -.uses. LIST_RES
+                SUB_RES -.returns. UNSUB_RES
+            end
+
+            %% Prompts API (3 functions)
+            subgraph "Prompts Functions"
+                LIST_PROMPTS["list_prompts/1<br/>→ {ok, [PromptMap]}"]
+                GET_PROMPT["get_prompt/2<br/>get_prompt/3<br/>→ {ok, MessagesMap} | {error, Reason}"]
+
+                LIST_PROMPTS -.returns. LIST_PROMPTS
+                GET_PROMPT -.uses. LIST_PROMPTS
+            end
+
+            %% Tools API (2 functions)
+            subgraph "Tools Functions"
+                LIST_TOOLS["list_tools/1<br/>→ {ok, [ToolMap]}"]
+                CALL_TOOL["call_tool/3<br/>→ {ok, ResultMap} | {error, Reason}"]
+
+                LIST_TOOLS -.returns. LIST_TOOLS
+                CALL_TOOL -.uses. LIST_TOOLS
+            end
+
+            %% Completions API (2 functions)
+            subgraph "Completions Functions"
+                COMPLETE["complete/3<br/>complete/4<br/>→ {ok, CompletionMap}"]
+
+                COMPLETE -.uses. PROMPT
+            end
+
+            %% Batch API (2 functions)
+            subgraph "Batch Functions"
+                WITH_BATCH["with_batch/2<br/>→ {ok, BatchId} | {error, Reason}"]
+                SEND_BATCH["send_batch_request/4<br/>→ ok"]
+
+                WITH_BATCH --> SEND_BATCH
+            end
+
+            %% Handlers (3 functions)
+            subgraph "Handler Functions"
+                SET_NOTIF["set_notification_handler/3<br/>→ ok"]
+                REMOVE_NOTIF["remove_notification_handler/2<br/>→ ok"]
+                SET_SAMPLING["set_sampling_handler/2<br/>→ ok"]
+
+                SET_NOTIF --> REMOVE_NOTIF
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 2: Server API (18 functions)
+        %% ========================================================================
+        subgraph "Server API - erlmcp_server"
+            direction TB
+
+            %% Lifecycle (1 function)
+            subgraph "Lifecycle Functions"
+                START_LINK_S["start_link/2<br/>→ {ok, Pid} | {error, Reason}"]
+            end
+
+            %% Resources API (4 functions)
+            subgraph "Resources Management"
+                ADD_RES["add_resource/3<br/>→ ok"]
+                ADD_RES_TPL["add_resource_template/4<br/>→ ok"]
+                DEL_RES["delete_resource/2<br/>→ ok"]
+                NOTIFY_RES["notify_resource_updated/3<br/>→ ok"]
+
+                ADD_RES -.creates. DEL_RES
+                ADD_RES_TPL -.creates. NOTIFY_RES
+                DEL_RES -.removes. ADD_RES
+            end
+
+            %% Tools API (5 functions)
+            subgraph "Tools Management"
+                ADD_TOOL["add_tool/3<br/>→ ok"]
+                ADD_TOOL_DESC["add_tool_with_description/4<br/>→ ok"]
+                ADD_TOOL_SCHEMA["add_tool_with_schema/4<br/>→ ok"]
+                ADD_TOOL_FULL["add_tool_full/5<br/>→ ok"]
+                DEL_TOOL["delete_tool/2<br/>→ ok"]
+
+                ADD_TOOL -.variants. ADD_TOOL_DESC
+                ADD_TOOL -.variants. ADD_TOOL_SCHEMA
+                ADD_TOOL -.variants. ADD_TOOL_FULL
+                DEL_TOOL -.removes. ADD_TOOL
+            end
+
+            %% Prompts API (4 functions)
+            subgraph "Prompts Management"
+                ADD_PROMPT["add_prompt/3<br/>→ ok"]
+                ADD_PROMPT_ARGS["add_prompt_with_args/4<br/>→ ok"]
+                ADD_PROMPT_SCHEMA["add_prompt_with_args_and_schema/5<br/>→ ok"]
+                DEL_PROMPT["delete_prompt/2<br/>→ ok"]
+
+                ADD_PROMPT -.variants. ADD_PROMPT_ARGS
+                ADD_PROMPT -.variants. ADD_PROMPT_SCHEMA
+                DEL_PROMPT -.removes. ADD_PROMPT
+            end
+
+            %% Subscriptions API (2 functions)
+            subgraph "Subscription Management"
+                SUB_RESOURCE["subscribe_resource/3<br/>→ ok"]
+                UNSUB_RESOURCE["unsubscribe_resource/2<br/>→ ok"]
+
+                SUB_RESOURCE --> UNSUB_RESOURCE
+            end
+
+            %% Progress API (1 function)
+            subgraph "Progress Reporting"
+                REPORT_PROGRESS["report_progress/4<br/>→ ok"]
+            end
+
+            %% Handlers (3 functions)
+            subgraph "Handler Management"
+                REG_NOTIF["register_notification_handler/3<br/>→ ok"]
+                UNREG_NOTIF["unregister_notification_handler/2<br/>→ ok"]
+                UNREG_ALL["unregister_all_handlers/1<br/>→ ok"]
+
+                REG_NOTIF --> UNREG_NOTIF
+                UNREG_NOTIF --> UNREG_ALL
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 3: Registry API (8 functions)
+        %% ========================================================================
+        subgraph "Registry API - erlmcp_registry"
+            direction TB
+
+            %% Server Registry (4 functions)
+            subgraph "Server Registration"
+                REG_SERVER["register_server/2<br/>→ ok"]
+                UNREG_SERVER["unregister_server/1<br/>→ ok"]
+                FIND_SERVER["find_server/1<br/>→ {ok, Pid} | {error, not_found}"]
+                LIST_SERVERS["list_servers/0<br/>→ [ServerId]"]
+
+                REG_SERVER --> UNREG_SERVER
+                REG_SERVER -.enables. FIND_SERVER
+                REG_SERVER -.enables. LIST_SERVERS
+            end
+
+            %% Client Registry (4 functions)
+            subgraph "Client Registration"
+                REG_CLIENT["register_client/2<br/>→ ok"]
+                UNREG_CLIENT["unregister_client/1<br/>→ ok"]
+                FIND_CLIENT["find_client/1<br/>→ {ok, Pid} | {error, not_found}"]
+                LIST_CLIENTS["list_clients/0<br/>→ [ClientId]"]
+
+                REG_CLIENT --> UNREG_CLIENT
+                REG_CLIENT -.enables. FIND_CLIENT
+                REG_CLIENT -.enables. LIST_CLIENTS
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 4: Session API (12 functions)
+        %% ========================================================================
+        subgraph "Session API - erlmcp_session"
+            direction TB
+
+            %% Lifecycle (3 functions)
+            subgraph "Session Lifecycle"
+                CREATE_SESSION["create/1<br/>→ {ok, SessionId}"]
+                LOOKUP_SESSION["lookup/1<br/>→ {ok, Session} | {error, not_found}"]
+                DELETE_SESSION["delete/1<br/>→ ok"]
+
+                CREATE_SESSION -.creates. LOOKUP_SESSION
+                LOOKUP_SESSION -.deleted_by. DELETE_SESSION
+            end
+
+            %% State Management (4 functions)
+            subgraph "State Operations"
+                GET_STATE["get_state/1<br/>→ {ok, StateMap}"]
+                SET_STATE["set_state/2<br/>→ ok"]
+                UPDATE_STATE["update_state/2<br/>→ ok"]
+                CLEAR_STATE["clear_state/1<br/>→ ok"]
+
+                GET_STATE -.modified_by. SET_STATE
+                GET_STATE -.modified_by. UPDATE_STATE
+                GET_STATE -.cleared_by. CLEAR_STATE
+            end
+
+            %% Capabilities (2 functions)
+            subgraph "Capability Storage"
+                SET_CAPABILITIES["set_capabilities/2<br/>→ ok"]
+                GET_CAPABILITIES["get_capabilities/1<br/>→ {ok, Capabilities}"]
+
+                SET_CAPABILITIES -.retrieved_by. GET_CAPABILITIES
+            end
+
+            %% Metadata (3 functions)
+            subgraph "Session Metadata"
+                SET_METADATA["set_metadata/2<br/>→ ok"]
+                GET_METADATA["get_metadata/1<br/>→ {ok, Metadata}"]
+                TOUCH["touch/1<br/>→ ok"]
+
+                SET_METADATA -.retrieved_by. GET_METADATA
+                TOUCH -.updates. SET_METADATA
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 5: Transport API (6 functions)
+        %% ========================================================================
+        subgraph "Transport API - erlmcp_transport_behavior"
+            direction TB
+
+            %% Behavior Callbacks (3 functions)
+            subgraph "Transport Behavior"
+                INIT["init/2<br/>→ {ok, State} | {error, Reason}"]
+                SEND["send/2<br/>→ {ok, State} | {error, Reason}"]
+                CLOSE["close/1<br/>→ ok"]
+
+                INIT -.enables. SEND
+                SEND -.terminated_by. CLOSE
+            end
+
+            %% Messages (3 functions)
+            subgraph "Transport Messages"
+                TRANSPORT_DATA["{transport_data, Binary}<br/>Inbound data"]
+                TRANSPORT_CONNECTED["{transport_connected, Info}<br/>Connection established"]
+                TRANSPORT_DISCONNECTED["{transport_disconnected, Reason}<br/>Connection terminated"]
+
+                TRANSPORT_CONNECTED -.data_flow. TRANSPORT_DATA
+                TRANSPORT_DATA -.terminated_by. TRANSPORT_DISCONNECTED
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 6: JSON-RPC API (8 functions)
+        %% ========================================================================
+        subgraph "JSON-RPC API - erlmcp_json_rpc"
+            direction TB
+
+            %% Encoding (2 functions)
+            subgraph "Encoding Functions"
+                ENCODE_REQUEST["encode_request/3<br/>→ binary()"]
+                ENCODE_NOTIFICATION["encode_notification/2<br/>→ binary()"]
+
+                ENCODE_REQUEST -.variant. ENCODE_NOTIFICATION
+            end
+
+            %% Decoding (2 functions)
+            subgraph "Decoding Functions"
+                DECODE["decode/1<br/>→ {ok, Request} | {error, Reason}"]
+                DECODE_BATCH["decode_batch/1<br/>→ {ok, [Request]} | {error, Reason}"]
+
+                DECODE -.batch_variant. DECODE_BATCH
+            end
+
+            %% Response (2 functions)
+            subgraph "Response Functions"
+                ENCODE_RESPONSE["encode_response/3<br/>→ binary()"]
+                ENCODE_ERROR["encode_error/3<br/>→ binary()"]
+
+                ENCODE_RESPONSE -.error_variant. ENCODE_ERROR
+            end
+
+            %% Validation (2 functions)
+            subgraph "Validation Functions"
+                VALIDATE_REQUEST["validate_request/1<br/>→ ok | {error, Reason}"]
+                VALIDATE_RESPONSE["validate_response/1<br/>→ ok | {error, Reason}"]
+
+                DECODE -.validated_by. VALIDATE_REQUEST
+                ENCODE_RESPONSE -.validated_by. VALIDATE_RESPONSE
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 7: Refusal API (5 functions)
+        %% ========================================================================
+        subgraph "Refusal API - erlmcp_refusal"
+            direction TB
+
+            %% Lookup (2 functions)
+            subgraph "Refusal Lookup"
+                GET_MESSAGE["get_message/1<br/>→ {ok, Message} | {error, unknown_code}"]
+                GET_METADATA["get_metadata/1<br/>→ {ok, Metadata} | {error, unknown_code}"]
+
+                GET_METADATA -.provides. GET_MESSAGE
+            end
+
+            %% Formatting (2 functions)
+            subgraph "Refusal Formatting"
+                FORMAT_REFUSAL["format_refusal/1<br/>→ binary()"]
+                FORMAT_REFUSAL_DETAILS["format_refusal/2<br/>→ binary()"]
+
+                FORMAT_REFUSAL -.variant_with_details. FORMAT_REFUSAL_DETAILS
+            end
+
+            %% Validation (1 function)
+            subgraph "Code Validation"
+                IS_VALID_CODE["is_valid_code/1<br/>→ boolean()"]
+
+                IS_VALID_CODE -.validates. GET_MESSAGE
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 8: Metrics API (10 functions)
+        %% ========================================================================
+        subgraph "Metrics API - erlmcp_metrics"
+            direction TB
+
+            %% Counters (3 functions)
+            subgraph "Counter Metrics"
+                COUNTER_INC["counter/2<br/>→ ok"]
+                COUNTER_INC_BY["counter_inc_by/3<br/>→ ok"]
+                COUNTER_GET["counter_get/1<br/>→ non_neg_integer()"]
+
+                COUNTER_INC -.increments. COUNTER_INC_BY
+                COUNTER_INC -.read_by. COUNTER_GET
+            end
+
+            %% Gauges (3 functions)
+            subgraph "Gauge Metrics"
+                GAUGE_SET["gauge/2<br/>→ ok"]
+                GAUGE_INC["gauge_inc/1<br/>→ ok"]
+                GAUGE_DEC["gauge_dec/1<br/>→ ok"]
+
+                GAUGE_INC -.modifies. GAUGE_SET
+                GAUGE_DEC -.modifies. GAUGE_SET
+            end
+
+            %% Histograms (2 functions)
+            subgraph "Histogram Metrics"
+                HISTOGRAM_OBSERVE["histogram_observe/2<br/>→ ok"]
+                HISTOGRAM_GET["histogram_get/1<br/>→ {ok, Statistics}"]
+
+                HISTOGRAM_OBSERVE -.measured_by. HISTOGRAM_GET
+            end
+
+            %% Timing (2 functions)
+            subgraph "Timing Metrics"
+                TIMER_START["timer_start/1<br/>→ {ok, TimerRef}"]
+                TIMER_STOP["timer_stop/2<br/>→ {ok, Duration}"]
+
+                TIMER_START -.stopped_by. TIMER_STOP
+            end
+        end
+
+        %% ========================================================================
+        %% SECTION 9: Auth API (7 functions)
+        %% ========================================================================
+        subgraph "Auth API - erlmcp_auth"
+            direction TB
+
+            %% Authentication (3 functions)
+            subgraph "Authentication Functions"
+                AUTHENTICATE["authenticate/2<br/>→ {ok, Context} | {error, Reason}"]
+                VALIDATE_TOKEN["validate_token/1<br/>→ {ok, Claims} | {error, Reason}"]
+                REFRESH_TOKEN["refresh_token/1<br/>→ {ok, NewToken} | {error, Reason}"]
+
+                AUTHENTICATE -.validates. VALIDATE_TOKEN
+                VALIDATE_TOKEN -.renewed_by. REFRESH_TOKEN
+            end
+
+            %% Authorization (2 functions)
+            subgraph "Authorization Functions"
+                CHECK_PERMISSION["check_permission/3<br/>→ boolean()"]
+                REQUIRE_PERMISSION["require_permission/3<br/>→ ok | {error, forbidden}"]
+
+                CHECK_PERMISSION -.enforces. REQUIRE_PERMISSION
+            end
+
+            %% Session (2 functions)
+            subgraph "Session Management"
+                CREATE_SESSION_AUTH["create_session/1<br/>→ {ok, SessionId}"]
+                TERMINATE_SESSION["terminate_session/1<br/>→ ok"]
+
+                CREATE_SESSION_AUTH -.terminated_by. TERMINATE_SESSION
+            end
+        end
+
+        %% ========================================================================
+        %% CROSS-MODULE RELATIONSHIPS
+        %% ========================================================================
+        START_LINK -.requires. REG_SERVER
+        INIT -.requires. CREATE_SESSION
+        LIST_RES -.uses. FIND_SERVER
+        ADD_RES -.requires. REG_SERVER
+        CALL_TOOL -.uses. GET_STATE
+        SET_NOTIF -.uses. REG_CLIENT
+        REPORT_PROGRESS -.uses. HISTOGRAM_OBSERVE
+        AUTHENTICATE -.uses. VALIDATE_TOKEN
+    end
+
+    %% ========================================================================
+    %% LEGEND
+    %% ========================================================================
+    subgraph "Legend"
+        L1["→ Direct call flow"]
+        L2["-.→ Dependency relationship"]
+        L3["Function signature format:<br/>name/arity → return_type"]
+        L4["API Sections:<br/>1. Client (19 functions)<br/>2. Server (18 functions)<br/>3. Registry (8 functions)<br/>4. Session (12 functions)<br/>5. Transport (6 functions)<br/>6. JSON-RPC (8 functions)<br/>7. Refusal (5 functions)<br/>8. Metrics (10 functions)<br/>9. Auth (7 functions)"]
+    end
+
+    classDef clientStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef serverStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef registryStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef sessionStyle fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    classDef transportStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef jsonrpcStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef refusalStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef metricsStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef authStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef legendStyle fill:#f5f5f5,stroke:#424242,stroke-width:1px
+
+    class START_LINK,INIT,STOP,LIST_RES,LIST_RES_TEMPL,READ_RES,SUB_RES,UNSUB_RES,LIST_PROMPTS,GET_PROMPT,LIST_TOOLS,CALL_TOOL,COMPLETE,WITH_BATCH,SEND_BATCH,SET_NOTIF,REMOVE_NOTIF,SET_SAMPLING clientStyle
+    class START_LINK_S,ADD_RES,ADD_RES_TPL,DEL_RES,NOTIFY_RES,ADD_TOOL,ADD_TOOL_DESC,ADD_TOOL_SCHEMA,ADD_TOOL_FULL,DEL_TOOL,ADD_PROMPT,ADD_PROMPT_ARGS,ADD_PROMPT_SCHEMA,DEL_PROMPT,SUB_RESOURCE,UNSUB_RESOURCE,REPORT_PROGRESS,REG_NOTIF,UNREG_NOTIF,UNREG_ALL serverStyle
+    class REG_SERVER,UNREG_SERVER,FIND_SERVER,LIST_SERVERS,REG_CLIENT,UNREG_CLIENT,FIND_CLIENT,LIST_CLIENTS registryStyle
+    class CREATE_SESSION,LOOKUP_SESSION,DELETE_SESSION,GET_STATE,SET_STATE,UPDATE_STATE,CLEAR_STATE,SET_CAPABILITIES,GET_CAPABILITIES,SET_METADATA,GET_METADATA,TOUCH sessionStyle
+    class INIT,SEND,CLOSE,TRANSPORT_DATA,TRANSPORT_CONNECTED,TRANSPORT_DISCONNECTED transportStyle
+    class ENCODE_REQUEST,ENCODE_NOTIFICATION,DECODE,DECODE_BATCH,ENCODE_RESPONSE,ENCODE_ERROR,VALIDATE_REQUEST,VALIDATE_RESPONSE jsonrpcStyle
+    class GET_MESSAGE,GET_METADATA,FORMAT_REFUSAL,FORMAT_REFUSAL_DETAILS,IS_VALID_CODE refusalStyle
+    class COUNTER_INC,COUNTER_INC_BY,COUNTER_GET,GAUGE_SET,GAUGE_INC,GAUGE_DEC,HISTOGRAM_OBSERVE,HISTOGRAM_GET,TIMER_START,TIMER_STOP metricsStyle
+    class AUTHENTICATE,VALIDATE_TOKEN,REFRESH_TOKEN,CHECK_PERMISSION,REQUIRE_PERMISSION,CREATE_SESSION_AUTH,TERMINATE_SESSION authStyle
+    class L1,L2,L3,L4 legendStyle

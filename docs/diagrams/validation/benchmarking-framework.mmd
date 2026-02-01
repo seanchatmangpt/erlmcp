@@ -1,0 +1,99 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#800000', 'edgeLabelBackground':'#ffffff'}}}%%
+graph TB
+    subgraph "Benchmark Suite Orchestrator"
+        RUN_ALL[./scripts/bench/run_all_benchmarks.sh<br/>Full Suite Execution]
+        QUICK[make benchmark-quick<br/>Rapid Validation]
+    end
+
+    subgraph "Core Benchmark Modules"
+        B1[erlmcp_bench_core_ops<br/>Registry/Queue/Pool/Session<br/>Workloads: 1K, 10K, 100K, 1M<br/>Target: μ = 2.69M ops/sec]
+        B2[erlmcp_bench_network_real<br/>TCP/HTTP Real Sockets<br/>7 Workloads<br/>Target: 43K msg/s]
+        B3[erlmcp_bench_stress<br/>Sustained Load Testing<br/>Durations: 30s, 5min, 1hr, 24hr<br/>Time-series Monitoring]
+    end
+
+    subgraph "Chaos & Integration"
+        B4[erlmcp_bench_chaos<br/>11 Failure Scenarios<br/>Recovery < 5s Target]
+        B5[erlmcp_bench_integration<br/>5 MCP Workflows<br/>E2E Latency Verification]
+    end
+
+    subgraph "Performance Baselines (Jan 2026)"
+        BASE[Throughput Metrics]
+        REG[Registry: 553K msg/s]
+        QUEUE[Queue: 971K msg/s]
+        POOL[Pool: 149K msg/s]
+        SESS[Session: 242K msg/s]
+        NET[Network I/O: 43K msg/s<br/>Bottleneck: 4KB packets]
+        SUST[Sustained: 372K msg/s<br/>60M ops / 30s]
+    end
+
+    subgraph "Metrology Validation"
+        METRO[erlmcp_metrology_validator<br/>Canonical Units Enforcement]
+        UNITS[throughput_msg_per_s<br/>latency_p{50,95,99}_us<br/>memory_heap_mib_per_conn<br/>memory_rss_mib_per_node]
+        SCOPE[workload_id, transport,<br/>duration_s, scope, precision]
+    end
+
+    subgraph "Regression Analysis"
+        REGRESS[Regression Detection]
+        THRESHOLD[<10% Threshold<br/>Blocking Gate]
+        COMPARE[Baseline Comparison<br/>Statistical Significance]
+    end
+
+    subgraph "Output & Integration"
+        METRICS_SERVER[erlmcp_metrics_server<br/>HTTP /metrics Endpoint]
+        OTEL[erlmcp_otel<br/>OpenTelemetry Export]
+        DASH[erlmcp_dashboard_server<br/>Real-time Visualization]
+        HEALTH[erlmcp_health_monitor<br/>Andon Alerting]
+    end
+
+    RUN_ALL --> B1
+    RUN_ALL --> B2
+    RUN_ALL --> B3
+    RUN_ALL --> B4
+    RUN_ALL --> B5
+
+    QUICK --> B1
+    QUICK --> B2
+
+    B1 --> BASE
+    B2 --> BASE
+    B3 --> BASE
+    B4 --> BASE
+    B5 --> BASE
+
+    BASE --> REG
+    BASE --> QUEUE
+    BASE --> POOL
+    BASE --> SESS
+    BASE --> NET
+    BASE --> SUST
+
+    B1 --> METRO
+    B2 --> METRO
+    B3 --> METRO
+    B4 --> METRO
+    B5 --> METRO
+
+    METRO --> UNITS
+    METRO --> SCOPE
+
+    BASE --> REGRESS
+    REGRESS --> THRESHOLD
+    REGRESS --> COMPARE
+
+    B1 --> METRICS_SERVER
+    B2 --> METRICS_SERVER
+    B3 --> OTEL
+    B4 --> OTEL
+    B5 --> DASH
+
+    REGRESS --> HEALTH
+
+    style RUN_ALL fill:#FF6347,stroke:#DC143C,stroke-width:4px
+    style B1 fill:#90EE90,stroke:#006400,stroke-width:3px
+    style B2 fill:#87CEEB,stroke:#0000CD,stroke-width:3px
+    style B3 fill:#FFD700,stroke:#FF8C00,stroke-width:3px
+    style B4 fill:#DDA0DD,stroke:#4B0082,stroke-width:3px
+    style B5 fill:#00CED1,stroke:#008B8B,stroke-width:3px
+    style METRO fill:#FF69B4,stroke:#C71585,stroke-width:3px
+    style REGRESS fill:#FF4500,stroke:#8B0000,stroke-width:3px
+    style HEALTH fill:#FF0000,stroke:#800000,stroke-width:4px

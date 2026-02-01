@@ -1,0 +1,121 @@
+%%{init: {'theme':'base', 'themeVariables': { 'primaryColor':'#f1f5f9', 'primaryTextColor':'#0f172a', 'primaryBorderColor':'#3b82f6', 'lineColor':'#64748b', 'sectionBkgColor':'#e2e8f0', 'altSectionBkgColor':'#f8fafc'}}}%%
+sequenceDiagram
+    actor Dev as Developer
+    participant Git as Git Repository
+    participant CI as CI/CD Pipeline
+    participant Reviewer as Code Reviewer
+    participant Lead as Tech Lead
+    participant Bot as Automation Bot
+
+    Note over Dev,Bot: Phase 1: Preparation
+
+    Dev->>Git: 1. Create feature branch<br/>git checkout -b feature/name
+    activate Git
+    Git-->>Dev: Branch created
+    deactivate Git
+
+    Dev->>Dev: 2. Implement feature<br/>Following TDD cycle
+    Note right of Dev: Red→Green→Refactor
+
+    Dev->>Dev: 3. Local quality gates<br/>- rebar3 compile<br/>- rebar3 eunit<br/>- rebar3 dialyzer<br/>- rebar3 format
+
+    Dev->>Git: 4. Commit changes<br/>git commit -m "feat: ..."
+    activate Git
+    Git->>Bot: 5. Pre-commit hooks<br/>./tools/claude-md-sync.sh
+    activate Bot
+    Bot->>Bot: - Format check<br/>- CLAUDE.md sync<br/>- Quick compile
+    Bot-->>Git: Hooks passed
+    deactivate Bot
+    Git-->>Dev: Commit accepted
+    deactivate Git
+
+    Dev->>Git: 6. Push branch<br/>git push origin feature/name
+    activate Git
+    Git-->>Dev: Push successful
+    deactivate Git
+
+    Note over Dev,Bot: Phase 2: Automated Checks
+
+    Dev->>CI: 7. Create Pull Request
+    activate CI
+    CI->>CI: 8. Run CI pipeline<br/>- Build (4 OTP versions)<br/>- Unit tests (84 modules)<br/>- Integration tests<br/>- Property tests<br/>- Dialyzer strict<br/>- Coverage ≥80%<br/>- Security scan
+
+    alt CI Checks Pass
+        CI-->>Dev: ✅ All checks passed
+        CI->>Bot: 9. Label PR<br/>"ready-for-review"
+        activate Bot
+        Bot-->>CI: Labels added
+        deactivate Bot
+    else CI Checks Fail
+        CI-->>Dev: ❌ Checks failed
+        CI->>Bot: 10. Label PR<br/>"needs-work"
+        activate Bot
+        Bot-->>Dev: Comment with logs
+        deactivate Bot
+        Dev->>Dev: 11. Fix issues<br/>Push commits
+        CI->>CI: Re-run checks
+    end
+
+    Note over Dev,Bot: Phase 3: Human Review
+
+    CI->>Reviewer: 12. Request review<br/>@mention reviewer
+    activate Reviewer
+
+    Reviewer->>Reviewer: 13. Review checklist<br/>✓ OTP patterns<br/>✓ gen_server behavior<br/>✓ Supervision tree<br/>✓ Error handling<br/>✓ Test coverage<br/>✓ Documentation<br/>✓ No secrets<br/>✓ Type hints
+
+    alt Approval Required
+        Reviewer->>Reviewer: 14. Changes requested
+        Reviewer-->>Dev: 💬 Comments with feedback
+        Dev->>Dev: 15. Address feedback
+        Dev->>Git: Push updates
+        Reviewer->>Reviewer: Re-review
+    end
+
+    Reviewer->>CI: 16. Approve PR ✅
+    deactivate Reviewer
+
+    Note over Dev,Bot: Phase 4: Merge & Validation
+
+    CI->>Lead: 17. Request final approval<br/>(for main branch)
+    activate Lead
+    Lead->>Lead: 18. Verify<br/>- Release readiness<br/>- Breaking changes<br/>- Migration docs
+    Lead-->>CI: Approved ✅
+    deactivate Lead
+
+    CI->>Git: 19. Merge to main<br/>Squash & merge
+    activate Git
+    Git->>Bot: 20. Post-merge hooks
+    activate Bot
+    Bot->>Bot: - Full benchmark suite<br/>- Compliance report<br/>- Receipt chain
+    Bot-->>Git: Validated
+    deactivate Bot
+    Git-->>CI: Merge complete
+    deactivate Git
+
+    CI->>Bot: 21. Update tracking<br/>- Close related issues<br/>- Update roadmap<br/>- Celebrate! 🎉
+    activate Bot
+    Bot-->>Dev: PR merged ✅
+    deactivate Bot
+
+    CI->>Git: 22. Delete branch<br/>Automatic cleanup
+    deactivate CI
+
+    Note over Dev,Bot: Quality Gates Summary
+
+    box Purple Quality Gates
+    par Blocking Gates
+        Compilation=0
+        Tests=100%
+        Coverage≥80%
+    and
+        Dialyzer=0
+        Security=Clean
+        Format=Verified
+    and
+        OTP Compliance
+        Supervision Tree
+        Behavior Contracts
+    end
+    end
+
+    Dev->>Dev: 23. Continue development<br/>Next feature 🚀

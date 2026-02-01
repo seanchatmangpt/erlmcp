@@ -1,0 +1,108 @@
+```mermaid
+graph TB
+    subgraph "Retry Decision"
+        A[Request Fails] --> B{Is Retryable?}
+        B -->|No| C[Return Error Immediately]
+        B -->|Yes| D{Error Category}
+
+        D -->|Transient| E[Network/Timeout Error]
+        D -->|Rate Limit| F[HTTP 429]
+        D -->|Server Error| G[HTTP 5xx]
+        D -->|Connection| H[Connection Refused]
+    end
+
+    subgraph "Retry Strategy Selection"
+        E --> I{Strategy Type}
+        F --> I
+        G --> I
+        H --> I
+
+        I -->|Exponential| J[Exponential Backoff]
+        I -->|Linear| K[Linear Backoff]
+        I -->|Jittered| L[Jittered Exponential]
+        I -->|Immediate| M[Immediate Retry]
+    end
+
+    subgraph "Exponential Backoff (Default)"
+        J --> N[Calculate Delay: base * 2^attempt]
+        N --> O{Add Jitter?}
+        O -->|Yes| P[delay ± random(0-25%)]
+        O -->|No| Q[Use Base Delay]
+        P --> R[Wait Delay]
+        Q --> R
+
+        R --> S{Max Attempts Reached?}
+        S -->|No| T[Increment Attempt Counter]
+        S -->|Yes| U[Return Max Retries Error]
+
+        T --> V{Max Delay Exceeded?}
+        V -->|Yes| W[Cap at Max Delay]
+        V -->|No| X[Use Calculated Delay]
+
+        W --> R
+        X --> R
+    end
+
+    subgraph "Retry Configuration"
+        M --> Y[Config]
+        Y --> Z[max_attempts: 3]
+        Y --> AA[base_delay_ms: 1000]
+        Y --> AB[max_delay_ms: 30000]
+        Y --> AC[backoff_multiplier: 2.0]
+        Y --> AD[jitter: true]
+        Y --> AE[jitter_range: 0.25]
+    end
+
+    subgraph "Retry Execution Flow"
+        U --> AF[Log Retry Exhausted]
+        AF --> AG[Update Metrics]
+        AG --> AH[Return Error to Client]
+
+        T --> AI[Retry Request]
+        AI --> AJ{Success?}
+        AJ -->|Yes| AK[Reset Retry State]
+        AJ -->|No| S
+
+        AK --> AL[Return Success Response]
+        AL --> AM[Log Recovery]
+    end
+
+    subgraph "Backoff Examples"
+        subgraph "Exponential: 1s base"
+            N1["Attempt 1: 1000ms"]
+            N2["Attempt 2: 2000ms"]
+            N3["Attempt 3: 4000ms"]
+            N4["Attempt 4: 8000ms"]
+        end
+
+        subgraph "Linear: 1s base"
+            L1["Attempt 1: 1000ms"]
+            L2["Attempt 2: 2000ms"]
+            L3["Attempt 3: 3000ms"]
+            L4["Attempt 4: 4000ms"]
+        end
+
+        subgraph "Jittered: 1s base, 25% jitter"
+            J1["Attempt 1: 750-1250ms"]
+            J2["Attempt 2: 1500-2500ms"]
+            J3["Attempt 3: 3000-5000ms"]
+            J4["Attempt 4: 6000-10000ms"]
+        end
+    end
+
+    subgraph "Special Cases"
+        AN[Idempotent Operations] --> AO[Retries Safe]
+        AP[Non-Idempotent] --> AQ[At Most Once]
+        AR[Rate Limited] --> AS[Respect Retry-After]
+    end
+
+    style A fill:#ffe1e1
+    style C fill:#ffcccc
+    style U fill:#ffcccc
+    style AH fill:#ffcccc
+    style AK fill:#ccffcc
+    style AL fill:#ccffcc
+    style N fill:#e1f5ff
+    style R fill:#fff4e1
+    style Y fill:#f0f0f0
+```

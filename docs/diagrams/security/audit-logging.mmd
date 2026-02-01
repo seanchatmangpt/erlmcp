@@ -1,0 +1,187 @@
+sequenceDiagram
+    %% Audit Logging and Compliance Tracking for erlmcp
+    %% Shows: Comprehensive logging of all security events, compliance reporting
+
+    autonumber
+    actor Admin as Security Administrator
+    actor Auditor as Compliance Auditor
+    participant System as erlmcp System
+    participant AuditLog as erlmcp_audit_log<br/>(Audit Log Service)
+    participant ReceiptChain as erlmcp_receipt_chain<br/>(SHA-256 Hash Chain)
+    participant Metrics as erlmcp_metrics<br/>(Metrics Collection)
+    participant OTEL as OpenTelemetry<br/>(Distributed Tracing)
+    participant Storage as Audit Storage<br/>(File / S3 / Database)
+    participant Alerting as Alerting System<br/>(PagerDuty / Slack)
+
+    Note over Admin,Alerting: Audit Logging Architecture
+
+    %% Initialization
+    Admin->>System: Start erlmcp with audit enabled
+    System->>AuditLog: start_link(Config)
+    AuditLog->>Storage: Initialize audit storage
+    Storage-->>AuditLog: {ok, StorageHandle}
+    AuditLog-->>System: {ok, Pid}
+
+    Note over AuditLog: Audit Log Levels:<br/>✓ critical (security incidents)<br/>✓ error (failures, exceptions)<br/>✓ warning (suspicious activity)<br/>✓ info (normal operations)<br/>✓ debug (diagnostic info)
+
+    %% Authentication Event Logging
+    System->>AuditLog: log_auth_event(EventDetails)
+    Note right of System: Event includes:<br/>- timestamp (UTC)<br/>- event_type (login/logout)<br/>- user_id (subject)<br/>- auth_method (api_key/jwt/oauth2/mtls)<br/>- client_ip (source)<br/>- success (boolean)<br/>- session_id (if success)<br/>- failure_reason (if failed)
+
+    AuditLog->>ReceiptChain: append_receipt(AuthEvent)
+    Note right of ReceiptChain: SHA-256 Hash Chain:<br/>Hash(N) = SHA256(Event || Hash(N-1))<br/>Creates immutable audit trail
+
+    ReceiptChain->>ReceiptChain: calculate_hash(AuthEvent, PreviousHash)
+    ReceiptChain-->>AuditLog: {ok, ReceiptHash}
+    Note right of ReceiptChain: Receipt Hash:<br/>ba7816bf8f01cfea...<br/>Cryptographic proof of integrity
+
+    AuditLog->>Storage: write_audit_entry(ReceiptHash, AuthEvent)
+    Storage-->>AuditLog: {ok, WriteReceipt}
+
+    AuditLog->>Metrics: record_auth_metric(success, auth_method)
+    Metrics-->>AuditLog: ok
+
+    %% Authorization Event Logging
+    System->>AuditLog: log_authz_event(PermissionCheck)
+    Note right of System: Event includes:<br/>- timestamp<br/>- event_type (permission_check)<br/>- user_id<br/>- resource (what was accessed)<br/>- action (read/write/execute/delete)<br/>- permission (required permission)<br/>- granted (boolean)<br/>- session_id
+
+    AuditLog->>ReceiptChain: append_receipt(PermissionCheck)
+    ReceiptChain-->>AuditLog: {ok, ReceiptHash}
+
+    AuditLog->>Storage: write_audit_entry(ReceiptHash, PermissionCheck)
+    Storage-->>AuditLog: {ok, WriteReceipt}
+
+    %% Data Access Logging
+    System->>AuditLog: log_data_access(DataAccessEvent)
+    Note right of System: Event includes:<br/>- timestamp<br/>- event_type (data_access)<br/>- user_id<br/>- data_type (secret/resource/tool)<br/>- data_id (identifier)<br/>- operation (read/write/delete)<br/>- result (success/failure)
+
+    AuditLog->>ReceiptChain: append_receipt(DataAccessEvent)
+    ReceiptChain-->>AuditLog: {ok, ReceiptHash}
+
+    AuditLog->>Storage: write_audit_entry(ReceiptHash, DataAccessEvent)
+    Storage-->>AuditLog: {ok, WriteReceipt}
+
+    %% Configuration Change Logging
+    Admin->>System: modify_system_config(ConfigChange)
+    System->>AuditLog: log_config_change(ConfigChange)
+    Note right of System: Event includes:<br/>- timestamp<br/>- event_type (config_change)<br/>- admin_id (who changed)<br/>- config_key (what changed)<br/>- old_value (previous value)<br/>- new_value (new value)<br/>- change_reason (optional)
+
+    AuditLog->>ReceiptChain: append_receipt(ConfigChange)
+    ReceiptChain-->>AuditLog: {ok, ReceiptHash}
+
+    AuditLog->>Storage: write_audit_entry(ReceiptHash, ConfigChange)
+    Storage-->>AuditLog: {ok, WriteReceipt}
+
+    %% Security Incident Logging
+    System->>AuditLog: log_security_incident(Incident)
+    Note right of System: Incident types:<br/>- brute_force_detected<br/>- unauthorized_access_attempt<br/>- privilege_escalation<br/>- data_exfiltration_attempt<br/>- malware_detected<br/>- anomaly_detected
+
+    AuditLog->>ReceiptChain: append_receipt(Incident)
+    ReceiptChain-->>AuditLog: {ok, ReceiptHash}
+
+    AuditLog->>Alerting: trigger_alert(Incident, ReceiptHash)
+    Note right of Alerting: Alert Channels:<br/>- PagerDuty (on-call)<br/>- Slack (security team)<br/>- Email (compliance officer)<br/>- SMS (critical incidents)
+
+    Alerting->>Alerting: send_pagerduty_alert(Incident)
+    Alerting->>Alerting: send_slack_notification(Incident)
+    Alerting-->>AuditLog: {ok, AlertReceipt}
+
+    AuditLog->>Storage: write_audit_entry(ReceiptHash, Incident)
+    Storage-->>AuditLog: {ok, WriteReceipt}
+
+    %% Compliance Reporting
+    Auditor->>AuditLog: generate_compliance_report(StartDate, EndDate)
+    Note right of Auditor: Compliance Standards:<br/>- SOC 2 Type II<br/>- PCI DSS<br/>- HIPAA<br/>- GDPR<br/>- ISO 27001
+
+    AuditLog->>Storage: query_audit_logs(StartDate, EndDate)
+    Storage-->>AuditLog: {ok, AuditLogs}
+
+    AuditLog->>ReceiptChain: verify_chain_integrity(AuditLogs)
+    Note right of ReceiptChain: Verify:<br/>1. Recalculate hashes<br/>2. Compare chain integrity<br/>3. Detect tampering attempts<br/>4. Validate sequence
+
+    ReceiptChain-->>AuditLog: {ok, IntegrityVerified}
+
+    AuditLog->>AuditLog: generate_report(AuditLogs)
+    Note right of AuditLog: Report Sections:<br/>1. Executive Summary<br/>2. Authentication Events<br/>3. Authorization Events<br/>4. Data Access Log<br/>5. Configuration Changes<br/>6. Security Incidents<br/>7. Compliance Metrics<br/>8. Recommendations
+
+    AuditLog-->>Auditor: {ok, ComplianceReport}
+
+    %% Compliance Metrics Calculation
+    AuditLog->>AuditLog: calculate_compliance_metrics(AuditLogs)
+
+    Note right of AuditLog: Key Metrics:<br/>✓ Total authentication attempts<br/>✓ Failed login rate<br/>✓ Average session duration<br/>✓ Permission denial rate<br/>✓ Data access frequency<br/>✓ Config changes count<br/>✓ Security incidents count<br/>✓ Alert response time
+
+    AuditLog-->>Auditor: {ok, Metrics}
+
+    %% Distributed Tracing Integration
+    System->>OTEL: start_span(authentication, SpanContext)
+    OTEL-->>System: {ok, Span}
+
+    System->>AuditLog: log_auth_event(Event)
+    AuditLog->>OTEL: add_span_attributes(Span, EventDetails)
+    OTEL-->>AuditLog: ok
+
+    System->>OTEL: end_span(Span)
+    OTEL->>OTEL: export_span(OTLP)
+    Note right of OTEL: Export to:<br/>- Jaeger<br/>- Datadog<br/>- Honeycomb<br/>- AWS X-Ray
+
+    %% Real-time Monitoring Dashboard
+    Auditor->>AuditLog: get_real_time_dashboard()
+    AuditLog->>Metrics: get_current_metrics()
+
+    Note right of Metrics: Dashboard Metrics:<br/>📊 Authentication success rate<br/>📊 Failed login attempts (last hour)<br/>📊 Active sessions<br/>📊 Permission denials<br/>📊 Data access count<br/>📊 Config changes (24h)<br/>📊 Open incidents<br/>📊 Alert response times
+
+    Metrics-->>AuditLog: {ok, DashboardData}
+    AuditLog-->>Auditor: {ok, Dashboard}
+
+    %% Audit Log Retention
+    Note over Storage: Retention Policy:<br/>✓ Critical logs: 7 years<br/>✓ Error logs: 2 years<br/>✓ Warning logs: 1 year<br/>✓ Info logs: 6 months<br/>✓ Debug logs: 1 month
+
+    AuditLog->>Storage: apply_retention_policy()
+    Storage->>Storage: delete_expired_logs()
+    Storage-->>AuditLog: {ok, DeletedCount}
+
+    %% Audit Log Backup
+    AuditLog->>Storage: backup_audit_logs()
+    Note right of Storage: Backup Destinations:<br/>- S3 (immutable storage)<br/>- Azure Blob (WORM)<br/>- Google Cloud Storage<br/>- On-premise backup
+
+    Storage->>Storage: create_snapshot(Timestamp)
+    Storage-->>AuditLog: {ok, BackupReceipt}
+
+    %% Tamper Detection
+    Note over ReceiptChain: Tamper Detection:<br/>If hash chain verification fails:<br/>1. Alert security team<br/>2. Quarantine affected logs<br/>3. Notify compliance officer<br/>4. Investigate incident<br/>5. Preserve evidence
+
+    AuditLog->>ReceiptChain: verify_chain_integrity(AllLogs)
+
+    alt Tampering Detected
+        ReceiptChain-->>AuditLog: {error, tampering_detected, BlockIndex}
+        AuditLog->>Alerting: trigger_critical_alert(TamperingIncident)
+        Alerting-->>AuditLog: {ok, AlertReceipt}
+        Note right of Alerting: CRITICAL:<br/>Potential evidence tampering<br/>Immediate investigation required
+    else Integrity Verified
+        ReceiptChain-->>AuditLog: {ok, integrity_verified}
+    end
+
+    %% Audit Log Search
+    Auditor->>AuditLog: search_logs(SearchQuery)
+    Note right of Auditor: Query Examples:<br/>- user_id = "alice"<br/>- event_type = "login"<br/>- timestamp > 2025-01-01<br/>- client_ip = "192.168.1.100"<br/>- auth_method = "mtls"
+
+    AuditLog->>Storage: execute_search(SearchQuery)
+    Storage-->>AuditLog: {ok, SearchResults}
+    AuditLog-->>Auditor: {ok, Results}
+
+    %% Compliance Evidence Bundle
+    Auditor->>AuditLog: generate_evidence_bundle(AuditPeriod)
+    Note right of Auditor: Evidence Bundle:<br/>1. Audit logs (SHA-256 verified)<br/>2. Compliance report<br/>3. Metrics summary<br/>4. Incident reports<br/>5. Change history<br/>6. Signature/certificate
+
+    AuditLog->>Storage: collect_evidence(AuditPeriod)
+    Storage-->>AuditLog: {ok, Evidence}
+
+    AuditLog->>ReceiptChain: verify_evidence_integrity(Evidence)
+    ReceiptChain-->>AuditLog: {ok, Verified}
+
+    AuditLog->>AuditLog: create_evidence_bundle(Evidence, ReceiptChain)
+    Note right of AuditLog: Bundle Format:<br/>- TAR.GZ archive<br/>- SHA-256 checksum<br/>- PGP signature<br/>- Compliance officer sign-off
+
+    AuditLog-->>Auditor: {ok, EvidenceBundle}
+    Note right of Auditor: Bundle ID:<br/>erlmcp-audit-2025-Q1.tar.gz<br/>Size: 245MB<br/>Checksum: ba7816bf8f01cfea...

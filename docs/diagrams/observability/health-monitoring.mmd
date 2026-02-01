@@ -1,0 +1,72 @@
+---
+title: erlmcp Health Monitoring & Andon System
+---
+flowchart TD
+    subgraph Monitors["Health Monitors"]
+        ProcMon["erlmcp_process_monitor<br/>Process heap/reduction_count"]
+        ConnMon["erlmcp_connection_monitor<br/>Connection lifecycle"]
+        MemMon["erlmcp_memory_monitor<br/>ETS tables / binary heap"]
+        CPUMon["erlmcp_cpu_monitor<br/>Scheduler utilization"]
+        NodeMon["erlmcp_node_monitor<br/>Distributed node health"]
+    end
+
+    subgraph Aggregator["erlmcp_health_monitor"]
+        Collector["Health Check Collector<br/>Aggregates all monitors"]
+        Threshold["Threshold Validator<br/>Configurable limits"]
+        State["State Machine<br/>healthy | degraded | unhealthy"]
+    end
+
+    subgraph Andon["Andon Alerting (行灯)"]
+        Dashboard["Dashboard Server<br/>Real-time /andon"]
+        Circuit["Circuit Breaker<br/>Auto-open on threshold"]
+        Alert["Alert Dispatcher<br/>Webhook / Email / Slack"]
+    end
+
+    subgraph Actions["Corrective Actions"]
+        Drain["erlmcp_graceful_drain<br/>Stop accepting new connections"]
+        Failover["erlmcp_failover_worker<br/>Redirect to healthy node"]
+        Restart["Supervisor Restarts<br/>Let-it-crash recovery"]
+    end
+
+    Monitors -->|"health events"| Collector
+    Collector -->|"validate limits"| Threshold
+    Threshold -->|"state transition"| State
+
+    State -->|"unhealthy | degraded"| Dashboard
+    State -->|"threshold exceeded"| Circuit
+    State -->|"severity ≥ warning"| Alert
+
+    Circuit -->|"circuit open"| Drain
+    Circuit -->|"node available"| Failover
+
+    Failover -->|"restart failed"| Restart
+    Drain -->|"load reduced"| State
+
+    Dashboard -->|"HTTP GET /health"| Client["Monitoring Client<br/>Prometheus / Datadog"]
+    Dashboard -->|"WebSocket /metrics-ws"| Client
+
+    Alert -->|"POST webhook"| ExtSystem["External Alerting<br/>PagerDuty / Slack"]
+
+    style Monitors fill:#e1f5fe
+    style Aggregator fill:#fff3e0
+    style Andon fill:#ffebee
+    style Actions fill:#e8f5e9
+
+    classDef monitor fill:#0277bd,stroke:#01579b,color:#fff
+    classDef health fill:#ef6c00,stroke:#e65100,color:#fff
+    classDef andon fill:#c62828,stroke:#b71c1c,color:#fff
+    classDef action fill:#388e3c,stroke:#1b5e20,color:#fff
+
+    class ProcMon,ConnMon,MemMon,CPUMon,NodeMon monitor
+    class Collector,Threshold,State health
+    class Dashboard,Circuit,Alert andon
+    class Drain,Failover,Restart action
+
+    %% Andon threshold examples
+    subgraph Thresholds["Andon Thresholds (Configurable)"]
+        T1["memory_heap_mib_per_conn > 100"]
+        T2["latency_p99_us > 1000000<br/>(1 second)"]
+        T3["error_rate_5m > 0.05<br/>(5% errors)"]
+        T4["connection_failures_1m > 100"]
+        T5["scheduler_utilization > 0.9<br/>(CPU saturation)"]
+    end

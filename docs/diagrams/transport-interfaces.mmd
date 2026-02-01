@@ -1,0 +1,222 @@
+graph TB
+    subgraph "erlmcp Transport Interfaces - Polymorphic Behavior"
+        direction TB
+
+        subgraph "Transport Behavior Contract"
+            direction TB
+
+            TRANSPORT_BEHAVIOR[erlmcp_transport_behavior<br/>-callback init/2<br/>-callback send/2<br/>-callback close/1]
+
+            TRANSPORT_ADAPTER[erlmcp_transport_adapter<br/>Adapter Pattern Implementation]
+
+            TRANSPORT_REGISTRY[erlmcp_transport_registry<br/>Transport Discovery & Registration]
+
+            TRANSPORT_BEHAVIOR --> TRANSPORT_ADAPTER
+            TRANSPORT_REGISTRY --> TRANSPORT_BEHAVIOR
+        end
+
+        subgraph "Transport Implementations"
+            direction TB
+
+            subgraph "STDIO Transport"
+                direction TB
+                STDIO[erlmcp_transport_stdio<br/>Process Standard I/O<br/>Capabilities: resources, tools, prompts]
+
+                STDIO_FEATURES[Features:<br/>✓ Bidirectional JSON-RPC<br/>✓ Process-based messaging<br/>✓ Synchronous request/response<br/>✓ VSCode Integration]
+
+                STDIO --> TRANSPORT_BEHAVIOR
+                STDIO_FEATURES -.-> STDIO
+            end
+
+            subgraph "TCP Transport"
+                direction TB
+                TCP[erlmcp_transport_tcp<br/>TCP Socket Transport<br/>Capabilities: resources, tools, prompts]
+
+                TCP_FEATURES[Features:<br/>✓ Ranch acceptor pool<br/>✓ Full-duplex communication<br/>✓ Connection pooling<br/>✓ High throughput (43K msg/s)]
+
+                TCP_POOL[erlmcp_transport_pool<br/>Connection Pool Manager]
+
+                TCP --> TRANSPORT_BEHAVIOR
+                TCP_POOL --> TCP
+                TCP_FEATURES -.-> TCP
+            end
+
+            subgraph "HTTP Transport"
+                direction TB
+                HTTP[erlmcp_transport_http<br/>HTTP Client Transport<br/>Capabilities: resources, tools, prompts]
+
+                HTTP_FEATURES[Features:<br/>✓ Gun HTTP client<br/>✓ RESTful endpoints<br/>✓ Bidirectional streaming<br/>✓ Load balancing support]
+
+                HTTP_SERVER[erlmcp_transport_http_server<br/>HTTP Server Transport<br/>Cowboy-based implementation]
+
+                HTTP_HEADERS[erlmcp_http_header_validator<br/>Header Validation]
+                SECURITY_HEADERS[erlmcp_security_headers<br/>Security Headers]
+
+                HTTP --> TRANSPORT_BEHAVIOR
+                HTTP_SERVER --> TRANSPORT_BEHAVIOR
+                HTTP_HEADERS --> HTTP
+                HTTP_HEADERS --> HTTP_SERVER
+                SECURITY_HEADERS --> HTTP
+                SECURITY_HEADERS --> HTTP_SERVER
+                HTTP_FEATURES -.-> HTTP
+                HTTP_FEATURES -.-> HTTP_SERVER
+            end
+
+            subgraph "WebSocket Transport"
+                direction TB
+                WS[erlmcp_transport_ws<br/>WebSocket Transport<br/>Capabilities: resources, tools, prompts]
+
+                WS_FEATURES[Features:<br/>✓ Full-duplex persistent<br/>✓ Low latency messaging<br/>✓ Binary/text support<br/>✓ Automatic reconnection]
+
+                WS --> TRANSPORT_BEHAVIOR
+                WS_FEATURES -.-> WS
+            end
+
+            subgraph "SSE Transport"
+                direction TB
+                SSE[erlmcp_transport_sse<br/>Server-Sent Events Transport<br/>Capabilities: resources, prompts]
+
+                SSE_MGR[erlmcp_transport_sse_manager<br/>SSE Connection Manager]
+
+                SSE_FEATURES[Features:<br/>✓ Unidirectional push<br/>✓ Automatic reconnection<br/>✓ Event streaming<br/>✓ Change notifications]
+
+                SSE_EVENT_STORE[erlmcp_sse_event_store<br/>SSE Event Storage]
+
+                SSE --> TRANSPORT_BEHAVIOR
+                SSE_MGR --> SSE
+                SSE_EVENT_STORE --> SSE_MGR
+                SSE_FEATURES -.-> SSE
+            end
+        end
+
+        subgraph "Transport Infrastructure"
+            direction TB
+
+            POOL_MANAGER[erlmcp_pool_manager<br/>Pool Strategy Manager]
+
+            POOL_STRATEGY[erlmcp_pool_strategy<br/>Pool Strategy Patterns]
+
+            TRANSPORT_PIPELINE[erlmcp_transport_pipeline<br/>Pipeline Pattern]
+
+            TRANSPORT_HEALTH[erlmcp_transport_health<br/>Health Monitoring]
+
+            TRANSPORT_DISCOVERY[erlmcp_transport_discovery<br/>Service Discovery<br/>(K8s, Consul)]
+
+            TRANSPORT_VALIDATION[erlmcp_transport_validation<br/>Compliance Validation]
+
+            POOL_MANAGER --> POOL_STRATEGY
+            POOL_MANAGER --> TCP_POOL
+            TRANSPORT_PIPELINE --> TRANSPORT_ADAPTER
+            TRANSPORT_HEALTH --> TRANSPORT_REGISTRY
+            TRANSPORT_DISCOVERY --> TRANSPORT_REGISTRY
+            TRANSPORT_VALIDATION --> TRANSPORT_BEHAVIOR
+        end
+
+        subgraph "Transport Security"
+            direction TB
+
+            TLS_VALIDATION[erlmcp_tls_validation<br/>Certificate Validation]
+
+            ORIGIN_VALIDATOR[erlmcp_origin_validator<br/>CORS Validation]
+
+            TLS_VALIDATION --> HTTP
+            TLS_VALIDATION --> HTTP_SERVER
+            TLS_VALIDATION --> WS
+            ORIGIN_VALIDATOR --> HTTP
+            ORIGIN_VALIDATOR --> HTTP_SERVER
+            ORIGIN_VALIDATOR --> WS
+        end
+
+        subgraph "Transport Integration Points"
+            direction TB
+
+            CLIENT_TRANSPORT[erlmcp_client_transport<br/>Client Transport Integration]
+
+            SERVER_TRANSPORT[Server Transport Integration<br/>erlmcp_server]
+
+            CLIENT_TRANSPORT --> STDIO
+            CLIENT_TRANSPORT --> TCP
+            CLIENT_TRANSPORT --> HTTP
+            CLIENT_TRANSPORT --> WS
+            CLIENT_TRANSPORT --> SSE
+
+            SERVER_TRANSPORT -.-> STDIO
+            SERVER_TRANSPORT -.-> TCP
+            SERVER_TRANSPORT -.-> HTTP_SERVER
+            SERVER_TRANSPORT -.-> WS
+            SERVER_TRANSPORT -.-> SSE
+        end
+
+        subgraph "Message Flow Across Transports"
+            direction TB
+
+            ALGORITHM[Transport Message Algorithm:<br/><br/>1. Transport receives {transport_data, Binary}<br/>2. Parse JSON-RPC message<br/>3. Route to message handler<br/>4. Process request/response<br/>5. Encode response<br/>6. Send via transport:send/2<br/>7. Handle {transport_connected, Info}<br/>8. Handle {transport_disconnected, Reason}]
+        end
+
+        subgraph "Transport Benchmarks"
+            direction TB
+
+            BENCH_STDIO[erlmcp_bench_stdio<br/>STDIO Benchmark]
+
+            BENCH_TCP[erlmcp_bench_tcp<br/>TCP Benchmark]
+
+            BENCH_HTTP[erlmcp_bench_http<br/>HTTP Benchmark]
+
+            BENCH_WS[erlmcp_bench_websocket<br/>WebSocket Benchmark]
+
+            BENCH_SSE[erlmcp_bench_sse<br/>SSE Benchmark]
+
+            BENCH_INTEGRATION[erlmcp_bench_integration<br/>E2E Transport Benchmark]
+        end
+
+        %% Registration relationships
+        TRANSPORT_REGISTRY --> STDIO
+        TRANSPORT_REGISTRY --> TCP
+        TRANSPORT_REGISTRY --> HTTP
+        TRANSPORT_REGISTRY --> HTTP_SERVER
+        TRANSPORT_REGISTRY --> WS
+        TRANSPORT_REGISTRY --> SSE
+
+        %% Health monitoring relationships
+        TRANSPORT_HEALTH --> STDIO
+        TRANSPORT_HEALTH --> TCP
+        TRANSPORT_HEALTH --> HTTP
+        TRANSPORT_HEALTH --> HTTP_SERVER
+        TRANSPORT_HEALTH --> WS
+        TRANSPORT_HEALTH --> SSE
+
+        %% Validation relationships
+        TRANSPORT_VALIDATION --> STDIO
+        TRANSPORT_VALIDATION --> TCP
+        TRANSPORT_VALIDATION --> HTTP
+        TRANSPORT_VALIDATION --> HTTP_SERVER
+        TRANSPORT_VALIDATION --> WS
+        TRANSPORT_VALIDATION --> SSE
+
+        %% Benchmark relationships
+        BENCH_STDIO -.-> STDIO
+        BENCH_TCP -.-> TCP
+        BENCH_HTTP -.-> HTTP
+        BENCH_WS -.-> WS
+        BENCH_SSE -.-> SSE
+        BENCH_INTEGRATION -.-> TRANSPORT_REGISTRY
+    end
+
+    classDef behaviorStyle fill:#e8eaf6,stroke:#283593,stroke-width:3px
+    classDef transportStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef infraStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef securityStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef integrationStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef benchStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+
+    class TRANSPORT_BEHAVIOR,TRANSPORT_ADAPTER,TRANSPORT_REGISTRY behaviorStyle
+    class STDIO,TCP,HTTP,HTTP_SERVER,WS,SSE,SSE_MGR transportStyle
+    class POOL_MANAGER,POOL_STRATEGY,TRANSPORT_PIPELINE,TRANSPORT_HEALTH,TRANSPORT_DISCOVERY,TRANSPORT_VALIDATION infraStyle
+    class TLS_VALIDATION,ORIGIN_VALIDATOR,HTTP_HEADERS,SECURITY_HEADERS securityStyle
+    class CLIENT_TRANSPORT,SERVER_TRANSPORT integrationStyle
+    class BENCH_STDIO,BENCH_TCP,BENCH_HTTP,BENCH_WS,BENCH_SSE,BENCH_INTEGRATION benchStyle
+
+    %% Feature annotations
+    classDef featureStyle fill:#f5f5f5,stroke:#424242,stroke-width:1px,stroke-dasharray: 5 5
+
+    class STDIO_FEATURES,TCP_FEATURES,HTTP_FEATURES,WS_FEATURES,SSE_FEATURES,ALGORITHM featureStyle

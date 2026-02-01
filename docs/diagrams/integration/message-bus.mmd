@@ -1,0 +1,346 @@
+```mermaid
+flowchart TB
+    subgraph PRODUCERS["Message Producers"]
+        MCP_CLIENT["MCP Clients<br/>(AI Assistants)"]
+        MCP_SERVER["MCP Servers<br/>(Tool Providers)"]
+        TRANSPORTS["Transports<br/>(TCP/HTTP/WS)"]
+        OBSERVABILITY["Observability<br/>(Metrics/Traces)"]
+    end
+
+    subgraph MESSAGE_BUS["Message Bus (gproc Registry)"]
+        subgraph REGISTRY_TYPES["Registry Types"]
+            LOCAL["Local Registry<br/>(gproc:local)"]
+            DIST["Distributed Registry<br/>(gproc:dist)"]
+            SHARED["Shared Property<br/>(gproc:shared)"]
+        end
+
+        subgraph ROUTING["Routing Layer"]
+            PUBSUB["Pub/Sub Pattern<br/>(gproc:reg)"]
+            CAST["Cast Pattern<br/>(gen_server:cast)"]
+            CALL["Call Pattern<br/>(gen_server:call)"]
+        end
+
+        subgraph QUEUES["Message Queues"]
+            PENDING["Pending Requests<br/>(Request Correlation)"]
+            EVENTS["Event Stream<br/>(Notifications)"]
+            REPLICAS["Replication Queue<br/>(Cluster Sync)"]
+        end
+    end
+
+    subgraph CONSUMERS["Message Consumers"]
+        RESOURCE_SUBS["Resource Subscribers"]
+        TOOL_HANDLERS["Tool Handlers"]
+        PROMPT_LISTENERS["Prompt Listeners"]
+        SESSION_MGR["Session Manager"]
+        CLUSTER_NODES["Cluster Nodes"]
+    end
+
+    subgraph PERSISTENCE["Persistence & Recovery"]
+        RECEIPTS["Receipt Chain<br/>(SHA-256)"]
+        SSE_STORE["SSE Event Store<br/>(ETS)"]
+        REPLICATION["Session Replication<br/>(Mnesia)"]
+    end
+
+    %% Producer to Bus
+    MCP_CLIENT -->|"Publish"| PUBSUB
+    MCP_SERVER -->|"Publish"| PUBSUB
+    TRANSPORTS -->|"Route"| ROUTING
+    OBSERVABILITY -->|"Events"| EVENTS
+
+    %% Registry Registration
+    PUBSUB --> LOCAL
+    PUBSUB --> DIST
+    ROUTING --> SHARED
+
+    %% Message Flow
+    LOCAL --> CAST
+    LOCAL --> CALL
+    DIST --> REPLICAS
+
+    %% Queue Management
+    CAST --> PENDING
+    EVENTS --> QUEUES
+    REPLICAS --> PERSISTENCE
+
+    %% Consumer Subscription
+    RESOURCE_SUBS -->|"Subscribe"| PUBSUB
+    TOOL_HANDLERS -->|"Subscribe"| PUBSUB
+    PROMPT_LISTENERS -->|"Subscribe"| PUBSUB
+    SESSION_MGR -->|"Monitor"| LOCAL
+    CLUSTER_NODES -->|"Sync"| DIST
+
+    %% Persistence Integration
+    PENDING -->|"Receipt"| RECEIPTS
+    EVENTS -->|"Store"| SSE_STORE
+    REPLICAS -->|"Persist"| REPLICATION
+
+    style PRODUCERS fill:#e3f2fd
+    style MESSAGE_BUS fill:#fff3e0
+    style CONSUMERS fill:#e8f5e9
+    style PERSISTENCE fill:#f3e5f5
+    style REGISTRY_TYPES fill:#ffe0b2
+    style ROUTING fill:#b2dfdb
+    style QUEUES fill:#c8e6c9
+```
+
+## Message Bus and Event Streaming Patterns
+
+### gproc Registry Patterns
+
+#### 1. Local Registration (Single Node)
+```erlang
+%% Register server process
+gproc:add_local_name({mcp, server, ServerId}),
+gproc:reg({p, l, {mcp_server_config, ServerId}}, Config).
+
+%% Lookup server
+case gproc:lookup_local_name({mcp, server, ServerId}) of
+    undefined -> {error, not_found};
+    Pid -> {ok, Pid}
+end.
+
+%% Publish to local subscribers
+gproc:send({p, l, {mcp_event, EventType}}, EventMessage).
+```
+
+#### 2. Distributed Registration (Cluster)
+```erlang
+%% Register across cluster
+gproc:add_dist_name({mcp, server, ServerId}),
+gproc:reg({p, g, {mcp_server_config, ServerId}}, Config).
+
+%% Lookup in cluster
+case gproc:lookup_dist_name({mcp, server, ServerId}) of
+    undefined -> {error, not_found};
+    {Pid, Node} -> {ok, Pid, Node}
+end.
+
+%% Publish to cluster
+gproc:send({p, g, {mcp_event, EventType}}, EventMessage).
+```
+
+#### 3. Shared Properties (Configuration)
+```erlang
+%% Store shared configuration
+gproc:reg_shared({mcp, shared, config}, #{
+    max_connections => 1000,
+    timeout => 5000
+}).
+
+%% Read shared config
+case gproc:get_shared_value({mcp, shared, config}) of
+    undefined -> default_config();
+    Config -> Config
+end.
+```
+
+### Message Routing Patterns
+
+#### 1. Publish/Subscribe (Event Broadcasting)
+```erlang
+%% Subscribe to resource changes
+subscribe_resource(ResourceUri) ->
+    gproc:reg({p, l, {mcp_resource, ResourceUri}}).
+
+%% Broadcast resource change
+notify_resource_change(ResourceUri, Change) ->
+    gproc:send({p, l, {mcp_resource, ResourceUri}}, {resource_changed, Change}).
+
+%% Subscriber receives message
+handle_info({resource_changed, Change}, State) ->
+    %% Handle change
+    {noreply, State}.
+```
+
+#### 2. Request/Response (Correlation)
+```erlang
+%% Client sends request
+call_tool(ToolName, Args) ->
+    RequestId = erlmcp_request_id:generate(),
+    Req = #{jsonrpc => "2.0", method => "tools/call", params => Args, id => RequestId},
+
+    %% Store pending request
+    Pending = maps:put(RequestId, {self(), erlang:monotonic_time(millisecond)}, State#state.pending),
+
+    %% Send request
+    gen_server:cast(TransportPid, {send_request, Req}),
+
+    %% Await response
+    receive
+        {tool_response, RequestId, Result} -> {ok, Result};
+        {tool_error, RequestId, Error} -> {error, Error}
+    after 5000 -> {error, timeout}
+    end.
+```
+
+#### 3. Message Queuing (Backpressure Handling)
+```erlang
+%% Queue message for processing
+queue_message(ClientPid, Message) ->
+    case ets:lookup(message_queue, ClientPid) of
+        [#queue{size = Size}] when Size < ?MAX_QUEUE_SIZE ->
+            ets:update_counter(message_queue, ClientPid, {#queue.size, 1}),
+            ets:insert(message_queue, {ClientPid, Message}),
+            {ok, enqueued};
+        _ ->
+            {error, queue_full}
+    end.
+
+%% Process queued messages
+process_queue(ClientPid) ->
+    case ets:lookup(message_queue, ClientPid) of
+        [{ClientPid, Message}] ->
+            ets:delete(message_queue, ClientPid),
+            handle_message(Message);
+        [] ->
+            ok
+    end.
+```
+
+### Event Streaming Patterns
+
+#### 1. Resource Subscription Events
+```erlang
+%% Subscribe to resource changes
+subscribe_resource(ServerPid, ResourceUri) ->
+    gen_server:call(ServerPid, {subscribe_resource, ResourceUri}).
+
+%% Server handles subscription
+handle_call({subscribe_resource, ResourceUri}, _From, State) ->
+    gproc:reg({p, l, {resource_sub, ResourceUri}}),
+    Subscriptions = maps:put(ResourceUri, true, State#state.subscriptions),
+    {reply, ok, State#state{subscriptions = Subscriptions}}.
+
+%% Broadcast change
+notify_resource_change(ResourceUri, NewContent) ->
+    gproc:send({p, l, {resource_sub, ResourceUri}}, {resource_updated, ResourceUri, NewContent}).
+```
+
+#### 2. Prompt Template Changes
+```erlang
+%% Subscribe to prompt list changes
+subscribe_prompt_changes(ServerPid) ->
+    gen_server:call(ServerPid, subscribe_prompt_changes).
+
+%% Broadcast prompt list update
+notify_prompt_list_changed(ChangedPrompts) ->
+    gproc:send({p, l, prompt_list_changed}, {prompts_updated, ChangedPrompts}).
+
+%% Client receives notification
+handle_info({prompts_updated, ChangedPrompts}, State) ->
+    %% Refresh prompt list
+    {noreply, State}.
+```
+
+#### 3. Progress Token Updates
+```erlang
+%% Report progress
+report_progress(ProgressToken, Progress) ->
+    gproc:send({p, l, {progress, ProgressToken}}, {progress_update, Progress}).
+
+%% Subscribe to progress
+subscribe_progress(ProgressToken) ->
+    gproc:reg({p, l, {progress, ProgressToken}}).
+
+%% Handle progress update
+handle_info({progress_update, Progress}, State) ->
+    %% Update UI or log progress
+    {noreply, State}.
+```
+
+### Message Persistence
+
+#### 1. Receipt Chain (Audit Trail)
+```erlang
+%% Append to receipt chain
+append_receipt(Event) ->
+    Receipt = #receipt{
+        id = erlmcp_request_id:generate(),
+        event = Event,
+        timestamp = erlang:system_time(microsecond),
+        hash = crypto:hash(sha256, term_to_binary(Event))
+    },
+    ets:insert(receipt_chain, Receipt),
+    {ok, Receipt}.
+
+%% Verify receipt chain
+verify_receipt_chain() ->
+    Receipts = ets:tab2list(receipt_chain),
+    lists:foldl(fun(Receipt, PrevHash) ->
+        case Receipt#receipt.hash of
+            PrevHash -> ok;
+            _ -> {error, chain_broken}
+        end
+    end, <<>>, Receipts).
+```
+
+#### 2. SSE Event Store (Server-Sent Events)
+```erlang
+%% Store SSE event
+store_sse_event(ClientId, Event) ->
+    ets:insert(sse_events, {ClientId, erlang:monotonic_time(millisecond), Event}).
+
+%% Fetch events since timestamp
+fetch_sse_events(ClientId, SinceTimestamp) ->
+    MatchSpec = [{#sse_event{client_id = ClientId, timestamp = '$1', event = '$2'},
+                  [{'>=', '$1', SinceTimestamp}],
+                  ['$2']}],
+    ets:select(sse_events, MatchSpec).
+```
+
+#### 3. Session Replication (Cluster)
+```erlang
+%% Replicate session to cluster nodes
+replicate_session(SessionId, SessionData) ->
+    Nodes = mnesia:table_info(session, where_to_read),
+    lists:foreach(fun(Node) ->
+        rpc:cast(Node, mnesia, dirty_write, [session, {SessionId, SessionData}])
+    end, Nodes).
+
+%% Sync session on node join
+sync_sessions_from_cluster() ->
+    Nodes = [node() | nodes()],
+    lists:foreach(fun(Node) ->
+        case rpc:call(Node, mnesia, dirty_foldl, ...) of
+            {ok, Sessions} ->
+                lists:foreach(fun(Sess) ->
+                    mnesia:dirty_write(session, Sess)
+                end, Sessions)
+        end
+    end, Nodes).
+```
+
+### Performance Optimization
+
+**Registry Performance (gproc):**
+- **Local lookups**: O(1) via ETS
+- **Distributed lookups**: O(1) with gproc:dist
+- **Publish/Subscribe**: O(N) where N = subscribers
+- **Automatic cleanup**: Process death → automatic deregistration
+
+**Queue Performance:**
+- **ETS queue**: ~500K ops/sec
+- **Pending request map**: ~1M lookups/sec
+- **SSE event storage**: ~200K writes/sec
+
+**Replication Performance:**
+- **Local Mnesia write**: ~1-5 ms
+- **Cluster replication**: ~10-50 ms (depends on network)
+- **Receipt chain append**: ~100 µs (ETS)
+
+### Configuration
+
+```erlang
+{erlmcp_registry, [
+    {registry_type, local},  % local | distributed
+    {shared_config_enabled, true},
+    {auto_cleanup, true},
+    {cleanup_interval, 60000}
+]}.
+
+{erlmcp_message_queue, [
+    {max_queue_size, 1000},
+    {queue_check_interval, 1000},
+    {backpressure_threshold, 800}
+]}.
+```

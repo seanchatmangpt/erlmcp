@@ -1,0 +1,204 @@
+graph TB
+    subgraph "erlmcp Supervision Hierarchy - 3-Tier Invariant"
+        direction TB
+
+        subgraph "TIER 1: Application Supervisors (one_for_all)"
+            direction TB
+
+            ERLMCP_SUP[erlmcp_sup<br/>Root Supervisor<br/>one_for_all]
+
+            subgraph "Core Application"
+                CORE_APP[erlmcp_app<br/>Application Callback]
+                CORE_SUP[erlmcp_core_sup<br/>Core Supervisor<br/>one_for_all]
+            end
+
+            subgraph "Transports Application"
+                TRANS_APP[erlmcp_transports_app<br/>Application Callback]
+                TRANS_SUP[erlmcp_transport_sup<br/>Transports Supervisor<br/>one_for_one]
+            end
+
+            subgraph "Observability Application"
+                OBS_APP[erlmcp_observability_app<br/>Application Callback]
+                OBS_SUP[erlmcp_observability_sup<br/>Observability Supervisor<br/>one_for_one]
+            end
+
+            subgraph "Validation Application"
+                VAL_APP[erlmcp_validation_app<br/>Application Callback]
+                VAL_SUP[erlmcp_validation_sup<br/>Validation Supervisor<br/>one_for_one]
+            end
+        end
+
+        subgraph "TIER 2: Service Supervisors (simple_one_for_one)"
+            direction TB
+
+            %% Core Supervisors
+            SERVER_SUP[erlmcp_server_sup<br/>Server Supervisor<br/>simple_one_for_one<br/>Process-per-Connection]
+            CLIENT_SUP[erlmcp_client_sup<br/>Client Supervisor<br/>simple_one_for_one<br/>Process-per-Connection]
+            SESSION_MGR[erlmcp_session_manager<br/>Session Manager<br/>simple_one_for_one<br/>Per-Session Isolation]
+
+            %% Observability Supervisors
+            CHAOS_SUP[erlmcp_chaos_worker_sup<br/>Chaos Worker Supervisor<br/>simple_one_for_one<br/>Failure Injection]
+
+            %% Support Supervisors
+            CACHE_WARMER_SUP[erlmcp_cache_warmer_sup<br/>Cache Warmer Supervisor<br/>one_for_one]
+            NOTIFICATION_HANDLER_SUP[erlmcp_notification_handler_sup<br/>Notification Handler Supervisor<br/>one_for_one]
+            FAILOVER_SUP[erlmcp_failover_worker_sup<br/>Failover Worker Supervisor<br/>simple_one_for_one]
+            RELOAD_SUP[erlmcp_reload_sup<br/>Code Reload Supervisor<br/>one_for_one]
+            CLUSTER_SUP[erlmcp_cluster_sup<br/>Cluster Supervisor<br/>one_for_one]
+        end
+
+        subgraph "TIER 3: Isolated Workers (temporary supervision)"
+            direction TB
+
+            %% Server Workers (isolated per connection)
+            SERVER_WORKER1[erlmcp_server<br/>Server Process #1<br/>Isolated State]
+            SERVER_WORKER2[erlmcp_server<br/>Server Process #N<br/>Isolated State]
+            SERVER_WORKER_DOT[..]
+
+            %% Client Workers (isolated per connection)
+            CLIENT_WORKER1[erlmcp_client<br/>Client Process #1<br/>Request Correlation]
+            CLIENT_WORKER2[erlmcp_client<br/>Client Process #N<br/>Request Correlation]
+            CLIENT_WORKER_DOT[..]
+
+            %% Session Workers
+            SESSION_WORKER1[erlmcp_session<br/>Session Process #1<br/>State Management]
+            SESSION_WORKER2[erlmcp_session<br/>Session Process #N<br/>State Management]
+            SESSION_WORKER_DOT[..]
+
+            %% Chaos Workers
+            CHAOS_WORKER1[erlmcp_chaos_worker<br/>Chaos Worker #1<br/>Failure Injection]
+            CHAOS_WORKER2[erlmcp_chaos_worker<br/>Chaos Worker #N<br/>Failure Injection]
+            CHAOS_WORKER_DOT[..]
+
+            %% Failover Workers
+            FAILOVER_WORKER1[erlmcp_failover_worker<br/>Failover Worker #1<br/>Recovery Coordination]
+            FAILOVER_WORKER2[erlmcp_failover_worker<br/>Failover Worker #N<br/>Recovery Coordination]
+            FAILOVER_WORKER_DOT[..]
+        end
+
+        subgraph "Standalone Processes (monitored, not linked)"
+            direction TB
+
+            REGISTRY[erlmcp_registry<br/>gproc Registry<br/>Standalone gen_server]
+            REGISTRY_DIST[erlmcp_registry_dist<br/>Distributed Registry<br/>Standalone gen_server]
+
+            HEALTH_MONITOR[erlmcp_health_monitor<br/>Health Monitor<br/>Standalone gen_server]
+            METRICS_SERVER[erlmcp_metrics_server<br/>Metrics HTTP Server<br/>Standalone gen_server]
+            DASHBOARD_SERVER[erlmcp_dashboard_server<br/>Dashboard Web Server<br/>Standalone gen_server]
+
+            CIRCUIT_BREAKER[erlmcp_circuit_breaker<br/>Circuit Breaker<br/>Standalone gen_server]
+            RATE_LIMITER[erlmcp_rate_limiter<br/>Rate Limiter<br/>Standalone gen_server]
+            CONNECTION_LIMITER[erlmcp_connection_limiter<br/>Connection Limiter<br/>Standalone gen_server]
+
+            AUTH[erlmcp_auth<br/>Auth Service<br/>Standalone gen_server]
+            SECRETS[erlmcp_secrets<br/>Secrets Manager<br/>Standalone gen_server]
+
+            OTEL[erlmcp_otel<br/>OpenTelemetry<br/>Standalone gen_server]
+            CHAOS_COORD[erlmcp_chaos<br/>Chaos Coordinator<br/>Standalone gen_server]
+            RECOVERY_MGR[erlmcp_recovery_manager<br/>Recovery Manager<br/>Standalone gen_server]
+
+            CHANGE_NOTIFIER[erlmcp_change_notifier<br/>Change Notifier<br/>Standalone gen_server]
+            PROMPT_LIST_NOTIFIER[erlmcp_prompt_list_change_notifier<br/>Prompt List Notifier<br/>Standalone gen_server]
+
+            MEMORY_GUARD[erlmcp_memory_guard<br/>Memory Guard<br/>Standalone gen_server]
+            CPU_GUARD[erlmcp_cpu_guard<br/>CPU Guard<br/>Standalone gen_server]
+
+            NODE_MONITOR[erlmcp_node_monitor<br/>Node Monitor<br/>Standalone gen_server]
+            SPLIT_BRAIN[erlmcp_split_brain_detector<br/>Split-Brain Detector<br/>Standalone gen_server]
+
+            DEBUGGER[erlmcp_debugger<br/>Debugger<br/>Standalone gen_server]
+            PROFILER[erlmcp_profiler<br/>Profiler<br/>Standalone gen_server]
+        end
+
+        %% TIER 1 Relationships
+        ERLMCP_SUP --> CORE_SUP
+        ERLMCP_SUP --> TRANS_SUP
+        ERLMCP_SUP --> OBS_SUP
+        ERLMCP_SUP --> VAL_SUP
+
+        CORE_APP -.-> CORE_SUP
+        TRANS_APP -.-> TRANS_SUP
+        OBS_APP -.-> OBS_SUP
+        VAL_APP -.-> VAL_SUP
+
+        %% TIER 1 to TIER 2 Relationships
+        CORE_SUP --> SERVER_SUP
+        CORE_SUP --> CLIENT_SUP
+        CORE_SUP --> SESSION_MGR
+        CORE_SUP --> CACHE_WARMER_SUP
+        CORE_SUP --> NOTIFICATION_HANDLER_SUP
+        CORE_SUP --> FAILOVER_SUP
+        CORE_SUP --> RELOAD_SUP
+        CORE_SUP --> CLUSTER_SUP
+
+        OBS_SUP --> CHAOS_SUP
+
+        %% TIER 2 to TIER 3 Relationships
+        SERVER_SUP --> SERVER_WORKER1
+        SERVER_SUP --> SERVER_WORKER2
+        SERVER_SUP --> SERVER_WORKER_DOT
+
+        CLIENT_SUP --> CLIENT_WORKER1
+        CLIENT_SUP --> CLIENT_WORKER2
+        CLIENT_SUP --> CLIENT_WORKER_DOT
+
+        SESSION_MGR --> SESSION_WORKER1
+        SESSION_MGR --> SESSION_WORKER2
+        SESSION_MGR --> SESSION_WORKER_DOT
+
+        CHAOS_SUP --> CHAOS_WORKER1
+        CHAOS_SUP --> CHAOS_WORKER2
+        CHAOS_SUP --> CHAOS_WORKER_DOT
+
+        FAILOVER_SUP --> FAILOVER_WORKER1
+        FAILOVER_SUP --> FAILOVER_WORKER2
+        FAILOVER_SUP --> FAILOVER_WORKER_DOT
+
+        %% Monitoring Relationships (monitored, not linked)
+        CORE_SUP -.monitor. REGISTRY
+        CORE_SUP -.monitor. REGISTRY_DIST
+        CORE_SUP -.monitor. HEALTH_MONITOR
+        CORE_SUP -.monitor. AUTH
+        CORE_SUP -.monitor. SECRETS
+
+        OBS_SUP -.monitor. METRICS_SERVER
+        OBS_SUP -.monitor. DASHBOARD_SERVER
+        OBS_SUP -.monitor. OTEL
+        OBS_SUP -.monitor. CHAOS_COORD
+        OBS_SUP -.monitor. RECOVERY_MGR
+
+        CORE_SUP -.monitor. CIRCUIT_BREAKER
+        CORE_SUP -.monitor. RATE_LIMITER
+        CORE_SUP -.monitor. CONNECTION_LIMITER
+        CORE_SUP -.monitor. CHANGE_NOTIFIER
+        CORE_SUP -.monitor. PROMPT_LIST_NOTIFIER
+        CORE_SUP -.monitor. MEMORY_GUARD
+        CORE_SUP -.monitor. CPU_GUARD
+        CORE_SUP -.monitor. NODE_MONITOR
+        CORE_SUP -.monitor. SPLIT_BRAIN
+        CORE_SUP -.monitor. DEBUGGER
+        CORE_SUP -.monitor. PROFILER
+    end
+
+    classDef tier1Style fill:#ffebee,stroke:#c62828,stroke-width:3px
+    classDef tier2Style fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    classDef tier3Style fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef standaloneStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px,stroke-dasharray: 5 5
+
+    class ERLMCP_SUP,CORE_APP,CORE_SUP,TRANS_APP,TRANS_SUP,OBS_APP,OBS_SUP,VAL_APP,VAL_SUP tier1Style
+    class SERVER_SUP,CLIENT_SUP,SESSION_MGR,CHAOS_SUP,CACHE_WARMER_SUP,NOTIFICATION_HANDLER_SUP,FAILOVER_SUP,RELOAD_SUP,CLUSTER_SUP tier2Style
+    class SERVER_WORKER1,SERVER_WORKER2,SERVER_WORKER_DOT,CLIENT_WORKER1,CLIENT_WORKER2,CLIENT_WORKER_DOT,SESSION_WORKER1,SESSION_WORKER2,SESSION_WORKER_DOT,CHAOS_WORKER1,CHAOS_WORKER2,CHAOS_WORKER_DOT,FAILOVER_WORKER1,FAILOVER_WORKER2,FAILOVER_WORKER_DOT tier3Style
+    class REGISTRY,REGISTRY_DIST,HEALTH_MONITOR,METRICS_SERVER,DASHBOARD_SERVER,CIRCUIT_BREAKER,RATE_LIMITER,CONNECTION_LIMITER,AUTH,SECRETS,OTEL,CHAOS_COORD,RECOVERY_MGR,CHANGE_NOTIFIER,PROMPT_LIST_NOTIFIER,MEMORY_GUARD,CPU_GUARD,NODE_MONITOR,SPLIT_BRAIN,DEBUGGER,PROFILER standaloneStyle
+
+    %% Legend
+        subgraph "Legend"
+            LEGEND_TIER1[TIER 1: Application Supervisors<br/>one_for_all strategy]
+            LEGEND_TIER2[TIER 2: Service Supervisors<br/>simple_one_for_one strategy]
+            LEGEND_TIER3[TIER 3: Isolated Workers<br/>Process-per-Connection]
+            LEGEND_STANDALONE[Standalone Processes<br/>Monitored, not linked]
+        end
+
+        class LEGEND_TIER1 tier1Style
+        class LEGEND_TIER2 tier2Style
+        class LEGEND_TIER3 tier3Style
+        class LEGEND_STANDALONE standaloneStyle

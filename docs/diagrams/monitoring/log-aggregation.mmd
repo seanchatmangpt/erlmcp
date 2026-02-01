@@ -1,0 +1,205 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#2f9e44', 'primaryTextColor':'#fff', 'primaryBorderColor':'#239940', 'lineColor':'#495057', 'sectionBkgColor':'#d3f9d8', 'altSectionBkgColor':'b2f2bb', 'gridColor':'#adb5bd'}}}%%
+graph TB
+    subgraph "Log Sources"
+        subgraph "Application Logs"
+            CoreLogs[erlmcp_core<br/>Protocol logs]
+            TransportLogs[erlmcp_transports<br/>Transport logs]
+            ObsLogs[erlmcp_observability<br/>Telemetry logs]
+            ValidLogs[erlmcp_validation<br/>Compliance logs]
+        end
+
+        subgraph "Erlang VM Logs"
+            ErrorLogger[error_logger<br/>VM errors]
+            LoggerApp[Logger<br/>Structured logs]
+            CrashDumps[Crash Dumps<br/>Post-mortem]
+        end
+
+        subgraph "Access Logs"
+            HTTPAccess[HTTP Access<br/>Cowboy logs]
+            TCPAccess[TCP Connections<br/>Ranch logs]
+            WSAccess[WebSocket<br/>Handshake logs]
+        end
+
+        subgraph "Audit Logs"
+            AuthAudit[Authentication<br/>Login/logout]
+            ResourceAudit[Resource Access<br/>Read/write/delete]
+            ConfigAudit[Config Changes<br/>Modifications]
+            FailureAudit[Failure Events<br/>Errors/refusals]
+        end
+
+        subgraph "Security Logs"
+            SecAlerts[Security Alerts<br/>Threats detected]
+            RateLimit[Rate Limiting<br/>Blocked requests]
+            AuthFailures[Auth Failures<br/>Invalid credentials]
+            Suspicious[Suspicious Activity<br/>Anomalies]
+        end
+    end
+
+    subgraph "Log Collection"
+        Collector[Log Collector<br/>erlmcp_logging]
+        Parser[Log Parser<br/>Structured format]
+        Enricher[Log Enricher<br/>Add metadata]
+        Buffer[Log Buffer<br/>In-memory queue]
+        Formatter[Log Formatter<br/>JSON/Text]
+    end
+
+    subgraph "Log Processing"
+        Filter[Log Filter<br/>Drop/keep rules]
+        Router[Log Router<br/>Destination routing]
+        Sampler[Log Sampler<br/>Rate limiting]
+        Aggregator[Log Aggregator<br/>Batching]
+    end
+
+    subgraph "Storage Backends"
+        subgraph "Local Storage"
+            LogFiles[Log Files<br/>/var/log/erlmcp/]
+            Rotator[Log Rotator<br/>Size/time rotation]
+            Compressor[Compressor<br/>gzip archives]
+        end
+
+        subgraph "Centralized Storage"
+            ETS[(ETS<br/>Hot logs)]
+            DETS[(DETS<br/>Warm logs)]
+            Disk[(Disk<br/>Cold logs)]
+        end
+
+        subgraph "External Storage"
+            Loki[(Loki<br/>Log aggregation)]
+            ELK[(ELK Stack<br/>Elasticsearch)]
+            CloudWatch[(CloudWatch<br/>AWS logs)]
+            S3[(S3<br/>Archive storage)]
+        end
+    end
+
+    subgraph "Analysis & Search"
+        Indexer[Log Indexer<br/>Full-text search]
+        Searcher[Log Searcher<br/>Query engine]
+        Analyzer[Log Analyzer<br/>Pattern matching]
+        Correlator[Log Correlator<br/>Cross-log events]
+    end
+
+    subgraph "Monitoring Integration"
+        AlertMatcher[Alert Matcher<br/>Log-based alerts]
+        Dashboard[Log Dashboard<br/>Real-time view]
+        Metrics[Log Metrics<br/>Error counts]
+        Tracer[Log Tracer<br/>Request tracing]
+    end
+
+    subgraph "Retention & Cleanup"
+        Retention[Retention Policy<br/>Time/size based]
+        Archiver[Archiver<br/>Long-term storage]
+        Cleanup[Cleanup Job<br/>Scheduled deletion]
+        Export[Log Export<br/>Backup/shipping]
+    end
+
+    subgraph "Query Interfaces"
+        CLIClient[CLI Client<br/>erlmcp_log:search/1]
+        HTTPAPI[HTTP API<br/>/logs endpoint]
+        DashboardUI[Dashboard UI<br/>Log viewer]
+        WebConsole[Web Console<br/>Interactive search]
+    end
+
+    %% Log sources to collection
+    CoreLogs --> Collector
+    TransportLogs --> Collector
+    ObsLogs --> Collector
+    ValidLogs --> Collector
+    ErrorLogger --> Collector
+    LoggerApp --> Collector
+    CrashDumps --> Collector
+    HTTPAccess --> Collector
+    TCPAccess --> Collector
+    WSAccess --> Collector
+    AuthAudit --> Collector
+    ResourceAudit --> Collector
+    ConfigAudit --> Collector
+    FailureAudit --> Collector
+    SecAlerts --> Collector
+    RateLimit --> Collector
+    AuthFailures --> Collector
+    Suspicious --> Collector
+
+    %% Collection pipeline
+    Collector --> Parser
+    Parser --> Enricher
+    Enricher --> Buffer
+    Buffer --> Formatter
+
+    %% Processing
+    Formatter --> Filter
+    Filter --> Router
+    Router --> Sampler
+    Sampler --> Aggregator
+
+    %% Storage routing
+    Aggregator -->|Hot| ETS
+    Aggregator -->|Warm| DETS
+    Aggregator -->|Cold| Disk
+    Aggregator -->|Remote| Loki
+    Aggregator -->|Archive| ELK
+    Aggregator -->|Cloud| CloudWatch
+    Aggregator -->|Backup| S3
+
+    %% Local file pipeline
+    Formatter --> LogFiles
+    LogFiles --> Rotator
+    Rotator --> Compressor
+    Compressor --> Disk
+
+    %% Analysis
+    ETS --> Indexer
+    DETS --> Indexer
+    Disk --> Indexer
+    Indexer --> Searcher
+    Searcher --> Analyzer
+    Analyzer --> Correlator
+
+    %% Monitoring integration
+    Analyzer --> AlertMatcher
+    ETS --> Dashboard
+    Analyzer --> Metrics
+    Correlator --> Tracer
+
+    %% Retention
+    DETS --> Retention
+    Disk --> Retention
+    Retention --> Archiver
+    Retention --> Cleanup
+    Retention --> Export
+
+    %% Query interfaces
+    Searcher --> CLIClient
+    Searcher --> HTTPAPI
+    Dashboard --> DashboardUI
+    Searcher --> WebConsole
+
+    %% Cross-flow
+    AlertMatcher -.->|Trigger alert| Collector
+    Metrics -.->|Error rate| Collector
+    Tracer -.->|Request ID lookup| Searcher
+
+    %% Styles
+    classDef sourceNode fill:#d3f9d8,stroke:#2f9e44,stroke-width:2px
+    classDef collectNode fill:#b2f2bb,stroke:#239940,stroke-width:2px
+    classDef processNode fill:#96f2d7,stroke:#0ca678,stroke-width:2px
+    classDef storageNode fill:#c3fae8,stroke:#0ca678,stroke-width:3px
+    classDef analysisNode fill:#e7f5ff,stroke:#1971c2,stroke-width:2px
+    classDef monitorNode fill:#fff3bf,stroke:#f59f00,stroke-width:2px
+    classDef retainNode fill:#ffe8cc,stroke:#d9480f,stroke-width:2px
+    classDef queryNode fill:#f3f0ff,stroke:#7950f2,stroke-width:2px
+
+    class CoreLogs,TransportLogs,ObsLogs,ValidLogs,ErrorLogger,LoggerApp,CrashDumps,HTTPAccess,TCPAccess,WSAccess,AuthAudit,ResourceAudit,ConfigAudit,FailureAudit,SecAlerts,RateLimit,AuthFailures,Suspicious sourceNode
+    class Collector,Parser,Enricher,Buffer,Formatter collectNode
+    class Filter,Router,Sampler,Aggregator processNode
+    class ETS,DETS,Disk,Loki,ELK,CloudWatch,S3,LogFiles,Rotator,Compressor storageNode
+    class Indexer,Searcher,Analyzer,Correlator analysisNode
+    class AlertMatcher,Dashboard,Metrics,Tracer monitorNode
+    class Retention,Archiver,Cleanup,Export retainNode
+    class CLIClient,HTTPAPI,DashboardUI,WebConsole queryNode
+
+    %% Annotations
+    Buffer -.->|1000 batch size| Aggregator
+    Sampler -.->|1% sample for DEBUG| Filter
+    Retention -.->|90 days hot, 1 year cold| ETS
+    Searcher -.->|Full-text + regex| QueryInterface
+    Correlator -.->|Request ID linking| Tracer

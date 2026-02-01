@@ -1,0 +1,133 @@
+erlmcp Multi-Node Cluster Deployment Topology
+=================================================
+
+graph TB
+    subgraph "Load Balancer Layer"
+        LB[HAProxy / NGINX<br/>TCP Load Balancer<br/>Port: 27015-27020]
+    end
+
+    subgraph "Erlang Cluster Layer"
+        subgraph "Node 1: Primary"
+            N1_EPMD[epmd<br/>Port: 4369]
+            N1_ERL[erlmcp_node_1@host1<br/>Primary Application<br/>Ports: 27015-27017]
+            N1_Core[erlmcp_core_sup<br/>Protocol Servers]
+            N1_Trans[erlmcp_transport_sup<br/>TCP/HTTP/WS Acceptors]
+            N1_Obs[erlmcp_observability_sup<br/>Metrics + Tracing]
+            N1_Sess[erlmcp_session_manager<br/>State Coordinator]
+        end
+
+        subgraph "Node 2: Secondary"
+            N2_EPMD[epmd<br/>Port: 4369]
+            N2_ERL[erlmcp_node_2@host2<br/>Secondary Application<br/>Ports: 27018-27020]
+            N2_Core[erlmcp_core_sup<br/>Protocol Servers]
+            N2_Trans[erlmcp_transport_sup<br/>TCP/HTTP/WS Acceptors]
+            N2_Obs[erlmcp_observability_sup<br/>Metrics + Tracing]
+            N2_Sess[erlmcp_session_manager<br/>State Coordinator]
+        end
+
+        subgraph "Node 3: Tertiary"
+            N3_EPMD[epmd<br/>Port: 4369]
+            N3_ERL[erlmcp_node_3@host3<br/>Tertiary Application<br/>Ports: 27021-27023]
+            N3_Core[erlmcp_core_sup<br/>Protocol Servers]
+            N3_Trans[erlmcp_transport_sup<br/>TCP/HTTP/WS Acceptors]
+            N3_Obs[erlmcp_observability_sup<br/>Metrics + Tracing]
+            N3_Sess[erlmcp_session_manager<br/>State Coordinator]
+        end
+    end
+
+    subgraph "Data Layer"
+        Mnesia[Mnesia Distributed DB<br/>Schema: disc_copies<br/>Replication Factor: 3]
+        Redis[Redis Sentinel Cluster<br/>Session Cache<br/>Pub/Sub Notifications]
+    end
+
+    subgraph "Observability Layer"
+        OTEL[OpenTelemetry Collector<br/>OTLP: 4317/tcp, 4318/tcp]
+        Jaeger[Jaeger Tracing<br/>UI: 16686/tcp]
+        Prometheus[Prometheus<br/>Metrics Scrape: 9090/tcp]
+        Grafana[Grafana Dashboard<br/>UI: 3000/tcp]
+    end
+
+    subgraph "Client Connections"
+        Client1[AI Client 1]
+        Client2[AI Client 2]
+        ClientN[AI Client N]
+    end
+
+    %% Client Connections
+    Client1 -->|TCP/JSON-RPC| LB
+    Client2 -->|TCP/JSON-RPC| LB
+    ClientN -->|TCP/JSON-RPC| LB
+
+    %% Load Balancer Distribution
+    LB -->|Round Robin| N1_Trans
+    LB -->|Least Conn| N2_Trans
+    LB -->|IP Hash| N3_Trans
+
+    %% Node Internal Structure
+    N1_ERL --> N1_Core
+    N1_ERL --> N1_Trans
+    N1_ERL --> N1_Obs
+    N1_ERL --> N1_Sess
+
+    N2_ERL --> N2_Core
+    N2_ERL --> N2_Trans
+    N2_ERL --> N2_Obs
+    N2_ERL --> N2_Sess
+
+    N3_ERL --> N3_Core
+    N3_ERL --> N3_Trans
+    N3_ERL --> N3_Obs
+    N3_ERL --> N3_Sess
+
+    %% Erlang Distribution Protocol
+    N1_ERL -.->|Distribution Protocol<br/>Port: 4370+| N2_ERL
+    N2_ERL -.->|Distribution Protocol<br/>Port: 4370+| N3_ERL
+    N3_ERL -.->|Distribution Protocol<br/>Port: 4370+| N1_ERL
+
+    %% EPMD Discovery
+    N1_ERL --> N1_EPMD
+    N2_ERL --> N2_EPMD
+    N3_ERL --> N3_EPMD
+
+    %% Data Layer Connections
+    N1_Sess -->|Mnesia:ets/transaction| Mnesia
+    N2_Sess -->|Mnesia:ets/transaction| Mnesia
+    N3_Sess -->|Mnesia:ets/transaction| Mnesia
+
+    N1_Core -.->|Cache Get/Set| Redis
+    N2_Core -.->|Cache Get/Set| Redis
+    N3_Core -.->|Cache Get/Set| Redis
+
+    %% Observability Pipeline
+    N1_Obs -->|OTLP Spans| OTEL
+    N2_Obs -->|OTLP Spans| OTEL
+    N3_Obs -->|OTLP Spans| OTEL
+
+    OTEL --> Jaeger
+    OTEL --> Prometheus
+    Prometheus --> Grafana
+
+    %% Styling
+    classDef clientStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef lbStyle fill:#fff3e0,stroke:#e65100,stroke-width:3px
+    classDef nodeStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef dataStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef obsStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+
+    class Client1,Client2,ClientN clientStyle
+    class LB lbStyle
+    class N1_ERL,N2_ERL,N3_ERL nodeStyle
+    class Mnesia,Redis dataStyle
+    class OTEL,Jaeger,Prometheus,Grafana obsStyle
+
+    %% Legend
+    subgraph "Legend"
+        L1[Solid Line: Direct Connection]
+        L2[Dotted Line: Erlang Distribution]
+        L3["TCP/JSON-RPC: Client-Server Protocol"]
+    end
+
+    %% Capacity Indicators
+    subgraph "Cluster Capacity"
+        CAP[Per Node: 40-50K Connections<br/>Total: 120-150K Connections<br/>Throughput: 2.69M ops/sec]
+    end

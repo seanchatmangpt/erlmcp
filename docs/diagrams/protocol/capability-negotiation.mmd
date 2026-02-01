@@ -1,0 +1,170 @@
+sequenceDiagram
+    participant Client as erlmcp_client
+    participant Server as erlmcp_server
+    participant Caps as Capability Module
+    participant Resources as Resource Handler
+    participant Tools as Tool Handler
+    participant Prompts as Prompt Handler
+
+    Note over Client,Prompts: MCP Capability Negotiation Flow
+
+    %% Phase 1: Initialize Request
+    Client->>Server: initialize request
+    Note right of Client: {<br/>  "jsonrpc": "2.0",<br/>  "id": "init-1",<br/>  "method": "initialize",<br/>  "params": {<br/>    "protocolVersion": "2025-11-25",<br/>    "capabilities": {<br/>      "resources": {},<br/>      "tools": {},<br/>      "prompts": {},<br/>      "logging": {}<br/>    },<br/>    "clientInfo": {<br/>      "name": "my-client",<br/>      "version": "1.0.0"<br/>    }<br/>  }<br/>}
+
+    activate Server
+    Server->>Caps: erlmcp_capabilities:negotiate(ClientCaps)
+    activate Caps
+
+    %% Phase 2: Server Capability Resolution
+    Caps->>Caps: Parse client capabilities
+    Caps->>Caps: Intersect with server capabilities
+    Note right of Caps: ServerCaps ∩ ClientCaps<br/>= NegotiatedCaps
+
+    %% Resource Capability Check
+    opt Client declares resources support
+        Caps->>Resources: check_resources_capability()
+        Resources-->>Caps: {supported, true}
+    end
+
+    %% Tool Capability Check
+    opt Client declares tools support
+        Caps->>Tools: check_tools_capability()
+        Tools-->>Caps: {supported, true}
+    end
+
+    %% Prompt Capability Check
+    opt Client declares prompts support
+        Caps->>Prompts: check_prompts_capability()
+        Prompts-->>Caps: {supported, true}
+    end
+
+    %% Logging Capability Check
+    opt Client declares logging support
+        Caps->>Caps: configure_logging_level()
+    end
+
+    %% Sampling Capability Check
+    opt Server offers sampling support
+        Caps->>Caps: add_sampling_capability()
+    end
+
+    %% Progress Support Check
+    opt Client declares progress support
+        Caps->>Caps: enable_progress_tokens()
+    end
+
+    Caps-->>Server: {ok, NegotiatedCaps}
+    deactivate Caps
+
+    Server->>Server: Store negotiated capabilities in state
+    Server->>Server: Initialize enabled handlers
+
+    %% Phase 3: Initialize Response
+    Server-->>Client: initialize response
+    Note left of Server: {<br/>  "jsonrpc": "2.0",<br/>  "id": "init-1",<br/>  "result": {<br/>    "protocolVersion": "2025-11-25",<br/>    "capabilities": {<br/>      "resources": {<br/>        "subscribe": true,<br/>        "listChanged": true<br/>      },<br/>      "tools": {},<br/>      "prompts": {<br/>        "listChanged": true<br/>      }<br/>    },<br/>    "serverInfo": {<br/>      "name": "erlmcp-server",<br/>      "version": "2.1.0"<br/>    }<br/>  }<br/>}
+    deactivate Server
+
+    %% Phase 4: Initialized Notification (REQUIRED)
+    Note over Client,Prompts: Critical: Client must send initialized notification
+
+    Client->>Server: initialized notification
+    Note right of Client: {<br/>  "jsonrpc": "2.0",<br/>  "method": "notifications/initialized"<br/>}
+
+    activate Server
+    Server->>Server: Mark session as ready for requests
+    Server-->>Client: ready state
+    deactivate Server
+
+    %% Phase 5: Capability-Specific Operations
+
+    %% Resource Operations (if negotiated)
+    opt Resources capability negotiated
+        Client->>Server: resources/list
+        Server-->>Client: {ok, [Resource1, Resource2, ...]}
+        Note left of Server: Returns only resources<br/>matching negotiated capabilities
+
+        Client->>Server: resources/subscribe
+        Server->>Resources: Enable subscription monitoring
+        Resources-->>Server: {ok, Subscribed}
+        Server-->>Client: {ok, {}}
+    end
+
+    %% Tool Operations (if negotiated)
+    opt Tools capability negotiated
+        Client->>Server: tools/list
+        Server->>Tools: Get available tools
+        Tools-->>Server: {ok, [Tool1, Tool2, ...]}
+        Server-->>Client: {ok, ToolList}
+
+        Client->>Server: tools/call
+        Server->>Tools: Execute tool
+        Tools-->>Server: {ok, Result}
+        Server-->>Client: {ok, ToolResult}
+
+        opt Progress tokens negotiated
+            Tools-->>Client: progress notification
+            Note left of Tools: {<br/>  "progressToken": "uuid",<br/>  "progress": 0.5<br/>}
+        end
+    end
+
+    %% Prompt Operations (if negotiated)
+    opt Prompts capability negotiated
+        Client->>Server: prompts/list
+        Server->>Prompts: Get available prompts
+        Prompts-->>Server: {ok, [Prompt1, Prompt2, ...]}
+        Server-->>Client: {ok, PromptList}
+
+        Client->>Server: prompts/get
+        Server->>Prompts: Render prompt template
+        Prompts-->>Server: {ok, RenderedMessages}
+        Server-->>Client: {ok, Messages}
+    end
+
+    %% Sampling Operations (if negotiated)
+    opt Sampling capability negotiated
+        Client->>Server: Sampling hint in tool call
+        Note right of Client: {<br/>  "_meta": {<br/>    "progressToken": "uuid",<br/>    "sampling": {...}<br/>  }<br/>}
+        Server->>Server: Invoke LLM sampling
+        Server-->>Client: Sampled result
+    end
+
+    %% Logging Operations (if negotiated)
+    opt Logging capability negotiated
+        Server-->>Client: logging notification
+        Note left of Server: {<br/>  "method": "notifications/message",<br/>  "params": {<br/>    "level": "info",<br/>    "logger": "erlmcp",<br/>    "data": "Message"<br/>  }<br/>}
+    end
+
+    %% Capability Degradation Handling
+    opt Capability becomes unavailable
+        Server->>Server: Detect capability failure
+        Server-->>Client: capability_removed notification
+        Note left of Server: Client should update UI<br/>to reflect unavailable features
+    end
+
+    %% Re-negotiation on Reconnection
+    Note over Client,Prompts: Reconnection Re-negotiation
+
+    Client->>Server: Connection lost
+    Server-->>Client: disconnected
+
+    Client->>Server: Reconnect + initialize
+    Note right of Client: Re-send initialize with<br/>full capability set
+    Server->>Caps: Re-negotiate capabilities
+    Caps-->>Server: Current capabilities
+    Server-->>Client: Initialize response
+    Client->>Server: initialized notification
+
+    %% Unsupported Capability Handling
+    opt Client requests unsupported capability
+        Client->>Server: Request using non-negotiated capability
+        Server-->>Client: {error, method_not_found}
+        Note left of Server: Client must check<br/>capabilities before use
+    end
+
+    %% Version Mismatch Handling
+    opt Protocol version mismatch
+        Client->>Server: initialize with incompatible version
+        Server-->>Client: {error, unsupported_protocol_version}
+        Note left of Server: Client should downgrade<br/>or upgrade protocol version
+    end

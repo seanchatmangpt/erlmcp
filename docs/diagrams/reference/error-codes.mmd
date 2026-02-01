@@ -1,0 +1,307 @@
+graph TB
+    subgraph "erlmcp Error Code Hierarchy - Refusal Taxonomy (1001-1089)"
+        direction TB
+
+        %% ========================================================================
+        %% ROOT: All Error Categories
+        %% ========================================================================
+        ROOT["Refusal Codes<br/>1001-1089"]
+
+        %% ========================================================================
+        %% CATEGORY 1: Queue and Backpressure (1001-1005)
+        %% ========================================================================
+        subgraph "Queue & Backpressure Errors (1001-1005)"
+            direction TB
+
+            QUEUE_CAT["Category: Queue Management<br/>HTTP: 429/503"]
+
+            Q1["1001: Queue Cap Exceeded<br/>Message count exceeded<br/>Severity: error<br/>Remedy: Increase max_messages or reduce rate"]
+            Q2["1002: Queue Byte Cap Exceeded<br/>Byte size limit exceeded<br/>Severity: error<br/>Remedy: Compress messages or wait"]
+            Q3["1003: Queue Tenant Cap Exceeded<br/>Tenant aggregate limit<br/>Severity: critical<br/>Remedy: Contact admin"]
+            Q4["1004: Buffer Overflow<br/>Internal buffer exhausted<br/>Severity: critical<br/>Remedy: Reduce load or increase buffer_pool"]
+            Q5["1005: Backpressure Active<br/>Server under load<br/>Severity: warn<br/>Remedy: Retry after delay"]
+
+            QUEUE_CAT --> Q1
+            QUEUE_CAT --> Q2
+            QUEUE_CAT --> Q3
+            QUEUE_CAT --> Q4
+            QUEUE_CAT --> Q5
+        end
+
+        %% ========================================================================
+        %% CATEGORY 2: Authentication & Authorization (1011-1016)
+        %% ========================================================================
+        subgraph "Authentication & Authorization Errors (1011-1016)"
+            direction TB
+
+            AUTH_CAT["Category: Security<br/>HTTP: 401/403"]
+
+            A1["1011: Auth Failed<br/>Authentication failed<br/>Severity: error<br/>Remedy: Provide valid credentials"]
+            A2["1012: Auth Expired<br/>Auth token expired<br/>Severity: error<br/>Remedy: Refresh token"]
+            A3["1013: Invalid Credentials<br/>Invalid username/password<br/>Severity: error<br/>Remedy: Check credentials"]
+            A4["1014: Authorization Forbidden<br/>Permission denied<br/>Severity: error<br/>Remedy: Contact administrator"]
+            A5["1015: Missing Authentication<br/>No credentials provided<br/>Severity: error<br/>Remedy: Provide auth header"]
+            A6["1016: Invalid Session ID<br/>Session ID format invalid<br/>Severity: error<br/>Remedy: Provide valid 32+ hex ID"]
+
+            AUTH_CAT --> A1
+            AUTH_CAT --> A2
+            AUTH_CAT --> A3
+            AUTH_CAT --> A4
+            AUTH_CAT --> A5
+            AUTH_CAT --> A6
+        end
+
+        %% ========================================================================
+        %% CATEGORY 3: Parameter & Validation (1021-1029)
+        %% ========================================================================
+        subgraph "Parameter & Validation Errors (1021-1029)"
+            direction TB
+
+            PARAM_CAT["Category: Input Validation<br/>HTTP: 400"]
+
+            P1["1021: Invalid Parameters<br/>Parameter names/types invalid<br/>Severity: error<br/>Remedy: Check API spec"]
+            P2["1022: Invalid JSON Schema<br/>Schema validation failed<br/>Severity: error<br/>Remedy: Review error details"]
+            P3["1023: Invalid URI<br/>URI format invalid<br/>Severity: error<br/>Remedy: Use valid URI"]
+            P4["1024: Invalid Content-Type<br/>Content-Type not supported<br/>Severity: error<br/>Remedy: Use application/json"]
+            P5["1025: Invalid Header<br/>Required header missing<br/>Severity: error<br/>Remedy: Include required headers"]
+            P6["1026: Invalid Session ID<br/>Session ID format invalid<br/>Severity: error<br/>Remedy: Use 32+ hex chars"]
+            P7["1027: Invalid Protocol Version<br/>Version not supported<br/>Severity: error<br/>Remedy: Use 2025-11-25 or 2024-11-05"]
+            P8["1028: Missing Required Field<br/>Required field missing<br/>Severity: error<br/>Remedy: Check API spec"]
+            P9["1029: Field Type Mismatch<br/>Type doesn't match schema<br/>Severity: error<br/>Remedy: Check API documentation"]
+
+            PARAM_CAT --> P1
+            PARAM_CAT --> P2
+            PARAM_CAT --> P3
+            PARAM_CAT --> P4
+            PARAM_CAT --> P5
+            PARAM_CAT --> P6
+            PARAM_CAT --> P7
+            PARAM_CAT --> P8
+            PARAM_CAT --> P9
+        end
+
+        %% ========================================================================
+        %% CATEGORY 4: Path & URI Security (1036-1040)
+        %% ========================================================================
+        subgraph "Path & URI Security Errors (1036-1040)"
+            direction TB
+
+            PATH_CAT["Category: Path Security<br/>HTTP: 400"]
+
+            PATH1["1036: Path Traversal Detected<br/>.. sequences detected<br/>Severity: critical<br/>Remedy: Remove .. or % sequences"]
+            PATH2["1037: Invalid Path Format<br/>Path format invalid<br/>Severity: error<br/>Remedy: Start with /, valid chars"]
+            PATH3["1038: Symlink Traversal<br/>Symlinks not allowed<br/>Severity: critical<br/>Remedy: Use direct paths"]
+            PATH4["1039: URI Out of Bounds<br/>URI outside roots<br/>Severity: error<br/>Remedy: Use allowed paths"]
+            PATH5["1040: Canonical Path Violation<br/>Non-canonical path<br/>Severity: error<br/>Remedy: Remove . or .. components"]
+
+            PATH_CAT --> PATH1
+            PATH_CAT --> PATH2
+            PATH_CAT --> PATH3
+            PATH_CAT --> PATH4
+            PATH_CAT --> PATH5
+        end
+
+        %% ========================================================================
+        %% CATEGORY 5: Resource & Entity (1046-1052)
+        %% ========================================================================
+        subgraph "Resource & Entity Errors (1046-1052)"
+            direction TB
+
+            RES_CAT["Category: Entity Management<br/>HTTP: 404/409"]
+
+            R1["1046: Resource Not Found<br/>Resource doesn't exist<br/>Severity: warn<br/>Remedy: Check resource URI"]
+            R2["1047: Resource Duplicate<br/>Resource already exists<br/>Severity: warn<br/>Remedy: Use different URI"]
+            R3["1048: Tool Not Found<br/>Tool doesn't exist<br/>Severity: warn<br/>Remedy: Check tools/list"]
+            R4["1049: Tool Duplicate<br/>Tool already registered<br/>Severity: warn<br/>Remedy: Use different name"]
+            R5["1050: Prompt Not Found<br/>Prompt doesn't exist<br/>Severity: warn<br/>Remedy: Check prompts/list"]
+            R6["1051: Prompt Duplicate<br/>Prompt already exists<br/>Severity: warn<br/>Remedy: Use different name"]
+            R7["1052: Entity Duplicate<br/>Entity already exists<br/>Severity: warn<br/>Remedy: Use different ID"]
+
+            RES_CAT --> R1
+            RES_CAT --> R2
+            RES_CAT --> R3
+            RES_CAT --> R4
+            RES_CAT --> R5
+            RES_CAT --> R6
+            RES_CAT --> R7
+        end
+
+        %% ========================================================================
+        %% CATEGORY 6: Rate Limiting (1056-1060)
+        %% ========================================================================
+        subgraph "Rate Limiting Errors (1056-1060)"
+            direction TB
+
+            RATE_CAT["Category: Throttling<br/>HTTP: 429"]
+
+            RATE1["1056: Rate Limit Exceeded<br/>Overall rate limit<br/>Severity: error<br/>Remedy: Slow down requests"]
+            RATE2["1057: Per-Second Rate Limit<br/>Max 100/sec<br/>Severity: error<br/>Remedy: Wait before retrying"]
+            RATE3["1058: Per-Minute Rate Limit<br/>Max 5000/min<br/>Severity: error<br/>Remedy: Wait or upgrade"]
+            RATE4["1059: Quota Exceeded<br/>Monthly quota used<br/>Severity: error<br/>Remedy: Upgrade plan"]
+            RATE5["1060: Concurrent Limit<br/>Max 100 connections<br/>Severity: error<br/>Remedy: Close unused"]
+
+            RATE_CAT --> RATE1
+            RATE_CAT --> RATE2
+            RATE_CAT --> RATE3
+            RATE_CAT --> RATE4
+            RATE_CAT --> RATE5
+        end
+
+        %% ========================================================================
+        %% CATEGORY 7: Protocol & Transport (1066-1070)
+        %% ========================================================================
+        subgraph "Protocol & Transport Errors (1066-1070)"
+            direction TB
+
+            PROTO_CAT["Category: Communication<br/>HTTP: 400/413/415/503"]
+
+            PROTO1["1066: Protocol Error<br/>Protocol-level error<br/>Severity: error<br/>Remedy: Review message format"]
+            PROTO2["1067: Transport Error<br/>Network I/O error<br/>Severity: error<br/>Remedy: Check connection"]
+            PROTO3["1068: Message Too Large<br/>Max 1MB per message<br/>Severity: error<br/>Remedy: Compress or split"]
+            PROTO4["1069: Timeout<br/>Operation timeout<br/>Severity: warn<br/>Remedy: Increase timeout"]
+            PROTO5["1070: Encoding Not Supported<br/>Encoding unsupported<br/>Severity: error<br/>Remedy: Use UTF-8"]
+
+            PROTO_CAT --> PROTO1
+            PROTO_CAT --> PROTO2
+            PROTO_CAT --> PROTO3
+            PROTO_CAT --> PROTO4
+            PROTO_CAT --> PROTO5
+        end
+
+        %% ========================================================================
+        %% CATEGORY 8: Server State (1076-1080)
+        %% ========================================================================
+        subgraph "Server State Errors (1076-1080)"
+            direction TB
+
+            STATE_CAT["Category: Server Availability<br/>HTTP: 503"]
+
+            S1["1076: Server Uninitialized<br/>Not initialized<br/>Severity: error<br/>Remedy: Call initialize first"]
+            S2["1077: Server Shutting Down<br/>Server closing<br/>Severity: warn<br/>Remedy: Reconnect after restart"]
+            S3["1078: Service Unavailable<br/>Temporarily unavailable<br/>Severity: warn<br/>Remedy: Retry later"]
+            S4["1079: Internal Error<br/>Unexpected error<br/>Severity: critical<br/>Remedy: Check logs, contact support"]
+            S5["1080: Dependency Unavailable<br/>External service down<br/>Severity: warn<br/>Remedy: Wait or contact support"]
+
+            STATE_CAT --> S1
+            STATE_CAT --> S2
+            STATE_CAT --> S3
+            STATE_CAT --> S4
+            STATE_CAT --> S5
+        end
+
+        %% ========================================================================
+        %% CATEGORY 9: Circuit Breaker & Health (1086-1089)
+        %% ========================================================================
+        subgraph "Circuit Breaker & Health Errors (1086-1089)"
+            direction TB
+
+            HEALTH_CAT["Category: System Health<br/>HTTP: 503"]
+
+            H1["1086: Circuit Breaker Open<br/>Too many failures<br/>Severity: warn<br/>Remedy: Wait before retrying"]
+            H2["1087: Health Check Failed<br/>Server unhealthy<br/>Severity: warn<br/>Remedy: May be degraded"]
+            H3["1088: Service Degraded<br/>Features unavailable<br/>Severity: warn<br/>Remedy: Reduced functionality"]
+            H4["1089: Resource Exhausted<br/>Out of resources<br/>Severity: critical<br/>Remedy: Scale up"]
+
+            HEALTH_CAT --> H1
+            HEALTH_CAT --> H2
+            HEALTH_CAT --> H3
+            HEALTH_CAT --> H4
+        end
+
+        %% ========================================================================
+        %% SEVERITY LEVELS
+        %% ========================================================================
+        subgraph "Severity Classification"
+            WARN["warn<br/>5 codes<br/>1046-1052, 1069, 1077, 1078, 1080, 1086-1088"]
+            ERROR["error<br/>22 codes<br/>1001-1002, 1005, 1011-1016, 1021-1029, 1037, 1039-1040, 1056-1060, 1066-1070, 1076"]
+            CRITICAL["critical<br/>7 codes<br/>1003-1004, 1036-1038, 1079, 1089"]
+        end
+
+        %% ========================================================================
+        %% HTTP STATUS CODES
+        %% ========================================================================
+        subgraph "HTTP Status Mapping"
+            HTTP_200["200 OK<br/>Success"]
+            HTTP_202["202 Accepted<br/>Processing"]
+            HTTP_400["400 Bad Request<br/>1021-1029, 1036-1040, 1066, 1070"]
+            HTTP_401["401 Unauthorized<br/>1011-1016"]
+            HTTP_403["403 Forbidden<br/>1014"]
+            HTTP_404["404 Not Found<br/>1046, 1048, 1050"]
+            HTTP_409["409 Conflict<br/>1047, 1049, 1051, 1052"]
+            HTTP_413["413 Payload Too Large<br/>1068"]
+            HTTP_415["415 Unsupported Media<br/>1024, 1070"]
+            HTTP_429["429 Too Many Requests<br/>1001-1003, 1056-1060"]
+            HTTP_503["503 Service Unavailable<br/>1004-1005, 1067, 1069, 1076-1080, 1086-1089"]
+        end
+
+        %% ========================================================================
+        /// RELATIONSHIPS
+        %% ========================================================================
+        ROOT --> QUEUE_CAT
+        ROOT --> AUTH_CAT
+        ROOT --> PARAM_CAT
+        ROOT --> PATH_CAT
+        ROOT --> RES_CAT
+        ROOT --> RATE_CAT
+        ROOT --> PROTO_CAT
+        ROOT --> STATE_CAT
+        ROOT --> HEALTH_CAT
+
+        QUEUE_CAT -.severity. WARN
+        QUEUE_CAT -.severity. ERROR
+        QUEUE_CAT -.severity. CRITICAL
+
+        QUEUE_CAT -.http. HTTP_429
+        QUEUE_CAT -.http. HTTP_503
+        AUTH_CAT -.http. HTTP_401
+        AUTH_CAT -.http. HTTP_403
+        PARAM_CAT -.http. HTTP_400
+        PATH_CAT -.http. HTTP_400
+        RES_CAT -.http. HTTP_404
+        RES_CAT -.http. HTTP_409
+        RATE_CAT -.http. HTTP_429
+        PROTO_CAT -.http. HTTP_400
+        PROTO_CAT -.http. HTTP_413
+        PROTO_CAT -.http. HTTP_415
+        PROTO_CAT -.http. HTTP_503
+        STATE_CAT -.http. HTTP_503
+        HEALTH_CAT -.http. HTTP_503
+    end
+
+    %% ========================================================================
+    %% LEGEND
+    %% ========================================================================
+    subgraph "Legend"
+        L1["Error Code Range: 1001-1089 (89 codes)"]
+        L2["Severity Levels:<br/>• warn: Recoverable, retry possible<br/>• error: Client error, fix needed<br/>• critical: Server error, immediate action"]
+        L3["HTTP Status Codes:<br/>• 4xx: Client errors<br/>• 5xx: Server errors<br/>• 200/202: Success"]
+        L4["Categories:<br/>1. Queue (1001-1005)<br/>2. Auth (1011-1016)<br/>3. Params (1021-1029)<br/>4. Paths (1036-1040)<br/>5. Resources (1046-1052)<br/>6. Rate Limit (1056-1060)<br/>7. Protocol (1066-1070)<br/>8. Server (1076-1080)<br/>9. Health (1086-1089)"]
+    end
+
+    classDef rootStyle fill:#f5f5f5,stroke:#424242,stroke-width:3px
+    classDef queueStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef authStyle fill:#ffebee,stroke:#c62828,stroke-width:2px
+    classDef paramStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef pathStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef resourceStyle fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+    classDef rateStyle fill:#fff8e1,stroke:#f57f17,stroke-width:2px
+    classDef protoStyle fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef stateStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    classDef healthStyle fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    classDef severityStyle fill:#fff9c4,stroke:#fbc02d,stroke-width:2px
+    classDef httpStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef legendStyle fill:#fafafa,stroke:#616161,stroke-width:1px
+
+    class ROOT rootStyle
+    class QUEUE_CAT,Q1,Q2,Q3,Q4,Q5 queueStyle
+    class AUTH_CAT,A1,A2,A3,A4,A5,A6 authStyle
+    class PARAM_CAT,P1,P2,P3,P4,P5,P6,P7,P8,P9 paramStyle
+    class PATH_CAT,PATH1,PATH2,PATH3,PATH4,PATH5 pathStyle
+    class RES_CAT,R1,R2,R3,R4,R5,R6,R7 resourceStyle
+    class RATE_CAT,RATE1,RATE2,RATE3,RATE4,RATE5 rateStyle
+    class PROTO_CAT,PROTO1,PROTO2,PROTO3,PROTO4,PROTO5 protoStyle
+    class STATE_CAT,S1,S2,S3,S4,S5 stateStyle
+    class HEALTH_CAT,H1,H2,H3,H4 healthStyle
+    class WARN,ERROR,CRITICAL severityStyle
+    class HTTP_200,HTTP_202,HTTP_400,HTTP_401,HTTP_403,HTTP_404,HTTP_409,HTTP_413,HTTP_415,HTTP_429,HTTP_503 httpStyle
+    class L1,L2,L3,L4 legendStyle

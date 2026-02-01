@@ -1,0 +1,63 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#006400', 'edgeLabelBackground':'#ffffff'}}}%%
+graph TB
+    subgraph "Test Pyramid - Chicago School TDD"
+        EUNIT[EUnit Tests<br/>84 modules<br/>Fast Unit Checks]
+        CT[CommonTest Suites<br/>Integration Testing<br/>Real Processes]
+        PROPER[Property-Based Tests<br/>Proper Generative<br/>Invariant Verification]
+        CHAOS[Chaos Engineering<br/>11 Failure Scenarios<br/>Resilience Validation]
+    end
+
+    subgraph "Coverage Requirements (≥80%)"
+        CORE[erlmcp_core<br/>97 modules<br/>Protocol Implementation]
+        TRANS[erlmcp_transports<br/>23 modules<br/>Transport Behaviors]
+        OBS[erlmcp_observability<br/>31 modules<br/>Metrics & Tracing]
+        VAL[erlmcp_validation<br/>13 modules<br/>Compliance Gates]
+    end
+
+    subgraph "Module Coverage Analysis"
+        M1[erlmcp_server.erl<br/>Resources/Tools/Prompts<br/>Coverage: 85%]
+        M2[erlmcp_client.erl<br/>Request Correlation<br/>Coverage: 88%]
+        M3[erlmcp_session.erl<br/>State Management<br/>Coverage: 82%]
+        M4[erlmcp_json_rpc.erl<br/>Protocol Encoding<br/>Coverage: 91%]
+        M5[erlmcp_registry.erl<br/>gproc Routing<br/>Coverage: 87%]
+    end
+
+    subgraph "Coverage Gaps (<80%)"
+        G1[Low Coverage Modules<br/>Require Additional Tests]
+        G2[Edge Cases<br/>Property-Based Testing]
+        G3[Error Paths<br/>Chaos Scenarios]
+    end
+
+    EUNIT --> CORE
+    EUNIT --> M1
+    EUNIT --> M2
+    EUNIT --> M3
+    EUNIT --> M4
+    EUNIT --> M5
+
+    CT --> TRANS
+    CT --> OBS
+    CT --> VAL
+
+    PROPER --> CORE
+    PROPER --> G2
+    PROPER --> G3
+
+    CHAOS --> OBS
+    CHAOS --> G3
+
+    CORE --> VAL
+    TRANS --> VAL
+    OBS --> VAL
+
+    M1 --> G1
+    M2 --> G1
+    M3 --> G1
+    M4 --> G1
+    M5 --> G1
+
+    style EUNIT fill:#90EE90,stroke:#006400,stroke-width:4px
+    style CT fill:#87CEEB,stroke:#0000CD,stroke-width:4px
+    style PROPER fill:#FFD700,stroke:#FF8C00,stroke-width:4px
+    style CHAOS fill:#FF6347,stroke:#DC143C,stroke-width:4px
+    style VAL fill:#FF69B4,stroke:#C71585,stroke-width:4px

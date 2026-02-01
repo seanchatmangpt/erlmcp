@@ -1,0 +1,106 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#ff9900', 'primaryTextColor':'#fff', 'primaryBorderColor':'#ff6600', 'lineColor':'#ff6600', 'sectionBkgColor':'#ffe6cc', 'altSectionBkgColor':'#ffd9b3', 'gridColor':'#ffcc00'}}}%%
+flowchart TB
+    subgraph Testing["Testing Landscape"]
+        direction TB
+
+        subgraph Core["erlmcp_core (97 modules)"]
+            C1[Protocol<br/>erlmcp_json_rpc]
+            C2[Registry<br/>erlmcp_registry]
+            C3[Server<br/>erlmcp_server]
+            C4[Client<br/>erlmcp_client]
+            C5[Session<br/>erlmcp_session*]
+            C6[Resources<br/>erlmcp_resources]
+            C7[Tools<br/>erlmcp_tool]
+            C8[Prompts<br/>erlmcp_prompt*]
+            C9[Auth<br/>erlmcp_auth*]
+            C10[Security<br/>erlmcp_secrets]
+        end
+
+        subgraph Transports["erlmcp_transports (23 modules)"]
+            T1[Behavior<br/>erlmcp_transport_behavior]
+            T2[STDIO<br/>erlmcp_transport_stdio]
+            T3[TCP<br/>erlmcp_transport_tcp]
+            T4[HTTP<br/>erlmcp_transport_http*]
+            T5[WebSocket<br/>erlmcp_transport_ws]
+            T6[SSE<br/>erlmcp_transport_sse*]
+            T7[Pool<br/>erlmcp_transport_pool]
+            T8[Registry<br/>erlmcp_transport_registry]
+        end
+
+        subgraph Observability["erlmcp_observability (31 modules)"]
+            O1[Metrics<br/>erlmcp_metrics*]
+            O2[Tracing<br/>erlmcp_tracing]
+            O3[OTEL<br/>erlmcp_otel*]
+            O4[Dashboard<br/>erlmcp_dashboard*]
+            O5[Chaos<br/>erlmcp_chaos*]
+            O6[Health<br/>erlmcp_health_monitor]
+            O7[Audit<br/>erlmcp_audit_log]
+        end
+
+        subgraph Validation["erlmcp_validation (13 modules)"]
+            V1[Protocol Validator<br/>erlmcp_protocol_validator]
+            V2[Transport Validator<br/>erlmcp_transport_validator]
+            V3[Security Validator<br/>erlmcp_security_validator]
+            V4[Performance Validator<br/>erlmcp_performance_validator]
+            V5[Compliance Report<br/>erlmcp_compliance_report]
+        end
+    end
+
+    subgraph TestTypes["Test Coverage Distribution"]
+        direction LR
+        EUnit["EUnit<br/>84 modules<br/>Unit Tests<br/>Chicago School TDD"]
+        CT["Common Test<br/>15+ suites<br/>Integration Tests<br/>Multi-process"]
+        Proper["Proper<br/>Property Tests<br/>Generative<br/>Invariants"]
+    end
+
+    subgraph Coverage["Coverage by Layer"]
+        direction TB
+        CoreCoverage["Core: 85%+<br/>97 modules tested"]
+        TransportCoverage["Transports: 82%<br/>23 modules tested"]
+        ObsCoverage["Observability: 80%<br/>31 modules tested"]
+        ValCoverage["Validation: 88%<br/>13 modules tested"]
+    end
+
+    %% Test Type Mapping
+    C1 & C2 & C3 & C4 --> EUnit
+    C1 & C2 & C3 & C4 --> CT
+    C1 --> Proper
+
+    T1 & T2 & T3 & T7 & T8 --> EUnit
+    T1 & T2 & T3 & T4 & T5 --> CT
+
+    O1 & O2 & O5 & O7 --> EUnit
+    O1 & O2 & O5 & O6 --> CT
+    O5 --> Proper
+
+    V1 & V2 & V3 & V4 --> CT
+
+    %% Coverage Mapping
+    C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 & C9 & C10 --> CoreCoverage
+    T1 & T2 & T3 & T4 & T5 & T6 & T7 & T8 --> TransportCoverage
+    O1 & O2 & O3 & O4 & O5 & O6 & O7 --> ObsCoverage
+    V1 & V2 & V3 & V4 & V5 --> ValCoverage
+
+    %% Styling
+    classDef coreStyle fill:#ff9900,stroke:#ff6600,stroke-width:3px,color:#fff
+    classDef transportStyle fill:#00bfff,stroke:#0080ff,stroke-width:3px,color:#fff
+    classDef obsStyle fill:#32cd32,stroke:#228b22,stroke-width:3px,color:#fff
+    classDef valStyle fill:#ff69b4,stroke:#ff1493,stroke-width:3px,color:#fff
+    classDef testStyle fill:#ffd700,stroke:#ff8c00,stroke-width:2px,color:#000
+    classDef coverageStyle fill:#ffe4b5,stroke:#deb887,stroke-width:2px,color:#000
+
+    class C1,C2,C3,C4,C5,C6,C7,C8,C9,C10 coreStyle
+    class T1,T2,T3,T4,T5,T6,T7,T8 transportStyle
+    class O1,O2,O3,O4,O5,O6,O7 obsStyle
+    class V1,V2,V3,V4,V5 valStyle
+    class EUnit,CT,Proper testStyle
+    class CoreCoverage,TransportCoverage,ObsCoverage,ValCoverage coverageStyle
+
+    %% Test Statistics
+    subgraph Stats["Test Statistics"]
+        TotalTests["Total Tests: 1,500+<br/>EUnit: 1,200<br/>CT: 250<br/>Proper: 50"]
+        TotalCoverage["Overall Coverage: 83%<br/>Lines: 85%<br/>Branches: 81%"]
+    end
+
+    EUnit & CT & Proper --> TotalTests
+    CoreCoverage & TransportCoverage & ObsCoverage & ValCoverage --> TotalCoverage

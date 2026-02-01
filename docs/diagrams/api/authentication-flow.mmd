@@ -1,0 +1,123 @@
+```mermaid
+sequenceDiagram
+    participant Client as erlmcp_client
+    participant Auth as erlmcp_auth<br/>(Authentication)
+    participant RateLimit as erlmcp_auth_rate_limiter
+    participant Server as erlmcp_server
+    participant Secrets as erlmcp_secrets<br/>(Vault/AWS/Local)
+    participant Transport as Transport Layer
+
+    Note over Client,Transport: Authentication & Authorization Flow
+
+    Client->>Auth: Initialize connection
+    activate Auth
+
+    Auth->>Client: Request credentials
+    activate Client
+    Client-->>Auth: Credentials<br/>(API key, token, cert)
+    deactivate Client
+
+    Auth->>Secrets: Retrieve secret<br/>(encrypted storage)
+    activate Secrets
+    Secrets-->>Auth: Secret value
+    deactivate Secrets
+
+    Auth->>RateLimit: Check rate limit<br/>(per-client quota)
+    activate RateLimit
+    RateLimit-->>Auth: Rate limit status<br/>(allow/deny)
+    deactivate RateLimit
+
+    alt Rate limit exceeded
+        Auth-->>Client: {error, rate_limit_exceeded}
+        Client->>Client: Exponential backoff
+    else Rate limit OK
+        Auth->>Auth: Validate credentials<br/>(JWT, mTLS, API key)
+        Auth->>Auth: Extract claims/roles
+
+        alt Credentials invalid
+            Auth-->>Client: {error, unauthorized}
+            Client->>Client: Authentication failed
+        else Credentials valid
+            Auth->>Server: Create authenticated session
+            activate Server
+            Server->>Server: Generate session token
+            Server-->>Auth: Session context
+            deactivate Server
+
+            Auth-->>Client: Authentication success<br/>(session token, capabilities)
+            Client->>Client: Store session context
+
+            Note over Client,Transport: Authenticated Request Flow
+
+            Client->>Client: Prepare request<br/>with session token
+            Client->>RateLimit: Check request quota
+            activate RateLimit
+            RateLimit-->>Client: Quota available
+            deactivate RateLimit
+
+            Client->>Transport: Send authenticated request
+            activate Transport
+            Transport->>Transport: Add auth headers<br/>(Authorization, mTLS cert)
+            Transport->>Server: Forward request with auth
+            activate Server
+
+            Server->>Auth: Validate session token
+            activate Auth
+            Auth->>Auth: Verify token signature<br/>(jose JWT validation)
+            Auth->>Auth: Extract permissions/roles
+            Auth-->>Server: Authorization context
+            deactivate Auth
+
+            alt Authorization failed
+                Server-->>Client: {error, forbidden}
+                deactivate Server
+                Client->>Client: Handle permission denied
+            else Authorization OK
+                Server->>Server: Execute request<br/>(resource/tool/prompt)
+                Server-->>Client: Response
+                deactivate Server
+                deactivate Transport
+            end
+        end
+    end
+
+    deactivate Auth
+
+    Note over Client,Transport: mTLS Authentication Flow
+
+    Client->>Transport: Initiate TLS handshake
+    activate Transport
+    Transport->>Transport: Present client certificate
+    Transport->>Auth: Validate certificate
+    activate Auth
+    Auth->>Auth: Verify certificate chain<br/>(CA signature)
+    Auth->>Auth: Check certificate revocation<br/>(CRL/OCSP)
+    Auth->>Auth: Extract client identity<br/>(CN, SAN)
+    Auth-->>Transport: Certificate valid
+    deactivate Auth
+    Transport-->>Client: TLS established
+    deactivate Transport
+
+    Note over Client,Transport: JWT Token Refresh Flow
+
+    Client->>Auth: Request token refresh<br/>(refresh token)
+    activate Auth
+    Auth->>Secrets: Validate refresh token
+    activate Secrets
+    Secrets-->>Auth: Token valid
+    deactivate Secrets
+    Auth->>Auth: Generate new access token
+    Auth->>Auth: Sign with private key<br/>(jose JWT signing)
+    Auth-->>Client: New access token
+    deactivate Auth
+    Client->>Client: Update session context
+
+    Note over Client,Transport: Rate Limit Recovery
+
+    RateLimit->>RateLimit: Reset rate limit window<br/>(time-based)
+    Client->>RateLimit: Check rate limit
+    activate RateLimit
+    RateLimit-->>Client: Rate limit reset<br/>(quota available)
+    deactivate RateLimit
+    Client->>Server: Retry request
+```

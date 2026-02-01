@@ -1,0 +1,282 @@
+```mermaid
+flowchart TB
+    subgraph CLIENTS["Clients"]
+        AI_CLIENT["AI Assistant<br/>(Claude, GPT)"]
+        DEV_CLIENT["Developer Tools<br/>(IDE, CLI)"]
+        AUTO_CLIENT["Automation<br/>(CI/CD, Scripts)"]
+    end
+
+    subgraph GATEWAY["API Gateway Layer"]
+        subgraph ROUTING["Request Router"]
+            HEALTH["Health Check<br/>/health"]
+            METRICS_EP["Metrics Endpoint<br/>/metrics"]
+            DASHBOARD["Dashboard<br/>/dashboard"]
+            API_EP["API Endpoint<br/>/api/*"]
+        end
+
+        subgraph MIDDLEWARE["Middleware Chain"]
+            AUTH["Authentication<br/>(mTLS/API Key)"]
+            RATE_LIMIT["Rate Limiter<br/>(Token Bucket)"]
+            VALIDATOR["Request Validator<br/>(JSON Schema)"]
+        end
+
+        subgraph LOAD_BALANCER["Load Balancer"]
+            LB["Round Robin<br/>Connections"]
+        end
+    end
+
+    subgraph ERLMCP["erlmcp Backend"]
+        subgraph TRANSPORTS["Transport Layer"]
+            STDIO["STDIO Transport"]
+            TCP["TCP Transport<br/>(ranch)"]
+            HTTP["HTTP/2 Transport<br/>(gun)"]
+            WS["WebSocket<br/>(gun)"]
+        end
+
+        subgraph CORE["Core Protocol"]
+            REGISTRY["erlmcp_registry<br/>(gproc)"]
+            SERVERS["erlmcp_server_pool"]
+            CLIENTS_POOL["erlmcp_client_pool"]
+        end
+    end
+
+    subgraph EXTERNAL["External Services"]
+        VAULT["Vault<br/>(Secrets)"]
+        OTEL["OTEL Backend<br/>(Traces)"]
+        MONITOR["Health Monitor<br/>(Andon)"]
+    end
+
+    %% Client Connections
+    AI_CLIENT -->|"HTTPS/WSS"| GATEWAY
+    DEV_CLIENT -->|"HTTPS/CLI"| GATEWAY
+    AUTO_CLIENT -->|"HTTPS/API"| GATEWAY
+
+    %% Gateway Routing
+    GATEWAY --> HEALTH
+    GATEWAY --> METRICS_EP
+    GATEWAY --> DASHBOARD
+    GATEWAY --> API_EP
+
+    %% Middleware Chain
+    API_EP --> AUTH
+    AUTH --> RATE_LIMIT
+    RATE_LIMIT --> VALIDATOR
+
+    %% Load Balancing
+    VALIDATOR --> LB
+
+    %% Transport Routing
+    LB -->|"Protocol Negotiation"| TRANSPORTS
+    LB -->|"STDIO"| STDIO
+    LB -->|"TCP Sockets"| TCP
+    LB -->|"HTTP/2"| HTTP
+    LB -->|"WebSocket Upgrade"| WS
+
+    %% Core Integration
+    TRANSPORTS -->|"Registry Lookup"| REGISTRY
+    REGISTRY -->|"Route"| SERVERS
+    REGISTRY -->|"Route"| CLIENTS_POOL
+
+    %% External Dependencies
+    AUTH -->|"Secret Lookup"| VAULT
+    SERVERS -->|"Traces"| OTEL
+    HEALTH -->|"Status"| MONITOR
+
+    style CLIENTS fill:#e3f2fd
+    style GATEWAY fill:#fff3e0
+    style ERLMCP fill:#e1f5fe
+    style EXTERNAL fill:#f3e5f5
+    style MIDDLEWARE fill:#ffe0b2
+    style TRANSPORTS fill:#b2dfdb
+    style CORE fill:#c8e6c9
+```
+
+## API Gateway and Routing Architecture
+
+### Gateway Components
+
+| Component | Purpose | Technology |
+|-----------|---------|------------|
+| **Health Check** | Liveness/readiness probes | `/health` endpoint |
+| **Metrics Endpoint** | Prometheus scraping | `/metrics` (OpenMetrics) |
+| **Dashboard** | Real-time visualization | WebSocket + Cowboy |
+| **API Router** | Request routing | Cowboy HTTP server |
+
+### Middleware Chain
+
+#### 1. Authentication Layer
+```erlang
+%% mTLS Authentication
+-case ssl:peername(Socket) of
+    {ok, {PeerIP, _Port}} ->
+        case validate_client_cert(PeerIP) of
+            ok -> next_middleware();
+            {error, invalid_cert} -> {error, unauthorized}
+        end;
+end.
+
+%% API Key Authentication
+-case get_header(<<"x-api-key">>) of
+    undefined -> {error, missing_api_key};
+    ApiKey ->
+        case erlmcp_secrets:get_secret(<<"api-keys/", ApiKey/binary>>) of
+            {ok, _} -> next_middleware();
+            {error, not_found} -> {error, invalid_api_key}
+        end
+end.
+```
+
+#### 2. Rate Limiting
+```erlang
+%% Token Bucket Algorithm
+-allow_request(ClientId) ->
+    case ets:lookup(rate_limits, ClientId) of
+        [#rate_limit{tokens = Tokens}] when Tokens > 0 ->
+            ets:update_counter(rate_limits, ClientId,
+                {#rate_limit.tokens, -1}),
+            {ok, allowed};
+        _ ->
+            {error, rate_limited}
+    end.
+
+%% Configuration: 100 req/min per client
+{erlmcp_rate_limiter, [
+    {capacity, 100},
+    {refill_rate, 100},
+    {refill_interval, 60000}  % 1 minute
+]}.
+```
+
+#### 3. Request Validation
+```erlang
+%% JSON Schema Validation
+-validate_request(Request, Schema) ->
+    case jesse:validate(Request, Schema) of
+        {ok, _} -> next_middleware();
+        {error, Errors} -> {error, {validation_failed, Errors}}
+    end.
+
+%% MCP Schema Validation
+mcp_request_schema => #{
+    type => object,
+    required => ["jsonrpc", "method", "id"],
+    properties => #{
+        jsonrpc => #{type => string, pattern => "^2.0$"},
+        method => #{type => string},
+        id => #{oneOf => [#{type => string}, #{type => number}]},
+        params => #{type => object}
+    }
+}.
+```
+
+### Load Balancing Strategy
+
+#### Round-Robin with Connection Tracking
+```erlang
+%% Connection Distribution
+balance_connection(TransportId, AvailableServers) ->
+    case ets:lookup(connection_counts, TransportId) of
+        [] -> select_least_loaded(AvailableServers);
+        [#connection_count{server = Server, count = Count}] ->
+            case Count < ?MAX_CONN_PER_SERVER of
+                true -> {ok, Server};
+                false -> select_least_loaded(AvailableServers)
+            end
+    end.
+
+select_least_loaded(Servers) ->
+    Counts = [{S, get_connection_count(S)} || S <- Servers],
+    {Server, _MinCount} = lists:min(Counts, fun erlang:'>='/2),
+    {ok, Server}.
+```
+
+### Transport Protocol Negotiation
+
+```
+Client Request
+    ↓
+[HTTP Upgrade Check]
+    ├─ WebSocket Upgrade? → WS Transport
+    ├─ HTTP/2 Request? → HTTP Transport
+    └─ TCP Raw? → TCP Transport
+    ↓
+Transport Registration (gproc)
+    gproc:add_local_name({mcp, transport, TransportId})
+    ↓
+Server Binding
+    gproc:lookup_local_name({mcp, server, ServerId})
+    ↓
+Request Processing
+```
+
+### Configuration Examples
+
+**Gateway Configuration:**
+```erlang
+{erlmcp_gateway, [
+    {listen_port, 3000},
+    {listen_ip, "0.0.0.0"},
+    {tls_enabled, true},
+    {certfile, "priv/certs/server.pem"},
+    {keyfile, "priv/certs/key.pem"},
+    {middlewares, [
+        erlmcp_auth_middleware,
+        erlmcp_rate_limit_middleware,
+        erlmcp_validation_middleware
+    ]}
+]}.
+```
+
+**Load Balancer Configuration:**
+```erlang
+{erlmcp_load_balancer, [
+    {strategy, round_robin},
+    {max_connections_per_server, 1000},
+    {health_check_interval, 30000},
+    {retry_policy, #{
+        max_retries => 3,
+        backoff_ms => 100
+    }}
+]}.
+```
+
+### Monitoring and Observability
+
+**Gateway Metrics:**
+```erlang
+%% Metrics Collected
+- erlmcp_gateway_requests_total
+- erlmcp_gateway_request_duration_seconds
+- erlmcp_gateway_active_connections
+- erlmcp_gateway_rate_limit_denied_total
+- erlmcp_gateway_auth_failures_total
+- erlmcp_gateway_validation_errors_total
+```
+
+**Health Check Response:**
+```json
+{
+  "status": "healthy",
+  "uptime_seconds": 3600,
+  "transports": {
+    "stdio": "up",
+    "tcp": "up",
+    "http": "up",
+    "websocket": "up"
+  },
+  "servers": {
+    "active": 5,
+    "total_connections": 423
+  }
+}
+```
+
+### Security Best Practices
+
+1. **TLS 1.3 Only**: Enforce modern TLS versions
+2. **mTLS**: Mutual TLS for service-to-service communication
+3. **API Key Rotation**: Rotate keys every 90 days
+4. **Rate Limiting**: Prevent abuse and DoS
+5. **Input Validation**: Strict JSON Schema validation
+6. **CORS**: Configure allowed origins explicitly
+7. **Security Headers**: HSTS, CSP, X-Frame-Options
