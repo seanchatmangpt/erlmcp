@@ -1,0 +1,370 @@
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                   ERLMCP MAKEFILE REFACTORING ARCHITECTURE                    ║
+║                           SPARC Methodology v1.0.0                            ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                            CURRENT STATE (BEFORE)                             │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────┐
+    │   Makefile (MONOLITH)               │
+    │   ├── 1499 lines                    │
+    │   ├── 110 targets                   │
+    │   ├── Mixed concerns                │
+    │   ├── Deep nesting (50+ line blocks)│
+    │   ├── Implicit dependencies         │
+    │   ├── Duplication (per-app targets) │
+    │   ├── No tests                      │
+    │   └── Logs in /tmp/ (ephemeral)     │
+    └─────────────────────────────────────┘
+                     │
+                     │ PROBLEMS:
+                     │ • Cognitive load (110 targets)
+                     │ • Maintainability (1499 lines)
+                     │ • Testability (0%)
+                     │ • Parallelism (manual)
+                     │ • Cloud safety (~80%)
+                     ▼
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                            TARGET STATE (AFTER)                               │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  Makefile (ORCHESTRATOR) - 150 lines                                        │
+│  ├── Canonical Targets:                                                     │
+│  │   ├── doctor   (environment health check)                                │
+│  │   ├── quick    (fast feedback: compile + smoke tests <5min)             │
+│  │   ├── verify   (full validation: spec + transport + dialyzer <15min)    │
+│  │   └── ci-local (reproduce CI workflow exactly)                           │
+│  │                                                                           │
+│  └── Include Chain:                                                          │
+│      ├── include makefiles/00-config.mk         (constants, colors)         │
+│      ├── include makefiles/01-dependencies.mk   (OTP, rebar3, deps)         │
+│      ├── include makefiles/02-compile.mk        (compilation targets)       │
+│      ├── include makefiles/03-test.mk           (test targets)              │
+│      ├── include makefiles/04-quality-gates.mk  (validate-* targets)        │
+│      ├── include makefiles/05-tcps.mk           (TCPS manufacturing)        │
+│      ├── include makefiles/06-governance.mk     (hooks, settings)           │
+│      ├── include makefiles/07-cli.mk            (CLI versioning)            │
+│      ├── include makefiles/08-benchmarks.mk     (performance tests)         │
+│      ├── include makefiles/09-metrics.mk        (quality metrics)           │
+│      ├── include makefiles/10-examples.mk       (example runners)           │
+│      ├── include makefiles/11-release.mk        (release targets)           │
+│      ├── include makefiles/12-cleanup.mk        (clean, distclean)          │
+│      └── include makefiles/99-help.mk           (help documentation)        │
+└─────────────────────────────────────────────────────────────────────────────┘
+         │                │                │                │
+         │                │                │                │
+         ▼                ▼                ▼                ▼
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ 00-config.mk   │ │ 01-deps.mk     │ │ 02-compile.mk  │ │ 03-test.mk     │
+│ ─────────────  │ │ ──────────     │ │ ─────────────  │ │ ──────────     │
+│ • Constants    │ │ • OTP check    │ │ • compile      │ │ • test         │
+│ • Colors       │ │ • rebar3       │ │ • compile-*    │ │ • eunit        │
+│ • Paths        │ │ • deps         │ │ • parallel     │ │ • ct           │
+│ • Env vars     │ │ • profile      │ │ • incremental  │ │ • coverage     │
+│                │ │                │ │ • locking      │ │                │
+│ 50 lines       │ │ 80 lines       │ │ 120 lines      │ │ 150 lines      │
+└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
+
+         │                │                │                │
+         │                │                │                │
+         ▼                ▼                ▼                ▼
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ 04-gates.mk    │ │ 05-tcps.mk     │ │ 06-govern.mk   │ │ 07-cli.mk      │
+│ ─────────────  │ │ ──────────     │ │ ─────────────  │ │ ──────────     │
+│ • validate     │ │ • jidoka       │ │ • hooks        │ │ • cli-version  │
+│ • validate-*   │ │ • andon        │ │ • settings     │ │ • cli-release  │
+│ • gate FSM     │ │ • poka-yoke    │ │ • receipts     │ │ • cli-test     │
+│ • receipts     │ │ • receipts     │ │ • governance   │ │ • cli-bench    │
+│                │ │                │ │                │ │                │
+│ 200 lines      │ │ 120 lines      │ │ 150 lines      │ │ 180 lines      │
+└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
+
+         │                │                │                │
+         │                │                │                │
+         ▼                ▼                ▼                ▼
+┌────────────────┐ ┌────────────────┐ ┌────────────────┐ ┌────────────────┐
+│ 08-bench.mk    │ │ 09-metrics.mk  │ │ 10-examples.mk │ │ 11-release.mk  │
+│ ─────────────  │ │ ──────────     │ │ ─────────────  │ │ ──────────     │
+│ • benchmark    │ │ • snapshot     │ │ • mcp-complete │ │ • release      │
+│ • bench-quick  │ │ • trend        │ │ • example-help │ │ • release-val  │
+│ • bench-9nines │ │ • report       │ │                │ │                │
+│ • regression   │ │ • ci           │ │                │ │                │
+│                │ │                │ │                │ │                │
+│ 100 lines      │ │ 80 lines       │ │ 50 lines       │ │ 60 lines       │
+└────────────────┘ └────────────────┘ └────────────────┘ └────────────────┘
+
+         │                │
+         │                │
+         ▼                ▼
+┌────────────────┐ ┌────────────────┐
+│ 12-cleanup.mk  │ │ 99-help.mk     │
+│ ─────────────  │ │ ──────────     │
+│ • clean        │ │ • help         │
+│ • distclean    │ │ • help-extra   │
+│                │ │ • auto-gen     │
+│                │ │                │
+│                │ │                │
+│ 40 lines       │ │ 100 lines      │
+└────────────────┘ └────────────────┘
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                         SUPPORTING INFRASTRUCTURE                             │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+.erlmcp/
+├── logs/                          # Centralized logging (persistent)
+│   ├── compile.log                # Main compilation log
+│   ├── compile-core.log           # Per-app logs
+│   ├── compile-transports.log
+│   ├── compile-observability.log
+│   ├── compile-tcps.log
+│   ├── test.log                   # Test logs
+│   └── gates/                     # Quality gate logs
+│       ├── gate-compile.log
+│       ├── gate-test.log
+│       ├── gate-coverage.log
+│       ├── gate-dialyzer.log
+│       └── gate-xref.log
+│
+├── locks/                         # File locks (parallelism)
+│   ├── core.lock                  # Lock for compile-core
+│   ├── transports.lock            # Lock for compile-transports
+│   ├── observability.lock         # Lock for compile-observability
+│   └── tcps.lock                  # Lock for compile-tcps
+│
+├── state/                         # Persistent state
+│   ├── gates.json                 # Gate status (PENDING/RUNNING/PASSED/FAILED)
+│   ├── last-compile-time.txt      # Incremental build tracking
+│   ├── baseline-performance.json  # Performance baselines
+│   └── andon.status               # Andon board status
+│
+└── receipts/                      # Quality receipts (TCPS)
+    ├── release-2.1.0.receipt      # Release quality certificate
+    └── session-*.receipt          # Session receipts
+
+tests/makefile-tests/
+├── test-framework.sh              # Test harness (assertions)
+├── test-00-config.sh              # Unit test: 00-config.mk
+├── test-01-dependencies.sh        # Unit test: 01-dependencies.mk
+├── test-02-compile.sh             # Unit test: 02-compile.mk
+├── test-03-test.sh                # Unit test: 03-test.mk
+├── test-04-quality-gates.sh       # Unit test: 04-quality-gates.mk
+├── test-05-tcps.sh                # Unit test: 05-tcps.mk
+├── test-06-governance.sh          # Unit test: 06-governance.mk
+├── test-07-cli.sh                 # Unit test: 07-cli.mk
+├── test-08-benchmarks.sh          # Unit test: 08-benchmarks.mk
+├── test-09-metrics.sh             # Unit test: 09-metrics.mk
+├── test-10-examples.sh            # Unit test: 10-examples.mk
+├── test-11-release.sh             # Unit test: 11-release.mk
+├── test-12-cleanup.sh             # Unit test: 12-cleanup.mk
+├── test-99-help.sh                # Unit test: 99-help.mk
+├── test-integration-doctor.sh     # Integration test: make doctor
+├── test-integration-quick.sh      # Integration test: make quick
+├── test-integration-verify.sh     # Integration test: make verify
+├── test-integration-ci-local.sh   # Integration test: make ci-local
+├── validate-refactoring.sh        # Full validation suite
+└── compare-performance.sh         # Performance regression checker
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                       DEPENDENCY DAG (make validate)                          │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+                           check-erlang-version
+                                    │
+                              setup-profile
+                                    │
+                                compile
+                       ╱────────────┼────────────╲
+                      ╱             │             ╲
+              compile-core   compile-transports   compile-observability
+                      ╲             │             ╱
+                       ╲────────────┼────────────╱
+                                    │
+                                  test
+                       ╱────────────┼────────────╲
+                      ╱             │             ╲
+                   eunit           ct          coverage
+                      ╲             │             ╱
+                       ╲────────────┼────────────╱
+                                    │
+                            validate-test
+                                    │
+                        ┌───────────┼───────────┐
+                        │           │           │
+                   dialyzer       xref    coverage-check
+                        │           │           │
+                        └───────────┼───────────┘
+                                    │
+                           validate-quality
+                                    │
+                            validate-bench
+                                    │
+                                validate
+
+    Legend:
+    ────  Sequential dependency (A must complete before B)
+    ╱ ╲   Parallel opportunity (can run concurrently)
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                          QUALITY GATE STATE MACHINE                           │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────┐
+    │ PENDING │  (Initial state, waiting for execution)
+    └────┬────┘
+         │ gate starts
+         ▼
+    ┌─────────┐
+    │ RUNNING │  (Gate in progress)
+    └────┬────┘
+         │
+         ├──── exit 0 ───────► ┌────────┐
+         │                     │ PASSED │  (Gate succeeded)
+         │                     └────────┘
+         │
+         ├──── exit 1 ───────► ┌────────┐
+         │                     │ FAILED │  (Gate failed, Andon pulled)
+         │                     └────┬───┘
+         │                          │ manual intervention
+         │                          │ (make andon-clear)
+         │                          ▼
+         │                     ┌─────────┐
+         │                     │ PENDING │ (Ready to retry)
+         │                     └─────────┘
+         │
+         └─ pre-condition ────► ┌─────────┐
+              failed             │ SKIPPED │  (Gate not applicable)
+                                 └─────────┘
+
+    Invariants:
+    • ∀gate. status(gate) ∈ {PENDING, RUNNING, PASSED, FAILED, SKIPPED}
+    • ∀gate₁, gate₂. depends(gate₂, gate₁) → (status(gate₁) = PASSED) ⊢ start(gate₂)
+    • ∀gate. status(gate) = FAILED → status(downstream_gates) = SKIPPED
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                         PARALLEL COMPILATION FLOW                             │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+    Sequential (Current):                     Parallel (New):
+    ────────────────────                      ───────────────
+
+    compile-core           30s                compile-parallel (make -j4)
+         ↓                                         │
+    compile-transports     30s                    ├─── compile-core          30s
+         ↓                                         ├─── compile-transports    30s
+    compile-observability  30s                    ├─── compile-observability 30s
+         ↓                                         └─── compile-tcps          15s
+    compile-tcps           15s                         │
+         │                                             │
+    ─────────────────────                         ─────────────────────
+    TOTAL: 105s                                   TOTAL: 30s (3.5x speedup)
+
+    File Locking Prevents Race Conditions:
+    ─────────────────────────────────────
+    Each app acquires lock before compilation:
+    • flock 200 && cd apps/erlmcp_core && rebar3 compile
+      200>.erlmcp/locks/core.lock
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                       ARMSTRONG PRINCIPLES PRESERVED                          │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+    ┌────────────────┐
+    │   ISOLATION    │  14 modules, single responsibility, <200 lines each
+    └────────────────┘  ✅ Preserved via modular structure
+
+    ┌────────────────┐
+    │  SUPERVISION   │  Explicit dependency DAG, documented ordering
+    └────────────────┘  ✅ Preserved via include chain + dependency graph
+
+    ┌────────────────┐
+    │ LET-IT-CRASH   │  All gates exit 1 on failure, no partial state
+    └────────────────┘  ✅ Preserved via quality gate FSM
+
+    ┌────────────────┐
+    │  BLACK-BOX     │  Test observable behavior, not implementation
+    └────────────────┘  ✅ Enforced via test harness (test-framework.sh)
+
+    ┌────────────────┐
+    │ DETERMINISM    │  Persistent logs, idempotent targets, reproducible
+    └────────────────┘  ✅ Enforced via .erlmcp/state/ + persistent logs
+
+    ┌────────────────┐
+    │  CLOUD SAFETY  │  TERM=dumb, no interactive prompts, deterministic
+    └────────────────┘  ✅ Enforced via environment checks + validation
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                            MIGRATION TIMELINE                                 │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+    Day 1-2: Foundation (M1)
+    ├── TASK-001: Directory structure
+    ├── TASK-002: Configuration extraction
+    └── TASK-003: Logging infrastructure
+
+    Day 3-5: Core Modules (M2)
+    ├── TASK-004: Dependencies
+    ├── TASK-005: Compilation
+    ├── TASK-006: Testing
+    ├── TASK-007: Quality gates
+    └── TASK-008: Main Makefile update
+
+    Day 6-8: Specialized Modules (M3)
+    ├── TASK-009: TCPS
+    ├── TASK-010: Governance
+    ├── TASK-011: CLI
+    ├── TASK-012: Benchmarks
+    └── TASK-013: Metrics
+
+    Day 9-10: Support Modules (M4)
+    ├── TASK-014: Examples
+    ├── TASK-015: Release
+    └── TASK-016: Cleanup
+
+    Day 11-13: Testing & Validation (M5)
+    ├── TASK-017: Test framework
+    ├── TASK-018: Unit tests
+    ├── TASK-019: Integration tests
+    └── TASK-020: Backward compatibility
+
+    Day 14-15: Documentation & Rollout (M6)
+    ├── TASK-021: Help system
+    ├── TASK-022: Migration guide
+    └── TASK-023: PR + Merge + Monitor
+
+    ────────────────────────────────────────
+    TOTAL: 5 days (2 developers, parallel)
+    ────────────────────────────────────────
+
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                             SUCCESS METRICS                                   │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+    Metric                 Current    Target     Improvement
+    ───────────────────────────────────────────────────────
+    Main Makefile Lines    1499       150        90% reduction
+    Total Files            1          15         15x isolation
+    Avg Module Size        N/A        ~100       Maintainable
+    Max Module Size        1499       200        Readable
+    Targets Preserved      110        110        100%
+    Test Coverage          0%         100%       +100%
+    Parallel Speedup       1x         2x         2x faster
+    Cloud Safety           ~80%       100%       +20%
+
+    ────────────────────────────────────────────────────────
+    Qualitative Metrics:
+    ────────────────────────────────────────────────────────
+    • Readability:           4+/5 rating (code review)
+    • Maintainability:       New target addition <30 min
+    • Testability:           Black-box tests for all modules
+    • Developer satisfaction: 80%+ approval
+
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                              STATUS: READY                                    ║
+║                       Timeline: 5 days (2 developers)                         ║
+║                          Risk: MEDIUM-HIGH (mitigated)                        ║
+╚═══════════════════════════════════════════════════════════════════════════════╝

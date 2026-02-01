@@ -1,0 +1,25 @@
+TCPS Jidoka Failure Receipt (自働化失敗レシート)
+================================================
+
+Work Order: 1769971303
+Timestamp:  2026-02-01T18:41:43Z
+Gate:       Gate 1: Schema Validation
+Status:     FAILED - LINE STOPPED
+
+Failure Details:
+Compilation failed
+
+Technical Details:
+./tools/tcps/jidoka_quality_gate.sh: line 133: rebar3: command not found
+
+Action Required:
+1. Fix the root cause (do not bypass the gate)
+2. Run 5 Whys analysis if recurring
+3. Re-run quality gates
+4. Resume production only after passing
+
+Jidoka Principle:
+Quality must be built into the process.
+Stop the line immediately when defects are detected.
+
+Receipt Hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

@@ -1,0 +1,434 @@
+{
+  "project": "Makefile Refactoring",
+  "version": "1.0.0",
+  "methodology": "SPARC",
+  "total_tasks": 23,
+  "milestones": 6,
+  "estimated_duration_days": 5,
+  "estimated_effort_hours": 68,
+  "recommended_team_size": 2,
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Foundation",
+      "days": "1-2",
+      "tasks": [
+        {
+          "id": "TASK-001",
+          "name": "Create makefiles/ directory structure",
+          "agent": "erlang-architect",
+          "effort_hours": 1,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": [],
+          "acceptance_criteria": [
+            "makefiles/ directory exists",
+            "14 .mk files created (placeholders OK)",
+            "Git tracks structure"
+          ]
+        },
+        {
+          "id": "TASK-002",
+          "name": "Extract configuration to 00-config.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 2,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-001"],
+          "acceptance_criteria": [
+            "makefiles/00-config.mk exists",
+            "No hardcoded paths in other modules",
+            "make info shows all config values"
+          ]
+        },
+        {
+          "id": "TASK-003",
+          "name": "Create logging infrastructure (.erlmcp/logs/)",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 2,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-001"],
+          "acceptance_criteria": [
+            ".erlmcp/logs/ directory exists",
+            "Log rotation implemented",
+            "Centralized logging working"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "name": "Core Modules",
+      "days": "3-5",
+      "tasks": [
+        {
+          "id": "TASK-004",
+          "name": "Refactor dependencies to 01-dependencies.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 3,
+          "risk": "MEDIUM",
+          "blocker": false,
+          "dependencies": ["TASK-002"],
+          "acceptance_criteria": [
+            "make check-erlang-version works identically",
+            "make setup-profile works identically",
+            "make deps idempotent",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-005",
+          "name": "Refactor compilation to 02-compile.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 4,
+          "risk": "HIGH",
+          "blocker": true,
+          "dependencies": ["TASK-002", "TASK-003", "TASK-004"],
+          "acceptance_criteria": [
+            "make compile works identically",
+            "make compile-core works identically",
+            "make compile-parallel 2x faster",
+            "No race conditions (100 parallel runs)",
+            "Logs written to .erlmcp/logs/compile*.log"
+          ]
+        },
+        {
+          "id": "TASK-006",
+          "name": "Refactor testing to 03-test.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 4,
+          "risk": "HIGH",
+          "blocker": true,
+          "dependencies": ["TASK-002", "TASK-003", "TASK-004"],
+          "acceptance_criteria": [
+            "make test works identically",
+            "make eunit works identically",
+            "make ct works identically",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-007",
+          "name": "Refactor quality gates to 04-quality-gates.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 5,
+          "risk": "HIGH",
+          "blocker": true,
+          "dependencies": ["TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006"],
+          "acceptance_criteria": [
+            "make validate works identically",
+            "All validate-* targets preserved",
+            "Exit codes correct (0 = pass, 1 = fail)",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-008",
+          "name": "Update main Makefile to include modules",
+          "agent": "erlang-architect",
+          "effort_hours": 2,
+          "risk": "MEDIUM",
+          "blocker": true,
+          "dependencies": ["TASK-004", "TASK-005", "TASK-006", "TASK-007"],
+          "acceptance_criteria": [
+            "Main Makefile ≤150 lines",
+            "All 110 targets work identically",
+            "make help shows all targets",
+            "No duplicate target definitions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "Specialized Modules",
+      "days": "6-8",
+      "tasks": [
+        {
+          "id": "TASK-009",
+          "name": "Refactor TCPS to 05-tcps.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 3,
+          "risk": "MEDIUM",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make jidoka works identically",
+            "make andon works identically",
+            "make poka-yoke works identically",
+            "Andon state persistent (.erlmcp/state/)"
+          ]
+        },
+        {
+          "id": "TASK-010",
+          "name": "Refactor governance to 06-governance.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 3,
+          "risk": "MEDIUM",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make hooks-validate works",
+            "make settings-validate works",
+            "make governance-test works",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-011",
+          "name": "Refactor CLI to 07-cli.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 3,
+          "risk": "MEDIUM",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make cli-version works",
+            "make cli-release works",
+            "make cli-test works",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-012",
+          "name": "Refactor benchmarks to 08-benchmarks.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 2,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make benchmark works",
+            "make bench-quick works",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-013",
+          "name": "Refactor metrics to 09-metrics.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 2,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make metrics-snapshot works",
+            "make metrics-trend works",
+            "100% backward compatible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "Support Modules",
+      "days": "9-10",
+      "tasks": [
+        {
+          "id": "TASK-014",
+          "name": "Refactor examples to 10-examples.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 1,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make example-mcp-complete works",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-015",
+          "name": "Refactor release to 11-release.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 2,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make release works identically",
+            "100% backward compatible"
+          ]
+        },
+        {
+          "id": "TASK-016",
+          "name": "Refactor cleanup to 12-cleanup.mk",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 1,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "make clean works identically",
+            "make distclean works identically",
+            "100% backward compatible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Testing & Validation",
+      "days": "11-13",
+      "tasks": [
+        {
+          "id": "TASK-017",
+          "name": "Create test framework",
+          "agent": "erlang-test-engineer",
+          "effort_hours": 4,
+          "risk": "MEDIUM",
+          "blocker": true,
+          "dependencies": ["TASK-008"],
+          "acceptance_criteria": [
+            "Test framework supports assertions",
+            "make test-makefile runs all tests",
+            "Exit code 0 if all pass, 1 if any fail",
+            "Coverage: 100% of modules tested"
+          ]
+        },
+        {
+          "id": "TASK-018",
+          "name": "Write unit tests for each module",
+          "agent": "erlang-test-engineer",
+          "effort_hours": 6,
+          "risk": "MEDIUM",
+          "blocker": true,
+          "dependencies": ["TASK-017"],
+          "acceptance_criteria": [
+            "14 test files (one per module)",
+            "100% module coverage",
+            "All tests pass"
+          ]
+        },
+        {
+          "id": "TASK-019",
+          "name": "Write integration tests",
+          "agent": "erlang-test-engineer",
+          "effort_hours": 6,
+          "risk": "HIGH",
+          "blocker": true,
+          "dependencies": ["TASK-017", "TASK-018"],
+          "acceptance_criteria": [
+            "12+ integration test cases",
+            "All canonical workflows tested",
+            "Performance baselines established",
+            "CI/CD integration verified"
+          ]
+        },
+        {
+          "id": "TASK-020",
+          "name": "Validate backward compatibility",
+          "agent": "erlang-test-engineer",
+          "effort_hours": 4,
+          "risk": "HIGH",
+          "blocker": true,
+          "dependencies": ["TASK-017", "TASK-018", "TASK-019"],
+          "acceptance_criteria": [
+            "All 110 original targets tested",
+            "100% backward compatibility",
+            "Performance regression <5%",
+            "No breaking changes"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "Documentation & Rollout",
+      "days": "14-15",
+      "tasks": [
+        {
+          "id": "TASK-021",
+          "name": "Update help system",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 2,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-020"],
+          "acceptance_criteria": [
+            "make help updated",
+            "99-help.mk complete",
+            "All new targets documented"
+          ]
+        },
+        {
+          "id": "TASK-022",
+          "name": "Generate migration guide",
+          "agent": "erlang-otp-developer",
+          "effort_hours": 2,
+          "risk": "LOW",
+          "blocker": false,
+          "dependencies": ["TASK-020"],
+          "acceptance_criteria": [
+            "MAKEFILE_MIGRATION.md created",
+            "Before/after comparison documented",
+            "Migration checklist provided"
+          ]
+        },
+        {
+          "id": "TASK-023",
+          "name": "Staged rollout",
+          "agent": "erlang-github-ops",
+          "effort_hours": 2,
+          "risk": "HIGH",
+          "blocker": true,
+          "dependencies": ["TASK-020", "TASK-021", "TASK-022"],
+          "acceptance_criteria": [
+            "PR approved by 2+ reviewers",
+            "All CI/CD checks pass",
+            "No rollback required within 24 hours",
+            "Post-merge metrics collected"
+          ]
+        }
+      ]
+    }
+  ],
+  "critical_path": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007",
+    "TASK-008",
+    "TASK-017",
+    "TASK-019",
+    "TASK-020",
+    "TASK-023"
+  ],
+  "parallel_opportunities": [
+    {
+      "phase": "Core Modules (after TASK-008)",
+      "tasks": ["TASK-009", "TASK-010", "TASK-011", "TASK-012", "TASK-013"],
+      "speedup": "5 tasks → 1 day (if parallel)"
+    },
+    {
+      "phase": "Support Modules (after TASK-008)",
+      "tasks": ["TASK-014", "TASK-015", "TASK-016"],
+      "speedup": "3 tasks → 0.5 day (if parallel)"
+    }
+  ],
+  "risk_summary": {
+    "high_risk_tasks": 5,
+    "medium_risk_tasks": 7,
+    "low_risk_tasks": 11,
+    "blockers": 8,
+    "mitigation": "Pair programming, extra code review, rollback plan"
+  },
+  "success_metrics": {
+    "quantitative": {
+      "main_makefile_lines": {"current": 1499, "target": 150, "reduction": "90%"},
+      "targets_preserved": {"current": 110, "target": 110, "preservation": "100%"},
+      "parallel_compilation_speedup": {"current": "1x", "target": "2x", "improvement": "100%"},
+      "test_coverage": {"current": "0%", "target": "100%", "improvement": "100%"}
+    },
+    "qualitative": {
+      "readability": "4+/5 rating",
+      "maintainability": "New target addition <30 min",
+      "testability": "Black-box tests for all modules",
+      "developer_satisfaction": "80%+ approval"
+    }
+  }
+}
