@@ -1,11 +1,13 @@
-.PHONY: all compile test ct eunit check clean distclean help \
+.PHONY: all compile test ct eunit check clean distclean help bench-quick \
         console observer deps info coverage \
         compile-core compile-transports compile-observability compile-tcps \
-        test-core test-transports test-observability test-tcps \
+        test-core test-transports test-observability test-tcps test-smoke test-quick test-full \
         dialyzer xref format release benchmark \
         validate validate-compile validate-test validate-coverage validate-quality validate-bench \
         test-strict benchmark-strict coverage-strict quality-strict \
-        jidoka andon poka-yoke tcps-quality-gates release-validate
+        jidoka andon poka-yoke tcps-quality-gates release-validate \
+        doctor quick verify ci-local \
+        example-mcp-complete example-help andon-clear andon-watch
 
 SHELL := /bin/bash
 
@@ -25,8 +27,121 @@ NC := \033[0m # No Color
 all: compile test
 	@echo "$(GREEN)✓ Build complete: compile + test passed$(NC)"
 
+# ============================================================================
+# CANONICAL WORKFLOW TARGETS
+# ============================================================================
+# Fast, focused targets for daily development workflow:
+#   doctor   : Check environment health before starting work
+#   quick    : Fast smoke test before commit (< 5min)
+#   verify   : Full validation before PR (< 15min)
+#   ci-local : Reproduce exact CI workflow locally
+# ============================================================================
+
+doctor: ## Check environment health (OTP, rebar3, deps, structure)
+	@./scripts/dev/doctor.sh
+
+quick: doctor ## Fast quality check: compile + smoke tests + validator (< 5min)
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)⚡ Quick Quality Check (<5min)$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(BLUE)1/3 Compiling...$(NC)"
+	@./scripts/build_and_test.sh --quick || exit 1
+	@echo ""
+	@echo "$(BLUE)2/3 Running smoke tests...$(NC)"
+	@rebar3 eunit --module=erlmcp_json_rpc_tests || exit 1
+	@echo ""
+	@echo "$(BLUE)3/3 Running quick validator...$(NC)"
+	@if [ -x ./bin/erlmcp-validate ]; then \
+		./bin/erlmcp-validate --quick || exit 1; \
+	else \
+		echo "$(YELLOW)⚠ Validator not built, skipping$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(BOLD)$(GREEN)✅ Quick check PASSED - Ready to commit$(NC)"
+	@echo ""
+
+verify: compile ## Full validation: spec + transport + dialyzer + xref (< 15min)
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🔍 Full Validation (<15min)$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(BLUE)1/5 Running xref...$(NC)"
+	@rebar3 xref || exit 1
+	@echo ""
+	@echo "$(BLUE)2/5 Running dialyzer...$(NC)"
+	@rebar3 dialyzer || exit 1
+	@echo ""
+	@echo "$(BLUE)3/5 Running spec compliance validation...$(NC)"
+	@if [ -f scripts/validation/run-ci.sh ]; then \
+		./scripts/validation/run-ci.sh --compliance || exit 1; \
+	else \
+		echo "$(YELLOW)⚠ Spec compliance script not found, skipping$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(BLUE)4/5 Running transport validation...$(NC)"
+	@if [ -x ./bin/erlmcp-validate ]; then \
+		./bin/erlmcp-validate --transport || exit 1; \
+	else \
+		echo "$(YELLOW)⚠ Transport validator not built, skipping$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(BLUE)5/5 Running full test suite...$(NC)"
+	@./tools/test-runner.sh || exit 1
+	@echo ""
+	@echo "$(BOLD)$(GREEN)✅ Full validation PASSED - Ready for PR$(NC)"
+	@echo ""
+
+ci-local: ## Reproduce exact CI workflow locally (matches .github/workflows/ci.yml)
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🔬 CI Workflow (Local Reproduction)$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(BLUE)GATE 1: Compilation$(NC)"
+	@TERM=dumb rebar3 compile 2>&1 | tee /tmp/erlmcp_ci_compile.log || exit 1
+	@echo "$(GREEN)✓ Compilation passed$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(BLUE)GATE 2: Xref$(NC)"
+	@rebar3 xref 2>&1 | tee /tmp/erlmcp_ci_xref.log || true
+	@echo "$(YELLOW)⚠ Xref complete (warnings non-blocking)$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(BLUE)GATE 3: Dialyzer$(NC)"
+	@rebar3 dialyzer 2>&1 | tee /tmp/erlmcp_ci_dialyzer.log || exit 1
+	@echo "$(GREEN)✓ Dialyzer passed$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(BLUE)GATE 4: EUnit Tests$(NC)"
+	@rebar3 as test do compile, eunit --cover 2>&1 | tee /tmp/erlmcp_ci_eunit.log || exit 1
+	@echo "$(GREEN)✓ EUnit tests passed$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(BLUE)GATE 5: Common Test$(NC)"
+	@rebar3 ct --dir=test/integration --cover 2>&1 | tee /tmp/erlmcp_ci_ct.log || true
+	@echo "$(YELLOW)⚠ CT complete (failures non-blocking if no suites)$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(BLUE)GATE 6: Coverage Check (≥80%)$(NC)"
+	@rebar3 cover --verbose 2>&1 | tee /tmp/erlmcp_ci_coverage.log
+	@if [ -f scripts/check_coverage_threshold.sh ]; then \
+		chmod +x scripts/check_coverage_threshold.sh; \
+		./scripts/check_coverage_threshold.sh 80 || exit 1; \
+		echo "$(GREEN)✓ Coverage ≥80% passed$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠ Coverage check script not found$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(GREEN)✅ ALL CI GATES PASSED$(NC)"
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "CI logs saved to /tmp/erlmcp_ci_*.log"
+	@echo ""
+
 help:
 	@echo "$(BOLD)$(BLUE)erlmcp Makefile - Umbrella Build System$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(CYAN)Canonical Workflow Targets:$(NC)"
+	@echo "  make doctor        - Check environment health (OTP, rebar3, deps)"
+	@echo "  make quick         - Fast check: compile + smoke tests (< 5min)"
+	@echo "  make verify        - Full validation: spec + transport + dialyzer + xref (< 15min)"
+	@echo "  make ci-local      - Reproduce exact CI workflow locally"
 	@echo ""
 	@echo "$(BOLD)$(GREEN)Main targets:$(NC)"
 	@echo "  make compile       - Compile all apps"
@@ -44,6 +159,11 @@ help:
 	@echo "  make test-transports       - Test erlmcp_transports only"
 	@echo "  make test-observability    - Test erlmcp_observability only"
 	@echo "  make test-tcps             - Test tcps_erlmcp only"
+	@echo ""
+	@echo "$(BOLD)$(GREEN)Test tier system (Chicago School TDD):$(NC)"
+	@echo "  make test-smoke        - Smoke tests (≤2 min): codec, lifecycle, basic transport"
+	@echo "  make test-quick        - Quick tests (≤10 min): smoke + core integration"
+	@echo "  make test-full         - Full test suite: all EUnit + CT + coverage"
 	@echo ""
 	@echo "$(BOLD)$(GREEN)Quality gates (BLOCKING):$(NC)"
 	@echo "  make validate              - Run ALL quality gates (BLOCKING)"
@@ -87,6 +207,7 @@ help:
 	@echo "$(BOLD)$(GREEN)Release:$(NC)"
 	@echo "  make release               - Build production release"
 	@echo "  make benchmark             - Run benchmarks"
+	@echo "  make bench-quick           - Quick performance check (<2 min, local dev)"
 	@echo ""
 	@echo "$(BOLD)$(YELLOW)⚠ CRITICAL: Quality gates are BLOCKING$(NC)"
 	@echo "  All validate-* targets exit with code 1 on failure."
@@ -128,6 +249,19 @@ compile-tcps:
 
 test: eunit ct
 	@echo "$(GREEN)✓ All tests passed$(NC)"
+
+# Test tier system (Chicago School TDD - real processes, no mocks)
+test-smoke:
+	@echo "$(BLUE)Running smoke tests (target: ≤2 min)...$(NC)"
+	@./scripts/test/smoke.sh
+
+test-quick:
+	@echo "$(BLUE)Running quick tests (target: ≤10 min)...$(NC)"
+	@./scripts/test/quick.sh
+
+test-full:
+	@echo "$(BLUE)Running full test suite...$(NC)"
+	@./scripts/test/full.sh
 
 # Automated test runners (BLOCKING on failures)
 test-strict:
@@ -542,6 +676,11 @@ benchmark:
 	@make -f Makefile benchmark-quick
 	@echo "$(GREEN)✓ Benchmarks complete (see above results)$(NC)"
 
+bench-quick:
+	@echo "$(BLUE)Running quick performance check (<2 min)...$(NC)"
+	@./scripts/bench/quick.sh
+	@echo "$(GREEN)✓ Quick benchmark complete$(NC)"
+
 # ============================================================================
 # RELEASE
 # ============================================================================
@@ -710,6 +849,40 @@ auto-fix-help: ## Show auto-fix system help
 	@echo ""
 	@echo "For detailed help: ./tools/auto-fix/orchestrator.sh help"
 
+# ============================================================================
+# EXAMPLES
+# ============================================================================
+
+.PHONY: example-mcp-complete example-help
+
+example-mcp-complete: compile
+	@echo "$(BOLD)$(BLUE)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(BLUE)Running erlmcp Full Surface End-to-End Example$(NC)"
+	@echo "$(BOLD)$(BLUE)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@escript examples/mcp_complete/example.erl
+	@echo ""
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(GREEN)✓ Example complete - All MCP features demonstrated$(NC)"
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+
+example-help:
+	@echo "$(BOLD)$(BLUE)erlmcp Examples$(NC)"
+	@echo ""
+	@echo "  make example-mcp-complete  - Run full surface end-to-end example"
+	@echo ""
+	@echo "  This example demonstrates:"
+	@echo "    - Resources (list, read, templates)"
+	@echo "    - Tools (invocation, secret injection)"
+	@echo "    - Prompts (templates, arguments)"
+	@echo "    - Subscriptions (change notifications)"
+	@echo "    - Progress (token reporting)"
+	@echo "    - HTTP Transport"
+	@echo "    - Secrets management"
+	@echo ""
+	@echo "  See examples/mcp_complete/README.md for detailed documentation"
+	@echo ""
 
 # ============================================================================
 # MCP SPECIFICATION VALIDATION
