@@ -1,5 +1,45 @@
 # Running erlmcp Locally - Complete Walkthrough
 
+## Tiered Workflow
+
+Before running any server, verify your environment:
+
+### Health Check
+```bash
+make doctor
+```
+
+### Test Tiers (choose one)
+
+**Smoke** (≤2 min): Minimal validation
+```bash
+make smoke
+```
+
+**Quick** (≤10 min): Core validation + integration
+```bash
+make quick
+```
+
+**Full** (≤30 min): All tests
+```bash
+make test
+```
+
+### Then Run a Server
+
+Once tests pass, use one of the one-command starts:
+
+```bash
+make run-stdio        # STDIO server
+make run-http         # HTTP server (port 3000)
+make run-http-sse     # HTTP + SSE server (port 3000)
+```
+
+Or use manual approaches (below):
+
+---
+
 This guide shows you how to run erlmcp examples and learn all major features in one end-to-end walkthrough.
 
 ## Quick Start (2 minutes)

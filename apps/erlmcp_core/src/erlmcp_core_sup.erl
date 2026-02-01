@@ -334,6 +334,20 @@ init([]) ->
             shutdown => infinity,  % Supervisor - wait for all children
             type => supervisor,
             modules => [erlmcp_client_sup]
+        },
+
+        %% ================================================================
+        %% PLUGIN SUPERVISOR: Plugin system management
+        %% Manages plugin discovery, loading, registry, and execution
+        %% Each plugin runs in isolated process (let-it-crash)
+        %% ================================================================
+        #{
+            id => erlmcp_plugin_sup,
+            start => {erlmcp_plugin_sup, start_link, []},
+            restart => permanent,
+            shutdown => infinity,  % Supervisor - wait for all children
+            type => supervisor,
+            modules => [erlmcp_plugin_sup]
         }
     ],
 

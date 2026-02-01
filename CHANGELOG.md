@@ -13,10 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - None planned
 
 ### New Features
-- (Planned features to be added here)
+- **Comprehensive CLI Documentation Suite**:
+  - `CLI_REFERENCE.md` - Complete command reference with all options, examples, exit codes, and performance characteristics
+  - `CLI_INTERACTIVE_GUIDE.md` - REPL workflow guide with 30+ interactive examples
+  - `SHELL_COMPLETIONS_GUIDE.md` - Tab completion installation for bash, zsh, and fish
+  - `DIAGNOSTICS_GUIDE.md` - Advanced profiling, tracing, and monitoring tools
+  - `PLUGIN_DEVELOPMENT_GUIDE.md` - Complete plugin architecture and creation guide
+  - Example CLI scripts: `validate-spec.sh`, `connect-server.sh`, interactive session recordings
+  - Example plugins: JSON-to-CSV transformer, custom security validator
 
 ### Enhancements
-- (Planned improvements to be added here)
+- CLI documentation focused on <30 minute learning curve for new users
+- Shell script examples for common workflows
+- Plugin examples with full test coverage
+- Integration with external tools (Jaeger, Prometheus, flame-graphs)
 
 ### Bug Fixes
 - (Bugs fixed in unreleased version)
@@ -28,6 +38,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - None reported
 
 ### Documentation
+- **CLI Documentation**: 6 comprehensive guides + examples
+- **Plugin Development**: End-to-end plugin creation walkthrough
+- **Diagnostics**: Profiling, tracing, monitoring, memory analysis
+- **Shell Completions**: Multi-shell setup and troubleshooting
+
+### CLI & Release Automation
+- **NEW**: Automated CLI versioning and release process
+  - `.github/workflows/cli-validation.yml` - 7-gate CLI CI/CD pipeline
+    - Gate 1: CLI compilation
+    - Gate 2: CLI help & version commands
+    - Gate 3: CLI validation commands (spec, quick-check, status)
+    - Gate 4: CLI startup time benchmarking (< 2000ms threshold)
+    - Gate 5: CLI test suite (EUnit)
+    - Gate 6: CLI coverage (>= 85% threshold)
+    - Gate 7: Shell completions (placeholder)
+  - `scripts/release-cli.sh` - One-command release automation
+    - Semantic versioning validation
+    - Pre-flight checks (git status, required commands)
+    - Automated version updates in source files
+    - Quality gate execution (compile, test)
+    - Escript build and testing
+    - Checksum generation (SHA256)
+    - Git commit and tag creation
+    - GitHub release with artifacts
+    - Dry-run mode for testing
+- **NEW**: Makefile targets for CLI operations
+  - `make cli-version` - Display CLI version information
+  - `make cli-release VERSION=X.Y.Z` - Create CLI release
+  - `make cli-release-dry-run VERSION=X.Y.Z` - Test release process
+  - `make cli-benchmark-baseline` - CLI performance baseline (startup, help)
+  - `make cli-test-startup` - Quick CLI startup test
+  - `make cli-checksum` - Generate SHA256 checksum
+  - `make cli-install` - Install to /usr/local/bin
+  - `make cli-uninstall` - Uninstall from /usr/local/bin
+- **Enhanced**: Version consistency across CLI module and app.src
+- **Documentation**: Comprehensive release automation guide in script comments
+
+### Performance Baselines (CLI)
+- **Startup time**: < 2000ms (enforced by CI)
+- **Help command**: < 3000ms
+- **Benchmarking**: 10 runs averaged for consistent measurements
+
 - **Repository Documentation Reorganization**: Major cleanup and restructuring
   - Archived 372 interim/transient files from root directory to `archive/`
   - Removed 222 files after comprehensive audit (one-time reports, old versions, interim fixes)
