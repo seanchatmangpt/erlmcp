@@ -21,7 +21,8 @@ BUILD_LOG="$LOG_DIR/build.log"
 TEST_LOG="$LOG_DIR/test.log"
 MAX_LOG_SIZE=$((10 * 1024 * 1024))  # 10MB
 KEEP_ROTATIONS=5
-TIMEOUT_SECONDS=120
+# Timeout should match settings.json (600s = 10 minutes)
+TIMEOUT_SECONDS=${POST_CI_TIMEOUT:-600}
 
 # ============================================================================
 # Log Rotation

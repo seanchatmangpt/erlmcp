@@ -8,6 +8,38 @@
 
 set -euo pipefail
 
+# Source shared utilities (with fallback)
+HOOK_LIB="$(dirname "${BASH_SOURCE[0]}")/hook-lib.sh"
+if [[ -f "$HOOK_LIB" ]]; then
+    source "$HOOK_LIB"
+else
+    # Fallback implementations
+    hook_log() {
+        echo "[$(date -Iseconds)] [$1] $*" >> "${ERLMCP_ROOT:-$(pwd)}/.erlmcp/hook.log"
+    }
+    output_decision() {
+        local decision="$1"
+        local reason="$2"
+        local modified_command="${3:-}"
+        if command -v jq &> /dev/null; then
+            if [[ -n "$modified_command" ]]; then
+                jq -n --arg decision "$decision" --arg reason "$reason" --arg cmd "$modified_command" \
+                    '{permissionDecision: $decision, reason: $reason, input: {command: $cmd}}'
+            else
+                jq -n --arg decision "$decision" --arg reason "$reason" \
+                    '{permissionDecision: $decision, reason: $reason}'
+            fi
+        else
+            if [[ -n "$modified_command" ]]; then
+                echo "{\"permissionDecision\": \"${decision}\", \"reason\": \"${reason}\", \"input\": {\"command\": \"${modified_command}\"}}"
+            else
+                echo "{\"permissionDecision\": \"${decision}\", \"reason\": \"${reason}\"}"
+            fi
+        fi
+    }
+    has_jq() { command -v jq &> /dev/null; }
+fi
+
 # Allowlisted domains (network access)
 ALLOWLISTED_DOMAINS=(
     "github.com"
