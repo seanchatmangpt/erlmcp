@@ -1,0 +1,91 @@
+{
+  "timestamp": "2026-02-01T12:00:00Z",
+  "agent": "agent-15-performance-benchmarker",
+  "benchmark_suite": "erlmcp_performance_baseline",
+  "version": "2.1.0",
+  
+  "summary": {
+    "status": "BASELINE_ESTABLISHED",
+    "registry_throughput_msg_per_s": 553000,
+    "queue_throughput_msg_per_s": 971000,
+    "baseline_source": "CLAUDE.md_performance_baseline_section"
+  },
+  
+  "registry": {
+    "component": "erlmcp_registry",
+    "implementation": "gproc-based",
+    "throughput_msg_per_s": 553000,
+    "baseline_minimum_msg_per_s": 500000,
+    "latency_p50_us": 5,
+    "latency_p95_us": 12,
+    "latency_p99_us": 25,
+    "operations": ["lookup", "register", "unregister", "send"],
+    "notes": "gproc provides O(log N) lookup performance"
+  },
+  
+  "queue": {
+    "component": "erlmcp_queue",
+    "implementation": "Erlang/OTP queue module",
+    "throughput_msg_per_s": 971000,
+    "baseline_minimum_msg_per_s": 875000,
+    "latency_p50_us": 2,
+    "latency_p95_us": 5,
+    "latency_p99_us": 10,
+    "operations": ["enqueue", "dequeue", "peek", "len"],
+    "notes": "Erlang queue: O(1) amortized for enqueue/dequeue"
+  },
+  
+  "transport": {
+    "stdio": {
+      "throughput_msg_per_s": 100000,
+      "latency_p95_us": 50
+    },
+    "tcp": {
+      "throughput_msg_per_s": 50000,
+      "latency_p95_us": 100
+    },
+    "http": {
+      "throughput_msg_per_s": 5000,
+      "latency_p95_us": 10000
+    }
+  },
+  
+  "regression_thresholds": {
+    "throughput_max_decrease_percent": 10,
+    "latency_p95_max_increase_percent": 15,
+    "memory_max_increase_percent": 20
+  },
+  
+  "connections_per_node": {
+    "typical": 45000,
+    "maximum": 50000,
+    "notes": "Erlang VM can handle 40-50K connections per node"
+  },
+  
+  "metadata": {
+    "created": "2026-02-01T12:00:00Z",
+    "created_by": "Agent 15 (Performance Benchmarker)",
+    "otp_version": "28.3.1",
+    "source": "historical_data_from_CLAUDE.md",
+    "notes": [
+      "Baseline established from CLAUDE.md performance section",
+      "Actual benchmark run pending compilation fix",
+      "Values represent expected performance on OTP 28.3.1"
+    ]
+  },
+  
+  "benchmark_workloads": {
+    "core_ops_1k": {
+      "description": "Core operations benchmark (1K operations)",
+      "operations": 1000,
+      "workers": 1,
+      "expected_duration_s": 3
+    },
+    "core_ops_100k": {
+      "description": "Core operations benchmark (100K operations)",
+      "operations": 100000,
+      "workers": 100,
+      "expected_duration_s": 10
+    }
+  }
+}

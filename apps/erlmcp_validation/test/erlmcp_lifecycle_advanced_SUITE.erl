@@ -44,63 +44,37 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_lifecycle_advanced_SUITE).
+
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
 -include("../../../include/erlmcp.hrl").
 
 %% Suite callbacks
--export([
-    all/0,
-    groups/0,
-    init_per_suite/1,
-    end_per_suite/1,
-    init_per_group/2,
-    end_per_group/2,
-    init_per_testcase/2,
-    end_per_testcase/2
-]).
-
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
 %% Test cases - Graceful Shutdown Under Load
--export([
-    test_shutdown_with_1000_connections/1,
-    test_shutdown_with_10000_connections/1,
-    test_inflight_request_completion/1,
-    test_pending_request_notification/1,
-    test_connection_drain_timeout/1
-]).
-
+-export([test_shutdown_with_1000_connections/1, test_shutdown_with_10000_connections/1,
+         test_inflight_request_completion/1, test_pending_request_notification/1,
+         test_connection_drain_timeout/1]).
 %% Test cases - Zero-Downtime Upgrades
--export([
-    test_rolling_upgrade_simulation/1,
-    test_blue_green_deployment/1,
-    test_canary_release_validation/1,
-    test_traffic_switching/1
-]).
-
+-export([test_rolling_upgrade_simulation/1, test_blue_green_deployment/1,
+         test_canary_release_validation/1, test_traffic_switching/1]).
 %% Test cases - Configuration Hot-Reload
--export([
-    test_config_reload_during_operation/1,
-    test_invalid_config_rejection/1,
-    test_config_validation_on_reload/1,
-    test_dynamic_capability_changes/1
-]).
-
+-export([test_config_reload_during_operation/1, test_invalid_config_rejection/1,
+         test_config_validation_on_reload/1, test_dynamic_capability_changes/1]).
 %% Test cases - Shutdown Safety
--export([
-    test_no_data_loss_on_shutdown/1,
-    test_clean_resource_release/1,
-    test_proper_process_termination/1,
-    test_mnesia_shutdown_safety/1
-]).
+-export([test_no_data_loss_on_shutdown/1, test_clean_resource_release/1,
+         test_proper_process_termination/1, test_mnesia_shutdown_safety/1]).
 
 %%====================================================================
 %% Constants
 %%====================================================================
 
--define(SHUTDOWN_TIMEOUT_MS, 30000).      
--define(CONNECTION_DRAIN_MS, 5000).       
+-define(SHUTDOWN_TIMEOUT_MS, 30000).
+-define(CONNECTION_DRAIN_MS, 5000).
 -define(MAX_1000_CONNECTIONS, 1000).
 -define(MAX_10000_CONNECTIONS, 10000).
 -define(INFLIGHT_REQUEST_COUNT, 100).
@@ -111,41 +85,37 @@
 %%====================================================================
 
 all() ->
-    [
-        {group, graceful_shutdown_under_load},
-        {group, zero_downtime_upgrades},
-        {group, config_hot_reload},
-        {group, shutdown_safety}
-    ].
+    [{group, graceful_shutdown_under_load},
+     {group, zero_downtime_upgrades},
+     {group, config_hot_reload},
+     {group, shutdown_safety}].
 
 groups() ->
-    [
-        {graceful_shutdown_under_load, [sequence], [
-            test_shutdown_with_1000_connections,
-            test_shutdown_with_10000_connections,
-            test_inflight_request_completion,
-            test_pending_request_notification,
-            test_connection_drain_timeout
-        ]},
-        {zero_downtime_upgrades, [sequence], [
-            test_rolling_upgrade_simulation,
-            test_blue_green_deployment,
-            test_canary_release_validation,
-            test_traffic_switching
-        ]},
-        {config_hot_reload, [parallel], [
-            test_config_reload_during_operation,
-            test_invalid_config_rejection,
-            test_config_validation_on_reload,
-            test_dynamic_capability_changes
-        ]},
-        {shutdown_safety, [sequence], [
-            test_no_data_loss_on_shutdown,
-            test_clean_resource_release,
-            test_proper_process_termination,
-            test_mnesia_shutdown_safety
-        ]}
-    ].
+    [{graceful_shutdown_under_load,
+      [sequence],
+      [test_shutdown_with_1000_connections,
+       test_shutdown_with_10000_connections,
+       test_inflight_request_completion,
+       test_pending_request_notification,
+       test_connection_drain_timeout]},
+     {zero_downtime_upgrades,
+      [sequence],
+      [test_rolling_upgrade_simulation,
+       test_blue_green_deployment,
+       test_canary_release_validation,
+       test_traffic_switching]},
+     {config_hot_reload,
+      [parallel],
+      [test_config_reload_during_operation,
+       test_invalid_config_rejection,
+       test_config_validation_on_reload,
+       test_dynamic_capability_changes]},
+     {shutdown_safety,
+      [sequence],
+      [test_no_data_loss_on_shutdown,
+       test_clean_resource_release,
+       test_proper_process_termination,
+       test_mnesia_shutdown_safety]}].
 
 init_per_suite(Config) ->
     ct:pal("Starting Advanced Lifecycle Test Suite - Graceful Shutdown"),
@@ -218,12 +188,10 @@ test_shutdown_with_1000_connections(Config) ->
 
     %% Create server with resources and tools
     ServerId = make_test_server_id(shutdown_1k),
-    ServerConfig = #{
-        capabilities => #mcp_server_capabilities{
-            resources = #mcp_capability{enabled = true},
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    ServerConfig =
+        #{capabilities =>
+              #mcp_server_capabilities{resources = #mcp_capability{enabled = true},
+                                       tools = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, ServerConfig),
 
     %% Add test resources and tools
@@ -250,7 +218,8 @@ test_shutdown_with_1000_connections(Config) ->
     ShutdownEnd = erlang:monotonic_time(millisecond),
     ShutdownDuration = ShutdownEnd - ShutdownStart,
 
-    ct:pal("Graceful shutdown completed in ~pms (~.2fs)", [ShutdownDuration, ShutdownDuration / 1000]),
+    ct:pal("Graceful shutdown completed in ~pms (~.2fs)",
+           [ShutdownDuration, ShutdownDuration / 1000]),
 
     %% Verify all clients are terminated
     AliveCount = length([Pid || Pid <- ClientPids, is_process_alive(Pid)]),
@@ -267,7 +236,7 @@ test_shutdown_with_1000_connections(Config) ->
     ?assert(ShutdownDuration < ?SHUTDOWN_TIMEOUT_MS),
 
     ct:pal("SUCCESS: Graceful shutdown of ~p connections completed in ~pms",
-        [?MAX_1000_CONNECTIONS, ShutdownDuration]),
+           [?MAX_1000_CONNECTIONS, ShutdownDuration]),
 
     Config.
 
@@ -277,12 +246,10 @@ test_shutdown_with_10000_connections(Config) ->
 
     %% Create server
     ServerId = make_test_server_id(shutdown_10k),
-    ServerConfig = #{
-        capabilities => #mcp_server_capabilities{
-            resources = #mcp_capability{enabled = true},
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    ServerConfig =
+        #{capabilities =>
+              #mcp_server_capabilities{resources = #mcp_capability{enabled = true},
+                                       tools = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, ServerConfig),
 
     %% Add test resources and tools
@@ -310,7 +277,8 @@ test_shutdown_with_10000_connections(Config) ->
     ShutdownEnd = erlang:monotonic_time(millisecond),
     ShutdownDuration = ShutdownEnd - ShutdownStart,
 
-    ct:pal("Graceful shutdown completed in ~pms (~.2fs)", [ShutdownDuration, ShutdownDuration / 1000]),
+    ct:pal("Graceful shutdown completed in ~pms (~.2fs)",
+           [ShutdownDuration, ShutdownDuration / 1000]),
 
     %% Verify all clients are terminated
     AliveAfter = length([Pid || Pid <- ClientPids, is_process_alive(Pid)]),
@@ -327,7 +295,7 @@ test_shutdown_with_10000_connections(Config) ->
     ?assert(ShutdownDuration < ?SHUTDOWN_TIMEOUT_MS),
 
     ct:pal("SUCCESS: Graceful shutdown of ~p connections completed in ~pms",
-        [?MAX_10000_CONNECTIONS, ShutdownDuration]),
+           [?MAX_10000_CONNECTIONS, ShutdownDuration]),
 
     Config.
 
@@ -337,19 +305,17 @@ test_inflight_request_completion(Config) ->
 
     %% Create server with slow tools
     ServerId = make_test_server_id(inflight),
-    ServerConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    ServerConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, ServerConfig),
 
     %% Add slow tool (200ms delay)
-    SlowTool = fun(Args) ->
-        timer:sleep(200),
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Hello, ", Name/binary, "!">>}
-    end,
+    SlowTool =
+        fun(Args) ->
+           timer:sleep(200),
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Hello, ", Name/binary, "!">>}
+        end,
     ok = erlmcp:add_tool(ServerId, <<"slow_tool">>, SlowTool),
 
     %% Create client and send in-flight requests
@@ -398,18 +364,16 @@ test_pending_request_notification(Config) ->
 
     %% Create server
     ServerId = make_test_server_id(pending),
-    ServerConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    ServerConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, ServerConfig),
 
     %% Add tool
-    TestTool = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Hello, ", Name/binary, "!">>}
-    end,
+    TestTool =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Hello, ", Name/binary, "!">>}
+        end,
     ok = erlmcp:add_tool(ServerId, <<"pending_tool">>, TestTool),
 
     %% Create clients and send requests
@@ -417,18 +381,24 @@ test_pending_request_notification(Config) ->
 
     %% Create a process to track pending requests
     Parent = self(),
-    _Tracker = spawn(fun() ->
-        %% Send pending requests
-        [begin
-            case erlmcp_server:call_tool(ServerPid, <<"pending_tool">>, #{<<"name">> => <<"Test", (integer_to_binary(N))/binary>>}) of
-                {ok, _Result} ->
-                    Parent ! {request_complete, N};
-                {error, _Reason} ->
-                    Parent ! {request_error, N, error}
-            end
-        end || N <- lists:seq(1, ?PENDING_REQUEST_COUNT)],
-        Parent ! tracker_done
-    end),
+    _Tracker =
+        spawn(fun() ->
+                 %% Send pending requests
+                 [begin
+                      case erlmcp_server:call_tool(ServerPid,
+                                                   <<"pending_tool">>,
+                                                   #{<<"name">> =>
+                                                         <<"Test", (integer_to_binary(N))/binary>>})
+                      of
+                          {ok, _Result} ->
+                              Parent ! {request_complete, N};
+                          {error, _Reason} ->
+                              Parent ! {request_error, N, error}
+                      end
+                  end
+                  || N <- lists:seq(1, ?PENDING_REQUEST_COUNT)],
+                 Parent ! tracker_done
+              end),
 
     %% Wait for some requests to be sent
     timer:sleep(100),
@@ -467,11 +437,8 @@ test_connection_drain_timeout(Config) ->
 
     %% Create server
     ServerId = make_test_server_id(drain),
-    ServerConfig = #{
-        capabilities => #mcp_server_capabilities{
-            resources = #mcp_capability{enabled = true}
-        }
-    },
+    ServerConfig =
+        #{capabilities => #mcp_server_capabilities{resources = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, ServerConfig),
 
     %% Add test resources
@@ -483,13 +450,19 @@ test_connection_drain_timeout(Config) ->
 
     %% Start slow resource reads (will be interrupted by drain timeout)
     [begin
-        spawn(fun() ->
-            case erlmcp_server:read_resource(ServerPid, <<"resource://test/", (integer_to_binary(N))/binary>>) of
-                {ok, _} -> ok;
-                {error, _} -> ok
-            end
-        end)
-    end || N <- lists:seq(1, 50)],
+         spawn(fun() ->
+                  case erlmcp_server:read_resource(ServerPid,
+                                                   <<"resource://test/",
+                                                     (integer_to_binary(N))/binary>>)
+                  of
+                      {ok, _} ->
+                          ok;
+                      {error, _} ->
+                          ok
+                  end
+               end)
+     end
+     || N <- lists:seq(1, 50)],
 
     %% Wait for operations to start
     timer:sleep(100),
@@ -533,84 +506,90 @@ test_rolling_upgrade_simulation(Config) ->
 
     %% Create initial server instances (simulating cluster)
     ServerCount = 3,
-    Servers = [begin
-        ServerId = make_test_server_id({rolling, N}),
-        ServerConfig = #{
-            capabilities => #mcp_server_capabilities{
-                tools = #mcp_capability{enabled = true}
-            }
-        },
-        {ok, Pid} = erlmcp:start_server(ServerId, ServerConfig),
-        {ServerId, Pid, N}
-    end || N <- lists:seq(1, ServerCount)],
+    Servers =
+        [begin
+             ServerId = make_test_server_id({rolling, N}),
+             ServerConfig =
+                 #{capabilities =>
+                       #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
+             {ok, Pid} = erlmcp:start_server(ServerId, ServerConfig),
+             {ServerId, Pid, N}
+         end
+         || N <- lists:seq(1, ServerCount)],
 
     ct:pal("Created ~p server instances for rolling upgrade", [ServerCount]),
 
     %% Add tools to all servers
     lists:foreach(fun({ServerId, _Pid, _N}) ->
-        TestTool = fun(Args) ->
-            Name = maps:get(<<"name">>, Args, <<"World">>),
-            #{result => <<"Hello, ", Name/binary, "!">>}
-        end,
-        ok = erlmcp:add_tool(ServerId, <<"rolling_tool">>, TestTool)
-    end, Servers),
+                     TestTool =
+                         fun(Args) ->
+                            Name = maps:get(<<"name">>, Args, <<"World">>),
+                            #{result => <<"Hello, ", Name/binary, "!">>}
+                         end,
+                     ok = erlmcp:add_tool(ServerId, <<"rolling_tool">>, TestTool)
+                  end,
+                  Servers),
 
     %% Create clients for each server
     ClientsPerServer = 10,
-    AllClients = [begin
-        ClientPids = spawn_client_connections(ClientsPerServer),
-        {ServerId, ClientPids}
-    end || {ServerId, _Pid, _N} <- Servers],
+    AllClients =
+        [begin
+             ClientPids = spawn_client_connections(ClientsPerServer),
+             {ServerId, ClientPids}
+         end
+         || {ServerId, _Pid, _N} <- Servers],
 
     ct:pal("Created ~p clients per server", [ClientsPerServer]),
 
     %% Simulate rolling upgrade: upgrade one server at a time
     lists:foreach(fun({ServerId, _Pid, N}) ->
-        ct:pal("Upgrading server ~p/~p: ~p", [N, ServerCount, ServerId]),
+                     ct:pal("Upgrading server ~p/~p: ~p", [N, ServerCount, ServerId]),
 
-        %% Get current clients
-        {ServerId, ClientPids} = lists:keyfind(ServerId, 1, AllClients),
+                     %% Get current clients
+                     {ServerId, ClientPids} = lists:keyfind(ServerId, 1, AllClients),
 
-        %% Stop server (simulate upgrade)
-        ok = erlmcp:stop_server(ServerId),
+                     %% Stop server (simulate upgrade)
+                     ok = erlmcp:stop_server(ServerId),
 
-        %% Verify clients disconnected
-        timer:sleep(100),
-        AliveCount = length([Pid || Pid <- ClientPids, is_process_alive(Pid)]),
-        ?assertEqual(0, AliveCount, "Clients should be disconnected"),
+                     %% Verify clients disconnected
+                     timer:sleep(100),
+                     AliveCount = length([Pid || Pid <- ClientPids, is_process_alive(Pid)]),
+                     ?assertEqual(0, AliveCount, "Clients should be disconnected"),
 
-        %% Restart server (simulate upgraded version)
-        {ok, NewPid} = erlmcp:start_server(ServerId, #{
-            capabilities => #mcp_server_capabilities{
-                tools = #mcp_capability{enabled = true}
-            }
-        }),
+                     %% Restart server (simulate upgraded version)
+                     {ok, NewPid} =
+                         erlmcp:start_server(ServerId,
+                                             #{capabilities =>
+                                                   #mcp_server_capabilities{tools =
+                                                                                #mcp_capability{enabled
+                                                                                                    =
+                                                                                                    true}}}),
 
-        %% Verify server restarted
-        ?assert(is_process_alive(NewPid)),
+                     %% Verify server restarted
+                     ?assert(is_process_alive(NewPid)),
 
-        %% Re-add tools
-        TestTool = fun(Args) ->
-            Name = maps:get(<<"name">>, Args, <<"World">>),
-            #{result => <<"Hello (upgraded), ", Name/binary, "!">>}
-        end,
-        ok = erlmcp:add_tool(ServerId, <<"rolling_tool_v2">>, TestTool),
+                     %% Re-add tools
+                     TestTool =
+                         fun(Args) ->
+                            Name = maps:get(<<"name">>, Args, <<"World">>),
+                            #{result => <<"Hello (upgraded), ", Name/binary, "!">>}
+                         end,
+                     ok = erlmcp:add_tool(ServerId, <<"rolling_tool_v2">>, TestTool),
 
-        %% Spawn new clients
-        NewClientPids = spawn_client_connections(ClientsPerServer),
-        ?assertEqual(ClientsPerServer, length(NewClientPids)),
+                     %% Spawn new clients
+                     NewClientPids = spawn_client_connections(ClientsPerServer),
+                     ?assertEqual(ClientsPerServer, length(NewClientPids)),
 
-        %% Update clients list
-        lists:keyreplace(ServerId, 1, AllClients, {ServerId, NewClientPids}),
+                     %% Update clients list
+                     lists:keyreplace(ServerId, 1, AllClients, {ServerId, NewClientPids}),
 
-        ct:pal("Server ~p upgraded successfully", [N]),
-        timer:sleep(200)
-    end, Servers),
+                     ct:pal("Server ~p upgraded successfully", [N]),
+                     timer:sleep(200)
+                  end,
+                  Servers),
 
     %% Cleanup all servers
-    lists:foreach(fun({ServerId, _Pid, _N}) ->
-        ok = erlmcp:stop_server(ServerId)
-    end, Servers),
+    lists:foreach(fun({ServerId, _Pid, _N}) -> ok = erlmcp:stop_server(ServerId) end, Servers),
 
     ct:pal("SUCCESS: Rolling upgrade of ~p servers completed", [ServerCount]),
 
@@ -622,18 +601,16 @@ test_blue_green_deployment(Config) ->
 
     %% Create blue environment (current production)
     BlueServerId = make_test_server_id(blue),
-    BlueConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    BlueConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, BluePid} = erlmcp:start_server(BlueServerId, BlueConfig),
 
     %% Add tool to blue
-    BlueTool = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Blue: Hello, ", Name/binary, "!">>}
-    end,
+    BlueTool =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Blue: Hello, ", Name/binary, "!">>}
+        end,
     ok = erlmcp:add_tool(BlueServerId, <<"bg_tool">>, BlueTool),
 
     %% Create clients for blue
@@ -642,18 +619,16 @@ test_blue_green_deployment(Config) ->
 
     %% Create green environment (new version)
     GreenServerId = make_test_server_id(green),
-    GreenConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    GreenConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, GreenPid} = erlmcp:start_server(GreenServerId, GreenConfig),
 
     %% Add enhanced tool to green
-    GreenTool = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Green: Hello, ", Name/binary, "! (enhanced)">>}
-    end,
+    GreenTool =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Green: Hello, ", Name/binary, "! (enhanced)">>}
+        end,
     ok = erlmcp:add_tool(GreenServerId, <<"bg_tool">>, GreenTool),
 
     %% Create clients for green (testing phase)
@@ -669,11 +644,14 @@ test_blue_green_deployment(Config) ->
 
     %% Disconnect blue clients
     lists:foreach(fun(Pid) ->
-        case is_process_alive(Pid) of
-            true -> exit(Pid, normal);
-            false -> ok
-        end
-    end, BlueClients),
+                     case is_process_alive(Pid) of
+                         true ->
+                             exit(Pid, normal);
+                         false ->
+                             ok
+                     end
+                  end,
+                  BlueClients),
 
     %% Create new clients for green (production load)
     NewGreenClients = spawn_client_connections(20),
@@ -690,11 +668,14 @@ test_blue_green_deployment(Config) ->
 
     %% Cleanup green
     lists:foreach(fun(Pid) ->
-        case is_process_alive(Pid) of
-            true -> exit(Pid, normal);
-            false -> ok
-        end
-    end, NewGreenClients),
+                     case is_process_alive(Pid) of
+                         true ->
+                             exit(Pid, normal);
+                         false ->
+                             ok
+                     end
+                  end,
+                  NewGreenClients),
     ok = erlmcp:stop_server(GreenServerId),
 
     ct:pal("SUCCESS: Blue-green deployment completed"),
@@ -707,39 +688,36 @@ test_canary_release_validation(Config) ->
 
     %% Create stable server (majority of traffic)
     StableServerId = make_test_server_id(stable),
-    StableConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    StableConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, StablePid} = erlmcp:start_server(StableServerId, StableConfig),
 
-    StableTool = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Stable: ", Name/binary>>}
-    end,
+    StableTool =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Stable: ", Name/binary>>}
+        end,
     ok = erlmcp:add_tool(StableServerId, <<"canary_tool">>, StableTool),
 
     %% Create canary server (new version, small traffic)
     CanaryServerId = make_test_server_id(canary),
-    CanaryConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    CanaryConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, CanaryPid} = erlmcp:start_server(CanaryServerId, CanaryConfig),
 
-    CanaryTool = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Canary: ", Name/binary, " (v2)">>}
-    end,
+    CanaryTool =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Canary: ", Name/binary, " (v2)">>}
+        end,
     ok = erlmcp:add_tool(CanaryServerId, <<"canary_tool">>, CanaryTool),
 
     %% Simulate traffic distribution: 90% stable, 10% canary
     StableClients = spawn_client_connections(90),
     CanaryClients = spawn_client_connections(10),
 
-    ct:pal("Traffic distribution: ~p stable, ~p canary", [length(StableClients), length(CanaryClients)]),
+    ct:pal("Traffic distribution: ~p stable, ~p canary",
+           [length(StableClients), length(CanaryClients)]),
 
     %% Verify both servers are running
     ?assert(is_process_alive(StablePid)),
@@ -761,18 +739,22 @@ test_canary_release_validation(Config) ->
 
     %% Disconnect stable clients
     lists:foreach(fun(Pid) ->
-        case is_process_alive(Pid) of
-            true -> exit(Pid, normal);
-            false -> ok
-        end
-    end, StableClients),
+                     case is_process_alive(Pid) of
+                         true ->
+                             exit(Pid, normal);
+                         false ->
+                             ok
+                     end
+                  end,
+                  StableClients),
 
     %% Switch remaining stable clients to canary
     FinalCanaryClients = spawn_client_connections(90),
 
     %% Verify canary handling all traffic
     ?assert(is_process_alive(CanaryPid)),
-    TotalCanaryClients = length(CanaryClients) + length(MoreCanaryClients) + length(FinalCanaryClients),
+    TotalCanaryClients =
+        length(CanaryClients) + length(MoreCanaryClients) + length(FinalCanaryClients),
     ct:pal("Canary handling ~p total connections", [TotalCanaryClients]),
 
     %% Decommission stable
@@ -782,11 +764,14 @@ test_canary_release_validation(Config) ->
     %% Cleanup canary
     AllCanaryClients = CanaryClients ++ MoreCanaryClients ++ FinalCanaryClients,
     lists:foreach(fun(Pid) ->
-        case is_process_alive(Pid) of
-            true -> exit(Pid, normal);
-            false -> ok
-        end
-    end, AllCanaryClients),
+                     case is_process_alive(Pid) of
+                         true ->
+                             exit(Pid, normal);
+                         false ->
+                             ok
+                     end
+                  end,
+                  AllCanaryClients),
     ok = erlmcp:stop_server(CanaryServerId),
 
     ct:pal("SUCCESS: Canary release validation completed"),
@@ -799,30 +784,32 @@ test_traffic_switching(Config) ->
 
     %% Create two servers
     ServerAId = make_test_server_id(server_a),
-    {ok, ServerAPid} = erlmcp:start_server(ServerAId, #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    }),
+    {ok, ServerAPid} =
+        erlmcp:start_server(ServerAId,
+                            #{capabilities =>
+                                  #mcp_server_capabilities{tools =
+                                                               #mcp_capability{enabled = true}}}),
 
     ServerBId = make_test_server_id(server_b),
-    {ok, ServerBPid} = erlmcp:start_server(ServerBId, #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    }),
+    {ok, ServerBPid} =
+        erlmcp:start_server(ServerBId,
+                            #{capabilities =>
+                                  #mcp_server_capabilities{tools =
+                                                               #mcp_capability{enabled = true}}}),
 
     %% Add tools
-    ToolA = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Server A: ", Name/binary>>}
-    end,
+    ToolA =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Server A: ", Name/binary>>}
+        end,
     ok = erlmcp:add_tool(ServerAId, <<"switch_tool">>, ToolA),
 
-    ToolB = fun(Args) ->
-        Name = maps:get(<<"name">>, Args, <<"World">>),
-        #{result => <<"Server B: ", Name/binary>>}
-    end,
+    ToolB =
+        fun(Args) ->
+           Name = maps:get(<<"name">>, Args, <<"World">>),
+           #{result => <<"Server B: ", Name/binary>>}
+        end,
     ok = erlmcp:add_tool(ServerBId, <<"switch_tool">>, ToolB),
 
     %% Initial traffic: all to Server A
@@ -842,8 +829,7 @@ test_traffic_switching(Config) ->
     ClientsB = spawn_client_connections(25),
 
     RemainingA = lists:nthtail(25, ClientsA),
-    ct:pal("After switch: ~p on Server A, ~p on Server B",
-        [length(RemainingA), length(ClientsB)]),
+    ct:pal("After switch: ~p on Server A, ~p on Server B", [length(RemainingA), length(ClientsB)]),
 
     %% Verify both servers running
     ?assert(is_process_alive(ServerAPid)),
@@ -880,12 +866,10 @@ test_config_reload_during_operation(Config) ->
 
     %% Create server with initial config
     ServerId = make_test_server_id(config_reload),
-    InitialConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true},
-            resources = #mcp_capability{enabled = false}
-        }
-    },
+    InitialConfig =
+        #{capabilities =>
+              #mcp_server_capabilities{tools = #mcp_capability{enabled = true},
+                                       resources = #mcp_capability{enabled = false}}},
     {ok, _ServerPid} = erlmcp:start_server(ServerId, InitialConfig),
 
     %% Add tool (tools enabled)
@@ -918,18 +902,13 @@ test_invalid_config_rejection(Config) ->
 
     %% Create server
     ServerId = make_test_server_id(invalid_config),
-    ValidConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    ValidConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, ValidConfig),
 
     %% Attempting to create server with invalid config should fail
     InvalidServerId = make_test_server_id(invalid_server),
-    InvalidConfig = #{
-        capabilities => invalid_type
-    },
+    InvalidConfig = #{capabilities => invalid_type},
 
     ct:pal("Attempting to create server with invalid configuration..."),
 
@@ -959,20 +938,15 @@ test_config_validation_on_reload(Config) ->
 
     %% Create server
     ServerId = make_test_server_id(config_validation),
-    InitialConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    InitialConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, _ServerPid} = erlmcp:start_server(ServerId, InitialConfig),
 
     %% Define valid config
-    ValidConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true},
-            resources = #mcp_capability{enabled = true}
-        }
-    },
+    ValidConfig =
+        #{capabilities =>
+              #mcp_server_capabilities{tools = #mcp_capability{enabled = true},
+                                       resources = #mcp_capability{enabled = true}}},
 
     ct:pal("Validating configuration..."),
 
@@ -985,9 +959,7 @@ test_config_validation_on_reload(Config) ->
     end,
 
     %% Define invalid config
-    _InvalidConfig = #{
-        capabilities => "invalid"
-    },
+    _InvalidConfig = #{capabilities => "invalid"},
 
     ct:pal("Validating invalid configuration..."),
     case validate_config(_InvalidConfig) of
@@ -1010,11 +982,8 @@ test_dynamic_capability_changes(Config) ->
 
     %% Create server with minimal capabilities
     ServerId = make_test_server_id(dynamic_caps),
-    InitialConfig = #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    },
+    InitialConfig =
+        #{capabilities => #mcp_server_capabilities{tools = #mcp_capability{enabled = true}}},
     {ok, ServerPid} = erlmcp:start_server(ServerId, InitialConfig),
 
     %% Add tool
@@ -1029,10 +998,12 @@ test_dynamic_capability_changes(Config) ->
 
     %% Add resources dynamically
     lists:foreach(fun(N) ->
-        ResourceUri = <<"resource://dynamic/", (integer_to_binary(N))/binary>>,
-        ResourceContent = #{<<"content">> => <<"Resource ", (integer_to_binary(N))/binary>>},
-        ok = erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
-    end, lists:seq(1, 5)),
+                     ResourceUri = <<"resource://dynamic/", (integer_to_binary(N))/binary>>,
+                     ResourceContent =
+                         #{<<"content">> => <<"Resource ", (integer_to_binary(N))/binary>>},
+                     ok = erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
+                  end,
+                  lists:seq(1, 5)),
 
     ct:pal("Added 5 dynamic resources"),
 
@@ -1066,31 +1037,36 @@ test_no_data_loss_on_shutdown(Config) ->
 
     %% Create server with resources
     ServerId = make_test_server_id(no_data_loss),
-    {ok, ServerPid} = erlmcp:start_server(ServerId, #{
-        capabilities => #mcp_server_capabilities{
-            resources = #mcp_capability{enabled = true},
-            tools = #mcp_capability{enabled = true}
-        }
-    }),
+    {ok, ServerPid} =
+        erlmcp:start_server(ServerId,
+                            #{capabilities =>
+                                  #mcp_server_capabilities{resources =
+                                                               #mcp_capability{enabled = true},
+                                                           tools =
+                                                               #mcp_capability{enabled = true}}}),
 
     %% Add resources and tools
     ResourceCount = 20,
     ToolCount = 10,
 
     lists:foreach(fun(N) ->
-        ResourceUri = <<"resource://data/", (integer_to_binary(N))/binary>>,
-        ResourceContent = #{
-            <<"content">> => <<"Important data ", (integer_to_binary(N))/binary>>,
-            <<"version">> => N
-        },
-        ok = erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
-    end, lists:seq(1, ResourceCount)),
+                     ResourceUri = <<"resource://data/", (integer_to_binary(N))/binary>>,
+                     ResourceContent =
+                         #{<<"content">> => <<"Important data ", (integer_to_binary(N))/binary>>,
+                           <<"version">> => N},
+                     ok = erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
+                  end,
+                  lists:seq(1, ResourceCount)),
 
     lists:foreach(fun(N) ->
-        ToolName = <<"tool_", (integer_to_binary(N))/binary>>,
-        ToolFun = fun(_Args) -> #{result => <<"Tool result ", (integer_to_binary(N))/binary>>} end,
-        ok = erlmcp:add_tool(ServerId, ToolName, ToolFun)
-    end, lists:seq(1, ToolCount)),
+                     ToolName = <<"tool_", (integer_to_binary(N))/binary>>,
+                     ToolFun =
+                         fun(_Args) ->
+                            #{result => <<"Tool result ", (integer_to_binary(N))/binary>>}
+                         end,
+                     ok = erlmcp:add_tool(ServerId, ToolName, ToolFun)
+                  end,
+                  lists:seq(1, ToolCount)),
 
     ct:pal("Added ~p resources and ~p tools", [ResourceCount, ToolCount]),
 
@@ -1128,33 +1104,35 @@ test_clean_resource_release(Config) ->
 
     %% Create server
     ServerId = make_test_server_id(resource_release),
-    {ok, ServerPid} = erlmcp:start_server(ServerId, #{
-        capabilities => #mcp_server_capabilities{
-            resources = #mcp_capability{enabled = true}
-        }
-    }),
+    {ok, ServerPid} =
+        erlmcp:start_server(ServerId,
+                            #{capabilities =>
+                                  #mcp_server_capabilities{resources =
+                                                               #mcp_capability{enabled = true}}}),
 
     %% Add resources with ETS tables (simulating external resources)
     ResourceCount = 10,
     lists:foreach(fun(N) ->
-        ResourceUri = <<"resource://ets/", (integer_to_binary(N))/binary>>,
-        %% Create ETS table for resource
-        TableName = binary_to_atom(<<"resource_table_", (integer_to_binary(N))/binary>>, utf8),
-        ets:new(TableName, [set, public, named_table]),
-        ets:insert(TableName, {data, <<"Resource data ", (integer_to_binary(N))/binary>>}),
+                     ResourceUri = <<"resource://ets/", (integer_to_binary(N))/binary>>,
+                     %% Create ETS table for resource
+                     TableName =
+                         binary_to_atom(<<"resource_table_", (integer_to_binary(N))/binary>>, utf8),
+                     ets:new(TableName, [set, public, named_table]),
+                     ets:insert(TableName,
+                                {data, <<"Resource data ", (integer_to_binary(N))/binary>>}),
 
-        ResourceContent = #{<<"ets_table">> => TableName},
-        ok = erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
-    end, lists:seq(1, ResourceCount)),
+                     ResourceContent = #{<<"ets_table">> => TableName},
+                     ok = erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
+                  end,
+                  lists:seq(1, ResourceCount)),
 
     ct:pal("Created ~p resources with ETS tables", [ResourceCount]),
 
     %% Verify ETS tables exist
-    TableNames = [binary_to_atom(<<"resource_table_", (integer_to_binary(N))/binary>>, utf8)
-                  || N <- lists:seq(1, ResourceCount)],
-    lists:foreach(fun(TableName) ->
-        ?assert(ets:info(TableName) =/= undefined)
-    end, TableNames),
+    TableNames =
+        [binary_to_atom(<<"resource_table_", (integer_to_binary(N))/binary>>, utf8)
+         || N <- lists:seq(1, ResourceCount)],
+    lists:foreach(fun(TableName) -> ?assert(ets:info(TableName) =/= undefined) end, TableNames),
 
     %% Initiate shutdown
     ct:pal("Initiating shutdown with ETS resources..."),
@@ -1166,7 +1144,8 @@ test_clean_resource_release(Config) ->
     %% Verify ETS tables cleaned up (if server manages them)
     %% Note: This depends on implementation - some ETS tables may be owned by other processes
     ct:pal("Checking ETS table cleanup..."),
-    CleanupCount = length([TableName || TableName <- TableNames, ets:info(TableName) =:= undefined]),
+    CleanupCount =
+        length([TableName || TableName <- TableNames, ets:info(TableName) =:= undefined]),
     ct:pal("ETS tables cleaned up: ~p/~p", [CleanupCount, ResourceCount]),
 
     %% Verify server stopped
@@ -1182,22 +1161,24 @@ test_proper_process_termination(Config) ->
 
     %% Create server
     ServerId = make_test_server_id(process_term),
-    {ok, ServerPid} = erlmcp:start_server(ServerId, #{
-        capabilities => #mcp_server_capabilities{
-            tools = #mcp_capability{enabled = true}
-        }
-    }),
+    {ok, ServerPid} =
+        erlmcp:start_server(ServerId,
+                            #{capabilities =>
+                                  #mcp_server_capabilities{tools =
+                                                               #mcp_capability{enabled = true}}}),
 
     %% Add tool
     TestTool = fun(_Args) -> #{result => <<"Tool result">>} end,
     ok = erlmcp:add_tool(ServerId, <<"term_tool">>, TestTool),
 
     %% Create monitored clients
-    Clients = [spawn_monitor(fun() ->
-        %% Simulate client process
-        timer:sleep(1000),
-        client_done
-    end) || _ <- lists:seq(1, 20)],
+    Clients =
+        [spawn_monitor(fun() ->
+                          %% Simulate client process
+                          timer:sleep(1000),
+                          client_done
+                       end)
+         || _ <- lists:seq(1, 20)],
 
     ct:pal("Created ~p monitored clients", [length(Clients)]),
 
@@ -1217,11 +1198,14 @@ test_proper_process_termination(Config) ->
     ?assertNot(is_process_alive(ServerPid)),
 
     %% Collect client monitor results
-    ClientResults = [receive
-        {'DOWN', Ref, process, _Pid, _Reason} -> {down, Ref}
-    after 1000 ->
-        timeout
-    end || {_, Ref} <- Clients],
+    ClientResults =
+        [receive
+             {'DOWN', Ref, process, _Pid, _Reason} ->
+                 {down, Ref}
+         after 1000 ->
+             timeout
+         end
+         || {_, Ref} <- Clients],
 
     DownCount = length([R || R <- ClientResults, element(1, R) =:= down]),
     TimeoutCount = length([R || R <- ClientResults, R =:= timeout]),
@@ -1245,53 +1229,54 @@ test_mnesia_shutdown_safety(Config) ->
             MnesiaRunning = lists:keymember(mnesia, 1, Apps),
 
             if MnesiaRunning ->
-                %% Create server with Mnesia-backed state
-                ServerId = make_test_server_id(mnesia_safe),
-                {ok, ServerPid} = erlmcp:start_server(ServerId, #{
-                    capabilities => #mcp_server_capabilities{
-                        tools = #mcp_capability{enabled = true}
-                    }
-                }),
+                   %% Create server with Mnesia-backed state
+                   ServerId = make_test_server_id(mnesia_safe),
+                   {ok, ServerPid} =
+                       erlmcp:start_server(ServerId,
+                                           #{capabilities =>
+                                                 #mcp_server_capabilities{tools =
+                                                                              #mcp_capability{enabled
+                                                                                                  =
+                                                                                                  true}}}),
 
-                %% Add tool
-                TestTool = fun(_Args) -> #{result => <<"Tool result">>} end,
-                ok = erlmcp:add_tool(ServerId, <<"mnesia_tool">>, TestTool),
+                   %% Add tool
+                   TestTool = fun(_Args) -> #{result => <<"Tool result">>} end,
+                   ok = erlmcp:add_tool(ServerId, <<"mnesia_tool">>, TestTool),
 
-                %% Record Mnesia tables before shutdown
-                MnesiaTablesBefore = mnesia:system_info(tables),
-                ct:pal("Mnesia tables before shutdown: ~p", [length(MnesiaTablesBefore)]),
+                   %% Record Mnesia tables before shutdown
+                   MnesiaTablesBefore = mnesia:system_info(tables),
+                   ct:pal("Mnesia tables before shutdown: ~p", [length(MnesiaTablesBefore)]),
 
-                %% Initiate shutdown
-                ct:pal("Initiating shutdown with Mnesia..."),
-                ok = erlmcp:stop_server(ServerId),
+                   %% Initiate shutdown
+                   ct:pal("Initiating shutdown with Mnesia..."),
+                   ok = erlmcp:stop_server(ServerId),
 
-                %% Wait for shutdown
-                wait_for_shutdown(ServerPid, ?SHUTDOWN_TIMEOUT_MS),
+                   %% Wait for shutdown
+                   wait_for_shutdown(ServerPid, ?SHUTDOWN_TIMEOUT_MS),
 
-                %% Verify server stopped
-                ?assertNot(is_process_alive(ServerPid)),
+                   %% Verify server stopped
+                   ?assertNot(is_process_alive(ServerPid)),
 
-                %% Verify Mnesia still running (server shutdown shouldn't stop Mnesia)
-                MnesiaTablesAfter = mnesia:system_info(tables),
-                ct:pal("Mnesia tables after shutdown: ~p", [length(MnesiaTablesAfter)]),
+                   %% Verify Mnesia still running (server shutdown shouldn't stop Mnesia)
+                   MnesiaTablesAfter = mnesia:system_info(tables),
+                   ct:pal("Mnesia tables after shutdown: ~p", [length(MnesiaTablesAfter)]),
 
-                ?assertEqual(MnesiaTablesBefore, MnesiaTablesAfter,
-                    "Mnesia tables should remain unchanged"),
+                   ?assertEqual(MnesiaTablesBefore,
+                                MnesiaTablesAfter,
+                                "Mnesia tables should remain unchanged"),
 
-                ct:pal("SUCCESS: Mnesia shutdown safety verified");
-
+                   ct:pal("SUCCESS: Mnesia shutdown safety verified");
                true ->
-                ct:pal("Mnesia not running, skipping Mnesia-specific test"),
-                %% Run basic shutdown test instead
-                ServerId = make_test_server_id(basic_safe),
-                {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
-                ok = erlmcp:stop_server(ServerId),
-                ?assertNot(is_process_alive(ServerPid)),
-                ct:pal("SUCCESS: Basic shutdown safety verified")
+                   ct:pal("Mnesia not running, skipping Mnesia-specific test"),
+                   %% Run basic shutdown test instead
+                   ServerId = make_test_server_id(basic_safe),
+                   {ok, ServerPid} = erlmcp:start_server(ServerId, #{}),
+                   ok = erlmcp:stop_server(ServerId),
+                   ?assertNot(is_process_alive(ServerPid)),
+                   ct:pal("SUCCESS: Basic shutdown safety verified")
             end;
-
         _ ->
-        ct:pal("Cannot determine application status, skipping Mnesia test")
+            ct:pal("Cannot determine application status, skipping Mnesia test")
     end,
 
     Config.
@@ -1303,29 +1288,36 @@ test_mnesia_shutdown_safety(Config) ->
 %% @doc Start required applications
 start_applications(Apps) ->
     lists:foreach(fun(App) ->
-        case application:start(App) of
-            ok -> ok;
-            {error, {already_started, App}} -> ok;
-            {error, Reason} ->
-                ct:pal("Failed to start ~p: ~p", [App, Reason])
-        end
-    end, Apps).
+                     case application:start(App) of
+                         ok ->
+                             ok;
+                         {error, {already_started, App}} ->
+                             ok;
+                         {error, Reason} ->
+                             ct:pal("Failed to start ~p: ~p", [App, Reason])
+                     end
+                  end,
+                  Apps).
 
 %% @doc Start optional applications (may not be available)
 start_optional_apps(Apps) ->
     lists:foreach(fun(App) ->
-        case application:start(App) of
-            ok -> ct:pal("Started optional app: ~p", [App]);
-            {error, {already_started, App}} -> ok;
-            {error, Reason} ->
-                ct:pal("Optional app ~p not available: ~p", [App, Reason])
-        end
-    end, Apps).
+                     case application:start(App) of
+                         ok ->
+                             ct:pal("Started optional app: ~p", [App]);
+                         {error, {already_started, App}} ->
+                             ok;
+                         {error, Reason} ->
+                             ct:pal("Optional app ~p not available: ~p", [App, Reason])
+                     end
+                  end,
+                  Apps).
 
 %% @doc Stop supervisor
 stop_supervisor(SupName) ->
     case whereis(SupName) of
-        undefined -> ok;
+        undefined ->
+            ok;
         Pid ->
             supervisor:stop(Pid),
             wait_for_shutdown(Pid, 5000)
@@ -1340,68 +1332,99 @@ wait_for_shutdown(Pid, Timeout) ->
     after Timeout ->
         ct:pal("Timeout waiting for process shutdown: ~p", [Pid]),
         case is_process_alive(Pid) of
-            true -> exit(Pid, kill);
-            false -> ok
+            true ->
+                exit(Pid, kill);
+            false ->
+                ok
         end
     end.
 
 %% @doc Generate unique test server ID
 make_test_server_id(Name) ->
-    BinaryName = case Name of
-        Atom when is_atom(Name) -> atom_to_binary(Name, utf8);
-        Binary when is_binary(Binary) -> Binary;
-        Tuple when is_tuple(Tuple) ->
-            TupleBin = list_to_binary([atom_to_binary(E, utf8) || E <- tuple_to_list(Tuple)]),
-            TupleBin
-    end,
-    Unique = binary:encode_hex(crypto:strong_rand_bytes(4)),
+    BinaryName =
+        case Name of
+            Atom when is_atom(Name) ->
+                atom_to_binary(Name, utf8);
+            Binary when is_binary(Binary) ->
+                Binary;
+            Tuple when is_tuple(Tuple) ->
+                TupleBin = list_to_binary([atom_to_binary(E, utf8) || E <- tuple_to_list(Tuple)]),
+                TupleBin
+        end,
+    Unique =
+        binary:encode_hex(
+            crypto:strong_rand_bytes(4)),
     binary_to_atom(<<"test_", BinaryName/binary, "_", Unique/binary>>, utf8).
 
 %% @doc Spawn client connections (simulated)
 spawn_client_connections(Count) ->
     [spawn_link(fun() ->
-        %% Simulate client connection
-        case whereis(erlmcp_registry) of
-            undefined ->
-                %% Registry not available, just wait
-                receive stop -> ok end;
-            _RegistryPid ->
-                %% Registry available, simulate connection
-                receive stop -> ok after 10000 -> ok end
-        end
-    end) || _ <- lists:seq(1, Count)].
+                   %% Simulate client connection
+                   case whereis(erlmcp_registry) of
+                       undefined ->
+                           %% Registry not available, just wait
+                           receive
+                               stop ->
+                                   ok
+                           end;
+                       _RegistryPid ->
+                           %% Registry available, simulate connection
+                           receive
+                               stop ->
+                                   ok
+                           after 10000 ->
+                               ok
+                           end
+                   end
+                end)
+     || _ <- lists:seq(1, Count)].
 
 %% @doc Add test resources
 add_test_resources(ServerId, Count) ->
     lists:foreach(fun(N) ->
-        ResourceUri = <<"resource://test/", (integer_to_binary(N))/binary>>,
-        ResourceContent = #{
-            <<"content">> => <<"Test resource ", (integer_to_binary(N))/binary>>
-        },
-        erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
-    end, lists:seq(1, Count)).
+                     ResourceUri = <<"resource://test/", (integer_to_binary(N))/binary>>,
+                     ResourceContent =
+                         #{<<"content">> => <<"Test resource ", (integer_to_binary(N))/binary>>},
+                     erlmcp:add_resource(ServerId, ResourceUri, ResourceContent)
+                  end,
+                  lists:seq(1, Count)).
 
 %% @doc Add test tools
 add_test_tools(ServerId, Count) ->
     lists:foreach(fun(N) ->
-        ToolName = <<"test_tool_", (integer_to_binary(N))/binary>>,
-        ToolFun = fun(Args) ->
-            Name = maps:get(<<"name">>, Args, <<"World">>),
-            #{result => <<"Tool ", (integer_to_binary(N))/binary, ": Hello, ", Name/binary, "!">>}
-        end,
-        erlmcp:add_tool(ServerId, ToolName, ToolFun)
-    end, lists:seq(1, Count)).
+                     ToolName = <<"test_tool_", (integer_to_binary(N))/binary>>,
+                     ToolFun =
+                         fun(Args) ->
+                            Name = maps:get(<<"name">>, Args, <<"World">>),
+                            #{result =>
+                                  <<"Tool ",
+                                    (integer_to_binary(N))/binary,
+                                    ": Hello, ",
+                                    Name/binary,
+                                    "!">>}
+                         end,
+                     erlmcp:add_tool(ServerId, ToolName, ToolFun)
+                  end,
+                  lists:seq(1, Count)).
 
 %% @doc Send tool calls to server
 send_tool_calls(ServerId, ToolName, Count) ->
     lists:foreach(fun(N) ->
-        spawn(fun() ->
-            case erlmcp_server:call_tool(ServerId, ToolName, #{<<"name">> => <<"Test", (integer_to_binary(N))/binary>>}) of
-                {ok, _Result} -> ok;
-                {error, _Reason} -> ok
-            end
-        end)
-    end, lists:seq(1, Count)).
+                     spawn(fun() ->
+                              case erlmcp_server:call_tool(ServerId,
+                                                           ToolName,
+                                                           #{<<"name">> =>
+                                                                 <<"Test",
+                                                                   (integer_to_binary(N))/binary>>})
+                              of
+                                  {ok, _Result} ->
+                                      ok;
+                                  {error, _Reason} ->
+                                      ok
+                              end
+                           end)
+                  end,
+                  lists:seq(1, Count)).
 
 %% @doc Collect results from tracker
 collect_results(Timeout, Acc) ->
@@ -1422,12 +1445,16 @@ validate_config(Config) ->
         %% Check capabilities structure
         Capabilities = maps:get(capabilities, Config),
         case Capabilities of
-            #mcp_server_capabilities{} -> ok;
-            _ when is_map(Capabilities) -> ok;
-            _ -> {error, invalid_capabilities}
+            #mcp_server_capabilities{} ->
+                ok;
+            _ when is_map(Capabilities) ->
+                ok;
+            _ ->
+                {error, invalid_capabilities}
         end
     catch
-        error:_Reason -> {error, validation_failed}
+        error:_Reason ->
+            {error, validation_failed}
     end.
 
 %% @doc Cleanup test artifacts
@@ -1436,11 +1463,15 @@ cleanup_test_artifacts(_TestCase) ->
     try
         Tables = ets:all(),
         lists:foreach(fun(TableName) ->
-            case atom_to_list(TableName) of
-                "resource_table_" ++ _ -> ets:delete(TableName);
-                _ -> ok
-            end
-        end, Tables)
+                         case atom_to_list(TableName) of
+                             "resource_table_" ++ _ ->
+                                 ets:delete(TableName);
+                             _ ->
+                                 ok
+                         end
+                      end,
+                      Tables)
     catch
-        _:_ -> ok
+        _:_ ->
+            ok
     end.

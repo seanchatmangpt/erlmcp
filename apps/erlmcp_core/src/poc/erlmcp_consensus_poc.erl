@@ -13,22 +13,21 @@
 %% Usage:
 %%   erlmcp_consensus_poc:run_demo().
 -module(erlmcp_consensus_poc).
+
 -behaviour(gen_server).
 
 %% API
 -export([start_link/1, execute_tool/3, get_status/1, stop/1, run_demo/0]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {
-    node_id :: atom(),
-    role :: leader | follower,
-    leader_pid :: pid() | undefined,
-    leader_monitor :: reference() | undefined,
-    audit_log :: [term()],
-    execution_count :: non_neg_integer()
-}).
+-record(state,
+        {node_id :: atom(),
+         role :: leader | follower,
+         leader_pid :: pid() | undefined,
+         leader_monitor :: reference() | undefined,
+         audit_log :: [term()],
+         execution_count :: non_neg_integer()}).
 
 -define(LEADER_NAME, erlmcp_consensus_leader).
 -define(ELECTION_RETRY_MS, 100).
@@ -84,7 +83,8 @@ run_demo() ->
     io:format("   Node1 -> add(1, 2) = ~p~n", [R1]),
     {ok, R2} = execute_tool(Node2, <<"multiply">>, #{<<"x">> => 3, <<"y">> => 4}),
     io:format("   Node2 -> multiply(3, 4) = ~p~n", [R2]),
-    {ok, R3} = execute_tool(Node3, <<"concat">>, #{<<"s1">> => <<"hello">>, <<"s2">> => <<"world">>}),
+    {ok, R3} =
+        execute_tool(Node3, <<"concat">>, #{<<"s1">> => <<"hello">>, <<"s2">> => <<"world">>}),
     io:format("   Node3 -> concat(hello, world) = ~p~n", [R3]),
     timer:sleep(100),
 
@@ -96,10 +96,8 @@ run_demo() ->
     io:format("~n5. Simulating leader failure (demonstrating failover)...~n"),
     Leader = find_leader([Node1, Node2, Node3]),
     LeaderStatus = get_status(Leader),
-    io:format("   Killing leader: ~p (executed ~p tools)~n", [
-        maps:get(node_id, LeaderStatus),
-        maps:get(execution_count, LeaderStatus)
-    ]),
+    io:format("   Killing leader: ~p (executed ~p tools)~n",
+              [maps:get(node_id, LeaderStatus), maps:get(execution_count, LeaderStatus)]),
     stop(Leader),
     timer:sleep(300), %% Wait for re-election
 
@@ -140,14 +138,13 @@ run_demo() ->
 
 init([NodeId]) ->
     %% Try to become leader
-    State = #state{
-        node_id = NodeId,
-        role = follower,
-        leader_pid = undefined,
-        leader_monitor = undefined,
-        audit_log = [],
-        execution_count = 0
-    },
+    State =
+        #state{node_id = NodeId,
+               role = follower,
+               leader_pid = undefined,
+               leader_monitor = undefined,
+               audit_log = [],
+               execution_count = 0},
     self() ! attempt_leadership,
     {ok, State}.
 
@@ -155,18 +152,16 @@ handle_call({execute_tool, ToolName, Args}, From, State = #state{role = leader})
     %% I'm the leader - execute locally
     Result = execute_tool_local(ToolName, Args),
     ExecutionId = erlang:unique_integer([monotonic, positive]),
-    AuditEntry = #{
-        execution_id => ExecutionId,
-        tool => ToolName,
-        args => Args,
-        result => Result,
-        timestamp => erlang:system_time(millisecond),
-        executor => State#state.node_id
-    },
-    NewState = State#state{
-        audit_log = [AuditEntry | State#state.audit_log],
-        execution_count = State#state.execution_count + 1
-    },
+    AuditEntry =
+        #{execution_id => ExecutionId,
+          tool => ToolName,
+          args => Args,
+          result => Result,
+          timestamp => erlang:system_time(millisecond),
+          executor => State#state.node_id},
+    NewState =
+        State#state{audit_log = [AuditEntry | State#state.audit_log],
+                    execution_count = State#state.execution_count + 1},
     {reply, {ok, Result}, NewState};
 handle_call({execute_tool, ToolName, Args}, From, State = #state{role = follower}) ->
     %% I'm a follower - forward to leader
@@ -188,13 +183,12 @@ handle_call({execute_tool, ToolName, Args}, From, State = #state{role = follower
             end
     end;
 handle_call(get_status, _From, State) ->
-    Status = #{
-        node_id => State#state.node_id,
-        role => State#state.role,
-        leader_pid => State#state.leader_pid,
-        execution_count => State#state.execution_count,
-        audit_log_size => length(State#state.audit_log)
-    },
+    Status =
+        #{node_id => State#state.node_id,
+          role => State#state.role,
+          leader_pid => State#state.leader_pid,
+          execution_count => State#state.execution_count,
+          audit_log_size => length(State#state.audit_log)},
     {reply, Status, State};
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
@@ -220,20 +214,17 @@ handle_info(attempt_leadership, State) ->
                     %% Monitor the leader
                     MonitorRef = monitor(process, LeaderPid),
                     io:format("   [~p] Following leader: ~p~n", [State#state.node_id, LeaderPid]),
-                    {noreply, State#state{
-                        role = follower,
-                        leader_pid = LeaderPid,
-                        leader_monitor = MonitorRef
-                    }}
+                    {noreply,
+                     State#state{role = follower,
+                                 leader_pid = LeaderPid,
+                                 leader_monitor = MonitorRef}}
             end
     end;
-handle_info({'DOWN', MonitorRef, process, LeaderPid, Reason}, State = #state{leader_monitor = MonitorRef}) ->
+handle_info({'DOWN', MonitorRef, process, LeaderPid, Reason},
+            State = #state{leader_monitor = MonitorRef}) ->
     %% Leader died, attempt to become new leader
-    io:format("   [~p] Leader ~p died (~p), attempting re-election~n", [
-        State#state.node_id,
-        LeaderPid,
-        Reason
-    ]),
+    io:format("   [~p] Leader ~p died (~p), attempting re-election~n",
+              [State#state.node_id, LeaderPid, Reason]),
     self() ! attempt_leadership,
     {noreply, State#state{leader_pid = undefined, leader_monitor = undefined}};
 handle_info(_Info, State) ->
@@ -270,44 +261,51 @@ execute_tool_local(ToolName, _Args) ->
 %% @doc Print status of all nodes
 print_status(Nodes) ->
     lists:foreach(fun(Node) ->
-        Status = get_status(Node),
-        io:format("   [~p] Role: ~p, Leader: ~p, Executions: ~p~n", [
-            maps:get(node_id, Status),
-            maps:get(role, Status),
-            case maps:get(leader_pid, Status) of
-                Pid when is_pid(Pid) -> Pid;
-                _ -> none
-            end,
-            maps:get(execution_count, Status)
-        ])
-    end, Nodes).
+                     Status = get_status(Node),
+                     io:format("   [~p] Role: ~p, Leader: ~p, Executions: ~p~n",
+                               [maps:get(node_id, Status),
+                                maps:get(role, Status),
+                                case maps:get(leader_pid, Status) of
+                                    Pid when is_pid(Pid) ->
+                                        Pid;
+                                    _ ->
+                                        none
+                                end,
+                                maps:get(execution_count, Status)])
+                  end,
+                  Nodes).
 
 %% @doc Print audit logs from all nodes
 print_audit_logs(Nodes) ->
     lists:foreach(fun(Node) ->
-        Status = get_status(Node),
-        NodeId = maps:get(node_id, Status),
-        LogSize = maps:get(audit_log_size, Status),
-        Role = maps:get(role, Status),
-        if
-            LogSize > 0 ->
-                io:format("   [~p] (~p) has ~p executions in audit log~n", [NodeId, Role, LogSize]);
-            true ->
-                io:format("   [~p] (~p) has empty audit log~n", [NodeId, Role])
-        end
-    end, Nodes).
+                     Status = get_status(Node),
+                     NodeId = maps:get(node_id, Status),
+                     LogSize = maps:get(audit_log_size, Status),
+                     Role = maps:get(role, Status),
+                     if LogSize > 0 ->
+                            io:format("   [~p] (~p) has ~p executions in audit log~n",
+                                      [NodeId, Role, LogSize]);
+                        true ->
+                            io:format("   [~p] (~p) has empty audit log~n", [NodeId, Role])
+                     end
+                  end,
+                  Nodes).
 
 %% @doc Find the leader process
 find_leader(Nodes) ->
     lists:foldl(fun(Node, Acc) ->
-        case Acc of
-            undefined ->
-                Status = get_status(Node),
-                case maps:get(role, Status) of
-                    leader -> Node;
-                    _ -> undefined
-                end;
-            _ ->
-                Acc
-        end
-    end, undefined, Nodes).
+                   case Acc of
+                       undefined ->
+                           Status = get_status(Node),
+                           case maps:get(role, Status) of
+                               leader ->
+                                   Node;
+                               _ ->
+                                   undefined
+                           end;
+                       _ ->
+                           Acc
+                   end
+                end,
+                undefined,
+                Nodes).

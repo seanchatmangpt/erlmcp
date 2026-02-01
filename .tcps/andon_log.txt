@@ -1,0 +1,25 @@
+---
+timestamp: 2026-02-01T20:01:46Z
+work_order: 1769976106
+gate: Gate 1: Schema Validation
+status: FAILURE
+reason: Compilation failed
+details: ===> Analyzing applications...
+===> Compiling extra_apps/erlmcp_core/test
+===> Compiling _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl failed
+_build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:{10,14}: can't find include lib "proper/include/proper.hrl"; Make sure proper is in your app file's 'applications' list
+     ┌─ _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:
+     │
+ 533 │      ?FORALL(_N,
+     │       ╰── undefined macro 'FORALL/3'
+
+     ┌─ _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:
+     │
+ 555 │      ?FORALL({Status1, Status2},
+     │       ╰── undefined macro 'FORALL/3'
+
+     ┌─ _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:
+     │
+ 581 │      ?FORALL(Metadata,
+     │       ╰── undefined macro 'FORALL/3'
+---

@@ -14,6 +14,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_process_monitor_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
@@ -30,11 +31,10 @@
 %%====================================================================
 
 setup() ->
-    {ok, Pid} = erlmcp_process_monitor:start_link([
-        {check_interval, ?TEST_CHECK_INTERVAL},
-        {warning_threshold, ?TEST_WARNING_THRESHOLD},
-        {critical_threshold, ?TEST_CRITICAL_THRESHOLD}
-    ]),
+    {ok, Pid} =
+        erlmcp_process_monitor:start_link([{check_interval, ?TEST_CHECK_INTERVAL},
+                                           {warning_threshold, ?TEST_WARNING_THRESHOLD},
+                                           {critical_threshold, ?TEST_CRITICAL_THRESHOLD}]),
     Pid.
 
 cleanup(Pid) ->
@@ -52,11 +52,10 @@ start_stop_test() ->
     ?assertNot(is_process_alive(Pid)).
 
 start_with_options_test() ->
-    {ok, Pid} = erlmcp_process_monitor:start_link([
-        {check_interval, 5000},
-        {warning_threshold, 0.60},
-        {critical_threshold, 0.80}
-    ]),
+    {ok, Pid} =
+        erlmcp_process_monitor:start_link([{check_interval, 5000},
+                                           {warning_threshold, 0.60},
+                                           {critical_threshold, 0.80}]),
     ?assert(is_pid(Pid)),
     gen_server:stop(Pid).
 
@@ -74,19 +73,17 @@ get_process_metrics_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Metrics} = erlmcp_process_monitor:get_process_metrics(),
-                     ?assert(is_map(Metrics)),
-                     ?assert(maps:is_key(process_count, Metrics)),
-                     ?assert(maps:is_key(process_limit, Metrics)),
-                     ?assert(maps:is_key(usage_percent, Metrics)),
-                     ?assert(maps:is_key(status, Metrics)),
-                     ?assert(maps:is_key(available_processes, Metrics)),
-                     ?assert(maps:is_key(capacity_estimate, Metrics)),
-                     ?assert(maps:is_key(timestamp, Metrics))
-                 end)
-         ]
+        [?_test(begin
+                    {ok, Metrics} = erlmcp_process_monitor:get_process_metrics(),
+                    ?assert(is_map(Metrics)),
+                    ?assert(maps:is_key(process_count, Metrics)),
+                    ?assert(maps:is_key(process_limit, Metrics)),
+                    ?assert(maps:is_key(usage_percent, Metrics)),
+                    ?assert(maps:is_key(status, Metrics)),
+                    ?assert(maps:is_key(available_processes, Metrics)),
+                    ?assert(maps:is_key(capacity_estimate, Metrics)),
+                    ?assert(maps:is_key(timestamp, Metrics))
+                end)]
      end}.
 
 process_metrics_validity_test_() ->
@@ -94,23 +91,21 @@ process_metrics_validity_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Metrics} = erlmcp_process_monitor:get_process_metrics(),
-                     ProcessCount = maps:get(process_count, Metrics),
-                     ProcessLimit = maps:get(process_limit, Metrics),
-                     UsagePercent = maps:get(usage_percent, Metrics),
+        [?_test(begin
+                    {ok, Metrics} = erlmcp_process_monitor:get_process_metrics(),
+                    ProcessCount = maps:get(process_count, Metrics),
+                    ProcessLimit = maps:get(process_limit, Metrics),
+                    UsagePercent = maps:get(usage_percent, Metrics),
 
-                     ?assert(is_integer(ProcessCount)),
-                     ?assert(ProcessCount >= 0),
-                     ?assert(is_integer(ProcessLimit)),
-                     ?assert(ProcessLimit > 0),
-                     ?assert(ProcessCount =< ProcessLimit),
-                     ?assert(is_float(UsagePercent)),
-                     ?assert(UsagePercent >= 0.0),
-                     ?assert(UsagePercent =< 1.0)
-                 end)
-         ]
+                    ?assert(is_integer(ProcessCount)),
+                    ?assert(ProcessCount >= 0),
+                    ?assert(is_integer(ProcessLimit)),
+                    ?assert(ProcessLimit > 0),
+                    ?assert(ProcessCount =< ProcessLimit),
+                    ?assert(is_float(UsagePercent)),
+                    ?assert(UsagePercent >= 0.0),
+                    ?assert(UsagePercent =< 1.0)
+                end)]
      end}.
 
 process_metrics_status_test_() ->
@@ -118,13 +113,11 @@ process_metrics_status_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Metrics} = erlmcp_process_monitor:get_process_metrics(),
-                     Status = maps:get(status, Metrics),
-                     ?assert(lists:member(Status, [ok, warning, critical]))
-                 end)
-         ]
+        [?_test(begin
+                    {ok, Metrics} = erlmcp_process_monitor:get_process_metrics(),
+                    Status = maps:get(status, Metrics),
+                    ?assert(lists:member(Status, [ok, warning, critical]))
+                end)]
      end}.
 
 %%====================================================================
@@ -136,20 +129,18 @@ get_capacity_estimate_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     ?assert(is_map(Estimate)),
-                     ?assert(maps:is_key(current_connections, Estimate)),
-                     ?assert(maps:is_key(estimated_capacity, Estimate)),
-                     ?assert(maps:is_key(remaining_capacity, Estimate)),
-                     ?assert(maps:is_key(utilization_percent, Estimate)),
-                     ?assert(maps:is_key(memory_total_bytes, Estimate)),
-                     ?assert(maps:is_key(memory_used_bytes, Estimate)),
-                     ?assert(maps:is_key(memory_available_bytes, Estimate)),
-                     ?assert(maps:is_key(recommendations, Estimate))
-                 end)
-         ]
+        [?_test(begin
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    ?assert(is_map(Estimate)),
+                    ?assert(maps:is_key(current_connections, Estimate)),
+                    ?assert(maps:is_key(estimated_capacity, Estimate)),
+                    ?assert(maps:is_key(remaining_capacity, Estimate)),
+                    ?assert(maps:is_key(utilization_percent, Estimate)),
+                    ?assert(maps:is_key(memory_total_bytes, Estimate)),
+                    ?assert(maps:is_key(memory_used_bytes, Estimate)),
+                    ?assert(maps:is_key(memory_available_bytes, Estimate)),
+                    ?assert(maps:is_key(recommendations, Estimate))
+                end)]
      end}.
 
 capacity_estimate_realistic_test_() ->
@@ -157,18 +148,16 @@ capacity_estimate_realistic_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     EstimatedCapacity = maps:get(estimated_capacity, Estimate),
+        [?_test(begin
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    EstimatedCapacity = maps:get(estimated_capacity, Estimate),
 
-                     %% Capacity should be reasonable (varies by system)
-                     %% On systems with high process limits, memory is the limiting factor
-                     ?assert(is_integer(EstimatedCapacity)),
-                     ?assert(EstimatedCapacity > 0),
-                     ?assert(EstimatedCapacity > 10000)  %% At least 10K
-                 end)
-         ]
+                    %% Capacity should be reasonable (varies by system)
+                    %% On systems with high process limits, memory is the limiting factor
+                    ?assert(is_integer(EstimatedCapacity)),
+                    ?assert(EstimatedCapacity > 0),
+                    ?assert(EstimatedCapacity > 10000)  %% At least 10K
+                end)]
      end}.
 
 capacity_estimate_memory_test_() ->
@@ -176,23 +165,21 @@ capacity_estimate_memory_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     TotalMemory = maps:get(memory_total_bytes, Estimate),
-                     UsedMemory = maps:get(memory_used_bytes, Estimate),
-                     AvailableMemory = maps:get(memory_available_bytes, Estimate),
+        [?_test(begin
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    TotalMemory = maps:get(memory_total_bytes, Estimate),
+                    UsedMemory = maps:get(memory_used_bytes, Estimate),
+                    AvailableMemory = maps:get(memory_available_bytes, Estimate),
 
-                     ?assert(is_integer(TotalMemory)),
-                     ?assert(TotalMemory > 0),
-                     ?assert(is_integer(UsedMemory)),
-                     ?assert(UsedMemory >= 0),
-                     ?assert(is_integer(AvailableMemory)),
-                     %% Note: AvailableMemory can be negative due to Erlang memory accounting
-                     %% where used_memory + system_memory > total_memory
-                     ?assert(is_number(AvailableMemory))
-                 end)
-         ]
+                    ?assert(is_integer(TotalMemory)),
+                    ?assert(TotalMemory > 0),
+                    ?assert(is_integer(UsedMemory)),
+                    ?assert(UsedMemory >= 0),
+                    ?assert(is_integer(AvailableMemory)),
+                    %% Note: AvailableMemory can be negative due to Erlang memory accounting
+                    %% where used_memory + system_memory > total_memory
+                    ?assert(is_number(AvailableMemory))
+                end)]
      end}.
 
 %%====================================================================
@@ -204,18 +191,16 @@ get_alert_thresholds_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, {Warning, Critical}} = erlmcp_process_monitor:get_alert_thresholds(),
-                     ?assert(is_float(Warning)),
-                     ?assert(is_float(Critical)),
-                     ?assert(Warning > 0),
-                     ?assert(Warning < 1.0),
-                     ?assert(Critical > 0),
-                     ?assert(Critical < 1.0),
-                     ?assert(Critical > Warning)
-                 end)
-         ]
+        [?_test(begin
+                    {ok, {Warning, Critical}} = erlmcp_process_monitor:get_alert_thresholds(),
+                    ?assert(is_float(Warning)),
+                    ?assert(is_float(Critical)),
+                    ?assert(Warning > 0),
+                    ?assert(Warning < 1.0),
+                    ?assert(Critical > 0),
+                    ?assert(Critical < 1.0),
+                    ?assert(Critical > Warning)
+                end)]
      end}.
 
 set_alert_thresholds_valid_test_() ->
@@ -223,15 +208,13 @@ set_alert_thresholds_valid_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     Result = erlmcp_process_monitor:set_alert_thresholds(0.60, 0.80),
-                     ?assertEqual(ok, Result),
-                     {ok, {Warning, Critical}} = erlmcp_process_monitor:get_alert_thresholds(),
-                     ?assertEqual(0.60, Warning),
-                     ?assertEqual(0.80, Critical)
-                 end)
-         ]
+        [?_test(begin
+                    Result = erlmcp_process_monitor:set_alert_thresholds(0.60, 0.80),
+                    ?assertEqual(ok, Result),
+                    {ok, {Warning, Critical}} = erlmcp_process_monitor:get_alert_thresholds(),
+                    ?assertEqual(0.60, Warning),
+                    ?assertEqual(0.80, Critical)
+                end)]
      end}.
 
 set_alert_thresholds_invalid_test_() ->
@@ -239,21 +222,19 @@ set_alert_thresholds_invalid_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Warning >= Critical
-                     Result1 = erlmcp_process_monitor:set_alert_thresholds(0.80, 0.70),
-                     ?assertEqual({error, invalid_thresholds}, Result1),
+        [?_test(begin
+                    %% Warning >= Critical
+                    Result1 = erlmcp_process_monitor:set_alert_thresholds(0.80, 0.70),
+                    ?assertEqual({error, invalid_thresholds}, Result1),
 
-                     %% Warning out of range
-                     Result2 = erlmcp_process_monitor:set_alert_thresholds(1.5, 0.90),
-                     ?assertEqual({error, invalid_thresholds}, Result2),
+                    %% Warning out of range
+                    Result2 = erlmcp_process_monitor:set_alert_thresholds(1.5, 0.90),
+                    ?assertEqual({error, invalid_thresholds}, Result2),
 
-                     %% Critical out of range
-                     Result3 = erlmcp_process_monitor:set_alert_thresholds(0.50, 1.1),
-                     ?assertEqual({error, invalid_thresholds}, Result3)
-                 end)
-         ]
+                    %% Critical out of range
+                    Result3 = erlmcp_process_monitor:set_alert_thresholds(0.50, 1.1),
+                    ?assertEqual({error, invalid_thresholds}, Result3)
+                end)]
      end}.
 
 %%====================================================================
@@ -265,18 +246,20 @@ check_process_limit_ok_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Under normal conditions, should be ok
-                     Result = erlmcp_process_monitor:check_process_limit(),
-                     case Result of
-                         ok -> ?assert(true);
-                         {warning, _Msg} -> ?assert(true);
-                         {critical, _Msg} -> ?assert(true);
-                         _ -> ?assert(false, "Invalid return value")
-                     end
-                 end)
-         ]
+        [?_test(begin
+                    %% Under normal conditions, should be ok
+                    Result = erlmcp_process_monitor:check_process_limit(),
+                    case Result of
+                        ok ->
+                            ?assert(true);
+                        {warning, _Msg} ->
+                            ?assert(true);
+                        {critical, _Msg} ->
+                            ?assert(true);
+                        _ ->
+                            ?assert(false, "Invalid return value")
+                    end
+                end)]
      end}.
 
 check_process_limit_returns_status_test_() ->
@@ -284,17 +267,19 @@ check_process_limit_returns_status_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     Result = erlmcp_process_monitor:check_process_limit(),
-                     case Result of
-                         ok -> ?assert(true);
-                         {warning, _Msg} -> ?assert(true);
-                         {critical, _Msg} -> ?assert(true);
-                         _ -> ?assert(false, "Invalid return value")
-                     end
-                 end)
-         ]
+        [?_test(begin
+                    Result = erlmcp_process_monitor:check_process_limit(),
+                    case Result of
+                        ok ->
+                            ?assert(true);
+                        {warning, _Msg} ->
+                            ?assert(true);
+                        {critical, _Msg} ->
+                            ?assert(true);
+                        _ ->
+                            ?assert(false, "Invalid return value")
+                    end
+                end)]
      end}.
 
 %%====================================================================
@@ -306,17 +291,15 @@ enable_auto_scaling_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     Result = erlmcp_process_monitor:enable_auto_scaling(),
-                     ?assertEqual(ok, Result),
+        [?_test(begin
+                    Result = erlmcp_process_monitor:enable_auto_scaling(),
+                    ?assertEqual(ok, Result),
 
-                     %% Check that recommendations include auto-scaling
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     Recommendations = maps:get(recommendations, Estimate),
-                     ?assert(is_list(Recommendations))
-                 end)
-         ]
+                    %% Check that recommendations include auto-scaling
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    Recommendations = maps:get(recommendations, Estimate),
+                    ?assert(is_list(Recommendations))
+                end)]
      end}.
 
 disable_auto_scaling_test_() ->
@@ -324,13 +307,11 @@ disable_auto_scaling_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     erlmcp_process_monitor:enable_auto_scaling(),
-                     Result = erlmcp_process_monitor:disable_auto_scaling(),
-                     ?assertEqual(ok, Result)
-                 end)
-         ]
+        [?_test(begin
+                    erlmcp_process_monitor:enable_auto_scaling(),
+                    Result = erlmcp_process_monitor:disable_auto_scaling(),
+                    ?assertEqual(ok, Result)
+                end)]
      end}.
 
 %%====================================================================
@@ -368,7 +349,7 @@ capacity_calculation_conservative_test() ->
     TargetMemory = 1073741824,  % 1GB
     SafetyMargin = 0.20,
 
-    MemoryCapacity = trunc((TargetMemory * (1.0 - SafetyMargin)) / PerConnOverhead),
+    MemoryCapacity = trunc(TargetMemory * (1.0 - SafetyMargin) / PerConnOverhead),
     ProcessCapacity = trunc(ProcessLimit * 0.70),
     ExpectedCapacity = min(MemoryCapacity, ProcessCapacity),
 
@@ -385,23 +366,21 @@ periodic_monitoring_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Get initial metrics
-                     {ok, Metrics1} = erlmcp_process_monitor:get_process_metrics(),
+        [?_test(begin
+                    %% Get initial metrics
+                    {ok, Metrics1} = erlmcp_process_monitor:get_process_metrics(),
 
-                     %% Wait for at least one check interval
-                     timer:sleep(?TEST_CHECK_INTERVAL + 500),
+                    %% Wait for at least one check interval
+                    timer:sleep(?TEST_CHECK_INTERVAL + 500),
 
-                     %% Get metrics again - should be different timestamp
-                     {ok, Metrics2} = erlmcp_process_monitor:get_process_metrics(),
+                    %% Get metrics again - should be different timestamp
+                    {ok, Metrics2} = erlmcp_process_monitor:get_process_metrics(),
 
-                     Timestamp1 = maps:get(timestamp, Metrics1),
-                     Timestamp2 = maps:get(timestamp, Metrics2),
+                    Timestamp1 = maps:get(timestamp, Metrics1),
+                    Timestamp2 = maps:get(timestamp, Metrics2),
 
-                     ?assert(Timestamp2 > Timestamp1)
-                 end)
-         ]
+                    ?assert(Timestamp2 > Timestamp1)
+                end)]
      end}.
 
 %%====================================================================
@@ -411,34 +390,34 @@ periodic_monitoring_test_() ->
 integration_with_recovery_manager_test_() ->
     {setup,
      fun() ->
-             %% Start both processes
-             {ok, RecPid} = erlmcp_recovery_manager:start_link(),
-             {ok, MonPid} = erlmcp_process_monitor:start_link([
-                 {check_interval, ?TEST_CHECK_INTERVAL}
-             ]),
-             {RecPid, MonPid}
+        %% Start both processes
+        {ok, RecPid} = erlmcp_recovery_manager:start_link(),
+        {ok, MonPid} = erlmcp_process_monitor:start_link([{check_interval, ?TEST_CHECK_INTERVAL}]),
+        {RecPid, MonPid}
      end,
      fun({RecPid, MonPid}) ->
-             gen_server:stop(RecPid),
-             gen_server:stop(MonPid)
+        gen_server:stop(RecPid),
+        gen_server:stop(MonPid)
      end,
      fun({_RecPid, _MonPid}) ->
-         [
-          ?_test(begin
-                     %% Verify both are running
-                     ?assert(is_process_alive(erlang:whereis(erlmcp_recovery_manager))),
-                     ?assert(is_process_alive(erlang:whereis(erlmcp_process_monitor))),
+        [?_test(begin
+                    %% Verify both are running
+                    ?assert(is_process_alive(erlang:whereis(erlmcp_recovery_manager))),
+                    ?assert(is_process_alive(erlang:whereis(erlmcp_process_monitor))),
 
-                     %% Check process limit (may trigger recovery)
-                     Result = erlmcp_process_monitor:check_process_limit(),
-                     case Result of
-                         ok -> ?assert(true);
-                         {warning, _Msg} -> ?assert(true);
-                         {critical, _Msg} -> ?assert(true);
-                         _ -> ?assert(false, "Invalid return value")
-                     end
-                 end)
-         ]
+                    %% Check process limit (may trigger recovery)
+                    Result = erlmcp_process_monitor:check_process_limit(),
+                    case Result of
+                        ok ->
+                            ?assert(true);
+                        {warning, _Msg} ->
+                            ?assert(true);
+                        {critical, _Msg} ->
+                            ?assert(true);
+                        _ ->
+                            ?assert(false, "Invalid return value")
+                    end
+                end)]
      end}.
 
 %%====================================================================
@@ -450,14 +429,12 @@ recommendations_list_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     Recommendations = maps:get(recommendations, Estimate),
-                     ?assert(is_list(Recommendations)),
-                     ?assert(length(Recommendations) >= 0)
-                 end)
-         ]
+        [?_test(begin
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    Recommendations = maps:get(recommendations, Estimate),
+                    ?assert(is_list(Recommendations)),
+                    ?assert(length(Recommendations) >= 0)
+                end)]
      end}.
 
 recommendations_content_test_() ->
@@ -465,18 +442,17 @@ recommendations_content_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     Recommendations = maps:get(recommendations, Estimate),
+        [?_test(begin
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    Recommendations = maps:get(recommendations, Estimate),
 
-                     %% All recommendations should be binaries
-                     lists:foreach(fun(Rec) ->
-                         ?assert(is_binary(Rec)),
-                         ?assert(byte_size(Rec) > 0)
-                     end, Recommendations)
-                 end)
-         ]
+                    %% All recommendations should be binaries
+                    lists:foreach(fun(Rec) ->
+                                     ?assert(is_binary(Rec)),
+                                     ?assert(byte_size(Rec) > 0)
+                                  end,
+                                  Recommendations)
+                end)]
      end}.
 
 %%====================================================================
@@ -488,12 +464,10 @@ unknown_call_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_) ->
-         [
-          ?_test(begin
-                     Result = gen_server:call(erlmcp_process_monitor, unknown_message),
-                     ?assertEqual({error, unknown_request}, Result)
-                 end)
-         ]
+        [?_test(begin
+                    Result = gen_server:call(erlmcp_process_monitor, unknown_message),
+                    ?assertEqual({error, unknown_request}, Result)
+                end)]
      end}.
 
 unknown_cast_test_() ->
@@ -501,14 +475,12 @@ unknown_cast_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_) ->
-         [
-          ?_test(begin
-                     %% Should not crash
-                     gen_server:cast(erlmcp_process_monitor, unknown_message),
-                     timer:sleep(100),
-                     ?assert(is_process_alive(erlang:whereis(erlmcp_process_monitor)))
-                 end)
-         ]
+        [?_test(begin
+                    %% Should not crash
+                    gen_server:cast(erlmcp_process_monitor, unknown_message),
+                    timer:sleep(100),
+                    ?assert(is_process_alive(erlang:whereis(erlmcp_process_monitor)))
+                end)]
      end}.
 
 %%====================================================================
@@ -520,29 +492,32 @@ concurrent_metrics_access_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Spawn multiple processes accessing metrics concurrently
-                     Parent = self(),
-                     Workers = 10,
-                     lists:foreach(fun(_) ->
-                         spawn(fun() ->
-                             Result = erlmcp_process_monitor:get_process_metrics(),
-                             Parent ! {worker_result, Result}
-                         end)
-                     end, lists:seq(1, Workers)),
+        [?_test(begin
+                    %% Spawn multiple processes accessing metrics concurrently
+                    Parent = self(),
+                    Workers = 10,
+                    lists:foreach(fun(_) ->
+                                     spawn(fun() ->
+                                              Result = erlmcp_process_monitor:get_process_metrics(),
+                                              Parent ! {worker_result, Result}
+                                           end)
+                                  end,
+                                  lists:seq(1, Workers)),
 
-                     %% Collect all results
-                     Results = [receive {worker_result, R} -> R after 5000 -> timeout end
-                               || _ <- lists:seq(1, Workers)],
+                    %% Collect all results
+                    Results =
+                        [receive
+                             {worker_result, R} ->
+                                 R
+                         after 5000 ->
+                             timeout
+                         end
+                         || _ <- lists:seq(1, Workers)],
 
-                     %% All should succeed
-                     ?assertEqual(Workers, length(Results)),
-                     lists:foreach(fun(R) ->
-                         ?assertMatch({ok, _}, R)
-                     end, Results)
-                 end)
-         ]
+                    %% All should succeed
+                    ?assertEqual(Workers, length(Results)),
+                    lists:foreach(fun(R) -> ?assertMatch({ok, _}, R) end, Results)
+                end)]
      end}.
 
 %%====================================================================
@@ -554,15 +529,12 @@ metrics_collection_performance_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Metrics collection should be fast (< 100ms)
-                     {Time, {ok, _Metrics}} = timer:tc(
-                         fun() -> erlmcp_process_monitor:get_process_metrics() end
-                     ),
-                     ?assert(Time < 100000)  % 100ms
-                 end)
-         ]
+        [?_test(begin
+                    %% Metrics collection should be fast (< 100ms)
+                    {Time, {ok, _Metrics}} =
+                        timer:tc(fun() -> erlmcp_process_monitor:get_process_metrics() end),
+                    ?assert(Time < 100000)  % 100ms
+                end)]
      end}.
 
 capacity_estimate_performance_test_() ->
@@ -570,15 +542,12 @@ capacity_estimate_performance_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Capacity estimation should be fast (< 100ms)
-                     {Time, {ok, _Estimate}} = timer:tc(
-                         fun() -> erlmcp_process_monitor:get_capacity_estimate() end
-                     ),
-                     ?assert(Time < 100000)  % 100ms
-                 end)
-         ]
+        [?_test(begin
+                    %% Capacity estimation should be fast (< 100ms)
+                    {Time, {ok, _Estimate}} =
+                        timer:tc(fun() -> erlmcp_process_monitor:get_capacity_estimate() end),
+                    ?assert(Time < 100000)  % 100ms
+                end)]
      end}.
 
 %%====================================================================
@@ -590,25 +559,23 @@ thresholds_persist_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Set custom thresholds
-                     ok = erlmcp_process_monitor:set_alert_thresholds(0.55, 0.85),
+        [?_test(begin
+                    %% Set custom thresholds
+                    ok = erlmcp_process_monitor:set_alert_thresholds(0.55, 0.85),
 
-                     %% Verify they persist
-                     {ok, {Warning, Critical}} = erlmcp_process_monitor:get_alert_thresholds(),
-                     ?assertEqual(0.55, Warning),
-                     ?assertEqual(0.85, Critical),
+                    %% Verify they persist
+                    {ok, {Warning, Critical}} = erlmcp_process_monitor:get_alert_thresholds(),
+                    ?assertEqual(0.55, Warning),
+                    ?assertEqual(0.85, Critical),
 
-                     %% Set again
-                     ok = erlmcp_process_monitor:set_alert_thresholds(0.65, 0.95),
+                    %% Set again
+                    ok = erlmcp_process_monitor:set_alert_thresholds(0.65, 0.95),
 
-                     %% Verify new values persist
-                     {ok, {Warning2, Critical2}} = erlmcp_process_monitor:get_alert_thresholds(),
-                     ?assertEqual(0.65, Warning2),
-                     ?assertEqual(0.95, Critical2)
-                 end)
-         ]
+                    %% Verify new values persist
+                    {ok, {Warning2, Critical2}} = erlmcp_process_monitor:get_alert_thresholds(),
+                    ?assertEqual(0.65, Warning2),
+                    ?assertEqual(0.95, Critical2)
+                end)]
      end}.
 
 auto_scaling_state_persists_test_() ->
@@ -616,29 +583,27 @@ auto_scaling_state_persists_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Enable auto-scaling
-                     erlmcp_process_monitor:enable_auto_scaling(),
+        [?_test(begin
+                    %% Enable auto-scaling
+                    erlmcp_process_monitor:enable_auto_scaling(),
 
-                     %% Wait a bit
-                     timer:sleep(100),
+                    %% Wait a bit
+                    timer:sleep(100),
 
-                     %% Get capacity estimate (should have recommendations)
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     Recommendations = maps:get(recommendations, Estimate),
+                    %% Get capacity estimate (should have recommendations)
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    Recommendations = maps:get(recommendations, Estimate),
 
-                     %% Disable auto-scaling
-                     erlmcp_process_monitor:disable_auto_scaling(),
+                    %% Disable auto-scaling
+                    erlmcp_process_monitor:disable_auto_scaling(),
 
-                     %% Get capacity estimate again
-                     {ok, Estimate2} = erlmcp_process_monitor:get_capacity_estimate(),
-                     Recommendations2 = maps:get(recommendations, Estimate2),
+                    %% Get capacity estimate again
+                    {ok, Estimate2} = erlmcp_process_monitor:get_capacity_estimate(),
+                    Recommendations2 = maps:get(recommendations, Estimate2),
 
-                     ?assert(is_list(Recommendations)),
-                     ?assert(is_list(Recommendations2))
-                 end)
-         ]
+                    ?assert(is_list(Recommendations)),
+                    ?assert(is_list(Recommendations2))
+                end)]
      end}.
 
 %%====================================================================
@@ -662,15 +627,13 @@ capacity_estimate_non_negative_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
-                     RemainingCapacity = maps:get(remaining_capacity, Estimate),
+        [?_test(begin
+                    {ok, Estimate} = erlmcp_process_monitor:get_capacity_estimate(),
+                    RemainingCapacity = maps:get(remaining_capacity, Estimate),
 
-                     %% Remaining capacity should never be negative
-                     ?assert(RemainingCapacity >= 0)
-                 end)
-         ]
+                    %% Remaining capacity should never be negative
+                    ?assert(RemainingCapacity >= 0)
+                end)]
      end}.
 
 %%====================================================================
@@ -682,18 +645,16 @@ enumerate_processes_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Test process enumeration
-                     {ok, Count} = erlmcp_process_monitor:enumerate_processes(),
-                     ?assert(is_integer(Count)),
-                     ?assert(Count > 0),
+        [?_test(begin
+                    %% Test process enumeration
+                    {ok, Count} = erlmcp_process_monitor:enumerate_processes(),
+                    ?assert(is_integer(Count)),
+                    ?assert(Count > 0),
 
-                     %% Should match or be close to system process count
-                     SystemCount = erlang:system_info(process_count),
-                     ?assert(abs(Count - SystemCount) < 100)  % Allow small difference due to timing
-                 end)
-         ]
+                    %% Should match or be close to system process count
+                    SystemCount = erlang:system_info(process_count),
+                    ?assert(abs(Count - SystemCount) < 100)  % Allow small difference due to timing
+                end)]
      end}.
 
 enumerate_processes_performance_test_() ->
@@ -701,15 +662,12 @@ enumerate_processes_performance_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Enumeration should be fast (< 100ms even with many processes)
-                     {Time, {ok, _Count}} = timer:tc(
-                         fun() -> erlmcp_process_monitor:enumerate_processes() end
-                     ),
-                     ?assert(Time < 100000)  % 100ms
-                 end)
-         ]
+        [?_test(begin
+                    %% Enumeration should be fast (< 100ms even with many processes)
+                    {Time, {ok, _Count}} =
+                        timer:tc(fun() -> erlmcp_process_monitor:enumerate_processes() end),
+                    ?assert(Time < 100000)  % 100ms
+                end)]
      end}.
 
 categorize_processes_test_() ->
@@ -717,28 +675,26 @@ categorize_processes_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Test process categorization
-                     {ok, Categories} = erlmcp_process_monitor:categorize_processes(),
-                     ?assert(is_map(Categories)),
-                     ?assert(maps:is_key(erlmcp_count, Categories)),
-                     ?assert(maps:is_key(system_count, Categories)),
+        [?_test(begin
+                    %% Test process categorization
+                    {ok, Categories} = erlmcp_process_monitor:categorize_processes(),
+                    ?assert(is_map(Categories)),
+                    ?assert(maps:is_key(erlmcp_count, Categories)),
+                    ?assert(maps:is_key(system_count, Categories)),
 
-                     ErlmcpCount = maps:get(erlmcp_count, Categories),
-                     SystemCount = maps:get(system_count, Categories),
+                    ErlmcpCount = maps:get(erlmcp_count, Categories),
+                    SystemCount = maps:get(system_count, Categories),
 
-                     ?assert(is_integer(ErlmcpCount)),
-                     ?assert(is_integer(SystemCount)),
-                     ?assert(ErlmcpCount >= 0),
-                     ?assert(SystemCount > 0),  % At least some system processes
+                    ?assert(is_integer(ErlmcpCount)),
+                    ?assert(is_integer(SystemCount)),
+                    ?assert(ErlmcpCount >= 0),
+                    ?assert(SystemCount > 0),  % At least some system processes
 
-                     %% Total should match process count
-                     Total = ErlmcpCount + SystemCount,
-                     ActualCount = erlang:system_info(process_count),
-                     ?assert(abs(Total - ActualCount) < 100)  % Allow small difference
-                 end)
-         ]
+                    %% Total should match process count
+                    Total = ErlmcpCount + SystemCount,
+                    ActualCount = erlang:system_info(process_count),
+                    ?assert(abs(Total - ActualCount) < 100)  % Allow small difference
+                end)]
      end}.
 
 categorize_processes_performance_test_() ->
@@ -746,15 +702,12 @@ categorize_processes_performance_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Categorization should be fast (< 200ms)
-                     {Time, {ok, _Categories}} = timer:tc(
-                         fun() -> erlmcp_process_monitor:categorize_processes() end
-                     ),
-                     ?assert(Time < 200000)  % 200ms
-                 end)
-         ]
+        [?_test(begin
+                    %% Categorization should be fast (< 200ms)
+                    {Time, {ok, _Categories}} =
+                        timer:tc(fun() -> erlmcp_process_monitor:categorize_processes() end),
+                    ?assert(Time < 200000)  % 200ms
+                end)]
      end}.
 
 categorize_processes_identifies_erlmcp_test_() ->
@@ -762,16 +715,14 @@ categorize_processes_identifies_erlmcp_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% The monitor itself should be counted as erlmcp
-                     {ok, Categories} = erlmcp_process_monitor:categorize_processes(),
-                     ErlmcpCount = maps:get(erlmcp_count, Categories),
+        [?_test(begin
+                    %% The monitor itself should be counted as erlmcp
+                    {ok, Categories} = erlmcp_process_monitor:categorize_processes(),
+                    ErlmcpCount = maps:get(erlmcp_count, Categories),
 
-                     %% Should have at least the process monitor itself
-                     ?assert(ErlmcpCount >= 1)
-                 end)
-         ]
+                    %% Should have at least the process monitor itself
+                    ?assert(ErlmcpCount >= 1)
+                end)]
      end}.
 
 otp_28_process_iteration_stability_test_() ->
@@ -779,27 +730,24 @@ otp_28_process_iteration_stability_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Run multiple iterations to ensure stability
-                     Results = [erlmcp_process_monitor:enumerate_processes()
-                               || _ <- lists:seq(1, 10)],
+        [?_test(begin
+                    %% Run multiple iterations to ensure stability
+                    Results =
+                        [erlmcp_process_monitor:enumerate_processes() || _ <- lists:seq(1, 10)],
 
-                     %% All should succeed
-                     lists:foreach(fun(R) ->
-                         ?assertMatch({ok, _Count}, R)
-                     end, Results),
+                    %% All should succeed
+                    lists:foreach(fun(R) -> ?assertMatch({ok, _Count}, R) end, Results),
 
-                     %% Counts should be similar (within 10% variance)
-                     Counts = [C || {ok, C} <- Results],
-                     AvgCount = lists:sum(Counts) / length(Counts),
+                    %% Counts should be similar (within 10% variance)
+                    Counts = [C || {ok, C} <- Results],
+                    AvgCount = lists:sum(Counts) / length(Counts),
 
-                     lists:foreach(fun(C) ->
-                         Variance = abs(C - AvgCount) / AvgCount,
-                         ?assert(Variance < 0.1)  % Less than 10% variance
-                     end, Counts)
-                 end)
-         ]
+                    lists:foreach(fun(C) ->
+                                     Variance = abs(C - AvgCount) / AvgCount,
+                                     ?assert(Variance < 0.1)  % Less than 10% variance
+                                  end,
+                                  Counts)
+                end)]
      end}.
 
 otp_28_categorization_consistency_test_() ->
@@ -807,29 +755,26 @@ otp_28_categorization_consistency_test_() ->
      fun setup/0,
      fun cleanup/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-                     %% Run categorization multiple times
-                     Results = [erlmcp_process_monitor:categorize_processes()
-                               || _ <- lists:seq(1, 5)],
+        [?_test(begin
+                    %% Run categorization multiple times
+                    Results =
+                        [erlmcp_process_monitor:categorize_processes() || _ <- lists:seq(1, 5)],
 
-                     %% All should succeed
-                     lists:foreach(fun(R) ->
-                         ?assertMatch({ok, _}, R)
-                     end, Results),
+                    %% All should succeed
+                    lists:foreach(fun(R) -> ?assertMatch({ok, _}, R) end, Results),
 
-                     %% Extract counts
-                     Categories = [C || {ok, C} <- Results],
+                    %% Extract counts
+                    Categories = [C || {ok, C} <- Results],
 
-                     %% Check consistency (counts shouldn't vary wildly)
-                     lists:foreach(fun(Cat) ->
-                         ErlmcpCount = maps:get(erlmcp_count, Cat),
-                         SystemCount = maps:get(system_count, Cat),
-                         ?assert(ErlmcpCount >= 0),
-                         ?assert(SystemCount > 0)
-                     end, Categories)
-                 end)
-         ]
+                    %% Check consistency (counts shouldn't vary wildly)
+                    lists:foreach(fun(Cat) ->
+                                     ErlmcpCount = maps:get(erlmcp_count, Cat),
+                                     SystemCount = maps:get(system_count, Cat),
+                                     ?assert(ErlmcpCount >= 0),
+                                     ?assert(SystemCount > 0)
+                                  end,
+                                  Categories)
+                end)]
      end}.
 
 %%====================================================================

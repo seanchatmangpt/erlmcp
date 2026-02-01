@@ -21,10 +21,8 @@
 
 valid_get_headers_test() ->
     %% Test valid GET request headers for SSE
-    Headers = [
-        {<<"Accept">>, <<"text/event-stream">>},
-        {<<"X-MCP-Protocol-Version">>, <<"2025-01-07">>}
-    ],
+    Headers =
+        [{<<"Accept">>, <<"text/event-stream">>}, {<<"X-MCP-Protocol-Version">>, <<"2025-01-07">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, get),
 
@@ -34,10 +32,9 @@ valid_get_headers_test() ->
 
 valid_post_headers_test() ->
     %% Test valid POST request headers with JSON
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"X-MCP-Protocol-Version">>, <<"2025-01-07">>}
-    ],
+    Headers =
+        [{<<"Content-Type">>, <<"application/json">>},
+         {<<"X-MCP-Protocol-Version">>, <<"2025-01-07">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -45,9 +42,7 @@ valid_post_headers_test() ->
 
 valid_post_headers_with_charset_test() ->
     %% Test POST with charset parameter
-    Headers = [
-        {<<"Content-Type">>, <<"application/json; charset=utf-8">>}
-    ],
+    Headers = [{<<"Content-Type">>, <<"application/json; charset=utf-8">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -55,9 +50,7 @@ valid_post_headers_with_charset_test() ->
 
 valid_headers_case_insensitive_test() ->
     %% Test header names are case-insensitive
-    Headers = [
-        {<<"CONTENT-TYPE">>, <<"application/json">>}
-    ],
+    Headers = [{<<"CONTENT-TYPE">>, <<"application/json">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -65,9 +58,7 @@ valid_headers_case_insensitive_test() ->
 
 valid_accept_with_multiple_types_test() ->
     %% Test Accept header with multiple media types
-    Headers = [
-        {<<"Accept">>, <<"text/html, text/event-stream, application/json">>}
-    ],
+    Headers = [{<<"Accept">>, <<"text/html, text/event-stream, application/json">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, get),
 
@@ -95,9 +86,7 @@ missing_content_type_header_test() ->
 
 wrong_accept_header_test() ->
     %% Test GET with wrong Accept header
-    Headers = [
-        {<<"Accept">>, <<"application/json">>}
-    ],
+    Headers = [{<<"Accept">>, <<"application/json">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, get),
 
@@ -105,9 +94,7 @@ wrong_accept_header_test() ->
 
 wrong_content_type_header_test() ->
     %% Test POST with wrong Content-Type
-    Headers = [
-        {<<"Content-Type">>, <<"text/plain">>}
-    ],
+    Headers = [{<<"Content-Type">>, <<"text/plain">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -115,17 +102,18 @@ wrong_content_type_header_test() ->
 
 invalid_charset_test() ->
     %% Test POST with invalid charset
-    Headers = [
-        {<<"Content-Type">>, <<"application/json; charset=iso-8859-1">>}
-    ],
+    Headers = [{<<"Content-Type">>, <<"application/json; charset=iso-8859-1">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
     %% Should either reject or normalize
     case Result of
-        {ok, _} -> ok;
-        {error, {400, _, _}} -> ok;
-        Other -> ?assert(false, {unexpected_result, Other})
+        {ok, _} ->
+            ok;
+        {error, {400, _, _}} ->
+            ok;
+        Other ->
+            ?assert(false, {unexpected_result, Other})
     end.
 
 %%%===================================================================
@@ -134,9 +122,7 @@ invalid_charset_test() ->
 
 crlf_injection_in_header_name_test() ->
     %% Test CRLF injection in header name
-    Headers = [
-        {<<"Content-Type\r\nX-Injected">>, <<"application/json">>}
-    ],
+    Headers = [{<<"Content-Type\r\nX-Injected">>, <<"application/json">>}],
 
     %% Header name with CRLF should be rejected or sanitized
     %% This is typically handled at the HTTP parser level
@@ -148,9 +134,7 @@ crlf_injection_in_header_name_test() ->
 
 crlf_injection_in_header_value_test() ->
     %% Test CRLF injection in header value
-    Headers = [
-        {<<"Content-Type">>, <<"application/json\r\nX-Injected: malicious">>}
-    ],
+    Headers = [{<<"Content-Type">>, <<"application/json\r\nX-Injected: malicious">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -159,9 +143,7 @@ crlf_injection_in_header_value_test() ->
 
 newline_injection_test() ->
     %% Test newline injection (LF only)
-    Headers = [
-        {<<"X-Custom">>, <<"value\ninjected">>}
-    ],
+    Headers = [{<<"X-Custom">>, <<"value\ninjected">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, put),
 
@@ -169,9 +151,7 @@ newline_injection_test() ->
 
 carriage_return_injection_test() ->
     %% Test carriage return injection (CR only)
-    Headers = [
-        {<<"X-Custom">>, <<"value\rinjected">>}
-    ],
+    Headers = [{<<"X-Custom">>, <<"value\rinjected">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, put),
 
@@ -179,9 +159,7 @@ carriage_return_injection_test() ->
 
 null_byte_injection_test() ->
     %% Test null byte injection
-    Headers = [
-        {<<"Content-Type">>, <<"application/json", 0, "injected">>}
-    ],
+    Headers = [{<<"Content-Type">>, <<"application/json", 0, "injected">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -195,10 +173,7 @@ null_byte_injection_test() ->
 normal_header_size_test() ->
     %% Test normal-sized header
     LargeValue = binary:copy(<<"a">>, 100),
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"X-Custom">>, LargeValue}
-    ],
+    Headers = [{<<"Content-Type">>, <<"application/json">>}, {<<"X-Custom">>, LargeValue}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -207,10 +182,7 @@ normal_header_size_test() ->
 very_long_header_value_test() ->
     %% Test very long header value (8KB)
     LargeValue = binary:copy(<<"x">>, 8192),
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"X-Large">>, LargeValue}
-    ],
+    Headers = [{<<"Content-Type">>, <<"application/json">>}, {<<"X-Large">>, LargeValue}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -219,10 +191,11 @@ very_long_header_value_test() ->
 
 many_headers_test() ->
     %% Test many headers
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>}
-        | [{<<"X-Custom-", (integer_to_binary(N))/binary>>, <<"value">>} || N <- lists:seq(1, 50)]
-    ],
+    Headers =
+        [{<<"Content-Type">>, <<"application/json">>} | [{<<"X-Custom-",
+                                                            (integer_to_binary(N))/binary>>,
+                                                          <<"value">>}
+                                                         || N <- lists:seq(1, 50)]],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -230,9 +203,7 @@ many_headers_test() ->
 
 empty_header_name_test() ->
     %% Test empty header name
-    Headers = [
-        {<<"">>, <<"value">>}
-    ],
+    Headers = [{<<"">>, <<"value">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -241,10 +212,7 @@ empty_header_name_test() ->
 
 empty_header_value_test() ->
     %% Test empty header value
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"X-Custom">>, <<"">>}
-    ],
+    Headers = [{<<"Content-Type">>, <<"application/json">>}, {<<"X-Custom">>, <<"">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -256,9 +224,7 @@ empty_header_value_test() ->
 
 special_characters_in_header_name_test() ->
     %% Test special characters in header name
-    Headers = [
-        {<<"X-Custom@Header">>, <<"value">>}
-    ],
+    Headers = [{<<"X-Custom@Header">>, <<"value">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, put),
 
@@ -267,10 +233,8 @@ special_characters_in_header_name_test() ->
 
 unicode_in_header_value_test() ->
     %% Test Unicode in header value
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"X-Custom">>, <<"value with 日本語">>}
-    ],
+    Headers =
+        [{<<"Content-Type">>, <<"application/json">>}, {<<"X-Custom">>, <<"value with 日本語">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -279,10 +243,9 @@ unicode_in_header_value_test() ->
 
 whitespace_in_header_value_test() ->
     %% Test whitespace preservation
-    Headers = [
-        {<<"Content-Type">>, <<"application/json">>},
-        {<<"X-Custom">>, <<"  value  with  spaces  ">>}
-    ],
+    Headers =
+        [{<<"Content-Type">>, <<"application/json">>},
+         {<<"X-Custom">>, <<"  value  with  spaces  ">>}],
 
     Result = erlmcp_http_header_validator:validate_request_headers(Headers, post),
 
@@ -290,11 +253,11 @@ whitespace_in_header_value_test() ->
 
 format_error_response_test() ->
     %% Test error response formatting
-    Response = erlmcp_http_header_validator:format_error_response(
-        400,
-        <<"Invalid header">>,
-        #{header => <<"Content-Type">>, reason => <<"Missing">>}
-    ),
+    Response =
+        erlmcp_http_header_validator:format_error_response(400,
+                                                           <<"Invalid header">>,
+                                                           #{header => <<"Content-Type">>,
+                                                             reason => <<"Missing">>}),
 
     ?assertMatch({400, _, _}, Response),
     {_Code, Headers, Body} = Response,
@@ -306,11 +269,10 @@ format_error_response_test() ->
 
 error_response_with_binary_data_test() ->
     %% Test error response with binary data
-    Response = erlmcp_http_header_validator:format_error_response(
-        400,
-        <<"Invalid value">>,
-        <<"Binary error data">>
-    ),
+    Response =
+        erlmcp_http_header_validator:format_error_response(400,
+                                                           <<"Invalid value">>,
+                                                           <<"Binary error data">>),
 
     ?assertMatch({400, _, _}, Response),
     {_Code, _Headers, Body} = Response,

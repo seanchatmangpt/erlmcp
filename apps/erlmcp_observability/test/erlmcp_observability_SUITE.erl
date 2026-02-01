@@ -7,25 +7,20 @@
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
--export([all/0, suite/0, init_per_suite/1, end_per_suite/1,
-         init_per_testcase/2, end_per_testcase/2]).
--export([
-    test_metrics_integration/1,
-    test_otel_integration/1,
-    test_health_integration/1,
-    test_dashboard_server/1,
-    test_full_observability_stack/1
-]).
+-export([all/0, suite/0, init_per_suite/1, end_per_suite/1, init_per_testcase/2,
+         end_per_testcase/2]).
+-export([test_metrics_integration/1, test_otel_integration/1, test_health_integration/1,
+         test_dashboard_server/1, test_full_observability_stack/1]).
 
-suite() -> [{timetrap, {seconds, 60}}].
+suite() ->
+    [{timetrap, {seconds, 60}}].
 
-all() -> [
-    test_metrics_integration,
-    test_otel_integration,
-    test_health_integration,
-    test_dashboard_server,
-    test_full_observability_stack
-].
+all() ->
+    [test_metrics_integration,
+     test_otel_integration,
+     test_health_integration,
+     test_dashboard_server,
+     test_full_observability_stack].
 
 %%====================================================================
 %% Suite Setup/Teardown
@@ -36,8 +31,10 @@ init_per_suite(Config) ->
 
     %% Start crypto (required by some modules)
     case application:ensure_all_started(crypto) of
-        ok -> ok;
-        {ok, _} -> ok
+        ok ->
+            ok;
+        {ok, _} ->
+            ok
     end,
 
     %% Start the observability application
@@ -102,7 +99,6 @@ test_metrics_integration(_Config) ->
             gen_server:stop(Pid),
             ?assertNot(is_process_alive(Pid)),
             ok;
-
         {error, {already_started, Pid}} when is_pid(Pid) ->
             ct:log("Metrics server already running: ~p", [Pid]),
 
@@ -111,7 +107,6 @@ test_metrics_integration(_Config) ->
             Metrics = erlmcp_metrics:get_metrics(),
             ?assert(is_map(Metrics) orelse is_list(Metrics)),
             ok;
-
         {'EXIT', Reason} ->
             ct:log("Metrics module not available or failed: ~p", [Reason]),
             {skip, "Metrics module not available"}
@@ -138,7 +133,6 @@ test_otel_integration(_Config) ->
                 erlmcp_otel:end_span(SpanCtx),
 
                 ok;
-
             {error, InitReason} ->
                 ct:log("OTEL initialization failed (may be optional): ~p", [InitReason]),
                 {skip, "OTEL not available or not configured"}
@@ -182,7 +176,6 @@ test_health_integration(_Config) ->
                 gen_server:stop(Pid),
                 ?assertNot(is_process_alive(Pid)),
                 ok;
-
             {error, {already_started, Pid}} when is_pid(Pid) ->
                 ct:log("Health monitor already running: ~p", [Pid]),
 
@@ -191,7 +184,6 @@ test_health_integration(_Config) ->
                 Health = erlmcp_health_monitor:get_system_health(),
                 ?assert(is_map(Health)),
                 ok;
-
             {'EXIT', Reason} ->
                 ct:log("Health monitor not available: ~p", [Reason]),
                 {skip, "Health monitor not available"}
@@ -229,7 +221,6 @@ test_dashboard_server(_Config) ->
                         ct:log("Ranch supervisor already running"),
                         test_dashboard_server_with_cowboy(19090)
                 end;
-
             {error, Reason} ->
                 ct:log("Cowboy not available: ~p", [Reason]),
                 {skip, "Cowboy dependency not available"}
@@ -253,10 +244,7 @@ test_dashboard_server_with_cowboy(TestPort) ->
             ?assertEqual(TestPort, RetrievedPort),
 
             %% Test metrics broadcast
-            TestMetrics = #{
-                timestamp => erlang:system_time(millisecond),
-                test_metric => 123
-            },
+            TestMetrics = #{timestamp => erlang:system_time(millisecond), test_metric => 123},
             ok = erlmcp_dashboard_server:broadcast_metrics(TestMetrics),
 
             %% Cleanup
@@ -264,15 +252,12 @@ test_dashboard_server_with_cowboy(TestPort) ->
             timer:sleep(100),
             ?assertNot(is_process_alive(Pid)),
             ok;
-
         {error, {already_started, Pid}} when is_pid(Pid) ->
             ct:log("Dashboard server already running: ~p", [Pid]),
             ok;
-
         {'EXIT', {{noproc, _}, _}} ->
             ct:log("Ranch supervisor still not available after starting ranch"),
             {skip, "Ranch/Cowboy dependencies not properly configured"};
-
         {'EXIT', Reason} ->
             ct:log("Dashboard server failed to start: ~p", [Reason]),
             {skip, "Dashboard server dependencies not available"}
@@ -282,11 +267,10 @@ test_full_observability_stack(_Config) ->
     ct:log("Testing full observability stack integration"),
 
     %% Try to start all observability components
-    Results = #{
-        metrics => test_component_safe(fun test_metrics_component/0),
-        otel => test_component_safe(fun test_otel_component/0),
-        health => test_component_safe(fun test_health_component/0)
-    },
+    Results =
+        #{metrics => test_component_safe(fun test_metrics_component/0),
+          otel => test_component_safe(fun test_otel_component/0),
+          health => test_component_safe(fun test_health_component/0)},
 
     ct:log("Observability stack test results: ~p", [Results]),
 
@@ -294,13 +278,14 @@ test_full_observability_stack(_Config) ->
     ?assertEqual(ok, maps:get(metrics, Results)),
 
     %% Verify at least one component succeeded
-    SuccessCount = lists:foldl(
-        fun(ok, Acc) -> Acc + 1;
-           (_, Acc) -> Acc
-        end,
-        0,
-        maps:values(Results)
-    ),
+    SuccessCount =
+        lists:foldl(fun (ok, Acc) ->
+                            Acc + 1;
+                        (_, Acc) ->
+                            Acc
+                    end,
+                    0,
+                    maps:values(Results)),
 
     ?assert(SuccessCount >= 1, "At least one observability component should work"),
 
@@ -325,11 +310,14 @@ test_metrics_component() ->
 test_otel_component() ->
     try
         case erlmcp_otel:init(#{service_name => <<"stack_test">>}) of
-            ok -> ok;
-            _ -> {error, otel_init_failed}
+            ok ->
+                ok;
+            _ ->
+                {error, otel_init_failed}
         end
     catch
-        _:_ -> {error, otel_unavailable}
+        _:_ ->
+            {error, otel_unavailable}
     end.
 
 test_health_component() ->
@@ -346,9 +334,12 @@ test_health_component() ->
 test_component_safe(Fun) ->
     try
         case Fun() of
-            ok -> ok;
-            {error, _} -> {skip, component_failed}
+            ok ->
+                ok;
+            {error, _} ->
+                {skip, component_failed}
         end
     catch
-        _:_ -> {skip, component_crashed}
+        _:_ ->
+            {skip, component_crashed}
     end.

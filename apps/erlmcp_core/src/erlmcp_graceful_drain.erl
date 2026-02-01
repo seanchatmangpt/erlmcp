@@ -1,38 +1,26 @@
 -module(erlmcp_graceful_drain).
+
 -behaviour(gen_server).
 
-
 %% API
--export([
-    start_link/0,
-    drain_module/2,
-    resume_module/1,
-    is_draining/1,
-    get_drain_status/0,
-    initiate_shutdown/1,
-    get_active_connections/0,
-    connection_started/1,
-    connection_finished/1
-]).
-
+-export([start_link/0, drain_module/2, resume_module/1, is_draining/1, get_drain_status/0,
+         initiate_shutdown/1, get_active_connections/0, connection_started/1,
+         connection_finished/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {
-    draining_modules = #{} :: #{module() => drain_info()},
-    paused_requests = #{} :: #{module() => queue:queue()},
-    shutdown_requested = false :: boolean(),
-    active_connections = 0 :: non_neg_integer(),
-    priority_messages_delivered = 0 :: non_neg_integer(),
-    priority_latency_sum_us = 0 :: non_neg_integer()
-}).
+-record(state,
+        {draining_modules = #{} :: #{module() => drain_info()},
+         paused_requests = #{} :: #{module() => queue:queue()},
+         shutdown_requested = false :: boolean(),
+         active_connections = 0 :: non_neg_integer(),
+         priority_messages_delivered = 0 :: non_neg_integer(),
+         priority_latency_sum_us = 0 :: non_neg_integer()}).
 
--type drain_info() :: #{
-    start_time => erlang:timestamp(),
-    timeout_ms => pos_integer(),
-    timer_ref => reference()
-}.
-
+-type drain_info() ::
+    #{start_time => erlang:timestamp(),
+      timeout_ms => pos_integer(),
+      timer_ref => reference()}.
 -type state() :: #state{}.
 
 %%====================================================================
@@ -70,7 +58,6 @@ initiate_shutdown(TimeoutMs) ->
     erlang:send(?MODULE, {priority_shutdown, TimeoutMs}, [nosuspend]),
     ok.
 
-
 %% @doc Get number of active connections
 -spec get_active_connections() -> non_neg_integer().
 get_active_connections() ->
@@ -102,27 +89,23 @@ init([]) ->
     {ok, #state{}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
-
 handle_call({drain_module, Module, TimeoutMs}, _From, State) ->
     logger:info("Starting drain for module ~p (timeout: ~pms)", [Module, TimeoutMs]),
 
     % Setup drain timeout
     TimerRef = erlang:send_after(TimeoutMs, self(), {drain_timeout, Module}),
 
-    DrainInfo = #{
-        start_time => erlang:timestamp(),
-        timeout_ms => TimeoutMs,
-        timer_ref => TimerRef
-    },
+    DrainInfo =
+        #{start_time => erlang:timestamp(),
+          timeout_ms => TimeoutMs,
+          timer_ref => TimerRef},
 
     NewDraining = maps:put(Module, DrainInfo, State#state.draining_modules),
-    NewState = State#state{
-        draining_modules = NewDraining,
-        paused_requests = maps:put(Module, queue:new(), State#state.paused_requests)
-    },
+    NewState =
+        State#state{draining_modules = NewDraining,
+                    paused_requests = maps:put(Module, queue:new(), State#state.paused_requests)},
 
     {reply, ok, NewState};
-
 handle_call({resume_module, Module}, _From, State) ->
     logger:info("Resuming module ~p", [Module]),
 
@@ -137,28 +120,20 @@ handle_call({resume_module, Module}, _From, State) ->
     NewDraining = maps:remove(Module, State#state.draining_modules),
     NewPaused = maps:remove(Module, State#state.paused_requests),
 
-    NewState = State#state{
-        draining_modules = NewDraining,
-        paused_requests = NewPaused
-    },
+    NewState = State#state{draining_modules = NewDraining, paused_requests = NewPaused},
 
     {reply, ok, NewState};
-
 handle_call({is_draining, Module}, _From, State) ->
     Result = maps:is_key(Module, State#state.draining_modules),
     {reply, Result, State};
-
 handle_call(get_drain_status, _From, State) ->
     {reply, State#state.draining_modules, State};
-
 handle_call(get_active_connections, _From, State) ->
     {reply, State#state.active_connections, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
-
 handle_cast({shutdown, TimeoutMs}, State) ->
     logger:warning("Graceful shutdown initiated (timeout: ~pms)", [TimeoutMs]),
     StartTime = erlang:monotonic_time(microsecond),
@@ -172,13 +147,11 @@ handle_cast({shutdown, TimeoutMs}, State) ->
     EndTime = erlang:monotonic_time(microsecond),
     LatencyUs = EndTime - StartTime,
 
-    FinalState = NewState#state{
-        priority_messages_delivered = State#state.priority_messages_delivered + 1,
-        priority_latency_sum_us = State#state.priority_latency_sum_us + LatencyUs
-    },
+    FinalState =
+        NewState#state{priority_messages_delivered = State#state.priority_messages_delivered + 1,
+                       priority_latency_sum_us = State#state.priority_latency_sum_us + LatencyUs},
 
     {noreply, FinalState};
-
 handle_cast({connection_started, _Module}, State) ->
     % Only increment if not shutting down
     case State#state.shutdown_requested of
@@ -189,7 +162,6 @@ handle_cast({connection_started, _Module}, State) ->
             logger:warning("Connection attempt during shutdown rejected"),
             {noreply, State}
     end;
-
 handle_cast({connection_finished, _Module}, State) ->
     NewConnections = max(0, State#state.active_connections - 1),
     NewState = State#state{active_connections = NewConnections},
@@ -204,12 +176,10 @@ handle_cast({connection_finished, _Module}, State) ->
     end,
 
     {noreply, NewState};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
-
 % Priority shutdown message (OTP 28 only)
 handle_info({priority_shutdown, TimeoutMs}, State) ->
     StartTime = erlang:monotonic_time(microsecond),
@@ -224,37 +194,29 @@ handle_info({priority_shutdown, TimeoutMs}, State) ->
     EndTime = erlang:monotonic_time(microsecond),
     LatencyUs = EndTime - StartTime,
 
-    FinalState = NewState#state{
-        priority_messages_delivered = State#state.priority_messages_delivered + 1,
-        priority_latency_sum_us = State#state.priority_latency_sum_us + LatencyUs
-    },
+    FinalState =
+        NewState#state{priority_messages_delivered = State#state.priority_messages_delivered + 1,
+                       priority_latency_sum_us = State#state.priority_latency_sum_us + LatencyUs},
 
     {noreply, FinalState};
-
 handle_info({drain_timeout, Module}, State) ->
     logger:info("Drain timeout reached for module ~p", [Module]),
 
     NewDraining = maps:remove(Module, State#state.draining_modules),
     NewPaused = maps:remove(Module, State#state.paused_requests),
 
-    NewState = State#state{
-        draining_modules = NewDraining,
-        paused_requests = NewPaused
-    },
+    NewState = State#state{draining_modules = NewDraining, paused_requests = NewPaused},
 
     {noreply, NewState};
-
 handle_info(shutdown_timeout, State) ->
     logger:warning("Shutdown timeout reached, forcing shutdown with ~p active connections",
-                  [State#state.active_connections]),
+                   [State#state.active_connections]),
     erlang:send_after(0, self(), final_shutdown),
     {noreply, State};
-
 handle_info(final_shutdown, State) ->
     logger:info("Final shutdown: ~p active connections", [State#state.active_connections]),
     % Notify supervisor that we're ready to terminate
     {stop, normal, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 

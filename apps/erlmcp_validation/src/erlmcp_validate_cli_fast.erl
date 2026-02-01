@@ -14,18 +14,9 @@
 -module(erlmcp_validate_cli_fast).
 
 %% Fast API
--export([
-    quick_check/0,
-    validate_spec_fast/0,
-    validate_protocol_fast/1,
-    main/1
-]).
-
+-export([quick_check/0, validate_spec_fast/0, validate_protocol_fast/1, main/1]).
 %% Internal
--export([
-    ensure_minimal_apps/0,
-    lazy_load_module/1
-]).
+-export([ensure_minimal_apps/0, lazy_load_module/1]).
 
 -define(VERSION, "1.0.0-fast").
 
@@ -37,29 +28,31 @@
 -spec quick_check() -> ok | error.
 quick_check() ->
     %% No app loading, just module checks
-    RequiredModules = [
-        erlmcp_validate_cli,
-        erlmcp_spec_parser
-    ],
-    
-    AllLoaded = lists:all(fun(M) ->
-        case code:is_loaded(M) of
-            {file, _} -> true;
-            false ->
-                %% Try lazy load
-                case code:ensure_loaded(M) of
-                    {module, M} -> true;
-                    _ -> false
-                end
-        end
-    end, RequiredModules),
-    
+    RequiredModules = [erlmcp_validate_cli, erlmcp_spec_parser],
+
+    AllLoaded =
+        lists:all(fun(M) ->
+                     case code:is_loaded(M) of
+                         {file, _} ->
+                             true;
+                         false ->
+                             %% Try lazy load
+                             case code:ensure_loaded(M) of
+                                 {module, M} ->
+                                     true;
+                                 _ ->
+                                     false
+                             end
+                     end
+                  end,
+                  RequiredModules),
+
     if AllLoaded ->
-            io:format("✓ Quick check PASSED~n"),
-            ok;
+           io:format("✓ Quick check PASSED~n"),
+           ok;
        true ->
-            io:format("✗ Quick check FAILED~n"),
-            error
+           io:format("✗ Quick check FAILED~n"),
+           error
     end.
 
 %% @doc Fast spec validation - minimal checks only
@@ -68,30 +61,32 @@ validate_spec_fast() ->
     try
         %% Only load minimal apps
         ensure_minimal_apps(),
-        
+
         %% Lazy load spec parser
         lazy_load_module(erlmcp_spec_parser),
-        
+
         %% Start spec parser if needed
         case whereis(erlmcp_spec_parser) of
             undefined ->
                 case erlmcp_spec_parser:start_link() of
-                    {ok, _} -> ok;
-                    {error, {already_started, _}} -> ok
+                    {ok, _} ->
+                        ok;
+                    {error, {already_started, _}} ->
+                        ok
                 end;
-            _ -> ok
+            _ ->
+                ok
         end,
-        
+
         %% Get minimal spec info
         SpecVersion = erlmcp_spec_parser:spec_version(),
-        
-        {ok, #{
-            status => passed,
-            spec_version => SpecVersion,
-            timestamp => iso8601_timestamp(),
-            mode => fast,
-            message => <<"Fast validation - basic checks only">>
-        }}
+
+        {ok,
+         #{status => passed,
+           spec_version => SpecVersion,
+           timestamp => iso8601_timestamp(),
+           mode => fast,
+           message => <<"Fast validation - basic checks only">>}}
     catch
         _:Error ->
             {error, {fast_validation_error, Error}}
@@ -104,21 +99,19 @@ validate_protocol_fast(Message) ->
         %% Basic structure check without full validation
         HasJsonRpc = maps:is_key(<<"jsonrpc">>, Message),
         HasId = maps:is_key(<<"id">>, Message) orelse maps:is_key(<<"method">>, Message),
-        
+
         if HasJsonRpc andalso HasId ->
-                {ok, #{
-                    status => passed,
-                    mode => fast,
-                    message => <<"Basic structure valid">>,
-                    timestamp => iso8601_timestamp()
-                }};
+               {ok,
+                #{status => passed,
+                  mode => fast,
+                  message => <<"Basic structure valid">>,
+                  timestamp => iso8601_timestamp()}};
            true ->
-                {error, #{
-                    status => failed,
-                    mode => fast,
-                    reason => <<"Invalid message structure">>,
-                    timestamp => iso8601_timestamp()
-                }}
+               {error,
+                #{status => failed,
+                  mode => fast,
+                  reason => <<"Invalid message structure">>,
+                  timestamp => iso8601_timestamp()}}
         end
     catch
         _:Error ->
@@ -129,13 +122,14 @@ validate_protocol_fast(Message) ->
 %% Escript Entry Point
 %%====================================================================
 
-main(["--quick"|_]) ->
+main(["--quick" | _]) ->
     case quick_check() of
-        ok -> halt(0);
-        error -> halt(1)
+        ok ->
+            halt(0);
+        error ->
+            halt(1)
     end;
-
-main(["spec", "--fast"|_]) ->
+main(["spec", "--fast" | _]) ->
     case validate_spec_fast() of
         {ok, Result} ->
             print_result(Result),
@@ -144,11 +138,9 @@ main(["spec", "--fast"|_]) ->
             io:format("Error: ~p~n", [Reason]),
             halt(1)
     end;
-
-main(["--help"|_]) ->
+main(["--help" | _]) ->
     print_help(),
     halt(0);
-
 main(_Args) ->
     %% Default to quick check
     main(["--quick"]).
@@ -161,20 +153,26 @@ main(_Args) ->
 ensure_minimal_apps() ->
     %% Only crypto is essential for most operations
     case application:start(crypto) of
-        ok -> ok;
-        {error, {already_started, crypto}} -> ok;
-        {error, Reason} -> throw({failed_to_start_crypto, Reason})
+        ok ->
+            ok;
+        {error, {already_started, crypto}} ->
+            ok;
+        {error, Reason} ->
+            throw({failed_to_start_crypto, Reason})
     end,
     ok.
 
 %% @doc Lazy load a module only when needed
 lazy_load_module(Module) ->
     case code:is_loaded(Module) of
-        {file, _} -> ok;
+        {file, _} ->
+            ok;
         false ->
             case code:ensure_loaded(Module) of
-                {module, Module} -> ok;
-                {error, Reason} -> throw({module_load_failed, Module, Reason})
+                {module, Module} ->
+                    ok;
+                {error, Reason} ->
+                    throw({module_load_failed, Module, Reason})
             end
     end.
 
@@ -185,13 +183,17 @@ lazy_load_module(Module) ->
 print_result(Result) ->
     Status = maps:get(status, Result),
     Message = maps:get(message, Result, <<"No message">>),
-    
-    StatusStr = case Status of
-        passed -> "PASS ✓";
-        warning -> "WARN ⚠";
-        _ -> "FAIL ✗"
-    end,
-    
+
+    StatusStr =
+        case Status of
+            passed ->
+                "PASS ✓";
+            warning ->
+                "WARN ⚠";
+            _ ->
+                "FAIL ✗"
+        end,
+
     io:format("~s: ~s~n", [StatusStr, Message]).
 
 print_help() ->
@@ -209,4 +211,4 @@ print_help() ->
 iso8601_timestamp() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:universal_time(),
     iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
-                  [Year, Month, Day, Hour, Min, Sec])).
+                                   [Year, Month, Day, Hour, Min, Sec])).

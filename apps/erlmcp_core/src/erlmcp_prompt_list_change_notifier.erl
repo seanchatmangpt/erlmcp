@@ -1,19 +1,16 @@
 -module(erlmcp_prompt_list_change_notifier).
+
 -behaviour(gen_server).
 
 %% API
 -export([start_link/0, notify_prompt_added/4]).
-
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 
 %% State record
--record(state, {
-    subscribers = sets:new() :: sets:set(pid())
-}).
+-record(state, {subscribers = sets:new() :: sets:set(pid())}).
 
 -type state() :: #state{}.
 
@@ -26,12 +23,7 @@ start_link() ->
 
 %% @doc Notify that a prompt has been added with metadata
 %% Gap #27: Send prompt added notification with metadata
--spec notify_prompt_added(
-    server_id(),
-    binary(),
-    #mcp_prompt{},
-    pid() | undefined
-) -> ok.
+-spec notify_prompt_added(server_id(), binary(), #mcp_prompt{}, pid() | undefined) -> ok.
 notify_prompt_added(ServerId, Name, Prompt, NotifierPid) ->
     gen_server:cast(?MODULE, {notify_prompt_added, ServerId, Name, Prompt, NotifierPid}),
     ok.
@@ -54,7 +46,6 @@ handle_cast({notify_prompt_added, ServerId, Name, Prompt, _NotifierPid}, State) 
     erlmcp_change_notifier:notify_list_changed(prompts),
 
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

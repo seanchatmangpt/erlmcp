@@ -8,16 +8,9 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2,
-         acquire/1,
-         acquire/2,
-         release/2,
-         get_pool_stats/1,
-         close_pool/1]).
-
+-export([start_link/2, acquire/1, acquire/2, release/2, get_pool_stats/1, close_pool/1]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -27,10 +20,7 @@
 -type pool_id() :: atom().
 -type connection() :: pid().
 
--record(state, {
-    pools = #{} :: #{pool_id() => map()},
-    health_timer :: reference() | undefined
-}).
+-record(state, {pools = #{} :: #{pool_id() => map()}, health_timer :: reference() | undefined}).
 
 %%%===================================================================
 %%% API
@@ -59,17 +49,13 @@ close_pool(PoolId) ->
 %%%===================================================================
 
 init({PoolId, Config}) ->
-    InitialState = #{
-        available => queue:new(),
-        in_use => #{},
-        size => 0,
-        config => Config
-    },
-    
-    {ok, #state{
-        pools = #{PoolId => InitialState},
-        health_timer = undefined
-    }}.
+    InitialState =
+        #{available => queue:new(),
+          in_use => #{},
+          size => 0,
+          config => Config},
+
+    {ok, #state{pools = #{PoolId => InitialState}, health_timer = undefined}}.
 
 handle_call({acquire, PoolId}, From, State) ->
     case maps:get(PoolId, State#state.pools, undefined) of
@@ -92,23 +78,24 @@ handle_call({acquire, PoolId}, From, State) ->
                     {noreply, State}
             end
     end;
-
 handle_call({get_stats, PoolId}, _From, State) ->
     case maps:get(PoolId, State#state.pools, undefined) of
         undefined ->
             {reply, {error, pool_not_found}, State};
         PoolState ->
-            AvailableCount = queue:len(maps:get(available, PoolState)),
-            InUseCount = maps:size(maps:get(in_use, PoolState)),
-            Stats = #{
-                pool_id => PoolId,
-                available_connections => AvailableCount,
-                in_use_connections => InUseCount,
-                total_connections => AvailableCount + InUseCount
-            },
+            AvailableCount =
+                queue:len(
+                    maps:get(available, PoolState)),
+            InUseCount =
+                maps:size(
+                    maps:get(in_use, PoolState)),
+            Stats =
+                #{pool_id => PoolId,
+                  available_connections => AvailableCount,
+                  in_use_connections => InUseCount,
+                  total_connections => AvailableCount + InUseCount},
             {reply, {ok, Stats}, State}
     end;
-
 handle_call({close, PoolId}, _From, State) ->
     case maps:get(PoolId, State#state.pools, undefined) of
         undefined ->
@@ -118,7 +105,6 @@ handle_call({close, PoolId}, _From, State) ->
             NewPools = maps:remove(PoolId, State#state.pools),
             {reply, ok, State#state{pools = NewPools}}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -141,37 +127,38 @@ handle_cast({release, PoolId, Connection}, State) ->
                     {noreply, State#state{pools = NewPools}}
             end
     end;
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({'DOWN', MonitorRef, process, _Pid, _Reason}, State) ->
-    NewPools = maps:map(fun(_PoolId, PoolState) ->
-        InUse = maps:get(in_use, PoolState),
-        % Find and remove the connection with this monitor ref
-        case maps:fold(fun(Conn, MonRef, {found, ConnKey}) ->
-                {found, ConnKey};
-               (Conn, MonRef, not_found) when MonRef =:= MonitorRef ->
-                {found, Conn};
-               (_Conn, _MonRef, Acc) ->
-                Acc
-            end, not_found, InUse) of
-            {found, Connection} ->
-                NewInUse = maps:remove(Connection, InUse),
-                PoolState#{in_use => NewInUse};
-            not_found ->
-                PoolState
-        end
-    end, State#state.pools),
+    NewPools =
+        maps:map(fun(_PoolId, PoolState) ->
+                    InUse = maps:get(in_use, PoolState),
+                    % Find and remove the connection with this monitor ref
+                    case maps:fold(fun (Conn, MonRef, {found, ConnKey}) ->
+                                           {found, ConnKey};
+                                       (Conn, MonRef, not_found) when MonRef =:= MonitorRef ->
+                                           {found, Conn};
+                                       (_Conn, _MonRef, Acc) ->
+                                           Acc
+                                   end,
+                                   not_found,
+                                   InUse)
+                    of
+                        {found, Connection} ->
+                            NewInUse = maps:remove(Connection, InUse),
+                            PoolState#{in_use => NewInUse};
+                        not_found ->
+                            PoolState
+                    end
+                 end,
+                 State#state.pools),
     {noreply, State#state{pools = NewPools}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, #state{pools = Pools}) ->
-    maps:foreach(fun(_PoolId, PoolState) ->
-        close_all_connections(PoolState)
-    end, Pools),
+    maps:foreach(fun(_PoolId, PoolState) -> close_all_connections(PoolState) end, Pools),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -184,14 +171,17 @@ code_change(_OldVsn, State, _Extra) ->
 close_all_connections(PoolState) ->
     Available = maps:get(available, PoolState),
     InUse = maps:get(in_use, PoolState),
-    
+
     queue:fold(fun(Connection, _Acc) ->
-        catch gen_tcp:close(Connection),
-        ok
-    end, ok, Available),
-    
+                  catch gen_tcp:close(Connection),
+                  ok
+               end,
+               ok,
+               Available),
+
     maps:foreach(fun(Connection, _MonitorRef) ->
-        catch gen_tcp:close(Connection),
-        ok
-    end, InUse),
+                    catch gen_tcp:close(Connection),
+                    ok
+                 end,
+                 InUse),
     ok.

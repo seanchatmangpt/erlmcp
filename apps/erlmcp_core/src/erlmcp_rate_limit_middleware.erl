@@ -34,38 +34,26 @@
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
+
 -include_lib("kernel/include/logger.hrl").
 
 %% API
--export([
-    start_link/0,
-    stop/0,
-    check_request/3,
-    check_request/4,
-    add_rate_limit/2,
-    remove_rate_limit/1,
-    get_rate_limits/0,
-    extract_client_id/1,
-    inject_retry_after/2
-]).
-
+-export([start_link/0, stop/0, check_request/3, check_request/4, add_rate_limit/2,
+         remove_rate_limit/1, get_rate_limits/0, extract_client_id/1, inject_retry_after/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
 -type client_id() :: term().
 -type method() :: binary().
--type rate_limit_config() :: #{
-    method => binary(),
-    max_rate => pos_integer(),
-    scope => per_client | per_tool | global
-}.
+-type rate_limit_config() ::
+    #{method => binary(),
+      max_rate => pos_integer(),
+      scope => per_client | per_tool | global}.
 
 %% State record
--record(state, {
-    method_limits :: #{binary() => rate_limit_config()},
-    default_limit :: pos_integer()
-}).
+-record(state,
+        {method_limits :: #{binary() => rate_limit_config()}, default_limit :: pos_integer()}).
 
 %%====================================================================
 %% API Functions
@@ -85,13 +73,13 @@ stop() ->
 %% @param TimeMs - Current time in milliseconds
 %% @returns {ok, Remaining} | {error, rate_limited, RetryAfterMs}
 -spec check_request(client_id(), method(), integer()) ->
-    {ok, non_neg_integer()} | {error, rate_limited, pos_integer()}.
+                       {ok, non_neg_integer()} | {error, rate_limited, pos_integer()}.
 check_request(ClientId, Method, TimeMs) ->
     check_request(ClientId, Method, TimeMs, normal).
 
 %% @doc Check request with priority
 -spec check_request(client_id(), method(), integer(), erlmcp_rate_limiter:priority()) ->
-    {ok, non_neg_integer()} | {error, rate_limited, pos_integer()}.
+                       {ok, non_neg_integer()} | {error, rate_limited, pos_integer()}.
 check_request(ClientId, Method, TimeMs, Priority) ->
     gen_server:call(?MODULE, {check_request, ClientId, Method, TimeMs, Priority}).
 
@@ -134,11 +122,7 @@ extract_client_id(_) ->
 -spec inject_retry_after(map(), pos_integer()) -> map().
 inject_retry_after(ErrorResponse, RetryAfterMs) ->
     RetryAfterSec = max(1, RetryAfterMs div 1000),
-    ErrorResponse#{
-        <<"_headers">> => #{
-            <<"Retry-After">> => integer_to_binary(RetryAfterSec)
-        }
-    }.
+    ErrorResponse#{<<"_headers">> => #{<<"Retry-After">> => integer_to_binary(RetryAfterSec)}}.
 
 %%====================================================================
 %% gen_server Callbacks
@@ -152,49 +136,41 @@ init([]) ->
 
     logger:info("Rate limit middleware started with ~p method limits", [maps:size(MethodLimits)]),
 
-    State = #state{
-        method_limits = MethodLimits,
-        default_limit = DefaultLimit
-    },
+    State = #state{method_limits = MethodLimits, default_limit = DefaultLimit},
     {ok, State}.
 
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
-
+-spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
 handle_call({check_request, ClientId, Method, TimeMs, Priority}, _From, State) ->
     % Get rate limit config for this method
-    Config = maps:get(Method, State#state.method_limits, #{
-        max_rate => State#state.default_limit,
-        scope => per_client
-    }),
+    Config =
+        maps:get(Method,
+                 State#state.method_limits,
+                 #{max_rate => State#state.default_limit, scope => per_client}),
 
     Scope = maps:get(scope, Config, per_client),
 
     % Check appropriate rate limit based on scope
-    Result = case Scope of
-        global ->
-            erlmcp_rate_limiter:check_global_rate(TimeMs);
-        per_tool ->
-            erlmcp_rate_limiter:check_tool_call_rate(ClientId, TimeMs);
-        per_client ->
-            erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs, Priority)
-    end,
+    Result =
+        case Scope of
+            global ->
+                erlmcp_rate_limiter:check_global_rate(TimeMs);
+            per_tool ->
+                erlmcp_rate_limiter:check_tool_call_rate(ClientId, TimeMs);
+            per_client ->
+                erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs, Priority)
+        end,
 
     {reply, Result, State};
-
 handle_call({add_rate_limit, Method, Config}, _From, State) ->
     NewLimits = maps:put(Method, Config, State#state.method_limits),
     logger:info("Added rate limit for method ~s: ~p", [Method, Config]),
     {reply, ok, State#state{method_limits = NewLimits}};
-
 handle_call({remove_rate_limit, Method}, _From, State) ->
     NewLimits = maps:remove(Method, State#state.method_limits),
     logger:info("Removed rate limit for method ~s", [Method]),
     {reply, ok, State#state{method_limits = NewLimits}};
-
 handle_call(get_rate_limits, _From, State) ->
     {reply, State#state.method_limits, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -228,18 +204,7 @@ load_method_limits() ->
             maps:from_list(Limits);
         _ ->
             % Default limits for expensive operations
-            #{
-                ?MCP_METHOD_TOOLS_CALL => #{
-                    max_rate => 50,
-                    scope => per_tool
-                },
-                ?MCP_METHOD_RESOURCES_READ => #{
-                    max_rate => 100,
-                    scope => per_client
-                },
-                ?MCP_METHOD_RESOURCES_SUBSCRIBE => #{
-                    max_rate => 20,
-                    scope => per_client
-                }
-            }
+            #{?MCP_METHOD_TOOLS_CALL => #{max_rate => 50, scope => per_tool},
+              ?MCP_METHOD_RESOURCES_READ => #{max_rate => 100, scope => per_client},
+              ?MCP_METHOD_RESOURCES_SUBSCRIBE => #{max_rate => 20, scope => per_client}}
     end.

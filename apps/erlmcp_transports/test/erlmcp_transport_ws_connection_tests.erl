@@ -28,24 +28,14 @@ cleanup(_) ->
 
 websocket_connection_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            {"Initialization", [
-                ?_test(test_session_id_generation()),
-                ?_test(test_unique_session_ids())
-            ]},
-            {"Connection API", [
-                ?_test(test_send_message()),
-                ?_test(test_close_connection())
-            ]},
-            {"Close Codes", [
-                ?_test(test_close_normal_shutdown()),
-                ?_test(test_close_protocol_error()),
-                ?_test(test_close_message_too_big())
-            ]}
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [{"Initialization", [?_test(test_session_id_generation()), ?_test(test_unique_session_ids())]},
+      {"Connection API", [?_test(test_send_message()), ?_test(test_close_connection())]},
+      {"Close Codes",
+       [?_test(test_close_normal_shutdown()),
+        ?_test(test_close_protocol_error()),
+        ?_test(test_close_message_too_big())]}]}.
 
 %%====================================================================
 %% Initialization Tests (Observable Behavior)
@@ -70,22 +60,17 @@ test_unique_session_ids() ->
 test_send_message() ->
     %% Test API: send returns ok or error tuple
     %% Note: Without real WebSocket connection, send may fail gracefully
-    Config = #{
-        port => 8080,
-        path => "/mcp/ws"
-    },
+    Config = #{port => 8080, path => "/mcp/ws"},
     TransportId = <<"ws_send_test">>,
 
     case erlmcp_transport_ws:init(TransportId, Config) of
         {ok, WsPid} ->
-            Message = jsx:encode(#{
-                <<"jsonrpc">> => <<"2.0">>,
-                <<"method">> => <<"resources/list">>,
-                <<"id">> => 1
-            }),
+            Message =
+                jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                             <<"method">> => <<"resources/list">>,
+                             <<"id">> => 1}),
             Result = erlmcp_transport_ws:send(WsPid, Message),
-            ?assert(Result =:= ok orelse
-                     (is_tuple(Result) andalso element(1, Result) =:= error)),
+            ?assert(Result =:= ok orelse is_tuple(Result) andalso element(1, Result) =:= error),
             erlmcp_transport_ws:close(WsPid);
         {error, _Reason} ->
             %% Cowboy not available, test passes gracefully
@@ -94,10 +79,7 @@ test_send_message() ->
 
 test_close_connection() ->
     %% Test API: close returns ok
-    Config = #{
-        port => 8081,
-        path => "/mcp/ws"
-    },
+    Config = #{port => 8081, path => "/mcp/ws"},
     TransportId = <<"ws_close_test">>,
 
     case erlmcp_transport_ws:init(TransportId, Config) of

@@ -45,8 +45,7 @@ build_security_headers_test() ->
                  lists:keyfind(<<"content-security-policy">>, 1, Headers)),
     ?assertMatch({<<"strict-transport-security">>, _HSTS},
                  lists:keyfind(<<"strict-transport-security">>, 1, Headers)),
-    ?assertMatch({<<"referrer-policy">>, _RP},
-                 lists:keyfind(<<"referrer-policy">>, 1, Headers)),
+    ?assertMatch({<<"referrer-policy">>, _RP}, lists:keyfind(<<"referrer-policy">>, 1, Headers)),
     ?assertMatch({<<"permissions-policy">>, _PP},
                  lists:keyfind(<<"permissions-policy">>, 1, Headers)).
 
@@ -106,10 +105,9 @@ custom_permissions_policy_test() ->
 
 additional_headers_test() ->
     %% Should support additional custom headers
-    CustomHeaders = [
-        {<<"x-custom-header">>, <<"custom-value">>},
-        {<<"x-another-header">>, <<"another-value">>}
-    ],
+    CustomHeaders =
+        [{<<"x-custom-header">>, <<"custom-value">>},
+         {<<"x-another-header">>, <<"another-value">>}],
     Config = #{additional_headers => CustomHeaders},
     Headers = erlmcp_security_headers:add_headers([], Config),
 
@@ -129,10 +127,9 @@ merge_headers_empty_test() ->
 
 merge_headers_preserve_existing_test() ->
     %% Should preserve existing headers
-    Existing = [
-        {<<"x-existing-header">>, <<"existing-value">>},
-        {<<"content-type">>, <<"application/json">>}
-    ],
+    Existing =
+        [{<<"x-existing-header">>, <<"existing-value">>},
+         {<<"content-type">>, <<"application/json">>}],
     Headers = erlmcp_security_headers:add_headers(Existing),
 
     %% Existing headers should be preserved
@@ -143,10 +140,7 @@ merge_headers_preserve_existing_test() ->
 
 merge_headers_no_duplicates_test() ->
     %% Should not add headers that already exist
-    Existing = [
-        {<<"x-frame-options">>, <<"SAMEORIGIN">>},
-        {<<"content-type">>, <<"text/html">>}
-    ],
+    Existing = [{<<"x-frame-options">>, <<"SAMEORIGIN">>}, {<<"content-type">>, <<"text/html">>}],
     Headers = erlmcp_security_headers:add_headers(Existing),
 
     %% Should preserve existing X-Frame-Options (not override with DENY)
@@ -159,15 +153,12 @@ merge_headers_no_duplicates_test() ->
 
 merge_headers_case_insensitive_test() ->
     %% Should handle header names case-insensitively
-    Existing = [
-        {<<"X-Frame-Options">>, <<"SAMEORIGIN">>},
-        {<<"Content-Type">>, <<"text/html">>}
-    ],
+    Existing = [{<<"X-Frame-Options">>, <<"SAMEORIGIN">>}, {<<"Content-Type">>, <<"text/html">>}],
     Headers = erlmcp_security_headers:add_headers(Existing),
 
     %% Should not duplicate X-Frame-Options (case-insensitive)
-    FrameOptions = [K || {K, _V} <- Headers,
-                        string:to_lower(binary_to_list(K)) =:= "x-frame-options"],
+    FrameOptions =
+        [K || {K, _V} <- Headers, string:to_lower(binary_to_list(K)) =:= "x-frame-options"],
     ?assert(length(FrameOptions) =:= 1).
 
 %%%===================================================================
@@ -176,10 +167,7 @@ merge_headers_case_insensitive_test() ->
 
 configure_global_test() ->
     %% Should configure security headers globally
-    Config = #{
-        csp => <<"default-src 'none'">>,
-        frame_options => sameorigin
-    },
+    Config = #{csp => <<"default-src 'none'">>, frame_options => sameorigin},
     ?assertEqual(ok, erlmcp_security_headers:configure(Config)),
 
     %% Clean up
@@ -207,9 +195,7 @@ configure_persistence_test() ->
 
 wrap_handler_function_test() ->
     %% Should wrap a function handler
-    HandlerFun = fun(Req, _State) ->
-        {ok, Req, #{}}
-    end,
+    HandlerFun = fun(Req, _State) -> {ok, Req, #{}} end,
 
     WrappedFun = erlmcp_security_headers:wrap_handler(HandlerFun),
     ?assert(is_function(WrappedFun, 2)),
@@ -220,27 +206,21 @@ wrap_handler_function_test() ->
 
 wrap_handler_preserves_shutdown_test() ->
     %% Should preserve shutdown return
-    HandlerFun = fun(Req, _State) ->
-        {shutdown, Req}
-    end,
+    HandlerFun = fun(Req, _State) -> {shutdown, Req} end,
 
     WrappedFun = erlmcp_security_headers:wrap_handler(HandlerFun),
     ?assert(is_function(WrappedFun)).
 
 wrap_handler_preserves_stop_test() ->
     %% Should preserve stop return
-    HandlerFun = fun(Req, _State) ->
-        {stop, Req}
-    end,
+    HandlerFun = fun(Req, _State) -> {stop, Req} end,
 
     WrappedFun = erlmcp_security_headers:wrap_handler(HandlerFun),
     ?assert(is_function(WrappedFun)).
 
 wrap_handler_preserves_other_returns_test() ->
     %% Should preserve other return values
-    HandlerFun = fun(_Req, _State) ->
-        {error, some_error}
-    end,
+    HandlerFun = fun(_Req, _State) -> {error, some_error} end,
 
     WrappedFun = erlmcp_security_headers:wrap_handler(HandlerFun),
     MockReq = mock_req(),
@@ -274,28 +254,23 @@ full_workflow_test() ->
     %% First clear any existing config
     application:unset_env(erlmcp, security_headers_config),
 
-    CustomConfig = #{
-        csp => <<"default-src 'self'">>,
-        frame_options => deny,
-        hsts => true,
-        hsts_max_age => 31536000
-    },
+    CustomConfig =
+        #{csp => <<"default-src 'self'">>,
+          frame_options => deny,
+          hsts => true,
+          hsts_max_age => 31536000},
 
     %% Configure
     erlmcp_security_headers:configure(CustomConfig),
 
     %% Add headers
-    ExistingHeaders = [
-        {<<"content-type">>, <<"application/json">>},
-        {<<"x-custom">>, <<"value">>}
-    ],
+    ExistingHeaders = [{<<"content-type">>, <<"application/json">>}, {<<"x-custom">>, <<"value">>}],
     FinalHeaders = erlmcp_security_headers:add_headers(ExistingHeaders),
 
     %% Verify existing headers preserved
     ?assertMatch({<<"content-type">>, <<"application/json">>},
                  lists:keyfind(<<"content-type">>, 1, FinalHeaders)),
-    ?assertMatch({<<"x-custom">>, <<"value">>},
-                 lists:keyfind(<<"x-custom">>, 1, FinalHeaders)),
+    ?assertMatch({<<"x-custom">>, <<"value">>}, lists:keyfind(<<"x-custom">>, 1, FinalHeaders)),
 
     %% Verify security headers added
     {_, CSPValue} = lists:keyfind(<<"content-security-policy">>, 1, FinalHeaders),
@@ -323,20 +298,16 @@ prop_merge_headers_idempotent_test() ->
 
 prop_add_headers_preserves_all_test() ->
     %% Adding security headers should preserve all existing headers
-    Existing = [
-        {<<"header1">>, <<"value1">>},
-        {<<"header2">>, <<"value2">>},
-        {<<"header3">>, <<"value3">>}
-    ],
+    Existing =
+        [{<<"header1">>, <<"value1">>},
+         {<<"header2">>, <<"value2">>},
+         {<<"header3">>, <<"value3">>}],
     Result = erlmcp_security_headers:add_headers(Existing),
 
     %% All existing headers should be present
-    ?assertMatch({<<"header1">>, <<"value1">>},
-                 lists:keyfind(<<"header1">>, 1, Result)),
-    ?assertMatch({<<"header2">>, <<"value2">>},
-                 lists:keyfind(<<"header2">>, 1, Result)),
-    ?assertMatch({<<"header3">>, <<"value3">>},
-                 lists:keyfind(<<"header3">>, 1, Result)),
+    ?assertMatch({<<"header1">>, <<"value1">>}, lists:keyfind(<<"header1">>, 1, Result)),
+    ?assertMatch({<<"header2">>, <<"value2">>}, lists:keyfind(<<"header2">>, 1, Result)),
+    ?assertMatch({<<"header3">>, <<"value3">>}, lists:keyfind(<<"header3">>, 1, Result)),
 
     %% Security headers should be added
     ?assert(length(Result) > length(Existing)).

@@ -40,10 +40,6 @@
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    erlmcp_plugin:behaviour_info(callbacks) ++
-    [
-        {format, 2},
-        {supports_format, 0}
-    ];
+    erlmcp_plugin:behaviour_info(callbacks) ++ [{format, 2}, {supports_format, 0}];
 behaviour_info(_) ->
     undefined.

@@ -9,18 +9,9 @@
 -module(erlmcp_cli_test_fixtures).
 
 %% Exports
--export([
-    create_mock_server/0,
-    create_mock_server/1,
-    create_test_plugin/1,
-    create_test_plugin/2,
-    create_test_spec/0,
-    cleanup_test_files/1,
-    wait_for_process/2,
-    mock_stdio_transport/0,
-    mock_http_transport/0,
-    mock_ws_transport/0
-]).
+-export([create_mock_server/0, create_mock_server/1, create_test_plugin/1, create_test_plugin/2,
+         create_test_spec/0, cleanup_test_files/1, wait_for_process/2, mock_stdio_transport/0,
+         mock_http_transport/0, mock_ws_transport/0]).
 
 %%%====================================================================
 %%% Mock Server Creation
@@ -56,19 +47,21 @@ create_test_plugin(Path) ->
     create_test_plugin(Path, "test_plugin").
 
 create_test_plugin(Path, ModuleName) ->
-    Code = io_lib:format("-module(~s).
+    Code =
+        io_lib:format("-module(~s).
 -export([init/1, execute/2]).
 
-init(_Config) -> 
+init(_Config) ->\s
     {ok, #{initialized => true}}.
 
-execute(Command, Args) -> 
+execute(Command, Args) ->\s
     {ok, #{
         command => Command,
         args => Args,
         status => success
     }}.
-", [ModuleName]),
+",
+                      [ModuleName]),
     file:write_file(Path, list_to_binary(Code)).
 
 %%%====================================================================
@@ -76,28 +69,10 @@ execute(Command, Args) ->
 %%%====================================================================
 
 create_test_spec() ->
-    #{
-        version => <<"2025-11-25">>,
-        methods => [
-            <<"initialize">>,
-            <<"ping">>,
-            <<"resources/list">>,
-            <<"tools/call">>
-        ],
-        error_codes => [
-            -32700,
-            -32600,
-            -32601,
-            -32602,
-            -32603
-        ],
-        transports => [
-            stdio,
-            tcp,
-            http,
-            websocket
-        ]
-    }.
+    #{version => <<"2025-11-25">>,
+      methods => [<<"initialize">>, <<"ping">>, <<"resources/list">>, <<"tools/call">>],
+      error_codes => [-32700, -32600, -32601, -32602, -32603],
+      transports => [stdio, tcp, http, websocket]}.
 
 %%%====================================================================
 %%% Cleanup Utilities
@@ -109,8 +84,10 @@ cleanup_test_files(Paths) when is_list(Paths) ->
 
 cleanup_test_file(Path) ->
     case filelib:is_file(Path) of
-        true -> file:delete(Path);
-        false -> ok
+        true ->
+            file:delete(Path);
+        false ->
+            ok
     end.
 
 %%%====================================================================
@@ -132,25 +109,19 @@ wait_for_process(Pid, Timeout) ->
 %%%====================================================================
 
 mock_stdio_transport() ->
-    #{
-        type => stdio,
-        send => fun(Data) -> {ok, Data} end,
-        receive_fn => fun() -> {ok, <<"{\"jsonrpc\":\"2.0\"}">>} end,
-        close => fun() -> ok end
-    }.
+    #{type => stdio,
+      send => fun(Data) -> {ok, Data} end,
+      receive_fn => fun() -> {ok, <<"{\"jsonrpc\":\"2.0\"}">>} end,
+      close => fun() -> ok end}.
 
 mock_http_transport() ->
-    #{
-        type => http,
-        port => 8080,
-        send => fun(Data) -> {ok, Data} end,
-        close => fun() -> ok end
-    }.
+    #{type => http,
+      port => 8080,
+      send => fun(Data) -> {ok, Data} end,
+      close => fun() -> ok end}.
 
 mock_ws_transport() ->
-    #{
-        type => websocket,
-        url => <<"ws://localhost:8080">>,
-        send => fun(Data) -> {ok, Data} end,
-        close => fun() -> ok end
-    }.
+    #{type => websocket,
+      url => <<"ws://localhost:8080">>,
+      send => fun(Data) -> {ok, Data} end,
+      close => fun() -> ok end}.

@@ -10,37 +10,27 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_uri_validator).
+
 -dialyzer({nowarn_function, [parse_uri/1]}).
 
 %% API exports
--export([
-    validate_uri/1,
-    validate_uri/2,
-    is_safe_uri/1,
-    is_safe_uri/2,
-    parse_uri/1,
-    check_ssrf/1,
-    is_private_ip/1,
-    validate_resource_uri_on_registration/1,
-    validate_uri_template/1
-]).
+-export([validate_uri/1, validate_uri/2, is_safe_uri/1, is_safe_uri/2, parse_uri/1, check_ssrf/1,
+         is_private_ip/1, validate_resource_uri_on_registration/1, validate_uri_template/1]).
 
 %% Types
 -type uri() :: binary().
--type validation_opts() :: #{
-    allow_private_ips => boolean(),
-    allowed_schemes => [binary()],
-    max_length => non_neg_integer()
-}.
+-type validation_opts() ::
+    #{allow_private_ips => boolean(),
+      allowed_schemes => [binary()],
+      max_length => non_neg_integer()}.
 -type validation_result() :: ok | {error, term()}.
--type uri_parts() :: #{
-    scheme => binary(),
-    host => binary(),
-    port => non_neg_integer() | undefined,
-    path => binary(),
-    query => binary() | undefined,
-    fragment => binary() | undefined
-}.
+-type uri_parts() ::
+    #{scheme => binary(),
+      host => binary(),
+      port => non_neg_integer() | undefined,
+      path => binary(),
+      query => binary() | undefined,
+      fragment => binary() | undefined}.
 
 -export_type([uri/0, validation_opts/0, validation_result/0, uri_parts/0]).
 
@@ -62,7 +52,8 @@ validate_uri(Uri, Opts) when is_binary(Uri) ->
 
     %% Check length
     case byte_size(Uri) > MaxLength of
-        true -> {error, uri_too_long};
+        true ->
+            {error, uri_too_long};
         false ->
             %% Check for dangerous characters
             case check_dangerous_chars(Uri) of
@@ -71,19 +62,24 @@ validate_uri(Uri, Opts) when is_binary(Uri) ->
                     case parse_uri(Uri) of
                         {ok, Parts} ->
                             %% Validate scheme
-                            case validate_scheme(maps:get(scheme, Parts, undefined), AllowedSchemes) of
+                            case validate_scheme(maps:get(scheme, Parts, undefined), AllowedSchemes)
+                            of
                                 ok ->
                                     %% Check SSRF if HTTP/HTTPS
                                     case AllowPrivateIPs of
-                                        true -> ok;
+                                        true ->
+                                            ok;
                                         false ->
                                             check_ssrf_parts(Parts)
                                     end;
-                                {error, _} = Error -> Error
+                                {error, _} = Error ->
+                                    Error
                             end;
-                        {error, _} = Error -> Error
+                        {error, _} = Error ->
+                            Error
                     end;
-                {error, _} = Error -> Error
+                {error, _} = Error ->
+                    Error
             end
     end;
 validate_uri(_Uri, _Opts) ->
@@ -98,8 +94,10 @@ is_safe_uri(Uri) ->
 -spec is_safe_uri(uri(), validation_opts()) -> boolean().
 is_safe_uri(Uri, Opts) ->
     case validate_uri(Uri, Opts) of
-        ok -> true;
-        {error, _} -> false
+        ok ->
+            true;
+        {error, _} ->
+            false
     end.
 
 %% @doc Validate resource URI during registration
@@ -109,13 +107,18 @@ is_safe_uri(Uri, Opts) ->
 validate_resource_uri_on_registration(Uri) when is_binary(Uri) ->
     % Check basic URI structure (scheme://something)
     case byte_size(Uri) of
-        0 -> {error, empty_uri};
+        0 ->
+            {error, empty_uri};
         _ ->
             case binary:split(Uri, <<"://">>) of
-                [<<>>, _] -> {error, missing_scheme};
-                [_, <<>>] -> {error, missing_path};
-                [_Scheme, _Rest] -> ok;
-                [_] -> {error, missing_scheme}
+                [<<>>, _] ->
+                    {error, missing_scheme};
+                [_, <<>>] ->
+                    {error, missing_path};
+                [_Scheme, _Rest] ->
+                    ok;
+                [_] ->
+                    {error, missing_scheme}
             end
     end;
 validate_resource_uri_on_registration(_Uri) ->
@@ -127,21 +130,27 @@ validate_resource_uri_on_registration(_Uri) ->
 -spec validate_uri_template(uri()) -> validation_result().
 validate_uri_template(UriTemplate) when is_binary(UriTemplate) ->
     case byte_size(UriTemplate) > 4096 of
-        true -> {error, template_too_long};
+        true ->
+            {error, template_too_long};
         false ->
             %% Check for valid structure
             case binary:split(UriTemplate, <<"://">>) of
-                [<<>>, _] -> {error, missing_scheme};
+                [<<>>, _] ->
+                    {error, missing_scheme};
                 [Scheme, Rest] ->
                     %% Validate scheme
-                    case validate_scheme(Scheme, [<<"http">>, <<"https">>, <<"file">>, <<"test">>]) of
+                    case validate_scheme(Scheme, [<<"http">>, <<"https">>, <<"file">>, <<"test">>])
+                    of
                         ok ->
                             %% Check template variables (basic validation)
                             case validate_template_variables(Rest) of
-                                ok -> ok;
-                                {error, _} = Error -> Error
+                                ok ->
+                                    ok;
+                                {error, _} = Error ->
+                                    Error
                             end;
-                        {error, _} = Error -> Error
+                        {error, _} = Error ->
+                            Error
                     end;
                 [_] ->
                     {error, missing_scheme}
@@ -158,55 +167,66 @@ parse_uri(Uri) when is_binary(Uri) ->
         %% Format: scheme://host:port/path?query#fragment
         case binary:split(Uri, <<"://">>) of
             [Scheme, Rest] ->
-                {HostPort, PathQueryFragment} = case binary:split(Rest, <<"/">>) of
-                    [HP] -> {HP, <<"/">>};
-                    [HP, PQF] -> {HP, <<"/", PQF/binary>>}
-                end,
+                {HostPort, PathQueryFragment} =
+                    case binary:split(Rest, <<"/">>) of
+                        [HP] ->
+                            {HP, <<"/">>};
+                        [HP, PQF] ->
+                            {HP, <<"/", PQF/binary>>}
+                    end,
 
-                {Host, Port} = case binary:split(HostPort, <<":">>) of
-                    [H] -> {H, undefined};
-                    [H, PortStr] ->
-                        try
-                            {H, binary_to_integer(PortStr)}
-                        catch
-                            _:_ -> {H, undefined}
-                        end
-                end,
+                {Host, Port} =
+                    case binary:split(HostPort, <<":">>) of
+                        [H] ->
+                            {H, undefined};
+                        [H, PortStr] ->
+                            try
+                                {H, binary_to_integer(PortStr)}
+                            catch
+                                _:_ ->
+                                    {H, undefined}
+                            end
+                    end,
 
                 %% Fragment can appear in path directly or after query
                 {PathWithoutFragment, Fragment} = split_fragment(PathQueryFragment),
 
-                {Path, Query} = case binary:split(PathWithoutFragment, <<"?">>) of
-                    [PathOnly] -> {PathOnly, undefined};
-                    [PathPart, Q] -> {PathPart, Q}
-                end,
+                {Path, Query} =
+                    case binary:split(PathWithoutFragment, <<"?">>) of
+                        [PathOnly] ->
+                            {PathOnly, undefined};
+                        [PathPart, Q] ->
+                            {PathPart, Q}
+                    end,
 
-
-                {ok, #{
-                    scheme => string:lowercase(Scheme),
-                    host => string:lowercase(Host),
-                    port => Port,
-                    path => Path,
-                    query => Query,
-                    fragment => Fragment
-                }};
+                {ok,
+                 #{scheme => string:lowercase(Scheme),
+                   host => string:lowercase(Host),
+                   port => Port,
+                   path => Path,
+                   query => Query,
+                   fragment => Fragment}};
             [_] ->
                 %% No scheme, might be relative URI
                 {error, missing_scheme}
         end
     catch
-        _:_ -> {error, parse_error}
+        _:_ ->
+            {error, parse_error}
     end;
 parse_uri(_Uri) ->
     {error, not_binary}.
 
 %% @doc Split query and fragment
 -spec split_fragment(binary() | undefined) -> {binary() | undefined, binary() | undefined}.
-split_fragment(undefined) -> {undefined, undefined};
+split_fragment(undefined) ->
+    {undefined, undefined};
 split_fragment(QueryFrag) ->
     case binary:split(QueryFrag, <<"#">>) of
-        [Q] -> {Q, undefined};
-        [Q, F] -> {Q, F}
+        [Q] ->
+            {Q, undefined};
+        [Q, F] ->
+            {Q, F}
     end.
 
 %% @doc Check for SSRF vulnerabilities
@@ -215,7 +235,8 @@ check_ssrf(Uri) ->
     case parse_uri(Uri) of
         {ok, Parts} ->
             check_ssrf_parts(Parts);
-        {error, _} = Error -> Error
+        {error, _} = Error ->
+            Error
     end.
 
 %% @doc Check if IP address is private/internal
@@ -223,10 +244,14 @@ check_ssrf(Uri) ->
 is_private_ip(Host) when is_binary(Host) ->
     %% Check for localhost
     case Host of
-        <<"localhost">> -> true;
-        <<"127.0.0.1">> -> true;
-        <<"::1">> -> true;
-        <<"[::1]">> -> true;
+        <<"localhost">> ->
+            true;
+        <<"127.0.0.1">> ->
+            true;
+        <<"::1">> ->
+            true;
+        <<"[::1]">> ->
+            true;
         _ ->
             %% Check for private IP ranges
             is_private_ipv4(Host) orelse is_private_ipv6(Host)
@@ -238,23 +263,24 @@ is_private_ip(Host) when is_binary(Host) ->
 
 %% @private Check for dangerous characters (injection prevention)
 check_dangerous_chars(Uri) ->
-    DangerousPatterns = [
-        <<0>>,           %% Null byte
-        <<"\r\n">>,      %% CRLF injection
-        <<"\r">>,        %% CR injection
-        <<"\n">>,        %% LF injection
-        <<"<script">>,   %% XSS
-        <<"javascript:">>, %% JavaScript protocol
-        <<"data:">>,     %% Data URI (can be used for XSS)
-        <<"vbscript:">>, %% VBScript protocol
-        <<"file:///etc">>, %% Path traversal attempt
-        <<"../">>,       %% Path traversal
-        <<"..\\">>       %% Windows path traversal
-    ],
+    DangerousPatterns =
+        [<<0>>,           %% Null byte
+         <<"\r\n">>,      %% CRLF injection
+         <<"\r">>,        %% CR injection
+         <<"\n">>,        %% LF injection
+         <<"<script">>,   %% XSS
+         <<"javascript:">>, %% JavaScript protocol
+         <<"data:">>,     %% Data URI (can be used for XSS)
+         <<"vbscript:">>, %% VBScript protocol
+         <<"file:///etc">>, %% Path traversal attempt
+         <<"../">>,       %% Path traversal
+         <<"..\\">>],       %% Windows path traversal
 
     case lists:any(fun(Pattern) -> binary:match(Uri, Pattern) =/= nomatch end, DangerousPatterns) of
-        true -> {error, dangerous_characters};
-        false -> ok
+        true ->
+            {error, dangerous_characters};
+        false ->
+            ok
     end.
 
 %% @private Validate URI scheme
@@ -262,19 +288,24 @@ validate_scheme(undefined, _AllowedSchemes) ->
     {error, missing_scheme};
 validate_scheme(Scheme, AllowedSchemes) ->
     case lists:member(Scheme, AllowedSchemes) of
-        true -> ok;
-        false -> {error, {disallowed_scheme, Scheme}}
+        true ->
+            ok;
+        false ->
+            {error, {disallowed_scheme, Scheme}}
     end.
 
 %% @private Check SSRF from parsed URI parts
 check_ssrf_parts(#{host := Host} = _Parts) ->
     case is_private_ip(Host) of
-        true -> {error, private_ip_not_allowed};
+        true ->
+            {error, private_ip_not_allowed};
         false ->
             %% Check for DNS rebinding patterns
             case is_dns_rebinding_pattern(Host) of
-                true -> {error, potential_dns_rebinding};
-                false -> ok
+                true ->
+                    {error, potential_dns_rebinding};
+                false ->
+                    ok
             end
     end;
 check_ssrf_parts(_Parts) ->
@@ -289,66 +320,71 @@ is_private_ipv4(Host) ->
                 [Ai, Bi, Ci, Di] = [binary_to_integer(X) || X <- [A, B, C, D]],
                 %% Check private ranges
                 %% 10.0.0.0/8
-                (Ai =:= 10) orelse
-                %% 172.16.0.0/12
-                (Ai =:= 172 andalso Bi >= 16 andalso Bi =< 31) orelse
-                %% 192.168.0.0/16
-                (Ai =:= 192 andalso Bi =:= 168) orelse
-                %% 169.254.0.0/16 (link-local)
-                (Ai =:= 169 andalso Bi =:= 254) orelse
-                %% 127.0.0.0/8 (loopback)
-                (Ai =:= 127) orelse
-                %% Catch variables to avoid unused warnings
-                (Ci =:= Ci andalso Di =:= Di andalso false)
+                Ai =:= 10
+                orelse Ai =:= 172 andalso Bi >= 16 andalso Bi =< 31
+                orelse Ai =:= 192 andalso Bi =:= 168
+                orelse Ai =:= 169 andalso Bi =:= 254
+                orelse Ai =:= 127
+                orelse %% Catch variables to avoid unused warnings
+                       Ci =:= Ci andalso Di =:= Di andalso false
             catch
-                _:_ -> false
+                _:_ ->
+                    false
             end;
-        _ -> false
+        _ ->
+            false
     end.
 
 %% @private Check if IPv6 is private
 is_private_ipv6(Host) ->
     %% Simple check for common private IPv6 patterns
     %% Remove brackets if present
-    Host1 = case Host of
-        <<"[", Rest/binary>> ->
-            Size = byte_size(Rest) - 1,
-            binary:part(Rest, {0, Size});
-        _ -> Host
-    end,
+    Host1 =
+        case Host of
+            <<"[", Rest/binary>> ->
+                Size = byte_size(Rest) - 1,
+                binary:part(Rest, {0, Size});
+            _ ->
+                Host
+        end,
 
     %% Check for private IPv6 ranges
     %% fc00::/7 (unique local)
     %% fe80::/10 (link-local)
     %% ::1 (loopback)
-    binary:match(Host1, <<"fc">>) =:= {0, 2} orelse
-    binary:match(Host1, <<"fd">>) =:= {0, 2} orelse
-    binary:match(Host1, <<"fe80">>) =:= {0, 4} orelse
-    Host1 =:= <<"::1">>.
+    binary:match(Host1, <<"fc">>) =:= {0, 2}
+    orelse binary:match(Host1, <<"fd">>) =:= {0, 2}
+    orelse binary:match(Host1, <<"fe80">>) =:= {0, 4}
+    orelse Host1 =:= <<"::1">>.
 
 %% @private Check for DNS rebinding patterns
 is_dns_rebinding_pattern(Host) ->
     %% Check for patterns like: 127.0.0.1.example.com
     %% or other DNS rebinding tricks
     Parts = binary:split(Host, <<".">>, [global]),
-    length(Parts) > 4 andalso
-    lists:any(fun(Part) ->
-        Part =:= <<"127">> orelse
-        Part =:= <<"localhost">> orelse
-        Part =:= <<"169">>
-    end, Parts).
+    length(Parts) > 4
+    andalso lists:any(fun(Part) ->
+                         Part =:= <<"127">>
+                         orelse Part =:= <<"localhost">>
+                         orelse Part =:= <<"169">>
+                      end,
+                      Parts).
 
 %% @private Validate template variable syntax
 validate_template_variables(Template) ->
     %% Check for balanced braces and valid variable names
     case catch validate_variables(Template, 0, false) of
-        ok -> ok;
-        {error, _} = Error -> Error;
-        _ -> {error, invalid_template_syntax}
+        ok ->
+            ok;
+        {error, _} = Error ->
+            Error;
+        _ ->
+            {error, invalid_template_syntax}
     end.
 
 %% @private Recursive variable validation
-validate_variables(<<>>, _Depth, _InVar) -> ok;
+validate_variables(<<>>, _Depth, _InVar) ->
+    ok;
 validate_variables(<<"{", Rest/binary>>, Depth, false) ->
     validate_variables(Rest, Depth + 1, true);
 validate_variables(<<"}", Rest/binary>>, Depth, true) when Depth > 0 ->

@@ -8,10 +8,7 @@
 -module(erlmcp_origin_validator).
 
 %% API exports
--export([
-    validate_origin/2,
-    get_default_allowed_origins/0
-]).
+-export([validate_origin/2, get_default_allowed_origins/0]).
 
 %% Types
 -type origin() :: binary() | undefined.
@@ -33,8 +30,9 @@ validate_origin(undefined, AllowedOrigins) ->
     %% Armstrong principle: "make unsafe defaults unrepresentable"
     %% Previous behavior allowed ANY undefined origin (DNS rebinding attack vector)
     %% New behavior: undefined is only allowed if explicitly in whitelist
-    case lists:member(<<"undefined">>, AllowedOrigins) orelse
-         lists:member(<<"null">>, AllowedOrigins) of
+    case lists:member(<<"undefined">>, AllowedOrigins)
+         orelse lists:member(<<"null">>, AllowedOrigins)
+    of
         true ->
             logger:debug("Origin validation: undefined origin explicitly allowed by whitelist"),
             {ok, <<"undefined">>};
@@ -50,7 +48,7 @@ validate_origin(Origin, AllowedOrigins) when is_binary(Origin), is_list(AllowedO
             {ok, Origin};
         false ->
             logger:warning("Origin validation DENIED: ~s (DNS rebinding attack vector - not in allowed list: ~p)",
-                [Origin, AllowedOrigins]),
+                           [Origin, AllowedOrigins]),
             %% Log security violation for audit trail
             log_security_violation(Origin, AllowedOrigins),
             {error, forbidden}
@@ -74,12 +72,13 @@ get_default_allowed_origins() ->
         undefined ->
             %% No configuration - return empty list (deny all)
             logger:warning("No origin whitelist configured - all origins will be rejected. "
-                          "Set 'allowed_origins' in app config to allow specific origins."),
+                           "Set 'allowed_origins' in app config to allow specific origins."),
             [];
         Origins when is_list(Origins) ->
             Origins;
         InvalidConfig ->
-            logger:error("Invalid allowed_origins configuration: ~p (expected list)", [InvalidConfig]),
+            logger:error("Invalid allowed_origins configuration: ~p (expected list)",
+                         [InvalidConfig]),
             []
     end.
 
@@ -156,7 +155,6 @@ log_security_violation(Origin, AllowedOrigins) ->
 
     %% Could also send to external security monitoring system here
     %% For example: send_to_siem(Origin, AllowedOrigins)
-
     ok.
 
 %% @private Format timestamp for logging
@@ -164,4 +162,4 @@ log_security_violation(Origin, AllowedOrigins) ->
 format_timestamp() ->
     {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:universal_time(),
     iolist_to_binary(io_lib:format("~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w UTC",
-        [Year, Month, Day, Hour, Minute, Second])).
+                                   [Year, Month, Day, Hour, Minute, Second])).

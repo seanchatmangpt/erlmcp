@@ -18,57 +18,29 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_comprehensive_error_tests).
+
 -behavior(ct_suite).
 
 %% CT callbacks
 -export([all/0, groups/0, init_per_suite/1, end_per_suite/1]).
 -export([init_per_group/2, end_per_group/2]).
 -export([init_per_testcase/2, end_per_testcase/2]).
-
 %% Test cases - Network Failures
--export([
-    test_tcp_connection_refused/1,
-    test_tcp_connection_timeout/1,
-    test_tcp_connection_reset/1,
-    test_http_500_error/1,
-    test_http_503_error/1,
-    test_websocket_disconnect/1,
-    test_sse_connection_failure/1
-]).
-
+-export([test_tcp_connection_refused/1, test_tcp_connection_timeout/1, test_tcp_connection_reset/1,
+         test_http_500_error/1, test_http_503_error/1, test_websocket_disconnect/1,
+         test_sse_connection_failure/1]).
 %% Test cases - Timeouts
--export([
-    test_request_timeout/1,
-    test_connection_timeout/1,
-    test_slow_operation_timeout/1,
-    test_concurrent_timeout_handling/1
-]).
-
+-export([test_request_timeout/1, test_connection_timeout/1, test_slow_operation_timeout/1,
+         test_concurrent_timeout_handling/1]).
 %% Test cases - Invalid Inputs
--export([
-    test_malformed_json_request/1,
-    test_missing_required_fields/1,
-    test_invalid_parameter_types/1,
-    test_out_of_range_values/1,
-    test_null_id_handling/1
-]).
-
+-export([test_malformed_json_request/1, test_missing_required_fields/1,
+         test_invalid_parameter_types/1, test_out_of_range_values/1, test_null_id_handling/1]).
 %% Test cases - Resource Limits
--export([
-    test_message_size_limit/1,
-    test_memory_limit_exceeded/1,
-    test_connection_limit_reached/1,
-    test_rate_limit_exceeded/1
-]).
-
+-export([test_message_size_limit/1, test_memory_limit_exceeded/1, test_connection_limit_reached/1,
+         test_rate_limit_exceeded/1]).
 %% Test cases - Authentication Failures
--export([
-    test_invalid_credentials/1,
-    test_missing_auth_header/1,
-    test_expired_token/1,
-    test_unauthorized_operation/1,
-    test_forbidden_resource/1
-]).
+-export([test_invalid_credentials/1, test_missing_auth_header/1, test_expired_token/1,
+         test_unauthorized_operation/1, test_forbidden_resource/1]).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -78,52 +50,48 @@
 %%%====================================================================
 
 all() ->
-    [
-        {group, network_failures},
-        {group, timeouts},
-        {group, invalid_inputs},
-        {group, resource_limits},
-        {group, auth_failures}
-    ].
+    [{group, network_failures},
+     {group, timeouts},
+     {group, invalid_inputs},
+     {group, resource_limits},
+     {group, auth_failures}].
 
 groups() ->
-    [
-        {network_failures, [sequence], [
-            test_tcp_connection_refused,
-            test_tcp_connection_timeout,
-            test_tcp_connection_reset,
-            test_http_500_error,
-            test_http_503_error,
-            test_websocket_disconnect,
-            test_sse_connection_failure
-        ]},
-        {timeouts, [sequence], [
-            test_request_timeout,
-            test_connection_timeout,
-            test_slow_operation_timeout,
-            test_concurrent_timeout_handling
-        ]},
-        {invalid_inputs, [parallel], [
-            test_malformed_json_request,
-            test_missing_required_fields,
-            test_invalid_parameter_types,
-            test_out_of_range_values,
-            test_null_id_handling
-        ]},
-        {resource_limits, [sequence], [
-            test_message_size_limit,
-            test_memory_limit_exceeded,
-            test_connection_limit_reached,
-            test_rate_limit_exceeded
-        ]},
-        {auth_failures, [parallel], [
-            test_invalid_credentials,
-            test_missing_auth_header,
-            test_expired_token,
-            test_unauthorized_operation,
-            test_forbidden_resource
-        ]}
-    ].
+    [{network_failures,
+      [sequence],
+      [test_tcp_connection_refused,
+       test_tcp_connection_timeout,
+       test_tcp_connection_reset,
+       test_http_500_error,
+       test_http_503_error,
+       test_websocket_disconnect,
+       test_sse_connection_failure]},
+     {timeouts,
+      [sequence],
+      [test_request_timeout,
+       test_connection_timeout,
+       test_slow_operation_timeout,
+       test_concurrent_timeout_handling]},
+     {invalid_inputs,
+      [parallel],
+      [test_malformed_json_request,
+       test_missing_required_fields,
+       test_invalid_parameter_types,
+       test_out_of_range_values,
+       test_null_id_handling]},
+     {resource_limits,
+      [sequence],
+      [test_message_size_limit,
+       test_memory_limit_exceeded,
+       test_connection_limit_reached,
+       test_rate_limit_exceeded]},
+     {auth_failures,
+      [parallel],
+      [test_invalid_credentials,
+       test_missing_auth_header,
+       test_expired_token,
+       test_unauthorized_operation,
+       test_forbidden_resource]}].
 
 init_per_suite(Config) ->
     ct:pal("Starting Comprehensive Error Tests"),
@@ -220,15 +188,13 @@ test_http_500_error(_Config) ->
     ct:pal("Testing HTTP 500 error handling"),
 
     %% Create a mock HTTP error response
-    ErrorJson = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32603,
-            <<"message">> => <<"Internal server error">>,
-            <<"data">> => #{<<"http_status">> => 500}
-        }
-    }),
+    ErrorJson =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => 1,
+                     <<"error">> =>
+                         #{<<"code">> => -32603,
+                           <<"message">> => <<"Internal server error">>,
+                           <<"data">> => #{<<"http_status">> => 500}}}),
 
     case erlmcp_json_rpc:decode_message(ErrorJson) of
         {ok, Response} ->
@@ -243,15 +209,13 @@ test_http_503_error(_Config) ->
     ct:pal("Testing HTTP 503 error handling"),
 
     %% Create a mock HTTP 503 error response
-    ErrorJson = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32004,
-            <<"message">> => <<"Service unavailable">>,
-            <<"data">> => #{<<"http_status">> => 503}
-        }
-    }),
+    ErrorJson =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => 1,
+                     <<"error">> =>
+                         #{<<"code">> => -32004,
+                           <<"message">> => <<"Service unavailable">>,
+                           <<"data">> => #{<<"http_status">> => 503}}}),
 
     case erlmcp_json_rpc:decode_message(ErrorJson) of
         {ok, Response} ->
@@ -292,11 +256,12 @@ test_sse_connection_failure(_Config) ->
     {ok, ServerPid} = start_test_server(),
 
     %% Simulate SSE failure
-    {ok, ClientPid} = spawn_link(fun() ->
-        %% Simulate SSE client that disconnects
-        timer:sleep(50),
-        exit(sse_connection_failed)
-    end),
+    {ok, ClientPid} =
+        spawn_link(fun() ->
+                      %% Simulate SSE client that disconnects
+                      timer:sleep(50),
+                      exit(sse_connection_failed)
+                   end),
 
     timer:sleep(100),
 
@@ -318,10 +283,11 @@ test_request_timeout(_Config) ->
     ct:pal("Testing request timeout"),
 
     %% Create a slow server
-    SlowServer = fun(_Request) ->
-        timer:sleep(5000),
-        #{result => <<"slow">>}
-    end,
+    SlowServer =
+        fun(_Request) ->
+           timer:sleep(5000),
+           #{result => <<"slow">>}
+        end,
 
     {ok, ServerPid} = start_test_server_with_handler(SlowServer),
 
@@ -330,10 +296,10 @@ test_request_timeout(_Config) ->
 
     %% Simulate timeout scenario
     spawn(fun() ->
-        timer:sleep(100),
-        %% In real scenario, this would timeout
-        ct:log("Request would timeout after 100ms", [])
-    end),
+             timer:sleep(100),
+             %% In real scenario, this would timeout
+             ct:log("Request would timeout after 100ms", [])
+          end),
 
     %% Verify server is still functional
     ?assert(is_process_alive(ServerPid)),
@@ -362,10 +328,11 @@ test_slow_operation_timeout(_Config) ->
     ct:pal("Testing slow operation timeout"),
 
     %% Create a server with very slow operation
-    SlowHandler = fun(_Request) ->
-        timer:sleep(10000),
-        #{result => <<"very slow">>}
-    end,
+    SlowHandler =
+        fun(_Request) ->
+           timer:sleep(10000),
+           #{result => <<"very slow">>}
+        end,
 
     {ok, ServerPid} = start_test_server_with_handler(SlowHandler),
 
@@ -385,14 +352,16 @@ test_concurrent_timeout_handling(_Config) ->
     {ok, ServerPid} = start_test_server(),
 
     %% Spawn multiple clients that timeout
-    Pids = [spawn_link(fun() ->
-        case catch send_request_with_timeout(ServerPid, 100) of
-            {'EXIT', {timeout, _}} ->
-                ct:log("Client ~p timed out", [self()]);
-            Other ->
-                ct:log("Client ~p got: ~p", [self(), Other])
-        end
-    end) || _ <- lists:seq(1, 10)],
+    Pids =
+        [spawn_link(fun() ->
+                       case catch send_request_with_timeout(ServerPid, 100) of
+                           {'EXIT', {timeout, _}} ->
+                               ct:log("Client ~p timed out", [self()]);
+                           Other ->
+                               ct:log("Client ~p got: ~p", [self(), Other])
+                       end
+                    end)
+         || _ <- lists:seq(1, 10)],
 
     %% Wait for all to complete/timeout
     timer:sleep(200),
@@ -415,24 +384,24 @@ test_malformed_json_request(_Config) ->
     ct:pal("Testing malformed JSON request"),
 
     %% Test various malformed JSON inputs
-    MalformedInputs = [
-        <<"{invalid json}">>,
-        <<"{\"jsonrpc\": \"2.0\", \"method\": }">>,
-        <<"{\"jsonrpc\": \"2.0\", \"id\": }">>,
-        <<"[{invalid}]">>,
-        <<"{{}}">>
-    ],
+    MalformedInputs =
+        [<<"{invalid json}">>,
+         <<"{\"jsonrpc\": \"2.0\", \"method\": }">>,
+         <<"{\"jsonrpc\": \"2.0\", \"id\": }">>,
+         <<"[{invalid}]">>,
+         <<"{{}}">>],
 
     lists:foreach(fun(Input) ->
-        case erlmcp_json_rpc:decode_message(Input) of
-            {error, {parse_error, _}} ->
-                ct:log("Malformed JSON detected: ~p", [Input]),
-                ok;
-            {error, _Reason} ->
-                ct:log("Malformed JSON caused error: ~p", [Input]),
-                ok
-        end
-    end, MalformedInputs),
+                     case erlmcp_json_rpc:decode_message(Input) of
+                         {error, {parse_error, _}} ->
+                             ct:log("Malformed JSON detected: ~p", [Input]),
+                             ok;
+                         {error, _Reason} ->
+                             ct:log("Malformed JSON caused error: ~p", [Input]),
+                             ok
+                     end
+                  end,
+                  MalformedInputs),
 
     ok.
 
@@ -441,22 +410,24 @@ test_missing_required_fields(_Config) ->
     ct:pal("Testing missing required fields"),
 
     %% Test requests missing required fields
-    InvalidRequests = [
-        jsx:encode(#{<<"id">> => 1}),  % Missing method
-        jsx:encode(#{<<"method">> => <<"test">>}),  % Missing id
-        jsx:encode(#{<<"id">> => 1, <<"method">> => <<"test">>, <<"params">> => null})  % Null params
-    ],
+    InvalidRequests =
+        [jsx:encode(#{<<"id">> => 1}),  % Missing method
+         jsx:encode(#{<<"method">> => <<"test">>}),  % Missing id
+         jsx:encode(#{<<"id">> => 1,
+                      <<"method">> => <<"test">>,
+                      <<"params">> => null})],  % Null params
 
     lists:foreach(fun(Request) ->
-        case erlmcp_json_rpc:decode_message(Request) of
-            {error, {invalid_request, _}} ->
-                ct:log("Invalid request detected", []),
-                ok;
-            {ok, _} ->
-                ct:log("Request accepted (parser may be lenient)", []),
-                ok
-        end
-    end, InvalidRequests),
+                     case erlmcp_json_rpc:decode_message(Request) of
+                         {error, {invalid_request, _}} ->
+                             ct:log("Invalid request detected", []),
+                             ok;
+                         {ok, _} ->
+                             ct:log("Request accepted (parser may be lenient)", []),
+                             ok
+                     end
+                  end,
+                  InvalidRequests),
 
     ok.
 
@@ -465,22 +436,27 @@ test_invalid_parameter_types(_Config) ->
     ct:pal("Testing invalid parameter types"),
 
     %% Test invalid parameter types
-    InvalidParams = [
-        #{<<"params">> => <<"string instead of map">>},
-        #{<<"params">> => [<<"list">>]}  % May be valid in some contexts
-    ],
+    InvalidParams =
+        [#{<<"params">> => <<"string instead of map">>},
+         #{<<"params">> => [<<"list">>]}],  % May be valid in some contexts
 
     lists:foreach(fun(Params) ->
-        Request = jsx:encode(maps:merge(#{<<"jsonrpc">> => <<"2.0">>, <<"id">> => 1, <<"method">> => <<"test">>}, Params)),
-        case erlmcp_json_rpc:decode_message(Request) of
-            {error, {invalid_params, _}} ->
-                ct:log("Invalid params detected", []),
-                ok;
-            {ok, _} ->
-                ct:log("Params accepted (may be valid in this context)", []),
-                ok
-        end
-    end, InvalidParams),
+                     Request =
+                         jsx:encode(
+                             maps:merge(#{<<"jsonrpc">> => <<"2.0">>,
+                                          <<"id">> => 1,
+                                          <<"method">> => <<"test">>},
+                                        Params)),
+                     case erlmcp_json_rpc:decode_message(Request) of
+                         {error, {invalid_params, _}} ->
+                             ct:log("Invalid params detected", []),
+                             ok;
+                         {ok, _} ->
+                             ct:log("Params accepted (may be valid in this context)", []),
+                             ok
+                     end
+                  end,
+                  InvalidParams),
 
     ok.
 
@@ -489,29 +465,25 @@ test_out_of_range_values(_Config) ->
     ct:pal("Testing out of range values"),
 
     %% Test out of range values
-    OutOfRangeRequests = [
-        jsx:encode(#{
-            <<"jsonrpc">> => <<"2.0">>,
-            <<"id">> => -1,  % Negative ID
-            <<"method">> => <<"test">>
-        }),
-        jsx:encode(#{
-            <<"jsonrpc">> => <<"2.0">>,
-            <<"id">> => 999999999999999999999,  % Extremely large ID
-            <<"method">> => <<"test">>
-        })
-    ],
+    OutOfRangeRequests =
+        [jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                      <<"id">> => -1,  % Negative ID
+                      <<"method">> => <<"test">>}),
+         jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                      <<"id">> => 999999999999999999999,  % Extremely large ID
+                      <<"method">> => <<"test">>})],
 
     lists:foreach(fun(Request) ->
-        case erlmcp_json_rpc:decode_message(Request) of
-            {error, {invalid_params, _}} ->
-                ct:log("Out of range value detected", []),
-                ok;
-            {ok, _} ->
-                ct:log("Out of range value accepted (may be valid)", []),
-                ok
-        end
-    end, OutOfRangeRequests),
+                     case erlmcp_json_rpc:decode_message(Request) of
+                         {error, {invalid_params, _}} ->
+                             ct:log("Out of range value detected", []),
+                             ok;
+                         {ok, _} ->
+                             ct:log("Out of range value accepted (may be valid)", []),
+                             ok
+                     end
+                  end,
+                  OutOfRangeRequests),
 
     ok.
 
@@ -520,11 +492,10 @@ test_null_id_handling(_Config) ->
     ct:pal("Testing null ID handling"),
 
     %% Test that null ID is handled correctly (used for notifications/errors)
-    NullIdRequest = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => null,
-        <<"method">> => <<"test">>
-    }),
+    NullIdRequest =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => null,
+                     <<"method">> => <<"test">>}),
 
     case erlmcp_json_rpc:decode_message(NullIdRequest) of
         {ok, _Message} ->
@@ -572,7 +543,6 @@ test_memory_limit_exceeded(_Config) ->
 
     %% This test verifies memory limit handling
     %% We simulate high memory usage
-
     {ok, ServerPid} = start_test_server(),
 
     %% Get initial memory
@@ -601,11 +571,14 @@ test_connection_limit_reached(_Config) ->
 
     %% Clean up clients
     lists:foreach(fun({ok, Pid}) ->
-        case is_process_alive(Pid) of
-            true -> exit(Pid, normal);
-            false -> ok
-        end
-    end, ClientPids),
+                     case is_process_alive(Pid) of
+                         true ->
+                             exit(Pid, normal);
+                         false ->
+                             ok
+                     end
+                  end,
+                  ClientPids),
 
     ok.
 
@@ -618,10 +591,11 @@ test_rate_limit_exceeded(_Config) ->
 
     %% Send many requests rapidly
     lists:foreach(fun(I) ->
-        Request = #{<<"method">> => <<"ping">>, <<"id">> => I},
-        %% In real scenario, this might trigger rate limiting
-        ct:log("Sending request ~p", [I])
-    end, lists:seq(1, 100)),
+                     Request = #{<<"method">> => <<"ping">>, <<"id">> => I},
+                     %% In real scenario, this might trigger rate limiting
+                     ct:log("Sending request ~p", [I])
+                  end,
+                  lists:seq(1, 100)),
 
     %% Verify server is still functional
     ?assert(is_process_alive(ServerPid)),
@@ -638,15 +612,13 @@ test_invalid_credentials(_Config) ->
     ct:pal("Testing invalid credentials"),
 
     %% Create auth error response
-    AuthError = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32001,
-            <<"message">> => <<"Invalid credentials">>,
-            <<"data">> => #{<<"auth_failed">> => true}
-        }
-    }),
+    AuthError =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => 1,
+                     <<"error">> =>
+                         #{<<"code">> => -32001,
+                           <<"message">> => <<"Invalid credentials">>,
+                           <<"data">> => #{<<"auth_failed">> => true}}}),
 
     case erlmcp_json_rpc:decode_message(AuthError) of
         {ok, Response} ->
@@ -661,14 +633,12 @@ test_missing_auth_header(_Config) ->
     ct:pal("Testing missing auth header"),
 
     %% Create error for missing auth
-    MissingAuthError = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32001,
-            <<"message">> => <<"Missing authentication header">>
-        }
-    }),
+    MissingAuthError =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => 1,
+                     <<"error">> =>
+                         #{<<"code">> => -32001,
+                           <<"message">> => <<"Missing authentication header">>}}),
 
     case erlmcp_json_rpc:decode_message(MissingAuthError) of
         {ok, Response} ->
@@ -683,18 +653,13 @@ test_expired_token(_Config) ->
     ct:pal("Testing expired token"),
 
     %% Create error for expired token
-    ExpiredError = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32001,
-            <<"message">> => <<"Token expired">>,
-            <<"data">> => #{
-                <<"expired">> => true,
-                <<"token_age">> => 3600
-            }
-        }
-    }),
+    ExpiredError =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => 1,
+                     <<"error">> =>
+                         #{<<"code">> => -32001,
+                           <<"message">> => <<"Token expired">>,
+                           <<"data">> => #{<<"expired">> => true, <<"token_age">> => 3600}}}),
 
     case erlmcp_json_rpc:decode_message(ExpiredError) of
         {ok, Response} ->
@@ -709,18 +674,15 @@ test_unauthorized_operation(_Config) ->
     ct:pal("Testing unauthorized operation"),
 
     %% Create error for unauthorized operation
-    UnauthorizedError = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32001,
-            <<"message">> => <<"Unauthorized operation">>,
-            <<"data">> => #{
-                <<"operation">> => <<"delete_all">>,
-                <<"required_permission">> => <<"admin">>
-            }
-        }
-    }),
+    UnauthorizedError =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => 1,
+                     <<"error">> =>
+                         #{<<"code">> => -32001,
+                           <<"message">> => <<"Unauthorized operation">>,
+                           <<"data">> =>
+                               #{<<"operation">> => <<"delete_all">>,
+                                 <<"required_permission">> => <<"admin">>}}}),
 
     case erlmcp_json_rpc:decode_message(UnauthorizedError) of
         {ok, Response} ->
@@ -735,18 +697,15 @@ test_forbidden_resource(_Config) ->
     ct:pal("Testing forbidden resource"),
 
     %% Create error for forbidden resource
-    ForbiddenError = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"id">> => 1,
-        <<"error">> => #{
-            <<"code">> => -32001,
-            <<"message">> => <<"Access to resource forbidden">>,
-            <<"data">> => #{
-                <<"uri">> => <<"file:///etc/passwd">>,
-                <<"reason">> => <<"protected_system_file">>
-            }
-        }
-    }),
+    ForbiddenError =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"id">> => 1,
+                     <<"error">> =>
+                         #{<<"code">> => -32001,
+                           <<"message">> => <<"Access to resource forbidden">>,
+                           <<"data">> =>
+                               #{<<"uri">> => <<"file:///etc/passwd">>,
+                                 <<"reason">> => <<"protected_system_file">>}}}),
 
     case erlmcp_json_rpc:decode_message(ForbiddenError) of
         {ok, Response} ->
@@ -763,22 +722,28 @@ test_forbidden_resource(_Config) ->
 %% Start a test server (uses STDIO transport)
 start_test_server() ->
     case erlmcp:start_server(test_server, #{}) of
-        {ok, Pid} -> {ok, Pid};
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            {ok, Pid};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% Start a test server with custom handler
 start_test_server_with_handler(Handler) ->
     case erlmcp:start_server(test_server, #{}) of
-        {ok, Pid} -> {ok, Pid};
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            {ok, Pid};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% Start a test client
 start_test_client() ->
     case erlmcp:start_client(test_client, #{transport => stdio}) of
-        {ok, Pid} -> {ok, Pid};
-        {error, Reason} -> {error, Reason}
+        {ok, Pid} ->
+            {ok, Pid};
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% Start TCP client (simulated)

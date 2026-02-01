@@ -26,24 +26,19 @@ cleanup(_) ->
 
 websocket_message_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            {"Fragmented Messages", [
-                ?_test(test_two_part_fragment()),
-                ?_test(test_multipart_fragment()),
-                ?_test(test_incomplete_fragment_buffering()),
-                ?_test(test_fragment_reassembly())
-            ]},
-            {"Message Integration", [
-                ?_test(test_complete_request_response_cycle()),
-                ?_test(test_mixed_valid_invalid_messages()),
-                ?_test(test_large_message_handling()),
-                ?_test(test_rapid_message_stream()),
-                ?_test(test_fragmented_large_message())
-            ]}
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [{"Fragmented Messages",
+       [?_test(test_two_part_fragment()),
+        ?_test(test_multipart_fragment()),
+        ?_test(test_incomplete_fragment_buffering()),
+        ?_test(test_fragment_reassembly())]},
+      {"Message Integration",
+       [?_test(test_complete_request_response_cycle()),
+        ?_test(test_mixed_valid_invalid_messages()),
+        ?_test(test_large_message_handling()),
+        ?_test(test_rapid_message_stream()),
+        ?_test(test_fragmented_large_message())]}]}.
 
 %%====================================================================
 %% Fragmented Message Tests (Observable Behavior)
@@ -83,11 +78,10 @@ test_fragment_reassembly() ->
 
 test_complete_request_response_cycle() ->
     %% Test API: Full JSON-RPC message with delimiter
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"tools/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"tools/list">>,
+                     <<"id">> => 1}),
     DelimitedMsg = <<Message/binary, "\n">>,
     Result = erlmcp_transport_ws:validate_utf8(DelimitedMsg),
     ?assertEqual(ok, Result).
@@ -103,36 +97,32 @@ test_mixed_valid_invalid_messages() ->
 test_large_message_handling() ->
     %% Test API: Large but valid messages are accepted
     LargeData = binary:copy(<<"x">>, 10000),
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"data">> => LargeData,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"data">> => LargeData,
+                     <<"id">> => 1}),
     DelimitedMsg = <<Message/binary, "\n">>,
     ?assertMatch({ok, _}, erlmcp_transport_ws:validate_message_size(Message)).
 
 test_rapid_message_stream() ->
     %% Test API: Rapid succession of messages
-    Messages = [
-        jsx:encode(#{<<"id">> => I}) || I <- lists:seq(1, 100)
-    ],
-    Stream = binary:list_to_bin(
-        [<<M/binary, "\n">> || M <- Messages]
-    ),
+    Messages = [jsx:encode(#{<<"id">> => I}) || I <- lists:seq(1, 100)],
+    Stream = binary:list_to_bin([<<M/binary, "\n">> || M <- Messages]),
     Result = erlmcp_transport_ws:validate_utf8(Stream),
     ?assertEqual(ok, Result).
 
 test_fragmented_large_message() ->
     %% Test API: Large message split across fragments reassembles correctly
     LargeData = binary:copy(<<"x">>, 5000),
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"data">> => LargeData,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"data">> => LargeData,
+                     <<"id">> => 1}),
     %% Simulate fragmentation
     Part1 = binary:part(Message, {0, byte_size(Message) div 2}),
-    Part2 = binary:part(Message, {byte_size(Message) div 2, byte_size(Message) - byte_size(Message) div 2}),
+    Part2 =
+        binary:part(Message,
+                    {byte_size(Message) div 2, byte_size(Message) - byte_size(Message) div 2}),
     Reassembled = <<Part1/binary, Part2/binary>>,
     ?assertEqual(Message, Reassembled).

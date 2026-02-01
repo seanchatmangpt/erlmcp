@@ -3,23 +3,13 @@
 %% Handles incoming message processing, request routing, and response generation.
 -module(erlmcp_message_handler).
 
--include("erlmcp.hrl").
-%% TODO: Add opentelemetry_api dependency when telemetry is enabled
-%% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
+-include("erlmcp.hrl").%% TODO: Add opentelemetry_api dependency when telemetry is enabled
+                       %% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
 
 %% API exports
--export([
-    process_message/3,
-    handle_initialize/2,
-    handle_initialized/2,
-    handle_ping/2,
-    handle_resources_list/2,
-    handle_tools_list/2,
-    handle_prompts_list/2,
-    handle_call_tool/2,
-    handle_get_prompt/2,
-    handle_read_resource/2
-]).
+-export([process_message/3, handle_initialize/2, handle_initialized/2, handle_ping/2,
+         handle_resources_list/2, handle_tools_list/2, handle_prompts_list/2, handle_call_tool/2,
+         handle_get_prompt/2, handle_read_resource/2]).
 
 %% Types
 -type state() :: #mcp_server_state{}.
@@ -31,10 +21,13 @@
 %% @doc Process incoming MCP message (hot path).
 %% Optimized for fast message routing with minimal allocation.
 -spec process_message(binary(), binary(), state()) ->
-    {ok, state()} | {error, term()} | {reply, binary(), state()}.
+                         {ok, state()} | {error, term()} | {reply, binary(), state()}.
 process_message(TransportId, Data, State) ->
     case erlmcp_json_rpc:decode_message(Data, default) of
-        {ok, #json_rpc_request{method = Method, params = Params, id = Id}} ->
+        {ok,
+         #json_rpc_request{method = Method,
+                           params = Params,
+                           id = Id}} ->
             handle_request(Method, Params, Id, TransportId, State);
         {ok, #json_rpc_notification{method = Method, params = Params}} ->
             handle_notification(Method, Params, TransportId, State);
@@ -110,7 +103,7 @@ handle_ping(_Params, State) ->
 
 %% @doc Route request by method name
 -spec handle_request(binary(), map() | undefined, json_rpc_id(), binary(), state()) ->
-    {reply, binary(), state()} | {error, term()}.
+                        {reply, binary(), state()} | {error, term()}.
 handle_request(<<"initialize">>, _Params, Id, _TransportId, State) ->
     {reply, erlmcp_json_rpc:encode_response(Id, #{<<"result">> => <<"ok">>}), State};
 handle_request(<<"ping">>, _Params, Id, _TransportId, State) ->
@@ -131,7 +124,7 @@ handle_request(Method, _Params, Id, _TransportId, State) ->
 
 %% @doc Route notification by method name
 -spec handle_notification(binary(), map() | undefined, binary(), state()) ->
-    {ok, state()} | {error, term()}.
+                             {ok, state()} | {error, term()}.
 handle_notification(<<"initialized">>, _Params, _TransportId, State) ->
     {ok, State#mcp_server_state{initialized = true}};
 handle_notification(_Method, _Params, _TransportId, State) ->

@@ -22,17 +22,15 @@ logger_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-         fun test_init/1,
-         fun test_tool_execution_logging/1,
-         fun test_resource_update_logging/1,
-         fun test_connection_state_logging/1,
-         fun test_error_logging/1,
-         fun test_request_response_logging/1,
-         fun test_session_logging/1,
-         fun test_get_stats/1,
-         fun test_unknown_event/1
-     ]}.
+     [fun test_init/1,
+      fun test_tool_execution_logging/1,
+      fun test_resource_update_logging/1,
+      fun test_connection_state_logging/1,
+      fun test_error_logging/1,
+      fun test_request_response_logging/1,
+      fun test_session_logging/1,
+      fun test_get_stats/1,
+      fun test_unknown_event/1]}.
 
 setup() ->
     {ok, Pid} = erlmcp_event_manager:start_link(),
@@ -41,8 +39,10 @@ setup() ->
 
 cleanup(Pid) ->
     case is_process_alive(Pid) of
-        true -> erlmcp_event_manager:stop();
-        false -> ok
+        true ->
+            erlmcp_event_manager:stop();
+        false ->
+            ok
     end.
 
 %%====================================================================
@@ -52,9 +52,7 @@ cleanup(Pid) ->
 test_init(_Pid) ->
     %% Handler should be registered
     Handlers = erlmcp_event_manager:which_handlers(),
-    [
-        ?_assert(lists:member(erlmcp_event_logger, Handlers))
-    ].
+    [?_assert(lists:member(erlmcp_event_logger, Handlers))].
 
 test_tool_execution_logging(_Pid) ->
     %% Test successful tool execution
@@ -66,48 +64,44 @@ test_tool_execution_logging(_Pid) ->
     %% Test tool execution with result
     ok = erlmcp_event_manager:notify({tool_executed, <<"echo">>, 500000, {ok, <<"hello">>}}),
 
-    [
-        ?_assertEqual(ok, erlmcp_event_manager:notify({tool_executed, <<"another">>, 750000, ok}))
-    ].
+    [?_assertEqual(ok, erlmcp_event_manager:notify({tool_executed, <<"another">>, 750000, ok}))].
 
 test_resource_update_logging(_Pid) ->
     %% Test resource updates with different metadata
-    Events = [
-        {resource_updated, <<"file://test.txt">>, #{size => 1024}},
-        {resource_updated, <<"http://example.com/data">>, #{status => updated}},
-        {resource_updated, <<"memory://cache">>, #{}}
-    ],
+    Events =
+        [{resource_updated, <<"file://test.txt">>, #{size => 1024}},
+         {resource_updated, <<"http://example.com/data">>, #{status => updated}},
+         {resource_updated, <<"memory://cache">>, #{}}],
 
     Results = [erlmcp_event_manager:notify(E) || E <- Events],
 
-    [
-        ?_assertEqual([ok, ok, ok], Results)
-    ].
+    [?_assertEqual([ok, ok, ok], Results)].
 
 test_connection_state_logging(_Pid) ->
     %% Test connection state changes
     ok = erlmcp_event_manager:notify({connection_state, connected, #{transport => stdio}}),
     ok = erlmcp_event_manager:notify({connection_state, disconnected, #{reason => normal}}),
-    ok = erlmcp_event_manager:notify({connection_state, connected, #{transport => tcp, port => 8080}}),
+    ok =
+        erlmcp_event_manager:notify({connection_state,
+                                     connected,
+                                     #{transport => tcp, port => 8080}}),
 
-    [
-        ?_assertEqual(ok, erlmcp_event_manager:notify({connection_state, disconnected, #{reason => error}}))
-    ].
+    [?_assertEqual(ok,
+                   erlmcp_event_manager:notify({connection_state,
+                                                disconnected,
+                                                #{reason => error}}))].
 
 test_error_logging(_Pid) ->
     %% Test different error categories
-    Errors = [
-        {error, validation, invalid_params},
-        {error, transport, connection_lost},
-        {error, protocol, unsupported_version},
-        {error, internal, unexpected_error}
-    ],
+    Errors =
+        [{error, validation, invalid_params},
+         {error, transport, connection_lost},
+         {error, protocol, unsupported_version},
+         {error, internal, unexpected_error}],
 
     Results = [erlmcp_event_manager:notify(E) || E <- Errors],
 
-    [
-        ?_assertEqual([ok, ok, ok, ok], Results)
-    ].
+    [?_assertEqual([ok, ok, ok, ok], Results)].
 
 test_request_response_logging(_Pid) ->
     %% Test request/response logging
@@ -117,11 +111,12 @@ test_request_response_logging(_Pid) ->
     ok = erlmcp_event_manager:notify({response_sent, <<"tools/call">>, RequestId, 500000}),
 
     %% Test notification
-    ok = erlmcp_event_manager:notify({notification_sent, <<"notifications/tools/list_changed">>, #{}}),
+    ok =
+        erlmcp_event_manager:notify({notification_sent,
+                                     <<"notifications/tools/list_changed">>,
+                                     #{}}),
 
-    [
-        ?_assertEqual(ok, erlmcp_event_manager:notify({request_received, <<"resources/read">>, 124}))
-    ].
+    [?_assertEqual(ok, erlmcp_event_manager:notify({request_received, <<"resources/read">>, 124}))].
 
 test_session_logging(_Pid) ->
     %% Test session lifecycle events
@@ -130,38 +125,19 @@ test_session_logging(_Pid) ->
     ok = erlmcp_event_manager:notify({session_created, SessionId, #{user => <<"test">>}}),
     ok = erlmcp_event_manager:notify({session_terminated, SessionId, normal}),
 
-    [
-        ?_assertEqual(ok, erlmcp_event_manager:notify({session_created, <<"sess_002">>, #{}}))
-    ].
+    [?_assertEqual(ok, erlmcp_event_manager:notify({session_created, <<"sess_002">>, #{}}))].
 
-test_get_stats(_Pid) ->
+test_get_stats( _Pid ) -> Events = [ { tool_executed , << "tool1" >> , 1000000 , ok } , { tool_executed , << "tool2" >> , 2000000 , ok } , { resource_updated , << "uri" >> , #{ } } , { error , test , reason } ] , lists : foreach( fun ( E ) -> erlmcp_event_manager : notify( E ) end , Events ) , Stats = gen_event : call( erlmcp_event_manager , erlmcp_event_logger , get_stats ) , [ ?_assertMatch( #{ event_count := Count } when Count >= 4 , Stats ) , ?_assertMatch( #{ uptime_ms := _ } , Stats ) , ?_assertMatch( #{ log_level := info } , Stats ) ] .
+
     %% Send several events
-    Events = [
-        {tool_executed, <<"tool1">>, 1000000, ok},
-        {tool_executed, <<"tool2">>, 2000000, ok},
-        {resource_updated, <<"uri">>, #{}},
-        {error, test, reason}
-    ],
-
-    lists:foreach(fun(E) -> erlmcp_event_manager:notify(E) end, Events),
-
     %% Get stats via gen_event:call
-    Stats = gen_event:call(erlmcp_event_manager, erlmcp_event_logger, get_stats),
-
-    [
-        ?_assertMatch(#{event_count := Count} when Count >= 4, Stats),
-        ?_assertMatch(#{uptime_ms := _}, Stats),
-        ?_assertMatch(#{log_level := info}, Stats)
-    ].
 
 test_unknown_event(_Pid) ->
     %% Unknown event should be logged but not crash
     Result = erlmcp_event_manager:notify({unknown_event_type, some, data}),
 
-    [
-        ?_assertEqual(ok, Result),
-        ?_assert(lists:member(erlmcp_event_logger, erlmcp_event_manager:which_handlers()))
-    ].
+    [?_assertEqual(ok, Result),
+     ?_assert(lists:member(erlmcp_event_logger, erlmcp_event_manager:which_handlers()))].
 
 %%====================================================================
 %% Custom Log Level Tests
@@ -170,19 +146,19 @@ test_unknown_event(_Pid) ->
 custom_log_level_test_() ->
     {setup,
      fun() ->
-         {ok, Pid} = erlmcp_event_manager:start_link(),
-         ok = erlmcp_event_manager:add_handler(erlmcp_event_logger, #{log_level => debug}),
-         Pid
+        {ok, Pid} = erlmcp_event_manager:start_link(),
+        ok = erlmcp_event_manager:add_handler(erlmcp_event_logger, #{log_level => debug}),
+        Pid
      end,
      fun(Pid) ->
-         case is_process_alive(Pid) of
-             true -> erlmcp_event_manager:stop();
-             false -> ok
-         end
+        case is_process_alive(Pid) of
+            true ->
+                erlmcp_event_manager:stop();
+            false ->
+                ok
+        end
      end,
      fun(_) ->
-         Stats = gen_event:call(erlmcp_event_manager, erlmcp_event_logger, get_stats),
-         [
-             ?_assertMatch(#{log_level := debug}, Stats)
-         ]
+        Stats = gen_event:call(erlmcp_event_manager, erlmcp_event_logger, get_stats),
+        [?_assertMatch(#{log_level := debug}, Stats)]
      end}.

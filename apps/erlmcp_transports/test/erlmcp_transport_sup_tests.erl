@@ -1,4 +1,5 @@
 -module(erlmcp_transport_sup_tests).
+
 -include_lib("eunit/include/eunit.hrl").
 
 %%%===================================================================
@@ -22,8 +23,7 @@ transport_sup_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Supervisor starts successfully", fun test_supervisor_start/0},
+     [{"Supervisor starts successfully", fun test_supervisor_start/0},
       {"Can start stdio transport child", fun test_start_stdio_child/0},
       {"Can start TCP transport child", fun test_start_tcp_child/0},
       {"Can start HTTP transport child", fun test_start_http_child/0},
@@ -32,8 +32,7 @@ transport_sup_test_() ->
       {"Transport registers to gproc", fun test_gproc_registration/0},
       {"Supervisor restarts crashed child", fun test_child_restart/0},
       {"Supervisor handles child termination", fun test_child_termination/0},
-      {"Multiple transports can coexist", fun test_multiple_transports/0}
-     ]}.
+      {"Multiple transports can coexist", fun test_multiple_transports/0}]}.
 
 setup() ->
     %% Start dependencies
@@ -76,14 +75,13 @@ test_start_stdio_child() ->
     %% Test starting stdio transport as supervised child
     Owner = self(),
 
-    ChildSpec = #{
-        id => stdio_test,
-        start => {erlmcp_transport_stdio, start_link, [Owner]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_stdio]
-    },
+    ChildSpec =
+        #{id => stdio_test,
+          start => {erlmcp_transport_stdio, start_link, [Owner]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_stdio]},
 
     %% Set test mode to avoid stdin issues
     put(test_mode, true),
@@ -105,22 +103,20 @@ test_start_stdio_child() ->
 test_start_tcp_child() ->
     %% Test starting TCP transport as supervised child
     UniqueId = erlang:unique_integer([positive]),
-    Opts = #{
-        mode => server,
-        port => 0,  % Random port
-        owner => self(),
-        transport_id => list_to_atom("test_tcp_transport_" ++ integer_to_list(UniqueId)),
-        server_id => list_to_atom("test_tcp_server_" ++ integer_to_list(UniqueId))
-    },
+    Opts =
+        #{mode => server,
+          port => 0,  % Random port
+          owner => self(),
+          transport_id => list_to_atom("test_tcp_transport_" ++ integer_to_list(UniqueId)),
+          server_id => list_to_atom("test_tcp_server_" ++ integer_to_list(UniqueId))},
 
-    ChildSpec = #{
-        id => tcp_test,
-        start => {erlmcp_transport_tcp, start_server, [Opts]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_tcp]
-    },
+    ChildSpec =
+        #{id => tcp_test,
+          start => {erlmcp_transport_tcp, start_server, [Opts]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_tcp]},
 
     Result = supervisor:start_child(erlmcp_transport_sup, ChildSpec),
 
@@ -136,20 +132,18 @@ test_start_tcp_child() ->
 
 test_start_http_child() ->
     %% Test starting HTTP transport as supervised child
-    Opts = #{
-        url => "http://localhost:8080/mcp",
-        owner => self(),
-        connect_timeout => 1000
-    },
+    Opts =
+        #{url => "http://localhost:8080/mcp",
+          owner => self(),
+          connect_timeout => 1000},
 
-    ChildSpec = #{
-        id => http_test,
-        start => {erlmcp_transport_http, init, [Opts]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_http, erlmcp_transport_http_server]
-    },
+    ChildSpec =
+        #{id => http_test,
+          start => {erlmcp_transport_http, init, [Opts]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_http, erlmcp_transport_http_server]},
 
     %% Note: This may fail if no server is running, which is expected
     Result = supervisor:start_child(erlmcp_transport_sup, ChildSpec),
@@ -168,20 +162,18 @@ test_start_http_child() ->
 test_start_ws_child() ->
     %% Test starting WebSocket transport as supervised child
     UniqueId = erlang:unique_integer([positive]),
-    Config = #{
-        port => 0,  % Random port
-        path => "/mcp/ws"
-    },
+    Config =
+        #{port => 0,  % Random port
+          path => "/mcp/ws"},
     TransportId = list_to_atom("ws_sup_test_" ++ integer_to_list(UniqueId)),
 
-    ChildSpec = #{
-        id => ws_test,
-        start => {erlmcp_transport_ws, init, [TransportId, Config]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_ws]
-    },
+    ChildSpec =
+        #{id => ws_test,
+          start => {erlmcp_transport_ws, init, [TransportId, Config]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_ws]},
 
     Result = supervisor:start_child(erlmcp_transport_sup, ChildSpec),
 
@@ -198,20 +190,18 @@ test_start_ws_child() ->
 test_start_sse_child() ->
     %% Test starting SSE transport as supervised child
     UniqueId = erlang:unique_integer([positive]),
-    Config = #{
-        port => 0,  % Random port
-        path => "/mcp/sse"
-    },
+    Config =
+        #{port => 0,  % Random port
+          path => "/mcp/sse"},
     TransportId = list_to_atom("sse_sup_test_" ++ integer_to_list(UniqueId)),
 
-    ChildSpec = #{
-        id => sse_test,
-        start => {erlmcp_transport_sse, init, [TransportId, Config]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_sse]
-    },
+    ChildSpec =
+        #{id => sse_test,
+          start => {erlmcp_transport_sse, init, [TransportId, Config]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_sse]},
 
     Result = supervisor:start_child(erlmcp_transport_sup, ChildSpec),
 
@@ -257,14 +247,13 @@ test_child_restart() ->
     Owner = self(),
     put(test_mode, true),
 
-    ChildSpec = #{
-        id => restart_test,
-        start => {erlmcp_transport_stdio, start_link, [Owner]},
-        restart => permanent,  % Will restart on crash
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_stdio]
-    },
+    ChildSpec =
+        #{id => restart_test,
+          start => {erlmcp_transport_stdio, start_link, [Owner]},
+          restart => permanent,  % Will restart on crash
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_stdio]},
 
     {ok, Pid1} = supervisor:start_child(erlmcp_transport_sup, ChildSpec),
     ?assert(is_process_alive(Pid1)),
@@ -294,14 +283,13 @@ test_child_termination() ->
     Owner = self(),
     put(test_mode, true),
 
-    ChildSpec = #{
-        id => term_test,
-        start => {erlmcp_transport_stdio, start_link, [Owner]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_stdio]
-    },
+    ChildSpec =
+        #{id => term_test,
+          start => {erlmcp_transport_stdio, start_link, [Owner]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_stdio]},
 
     {ok, Pid} = supervisor:start_child(erlmcp_transport_sup, ChildSpec),
     ?assert(is_process_alive(Pid)),
@@ -328,30 +316,29 @@ test_multiple_transports() ->
     UniqueId = erlang:unique_integer([positive]),
 
     %% Start stdio
-    StdioSpec = #{
-        id => multi_stdio,
-        start => {erlmcp_transport_stdio, start_link, [Owner]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_stdio]
-    },
+    StdioSpec =
+        #{id => multi_stdio,
+          start => {erlmcp_transport_stdio, start_link, [Owner]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_stdio]},
 
     %% Start TCP server
-    TcpSpec = #{
-        id => multi_tcp,
-        start => {erlmcp_transport_tcp, start_server, [#{
-            mode => server,
-            port => 0,
-            owner => Owner,
-            transport_id => list_to_atom("multi_tcp_transport_" ++ integer_to_list(UniqueId)),
-            server_id => list_to_atom("multi_tcp_server_" ++ integer_to_list(UniqueId))
-        }]},
-        restart => temporary,
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_transport_tcp]
-    },
+    TcpSpec =
+        #{id => multi_tcp,
+          start =>
+              {erlmcp_transport_tcp,
+               start_server,
+               [#{mode => server,
+                  port => 0,
+                  owner => Owner,
+                  transport_id => list_to_atom("multi_tcp_transport_" ++ integer_to_list(UniqueId)),
+                  server_id => list_to_atom("multi_tcp_server_" ++ integer_to_list(UniqueId))}]},
+          restart => temporary,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_transport_tcp]},
 
     {ok, StdioPid} = supervisor:start_child(erlmcp_transport_sup, StdioSpec),
     {ok, TcpPid} = supervisor:start_child(erlmcp_transport_sup, TcpSpec),

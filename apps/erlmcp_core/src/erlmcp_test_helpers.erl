@@ -1,4 +1,5 @@
 -module(erlmcp_test_helpers).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
@@ -19,53 +20,31 @@
 %% @end
 
 %% API
--export([
-    start_link/0,
+-export([start_link/0, generate_server_id/0, generate_server_id/1, generate_client_id/0,
+         generate_client_id/1, generate_transport_id/0, generate_transport_id/1, allocate_port/0,
+         allocate_port/1, release_port/1, get_free_port/0, start_test_server/1, start_test_server/2,
+         start_test_server/3, start_test_client/1, start_test_client/2, stop_test_process/1,
+         stop_all_test_processes/0, random_binary/1, random_uri/0, random_uri/1,
+         generate_test_resource/0, generate_test_tool/0, generate_test_prompt/0,
+         create_mock_transport/0, create_mock_transport/1, setup_test/0, cleanup_test/0,
+         with_test_server/2, with_test_client/2, assert_process_alive/1, assert_process_dead/1,
+         wait_for_process_death/1, wait_for_process_death/2, sleep/1, timestamp/0, unique_ref/0]).
+
     %% Unique ID generation
-    generate_server_id/0,
-    generate_server_id/1,
-    generate_client_id/0,
-    generate_client_id/1,
-    generate_transport_id/0,
-    generate_transport_id/1,
+
     %% Port management
-    allocate_port/0,
-    allocate_port/1,
-    release_port/1,
-    get_free_port/0,
+
     %% Process management
-    start_test_server/1,
-    start_test_server/2,
-    start_test_server/3,
-    start_test_client/1,
-    start_test_client/2,
-    stop_test_process/1,
-    stop_all_test_processes/0,
+
     %% Test data generation
-    random_binary/1,
-    random_uri/0,
-    random_uri/1,
-    generate_test_resource/0,
-    generate_test_tool/0,
-    generate_test_prompt/0,
+
     %% Mock transport helpers
-    create_mock_transport/0,
-    create_mock_transport/1,
+
     %% Test setup/teardown
-    setup_test/0,
-    cleanup_test/0,
-    with_test_server/2,
-    with_test_client/2,
+
     %% Assertions
-    assert_process_alive/1,
-    assert_process_dead/1,
-    wait_for_process_death/1,
-    wait_for_process_death/2,
+
     %% Utilities
-    sleep/1,
-    timestamp/0,
-    unique_ref/0
-]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -74,13 +53,12 @@
 -define(DEFAULT_PORT_RANGE, {10000, 65000}).
 
 %% State record
--record(state, {
-    port_pool :: sets:set(integer()),
-    port_allocations = #{} :: map(),  %% Port -> Allocator Pid
-    test_processes = sets:new() :: sets:set(pid()),
-    id_counters = #{} :: map(),  %% Prefix -> Counter
-    allocated_ports = sets:new() :: sets:set(integer())
-}).
+-record(state,
+        {port_pool :: sets:set(integer()),
+         port_allocations = #{} :: map(),  %% Port -> Allocator Pid
+         test_processes = sets:new() :: sets:set(pid()),
+         id_counters = #{} :: map(),  %% Prefix -> Counter
+         allocated_ports = sets:new() :: sets:set(integer())}).
 
 -type state() :: #state{}.
 
@@ -166,12 +144,14 @@ start_test_server(ServerId) ->
     start_test_server(ServerId, #mcp_server_capabilities{}, #{}).
 
 %% @doc Start a test server with custom capabilities.
--spec start_test_server(binary(), #mcp_server_capabilities{} | map()) -> {ok, pid()} | {error, term()}.
+-spec start_test_server(binary(), #mcp_server_capabilities{} | map()) ->
+                           {ok, pid()} | {error, term()}.
 start_test_server(ServerId, Capabilities) ->
     start_test_server(ServerId, Capabilities, #{}).
 
 %% @doc Start a test server with full options.
--spec start_test_server(binary(), #mcp_server_capabilities{} | map(), map()) -> {ok, pid()} | {error, term()}.
+-spec start_test_server(binary(), #mcp_server_capabilities{} | map(), map()) ->
+                           {ok, pid()} | {error, term()}.
 start_test_server(ServerId, Capabilities, Options) ->
     case erlmcp_server:start_link(ServerId, Capabilities) of
         {ok, Pid} = Result ->
@@ -203,9 +183,12 @@ stop_test_process(Pid) when is_pid(Pid) ->
     case erlang:is_process_alive(Pid) of
         true ->
             case get_process_type(Pid) of
-                server -> erlmcp_server:stop(Pid);
-                client -> erlmcp_client:stop(Pid);
-                _ -> exit(Pid, kill)
+                server ->
+                    erlmcp_server:stop(Pid);
+                client ->
+                    erlmcp_client:stop(Pid);
+                _ ->
+                    exit(Pid, kill)
             end,
             gen_server:cast(?SERVER, {unregister_process, Pid});
         false ->
@@ -236,7 +219,11 @@ random_uri() ->
 -spec random_uri(binary()) -> binary().
 random_uri(Scheme) when is_binary(Scheme) ->
     Unique = unique_ref(),
-    <<Scheme/binary, "://", Unique/binary, "/", (integer_to_binary(erlang:unique_integer([positive])))/binary>>.
+    <<Scheme/binary,
+      "://",
+      Unique/binary,
+      "/",
+      (integer_to_binary(erlang:unique_integer([positive])))/binary>>.
 
 %% @doc Generate a test resource with random data.
 -spec generate_test_resource() -> {binary(), fun()}.
@@ -256,7 +243,8 @@ generate_test_tool() ->
 -spec generate_test_prompt() -> {binary(), fun()}.
 generate_test_prompt() ->
     Name = <<"prompt_", (random_binary(8))/binary>>,
-    Handler = fun(_) -> [#{role => <<"user">>, content => #{type => <<"text">>, text => <<"test">>}}] end,
+    Handler =
+        fun(_) -> [#{role => <<"user">>, content => #{type => <<"text">>, text => <<"test">>}}] end,
     {Name, Handler}.
 
 %%%--------------------------------------------------------------------
@@ -271,16 +259,18 @@ create_mock_transport() ->
 %% @doc Create a mock transport with custom configuration.
 -spec create_mock_transport(map()) -> {module(), map()}.
 create_mock_transport(Options) when is_map(Options) ->
-    MockModule = case maps:get(type, Options, stdio) of
-        stdio -> erlmcp_transport_stdio;
-        tcp -> erlmcp_transport_tcp;
-        http -> erlmcp_transport_http;
-        _ -> erlmcp_transport_stdio
-    end,
-    Config = maps:merge(#{
-        test_mode => true,
-        mock_responses => []
-    }, Options),
+    MockModule =
+        case maps:get(type, Options, stdio) of
+            stdio ->
+                erlmcp_transport_stdio;
+            tcp ->
+                erlmcp_transport_tcp;
+            http ->
+                erlmcp_transport_http;
+            _ ->
+                erlmcp_transport_stdio
+        end,
+    Config = maps:merge(#{test_mode => true, mock_responses => []}, Options),
     {MockModule, Config}.
 
 %%%--------------------------------------------------------------------
@@ -298,8 +288,10 @@ setup_test() ->
     case whereis(?SERVER) of
         undefined ->
             case start_link() of
-                {ok, _Pid} -> ok;
-                {error, {already_started, _}} -> ok
+                {ok, _Pid} ->
+                    ok;
+                {error, {already_started, _}} ->
+                    ok
             end;
         _Pid ->
             ok
@@ -342,16 +334,20 @@ with_test_client(TransportOpts, Fun) when is_tuple(TransportOpts), is_function(F
 -spec assert_process_alive(pid()) -> true.
 assert_process_alive(Pid) when is_pid(Pid) ->
     case erlang:is_process_alive(Pid) of
-        true -> true;
-        false -> error({process_dead, Pid})
+        true ->
+            true;
+        false ->
+            error({process_dead, Pid})
     end.
 
 %% @doc Assert that a process is dead.
 -spec assert_process_dead(pid()) -> true.
 assert_process_dead(Pid) when is_pid(Pid) ->
     case erlang:is_process_alive(Pid) of
-        false -> true;
-        true -> error({process_alive, Pid})
+        false ->
+            true;
+        true ->
+            error({process_alive, Pid})
     end.
 
 %% @doc Wait for a process to die (default 5 seconds).
@@ -390,15 +386,13 @@ timestamp() ->
 unique_ref() ->
     {Mega, Secs, Micro} = erlang:timestamp(),
     Unique = erlang:unique_integer([positive]),
-    iolist_to_binary([
-        integer_to_binary(Mega),
-        <<"_">>,
-        integer_to_binary(Secs),
-        <<"_">>,
-        integer_to_binary(Micro),
-        <<"_">>,
-        integer_to_binary(Unique)
-    ]).
+    iolist_to_binary([integer_to_binary(Mega),
+                      <<"_">>,
+                      integer_to_binary(Secs),
+                      <<"_">>,
+                      integer_to_binary(Micro),
+                      <<"_">>,
+                      integer_to_binary(Unique)]).
 
 %%%--------------------------------------------------------------------
 %%% Internal functions
@@ -417,31 +411,26 @@ get_process_type(Pid) ->
 init([]) ->
     process_flag(trap_exit, true),
     %% Initialize ETS table for process tracking
-    State = #state{
-        port_pool = initialize_port_pool(),
-        test_processes = sets:new(),
-        id_counters = #{},
-        allocated_ports = sets:new()
-    },
+    State =
+        #state{port_pool = initialize_port_pool(),
+               test_processes = sets:new(),
+               id_counters = #{},
+               allocated_ports = sets:new()},
     {ok, State}.
 
 %% @private
 handle_call(generate_server_id, _From, State) ->
     ServerId = generate_unique_id(<<"server">>, State),
     {reply, ServerId, State};
-
 handle_call({generate_server_id, Prefix}, _From, State) ->
     ServerId = generate_unique_id(Prefix, State),
     {reply, ServerId, State};
-
 handle_call({generate_client_id, Prefix}, _From, State) ->
     ClientId = generate_unique_id(Prefix, State),
     {reply, ClientId, State};
-
 handle_call({generate_transport_id, Prefix}, _From, State) ->
     TransportId = generate_unique_id(Prefix, State),
     {reply, TransportId, State};
-
 handle_call({allocate_port, {Min, Max}}, _From, #state{allocated_ports = Allocated} = State) ->
     case find_free_port(Min, Max, Allocated) of
         {ok, Port} ->
@@ -451,33 +440,35 @@ handle_call({allocate_port, {Min, Max}}, _From, #state{allocated_ports = Allocat
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call(stop_all_test_processes, _From, #state{test_processes = Processes} = State) ->
     %% Stop all tracked processes
     PidList = sets:to_list(Processes),
     lists:foreach(fun(Pid) ->
-        case erlang:is_process_alive(Pid) of
-            true ->
-                try
-                    stop_test_process(Pid)
-                catch
-                    _:_ -> ok
-                end;
-            false ->
-                ok
-        end
-    end, PidList),
+                     case erlang:is_process_alive(Pid) of
+                         true ->
+                             try
+                                 stop_test_process(Pid)
+                             catch
+                                 _:_ ->
+                                     ok
+                             end;
+                         false ->
+                             ok
+                     end
+                  end,
+                  PidList),
     NewState = State#state{test_processes = sets:new()},
     {reply, ok, NewState};
-
 handle_call({get_process_type, Pid}, _From, State) ->
     %% Look up process type from ETS table or internal state
-    Type = case get_process_entry(Pid, State) of
-        {_, ProcessType, _} -> ProcessType;
-        undefined -> undefined
-    end,
+    Type =
+        case get_process_entry(Pid, State) of
+            {_, ProcessType, _} ->
+                ProcessType;
+            undefined ->
+                undefined
+        end,
     {reply, Type, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -488,24 +479,21 @@ handle_cast({register_process, Pid, Type, Id}, #state{test_processes = Processes
     %% Store process info (in real implementation, use ETS)
     NewProcesses = sets:add_element(Pid, Processes),
     {noreply, State#state{test_processes = NewProcesses}};
-
 handle_cast({unregister_process, Pid}, #state{test_processes = Processes} = State) ->
     NewProcesses = sets:del_element(Pid, Processes),
     {noreply, State#state{test_processes = NewProcesses}};
-
 handle_cast({release_port, Port}, #state{allocated_ports = Allocated} = State) ->
     NewAllocated = sets:del_element(Port, Allocated),
     {noreply, State#state{allocated_ports = NewAllocated}};
-
 handle_cast(_Request, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({'DOWN', MonitorRef, process, Pid, _Reason}, #state{test_processes = Processes} = State) ->
+handle_info({'DOWN', MonitorRef, process, Pid, _Reason},
+            #state{test_processes = Processes} = State) ->
     %% Clean up process that died
     NewProcesses = sets:del_element(Pid, Processes),
     {noreply, State#state{test_processes = NewProcesses}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -526,16 +514,19 @@ code_change(_OldVsn, State, _Extra) ->
 initialize_port_pool() ->
     %% Create a pool of ports in the valid range
     {Min, Max} = ?DEFAULT_PORT_RANGE,
-    sets:from_list(lists:seq(Min, Max)).
+    sets:from_list(
+        lists:seq(Min, Max)).
 
 %% @private Find a free port in the specified range.
--spec find_free_port(integer(), integer(), sets:set(integer())) -> {ok, integer()} | {error, term()}.
+-spec find_free_port(integer(), integer(), sets:set(integer())) ->
+                        {ok, integer()} | {error, term()}.
 find_free_port(Min, Max, Allocated) ->
     %% Try to bind to ports in the range
     find_free_port_loop(Min, Max, Allocated, 100).
 
 %% @private Loop to find a free port with max attempts.
--spec find_free_port_loop(integer(), integer(), sets:set(integer()), integer()) -> {ok, integer()} | {error, term()}.
+-spec find_free_port_loop(integer(), integer(), sets:set(integer()), integer()) ->
+                             {ok, integer()} | {error, term()}.
 find_free_port_loop(_Min, _Max, _Allocated, 0) ->
     {error, no_free_port};
 find_free_port_loop(Min, Max, Allocated, Attempts) ->
@@ -562,7 +553,13 @@ generate_unique_id(Prefix, #state{id_counters = Counters}) ->
     Counter = maps:get(Prefix, Counters, 0) + 1,
     Timestamp = integer_to_binary(timestamp()),
     Random = random_binary(4),
-    <<Prefix/binary, "_", Timestamp/binary, "_", Random/binary, "_", (integer_to_binary(Counter))/binary>>.
+    <<Prefix/binary,
+      "_",
+      Timestamp/binary,
+      "_",
+      Random/binary,
+      "_",
+      (integer_to_binary(Counter))/binary>>.
 
 %% @private Get process entry from tracking.
 -spec get_process_entry(pid(), #state{}) -> {pid(), atom(), term()} | undefined.

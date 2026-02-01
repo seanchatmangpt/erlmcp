@@ -1,0 +1,82 @@
+# Agent 08 Smoke Test - FAILED
+
+## Status: FAIL
+
+## Timestamp
+2026-02-01T11:50:00Z
+
+## Duration
+29 seconds (target: ≤120 seconds)
+
+## Root Cause
+**Compilation failures prevent test execution.**
+
+## Failed Tests: 15/15
+
+### Critical Path Failures:
+
+1. **Codec & Protocol** (6/6 failed)
+   - erlmcp_json_rpc_tests
+   - erlmcp_json_rpc_encoding_tests
+   - erlmcp_json_rpc_request_tests
+   - erlmcp_json_rpc_response_tests
+   - erlmcp_message_parser_tests
+   - erlmcp_request_id_tests
+
+2. **Lifecycle** (3/3 failed)
+   - erlmcp_client_basic_tests
+   - erlmcp_server_basic_tests
+   - erlmcp_ping_tests
+
+3. **Registry** (2/2 failed)
+   - erlmcp_registry_basic_tests
+   - erlmcp_registry_tests
+
+4. **Transport** (1/1 failed)
+   - erlmcp_transport_stdio_tests
+
+5. **Validation** (2/2 failed)
+   - erlmcp_validate_cli_tests
+   - erlmcp_uri_validator_tests
+
+6. **Supervision** (1/1 failed)
+   - erlmcp_supervisor_tests
+
+## Blocker
+Agent 02 (Compile) must fix syntax errors in test files before smoke tests can run.
+
+## Specific Compilation Errors
+
+```
+apps/erlmcp_core/test/erlmcp_circuit_breaker_priority_tests.erl:
+  - Line 67: Incomplete test function (missing assertion)
+  - Line 91: Incomplete test function (missing assertion)
+  - Functions undefined: test_priority_state_transition_closed_to_open/1
+  - Functions undefined: test_priority_state_transition_open_to_half_open/1
+  - Functions undefined: test_priority_metrics_tracking/1
+  - Functions undefined: test_state_change_notification_latency/1
+```
+
+## Next Steps
+1. Agent 02 must fix compilation errors
+2. Agent 08 will retry smoke tests after compilation succeeds
+3. All 15 critical path tests must pass within ≤120s
+
+## Logs
+- /tmp/smoke_erlmcp_json_rpc_tests.log
+- /tmp/smoke_erlmcp_json_rpc_encoding_tests.log
+- /tmp/smoke_erlmcp_json_rpc_request_tests.log
+- /tmp/smoke_erlmcp_json_rpc_response_tests.log
+- /tmp/smoke_erlmcp_message_parser_tests.log
+- /tmp/smoke_erlmcp_request_id_tests.log
+- /tmp/smoke_erlmcp_client_basic_tests.log
+- /tmp/smoke_erlmcp_server_basic_tests.log
+- /tmp/smoke_erlmcp_ping_tests.log
+- /tmp/smoke_erlmcp_registry_basic_tests.log
+- /tmp/smoke_erlmcp_registry_tests.log
+- /tmp/smoke_erlmcp_transport_stdio_tests.log
+- /tmp/smoke_erlmcp_validate_cli_tests.log
+- /tmp/smoke_erlmcp_uri_validator_tests.log
+- /tmp/smoke_erlmcp_supervisor_tests.log
+
+## Agent 08 Report Complete

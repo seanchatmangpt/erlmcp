@@ -8,49 +8,39 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_resource_subscriptions).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/0,
-    subscribe_to_resource/3,
-    unsubscribe_from_resource/2,
-    list_resource_subscriptions/2,
-    notify_resource_changed/2,
-    set_rate_limit/2,
-    get_stats/0
-]).
-
+-export([start_link/0, subscribe_to_resource/3, unsubscribe_from_resource/2,
+         list_resource_subscriptions/2, notify_resource_changed/2, set_rate_limit/2, get_stats/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
 -type uri() :: binary().
 -type subscriber() :: pid().
--type subscription_config() :: #{
-    created_at => integer(),
-    rate_limit => non_neg_integer(),
-    filter => fun((map()) -> boolean()) | undefined
-}.
--type change_notification() :: #{
-    uri => uri(),
-    timestamp => integer(),
-    metadata => map()
-}.
+-type subscription_config() ::
+    #{created_at => integer(),
+      rate_limit => non_neg_integer(),
+      filter => fun((map()) -> boolean()) | undefined}.
+-type change_notification() ::
+    #{uri => uri(),
+      timestamp => integer(),
+      metadata => map()}.
 
 -export_type([uri/0, subscription_config/0, change_notification/0]).
 
 %% State record
--record(state, {
-    resource_subscriptions :: #{uri() => #{subscriber() => subscription_config()}},
-    subscription_counters :: #{uri() => integer()},
-    last_notified :: #{uri() => integer()},  % Rate limiting: timestamp of last notification
-    pending_changes :: #{uri() => [change_notification()]},  % Batching window
-    batch_timer_ref :: reference() | undefined,
-    default_rate_limit = 1000 :: non_neg_integer()  % Default: 1 notification/sec
-}).
+-record(state,
+        {resource_subscriptions :: #{uri() => #{subscriber() => subscription_config()}},
+         subscription_counters :: #{uri() => integer()},
+         last_notified :: #{uri() => integer()},  % Rate limiting: timestamp of last notification
+         pending_changes :: #{uri() => [change_notification()]},  % Batching window
+         batch_timer_ref :: reference() | undefined,
+         default_rate_limit = 1000 :: non_neg_integer()}).  % Default: 1 notification/sec
 
 -type state() :: #state{}.
 
@@ -69,7 +59,8 @@ start_link() ->
 %% @doc Subscribe to a resource URI.
 %% Supports exact URI match and URI templates.
 -spec subscribe_to_resource(uri(), subscriber(), map()) -> ok | {error, term()}.
-subscribe_to_resource(Uri, Subscriber, Options) when is_binary(Uri), is_pid(Subscriber), is_map(Options) ->
+subscribe_to_resource(Uri, Subscriber, Options)
+    when is_binary(Uri), is_pid(Subscriber), is_map(Options) ->
     gen_server:call(?MODULE, {subscribe_resource, Uri, Subscriber, Options}).
 
 %% @doc Unsubscribe from a resource URI.
@@ -79,7 +70,8 @@ unsubscribe_from_resource(Uri, Subscriber) when is_binary(Uri), is_pid(Subscribe
 
 %% @doc List all subscribers for a resource URI (exact match).
 -spec list_resource_subscriptions(uri(), boolean()) -> [subscriber()].
-list_resource_subscriptions(Uri, IncludeTemplates) when is_binary(Uri), is_boolean(IncludeTemplates) ->
+list_resource_subscriptions(Uri, IncludeTemplates)
+    when is_binary(Uri), is_boolean(IncludeTemplates) ->
     gen_server:call(?MODULE, {list_subscriptions, Uri, IncludeTemplates}).
 
 %% @doc Notify that a resource has changed.
@@ -106,13 +98,12 @@ get_stats() ->
 init([]) ->
     process_flag(trap_exit, true),
     logger:info("Starting resource subscriptions manager"),
-    {ok, #state{
-        resource_subscriptions = #{},
-        subscription_counters = #{},
-        last_notified = #{},
-        pending_changes = #{},
-        batch_timer_ref = undefined
-    }}.
+    {ok,
+     #state{resource_subscriptions = #{},
+            subscription_counters = #{},
+            last_notified = #{},
+            pending_changes = #{},
+            batch_timer_ref = undefined}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
 handle_call({subscribe_resource, Uri, Subscriber, Options}, _From, State) ->
@@ -122,34 +113,33 @@ handle_call({subscribe_resource, Uri, Subscriber, Options}, _From, State) ->
                 ok ->
                     MonitorRef = monitor(process, Subscriber),
                     RateLimit = maps:get(rate_limit, Options, State#state.default_rate_limit),
-                    Config = #{
-                        created_at => erlang:system_time(millisecond),
-                        rate_limit => RateLimit,
-                        filter => maps:get(filter, Options, undefined),
-                        monitor_ref => MonitorRef
-                    },
+                    Config =
+                        #{created_at => erlang:system_time(millisecond),
+                          rate_limit => RateLimit,
+                          filter => maps:get(filter, Options, undefined),
+                          monitor_ref => MonitorRef},
 
                     % Add to resource subscriptions
                     ResourceSubs = maps:get(Uri, State#state.resource_subscriptions, #{}),
                     NewResourceSubs = maps:put(Subscriber, Config, ResourceSubs),
-                    NewResourceSubscriptions = maps:put(Uri, NewResourceSubs, State#state.resource_subscriptions),
+                    NewResourceSubscriptions =
+                        maps:put(Uri, NewResourceSubs, State#state.resource_subscriptions),
 
                     % Increment subscription counter
                     Counter = maps:get(Uri, State#state.subscription_counters, 0),
                     NewCounters = maps:put(Uri, Counter + 1, State#state.subscription_counters),
 
                     logger:debug("Subscribed ~p to resource ~p", [Subscriber, Uri]),
-                    {reply, ok, State#state{
-                        resource_subscriptions = NewResourceSubscriptions,
-                        subscription_counters = NewCounters
-                    }};
+                    {reply,
+                     ok,
+                     State#state{resource_subscriptions = NewResourceSubscriptions,
+                                 subscription_counters = NewCounters}};
                 {error, Reason} ->
                     {reply, {error, Reason}, State}
             end;
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({unsubscribe_resource, Uri, Subscriber}, _From, State) ->
     case maps:get(Uri, State#state.resource_subscriptions, undefined) of
         undefined ->
@@ -165,131 +155,144 @@ handle_call({unsubscribe_resource, Uri, Subscriber}, _From, State) ->
 
                     % Remove from resource subscriptions
                     NewResourceSubs = maps:remove(Subscriber, ResourceSubs),
-                    NewResourceSubscriptions = case maps:size(NewResourceSubs) of
-                        0 -> maps:remove(Uri, State#state.resource_subscriptions);
-                        _ -> maps:put(Uri, NewResourceSubs, State#state.resource_subscriptions)
-                    end,
+                    NewResourceSubscriptions =
+                        case maps:size(NewResourceSubs) of
+                            0 ->
+                                maps:remove(Uri, State#state.resource_subscriptions);
+                            _ ->
+                                maps:put(Uri, NewResourceSubs, State#state.resource_subscriptions)
+                        end,
 
                     % Decrement subscription counter
                     Counter = maps:get(Uri, State#state.subscription_counters, 1),
-                    NewCounters = case Counter of
-                        1 -> maps:remove(Uri, State#state.subscription_counters);
-                        _ -> maps:put(Uri, Counter - 1, State#state.subscription_counters)
-                    end,
+                    NewCounters =
+                        case Counter of
+                            1 ->
+                                maps:remove(Uri, State#state.subscription_counters);
+                            _ ->
+                                maps:put(Uri, Counter - 1, State#state.subscription_counters)
+                        end,
 
                     logger:debug("Unsubscribed ~p from resource ~p", [Subscriber, Uri]),
-                    {reply, ok, State#state{
-                        resource_subscriptions = NewResourceSubscriptions,
-                        subscription_counters = NewCounters
-                    }}
+                    {reply,
+                     ok,
+                     State#state{resource_subscriptions = NewResourceSubscriptions,
+                                 subscription_counters = NewCounters}}
             end
     end;
-
 handle_call({list_subscriptions, Uri, IncludeTemplates}, _From, State) ->
     % Get exact match subscribers
-    ExactSubs = case maps:get(Uri, State#state.resource_subscriptions, undefined) of
-        undefined -> [];
-        SubsMap -> maps:keys(SubsMap)
-    end,
+    ExactSubs =
+        case maps:get(Uri, State#state.resource_subscriptions, undefined) of
+            undefined ->
+                [];
+            SubsMap ->
+                maps:keys(SubsMap)
+        end,
 
     % Get template match subscribers if requested
-    TemplateSubs = case IncludeTemplates of
-        true -> match_template_subscribers(Uri, State#state.resource_subscriptions);
-        false -> []
-    end,
+    TemplateSubs =
+        case IncludeTemplates of
+            true ->
+                match_template_subscribers(Uri, State#state.resource_subscriptions);
+            false ->
+                []
+        end,
 
     % Combine and deduplicate
     AllSubs = lists:usort(ExactSubs ++ TemplateSubs),
     {reply, AllSubs, State};
-
 handle_call({set_rate_limit, Uri, RateLimitMs}, _From, State) ->
-    NewResourceSubscriptions = maps:map(fun(_ResourceUri, ResourceSubs) ->
-        maps:map(fun(_Subscriber, Config) ->
-            case RateLimitMs of
-                0 -> maps:remove(rate_limit, Config);
-                _ -> Config#{rate_limit => RateLimitMs}
-            end
-        end, ResourceSubs)
-    end, State#state.resource_subscriptions),
+    NewResourceSubscriptions =
+        maps:map(fun(_ResourceUri, ResourceSubs) ->
+                    maps:map(fun(_Subscriber, Config) ->
+                                case RateLimitMs of
+                                    0 ->
+                                        maps:remove(rate_limit, Config);
+                                    _ ->
+                                        Config#{rate_limit => RateLimitMs}
+                                end
+                             end,
+                             ResourceSubs)
+                 end,
+                 State#state.resource_subscriptions),
 
     {reply, ok, State#state{resource_subscriptions = NewResourceSubscriptions}};
-
 handle_call(get_stats, _From, State) ->
-    Stats = #{
-        total_resources => maps:size(State#state.resource_subscriptions),
-        total_subscriptions => lists:sum([maps:size(Subs) || Subs <- maps:values(State#state.resource_subscriptions)]),
-        resources_with_pending_changes => maps:size(State#state.pending_changes),
-        default_rate_limit => State#state.default_rate_limit
-    },
+    Stats =
+        #{total_resources => maps:size(State#state.resource_subscriptions),
+          total_subscriptions =>
+              lists:sum([maps:size(Subs)
+                         || Subs <- maps:values(State#state.resource_subscriptions)]),
+          resources_with_pending_changes => maps:size(State#state.pending_changes),
+          default_rate_limit => State#state.default_rate_limit},
     {reply, Stats, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 handle_cast({resource_changed, Uri, Metadata}, State) ->
-    ChangeNotification = #{
-        uri => Uri,
-        timestamp => erlang:system_time(millisecond),
-        metadata => Metadata
-    },
+    ChangeNotification =
+        #{uri => Uri,
+          timestamp => erlang:system_time(millisecond),
+          metadata => Metadata},
 
     % Add to pending changes
     PendingChanges = maps:get(Uri, State#state.pending_changes, []),
-    NewPendingChanges = maps:put(Uri, [ChangeNotification | PendingChanges], State#state.pending_changes),
+    NewPendingChanges =
+        maps:put(Uri, [ChangeNotification | PendingChanges], State#state.pending_changes),
 
     % Start or reset batch timer
-    NewTimerRef = case State#state.batch_timer_ref of
-        undefined ->
-            erlang:send_after(?BATCH_WINDOW_MS, self(), flush_batch);
-        Ref ->
-            erlang:cancel_timer(Ref),
-            erlang:send_after(?BATCH_WINDOW_MS, self(), flush_batch)
-    end,
+    NewTimerRef =
+        case State#state.batch_timer_ref of
+            undefined ->
+                erlang:send_after(?BATCH_WINDOW_MS, self(), flush_batch);
+            Ref ->
+                erlang:cancel_timer(Ref),
+                erlang:send_after(?BATCH_WINDOW_MS, self(), flush_batch)
+        end,
 
-    {noreply, State#state{
-        pending_changes = NewPendingChanges,
-        batch_timer_ref = NewTimerRef
-    }};
-
+    {noreply, State#state{pending_changes = NewPendingChanges, batch_timer_ref = NewTimerRef}};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info({'DOWN', MonitorRef, process, Subscriber, _Info}, State) ->
     % Subscriber died - cleanup all its subscriptions
-    NewResourceSubscriptions = maps:map(fun(_Uri, ResourceSubs) ->
-        case maps:get(Subscriber, ResourceSubs, undefined) of
-            undefined -> ResourceSubs;
-            _Config -> maps:remove(Subscriber, ResourceSubs)
-        end
-    end, State#state.resource_subscriptions),
+    NewResourceSubscriptions =
+        maps:map(fun(_Uri, ResourceSubs) ->
+                    case maps:get(Subscriber, ResourceSubs, undefined) of
+                        undefined ->
+                            ResourceSubs;
+                        _Config ->
+                            maps:remove(Subscriber, ResourceSubs)
+                    end
+                 end,
+                 State#state.resource_subscriptions),
 
     % Update subscription counters
-    NewCounters = maps:map(fun(Uri, ResourceSubs) ->
-        maps:size(ResourceSubs)
-    end, NewResourceSubscriptions),
+    NewCounters =
+        maps:map(fun(Uri, ResourceSubs) -> maps:size(ResourceSubs) end, NewResourceSubscriptions),
 
     logger:info("Cleaned up resource subscriptions for dead subscriber ~p", [Subscriber]),
-    {noreply, State#state{
-        resource_subscriptions = NewResourceSubscriptions,
-        subscription_counters = NewCounters
-    }};
-
+    {noreply,
+     State#state{resource_subscriptions = NewResourceSubscriptions,
+                 subscription_counters = NewCounters}};
 handle_info(flush_batch, State) ->
     % Flush all pending changes
-    NewState = maps:fold(fun(Uri, Changes, AccState) ->
-        % Changes is a list of change notifications
-        lists:foldl(fun(ChangeNotification, InnerState) ->
-            send_resource_notification(Uri, ChangeNotification, InnerState)
-        end, AccState, Changes)
-    end, State, State#state.pending_changes),
+    NewState =
+        maps:fold(fun(Uri, Changes, AccState) ->
+                     % Changes is a list of change notifications
+                     lists:foldl(fun(ChangeNotification, InnerState) ->
+                                    send_resource_notification(Uri, ChangeNotification, InnerState)
+                                 end,
+                                 AccState,
+                                 Changes)
+                  end,
+                  State,
+                  State#state.pending_changes),
 
-    {noreply, NewState#state{
-        pending_changes = #{},
-        batch_timer_ref = undefined
-    }};
-
+    {noreply, NewState#state{pending_changes = #{}, batch_timer_ref = undefined}};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -313,8 +316,10 @@ validate_subscriber(Subscriber) when is_pid(Subscriber) ->
     case SubNode of
         Node when Node =:= node() ->
             case is_process_alive(Subscriber) of
-                true -> ok;
-                false -> {error, no_process}
+                true ->
+                    ok;
+                false ->
+                    {error, no_process}
             end;
         _Node ->
             {error, {remote_process_not_supported, SubNode}}
@@ -324,25 +329,32 @@ validate_subscriber(Subscriber) when is_pid(Subscriber) ->
 -spec validate_uri(uri()) -> ok | {error, term()}.
 validate_uri(Uri) when is_binary(Uri) ->
     case byte_size(Uri) of
-        0 -> {error, empty_uri};
-        _ -> ok
+        0 ->
+            {error, empty_uri};
+        _ ->
+            ok
     end.
 
 %% @doc Match subscribers using URI templates.
 -spec match_template_subscribers(uri(), #{uri() => #{subscriber() => _}}) -> [subscriber()].
 match_template_subscribers(Uri, ResourceSubscriptions) ->
     % Find all template URIs that match this resource
-    MatchingTemplates = lists:filter(fun(TemplateUri) ->
-        match_uri_template(Uri, TemplateUri)
-    end, maps:keys(ResourceSubscriptions)),
+    MatchingTemplates =
+        lists:filter(fun(TemplateUri) -> match_uri_template(Uri, TemplateUri) end,
+                     maps:keys(ResourceSubscriptions)),
 
     % Collect all unique subscribers
-    lists:usort(lists:foldl(fun(TemplateUri, Acc) ->
-        case maps:get(TemplateUri, ResourceSubscriptions, undefined) of
-            undefined -> Acc;
-            SubsMap -> maps:keys(SubsMap) ++ Acc
-        end
-    end, [], MatchingTemplates)).
+    lists:usort(
+        lists:foldl(fun(TemplateUri, Acc) ->
+                       case maps:get(TemplateUri, ResourceSubscriptions, undefined) of
+                           undefined ->
+                               Acc;
+                           SubsMap ->
+                               maps:keys(SubsMap) ++ Acc
+                       end
+                    end,
+                    [],
+                    MatchingTemplates)).
 
 %% @doc Check if a URI matches a template.
 %% Supports simple wildcard patterns: {var} for path segments.
@@ -360,10 +372,13 @@ send_resource_notification(Uri, ChangeNotification, State) ->
 
     % Check rate limit
     ResourceSubs = maps:get(Uri, State#state.resource_subscriptions, #{}),
-    RateLimit = case maps:values(ResourceSubs) of
-        [] -> State#state.default_rate_limit;
-        [Config | _] -> maps:get(rate_limit, Config, State#state.default_rate_limit)
-    end,
+    RateLimit =
+        case maps:values(ResourceSubs) of
+            [] ->
+                State#state.default_rate_limit;
+            [Config | _] ->
+                maps:get(rate_limit, Config, State#state.default_rate_limit)
+        end,
 
     case Now - LastNotified >= RateLimit of
         true ->
@@ -383,14 +398,12 @@ notify_subscribers(_Uri, _ChangeNotification, []) ->
     ok;
 notify_subscribers(Uri, ChangeNotification, [Subscriber | Rest]) ->
     % Send MCP resources/updated notification
-    Notification = #{
-        jsonrpc => <<"2.0">>,
-        method => <<"resources/updated">>,
-        params => #{
-            uri => maps:get(uri, ChangeNotification),
-            timestamp => maps:get(timestamp, ChangeNotification)
-        }
-    },
+    Notification =
+        #{jsonrpc => <<"2.0">>,
+          method => <<"resources/updated">>,
+          params =>
+              #{uri => maps:get(uri, ChangeNotification),
+                timestamp => maps:get(timestamp, ChangeNotification)}},
 
     try
         Subscriber ! {'$mcp_resource', Notification},

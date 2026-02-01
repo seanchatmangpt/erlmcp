@@ -23,12 +23,10 @@ safety_test_() ->
     {setup,
      fun setup_chaos/0,
      fun cleanup_chaos/1,
-     [
-         {"Safety controls enforcement", fun test_safety_controls/0},
-         {"Blast radius limits", fun test_blast_radius_limits/0},
-         {"Auto rollback on failure", fun test_auto_rollback/0},
-         {"Multiple experiments with cumulative blast radius", fun test_cumulative_blast_radius/0}
-     ]}.
+     [{"Safety controls enforcement", fun test_safety_controls/0},
+      {"Blast radius limits", fun test_blast_radius_limits/0},
+      {"Auto rollback on failure", fun test_auto_rollback/0},
+      {"Multiple experiments with cumulative blast radius", fun test_cumulative_blast_radius/0}]}.
 
 setup_chaos() ->
     {ok, Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
@@ -48,13 +46,12 @@ test_safety_controls() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
     % Try to run experiment with very high rate (should be controlled)
-    Config = #{
-        experiment => kill_servers,
-        target => erlmcp_server,
-        rate => 0.8,  % Very high rate
-        max_blast_radius => 0.8,
-        duration => 5000
-    },
+    Config =
+        #{experiment => kill_servers,
+          target => erlmcp_server,
+          rate => 0.8,  % Very high rate
+          max_blast_radius => 0.8,
+          duration => 5000},
 
     % Should be rejected or controlled by safety checks
     Result = erlmcp_chaos:run(Config),
@@ -82,23 +79,21 @@ test_blast_radius_limits() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
     % Start first experiment with moderate blast radius
-    Config1 = #{
-        experiment => kill_random,
-        rate => 0.3,
-        duration => 5000,
-        max_blast_radius => 0.3
-    },
+    Config1 =
+        #{experiment => kill_random,
+          rate => 0.3,
+          duration => 5000,
+          max_blast_radius => 0.3},
 
     {ok, _Exp1} = erlmcp_chaos:run(Config1),
 
     % Try to start another experiment that would exceed global blast radius
-    Config2 = #{
-        experiment => network_latency,
-        latency => 100,
-        rate => 0.3,
-        duration => 5000,
-        max_blast_radius => 0.3
-    },
+    Config2 =
+        #{experiment => network_latency,
+          latency => 100,
+          rate => 0.3,
+          duration => 5000,
+          max_blast_radius => 0.3},
 
     % May be rejected or allowed depending on global limits
     Result = erlmcp_chaos:run(Config2),
@@ -119,20 +114,18 @@ test_cumulative_blast_radius() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
     % Start multiple small experiments
-    Config1 = #{
-        experiment => network_latency,
-        latency => 50,
-        rate => 0.1,
-        duration => 5000,
-        max_blast_radius => 0.15
-    },
+    Config1 =
+        #{experiment => network_latency,
+          latency => 50,
+          rate => 0.1,
+          duration => 5000,
+          max_blast_radius => 0.15},
 
-    Config2 = #{
-        experiment => kill_random,
-        rate => 0.05,
-        duration => 5000,
-        max_blast_radius => 0.15
-    },
+    Config2 =
+        #{experiment => kill_random,
+          rate => 0.05,
+          duration => 5000,
+          max_blast_radius => 0.15},
 
     {ok, _Exp1} = erlmcp_chaos:run(Config1),
     {ok, _Exp2} = erlmcp_chaos:run(Config2),
@@ -153,13 +146,12 @@ test_auto_rollback() ->
     {ok, _Pid} = erlmcp_chaos:start_link([{safety_enabled, true}]),
 
     % Run experiment targeting non-existent server (should auto-rollback)
-    Config = #{
-        experiment => kill_servers,
-        target => nonexistent_server,
-        rate => 0.1,
-        duration => 2000,
-        auto_rollback => true
-    },
+    Config =
+        #{experiment => kill_servers,
+          target => nonexistent_server,
+          rate => 0.1,
+          duration => 2000,
+          auto_rollback => true},
 
     {ok, ExperimentId} = erlmcp_chaos:run(Config),
 
@@ -184,33 +176,30 @@ test_auto_rollback() ->
 safety_disabled_test_() ->
     {setup,
      fun() ->
-         % Start with safety disabled
-         {ok, Pid} = erlmcp_chaos:start_link([{safety_enabled, false}]),
-         Pid
+        % Start with safety disabled
+        {ok, Pid} = erlmcp_chaos:start_link([{safety_enabled, false}]),
+        Pid
      end,
      fun(Pid) ->
-         erlmcp_chaos:stop_all_experiments(),
-         catch gen_server:stop(Pid),
-         catch unregister(erlmcp_chaos)
+        erlmcp_chaos:stop_all_experiments(),
+        catch gen_server:stop(Pid),
+        catch unregister(erlmcp_chaos)
      end,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % With safety disabled, high-risk experiments should run
-              Config = #{
-                  experiment => kill_random,
-                  rate => 0.5,  % High rate
-                  duration => 1000
-              },
+        [?_test(begin
+                    % With safety disabled, high-risk experiments should run
+                    Config =
+                        #{experiment => kill_random,
+                          rate => 0.5,  % High rate
+                          duration => 1000},
 
-              Result = erlmcp_chaos:run(Config),
-              ?assertMatch({ok, _}, Result),
+                    Result = erlmcp_chaos:run(Config),
+                    ?assertMatch({ok, _}, Result),
 
-              % Clean up
-              {ok, ExpId} = Result,
-              erlmcp_chaos:stop_experiment(ExpId)
-          end)
-         ]
+                    % Clean up
+                    {ok, ExpId} = Result,
+                    erlmcp_chaos:stop_experiment(ExpId)
+                end)]
      end}.
 
 %% Test blast radius of zero
@@ -219,27 +208,24 @@ zero_blast_radius_test_() ->
      fun setup_chaos/0,
      fun cleanup_chaos/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Zero blast radius should mean no impact
-              Config = #{
-                  experiment => network_latency,
-                  latency => 100,
-                  rate => 0.1,
-                  duration => 1000,
-                  max_blast_radius => 0.0
-              },
+        [?_test(begin
+                    % Zero blast radius should mean no impact
+                    Config =
+                        #{experiment => network_latency,
+                          latency => 100,
+                          rate => 0.1,
+                          duration => 1000,
+                          max_blast_radius => 0.0},
 
-              % Should either run with no effect or be rejected
-              Result = erlmcp_chaos:run(Config),
-              case Result of
-                  {ok, ExpId} ->
-                      erlmcp_chaos:stop_experiment(ExpId);
-                  {error, _} ->
-                      ok
-              end
-          end)
-         ]
+                    % Should either run with no effect or be rejected
+                    Result = erlmcp_chaos:run(Config),
+                    case Result of
+                        {ok, ExpId} ->
+                            erlmcp_chaos:stop_experiment(ExpId);
+                        {error, _} ->
+                            ok
+                    end
+                end)]
      end}.
 
 %%====================================================================
@@ -252,31 +238,28 @@ safety_workflow_test_() ->
      fun setup_chaos/0,
      fun cleanup_chaos/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Dry run to check safety
-              Config = #{
-                  experiment => kill_servers,
-                  target => erlmcp_server,
-                  rate => 0.5,
-                  duration => 2000,
-                  max_blast_radius => 0.5
-              },
+        [?_test(begin
+                    % Dry run to check safety
+                    Config =
+                        #{experiment => kill_servers,
+                          target => erlmcp_server,
+                          rate => 0.5,
+                          duration => 2000,
+                          max_blast_radius => 0.5},
 
-              {ok, DryRunResult} = erlmcp_chaos:dry_run(Config),
+                    {ok, DryRunResult} = erlmcp_chaos:dry_run(Config),
 
-              % Verify dry run includes safety checks
-              ?assertMatch(#{safety_checks := _, risks := _}, DryRunResult),
+                    % Verify dry run includes safety checks
+                    ?assertMatch(#{safety_checks := _, risks := _}, DryRunResult),
 
-              % Run experiment (should be within safety limits)
-              {ok, ExperimentId} = erlmcp_chaos:run(Config),
+                    % Run experiment (should be within safety limits)
+                    {ok, ExperimentId} = erlmcp_chaos:run(Config),
 
-              % Verify it's running
-              {ok, Status} = erlmcp_chaos:get_experiment_status(ExperimentId),
-              ?assertEqual(running, maps:get(state, Status)),
+                    % Verify it's running
+                    {ok, Status} = erlmcp_chaos:get_experiment_status(ExperimentId),
+                    ?assertEqual(running, maps:get(state, Status)),
 
-              % Stop experiment
-              ok = erlmcp_chaos:stop_experiment(ExperimentId)
-          end)
-         ]
+                    % Stop experiment
+                    ok = erlmcp_chaos:stop_experiment(ExperimentId)
+                end)]
      end}.

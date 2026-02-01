@@ -9,15 +9,10 @@
 -module(erlmcp_refusal).
 
 %% API
--export([
-    get_message/1,
-    get_metadata/1,
-    format_refusal/1,
-    format_refusal/2,
-    is_valid_code/1
-]).
+-export([get_message/1, get_metadata/1, format_refusal/1, format_refusal/2, is_valid_code/1]).
 
 -include_lib("kernel/include/logger.hrl").
+
 -include("erlmcp_refusal.hrl").
 
 %%====================================================================
@@ -36,8 +31,13 @@ get_message(Code) ->
 
 %% @doc Get full refusal metadata by code
 -spec get_metadata(refusal_code()) ->
-    {ok, refusal_code(), pos_integer(), binary(), binary(), warn | error | critical} |
-    {error, unknown_code}.
+                      {ok,
+                       refusal_code(),
+                       pos_integer(),
+                       binary(),
+                       binary(),
+                       warn | error | critical} |
+                      {error, unknown_code}.
 get_metadata(Code) ->
     case lists:keyfind(Code, 1, ?REFUSAL_METADATA) of
         {Code, Status, Message, Hint, Severity} ->
@@ -62,10 +62,7 @@ format_refusal(Code, Details) when map_size(Details) =:= 0 ->
     format_refusal(Code);
 format_refusal(Code, Details) ->
     Base = format_refusal(Code),
-    DetailStr = iolist_to_binary(
-        [<<" | Details: ">>,
-         jsx:encode(Details)]
-    ),
+    DetailStr = iolist_to_binary([<<" | Details: ">>, jsx:encode(Details)]),
     <<Base/binary, DetailStr/binary>>.
 
 %% @doc Check if code is a valid refusal code (1001-1089)

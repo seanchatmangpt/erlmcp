@@ -1,25 +1,22 @@
--module(erlmcp_transport_http).
-%% -behaviour(erlmcp_transport_behavior).  % Conflicts with gen_server init/1
+-module(erlmcp_transport_http).%% -behaviour(erlmcp_transport_behavior).  % Conflicts with gen_server init/1
 
 %% Transport behavior callbacks
 -export([send/2, close/1, init/1]).
-
 %% API
 -export([start_link/1]).
 
 %% Types
--type http_opts() :: #{
-    url := binary() | string(),
-    owner := pid(),
-    method => get | post,
-    headers => [{string() | binary(), string() | binary()}],
-    timeout => timeout(),
-    connect_timeout => timeout(),
-    max_retries => non_neg_integer(),
-    retry_delay => pos_integer(),
-    ssl_options => [ssl:tls_client_option()],
-    pool_size => non_neg_integer()
-}.
+-type http_opts() ::
+    #{url := binary() | string(),
+      owner := pid(),
+      method => get | post,
+      headers => [{string() | binary(), string() | binary()}],
+      timeout => timeout(),
+      connect_timeout => timeout(),
+      max_retries => non_neg_integer(),
+      retry_delay => pos_integer(),
+      ssl_options => [ssl:tls_client_option()],
+      pool_size => non_neg_integer()}.
 
 -export_type([http_opts/0]).
 

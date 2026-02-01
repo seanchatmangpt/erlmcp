@@ -1,4 +1,5 @@
 -module(erlmcp_cluster_sup).
+
 -behaviour(supervisor).
 
 -export([start_link/0]).
@@ -33,51 +34,41 @@ init([]) ->
     %% Read cluster configuration
     ClusterEnabled = application:get_env(erlmcp_core, cluster_enabled, false),
 
-    SupFlags = #{
-        strategy => one_for_one,
-        intensity => 5,
-        period => 60
-    },
+    SupFlags =
+        #{strategy => one_for_one,
+          intensity => 5,
+          period => 60},
 
     %% Dynamically build child specs based on cluster_enabled flag
-    ChildSpecs = case ClusterEnabled of
-        true ->
-            logger:info("Starting cluster supervisor with distributed components"),
-            [
-                %% Distributed registry (global gproc)
-                #{
-                    id => erlmcp_registry_dist,
-                    start => {erlmcp_registry_dist, start_link, []},
-                    restart => permanent,
-                    shutdown => 5000,
-                    type => worker,
-                    modules => [erlmcp_registry_dist]
-                },
-
-                %% Node monitor (tracks nodeup/nodedown)
-                #{
-                    id => erlmcp_node_monitor,
-                    start => {erlmcp_node_monitor, start_link, []},
-                    restart => permanent,
-                    shutdown => 5000,
-                    type => worker,
-                    modules => [erlmcp_node_monitor]
-                },
-
-                %% Split-brain detector
-                #{
-                    id => erlmcp_split_brain_detector,
-                    start => {erlmcp_split_brain_detector, start_link, []},
-                    restart => permanent,
-                    shutdown => 5000,
-                    type => worker,
-                    modules => [erlmcp_split_brain_detector]
-                }
-            ];
-        false ->
-            logger:info("Starting cluster supervisor in local mode (no distributed components)"),
-            %% Empty child list when clustering disabled
-            []
-    end,
+    ChildSpecs =
+        case ClusterEnabled of
+            true ->
+                logger:info("Starting cluster supervisor with distributed components"),
+                [%% Distributed registry (global gproc)
+                 #{id => erlmcp_registry_dist,
+                   start => {erlmcp_registry_dist, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => worker,
+                   modules => [erlmcp_registry_dist]},
+                 %% Node monitor (tracks nodeup/nodedown)
+                 #{id => erlmcp_node_monitor,
+                   start => {erlmcp_node_monitor, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => worker,
+                   modules => [erlmcp_node_monitor]},
+                 %% Split-brain detector
+                 #{id => erlmcp_split_brain_detector,
+                   start => {erlmcp_split_brain_detector, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => worker,
+                   modules => [erlmcp_split_brain_detector]}];
+            false ->
+                logger:info("Starting cluster supervisor in local mode (no distributed components)"),
+                %% Empty child list when clustering disabled
+                []
+        end,
 
     {ok, {SupFlags, ChildSpecs}}.

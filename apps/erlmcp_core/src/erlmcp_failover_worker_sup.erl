@@ -12,11 +12,11 @@
 %%% @end
 %%%====================================================================
 -module(erlmcp_failover_worker_sup).
+
 -behaviour(supervisor).
 
 %% API
 -export([start_link/0, start_worker/1]).
-
 %% Supervisor callbacks
 -export([init/1]).
 
@@ -41,19 +41,17 @@ start_worker(Work) ->
 %%====================================================================
 
 init([]) ->
-    SupFlags = #{
-        strategy => simple_one_for_one,
-        intensity => 10,
-        period => 60
-    },
+    SupFlags =
+        #{strategy => simple_one_for_one,
+          intensity => 10,
+          period => 60},
 
-    ChildSpec = #{
-        id => erlmcp_failover_worker,
-        start => {erlmcp_failover_worker, start_link, []},
-        restart => transient,  % Don't restart after normal completion
-        shutdown => 5000,
-        type => worker,
-        modules => [erlmcp_failover_worker]
-    },
+    ChildSpec =
+        #{id => erlmcp_failover_worker,
+          start => {erlmcp_failover_worker, start_link, []},
+          restart => transient,  % Don't restart after normal completion
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_failover_worker]},
 
     {ok, {SupFlags, [ChildSpec]}}.

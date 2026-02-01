@@ -1,4 +1,5 @@
 -module(erlmcp_pricing_validator).
+
 -export([validate_usage/2, check_limit/3, validate_upgrade_path/2]).
 
 %% @doc Validate usage against plan limits

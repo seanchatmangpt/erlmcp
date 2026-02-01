@@ -1,30 +1,22 @@
 -module(erlmcp_code_reload).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    reload_module/2,
-    reload_modules/2,
-    get_reload_history/0,
-    rollback_module/1,
-    validate_module/1
-]).
-
+-export([start_link/0, reload_module/2, reload_modules/2, get_reload_history/0, rollback_module/1,
+         validate_module/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Reload options
--type reload_opts() :: #{
-    validate_syntax => boolean(),
-    validate_dialyzer => boolean(),
-    run_tests => boolean(),
-    drain_connections => boolean(),
-    drain_timeout_ms => pos_integer(),
-    rollback_window_s => pos_integer(),
-    smoke_tests => [fun(() -> ok | {error, term()})]
-}.
-
+-type reload_opts() ::
+    #{validate_syntax => boolean(),
+      validate_dialyzer => boolean(),
+      run_tests => boolean(),
+      drain_connections => boolean(),
+      drain_timeout_ms => pos_integer(),
+      rollback_window_s => pos_integer(),
+      smoke_tests => [fun(() -> ok | {error, term()})]}.
 %% Reload result
 -type reload_result() :: {ok, OldVsn :: term(), NewVsn :: term()} | {error, term()}.
 
@@ -32,28 +24,24 @@
 -define(STATE_VERSION, 1).
 
 %% State record
--record(state, {
-    version = ?STATE_VERSION :: integer(),
-    reload_history = [] :: [reload_entry()],
-    rollback_timers = #{} :: #{module() => reference()},
-    draining = false :: boolean()
-}).
+-record(state,
+        {version = ?STATE_VERSION :: integer(),
+         reload_history = [] :: [reload_entry()],
+         rollback_timers = #{} :: #{module() => reference()},
+         draining = false :: boolean()}).
 
--type reload_entry() :: #{
-    module => module(),
-    old_vsn => term(),
-    new_vsn => term(),
-    timestamp => erlang:timestamp(),
-    result => ok | {error, term()}
-}.
-
+-type reload_entry() ::
+    #{module => module(),
+      old_vsn => term(),
+      new_vsn => term(),
+      timestamp => erlang:timestamp(),
+      result => ok | {error, term()}}.
 -type state() :: #state{}.
 -type module_name() :: module().
--type module_info() :: #{
-    version => term(),
-    loaded_at => erlang:timestamp(),
-    exports => [{function(), arity()}]
-}.
+-type module_info() ::
+    #{version => term(),
+      loaded_at => erlang:timestamp(),
+      exports => [{function(), arity()}]}.
 
 %%====================================================================
 %% API Functions
@@ -101,32 +89,37 @@ init([]) ->
 %% @doc Initialize state with current version
 -spec init_state() -> state().
 init_state() ->
-    #state{
-        version = ?STATE_VERSION,
-        reload_history = [],
-        rollback_timers = #{},
-        draining = false
-    }.
+    #state{version = ?STATE_VERSION,
+           reload_history = [],
+           rollback_timers = #{},
+           draining = false}.
 
 %% @doc Get all loaded modules with their info
 -spec get_all_modules() -> #{module_name() => module_info()}.
 get_all_modules() ->
     Modules = [M || M <- registered_modules(), is_valid_module(M)],
     lists:foldl(fun(Module, Acc) ->
-        case get_module_info(Module) of
-            {ok, Info} -> maps:put(Module, Info, Acc);
-            {error, _} -> Acc
-        end
-    end, #{}, Modules).
+                   case get_module_info(Module) of
+                       {ok, Info} ->
+                           maps:put(Module, Info, Acc);
+                       {error, _} ->
+                           Acc
+                   end
+                end,
+                #{},
+                Modules).
 
 %% @doc Check if module is valid for reload
 -spec is_valid_module(module()) -> boolean().
 is_valid_module(Module) when is_atom(Module) ->
     case code:is_loaded(Module) of
-        {file, _} -> true;
-        _ -> false
+        {file, _} ->
+            true;
+        _ ->
+            false
     end;
-is_valid_module(_) -> false.
+is_valid_module(_) ->
+    false.
 
 %% @doc Get module info for tracking
 -spec get_module_info(module()) -> {ok, module_info()} | {error, term()}.
@@ -134,15 +127,19 @@ get_module_info(Module) ->
     case code:is_loaded(Module) of
         {file, _} ->
             Version = get_module_version(Module),
-            Exports = case beam_lib:chunks(code:which(Module), [exports]) of
-                {ok, {Module, [{exports, Exp}]}} -> Exp;
-                _ -> []
-            end,
-            {ok, #{
-                version => Version,
-                loaded_at => erlang:timestamp(),
-                exports => Exports
-            }};
+            Exports =
+                case beam_lib:chunks(
+                         code:which(Module), [exports])
+                of
+                    {ok, {Module, [{exports, Exp}]}} ->
+                        Exp;
+                    _ ->
+                        []
+                end,
+            {ok,
+             #{version => Version,
+               loaded_at => erlang:timestamp(),
+               exports => Exports}};
         _ ->
             {error, module_not_loaded}
     end.
@@ -155,57 +152,51 @@ registered_modules() ->
     [Module || {Module, _} <- Loaded].
 
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
-
 handle_call({reload_module, Module, Opts}, _From, State) ->
     Result = do_reload_module(Module, Opts, State),
 
     % Record in history
-    Entry = #{
-        module => Module,
-        old_vsn => get_module_version(Module),
-        new_vsn => get_module_version(Module),
-        timestamp => erlang:timestamp(),
-        result => element(1, Result)
-    },
+    Entry =
+        #{module => Module,
+          old_vsn => get_module_version(Module),
+          new_vsn => get_module_version(Module),
+          timestamp => erlang:timestamp(),
+          result => element(1, Result)},
     NewHistory = [Entry | State#state.reload_history],
 
     % Setup rollback timer if configured
     RollbackWindow = maps:get(rollback_window_s, Opts, 60),
-    NewState = case Result of
-        {ok, _, _} ->
-            TimerRef = erlang:send_after(RollbackWindow * 1000, self(), {rollback_window_expired, Module}),
-            State#state{
-                reload_history = NewHistory,
-                rollback_timers = maps:put(Module, TimerRef, State#state.rollback_timers)
-            };
-        _ ->
-            State#state{reload_history = NewHistory}
-    end,
+    NewState =
+        case Result of
+            {ok, _, _} ->
+                TimerRef =
+                    erlang:send_after(RollbackWindow * 1000,
+                                      self(),
+                                      {rollback_window_expired, Module}),
+                State#state{reload_history = NewHistory,
+                            rollback_timers =
+                                maps:put(Module, TimerRef, State#state.rollback_timers)};
+            _ ->
+                State#state{reload_history = NewHistory}
+        end,
 
     {reply, Result, NewState};
-
 handle_call({reload_modules, Modules, Opts}, _From, State) ->
     % Sort modules by dependency order
     SortedModules = sort_by_dependencies(Modules),
 
     % Reload each module
-    Results = lists:map(fun(Mod) ->
-        {Mod, do_reload_module(Mod, Opts, State)}
-    end, SortedModules),
+    Results = lists:map(fun(Mod) -> {Mod, do_reload_module(Mod, Opts, State)} end, SortedModules),
 
     {reply, Results, State};
-
 handle_call(get_reload_history, _From, State) ->
     {reply, State#state.reload_history, State};
-
 handle_call({rollback_module, Module}, _From, State) ->
     Result = do_rollback_module(Module),
     {reply, Result, State};
-
 handle_call({validate_module, Module}, _From, State) ->
     Result = validate_module_internal(Module),
     {reply, Result, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -219,7 +210,6 @@ handle_info({rollback_window_expired, Module}, State) ->
     logger:info("Rollback window expired for module ~p, keeping new code", [Module]),
     NewTimers = maps:remove(Module, State#state.rollback_timers),
     {noreply, State#state{rollback_timers = NewTimers}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -230,12 +220,17 @@ terminate(_Reason, _State) ->
 -spec code_change(term(), state(), term()) -> {ok, state()}.
 code_change(OldVsn, State, Extra) ->
     % Extract version from OldVsn
-    Version = case OldVsn of
-        {down, V} -> V;
-        _ when is_integer(OldVsn) -> OldVsn;
-        undefined -> 0;  % No version info means v0
-        _ -> 0  % Fallback to v0
-    end,
+    Version =
+        case OldVsn of
+            {down, V} ->
+                V;
+            _ when is_integer(OldVsn) ->
+                OldVsn;
+            undefined ->
+                0;  % No version info means v0
+            _ ->
+                0  % Fallback to v0
+        end,
     logger:info("Code change from version ~p to ~p", [Version, ?STATE_VERSION]),
     case migrate_state(State, Version) of
         {ok, NewState} ->
@@ -284,12 +279,11 @@ migrate_state_v0_to_v1(V0State) when is_record(V0State, state) ->
     end;
 migrate_state_v0_to_v1(V0State) when is_map(V0State) ->
     % Convert old map-based state to record format
-    V1State = #state{
-        version = ?STATE_VERSION,
-        reload_history = maps:get(reload_history, V0State, []),
-        rollback_timers = maps:get(rollback_timers, V0State, #{}),
-        draining = maps:get(draining, V0State, false)
-    },
+    V1State =
+        #state{version = ?STATE_VERSION,
+               reload_history = maps:get(reload_history, V0State, []),
+               rollback_timers = maps:get(rollback_timers, V0State, #{}),
+               draining = maps:get(draining, V0State, false)},
     logger:info("Converted map-based state to v1 record format"),
     {ok, V1State};
 migrate_state_v0_to_v1(OldState) ->
@@ -344,10 +338,11 @@ do_reload_module_validated(Module, Opts, _State) ->
                             case run_smoke_tests(SmokeTests) of
                                 ok ->
                                     logger:info("Module ~p reloaded successfully: ~p -> ~p",
-                                               [Module, OldVsn, NewVsn]),
+                                                [Module, OldVsn, NewVsn]),
                                     {ok, OldVsn, NewVsn};
                                 {error, TestErr} ->
-                                    logger:error("Smoke tests failed for ~p, rolling back", [Module]),
+                                    logger:error("Smoke tests failed for ~p, rolling back",
+                                                 [Module]),
                                     _ = do_rollback_module(Module),
                                     {error, {smoke_test_failed, TestErr}}
                             end;
@@ -579,9 +574,11 @@ sort_by_dependencies(Modules) ->
 -spec build_dependency_graph([module()]) -> #{module() => [module()]}.
 build_dependency_graph(Modules) ->
     lists:foldl(fun(Mod, Acc) ->
-        Deps = get_module_dependencies(Mod),
-        maps:put(Mod, Deps, Acc)
-    end, #{}, Modules).
+                   Deps = get_module_dependencies(Mod),
+                   maps:put(Mod, Deps, Acc)
+                end,
+                #{},
+                Modules).
 
 -spec get_module_dependencies(module()) -> [module()].
 get_module_dependencies(Module) ->
@@ -606,9 +603,11 @@ topological_sort(Graph) ->
     Queue = [N || N <- Nodes, maps:get(N, InDegree, 0) =:= 0],
     topological_sort_loop(Queue, InDegree, Graph, []).
 
--spec topological_sort_loop([module()], #{module() => non_neg_integer()},
-                            #{module() => [module()]}, [module()]) ->
-    {ok, [module()]} | {error, cycle}.
+-spec topological_sort_loop([module()],
+                            #{module() => non_neg_integer()},
+                            #{module() => [module()]},
+                            [module()]) ->
+                               {ok, [module()]} | {error, cycle}.
 topological_sort_loop([], _InDegree, Graph, Result) ->
     case length(Result) =:= maps:size(Graph) of
         true ->
@@ -618,27 +617,32 @@ topological_sort_loop([], _InDegree, Graph, Result) ->
     end;
 topological_sort_loop([Node | Queue], InDegree, Graph, Result) ->
     Neighbors = maps:get(Node, Graph, []),
-    {NewQueue, NewInDegree} = lists:foldl(fun(Neighbor, {Q, ID}) ->
-        NewDegree = maps:get(Neighbor, ID, 1) - 1,
-        NewID = maps:put(Neighbor, NewDegree, ID),
-        case NewDegree of
-            0 ->
-                {[Neighbor | Q], NewID};
-            _ ->
-                {Q, NewID}
-        end
-    end, {Queue, InDegree}, Neighbors),
+    {NewQueue, NewInDegree} =
+        lists:foldl(fun(Neighbor, {Q, ID}) ->
+                       NewDegree = maps:get(Neighbor, ID, 1) - 1,
+                       NewID = maps:put(Neighbor, NewDegree, ID),
+                       case NewDegree of
+                           0 ->
+                               {[Neighbor | Q], NewID};
+                           _ ->
+                               {Q, NewID}
+                       end
+                    end,
+                    {Queue, InDegree},
+                    Neighbors),
     topological_sort_loop(NewQueue, NewInDegree, Graph, [Node | Result]).
 
 -spec calculate_in_degree(#{module() => [module()]}, [module()]) ->
-    #{module() => non_neg_integer()}.
+                             #{module() => non_neg_integer()}.
 calculate_in_degree(Graph, Nodes) ->
     Initial = maps:from_list([{N, 0} || N <- Nodes]),
     maps:fold(fun(_From, Tos, Acc) ->
-        lists:foldl(fun(To, A) ->
-            maps:update_with(To, fun(V) -> V + 1 end, 1, A)
-        end, Acc, Tos)
-    end, Initial, Graph).
+                 lists:foldl(fun(To, A) -> maps:update_with(To, fun(V) -> V + 1 end, 1, A) end,
+                             Acc,
+                             Tos)
+              end,
+              Initial,
+              Graph).
 
 %%====================================================================
 %% Internal functions - Utilities
@@ -654,8 +658,10 @@ get_beam_path(Module) ->
             % For cover_compiled modules, try to get the original beam path
             % The cover module stores the original path in the module info
             case get_original_beam_path(Module) of
-                {ok, OriginalPath} -> OriginalPath;
-                error -> non_existing
+                {ok, OriginalPath} ->
+                    OriginalPath;
+                error ->
+                    non_existing
             end;
         BeamPath when is_list(BeamPath) ->
             % Check if this is a cover_compiled path
@@ -666,8 +672,10 @@ get_beam_path(Module) ->
                     % For cover_compiled modules, try to get the original beam path
                     % The cover module stores the original path in the module info
                     case get_original_beam_path(Module) of
-                        {ok, OriginalPath} -> OriginalPath;
-                        error -> BeamPath
+                        {ok, OriginalPath} ->
+                            OriginalPath;
+                        error ->
+                            BeamPath
                     end
             end
     end.
@@ -683,8 +691,10 @@ get_original_beam_path(Module) ->
         _ ->
             % Fallback: try to find the beam file in code path
             case code:where_is_file(atom_to_list(Module) ++ ".beam") of
-                non_existing -> error;
-                BeamPath when is_list(BeamPath) -> {ok, BeamPath}
+                non_existing ->
+                    error;
+                BeamPath when is_list(BeamPath) ->
+                    {ok, BeamPath}
             end
     end.
 

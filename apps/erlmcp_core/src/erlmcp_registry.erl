@@ -1,49 +1,37 @@
 -module(erlmcp_registry).
+
 -behaviour(gen_server).
 
 -include("erlmcp.hrl").
 
 %% API exports
--export([
-    start_link/0,
-    register_server/3, register_server/4, register_transport/3, register_transport/4,
-    unregister_server/1, unregister_server/2, unregister_transport/1, unregister_transport/2,
-    update_server/2,
-    route_to_server/3, route_to_transport/3,
-    find_server/1, find_server/2, find_transport/1, find_transport/2,
-    list_servers/0, list_servers/1, list_transports/0, list_transports/1,
-    bind_transport_to_server/2, unbind_transport/1,
-    get_server_for_transport/1,
-    get_all_state/0,
-    get_pid/0,
-    get_queue_depth/0,
-    restore_state/1,
-    route_message/2
-]).
-
+-export([start_link/0, register_server/3, register_server/4, register_transport/3,
+         register_transport/4, unregister_server/1, unregister_server/2, unregister_transport/1,
+         unregister_transport/2, update_server/2, route_to_server/3, route_to_transport/3,
+         find_server/1, find_server/2, find_transport/1, find_transport/2, list_servers/0,
+         list_servers/1, list_transports/0, list_transports/1, bind_transport_to_server/2,
+         unbind_transport/1, get_server_for_transport/1, get_all_state/0, get_pid/0,
+         get_queue_depth/0, restore_state/1, route_message/2]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, format_status/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
+         format_status/2]).
 
 %% Types
 -type transport_id() :: atom() | binary().
--type server_config() :: #{
-    capabilities => #mcp_server_capabilities{},
-    options => map(),
-    _ => _
-}.
--type transport_config() :: #{
-    type => stdio | tcp | http,
-    server_id => server_id(),
-    config => map(),
-    _ => _
-}.
+-type server_config() ::
+    #{capabilities => #mcp_server_capabilities{},
+      options => map(),
+      _ => _}.
+-type transport_config() ::
+    #{type => stdio | tcp | http,
+      server_id => server_id(),
+      config => map(),
+      _ => _}.
 
 -export_type([server_id/0, transport_id/0]).
 
 %% State record - significantly simplified with gproc
--record(registry_state, {
-    server_transport_map = #{} :: #{transport_id() => server_id()}
-}).
+-record(registry_state, {server_transport_map = #{} :: #{transport_id() => server_id()}}).
 
 -type state() :: #registry_state{}.
 
@@ -70,7 +58,8 @@ register_server(global, ServerId, ServerPid, Config) when is_pid(ServerPid) ->
 register_transport(TransportId, TransportPid, Config) when is_pid(TransportPid) ->
     register_transport(local, TransportId, TransportPid, Config).
 
--spec register_transport(local | global, transport_id(), pid(), transport_config()) -> ok | {error, term()}.
+-spec register_transport(local | global, transport_id(), pid(), transport_config()) ->
+                            ok | {error, term()}.
 register_transport(local, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
     gen_server:call(?MODULE, {register_transport, TransportId, TransportPid, Config});
 register_transport(global, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
@@ -119,7 +108,10 @@ route_to_transport(TransportId, ServerId, Message) ->
 find_server(ServerId) ->
     find_server(local, ServerId).
 
--spec find_server(local | global, server_id()) -> {ok, {pid(), server_config()}} | {ok, {node(), pid(), server_config()}} | {error, not_found}.
+-spec find_server(local | global, server_id()) ->
+                     {ok, {pid(), server_config()}} |
+                     {ok, {node(), pid(), server_config()}} |
+                     {error, not_found}.
 find_server(local, ServerId) ->
     gen_server:call(?MODULE, {find_server, ServerId});
 find_server(global, ServerId) ->
@@ -129,7 +121,10 @@ find_server(global, ServerId) ->
 find_transport(TransportId) ->
     find_transport(local, TransportId).
 
--spec find_transport(local | global, transport_id()) -> {ok, {pid(), transport_config()}} | {ok, {node(), pid(), transport_config()}} | {error, not_found}.
+-spec find_transport(local | global, transport_id()) ->
+                        {ok, {pid(), transport_config()}} |
+                        {ok, {node(), pid(), transport_config()}} |
+                        {error, not_found}.
 find_transport(local, TransportId) ->
     gen_server:call(?MODULE, {find_transport, TransportId});
 find_transport(global, TransportId) ->
@@ -139,7 +134,9 @@ find_transport(global, TransportId) ->
 list_servers() ->
     list_servers(local).
 
--spec list_servers(local | global) -> [{server_id(), {pid(), server_config()}}] | [{server_id(), {node(), pid(), server_config()}}].
+-spec list_servers(local | global) ->
+                      [{server_id(), {pid(), server_config()}}] |
+                      [{server_id(), {node(), pid(), server_config()}}].
 list_servers(local) ->
     gen_server:call(?MODULE, list_servers);
 list_servers(global) ->
@@ -149,7 +146,9 @@ list_servers(global) ->
 list_transports() ->
     list_transports(local).
 
--spec list_transports(local | global) -> [{transport_id(), {pid(), transport_config()}}] | [{transport_id(), {node(), pid(), transport_config()}}].
+-spec list_transports(local | global) ->
+                         [{transport_id(), {pid(), transport_config()}}] |
+                         [{transport_id(), {node(), pid(), transport_config()}}].
 list_transports(local) ->
     gen_server:call(?MODULE, list_transports);
 list_transports(global) ->
@@ -190,7 +189,8 @@ get_pid() ->
 -spec get_queue_depth() -> non_neg_integer().
 get_queue_depth() ->
     case get_pid() of
-        undefined -> 0;
+        undefined ->
+            0;
         Pid ->
             {message_queue_len, Len} = erlang:process_info(Pid, message_queue_len),
             Len
@@ -210,7 +210,8 @@ restore_state(State) ->
 %% Destination format: {server, ServerId} | {transport, TransportId}
 %% @end
 %%--------------------------------------------------------------------
--spec route_message({server, server_id()} | {transport, transport_id()}, term()) -> ok | {error, term()}.
+-spec route_message({server, server_id()} | {transport, transport_id()}, term()) ->
+                       ok | {error, term()}.
 route_message({server, ServerId}, Message) ->
     % Find server to get transport ID
     case find_server(ServerId) of
@@ -226,8 +227,10 @@ route_message({transport, TransportId}, Message) ->
         {ok, {_Pid, Config}} ->
             ServerId = maps:get(server_id, Config, undefined),
             case ServerId of
-                undefined -> {error, no_bound_server};
-                _ -> route_to_transport(TransportId, ServerId, Message)
+                undefined ->
+                    {error, no_bound_server};
+                _ ->
+                    route_to_transport(TransportId, ServerId, Message)
             end;
         {error, not_found} ->
             {error, transport_not_found}
@@ -248,9 +251,7 @@ init([]) ->
     % Schedule async dependency check - won't block supervisor
     {ok, State, {continue, ensure_dependencies}}.
 
--spec handle_call(term(), {pid(), term()}, state()) ->
-    {reply, term(), state()}.
-
+-spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
 handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
     % Use gproc to register the server with retry logic to prevent race conditions
     Key = {n, l, {mcp, server, ServerId}},
@@ -265,7 +266,8 @@ handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
             catch
                 error:badarg ->
                     % Race condition: another process registered just now
-                    logger:warning("Registration race for server ~p, retry logic may be needed", [ServerId]),
+                    logger:warning("Registration race for server ~p, retry logic may be needed",
+                                   [ServerId]),
                     {reply, {error, already_registered}, State}
             end;
         ExistingPid when ExistingPid =:= ServerPid ->
@@ -274,10 +276,9 @@ handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
             {reply, ok, State};
         ExistingPid ->
             logger:warning("Server ~p already registered with different pid ~p (our pid: ~p)",
-                          [ServerId, ExistingPid, ServerPid]),
+                           [ServerId, ExistingPid, ServerPid]),
             {reply, {error, already_registered}, State}
     end;
-
 handle_call({register_transport, TransportId, TransportPid, Config}, _From, State) ->
     % Use gproc to register the transport with retry logic to prevent race conditions
     Key = {n, l, {mcp, transport, TransportId}},
@@ -288,32 +289,38 @@ handle_call({register_transport, TransportId, TransportPid, Config}, _From, Stat
                 gproc:monitor(Key),
 
                 % Auto-bind to server if specified in config
-                NewState = case maps:get(server_id, Config, undefined) of
-                    undefined ->
-                        State;
-                    ServerId ->
-                        NewMap = maps:put(TransportId, ServerId, State#registry_state.server_transport_map),
-                        State#registry_state{server_transport_map = NewMap}
-                end,
+                NewState =
+                    case maps:get(server_id, Config, undefined) of
+                        undefined ->
+                            State;
+                        ServerId ->
+                            NewMap =
+                                maps:put(TransportId,
+                                         ServerId,
+                                         State#registry_state.server_transport_map),
+                            State#registry_state{server_transport_map = NewMap}
+                    end,
 
-                logger:info("Registered transport ~p with pid ~p via gproc", [TransportId, TransportPid]),
+                logger:info("Registered transport ~p with pid ~p via gproc",
+                            [TransportId, TransportPid]),
                 {reply, ok, NewState}
             catch
                 error:badarg ->
                     % Race condition: another process registered just now
-                    logger:warning("Registration race for transport ~p, retry logic may be needed", [TransportId]),
+                    logger:warning("Registration race for transport ~p, retry logic may be needed",
+                                   [TransportId]),
                     {reply, {error, already_registered}, State}
             end;
         ExistingPid when ExistingPid =:= TransportPid ->
             % Already registered by same process - this is OK (idempotent)
-            logger:debug("Transport ~p already registered by same pid ~p", [TransportId, TransportPid]),
+            logger:debug("Transport ~p already registered by same pid ~p",
+                         [TransportId, TransportPid]),
             {reply, ok, State};
         ExistingPid ->
             logger:warning("Transport ~p already registered with different pid ~p (our pid: ~p)",
-                          [TransportId, ExistingPid, TransportPid]),
+                           [TransportId, ExistingPid, TransportPid]),
             {reply, {error, already_registered}, State}
     end;
-
 handle_call({update_server, ServerId, Config}, _From, State) ->
     Key = {n, l, {mcp, server, ServerId}},
     case gproc:where(Key) of
@@ -331,7 +338,6 @@ handle_call({update_server, ServerId, Config}, _From, State) ->
                     {reply, {error, update_failed}, State}
             end
     end;
-
 handle_call({unregister_server, ServerId}, _From, State) ->
     Key = {n, l, {mcp, server, ServerId}},
     case gproc:where(Key) of
@@ -342,18 +348,19 @@ handle_call({unregister_server, ServerId}, _From, State) ->
             try
                 gproc:unreg_other(Key, Pid)
             catch
-                error:badarg -> ok  % Already unregistered
+                error:badarg ->
+                    ok  % Already unregistered
             end,
 
             % Remove any transport bindings
-            NewTransportMap = maps:filter(fun(_, SId) -> SId =/= ServerId end,
-                                         State#registry_state.server_transport_map),
+            NewTransportMap =
+                maps:filter(fun(_, SId) -> SId =/= ServerId end,
+                            State#registry_state.server_transport_map),
 
             NewState = State#registry_state{server_transport_map = NewTransportMap},
             logger:info("Unregistered server ~p", [ServerId]),
             {reply, ok, NewState}
     end;
-
 handle_call({unregister_transport, TransportId}, _From, State) ->
     Key = {n, l, {mcp, transport, TransportId}},
     case gproc:where(Key) of
@@ -364,7 +371,8 @@ handle_call({unregister_transport, TransportId}, _From, State) ->
             try
                 gproc:unreg_other(Key, Pid)
             catch
-                error:badarg -> ok  % Already unregistered
+                error:badarg ->
+                    ok  % Already unregistered
             end,
 
             % Remove binding
@@ -373,7 +381,6 @@ handle_call({unregister_transport, TransportId}, _From, State) ->
             logger:info("Unregistered transport ~p", [TransportId]),
             {reply, ok, NewState}
     end;
-
 handle_call({find_server, ServerId}, _From, State) ->
     Key = {n, l, {mcp, server, ServerId}},
     case gproc:where(Key) of
@@ -384,7 +391,6 @@ handle_call({find_server, ServerId}, _From, State) ->
             Config = gproc:get_value(Key, Pid),
             {reply, {ok, {Pid, Config}}, State}
     end;
-
 handle_call({find_transport, TransportId}, _From, State) ->
     Key = {n, l, {mcp, transport, TransportId}},
     case gproc:where(Key) of
@@ -395,17 +401,18 @@ handle_call({find_transport, TransportId}, _From, State) ->
             Config = gproc:get_value(Key, Pid),
             {reply, {ok, {Pid, Config}}, State}
     end;
-
 handle_call(list_servers, _From, State) ->
     % Query all registered servers from gproc
-    Servers = gproc:select([{{{n, l, {mcp, server, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]}]),
+    Servers =
+        gproc:select([{{{n, l, {mcp, server, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]}]),
     {reply, Servers, State};
-
 handle_call(list_transports, _From, State) ->
     % Query all registered transports from gproc
-    Transports = gproc:select([{{{n, l, {mcp, transport, '$1'}}, '$2', '$3'}, [], [{{'$1', {{'$2', '$3'}}}}]}]),
+    Transports =
+        gproc:select([{{{n, l, {mcp, transport, '$1'}}, '$2', '$3'},
+                       [],
+                       [{{'$1', {{'$2', '$3'}}}}]}]),
     {reply, Transports, State};
-
 handle_call({bind_transport_to_server, TransportId, ServerId}, _From, State) ->
     % Verify both exist using gproc
     ServerExists = gproc:where({n, l, {mcp, server, ServerId}}) =/= undefined,
@@ -422,33 +429,28 @@ handle_call({bind_transport_to_server, TransportId, ServerId}, _From, State) ->
         {_, false} ->
             {reply, {error, transport_not_found}, State}
     end;
-
 handle_call({unbind_transport, TransportId}, _From, State) ->
     NewMap = maps:remove(TransportId, State#registry_state.server_transport_map),
     NewState = State#registry_state{server_transport_map = NewMap},
     {reply, ok, NewState};
-
 handle_call({get_server_for_transport, TransportId}, _From, State) ->
     case maps:get(TransportId, State#registry_state.server_transport_map, undefined) of
-        undefined -> {reply, {error, not_found}, State};
-        ServerId -> {reply, {ok, ServerId}, State}
+        undefined ->
+            {reply, {error, not_found}, State};
+        ServerId ->
+            {reply, {ok, ServerId}, State}
     end;
-
 handle_call(get_all_state, _From, State) ->
     {reply, {ok, State}, State};
-
 handle_call({restore_state, NewState}, _From, _State) when is_record(NewState, registry_state) ->
     logger:info("Restoring registry state"),
     {reply, ok, NewState};
-
 handle_call({restore_state, _InvalidState}, _From, State) ->
     {reply, {error, invalid_state}, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 -spec handle_cast(term(), state()) -> {noreply, state()}.
-
 handle_cast({route_to_server, ServerId, TransportId, Message}, State) ->
     case gproc:where({n, l, {mcp, server, ServerId}}) of
         undefined ->
@@ -458,52 +460,43 @@ handle_cast({route_to_server, ServerId, TransportId, Message}, State) ->
             ServerPid ! {mcp_message, TransportId, Message},
             {noreply, State}
     end;
-
 handle_cast({route_to_transport, broadcast, ServerId, Message}, State) ->
     case transports_for_server(ServerId, State) of
         [] ->
             logger:warning("Cannot broadcast to transports for server ~p: none bound", [ServerId]),
             {noreply, State};
         TransportIds ->
-            lists:foreach(fun(TransportId) ->
-                send_to_transport(TransportId, ServerId, Message)
-            end, TransportIds),
+            lists:foreach(fun(TransportId) -> send_to_transport(TransportId, ServerId, Message) end,
+                          TransportIds),
             {noreply, State}
     end;
-
 handle_cast({route_to_transport, TransportId, ServerId, Message}, State) ->
     send_to_transport(TransportId, ServerId, Message),
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_continue(term(), state()) -> {noreply, state()}.
-
 %% Async dependency initialization - doesn't block supervisor
 handle_continue(ensure_dependencies, State) ->
     % Ensure gproc is started - can be slow on first boot
     ok = erlmcp_registry_utils:ensure_gproc_started(),
     logger:info("MCP registry initialized with gproc"),
     {noreply, State};
-
 handle_continue(_Continue, State) ->
     {noreply, State}.
 
--spec handle_info(term(), state()) ->
-    {noreply, state()}.
-
+-spec handle_info(term(), state()) -> {noreply, state()}.
 handle_info({gproc, unreg, _Ref, {n, l, {mcp, server, ServerId}}}, State) ->
     % gproc notifies us when a server process dies
     logger:warning("Server ~p unregistered (process died)", [ServerId]),
 
     % Remove any transport bindings
-    NewTransportMap = maps:filter(fun(_, SId) -> SId =/= ServerId end,
-                                 State#registry_state.server_transport_map),
+    NewTransportMap =
+        maps:filter(fun(_, SId) -> SId =/= ServerId end, State#registry_state.server_transport_map),
 
     NewState = State#registry_state{server_transport_map = NewTransportMap},
     {noreply, NewState};
-
 handle_info({gproc, unreg, _Ref, {n, l, {mcp, transport, TransportId}}}, State) ->
     % gproc notifies us when a transport process dies
     logger:warning("Transport ~p unregistered (process died)", [TransportId]),
@@ -512,7 +505,6 @@ handle_info({gproc, unreg, _Ref, {n, l, {mcp, transport, TransportId}}}, State) 
     NewTransportMap = maps:remove(TransportId, State#registry_state.server_transport_map),
     NewState = State#registry_state{server_transport_map = NewTransportMap},
     {noreply, NewState};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -544,29 +536,21 @@ format_status(Opt, [PDict, State]) ->
 
 %% @doc Sanitize registry state by hiding sensitive data
 -spec sanitize_registry_state(state()) -> map().
-sanitize_registry_state(#registry_state{
-    server_transport_map = ServerTransportMap
-}) ->
-    #{
-        server_transport_map_count => maps:size(ServerTransportMap),
-        bindings => sanitize_bindings(ServerTransportMap),
-        %% Get gproc registry stats (non-intrusive)
-        gproc_servers_count => length(gproc:select([{{{n, l, {mcp, server, '_'}}, '_', '_'}, [], [true]}])),
-        gproc_transports_count => length(gproc:select([{{{n, l, {mcp, transport, '_'}}, '_', '_'}, [], [true]}]))
-    }.
+sanitize_registry_state(#registry_state{server_transport_map = ServerTransportMap}) ->
+    #{server_transport_map_count => maps:size(ServerTransportMap),
+      bindings => sanitize_bindings(ServerTransportMap),
+      %% Get gproc registry stats (non-intrusive)
+      gproc_servers_count =>
+          length(gproc:select([{{{n, l, {mcp, server, '_'}}, '_', '_'}, [], [true]}])),
+      gproc_transports_count =>
+          length(gproc:select([{{{n, l, {mcp, transport, '_'}}, '_', '_'}, [], [true]}]))}.
 
 %% @doc Sanitize bindings to show structure without exposing PIDs or sensitive data
 -spec sanitize_bindings(map()) -> [map()].
 sanitize_bindings(ServerTransportMap) ->
-    lists:map(
-        fun({TransportId, ServerId}) ->
-            #{
-                transport_id => TransportId,
-                server_id => ServerId
-            }
-        end,
-        maps:to_list(ServerTransportMap)
-    ).
+    lists:map(fun({TransportId, ServerId}) -> #{transport_id => TransportId, server_id => ServerId}
+              end,
+              maps:to_list(ServerTransportMap)).
 
 %%====================================================================
 %% Internal helper functions

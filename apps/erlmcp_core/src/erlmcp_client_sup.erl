@@ -1,4 +1,5 @@
 -module(erlmcp_client_sup).
+
 -behaviour(supervisor).
 
 -export([start_link/0, start_client/1, start_client/2]).
@@ -19,8 +20,7 @@ start_link() ->
 
 %% @doc Starts a new client process with transport options only.
 %% Equivalent to start_client(TransportOpts, #{}).
--spec start_client(erlmcp_client:transport_opts()) ->
-    {ok, pid()} | {error, term()}.
+-spec start_client(erlmcp_client:transport_opts()) -> {ok, pid()} | {error, term()}.
 start_client(TransportOpts) ->
     start_client(TransportOpts, #{}).
 
@@ -31,7 +31,7 @@ start_client(TransportOpts) ->
 %% TransportOpts: {stdio, list()} | {tcp, map()} | {http, map()}
 %% ClientOpts: #{strict_mode => boolean(), timeout => timeout(), ...}
 -spec start_client(erlmcp_client:transport_opts(), erlmcp_client:client_opts()) ->
-    {ok, pid()} | {error, term()}.
+                      {ok, pid()} | {error, term()}.
 start_client(TransportOpts, ClientOpts) ->
     % For simple_one_for_one, we pass the arguments that will be appended
     % to the start function's argument list from the child spec template
@@ -50,25 +50,21 @@ start_client(TransportOpts, ClientOpts) ->
 %% Intensity/Period: 5 restarts per 60 seconds
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    SupFlags = #{
-        strategy => simple_one_for_one,  % Dynamic client instances
-        intensity => 5,
-        period => 60
-    },
+    SupFlags =
+        #{strategy => simple_one_for_one,  % Dynamic client instances
+          intensity => 5,
+          period => 60},
 
     % Template child spec for client instances
     % For simple_one_for_one, the start args are placeholder values.
     % When start_client/2 is called, the provided args are appended to
     % the start function's argument list.
-    ChildSpecs = [
-        #{
-            id => erlmcp_client,
-            start => {erlmcp_client, start_link, [undefined, #{}]},
-            restart => temporary,  % Clients should not restart on crash
-            shutdown => 5000,      % Graceful shutdown timeout
-            type => worker,
-            modules => [erlmcp_client]
-        }
-    ],
+    ChildSpecs =
+        [#{id => erlmcp_client,
+           start => {erlmcp_client, start_link, [undefined, #{}]},
+           restart => temporary,  % Clients should not restart on crash
+           shutdown => 5000,      % Graceful shutdown timeout
+           type => worker,
+           modules => [erlmcp_client]}],
 
     {ok, {SupFlags, ChildSpecs}}.

@@ -1,31 +1,21 @@
 -module(erlmcp_telemetry_poc).
+
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    start_link/1,
-    stop/1,
-    attach_handler/3,
-    detach_handler/2,
-    emit_event/3,
-    get_handlers/2
-]).
-
+-export([start_link/0, start_link/1, stop/1, attach_handler/3, detach_handler/2, emit_event/3,
+         get_handlers/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(state, {
-    handlers = #{} :: #{event_name() => [handler()]}
-}).
+-record(state, {handlers = #{} :: #{event_name() => [handler()]}}).
 
 -type event_name() :: atom().
 -type event_metadata() :: #{atom() => term()}.
--type handler() :: #{
-    id => term(),
-    module => module(),
-    function => atom()
-}.
+-type handler() ::
+    #{id => term(),
+      module => module(),
+      function => atom()}.
 
 %%====================================================================
 %% API
@@ -70,31 +60,29 @@ handle_call({attach_handler, EventName, Handler}, _From, State = #state{handlers
     CurrentHandlers = maps:get(EventName, Handlers, []),
     NewHandlers = maps:put(EventName, [Handler | CurrentHandlers], Handlers),
     {reply, ok, State#state{handlers = NewHandlers}};
-
 handle_call({detach_handler, EventName}, _From, State = #state{handlers = Handlers}) ->
     NewHandlers = maps:remove(EventName, Handlers),
     {reply, ok, State#state{handlers = NewHandlers}};
-
 handle_call({get_handlers, EventName}, _From, State = #state{handlers = Handlers}) ->
     EventHandlers = maps:get(EventName, Handlers, []),
     {reply, {ok, EventHandlers}, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast({emit_event, EventName, Metadata}, State = #state{handlers = Handlers}) ->
     EventHandlers = maps:get(EventName, Handlers, []),
     lists:foreach(fun(Handler) ->
-        Module = maps:get(module, Handler),
-        Function = maps:get(function, Handler),
-        try
-            erlang:apply(Module, Function, [EventName, Metadata])
-        catch
-            _:_ -> ok
-        end
-    end, EventHandlers),
+                     Module = maps:get(module, Handler),
+                     Function = maps:get(function, Handler),
+                     try
+                         erlang:apply(Module, Function, [EventName, Metadata])
+                     catch
+                         _:_ ->
+                             ok
+                     end
+                  end,
+                  EventHandlers),
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

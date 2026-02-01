@@ -25,20 +25,14 @@ cleanup(_) ->
 
 sse_validation_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            {"SSE Event Formatting", [
-                ?_test(test_format_sse_message()),
-                ?_test(test_format_sse_event()),
-                ?_test(test_sse_with_newlines())
-            ]},
-            {"Message Validation", [
-                ?_test(test_post_message_validation()),
-                ?_test(test_json_rpc_message())
-            ]}
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [{"SSE Event Formatting",
+       [?_test(test_format_sse_message()),
+        ?_test(test_format_sse_event()),
+        ?_test(test_sse_with_newlines())]},
+      {"Message Validation",
+       [?_test(test_post_message_validation()), ?_test(test_json_rpc_message())]}]}.
 
 %%====================================================================
 %% SSE Event Formatting Tests (Observable Behavior)
@@ -78,12 +72,11 @@ test_sse_with_newlines() ->
 
 test_post_message_validation() ->
     %% Test API: POST request to /mcp/sse accepts JSON
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"tools/call">>,
-        <<"params">> => #{<<"name">> => <<"test">>},
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"tools/call">>,
+                     <<"params">> => #{<<"name">> => <<"test">>},
+                     <<"id">> => 1}),
 
     ?assert(is_binary(Message)),
     ?assert(byte_size(Message) > 0),
@@ -93,11 +86,10 @@ test_post_message_validation() ->
 
 test_json_rpc_message() ->
     %% Test API: JSON-RPC 2.0 message structure
-    Message = jsx:encode(#{
-        <<"jsonrpc">> => <<"2.0">>,
-        <<"method">> => <<"resources/list">>,
-        <<"id">> => 1
-    }),
+    Message =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"resources/list">>,
+                     <<"id">> => 1}),
 
     Decoded = jsx:decode(Message, [return_maps]),
     ?assertEqual(<<"2.0">>, maps:get(<<"jsonrpc">>, Decoded)),

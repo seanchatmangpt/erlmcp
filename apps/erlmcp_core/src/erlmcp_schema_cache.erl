@@ -1,21 +1,10 @@
 -module(erlmcp_schema_cache).
+
 -behaviour(gen_server).
 
 %% API exports - Fast zero-copy schema access via persistent_term
--export([
-    start_link/0,
-    cache_schema/2,
-    cache_schema/3,
-    get_schema/1,
-    has_schema/1,
-    validate/2,
-    validate_with_options/3,
-    invalidate/1,
-    clear_all/0,
-    list_schemas/0,
-    get_stats/0
-]).
-
+-export([start_link/0, cache_schema/2, cache_schema/3, get_schema/1, has_schema/1, validate/2,
+         validate_with_options/3, invalidate/1, clear_all/0, list_schemas/0, get_stats/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -24,20 +13,18 @@
 -define(STATS_KEY, {erlmcp_schema_cache, stats}).
 
 %% State record
--record(state, {
-    cache_hits :: non_neg_integer(),
-    cache_misses :: non_neg_integer(),
-    validations :: non_neg_integer(),
-    started_at :: erlang:timestamp()
-}).
+-record(state,
+        {cache_hits :: non_neg_integer(),
+         cache_misses :: non_neg_integer(),
+         validations :: non_neg_integer(),
+         started_at :: erlang:timestamp()}).
 
 -type state() :: #state{}.
 -type schema_name() :: atom() | binary().
 -type schema_definition() :: map().
--type validation_options() :: #{
-    allowed_errors => non_neg_integer(),
-    schema_loader_fun => fun((binary()) -> schema_definition())
-}.
+-type validation_options() ::
+    #{allowed_errors => non_neg_integer(),
+      schema_loader_fun => fun((binary()) -> schema_definition())}.
 
 -export_type([schema_name/0, schema_definition/0, validation_options/0]).
 
@@ -82,7 +69,8 @@ has_schema(Name) ->
         _ = persistent_term:get(?SCHEMA_KEY(Name)),
         true
     catch
-        error:badarg -> false
+        error:badarg ->
+            false
     end.
 
 %% @doc Validate data against cached schema
@@ -92,8 +80,7 @@ validate(Name, Data) ->
     validate_with_options(Name, Data, #{}).
 
 %% @doc Validate with options
--spec validate_with_options(schema_name(), term(), validation_options()) ->
-    ok | {error, term()}.
+-spec validate_with_options(schema_name(), term(), validation_options()) -> ok | {error, term()}.
 validate_with_options(Name, Data, Options) ->
     case get_schema(Name) of
         {ok, Schema} ->
@@ -118,21 +105,16 @@ clear_all() ->
 -spec list_schemas() -> [schema_name()].
 list_schemas() ->
     AllTerms = persistent_term:get(),
-    [
-        Name
-     || {{erlmcp_schema_cache, Name}, _} <- AllTerms, Name =/= stats
-    ].
+    [Name || {{erlmcp_schema_cache, Name}, _} <- AllTerms, Name =/= stats].
 
 %% @doc Get cache statistics
 -spec get_stats() ->
-    #{
-        cache_hits => non_neg_integer(),
-        cache_misses => non_neg_integer(),
-        validations => non_neg_integer(),
-        hit_rate => float(),
-        schema_count => non_neg_integer(),
-        uptime_seconds => non_neg_integer()
-    }.
+                   #{cache_hits => non_neg_integer(),
+                     cache_misses => non_neg_integer(),
+                     validations => non_neg_integer(),
+                     hit_rate => float(),
+                     schema_count => non_neg_integer(),
+                     uptime_seconds => non_neg_integer()}.
 get_stats() ->
     gen_server:call(?MODULE, get_stats).
 
@@ -145,17 +127,19 @@ init([]) ->
     process_flag(trap_exit, true),
 
     % Initialize stats in persistent_term
-    Stats = #{cache_hits => 0, cache_misses => 0, validations => 0},
+    Stats =
+        #{cache_hits => 0,
+          cache_misses => 0,
+          validations => 0},
     persistent_term:put(?STATS_KEY, Stats),
 
     logger:info("erlmcp_schema_cache initialized using persistent_term", []),
 
-    {ok, #state{
-        cache_hits = 0,
-        cache_misses = 0,
-        validations = 0,
-        started_at = erlang:timestamp()
-    }}.
+    {ok,
+     #state{cache_hits = 0,
+            cache_misses = 0,
+            validations = 0,
+            started_at = erlang:timestamp()}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
 handle_call({cache_schema, Name, Schema}, _From, State) ->
@@ -181,36 +165,38 @@ handle_call({invalidate, Name}, _From, State) ->
 handle_call(clear_all, _From, State) ->
     % Remove all erlmcp_schema_cache keys except stats
     AllTerms = persistent_term:get(),
-    lists:foreach(
-        fun
-            ({{erlmcp_schema_cache, Name}, _}) when Name =/= stats ->
-                persistent_term:erase(?SCHEMA_KEY(Name));
-            (_) ->
-                ok
-        end,
-        AllTerms
-    ),
+    lists:foreach(fun ({{erlmcp_schema_cache, Name}, _}) when Name =/= stats ->
+                          persistent_term:erase(?SCHEMA_KEY(Name));
+                      (_) ->
+                          ok
+                  end,
+                  AllTerms),
     logger:info("Cleared all cached schemas", []),
-    {reply, ok, State#state{cache_hits = 0, cache_misses = 0, validations = 0}};
+    {reply,
+     ok,
+     State#state{cache_hits = 0,
+                 cache_misses = 0,
+                 validations = 0}};
 handle_call(get_stats, _From, State) ->
     Total = State#state.cache_hits + State#state.cache_misses,
     HitRate =
         case Total of
-            0 -> 0.0;
-            _ -> State#state.cache_hits / Total
+            0 ->
+                0.0;
+            _ ->
+                State#state.cache_hits / Total
         end,
 
     Now = erlang:timestamp(),
     UptimeSeconds = timer:now_diff(Now, State#state.started_at) div 1000000,
 
-    Stats = #{
-        cache_hits => State#state.cache_hits,
-        cache_misses => State#state.cache_misses,
-        validations => State#state.validations,
-        hit_rate => HitRate,
-        schema_count => length(list_schemas()),
-        uptime_seconds => UptimeSeconds
-    },
+    Stats =
+        #{cache_hits => State#state.cache_hits,
+          cache_misses => State#state.cache_misses,
+          validations => State#state.validations,
+          hit_rate => HitRate,
+          schema_count => length(list_schemas()),
+          uptime_seconds => UptimeSeconds},
     {reply, Stats, State};
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.

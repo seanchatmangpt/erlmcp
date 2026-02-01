@@ -66,10 +66,12 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_performance_validator_SUITE).
+
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
 -include_lib("eunit/include/eunit.hrl").
+
 -include("erlmcp.hrl").
 
 %%====================================================================
@@ -77,49 +79,29 @@
 %%====================================================================
 
 all() ->
-    [
-     %% Latency Tests (8 tests)
+    [%% Latency Tests (8 tests)
      p50_less_than_5ms_validated_test,
-     p95_less_than_20ms_validated_test,
-     p99_less_than_50ms_validated_test,
-     percentiles_calculated_correctly_test,
-     latency_measured_accurately_test,
-     latency_under_load_test,
-     latency_with_large_messages_test,
-     latency_degradation_detected_test,
-
+     p95_less_than_20ms_validated_test, p99_less_than_50ms_validated_test,
+     percentiles_calculated_correctly_test, latency_measured_accurately_test,
+     latency_under_load_test, latency_with_large_messages_test, latency_degradation_detected_test,
      %% Throughput Tests (5 tests)
      throughput_greater_than_1000_req_per_sec_validated_test,
-     throughput_measured_accurately_test,
-     throughput_under_load_test,
-     throughput_sustained_test,
+     throughput_measured_accurately_test, throughput_under_load_test, throughput_sustained_test,
      throughput_per_transport_test,
-
      %% Memory Tests (5 tests)
      memory_less_than_100kb_per_connection_validated_test,
-     memory_measured_accurately_test,
-     memory_growth_detected_test,
-     memory_leaks_detected_test,
+     memory_measured_accurately_test, memory_growth_detected_test, memory_leaks_detected_test,
      memory_per_transport_test,
-
      %% Connection Setup Tests (4 tests)
      connection_setup_less_than_100ms_validated_test,
-     setup_time_measured_test,
-     setup_under_load_test,
-     setup_per_transport_test,
-
+     setup_time_measured_test, setup_under_load_test, setup_per_transport_test,
      %% Concurrent Connections Tests (5 tests)
      concurrent_10k_connections_supported_test,
-     concurrent_99_percent_success_rate_test,
-     concurrent_stability_test,
-     concurrent_resource_limits_test,
-     concurrent_graceful_degradation_test,
-
+     concurrent_99_percent_success_rate_test, concurrent_stability_test,
+     concurrent_resource_limits_test, concurrent_graceful_degradation_test,
      %% Report Generation Tests (3 tests)
      report_generated_correctly_test,
-     report_pass_fail_indicated_test,
-     report_recommendations_included_test
-    ].
+     report_pass_fail_indicated_test, report_recommendations_included_test].
 
 init_per_suite(Config) ->
     %% Start real erlmcp application (Chicago School: real system)
@@ -133,8 +115,10 @@ end_per_suite(_Config) ->
 init_per_testcase(_TestCase, Config) ->
     %% Reset metrics before each test
     case whereis(erlmcp_metrics_server) of
-        undefined -> ok;
-        _Pid -> erlmcp_metrics_server:reset_metrics()
+        undefined ->
+            ok;
+        _Pid ->
+            erlmcp_metrics_server:reset_metrics()
     end,
     Config.
 
@@ -148,11 +132,10 @@ end_per_testcase(_TestCase, _Config) ->
 %% @doc Validate that P50 latency is less than 5ms
 p50_less_than_5ms_validated_test(_Config) ->
     %% Create test latency result with P50 < 5ms
-    LatencyResult = #{
-        p50_us => 3000,    % 3ms - should pass
-        p95_us => 15000,   % 15ms - should pass
-        p99_us => 40000    % 40ms - should pass
-    },
+    LatencyResult =
+        #{p50_us => 3000,    % 3ms - should pass
+          p95_us => 15000,   % 15ms - should pass
+          p99_us => 40000},    % 40ms - should pass
 
     ValidationResult = erlmcp_performance_validator:validate_latency(LatencyResult),
 
@@ -167,11 +150,10 @@ p50_less_than_5ms_validated_test(_Config) ->
 
 %% @doc Validate that P95 latency is less than 20ms
 p95_less_than_20ms_validated_test(_Config) ->
-    LatencyResult = #{
-        p50_us => 3000,    % 3ms - should pass
-        p95_us => 15000,   % 15ms - should pass
-        p99_us => 40000    % 40ms - should pass
-    },
+    LatencyResult =
+        #{p50_us => 3000,    % 3ms - should pass
+          p95_us => 15000,   % 15ms - should pass
+          p99_us => 40000},    % 40ms - should pass
 
     ValidationResult = erlmcp_performance_validator:validate_latency(LatencyResult),
 
@@ -185,11 +167,10 @@ p95_less_than_20ms_validated_test(_Config) ->
 
 %% @doc Validate that P99 latency is less than 50ms
 p99_less_than_50ms_validated_test(_Config) ->
-    LatencyResult = #{
-        p50_us => 3000,    % 3ms - should pass
-        p95_us => 15000,   % 15ms - should pass
-        p99_us => 40000    % 40ms - should pass
-    },
+    LatencyResult =
+        #{p50_us => 3000,    % 3ms - should pass
+          p95_us => 15000,   % 15ms - should pass
+          p99_us => 40000},    % 40ms - should pass
 
     ValidationResult = erlmcp_performance_validator:validate_latency(LatencyResult),
 
@@ -299,21 +280,19 @@ latency_with_large_messages_test(_Config) ->
 %% @doc Verify that latency degradation is detected
 latency_degradation_detected_test(_Config) ->
     %% Good latency
-    GoodLatency = #{
-        p50_us => 3000,
-        p95_us => 15000,
-        p99_us => 40000
-    },
+    GoodLatency =
+        #{p50_us => 3000,
+          p95_us => 15000,
+          p99_us => 40000},
     GoodResult = erlmcp_performance_validator:validate_latency(GoodLatency),
     ?assert(maps:get(passed, GoodResult)),
     ?assertEqual(pass, maps:get(status, GoodResult)),
 
     %% Degraded latency (P99 exceeds 50ms)
-    BadLatency = #{
-        p50_us => 3000,   % Still good
-        p95_us => 15000,  % Still good
-        p99_us => 60000   % Degraded: 60ms > 50ms target
-    },
+    BadLatency =
+        #{p50_us => 3000,   % Still good
+          p95_us => 15000,  % Still good
+          p99_us => 60000},   % Degraded: 60ms > 50ms target
     BadResult = erlmcp_performance_validator:validate_latency(BadLatency),
     ?assertNot(maps:get(passed, BadResult)),
     ?assertEqual(fail, maps:get(status, BadResult)),
@@ -329,11 +308,10 @@ latency_degradation_detected_test(_Config) ->
 
 %% @doc Validate that throughput is greater than 1000 req/s
 throughput_greater_than_1000_req_per_sec_validated_test(_Config) ->
-    ThroughputResult = #{
-        requests_per_second => 1500,  % Above target
-        total_requests => 1000,
-        duration_s => 0.67
-    },
+    ThroughputResult =
+        #{requests_per_second => 1500,  % Above target
+          total_requests => 1000,
+          duration_s => 0.67},
 
     ValidationResult = erlmcp_performance_validator:validate_throughput(ThroughputResult),
 
@@ -350,11 +328,10 @@ throughput_measured_accurately_test(_Config) ->
     DurationS = 5.0,
     ExpectedRPS = TotalRequests / DurationS,  % 1000 req/s
 
-    ThroughputResult = #{
-        requests_per_second => ExpectedRPS,
-        total_requests => TotalRequests,
-        duration_s => DurationS
-    },
+    ThroughputResult =
+        #{requests_per_second => ExpectedRPS,
+          total_requests => TotalRequests,
+          duration_s => DurationS},
 
     ValidationResult = erlmcp_performance_validator:validate_throughput(ThroughputResult),
 
@@ -365,31 +342,29 @@ throughput_measured_accurately_test(_Config) ->
 %% @doc Verify throughput under load
 throughput_under_load_test(_Config) ->
     %% Simulate throughput under varying load
-    LoadCases = [
-        {1000, 1.0, 1000},   % 1000 req/s (at target)
-        {2000, 1.0, 2000},  % 2000 req/s (above target)
-        {5000, 5.0, 1000}   % 1000 req/s (at target, sustained)
-    ],
+    LoadCases =
+        [{1000, 1.0, 1000},   % 1000 req/s (at target)
+         {2000, 1.0, 2000},  % 2000 req/s (above target)
+         {5000, 5.0, 1000}],   % 1000 req/s (at target, sustained)
 
     lists:foreach(fun({TotalReq, Duration, ExpectedRPS}) ->
-        Result = #{
-            requests_per_second => ExpectedRPS,
-            total_requests => TotalReq,
-            duration_s => Duration
-        },
-        Validation = erlmcp_performance_validator:validate_throughput(Result),
-        ?assertEqual(ExpectedRPS, maps:get(actual, Validation))
-    end, LoadCases),
+                     Result =
+                         #{requests_per_second => ExpectedRPS,
+                           total_requests => TotalReq,
+                           duration_s => Duration},
+                     Validation = erlmcp_performance_validator:validate_throughput(Result),
+                     ?assertEqual(ExpectedRPS, maps:get(actual, Validation))
+                  end,
+                  LoadCases),
     ok.
 
 %% @doc Verify sustained throughput
 throughput_sustained_test(_Config) ->
     %% Simulate sustained throughput over time
-    SustainedResult = #{
-        requests_per_second => 1200,  % Sustained above target
-        total_requests => 12000,
-        duration_s => 10.0  % 10 seconds
-    },
+    SustainedResult =
+        #{requests_per_second => 1200,  % Sustained above target
+          total_requests => 12000,
+          duration_s => 10.0},  % 10 seconds
 
     ValidationResult = erlmcp_performance_validator:validate_throughput(SustainedResult),
 
@@ -401,21 +376,18 @@ throughput_sustained_test(_Config) ->
 %% @doc Verify throughput per transport
 throughput_per_transport_test(_Config) ->
     %% Test different transports have different throughput
-    Transports = [
-        {stdio, 5000},
-        {tcp, 3000}
-    ],
+    Transports = [{stdio, 5000}, {tcp, 3000}],
 
     lists:foreach(fun({Transport, RPS}) ->
-        Result = #{
-            requests_per_second => RPS,
-            total_requests => RPS,
-            duration_s => 1.0,
-            transport => Transport
-        },
-        Validation = erlmcp_performance_validator:validate_throughput(Result),
-        ?assertEqual(RPS, maps:get(actual, Validation))
-    end, Transports),
+                     Result =
+                         #{requests_per_second => RPS,
+                           total_requests => RPS,
+                           duration_s => 1.0,
+                           transport => Transport},
+                     Validation = erlmcp_performance_validator:validate_throughput(Result),
+                     ?assertEqual(RPS, maps:get(actual, Validation))
+                  end,
+                  Transports),
     ok.
 
 %%====================================================================
@@ -424,13 +396,12 @@ throughput_per_transport_test(_Config) ->
 
 %% @doc Validate that memory is less than 100KB per connection
 memory_less_than_100kb_per_connection_validated_test(_Config) ->
-    MemoryResult = #{
-        bytes_per_connection => 80000,  % 80KB - below target
-        kb_per_connection => 78.13,
-        total_connections => 10,
-        memory_delta_bytes => 800000,
-        transport => stdio
-    },
+    MemoryResult =
+        #{bytes_per_connection => 80000,  % 80KB - below target
+          kb_per_connection => 78.13,
+          total_connections => 10,
+          memory_delta_bytes => 800000,
+          transport => stdio},
 
     ValidationResult = erlmcp_performance_validator:validate_memory(MemoryResult),
 
@@ -447,13 +418,12 @@ memory_measured_accurately_test(_Config) ->
     Connections = 10,
     ExpectedPerConn = TotalMemory / Connections,  % 100KB
 
-    MemoryResult = #{
-        bytes_per_connection => ExpectedPerConn,
-        kb_per_connection => ExpectedPerConn / 1024,
-        total_connections => Connections,
-        memory_delta_bytes => TotalMemory,
-        transport => stdio
-    },
+    MemoryResult =
+        #{bytes_per_connection => ExpectedPerConn,
+          kb_per_connection => ExpectedPerConn / 1024,
+          total_connections => Connections,
+          memory_delta_bytes => TotalMemory,
+          transport => stdio},
 
     ValidationResult = erlmcp_performance_validator:validate_memory(MemoryResult),
 
@@ -463,21 +433,19 @@ memory_measured_accurately_test(_Config) ->
 %% @doc Verify that memory growth is detected
 memory_growth_detected_test(_Config) ->
     %% Normal memory
-    NormalMemory = #{
-        bytes_per_connection => 80000,
-        total_connections => 10,
-        transport => stdio
-    },
+    NormalMemory =
+        #{bytes_per_connection => 80000,
+          total_connections => 10,
+          transport => stdio},
     NormalResult = erlmcp_performance_validator:validate_memory(NormalMemory),
     ?assert(maps:get(passed, NormalResult)),
 
     %% Excessive memory growth (above 100KB)
-    HighMemory = #{
-        bytes_per_connection => 150000,  % 150KB - exceeds target
-        kb_per_connection => 146.48,
-        total_connections => 10,
-        transport => stdio
-    },
+    HighMemory =
+        #{bytes_per_connection => 150000,  % 150KB - exceeds target
+          kb_per_connection => 146.48,
+          total_connections => 10,
+          transport => stdio},
     HighResult = erlmcp_performance_validator:validate_memory(HighMemory),
     ?assertNot(maps:get(passed, HighResult)),
     ?assertEqual(fail, maps:get(status, HighResult)),
@@ -486,18 +454,16 @@ memory_growth_detected_test(_Config) ->
 %% @doc Verify that memory leaks are detected
 memory_leaks_detected_test(_Config) ->
     %% Simulate memory leak detection over time
-    InitialMemory = #{
-        bytes_per_connection => 50000,
-        total_connections => 10,
-        transport => stdio
-    },
+    InitialMemory =
+        #{bytes_per_connection => 50000,
+          total_connections => 10,
+          transport => stdio},
 
     %% After some time, memory per connection increases significantly
-    LeakedMemory = #{
-        bytes_per_connection => 200000,  % 4x increase
-        total_connections => 10,
-        transport => stdio
-    },
+    LeakedMemory =
+        #{bytes_per_connection => 200000,  % 4x increase
+          total_connections => 10,
+          transport => stdio},
 
     InitialResult = erlmcp_performance_validator:validate_memory(InitialMemory),
     ?assert(maps:get(passed, InitialResult)),
@@ -510,21 +476,20 @@ memory_leaks_detected_test(_Config) ->
 %% @doc Verify memory per transport
 memory_per_transport_test(_Config) ->
     %% Different transports may have different memory profiles
-    Transports = [
-        {stdio, 50000},   % 50KB
-        {tcp, 80000}      % 80KB
-    ],
+    Transports =
+        [{stdio, 50000},   % 50KB
+         {tcp, 80000}],      % 80KB
 
     lists:foreach(fun({Transport, Bytes}) ->
-        Result = #{
-            bytes_per_connection => Bytes,
-            kb_per_connection => Bytes / 1024,
-            total_connections => 10,
-            transport => Transport
-        },
-        Validation = erlmcp_performance_validator:validate_memory(Result),
-        ?assertEqual(Bytes, maps:get(actual, Validation))
-    end, Transports),
+                     Result =
+                         #{bytes_per_connection => Bytes,
+                           kb_per_connection => Bytes / 1024,
+                           total_connections => 10,
+                           transport => Transport},
+                     Validation = erlmcp_performance_validator:validate_memory(Result),
+                     ?assertEqual(Bytes, maps:get(actual, Validation))
+                  end,
+                  Transports),
     ok.
 
 %%====================================================================
@@ -533,12 +498,11 @@ memory_per_transport_test(_Config) ->
 
 %% @doc Validate that connection setup is less than 100ms
 connection_setup_less_than_100ms_validated_test(_Config) ->
-    SetupResult = #{
-        avg_setup_time_us => 50000,  % 50ms - below target
-        max_setup_time_us => 90000,  % 90ms - below target
-        samples => 50,
-        transport => stdio
-    },
+    SetupResult =
+        #{avg_setup_time_us => 50000,  % 50ms - below target
+          max_setup_time_us => 90000,  % 90ms - below target
+          samples => 50,
+          transport => stdio},
 
     ValidationResult = erlmcp_performance_validator:validate_connection_setup(SetupResult),
 
@@ -555,12 +519,11 @@ setup_time_measured_test(_Config) ->
     AvgSetup = lists:sum(SetupTimes) / length(SetupTimes),
     MaxSetup = lists:max(SetupTimes),
 
-    SetupResult = #{
-        avg_setup_time_us => AvgSetup,
-        max_setup_time_us => MaxSetup,
-        samples => 5,
-        transport => stdio
-    },
+    SetupResult =
+        #{avg_setup_time_us => AvgSetup,
+          max_setup_time_us => MaxSetup,
+          samples => 5,
+          transport => stdio},
 
     ValidationResult = erlmcp_performance_validator:validate_connection_setup(SetupResult),
 
@@ -571,12 +534,11 @@ setup_time_measured_test(_Config) ->
 %% @doc Verify setup under load
 setup_under_load_test(_Config) ->
     %% Setup times may increase under load
-    LoadSetupResult = #{
-        avg_setup_time_us => 80000,  % 80ms - still acceptable
-        max_setup_time_us => 95000,  % 95ms - still acceptable
-        samples => 100,
-        transport => stdio
-    },
+    LoadSetupResult =
+        #{avg_setup_time_us => 80000,  % 80ms - still acceptable
+          max_setup_time_us => 95000,  % 95ms - still acceptable
+          samples => 100,
+          transport => stdio},
 
     ValidationResult = erlmcp_performance_validator:validate_connection_setup(LoadSetupResult),
 
@@ -587,21 +549,20 @@ setup_under_load_test(_Config) ->
 %% @doc Verify setup per transport
 setup_per_transport_test(_Config) ->
     %% Different transports may have different setup times
-    Transports = [
-        {stdio, 30000},   % 30ms
-        {tcp, 70000}      % 70ms
-    ],
+    Transports =
+        [{stdio, 30000},   % 30ms
+         {tcp, 70000}],      % 70ms
 
     lists:foreach(fun({Transport, SetupTime}) ->
-        Result = #{
-            avg_setup_time_us => SetupTime,
-            max_setup_time_us => SetupTime + 10000,
-            samples => 50,
-            transport => Transport
-        },
-        Validation = erlmcp_performance_validator:validate_connection_setup(Result),
-        ?assertEqual(SetupTime, maps:get(actual, Validation))
-    end, Transports),
+                     Result =
+                         #{avg_setup_time_us => SetupTime,
+                           max_setup_time_us => SetupTime + 10000,
+                           samples => 50,
+                           transport => Transport},
+                     Validation = erlmcp_performance_validator:validate_connection_setup(Result),
+                     ?assertEqual(SetupTime, maps:get(actual, Validation))
+                  end,
+                  Transports),
     ok.
 
 %%====================================================================
@@ -610,16 +571,16 @@ setup_per_transport_test(_Config) ->
 
 %% @doc Validate that 10K concurrent connections are supported
 concurrent_10k_connections_supported_test(_Config) ->
-    ConcurrentResult = #{
-        success_count => 10000,
-        failure_count => 0,
-        success_rate => 100.0,
-        total_connections => 10000,
-        duration_ms => 5000,
-        transport => stdio
-    },
+    ConcurrentResult =
+        #{success_count => 10000,
+          failure_count => 0,
+          success_rate => 100.0,
+          total_connections => 10000,
+          duration_ms => 5000,
+          transport => stdio},
 
-    ValidationResult = erlmcp_performance_validator:validate_concurrent_connections(ConcurrentResult),
+    ValidationResult =
+        erlmcp_performance_validator:validate_concurrent_connections(ConcurrentResult),
 
     ?assert(maps:get(passed, ValidationResult)),
     ?assertEqual(pass, maps:get(status, ValidationResult)),
@@ -631,26 +592,24 @@ concurrent_10k_connections_supported_test(_Config) ->
 %% @doc Validate 99% success rate for concurrent connections
 concurrent_99_percent_success_rate_test(_Config) ->
     %% 99% success rate
-    Result99 = #{
-        success_count => 9900,
-        failure_count => 100,
-        success_rate => 99.0,
-        total_connections => 10000,
-        transport => stdio
-    },
+    Result99 =
+        #{success_count => 9900,
+          failure_count => 100,
+          success_rate => 99.0,
+          total_connections => 10000,
+          transport => stdio},
 
     Validation99 = erlmcp_performance_validator:validate_concurrent_connections(Result99),
     ?assert(maps:get(passed, Validation99)),
     ?assertEqual(99.0, maps:get(success_rate, Validation99)),
 
     %% Below 99% should fail
-    Result95 = #{
-        success_count => 9500,
-        failure_count => 500,
-        success_rate => 95.0,
-        total_connections => 10000,
-        transport => stdio
-    },
+    Result95 =
+        #{success_count => 9500,
+          failure_count => 500,
+          success_rate => 95.0,
+          total_connections => 10000,
+          transport => stdio},
 
     Validation95 = erlmcp_performance_validator:validate_concurrent_connections(Result95),
     ?assertNot(maps:get(passed, Validation95)),
@@ -660,21 +619,19 @@ concurrent_99_percent_success_rate_test(_Config) ->
 %% @doc Verify concurrent connection stability
 concurrent_stability_test(_Config) ->
     %% Test stability over multiple runs
-    Run1 = #{
-        success_count => 10000,
-        failure_count => 0,
-        success_rate => 100.0,
-        total_connections => 10000,
-        transport => stdio
-    },
+    Run1 =
+        #{success_count => 10000,
+          failure_count => 0,
+          success_rate => 100.0,
+          total_connections => 10000,
+          transport => stdio},
 
-    Run2 = #{
-        success_count => 9950,
-        failure_count => 50,
-        success_rate => 99.5,
-        total_connections => 10000,
-        transport => stdio
-    },
+    Run2 =
+        #{success_count => 9950,
+          failure_count => 50,
+          success_rate => 99.5,
+          total_connections => 10000,
+          transport => stdio},
 
     Validation1 = erlmcp_performance_validator:validate_concurrent_connections(Run1),
     Validation2 = erlmcp_performance_validator:validate_concurrent_connections(Run2),
@@ -687,28 +644,27 @@ concurrent_stability_test(_Config) ->
 %% @doc Verify concurrent connection resource limits
 concurrent_resource_limits_test(_Config) ->
     %% Test at resource limits
-    LimitedResult = #{
-        success_count => 10000,
-        failure_count => 0,
-        success_rate => 100.0,
-        total_connections => 10000,
-        transport => stdio
-    },
+    LimitedResult =
+        #{success_count => 10000,
+          failure_count => 0,
+          success_rate => 100.0,
+          total_connections => 10000,
+          transport => stdio},
 
     Validation = erlmcp_performance_validator:validate_concurrent_connections(LimitedResult),
     ?assert(maps:get(passed, Validation)),
 
     %% Exceeding limits should be detected
-    ExceededResult = #{
-        success_count => 15000,
-        failure_count => 0,
-        success_rate => 100.0,
-        total_connections => 15000,
-        transport => stdio
-    },
+    ExceededResult =
+        #{success_count => 15000,
+          failure_count => 0,
+          success_rate => 100.0,
+          total_connections => 15000,
+          transport => stdio},
 
     %% Should still validate, but shows capability
-    ExceededValidation = erlmcp_performance_validator:validate_concurrent_connections(ExceededResult),
+    ExceededValidation =
+        erlmcp_performance_validator:validate_concurrent_connections(ExceededResult),
     ?assert(maps:get(passed, ExceededValidation)),
     ?assertEqual(15000, maps:get(actual, ExceededValidation)),
     ok.
@@ -716,13 +672,12 @@ concurrent_resource_limits_test(_Config) ->
 %% @doc Verify graceful degradation under load
 concurrent_graceful_degradation_test(_Config) ->
     %% Test graceful degradation (not sudden failure)
-    GracefulResult = #{
-        success_count => 9800,
-        failure_count => 200,
-        success_rate => 98.0,
-        total_connections => 10000,
-        transport => stdio
-    },
+    GracefulResult =
+        #{success_count => 9800,
+          failure_count => 200,
+          success_rate => 98.0,
+          total_connections => 10000,
+          transport => stdio},
 
     Validation = erlmcp_performance_validator:validate_concurrent_connections(GracefulResult),
 
@@ -739,30 +694,46 @@ concurrent_graceful_degradation_test(_Config) ->
 %% @doc Verify that report is generated correctly
 report_generated_correctly_test(_Config) ->
     %% Build complete performance report
-    LatencyResult = #{p50_us => 3000, p95_us => 15000, p99_us => 40000},
-    ThroughputResult = #{requests_per_second => 1500, total_requests => 1000, duration_s => 0.67},
-    MemoryResult = #{bytes_per_connection => 80000, kb_per_connection => 78.13, total_connections => 10},
-    SetupResult = #{avg_setup_time_us => 50000, max_setup_time_us => 90000, samples => 50},
-    ConcurrentResult = #{success_count => 10000, failure_count => 0, success_rate => 100.0, total_connections => 10000},
+    LatencyResult =
+        #{p50_us => 3000,
+          p95_us => 15000,
+          p99_us => 40000},
+    ThroughputResult =
+        #{requests_per_second => 1500,
+          total_requests => 1000,
+          duration_s => 0.67},
+    MemoryResult =
+        #{bytes_per_connection => 80000,
+          kb_per_connection => 78.13,
+          total_connections => 10},
+    SetupResult =
+        #{avg_setup_time_us => 50000,
+          max_setup_time_us => 90000,
+          samples => 50},
+    ConcurrentResult =
+        #{success_count => 10000,
+          failure_count => 0,
+          success_rate => 100.0,
+          total_connections => 10000},
 
     LatencyValidated = erlmcp_performance_validator:validate_latency(LatencyResult),
     ThroughputValidated = erlmcp_performance_validator:validate_throughput(ThroughputResult),
     MemoryValidated = erlmcp_performance_validator:validate_memory(MemoryResult),
     SetupValidated = erlmcp_performance_validator:validate_connection_setup(SetupResult),
-    ConcurrentValidated = erlmcp_performance_validator:validate_concurrent_connections(ConcurrentResult),
+    ConcurrentValidated =
+        erlmcp_performance_validator:validate_concurrent_connections(ConcurrentResult),
 
-    Report = #{
-        transport => stdio,
-        timestamp => 1640000000000,
-        duration_ms => 5000,
-        overall_passed => true,
-        latency => maps:merge(LatencyResult, LatencyValidated),
-        throughput => maps:merge(ThroughputResult, ThroughputValidated),
-        memory => maps:merge(MemoryResult, MemoryValidated),
-        connection_setup => maps:merge(SetupResult, SetupValidated),
-        concurrent_connections => maps:merge(ConcurrentResult, ConcurrentValidated),
-        details => #{}
-    },
+    Report =
+        #{transport => stdio,
+          timestamp => 1640000000000,
+          duration_ms => 5000,
+          overall_passed => true,
+          latency => maps:merge(LatencyResult, LatencyValidated),
+          throughput => maps:merge(ThroughputResult, ThroughputValidated),
+          memory => maps:merge(MemoryResult, MemoryValidated),
+          connection_setup => maps:merge(SetupResult, SetupValidated),
+          concurrent_connections => maps:merge(ConcurrentResult, ConcurrentValidated),
+          details => #{}},
 
     Formatted = erlmcp_performance_validator:format_report(Report),
 
@@ -782,27 +753,37 @@ report_generated_correctly_test(_Config) ->
 %% @doc Verify that report indicates pass/fail
 report_pass_fail_indicated_test(_Config) ->
     %% Passing report
-    PassReport = #{
-        transport => stdio,
-        timestamp => 1640000000000,
-        duration_ms => 5000,
-        overall_passed => true,
-        latency => #{p50_us => 3000, p95_us => 15000, p99_us => 40000, passed => true},
-        throughput => #{requests_per_second => 1500, passed => true},
-        memory => #{bytes_per_connection => 80000, passed => true},
-        connection_setup => #{avg_setup_time_us => 50000, passed => true},
-        concurrent_connections => #{success_count => 10000, success_rate => 100.0, passed => true},
-        details => #{}
-    },
+    PassReport =
+        #{transport => stdio,
+          timestamp => 1640000000000,
+          duration_ms => 5000,
+          overall_passed => true,
+          latency =>
+              #{p50_us => 3000,
+                p95_us => 15000,
+                p99_us => 40000,
+                passed => true},
+          throughput => #{requests_per_second => 1500, passed => true},
+          memory => #{bytes_per_connection => 80000, passed => true},
+          connection_setup => #{avg_setup_time_us => 50000, passed => true},
+          concurrent_connections =>
+              #{success_count => 10000,
+                success_rate => 100.0,
+                passed => true},
+          details => #{}},
 
     PassFormatted = erlmcp_performance_validator:format_report(PassReport),
     ?assertNotEqual(nomatch, binary:match(PassFormatted, <<"Status: PASSED">>)),
     ?assertNotEqual(nomatch, binary:match(PassFormatted, <<"Overall Result: PASSED">>)),
 
     %% Failing report
-    FailReport = PassReport#{overall_passed => false,
-        latency => #{p50_us => 6000, p95_us => 25000, p99_us => 60000, passed => false}
-    },
+    FailReport =
+        PassReport#{overall_passed => false,
+                    latency =>
+                        #{p50_us => 6000,
+                          p95_us => 25000,
+                          p99_us => 60000,
+                          passed => false}},
 
     FailFormatted = erlmcp_performance_validator:format_report(FailReport),
     ?assertNotEqual(nomatch, binary:match(FailFormatted, <<"Status: FAILED">>)),
@@ -812,26 +793,37 @@ report_pass_fail_indicated_test(_Config) ->
 %% @doc Verify that report includes recommendations
 report_recommendations_included_test(_Config) ->
     %% Build report with failures to trigger recommendations
-    LatencyResult = #{p50_us => 6000, p95_us => 25000, p99_us => 60000},
-    ThroughputResult = #{requests_per_second => 800, total_requests => 800, duration_s => 1.0},
-    MemoryResult = #{bytes_per_connection => 120000, kb_per_connection => 117.19, total_connections => 10},
+    LatencyResult =
+        #{p50_us => 6000,
+          p95_us => 25000,
+          p99_us => 60000},
+    ThroughputResult =
+        #{requests_per_second => 800,
+          total_requests => 800,
+          duration_s => 1.0},
+    MemoryResult =
+        #{bytes_per_connection => 120000,
+          kb_per_connection => 117.19,
+          total_connections => 10},
 
     LatencyValidated = erlmcp_performance_validator:validate_latency(LatencyResult),
     ThroughputValidated = erlmcp_performance_validator:validate_throughput(ThroughputResult),
     MemoryValidated = erlmcp_performance_validator:validate_memory(MemoryResult),
 
-    Report = #{
-        transport => stdio,
-        timestamp => 1640000000000,
-        duration_ms => 5000,
-        overall_passed => false,
-        latency => maps:merge(LatencyResult, LatencyValidated),
-        throughput => maps:merge(ThroughputResult, ThroughputValidated),
-        memory => maps:merge(MemoryResult, MemoryValidated),
-        connection_setup => #{avg_setup_time_us => 50000, passed => true},
-        concurrent_connections => #{success_count => 10000, success_rate => 100.0, passed => true},
-        details => #{}
-    },
+    Report =
+        #{transport => stdio,
+          timestamp => 1640000000000,
+          duration_ms => 5000,
+          overall_passed => false,
+          latency => maps:merge(LatencyResult, LatencyValidated),
+          throughput => maps:merge(ThroughputResult, ThroughputValidated),
+          memory => maps:merge(MemoryResult, MemoryValidated),
+          connection_setup => #{avg_setup_time_us => 50000, passed => true},
+          concurrent_connections =>
+              #{success_count => 10000,
+                success_rate => 100.0,
+                passed => true},
+          details => #{}},
 
     Formatted = erlmcp_performance_validator:format_report(Report),
 
@@ -851,28 +843,22 @@ report_recommendations_included_test(_Config) ->
 %% @doc Create a mock latency result for testing
 -spec create_latency_result(pos_integer(), pos_integer(), pos_integer()) -> map().
 create_latency_result(P50, P95, P99) ->
-    #{
-        p50_us => P50,
-        p95_us => P95,
-        p99_us => P99,
-        samples => 100
-    }.
+    #{p50_us => P50,
+      p95_us => P95,
+      p99_us => P99,
+      samples => 100}.
 
 %% @doc Create a mock throughput result for testing
 -spec create_throughput_result(number(), pos_integer(), number()) -> map().
 create_throughput_result(RPS, Total, Duration) ->
-    #{
-        requests_per_second => RPS,
-        total_requests => Total,
-        duration_s => Duration
-    }.
+    #{requests_per_second => RPS,
+      total_requests => Total,
+      duration_s => Duration}.
 
 %% @doc Create a mock memory result for testing
 -spec create_memory_result(number(), pos_integer()) -> map().
 create_memory_result(BytesPerConn, NumConns) ->
-    #{
-        bytes_per_connection => BytesPerConn,
-        kb_per_connection => BytesPerConn / 1024,
-        total_connections => NumConns,
-        memory_delta_bytes => BytesPerConn * NumConns
-    }.
+    #{bytes_per_connection => BytesPerConn,
+      kb_per_connection => BytesPerConn / 1024,
+      total_connections => NumConns,
+      memory_delta_bytes => BytesPerConn * NumConns}.

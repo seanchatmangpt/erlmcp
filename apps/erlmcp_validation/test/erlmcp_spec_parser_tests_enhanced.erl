@@ -14,7 +14,9 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_spec_parser_tests_enhanced).
+
 -include_lib("eunit/include/eunit.hrl").
+
 -include("../include/erlmcp_spec_parser.hrl").
 
 %%%====================================================================
@@ -26,14 +28,12 @@ spec_parser_test_() ->
     {setup,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Spec Version and Constants", fun test_spec_version_constants/0},
+     [{"Spec Version and Constants", fun test_spec_version_constants/0},
       {"Spec Parsing Structure", fun test_spec_parsing_structure/0},
       {"All Methods Parsed", fun test_all_methods_parsed/0},
       {"All Error Codes Parsed", fun test_all_error_codes_parsed/0},
       {"All Transports Parsed", fun test_all_transports_parsed/0},
       {"All Capabilities Parsed", fun test_all_capabilities_parsed/0},
-
       %% Method tests
       {"Initialize Method Complete", fun test_initialize_method_complete/0},
       {"Tools List Method", fun test_tools_list_method/0},
@@ -43,25 +43,21 @@ spec_parser_test_() ->
       {"Prompts List Method", fun test_prompts_list_method/0},
       {"Prompts Get Method", fun test_prompts_get_method/0},
       {"Ping Method", fun test_ping_method/0},
-
       %% Error code tests
       {"JSON-RPC Error Codes Valid Range", fun test_jsonrpc_error_codes_range/0},
       {"MCP Protocol Error Codes", fun test_mcp_protocol_error_codes/0},
       {"Refusal Codes 1001-1089", fun test_refusal_codes_range/0},
       {"Error Code Categories", fun test_error_code_categories/0},
       {"Error Retry Strategies", fun test_error_retry_strategies/0},
-
       %% Transport tests
       {"STDIO Transport Complete", fun test_stdio_transport_complete/0},
       {"SSE Transport Complete", fun test_sse_transport_complete/0},
       {"Transport Features", fun test_transport_features/0},
-
       %% Capability tests
       {"Resources Capability", fun test_resources_capability/0},
       {"Tools Capability", fun test_tools_capability/0},
       {"Prompts Capability", fun test_prompts_capability/0},
       {"Sampling Capability", fun test_sampling_capability/0},
-
       %% Validation tests
       {"Validate Valid Message", fun test_validate_valid_message/0},
       {"Validate Invalid JSON-RPC Version", fun test_validate_invalid_version/0},
@@ -69,8 +65,7 @@ spec_parser_test_() ->
       {"Validate Method Call Parameters", fun test_validate_method_params/0},
       {"Validate Error Codes", fun test_validate_error_codes/0},
       {"Check Capability Support", fun test_check_capability_support/0},
-      {"Generate Validation Rules", fun test_generate_validation_rules/0}
-     ]}.
+      {"Generate Validation Rules", fun test_generate_validation_rules/0}]}.
 
 %% Setup function - start the spec parser gen_server
 setup() ->
@@ -265,15 +260,15 @@ test_jsonrpc_error_codes_range() ->
 
     %% Verify all in valid range
     lists:foreach(fun(E) ->
-        Code = E#error_code_req.code,
-        ?assert(Code >= -32700 andalso Code =< -32600)
-    end, JsonRpcErrors).
+                     Code = E#error_code_req.code,
+                     ?assert(Code >= -32700 andalso Code =< -32600)
+                  end,
+                  JsonRpcErrors).
 
 test_mcp_protocol_error_codes() ->
     {ok, Errors} = erlmcp_spec_parser:get_error_requirements(),
-    McpErrors = [E || E <- Errors,
-                      E#error_code_req.category =:= mcp_protocol,
-                      E#error_code_req.code < 0],
+    McpErrors =
+        [E || E <- Errors, E#error_code_req.category =:= mcp_protocol, E#error_code_req.code < 0],
 
     ?assert(length(McpErrors) >= 3),
 
@@ -286,9 +281,7 @@ test_mcp_protocol_error_codes() ->
 
 test_refusal_codes_range() ->
     {ok, Errors} = erlmcp_spec_parser:get_error_requirements(),
-    RefusalCodes = [E || E <- Errors,
-                         E#error_code_req.code >= 1001,
-                         E#error_code_req.code =< 1089],
+    RefusalCodes = [E || E <- Errors, E#error_code_req.code >= 1001, E#error_code_req.code =< 1089],
 
     ?assertEqual(89, length(RefusalCodes)),  %% Should have all 89 refusal codes
 
@@ -303,10 +296,13 @@ test_error_code_categories() ->
     {ok, Errors} = erlmcp_spec_parser:get_error_requirements(),
 
     %% Group by category
-    Categories = lists:foldl(fun(E, Acc) ->
-        Cat = E#error_code_req.category,
-        maps:update_with(Cat, fun(V) -> V + 1 end, 1, Acc)
-    end, #{}, Errors),
+    Categories =
+        lists:foldl(fun(E, Acc) ->
+                       Cat = E#error_code_req.category,
+                       maps:update_with(Cat, fun(V) -> V + 1 end, 1, Acc)
+                    end,
+                    #{},
+                    Errors),
 
     ?assert(maps:is_key(json_rpc, Categories)),
     ?assert(maps:is_key(mcp_protocol, Categories)),
@@ -360,9 +356,10 @@ test_transport_features() ->
 
     %% All transports should have required_features
     lists:foreach(fun(T) ->
-        ?assert(is_list(T#transport_req.required_features)),
-        ?assert(is_list(T#transport_req.optional_features))
-    end, Transports).
+                     ?assert(is_list(T#transport_req.required_features)),
+                     ?assert(is_list(T#transport_req.optional_features))
+                  end,
+                  Transports).
 
 %%%====================================================================
 %%% Capability Tests
@@ -408,21 +405,18 @@ test_sampling_capability() ->
 %%%====================================================================
 
 test_validate_valid_message() ->
-    ValidMsg = #{
-        jsonrpc => <<"2.0">>,
-        method => <<"test">>,
-        id => 1
-    },
+    ValidMsg =
+        #{jsonrpc => <<"2.0">>,
+          method => <<"test">>,
+          id => 1},
     ?assertEqual({ok, valid_message}, erlmcp_spec_parser:validate_message(ValidMsg)).
 
 test_validate_invalid_version() ->
-    InvalidMsg = #{
-        jsonrpc => <<"1.0">>,
-        method => <<"test">>,
-        id => 1
-    },
-    ?assertEqual({error, invalid_jsonrpc_version},
-                 erlmcp_spec_parser:validate_message(InvalidMsg)).
+    InvalidMsg =
+        #{jsonrpc => <<"1.0">>,
+          method => <<"test">>,
+          id => 1},
+    ?assertEqual({error, invalid_jsonrpc_version}, erlmcp_spec_parser:validate_message(InvalidMsg)).
 
 test_validate_missing_fields() ->
     MissingMethod = #{jsonrpc => <<"2.0">>, id => 1},
@@ -450,30 +444,25 @@ test_validate_method_params() ->
 
 test_validate_error_codes() ->
     %% Valid codes
-    ?assertEqual({ok, valid_error_code},
-                 erlmcp_spec_parser:validate_error_code(-32700)),
-    ?assertEqual({ok, valid_error_code},
-                 erlmcp_spec_parser:validate_error_code(1001)),
+    ?assertEqual({ok, valid_error_code}, erlmcp_spec_parser:validate_error_code(-32700)),
+    ?assertEqual({ok, valid_error_code}, erlmcp_spec_parser:validate_error_code(1001)),
 
     %% Invalid code
-    ?assertEqual({error, unknown_error_code},
-                 erlmcp_spec_parser:validate_error_code(-99999)).
+    ?assertEqual({error, unknown_error_code}, erlmcp_spec_parser:validate_error_code(-99999)).
 
 test_check_capability_support() ->
     %% Full support
     ?assertEqual({ok, capability_supported},
-                 erlmcp_spec_parser:check_capability_support(
-                     <<"tools">>, [<<"list">>, <<"call">>])),
+                 erlmcp_spec_parser:check_capability_support(<<"tools">>,
+                                                             [<<"list">>, <<"call">>])),
 
     %% Partial support (missing features)
     ?assertMatch({error, {missing_features, _}},
-                 erlmcp_spec_parser:check_capability_support(
-                     <<"resources">>, [<<"list">>])),
+                 erlmcp_spec_parser:check_capability_support(<<"resources">>, [<<"list">>])),
 
     %% Unknown capability
     ?assertEqual({error, unknown_capability},
-                 erlmcp_spec_parser:check_capability_support(
-                     <<"unknown">>, [])).
+                 erlmcp_spec_parser:check_capability_support(<<"unknown">>, [])).
 
 test_generate_validation_rules() ->
     {ok, Rules} = erlmcp_spec_parser:generate_validation_rules(),
@@ -482,9 +471,10 @@ test_generate_validation_rules() ->
 
     %% Verify rule structure
     lists:foreach(fun(Rule) ->
-        ?assert(is_record(Rule, validation_rule)),
-        ?assert(is_binary(Rule#validation_rule.rule_id)),
-        ?assert(is_atom(Rule#validation_rule.severity)),
-        ?assert(is_atom(Rule#validation_rule.category)),
-        ?assert(is_binary(Rule#validation_rule.error_message))
-    end, Rules).
+                     ?assert(is_record(Rule, validation_rule)),
+                     ?assert(is_binary(Rule#validation_rule.rule_id)),
+                     ?assert(is_atom(Rule#validation_rule.severity)),
+                     ?assert(is_atom(Rule#validation_rule.category)),
+                     ?assert(is_binary(Rule#validation_rule.error_message))
+                  end,
+                  Rules).

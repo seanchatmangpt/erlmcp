@@ -12,13 +12,13 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_sse_event_store).
+
 -behaviour(gen_server).
 
 %% API
 -export([start_link/0]).
 -export([add_event/3, get_events_since/2, parse_event_id/1]).
 -export([clear_session/1, cleanup_expired/0, get_session_info/1]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -26,16 +26,12 @@
 -define(EVENT_TTL, 3600000). %% 1 hour TTL per event
 -define(CLEANUP_INTERVAL, 300000). %% 5 minutes
 
--record(state, {
-    cleanup_timer :: reference() | undefined
-}).
-
--record(event, {
-    event_number :: pos_integer(),
-    event_id :: binary(),
-    data :: binary(),
-    timestamp :: integer()
-}).
+-record(state, {cleanup_timer :: reference() | undefined}).
+-record(event,
+        {event_number :: pos_integer(),
+         event_id :: binary(),
+         data :: binary(),
+         timestamp :: integer()}).
 
 %%%===================================================================
 %%% API
@@ -62,12 +58,18 @@ parse_event_id(EventId) when is_binary(EventId) ->
     case binary:split(EventId, <<"_">>, [global]) of
         Parts when length(Parts) >= 2 ->
             LastPart = lists:last(Parts),
-            try binary_to_integer(LastPart)
-            catch error:_ -> 0
+            try
+                binary_to_integer(LastPart)
+            catch
+                error:_ ->
+                    0
             end;
         _ ->
-            try binary_to_integer(EventId)
-            catch error:_ -> 0
+            try
+                binary_to_integer(EventId)
+            catch
+                error:_ ->
+                    0
             end
     end;
 parse_event_id(_) ->
@@ -100,32 +102,31 @@ init([]) ->
 handle_call({add_event, SessionId, EventNumber, Data}, _From, State) ->
     TableId = get_or_create_table(SessionId),
     EventId = generate_event_id(SessionId, EventNumber),
-    Event = #event{
-        event_number = EventNumber,
-        event_id = EventId,
-        data = Data,
-        timestamp = erlang:system_time(millisecond)
-    },
+    Event =
+        #event{event_number = EventNumber,
+               event_id = EventId,
+               data = Data,
+               timestamp = erlang:system_time(millisecond)},
     ets:insert(TableId, Event),
     {reply, {ok, EventId}, State};
-
 handle_call({get_events_since, SessionId, LastEventId}, _From, State) ->
     TableName = {?MODULE, SessionId},
     case ets:whereis(TableName) of
         undefined ->
             {reply, {ok, []}, State};
         _TableId ->
-            StartEventNum = case LastEventId of
-                undefined -> 0;
-                _ -> parse_event_id(LastEventId)
-            end,
+            StartEventNum =
+                case LastEventId of
+                    undefined ->
+                        0;
+                    _ ->
+                        parse_event_id(LastEventId)
+                end,
             AllEvents = ets:tab2list(TableName),
-            FilteredEvents = [E#event.data || E <- AllEvents,
-                                             E#event.event_number > StartEventNum],
+            FilteredEvents = [E#event.data || E <- AllEvents, E#event.event_number > StartEventNum],
             SortedEvents = lists:sort(FilteredEvents),
             {reply, {ok, SortedEvents}, State}
     end;
-
 handle_call({clear_session, SessionId}, _From, State) ->
     TableName = {?MODULE, SessionId},
     case ets:whereis(TableName) of
@@ -135,7 +136,6 @@ handle_call({clear_session, SessionId}, _From, State) ->
             ets:delete(TableName),
             {reply, ok, State}
     end;
-
 handle_call({get_session_info, SessionId}, _From, State) ->
     TableName = {?MODULE, SessionId},
     case ets:whereis(TableName) of
@@ -143,32 +143,31 @@ handle_call({get_session_info, SessionId}, _From, State) ->
             {reply, {error, session_not_found}, State};
         _TableId ->
             EventCount = ets:info(TableName, size),
-            LastEventNum = case ets:last(TableName) of
-                '$end_of_table' -> 0;
-                Key -> Key
-            end,
-            Info = #{
-                session_id => SessionId,
-                event_count => EventCount,
-                last_event_number => LastEventNum
-            },
+            LastEventNum =
+                case ets:last(TableName) of
+                    '$end_of_table' ->
+                        0;
+                    Key ->
+                        Key
+                end,
+            Info =
+                #{session_id => SessionId,
+                  event_count => EventCount,
+                  last_event_number => LastEventNum},
             {reply, {ok, Info}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast(cleanup_expired, State) ->
     cleanup_expired_sessions(),
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info(cleanup_expired, State) ->
     cleanup_expired_sessions(),
     {noreply, State};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -177,11 +176,14 @@ terminate(_Reason, #state{cleanup_timer = Ref}) ->
     %% Clean up all session tables
     Tables = ets:all(),
     lists:foreach(fun(Table) ->
-        case ets:info(Table, name) of
-            {?MODULE, _SessionId} -> ets:delete(Table);
-            _ -> ok
-        end
-    end, Tables),
+                     case ets:info(Table, name) of
+                         {?MODULE, _SessionId} ->
+                             ets:delete(Table);
+                         _ ->
+                             ok
+                     end
+                  end,
+                  Tables),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -198,14 +200,13 @@ get_or_create_table(SessionId) ->
     TableName = {?MODULE, SessionId},
     case ets:whereis(TableName) of
         undefined ->
-            ets:new(TableName, [
-                named_table,
-                set,
-                public,
-                {keypos, #event.event_number},
-                {read_concurrency, true},
-                {write_concurrency, true}
-            ]);
+            ets:new(TableName,
+                    [named_table,
+                     set,
+                     public,
+                     {keypos, #event.event_number},
+                     {read_concurrency, true},
+                     {write_concurrency, true}]);
         _TableId ->
             TableName
     end.
@@ -227,13 +228,14 @@ cleanup_expired_sessions() ->
     Tables = ets:all(),
 
     lists:foreach(fun(Table) ->
-        case ets:info(Table, name) of
-            {?MODULE, SessionId} ->
-                cleanup_table_if_expired(Table, SessionId, Now);
-            _ ->
-                ok
-        end
-    end, Tables),
+                     case ets:info(Table, name) of
+                         {?MODULE, SessionId} ->
+                             cleanup_table_if_expired(Table, SessionId, Now);
+                         _ ->
+                             ok
+                     end
+                  end,
+                  Tables),
 
     ok.
 

@@ -29,25 +29,13 @@ cleanup(_) ->
 
 sse_connection_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            {"Initialization", [
-                ?_test(test_init_sse()),
-                ?_test(test_init_with_config())
-            ]},
-            {"Connection API", [
-                ?_test(test_send_event()),
-                ?_test(test_close_stream()),
-                ?_test(test_concurrent_streams())
-            ]},
-            {"Stream Behavior", [
-                ?_test(test_get_stream()),
-                ?_test(test_keepalive_ping()),
-                ?_test(test_stream_timeout())
-            ]}
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [{"Initialization", [?_test(test_init_sse()), ?_test(test_init_with_config())]},
+      {"Connection API",
+       [?_test(test_send_event()), ?_test(test_close_stream()), ?_test(test_concurrent_streams())]},
+      {"Stream Behavior",
+       [?_test(test_get_stream()), ?_test(test_keepalive_ping()), ?_test(test_stream_timeout())]}]}.
 
 %%====================================================================
 %% Initialization Tests (Observable Behavior)
@@ -55,10 +43,7 @@ sse_connection_test_() ->
 
 test_init_sse() ->
     %% Test API: init returns {ok, Pid} or {error, Reason}
-    Config = #{
-        port => 8081,
-        path => "/mcp/sse"
-    },
+    Config = #{port => 8081, path => "/mcp/sse"},
     TransportId = <<"sse_test_1">>,
 
     case erlmcp_transport_sse:init(TransportId, Config) of
@@ -72,11 +57,10 @@ test_init_sse() ->
 
 test_init_with_config() ->
     %% Test API: init with custom configuration
-    Config = #{
-        port => 8082,
-        path => "/custom/sse",
-        keepalive => 30000
-    },
+    Config =
+        #{port => 8082,
+          path => "/custom/sse",
+          keepalive => 30000},
     TransportId = <<"sse_test_config">>,
 
     case erlmcp_transport_sse:init(TransportId, Config) of
@@ -98,14 +82,12 @@ test_send_event() ->
 
     case erlmcp_transport_sse:init(TransportId, Config) of
         {ok, SsePid} ->
-            Message = jsx:encode(#{
-                <<"jsonrpc">> => <<"2.0">>,
-                <<"method">> => <<"resources/list">>,
-                <<"id">> => 1
-            }),
+            Message =
+                jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                             <<"method">> => <<"resources/list">>,
+                             <<"id">> => 1}),
             Result = erlmcp_transport_sse:send(SsePid, Message),
-            ?assert(Result =:= ok orelse
-                     (is_tuple(Result) andalso element(1, Result) =:= error)),
+            ?assert(Result =:= ok orelse is_tuple(Result) andalso element(1, Result) =:= error),
             erlmcp_transport_sse:close(SsePid);
         {error, _Reason} ->
             ?assert(true)
@@ -131,29 +113,26 @@ test_concurrent_streams() ->
     Config2 = #{port => 8086, path => "/mcp/sse"},
     Config3 = #{port => 8087, path => "/mcp/sse"},
 
-    Results = [
-        erlmcp_transport_sse:init(<<"sse1">>, Config1),
-        erlmcp_transport_sse:init(<<"sse2">>, Config2),
-        erlmcp_transport_sse:init(<<"sse3">>, Config3)
-    ],
+    Results =
+        [erlmcp_transport_sse:init(<<"sse1">>, Config1),
+         erlmcp_transport_sse:init(<<"sse2">>, Config2),
+         erlmcp_transport_sse:init(<<"sse3">>, Config3)],
 
     %% Verify all streams initialized successfully
-    ?assert(lists:all(
-        fun
-            ({ok, _}) -> true;
-            ({error, _}) -> true  % Cowboy not available is ok
-        end,
-        Results
-    )),
+    ?assert(lists:all(fun ({ok, _}) ->
+                              true;
+                          ({error, _}) ->
+                              true  % Cowboy not available is ok
+                      end,
+                      Results)),
 
     %% Clean up any successful streams
-    lists:foreach(
-        fun
-            ({ok, Pid}) -> erlmcp_transport_sse:close(Pid);
-            ({error, _}) -> ok
-        end,
-        Results
-    ).
+    lists:foreach(fun ({ok, Pid}) ->
+                          erlmcp_transport_sse:close(Pid);
+                      ({error, _}) ->
+                          ok
+                  end,
+                  Results).
 
 %%====================================================================
 %% Stream Behavior Tests (Observable Behavior)

@@ -20,18 +20,10 @@
 -include_lib("kernel/include/logger.hrl").
 
 %% API
--export([
-    run/1,
-    run_all/0,
-    benchmark_token_bucket/1,
-    benchmark_sliding_window/1,
-    benchmark_leaky_bucket/1,
-    benchmark_per_client_isolation/1,
-    benchmark_global_limit/1,
-    benchmark_distributed_limits/1,
-    benchmark_priority_system/1,
-    benchmark_middleware_overhead/1
-]).
+-export([run/1, run_all/0, benchmark_token_bucket/1, benchmark_sliding_window/1,
+         benchmark_leaky_bucket/1, benchmark_per_client_isolation/1, benchmark_global_limit/1,
+         benchmark_distributed_limits/1, benchmark_priority_system/1,
+         benchmark_middleware_overhead/1]).
 
 %% Benchmark workload IDs
 -define(WORKLOAD_TOKEN_BUCKET_1K, <<"rate_limit_token_bucket_1k">>).
@@ -52,16 +44,26 @@
 -spec run(binary()) -> ok.
 run(WorkloadId) ->
     case WorkloadId of
-        ?WORKLOAD_TOKEN_BUCKET_1K -> benchmark_token_bucket(1000);
-        ?WORKLOAD_TOKEN_BUCKET_10K -> benchmark_token_bucket(10000);
-        ?WORKLOAD_TOKEN_BUCKET_100K -> benchmark_token_bucket(100000);
-        ?WORKLOAD_SLIDING_WINDOW_1K -> benchmark_sliding_window(1000);
-        ?WORKLOAD_LEAKY_BUCKET_1K -> benchmark_leaky_bucket(1000);
-        ?WORKLOAD_PER_CLIENT_100 -> benchmark_per_client_isolation(100);
-        ?WORKLOAD_GLOBAL_10K -> benchmark_global_limit(10000);
-        ?WORKLOAD_DISTRIBUTED_1K -> benchmark_distributed_limits(1000);
-        ?WORKLOAD_PRIORITY_1K -> benchmark_priority_system(1000);
-        ?WORKLOAD_MIDDLEWARE_1K -> benchmark_middleware_overhead(1000);
+        ?WORKLOAD_TOKEN_BUCKET_1K ->
+            benchmark_token_bucket(1000);
+        ?WORKLOAD_TOKEN_BUCKET_10K ->
+            benchmark_token_bucket(10000);
+        ?WORKLOAD_TOKEN_BUCKET_100K ->
+            benchmark_token_bucket(100000);
+        ?WORKLOAD_SLIDING_WINDOW_1K ->
+            benchmark_sliding_window(1000);
+        ?WORKLOAD_LEAKY_BUCKET_1K ->
+            benchmark_leaky_bucket(1000);
+        ?WORKLOAD_PER_CLIENT_100 ->
+            benchmark_per_client_isolation(100);
+        ?WORKLOAD_GLOBAL_10K ->
+            benchmark_global_limit(10000);
+        ?WORKLOAD_DISTRIBUTED_1K ->
+            benchmark_distributed_limits(1000);
+        ?WORKLOAD_PRIORITY_1K ->
+            benchmark_priority_system(1000);
+        ?WORKLOAD_MIDDLEWARE_1K ->
+            benchmark_middleware_overhead(1000);
         _ ->
             logger:error("Unknown workload: ~s", [WorkloadId]),
             {error, unknown_workload}
@@ -69,26 +71,26 @@ run(WorkloadId) ->
 
 -spec run_all() -> ok.
 run_all() ->
-    Workloads = [
-        ?WORKLOAD_TOKEN_BUCKET_1K,
-        ?WORKLOAD_TOKEN_BUCKET_10K,
-        ?WORKLOAD_TOKEN_BUCKET_100K,
-        ?WORKLOAD_SLIDING_WINDOW_1K,
-        ?WORKLOAD_LEAKY_BUCKET_1K,
-        ?WORKLOAD_PER_CLIENT_100,
-        ?WORKLOAD_GLOBAL_10K,
-        ?WORKLOAD_DISTRIBUTED_1K,
-        ?WORKLOAD_PRIORITY_1K,
-        ?WORKLOAD_MIDDLEWARE_1K
-    ],
+    Workloads =
+        [?WORKLOAD_TOKEN_BUCKET_1K,
+         ?WORKLOAD_TOKEN_BUCKET_10K,
+         ?WORKLOAD_TOKEN_BUCKET_100K,
+         ?WORKLOAD_SLIDING_WINDOW_1K,
+         ?WORKLOAD_LEAKY_BUCKET_1K,
+         ?WORKLOAD_PER_CLIENT_100,
+         ?WORKLOAD_GLOBAL_10K,
+         ?WORKLOAD_DISTRIBUTED_1K,
+         ?WORKLOAD_PRIORITY_1K,
+         ?WORKLOAD_MIDDLEWARE_1K],
 
     logger:info("Running all rate limit benchmarks (~p workloads)...", [length(Workloads)]),
 
     lists:foreach(fun(WorkloadId) ->
-        logger:info("Running workload: ~s", [WorkloadId]),
-        run(WorkloadId),
-        timer:sleep(1000)  % Brief pause between workloads
-    end, Workloads),
+                     logger:info("Running workload: ~s", [WorkloadId]),
+                     run(WorkloadId),
+                     timer:sleep(1000)  % Brief pause between workloads
+                  end,
+                  Workloads),
 
     ok.
 
@@ -108,17 +110,19 @@ benchmark_token_bucket(NumOperations) ->
 
     % Warm-up
     warmup(fun() ->
-        TimeMs = erlang:system_time(millisecond),
-        erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs)
-    end, 100),
+              TimeMs = erlang:system_time(millisecond),
+              erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs)
+           end,
+           100),
 
     % Benchmark
     StartTime = erlang:monotonic_time(microsecond),
 
     lists:foreach(fun(_) ->
-        TimeMs = erlang:system_time(millisecond),
-        erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs)
-    end, lists:seq(1, NumOperations)),
+                     TimeMs = erlang:system_time(millisecond),
+                     erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs)
+                  end,
+                  lists:seq(1, NumOperations)),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -149,12 +153,16 @@ benchmark_sliding_window(NumOperations) ->
 
     % Run operations
     lists:foldl(fun(_, Acc) ->
-        TimeMs = erlang:system_time(millisecond),
-        case erlmcp_rate_limiter:check_sliding_window(Acc, 100, TimeMs) of
-            {ok, NewWindow, _} -> NewWindow;
-            {error, exceeded} -> Acc
-        end
-    end, Window, lists:seq(1, NumOperations)),
+                   TimeMs = erlang:system_time(millisecond),
+                   case erlmcp_rate_limiter:check_sliding_window(Acc, 100, TimeMs) of
+                       {ok, NewWindow, _} ->
+                           NewWindow;
+                       {error, exceeded} ->
+                           Acc
+                   end
+                end,
+                Window,
+                lists:seq(1, NumOperations)),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -182,11 +190,15 @@ benchmark_leaky_bucket(NumOperations) ->
 
     % Run operations
     lists:foldl(fun(_, Acc) ->
-        case erlmcp_rate_limiter:check_leaky_bucket(Acc, 100) of
-            {ok, NewBucket, _} -> NewBucket;
-            {error, exceeded} -> Acc
-        end
-    end, Bucket, lists:seq(1, NumOperations)),
+                   case erlmcp_rate_limiter:check_leaky_bucket(Acc, 100) of
+                       {ok, NewBucket, _} ->
+                           NewBucket;
+                       {error, exceeded} ->
+                           Acc
+                   end
+                end,
+                Bucket,
+                lists:seq(1, NumOperations)),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -218,11 +230,13 @@ benchmark_per_client_isolation(NumClients) ->
 
     % Each client makes 100 requests
     lists:foreach(fun(ClientId) ->
-        lists:foreach(fun(_) ->
-            TimeMs = erlang:system_time(millisecond),
-            erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs)
-        end, lists:seq(1, 100))
-    end, ClientIds),
+                     lists:foreach(fun(_) ->
+                                      TimeMs = erlang:system_time(millisecond),
+                                      erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs)
+                                   end,
+                                   lists:seq(1, 100))
+                  end,
+                  ClientIds),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -250,18 +264,18 @@ benchmark_global_limit(NumOperations) ->
 
     % Setup
     application:ensure_all_started(erlmcp),
-    application:set_env(erlmcp, rate_limiting, #{
-        global_max_messages_per_sec => 1000000,
-        enabled => true
-    }),
+    application:set_env(erlmcp,
+                        rate_limiting,
+                        #{global_max_messages_per_sec => 1000000, enabled => true}),
     {ok, _} = erlmcp_rate_limiter:start_link(),
 
     StartTime = erlang:monotonic_time(microsecond),
 
     lists:foreach(fun(_) ->
-        TimeMs = erlang:system_time(millisecond),
-        erlmcp_rate_limiter:check_global_rate(TimeMs)
-    end, lists:seq(1, NumOperations)),
+                     TimeMs = erlang:system_time(millisecond),
+                     erlmcp_rate_limiter:check_global_rate(TimeMs)
+                  end,
+                  lists:seq(1, NumOperations)),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -294,9 +308,8 @@ benchmark_distributed_limits(NumOperations) ->
 
     StartTime = erlang:monotonic_time(microsecond),
 
-    lists:foreach(fun(_) ->
-        erlmcp_rate_limiter:increment_distributed_limit(Scope, 1)
-    end, lists:seq(1, NumOperations)),
+    lists:foreach(fun(_) -> erlmcp_rate_limiter:increment_distributed_limit(Scope, 1) end,
+                  lists:seq(1, NumOperations)),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -336,9 +349,10 @@ benchmark_priority_system(NumOperations) ->
     StartTime = erlang:monotonic_time(microsecond),
 
     lists:foreach(fun(_) ->
-        TimeMs = erlang:system_time(millisecond),
-        erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs, high)
-    end, lists:seq(1, NumOperations)),
+                     TimeMs = erlang:system_time(millisecond),
+                     erlmcp_rate_limiter:check_message_rate(ClientId, TimeMs, high)
+                  end,
+                  lists:seq(1, NumOperations)),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -373,9 +387,10 @@ benchmark_middleware_overhead(NumOperations) ->
     StartTime = erlang:monotonic_time(microsecond),
 
     lists:foreach(fun(_) ->
-        TimeMs = erlang:system_time(millisecond),
-        erlmcp_rate_limit_middleware:check_request(ClientId, Method, TimeMs)
-    end, lists:seq(1, NumOperations)),
+                     TimeMs = erlang:system_time(millisecond),
+                     erlmcp_rate_limit_middleware:check_request(ClientId, Method, TimeMs)
+                  end,
+                  lists:seq(1, NumOperations)),
 
     EndTime = erlang:monotonic_time(microsecond),
     DurationUs = EndTime - StartTime,
@@ -383,7 +398,7 @@ benchmark_middleware_overhead(NumOperations) ->
 
     ThroughputPerS = NumOperations / DurationS,
     LatencyP50Us = DurationUs / NumOperations,
-    OverheadPct = (LatencyP50Us / 10.0) * 100,  % Assuming 10us base request time
+    OverheadPct = LatencyP50Us / 10.0 * 100,  % Assuming 10us base request time
 
     logger:info("Middleware overhead benchmark complete:"),
     logger:info("  Operations: ~p", [NumOperations]),

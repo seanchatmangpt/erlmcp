@@ -18,19 +18,17 @@
 
 %% Valid benchmark output fixture
 valid_benchmark_output() ->
-    #{
-        workload_id => <<"core_ops_100k">>,
-        transport => <<"stdio">>,
-        duration_s => 10,
-        scope => <<"per_node_total">>,
-        precision => <<"microsecond">>,
-        throughput_msg_per_s => 2690000,
-        latency_p50_us => 1,
-        latency_p95_us => 5,
-        latency_p99_us => 10,
-        memory_heap_mib_per_conn => 0.5,
-        memory_rss_mib_per_node => 256
-    }.
+    #{workload_id => <<"core_ops_100k">>,
+      transport => <<"stdio">>,
+      duration_s => 10,
+      scope => <<"per_node_total">>,
+      precision => <<"microsecond">>,
+      throughput_msg_per_s => 2690000,
+      latency_p50_us => 1,
+      latency_p95_us => 5,
+      latency_p99_us => 10,
+      memory_heap_mib_per_conn => 0.5,
+      memory_rss_mib_per_node => 256}.
 
 %%====================================================================
 %% Lifecycle Tests
@@ -41,13 +39,11 @@ metrology_validator_lifecycle_test_() ->
      fun setup_validator/0,
      fun cleanup_validator/1,
      fun(_State) ->
-         [
-          ?_test(begin
-                   %% Validator is running
-                   Pid = whereis(erlmcp_metrology_validator),
-                   ?assert(is_pid(Pid))
-               end)
-         ]
+        [?_test(begin
+                    %% Validator is running
+                    Pid = whereis(erlmcp_metrology_validator),
+                    ?assert(is_pid(Pid))
+                end)]
      end}.
 
 %%====================================================================
@@ -72,27 +68,21 @@ validate_missing_workload_id_test() ->
     Result = erlmcp_metrology_validator:validate_benchmark_output(Output),
     ?assertMatch({error, _}, Result),
     {error, Errors} = Result,
-    ?assert(lists:any(fun(E) ->
-        binary:match(E, <<"workload_id">>) =/= nomatch
-    end, Errors)).
+    ?assert(lists:any(fun(E) -> binary:match(E, <<"workload_id">>) =/= nomatch end, Errors)).
 
 validate_missing_transport_test() ->
     Output = maps:remove(transport, valid_benchmark_output()),
     Result = erlmcp_metrology_validator:validate_benchmark_output(Output),
     ?assertMatch({error, _}, Result),
     {error, Errors} = Result,
-    ?assert(lists:any(fun(E) ->
-        binary:match(E, <<"transport">>) =/= nomatch
-    end, Errors)).
+    ?assert(lists:any(fun(E) -> binary:match(E, <<"transport">>) =/= nomatch end, Errors)).
 
 validate_missing_duration_test() ->
     Output = maps:remove(duration_s, valid_benchmark_output()),
     Result = erlmcp_metrology_validator:validate_benchmark_output(Output),
     ?assertMatch({error, _}, Result),
     {error, Errors} = Result,
-    ?assert(lists:any(fun(E) ->
-        binary:match(E, <<"duration_s">>) =/= nomatch
-    end, Errors)).
+    ?assert(lists:any(fun(E) -> binary:match(E, <<"duration_s">>) =/= nomatch end, Errors)).
 
 validate_missing_scope_test() ->
     Output = maps:remove(scope, valid_benchmark_output()),
@@ -100,9 +90,10 @@ validate_missing_scope_test() ->
     ?assertMatch({error, _}, Result),
     {error, Errors} = Result,
     ?assert(lists:any(fun(E) ->
-        binary:match(E, <<"scope">>) =/= nomatch orelse
-        binary:match(E, <<"Scope field">>) =/= nomatch
-    end, Errors)).
+                         binary:match(E, <<"scope">>) =/= nomatch
+                         orelse binary:match(E, <<"Scope field">>) =/= nomatch
+                      end,
+                      Errors)).
 
 validate_multiple_missing_fields_test() ->
     Output = #{},
@@ -136,19 +127,15 @@ validate_canonical_throughput_units_test() ->
     ?assertMatch({ok, _}, Result).
 
 validate_canonical_latency_units_test() ->
-    Output = #{
-        latency_p50_us => 1,
-        latency_p95_us => 5,
-        latency_p99_us => 10
-    },
+    Output =
+        #{latency_p50_us => 1,
+          latency_p95_us => 5,
+          latency_p99_us => 10},
     Result = erlmcp_metrology_validator:validate_metric_units(Output),
     ?assertMatch({ok, _}, Result).
 
 validate_canonical_memory_units_test() ->
-    Output = #{
-        memory_heap_mib_per_conn => 0.5,
-        memory_rss_mib_per_node => 256
-    },
+    Output = #{memory_heap_mib_per_conn => 0.5, memory_rss_mib_per_node => 256},
     Result = erlmcp_metrology_validator:validate_metric_units(Output),
     ?assertMatch({ok, _}, Result).
 
@@ -212,23 +199,21 @@ detect_bare_mem_as_ambiguous_test() ->
     ?assertEqual(<<"mem">>, maps:get(field, Violation)).
 
 no_violations_for_canonical_units_test() ->
-    Output = #{
-        throughput_msg_per_s => 1000000,
-        latency_p50_us => 1,
-        latency_p95_us => 5,
-        latency_p99_us => 10,
-        memory_heap_mib_per_conn => 0.5,
-        memory_rss_mib_per_node => 256
-    },
+    Output =
+        #{throughput_msg_per_s => 1000000,
+          latency_p50_us => 1,
+          latency_p95_us => 5,
+          latency_p99_us => 10,
+          memory_heap_mib_per_conn => 0.5,
+          memory_rss_mib_per_node => 256},
     Violations = erlmcp_metrology_validator:detect_ambiguous_units(Output),
     ?assertEqual([], Violations).
 
 detect_multiple_ambiguous_units_test() ->
-    Output = #{
-        <<"req/s">> => 1000000,
-        <<"latency_ms">> => 10,
-        <<"memory">> => 512
-    },
+    Output =
+        #{<<"req/s">> => 1000000,
+          <<"latency_ms">> => 10,
+          <<"memory">> => 512},
     Violations = erlmcp_metrology_validator:detect_ambiguous_units(Output),
     ?assert(length(Violations) >= 3).
 
@@ -375,10 +360,7 @@ generate_report_with_invalid_scope_test() ->
     ?assert(length(Violations) > 0).
 
 generate_report_with_multiple_violations_test() ->
-    Output = #{
-        <<"req/s">> => 1000000,
-        <<"latency_ms">> => 10
-    },
+    Output = #{<<"req/s">> => 1000000, <<"latency_ms">> => 10},
     Report = erlmcp_metrology_validator:generate_violations_report(Output),
     ?assertEqual(false, maps:get(valid, Report)),
     Violations = maps:get(violations, Report),
@@ -403,17 +385,14 @@ violation_type_is_missing_required_test() ->
     Output = #{},
     Report = erlmcp_metrology_validator:generate_violations_report(Output),
     Violations = maps:get(violations, Report),
-    ?assert(lists:any(fun(V) ->
-        maps:get(type, V, <<>>) =:= <<"missing_required">>
-    end, Violations)).
+    ?assert(lists:any(fun(V) -> maps:get(type, V, <<>>) =:= <<"missing_required">> end,
+                      Violations)).
 
 violation_type_is_invalid_scope_test() ->
     Output = maps:put(scope, <<"bad">>, valid_benchmark_output()),
     Report = erlmcp_metrology_validator:generate_violations_report(Output),
     Violations = maps:get(violations, Report),
-    ?assert(lists:any(fun(V) ->
-        maps:get(type, V, <<>>) =:= <<"invalid_scope">>
-    end, Violations)).
+    ?assert(lists:any(fun(V) -> maps:get(type, V, <<>>) =:= <<"invalid_scope">> end, Violations)).
 
 %%====================================================================
 %% get_validation_rules/1 Tests
@@ -487,66 +466,62 @@ required_fields_list_test() ->
 
 real_world_benchmark_validation_test() ->
     %% Real benchmark output from core_ops
-    Output = #{
-        workload_id => <<"core_ops_100k">>,
-        transport => <<"stdio">>,
-        duration_s => 10,
-        scope => <<"per_node_total">>,
-        precision => <<"high_resolution">>,
-        throughput_msg_per_s => 2690000,
-        latency_p50_us => 1,
-        latency_p95_us => 5,
-        latency_p99_us => 10,
-        memory_heap_mib_per_conn => 0.5,
-        memory_rss_mib_per_node => 256,
-        timestamp => erlang:system_time(millisecond)
-    },
+    Output =
+        #{workload_id => <<"core_ops_100k">>,
+          transport => <<"stdio">>,
+          duration_s => 10,
+          scope => <<"per_node_total">>,
+          precision => <<"high_resolution">>,
+          throughput_msg_per_s => 2690000,
+          latency_p50_us => 1,
+          latency_p95_us => 5,
+          latency_p99_us => 10,
+          memory_heap_mib_per_conn => 0.5,
+          memory_rss_mib_per_node => 256,
+          timestamp => erlang:system_time(millisecond)},
     Result = erlmcp_metrology_validator:validate_benchmark_output(Output),
     ?assertMatch({ok, _}, Result).
 
 tcp_benchmark_validation_test() ->
-    Output = #{
-        workload_id => <<"tcp_sustained_10k">>,
-        transport => <<"tcp">>,
-        duration_s => 60,
-        scope => <<"per_connection_total">>,
-        throughput_msg_per_s => 43000,
-        latency_p50_us => 100,
-        latency_p95_us => 500,
-        latency_p99_us => 1000,
-        memory_heap_mib_per_conn => 2.5,
-        memory_rss_mib_per_node => 512
-    },
+    Output =
+        #{workload_id => <<"tcp_sustained_10k">>,
+          transport => <<"tcp">>,
+          duration_s => 60,
+          scope => <<"per_connection_total">>,
+          throughput_msg_per_s => 43000,
+          latency_p50_us => 100,
+          latency_p95_us => 500,
+          latency_p99_us => 1000,
+          memory_heap_mib_per_conn => 2.5,
+          memory_rss_mib_per_node => 512},
     Result = erlmcp_metrology_validator:validate_benchmark_output(Output),
     ?assertMatch({ok, _}, Result).
 
 http_benchmark_validation_test() ->
-    Output = #{
-        workload_id => <<"http_sustained_5k">>,
-        transport => <<"http">>,
-        duration_s => 30,
-        scope => <<"per_node_total">>,
-        throughput_msg_per_s => 25000,
-        latency_p50_us => 150,
-        latency_p95_us => 750,
-        latency_p99_us => 1500,
-        memory_heap_mib_per_conn => 3.0,
-        memory_rss_mib_per_node => 768
-    },
+    Output =
+        #{workload_id => <<"http_sustained_5k">>,
+          transport => <<"http">>,
+          duration_s => 30,
+          scope => <<"per_node_total">>,
+          throughput_msg_per_s => 25000,
+          latency_p50_us => 150,
+          latency_p95_us => 750,
+          latency_p99_us => 1500,
+          memory_heap_mib_per_conn => 3.0,
+          memory_rss_mib_per_node => 768},
     Result = erlmcp_metrology_validator:validate_benchmark_output(Output),
     ?assertMatch({ok, _}, Result).
 
 reject_legacy_benchmark_format_test() ->
     %% Legacy format with ambiguous units (req/s instead of msg_per_s)
-    Output = #{
-        workload_id => <<"legacy_benchmark">>,
-        transport => <<"stdio">>,
-        duration_s => 10,
-        scope => <<"per_node_total">>,
-        <<"req/s">> => 1000000,  %% Ambiguous unit
-        <<"latency_ms">> => 10,  %% Should be _us
-        <<"memory">> => 512      %% Missing scope specification
-    },
+    Output =
+        #{workload_id => <<"legacy_benchmark">>,
+          transport => <<"stdio">>,
+          duration_s => 10,
+          scope => <<"per_node_total">>,
+          <<"req/s">> => 1000000,  %% Ambiguous unit
+          <<"latency_ms">> => 10,  %% Should be _us
+          <<"memory">> => 512},      %% Missing scope specification
     Result = erlmcp_metrology_validator:validate_benchmark_output(Output),
     ?assertMatch({error, _}, Result).
 
@@ -561,6 +536,8 @@ setup_validator() ->
 
 cleanup_validator(_Pid) ->
     case whereis(erlmcp_metrology_validator) of
-        undefined -> ok;
-        Pid -> gen_server:stop(Pid)
+        undefined ->
+            ok;
+        Pid ->
+            gen_server:stop(Pid)
     end.

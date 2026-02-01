@@ -26,21 +26,16 @@ cleanup(_) ->
 
 circuit_breaker_test_() ->
     {setup,
-        fun setup/0,
-        fun cleanup/1,
-        [
-            {"Circuit States", [
-                ?_test(test_circuit_closed()),
-                ?_test(test_circuit_open()),
-                ?_test(test_circuit_half_open())
-            ]},
-            {"Circuit Transitions", [
-                ?_test(test_open_on_failures()),
-                ?_test(test_half_open_after_timeout()),
-                ?_test(test_close_on_success())
-            ]}
-        ]
-    }.
+     fun setup/0,
+     fun cleanup/1,
+     [{"Circuit States",
+       [?_test(test_circuit_closed()),
+        ?_test(test_circuit_open()),
+        ?_test(test_circuit_half_open())]},
+      {"Circuit Transitions",
+       [?_test(test_open_on_failures()),
+        ?_test(test_half_open_after_timeout()),
+        ?_test(test_close_on_success())]}]}.
 
 %%====================================================================
 %% Circuit State Tests (Observable Behavior)
@@ -48,16 +43,15 @@ circuit_breaker_test_() ->
 
 test_circuit_closed() ->
     %% Test API: Circuit starts closed (normal operation)
-    {ok, TransportPid} = gen_server:start_link(
-        fun() ->
-            {ok, #{
-                transport_id => test_circuit_closed,
-                type => tcp,
-                circuit_state => closed
-            }}
-        end,
-        [], []
-    ),
+    {ok, TransportPid} =
+        gen_server:start_link(fun() ->
+                                 {ok,
+                                  #{transport_id => test_circuit_closed,
+                                    type => tcp,
+                                    circuit_state => closed}}
+                              end,
+                              [],
+                              []),
 
     %% Check circuit state (API call - observable)
     case erlmcp_transport_health:get_circuit_state(TransportPid) of
@@ -71,22 +65,20 @@ test_circuit_closed() ->
 
 test_circuit_open() ->
     %% Test API: Circuit opens after failures
-    {ok, TransportPid} = gen_server:start_link(
-        fun() ->
-            {ok, #{
-                transport_id => test_circuit_open,
-                type => tcp,
-                circuit_state => closed,
-                failure_count => 0
-            }}
-        end,
-        [], []
-    ),
+    {ok, TransportPid} =
+        gen_server:start_link(fun() ->
+                                 {ok,
+                                  #{transport_id => test_circuit_open,
+                                    type => tcp,
+                                    circuit_state => closed,
+                                    failure_count => 0}}
+                              end,
+                              [],
+                              []),
 
     %% Record failures to trigger circuit open (API calls - observable)
-    lists:foreach(fun(_) ->
-        erlmcp_transport_health:record_failure(TransportPid, timeout)
-    end, lists:seq(1, 10)),
+    lists:foreach(fun(_) -> erlmcp_transport_health:record_failure(TransportPid, timeout) end,
+                  lists:seq(1, 10)),
 
     timer:sleep(100),
 
@@ -102,17 +94,16 @@ test_circuit_open() ->
 
 test_circuit_half_open() ->
     %% Test API: Circuit transitions to half-open after timeout
-    {ok, TransportPid} = gen_server:start_link(
-        fun() ->
-            {ok, #{
-                transport_id => test_circuit_half_open,
-                type => tcp,
-                circuit_state => open,
-                last_failure_time => erlang:timestamp()
-            }}
-        end,
-        [], []
-    ),
+    {ok, TransportPid} =
+        gen_server:start_link(fun() ->
+                                 {ok,
+                                  #{transport_id => test_circuit_half_open,
+                                    type => tcp,
+                                    circuit_state => open,
+                                    last_failure_time => erlang:timestamp()}}
+                              end,
+                              [],
+                              []),
 
     %% Wait for circuit timeout
     timer:sleep(1100),
@@ -136,23 +127,21 @@ test_circuit_half_open() ->
 
 test_open_on_failures() ->
     %% Test API: Circuit opens when failure threshold exceeded
-    {ok, TransportPid} = gen_server:start_link(
-        fun() ->
-            {ok, #{
-                transport_id => test_open_failures,
-                type => tcp,
-                circuit_state => closed,
-                failure_count => 0,
-                failure_threshold => 5
-            }}
-        end,
-        [], []
-    ),
+    {ok, TransportPid} =
+        gen_server:start_link(fun() ->
+                                 {ok,
+                                  #{transport_id => test_open_failures,
+                                    type => tcp,
+                                    circuit_state => closed,
+                                    failure_count => 0,
+                                    failure_threshold => 5}}
+                              end,
+                              [],
+                              []),
 
     %% Record failures (API calls - observable)
-    lists:foreach(fun(_) ->
-        erlmcp_transport_health:record_failure(TransportPid, network_error)
-    end, lists:seq(1, 6)),
+    lists:foreach(fun(_) -> erlmcp_transport_health:record_failure(TransportPid, network_error) end,
+                  lists:seq(1, 6)),
 
     timer:sleep(100),
 
@@ -171,19 +160,18 @@ test_open_on_failures() ->
 
 test_half_open_after_timeout() ->
     %% Test API: Circuit transitions to half-open after timeout
-    {ok, TransportPid} = gen_server:start_link(
-        fun() ->
-            {ok, #{
-                transport_id => test_half_open_timeout,
-                type => tcp,
-                circuit_state => open,
-                failure_count => 10,
-                failure_threshold => 5,
-                last_failure_time => erlang:timestamp()
-            }}
-        end,
-        [], []
-    ),
+    {ok, TransportPid} =
+        gen_server:start_link(fun() ->
+                                 {ok,
+                                  #{transport_id => test_half_open_timeout,
+                                    type => tcp,
+                                    circuit_state => open,
+                                    failure_count => 10,
+                                    failure_threshold => 5,
+                                    last_failure_time => erlang:timestamp()}}
+                              end,
+                              [],
+                              []),
 
     %% Wait for circuit timeout (typically 1-5 seconds)
     timer:sleep(1100),
@@ -203,16 +191,15 @@ test_half_open_after_timeout() ->
 
 test_close_on_success() ->
     %% Test API: Circuit closes after successful request
-    {ok, TransportPid} = gen_server:start_link(
-        fun() ->
-            {ok, #{
-                transport_id => test_close_success,
-                type => tcp,
-                circuit_state => half_open
-            }}
-        end,
-        [], []
-    ),
+    {ok, TransportPid} =
+        gen_server:start_link(fun() ->
+                                 {ok,
+                                  #{transport_id => test_close_success,
+                                    type => tcp,
+                                    circuit_state => half_open}}
+                              end,
+                              [],
+                              []),
 
     %% Record success (API call - observable)
     erlmcp_transport_health:record_success(TransportPid),

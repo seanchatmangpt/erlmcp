@@ -20,6 +20,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_transport_validator_SUITE).
+
 -compile(export_all).
 
 -include_lib("common_test/include/ct.hrl").
@@ -30,84 +31,80 @@
 %%====================================================================
 
 all() ->
-    [
-        %% stdio transport tests (8 tests)
-        {group, stdio_transport},
-        %% tcp transport tests (8 tests)
-        {group, tcp_transport},
-        %% http transport tests (8 tests)
-        {group, http_transport},
-        %% websocket transport tests (8 tests)
-        {group, websocket_transport},
-        %% sse transport tests (8 tests)
-        {group, sse_transport},
-        %% Cross-transport tests (8+ tests)
-        {group, cross_transport}
-    ].
+    [%% stdio transport tests (8 tests)
+     {group, stdio_transport},
+     %% tcp transport tests (8 tests)
+     {group, tcp_transport},
+     %% http transport tests (8 tests)
+     {group, http_transport},
+     %% websocket transport tests (8 tests)
+     {group, websocket_transport},
+     %% sse transport tests (8 tests)
+     {group, sse_transport},
+     %% Cross-transport tests (8+ tests)
+     {group, cross_transport}].
 
 groups() ->
-    [
-        {stdio_transport, [parallel], [
-            stdio_module_validation,
-            stdio_init_valid,
-            stdio_init_invalid,
-            stdio_send_message,
-            stdio_close,
-            stdio_round_trip,
-            stdio_message_format,
-            stdio_error_handling
-        ]},
-        {tcp_transport, [parallel], [
-            tcp_module_validation,
-            tcp_init_valid,
-            tcp_init_invalid,
-            tcp_send_message,
-            tcp_close,
-            tcp_round_trip,
-            tcp_concurrent_connections,
-            tcp_error_handling
-        ]},
-        {http_transport, [parallel], [
-            http_module_validation,
-            http_init_valid,
-            http_init_invalid,
-            http_send_message,
-            http_close,
-            http_round_trip,
-            http_message_format,
-            http_error_handling
-        ]},
-        {websocket_transport, [parallel], [
-            websocket_module_validation,
-            websocket_init_valid,
-            websocket_init_invalid,
-            websocket_send_message,
-            websocket_close,
-            websocket_round_trip,
-            websocket_concurrent_connections,
-            websocket_error_handling
-        ]},
-        {sse_transport, [parallel], [
-            sse_module_validation,
-            sse_init_valid,
-            sse_init_invalid,
-            sse_send_message,
-            sse_close,
-            sse_round_trip,
-            sse_message_format,
-            sse_error_handling
-        ]},
-        {cross_transport, [sequence], [
-            all_transports_module_validation,
-            all_transports_message_format,
-            concurrent_multi_transport,
-            latency_comparison,
-            stress_test_messages,
-            connection_lifecycle_all,
-            error_recovery_all,
-            compliance_summary
-        ]}
-    ].
+    [{stdio_transport,
+      [parallel],
+      [stdio_module_validation,
+       stdio_init_valid,
+       stdio_init_invalid,
+       stdio_send_message,
+       stdio_close,
+       stdio_round_trip,
+       stdio_message_format,
+       stdio_error_handling]},
+     {tcp_transport,
+      [parallel],
+      [tcp_module_validation,
+       tcp_init_valid,
+       tcp_init_invalid,
+       tcp_send_message,
+       tcp_close,
+       tcp_round_trip,
+       tcp_concurrent_connections,
+       tcp_error_handling]},
+     {http_transport,
+      [parallel],
+      [http_module_validation,
+       http_init_valid,
+       http_init_invalid,
+       http_send_message,
+       http_close,
+       http_round_trip,
+       http_message_format,
+       http_error_handling]},
+     {websocket_transport,
+      [parallel],
+      [websocket_module_validation,
+       websocket_init_valid,
+       websocket_init_invalid,
+       websocket_send_message,
+       websocket_close,
+       websocket_round_trip,
+       websocket_concurrent_connections,
+       websocket_error_handling]},
+     {sse_transport,
+      [parallel],
+      [sse_module_validation,
+       sse_init_valid,
+       sse_init_invalid,
+       sse_send_message,
+       sse_close,
+       sse_round_trip,
+       sse_message_format,
+       sse_error_handling]},
+     {cross_transport,
+      [sequence],
+      [all_transports_module_validation,
+       all_transports_message_format,
+       concurrent_multi_transport,
+       latency_comparison,
+       stress_test_messages,
+       connection_lifecycle_all,
+       error_recovery_all,
+       compliance_summary]}].
 
 init_per_suite(Config) ->
     application:ensure_all_started(erlmcp),
@@ -167,7 +164,10 @@ stdio_send_message(_Config) ->
     Opts = #{owner => Owner, test_mode => true},
     {ok, State} = erlmcp_transport_validator:validate_init(erlmcp_transport_stdio, stdio, Opts),
 
-    TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+    TestMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
     Result = erlmcp_transport_validator:validate_send(erlmcp_transport_stdio, TestMessage, State),
 
     %% Cleanup
@@ -191,7 +191,8 @@ stdio_round_trip(_Config) ->
     {ok, State} = erlmcp_transport_validator:validate_init(erlmcp_transport_stdio, stdio, Opts),
 
     NumMessages = 10,
-    Result = erlmcp_transport_validator:validate_round_trip(erlmcp_transport_stdio, State, NumMessages),
+    Result =
+        erlmcp_transport_validator:validate_round_trip(erlmcp_transport_stdio, State, NumMessages),
 
     %% Cleanup
     erlmcp_transport_validator:validate_close(erlmcp_transport_stdio, State),
@@ -205,7 +206,10 @@ stdio_round_trip(_Config) ->
     end.
 
 stdio_message_format(_Config) ->
-    ValidMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+    ValidMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
     Result = erlmcp_transport_validator:validate_message_format(stdio, ValidMessage),
     ?assertEqual(ok, Result),
 
@@ -218,8 +222,12 @@ stdio_message_format(_Config) ->
 stdio_error_handling(_Config) ->
     %% Test send to uninitialized state
     InvalidState = undefined,
-    TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
-    Result = erlmcp_transport_validator:validate_send(erlmcp_transport_stdio, TestMessage, InvalidState),
+    TestMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
+    Result =
+        erlmcp_transport_validator:validate_send(erlmcp_transport_stdio, TestMessage, InvalidState),
 
     %% Should fail gracefully
     ?assertMatch({error, _}, Result),
@@ -236,7 +244,11 @@ tcp_module_validation(_Config) ->
 
 tcp_init_valid(_Config) ->
     Owner = self(),
-    Opts = #{owner => Owner, mode => client, host => "localhost", port => 9999},
+    Opts =
+        #{owner => Owner,
+          mode => client,
+          host => "localhost",
+          port => 9999},
     Result = erlmcp_transport_validator:validate_init(erlmcp_transport_tcp, tcp, Opts),
     case Result of
         {ok, State} ->
@@ -257,11 +269,19 @@ tcp_init_invalid(_Config) ->
 
 tcp_send_message(_Config) ->
     Owner = self(),
-    Opts = #{owner => Owner, mode => client, host => "localhost", port => 9998},
+    Opts =
+        #{owner => Owner,
+          mode => client,
+          host => "localhost",
+          port => 9998},
     case erlmcp_transport_validator:validate_init(erlmcp_transport_tcp, tcp, Opts) of
         {ok, State} ->
-            TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
-            Result = erlmcp_transport_validator:validate_send(erlmcp_transport_tcp, TestMessage, State),
+            TestMessage =
+                jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                             <<"method">> => <<"ping">>,
+                             <<"id">> => 1}),
+            Result =
+                erlmcp_transport_validator:validate_send(erlmcp_transport_tcp, TestMessage, State),
 
             %% Cleanup
             erlmcp_transport_validator:validate_close(erlmcp_transport_tcp, State),
@@ -274,7 +294,11 @@ tcp_send_message(_Config) ->
 
 tcp_close(_Config) ->
     Owner = self(),
-    Opts = #{owner => Owner, mode => client, host => "localhost", port => 9997},
+    Opts =
+        #{owner => Owner,
+          mode => client,
+          host => "localhost",
+          port => 9997},
     case erlmcp_transport_validator:validate_init(erlmcp_transport_tcp, tcp, Opts) of
         {ok, State} ->
             Result = erlmcp_transport_validator:validate_close(erlmcp_transport_tcp, State),
@@ -292,8 +316,12 @@ tcp_concurrent_connections(_Config) ->
 
 tcp_error_handling(_Config) ->
     InvalidState = undefined,
-    TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
-    Result = erlmcp_transport_validator:validate_send(erlmcp_transport_tcp, TestMessage, InvalidState),
+    TestMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
+    Result =
+        erlmcp_transport_validator:validate_send(erlmcp_transport_tcp, TestMessage, InvalidState),
     ?assertMatch({error, _}, Result),
     ct:comment("tcp error handling works").
 
@@ -343,15 +371,22 @@ http_round_trip(_Config) ->
     ct:comment("http round-trip test skipped (requires server)").
 
 http_message_format(_Config) ->
-    ValidMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+    ValidMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
     Result = erlmcp_transport_validator:validate_message_format(http, ValidMessage),
     ?assertEqual(ok, Result),
     ct:comment("http message format validation works").
 
 http_error_handling(_Config) ->
     InvalidState = undefined,
-    TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
-    Result = erlmcp_transport_validator:validate_send(erlmcp_transport_http, TestMessage, InvalidState),
+    TestMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
+    Result =
+        erlmcp_transport_validator:validate_send(erlmcp_transport_http, TestMessage, InvalidState),
     ?assertMatch({error, _}, Result),
     ct:comment("http error handling works").
 
@@ -397,8 +432,12 @@ websocket_concurrent_connections(_Config) ->
 
 websocket_error_handling(_Config) ->
     InvalidState = undefined,
-    TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
-    Result = erlmcp_transport_validator:validate_send(erlmcp_transport_ws, TestMessage, InvalidState),
+    TestMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
+    Result =
+        erlmcp_transport_validator:validate_send(erlmcp_transport_ws, TestMessage, InvalidState),
     ?assertMatch({error, _}, Result),
     ct:comment("websocket error handling works").
 
@@ -433,7 +472,10 @@ sse_round_trip(_Config) ->
     ct:comment("sse round-trip test skipped (transport may not be implemented)").
 
 sse_message_format(_Config) ->
-    ValidMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+    ValidMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
     Result = erlmcp_transport_validator:validate_message_format(sse, ValidMessage),
     ?assertEqual(ok, Result),
     ct:comment("sse message format validation works").
@@ -446,15 +488,15 @@ sse_error_handling(_Config) ->
 %%====================================================================
 
 all_transports_module_validation(_Config) ->
-    Transports = [
-        {erlmcp_transport_stdio, stdio},
-        {erlmcp_transport_tcp, tcp},
-        {erlmcp_transport_http, http},
-        {erlmcp_transport_ws, websocket}
-    ],
+    Transports =
+        [{erlmcp_transport_stdio, stdio},
+         {erlmcp_transport_tcp, tcp},
+         {erlmcp_transport_http, http},
+         {erlmcp_transport_ws, websocket}],
 
-    Results = [{Module, erlmcp_transport_validator:validate_transport_module(Module)}
-               || {Module, _Type} <- Transports],
+    Results =
+        [{Module, erlmcp_transport_validator:validate_transport_module(Module)}
+         || {Module, _Type} <- Transports],
 
     PassedCount = length([ok || {_Module, {ok, _}} <- Results]),
     ?assert(PassedCount >= 3),
@@ -462,19 +504,28 @@ all_transports_module_validation(_Config) ->
     ct:comment("Validated ~p transports, ~p passed", [length(Transports), PassedCount]).
 
 all_transports_message_format(_Config) ->
-    ValidMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+    ValidMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
     InvalidMessage = <<"not json">>,
 
     Transports = [stdio, tcp, http, websocket, sse],
 
-    ValidResults = [erlmcp_transport_validator:validate_message_format(T, ValidMessage)
-                    || T <- Transports],
+    ValidResults =
+        [erlmcp_transport_validator:validate_message_format(T, ValidMessage) || T <- Transports],
     AllValid = lists:all(fun(R) -> R =:= ok end, ValidResults),
     ?assert(AllValid),
 
-    InvalidResults = [erlmcp_transport_validator:validate_message_format(T, InvalidMessage)
-                      || T <- Transports],
-    AllInvalid = lists:all(fun({error, _}) -> true; (_) -> false end, InvalidResults),
+    InvalidResults =
+        [erlmcp_transport_validator:validate_message_format(T, InvalidMessage) || T <- Transports],
+    AllInvalid =
+        lists:all(fun ({error, _}) ->
+                          true;
+                      (_) ->
+                          false
+                  end,
+                  InvalidResults),
     ?assert(AllInvalid),
 
     ct:comment("All transports validate message format correctly").
@@ -485,16 +536,17 @@ concurrent_multi_transport(_Config) ->
     Opts = #{owner => Owner, test_mode => true},
 
     %% Initialize 5 stdio transports concurrently
-    Results = [erlmcp_transport_validator:validate_init(erlmcp_transport_stdio, stdio,
-                                                        Opts#{connection_id => N})
-               || N <- lists:seq(1, 5)],
+    Results =
+        [erlmcp_transport_validator:validate_init(erlmcp_transport_stdio,
+                                                  stdio,
+                                                  Opts#{connection_id => N})
+         || N <- lists:seq(1, 5)],
 
     SuccessCount = length([ok || {ok, _} <- Results]),
     ?assert(SuccessCount >= 3),
 
     %% Cleanup
-    [erlmcp_transport_validator:validate_close(erlmcp_transport_stdio, S)
-     || {ok, S} <- Results],
+    [erlmcp_transport_validator:validate_close(erlmcp_transport_stdio, S) || {ok, S} <- Results],
 
     ct:comment("Concurrent multi-transport test: ~p/5 succeeded", [SuccessCount]).
 
@@ -504,7 +556,8 @@ latency_comparison(_Config) ->
 
     case erlmcp_transport_validator:validate_init(erlmcp_transport_stdio, stdio, Opts) of
         {ok, State} ->
-            Result = erlmcp_transport_validator:validate_round_trip(erlmcp_transport_stdio, State, 100),
+            Result =
+                erlmcp_transport_validator:validate_round_trip(erlmcp_transport_stdio, State, 100),
             erlmcp_transport_validator:validate_close(erlmcp_transport_stdio, State),
 
             case Result of
@@ -524,11 +577,17 @@ stress_test_messages(_Config) ->
     case erlmcp_transport_validator:validate_init(erlmcp_transport_stdio, stdio, Opts) of
         {ok, State} ->
             %% Send 1000 messages
-            TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+            TestMessage =
+                jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                             <<"method">> => <<"ping">>,
+                             <<"id">> => 1}),
 
             StartTime = erlang:monotonic_time(millisecond),
-            Results = [erlmcp_transport_validator:validate_send(erlmcp_transport_stdio, TestMessage, State)
-                       || _ <- lists:seq(1, 1000)],
+            Results =
+                [erlmcp_transport_validator:validate_send(erlmcp_transport_stdio,
+                                                          TestMessage,
+                                                          State)
+                 || _ <- lists:seq(1, 1000)],
             EndTime = erlang:monotonic_time(millisecond),
 
             SuccessCount = length([ok || {ok, _} <- Results]),
@@ -549,7 +608,10 @@ connection_lifecycle_all(_Config) ->
     Opts = #{owner => Owner, test_mode => true},
     {ok, State} = erlmcp_transport_validator:validate_init(erlmcp_transport_stdio, stdio, Opts),
 
-    TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+    TestMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
     {ok, _} = erlmcp_transport_validator:validate_send(erlmcp_transport_stdio, TestMessage, State),
 
     ok = erlmcp_transport_validator:validate_close(erlmcp_transport_stdio, State),
@@ -558,35 +620,41 @@ connection_lifecycle_all(_Config) ->
 
 error_recovery_all(_Config) ->
     %% Test error recovery across transports
-    TestMessage = jsx:encode(#{<<"jsonrpc">> => <<"2.0">>, <<"method">> => <<"ping">>, <<"id">> => 1}),
+    TestMessage =
+        jsx:encode(#{<<"jsonrpc">> => <<"2.0">>,
+                     <<"method">> => <<"ping">>,
+                     <<"id">> => 1}),
 
-    Modules = [erlmcp_transport_stdio, erlmcp_transport_tcp, erlmcp_transport_http, erlmcp_transport_ws],
+    Modules =
+        [erlmcp_transport_stdio, erlmcp_transport_tcp, erlmcp_transport_http, erlmcp_transport_ws],
 
     %% All should handle invalid state gracefully
-    Results = [erlmcp_transport_validator:validate_send(M, TestMessage, undefined)
-               || M <- Modules],
+    Results = [erlmcp_transport_validator:validate_send(M, TestMessage, undefined) || M <- Modules],
 
-    AllFailed = lists:all(fun({error, _}) -> true; (_) -> false end, Results),
+    AllFailed =
+        lists:all(fun ({error, _}) ->
+                          true;
+                      (_) ->
+                          false
+                  end,
+                  Results),
     ?assert(AllFailed),
 
     ct:comment("All transports handle errors gracefully").
 
 compliance_summary(_Config) ->
     %% Generate compliance summary for all transports
-    Modules = [
-        erlmcp_transport_stdio,
-        erlmcp_transport_tcp,
-        erlmcp_transport_http,
-        erlmcp_transport_ws
-    ],
+    Modules =
+        [erlmcp_transport_stdio, erlmcp_transport_tcp, erlmcp_transport_http, erlmcp_transport_ws],
 
-    Results = [{Module, erlmcp_transport_validator:validate_transport_module(Module)}
-               || Module <- Modules],
+    Results =
+        [{Module, erlmcp_transport_validator:validate_transport_module(Module)}
+         || Module <- Modules],
 
     PassedCount = length([ok || {_Module, {ok, _}} <- Results]),
     FailedCount = length(Results) - PassedCount,
 
-    CompliancePercent = (PassedCount / length(Results)) * 100,
+    CompliancePercent = PassedCount / length(Results) * 100,
 
     ct:pal("~n=== Transport Validation Compliance Summary ===~n"
            "Total Transports Tested: ~p~n"

@@ -12,7 +12,9 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_interactive_SUITE).
+
 -compile(export_all).
+
 -include_lib("common_test/include/ct.hrl").
 
 %%%====================================================================
@@ -20,8 +22,7 @@
 %%%====================================================================
 
 all() ->
-    [
-     full_session_workflow_test,
+    [full_session_workflow_test,
      multi_command_execution_test,
      history_persistence_test,
      tab_completion_integration_test,
@@ -30,8 +31,7 @@ all() ->
      session_timeout_test,
      command_chaining_test,
      error_recovery_workflow_test,
-     plugin_integration_test
-    ].
+     plugin_integration_test].
 
 init_per_suite(Config) ->
     application:ensure_all_started(erlmcp),
@@ -90,9 +90,8 @@ multi_command_execution_test(_Config) ->
 
 history_persistence_test(_Config) ->
     %% Create session with persistent history
-    {ok, Session} = erlmcp_cli_interactive:start_link(#{
-        history_file => "/tmp/cli_history_test.txt"
-    }),
+    {ok, Session} =
+        erlmcp_cli_interactive:start_link(#{history_file => "/tmp/cli_history_test.txt"}),
 
     %% Execute commands
     {ok, _} = erlmcp_cli_interactive:execute(Session, "help"),
@@ -102,9 +101,8 @@ history_persistence_test(_Config) ->
     ok = erlmcp_cli_interactive:stop(Session),
 
     %% Start new session with same history file
-    {ok, NewSession} = erlmcp_cli_interactive:start_link(#{
-        history_file => "/tmp/cli_history_test.txt"
-    }),
+    {ok, NewSession} =
+        erlmcp_cli_interactive:start_link(#{history_file => "/tmp/cli_history_test.txt"}),
 
     %% Verify history loaded
     {ok, History} = erlmcp_cli_interactive:get_history(NewSession),
@@ -150,15 +148,15 @@ multi_line_command_test(_Config) ->
 
 concurrent_sessions_test(_Config) ->
     %% Start 10 concurrent sessions
-    Sessions = [begin
-        {ok, S} = erlmcp_cli_interactive:start_link(#{session_id => N}),
-        S
-    end || N <- lists:seq(1, 10)],
+    Sessions =
+        [begin
+             {ok, S} = erlmcp_cli_interactive:start_link(#{session_id => N}),
+             S
+         end
+         || N <- lists:seq(1, 10)],
 
     %% Execute commands concurrently
-    [spawn(fun() ->
-        {ok, _} = erlmcp_cli_interactive:execute(S, "help")
-    end) || S <- Sessions],
+    [spawn(fun() -> {ok, _} = erlmcp_cli_interactive:execute(S, "help") end) || S <- Sessions],
 
     timer:sleep(1000),
 
@@ -172,9 +170,7 @@ concurrent_sessions_test(_Config) ->
 
 session_timeout_test(_Config) ->
     %% Start session with 1 second idle timeout
-    {ok, Session} = erlmcp_cli_interactive:start_link(#{
-        idle_timeout => 1000
-    }),
+    {ok, Session} = erlmcp_cli_interactive:start_link(#{idle_timeout => 1000}),
 
     %% Wait for timeout
     timer:sleep(1500),
@@ -230,5 +226,6 @@ plugin_integration_test(_Config) ->
 %%%====================================================================
 
 create_test_plugin(Path) ->
-    Code = "-module(test_plugin).\n-export([init/1, execute/2]).\n\ninit(_Config) -> {ok, #{}}.\nexecute(hello, _Args) -> {ok, \"Hello from plugin\"}.\n",
+    Code =
+        "-module(test_plugin).\n-export([init/1, execute/2]).\n\ninit(_Config) -> {ok, #{}}.\nexecute(hello, _Args) -> {ok, \"Hello from plugin\"}.\n",
     file:write_file(Path, Code).

@@ -14,8 +14,7 @@ dot_format_test_() ->
     {foreach,
      fun setup/0,
      fun cleanup/1,
-     [
-      {"Generate DOT from process info", fun test_call_graph_to_dot/0},
+     [{"Generate DOT from process info", fun test_call_graph_to_dot/0},
       {"Generate DOT with registered name", fun test_call_graph_to_dot_registered/0},
       {"Process info to map conversion", fun test_process_info_to_map/0},
       {"Timestamp generation", fun test_timestamp/0},
@@ -23,8 +22,7 @@ dot_format_test_() ->
       {"Visualize call graph with missing ref", fun test_visualize_call_graph_missing_ref/0},
       {"DOT format validity", fun test_dot_format_validity/0},
       {"DOT format with current function", fun test_dot_format_with_current_function/0},
-      {"DOT format with unknown current function", fun test_dot_format_unknown_function/0}
-     ]}.
+      {"DOT format with unknown current function", fun test_dot_format_unknown_function/0}]}.
 
 setup() ->
     application:ensure_all_started(erlmcp_observability),
@@ -45,14 +43,17 @@ cleanup(Pid) ->
 
 test_call_graph_to_dot() ->
     %% Create minimal process info map
-    Pid = spawn(fun() -> receive after infinity -> ok end end),
-    ProcInfo = #{
-        pid => Pid,
-        registered_name => undefined,
-        message_queue_len => 5,
-        memory => 12345,
-        current_function => {erlmcp_server, handle_call, 3}
-    },
+    Pid = spawn(fun() ->
+                   receive after infinity ->
+                       ok
+                   end
+                end),
+    ProcInfo =
+        #{pid => Pid,
+          registered_name => undefined,
+          message_queue_len => 5,
+          memory => 12345,
+          current_function => {erlmcp_server, handle_call, 3}},
 
     %% Generate DOT
     DOT = erlmcp_debugger:call_graph_to_dot(ProcInfo),
@@ -76,14 +77,17 @@ test_call_graph_to_dot() ->
 
 test_call_graph_to_dot_registered() ->
     %% Test with registered process name
-    Pid = spawn(fun() -> receive after infinity -> ok end end),
-    ProcInfo = #{
-        pid => Pid,
-        registered_name => my_registered_process,
-        message_queue_len => 0,
-        memory => 6789,
-        current_function => {gen_server, loop, 7}
-    },
+    Pid = spawn(fun() ->
+                   receive after infinity ->
+                       ok
+                   end
+                end),
+    ProcInfo =
+        #{pid => Pid,
+          registered_name => my_registered_process,
+          message_queue_len => 0,
+          memory => 6789,
+          current_function => {gen_server, loop, 7}},
 
     %% Generate DOT
     DOT = erlmcp_debugger:call_graph_to_dot(ProcInfo),
@@ -100,13 +104,12 @@ test_call_graph_to_dot_registered() ->
 
 test_process_info_to_map() ->
     %% Test process_info_to_map conversion
-    InfoList = [
-        {pid, self()},
-        {registered_name, test_process},
-        {message_queue_len, 10},
-        {memory, 9999},
-        {current_function, {module, function, 2}}
-    ],
+    InfoList =
+        [{pid, self()},
+         {registered_name, test_process},
+         {message_queue_len, 10},
+         {memory, 9999},
+         {current_function, {module, function, 2}}],
 
     Map = erlmcp_debugger:process_info_to_map(InfoList),
 
@@ -167,14 +170,17 @@ test_visualize_call_graph_missing_ref() ->
 
 test_dot_format_validity() ->
     %% Test that DOT format is syntactically valid
-    Pid = spawn(fun() -> receive after infinity -> ok end end),
-    ProcInfo = #{
-        pid => Pid,
-        registered_name => undefined,
-        message_queue_len => 1,
-        memory => 5000,
-        current_function => {erlmcp_core, init, 1}
-    },
+    Pid = spawn(fun() ->
+                   receive after infinity ->
+                       ok
+                   end
+                end),
+    ProcInfo =
+        #{pid => Pid,
+          registered_name => undefined,
+          message_queue_len => 1,
+          memory => 5000,
+          current_function => {erlmcp_core, init, 1}},
 
     DOT = erlmcp_debugger:call_graph_to_dot(ProcInfo),
     FlatDOT = lists:flatten(DOT),
@@ -192,14 +198,17 @@ test_dot_format_validity() ->
 
 test_dot_format_with_current_function() ->
     %% Test DOT format includes current function info
-    Pid = spawn(fun() -> receive after infinity -> ok end end),
-    ProcInfo = #{
-        pid => Pid,
-        registered_name => my_process,
-        message_queue_len => 3,
-        memory => 25000,
-        current_function => {erlmcp_json_rpc, decode, 1}
-    },
+    Pid = spawn(fun() ->
+                   receive after infinity ->
+                       ok
+                   end
+                end),
+    ProcInfo =
+        #{pid => Pid,
+          registered_name => my_process,
+          message_queue_len => 3,
+          memory => 25000,
+          current_function => {erlmcp_json_rpc, decode, 1}},
 
     DOT = erlmcp_debugger:call_graph_to_dot(ProcInfo),
     FlatDOT = lists:flatten(DOT),
@@ -216,14 +225,17 @@ test_dot_format_with_current_function() ->
 
 test_dot_format_unknown_function() ->
     %% Test DOT format handles unknown current function
-    Pid = spawn(fun() -> receive after infinity -> ok end end),
-    ProcInfo = #{
-        pid => Pid,
-        registered_name => undefined,
-        message_queue_len => 0,
-        memory => 1000,
-        current_function => undefined
-    },
+    Pid = spawn(fun() ->
+                   receive after infinity ->
+                       ok
+                   end
+                end),
+    ProcInfo =
+        #{pid => Pid,
+          registered_name => undefined,
+          message_queue_len => 0,
+          memory => 1000,
+          current_function => undefined},
 
     DOT = erlmcp_debugger:call_graph_to_dot(ProcInfo),
     FlatDOT = lists:flatten(DOT),

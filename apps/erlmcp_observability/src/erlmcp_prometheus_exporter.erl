@@ -24,13 +24,7 @@
 -behaviour(gen_server).
 
 %% API
--export([
-    start_link/0,
-    start_link/1,
-    export/0,
-    export_with_system_metrics/0
-]).
-
+-export([start_link/0, start_link/1, export/0, export_with_system_metrics/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -39,10 +33,7 @@
 -define(SERVER, ?MODULE).
 -define(DEFAULT_PORT, 9090).
 
--record(state, {
-    port :: non_neg_integer(),
-    start_time :: integer()
-}).
+-record(state, {port :: non_neg_integer(), start_time :: integer()}).
 
 %%====================================================================
 %% API Functions
@@ -78,18 +69,13 @@ export_with_system_metrics() ->
 -spec init([non_neg_integer()]) -> {ok, #state{}}.
 init([Port]) ->
     ?LOG_INFO("Prometheus exporter starting on port ~p~n", [Port]),
-    State = #state{
-        port = Port,
-        start_time = erlang:system_time(millisecond)
-    },
+    State = #state{port = Port, start_time = erlang:system_time(millisecond)},
     {ok, State}.
 
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
 handle_call(export, _From, State) ->
     Metrics = export_with_system_metrics(),
     {reply, Metrics, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -123,66 +109,54 @@ export_system_metrics() ->
     Schedulers = erlang:system_info(schedulers),
     SchedulersOnline = erlang:system_info(schedulers_online),
 
-    [
-        "# HELP erlmcp_memory_total_bytes Total memory allocated\n",
-        "# TYPE erlmcp_memory_total_bytes gauge\n",
-        io_lib:format("erlmcp_memory_total_bytes ~p~n", [proplists:get_value(total, Memory)]),
-        "\n",
-        "# HELP erlmcp_memory_processes_bytes Memory used by processes\n",
-        "# TYPE erlmcp_memory_processes_bytes gauge\n",
-        io_lib:format("erlmcp_memory_processes_bytes ~p~n", [proplists:get_value(processes, Memory)]),
-        "\n",
-        "# HELP erlmcp_memory_system_bytes Memory used by system\n",
-        "# TYPE erlmcp_memory_system_bytes gauge\n",
-        io_lib:format("erlmcp_memory_system_bytes ~p~n", [proplists:get_value(system, Memory)]),
-        "\n",
-        "# HELP erlmcp_process_count Current number of processes\n",
-        "# TYPE erlmcp_process_count gauge\n",
-        io_lib:format("erlmcp_process_count ~p~n", [ProcessCount]),
-        "\n",
-        "# HELP erlmcp_port_count Current number of ports\n",
-        "# TYPE erlmcp_port_count gauge\n",
-        io_lib:format("erlmcp_port_count ~p~n", [PortCount]),
-        "\n",
-        "# HELP erlmcp_schedulers Total number of schedulers\n",
-        "# TYPE erlmcp_schedulers gauge\n",
-        io_lib:format("erlmcp_schedulers ~p~n", [Schedulers]),
-        "\n",
-        "# HELP erlmcp_schedulers_online Number of schedulers online\n",
-        "# TYPE erlmcp_schedulers_online gauge\n",
-        io_lib:format("erlmcp_schedulers_online ~p~n", [SchedulersOnline])
-    ].
+    ["# HELP erlmcp_memory_total_bytes Total memory allocated\n",
+     "# TYPE erlmcp_memory_total_bytes gauge\n",
+     io_lib:format("erlmcp_memory_total_bytes ~p~n", [proplists:get_value(total, Memory)]), "\n",
+     "# HELP erlmcp_memory_processes_bytes Memory used by processes\n",
+     "# TYPE erlmcp_memory_processes_bytes gauge\n",
+     io_lib:format("erlmcp_memory_processes_bytes ~p~n", [proplists:get_value(processes, Memory)]),
+     "\n", "# HELP erlmcp_memory_system_bytes Memory used by system\n",
+     "# TYPE erlmcp_memory_system_bytes gauge\n",
+     io_lib:format("erlmcp_memory_system_bytes ~p~n", [proplists:get_value(system, Memory)]), "\n",
+     "# HELP erlmcp_process_count Current number of processes\n",
+     "# TYPE erlmcp_process_count gauge\n",
+     io_lib:format("erlmcp_process_count ~p~n", [ProcessCount]), "\n",
+     "# HELP erlmcp_port_count Current number of ports\n", "# TYPE erlmcp_port_count gauge\n",
+     io_lib:format("erlmcp_port_count ~p~n", [PortCount]), "\n",
+     "# HELP erlmcp_schedulers Total number of schedulers\n", "# TYPE erlmcp_schedulers gauge\n",
+     io_lib:format("erlmcp_schedulers ~p~n", [Schedulers]), "\n",
+     "# HELP erlmcp_schedulers_online Number of schedulers online\n",
+     "# TYPE erlmcp_schedulers_online gauge\n",
+     io_lib:format("erlmcp_schedulers_online ~p~n", [SchedulersOnline])].
 
 %% @doc Export flag metrics in Prometheus format
 -spec export_flag_metrics() -> iolist().
 export_flag_metrics() ->
     Flags = erlmcp_flags:get_all(),
-    [
-        "# HELP erlmcp_accepting_connections Whether server is accepting connections (1=yes, 0=no)\n",
-        "# TYPE erlmcp_accepting_connections gauge\n",
-        io_lib:format("erlmcp_accepting_connections ~p~n",
-                      [bool_to_int(maps:get(accepting_connections, Flags))]),
-        "\n",
-        "# HELP erlmcp_maintenance_mode Whether system is in maintenance mode (1=yes, 0=no)\n",
-        "# TYPE erlmcp_maintenance_mode gauge\n",
-        io_lib:format("erlmcp_maintenance_mode ~p~n",
-                      [bool_to_int(maps:get(maintenance_mode, Flags))]),
-        "\n",
-        "# HELP erlmcp_shutting_down Whether system is shutting down (1=yes, 0=no)\n",
-        "# TYPE erlmcp_shutting_down gauge\n",
-        io_lib:format("erlmcp_shutting_down ~p~n",
-                      [bool_to_int(maps:get(shutting_down, Flags))]),
-        "\n",
-        "# HELP erlmcp_healthy Whether system is healthy (1=yes, 0=no)\n",
-        "# TYPE erlmcp_healthy gauge\n",
-        io_lib:format("erlmcp_healthy ~p~n",
-                      [bool_to_int(maps:get(healthy, Flags))])
-    ].
+    ["# HELP erlmcp_accepting_connections Whether server is accepting connections (1=yes, 0=no)\n",
+     "# TYPE erlmcp_accepting_connections gauge\n",
+     io_lib:format("erlmcp_accepting_connections ~p~n",
+                   [bool_to_int(maps:get(accepting_connections, Flags))]),
+     "\n",
+     "# HELP erlmcp_maintenance_mode Whether system is in maintenance mode (1=yes, 0=no)\n",
+     "# TYPE erlmcp_maintenance_mode gauge\n",
+     io_lib:format("erlmcp_maintenance_mode ~p~n",
+                   [bool_to_int(maps:get(maintenance_mode, Flags))]),
+     "\n",
+     "# HELP erlmcp_shutting_down Whether system is shutting down (1=yes, 0=no)\n",
+     "# TYPE erlmcp_shutting_down gauge\n",
+     io_lib:format("erlmcp_shutting_down ~p~n", [bool_to_int(maps:get(shutting_down, Flags))]),
+     "\n",
+     "# HELP erlmcp_healthy Whether system is healthy (1=yes, 0=no)\n",
+     "# TYPE erlmcp_healthy gauge\n",
+     io_lib:format("erlmcp_healthy ~p~n", [bool_to_int(maps:get(healthy, Flags))])].
 
 %% @doc Convert boolean to integer for Prometheus
 -spec bool_to_int(boolean()) -> 0 | 1.
-bool_to_int(true) -> 1;
-bool_to_int(false) -> 0.
+bool_to_int(true) ->
+    1;
+bool_to_int(false) ->
+    0.
 
 %%====================================================================
 %% Utility Functions

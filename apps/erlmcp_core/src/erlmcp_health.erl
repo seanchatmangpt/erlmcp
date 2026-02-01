@@ -18,23 +18,16 @@
 -export([start_link/0]).
 -export([check/0]).
 -export([register_check/2, unregister_check/1]).
-
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %% Types
 -type check_name() :: atom().
 -type check_result() :: healthy | degraded | unhealthy.
 -type check_fun() :: {module(), atom(), [term()]}.
--type health_report() :: #{
-    healthy := boolean(),
-    checks := #{check_name() := check_result()}
-}.
+-type health_report() :: #{healthy := boolean(), checks := #{check_name() := check_result()}}.
 
--record(state, {
-    checks :: #{check_name() => check_fun()}
-}).
+-record(state, {checks :: #{check_name() => check_fun()}}).
 
 %%%===================================================================
 %%% API
@@ -73,50 +66,35 @@ init([]) ->
 
     %% Register default checks for core services
     %% These checks verify that critical gen_servers are running
-    DefaultChecks = #{
-        registry => {erlmcp_registry, get_pid, []},
-        session_manager => {erlmcp_session_manager, list_sessions, []}
-    },
+    DefaultChecks =
+        #{registry => {erlmcp_registry, get_pid, []},
+          session_manager => {erlmcp_session_manager, list_sessions, []}},
 
-    logger:info("Starting health check server with ~p default checks",
-                [maps:size(DefaultChecks)]),
+    logger:info("Starting health check server with ~p default checks", [maps:size(DefaultChecks)]),
 
     {ok, #state{checks = DefaultChecks}}.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, term(), #state{}}.
-
+-spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
 handle_call(check, _From, State) ->
     %% Run all health checks and collect results
-    Results = maps:map(
-        fun(_Name, {M, F, A}) ->
-            run_check(M, F, A)
-        end,
-        State#state.checks
-    ),
+    Results = maps:map(fun(_Name, {M, F, A}) -> run_check(M, F, A) end, State#state.checks),
 
     %% Overall healthy if no checks returned unhealthy
     AllResults = maps:values(Results),
     Healthy = not lists:member(unhealthy, AllResults),
 
-    Report = #{
-        healthy => Healthy,
-        checks => Results
-    },
+    Report = #{healthy => Healthy, checks => Results},
 
     {reply, Report, State};
-
 handle_call({register, Name, CheckFun}, _From, State) ->
     NewChecks = maps:put(Name, CheckFun, State#state.checks),
     logger:info("Registered health check: ~p", [Name]),
     {reply, ok, State#state{checks = NewChecks}};
-
 handle_call({unregister, Name}, _From, State) ->
     NewChecks = maps:remove(Name, State#state.checks),
     logger:info("Unregistered health check: ~p", [Name]),
     {reply, ok, State#state{checks = NewChecks}};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -163,9 +141,12 @@ run_check(M, F, A) ->
             Atom when is_atom(Atom) ->
                 %% Atom results (e.g., node(), undefined) are healthy if not error atom
                 case Atom of
-                    undefined -> degraded;
-                    error -> unhealthy;
-                    _ -> healthy
+                    undefined ->
+                        degraded;
+                    error ->
+                        unhealthy;
+                    _ ->
+                        healthy
                 end;
             Int when is_integer(Int) ->
                 %% Integer results (e.g., timestamps, counts) are healthy
@@ -174,14 +155,18 @@ run_check(M, F, A) ->
                 %% Tuple results (e.g., timestamps, MFA results) are healthy
                 %% unless they're error tuples
                 case Tuple of
-                    {error, _} -> unhealthy;
-                    _ -> healthy
+                    {error, _} ->
+                        unhealthy;
+                    _ ->
+                        healthy
                 end;
             Pid when is_pid(Pid) ->
                 %% Pid result - check if alive
                 case erlang:is_process_alive(Pid) of
-                    true -> healthy;
-                    false -> unhealthy
+                    true ->
+                        healthy;
+                    false ->
+                        unhealthy
                 end;
             _ ->
                 degraded

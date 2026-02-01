@@ -9,9 +9,7 @@
 -module(erlmcp_cpu_guard).
 
 %% API
--export([
-    execute_with_protection/5
-]).
+-export([execute_with_protection/5]).
 
 %%====================================================================
 %% API Functions
@@ -20,7 +18,7 @@
 %% @doc Execute function with CPU time protection
 %% Returns: {ok, Result, CpuTime} | {error, Reason}
 -spec execute_with_protection(term(), term(), function(), list(), pos_integer()) ->
-    {ok, term(), non_neg_integer()} | {error, term()}.
+                                 {ok, term(), non_neg_integer()} | {error, term()}.
 execute_with_protection(_ClientId, _Operation, Function, Args, Timeout) ->
     try
         %% Execute with timeout

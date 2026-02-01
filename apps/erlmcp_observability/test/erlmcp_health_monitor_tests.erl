@@ -23,18 +23,16 @@ health_monitor_test_() ->
     {setup,
      fun setup_health_monitor/0,
      fun cleanup_health_monitor/1,
-     [
-         {"Start and stop health monitor", fun test_start_stop/0},
-         {"Register component", fun test_register_component/0},
-         {"Unregister component", fun test_unregister_component/0},
-         {"Get component health", fun test_get_component_health/0},
-         {"Get all component health", fun test_get_all_component_health/0},
-         {"Get system health", fun test_get_system_health/0},
-         {"Set health check config", fun test_set_health_check_config/0},
-         {"Report circuit breaker", fun test_report_circuit_breaker/0},
-         {"Report degradation", fun test_report_degradation/0},
-         {"Reset health status", fun test_reset_health_status/0}
-     ]}.
+     [{"Start and stop health monitor", fun test_start_stop/0},
+      {"Register component", fun test_register_component/0},
+      {"Unregister component", fun test_unregister_component/0},
+      {"Get component health", fun test_get_component_health/0},
+      {"Get all component health", fun test_get_all_component_health/0},
+      {"Get system health", fun test_get_system_health/0},
+      {"Set health check config", fun test_set_health_check_config/0},
+      {"Report circuit breaker", fun test_report_circuit_breaker/0},
+      {"Report degradation", fun test_report_degradation/0},
+      {"Reset health status", fun test_reset_health_status/0}]}.
 
 setup_health_monitor() ->
     {ok, Pid} = erlmcp_health_monitor:start_link(),
@@ -117,13 +115,11 @@ get_component_health_not_found_test_() ->
      fun setup_health_monitor/0,
      fun cleanup_health_monitor/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Query non-existent component
-              Result = erlmcp_health_monitor:get_component_health(nonexistent),
-              ?assertEqual(not_found, Result)
-          end)
-         ]
+        [?_test(begin
+                    % Query non-existent component
+                    Result = erlmcp_health_monitor:get_component_health(nonexistent),
+                    ?assertEqual(not_found, Result)
+                end)]
      end}.
 
 %% Test getting all component health
@@ -171,10 +167,7 @@ test_set_health_check_config() ->
     ok = erlmcp_health_monitor:register_component(config_comp, TestPid),
 
     % Set health check config
-    Config = #{
-        check_interval => 60000,
-        timeout => 10000
-    },
+    Config = #{check_interval => 60000, timeout => 10000},
     Result = erlmcp_health_monitor:set_health_check_config(config_comp, Config),
     ?assertEqual(ok, Result),
 
@@ -263,22 +256,17 @@ register_with_check_fun_test_() ->
      fun setup_health_monitor/0,
      fun cleanup_health_monitor/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              TestPid = self(),
+        [?_test(begin
+                    TestPid = self(),
 
-              % Define a health check function
-              CheckFun = fun() -> healthy end,
+                    % Define a health check function
+                    CheckFun = fun() -> healthy end,
 
-              % Register component with health check function
-              Result = erlmcp_health_monitor:register_component(
-                  checked_comp,
-                  TestPid,
-                  CheckFun
-              ),
-              ?assertEqual(ok, Result)
-          end)
-         ]
+                    % Register component with health check function
+                    Result =
+                        erlmcp_health_monitor:register_component(checked_comp, TestPid, CheckFun),
+                    ?assertEqual(ok, Result)
+                end)]
      end}.
 
 %% Test multiple registrations of same component
@@ -287,18 +275,16 @@ multiple_registration_test_() ->
      fun setup_health_monitor/0,
      fun cleanup_health_monitor/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              TestPid = self(),
+        [?_test(begin
+                    TestPid = self(),
 
-              % Register component twice
-              ok = erlmcp_health_monitor:register_component(multi_comp, TestPid),
-              Result = erlmcp_health_monitor:register_component(multi_comp, TestPid),
+                    % Register component twice
+                    ok = erlmcp_health_monitor:register_component(multi_comp, TestPid),
+                    Result = erlmcp_health_monitor:register_component(multi_comp, TestPid),
 
-              % Should return ok (updates existing registration)
-              ?assertEqual(ok, Result)
-          end)
-         ]
+                    % Should return ok (updates existing registration)
+                    ?assertEqual(ok, Result)
+                end)]
      end}.
 
 %% Test system metrics structure
@@ -307,20 +293,18 @@ system_metrics_structure_test_() ->
      fun setup_health_monitor/0,
      fun cleanup_health_monitor/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              % Get system health
-              SystemHealth = erlmcp_health_monitor:get_system_health(),
+        [?_test(begin
+                    % Get system health
+                    SystemHealth = erlmcp_health_monitor:get_system_health(),
 
-              % Verify system metrics structure
-              SystemMetrics = maps:get(system_metrics, SystemHealth),
-              ?assert(is_map(SystemMetrics)),
-              ?assert(maps:is_key(memory_status, SystemMetrics)),
-              ?assert(maps:is_key(process_count, SystemMetrics)),
-              ?assert(maps:is_key(system_load, SystemMetrics)),
-              ?assert(maps:is_key(last_check, SystemMetrics))
-          end)
-         ]
+                    % Verify system metrics structure
+                    SystemMetrics = maps:get(system_metrics, SystemHealth),
+                    ?assert(is_map(SystemMetrics)),
+                    ?assert(maps:is_key(memory_status, SystemMetrics)),
+                    ?assert(maps:is_key(process_count, SystemMetrics)),
+                    ?assert(maps:is_key(system_load, SystemMetrics)),
+                    ?assert(maps:is_key(last_check, SystemMetrics))
+                end)]
      end}.
 
 %%====================================================================
@@ -333,49 +317,47 @@ health_monitor_workflow_test_() ->
      fun setup_health_monitor/0,
      fun cleanup_health_monitor/1,
      fun(_Pid) ->
-         [
-          ?_test(begin
-              TestPid = self(),
+        [?_test(begin
+                    TestPid = self(),
 
-              % Register multiple components
-              ok = erlmcp_health_monitor:register_component(server1, TestPid),
-              ok = erlmcp_health_monitor:register_component(server2, TestPid),
+                    % Register multiple components
+                    ok = erlmcp_health_monitor:register_component(server1, TestPid),
+                    ok = erlmcp_health_monitor:register_component(server2, TestPid),
 
-              % Set configuration for one component
-              Config = #{check_interval => 30000},
-              ok = erlmcp_health_monitor:set_health_check_config(server1, Config),
+                    % Set configuration for one component
+                    Config = #{check_interval => 30000},
+                    ok = erlmcp_health_monitor:set_health_check_config(server1, Config),
 
-              % Report degradation on one component
-              ok = erlmcp_health_monitor:report_degradation(server1),
+                    % Report degradation on one component
+                    ok = erlmcp_health_monitor:report_degradation(server1),
 
-              % Report circuit breaker on another
-              ok = erlmcp_health_monitor:report_circuit_breaker(server2, open),
+                    % Report circuit breaker on another
+                    ok = erlmcp_health_monitor:report_circuit_breaker(server2, open),
 
-              % Verify individual component health
-              Server1Health = erlmcp_health_monitor:get_component_health(server1),
-              ?assertEqual(degraded, Server1Health),
+                    % Verify individual component health
+                    Server1Health = erlmcp_health_monitor:get_component_health(server1),
+                    ?assertEqual(degraded, Server1Health),
 
-              Server2Health = erlmcp_health_monitor:get_component_health(server2),
-              ?assertEqual(unhealthy, Server2Health),
+                    Server2Health = erlmcp_health_monitor:get_component_health(server2),
+                    ?assertEqual(unhealthy, Server2Health),
 
-              % Verify all component health
-              AllHealth = erlmcp_health_monitor:get_all_component_health(),
-              ?assertEqual(2, maps:size(AllHealth)),
+                    % Verify all component health
+                    AllHealth = erlmcp_health_monitor:get_all_component_health(),
+                    ?assertEqual(2, maps:size(AllHealth)),
 
-              % Verify system health
-              SystemHealth = erlmcp_health_monitor:get_system_health(),
-              ?assert(is_map(SystemHealth)),
-              ?assert(maps:is_key(overall_status, SystemHealth)),
+                    % Verify system health
+                    SystemHealth = erlmcp_health_monitor:get_system_health(),
+                    ?assert(is_map(SystemHealth)),
+                    ?assert(maps:is_key(overall_status, SystemHealth)),
 
-              % Reset all health status
-              ok = erlmcp_health_monitor:reset_health_status(),
+                    % Reset all health status
+                    ok = erlmcp_health_monitor:reset_health_status(),
 
-              % Verify reset
-              ResetServer1 = erlmcp_health_monitor:get_component_health(server1),
-              ?assertEqual(unknown, ResetServer1),
+                    % Verify reset
+                    ResetServer1 = erlmcp_health_monitor:get_component_health(server1),
+                    ?assertEqual(unknown, ResetServer1),
 
-              ResetServer2 = erlmcp_health_monitor:get_component_health(server2),
-              ?assertEqual(unknown, ResetServer2)
-          end)
-         ]
+                    ResetServer2 = erlmcp_health_monitor:get_component_health(server2),
+                    ?assertEqual(unknown, ResetServer2)
+                end)]
      end}.
