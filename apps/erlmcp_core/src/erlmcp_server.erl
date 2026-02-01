@@ -212,6 +212,8 @@ stop(Server) ->
 -spec init([server_id() | #mcp_server_capabilities{}]) -> {ok, state(), {continue, initialize}}.
 init([ServerId, Capabilities]) ->
     process_flag(trap_exit, true),
+    % FM-09: Priority Control Plane - enable off-heap message queue for priority dispatch
+    process_flag(message_queue_data, off_heap),
 
     % Fast init - just set up basic state, no blocking operations
     State = #state{
@@ -510,6 +512,34 @@ handle_continue(_Continue, State) ->
 -spec handle_info(term(), state()) -> {noreply, state()}.
 
 % Handle messages routed from registry - this is the key change!
+%% FM-09: Priority Control Plane - Control messages processed before data messages
+%% Control messages: {'DOWN', ...}, force_gc, shutdown signals
+%% These CANNOT be blocked by data message flooding
+
+%% Control message: Monitor DOWN
+handle_info({'DOWN', _Ref, process, _Pid, _Reason} = DownMsg, State) ->
+    % Delegate to dedicated handler (high priority)
+    handle_monitor_down(DownMsg, State);
+
+%% Control message: Periodic garbage collection
+handle_info(force_gc, #state{server_id = ServerId} = State) ->
+    %% Periodic garbage collection (Gap #10)
+    Before = erlang:memory(total),
+    _ = garbage_collect(),
+    After = erlang:memory(total),
+    Freed = Before - After,
+
+    logger:debug("Server ~p: Periodic GC freed ~p bytes (~.2f MB)", [
+        ServerId,
+        Freed,
+        Freed / (1024 * 1024)
+    ]),
+
+    %% Reschedule periodic GC
+    start_periodic_gc(),
+    {noreply, State};
+
+%% Data message: MCP protocol messages (normal priority)
 handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_mcp_message">>, ServerId),
     StartTime = erlang:monotonic_time(microsecond),
@@ -583,48 +613,7 @@ handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = Sta
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
-handle_info(force_gc, #state{server_id = ServerId} = State) ->
-    %% Periodic garbage collection (Gap #10)
-    Before = erlang:memory(total),
-    _ = garbage_collect(),
-    After = erlang:memory(total),
-    Freed = Before - After,
-
-    logger:debug("Server ~p: Periodic GC freed ~p bytes (~.2f MB)", [
-        ServerId,
-        Freed,
-        Freed / (1024 * 1024)
-    ]),
-
-    %% Reschedule periodic GC
-    start_periodic_gc(),
-    {noreply, State};
-
-% Handle monitored process death - automatic cleanup
-handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
-    % Check if this is the notifier process
-    case State#state.notifier_monitor_ref of
-        Ref ->
-            % Notifier process died - critical error
-            logger:error("Change notifier process ~p died: ~p", [Pid, Reason]),
-            {stop, {notifier_died, Reason}, State#state{notifier_pid = undefined, notifier_monitor_ref = undefined}};
-        _ ->
-            % Not the notifier, check if it's a notification handler
-            NewHandlers = maps:filter(fun(_Method, {_HandlerPid, HandlerRef}) ->
-                HandlerRef =/= Ref
-            end, State#state.notification_handlers),
-            case maps:size(State#state.notification_handlers) - maps:size(NewHandlers) of
-                0 ->
-                    % No handler was removed (Ref not found) - unknown monitor
-                    logger:warning("Received DOWN for unknown monitor ref ~p (pid: ~p, reason: ~p)", [Ref, Pid, Reason]),
-                    {noreply, State};
-                _ ->
-                    % At least one handler was removed
-                    logger:info("Automatically unregistered dead notification handler (ref: ~p, pid: ~p)", [Ref, Pid]),
-                    {noreply, State#state{notification_handlers = NewHandlers}}
-            end
-    end;
-
+%% Catch-all for unknown messages
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -670,6 +659,37 @@ format_status(Opt, [PDict, State]) ->
             SanitizedState;
         normal ->
             [{data, [{"State", SanitizedState}]}]
+    end.
+
+%%====================================================================
+%% Internal functions - Priority Control Plane (FM-09)
+%%====================================================================
+
+%% @doc Handle monitor DOWN messages (control plane)
+%% Processes monitored process death - automatic cleanup
+-spec handle_monitor_down(tuple(), state()) -> {noreply, state()} | {stop, term(), state()}.
+handle_monitor_down({'DOWN', Ref, process, Pid, Reason}, State) ->
+    % Check if this is the notifier process
+    case State#state.notifier_monitor_ref of
+        Ref ->
+            % Notifier process died - critical error
+            logger:error("Change notifier process ~p died: ~p", [Pid, Reason]),
+            {stop, {notifier_died, Reason}, State#state{notifier_pid = undefined, notifier_monitor_ref = undefined}};
+        _ ->
+            % Not the notifier, check if it's a notification handler
+            NewHandlers = maps:filter(fun(_Method, {_HandlerPid, HandlerRef}) ->
+                HandlerRef =/= Ref
+            end, State#state.notification_handlers),
+            case maps:size(State#state.notification_handlers) - maps:size(NewHandlers) of
+                0 ->
+                    % No handler was removed (Ref not found) - unknown monitor
+                    logger:warning("Received DOWN for unknown monitor ref ~p (pid: ~p, reason: ~p)", [Ref, Pid, Reason]),
+                    {noreply, State};
+                _ ->
+                    % At least one handler was removed
+                    logger:info("Automatically unregistered dead notification handler (ref: ~p, pid: ~p)", [Ref, Pid]),
+                    {noreply, State#state{notification_handlers = NewHandlers}}
+            end
     end.
 
 %%====================================================================

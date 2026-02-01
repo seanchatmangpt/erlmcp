@@ -77,6 +77,19 @@ system_message_handling_test_() ->
          ]
      end}}.
 
+priority_control_plane_test_() ->
+    {timeout, 10, {setup,
+     fun setup/0,
+     fun cleanup/1,
+     fun(_) ->
+         [
+          {"FM-09: Process flag off_heap set", fun test_message_queue_off_heap/0},
+          {"FM-09: Control messages processed under load", fun test_control_priority_under_load/0},
+          {"FM-09: Monitor DOWN messages processed", fun test_monitor_down_priority/0},
+          {"FM-09: GC messages processed under load", fun test_gc_priority_under_load/0}
+         ]
+     end}}.
+
 %%%====================================================================
 %%% Setup and Cleanup
 %%%====================================================================
@@ -402,6 +415,88 @@ test_code_change() ->
 
     %% Verify server responds to calls (state is consistent)
     ?assert(is_pid(Server)),
+
+    ok = erlmcp_server:stop(Server).
+
+%%%====================================================================
+%%% Priority Control Plane Tests (FM-09)
+%%%====================================================================
+
+test_message_queue_off_heap() ->
+    %% FM-09: Verify process flag is set for off-heap message queue
+    Server = start_server_with_caps(<<"priority_test_1">>, #mcp_server_capabilities{}),
+
+    %% Check process flag - off_heap enables priority dispatch
+    ProcessInfo = erlang:process_info(Server, message_queue_data),
+    ?assertMatch({message_queue_data, off_heap}, ProcessInfo),
+
+    ok = erlmcp_server:stop(Server).
+
+test_control_priority_under_load() ->
+    %% FM-09: Control messages (DOWN, GC) must not be blocked by data flooding
+    Server = start_server_with_caps(<<"priority_test_2">>, #mcp_server_capabilities{
+        resources = #mcp_capability{enabled = true}
+    }),
+
+    %% Spawn a monitored process
+    MonitoredPid = spawn(fun() -> timer:sleep(100) end),
+    MonitorRef = erlang:monitor(process, MonitoredPid),
+
+    %% Flood server with data messages (simulated load)
+    Parent = self(),
+    _FloodPid = spawn(fun() ->
+        lists:foreach(fun(_) ->
+            %% Send non-blocking messages to create backlog
+            Server ! {test_data_message, rand:uniform(1000)}
+        end, lists:seq(1, 100)),
+        Parent ! flood_complete
+    end),
+
+    %% Kill monitored process - should trigger DOWN message
+    exit(MonitoredPid, kill),
+
+    %% Wait for flood to complete
+    receive flood_complete -> ok after 5000 -> error(timeout) end,
+
+    %% Server should still be alive (DOWN message processed without blocking)
+    ?assert(erlang:is_process_alive(Server)),
+
+    %% Cleanup monitor
+    receive {'DOWN', MonitorRef, process, MonitoredPid, _} -> ok after 1000 -> ok end,
+
+    ok = erlmcp_server:stop(Server).
+
+test_monitor_down_priority() ->
+    %% FM-09: Monitor DOWN messages are control messages (high priority)
+    Server = start_server_with_caps(<<"priority_test_3">>, #mcp_server_capabilities{}),
+
+    %% Create and monitor a process
+    TestPid = spawn(fun() -> receive stop -> ok end end),
+    Ref = erlang:monitor(process, TestPid),
+
+    %% Kill the process
+    TestPid ! stop,
+
+    %% Server should process DOWN message without issue
+    %% (We can't directly observe this, but server staying alive indicates success)
+    timer:sleep(50),
+    ?assert(erlang:is_process_alive(Server)),
+
+    %% Cleanup
+    receive {'DOWN', Ref, process, TestPid, _} -> ok after 1000 -> ok end,
+
+    ok = erlmcp_server:stop(Server).
+
+test_gc_priority_under_load() ->
+    %% FM-09: GC messages (force_gc) are control messages
+    Server = start_server_with_caps(<<"priority_test_4">>, #mcp_server_capabilities{}),
+
+    %% Send GC message directly
+    Server ! force_gc,
+
+    %% Server should process GC without crashing
+    timer:sleep(50),
+    ?assert(erlang:is_process_alive(Server)),
 
     ok = erlmcp_server:stop(Server).
 

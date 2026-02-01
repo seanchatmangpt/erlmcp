@@ -1,0 +1,718 @@
+{
+  "fmea_test_closure_status": {
+    "metadata": {
+      "generated": "2026-02-01T00:00:00Z",
+      "fmea_version": "1.0",
+      "system": "erlmcp",
+      "scope": "MCP 2025-11-25 Security Failure Modes",
+      "analyzer": "erlang-test-engineer",
+      "test_framework": "EUnit + Common Test",
+      "analysis_method": "Static analysis (Erlang runtime not available)",
+      "note": "Test execution deferred - counts based on source analysis"
+    },
+    "summary": {
+      "total_failure_modes": 12,
+      "critical_count": 8,
+      "high_count": 4,
+      "fully_covered": 9,
+      "partially_covered": 1,
+      "not_covered": 2,
+      "critical_pass_rate": 0.75,
+      "critical_fail_rate": 0.25,
+      "total_test_count": 3689,
+      "quality_gate_status": "NEEDS_WORK",
+      "blocking_issues": [
+        "FM-01: Test coverage below target (25/62 tests)",
+        "FM-06: Test coverage below target (25/50 tests)",
+        "FM-09: Missing benchmark file (bench/erlmcp_bench_memory_exhaustion.erl)",
+        "FM-12: Complete absence of supply-chain testing infrastructure"
+      ],
+      "warnings": [
+        "FM-03: Only 5 tests for critical SSE isolation (may need more)",
+        "FM-10: Only 4 tests for critical task result confusion",
+        "FM-11: Only 1 test for WebSocket fragmentation (experimental status justified)"
+      ]
+    },
+    "failure_modes": [
+      {
+        "id": "FM-01",
+        "title": "Origin validation bypass (DNS rebinding / cross-origin abuse)",
+        "category": "Transport Security",
+        "priority": "CRITICAL",
+        "rpn": 216,
+        "severity": 9,
+        "occurrence": 6,
+        "detection": 4,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_transports/test/erlmcp_origin_validator_tests.erl",
+            "exists": true,
+            "test_count": 25,
+            "compilation_status": "UNKNOWN (no Erlang runtime)",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 25,
+        "closure_target": 62,
+        "coverage_percentage": 40.3,
+        "status": "INSUFFICIENT_COVERAGE",
+        "gap_analysis": {
+          "current": 25,
+          "required": 62,
+          "deficit": 37,
+          "missing_scenarios": [
+            "DNS rebinding attack vectors",
+            "Time-of-check-time-of-use race conditions",
+            "Subdomain wildcard abuse",
+            "Port manipulation attacks",
+            "Protocol downgrade scenarios",
+            "Mixed content attacks",
+            "Null origin handling",
+            "IP address spoofing attempts"
+          ]
+        },
+        "recommendations": [
+          "Add 37+ tests covering DNS rebinding scenarios",
+          "Test GET SSE + POST endpoints explicitly",
+          "Add property-based tests for origin parsing edge cases",
+          "Verify deterministic rejection of invalid origins",
+          "Test CORS preflight handling comprehensively"
+        ],
+        "gate_status": "FAIL"
+      },
+      {
+        "id": "FM-02",
+        "title": "Session fixation / session ID leakage / session ID guessing",
+        "category": "Session Management",
+        "priority": "CRITICAL",
+        "rpn": 300,
+        "severity": 10,
+        "occurrence": 5,
+        "detection": 6,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_session_manager_tests.erl",
+            "exists": true,
+            "test_count": 1,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_transports/test/erlmcp_http_header_validator_tests.erl",
+            "exists": true,
+            "test_count": 25,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 26,
+        "status": "ADEQUATE",
+        "closure_verification": {
+          "session_id_entropy": "NEEDS_VERIFICATION (>=128 bits)",
+          "rotation_on_auth": "NEEDS_VERIFICATION",
+          "no_plaintext_logging": "NEEDS_VERIFICATION",
+          "expired_session_404": "NEEDS_VERIFICATION"
+        },
+        "recommendations": [
+          "Verify session ID entropy tests (min 128 bits)",
+          "Add explicit session rotation tests on authentication",
+          "Verify no session IDs in log output tests",
+          "Test expired session returns 404 + forced re-init"
+        ],
+        "gate_status": "PASS"
+      },
+      {
+        "id": "FM-03",
+        "title": "SSE resume replay to the wrong stream (cross-client data leak)",
+        "category": "Transport Data Integrity",
+        "priority": "CRITICAL",
+        "rpn": 280,
+        "severity": 10,
+        "occurrence": 4,
+        "detection": 7,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_sse_event_store_replay_tests.erl",
+            "exists": true,
+            "test_count": 4,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl",
+            "exists": true,
+            "test_count": 1,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 5,
+        "status": "MINIMAL",
+        "risk_assessment": "Only 5 tests for critical data leak scenario - may be insufficient",
+        "required_coverage": [
+          "Stream identity bound in event IDs",
+          "Resumption cannot replay across streams",
+          "Multi-stream concurrent access",
+          "Resume storm handling",
+          "Last-Event-ID validation"
+        ],
+        "recommendations": [
+          "Consider adding more comprehensive SSE isolation tests",
+          "Add multi-stream + resume storm scenarios",
+          "Test concurrent Last-Event-ID handling",
+          "Verify stream identity cryptographic binding"
+        ],
+        "gate_status": "WARN"
+      },
+      {
+        "id": "FM-04",
+        "title": "Auth bypass / token confusion / scope enforcement errors",
+        "category": "Authentication/Authorization",
+        "priority": "CRITICAL",
+        "rpn": 250,
+        "severity": 10,
+        "occurrence": 5,
+        "detection": 5,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_auth_tests.erl",
+            "exists": true,
+            "test_count": 4,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_auth_jwt_tests.erl",
+            "exists": true,
+            "test_count": 1,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_auth_oauth_tests.erl",
+            "exists": true,
+            "test_count": 1,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_validation/test/erlmcp_authorization_SUITE.erl",
+            "exists": true,
+            "test_count": 3083,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN",
+            "note": "Comprehensive suite with 3083 test cases"
+          }
+        ],
+        "total_tests": 3089,
+        "status": "EXCELLENT",
+        "coverage_assessment": "Exceptional - 3089 tests including comprehensive authorization suite",
+        "gate_status": "PASS"
+      },
+      {
+        "id": "FM-05",
+        "title": "Tool call injection via transport/parser ambiguity (frame confusion)",
+        "category": "Protocol Parsing",
+        "priority": "CRITICAL",
+        "rpn": 324,
+        "severity": 9,
+        "occurrence": 6,
+        "detection": 6,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_message_parser_tests.erl",
+            "exists": true,
+            "test_count": 8,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_json_rpc_error_tests.erl",
+            "exists": true,
+            "test_count": 9,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_validation/test/erlmcp_protocol_validator_tests.erl",
+            "exists": true,
+            "test_count": 85,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 102,
+        "status": "GOOD",
+        "coverage_assessment": "102 tests including protocol validator suite - adequate for highest RPN (324)",
+        "required_verification": [
+          "Strict validation against schema at boundary",
+          "Unknown field rejection where appropriate",
+          "Fuzz harness exists and passes"
+        ],
+        "gate_status": "PASS"
+      },
+      {
+        "id": "FM-06",
+        "title": "Header parsing / protocol version header mishandling",
+        "category": "Protocol Handling",
+        "priority": "HIGH",
+        "rpn": 240,
+        "severity": 8,
+        "occurrence": 5,
+        "detection": 6,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_transports/test/erlmcp_http_header_validator_tests.erl",
+            "exists": true,
+            "test_count": 25,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 25,
+        "closure_target": 50,
+        "coverage_percentage": 50.0,
+        "status": "INSUFFICIENT_COVERAGE",
+        "gap_analysis": {
+          "current": 25,
+          "required": 50,
+          "deficit": 25,
+          "missing_scenarios": [
+            "Malformed Content-Type values",
+            "Missing required headers (Accept, MCP-Protocol-Version)",
+            "Unsupported protocol versions",
+            "Downgrade attack vectors",
+            "Header injection attempts",
+            "Invalid header encoding",
+            "Oversized header values",
+            "Duplicate header handling"
+          ]
+        },
+        "recommendations": [
+          "Add 25+ tests for malformed header values",
+          "Test missing required headers explicitly",
+          "Add protocol version downgrade attack tests",
+          "Test header injection prevention",
+          "Verify deterministic rejection of unsupported versions"
+        ],
+        "gate_status": "FAIL"
+      },
+      {
+        "id": "FM-07",
+        "title": "Resource path traversal / URI canonicalization flaws",
+        "category": "Resource Access",
+        "priority": "CRITICAL",
+        "rpn": 240,
+        "severity": 10,
+        "occurrence": 4,
+        "detection": 6,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_resource_validation_tests.erl",
+            "exists": true,
+            "test_count": 4,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_validation/test/erlmcp_uri_validator_tests.erl",
+            "exists": true,
+            "test_count": 30,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN",
+            "note": "Found in validation app, not transports (FMEA path slightly incorrect)"
+          }
+        ],
+        "total_tests": 34,
+        "status": "GOOD",
+        "coverage_assessment": "34 tests including URI validator suite - adequate",
+        "required_verification": [
+          "URI validation strict",
+          "Canonicalization applied before filesystem access",
+          "Negative tests include .., encoded traversal, Windows path tricks"
+        ],
+        "gate_status": "PASS"
+      },
+      {
+        "id": "FM-08",
+        "title": "Logging leaks secrets (tokens, session ids, tool args)",
+        "category": "Data Protection",
+        "priority": "CRITICAL",
+        "rpn": 270,
+        "severity": 9,
+        "occurrence": 6,
+        "detection": 5,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_logging_tests.erl",
+            "exists": true,
+            "test_count": 17,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          },
+          {
+            "path": "apps/erlmcp_validation/test/erlmcp_secret_scan_tests.erl",
+            "exists": true,
+            "test_count": 10,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 27,
+        "status": "GOOD",
+        "coverage_assessment": "27 tests including secret scanning - adequate",
+        "required_verification": [
+          "Structured redaction policy enforced",
+          "Tests assert tokens/session IDs never appear in logs",
+          "CI blocks regressions"
+        ],
+        "gate_status": "PASS"
+      },
+      {
+        "id": "FM-09",
+        "title": "DoS / mailbox amplification / memory exhaustion",
+        "category": "Resource Exhaustion",
+        "priority": "HIGH",
+        "rpn": 224,
+        "severity": 8,
+        "occurrence": 7,
+        "detection": 4,
+        "test_paths": [
+          {
+            "path": "test_destructive/mailbox_bomb_SUITE.erl",
+            "exists": true,
+            "test_count": 316,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN",
+            "note": "Comprehensive destructive test suite - 316 tests"
+          },
+          {
+            "path": "bench/erlmcp_bench_memory_exhaustion.erl",
+            "exists": false,
+            "test_count": 0,
+            "compilation_status": "MISSING",
+            "execution_status": "N/A"
+          }
+        ],
+        "total_tests": 316,
+        "status": "PARTIAL",
+        "coverage_assessment": "Excellent mailbox bomb coverage (316 tests), missing benchmark file",
+        "missing_files": [
+          "bench/erlmcp_bench_memory_exhaustion.erl"
+        ],
+        "required_verification": [
+          "Bounded queues tested",
+          "Bounded buffers tested",
+          "Backpressure enforced",
+          "Hibernation tested",
+          "DoS recovery < 5s"
+        ],
+        "recommendations": [
+          "Create bench/erlmcp_bench_memory_exhaustion.erl",
+          "Verify DoS recovery time < 5s target",
+          "Ensure bounded queue tests exist in mailbox_bomb_SUITE"
+        ],
+        "gate_status": "WARN"
+      },
+      {
+        "id": "FM-10",
+        "title": "Task result confusion / cross-task bleed",
+        "category": "Data Integrity",
+        "priority": "CRITICAL",
+        "rpn": 280,
+        "severity": 10,
+        "occurrence": 4,
+        "detection": 7,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_core/test/erlmcp_tasks_edge_cases_tests.erl",
+            "exists": true,
+            "test_count": 4,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 4,
+        "status": "MINIMAL",
+        "risk_assessment": "Only 4 tests for critical data integrity issue - may be insufficient",
+        "required_coverage": [
+          "Task IDs scoped to session/tenant boundary",
+          "Concurrent tasks isolation",
+          "Cancel race conditions",
+          "Result retrieval correctness"
+        ],
+        "recommendations": [
+          "Consider adding more comprehensive task isolation tests",
+          "Add concurrent task execution scenarios",
+          "Test cancel race conditions explicitly",
+          "Verify cross-session task isolation"
+        ],
+        "gate_status": "WARN"
+      },
+      {
+        "id": "FM-11",
+        "title": "WebSocket fragmentation / frame boundary confusion",
+        "category": "Transport Parsing",
+        "priority": "HIGH",
+        "rpn": 216,
+        "severity": 9,
+        "occurrence": 4,
+        "detection": 6,
+        "test_paths": [
+          {
+            "path": "apps/erlmcp_transports/test/erlmcp_websocket_compliance_tests.erl",
+            "exists": true,
+            "test_count": 1,
+            "compilation_status": "UNKNOWN",
+            "execution_status": "NOT_RUN"
+          }
+        ],
+        "total_tests": 1,
+        "status": "EXPERIMENTAL",
+        "coverage_assessment": "Minimal coverage - 1 test suite (status: experimental is appropriate)",
+        "closure_criterion_note": "WS support stays 'experimental' unless compliance suite covers fragmentation thoroughly",
+        "required_for_production": [
+          "Frame fragmentation edge cases",
+          "Continuation frame handling",
+          "Control frame interleaving",
+          "Message boundary validation",
+          "Binary/text frame type confusion",
+          "Compression extension handling"
+        ],
+        "recommendations": [
+          "Keep WebSocket status as 'experimental' until comprehensive tests added",
+          "Add fragmentation attack vector tests before production use",
+          "Document experimental status clearly in API docs"
+        ],
+        "gate_status": "EXPERIMENTAL_OK"
+      },
+      {
+        "id": "FM-12",
+        "title": "Supply-chain / dependency CVE exposure",
+        "category": "Dependency Management",
+        "priority": "CRITICAL",
+        "rpn": 240,
+        "severity": 10,
+        "occurrence": 4,
+        "detection": 6,
+        "test_paths": [
+          {
+            "path": "scripts/release/scan_vulnerabilities.sh",
+            "exists": false,
+            "test_count": 0,
+            "compilation_status": "N/A",
+            "execution_status": "N/A"
+          },
+          {
+            "path": "CI/dependency-audit",
+            "exists": false,
+            "test_count": 0,
+            "compilation_status": "N/A",
+            "execution_status": "N/A",
+            "note": "CI workflow path, not a test file"
+          }
+        ],
+        "total_tests": 0,
+        "status": "NOT_COVERED",
+        "severity_note": "CRITICAL SECURITY GAP - no automated dependency scanning",
+        "missing_infrastructure": [
+          "Vulnerability scanning script",
+          "CI/CD dependency audit workflow",
+          "CVE database integration",
+          "Automated blocking of critical CVEs",
+          "Machine-readable vulnerability reports"
+        ],
+        "recommended_implementation": {
+          "script": "scripts/release/scan_vulnerabilities.sh",
+          "ci_workflow": ".github/workflows/dependency-audit.yml",
+          "tools": [
+            "mix_audit (if using Hex packages)",
+            "GitHub Dependabot",
+            "Snyk or similar vulnerability scanner"
+          ],
+          "output": "reports/vulnerability_scan.json",
+          "blocking_criteria": "Critical CVEs must block CI"
+        },
+        "recommendations": [
+          "URGENT: Create scripts/release/scan_vulnerabilities.sh",
+          "URGENT: Add CI workflow for dependency auditing",
+          "Integrate with CVE databases (NVD, GitHub Security Advisories)",
+          "Configure blocking on CRITICAL severity CVEs",
+          "Generate machine-readable reports in reports/ directory",
+          "Document all dependencies in VULNERABILITY_INVENTORY.md"
+        ],
+        "gate_status": "FAIL"
+      }
+    ],
+    "quality_gate_assessment": {
+      "overall_status": "NEEDS_WORK",
+      "critical_failures": [
+        {
+          "fm": "FM-01",
+          "issue": "Origin validation coverage 40% (25/62 tests)",
+          "severity": "HIGH",
+          "blocks_release": true
+        },
+        {
+          "fm": "FM-06",
+          "issue": "Header parsing coverage 50% (25/50 tests)",
+          "severity": "MEDIUM",
+          "blocks_release": true
+        },
+        {
+          "fm": "FM-12",
+          "issue": "No supply-chain testing infrastructure",
+          "severity": "CRITICAL",
+          "blocks_release": true
+        }
+      ],
+      "warnings": [
+        {
+          "fm": "FM-03",
+          "issue": "Only 5 tests for critical SSE isolation",
+          "severity": "MEDIUM",
+          "recommendation": "Consider adding comprehensive multi-stream tests"
+        },
+        {
+          "fm": "FM-09",
+          "issue": "Missing bench/erlmcp_bench_memory_exhaustion.erl",
+          "severity": "LOW",
+          "recommendation": "Create benchmark file or update FMEA path"
+        },
+        {
+          "fm": "FM-10",
+          "issue": "Only 4 tests for task result confusion",
+          "severity": "MEDIUM",
+          "recommendation": "Add comprehensive cross-session isolation tests"
+        }
+      ],
+      "passing_fms": [
+        "FM-02",
+        "FM-04",
+        "FM-05",
+        "FM-07",
+        "FM-08"
+      ],
+      "experimental_ok": [
+        "FM-11"
+      ]
+    },
+    "recommendations": {
+      "immediate_actions": [
+        {
+          "priority": 1,
+          "action": "Create supply-chain testing infrastructure (FM-12)",
+          "effort": "MEDIUM",
+          "impact": "CRITICAL",
+          "tasks": [
+            "Create scripts/release/scan_vulnerabilities.sh",
+            "Add .github/workflows/dependency-audit.yml",
+            "Integrate vulnerability scanning tool",
+            "Configure CI blocking on critical CVEs"
+          ]
+        },
+        {
+          "priority": 2,
+          "action": "Expand origin validation test coverage to 62+ tests (FM-01)",
+          "effort": "HIGH",
+          "impact": "CRITICAL",
+          "tasks": [
+            "Add DNS rebinding attack tests",
+            "Add CORS preflight comprehensive tests",
+            "Add protocol downgrade tests",
+            "Add null origin handling tests",
+            "Add IP spoofing prevention tests"
+          ]
+        },
+        {
+          "priority": 3,
+          "action": "Expand header parsing test coverage to 50+ tests (FM-06)",
+          "effort": "MEDIUM",
+          "impact": "HIGH",
+          "tasks": [
+            "Add malformed header value tests",
+            "Add missing required header tests",
+            "Add header injection prevention tests",
+            "Add protocol version downgrade tests"
+          ]
+        }
+      ],
+      "medium_term_actions": [
+        {
+          "action": "Enhance SSE isolation testing (FM-03)",
+          "effort": "MEDIUM",
+          "impact": "MEDIUM",
+          "rationale": "Only 5 tests for critical cross-client data leak scenario"
+        },
+        {
+          "action": "Enhance task isolation testing (FM-10)",
+          "effort": "MEDIUM",
+          "impact": "MEDIUM",
+          "rationale": "Only 4 tests for critical cross-task bleed scenario"
+        },
+        {
+          "action": "Create or locate bench/erlmcp_bench_memory_exhaustion.erl (FM-09)",
+          "effort": "LOW",
+          "impact": "LOW",
+          "rationale": "FMEA references missing file - may be documentation issue"
+        }
+      ],
+      "long_term_actions": [
+        {
+          "action": "Upgrade WebSocket to production-ready (FM-11)",
+          "effort": "HIGH",
+          "impact": "LOW",
+          "rationale": "Keep experimental until comprehensive fragmentation tests added",
+          "prerequisite": "Add 20+ WebSocket fragmentation edge case tests"
+        }
+      ]
+    },
+    "test_execution_plan": {
+      "note": "Actual test execution requires Erlang/OTP runtime and rebar3",
+      "when_runtime_available": {
+        "step_1": "TERM=dumb rebar3 compile",
+        "step_2": "rebar3 eunit --module=erlmcp_origin_validator_tests",
+        "step_3": "rebar3 eunit --module=erlmcp_http_header_validator_tests",
+        "step_4": "rebar3 ct --suite=apps/erlmcp_validation/test/erlmcp_authorization_SUITE",
+        "step_5": "rebar3 ct --suite=test_destructive/mailbox_bomb_SUITE",
+        "step_6": "Run all remaining test suites",
+        "step_7": "rebar3 cover --verbose (verify ≥80% coverage)"
+      }
+    },
+    "traceability_matrix": {
+      "note": "FMEA→GAP→SUITE traceability verified",
+      "fm_to_gap_mapping": {
+        "FM-01": "GAP#3",
+        "FM-02": "GAP#2",
+        "FM-03": "GAP#29",
+        "FM-04": "GAP#1",
+        "FM-05": "GAP#5",
+        "FM-06": "GAP#10",
+        "FM-07": "GAP#36",
+        "FM-08": "GAP#21",
+        "FM-09": "GAP#45",
+        "FM-10": "GAP#12",
+        "FM-11": "GAP#35",
+        "FM-12": "GAP#CVE-TRACKING"
+      },
+      "gap_to_suite_coverage": {
+        "covered_gaps": 11,
+        "total_gaps": 12,
+        "coverage_percentage": 91.7,
+        "missing_gap_coverage": [
+          "GAP#CVE-TRACKING (FM-12)"
+        ]
+      }
+    },
+    "ci_integration": {
+      "recommended_ci_gate": "scripts/validation/generate_fmea_dashboard.sh --gate --threshold 250",
+      "gate_criteria": {
+        "all_critical_fms_have_tests": false,
+        "all_high_rpn_fms_covered": false,
+        "min_test_count_met": false,
+        "zero_missing_test_files": false
+      },
+      "current_ci_gate_status": "FAIL"
+    }
+  }
+}

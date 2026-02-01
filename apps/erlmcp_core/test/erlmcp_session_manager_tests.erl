@@ -58,6 +58,14 @@ session_manager_test_() ->
          fun test_touch_multiple_times/1,
          fun test_touch_preserves_metadata/1,
 
+         %% Session Rotation Tests (FM-02) (6 tests)
+         fun test_rotate_session/1,
+         fun test_rotate_session_nonexistent/1,
+         fun test_rotate_session_generates_new_id/1,
+         fun test_rotate_session_deletes_old_id/1,
+         fun test_rotate_session_preserves_data/1,
+         fun test_rotate_session_updates_metadata/1,
+
          %% Expiration Tests (6 tests)
          fun test_session_expiration/1,
          fun test_cleanup_expired/1,
@@ -560,6 +568,129 @@ test_touch_preserves_metadata(_Pid) ->
 
         {ok, Session} = erlmcp_session_manager:get_session(SessionId),
         ?assertEqual(Metadata, maps:get(metadata, Session))
+    end.
+
+%%====================================================================
+%% Session Rotation Tests (FM-02)
+%%====================================================================
+
+test_rotate_session(_Pid) ->
+    fun() ->
+        OriginalMetadata = #{user => <<"alice">>, role => <<"admin">>},
+        {ok, OldSessionId} = erlmcp_session_manager:create_session(OriginalMetadata),
+
+        %% Rotate session with new metadata
+        NewMetadata = #{user => <<"alice">>, role => <<"admin">>, authenticated => true},
+        {ok, NewSessionId} = erlmcp_session_manager:rotate_session(OldSessionId, NewMetadata),
+
+        %% New session should exist with new ID
+        ?assert(is_binary(NewSessionId)),
+        ?assertNotEqual(OldSessionId, NewSessionId),
+
+        %% Old session should be deleted
+        ?assertEqual({error, not_found}, erlmcp_session_manager:get_session(OldSessionId)),
+
+        %% New session should exist with updated metadata
+        {ok, NewSession} = erlmcp_session_manager:get_session(NewSessionId),
+        ?assertEqual(NewMetadata, maps:get(metadata, NewSession))
+    end.
+
+test_rotate_session_nonexistent(_Pid) ->
+    fun() ->
+        NonExistentId = <<"00000000000000000000000000000000">>,
+        NewMetadata = #{user => <<"bob">>},
+        Result = erlmcp_session_manager:rotate_session(NonExistentId, NewMetadata),
+        ?assertEqual({error, not_found}, Result)
+    end.
+
+test_rotate_session_generates_new_id(_Pid) ->
+    fun() ->
+        {ok, OldSessionId} = erlmcp_session_manager:create_session(#{index => 1}),
+
+        %% Rotate multiple times to ensure each generates unique ID
+        {ok, NewId1} = erlmcp_session_manager:rotate_session(OldSessionId, #{index => 2}),
+        {ok, NewId2} = erlmcp_session_manager:rotate_session(NewId1, #{index => 3}),
+        {ok, NewId3} = erlmcp_session_manager:rotate_session(NewId2, #{index => 4}),
+
+        %% All IDs should be different
+        ?assertNotEqual(OldSessionId, NewId1),
+        ?assertNotEqual(NewId1, NewId2),
+        ?assertNotEqual(NewId2, NewId3),
+        ?assertNotEqual(OldSessionId, NewId3),
+
+        %% All should be 32 hex characters
+        ?assertEqual(32, byte_size(NewId1)),
+        ?assertEqual(32, byte_size(NewId2)),
+        ?assertEqual(32, byte_size(NewId3))
+    end.
+
+test_rotate_session_deletes_old_id(_Pid) ->
+    fun() ->
+        {ok, OldSessionId} = erlmcp_session_manager:create_session(#{test => <<"rotation">>}),
+
+        %% Verify old session exists
+        ?assertMatch({ok, _}, erlmcp_session_manager:get_session(OldSessionId)),
+
+        %% Rotate session
+        {ok, _NewSessionId} = erlmcp_session_manager:rotate_session(OldSessionId, #{test => <<"rotated">>}),
+
+        %% Old session should be deleted (FM-02: session ID never reused)
+        ?assertEqual({error, not_found}, erlmcp_session_manager:get_session(OldSessionId))
+    end.
+
+test_rotate_session_preserves_data(_Pid) ->
+    fun() ->
+        %% Create session with timeout
+        Metadata = #{user => <<"charlie">>, counter => 100},
+        Timeout = 5000,
+        {ok, OldSessionId} = erlmcp_session_manager:create_session(Metadata, Timeout),
+
+        {ok, OldSession} = erlmcp_session_manager:get_session(OldSessionId),
+        OldCreatedAt = maps:get(created_at, OldSession),
+
+        timer:sleep(10),
+
+        %% Rotate with updated metadata
+        NewMetadata = #{user => <<"charlie">>, counter => 101},
+        {ok, NewSessionId} = erlmcp_session_manager:rotate_session(OldSessionId, NewMetadata),
+
+        %% New session should preserve timeout and created_at
+        {ok, NewSession} = erlmcp_session_manager:get_session(NewSessionId),
+        ?assertEqual(Timeout, maps:get(timeout_ms, NewSession)),
+        ?assertEqual(OldCreatedAt, maps:get(created_at, NewSession)),
+
+        %% last_accessed should be updated
+        NewLastAccessed = maps:get(last_accessed, NewSession),
+        OldLastAccessed = maps:get(last_accessed, OldSession),
+        ?assert(NewLastAccessed >= OldLastAccessed)
+    end.
+
+test_rotate_session_updates_metadata(_Pid) ->
+    fun() ->
+        %% Create session with initial metadata
+        OriginalMetadata = #{
+            user => <<"dave">>,
+            role => <<"user">>,
+            login_count => 1
+        },
+        {ok, OldSessionId} = erlmcp_session_manager:create_session(OriginalMetadata),
+
+        %% Rotate with updated metadata (simulating re-authentication)
+        NewMetadata = #{
+            user => <<"dave">>,
+            role => <<"admin">>,
+            login_count => 2,
+            last_login => erlang:system_time(millisecond)
+        },
+        {ok, NewSessionId} = erlmcp_session_manager:rotate_session(OldSessionId, NewMetadata),
+
+        %% Verify metadata updated
+        {ok, NewSession} = erlmcp_session_manager:get_session(NewSessionId),
+        RetrievedMetadata = maps:get(metadata, NewSession),
+        ?assertEqual(NewMetadata, RetrievedMetadata),
+
+        %% Verify old metadata not accessible
+        ?assertEqual({error, not_found}, erlmcp_session_manager:get_session(OldSessionId))
     end.
 
 %%====================================================================

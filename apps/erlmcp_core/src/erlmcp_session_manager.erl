@@ -17,6 +17,7 @@
     cleanup_expired/0,
     set_timeout/2,
     touch_session/1,
+    rotate_session/2,
     persist_session/1,
     persist_session/2,
     load_session/1,
@@ -125,6 +126,14 @@ set_timeout(SessionId, TimeoutMs) ->
 -spec touch_session(session_id()) -> ok | {error, not_found}.
 touch_session(SessionId) ->
     gen_server:call(?MODULE, {touch_session, SessionId}).
+
+%% @doc Rotate session ID (FM-02: Session Rotation).
+%% Creates a new session ID for the existing session data.
+%% Old session ID is deleted to prevent reuse.
+%% Returns {ok, NewSessionId} or {error, not_found}.
+-spec rotate_session(session_id(), map()) -> {ok, session_id()} | {error, not_found}.
+rotate_session(SessionId, NewMetadata) ->
+    gen_server:call(?MODULE, {rotate_session, SessionId, NewMetadata}).
 
 %% @doc Persist session to Mnesia storage
 -spec persist_session(session_id()) -> ok | {error, term()}.
@@ -277,6 +286,34 @@ handle_call({touch_session, SessionId}, _From, State) ->
             UpdatedData = SessionData#{last_accessed => Now},
             ets:insert(State#state.table, {UpdatedData, SessionId}),
             {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({rotate_session, OldSessionId, NewMetadata}, _From, State) ->
+    %% FM-02: Session Rotation
+    %% Generate new session ID, preserve session data, delete old session
+    case ets:lookup(State#state.table, OldSessionId) of
+        [{SessionData, OldSessionId}] ->
+            %% Generate new unique session ID
+            NewSessionId = generate_session_id(),
+            Now = erlang:system_time(millisecond),
+
+            %% Create new session with updated metadata
+            NewSessionData = SessionData#{
+                id => NewSessionId,
+                last_accessed => Now,
+                metadata => NewMetadata
+            },
+
+            %% Insert new session and delete old (atomic in gen_server context)
+            ets:insert(State#state.table, {NewSessionData, NewSessionId}),
+            ets:delete(State#state.table, OldSessionId),
+
+            %% Hook for replication
+            notify_replicator({session_rotated, OldSessionId, NewSessionId, NewSessionData}),
+
+            {reply, {ok, NewSessionId}, State};
         [] ->
             {reply, {error, not_found}, State}
     end;
