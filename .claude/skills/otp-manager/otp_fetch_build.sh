@@ -33,7 +33,9 @@ OTP_REQUIRED_VERSION="${OTP_REQUIRED_MAJOR}.${OTP_REQUIRED_MINOR}.${OTP_REQUIRED
 ERLANG_SOLUTIONS_DEB="https://packages.erlang-solutions.com/erlang-solutions_2.0_all.deb"
 ERLANG_PACKAGE="esl-erlang=1:${OTP_REQUIRED_VERSION}-1"
 
-ERLMCP_ROOT="${ERLMCP_ROOT:-/home/user/erlmcp}"
+# Find project root (parent of .claude directory)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ERLMCP_ROOT="${ERLMCP_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 ERLMCP_CACHE="${ERLMCP_CACHE:-${ERLMCP_ROOT}/.erlmcp/cache}"
 ERLMCP_LOG="${ERLMCP_LOG:-${ERLMCP_ROOT}/.erlmcp/otp-manager.log}"
 

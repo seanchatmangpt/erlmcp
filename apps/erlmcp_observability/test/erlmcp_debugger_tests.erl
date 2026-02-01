@@ -158,21 +158,22 @@ test_trace_messages() ->
 %%%=============================================================================
 
 %% These callbacks make this module a test gen_server
+%% NOTE: Currently unused, kept for future test infrastructure
 
-init([]) ->
-    {ok, #{counter => 0}}.
-
-handle_call(_Request, _From, State) ->
-    {reply, ok, State}.
-
-handle_cast(_Msg, State = #{counter := N}) ->
-    {noreply, State#{counter => N + 1}}.
-
-handle_info(_Info, State) ->
-    {noreply, State}.
-
-terminate(_Reason, _State) ->
-    ok.
-
-code_change(_OldVsn, State, _Extra) ->
-    {ok, State}.
+% init([]) ->
+%     {ok, #{counter => 0}}.
+%
+% handle_call(_Request, _From, State) ->
+%     {reply, ok, State}.
+%
+% handle_cast(_Msg, State = #{counter := N}) ->
+%     {noreply, State#{counter => N + 1}}.
+%
+% handle_info(_Info, State) ->
+%     {noreply, State}.
+%
+% terminate(_Reason, _State) ->
+%     ok.
+%
+% code_change(_OldVsn, State, _Extra) ->
+%     {ok, State}.

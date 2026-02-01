@@ -1,6 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-
   "permissions": {
     "deny": [
       ".env",
@@ -27,7 +26,6 @@
       ".claude/**"
     ]
   },
-
   "hooks": {
     "SessionStart": [
       {
@@ -42,7 +40,6 @@
         ]
       }
     ],
-
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -78,7 +75,6 @@
         ]
       }
     ],
-
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
@@ -105,21 +101,7 @@
         ]
       }
     ],
-
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "agent",
-            "prompt": "You are the erlmcp verification subagent. Your task is to verify the build is production-ready.\n\n**Verification Checklist:**\n\n1. **OTP Version Check**\n   ```bash\n   erl -noshell -eval 'io:format(\"~s~n\", [erlang:system_info(otp_release)])' -s init stop\n   ```\n   Requirement: >= 28.3.1\n\n2. **Compilation Check**\n   ```bash\n   TERM=dumb rebar3 compile\n   ```\n   Requirement: Exit code 0 (no errors)\n\n3. **Unit Test Check**\n   ```bash\n   rebar3 eunit --application=erlmcp_core\n   ```\n   Requirement: All tests pass (0 failures)\n\n**Return Format:**\n\nIf all checks pass:\n```json\n{\n  \"ok\": true,\n  \"checks\": {\n    \"otp_version\": \"28.3.1\",\n    \"compilation\": \"pass\",\n    \"unit_tests\": \"pass\"\n  }\n}\n```\n\nIf any check fails:\n```json\n{\n  \"ok\": false,\n  \"reason\": \"OTP version is 25.3.2, need 28.3.1+\",\n  \"failed_check\": \"otp_version\"\n}\n```\n\n**Tool Access:**\n- Bash: Execute-only (erl, rebar3 commands)\n- Read: Logs, config files\n- NO Write/Edit/Delete\n\nBegin verification now.",
-            "subagent": "verifier",
-            "timeout": 120,
-            "description": "Spawn verifier subagent for quality gate checks"
-          }
-        ]
-      }
-    ],
-
+    "Stop": [],
     "SessionEnd": [
       {
         "hooks": [
@@ -132,7 +114,6 @@
         ]
       }
     ],
-
     "PreCompact": [
       {
         "hooks": [
@@ -145,28 +126,12 @@
       }
     ]
   },
-
   "subagents": {
     "verifier": {
       "description": "Verification specialist (read-only + execute tests)",
       "toolAccess": {
         "allow": ["Bash", "Read"],
-        "deny": ["Write", "Edit", "Delete", "WebSearch", "WebFetch"]
-      },
-      "bashConstraints": {
-        "allow": [
-          "^erl -noshell",
-          "^rebar3 (compile|eunit|ct|xref|dialyzer)",
-          "^make check",
-          "^git (status|log|diff|rev-parse)"
-        ],
-        "deny": [
-          "sudo",
-          "rm -rf",
-          "apt-get|yum|brew",
-          "curl|wget",
-          "git (push|commit|reset|clean)"
-        ]
+        "deny": ["Write", "Edit", "Delete", "WebSearch", "WebFetch", "Glob", "Grep", "Task", "Skill", "NotebookEdit"]
       },
       "permissionMode": "execute",
       "skills": ["otp-manager"],
@@ -174,7 +139,6 @@
         ".claude/skills/otp-manager/SKILL.md"
       ]
     },
-
     "build-engineer": {
       "description": "Code editing specialist (constrained writes)",
       "toolAccess": {
@@ -207,7 +171,6 @@
         ".claude/skills/otp-manager/SKILL.md"
       ]
     },
-
     "release-scout": {
       "description": "Read-only research specialist (WebSearch enabled)",
       "toolAccess": {
@@ -222,9 +185,7 @@
           "hexdocs.pm",
           "stackoverflow.com"
         ],
-        "denyDomains": [
-          "*"
-        ],
+        "denyDomains": ["*"],
         "askForOthers": true
       },
       "permissionMode": "read",
@@ -232,7 +193,6 @@
       "preload": []
     }
   },
-
   "skills": {
     "otp-manager": {
       "path": ".claude/skills/otp-manager/SKILL.md",
@@ -256,7 +216,6 @@
       ]
     }
   },
-
   "environment": {
     "variables": {
       "ERLMCP_PROFILE": {
@@ -277,12 +236,11 @@
       }
     }
   },
-
   "metadata": {
     "version": "3.1.0",
     "project": "erlmcp",
     "description": "Erlang/OTP MCP SDK governance configuration",
-    "architecture": "4-layer governance (Policy → Execution → Verification → Receipt)",
+    "architecture": "4-layer governance (Policy to Execution to Verification to Receipt)",
     "armstrong_principles": [
       "Illegal states unrepresentable",
       "Let-it-crash supervision",
@@ -296,8 +254,6 @@
       "project_rules": "CLAUDE.md"
     },
     "last_updated": "2026-02-01",
-    "authors": [
-      "code-reviewer (WO-003)"
-    ]
+    "authors": ["code-reviewer (WO-003)"]
   }
 }

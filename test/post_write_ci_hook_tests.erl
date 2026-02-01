@@ -159,7 +159,8 @@ test_log_rotation() ->
     file:write_file(?BUILD_LOG, LargeContent),
 
     %% Verify: Initial log size > 10MB
-    {ok, #file_info{size = InitialSize}} = file:read_file_info(?BUILD_LOG),
+    {ok, FileInfo} = file:read_file_info(?BUILD_LOG, [raw]),
+    InitialSize = maps:get(size, FileInfo),
     ?assert(InitialSize > 10 * 1024 * 1024, "Test log should be > 10MB"),
 
     %% Exercise: Trigger hook (should rotate log)
@@ -171,7 +172,8 @@ test_log_rotation() ->
     %% Verify: Old log rotated to .1, new log created
     ?assertEqual(true, filelib:is_file(?BUILD_LOG ++ ".1"), "Rotated log should exist"),
 
-    {ok, #file_info{size = NewSize}} = file:read_file_info(?BUILD_LOG),
+    {ok, FileInfo2} = file:read_file_info(?BUILD_LOG, [raw]),
+    NewSize = maps:get(size, FileInfo2),
     ?assert(NewSize < InitialSize, "New log should be smaller than rotated log").
 
 test_compile_failure() ->

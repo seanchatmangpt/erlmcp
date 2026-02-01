@@ -12,7 +12,7 @@ debug_missing_entries_test() ->
         flush_interval_ms => 100
     },
 
-    {ok, Pid} = erlmcp_audit_log:start_link(Config),
+    {ok, _Pid} = erlmcp_audit_log:start_link(Config),
 
     % Log 2 events
     ok = erlmcp_audit_log:log_auth_success(<<"user1">>, #{}),

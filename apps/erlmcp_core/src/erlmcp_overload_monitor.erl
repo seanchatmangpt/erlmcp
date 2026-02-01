@@ -387,7 +387,7 @@ process_alert(#{level := overload, role := Role, process := Proc,
     %% Notify health monitor as unhealthy
     case whereis(erlmcp_health_monitor) of
         undefined -> ok;
-        _Pid ->
+        Pid when is_pid(Pid) ->
             erlmcp_health_monitor:report_degradation(#{
                 component => Role,
                 reason => queue_overload,
@@ -400,6 +400,6 @@ process_alert(#{level := overload, role := Role, process := Proc,
     %% Trigger circuit breaker if available
     case whereis(erlmcp_circuit_breaker) of
         undefined -> ok;
-        _Pid ->
+        CBPid when is_pid(CBPid) ->
             erlmcp_circuit_breaker:open(Role, queue_overload)
     end.

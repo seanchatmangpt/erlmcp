@@ -221,8 +221,8 @@ test_stop_all_experiments() ->
         duration => 10000
     },
 
-    {ok, Exp1} = erlmcp_chaos:run(Config1),
-    {ok, Exp2} = erlmcp_chaos:run(Config2),
+    {ok, _Exp1} = erlmcp_chaos:run(Config1),
+    {ok, _Exp2} = erlmcp_chaos:run(Config2),
 
     % Verify both are running
     ActiveExperiments = erlmcp_chaos:get_active_experiments(),

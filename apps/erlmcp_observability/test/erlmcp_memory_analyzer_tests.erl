@@ -150,7 +150,7 @@ test_heap_analysis() ->
     lists:foreach(fun(ProcInfo) ->
         ?assertMatch(#{
             pid := _,
-            fragmentation_pct := Frag,
+            fragmentation_pct := _,
             heap_size_words := _,
             total_heap_size_words := _
         }, ProcInfo),

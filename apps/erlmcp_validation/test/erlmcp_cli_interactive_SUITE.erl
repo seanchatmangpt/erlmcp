@@ -230,10 +230,5 @@ plugin_integration_test(_Config) ->
 %%%====================================================================
 
 create_test_plugin(Path) ->
-    Code = <<"-module(test_plugin).
--export([init/1, execute/2]).
-
-init(_Config) -> {ok, #{}}.
-execute(hello, _Args) -> {ok, <<"Hello from plugin">>}.
-">>,
+    Code = "-module(test_plugin).\n-export([init/1, execute/2]).\n\ninit(_Config) -> {ok, #{}}.\nexecute(hello, _Args) -> {ok, \"Hello from plugin\"}.\n",
     file:write_file(Path, Code).

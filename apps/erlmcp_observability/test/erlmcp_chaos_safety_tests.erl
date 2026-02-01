@@ -134,8 +134,8 @@ test_cumulative_blast_radius() ->
         max_blast_radius => 0.15
     },
 
-    {ok, Exp1} = erlmcp_chaos:run(Config1),
-    {ok, Exp2} = erlmcp_chaos:run(Config2),
+    {ok, _Exp1} = erlmcp_chaos:run(Config1),
+    {ok, _Exp2} = erlmcp_chaos:run(Config2),
 
     % Verify both are running (within cumulative limit)
     ActiveExperiments = erlmcp_chaos:get_active_experiments(),
