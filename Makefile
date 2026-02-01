@@ -7,7 +7,8 @@
         test-strict benchmark-strict coverage-strict quality-strict \
         jidoka andon poka-yoke tcps-quality-gates release-validate \
         doctor quick verify ci-local \
-        example-mcp-complete example-help andon-clear andon-watch
+        example-mcp-complete example-help andon-clear andon-watch \
+        setup-profile
 
 SHELL := /bin/bash
 
@@ -37,8 +38,11 @@ all: compile test
 #   ci-local : Reproduce exact CI workflow locally
 # ============================================================================
 
-doctor: ## Check environment health (OTP, rebar3, deps, structure)
+doctor: ## Check environment health (OTP, rebar3, deps, structure, profile)
 	@./scripts/dev/doctor.sh
+	@echo ""
+	@echo "$(BLUE)Validating ERLMCP_PROFILE...$(NC)"
+	@./scripts/validate_profile.sh $${ERLMCP_PROFILE:-dev} || exit 1
 
 quick: doctor ## Fast quality check: compile + smoke tests + validator (< 5min)
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
@@ -218,7 +222,22 @@ help:
 # COMPILATION
 # ============================================================================
 
-compile:
+# Profile setup - creates symlink for rebar3 sys.config selection
+# Controlled by ERLMCP_PROFILE environment variable (dev|test|staging|prod)
+setup-profile:
+	@ERLMCP_PROFILE=$${ERLMCP_PROFILE:-dev}; \
+	CONFIG_SOURCE="config/sys.config.$$ERLMCP_PROFILE"; \
+	CONFIG_TARGET="config/sys.config"; \
+	if [ ! -f "$$CONFIG_SOURCE" ]; then \
+		echo "$(RED)❌ Config file not found: $$CONFIG_SOURCE$(NC)"; \
+		echo "$(RED)Available profiles: dev, test, staging, prod$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "$(CYAN)Setting up profile: $$ERLMCP_PROFILE$(NC)"; \
+	ln -sf "sys.config.$$ERLMCP_PROFILE" "$$CONFIG_TARGET"; \
+	echo "$(GREEN)✓ Config symlink: $$CONFIG_TARGET -> sys.config.$$ERLMCP_PROFILE$(NC)"
+
+compile: setup-profile
 	@echo "$(BLUE)Compiling all apps...$(NC)"
 	@TERM=dumb rebar3 compile
 	@echo "$(GREEN)✓ Compilation complete$(NC)"
@@ -280,12 +299,12 @@ quality-strict:
 	@echo "$(BLUE)🔍 Master Quality Checker - ALL checks MUST pass$(NC)"
 	@./tools/quality-checker.sh || exit 1
 
-eunit:
+eunit: setup-profile
 	@echo "$(BLUE)Running EUnit tests...$(NC)"
 	@rebar3 eunit
 	@echo "$(GREEN)✓ EUnit tests passed$(NC)"
 
-ct:
+ct: setup-profile
 	@echo "$(BLUE)Running Common Test...$(NC)"
 	@rebar3 ct || echo "$(YELLOW)⚠ Some CT tests skipped (expected if no CT suites)$(NC)"
 	@echo "$(GREEN)✓ Common Test complete$(NC)"
@@ -337,18 +356,37 @@ coverage:
 # NO COMPROMISES. Stop the line on failure (自働化 Jidoka).
 # ============================================================================
 
-validate: validate-compile validate-test validate-coverage validate-quality validate-bench
+validate: validate-profile validate-compile validate-test validate-coverage validate-quality validate-bench
 	@echo ""
 	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(GREEN)✅ ALL QUALITY GATES PASSED - READY FOR PRODUCTION$(NC)"
 	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
 	@echo ""
+	@echo "$(GREEN)✓ Profile:$(NC) Valid ERLMCP_PROFILE configuration"
 	@echo "$(GREEN)✓ Compilation:$(NC) All modules compiled successfully (0 errors)"
 	@echo "$(GREEN)✓ Tests:$(NC) All tests passed (0 failures)"
 	@echo "$(GREEN)✓ Coverage:$(NC) ≥80% code coverage achieved"
 	@echo "$(GREEN)✓ Quality:$(NC) Dialyzer + Xref passed (0 warnings)"
 	@echo "$(GREEN)✓ Benchmarks:$(NC) No performance regression (<10%)"
 	@echo ""
+
+validate-profile:
+	@echo "$(BLUE)🔧 Quality Gate: Profile Validation$(NC)"
+	@echo "  Target: Valid ERLMCP_PROFILE configuration"
+	@echo "  Action: Checking profile $${ERLMCP_PROFILE:-dev}..."
+	@echo ""
+	@if ./scripts/validate_profile.sh $${ERLMCP_PROFILE:-dev}; then \
+		echo ""; \
+		echo "$(GREEN)✅ Profile validation passed$(NC)"; \
+		echo ""; \
+	else \
+		echo ""; \
+		echo "$(RED)❌ PROFILE VALIDATION FAILED$(NC)"; \
+		echo "$(RED)Gate: BLOCKED$(NC)"; \
+		echo "$(RED)Action: Set valid ERLMCP_PROFILE (dev, test, staging, prod)$(NC)"; \
+		echo ""; \
+		exit 1; \
+	fi
 
 validate-compile:
 	@echo "$(BLUE)🔨 Quality Gate: Compilation$(NC)"
@@ -639,7 +677,7 @@ xref:
 # DEVELOPMENT
 # ============================================================================
 
-console:
+console: setup-profile
 	@echo "$(BLUE)Starting Erlang shell...$(NC)"
 	@rebar3 shell
 
@@ -685,7 +723,7 @@ bench-quick:
 # RELEASE
 # ============================================================================
 
-release:
+release: setup-profile
 	@echo "$(BLUE)Building production release...$(NC)"
 	@rebar3 as prod release
 	@echo "$(GREEN)✓ Release built: _build/prod/rel/erlmcp$(NC)"

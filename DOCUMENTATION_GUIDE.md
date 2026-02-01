@@ -1,6 +1,6 @@
 # erlmcp Documentation Guide
 
-**Last Updated**: 2026-01-31
+**Last Updated**: 2026-02-01
 **Status**: ✅ Current and Maintained
 **Version**: v2.1.0
 
@@ -29,6 +29,8 @@ Start here for project orientation:
 | Release Process | `archive/strategy/RELEASE_STRATEGY.md` |
 | Security Fixes | `archive/troubleshooting/` (7 files) |
 | Formal Specification | `/docs/protocol.md` or `CLAUDE.md` |
+| OTP 28 Quick Reference | `docs/OTP_28_QUICK_REFERENCE.md` |
+| Migration Notes | `docs/MIGRATION_NOTES.md` |
 
 ### 🔍 Archive Categories
 
@@ -85,7 +87,7 @@ These are the **core operational documents** you'll use most often:
 - `CODE_QUALITY_REPORT_V2.1.md` - Latest quality metrics
 - `CODE_REVIEW_QUICK_REFERENCE.md` - Code review checklist
 - `CLI_USAGE.md` - Command-line tool docs
-- `OTP_28_QUICK_REFERENCE.md` - OTP 28+ features
+- `DOCUMENTATION_GUIDE.md` - This navigation guide
 - `RELEASE_NOTES_v2.1.0.md` - Latest release details
 
 ### Archive/ (150 Retained Files)
@@ -130,7 +132,7 @@ After audit and cleanup, we retained only files with ongoing reference value.
 - Security assessment reports
 - Blocker resolution summaries
 
-### /docs/ (917 Files)
+### /docs/ (917+ Files)
 
 Official documentation directory with subdirectories:
 
@@ -146,7 +148,9 @@ docs/
 ├── quality-gates/       ← Quality procedures
 ├── tcps/                ← TCPS documentation
 ├── security/            ← Security audits
-└── observability/       ← Telemetry documentation
+├── observability/       ← Telemetry documentation
+├── MIGRATION_NOTES.md   ← Documentation reorganization guide (2026-01-31)
+└── OTP_28_QUICK_REFERENCE.md ← OTP 28+ benchmark quick reference
 ```
 
 ---
@@ -204,13 +208,16 @@ We kept files with ongoing reference or policy value:
 → `CLAUDE.md` or `docs/architecture/`
 
 **"How do I run benchmarks?"**
-→ `archive/benchmarks/BENCHMARK_EXECUTION_GUIDE.md`
+→ `archive/benchmarks/BENCHMARK_EXECUTION_GUIDE.md` or `docs/OTP_28_QUICK_REFERENCE.md`
 
 **"What security fixes were applied?"**
 → `archive/troubleshooting/` (7 files)
 
 **"Was there a specific feature implemented?"**
 → `archive/phase-reports/` (search for feature name)
+
+**"What was the documentation reorganization about?"**
+→ `docs/MIGRATION_NOTES.md`
 
 ### By Development Phase
 
@@ -238,6 +245,7 @@ We kept files with ongoing reference or policy value:
 1. archive/benchmarks/BENCHMARK_EXECUTION_GUIDE.md
 2. archive/benchmarks/OTP_28_BENCHMARK_SUMMARY.md
 3. CLAUDE.md (baseline metrics in metrology section)
+4. docs/OTP_28_QUICK_REFERENCE.md (quick commands)
 
 ---
 
@@ -267,7 +275,7 @@ We kept files with ongoing reference or policy value:
 ```
 Root-level:     10 files (essential only)
 archive/:       150 files (reference material)
-/docs/:         917 files (official documentation)
+/docs/:         917+ files (official documentation)
 .claude/:       ~30 files (agent/command specs)
 .roo/:          30 files (role definitions)
 .wreckit/:      82 files (work item tracking)
@@ -317,7 +325,7 @@ Total:          ~1,200 active files
 
 For detailed information about all archived files:
 
-→ **See ARCHIVE_INDEX.md** (comprehensive guide with file descriptions)
+→ **See archive/README.md** (comprehensive guide with file descriptions)
 
 ---
 
@@ -332,5 +340,6 @@ For detailed information about all archived files:
 ---
 
 **Last Audit**: 2026-01-31
+**Cleanup Update**: 2026-02-01 (6 files moved to proper locations)
 **Next Review**: Q2 2026
 **Status**: ✅ Clean and Current

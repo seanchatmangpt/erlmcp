@@ -14,10 +14,36 @@
 #   0: PASS (no regression)
 #   1: FAIL (regression >10% or benchmark error)
 #
+# Environment:
+#   ERLMCP_PROFILE  Profile to use (dev|test|staging|prod), defaults to 'staging'
+#
 # Integration: make bench-quick
 # ==============================================================================
 
 set -euo pipefail
+
+# ==============================================================================
+# Profile Configuration
+# ==============================================================================
+
+# Use staging profile for benchmarks (production-like, with logging)
+ERLMCP_PROFILE="${ERLMCP_PROFILE:-staging}"
+
+# Validate profile (with graceful fallback to staging)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+VALIDATE_SCRIPT="$PROJECT_ROOT/scripts/validate_profile.sh"
+
+if [ -f "$VALIDATE_SCRIPT" ]; then
+    if ! "$VALIDATE_SCRIPT" "$ERLMCP_PROFILE" 2>/dev/null; then
+        echo -e "${YELLOW}WARNING: Invalid profile '$ERLMCP_PROFILE', falling back to 'staging'${NC}"
+        ERLMCP_PROFILE=staging
+    fi
+else
+    echo -e "${YELLOW}WARNING: validate_profile.sh not found, using profile: $ERLMCP_PROFILE${NC}"
+fi
+
+export ERLMCP_PROFILE
 
 # Colors
 readonly BLUE='\033[0;34m'
@@ -90,8 +116,9 @@ main() {
     local start_time=$(date +%s)
     
     log_header "ERLMCP QUICK PERFORMANCE CHECK"
-    
+
     echo "Target: Sub-2-minute sanity check for local development"
+    echo "Profile: $ERLMCP_PROFILE"
     echo "Date: $(date '+%Y-%m-%d %H:%M:%S')"
     echo ""
     
