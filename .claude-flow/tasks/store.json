@@ -1,0 +1,24 @@
+{
+  "tasks": {
+    "task-1769979041049-mdtsiz": {
+      "taskId": "task-1769979041049-mdtsiz",
+      "type": "feature",
+      "description": "Compile erlmcp_core app (97 modules) - Protocol, sessions, auth, secrets, LLM functionality. Validate OTP compliance for gen_server and supervisor behaviors. Check for undefined function calls.",
+      "priority": "high",
+      "status": "pending",
+      "progress": 0,
+      "assignedTo": [
+        "erlang-otp-developer"
+      ],
+      "tags": [
+        "core",
+        "compilation",
+        "otp"
+      ],
+      "createdAt": "2026-02-01T20:50:41.049Z",
+      "startedAt": null,
+      "completedAt": null
+    }
+  },
+  "version": "3.0.0"
+}

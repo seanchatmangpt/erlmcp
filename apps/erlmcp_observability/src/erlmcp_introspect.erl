@@ -344,10 +344,10 @@ health_check() ->
         case whereis(erlmcp_session_manager) of
             undefined ->
                 unhealthy;
-            Pid when is_pid(Pid) ->
-                case erlang:is_process_alive(Pid) of
+            Pid1 when is_pid(Pid1) ->
+                case erlang:is_process_alive(Pid1) of
                     true ->
-                        case catch gen_server:call(Pid, list_sessions, 1000) of
+                        case catch gen_server:call(Pid1, list_sessions, 1000) of
                             L when is_list(L) ->
                                 healthy;
                             _ ->

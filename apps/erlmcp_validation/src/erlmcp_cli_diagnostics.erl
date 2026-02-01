@@ -455,22 +455,22 @@ generate_recommendations(HealthStatus, MemoryInfo, ProcessInfo) ->
     Recommendations = [],
 
     %% Memory recommendations
-    MemRecs =
-        case maps:get(usage_percentage, MemoryInfo, 0) of
-            Usage when Usage > 90 ->
-                [<<"CRITICAL: Memory usage is very high. Consider reducing load or increasing memory.">>];
-            Usage when Usage > 80 ->
-                [<<"WARNING: Memory usage is high. Monitor closely and consider optimization.">>];
-            _ ->
-                []
-        end,
+    MemRecs = MemUsage = maps:get(usage_percentage, MemoryInfo, 0),
+    case MemUsage of
+        Usage when Usage > 90 ->
+            [<<"CRITICAL: Memory usage is very high. Consider reducing load or increasing memory.">>];
+        Usage when Usage > 80 ->
+            [<<"WARNING: Memory usage is high. Monitor closely and consider optimization.">>];
+        _ ->
+            []
+    end,
 
     %% Process recommendations
     ProcRecs =
         case maps:get(usage_percentage, ProcessInfo, 0) of
-            Usage when Usage > 85 ->
+            ProcUsage when ProcUsage > 85 ->
                 [<<"CRITICAL: Process count is very high. Review process creation patterns.">>];
-            Usage when Usage > 75 ->
+            ProcUsage when ProcUsage > 75 ->
                 [<<"WARNING: Process count is high. Monitor process lifecycle.">>];
             _ ->
                 []

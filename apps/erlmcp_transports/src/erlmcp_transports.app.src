@@ -13,7 +13,8 @@
       ranch,
       poolboy,
       cowboy,
-      erlmcp_core
+      erlmcp_core,
+      opentelemetry_api
   ]},
   {mod, {erlmcp_transports_app, []}},
   {env, [
