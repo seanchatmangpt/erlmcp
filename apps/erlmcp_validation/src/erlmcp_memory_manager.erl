@@ -95,7 +95,7 @@ init(Config) ->
     {ok, State}.
 
 handle_call(start_memory_monitor, _From, State) ->
-    MonitorPid = spawn_link(fun() -> memory_monitor_loop(self()) end),
+    MonitorPid = proc_lib:spawn_link(fun() -> memory_monitor_loop(self()) end),
     {reply, {ok, MonitorPid}, State};
 
 handle_call(get_memory_usage, _From, State) ->
@@ -296,15 +296,22 @@ purge_cache_entries(State, Percentage) ->
 evict_lru_entry(State) ->
     CacheList = maps:to_list(State#state.spec_cache),
     case CacheList of
-        [] -> State;
-        _ ->
+        [] ->
+            State;
+        [{SingleSpecId, _SingleEntry}] ->
+            %% Only one entry, evict it
+            NewCache = maps:remove(SingleSpecId, State#state.spec_cache),
+            NewStats = maps:update_with(cache_evictions, fun(V) -> V + 1 end, State#state.stats),
+            State#state{spec_cache = NewCache, stats = NewStats};
+        [First | Rest] ->
+            %% Multiple entries, find LRU
             {SpecId, _Entry} = lists:foldl(
                 fun({_Id, Entry}, {AccId, AccEntry}) ->
                     case maps:get(last_accessed, Entry) < maps:get(last_accessed, AccEntry) of
                         true -> {_Id, Entry};
                         false -> {AccId, AccEntry}
                     end
-                end, hd(CacheList), tl(CacheList)
+                end, First, Rest
             ),
             NewCache = maps:remove(SpecId, State#state.spec_cache),
             NewStats = maps:update_with(cache_evictions, fun(V) -> V + 1 end, State#state.stats),

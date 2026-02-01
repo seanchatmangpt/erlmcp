@@ -174,21 +174,45 @@ stop_profiling() ->
             fprof:profile({file, "fprof.trace"}),
             fprof:analyse([{dest, "fprof.analysis"}]),
             {ok, <<"fprof.analysis">>}
-        catch _:_ -> {error, not_running} end,
+        catch
+            error:{badmatch, _} = Error ->
+                logger:warning("Fprof analysis failed: ~p", [Error]),
+                {error, {fprof_failed, Error}};
+            error:badarg ->
+                logger:debug("Fprof not running"),
+                {error, not_running};
+            Class:Reason:Stack ->
+                logger:error("Fprof unexpected error ~p:~p~n~p", [Class, Reason, Stack]),
+                {error, {profiler_error, Reason}}
+        end,
 
         EprofResult = try
             eprof:stop_profiling(),
             eprof:analyze(total),
             eprof:stop(),
             {ok, analysis_done}
-        catch _:_ -> {error, not_running} end,
+        catch
+            error:badarg ->
+                logger:debug("Eprof not running"),
+                {error, not_running};
+            Class:Reason:Stack ->
+                logger:error("Eprof unexpected error ~p:~p~n~p", [Class, Reason, Stack]),
+                {error, {profiler_error, Reason}}
+        end,
 
         CprofResult = try
             cprof:pause(),
             Analysis = cprof:analyse(),
             cprof:stop(),
             {ok, Analysis}
-        catch _:_ -> {error, not_running} end,
+        catch
+            error:badarg ->
+                logger:debug("Cprof not running"),
+                {error, not_running};
+            Class:Reason:Stack ->
+                logger:error("Cprof unexpected error ~p:~p~n~p", [Class, Reason, Stack]),
+                {error, {profiler_error, Reason}}
+        end,
 
         {ok, #{
             fprof => FprofResult,

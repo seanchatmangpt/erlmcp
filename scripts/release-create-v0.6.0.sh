@@ -20,6 +20,10 @@ VERSION="v0.6.0"
 RELEASE_BRANCH="release/v0.6.0"
 MAIN_BRANCH="main"
 ARTIFACT_DIR="_build/release_artifacts"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source idempotent git utilities
+source "$SCRIPT_DIR/lib/git-utils.sh"
 
 # Functions
 log_info() {
@@ -294,14 +298,23 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
 push_changes() {
     log_info "Pushing changes..."
 
-    # Push branch
-    git push origin $RELEASE_BRANCH
+    # Push branch (idempotent)
+    if ! idempotent_git_push_branch origin "$RELEASE_BRANCH"; then
+        log_error "Failed to push branch $RELEASE_BRANCH"
+        exit 1
+    fi
 
-    # Push tag
-    git push origin $VERSION
+    # Push tag (idempotent)
+    if ! idempotent_git_push_tag origin "$VERSION"; then
+        log_error "Failed to push tag $VERSION"
+        exit 1
+    fi
 
-    # Push main merge
-    git push origin $MAIN_BRANCH
+    # Push main merge (idempotent)
+    if ! idempotent_git_push_branch origin "$MAIN_BRANCH"; then
+        log_error "Failed to push branch $MAIN_BRANCH"
+        exit 1
+    fi
 
     log_success "All changes pushed"
 }

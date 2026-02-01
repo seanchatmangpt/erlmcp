@@ -167,7 +167,7 @@ init([Owner, Opts]) when is_map(Opts) ->
             % In test mode, don't start a reader process
             {ok, State};
         false ->
-            ReaderPid = spawn_link(fun() -> read_loop(self(), Owner, MaxMessageSize) end),
+            ReaderPid = proc_lib:spawn_link(fun() -> read_loop(self(), Owner, MaxMessageSize) end),
             {ok, State#state{reader = ReaderPid}}
     end.
 

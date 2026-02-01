@@ -170,56 +170,58 @@ levenshtein_distance([], S2, _Cache) ->
     length(S2);
 levenshtein_distance(S1, [], _Cache) ->
     length(S1);
-levenshtein_distance(S1, S2, Cache) ->
-    levenshtein_matrix(S1, S2, Cache).
-
-%% @doc Build Levenshtein distance matrix
--spec levenshtein_matrix(string(), string(), map()) -> non_neg_integer().
-levenshtein_matrix(S1, S2, _Cache) ->
+-spec levenshtein_distance(string(), string()) -> non_neg_integer().
+levenshtein_distance(S1, S2) when S1 =:= S2 ->
+    0;
+levenshtein_distance([], S2) ->
+    length(S2);
+levenshtein_distance(S1, []) ->
+    length(S1);
+levenshtein_distance(S1, S2) ->
     Len1 = length(S1),
     Len2 = length(S2),
 
-    %% Initialize matrix
-    InitRow = lists:seq(0, Len2),
-    InitMatrix = [{0, InitRow}],
+    S1Tuple = list_to_tuple(S1),
+    S2Tuple = list_to_tuple(S2),
 
-    %% Calculate matrix row by row
+    InitRow = list_to_tuple(lists:seq(0, Len2)),
+    InitMatrix = array:from_list([InitRow]),
+
     FinalMatrix = lists:foldl(fun(I, Matrix) ->
-        Char1 = lists:nth(I, S1),
-        PrevRow = proplists:get_value(I - 1, Matrix),
-        NewRow = calculate_row(Char1, S2, PrevRow, I),
-        [{I, NewRow} | Matrix]
+        Char1 = element(I, S1Tuple),
+        PrevRow = array:get(I - 1, Matrix),
+        NewRow = calculate_row_optimized(Char1, S2Tuple, PrevRow, I, Len2),
+        array:set(I, NewRow, Matrix)
     end, InitMatrix, lists:seq(1, Len1)),
 
-    %% Get final distance from bottom-right cell
-    LastRow = proplists:get_value(Len1, FinalMatrix),
-    lists:last(LastRow).
+    LastRow = array:get(Len1, FinalMatrix),
+    element(Len2 + 1, LastRow).
 
-%% @doc Calculate a single row of the Levenshtein matrix
--spec calculate_row(char(), string(), [non_neg_integer()], non_neg_integer()) -> [non_neg_integer()].
-calculate_row(Char1, S2, PrevRow, RowIndex) ->
+%% @doc Calculate a single row of the Levenshtein matrix (optimized)
+-spec calculate_row_optimized(char(), tuple(), tuple(), non_neg_integer(), non_neg_integer()) -> tuple().
+calculate_row_optimized(Char1, S2Tuple, PrevRow, RowIndex, Len2) ->
     InitAcc = {[RowIndex], RowIndex},
-    {Row, _} = lists:foldl(fun(J, {RowAcc, PrevCell}) ->
-        Char2 = lists:nth(J, S2),
+    {RowList, _} = lists:foldl(fun(J, {RowAcc, PrevCell}) ->
+        Char2 = element(J, S2Tuple),
         Cost = case Char1 =:= Char2 of
             true -> 0;
             false -> 1
         end,
 
-        Above = lists:nth(J + 1, PrevRow),
+        Above = element(J + 1, PrevRow),
         Left = PrevCell,
-        Diag = lists:nth(J, PrevRow),
+        Diag = element(J, PrevRow),
 
         NewCell = lists:min([
-            Above + 1,      %% Deletion
-            Left + 1,       %% Insertion
-            Diag + Cost     %% Substitution
+            Above + 1,
+            Left + 1,
+            Diag + Cost
         ]),
 
-        {RowAcc ++ [NewCell], NewCell}
-    end, InitAcc, lists:seq(1, length(S2))),
+        {[NewCell | RowAcc], NewCell}
+    end, InitAcc, lists:seq(1, Len2)),
 
-    Row.
+    list_to_tuple(lists:reverse(RowList)).
 
 %% @doc Find commands that start with given prefix
 -spec prefix_matches(string(), [binary()]) -> [binary()].

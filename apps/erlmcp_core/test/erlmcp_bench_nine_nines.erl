@@ -300,27 +300,29 @@ measure_registry_throughput() ->
     Operations = 1000000,
     Table = ets:new(bench_registry, [set, public, {read_concurrency, true}, {write_concurrency, true}]),
 
-    StartTime = erlang:monotonic_time(microsecond),
+    try
+        StartTime = erlang:monotonic_time(microsecond),
 
-    lists:foreach(fun(I) ->
-        Key = {registry, I},
-        Value = {data, erlang:system_time()},
-        ets:insert(Table, {Key, Value}),
-        _ = ets:lookup(Table, Key),
-        ets:delete(Table, Key)
-    end, lists:seq(1, Operations)),
+        lists:foreach(fun(I) ->
+            Key = {registry, I},
+            Value = {data, erlang:system_time()},
+            ets:insert(Table, {Key, Value}),
+            _ = ets:lookup(Table, Key),
+            ets:delete(Table, Key)
+        end, lists:seq(1, Operations)),
 
-    EndTime = erlang:monotonic_time(microsecond),
-    DurationS = (EndTime - StartTime) / 1_000_000,
-    Throughput = Operations / DurationS,
+        EndTime = erlang:monotonic_time(microsecond),
+        DurationS = (EndTime - StartTime) / 1_000_000,
+        Throughput = Operations / DurationS,
 
-    ets:delete(Table),
-
-    #{
-        throughput => Throughput,
-        operations => Operations,
-        duration_s => DurationS
-    }.
+        #{
+            throughput => Throughput,
+            operations => Operations,
+            duration_s => DurationS
+        }
+    after
+        catch ets:delete(Table)
+    end.
 
 -spec measure_queue_throughput() -> map().
 measure_queue_throughput() ->
@@ -352,27 +354,29 @@ measure_session_throughput() ->
     Operations = 1000000,
     Table = ets:new(bench_session, [set, public, {read_concurrency, true}, {write_concurrency, true}]),
 
-    StartTime = erlang:monotonic_time(microsecond),
+    try
+        StartTime = erlang:monotonic_time(microsecond),
 
-    lists:foreach(fun(I) ->
-        SessionId = I rem 10000,
-        Key = {session, SessionId},
-        Value = #{user_id => I, timestamp => erlang:system_time()},
-        ets:insert(Table, {Key, Value}),
-        _ = ets:lookup(Table, Key)
-    end, lists:seq(1, Operations)),
+        lists:foreach(fun(I) ->
+            SessionId = I rem 10000,
+            Key = {session, SessionId},
+            Value = #{user_id => I, timestamp => erlang:system_time()},
+            ets:insert(Table, {Key, Value}),
+            _ = ets:lookup(Table, Key)
+        end, lists:seq(1, Operations)),
 
-    EndTime = erlang:monotonic_time(microsecond),
-    DurationS = (EndTime - StartTime) / 1_000_000,
-    Throughput = Operations / DurationS,
+        EndTime = erlang:monotonic_time(microsecond),
+        DurationS = (EndTime - StartTime) / 1_000_000,
+        Throughput = Operations / DurationS,
 
-    ets:delete(Table),
-
-    #{
-        throughput => Throughput,
-        operations => Operations,
-        duration_s => DurationS
-    }.
+        #{
+            throughput => Throughput,
+            operations => Operations,
+            duration_s => DurationS
+        }
+    after
+        catch ets:delete(Table)
+    end.
 
 -spec measure_e2e_latency(pos_integer()) -> map().
 measure_e2e_latency(Operations) ->
@@ -550,41 +554,43 @@ measure_sustained_throughput(TargetMsgPerSec) ->
     %% Shared ETS table for work
     WorkTable = ets:new(work_table, [set, public, {write_concurrency, true}, {read_concurrency, true}]),
 
-    StartTime = erlang:monotonic_time(microsecond),
+    try
+        StartTime = erlang:monotonic_time(microsecond),
 
-    %% Spawn workers
-    Self = self(),
-    _WorkerPids = lists:map(fun(WorkerId) ->
-        spawn_link(fun() ->
-            worker_loop(WorkTable, WorkerId, OpsPerWorker),
-            Self ! {worker_done, WorkerId}
-        end)
-    end, lists:seq(1, Workers)),
+        %% Spawn workers
+        Self = self(),
+        _WorkerPids = lists:map(fun(WorkerId) ->
+            spawn_link(fun() ->
+                worker_loop(WorkTable, WorkerId, OpsPerWorker),
+                Self ! {worker_done, WorkerId}
+            end)
+        end, lists:seq(1, Workers)),
 
-    %% Wait for all workers
-    lists:foreach(fun(WorkerId) ->
-        receive
-            {worker_done, WorkerId} -> ok
-        after 60000 ->
-            io:format("   WARNING: Worker ~p timed out~n", [WorkerId])
-        end
-    end, lists:seq(1, Workers)),
+        %% Wait for all workers
+        lists:foreach(fun(WorkerId) ->
+            receive
+                {worker_done, WorkerId} -> ok
+            after 60000 ->
+                io:format("   WARNING: Worker ~p timed out~n", [WorkerId])
+            end
+        end, lists:seq(1, Workers)),
 
-    EndTime = erlang:monotonic_time(microsecond),
-    ActualDurationS = (EndTime - StartTime) / 1_000_000,
-    AchievedThroughput = TotalOps / ActualDurationS,
+        EndTime = erlang:monotonic_time(microsecond),
+        ActualDurationS = (EndTime - StartTime) / 1_000_000,
+        AchievedThroughput = TotalOps / ActualDurationS,
 
-    ets:delete(WorkTable),
-
-    #{
-        target_msg_per_sec => TargetMsgPerSec,
-        achieved_msg_per_sec => AchievedThroughput,
-        throughput => AchievedThroughput,
-        duration_s => ActualDurationS,
-        total_ops => TotalOps,
-        workers => Workers,
-        connections => Workers  % Approximate
-    }.
+        #{
+            target_msg_per_sec => TargetMsgPerSec,
+            achieved_msg_per_sec => AchievedThroughput,
+            throughput => AchievedThroughput,
+            duration_s => ActualDurationS,
+            total_ops => TotalOps,
+            workers => Workers,
+            connections => Workers  % Approximate
+        }
+    after
+        catch ets:delete(WorkTable)
+    end.
 
 %%====================================================================
 %% Helper Functions

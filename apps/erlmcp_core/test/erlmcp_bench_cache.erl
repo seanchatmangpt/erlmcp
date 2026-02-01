@@ -345,6 +345,7 @@ calculate_percentiles([]) ->
     {0.0, 0.0, 0.0};
 calculate_percentiles(Latencies) ->
     Sorted = lists:sort(Latencies),
+    SortedTuple = list_to_tuple(Sorted),
     Len = length(Sorted),
 
     P50 = lists:nth(max(1, round(Len * 0.50)), Sorted),

@@ -228,13 +228,11 @@ parse_single_pattern(Pattern) ->
 start_trace_internal(TracePatterns, Opts) ->
     MaxEvents = maps:get(max_events, Opts, 10000),
 
-    %% Start trace collector process
-    CollectorPid = spawn(fun() ->
+    %% Start trace collector process using proc_lib
+    CollectorPid = proc_lib:spawn_link(fun() ->
+        erlang:register(erlmcp_trace_collector, self()),
         trace_collector_loop([], MaxEvents)
     end),
-
-    %% Register collector
-    erlang:register(erlmcp_trace_collector, CollectorPid),
 
     %% Set up tracer
     erlang:trace(all, true, [call, procs, {tracer, CollectorPid}]),

@@ -187,7 +187,7 @@ handle_cast(_Msg, State) ->
 %% @doc Handle info messages
 handle_info(run_repl, State) ->
     % Run REPL loop in separate process to avoid blocking gen_server
-    spawn_link(fun() -> repl_loop(State) end),
+    proc_lib:spawn_link(fun() -> repl_loop(State) end),
     {noreply, State};
 
 handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.history_pid ->
@@ -580,7 +580,18 @@ cmd_call_tool([Name | ArgsStr], State) ->
                 [] -> #{};
                 [JsonStr] ->
                     try jsx:decode(list_to_binary(JsonStr), [return_maps])
-                    catch _:_ -> #{}
+                    catch
+                        error:badarg ->
+                            logger:warning("Invalid JSON arguments: ~p", [JsonStr]),
+                            io:format(erlmcp_cli_formatter:warning(
+                                "Invalid JSON, using empty arguments~n")),
+                            #{};
+                        Class:Reason ->
+                            logger:error("JSON parsing error ~p:~p for input: ~p",
+                                        [Class, Reason, JsonStr]),
+                            io:format(erlmcp_cli_formatter:warning(
+                                "JSON parse error, using empty arguments~n")),
+                            #{}
                     end
             end,
 

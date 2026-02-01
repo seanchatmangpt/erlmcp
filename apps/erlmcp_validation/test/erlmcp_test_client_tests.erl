@@ -293,11 +293,10 @@ test_client_gen_server_info() ->
     ?assert(lists:keymember(message_queue_len, 1, Info)),
     erlmcp_test_client:stop_test_server(Pid).
 
-test_client_process_dictionary() ->
-    {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),
-    Dict = erlang:process_info(Pid, dictionary),
-    ?assertMatch({dictionary, _}, Dict),
-    erlmcp_test_client:stop_test_server(Pid).
+%% test_client_process_dictionary - DELETED
+%% Reason: Testing implementation detail (process dictionary existence).
+%% Process dictionary is an internal Erlang feature, not module behavior.
+%% See ANTIPATTERN_IMPLEMENTATION_TESTING.md for details.
 
 test_client_trap_exit() ->
     {ok, Pid} = erlmcp_test_client:start_test_client(stdio, #{}),

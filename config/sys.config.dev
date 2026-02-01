@@ -68,7 +68,44 @@
             enable_http_logging => true,
             enable_profiling => true,
             profile_dir => "profiles"
-        }}
+        }},
+
+        %% RPC timeout configuration - generous for debugging
+        {rpc_call_timeout_ms, 10000},
+        {rpc_long_call_timeout_ms, 30000},
+
+        %% Apps server configuration
+        {max_registered_apps, 500},
+
+        %% Plugin registry configuration
+        {plugin_registry_timeout_ms, 10000},
+
+        %% Overload monitor configuration
+        {overload_monitor_enabled, true},
+        {overload_check_interval_ms, 5000},
+        {overload_max_alert_history, 500},
+        {overload_warning_threshold, 0.80},
+        {overload_critical_threshold, 0.90},
+        {overload_threshold, 1.00},
+
+        %% Node monitor configuration
+        {node_monitor_enabled, true},
+        {node_check_interval_ms, 5000},
+
+        %% CPU quota configuration - relaxed in dev
+        {cpu_quota_enabled, false},
+        {cpu_quota_max_cpu_time_per_sec_ms, 500},
+        {cpu_quota_max_ops_per_sec, 1000},
+        {cpu_quota_window_ms, 1000},
+        {cpu_quota_timeout_ms, 30000},
+        {cpu_quota_cleanup_interval_ms, 300000},
+
+        %% Memory monitor configuration - less aggressive in dev
+        {memory_monitor_enabled, true},
+        {memory_monitor_check_interval_ms, 60000},
+        {memory_monitor_threshold, 0.90},
+        {memory_monitor_binary_threshold_bytes, 500000000},
+        {memory_monitor_auto_gc, true}
     ]},
 
     {kernel, [

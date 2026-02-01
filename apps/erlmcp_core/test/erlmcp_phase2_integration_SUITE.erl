@@ -376,63 +376,66 @@ test_completion_cache_integration(Config) ->
     %% Setup: Completion handler with cache
     CompletionRef = <<"cached_completion">>,
     CallCount = ets:new(call_count, [set, public]),
-    ets:insert(CallCount, {count, 0}),
 
-    %% Handler that counts calls (to verify caching)
-    CountingHandler = fun(_Ref, _Arg, _Context) ->
-        [{count, Count}] = ets:lookup(CallCount, count),
-        ets:insert(CallCount, {count, Count + 1}),
-        {ok, [
-            #{value => <<"option1">>, label => <<"Option 1">>},
-            #{value => <<"option2">>, label => <<"Option 2">>}
-        ]}
-    end,
+    try
+        ets:insert(CallCount, {count, 0}),
 
-    ok = erlmcp_completion:add_completion_handler(
-        whereis(erlmcp_completion),
-        CompletionRef,
-        CountingHandler,
-        <<"general">>
-    ),
+        %% Handler that counts calls (to verify caching)
+        CountingHandler = fun(_Ref, _Arg, _Context) ->
+            [{count, Count}] = ets:lookup(CallCount, count),
+            ets:insert(CallCount, {count, Count + 1}),
+            {ok, [
+                #{value => <<"option1">>, label => <<"Option 1">>},
+                #{value => <<"option2">>, label => <<"Option 2">>}
+            ]}
+        end,
 
-    %% Test 1: First request (cache miss)
-    {ok, _Result1} = erlmcp_completion:complete(
-        whereis(erlmcp_completion),
-        CompletionRef,
-        #{name => <<"test">>, value => <<"opt">>},
-        #{}
-    ),
+        ok = erlmcp_completion:add_completion_handler(
+            whereis(erlmcp_completion),
+            CompletionRef,
+            CountingHandler,
+            <<"general">>
+        ),
 
-    [{count, Count1}] = ets:lookup(CallCount, count),
-    ?assertEqual(1, Count1, "Handler should be called once"),
+        %% Test 1: First request (cache miss)
+        {ok, _Result1} = erlmcp_completion:complete(
+            whereis(erlmcp_completion),
+            CompletionRef,
+            #{name => <<"test">>, value => <<"opt">>},
+            #{}
+        ),
 
-    %% Test 2: Second identical request (cache hit)
-    {ok, _Result2} = erlmcp_completion:complete(
-        whereis(erlmcp_completion),
-        CompletionRef,
-        #{name => <<"test">>, value => <<"opt">>},
-        #{}
-    ),
+        [{count, Count1}] = ets:lookup(CallCount, count),
+        ?assertEqual(1, Count1, "Handler should be called once"),
 
-    [{count, Count2}] = ets:lookup(CallCount, count),
-    ?assertEqual(1, Count2, "Handler should NOT be called again (cache hit)"),
+        %% Test 2: Second identical request (cache hit)
+        {ok, _Result2} = erlmcp_completion:complete(
+            whereis(erlmcp_completion),
+            CompletionRef,
+            #{name => <<"test">>, value => <<"opt">>},
+            #{}
+        ),
 
-    %% Test 3: Different argument (cache miss)
-    {ok, _Result3} = erlmcp_completion:complete(
-        whereis(erlmcp_completion),
-        CompletionRef,
-        #{name => <<"test">>, value => <<"different">>},
-        #{}
-    ),
+        [{count, Count2}] = ets:lookup(CallCount, count),
+        ?assertEqual(1, Count2, "Handler should NOT be called again (cache hit)"),
 
-    [{count, Count3}] = ets:lookup(CallCount, count),
-    ?assertEqual(2, Count3, "Handler should be called for different argument"),
+        %% Test 3: Different argument (cache miss)
+        {ok, _Result3} = erlmcp_completion:complete(
+            whereis(erlmcp_completion),
+            CompletionRef,
+            #{name => <<"test">>, value => <<"different">>},
+            #{}
+        ),
 
-    %% Cleanup
-    ets:delete(CallCount),
+        [{count, Count3}] = ets:lookup(CallCount, count),
+        ?assertEqual(2, Count3, "Handler should be called for different argument"),
 
-    ct:pal("Completion cache integration test completed successfully"),
-    Config.
+        ct:pal("Completion cache integration test completed successfully"),
+        Config
+    after
+        %% Always cleanup ETS table, even if test fails
+        catch ets:delete(CallCount)
+    end.
 
 test_elicitation_with_secrets(Config) ->
     ct:pal("Testing elicitation integration with secrets"),

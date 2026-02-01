@@ -160,8 +160,13 @@ close(#state{mode = server, ranch_ref = RanchRef, server_id = ServerId})
 close(#state{socket = Socket, server_id = ServerId}) when Socket =/= undefined ->
     %% Release connection slot on close
     catch erlmcp_connection_limiter:release_connection(ServerId),
-    gen_tcp:close(Socket),
-    ok;
+    case gen_tcp:close(Socket) of
+        ok ->
+            ok;
+        {error, Reason} ->
+            logger:warning("TCP close failed: ~p", [Reason]),
+            ok  % Still return ok since we're closing anyway
+    end;
 close(_State) ->
     ok.
 

@@ -76,7 +76,13 @@
     backpressure_timer :: reference() | undefined,
     messages_pending :: non_neg_integer(),
     bytes_buffered :: non_neg_integer(),
-    %% Statistics
+    %% Statistics (per-connection, safe in state)
+    %% IDEMPOTENCY NOTE: These counters are per-WebSocket-connection statistics
+    %% stored in process state. This is SAFE because:
+    %% 1. Each WebSocket connection has its own process (no cross-process race conditions)
+    %% 2. If the connection process crashes, the WebSocket connection is dead anyway
+    %% 3. Statistics reset to 0 on new connection, which is correct behavior
+    %% 4. No counter drift across processes (isolated per connection)
     messages_received = 0 :: non_neg_integer(),
     messages_sent = 0 :: non_neg_integer(),
     bytes_received = 0 :: non_neg_integer(),

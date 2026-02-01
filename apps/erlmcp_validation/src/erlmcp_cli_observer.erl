@@ -65,11 +65,11 @@ start_watch(Opts) ->
         RefreshInterval = maps:get(refresh_interval, Opts, 1000),
         OutputFile = maps:get(output_file, Opts, undefined),
 
-        Pid = spawn(fun() ->
+        Pid = proc_lib:spawn_link(fun() ->
+            erlang:register(erlmcp_cli_watch, self()),
             watch_background_loop(Opts, RefreshInterval, OutputFile, [])
         end),
 
-        erlang:register(erlmcp_cli_watch, Pid),
         {ok, Pid}
     catch
         Class:Error:Stack ->

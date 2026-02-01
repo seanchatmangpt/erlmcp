@@ -410,7 +410,7 @@ test_invalid_task_spec() ->
 %%%===================================================================
 
 test_sys_debugging() ->
-    % Test sys module integration
+    % Test task status tracking (observable behavior)
     TaskFun = fun() ->
         timer:sleep(500),
         ok
@@ -418,15 +418,15 @@ test_sys_debugging() ->
 
     {ok, _TaskId, Pid} = erlmcp_task_runner:start_task(TaskFun, #{timeout => 60000}),
 
-    % Get state via sys module
+    % Check task status via public API
     timer:sleep(50),
 
     case erlmcp_task_runner:get_status(Pid) of
         {ok, Status} ->
             ?assertMatch(#{status := running}, Status);
         {error, _Reason} ->
-            % Process may have already completed
-            ?debugMsg("Process completed before sys:get_state"),
+            % Process may have already completed (acceptable race condition)
+            ?debugMsg("Process completed before status check"),
             ok
     end.
 

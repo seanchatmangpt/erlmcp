@@ -570,9 +570,9 @@ test_concurrent_connections(Transport, NumConnections) ->
         
         %% Start all connections concurrently
         StartTime = erlang:monotonic_time(millisecond),
-        
+
         Clients = lists:map(fun(_) ->
-            spawn(fun() ->
+            spawn_monitor(fun() ->
                 case erlmcp_test_client:start_test_client(Transport, #{
                     owner => self(),
                     test_mode => true
@@ -584,9 +584,9 @@ test_concurrent_connections(Transport, NumConnections) ->
                 end
             end)
         end, lists:seq(1, NumConnections)),
-        
+
         %% Wait for all clients to connect
-        Results = lists:map(fun(ClientRef) ->
+        Results = lists:map(fun({ClientRef, _MonRef}) ->
             Ref = monitor(process, ClientRef),
             receive
                 {'DOWN', Ref, process, ClientRef, _} ->

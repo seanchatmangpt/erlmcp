@@ -34,6 +34,9 @@ CHANGELOG="CHANGELOG.md"
 ESCRIPT_NAME="erlmcp-validate"
 BUILD_DIR="_build/validation/bin"
 
+# Source idempotent git utilities
+source "$SCRIPT_DIR/lib/git-utils.sh"
+
 # Parse arguments
 VERSION="${1:-}"
 DRY_RUN=false
@@ -284,10 +287,16 @@ Build Info:
         echo -e "${GREEN}✓ Created tag: $TAG_NAME${NC}"
     fi
 
-    # Push changes
+    # Push changes (idempotent operations for cloud safety)
     echo -e "${BLUE}Pushing changes to remote...${NC}"
-    git push origin "$CURRENT_BRANCH" || echo -e "${YELLOW}⚠ Failed to push branch${NC}"
-    git push origin "$TAG_NAME" || echo -e "${YELLOW}⚠ Failed to push tag${NC}"
+    if ! idempotent_git_push_branch origin "$CURRENT_BRANCH"; then
+        echo -e "${RED}✗ Failed to push branch $CURRENT_BRANCH${NC}"
+        exit 1
+    fi
+    if ! idempotent_git_push_tag origin "$TAG_NAME"; then
+        echo -e "${RED}✗ Failed to push tag $TAG_NAME${NC}"
+        exit 1
+    fi
 
     echo -e "${GREEN}✓ Git commit and tag complete${NC}"
 fi

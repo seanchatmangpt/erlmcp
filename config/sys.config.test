@@ -70,7 +70,44 @@
             enable_profiling => false,
             fast_shutdown => true,           % Quick cleanup between tests
             random_ports => true             % Avoid port conflicts
-        }}
+        }},
+
+        %% RPC timeout configuration - fast for tests
+        {rpc_call_timeout_ms, 1000},
+        {rpc_long_call_timeout_ms, 5000},
+
+        %% Apps server configuration
+        {max_registered_apps, 50},
+
+        %% Plugin registry configuration
+        {plugin_registry_timeout_ms, 1000},
+
+        %% Overload monitor configuration - relaxed for tests
+        {overload_monitor_enabled, false},
+        {overload_check_interval_ms, 5000},
+        {overload_max_alert_history, 50},
+        {overload_warning_threshold, 0.80},
+        {overload_critical_threshold, 0.90},
+        {overload_threshold, 1.00},
+
+        %% Node monitor configuration
+        {node_monitor_enabled, false},
+        {node_check_interval_ms, 5000},
+
+        %% CPU quota configuration - disabled for tests
+        {cpu_quota_enabled, false},
+        {cpu_quota_max_cpu_time_per_sec_ms, 100},
+        {cpu_quota_max_ops_per_sec, 50},
+        {cpu_quota_window_ms, 1000},
+        {cpu_quota_timeout_ms, 5000},
+        {cpu_quota_cleanup_interval_ms, 60000},
+
+        %% Memory monitor configuration - disabled for tests
+        {memory_monitor_enabled, false},
+        {memory_monitor_check_interval_ms, 30000},
+        {memory_monitor_threshold, 0.80},
+        {memory_monitor_binary_threshold_bytes, 50000000},
+        {memory_monitor_auto_gc, false}
     ]},
 
     {kernel, [

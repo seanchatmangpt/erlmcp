@@ -263,6 +263,7 @@ benchmark_batched_requests(NumOps, Strategy) ->
 
 calculate_percentiles(Latencies) ->
     Sorted = lists:sort(Latencies),
+    SortedTuple = list_to_tuple(Sorted),
     Len = length(Sorted),
 
     P50 = lists:nth(max(1, Len div 2), Sorted),

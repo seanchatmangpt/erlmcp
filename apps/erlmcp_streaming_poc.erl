@@ -37,7 +37,7 @@
     delay_ms :: pos_integer(),
     chunk_size :: pos_integer(),
     position = 0 :: non_neg_integer(),
-    subscribers = [] :: [pid()],
+    subscribers :: sets:set(pid()),
     monitors = #{} :: #{pid() => reference()},
     backpressure_strategy = drop :: drop | block
 }).
@@ -85,24 +85,21 @@ init(_Opts) ->
     {ok, #state{}}.
 
 handle_call({execute_tool, ToolName, Opts}, _From, State = #state{streams = Streams, execution_counter = Counter}) ->
-    %% Create unique execution ID
     ExecutionId = make_ref(),
 
-    %% Extract options
     Chunks = maps:get(chunks, Opts, 10),
     DelayMs = maps:get(delay_ms, Opts, 10),
     ChunkSize = maps:get(chunk_size, Opts, 10),
 
-    %% Create stream
     Stream = #stream{
         id = ExecutionId,
         tool_name = ToolName,
         chunks = Chunks,
         delay_ms = DelayMs,
-        chunk_size = ChunkSize
+        chunk_size = ChunkSize,
+        subscribers = sets:new([{version, 2}])
     },
 
-    %% Start streaming asynchronously
     self() ! {start_streaming, ExecutionId},
 
     NewStreams = maps:put(ExecutionId, Stream, Streams),
@@ -111,13 +108,12 @@ handle_call({execute_tool, ToolName, Opts}, _From, State = #state{streams = Stre
 handle_call({subscribe, ExecutionId, SubscriberPid}, _From, State = #state{streams = Streams}) ->
     case maps:find(ExecutionId, Streams) of
         {ok, Stream = #stream{subscribers = Subs, monitors = Mons}} ->
-            case lists:member(SubscriberPid, Subs) of
+            case sets:is_element(SubscriberPid, Subs) of
                 true ->
                     {reply, ok, State};
                 false ->
-                    %% Monitor the subscriber
                     Ref = monitor(process, SubscriberPid),
-                    NewSubs = [SubscriberPid | Subs],
+                    NewSubs = sets:add_element(SubscriberPid, Subs),
                     NewMons = maps:put(SubscriberPid, Ref, Mons),
                     NewStream = Stream#stream{subscribers = NewSubs, monitors = NewMons},
                     NewStreams = maps:put(ExecutionId, NewStream, Streams),
@@ -130,7 +126,7 @@ handle_call({subscribe, ExecutionId, SubscriberPid}, _From, State = #state{strea
 handle_call({unsubscribe, ExecutionId, SubscriberPid}, _From, State = #state{streams = Streams}) ->
     case maps:find(ExecutionId, Streams) of
         {ok, Stream = #stream{subscribers = Subs, monitors = Mons}} ->
-            NewSubs = lists:delete(SubscriberPid, Subs),
+            NewSubs = sets:del_element(SubscriberPid, Subs),
             NewMons = case maps:find(SubscriberPid, Mons) of
                 {ok, Ref} ->
                     demonitor(Ref, [flush]),
@@ -154,7 +150,6 @@ handle_cast(_Msg, State) ->
 handle_info({start_streaming, ExecutionId}, State = #state{streams = Streams}) ->
     case maps:find(ExecutionId, Streams) of
         {ok, Stream = #stream{chunks = Chunks, delay_ms = DelayMs}} ->
-            %% Send first chunk
             self() ! {send_chunk, ExecutionId, 1},
             {noreply, State};
         error ->
@@ -171,20 +166,17 @@ handle_info({send_chunk, ExecutionId, ChunkNum}, State = #state{streams = Stream
             subscribers = Subs,
             backpressure_strategy = Strategy
         }} ->
-            %% Generate chunk data
             ChunkData = #{
                 chunk_num => ChunkNum,
                 data => generate_chunk_data(ChunkSize, ChunkNum),
                 timestamp => erlang:monotonic_time(microsecond)
             },
 
-            %% Send to all subscribers (with backpressure handling)
             SendTime = erlang:monotonic_time(microsecond),
-            lists:foreach(
-                fun(Sub) ->
+            sets:fold(
+                fun(Sub, _Acc) ->
                     case Strategy of
                         drop ->
-                            %% Non-blocking send - drop if mailbox full
                             try
                                 Sub ! {stream_chunk, Id, ChunkData, SendTime}
                             catch
@@ -193,26 +185,26 @@ handle_info({send_chunk, ExecutionId, ChunkNum}, State = #state{streams = Stream
                             end;
                         block ->
                             Sub ! {stream_chunk, Id, ChunkData, SendTime}
-                    end
+                    end,
+                    ok
                 end,
+                ok,
                 Subs
             ),
 
-            %% Schedule next chunk or complete
             case ChunkNum >= TotalChunks of
                 true ->
-                    %% Send completion signal
-                    lists:foreach(
-                        fun(Sub) ->
-                            Sub ! {stream_complete, Id}
+                    sets:fold(
+                        fun(Sub, _Acc) ->
+                            Sub ! {stream_complete, Id},
+                            ok
                         end,
+                        ok,
                         Subs
                     ),
-                    %% Remove stream
                     NewStreams = maps:remove(ExecutionId, Streams),
                     {noreply, State#state{streams = NewStreams}};
                 false ->
-                    %% Schedule next chunk
                     erlang:send_after(DelayMs, self(), {send_chunk, ExecutionId, ChunkNum + 1}),
                     {noreply, State}
             end;
@@ -221,12 +213,11 @@ handle_info({send_chunk, ExecutionId, ChunkNum}, State = #state{streams = Stream
     end;
 
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, State = #state{streams = Streams}) ->
-    %% Remove dead subscriber from all streams
     NewStreams = maps:map(
         fun(_ExecId, Stream = #stream{subscribers = Subs, monitors = Mons}) ->
-            case lists:member(Pid, Subs) of
+            case sets:is_element(Pid, Subs) of
                 true ->
-                    NewSubs = lists:delete(Pid, Subs),
+                    NewSubs = sets:del_element(Pid, Subs),
                     NewMons = maps:remove(Pid, Mons),
                     Stream#stream{subscribers = NewSubs, monitors = NewMons};
                 false ->
@@ -236,10 +227,9 @@ handle_info({'DOWN', _Ref, process, Pid, _Reason}, State = #state{streams = Stre
         Streams
     ),
 
-    %% Remove streams with no subscribers
     CleanedStreams = maps:filter(
         fun(_ExecId, #stream{subscribers = Subs}) ->
-            Subs =/= []
+            sets:size(Subs) > 0
         end,
         NewStreams
     ),

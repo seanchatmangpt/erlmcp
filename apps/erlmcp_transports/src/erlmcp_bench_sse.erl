@@ -92,6 +92,7 @@ run(#{workload_id := WorkloadId, message_size := MessageSize} = Config) ->
 
     % Calculate latency percentiles
     SortedLatencies = lists:sort(LatencySamples),
+    SortedTuple = list_to_tuple(SortedLatencies),
     {P50, P95, P99} = calculate_percentiles(SortedLatencies),
 
     Result = #{
@@ -229,9 +230,9 @@ calculate_percentiles(SortedList) ->
     P95_Idx = max(1, (Len * 95) div 100),
     P99_Idx = max(1, (Len * 99) div 100),
 
-    P50 = lists:nth(P50_Idx, SortedList),
-    P95 = lists:nth(P95_Idx, SortedList),
-    P99 = lists:nth(P99_Idx, SortedList),
+    P50 = element(P50_Idx, SortedTuple),
+    P95 = element(P95_Idx, SortedTuple),
+    P99 = element(P99_Idx, SortedTuple),
 
     {P50, P95, P99}.
 

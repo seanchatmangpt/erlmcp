@@ -615,9 +615,11 @@ validate_required_fields(Map, FieldList) when is_list(FieldList) ->
             {error, #{reason => invalid_message_structure}};
         true ->
             %% Convert list of binaries to list of tuples if needed
-            Fields = case is_binary(hd(FieldList)) of
-                true -> [{Field, Field} || Field <- FieldList];
-                false -> FieldList
+            Fields = case FieldList of
+                [First | _] when is_binary(First) ->
+                    [{Field, Field} || Field <- FieldList];
+                _ ->
+                    FieldList
             end,
             validate_required_fields_impl(Map, Fields, [])
     end.

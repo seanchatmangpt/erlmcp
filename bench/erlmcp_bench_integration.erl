@@ -506,6 +506,7 @@ calculate_percentiles([]) ->
     #{p50 => 0.0, p95 => 0.0, p99 => 0.0, mean => 0.0, min => 0.0, max => 0.0};
 calculate_percentiles(Timings) ->
     Sorted = lists:sort(Timings),
+    SortedTuple = list_to_tuple(Sorted),
     N = length(Sorted),
 
     P50 = lists:nth(max(1, round(N * 0.50)), Sorted),

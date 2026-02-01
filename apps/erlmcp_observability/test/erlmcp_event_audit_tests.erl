@@ -114,16 +114,24 @@ test_set_enabled() ->
 
     {ok, ok, NewState} = erlmcp_event_audit:handle_call({set_enabled, false}, State),
 
-    % Verify enabled is now false
-    ?assertEqual(false, element(2, NewState)).
+    % Verify behavior changed: events should not be logged when disabled
+    Event = {tool_executed, <<"tool">>, 10, ok},
+    {ok, StateAfterEvent} = erlmcp_event_audit:handle_event(Event, NewState),
+
+    % Event count should not increase (observable behavior)
+    ?assertEqual(element(4, NewState), element(4, StateAfterEvent)).
 
 test_set_log_all() ->
-    {ok, State} = erlmcp_event_audit:init(#{log_all_events => false}),
+    {ok, State} = erlmcp_event_audit:init(#{log_all_events => false, enabled => true}),
 
     {ok, ok, NewState} = erlmcp_event_audit:handle_call({set_log_all, true}, State),
 
-    % Verify log_all_events is now true
-    ?assertEqual(true, element(3, NewState)).
+    % Verify behavior changed: request_received events should now be logged
+    Event = {request_received, <<"method">>, <<"id">>},
+    {ok, StateAfterEvent} = erlmcp_event_audit:handle_event(Event, NewState),
+
+    % Event count should increase when log_all is true (observable behavior)
+    ?assertEqual(element(4, NewState) + 1, element(4, StateAfterEvent)).
 
 %%====================================================================
 %% Edge Cases

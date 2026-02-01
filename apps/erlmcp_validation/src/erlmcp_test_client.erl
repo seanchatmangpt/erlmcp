@@ -767,12 +767,12 @@ handle_call({set_timeout, Timeout}, _From, State) ->
 
 handle_call({send_concurrent_requests, Requests, Options}, From, State) ->
     %% Spawn a worker to handle concurrent requests
-    spawn_link(fun() -> handle_concurrent_requests(Requests, Options, From, State) end),
+    proc_lib:spawn_link(fun() -> handle_concurrent_requests(Requests, Options, From, State) end),
     {noreply, State};
 
 handle_call({run_sequence, Sequence}, From, State) ->
     %% Spawn a worker to handle sequence execution
-    spawn_link(fun() -> handle_sequence_execution(Sequence, From, State) end),
+    proc_lib:spawn_link(fun() -> handle_sequence_execution(Sequence, From, State) end),
     {noreply, State};
 
 handle_call(get_transport_type, _From, State) ->
@@ -1018,7 +1018,7 @@ process_batches_concurrently(Batches, State, Timeout) ->
 -spec spawn_worker([request_map()], state(), timeout()) -> pid().
 spawn_worker(Requests, State, Timeout) ->
     Parent = self(),
-    spawn_link(fun() ->
+    proc_lib:spawn_link(fun() ->
         Results = [process_request(Request, State, Timeout) || Request <- Requests],
         Parent ! {worker_results, self(), Results}
     end).

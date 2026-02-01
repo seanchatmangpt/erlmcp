@@ -311,7 +311,7 @@ get_command_stats_internal(Command, State) ->
                 execution_count => 0,
                 error => no_executions
             };
-        _ ->
+        [FirstExec | _] = CommandHistory ->
             Durations = [E#command_execution.duration_ms || E <- CommandHistory],
             SortedDurations = lists:sort(Durations),
 
@@ -328,8 +328,7 @@ get_command_stats_internal(Command, State) ->
                 min_duration_ms => lists:min(Durations),
                 max_duration_ms => lists:max(Durations),
                 p95_duration_ms => percentile(SortedDurations, 95),
-                last_execution => format_timestamp(
-                    (hd(CommandHistory))#command_execution.timestamp)
+                last_execution => format_timestamp(FirstExec#command_execution.timestamp)
             }
     end.
 
