@@ -95,6 +95,15 @@ dialyzer*.txt
 reports/compliance/latest/
 reports/bench/latest/
 
+# Runtime artifacts (generated during execution)
+.erlmcp/cache/
+.erlmcp/receipts/
+.erlmcp/receipts.backup/
+.erlmcp/build.log
+.erlmcp/test.log
+.erlmcp/sessionstart.log
+.erlmcp/otp-manager.log
+
 # Documentation structure (TRACKED - DO NOT IGNORE)
 # The following directories are TRACKED and contain important project documentation:
 #   - archive/: Historical documentation, phase reports, quality reports, strategy docs
