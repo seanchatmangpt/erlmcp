@@ -2,6 +2,101 @@
 
 The erlmcp server API provides a complete interface for implementing MCP servers. This document covers all server functions, tool registration, and request handling.
 
+## Server Lifecycle Architecture
+
+```mermaid
+stateDiagram-v2
+    [*] --> Starting: start_link(Config)
+
+    state Starting {
+        [*] --> LoadConfig
+        LoadConfig --> ParseCapabilities
+        ParseCapabilities --> RegisterRegistry
+        RegisterRegistry --> InitTransport
+        InitTransport --> [*]
+    }
+
+    Starting --> Ready: Transport Initialized
+
+    state Ready {
+        [*] --> AcceptingRequests
+        AcceptingRequests --> Processing: Request Received
+        Processing --> AcceptingRequests: Response Sent
+    }
+
+    Ready --> ShuttingDown: shutdown()
+    ShuttingDown --> [*]: Cleanup Complete
+
+    Ready --> ErrorState: Critical Error
+    ErrorState --> [*]: Terminated
+```
+
+## Server Request Processing Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as Client
+    participant Transport as Transport Layer
+    participant Server as erlmcp_server
+    participant Router as Request Router
+    participant Handler as Handler Function
+    participant Validator as JSON Schema Validator
+
+    Client->>Transport: JSON-RPC Request
+    Transport->>Server: Raw Binary Data
+
+    activate Server
+    Server->>Server: Decode JSON-RPC
+    Server->>Server: Validate Protocol Version
+
+    alt Not Initialized
+        Server-->>Client: Error -32005 (Not Initialized)
+    else Initialized
+        Server->>Router: Route to Handler
+        activate Router
+
+        Router->>Router: Extract Method Name
+
+        alt Resource Method
+            Router->>Handler: Resource Handler
+            activate Handler
+            Handler->>Validator: Validate Resource URI
+            Validator-->>Handler: Valid URI
+            Handler-->>Server: Resource Data
+            deactivate Handler
+        else Tool Method
+            Router->>Handler: Tool Handler
+            activate Handler
+            Handler->>Validator: Validate Arguments
+            Validator-->>Handler: Valid Arguments
+            Handler->>Handler: Execute Tool
+            Handler-->>Server: Tool Result
+            deactivate Handler
+        else Prompt Method
+            Router->>Handler: Prompt Handler
+            activate Handler
+            Handler->>Validator: Validate Arguments
+            Handler-->>Server: Prompt Messages
+            deactivate Handler
+        else Unknown Method
+            Router-->>Server: Method Not Found
+            Server-->>Client: Error -32601
+        end
+
+        deactivate Router
+
+        alt Handler Error
+            Server->>Server: Format Error Response
+            Server-->>Client: Error Response
+        else Handler Success
+            Server->>Server: Format Success Response
+            Server-->>Client: Success Response
+        end
+    end
+
+    deactivate Server
+```
+
 ## API Overview
 
 ### Server Types

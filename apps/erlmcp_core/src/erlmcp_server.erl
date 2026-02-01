@@ -1575,6 +1575,239 @@ handle_request(Id, ?MCP_METHOD_COMPLETION_COMPLETE, Params, TransportId, #state{
         erlmcp_tracing:end_span(SpanCtx)
     end;
 
+%% Tasks/update endpoint - v3.0 NEW: Update task metadata and trigger input_required state
+handle_request(Id, ?MCP_METHOD_TASKS_UPDATE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tasks_update">>, ServerId),
+    ServerPid = self(),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TASKS_UPDATE
+        }),
+
+        case maps:get(?MCP_PARAM_TASK_ID, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_task_id, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    ?MCP_MSG_TASK_NOT_FOUND),
+                {noreply, State};
+            TaskId ->
+                MetadataUpdate = maps:get(<<"metadata">>, Params, undefined),
+                StatusUpdate = maps:get(?MCP_PARAM_STATUS, Params, undefined),
+
+                case erlmcp_tasks:update_task(ServerPid, TaskId,
+                    fun(TaskMap) ->
+                        TaskMap1 = case MetadataUpdate of
+                            undefined -> TaskMap;
+                            _ when is_map(MetadataUpdate) ->
+                                ExistingMeta = maps:get(<<"metadata">>, TaskMap, #{}),
+                                TaskMap#{<<"metadata">> => maps:merge(ExistingMeta, MetadataUpdate)}
+                        end,
+
+                        TaskMap2 = case StatusUpdate of
+                            undefined -> TaskMap1;
+                            <<"input_required">> ->
+                                case maps:get(<<"status">>, TaskMap1) of
+                                    <<"processing">> ->
+                                        TaskMap1#{<<"status">> => <<"input_required">>};
+                                    _ ->
+                                        TaskMap1
+                                end;
+                            _ -> TaskMap1
+                        end,
+                        TaskMap2
+                    end) of
+                    ok ->
+                        case erlmcp_tasks:get(ServerPid, TaskId) of
+                            {ok, UpdatedTask} ->
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                Response = #{
+                                    ?MCP_PARAM_TASK => UpdatedTask
+                                },
+                                send_response_via_registry(State, TransportId, Id, Response),
+                                {noreply, State};
+                            {error, GetReason} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, task_get_failed, GetReason),
+                                send_error_via_registry(State, TransportId, Id,
+                                    task_error_to_code(GetReason), task_error_to_msg(GetReason)),
+                                {noreply, State}
+                        end;
+                    {error, UpdateReason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, task_update_failed, UpdateReason),
+                        send_error_via_registry(State, TransportId, Id,
+                            task_error_to_code(UpdateReason), task_error_to_msg(UpdateReason)),
+                        {noreply, State}
+                end
+        end
+    catch
+        Class:Reason2:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason2, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Tasks/progress endpoint - v3.0 NEW: Report progress via progress token
+handle_request(Id, ?MCP_METHOD_TASKS_PROGRESS, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_tasks_progress">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_TASKS_PROGRESS
+        }),
+
+        case maps:get(<<"progressToken">>, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_progress_token, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    ?MCP_MSG_INVALID_PROGRESS_TOKEN),
+                {noreply, State};
+            Token ->
+                Progress = maps:get(?MCP_PARAM_PROGRESS, Params, 0.0),
+                Total = maps:get(?MCP_PARAM_TOTAL, Params, undefined),
+
+                case is_number(Progress) andalso Progress >= 0.0 andalso Progress =< 1.0 of
+                    false when Progress > 1.0 ->
+                        erlmcp_tracing:record_error_details(SpanCtx, invalid_progress, Progress),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                            <<"Progress must be between 0.0 and 1.0">>),
+                        {noreply, State};
+                    _ ->
+                        Update = #{
+                            current => Progress
+                        },
+                        Update1 = case Total of
+                            undefined -> Update;
+                            _ when is_number(Total) -> Update#{total => Total}
+                        end,
+
+                        case erlmcp_progress:update(Token, Update1) of
+                            ok ->
+                                Response = #{
+                                    ?MCP_PARAM_PROGRESS => Progress,
+                                    ?MCP_PARAM_TOTAL => Total
+                                },
+                                send_response_via_registry(State, TransportId, Id, Response),
+                                {noreply, State};
+                            {error, invalid_token} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, token_invalid, Token),
+                                send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_INVALID_PROGRESS_TOKEN,
+                                    ?MCP_MSG_INVALID_PROGRESS_TOKEN),
+                                {noreply, State}
+                        end
+                end
+        end
+    catch
+        Class:Reason2:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason2, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Roots/add endpoint - v3.0 NEW: Add a root directory
+handle_request(Id, ?MCP_METHOD_ROOTS_ADD, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_roots_add">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_ROOTS_ADD
+        }),
+
+        case maps:get(?MCP_PARAM_URI, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_uri_parameter, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    ?MCP_MSG_MISSING_URI_PARAMETER),
+                {noreply, State};
+            RootUri ->
+                Name = maps:get(?MCP_PARAM_NAME, Params, RootUri),
+
+                case erlmcp_resources:add_root(State, RootUri, Name) of
+                    {ok, NewState} ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        Response = #{
+                            <<"root">> => #{
+                                <<"uri">> => RootUri,
+                                <<"name">> => Name
+                            }
+                        },
+                        send_response_via_registry(State, TransportId, Id, Response),
+                        {noreply, NewState};
+                    {error, {invalid_uri, _Reason}} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, invalid_uri, RootUri),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_INVALID_URI,
+                            ?MCP_MSG_INVALID_URI),
+                        {noreply, State};
+                    {error, {root_exists, _}} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, root_exists, RootUri),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_ALREADY_EXISTS,
+                            <<"Root already exists">>),
+                        {noreply, State};
+                    {error, Reason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, add_root_failed, Reason),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                            io_lib:format("Failed to add root: ~p", [Reason])),
+                        {noreply, State}
+                end
+        end
+    catch
+        Class:Reason2:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason2, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
+%% Roots/remove endpoint - v3.0 NEW: Remove a root directory
+handle_request(Id, ?MCP_METHOD_ROOTS_REMOVE, Params, TransportId, #state{server_id = ServerId} = State) ->
+    SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_roots_remove">>, ServerId),
+    try
+        erlmcp_tracing:set_attributes(SpanCtx, #{
+            <<"request_id">> => Id,
+            <<"transport_id">> => TransportId,
+            <<"method">> => ?MCP_METHOD_ROOTS_REMOVE
+        }),
+
+        case maps:get(?MCP_PARAM_URI, Params, undefined) of
+            undefined ->
+                erlmcp_tracing:record_error_details(SpanCtx, missing_uri_parameter, undefined),
+                send_error_via_registry(State, TransportId, Id, ?JSONRPC_INVALID_PARAMS,
+                    ?MCP_MSG_MISSING_URI_PARAMETER),
+                {noreply, State};
+            RootUri ->
+                case erlmcp_resources:remove_root(State, RootUri) of
+                    {ok, NewState} ->
+                        erlmcp_tracing:set_status(SpanCtx, ok),
+                        send_response_via_registry(State, TransportId, Id, #{}),
+                        {noreply, NewState};
+                    {error, {root_not_found, _}} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, root_not_found, RootUri),
+                        send_error_via_registry(State, TransportId, Id, ?MCP_ERROR_RESOURCE_NOT_FOUND,
+                            ?MCP_MSG_RESOURCE_NOT_FOUND),
+                        {noreply, State};
+                    {error, Reason} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, remove_root_failed, Reason),
+                        send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR,
+                            io_lib:format("Failed to remove root: ~p", [Reason])),
+                        {noreply, State}
+                end
+        end
+    catch
+        Class:Reason2:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, Reason2, Stacktrace),
+            send_error_via_registry(State, TransportId, Id, ?JSONRPC_INTERNAL_ERROR, ?JSONRPC_MSG_INTERNAL_ERROR),
+            {noreply, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
+
 handle_request(Id, _Method, _Params, TransportId, State) ->
     send_error_via_registry(State, TransportId, Id, ?JSONRPC_METHOD_NOT_FOUND, ?JSONRPC_MSG_METHOD_NOT_FOUND),
     {noreply, State}.
@@ -3033,6 +3266,46 @@ wait_for_task_result_loop(ClientPid, TaskId, Timeout, Start) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+%% @doc Map task error reasons to MCP error codes
+-spec task_error_to_code(term()) -> integer().
+task_error_to_code(not_found) ->
+    ?MCP_ERROR_TASK_NOT_FOUND;
+task_error_to_code(invalid_state) ->
+    ?MCP_ERROR_TASK_STATE_INVALID;
+task_error_to_code(timeout) ->
+    ?MCP_ERROR_TIMEOUT;
+task_error_to_code({not_found, _}) ->
+    ?MCP_ERROR_TASK_NOT_FOUND;
+task_error_to_code({invalid_state, _}) ->
+    ?MCP_ERROR_TASK_STATE_INVALID;
+task_error_to_code({error, not_found}) ->
+    ?MCP_ERROR_TASK_NOT_FOUND;
+task_error_to_code({error, invalid_state}) ->
+    ?MCP_ERROR_TASK_STATE_INVALID;
+task_error_to_code(_) ->
+    ?JSONRPC_INTERNAL_ERROR.
+
+%% @doc Map task error reasons to human-readable messages
+-spec task_error_to_msg(term()) -> binary().
+task_error_to_msg(not_found) ->
+    <<"Task not found">>;
+task_error_to_msg(invalid_state) ->
+    <<"Task is in invalid state for this operation">>;
+task_error_to_msg(timeout) ->
+    <<"Task operation timed out">>;
+task_error_to_msg({not_found, TaskId}) when is_binary(TaskId) ->
+    <<"Task not found: ", TaskId/binary>>;
+task_error_to_msg({not_found, _}) ->
+    <<"Task not found">>;
+task_error_to_msg({invalid_state, State}) when is_atom(State) ->
+    <<"Task is in invalid state: ", (atom_to_binary(State))/binary>>;
+task_error_to_msg({invalid_state, _}) ->
+    <<"Task is in invalid state for this operation">>;
+task_error_to_msg({error, Reason}) ->
+    task_error_to_msg(Reason);
+task_error_to_msg(_) ->
+    <<"Internal task error">>.
 
 %%====================================================================
 %% Internal functions - Elicitation Support (MCP 2025-11-25)

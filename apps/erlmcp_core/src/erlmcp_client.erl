@@ -15,6 +15,7 @@
     with_batch/2, send_batch_request/4,
     set_notification_handler/3, remove_notification_handler/2,
     set_sampling_handler/2, remove_sampling_handler/1,
+    list_roots/1, add_root/2, remove_root/2,  %% v3.0 Roots API
     stop/1,
     cleanup_stale_correlations/0
 ]).
@@ -171,6 +172,33 @@ subscribe_to_resource(Client, Uri) when is_binary(Uri) ->
 -spec unsubscribe_from_resource(client(), binary()) -> ok | {error, term()}.
 unsubscribe_from_resource(Client, Uri) when is_binary(Uri) ->
     gen_server:call(Client, {unsubscribe_resource, Uri}).
+
+%%--------------------------------------------------------------------
+%% @doc List all roots (MCP 2025-11-25)
+%% Returns a list of root directories that the server has access to.
+%% @end
+%%--------------------------------------------------------------------
+-spec list_roots(client()) -> {ok, [map()]} | {error, term()}.
+list_roots(Client) ->
+    gen_server:call(Client, list_roots, 5000).
+
+%%--------------------------------------------------------------------
+%% @doc Add a root directory (MCP 2025-11-25)
+%% Adds a new root to the server's workspace.
+%% @end
+%%--------------------------------------------------------------------
+-spec add_root(client(), binary()) -> {ok, map()} | {error, term()}.
+add_root(Client, Uri) when is_binary(Uri) ->
+    gen_server:call(Client, {add_root, Uri}, 5000).
+
+%%--------------------------------------------------------------------
+%% @doc Remove a root directory (MCP 2025-11-25)
+%% Removes a root from the server's workspace.
+%% @end
+%%--------------------------------------------------------------------
+-spec remove_root(client(), binary()) -> ok | {error, term()}.
+remove_root(Client, Uri) when is_binary(Uri) ->
+    gen_server:call(Client, {remove_root, Uri}, 5000).
 
 -spec with_batch(client(), fun((batch_id()) -> Result)) -> Result when Result :: term().
 with_batch(Client, BatchFun) when is_function(BatchFun, 1) ->
@@ -408,6 +436,56 @@ handle_call({unsubscribe_resource, Uri}, From, #state{phase = initialized} = Sta
 handle_call({unsubscribe_resource, _Uri}, From, #state{phase = Phase} = State) ->
     gen_server:reply(From, {error, {not_initialized, Phase, <<"Client not initialized">>}}),
     {noreply, State};
+
+%%====================================================================
+%% Roots API (MCP 2025-11-25) - v3.0
+%%====================================================================
+
+%% @doc List all roots
+handle_call(list_roots, From, #state{phase = initialized} = State) ->
+    case ?CHECK_CAPABILITY(State, roots) of
+        do_request ->
+            Params = #{},
+            {ok, NewState} = send_request(State, ?MCP_METHOD_ROOTS_LIST, Params, {list_roots, From}),
+            {noreply, NewState};
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
+    end;
+
+handle_call(list_roots, _From, #state{phase = Phase} = State) ->
+    {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State};
+
+%% @doc Add a root
+handle_call({add_root, Uri}, From, #state{phase = initialized} = State) when is_binary(Uri) ->
+    case ?CHECK_CAPABILITY(State, roots) of
+        do_request ->
+            Params = #{<<"uri">> => Uri},
+            {ok, NewState} = send_request(State, ?MCP_METHOD_ROOTS_ADD, Params, {add_root, From}),
+            {noreply, NewState};
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
+    end;
+
+handle_call({add_root, _Uri}, _From, #state{phase = Phase} = State) ->
+    {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State};
+
+%% @doc Remove a root
+handle_call({remove_root, Uri}, From, #state{phase = initialized} = State) when is_binary(Uri) ->
+    case ?CHECK_CAPABILITY(State, roots) of
+        do_request ->
+            Params = #{<<"uri">> => Uri},
+            {ok, NewState} = send_request(State, ?MCP_METHOD_ROOTS_REMOVE, Params, {remove_root, From}),
+            {noreply, NewState};
+        {error, _} = ErrorTuple ->
+            {reply, ErrorTuple, State}
+    end;
+
+handle_call({remove_root, _Uri}, _From, #state{phase = Phase} = State) ->
+    {reply, {error, {not_initialized, Phase, <<"Client not initialized">>}}, State};
+
+%%====================================================================
+%% Batch API
+%%====================================================================
 
 handle_call({start_batch, BatchId}, _From, State) ->
     NewBatches = maps:put(BatchId, [], State#state.batch_requests),
@@ -899,6 +977,12 @@ check_server_capability(Caps, tools) ->
     check_capability_enabled(Caps#mcp_server_capabilities.tools);
 check_server_capability(Caps, prompts) ->
     check_capability_enabled(Caps#mcp_server_capabilities.prompts);
+check_server_capability(Caps, roots) ->
+    case Caps#mcp_server_capabilities.roots of
+        #mcp_roots_capability{list_changed = true} -> ok;
+        #mcp_roots_capability{} -> ok;
+        undefined -> {error, capability_not_supported}
+    end;
 check_server_capability(Caps, completions) ->
     case Caps#mcp_server_capabilities.experimental of
         #{<<"completions">> := _} -> ok;

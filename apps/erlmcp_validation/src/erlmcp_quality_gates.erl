@@ -537,7 +537,7 @@ format_report(Report) ->
         <<"">>
     ],
 
-    iolist_to_binary([Line, $\n || Line <- AllLines]).
+    iolist_to_binary([[Line, $\n] || Line <- AllLines]).
 
 %%%=============================================================================
 %%% Check Stub Implementations

@@ -17,11 +17,9 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
-%% Types
--type app_id() :: binary().
+%% Types (app_id and app_status defined in erlmcp.hrl)
 -type app_manifest() :: map().
 -type permissions() :: [binary()].
--type app_status() :: stopped | starting | running | stopping | crashed.
 
 %% State record
 -record(state, {

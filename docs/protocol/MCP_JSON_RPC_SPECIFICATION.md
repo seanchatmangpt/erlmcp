@@ -11,6 +11,127 @@ The Model Context Protocol (MCP) uses JSON-RPC 2.0 (RFC 7049) as its transport-a
 - Protocol versioning
 - Message serialization and validation
 
+## JSON-RPC 2.0 Message Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as erlmcp_client
+    participant Transport as Transport Layer
+    participant Server as erlmcp_server
+    participant Handler as Message Handler
+    participant Registry as Registry (gproc)
+
+    Note over Client,Registry: JSON-RPC 2.0 Request Lifecycle
+
+    %% Request Phase
+    Client->>Transport: erlmcp_client:call_tool(ToolId, Params)
+    activate Transport
+    Transport->>Transport: Encode to JSON-RPC 2.0
+    Note right of Transport: {<br/>  "jsonrpc": "2.0",<br/>  "id": "uuid-v4",<br/>  "method": "tools/call",<br/>  "params": {...}<br/>}
+    Transport->>Server: Send binary frame
+    deactivate Transport
+
+    %% Server Processing
+    activate Server
+    Server->>Server: erlmcp_json_rpc:decode(Binary)
+    Server->>Server: Validate JSON-RPC 2.0 compliance
+    alt Invalid JSON-RPC
+        Server-->>Client: Parse Error (-32700)
+        Note left of Server: {<br/>  "jsonrpc": "2.0",<br/>  "id": null,<br/>  "error": {<br/>    "code": -32700,<br/>    "message": "Parse error"<br/>  }<br/>}
+    else Invalid Request
+        Server-->>Client: Invalid Request (-32600)
+    else Valid Request
+        Server->>Registry: Route to handler
+        activate Registry
+        Registry-->>Server: Handler PID
+        deactivate Registry
+
+        %% Handler Execution
+        Server->>Handler: handle_request(Request, State)
+        activate Handler
+
+        %% Capability Check
+        alt Tool Not Found
+            Handler-->>Server: {error, {tool_not_found, ToolId}}
+        else Tool Found
+            Handler->>Handler: Execute tool logic
+            Handler->>Handler: Validate response schema
+
+            %% Error Handling
+            alt Execution Error
+                Handler-->>Server: {error, {internal_error, Reason}}
+            else Execution Success
+                Handler-->>Server: {ok, Result}
+            end
+        end
+        deactivate Handler
+
+        %% Response Encoding
+        Server->>Server: erlmcp_json_rpc:encode_response(Response)
+        Server->>Transport: Send response frame
+    end
+    deactivate Server
+
+    %% Response Phase
+    activate Transport
+    Transport->>Transport: Decode frame
+    Transport->>Client: Deliver to pending request map
+    deactivate Transport
+
+    %% Client Correlation
+    Client->>Client: Match response via req_id
+    Client->>Client: Remove from State.pending (UUID -> Request)
+    Client-->>Caller: Return {ok, Result} or {error, Reason}
+
+    Note over Client,Registry: Async Notification Flow (No ID)
+
+    Client->>Transport: erlmcp_client:send_notification(Method, Params)
+    activate Transport
+    Transport->>Transport: Encode notification (no id field)
+    Transport->>Server: Send notification frame
+    deactivate Transport
+
+    Server->>Server: Handle notification (fire-and-forget)
+    Note right of Server: No response sent
+
+    %% Batch Request Flow
+    Note over Client,Registry: Batch Request Processing
+
+    Client->>Transport: erlmcp_client:batch([Req1, Req2, Req3])
+    activate Transport
+    Transport->>Transport: Encode as JSON array
+    Transport->>Server: Send batch frame
+    deactivate Transport
+
+    Server->>Server: Process all requests in parallel
+    Server->>Transport: Send batch response array
+    activate Transport
+    Transport-->>Client: [{ok, Res1}, {error, Err2}, {ok, Res3}]
+    deactivate Transport
+
+    %% Error Response Structure
+    Note over Client,Registry: Error Response Format
+
+    Server-->>Client: {<br/>  "jsonrpc": "2.0",<br/>  "id": "uuid-v4",<br/>  "error": {<br/>    "code": -32601,<br/>    "message": "Method not found",<br/>    "data": {...}<br/>  }<br/>}
+
+    %% Standard JSON-RPC Error Codes
+    Note over Client,Registry: Standard Error Codes
+    Note right of Server: -32700: Parse error<br/>-32600: Invalid Request<br/>-32601: Method not found<br/>-32602: Invalid params<br/>-32603: Internal error
+```
+
+**See also:** [Detailed JSON-RPC Flow](./diagrams/protocol/json-rpc-flow.mmd)
+
+## Overview
+
+The Model Context Protocol (MCP) uses JSON-RPC 2.0 (RFC 7049) as its transport-agnostic message format. This document provides detailed technical specifications of the protocol layer implementation in erlmcp v2.2.0+, covering:
+
+- JSON-RPC 2.0 message structure and encoding
+- Request/response/notification message types
+- Batch request processing
+- Error codes and error handling
+- Protocol versioning
+- Message serialization and validation
+
 ## 1. JSON-RPC 2.0 Message Structure
 
 ### 1.1 Basic Message Format

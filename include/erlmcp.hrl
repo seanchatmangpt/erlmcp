@@ -517,6 +517,8 @@
 -define(MCP_METHOD_TASKS_GET, <<"tasks/get">>).
 -define(MCP_METHOD_TASKS_RESULT, <<"tasks/result">>).
 -define(MCP_METHOD_TASKS_CANCEL, <<"tasks/cancel">>).
+-define(MCP_METHOD_TASKS_UPDATE, <<"tasks/update">>).  %% v3.0 NEW
+-define(MCP_METHOD_TASKS_PROGRESS, <<"tasks/progress">>).  %% v3.0 NEW
 
 %%% Cancellation Methods (TASK #142: Request Cancellation)
 -define(MCP_METHOD_REQUESTS_CANCEL, <<"requests/cancel">>).
@@ -547,6 +549,8 @@
 
 %%% Roots Methods (client-side capability)
 -define(MCP_METHOD_ROOTS_LIST, <<"roots/list">>).
+-define(MCP_METHOD_ROOTS_ADD, <<"roots/add">>).      %% v3.0 NEW
+-define(MCP_METHOD_ROOTS_REMOVE, <<"roots/remove">>).  %% v3.0 NEW
 
 %%% Sampling Methods (for AI model sampling)
 -define(MCP_METHOD_SAMPLING_CREATE_MESSAGE, <<"sampling/createMessage">>).
@@ -755,6 +759,7 @@
 
 %% Roots capability
 -record(mcp_roots_capability, {
+    list_changed = false :: boolean()  %% v3.0 NEW: Notify when roots list changes
 }).
 
 %% Client capabilities sent during initialize
@@ -961,7 +966,8 @@
     progress :: number() | undefined,
     total :: number() | undefined,
     timeout_ms :: integer(),
-    timer_ref :: reference() | undefined
+    timer_ref :: reference() | undefined,
+    partial_results :: map() | undefined  %% v3.0 NEW: Store partial results during input_required
 }).
 
 %%% Request ID Space Monitoring (RPN 720: Request ID Overflow Fix)

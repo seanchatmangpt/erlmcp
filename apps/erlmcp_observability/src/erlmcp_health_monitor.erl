@@ -186,14 +186,32 @@ handle_call({register_component, ComponentId, Pid, CheckFun}, _From, State) ->
     schedule_health_check(ComponentId, maps:get(check_interval, State#state.default_config)),
 
     {reply, ok, NewState};
-handle_call(get_system_health, From, State) ->
-    StartTime = erlang:monotonic_time(microsecond),
-
-    
-handle_call({get_component_health, ComponentId}, From, State) ->
-    StartTime = erlang:monotonic_time(microsecond),
-
-    
+handle_call(get_system_health, _From, State) ->
+    AllHealth = maps:map(fun(_Id, Component) ->
+                    #{status => Component#component_health.status,
+                      last_check => Component#component_health.last_check,
+                      consecutive_failures => Component#component_health.consecutive_failures,
+                      total_checks => Component#component_health.total_checks,
+                      successful_checks => Component#component_health.successful_checks,
+                      circuit_breaker_active => Component#component_health.circuit_breaker_active,
+                      degraded => Component#component_health.degraded}
+                 end,
+                 State#state.components),
+    {reply, #{system => healthy, components => AllHealth}, State};
+handle_call({get_component_health, ComponentId}, _From, State) ->
+    Result = case maps:find(ComponentId, State#state.components) of
+        {ok, Component} ->
+            #{status => Component#component_health.status,
+              last_check => Component#component_health.last_check,
+              consecutive_failures => Component#component_health.consecutive_failures,
+              total_checks => Component#component_health.total_checks,
+              successful_checks => Component#component_health.successful_checks,
+              circuit_breaker_active => Component#component_health.circuit_breaker_active,
+              degraded => Component#component_health.degraded};
+        error ->
+            {error, not_found}
+    end,
+    {reply, Result, State};
 handle_call(get_all_component_health, _From, State) ->
     AllHealth =
         maps:map(fun(_Id, Component) ->
@@ -747,7 +765,29 @@ schedule_health_check(ComponentId, Interval) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec enumerate_process_health() -> {ok, map()}.
+enumerate_process_health() ->
+    Iterator = erlang:processes_iterator(),
+    {Healthy, Unhealthy} = enumerate_process_iterator(Iterator, 0, 0),
+    {ok, #{healthy => Healthy, unhealthy => Unhealthy}}.
 
+-spec enumerate_process_iterator(term(), non_neg_integer(), non_neg_integer()) -> {non_neg_integer(), non_neg_integer()}.
+enumerate_process_iterator(Iterator, Healthy, Unhealthy) ->
+    case erlang:process_next(Iterator) of
+        {Pid, NewIterator} ->
+            {H, U} = case process_info(Pid, [message_queue_len, memory]) of
+                undefined ->
+                    {Healthy, Unhealthy};
+                [{message_queue_len, QLen}, {memory, _Mem}] ->
+                    if QLen > 100 ->
+                            {Healthy, Unhealthy + 1};
+                       true ->
+                            {Healthy + 1, Unhealthy}
+                    end
+            end,
+            enumerate_process_iterator(NewIterator, H, U);
+        _ ->
+            {Healthy, Unhealthy}
+    end.
 
 
 %%--------------------------------------------------------------------

@@ -71,6 +71,12 @@ make workspace-check            # Full validation (build + lint + test)
 - [docs/otp-patterns.md](docs/otp-patterns.md) - OTP design patterns and behaviors
 - [docs/protocol.md](docs/protocol.md) - MCP protocol specification
 
+**Development Guides (NEW - with Visual Workflows)**:
+- [docs/development/README.md](docs/development/README.md) - **Development Process Overview** with TDD workflow diagrams
+- [docs/development/coding-standards.md](docs/development/coding-standards.md) - **Coding Standards** with decision trees and flowcharts
+- [docs/development/tooling-automation.md](docs/development/tooling-automation.md) - **Tooling and Automation** comprehensive guide
+- [archive/strategy/DEVELOPMENT_ROADMAP.md](archive/strategy/DEVELOPMENT_ROADMAP.md) - **Development Roadmap** through Q4 2026
+
 **Code Standards and Quality Gates:**
 - Quality gates in [CLAUDE.md § Quality Gates](CLAUDE.md#quality-gates-mandatory-gate-sequence)
   - Gate₁: Compilation (errors = 0)
@@ -107,6 +113,11 @@ ls docs/api-reference.md
 # Find testing guides
 ls docs/testing-guide.md
 
+# Browse development guides (NEW)
+ls docs/development/README.md
+ls docs/development/coding-standards.md
+ls docs/development/tooling-automation.md
+
 # Browse examples
 ls examples/
 
@@ -116,29 +127,210 @@ grep -A 10 "Quality Gates" CLAUDE.md
 
 ## Development Workflow
 
+### Test-Driven Development (TDD) Workflow
+
+erlmcp follows **Chicago School TDD** - tests drive behavior, no mocks/fakes.
+
+```mermaid
+graph LR
+    A[Write Failing Test] --> B[Run Test - Confirm Red]
+    B --> C[Write Minimal Code]
+    C --> D[Run Test - Confirm Green]
+    D --> E[Refactor]
+    E --> F{All Tests Pass?}
+    F -->|No| C
+    F -->|Yes| G[Commit]
+    G --> H[Quality Gates]
+    H --> I{Gate Pass?}
+    I -->|No| C
+    I -->|Yes| J[Done]
+
+    style A fill:#ff6b6b
+    style B fill:#ff6b6b
+    style D fill:#51cf66
+    style G fill:#51cf66
+    style J fill:#339af0
+```
+
+**TDD Principles**:
+- **Red-Green-Refactor**: Write test first, implement, refactor
+- **No Mocks**: Use real erlmcp processes (gen_server, supervisors)
+- **Black-Box Testing**: Test observable behavior, not implementation
+- **Coverage ≥80%**: Mandatory before commit
+
+### Chicago School TDD Deep Dive
+
+```mermaid
+graph TB
+    subgraph "Chicago School TDD Process"
+        A[1. Write Test FIRST] --> B{Test Fails?}
+        B -->|Yes| C[2. Write Implementation]
+        B -->|No| D[⚠️ Test Was Passing<br/>Add New Scenario]
+        C --> E{Test Passes?}
+        E -->|No| F[Fix Code]
+        F --> E
+        E -->|Yes| G[3. Refactor]
+        G --> H{All Tests Pass?}
+        H -->|No| I[Fix Refactoring]
+        I --> H
+        H -->|Yes| J[4. Repeat]
+    end
+
+    subgraph "Forbidden Patterns"
+        K[❌ Mocks]
+        L[❌ Fakes]
+        M[❌ Stubs]
+        N[❌ Implementation Tests]
+    end
+
+    subgraph "Required Patterns"
+        O[✅ Real Processes]
+        P[✅ gen_server]
+        Q[✅ Supervisors]
+        R[✅ Black-Box Tests]
+    end
+
+    style D fill:#ff6b6b
+    style J fill:#51cf66
+    style K fill:#ff6b6b
+    style L fill:#ff6b6b
+    style M fill:#ff6b6b
+    style N fill:#ff6b6b
+    style O fill:#51cf66
+    style P fill:#51cf66
+    style Q fill:#51cf66
+    style R fill:#51cf66
+```
+
+### CI/CD Pipeline
+
+```mermaid
+graph TB
+    A[Push to Branch] --> B[CI Triggered]
+    B --> C[Compile Check]
+    C --> D{Compile OK?}
+    D -->|No| E[Fail Build]
+    D -->|Yes| F[Unit Tests EUnit]
+    F --> G{Tests Pass?}
+    G -->|No| E
+    G -->|Yes| H[Integration Tests CT]
+    H --> I{Tests Pass?}
+    I -->|No| E
+    I -->|Yes| J[Property Tests PropEr]
+    J --> K{Tests Pass?}
+    K -->|No| E
+    K -->|Yes| L[Coverage Analysis]
+    L --> M{Coverage ≥80%?}
+    M -->|No| E
+    M -->|Yes| N[Dialyzer Type Check]
+    N --> O{Type Check OK?}
+    O -->|No| E
+    O -->|Yes| P[Xref Analysis]
+    P --> Q{Xref Clean?}
+    Q -->|No| E
+    Q -->|Yes| R[Benchmarks]
+    R --> S{Regression <10%?}
+    S -->|No| E
+    S -->|Yes| T[Build Release]
+    T --> U[Deploy to Staging]
+    U --> V[Smoke Tests]
+    V --> W[Ready for Review]
+
+    style E fill:#ff6b6b
+    style W fill:#51cf66
+    style T fill:#339af0
+```
+
+### Quality Gate Enforcement
+
+```mermaid
+graph TB
+    subgraph "Pre-Commit Hooks"
+        A[git commit] --> B{Format Check}
+        B -->|Fail| C[❌ Block Commit]
+        B -->|Pass| D{Compile Check}
+        D -->|Fail| C
+        D -->|Pass| E[✅ Commit Allowed]
+    end
+
+    subgraph "CI/CD Pipeline"
+        E --> F[Push to Remote]
+        F --> G{Unit Tests}
+        G -->|Fail| H[❌ Block Merge]
+        G -->|Pass| I{Integration Tests}
+        I -->|Fail| H
+        I -->|Pass| J{Coverage ≥80%}
+        J -->|Fail| H
+        J -->|Pass| K{Dialyzer}
+        K -->|Fail| H
+        K -->|Pass| L{Xref}
+        L -->|Fail| H
+        L -->|Pass| M{Benchmarks}
+        M -->|Fail| H
+        M -->|Pass| N[✅ Ready to Merge]
+    end
+
+    style C fill:#ff6b6b
+    style H fill:#ff6b6b
+    style E fill:#51cf66
+    style N fill:#51cf66
+```
+
 ### Daily Development Loop
+
+```mermaid
+graph LR
+    A[pull latest main] --> B[create feature branch]
+    B --> C[write test FIRST]
+    C --> D[confirm test FAILS]
+    D --> E[implement feature]
+    E --> F[test PASSES]
+    F --> G[run full test suite]
+    G --> H{all tests pass?}
+    H -->|No| E
+    H -->|Yes| I[run quality gates]
+    I --> J{gates pass?}
+    J -->|No| E
+    J -->|Yes| K[refactor]
+    K --> L[commit]
+    L --> M[push to remote]
+    M --> N[create PR]
+
+    style D fill:#ff6b6b
+    style F fill:#51cf66
+    style N fill:#339af0
+```
+
+**Command sequence:**
 
 ```bash
 # 1. Start session with environment loaded
 cd /path/to/erlmcp
 direnv allow                    # First time only
 
-# 2. Make changes to source code
-# Edit src/*.erl or taiea/apps/*/src/*.erl
+# 2. Write test FIRST (TDD)
+# Edit test/my_feature_tests.erl
+make test-unit                  # Confirm RED (failing)
 
-# 3. Quick compilation
-make build
+# 3. Implement feature
+# Edit src/my_feature.erl
+make test-unit                  # Confirm GREEN (passing)
 
-# 4. Run tests (choose based on what changed)
-make test-unit                  # Fast feedback (~5s)
+# 4. Run all tests (regression check)
 make test                       # Full suite (~30s)
 make workspace-test             # Both erlmcp + taiea (~60s)
 
-# 5. Check code quality before commit
-make lint                       # Static analysis (xref + dialyzer)
-make check                      # Full validation
+# 5. Quality gates (all must pass)
+make lint                       # Static analysis
+make coverage-report            # Check ≥80%
 
-# 6. Commit with confidence
+# 6. Refactor & iterate
+# Make improvements, tests guide you
+
+# 7. Full validation before commit
+make check                      # Build + lint + test
+
+# 8. Commit with confidence
 git add .
 git commit -m "feat: describe change"
 ```

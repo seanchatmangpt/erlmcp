@@ -1,8 +1,8 @@
-# erlmcp Architecture - v2.0.0
+# erlmcp Architecture - v2.1.0
 
 ## Executive Summary
 
-erlmcp v2.0.0 is a **production-grade umbrella application** implementing the Model Context Protocol (MCP) in Erlang/OTP. It consists of 4 independent OTP applications with 94 modules organized by domain boundaries, enabling AI-to-service communication with fault-tolerant supervision, pluggable transports, and comprehensive observability.
+erlmcp v2.1.0 is a **production-grade umbrella application** implementing the Model Context Protocol (MCP) in Erlang/OTP. It consists of 4 independent OTP applications with 164 modules organized by domain boundaries, enabling AI-to-service communication with fault-tolerant supervision, pluggable transports, and comprehensive observability.
 
 **Architecture Principles:**
 - **Separation of Concerns** - 4 focused OTP applications with clear boundaries
@@ -10,6 +10,418 @@ erlmcp v2.0.0 is a **production-grade umbrella application** implementing the Mo
 - **Library Integration** - Battle-tested Erlang libraries (gproc, gun, ranch, poolboy)
 - **Process-per-Connection** - Concurrent, isolated request handling
 - **Optional Features** - TCPS quality system can be excluded for minimal deployments
+- **Visual Documentation** - Complete Mermaid diagram suite for architecture understanding
+
+## Mermaid Diagram References
+
+This architecture documentation is enhanced with comprehensive Mermaid diagrams located in `/docs/diagrams/`:
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **System Architecture** | `system-architecture.mmd` | Complete system overview with all 4 layers |
+| **Supervision Tree** | `supervision-tree.mmd` | 3-tier supervision hierarchy |
+| **Data Flow** | `data-flow.mmd` | Request/response flow with all components |
+| **Module Dependencies** | `module-dependencies.mmd` | Inter-module dependency graph |
+
+### Protocol Layer Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Client-Server Interaction** | `protocol/client-server-interaction.mmd` | Protocol message exchange |
+| **Session Lifecycle** | `protocol/session-lifecycle.mmd` | Session state machine |
+| **JSON-RPC Flow** | `protocol/json-rpc-flow.mmd` | JSON-RPC 2.0 processing |
+| **Capability Negotiation** | `protocol/capability-negotiation.mmd` | MCP capability exchange |
+| **Error Handling** | `protocol/error-handling.mmd` | Error flow and recovery |
+
+### Transport Layer Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Transport Types** | `transports/transport-types.mmd` | All transport implementations |
+| **Transport Interfaces** | `transport-interfaces.mmd` | Transport behavior polymorphism |
+| **Connection Pooling** | `transports/connection-pooling.mmd` | Pool management strategies |
+| **Transport Failover** | `transports/transport-failover.mmd` | Failover mechanisms |
+| **Protocol Handlers** | `transports/protocol-handlers.mmd` | Transport-specific handlers |
+| **Transport Security** | `transports/transport-security.mmd` | TLS and security |
+
+### Observability Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Telemetry Flow** | `observability/telemetry-flow.mmd` | OTEL data pipeline |
+| **Metrics Collection** | `observability/metrics-collection.mmd` | Metrics aggregation |
+| **Tracing Span Tree** | `observability/tracing-span-tree.mmd` | Distributed tracing |
+| **Health Monitoring** | `observability/health-monitoring.mmd` | Health check system |
+| **Chaos Testing** | `observability/chaos-testing.mmd` | Resilience testing |
+
+### Validation Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Quality Gates** | `validation/quality-gates.mmd` | Validation pipeline |
+| **Test Coverage** | `validation/test-coverage.mmd` | Coverage strategy |
+| **Compliance Reporting** | `validation/compliance-reporting.mmd` | Report generation |
+| **Validator Architecture** | `validation/validator-architecture.mmd` | Validator design |
+| **Benchmarking Framework** | `validation/benchmarking-framework.mmd` | Performance validation |
+
+### Testing Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Test Coverage Map** | `testing/test-coverage-map.mmd` | Test organization |
+| **Unit Test Flow** | `testing/unit-test-flow.mmd` | Unit testing process |
+| **Integration Tests** | `testing/integration-tests.mmd` | Integration strategy |
+| **Property Testing** | `testing/property-testing.mmd` | Proper testing |
+| **Test Data Management** | `testing/test-data-management.mmd` | Test data fixtures |
+
+### Error Handling Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Error Flow** | `errors/error-flow.mmd` | Error propagation |
+| **Circuit Breakers** | `errors/circuit-breakers.mmd` | Circuit breaker pattern |
+| **Retry Mechanisms** | `errors/retry-mechanisms.mmd` | Retry strategies |
+| **Graceful Degradation** | `errors/graceful-degradation.mmd` | Degradation modes |
+| **Monitoring Alerts** | `errors/monitoring-alerts.mmd` | Alert generation |
+
+### Deployment Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Cluster Topology** | `deployment/cluster-topology.mmd` | Cluster architecture |
+| **Load Balancing** | `deployment/load-balancing.mmd` | Load distribution |
+| **Failover Mechanisms** | `deployment/failover-mechanisms.mmd` | Failover strategies |
+| **Infrastructure Components** | `deployment/infrastructure-components.mmd` | Deployment stack |
+| **Scaling Strategies** | `deployment/scaling-strategies.mmd` | Scaling approach |
+
+### Configuration Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Configuration Hierarchy** | `configuration/configuration-hierarchy.mmd` | Config layers |
+| **Environment Variables** | `configuration/environment-variables.mmd` | Environment config |
+| **Feature Flags** | `configuration/feature-flags.mmd` | Feature toggles |
+| **Validation Pipeline** | `configuration/validation-pipeline.mmd` | Config validation |
+| **Runtime Config** | `configuration/runtime-config.mmd` | Dynamic configuration |
+
+### Security Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Authentication Flow** | `security/authentication-flow.mmd` | Auth process |
+| **Secrets Management** | `security/secrets-management.mmd` | Secret storage |
+| **Transport Security** | `security/transport-security.mmd` | TLS implementation |
+| **Data Protection** | `security/data-protection.mmd` | Data encryption |
+| **Audit Logging** | `security/audit-logging.mmd` | Audit trail |
+
+### API Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **API Endpoints** | `api/api-endpoints.mmd` | HTTP API structure |
+| **Request-Response Flow** | `api/request-response-flow.mmd` | API message flow |
+| **Authentication Flow** | `api/authentication-flow.mmd` | API authentication |
+| **Rate Limiting** | `api/rate-limiting.mmd` | API rate limiting |
+| **Versioning Strategy** | `api/versioning-strategy.mmd` | API versioning |
+
+### Development Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **TDD Workflow** | `development/tdd-workflow.mmd` | Test-driven development |
+| **CI/CD Pipeline** | `development/ci-cd-pipeline.mmd` | Build automation |
+| **Code Review Process** | `development/code-review-process.mmd` | Review workflow |
+| **Deployment Flow** | `development/deployment-flow.mmd` | Deployment process |
+| **Debugging Workflow** | `development/debugging-workflow.mmd` | Debug process |
+
+### Monitoring Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Metrics Collection** | `monitoring/metrics-collection.mmd` | Metrics pipeline |
+| **Dashboard Structure** | `monitoring/dashboard-structure.mmd` | Dashboard layout |
+| **Alerting Workflow** | `monitoring/alerting-workflow.mmd` | Alert routing |
+| **Performance Monitoring** | `monitoring/performance-monitoring.mmd` | Performance tracking |
+| **Log Aggregation** | `monitoring/log-aggregation.mmd` | Log collection |
+
+### Integration Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **External Services** | `integration/external-services.mmd` | Service integration |
+| **API Gateway** | `integration/api-gateway.mmd` | Gateway patterns |
+| **Message Bus** | `integration/message-bus.mmd` | Messaging integration |
+| **Database Integration** | `integration/database-integration.mmd` | Database connections |
+| **Monitoring Integration** | `integration/monitoring-integration.mmd` | Monitoring stack |
+
+### Roadmap Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Development Roadmap** | `roadmap/development-roadmap.mmd` | Feature roadmap |
+| **Feature Timeline** | `roadmap/feature-timeline.mmd` | Release schedule |
+| **Technology Stack** | `roadmap/technology-stack.mmd` | Technology choices |
+| **Community Contribution** | `roadmap/community-contribution.mmd` | Contribution guide |
+| **Maintenance Plan** | `roadmap/maintenance-plan.mmd` | Maintenance strategy |
+
+### Reference Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Module Index** | `reference/module-index.mmd` | Complete module catalog |
+| **Function Signatures** | `reference/function-signatures.mmd` | API signatures |
+| **Error Codes** | `reference/error-codes.mmd` | Error code reference |
+| **Configuration Reference** | `reference/configuration-reference.mmd` | Config options |
+| **Troubleshooting Guide** | `reference/troubleshooting-guide.mmd` | Issue resolution |
+
+### Example Diagrams
+
+| Diagram | Path | Purpose |
+|---------|------|---------|
+| **Basic Request** | `examples/basic-request.mmd` | Simple request flow |
+| **Complex Workflow** | `examples/complex-workflow.mmd` | Multi-step example |
+| **Error Scenario** | `examples/error-scenario.mmd` | Error handling example |
+| **Performance Benchmark** | `examples/performance-benchmark.mmd` | Benchmark example |
+| **Deployment Example** | `examples/deployment-example.mmd` | Deployment scenario |
+
+**Total Diagrams**: 85+ Mermaid diagrams covering all aspects of the system
+
+**Viewing Diagrams:**
+- GitHub/Markdown: Native Mermaid rendering supported
+- CLI: `mermaid-cli` package (`npm install -g @mermaid-js/mermaid-cli`)
+- Web: [Mermaid Live Editor](https://mermaid.live)
+
+## System Overview (Visual)
+
+```mermaid
+graph TB
+    subgraph "erlmcp System Architecture v2.1.0"
+        direction TB
+
+        subgraph "Client Layer"
+            AI_CLIENT[AI Runtime<br/>Claude, GPT-4, Local LLMs]
+            CLIENT_TOOLS[Client Tools<br/>VSCode, CLI, Browser]
+        end
+
+        subgraph "Transport Layer"
+            direction LR
+            STDIO[STDIO Transport<br/>Process I/O]
+            TCP[TCP Transport<br/>Ranch Acceptors]
+            HTTP[HTTP Transport<br/>Gun Client/Cowboy Server]
+            WS[WebSocket Transport<br/>Full-Duplex]
+            SSE[SSE Transport<br/>Server-Sent Events]
+        end
+
+        subgraph "Core Layer (97 modules)"
+            direction TB
+
+            subgraph "Protocol Processing"
+                JSON_RPC[erlmcp_json_rpc<br/>JSON-RPC 2.0 Codec]
+                MSG_HANDLER[erlmcp_message_handler<br/>Router & Dispatcher]
+                MSG_PARSER[erlmcp_message_parser<br/>Parse & Validate]
+            end
+
+            subgraph "Session Management"
+                SESSION_MGR[erlmcp_session_manager<br/>Lifecycle Coordinator]
+                SESSION[erlmcp_session<br/>State Management]
+                SESSION_BACKENDS[Session Backends<br/>ETS | DETS | Mnesia]
+                SESSION_FAILOVER[erlmcp_session_failover<br/>Failover Orchestrator]
+            end
+
+            subgraph "MCP Capabilities"
+                RESOURCES[erlmcp_resources<br/>Resource Management]
+                TOOLS[erlmcp_tool<br/>Tool Invocation]
+                PROMPTS[erlmcp_prompt_template<br/>Prompt Management]
+                SUBSCRIPTIONS[erlmcp_resource_subscriptions<br/>Change Notifications]
+            end
+
+            subgraph "Security"
+                AUTH[erlmcp_auth<br/>Authentication/Authorization]
+                AUTH_MTLS[erlmcp_auth_mtls<br/>Mutual TLS]
+                AUTH_RATE[erlmcp_auth_rate_limiter<br/>Auth-Specific Limits]
+                SECRETS[erlmcp_secrets<br/>Vault/AWS/Local Encrypted]
+            end
+
+            subgraph "Resilience"
+                CIRCUIT[erlmcp_circuit_breaker<br/>Circuit Breaker Pattern]
+                RATE_LIMIT[erlmcp_rate_limiter<br/>Rate Limiting]
+                CONN_MONITOR[erlmcp_connection_monitor<br/>Health Monitoring]
+                CONN_LIMITER[erlmcp_connection_limiter<br/>Connection Limits]
+            end
+
+            subgraph "Server & Client"
+                SERVER[erlmcp_server<br/>MCP Server Implementation]
+                SERVER_SUP[erlmcp_server_sup<br/>Server Supervisor]
+                CLIENT[erlmcp_client<br/>MCP Client Implementation]
+                CLIENT_SUP[erlmcp_client_sup<br/>Client Supervisor]
+            end
+
+            subgraph "Registry"
+                REGISTRY[erlmcp_registry<br/>gproc-based Routing]
+                REGISTRY_DIST[erlmcp_registry_dist<br/>Distributed Coordination]
+            end
+
+            subgraph "LLM Integration"
+                LLVM_ANTHROPIC[erlmcp_llm_provider_anthropic<br/>Claude Integration]
+                LLVM_OPENAI[erlmcp_llm_provider_openai<br/>GPT Integration]
+                LLVM_LOCAL[erlmcp_llm_provider_local<br/>Local Model Support]
+            end
+        end
+
+        subgraph "Observability Layer (31 modules)"
+            direction TB
+
+            subgraph "OpenTelemetry"
+                OTEL[erlmcp_otel<br/>OTel Integration]
+                OTEL_DATADOG[erlmcp_otel_datadog<br/>Datadog Exporter]
+                OTEL_HONEYCOMB[erlmcp_otel_honeycomb<br/>Honeycomb Exporter]
+                OTEL_JAEGER[erlmcp_otel_jaeger<br/>Jaeger Exporter]
+            end
+
+            subgraph "Metrics & Tracing"
+                METRICS[erlmcp_metrics<br/>Metrics Collection]
+                METRICS_SERVER[erlmcp_metrics_server<br/>HTTP Server]
+                METRICS_AGG[erlmcp_metrics_aggregator<br/>Aggregation]
+                TRACING[erlmcp_tracing<br/>Distributed Tracing]
+                TRACE_ANALYZER[erlmcp_trace_analyzer<br/>Trace Analysis]
+            end
+
+            subgraph "Chaos Engineering"
+                CHAOS[erlmcp_chaos<br/>Coordinator]
+                CHAOS_NETWORK[erlmcp_chaos_network<br/>Network Failures]
+                CHAOS_PROCESS[erlmcp_chaos_process<br/>Process Failures]
+                CHAOS_RESOURCE[erlmcp_chaos_resource<br/>Resource Exhaustion]
+                RECOVERY[erlmcp_recovery_manager<br/>Recovery Orchestration]
+            end
+
+            subgraph "Monitoring"
+                HEALTH[erlmcp_health_monitor<br/>Health Monitoring]
+                DASHBOARD[erlmcp_dashboard_server<br/>Web Interface]
+                PROCESS_MONITOR[erlmcp_process_monitor<br/>Process Monitoring]
+                AUDIT_LOG[erlmcp_audit_log<br/>Audit Logging]
+            end
+        end
+
+        subgraph "Validation Layer (13 modules)"
+            direction TB
+
+            PROTO_VALIDATOR[erlmcp_protocol_validator<br/>JSON-RPC + MCP Compliance]
+            TRANSPORT_VALIDATOR[erlmcp_transport_validator<br/>Transport Behavior Compliance]
+            SECURITY_VALIDATOR[erlmcp_security_validator<br/>Auth + Secrets + Input Validation]
+            PERF_VALIDATOR[erlmcp_performance_validator<br/>Latency + Throughput + Memory]
+
+            COMPLIANCE_REPORT[erlmcp_compliance_report<br/>Compliance Reporting]
+            COMPLIANCE_HTML[erlmcp_compliance_report_html<br/>HTML Generation]
+            COMPLIANCE_JSON[erlmcp_compliance_report_json<br/>JSON Generation]
+
+            SPEC_PARSER[erlmcp_spec_parser<br/>MCP Spec Parser 2025-11-25]
+            TEST_CLIENT[erlmcp_test_client<br/>Multi-Transport Test Client]
+            VALIDATE_CLI[erlmcp_validate_cli<br/>Command-Line Interface]
+        end
+
+        subgraph "External Dependencies"
+            GPROC[gproc<br/>Process Registry]
+            JSX[jsx<br/>JSON Codec]
+            JESSE[jesse<br/>JSON Schema Validation]
+            GUN[gun<br/>HTTP Client]
+            RANCH[ranch<br/>TCP Acceptors]
+            COWBOY[cowboy<br/>HTTP Server]
+            POOLBOY[poolboy<br/>Pool Management]
+            JOSE[jose<br/>JWT Validation]
+        end
+
+        %% Connections
+        AI_CLIENT -->|stdio, tcp, http, ws, sse| Transport_Layer
+        CLIENT_TOOLS -->|stdio, tcp, http, ws, sse| Transport_Layer
+
+        Transport_Layer --> MSG_HANDLER
+        MSG_HANDLER --> MSG_PARSER
+        MSG_PARSER --> JSON_RPC
+        JSON_RPC --> REGISTRY
+
+        REGISTRY --> SERVER
+        REGISTRY --> CLIENT
+
+        SERVER --> RESOURCES
+        SERVER --> TOOLS
+        SERVER --> PROMPTS
+        SERVER --> SUBSCRIPTIONS
+
+        CLIENT --> SESSION
+        SESSION --> SESSION_BACKENDS
+        SESSION --> SESSION_FAILOVER
+        SESSION_MGR --> SESSION
+
+        SERVER --> AUTH
+        AUTH --> AUTH_MTLS
+        AUTH --> AUTH_RATE
+        AUTH --> SECRETS
+
+        SERVER --> CIRCUIT
+        SERVER --> RATE_LIMIT
+        SERVER --> CONN_MONITOR
+        SERVER --> CONN_LIMITER
+
+        SERVER --> LLVM_ANTHROPIC
+        SERVER --> LLVM_OPENAI
+        SERVER --> LLVM_LOCAL
+
+        %% Observability Connections
+        OTEL --> OTEL_DATADOG
+        OTEL --> OTEL_HONEYCOMB
+        OTEL --> OTEL_JAEGER
+
+        METRICS --> METRICS_SERVER
+        METRICS --> METRICS_AGG
+
+        CHAOS --> CHAOS_NETWORK
+        CHAOS --> CHAOS_PROCESS
+        CHAOS --> CHAOS_RESOURCE
+        CHAOS --> RECOVERY
+
+        HEALTH --> DASHBOARD
+        HEALTH --> PROCESS_MONITOR
+
+        %% Validation Connections
+        PROTO_VALIDATOR --> COMPLIANCE_REPORT
+        TRANSPORT_VALIDATOR --> COMPLIANCE_REPORT
+        SECURITY_VALIDATOR --> COMPLIANCE_REPORT
+        PERF_VALIDATOR --> COMPLIANCE_REPORT
+
+        COMPLIANCE_REPORT --> COMPLIANCE_HTML
+        COMPLIANCE_REPORT --> COMPLIANCE_JSON
+
+        SPEC_PARSER --> PROTO_VALIDATOR
+        TEST_CLIENT --> TRANSPORT_VALIDATOR
+        VALIDATE_CLI --> COMPLIANCE_REPORT
+
+        %% Dependencies
+        REGISTRY -.-> GPROC
+        JSON_RPC -.-> JSX
+        MSG_PARSER -.-> JESSE
+        HTTP -.-> GUN
+        TCP -.-> RANCH
+        HTTP -.-> COWBOY
+        CIRCUIT -.-> POOLBOY
+        AUTH -.-> JOSE
+    end
+
+    classDef clientStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef transportStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef coreStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef observabilityStyle fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef validationStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef depStyle fill:#f5f5f5,stroke:#424242,stroke-width:1px,stroke-dasharray: 5 5
+
+    class AI_CLIENT,CLIENT_TOOLS clientStyle
+    class STDIO,TCP,HTTP,WS,SSE transportStyle
+    class JSON_RPC,MSG_HANDLER,MSG_PARSER,SESSION_MGR,SESSION,SESSION_BACKENDS,SESSION_FAILOVER,RESOURCES,TOOLS,PROMPTS,SUBSCRIPTIONS,AUTH,AUTH_MTLS,AUTH_RATE,SECRETS,CIRCUIT,RATE_LIMIT,CONN_MONITOR,CONN_LIMITER,SERVER,SERVER_SUP,CLIENT,CLIENT_SUP,REGISTRY,REGISTRY_DIST,LLVM_ANTHROPIC,LLVM_OPENAI,LLVM_LOCAL coreStyle
+    class OTEL,OTEL_DATADOG,OTEL_HONEYCOMB,OTEL_JAEGER,METRICS,METRICS_SERVER,METRICS_AGG,TRACING,TRACE_ANALYZER,CHAOS,CHAOS_NETWORK,CHAOS_PROCESS,CHAOS_RESOURCE,RECOVERY,HEALTH,DASHBOARD,PROCESS_MONITOR,AUDIT_LOG observabilityStyle
+    class PROTO_VALIDATOR,TRANSPORT_VALIDATOR,SECURITY_VALIDATOR,PERF_VALIDATOR,COMPLIANCE_REPORT,COMPLIANCE_HTML,COMPLIANCE_JSON,SPEC_PARSER,TEST_CLIENT,VALIDATE_CLI validationStyle
+    class GPROC,JSX,JESSE,GUN,RANCH,COWBOY,POOLBOY,JOSE depStyle
+```
+
+**See also:** [`system-architecture.mmd`](diagrams/system-architecture.mmd) for the standalone diagram file.
 
 ## v2.0.0 Umbrella Structure
 

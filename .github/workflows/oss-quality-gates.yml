@@ -1,0 +1,305 @@
+name: OSS Quality Gates
+
+on:
+  push:
+    branches: [main, release/**]
+  pull_request:
+    branches: [main, release/**]
+  workflow_call:
+
+jobs:
+  quality-gates:
+    name: Quality Gate Enforcement
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          rebar3-version: '3.25'
+
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-erlang-28-${{ hashFiles('rebar.lock', 'apps/*/rebar.config') }}
+          restore-keys: |
+            ${{ runner.os }}-erlang-28-
+
+      # ========================================================================
+      # GATE 1: COMPILATION (BLOCKING)
+      # ========================================================================
+      - name: Gate 1 - Compilation
+        id: gate_compile
+        run: |
+          echo "::group::Gate 1: Compilation"
+          echo "Status: BLOCKING GATE"
+          echo "Requirement: Zero compilation errors"
+          echo ""
+
+          TERM=dumb rebar3 compile 2>&1 | tee compile.log
+          COMPILE_EXIT=${PIPESTATUS[0]}
+
+          ERRORS=$(grep -c "Error:" compile.log || echo 0)
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔨 Gate 1: Compilation" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** $( [ $COMPILE_EXIT -eq 0 ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "- Errors: $ERRORS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "::endgroup::"
+
+          if [ $COMPILE_EXIT -ne 0 ]; then
+            echo "::error::Compilation FAILED - MERGE BLOCKED"
+            echo "gate_compile=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "gate_compile=passed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # GATE 2: XREF (BLOCKING)
+      # ========================================================================
+      - name: Gate 2 - Xref
+        id: gate_xref
+        run: |
+          echo "::group::Gate 2: Xref"
+          echo "Status: BLOCKING GATE"
+          echo "Requirement: Zero undefined function calls"
+          echo ""
+
+          rebar3 xref 2>&1 | tee xref.log
+          XREF_EXIT=${PIPESTATUS[0]}
+
+          UNDEFINED=$(grep -c "undefined function" xref.log || echo 0)
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Gate 2: Xref" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** $( [ $XREF_EXIT -eq 0 ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "- Undefined functions: $UNDEFINED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "::endgroup::"
+
+          if [ $XREF_EXIT -ne 0 ]; then
+            echo "::error::Xref FAILED - MERGE BLOCKED"
+            echo "gate_xref=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "gate_xref=passed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # GATE 3: DIALYZER (BLOCKING)
+      # ========================================================================
+      - name: Gate 3 - Dialyzer
+        id: gate_dialyzer
+        run: |
+          echo "::group::Gate 3: Dialyzer"
+          echo "Status: BLOCKING GATE"
+          echo "Requirement: Zero type errors"
+          echo ""
+
+          rebar3 dialyzer 2>&1 | tee dialyzer.log
+          DIALYZER_EXIT=${PIPESTATUS[0]}
+
+          TYPE_ERRORS=$(grep -c "dialyzer: Analysis failed" dialyzer.log || echo 0)
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔍 Gate 3: Dialyzer" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** $( [ $DIALYZER_EXIT -eq 0 ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "- Type errors: $TYPE_ERRORS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "::endgroup::"
+
+          if [ $DIALYZER_EXIT -ne 0 ]; then
+            echo "::error::Dialyzer FAILED - MERGE BLOCKED"
+            echo "gate_dialyzer=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "gate_dialyzer=passed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # GATE 4: UNIT TESTS (BLOCKING - ≥90%)
+      # ========================================================================
+      - name: Gate 4 - Unit Tests
+        id: gate_eunit
+        run: |
+          echo "::group::Gate 4: Unit Tests"
+          echo "Status: BLOCKING GATE"
+          echo "Requirement: ≥90% pass rate"
+          echo ""
+
+          rebar3 as test do compile, eunit --cover 2>&1 | tee eunit.log
+          EUNIT_EXIT=${PIPESTATUS[0]}
+
+          PASSED=$(grep -c "Test passed" eunit.log || echo 0)
+          FAILED=$(grep -c "Test failed" eunit.log || echo 0)
+          TOTAL=$((PASSED + FAILED))
+
+          if [ $TOTAL -gt 0 ]; then
+            PASS_RATE=$(echo "scale=2; $PASSED * 100 / $TOTAL" | bc)
+          else
+            PASS_RATE="0"
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🧪 Gate 4: Unit Tests" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** $( [ $EUNIT_EXIT -eq 0 ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "- Passed: $PASSED" >> $GITHUB_STEP_SUMMARY
+          echo "- Failed: $FAILED" >> $GITHUB_STEP_SUMMARY
+          echo "- Pass Rate: ${PASS_RATE}%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "::endgroup::"
+
+          if [ $EUNIT_EXIT -ne 0 ] || [ $(echo "$PASS_RATE < 90" | bc) -eq 1 ]; then
+            echo "::error::Unit tests FAILED (pass rate: ${PASS_RATE}%) - MERGE BLOCKED"
+            echo "gate_eunit=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "gate_eunit=passed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # GATE 5: COVERAGE (BLOCKING - ≥80%)
+      # ========================================================================
+      - name: Gate 5 - Coverage
+        id: gate_coverage
+        run: |
+          echo "::group::Gate 5: Coverage"
+          echo "Status: BLOCKING GATE"
+          echo "Requirement: ≥80% overall coverage"
+          echo ""
+
+          rebar3 cover --verbose
+
+          if [ -f scripts/check_coverage_threshold.sh ]; then
+            chmod +x scripts/check_coverage_threshold.sh
+            ./scripts/check_coverage_threshold.sh 80
+            COVERAGE_EXIT=$?
+
+            if [ -f _build/test/cover/cover.log ]; then
+              COVERAGE=$(grep "total" _build/test/cover/cover.log | tail -1 | awk -F'|' '{print $3}' | tr -d ' %|' || echo "0")
+            else
+              COVERAGE="0"
+            fi
+
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📊 Gate 5: Coverage" >> $GITHUB_STEP_SUMMARY
+            echo "**Status:** $( [ $COVERAGE_EXIT -eq 0 ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+            echo "- Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+            echo "- Threshold: ≥80%" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "::endgroup::"
+
+            if [ $COVERAGE_EXIT -ne 0 ]; then
+              echo "::error::Coverage ${COVERAGE}% below 80% - MERGE BLOCKED"
+              echo "gate_coverage=failed" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+
+            echo "gate_coverage=passed" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Coverage script not found - Gate skipped"
+            echo "gate_coverage=skipped" >> $GITHUB_OUTPUT
+          fi
+
+      # ========================================================================
+      # GATE 6: MCP COMPLIANCE (BLOCKING - ≥95%)
+      # ========================================================================
+      - name: Gate 6 - MCP Compliance
+        id: gate_mcp
+        run: |
+          echo "::group::Gate 6: MCP Compliance"
+          echo "Status: BLOCKING GATE"
+          echo "Requirement: ≥95% MCP 2025-11-25 spec adherence"
+          echo ""
+
+          rebar3 escriptize
+
+          ./_build/default/bin/erlmcp_validate run --section protocol 2>&1 | tee mcp_protocol.log
+          ./_build/default/bin/erlmcp_validate run --section transport 2>&1 | tee mcp_transport.log
+
+          ./_build/default/bin/erlmcp_validate report --format markdown > mcp-compliance.md
+          MCP_EXIT=${PIPESTATUS[0]}
+
+          COMPLIANCE=$(grep -oP "Compliance: \K[0-9.]+" mcp-compliance.md || echo "0")
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Gate 6: MCP Compliance" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** $( [ $MCP_EXIT -eq 0 ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "- Compliance: ${COMPLIANCE}%" >> $GITHUB_STEP_SUMMARY
+          echo "- Threshold: ≥95%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "::endgroup::"
+
+          if [ $MCP_EXIT -ne 0 ] || [ $(echo "$COMPLIANCE < 95" | bc) -eq 1 ]; then
+            echo "::error::MCP compliance ${COMPLIANCE}% below 95% - MERGE BLOCKED"
+            echo "gate_mcp=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+          echo "gate_mcp=passed" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # FINAL STATUS
+      # ========================================================================
+      - name: Quality Gate Summary
+        if: always()
+        run: |
+          echo "# 🚦 Quality Gate Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Blocking Gates (MUST PASS)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          COMPILE_STATUS="${{ steps.gate_compile.outputs.gate_compile }}"
+          XREF_STATUS="${{ steps.gate_xref.outputs.gate_xref }}"
+          DIALYZER_STATUS="${{ steps.gate_dialyzer.outputs.gate_dialyzer }}"
+          EUNIT_STATUS="${{ steps.gate_eunit.outputs.gate_eunit }}"
+          COVERAGE_STATUS="${{ steps.gate_coverage.outputs.gate_coverage }}"
+          MCP_STATUS="${{ steps.gate_mcp.outputs.gate_mcp }}"
+
+          echo "1. **Compilation:** $( [ "$COMPILE_STATUS" = "passed" ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Xref:** $( [ "$XREF_STATUS" = "passed" ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Dialyzer:** $( [ "$DIALYZER_STATUS" = "passed" ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Unit Tests (≥90%):** $( [ "$EUNIT_STATUS" = "passed" ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "5. **Coverage (≥80%):** $( [ "$COVERAGE_STATUS" = "passed" ] && echo '✅ PASSED' || [ "$COVERAGE_STATUS" = "skipped" ] && echo '⚠️ SKIPPED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+          echo "6. **MCP Compliance (≥95%):** $( [ "$MCP_STATUS" = "passed" ] && echo '✅ PASSED' || echo '❌ FAILED' )" >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$COMPILE_STATUS" = "passed" ] && [ "$XREF_STATUS" = "passed" ] && \
+             [ "$DIALYZER_STATUS" = "passed" ] && [ "$EUNIT_STATUS" = "passed" ] && \
+             [ "$COVERAGE_STATUS" = "passed" ] && [ "$MCP_STATUS" = "passed" ]; then
+            echo "## ✅ RESULT: ALL GATES PASSED - MERGE ALLOWED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This commit meets all OSS quality requirements." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          else
+            echo "## ❌ RESULT: QUALITY GATES FAILED - MERGE BLOCKED" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Fix the failing gates and re-push." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: quality-gate-logs
+          path: |
+            compile.log
+            xref.log
+            dialyzer.log
+            eunit.log
+            mcp_protocol.log
+            mcp_transport.log
+            mcp-compliance.md
+          retention-days: 30
