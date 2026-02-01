@@ -1,0 +1,331 @@
+{
+  "fmea_version": "1.0",
+  "system": "erlmcp",
+  "scope": "MCP 2025-11-25 Security Failure Modes",
+  "generated": "2026-02-01",
+  "documentation": "FMEA→GAP→SUITE traceability for security-critical failure modes. RPN = S × O × D (Severity × Occurrence × Detection). S,O,D ∈ [1,10]. CI gate: no unmapped FM with RPN ≥ threshold allowed.",
+  "failure_modes": [
+    {
+      "id": "FM-01",
+      "title": "Origin validation bypass (DNS rebinding / cross-origin abuse)",
+      "category": "Transport Security",
+      "severity": 9,
+      "occurrence": 6,
+      "detection": 4,
+      "rpn": 216,
+      "priority": "CRITICAL",
+      "threat_class": "transport",
+      "effect": "attacker can interact with server from hostile origin → unauthorized tool calls / session theft",
+      "primary_controls": [
+        "apps/erlmcp_transports/src/erlmcp_origin_validator.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_transports/test/erlmcp_origin_validator_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#3"
+      ],
+      "closure_criterion": "all HTTP entrypoints enforce origin policy; invalid → reject deterministically; tests cover GET SSE + POST",
+      "spec_reference": "MCP 2025-11-25: HTTP Transport Security, Section 4.2",
+      "doc_reference": "docs/GAP3_ORIGIN_VALIDATION.md"
+    },
+    {
+      "id": "FM-02",
+      "title": "Session fixation / session ID leakage / session ID guessing",
+      "category": "Session Management",
+      "severity": 10,
+      "occurrence": 5,
+      "detection": 6,
+      "rpn": 300,
+      "priority": "CRITICAL",
+      "threat_class": "session",
+      "effect": "attacker hijacks session stream → gets notifications / results / can drive calls",
+      "primary_controls": [
+        "apps/erlmcp_core/src/erlmcp_session_manager.erl",
+        "apps/erlmcp_core/src/erlmcp_session_ets.erl",
+        "apps/erlmcp_transports/src/erlmcp_http_header_validator.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_core/test/erlmcp_session_manager_tests.erl",
+        "apps/erlmcp_transports/test/erlmcp_http_header_validator_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#2"
+      ],
+      "closure_criterion": "session id entropy verified (≥128 bits); rotation on auth; never logged plaintext; expired session → 404 + forced re-init",
+      "spec_reference": "MCP 2025-11-25: HTTP Session Management, Section 3.1",
+      "doc_reference": "docs/GAP_2_SESSION_MANAGEMENT_IMPLEMENTATION.md",
+      "tags": ["HIGH-RPN-300"]
+    },
+    {
+      "id": "FM-03",
+      "title": "SSE resume replay to the wrong stream (cross-client data leak)",
+      "category": "Transport Data Integrity",
+      "severity": 10,
+      "occurrence": 4,
+      "detection": 7,
+      "rpn": 280,
+      "priority": "CRITICAL",
+      "threat_class": "transport",
+      "effect": "confidential notifications/results delivered to wrong requester after Last-Event-ID resume",
+      "primary_controls": [
+        "apps/erlmcp_core/src/erlmcp_sse_event_store.erl",
+        "apps/erlmcp_transports/src/erlmcp_transport_sse_manager.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_core/test/erlmcp_sse_event_store_replay_tests.erl",
+        "apps/erlmcp_transports/test/erlmcp_transport_sse_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#29"
+      ],
+      "closure_criterion": "stream identity bound in event ids; resumption cannot replay across streams; exhaustive test includes multi-stream + resume storms",
+      "spec_reference": "MCP 2025-11-25: SSE Stream Resumability, Section 6.3",
+      "doc_reference": "docs/GAP_29_SSE_RETRY_FIELD_IMPLEMENTATION.md"
+    },
+    {
+      "id": "FM-04",
+      "title": "Auth bypass / token confusion / scope enforcement errors",
+      "category": "Authentication/Authorization",
+      "severity": 10,
+      "occurrence": 5,
+      "detection": 5,
+      "rpn": 250,
+      "priority": "CRITICAL",
+      "threat_class": "auth",
+      "effect": "unauthorized tool/resource access; privilege escalation",
+      "primary_controls": [
+        "apps/erlmcp_core/src/erlmcp_auth.erl",
+        "apps/erlmcp_core/src/erlmcp_auth_jwt_tests.erl",
+        "apps/erlmcp_core/src/erlmcp_auth_oauth_tests.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_core/test/erlmcp_auth_tests.erl",
+        "apps/erlmcp_core/test/erlmcp_auth_jwt_tests.erl",
+        "apps/erlmcp_core/test/erlmcp_auth_oauth_tests.erl",
+        "apps/erlmcp_validation/test/erlmcp_authorization_SUITE.erl"
+      ],
+      "gap_ids": [
+        "GAP#1"
+      ],
+      "closure_criterion": "auth decision enforced at every mutation-capable route; negative tests cover token replay, missing scopes, malformed JWT/JWS",
+      "spec_reference": "MCP 2025-11-25: Authentication, Section 2.1",
+      "doc_reference": "docs/OAUTH2_IMPLEMENTATION_SUMMARY.md, docs/JWT_IMPLEMENTATION_SUMMARY.md"
+    },
+    {
+      "id": "FM-05",
+      "title": "Tool call injection via transport/parser ambiguity (frame confusion)",
+      "category": "Protocol Parsing",
+      "severity": 9,
+      "occurrence": 6,
+      "detection": 6,
+      "rpn": 324,
+      "priority": "CRITICAL",
+      "threat_class": "parsing",
+      "effect": "attacker crafts malformed JSON-RPC to reach unintended method routing or bypass validation",
+      "primary_controls": [
+        "apps/erlmcp_core/src/erlmcp_message_parser.erl",
+        "apps/erlmcp_core/src/erlmcp_json_rpc.erl",
+        "apps/erlmcp_validation/src/erlmcp_protocol_validator.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_core/test/erlmcp_message_parser_tests.erl",
+        "apps/erlmcp_core/test/erlmcp_json_rpc_error_tests.erl",
+        "apps/erlmcp_validation/test/erlmcp_protocol_validator_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#5"
+      ],
+      "closure_criterion": "strict validation against schema at boundary; reject unknown fields where appropriate; fuzz harness must exist and pass",
+      "spec_reference": "MCP 2025-11-25: Protocol Validation, Section 1.3",
+      "doc_reference": "docs/SECURITY_FUZZING.md",
+      "tags": ["HIGH-RPN-324"]
+    },
+    {
+      "id": "FM-06",
+      "title": "Header parsing / protocol version header mishandling",
+      "category": "Protocol Handling",
+      "severity": 8,
+      "occurrence": 5,
+      "detection": 6,
+      "rpn": 240,
+      "priority": "HIGH",
+      "threat_class": "transport",
+      "effect": "downgrade attacks, inconsistent behavior across requests, security checks skipped",
+      "primary_controls": [
+        "apps/erlmcp_transports/src/erlmcp_http_header_validator.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_transports/test/erlmcp_http_header_validator_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#10"
+      ],
+      "closure_criterion": "all required headers validated; incorrect/unsupported protocol version rejects deterministically; tests include malformed values and missing values",
+      "spec_reference": "MCP 2025-11-25: HTTP Header Validation, Section 4.1",
+      "doc_reference": "docs/GAP_10_HTTP_HEADER_VALIDATION.md"
+    },
+    {
+      "id": "FM-07",
+      "title": "Resource path traversal / URI canonicalization flaws",
+      "category": "Resource Access",
+      "severity": 10,
+      "occurrence": 4,
+      "detection": 6,
+      "rpn": 240,
+      "priority": "CRITICAL",
+      "threat_class": "resource",
+      "effect": "read arbitrary files / leak secrets through resources/read",
+      "primary_controls": [
+        "apps/erlmcp_core/src/erlmcp_path_canonicalizer.erl",
+        "apps/erlmcp_transports/src/erlmcp_uri_validator.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_core/test/erlmcp_resource_validation_tests.erl",
+        "apps/erlmcp_transports/test/erlmcp_uri_validator_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#36"
+      ],
+      "closure_criterion": "URI validation strict; canonicalization applied before filesystem access; negative tests include .., encoded traversal, windows path tricks",
+      "spec_reference": "MCP 2025-11-25: Resource Access, Section 5.2",
+      "doc_reference": "docs/GAP36_RESOURCE_CANONICALIZATION.md"
+    },
+    {
+      "id": "FM-08",
+      "title": "Logging leaks secrets (tokens, session ids, tool args)",
+      "category": "Data Protection",
+      "severity": 9,
+      "occurrence": 6,
+      "detection": 5,
+      "rpn": 270,
+      "priority": "CRITICAL",
+      "threat_class": "logging",
+      "effect": "attacker reads logs → lateral movement or session hijack",
+      "primary_controls": [
+        "apps/erlmcp_core/src/erlmcp_logging.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_core/test/erlmcp_logging_tests.erl",
+        "apps/erlmcp_validation/test/erlmcp_secret_scan_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#21"
+      ],
+      "closure_criterion": "structured redaction policy; tests assert tokens/session ids never appear in logs; CI blocks regressions",
+      "spec_reference": "MCP 2025-11-25: Logging Best Practices, Section 7.1",
+      "doc_reference": "docs/GAP21_LOG_LEVEL_ENFORCEMENT_IMPLEMENTATION.md"
+    },
+    {
+      "id": "FM-09",
+      "title": "DoS / mailbox amplification / memory exhaustion",
+      "category": "Resource Exhaustion",
+      "severity": 8,
+      "occurrence": 7,
+      "detection": 4,
+      "rpn": 224,
+      "priority": "HIGH",
+      "threat_class": "dos",
+      "effect": "service collapse → control-plane failure → follow-on compromise risk + availability failure",
+      "primary_controls": [
+        "test_destructive/mailbox_bomb_SUITE.erl",
+        "apps/erlmcp_core/src/erlmcp_memory_guard.erl",
+        "apps/erlmcp_core/src/erlmcp_connection_limiter.erl"
+      ],
+      "test_paths": [
+        "test_destructive/mailbox_bomb_SUITE.erl",
+        "bench/erlmcp_bench_memory_exhaustion.erl"
+      ],
+      "gap_ids": [
+        "GAP#45"
+      ],
+      "closure_criterion": "bounded queues, bounded buffers, backpressure enforced, hibernation tested; DoS recovery < 5s",
+      "spec_reference": "MCP 2025-11-25: Resource Limits, Section 8.2",
+      "doc_reference": "docs/operations/backpressure_config.md, bench/BINARY_EXHAUSTION_RESULTS.md"
+    },
+    {
+      "id": "FM-10",
+      "title": "Task result confusion / cross-task bleed",
+      "category": "Data Integrity",
+      "severity": 10,
+      "occurrence": 4,
+      "detection": 7,
+      "rpn": 280,
+      "priority": "CRITICAL",
+      "threat_class": "task",
+      "effect": "user A can observe user B's task result / status; integrity failure",
+      "primary_controls": [
+        "apps/erlmcp_core/src/erlmcp_tasks.erl",
+        "apps/erlmcp_core/src/erlmcp_task_runner.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_core/test/erlmcp_tasks_edge_cases_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#12"
+      ],
+      "closure_criterion": "task IDs scoped to session/tenant boundary; tests include concurrent tasks, cancel races, result retrieval correctness",
+      "spec_reference": "MCP 2025-11-25: Tool Execution, Section 5.1",
+      "doc_reference": "docs/c4/feature-tasks.md"
+    },
+    {
+      "id": "FM-11",
+      "title": "WebSocket fragmentation / frame boundary confusion",
+      "category": "Transport Parsing",
+      "severity": 9,
+      "occurrence": 4,
+      "detection": 6,
+      "rpn": 216,
+      "priority": "HIGH",
+      "threat_class": "parsing",
+      "effect": "parser confusion → injection or state corruption",
+      "primary_controls": [
+        "apps/erlmcp_transports/src/erlmcp_transport_ws.erl"
+      ],
+      "test_paths": [
+        "apps/erlmcp_transports/test/erlmcp_websocket_compliance_tests.erl"
+      ],
+      "gap_ids": [
+        "GAP#35"
+      ],
+      "closure_criterion": "WS support stays 'experimental' unless compliance suite covers fragmentation thoroughly; all edge cases tested",
+      "spec_reference": "MCP 2025-11-25: WebSocket Transport, Section 6.1",
+      "doc_reference": "docs/GAP35_WEBSOCKET_FRAGMENTATION_IMPLEMENTATION.md"
+    },
+    {
+      "id": "FM-12",
+      "title": "Supply-chain / dependency CVE exposure",
+      "category": "Dependency Management",
+      "severity": 10,
+      "occurrence": 4,
+      "detection": 6,
+      "rpn": 240,
+      "priority": "CRITICAL",
+      "threat_class": "supply-chain",
+      "effect": "compromised dependency enables RCE or auth bypass",
+      "primary_controls": [
+        "scripts/release/scan_vulnerabilities.sh"
+      ],
+      "test_paths": [
+        "CI/dependency-audit"
+      ],
+      "gap_ids": [
+        "GAP#CVE-TRACKING"
+      ],
+      "closure_criterion": "CI runs dependency scan on every commit; blocks known critical CVEs; produce machine report in reports/",
+      "spec_reference": "MCP 2025-11-25: Supply Chain Security, Section 9.1",
+      "doc_reference": "docs/VULNERABILITY_INVENTORY.md, docs/SECURITY_VULNERABILITY_MATRIX.md"
+    }
+  ],
+  "summary": {
+    "total_failure_modes": 12,
+    "critical_count": 8,
+    "critical_rpn_threshold": 300,
+    "high_rpn_threshold": 250,
+    "median_rpn": 256,
+    "max_rpn": 324,
+    "min_rpn": 216,
+    "closure_status": "GATE: All FM must have ≥1 green suite before merge",
+    "ci_gate_command": "scripts/validation/generate_fmea_dashboard.sh --gate --threshold 250"
+  }
+}
