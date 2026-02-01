@@ -167,7 +167,7 @@ init([]) ->
 handle_call({register_component, ComponentId, HandlerFun}, _From, State) ->
     %% Spawn a dedicated handler process for this component
     %% This ensures priority message handling doesn't block the control plane
-    HandlerPid = spawn_link(fun() -> component_handler_loop(ComponentId, HandlerFun) end),
+    HandlerPid = proc_lib:spawn_link(fun() -> component_handler_loop(ComponentId, HandlerFun) end),
     MonitorRef = monitor(process, HandlerPid),
 
     Handler = #{

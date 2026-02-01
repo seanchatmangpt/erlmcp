@@ -354,18 +354,24 @@ inspect_process(Pid) ->
 %% @doc Trace messages for a process
 -spec trace_messages(pid(), pos_integer()) -> {ok, [term()]}.
 trace_messages(Pid, Duration) ->
-    Tracer = spawn(fun() -> message_tracer(Pid, []) end),
+    Parent = self(),
+    Tracer = proc_lib:spawn_link(fun() -> message_tracer(Pid, []) end),
     erlang:trace(Pid, true, ['receive', {tracer, Tracer}]),
-    
-    timer:sleep(Duration),
-    
-    erlang:trace(Pid, false, ['receive']),
-    Tracer ! {get_messages, self()},
-    
-    receive
-        {messages, Messages} -> {ok, lists:reverse(Messages)}
-    after 5000 ->
-        {ok, []}
+
+    % Ensure cleanup on any exit
+    try
+        timer:sleep(Duration),
+
+        erlang:trace(Pid, false, ['receive']),
+        Tracer ! {get_messages, Parent},
+
+        receive
+            {messages, Messages} -> {ok, lists:reverse(Messages)}
+        after 5000 ->
+            {ok, []}
+        end
+    after
+        erlang:trace(Pid, false, ['receive'])
     end.
 
 %%%=============================================================================

@@ -388,7 +388,7 @@ handle_call({is_rate_limited, ClientId}, _From, State) ->
 
 handle_call({is_ddos_attack, ClientId}, _From, State) ->
     case ets:lookup(State#state.violations, ClientId) of
-        [{_, Count}] ->
+        [{_, Count, _Timestamp}] ->
             Threshold = maps:get(ddos_violation_threshold, State#state.config, 100),
             {reply, Count >= Threshold, State};
         [] ->
@@ -457,11 +457,12 @@ handle_info(cleanup, State) ->
 
     % Clean up violation counts older than block duration
     ViolationWindow = maps:get(ddos_block_duration_ms, State#state.config, 300000),
-    ets:foldl(fun({ClientId, _}, _) ->
-        case ets:lookup(State#state.violations, ClientId) of
-            [{_, {_Count, Timestamp}}] when (TimeNowMs - Timestamp) > ViolationWindow ->
+    ets:foldl(fun({ClientId, _Count, Timestamp}, _) ->
+        % Check if violation is older than window
+        if
+            (TimeNowMs - Timestamp) > ViolationWindow ->
                 ets:delete(State#state.violations, ClientId);
-            _ ->
+            true ->
                 ok
         end
     end, ok, State#state.violations),
@@ -661,43 +662,35 @@ check_global_rate_internal(Bucket, MaxRate, _TimeNowMs) ->
 
 %% @private Increment violation counter for DDoS detection
 %% Uses atomic update_counter to prevent lost update anomaly (RPN 900)
+%% CONCURRENCY SAFETY: This function uses ets:update_counter for atomic increments.
+%% The violations table structure is: {ClientId, Count, Timestamp}
+%% This allows position 2 (Count) to be atomically incremented.
 -spec increment_violations(client_id(), #state{}) -> ok.
 increment_violations(ClientId, State) ->
     TimeNowMs = erlang:system_time(millisecond),
     ViolationWindow = ?VIOLATION_WINDOW,
 
-    % Atomic operation: get current count and timestamp, or initialize if not exists
-    Result = case ets:lookup(State#state.violations, ClientId) of
-        [{_, {Count, Timestamp}}] ->
-            {Count, Timestamp};
-        [] ->
-            {0, undefined}
-    end,
-
-    {OldCount, OldTimestamp} = Result,
-
-    case OldTimestamp of
-        undefined ->
-            % First violation, initialize
-            ets:insert(State#state.violations, {ClientId, {1, TimeNowMs}}),
-            maybe_block_client(ClientId, 1, TimeNowMs, State);
+    % First, check if window has expired and reset if needed
+    case ets:lookup(State#state.violations, ClientId) of
+        [{_, _Count, Timestamp}] when (TimeNowMs - Timestamp) > ViolationWindow ->
+            % Window expired, reset to 1
+            ets:insert(State#state.violations, {ClientId, 1, TimeNowMs}),
+            maybe_block_client(ClientId, 1, TimeNowMs, State),
+            ok;
         _ ->
-            % Check if violation window has expired
-            if
-                (TimeNowMs - OldTimestamp) > ViolationWindow ->
-                    % Window expired, reset counter to 1
-                    ets:insert(State#state.violations, {ClientId, {1, TimeNowMs}}),
-                    ok;
-                true ->
-                    % Atomic increment using update_counter (position 2 in tuple)
-                    % Tuple structure: {ClientId, {Count, Timestamp}}
-                    % We need to increment the count (first element of the nested tuple)
-                    NewCount = OldCount + 1,
-                    ets:insert(State#state.violations, {ClientId, {NewCount, OldTimestamp}}),
-                    maybe_block_client(ClientId, NewCount, TimeNowMs, State)
-            end
-    end,
-    ok.
+            % Either first violation or within window - use atomic increment
+            % ets:update_counter atomically increments position 2 (Count)
+            % Default tuple: {ClientId, 0, TimeNowMs} is inserted if key doesn't exist
+            % Then it increments position 2, resulting in {ClientId, 1, TimeNowMs}
+            NewCount = ets:update_counter(
+                State#state.violations,
+                ClientId,
+                {2, 1},  % Increment position 2 (Count field) by 1
+                {ClientId, 0, TimeNowMs}  % Default if key doesn't exist
+            ),
+            maybe_block_client(ClientId, NewCount, TimeNowMs, State),
+            ok
+    end.
 
 %% @private Check if client should be blocked due to excessive violations
 -spec maybe_block_client(client_id(), non_neg_integer(), integer(), #state{}) -> ok.

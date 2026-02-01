@@ -369,7 +369,7 @@ execute_batch_parallel(Requests, #state{executor = Executor, parallel_workers = 
     Parent = self(),
     Refs = [begin
         Ref = make_ref(),
-        spawn_link(fun() ->
+        proc_lib:spawn_link(fun() ->
             ChunkResults = try
                 Executor(Chunk)
             catch

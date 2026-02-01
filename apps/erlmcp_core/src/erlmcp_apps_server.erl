@@ -27,7 +27,7 @@
     app_list = [] :: [app_id()],
     app_policies :: ets:tid(),
     running_apps = #{} :: #{app_id() => {pid(), reference()}},
-    max_apps = 100 :: pos_integer(),
+    max_apps :: pos_integer(),
     manifest_validation = true :: boolean()
 }).
 
@@ -59,27 +59,33 @@ start_link() ->
     ok | {error, invalid_manifest | already_registered | too_many_apps}.
 register_app(AppId, AppManifest, Permissions)
   when is_binary(AppId), is_map(AppManifest), is_list(Permissions) ->
-    gen_server:call(?MODULE, {register_app, AppId, AppManifest, Permissions}, 5000).
+    Timeout = application:get_env(erlmcp_core, rpc_call_timeout_ms, 5000),
+    gen_server:call(?MODULE, {register_app, AppId, AppManifest, Permissions}, Timeout).
 
 -spec get_apps() -> {ok, [map()]}.
 get_apps() ->
-    gen_server:call(?MODULE, get_apps, 5000).
+    Timeout = application:get_env(erlmcp_core, rpc_call_timeout_ms, 5000),
+    gen_server:call(?MODULE, get_apps, Timeout).
 
 -spec start_app(app_id(), map()) -> {ok, pid()} | {error, term()}.
 start_app(AppId, Config) when is_binary(AppId), is_map(Config) ->
-    gen_server:call(?MODULE, {start_app, AppId, Config}, 10000).
+    Timeout = application:get_env(erlmcp_core, rpc_long_call_timeout_ms, 10000),
+    gen_server:call(?MODULE, {start_app, AppId, Config}, Timeout).
 
 -spec stop_app(app_id()) -> ok | {error, not_running | not_found}.
 stop_app(AppId) when is_binary(AppId) ->
-    gen_server:call(?MODULE, {stop_app, AppId}, 5000).
+    Timeout = application:get_env(erlmcp_core, rpc_call_timeout_ms, 5000),
+    gen_server:call(?MODULE, {stop_app, AppId}, Timeout).
 
 -spec get_app_status(app_id()) -> {ok, app_status(), map()} | {error, not_found}.
 get_app_status(AppId) when is_binary(AppId) ->
-    gen_server:call(?MODULE, {get_app_status, AppId}, 5000).
+    Timeout = application:get_env(erlmcp_core, rpc_call_timeout_ms, 5000),
+    gen_server:call(?MODULE, {get_app_status, AppId}, Timeout).
 
 -spec unregister_app(app_id()) -> ok | {error, not_found | still_running}.
 unregister_app(AppId) when is_binary(AppId) ->
-    gen_server:call(?MODULE, {unregister_app, AppId}, 5000).
+    Timeout = application:get_env(erlmcp_core, rpc_call_timeout_ms, 5000),
+    gen_server:call(?MODULE, {unregister_app, AppId}, Timeout).
 
 %%====================================================================
 %% gen_server callbacks
@@ -88,6 +94,9 @@ unregister_app(AppId) when is_binary(AppId) ->
 -spec init([]) -> {ok, state()}.
 init([]) ->
     process_flag(trap_exit, true),
+
+    %% Load max_apps from configuration
+    MaxApps = application:get_env(erlmcp_core, max_registered_apps, 100),
 
     %% Create ETS table for apps with heir pattern
     AppsTid = ets:new(erlmcp_apps, [
@@ -109,8 +118,8 @@ init([]) ->
         {heir, whereis(erlmcp_core_sup), []}
     ]),
 
-    logger:info("Starting apps server with ETS tables ~p, ~p", [AppsTid, PoliciesTid]),
-    {ok, #state{apps_ets = AppsTid, app_policies = PoliciesTid}}.
+    logger:info("Starting apps server with ETS tables ~p, ~p (max_apps=~p)", [AppsTid, PoliciesTid, MaxApps]),
+    {ok, #state{apps_ets = AppsTid, app_policies = PoliciesTid, max_apps = MaxApps}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()} | {noreply, state()}.
@@ -420,9 +429,9 @@ stop_app_internal(App, State) ->
     {ok, pid()} | {error, term()}.
 start_app_process(AppId, Manifest, Config) ->
     %% Simplified app process starter
-    %% In production, this would use a proper supervisor
+    %% TODO: In production, this should use a proper supervisor (erlmcp_app_worker_sup)
     try
-        Pid = spawn_link(fun() ->
+        Pid = proc_lib:spawn_link(fun() ->
             logger:info("App ~p started with config ~p", [AppId, Config]),
             app_loop(AppId, Manifest, Config)
         end),

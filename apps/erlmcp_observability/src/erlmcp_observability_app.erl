@@ -31,9 +31,10 @@ start(_StartType, _StartArgs) ->
 
             %% Initialize OpenTelemetry ASYNC after supervisor starts
             %% This avoids blocking application startup if OTEL fails
+            %% Use proc_lib for proper OTP integration and crash reports
             case application:get_env(erlmcp_observability, otel_enabled, true) of
                 true ->
-                    spawn(fun() ->
+                    proc_lib:spawn(fun() ->
                         timer:sleep(100),  % Small delay to let supervisor initialize
                         init_otel()
                     end);

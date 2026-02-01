@@ -233,7 +233,7 @@ heap_analysis(Opts) ->
 %% @doc Track memory trends over time
 -spec memory_trends(pos_integer()) -> {ok, pid()}.
 memory_trends(IntervalMs) ->
-    Pid = spawn(fun() -> trend_tracker(IntervalMs, []) end),
+    Pid = proc_lib:spawn_link(fun() -> trend_tracker(IntervalMs, []) end),
     {ok, Pid}.
 
 %%%=============================================================================

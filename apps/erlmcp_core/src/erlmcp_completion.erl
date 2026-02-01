@@ -541,7 +541,7 @@ do_stream_completion(Ref, Argument, Context, State) ->
                      <<"Completion reference not found">>}};
         {Handler, _Type} ->
             CompletionId = generate_completion_id(),
-            Pid = spawn_link(?MODULE, stream_loop, [
+            Pid = proc_lib:spawn_link(?MODULE, stream_loop, [
                 CompletionId,
                 Ref,
                 Argument,

@@ -204,20 +204,30 @@ register_breaker(Name, Config) ->
     register_breaker(Name, Config, undefined).
 
 %% @doc Register a circuit breaker (manager compatibility)
+%% CONCURRENCY SAFETY: Uses ets:insert_new for atomic test-and-set to prevent
+%% TOCTOU (Time-Of-Check-Time-Of-Use) race conditions. If two processes try to
+%% register the same breaker concurrently, only one will succeed.
 -spec register_breaker(atom(), config(), pid() | undefined) -> ok | {error, term()}.
 register_breaker(Name, Config, _MonitorPid) ->
     ensure_manager_table(),
-    case ets:lookup(?MANAGER_TABLE, Name) of
-        [{Name, _Pid}] ->
-            {error, already_registered};
-        [] ->
-            case start_link(Name, Config) of
-                {ok, Pid} ->
-                    ets:insert(?MANAGER_TABLE, {Name, Pid}),
+    % Start the circuit breaker process first
+    case start_link(Name, Config) of
+        {ok, Pid} ->
+            % Atomically insert only if Name doesn't exist
+            % This prevents the race where two processes could start
+            % circuit breakers for the same name
+            case ets:insert_new(?MANAGER_TABLE, {Name, Pid}) of
+                true ->
+                    % Successfully registered
                     ok;
-                Error ->
-                    Error
-            end
+                false ->
+                    % Another process already registered this name
+                    % Clean up the process we just started
+                    catch stop(Pid),
+                    {error, already_registered}
+            end;
+        Error ->
+            Error
     end.
 
 %% @doc Unregister a circuit breaker
@@ -234,23 +244,37 @@ unregister_breaker(Name) ->
     end.
 
 %% @doc Get all circuit breaker states
+%% CONCURRENCY SAFETY: Collect dead PIDs during fold, then delete after fold completes.
+%% Deleting during fold creates undefined behavior (ETS docs: modifications during
+%% fold may or may not be included in iteration). This two-pass approach ensures
+%% deterministic cleanup without interfering with the iteration.
 -spec get_all_states() -> #{atom() => state_name()}.
 get_all_states() ->
     ensure_manager_table(),
-    ets:foldl(
-        fun({Name, Pid}, Acc) ->
+
+    %% Pass 1: Collect states and identify dead processes
+    {States, DeadBreakers} = ets:foldl(
+        fun({Name, Pid}, {AccStates, AccDead}) ->
             case is_process_alive(Pid) of
                 true ->
                     State = get_state(Pid),
-                    maps:put(Name, State, Acc);
+                    {maps:put(Name, State, AccStates), AccDead};
                 false ->
-                    ets:delete(?MANAGER_TABLE, Name),
-                    Acc
+                    %% Don't delete yet - collect for cleanup after fold
+                    {AccStates, [Name | AccDead]}
             end
         end,
-        #{},
+        {#{}, []},
         ?MANAGER_TABLE
-    ).
+    ),
+
+    %% Pass 2: Clean up dead breakers (after fold completes)
+    lists:foreach(
+        fun(Name) -> ets:delete(?MANAGER_TABLE, Name) end,
+        DeadBreakers
+    ),
+
+    States.
 
 %% @doc Get all circuit breaker stats
 -spec get_all_stats() -> #{atom() => map()}.

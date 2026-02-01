@@ -78,26 +78,55 @@ start_link() ->
 %% @doc Register an entity globally with a unique name
 %% @end
 %%--------------------------------------------------------------------
+%% CONCURRENCY SAFETY: Setup all configuration BEFORE global registration to prevent
+%% race conditions where an entity is globally registered but missing config/monitoring.
+%% If setup fails, no global registration occurs. This ensures atomic semantics.
 -spec register(entity_type(), entity_id(), pid(), entity_config()) -> ok | {error, term()}.
 register(Type, Id, Pid, Config) when is_atom(Type), is_pid(Pid), is_map(Config) ->
     GlobalName = make_global_name(Type, Id),
-    case global:register_name(GlobalName, Pid) of
-        yes ->
-            %% Store config before joining groups
-            put_entity_config(Type, Id, Config),
 
-            %% Join appropriate groups
-            Groups = determine_groups(Type, Config),
-            lists:foreach(fun(Group) -> ok = join_group(Group, Pid) end, Groups),
+    %% Pre-flight: Setup all configuration BEFORE global registration
+    %% This prevents the race where registration succeeds but config/monitoring fails
+    try
+        %% Step 1: Store entity config
+        put_entity_config(Type, Id, Config),
 
-            %% Setup monitoring for automatic cleanup
-            gen_server:call(?MODULE, {monitor_process, Type, Id, Pid, Groups}),
-            logger:info("Registered global ~p ~p with pid ~p", [Type, Id, Pid]),
-            ok;
-        no ->
-            ExistingPid = global:whereis_name(GlobalName),
-            logger:warning("Global ~p ~p already registered with pid ~p", [Type, Id, ExistingPid]),
-            {error, {already_registered, ExistingPid}}
+        %% Step 2: Determine groups (but don't join yet)
+        Groups = determine_groups(Type, Config),
+
+        %% Step 3: Setup monitoring (pre-registration)
+        ok = gen_server:call(?MODULE, {monitor_process, Type, Id, Pid, Groups}),
+
+        %% Step 4: Only NOW attempt global registration
+        case global:register_name(GlobalName, Pid) of
+            yes ->
+                %% Registration succeeded - complete the process
+                %% Join groups (these can fail without breaking registration)
+                lists:foreach(fun(Group) ->
+                    case join_group(Group, Pid) of
+                        ok -> ok;
+                        {error, Reason} ->
+                            logger:warning("Failed to join group ~p: ~p", [Group, Reason])
+                    end
+                end, Groups),
+
+                logger:info("Registered global ~p ~p with pid ~p", [Type, Id, Pid]),
+                ok;
+            no ->
+                %% Registration failed - rollback all setup
+                erase_entity_config(Type, Id),
+                gen_server:cast(?MODULE, {stop_monitoring, Type, Id}),
+                ExistingPid = global:whereis_name(GlobalName),
+                logger:warning("Global ~p ~p already registered with pid ~p", [Type, Id, ExistingPid]),
+                {error, {already_registered, ExistingPid}}
+        end
+    catch
+        _:Reason ->
+            %% Setup failed - ensure no partial state
+            erase_entity_config(Type, Id),
+            catch gen_server:cast(?MODULE, {stop_monitoring, Type, Id}),
+            logger:error("Failed to register ~p ~p: ~p", [Type, Id, Reason]),
+            {error, {setup_failed, Reason}}
     end.
 
 %%--------------------------------------------------------------------

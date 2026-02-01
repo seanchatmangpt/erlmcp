@@ -88,18 +88,19 @@ saturate_cpu(Config) ->
     
     SchedulerCount = erlang:system_info(schedulers_online),
     WorkerCount = round(SchedulerCount * TargetLoad),
-    
-    ?LOG_INFO("Saturating ~p/~p CPU schedulers for ~pms", 
+
+    ?LOG_INFO("Saturating ~p/~p CPU schedulers for ~pms",
              [WorkerCount, SchedulerCount, Duration]),
-    
-    % Spawn CPU-intensive workers
-    Workers = [spawn(fun() -> cpu_burn_loop() end) || _ <- lists:seq(1, WorkerCount)],
-    
+
+    % Spawn CPU-intensive workers using proc_lib for OTP compliance
+    % NOTE: These are temporary workers for chaos testing
+    Workers = [proc_lib:spawn_link(fun() -> cpu_burn_loop() end) || _ <- lists:seq(1, WorkerCount)],
+
     timer:sleep(Duration),
-    
+
     % Kill workers
     lists:foreach(fun(Pid) -> exit(Pid, kill) end, Workers),
-    
+
     ?LOG_INFO("CPU saturation complete", []),
     ok.
 

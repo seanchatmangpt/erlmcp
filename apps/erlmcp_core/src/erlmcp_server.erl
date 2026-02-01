@@ -2413,7 +2413,7 @@ handle_tool_call_streaming(Id, Name, Arguments, StreamOpts, TransportId, State, 
 
                     %% Spawn worker to execute tool and stream results
                     ServerPid = self(),
-                    spawn_link(fun() ->
+                    proc_lib:spawn_link(fun() ->
                         execute_streaming_tool(StreamId, ProgressToken, ServerPid, Name, Handler, Arguments, StreamOpts)
                     end),
                     ok;

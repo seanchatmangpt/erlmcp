@@ -150,10 +150,9 @@ inspect_state(Pid) ->
 %% @doc List all attached processes
 -spec list_attached() -> [map()].
 list_attached() ->
-    case persistent_term:get({?MODULE, attached}, undefined) of
-        undefined -> [];
-        Attached -> maps:values(Attached)
-    end.
+    ensure_tables(),
+    % Return all attached process states
+    [State || {_Pid, State} <- ets:tab2list(?ATTACHED_TABLE)].
 
 %%%=============================================================================
 %%% MESSAGE TRACING API
@@ -163,13 +162,13 @@ list_attached() ->
 -spec trace_calls(module(), atom(), arity() | '_') -> {ok, reference()} | {error, term()}.
 trace_calls(Module, Function, Arity) ->
     Ref = make_ref(),
-    Tracer = spawn(fun() -> call_tracer(Ref, []) end),
-    
+    Tracer = proc_lib:spawn_link(fun() -> call_tracer(Ref, []) end),
+
     %% Set up trace pattern
     MatchSpec = [{'_', [], [{message, {caller}}]}],
     erlang:trace_pattern({Module, Function, Arity}, MatchSpec, [local]),
     erlang:trace(all, true, [call, {tracer, Tracer}]),
-    
+
     TraceState = #{
         ref => Ref,
         tracer_pid => Tracer,
@@ -186,17 +185,17 @@ trace_calls(Module, Function, Arity) ->
 -spec trace_messages(pid(), pos_integer()) -> {ok, reference()} | {error, term()}.
 trace_messages(Pid, Duration) ->
     Ref = make_ref(),
-    Tracer = spawn(fun() -> message_tracer(Ref, Pid, []) end),
-    
+    Tracer = proc_lib:spawn_link(fun() -> message_tracer(Ref, Pid, []) end),
+
     erlang:trace(Pid, true, ['receive', {tracer, Tracer}]),
-    
+
     %% Auto-stop after duration
-    spawn(fun() ->
+    proc_lib:spawn_link(fun() ->
         timer:sleep(Duration),
         erlang:trace(Pid, false, ['receive']),
         Tracer ! stop
     end),
-    
+
     TraceState = #{
         ref => Ref,
         tracer_pid => Tracer,
@@ -299,19 +298,19 @@ list_breakpoints() ->
 -spec call_graph(pid(), pos_integer()) -> {ok, reference()} | {error, term()}.
 call_graph(Pid, Duration) ->
     Ref = make_ref(),
-    Collector = spawn(fun() -> call_graph_collector(Ref, []) end),
-    
+    Collector = proc_lib:spawn_link(fun() -> call_graph_collector(Ref, []) end),
+
     %% Trace all calls from this process
     erlang:trace(Pid, true, [call, {tracer, Collector}]),
     erlang:trace_pattern({'_', '_', '_'}, [{'_', [], [{message, {caller}}]}], [local]),
-    
+
     %% Auto-stop after duration
-    spawn(fun() ->
+    proc_lib:spawn_link(fun() ->
         timer:sleep(Duration),
         erlang:trace(Pid, false, [call]),
         erlang:trace_pattern({'_', '_', '_'}, false, [local])
     end),
-    
+
     save_call_graph_state(Ref, #{pid => Pid, duration => Duration}),
     
     ?LOG_INFO("Collecting call graph for ~p for ~pms", [Pid, Duration]),
@@ -346,71 +345,128 @@ visualize_call_graph(Ref, OutputFile) ->
 %%%=============================================================================
 %%% INTERNAL FUNCTIONS - STATE MANAGEMENT
 %%%=============================================================================
+%%
+%% CONCURRENCY SAFETY: This module previously used persistent_term for state
+%% management, which is NOT safe for concurrent read-modify-write operations.
+%% persistent_term is designed for write-once, read-many configuration data.
+%%
+%% FIX: Replaced with ETS tables that support atomic operations:
+%% - debugger_attached: Stores attached process states
+%% - debugger_traces: Stores trace states
+%% - debugger_breakpoints: Stores breakpoint configurations
+%% - debugger_call_graphs: Stores call graph states
+%%
+%% All tables are created with [set, public, named_table] options:
+%% - set: Each key has at most one value
+%% - public: Any process can read/write (needed for utility module)
+%% - named_table: Table has a name for easy access
+%%
+%% Operations like ets:insert and ets:delete are atomic, preventing the
+%% lost update anomalies that occurred with persistent_term.
+
+-define(ATTACHED_TABLE, debugger_attached).
+-define(TRACES_TABLE, debugger_traces).
+-define(BREAKPOINTS_TABLE, debugger_breakpoints).
+-define(CALL_GRAPHS_TABLE, debugger_call_graphs).
+
+%% @private Ensure ETS tables exist (create on first use)
+-spec ensure_tables() -> ok.
+ensure_tables() ->
+    Tables = [
+        {?ATTACHED_TABLE, [set, public, named_table, {read_concurrency, true}]},
+        {?TRACES_TABLE, [set, public, named_table, {read_concurrency, true}]},
+        {?BREAKPOINTS_TABLE, [set, public, named_table, {read_concurrency, true}]},
+        {?CALL_GRAPHS_TABLE, [set, public, named_table, {read_concurrency, true}]}
+    ],
+    lists:foreach(fun({Name, Opts}) ->
+        case ets:whereis(Name) of
+            undefined ->
+                ets:new(Name, Opts),
+                ok;
+            _ ->
+                ok
+        end
+    end, Tables),
+    ok.
 
 -spec save_attached_state(pid(), map()) -> ok.
 save_attached_state(Pid, State) ->
-    Attached = persistent_term:get({?MODULE, attached}, #{}),
-    persistent_term:put({?MODULE, attached}, Attached#{Pid => State}),
+    ensure_tables(),
+    % Atomic insert - replaces any existing entry for this Pid
+    ets:insert(?ATTACHED_TABLE, {Pid, State}),
     ok.
 
 -spec get_attached_state(pid()) -> map() | undefined.
 get_attached_state(Pid) ->
-    case persistent_term:get({?MODULE, attached}, undefined) of
-        undefined -> undefined;
-        Attached -> maps:get(Pid, Attached, undefined)
+    ensure_tables(),
+    case ets:lookup(?ATTACHED_TABLE, Pid) of
+        [{_, State}] -> State;
+        [] -> undefined
     end.
 
 -spec remove_attached_state(pid()) -> ok.
 remove_attached_state(Pid) ->
-    case persistent_term:get({?MODULE, attached}, undefined) of
-        undefined -> ok;
-        Attached ->
-            persistent_term:put({?MODULE, attached}, maps:remove(Pid, Attached)),
-            ok
-    end.
+    ensure_tables(),
+    % Atomic delete
+    ets:delete(?ATTACHED_TABLE, Pid),
+    ok.
 
 -spec save_trace_state(reference(), map()) -> ok.
 save_trace_state(Ref, State) ->
-    Traces = persistent_term:get({?MODULE, traces}, #{}),
-    persistent_term:put({?MODULE, traces}, Traces#{Ref => State}),
+    ensure_tables(),
+    % Atomic insert
+    ets:insert(?TRACES_TABLE, {Ref, State}),
     ok.
 
 -spec get_trace_state(reference()) -> map() | undefined.
 get_trace_state(Ref) ->
-    case persistent_term:get({?MODULE, traces}, undefined) of
-        undefined -> undefined;
-        Traces -> maps:get(Ref, Traces, undefined)
+    ensure_tables(),
+    case ets:lookup(?TRACES_TABLE, Ref) of
+        [{_, State}] -> State;
+        [] -> undefined
     end.
 
 -spec remove_trace_state(reference()) -> ok.
 remove_trace_state(Ref) ->
-    case persistent_term:get({?MODULE, traces}, undefined) of
-        undefined -> ok;
-        Traces ->
-            persistent_term:put({?MODULE, traces}, maps:remove(Ref, Traces)),
-            ok
-    end.
+    ensure_tables(),
+    % Atomic delete
+    ets:delete(?TRACES_TABLE, Ref),
+    ok.
 
 -spec get_breakpoints() -> map().
 get_breakpoints() ->
-    persistent_term:get({?MODULE, breakpoints}, #{}).
+    ensure_tables(),
+    % Return all breakpoints as a map
+    case ets:tab2list(?BREAKPOINTS_TABLE) of
+        [] -> #{};
+        List -> maps:from_list(List)
+    end.
 
 -spec save_breakpoints(map()) -> ok.
 save_breakpoints(Breakpoints) ->
-    persistent_term:put({?MODULE, breakpoints}, Breakpoints),
+    ensure_tables(),
+    % Clear old breakpoints and insert new ones
+    % Note: This is not atomic as a whole, but each insert is atomic
+    % For true atomicity, this should be wrapped in a gen_server
+    ets:delete_all_objects(?BREAKPOINTS_TABLE),
+    maps:foreach(fun(K, V) ->
+        ets:insert(?BREAKPOINTS_TABLE, {K, V})
+    end, Breakpoints),
     ok.
 
 -spec save_call_graph_state(reference(), map()) -> ok.
 save_call_graph_state(Ref, State) ->
-    Graphs = persistent_term:get({?MODULE, call_graphs}, #{}),
-    persistent_term:put({?MODULE, call_graphs}, Graphs#{Ref => State}),
+    ensure_tables(),
+    % Atomic insert
+    ets:insert(?CALL_GRAPHS_TABLE, {Ref, State}),
     ok.
 
 -spec get_call_graph_state(reference()) -> map() | undefined.
 get_call_graph_state(Ref) ->
-    case persistent_term:get({?MODULE, call_graphs}, undefined) of
-        undefined -> undefined;
-        Graphs -> maps:get(Ref, Graphs, undefined)
+    ensure_tables(),
+    case ets:lookup(?CALL_GRAPHS_TABLE, Ref) of
+        [{_, State}] -> State;
+        [] -> undefined
     end.
 
 %%%=============================================================================

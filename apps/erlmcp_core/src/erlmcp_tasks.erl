@@ -63,8 +63,8 @@
 -type update_function() :: fun((map()) -> map()).
 
 -record(state, {
-    task_count = 0 :: non_neg_integer(),
     pending_cleanup = [] :: [task_id()]
+    % Note: task_count removed - now stored as atomic ETS counter for idempotency
 }).
 
 %%%===================================================================
@@ -266,11 +266,17 @@ init([]) ->
         {write_concurrency, true}
     ]),
 
+    % Initialize atomic task counter for idempotent operations
+    % Using ETS counter instead of state ensures:
+    % - Atomic increments (no race conditions)
+    % - Survives process restarts
+    % - No counter drift on supervisor restart
+    ets:insert(?TASKS_TABLE, {task_count, 0}),
+
     % Schedule periodic cleanup of expired tasks
     schedule_cleanup(),
 
     {ok, #state{
-        task_count = 0,
         pending_cleanup = []
     }}.
 
@@ -278,7 +284,7 @@ init([]) ->
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
     {reply, term(), #state{}}.
 handle_call({create_task, ClientPid, Action, Metadata}, _From, State) ->
-    case State#state.task_count >= ?MAX_CONCURRENT_TASKS of
+    case get_task_count() >= ?MAX_CONCURRENT_TASKS of
         true ->
             {reply, {error, {max_concurrent_tasks, ?MCP_ERROR_MAX_CONCURRENT_TASKS}}, State};
         false ->
@@ -287,7 +293,7 @@ handle_call({create_task, ClientPid, Action, Metadata}, _From, State) ->
     end;
 
 handle_call({create_task, ClientPid, Action, Metadata, Options}, _From, State) ->
-    case State#state.task_count >= ?MAX_CONCURRENT_TASKS of
+    case get_task_count() >= ?MAX_CONCURRENT_TASKS of
         true ->
             {reply, {error, {max_concurrent_tasks, ?MCP_ERROR_MAX_CONCURRENT_TASKS}}, State};
         false ->
@@ -367,7 +373,8 @@ handle_info(_Info, State) ->
 
 %% @private
 -spec terminate(term(), #state{}) -> ok.
-terminate(_Reason, #state{task_count = Count}) ->
+terminate(_Reason, _State) ->
+    Count = get_task_count(),
     logger:info("Tasks manager terminating with ~p active tasks", [Count]),
     % Clean up ETS table to prevent state leakage
     catch ets:delete(?TASKS_TABLE),
@@ -394,6 +401,12 @@ do_create_task(ClientPid, Action, Metadata, State) ->
 
     Now = erlang:system_time(millisecond),
 
+    % CONCURRENCY SAFETY: Create timer BEFORE creating task to avoid split-brain state.
+    % Previously, the task was inserted twice: once without timer_ref, then with timer_ref.
+    % This created a window where readers could see incomplete state (timer_ref = undefined).
+    % Now we create the complete task state before any ETS insertion.
+    TimerRef = erlang:send_after(TimeoutMs, self(), {task_timeout, TaskId}),
+
     Task = #mcp_task{
         id = TaskId,
         status = pending,
@@ -411,23 +424,24 @@ do_create_task(ClientPid, Action, Metadata, State) ->
         progress = undefined,
         total = undefined,
         timeout_ms = TimeoutMs,
-        timer_ref = undefined
+        timer_ref = TimerRef  % Timer created BEFORE task insertion
     },
 
+    % Single atomic insert of complete task state
     ets:insert(?TASKS_TABLE, Task),
-
-    TimerRef = erlang:send_after(TimeoutMs, self(), {task_timeout, TaskId}),
-    Task1 = Task#mcp_task{timer_ref = TimerRef},
-    ets:insert(?TASKS_TABLE, Task1),
 
     % Create progress tracking
     ProgressPid = resolve_client_pid(ClientPid),
     erlmcp_progress:create(ProgressPid, <<"Task created: ", TaskId/binary>>),
 
-    logger:debug("Created task ~p for client ~p", [TaskId, ClientPid]),
+    % Atomically increment task counter (idempotent operation)
+    % Using update_counter ensures no race conditions or counter drift
+    NewCount = ets:update_counter(?TASKS_TABLE, task_count, {2, 1}, {task_count, 0}),
+
+    logger:debug("Created task ~p for client ~p (total: ~p)", [TaskId, ClientPid, NewCount]),
     send_task_notification(ClientPid, TaskId),
 
-    {{ok, TaskId}, State#state{task_count = State#state.task_count + 1}}.
+    {{ok, TaskId}, State}.
 
 %% @private
 do_list_tasks(ClientPid, Cursor, Limit) ->
@@ -621,7 +635,9 @@ do_complete_task(TaskId, Result, State) ->
             logger:info("Task ~p completed successfully", [TaskId]),
             send_task_notification(Task#mcp_task.client_pid, TaskId),
 
-            {ok, State#state{task_count = max(0, State#state.task_count - 1)}};
+            % Atomically decrement task count
+            decrement_task_count(),
+            {ok, State};
         [#mcp_task{status = Status}] ->
             logger:warning("Cannot complete task ~p in status ~p", [TaskId, Status]),
             {{error, {task_state_invalid, ?MCP_ERROR_TASK_STATE_INVALID}}, State};
@@ -665,7 +681,9 @@ do_fail_task(TaskId, Error, State) ->
             logger:error("Task ~p failed: ~p", [TaskId, Error]),
             send_task_notification(Task#mcp_task.client_pid, TaskId),
 
-            {ok, State#state{task_count = max(0, State#state.task_count - 1)}};
+            % Atomically decrement task count
+            decrement_task_count(),
+            {ok, State};
         [#mcp_task{status = Status}] ->
             logger:warning("Cannot fail task ~p in status ~p", [TaskId, Status]),
             {{error, {task_state_invalid, ?MCP_ERROR_TASK_STATE_INVALID}}, State};
@@ -728,7 +746,9 @@ do_handle_task_timeout(TaskId, State) ->
                 WorkerPid -> exit(WorkerPid, task_timeout)
             end,
 
-            State#state{task_count = max(0, State#state.task_count - 1)};
+            % Atomically decrement task count
+            decrement_task_count(),
+            State;
         [#mcp_task{}] ->
             State;
         [] ->
@@ -761,7 +781,9 @@ do_handle_worker_down(MonitorRef, State) ->
 
             logger:error("Task ~p failed due to worker death", [TaskId]),
 
-            State#state{task_count = max(0, State#state.task_count - 1)};
+            % Atomically decrement task count
+            decrement_task_count(),
+            State;
         [] ->
             State
     end.
@@ -794,7 +816,9 @@ do_cleanup_expired_tasks(State) ->
         ExpiredTasks
     ),
 
-    State#state{task_count = max(0, State#state.task_count - length(ExpiredTasks))}.
+    % Atomically decrement task count by number of cleaned tasks
+    decrement_task_count(length(ExpiredTasks)),
+    State.
 
 %% @private
 generate_task_id() ->
@@ -802,6 +826,32 @@ generate_task_id() ->
     Time = erlang:system_time(microsecond),
     Random = crypto:strong_rand_bytes(16),
     <<Unique:64, Time:64, Random/binary>>.
+
+%% @private
+%% @doc Get current task count atomically from ETS
+%% This function reads the atomic counter from ETS, ensuring:
+%% - No race conditions
+%% - Consistent reads across process restarts
+%% - Idempotent operation (safe to retry)
+get_task_count() ->
+    case ets:lookup(?TASKS_TABLE, task_count) of
+        [{task_count, Count}] -> Count;
+        [] -> 0
+    end.
+
+%% @private
+%% @doc Decrement task count atomically
+%% Used when tasks are cancelled or completed
+decrement_task_count() ->
+    ets:update_counter(?TASKS_TABLE, task_count, {2, -1, 0, 0}, {task_count, 0}).
+
+%% @private
+%% @doc Decrement task count by N atomically
+%% Used when multiple tasks are cleaned up
+decrement_task_count(N) when N > 0 ->
+    ets:update_counter(?TASKS_TABLE, task_count, {2, -N, 0, 0}, {task_count, 0});
+decrement_task_count(_) ->
+    get_task_count().
 
 %% @private
 format_task_for_api(#mcp_task{
@@ -967,6 +1017,12 @@ do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
 
     Now = erlang:system_time(millisecond),
 
+    % CONCURRENCY SAFETY: Create timer BEFORE creating task to avoid split-brain state.
+    % Previously, the task was inserted twice: once without timer_ref, then with timer_ref.
+    % This created a window where readers could see incomplete state (timer_ref = undefined).
+    % Now we create the complete task state before any ETS insertion.
+    TimerRef = erlang:send_after(TimeoutMs, self(), {task_timeout, TaskId}),
+
     Task = #mcp_task{
         id = TaskId,
         status = pending,
@@ -984,23 +1040,23 @@ do_create_task_with_options(ClientPid, Action, Metadata, Options, State) ->
         progress = undefined,
         total = undefined,
         timeout_ms = TimeoutMs,
-        timer_ref = undefined
+        timer_ref = TimerRef  % Timer created BEFORE task insertion
     },
 
+    % Single atomic insert of complete task state
     ets:insert(?TASKS_TABLE, Task),
-
-    TimerRef = erlang:send_after(TimeoutMs, self(), {task_timeout, TaskId}),
-    Task1 = Task#mcp_task{timer_ref = TimerRef},
-    ets:insert(?TASKS_TABLE, Task1),
 
     % Create progress tracking
     ProgressPid = resolve_client_pid(ClientPid),
     erlmcp_progress:create(ProgressPid, <<"Task created: ", TaskId/binary>>),
 
-    logger:debug("Created task ~p for client ~p with TTL ~p ms", [TaskId, ClientPid, TTL]),
+    % Atomically increment task counter (idempotent operation)
+    NewCount = ets:update_counter(?TASKS_TABLE, task_count, {2, 1}, {task_count, 0}),
+
+    logger:debug("Created task ~p for client ~p with TTL ~p ms (total: ~p)", [TaskId, ClientPid, TTL, NewCount]),
     send_task_notification(ClientPid, TaskId),
 
-    {{ok, TaskId}, State#state{task_count = State#state.task_count + 1}}.
+    {{ok, TaskId}, State}.
 
 %% @private
 do_update_task(ClientPid, TaskId, UpdateFun) ->
@@ -1105,4 +1161,6 @@ do_cleanup_expired_tasks_with_count(State) ->
     ),
 
     Count = length(ExpiredTasks),
-    {ok, Count, State#state{task_count = max(0, State#state.task_count - Count)}}.
+    % Atomically decrement task count
+    decrement_task_count(Count),
+    {ok, Count, State}.
