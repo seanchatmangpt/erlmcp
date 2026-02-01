@@ -215,7 +215,7 @@ throw_error({Where, E}, L) when is_list(Where) ->
 
 %% vim: ft=erlang
 
--file("/tmp/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/buildroot/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %%

@@ -10,11 +10,11 @@
 -asn1_info([{vsn,'5.4.2'},
             {module,'megaco_ber_media_gateway_control_v3'},
             {options,[warnings,ber,errors,
- {cwd,"/tmp/otp/lib/megaco/src/binary"},
- {outdir,"/tmp/otp/lib/megaco/src/binary"},
+ {cwd,"/buildroot/otp/lib/megaco/src/binary"},
+ {outdir,"/buildroot/otp/lib/megaco/src/binary"},
  noobj,legacy_erlang_types,asn1config,
  {i,"."},
- {i,"/tmp/otp/lib/megaco/src/binary"}]}]).
+ {i,"/buildroot/otp/lib/megaco/src/binary"}]}]).
 
 -export([encoding_rule/0,maps/0,bit_string_format/0,
          legacy_erlang_types/0]).

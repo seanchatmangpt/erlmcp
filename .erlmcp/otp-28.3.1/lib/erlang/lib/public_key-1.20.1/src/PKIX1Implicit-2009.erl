@@ -9,13 +9,13 @@
 -include("PKIX1Implicit-2009.hrl").
 -asn1_info([{vsn,'5.4.2'},
             {module,'PKIX1Implicit-2009'},
-            {options,[{i,"/tmp/otp/lib/public_key/asn1/../src"},
+            {options,[{i,"/buildroot/otp/lib/public_key/asn1/../src"},
  warnings,ber,errors,
- {cwd,"/tmp/otp/lib/public_key/asn1"},
- {outdir,"/tmp/otp/lib/public_key/asn1/../src"},
+ {cwd,"/buildroot/otp/lib/public_key/asn1"},
+ {outdir,"/buildroot/otp/lib/public_key/asn1/../src"},
  der,noobj,asn1config,
  {i,"."},
- {i,"/tmp/otp/lib/public_key/asn1"}]}]).
+ {i,"/buildroot/otp/lib/public_key/asn1"}]}]).
 
 -export([encoding_rule/0,maps/0,bit_string_format/0,
          legacy_erlang_types/0]).
@@ -165,7 +165,7 @@ getenc_CertExtensions/1,
 getenc_CrlExtensions/1,
 getenc_CrlEntryExtensions/1,
 getenc_PolicyQualifierId/1,
-getenc_internal_object_set_argument_1/1
+getenc_internal_object_set_argument_2/1
 ]).
 
 -export([
@@ -173,7 +173,7 @@ getdec_CertExtensions/1,
 getdec_CrlExtensions/1,
 getdec_CrlEntryExtensions/1,
 getdec_PolicyQualifierId/1,
-getdec_internal_object_set_argument_1/1
+getdec_internal_object_set_argument_2/1
 ]).
 
 -export([
@@ -1476,7 +1476,7 @@ enc_SubjectDirectoryAttributes(Val, TagIn) ->
 enc_SubjectDirectoryAttributes_AttributeSet(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objtype = 
-   'PKIX1Implicit-2009':'getenc_internal_object_set_argument_1'(                                   Cindex1),
+   'PKIX1Implicit-2009':'getenc_internal_object_set_argument_2'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute type(1) with type OBJECT IDENTIFIER
@@ -1534,7 +1534,7 @@ Tlv1 = match_tags(Tlv, TagIn),
 %%-------------------------------------------------
 [V1|Tlv2] = Tlv1, 
 Term1 = decode_object_identifier(V1, [6]),
-ObjFun = 'PKIX1Implicit-2009':'getdec_internal_object_set_argument_1'(Term1),
+ObjFun = 'PKIX1Implicit-2009':'getdec_internal_object_set_argument_2'(Term1),
 
 %%-------------------------------------------------
 %% attribute values(2) with type SET OF
@@ -3305,43 +3305,43 @@ getdec_PolicyQualifierId(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_1
+%%  internal_object_set_argument_2
 %%================================
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,3} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,3} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520CommonName'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,4} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,4} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-surname'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,5} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,5} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520SerialNumber'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,6} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,6} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520countryName'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,7} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,7} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520LocalityName'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,8} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,8} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520StateOrProvinceName'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,10} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,10} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520OrganizationName'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,11} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,11} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520OrganizationalUnitName'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,12} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,12} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520Title'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,41} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,41} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-name'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,42} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,42} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-givenName'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,43} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,43} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-initials'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,44} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,44} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-generationQualifier'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,46} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,46} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520dnQualifier'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {2,5,4,65} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {2,5,4,65} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-x520Pseudonym'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {0,9,2342,19200300,100,1,25} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {0,9,2342,19200300,100,1,25} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-domainComponent'(T,V,O) end;
-getenc_internal_object_set_argument_1(Id) when Id =:= {1,2,840,113549,1,9,1} ->
+getenc_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,9,1} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'enc_at-emailAddress'(T,V,O) end;
-getenc_internal_object_set_argument_1(_) ->
+getenc_internal_object_set_argument_2(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
       {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
@@ -3349,41 +3349,41 @@ getenc_internal_object_set_argument_1(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,3} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,3} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520CommonName'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,4} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,4} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-surname'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,5} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,5} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520SerialNumber'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,6} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,6} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520countryName'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,7} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,7} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520LocalityName'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,8} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,8} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520StateOrProvinceName'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,10} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,10} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520OrganizationName'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,11} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,11} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520OrganizationalUnitName'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,12} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,12} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520Title'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,41} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,41} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-name'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,42} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,42} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-givenName'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,43} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,43} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-initials'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,44} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,44} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-generationQualifier'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,46} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,46} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520dnQualifier'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {2,5,4,65} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {2,5,4,65} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-x520Pseudonym'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {0,9,2342,19200300,100,1,25} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {0,9,2342,19200300,100,1,25} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-domainComponent'(T,V,O) end;
-getdec_internal_object_set_argument_1(Id) when Id =:= {1,2,840,113549,1,9,1} ->
+getdec_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,9,1} ->
    fun(T,V,O) -> 'PKIX1Explicit-2009':'dec_at-emailAddress'(T,V,O) end;
-getdec_internal_object_set_argument_1(_) ->
+getdec_internal_object_set_argument_2(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 

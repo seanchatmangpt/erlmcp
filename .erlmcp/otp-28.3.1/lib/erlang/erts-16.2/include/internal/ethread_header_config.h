@@ -1,4 +1,4 @@
-/* include/internal/x86_64-pc-linux-gnu/ethread_header_config.h.  Generated from ethread_header_config.h.in by configure.  */
+/* include/internal/aarch64-apple-darwin25.2.0/ethread_header_config.h.  Generated from ethread_header_config.h.in by configure.  */
 /*
  * %CopyrightBegin%
  *
@@ -61,20 +61,20 @@
 /* #undef ETHR_HAVE_MIT_PTHREAD_H */
 
 /* Define if you have the pthread_spin_lock function. */
-#define ETHR_HAVE_PTHREAD_SPIN_LOCK 1
+/* #undef ETHR_HAVE_PTHREAD_SPIN_LOCK */
 
 /* Define if you want to force usage of pthread rwlocks */
 /* #undef ETHR_FORCE_PTHREAD_RWLOCK */
 
 /* Define if you have the pthread_rwlockattr_setkind_np() function. */
-#define ETHR_HAVE_PTHREAD_RWLOCKATTR_SETKIND_NP 1
+/* #undef ETHR_HAVE_PTHREAD_RWLOCKATTR_SETKIND_NP */
 
 /* Define if you have the PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP rwlock
    attribute. */
-#define ETHR_HAVE_PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP 1
+/* #undef ETHR_HAVE_PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP */
 
 /* Define if you have a linux futex implementation. */
-#define ETHR_HAVE_LINUX_FUTEX 1
+/* #undef ETHR_HAVE_LINUX_FUTEX */
 
 /* Define if x86/x86_64 out of order instructions should be synchronized */
 /* #undef ETHR_X86_OUT_OF_ORDER */
@@ -97,22 +97,22 @@
 /* Define as a boolean indicating whether you have a gcc compatible compiler
    capable of generating the ARM 'dmb sy' instruction, and are compiling for
    an ARM processor with ARM DMB instruction support, or not */
-#define ETHR_HAVE_GCC_ASM_ARM_DMB_INSTRUCTION 0
+#define ETHR_HAVE_GCC_ASM_ARM_DMB_INSTRUCTION 1
 
 /* Define as a boolean indicating whether you have a gcc compatible compiler
    capable of generating the ARM 'dmb ld' instruction, and are compiling for
    an ARM processor with ARM DMB instruction support, or not */
-#define ETHR_HAVE_GCC_ASM_ARM_DMB_LD_INSTRUCTION 0
+#define ETHR_HAVE_GCC_ASM_ARM_DMB_LD_INSTRUCTION 1
 
 /* Define as a boolean indicating whether you have a gcc compatible compiler
    capable of generating the ARM 'dmb st' instruction, and are compiling for
    an ARM processor with ARM DMB instruction support, or not */
-#define ETHR_HAVE_GCC_ASM_ARM_DMB_ST_INSTRUCTION 0
+#define ETHR_HAVE_GCC_ASM_ARM_DMB_ST_INSTRUCTION 1
 
 /* Define as a boolean indicating whether you have a gcc compatible compiler
    capable of generating the ARM 'isb sy' instruction, and are compiling for
    an ARM processor with ARM ISB instruction support, or not */
-#define ETHR_HAVE_GCC_ASM_ARM_ISB_SY_INSTRUCTION 0
+#define ETHR_HAVE_GCC_ASM_ARM_ISB_SY_INSTRUCTION 1
 
 /* Define as a bitmask corresponding to the word sizes that
    __sync_synchronize() can handle on your system */
@@ -120,19 +120,19 @@
 
 /* Define as a bitmask corresponding to the word sizes that
    __sync_add_and_fetch() can handle on your system */
-#define ETHR_HAVE___sync_add_and_fetch 12
+#define ETHR_HAVE___sync_add_and_fetch 28
 
 /* Define as a bitmask corresponding to the word sizes that
    __sync_fetch_and_and() can handle on your system */
-#define ETHR_HAVE___sync_fetch_and_and 12
+#define ETHR_HAVE___sync_fetch_and_and 28
 
 /* Define as a bitmask corresponding to the word sizes that
    __sync_fetch_and_or() can handle on your system */
-#define ETHR_HAVE___sync_fetch_and_or 12
+#define ETHR_HAVE___sync_fetch_and_or 28
 
 /* Define as a bitmask corresponding to the word sizes that
    __sync_val_compare_and_swap() can handle on your system */
-#define ETHR_HAVE___sync_val_compare_and_swap 12
+#define ETHR_HAVE___sync_val_compare_and_swap 28
 
 /* Define as a boolean indicating whether you have a gcc __atomic builtins or
    not */
@@ -144,27 +144,27 @@
 
 /* Define as a bitmask corresponding to the word sizes that __atomic_store_n()
    can handle on your system */
-#define ETHR_HAVE___atomic_store_n 12
+#define ETHR_HAVE___atomic_store_n 28
 
 /* Define as a bitmask corresponding to the word sizes that __atomic_load_n()
    can handle on your system */
-#define ETHR_HAVE___atomic_load_n 12
+#define ETHR_HAVE___atomic_load_n 28
 
 /* Define as a bitmask corresponding to the word sizes that
    __atomic_add_fetch() can handle on your system */
-#define ETHR_HAVE___atomic_add_fetch 12
+#define ETHR_HAVE___atomic_add_fetch 28
 
 /* Define as a bitmask corresponding to the word sizes that
    __atomic_fetch_and() can handle on your system */
-#define ETHR_HAVE___atomic_fetch_and 12
+#define ETHR_HAVE___atomic_fetch_and 28
 
 /* Define as a bitmask corresponding to the word sizes that
    __atomic_fetch_or() can handle on your system */
-#define ETHR_HAVE___atomic_fetch_or 12
+#define ETHR_HAVE___atomic_fetch_or 28
 
 /* Define as a bitmask corresponding to the word sizes that
    __atomic_compare_exchange_n() can handle on your system */
-#define ETHR_HAVE___atomic_compare_exchange_n 12
+#define ETHR_HAVE___atomic_compare_exchange_n 28
 
 /* Define if you prefer gcc native ethread implementations */
 /* #undef ETHR_PREFER_GCC_NATIVE_IMPLS */
@@ -188,7 +188,7 @@
 /* #undef ETHR_GCC_HAVE_SSE2_ASM_SUPPORT */
 
 /* Define if you use a gcc that supports the double word cmpxchg instruction */
-#define ETHR_GCC_HAVE_DW_CMPXCHG_ASM_SUPPORT 1
+/* #undef ETHR_GCC_HAVE_DW_CMPXCHG_ASM_SUPPORT */
 
 /* Define if gcc won't let you clobber ebx with cmpxchg8b and position
    independent code */
@@ -198,11 +198,11 @@
 /* #undef ETHR_CMPXCHG8B_REGISTER_SHORTAGE */
 
 /* Define if you have the pthread_rwlockattr_setkind_np() function. */
-#define ETHR_HAVE_PTHREAD_RWLOCKATTR_SETKIND_NP 1
+/* #undef ETHR_HAVE_PTHREAD_RWLOCKATTR_SETKIND_NP */
 
 /* Define if you have the PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP rwlock
    attribute. */
-#define ETHR_HAVE_PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP 1
+/* #undef ETHR_HAVE_PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP */
 
 /* Define if you have gcc atomic operations */
 /* #undef ETHR_HAVE_GCC_ATOMIC_OPS */
@@ -307,10 +307,10 @@
 /* #undef ETHR_HAVE_MACH_CLOCK_GET_TIME */
 
 /* Define to the monotonic clock id to use */
-#define ETHR_MONOTONIC_CLOCK_ID CLOCK_MONOTONIC
+#define ETHR_MONOTONIC_CLOCK_ID CLOCK_UPTIME_RAW
 
 /* Define if pthread_cond_timedwait() can be used with a monotonic clock */
-#define ETHR_HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC 1
+/* #undef ETHR_HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC */
 
 /* Number of bits in a file offset, on hosts where this is settable. */
 /* #undef _FILE_OFFSET_BITS */

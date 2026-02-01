@@ -5,7 +5,7 @@
 -file("xmerl_b64Bin.yrl", 73).
 -moduledoc false.
 
--file("/tmp/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/buildroot/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %%

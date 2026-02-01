@@ -9,13 +9,13 @@
 -include("PKIXCMP-2023.hrl").
 -asn1_info([{vsn,'5.4.2'},
             {module,'PKIXCMP-2023'},
-            {options,[{i,"/tmp/otp/lib/public_key/asn1/../src"},
+            {options,[{i,"/buildroot/otp/lib/public_key/asn1/../src"},
  warnings,ber,errors,
- {cwd,"/tmp/otp/lib/public_key/asn1"},
- {outdir,"/tmp/otp/lib/public_key/asn1/../src"},
+ {cwd,"/buildroot/otp/lib/public_key/asn1"},
+ {outdir,"/buildroot/otp/lib/public_key/asn1/../src"},
  der,noobj,asn1config,
  {i,"."},
- {i,"/tmp/otp/lib/public_key/asn1"}]}]).
+ {i,"/buildroot/otp/lib/public_key/asn1"}]}]).
 
 -export([encoding_rule/0,maps/0,bit_string_format/0,
          legacy_erlang_types/0]).
@@ -147,45 +147,45 @@ dec_PollRepContent/2
 -export([
 getenc_ExpandedRegControlSet/1,
 getenc_SupportedInfoSet/1,
-getenc_internal_object_set_argument_2/1,
+getenc_internal_object_set_argument_58/1,
+getenc_internal_object_set_argument_56/1,
+getenc_internal_object_set_argument_55/1,
+getenc_internal_object_set_argument_53/1,
+getenc_internal_object_set_argument_51/1,
+getenc_internal_object_set_argument_60/1,
+getenc_internal_object_set_argument_39/1,
 getenc_internal_object_set_argument_38/1,
-getenc_internal_object_set_argument_36/1,
-getenc_internal_object_set_argument_34/1,
-getenc_internal_object_set_argument_32/1,
 getenc_internal_object_set_argument_30/1,
+getenc_internal_object_set_argument_49/1,
+getenc_internal_object_set_argument_47/1,
 getenc_internal_object_set_argument_45/1,
 getenc_internal_object_set_argument_43/1,
 getenc_internal_object_set_argument_41/1,
-getenc_internal_object_set_argument_40/1,
-getenc_internal_object_set_argument_28/1,
-getenc_internal_object_set_argument_26/1,
-getenc_internal_object_set_argument_24/1,
-getenc_internal_object_set_argument_23/1,
-getenc_internal_object_set_argument_22/1,
-getenc_internal_object_set_argument_21/1,
-getenc_internal_object_set_argument_20/1
+getenc_internal_object_set_argument_10/1,
+getenc_internal_object_set_argument_29/1,
+getenc_internal_object_set_argument_28/1
 ]).
 
 -export([
 getdec_ExpandedRegControlSet/1,
 getdec_SupportedInfoSet/1,
-getdec_internal_object_set_argument_2/1,
+getdec_internal_object_set_argument_58/1,
+getdec_internal_object_set_argument_56/1,
+getdec_internal_object_set_argument_55/1,
+getdec_internal_object_set_argument_53/1,
+getdec_internal_object_set_argument_51/1,
+getdec_internal_object_set_argument_60/1,
+getdec_internal_object_set_argument_39/1,
 getdec_internal_object_set_argument_38/1,
-getdec_internal_object_set_argument_36/1,
-getdec_internal_object_set_argument_34/1,
-getdec_internal_object_set_argument_32/1,
 getdec_internal_object_set_argument_30/1,
+getdec_internal_object_set_argument_49/1,
+getdec_internal_object_set_argument_47/1,
 getdec_internal_object_set_argument_45/1,
 getdec_internal_object_set_argument_43/1,
 getdec_internal_object_set_argument_41/1,
-getdec_internal_object_set_argument_40/1,
-getdec_internal_object_set_argument_28/1,
-getdec_internal_object_set_argument_26/1,
-getdec_internal_object_set_argument_24/1,
-getdec_internal_object_set_argument_23/1,
-getdec_internal_object_set_argument_22/1,
-getdec_internal_object_set_argument_21/1,
-getdec_internal_object_set_argument_20/1
+getdec_internal_object_set_argument_10/1,
+getdec_internal_object_set_argument_29/1,
+getdec_internal_object_set_argument_28/1
 ]).
 
 -export([
@@ -663,7 +663,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_PKIHeader_protectionAlg(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_2'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_10'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -854,7 +854,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_2'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_10'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -1243,7 +1243,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_PBMParameter_owf(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_28'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_43'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1272,7 +1272,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_PBMParameter_mac(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_30'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_45'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1355,7 +1355,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_28'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_43'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -1396,7 +1396,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_30'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_45'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -1447,7 +1447,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_DHBMParameter_owf(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_32'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_47'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1476,7 +1476,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_DHBMParameter_mac(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_34'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_49'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1547,7 +1547,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_32'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_47'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -1588,7 +1588,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_34'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_49'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -1653,7 +1653,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_KemBMParameter_kdf(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_36'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_51'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1682,7 +1682,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_KemBMParameter_mac(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_38'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_53'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1776,7 +1776,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_36'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_51'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -1817,7 +1817,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_38'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_53'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -2022,7 +2022,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_OOBCertHash_hashAlg(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_40'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_55'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -2107,7 +2107,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_40'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_55'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -2208,7 +2208,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_Challenge_owf(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_20'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_28'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -2299,7 +2299,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_20'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_28'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -3661,7 +3661,7 @@ enc_AttributeTypeAndValue(Val) ->
 enc_AttributeTypeAndValue(Val, TagIn) ->
 {_,Cindex1,Cindex2} = Val,
 Objtype = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_41'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_56'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute type(1) with type OBJECT IDENTIFIER
@@ -3703,7 +3703,7 @@ Term1 = decode_object_identifier(V1, [6]),
   Tmpterm1 = decode_open_type(V2, []),
 
 DecObjtypeTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_41'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_56'(Term1),
 Term2 = 
    case (catch DecObjtypeTerm1('Type', Tmpterm1, [])) of
       {'EXIT', Reason1} ->
@@ -3746,7 +3746,7 @@ enc_AlgIdCtrl(Val) ->
 enc_AlgIdCtrl(Val, TagIn) ->
 {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_43'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_58'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -3794,7 +3794,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_43'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_58'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -4054,7 +4054,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_KemCiphertextInfo_kem(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_45'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_60'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -4125,7 +4125,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_45'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_60'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -4507,7 +4507,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_CertStatus_hashAlg(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'PKIXCMP-2023':'getenc_internal_object_set_argument_26'(                                   Cindex1),
+   'PKIXCMP-2023':'getenc_internal_object_set_argument_41'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -4598,7 +4598,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'PKIXCMP-2023':'getdec_internal_object_set_argument_26'(Term1),
+   'PKIXCMP-2023':'getdec_internal_object_set_argument_41'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -4948,9 +4948,9 @@ getdec_SupportedInfoSet(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_2
+%%  internal_object_set_argument_58
 %%================================
-getenc_internal_object_set_argument_2(_) ->
+getenc_internal_object_set_argument_58(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
       {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
@@ -4958,7 +4958,157 @@ getenc_internal_object_set_argument_2(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_2(_) ->
+getdec_internal_object_set_argument_58(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_56
+%%================================
+getenc_internal_object_set_argument_56(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_56(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_55
+%%================================
+getenc_internal_object_set_argument_55(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_55(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_53
+%%================================
+getenc_internal_object_set_argument_53(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_53(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_51
+%%================================
+getenc_internal_object_set_argument_51(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_51(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_60
+%%================================
+getenc_internal_object_set_argument_60(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_60(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_39
+%%================================
+getenc_internal_object_set_argument_39(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_39(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 
@@ -4998,81 +5148,6 @@ getdec_internal_object_set_argument_38(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_36
-%%================================
-getenc_internal_object_set_argument_36(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_36(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_34
-%%================================
-getenc_internal_object_set_argument_34(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_34(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_32
-%%================================
-getenc_internal_object_set_argument_32(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_32(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
 %%  internal_object_set_argument_30
 %%================================
 getenc_internal_object_set_argument_30(_) ->
@@ -5084,6 +5159,56 @@ getenc_internal_object_set_argument_30(_) ->
   end.
 
 getdec_internal_object_set_argument_30(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_49
+%%================================
+getenc_internal_object_set_argument_49(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_49(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_47
+%%================================
+getenc_internal_object_set_argument_47(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_47(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 
@@ -5173,9 +5298,9 @@ getdec_internal_object_set_argument_41(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_40
+%%  internal_object_set_argument_10
 %%================================
-getenc_internal_object_set_argument_40(_) ->
+getenc_internal_object_set_argument_10(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
       {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
@@ -5183,7 +5308,32 @@ getenc_internal_object_set_argument_40(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_40(_) ->
+getdec_internal_object_set_argument_10(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_29
+%%================================
+getenc_internal_object_set_argument_29(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_29(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 
@@ -5209,156 +5359,6 @@ getenc_internal_object_set_argument_28(_) ->
   end.
 
 getdec_internal_object_set_argument_28(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_26
-%%================================
-getenc_internal_object_set_argument_26(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_26(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_24
-%%================================
-getenc_internal_object_set_argument_24(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_24(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_23
-%%================================
-getenc_internal_object_set_argument_23(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_23(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_22
-%%================================
-getenc_internal_object_set_argument_22(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_22(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_21
-%%================================
-getenc_internal_object_set_argument_21(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_21(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_20
-%%================================
-getenc_internal_object_set_argument_20(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_20(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 

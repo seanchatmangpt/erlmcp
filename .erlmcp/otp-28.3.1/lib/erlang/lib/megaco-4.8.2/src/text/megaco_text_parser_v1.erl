@@ -19,7 +19,7 @@
 %%    ok.
 
 
--file("/tmp/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/buildroot/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %%

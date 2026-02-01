@@ -1,4 +1,4 @@
-/* include/x86_64-pc-linux-gnu/erl_int_sizes_config.h.  Generated from erl_int_sizes_config.h.in by configure.  */
+/* include/aarch64-apple-darwin25.2.0/erl_int_sizes_config.h.  Generated from erl_int_sizes_config.h.in by configure.  */
 /*
  * %CopyrightBegin%
  *

@@ -9,11 +9,11 @@
 -asn1_info([{vsn,'5.4.2'},
             {module,'snmp_pdus_basic'},
             {options,[warnings,ber,errors,
- {cwd,"/tmp/otp/lib/snmp/src/misc"},
- {outdir,"/tmp/otp/lib/snmp/src/misc"},
+ {cwd,"/buildroot/otp/lib/snmp/src/misc"},
+ {outdir,"/buildroot/otp/lib/snmp/src/misc"},
  noobj,
  {i,"."},
- {i,"/tmp/otp/lib/snmp/src/misc"}]}]).
+ {i,"/buildroot/otp/lib/snmp/src/misc"}]}]).
 
 -export([encoding_rule/0,maps/0,bit_string_format/0,
          legacy_erlang_types/0]).

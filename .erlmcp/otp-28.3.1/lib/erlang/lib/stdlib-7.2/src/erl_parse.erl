@@ -1595,7 +1595,7 @@ add_anno_check({check_expr,Loc,Args}, AnnoCheck) ->
 
 %% vim: ft=erlang
 
--file("/tmp/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/buildroot/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %%

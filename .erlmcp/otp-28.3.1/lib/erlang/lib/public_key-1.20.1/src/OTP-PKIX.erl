@@ -9,13 +9,13 @@
 -include("OTP-PKIX.hrl").
 -asn1_info([{vsn,'5.4.2'},
             {module,'OTP-PKIX'},
-            {options,[{i,"/tmp/otp/lib/public_key/asn1/../src"},
+            {options,[{i,"/buildroot/otp/lib/public_key/asn1/../src"},
  warnings,ber,errors,
- {cwd,"/tmp/otp/lib/public_key/asn1"},
- {outdir,"/tmp/otp/lib/public_key/asn1/../src"},
+ {cwd,"/buildroot/otp/lib/public_key/asn1"},
+ {outdir,"/buildroot/otp/lib/public_key/asn1/../src"},
  der,noobj,asn1config,
  {i,"."},
- {i,"/tmp/otp/lib/public_key/asn1"}]}]).
+ {i,"/buildroot/otp/lib/public_key/asn1"}]}]).
 
 -export([encoding_rule/0,maps/0,bit_string_format/0,
          legacy_erlang_types/0]).

@@ -9,13 +9,13 @@
 -include("EnrollmentMessageSyntax-2009.hrl").
 -asn1_info([{vsn,'5.4.2'},
             {module,'EnrollmentMessageSyntax-2009'},
-            {options,[{i,"/tmp/otp/lib/public_key/asn1/../src"},
+            {options,[{i,"/buildroot/otp/lib/public_key/asn1/../src"},
  warnings,ber,errors,
- {cwd,"/tmp/otp/lib/public_key/asn1"},
- {outdir,"/tmp/otp/lib/public_key/asn1/../src"},
+ {cwd,"/buildroot/otp/lib/public_key/asn1"},
+ {outdir,"/buildroot/otp/lib/public_key/asn1/../src"},
  der,noobj,asn1config,
  {i,"."},
- {i,"/tmp/otp/lib/public_key/asn1"}]}]).
+ {i,"/buildroot/otp/lib/public_key/asn1"}]}]).
 
 -export([encoding_rule/0,maps/0,bit_string_format/0,
          legacy_erlang_types/0]).
@@ -187,17 +187,17 @@ getenc_WitnessAlgs/1,
 getenc_ExtendedFailures/1,
 getenc_HashAlgorithms/1,
 getenc_KeyDevAlgs/1,
-getenc_internal_object_set_argument_8/1,
 getenc_internal_object_set_argument_6/1,
-getenc_internal_object_set_argument_5/1,
+getenc_internal_object_set_argument_4/1,
 getenc_internal_object_set_argument_3/1,
-getenc_internal_object_set_argument_2/1,
+getenc_internal_object_set_argument_38/1,
+getenc_internal_object_set_argument_36/1,
+getenc_internal_object_set_argument_34/1,
+getenc_internal_object_set_argument_32/1,
+getenc_internal_object_set_argument_30/1,
 getenc_internal_object_set_argument_19/1,
-getenc_internal_object_set_argument_17/1,
-getenc_internal_object_set_argument_15/1,
-getenc_internal_object_set_argument_13/1,
-getenc_internal_object_set_argument_12/1,
-getenc_internal_object_set_argument_10/1,
+getenc_internal_object_set_argument_28/1,
+getenc_internal_object_set_argument_26/1,
 getenc_internal_object_set_argument_25/1,
 getenc_internal_object_set_argument_23/1,
 getenc_internal_object_set_argument_21/1
@@ -216,17 +216,17 @@ getdec_WitnessAlgs/1,
 getdec_ExtendedFailures/1,
 getdec_HashAlgorithms/1,
 getdec_KeyDevAlgs/1,
-getdec_internal_object_set_argument_8/1,
 getdec_internal_object_set_argument_6/1,
-getdec_internal_object_set_argument_5/1,
+getdec_internal_object_set_argument_4/1,
 getdec_internal_object_set_argument_3/1,
-getdec_internal_object_set_argument_2/1,
+getdec_internal_object_set_argument_38/1,
+getdec_internal_object_set_argument_36/1,
+getdec_internal_object_set_argument_34/1,
+getdec_internal_object_set_argument_32/1,
+getdec_internal_object_set_argument_30/1,
 getdec_internal_object_set_argument_19/1,
-getdec_internal_object_set_argument_17/1,
-getdec_internal_object_set_argument_15/1,
-getdec_internal_object_set_argument_13/1,
-getdec_internal_object_set_argument_12/1,
-getdec_internal_object_set_argument_10/1,
+getdec_internal_object_set_argument_28/1,
+getdec_internal_object_set_argument_26/1,
 getdec_internal_object_set_argument_25/1,
 getdec_internal_object_set_argument_23/1,
 getdec_internal_object_set_argument_21/1
@@ -990,7 +990,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_CertificationRequest_certificationRequestInfo_subjectPublicKeyInfo_algorithm(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_2'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_3'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1036,7 +1036,7 @@ enc_CertificationRequest_certificationRequestInfo_attributes(Val, TagIn) ->
 enc_CertificationRequest_certificationRequestInfo_attributes_AttributeSet(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objtype = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_3'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_4'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute type(1) with type OBJECT IDENTIFIER
@@ -1079,7 +1079,7 @@ enc_CertificationRequest_certificationRequestInfo_attributes_AttributeSet_values
 enc_CertificationRequest_signatureAlgorithm(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_5'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_6'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -1214,7 +1214,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_2'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_3'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -1251,7 +1251,7 @@ Tlv1 = match_tags(Tlv, TagIn),
 %%-------------------------------------------------
 [V1|Tlv2] = Tlv1, 
 Term1 = decode_object_identifier(V1, [6]),
-ObjFun = 'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_3'(Term1),
+ObjFun = 'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_4'(Term1),
 
 %%-------------------------------------------------
 %% attribute values(2) with type SET OF
@@ -1305,7 +1305,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_5'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_6'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -2129,7 +2129,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_EncryptedPOP_thePOPAlgID(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_8'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_21'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -2158,7 +2158,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_EncryptedPOP_witnessAlgID(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_10'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_23'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -2247,7 +2247,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_8'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_21'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -2288,7 +2288,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_10'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_23'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -2344,7 +2344,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_DecryptedPOP_thePOPAlgID(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_12'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_25'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -2428,7 +2428,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_12'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_25'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -3405,7 +3405,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_PublishTrustAnchors_hashAlgorithm(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_15'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_28'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -3499,7 +3499,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_15'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_28'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -3627,7 +3627,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_CMCPublicationInfo_hashAlg(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_17'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_30'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -3721,7 +3721,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_17'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_30'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -3933,7 +3933,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_IdentityProofV2_proofAlgID(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_19'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_32'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -3962,7 +3962,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_IdentityProofV2_macAlgId(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_21'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_34'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -4039,7 +4039,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_19'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_32'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -4080,7 +4080,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_21'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_34'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -4136,7 +4136,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_PopLinkWitnessV2_keyGenAlgorithm(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_23'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_36'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -4165,7 +4165,7 @@ encode_tags(TagIn, BytesSoFar, LenSoFar).
 enc_PopLinkWitnessV2_macAlgorithm(Val, TagIn) ->
    {_,Cindex1,Cindex2} = Val,
 Objalgorithm = 
-   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_25'(                                   Cindex1),
+   'EnrollmentMessageSyntax-2009':'getenc_internal_object_set_argument_38'(                                   Cindex1),
 
 %%-------------------------------------------------
 %% attribute algorithm(1) with type OBJECT IDENTIFIER
@@ -4242,7 +4242,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_23'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_36'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -4283,7 +4283,7 @@ Term1 = decode_object_identifier(V1, [6]),
 end,
 
 DecObjalgorithmTerm1 =
-   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_25'(Term1),
+   'EnrollmentMessageSyntax-2009':'getdec_internal_object_set_argument_38'(Term1),
 Term2 = 
    case Tmpterm1 of
       asn1_NOVALUE ->asn1_NOVALUE;
@@ -5369,73 +5369,32 @@ getdec_KeyDevAlgs(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_8
-%%================================
-getenc_internal_object_set_argument_8(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
-   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'enc_maca-hMAC-SHA1'(T,V,O) end;
-getenc_internal_object_set_argument_8(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_8(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
-   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'dec_maca-hMAC-SHA1'(T,V,O) end;
-getdec_internal_object_set_argument_8(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
 %%  internal_object_set_argument_6
 %%================================
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,9} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectDirectoryAttributes'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,14} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectKeyIdentifier'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,15} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-KeyUsage'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,16} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PrivateKeyUsagePeriod'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,17} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectAltName'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,18} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-IssuerAltName'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,19} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-BasicConstraints'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,30} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-NameConstraints'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,31} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-CRLDistributionPoints'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,32} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-CertificatePolicies'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,33} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PolicyMappings'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,35} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-AuthorityKeyIdentifier'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,36} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PolicyConstraints'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,37} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-ExtKeyUsage'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,46} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-FreshestCRL'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {2,5,29,54} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-InhibitAnyPolicy'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-AuthorityInfoAccess'(T,V,O) end;
-getenc_internal_object_set_argument_6(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectInfoAccessSyntax'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10040,4,3} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-dsaWithSHA1'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA1'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA224'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,2} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA256'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,3} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA384'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,4} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA512'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,2} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-rsaWithMD2'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,4} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-rsaWithMD5'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,5} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-rsaWithSHA1'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,10} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_sa-rsaSSA-PSS'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {2,16,840,1,101,3,4,3,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-dsaWithSHA224'(T,V,O) end;
+getenc_internal_object_set_argument_6(Id) when Id =:= {2,16,840,1,101,3,4,3,2} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-dsaWithSHA256'(T,V,O) end;
 getenc_internal_object_set_argument_6(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
@@ -5444,42 +5403,30 @@ getenc_internal_object_set_argument_6(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,9} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectDirectoryAttributes'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,14} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectKeyIdentifier'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,15} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-KeyUsage'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,16} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PrivateKeyUsagePeriod'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,17} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectAltName'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,18} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-IssuerAltName'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,19} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-BasicConstraints'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,30} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-NameConstraints'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,31} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-CRLDistributionPoints'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,32} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-CertificatePolicies'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,33} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PolicyMappings'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,35} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-AuthorityKeyIdentifier'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,36} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PolicyConstraints'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,37} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-ExtKeyUsage'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,46} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-FreshestCRL'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {2,5,29,54} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-InhibitAnyPolicy'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-AuthorityInfoAccess'(T,V,O) end;
-getdec_internal_object_set_argument_6(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
-   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectInfoAccessSyntax'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10040,4,3} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-dsaWithSHA1'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA1'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA224'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,2} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA256'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,3} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA384'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,10045,4,3,4} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA512'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,2} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-rsaWithMD2'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,4} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-rsaWithMD5'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,5} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-rsaWithSHA1'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {1,2,840,113549,1,1,10} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_sa-rsaSSA-PSS'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {2,16,840,1,101,3,4,3,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-dsaWithSHA224'(T,V,O) end;
+getdec_internal_object_set_argument_6(Id) when Id =:= {2,16,840,1,101,3,4,3,2} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-dsaWithSHA256'(T,V,O) end;
 getdec_internal_object_set_argument_6(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
@@ -5495,33 +5442,11 @@ getdec_internal_object_set_argument_6(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_5
+%%  internal_object_set_argument_4
 %%================================
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10040,4,3} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-dsaWithSHA1'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA1'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA224'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,2} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA256'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,3} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA384'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,4} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-ecdsaWithSHA512'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,2} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-rsaWithMD2'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,4} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-rsaWithMD5'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,5} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-rsaWithSHA1'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,10} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_sa-rsaSSA-PSS'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {2,16,840,1,101,3,4,3,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-dsaWithSHA224'(T,V,O) end;
-getenc_internal_object_set_argument_5(Id) when Id =:= {2,16,840,1,101,3,4,3,2} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_sa-dsaWithSHA256'(T,V,O) end;
-getenc_internal_object_set_argument_5(_) ->
+getenc_internal_object_set_argument_4(Id) when Id =:= {1,2,840,113549,1,9,14} ->
+    fun 'enc_at-extension-req'/3;
+getenc_internal_object_set_argument_4(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
       {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
@@ -5529,31 +5454,9 @@ getenc_internal_object_set_argument_5(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10040,4,3} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-dsaWithSHA1'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA1'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA224'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,2} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA256'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,3} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA384'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,10045,4,3,4} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-ecdsaWithSHA512'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,2} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-rsaWithMD2'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,4} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-rsaWithMD5'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,5} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-rsaWithSHA1'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {1,2,840,113549,1,1,10} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_sa-rsaSSA-PSS'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {2,16,840,1,101,3,4,3,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-dsaWithSHA224'(T,V,O) end;
-getdec_internal_object_set_argument_5(Id) when Id =:= {2,16,840,1,101,3,4,3,2} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_sa-dsaWithSHA256'(T,V,O) end;
-getdec_internal_object_set_argument_5(_) ->
+getdec_internal_object_set_argument_4(Id) when Id =:= {1,2,840,113549,1,9,14} ->
+    fun 'dec_at-extension-req'/3;
+getdec_internal_object_set_argument_4(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 
@@ -5570,8 +5473,24 @@ getdec_internal_object_set_argument_5(_) ->
 %%================================
 %%  internal_object_set_argument_3
 %%================================
-getenc_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,9,14} ->
-    fun 'enc_at-extension-req'/3;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,3,132,1,12} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-ecDH'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,3,132,1,13} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-ecMQV'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,2,840,10040,4,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-dsa'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,2,840,10045,2,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-ec'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,2,840,10046,2,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-dh'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,1,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-rsa'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,1,7} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_pk-rsaES-OAEP'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,1,10} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_pk-rsaSSA-PSS'(T,V,O) end;
+getenc_internal_object_set_argument_3(Id) when Id =:= {2,16,840,1,101,2,1,1,22} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-kea'(T,V,O) end;
 getenc_internal_object_set_argument_3(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
@@ -5580,8 +5499,24 @@ getenc_internal_object_set_argument_3(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,9,14} ->
-    fun 'dec_at-extension-req'/3;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,3,132,1,12} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-ecDH'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,3,132,1,13} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-ecMQV'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,2,840,10040,4,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-dsa'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,2,840,10045,2,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-ec'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,2,840,10046,2,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-dh'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,1,1} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-rsa'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,1,7} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_pk-rsaES-OAEP'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {1,2,840,113549,1,1,10} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_pk-rsaSSA-PSS'(T,V,O) end;
+getdec_internal_object_set_argument_3(Id) when Id =:= {2,16,840,1,101,2,1,1,22} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-kea'(T,V,O) end;
 getdec_internal_object_set_argument_3(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
@@ -5597,27 +5532,11 @@ getdec_internal_object_set_argument_3(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_2
+%%  internal_object_set_argument_38
 %%================================
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,3,132,1,12} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-ecDH'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,3,132,1,13} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-ecMQV'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,2,840,10040,4,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-dsa'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,2,840,10045,2,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-ec'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,2,840,10046,2,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-dh'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,1,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-rsa'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,1,7} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_pk-rsaES-OAEP'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,1,10} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_pk-rsaSSA-PSS'(T,V,O) end;
-getenc_internal_object_set_argument_2(Id) when Id =:= {2,16,840,1,101,2,1,1,22} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_pk-kea'(T,V,O) end;
-getenc_internal_object_set_argument_2(_) ->
+getenc_internal_object_set_argument_38(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
+   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'enc_maca-hMAC-SHA1'(T,V,O) end;
+getenc_internal_object_set_argument_38(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
       {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
@@ -5625,25 +5544,129 @@ getenc_internal_object_set_argument_2(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,3,132,1,12} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-ecDH'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,3,132,1,13} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-ecMQV'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,2,840,10040,4,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-dsa'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,2,840,10045,2,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-ec'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,2,840,10046,2,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-dh'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,1,1} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-rsa'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,1,7} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_pk-rsaES-OAEP'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {1,2,840,113549,1,1,10} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_pk-rsaSSA-PSS'(T,V,O) end;
-getdec_internal_object_set_argument_2(Id) when Id =:= {2,16,840,1,101,2,1,1,22} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_pk-kea'(T,V,O) end;
-getdec_internal_object_set_argument_2(_) ->
+getdec_internal_object_set_argument_38(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
+   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'dec_maca-hMAC-SHA1'(T,V,O) end;
+getdec_internal_object_set_argument_38(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_36
+%%================================
+getenc_internal_object_set_argument_36(Id) when Id =:= {1,2,840,113549,1,5,12} ->
+   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'enc_kda-PBKDF2'(T,V,O) end;
+getenc_internal_object_set_argument_36(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_36(Id) when Id =:= {1,2,840,113549,1,5,12} ->
+   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'dec_kda-PBKDF2'(T,V,O) end;
+getdec_internal_object_set_argument_36(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_34
+%%================================
+getenc_internal_object_set_argument_34(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
+   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'enc_maca-hMAC-SHA1'(T,V,O) end;
+getenc_internal_object_set_argument_34(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_34(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
+   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'dec_maca-hMAC-SHA1'(T,V,O) end;
+getdec_internal_object_set_argument_34(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_32
+%%================================
+getenc_internal_object_set_argument_32(Id) when Id =:= {1,3,14,3,2,26} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_mda-sha1'(T,V,O) end;
+getenc_internal_object_set_argument_32(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_32(Id) when Id =:= {1,3,14,3,2,26} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_mda-sha1'(T,V,O) end;
+getdec_internal_object_set_argument_32(_) ->
+  fun(_,Bytes, _RestPrimFieldName) ->
+    case Bytes of
+      Bin when is_binary(Bin) -> 
+        {asn1_OPENTYPE,Bin};
+      _ ->
+        {asn1_OPENTYPE,ber_encode(Bytes)}
+    end
+  end.
+
+
+
+
+
+%%================================
+%%  internal_object_set_argument_30
+%%================================
+getenc_internal_object_set_argument_30(Id) when Id =:= {1,3,14,3,2,26} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_mda-sha1'(T,V,O) end;
+getenc_internal_object_set_argument_30(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_mda-sha256'(T,V,O) end;
+getenc_internal_object_set_argument_30(_) ->
+  fun(_, Val, _RestPrimFieldName) ->
+    case Val of
+      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
+        {Bin,byte_size(Bin)}
+    end
+  end.
+
+getdec_internal_object_set_argument_30(Id) when Id =:= {1,3,14,3,2,26} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_mda-sha1'(T,V,O) end;
+getdec_internal_object_set_argument_30(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
+   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_mda-sha256'(T,V,O) end;
+getdec_internal_object_set_argument_30(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 
@@ -5660,8 +5683,42 @@ getdec_internal_object_set_argument_2(_) ->
 %%================================
 %%  internal_object_set_argument_19
 %%================================
-getenc_internal_object_set_argument_19(Id) when Id =:= {1,3,14,3,2,26} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_mda-sha1'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,9} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectDirectoryAttributes'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,14} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectKeyIdentifier'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,15} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-KeyUsage'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,16} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PrivateKeyUsagePeriod'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,17} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectAltName'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,18} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-IssuerAltName'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,19} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-BasicConstraints'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,30} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-NameConstraints'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,31} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-CRLDistributionPoints'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,32} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-CertificatePolicies'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,33} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PolicyMappings'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,35} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-AuthorityKeyIdentifier'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,36} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PolicyConstraints'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,37} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-ExtKeyUsage'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,46} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-FreshestCRL'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {2,5,29,54} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-InhibitAnyPolicy'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-AuthorityInfoAccess'(T,V,O) end;
+getenc_internal_object_set_argument_19(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectInfoAccessSyntax'(T,V,O) end;
 getenc_internal_object_set_argument_19(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
@@ -5670,8 +5727,42 @@ getenc_internal_object_set_argument_19(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_19(Id) when Id =:= {1,3,14,3,2,26} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_mda-sha1'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,9} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectDirectoryAttributes'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,14} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectKeyIdentifier'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,15} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-KeyUsage'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,16} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PrivateKeyUsagePeriod'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,17} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectAltName'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,18} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-IssuerAltName'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,19} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-BasicConstraints'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,30} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-NameConstraints'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,31} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-CRLDistributionPoints'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,32} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-CertificatePolicies'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,33} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PolicyMappings'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,35} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-AuthorityKeyIdentifier'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,36} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PolicyConstraints'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,37} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-ExtKeyUsage'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,46} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-FreshestCRL'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {2,5,29,54} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-InhibitAnyPolicy'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-AuthorityInfoAccess'(T,V,O) end;
+getdec_internal_object_set_argument_19(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
+   fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectInfoAccessSyntax'(T,V,O) end;
 getdec_internal_object_set_argument_19(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
@@ -5687,13 +5778,13 @@ getdec_internal_object_set_argument_19(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_17
+%%  internal_object_set_argument_28
 %%================================
-getenc_internal_object_set_argument_17(Id) when Id =:= {1,3,14,3,2,26} ->
+getenc_internal_object_set_argument_28(Id) when Id =:= {1,3,14,3,2,26} ->
    fun(T,V,O) -> 'PKIXAlgs-2009':'enc_mda-sha1'(T,V,O) end;
-getenc_internal_object_set_argument_17(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
+getenc_internal_object_set_argument_28(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
    fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_mda-sha256'(T,V,O) end;
-getenc_internal_object_set_argument_17(_) ->
+getenc_internal_object_set_argument_28(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
       {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
@@ -5701,11 +5792,11 @@ getenc_internal_object_set_argument_17(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_17(Id) when Id =:= {1,3,14,3,2,26} ->
+getdec_internal_object_set_argument_28(Id) when Id =:= {1,3,14,3,2,26} ->
    fun(T,V,O) -> 'PKIXAlgs-2009':'dec_mda-sha1'(T,V,O) end;
-getdec_internal_object_set_argument_17(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
+getdec_internal_object_set_argument_28(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
    fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_mda-sha256'(T,V,O) end;
-getdec_internal_object_set_argument_17(_) ->
+getdec_internal_object_set_argument_28(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 
@@ -5720,78 +5811,45 @@ getdec_internal_object_set_argument_17(_) ->
 
 
 %%================================
-%%  internal_object_set_argument_15
+%%  internal_object_set_argument_26
 %%================================
-getenc_internal_object_set_argument_15(Id) when Id =:= {1,3,14,3,2,26} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_mda-sha1'(T,V,O) end;
-getenc_internal_object_set_argument_15(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'enc_mda-sha256'(T,V,O) end;
-getenc_internal_object_set_argument_15(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_15(Id) when Id =:= {1,3,14,3,2,26} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_mda-sha1'(T,V,O) end;
-getdec_internal_object_set_argument_15(Id) when Id =:= {2,16,840,1,101,3,4,2,1} ->
-   fun(T,V,O) -> 'PKIX1-PSS-OAEP-Algorithms-2009':'dec_mda-sha256'(T,V,O) end;
-getdec_internal_object_set_argument_15(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_13
-%%================================
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,9} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,9} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectDirectoryAttributes'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,14} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,14} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectKeyIdentifier'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,15} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,15} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-KeyUsage'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,16} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,16} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PrivateKeyUsagePeriod'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,17} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,17} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectAltName'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,18} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,18} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-IssuerAltName'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,19} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,19} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-BasicConstraints'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,30} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,30} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-NameConstraints'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,31} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,31} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-CRLDistributionPoints'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,32} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,32} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-CertificatePolicies'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,33} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,33} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PolicyMappings'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,35} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,35} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-AuthorityKeyIdentifier'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,36} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,36} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-PolicyConstraints'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,37} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,37} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-ExtKeyUsage'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,46} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,46} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-FreshestCRL'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {2,5,29,54} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {2,5,29,54} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-InhibitAnyPolicy'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-AuthorityInfoAccess'(T,V,O) end;
-getenc_internal_object_set_argument_13(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
+getenc_internal_object_set_argument_26(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'enc_ext-SubjectInfoAccessSyntax'(T,V,O) end;
-getenc_internal_object_set_argument_13(_) ->
+getenc_internal_object_set_argument_26(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
       {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
@@ -5799,101 +5857,43 @@ getenc_internal_object_set_argument_13(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,9} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,9} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectDirectoryAttributes'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,14} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,14} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectKeyIdentifier'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,15} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,15} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-KeyUsage'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,16} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,16} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PrivateKeyUsagePeriod'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,17} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,17} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectAltName'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,18} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,18} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-IssuerAltName'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,19} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,19} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-BasicConstraints'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,30} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,30} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-NameConstraints'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,31} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,31} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-CRLDistributionPoints'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,32} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,32} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-CertificatePolicies'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,33} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,33} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PolicyMappings'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,35} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,35} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-AuthorityKeyIdentifier'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,36} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,36} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-PolicyConstraints'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,37} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,37} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-ExtKeyUsage'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,46} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,46} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-FreshestCRL'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {2,5,29,54} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {2,5,29,54} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-InhibitAnyPolicy'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {1,3,6,1,5,5,7,1,1} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-AuthorityInfoAccess'(T,V,O) end;
-getdec_internal_object_set_argument_13(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
+getdec_internal_object_set_argument_26(Id) when Id =:= {1,3,6,1,5,5,7,1,11} ->
    fun(T,V,O) -> 'PKIX1Implicit-2009':'dec_ext-SubjectInfoAccessSyntax'(T,V,O) end;
-getdec_internal_object_set_argument_13(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_12
-%%================================
-getenc_internal_object_set_argument_12(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
-   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'enc_maca-hMAC-SHA1'(T,V,O) end;
-getenc_internal_object_set_argument_12(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_12(Id) when Id =:= {1,3,6,1,5,5,8,1,2} ->
-   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'dec_maca-hMAC-SHA1'(T,V,O) end;
-getdec_internal_object_set_argument_12(_) ->
-  fun(_,Bytes, _RestPrimFieldName) ->
-    case Bytes of
-      Bin when is_binary(Bin) -> 
-        {asn1_OPENTYPE,Bin};
-      _ ->
-        {asn1_OPENTYPE,ber_encode(Bytes)}
-    end
-  end.
-
-
-
-
-
-%%================================
-%%  internal_object_set_argument_10
-%%================================
-getenc_internal_object_set_argument_10(Id) when Id =:= {1,3,14,3,2,26} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_mda-sha1'(T,V,O) end;
-getenc_internal_object_set_argument_10(_) ->
-  fun(_, Val, _RestPrimFieldName) ->
-    case Val of
-      {asn1_OPENTYPE,Bin} when is_binary(Bin) ->
-        {Bin,byte_size(Bin)}
-    end
-  end.
-
-getdec_internal_object_set_argument_10(Id) when Id =:= {1,3,14,3,2,26} ->
-   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_mda-sha1'(T,V,O) end;
-getdec_internal_object_set_argument_10(_) ->
+getdec_internal_object_set_argument_26(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of
       Bin when is_binary(Bin) -> 
@@ -5939,8 +5939,8 @@ getdec_internal_object_set_argument_25(_) ->
 %%================================
 %%  internal_object_set_argument_23
 %%================================
-getenc_internal_object_set_argument_23(Id) when Id =:= {1,2,840,113549,1,5,12} ->
-   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'enc_kda-PBKDF2'(T,V,O) end;
+getenc_internal_object_set_argument_23(Id) when Id =:= {1,3,14,3,2,26} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'enc_mda-sha1'(T,V,O) end;
 getenc_internal_object_set_argument_23(_) ->
   fun(_, Val, _RestPrimFieldName) ->
     case Val of
@@ -5949,8 +5949,8 @@ getenc_internal_object_set_argument_23(_) ->
     end
   end.
 
-getdec_internal_object_set_argument_23(Id) when Id =:= {1,2,840,113549,1,5,12} ->
-   fun(T,V,O) -> 'CryptographicMessageSyntaxAlgorithms-2009':'dec_kda-PBKDF2'(T,V,O) end;
+getdec_internal_object_set_argument_23(Id) when Id =:= {1,3,14,3,2,26} ->
+   fun(T,V,O) -> 'PKIXAlgs-2009':'dec_mda-sha1'(T,V,O) end;
 getdec_internal_object_set_argument_23(_) ->
   fun(_,Bytes, _RestPrimFieldName) ->
     case Bytes of

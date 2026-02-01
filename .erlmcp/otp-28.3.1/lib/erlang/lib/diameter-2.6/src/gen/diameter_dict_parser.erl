@@ -5,7 +5,7 @@
 -file("compiler/diameter_dict_parser.yrl", 329).
 -moduledoc false.
 
--file("/tmp/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
+-file("/buildroot/otp/bootstrap/lib/parsetools/include/yeccpre.hrl", 0).
 %%
 %% %CopyrightBegin%
 %%

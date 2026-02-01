@@ -26,11 +26,11 @@
 EI_THREADS=true
 
 # Threads flags
-THR_DEFS= -D_THREAD_SAFE -D_REENTRANT -DPOSIX_THREADS -D_POSIX_THREAD_SAFE_FUNCTIONS
+THR_DEFS= -D_THREAD_SAFE -D_REENTRANT -DPOSIX_THREADS
 
 # Threads libs
 THR_LIBS=-lpthread
 
-EI_LDFLAGS=-Wl,--no-copy-dt-needed-entries -Wl,--as-needed -Wl,-z,now -Wl,-z,relro -Wl,-z,noexecstack -fstack-protector-strong 
+EI_LDFLAGS=-fstack-protector-strong 
 
 # ----------------------------------------------------------------------
