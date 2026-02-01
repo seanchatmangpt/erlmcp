@@ -2,6 +2,8 @@
 
 This directory contains example applications demonstrating erlmcp v2.0 functionality with the new umbrella project structure.
 
+> **Getting Started?** See **[../docs/README_RUN_LOCAL.md](../docs/README_RUN_LOCAL.md)** for all entry points including running examples, STDIO server, HTTP server, and validator with exact commands.
+
 ## v2.0 Umbrella Structure
 
 erlmcp v2.0 uses an umbrella project with separate applications:

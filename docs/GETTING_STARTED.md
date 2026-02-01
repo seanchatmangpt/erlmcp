@@ -2,6 +2,8 @@
 
 **Estimated time: 5 minutes**
 
+> **TL;DR?** Go directly to **[docs/README_RUN_LOCAL.md](README_RUN_LOCAL.md)** for exact copy-paste commands for all entry points (STDIO, HTTP, validator, examples, shell).
+
 Welcome to erlmcp! This quick guide gets you up and running in 5 minutes, whether you're a developer, operator, or architect.
 
 ## Prerequisites
