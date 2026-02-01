@@ -7,6 +7,7 @@
         test-strict benchmark-strict coverage-strict quality-strict \
         jidoka andon poka-yoke tcps-quality-gates release-validate \
         doctor quick verify ci-local \
+        run-stdio run-http run-http-sse validate-cli compliance-report \
         example-mcp-complete example-help andon-clear andon-watch \
         setup-profile check-erlang-version
 
@@ -208,6 +209,15 @@ help:
 	@echo "  make observer              - Start observer GUI"
 	@echo "  make deps                  - Fetch dependencies"
 	@echo "  make info                  - Show project info"
+	@echo ""
+	@echo "$(BOLD)$(GREEN)Run Servers (One-Command Starts):$(NC)"
+	@echo "  make run-stdio             - Start STDIO MCP server"
+	@echo "  make run-http              - Start HTTP MCP server on http://localhost:3000"
+	@echo "  make run-http-sse          - Start HTTP + SSE MCP server on http://localhost:3000"
+	@echo ""
+	@echo "$(BOLD)$(GREEN)Validation CLI & Compliance:$(NC)"
+	@echo "  make validate-cli          - Build validation CLI escript"
+	@echo "  make compliance-report     - Generate MCP compliance report (JSON)"
 	@echo ""
 	@echo "$(BOLD)$(GREEN)Release:$(NC)"
 	@echo "  make release               - Build production release"
@@ -898,6 +908,37 @@ auto-fix-help: ## Show auto-fix system help
 	@echo "  docs/auto-fix/AUTO_FIX_SYSTEM.md"
 	@echo ""
 	@echo "For detailed help: ./tools/auto-fix/orchestrator.sh help"
+
+# ============================================================================
+# RUN SERVERS (One-Command Starts)
+# ============================================================================
+
+run-stdio: compile
+	@echo "$(BLUE)Starting STDIO MCP server...$(NC)"
+	@erl -pa _build/default/lib/*/ebin -eval "erlmcp_examples:start_stdio_server()."
+
+run-http: compile
+	@echo "$(BLUE)Starting HTTP MCP server on http://localhost:3000...$(NC)"
+	@erl -pa _build/default/lib/*/ebin -eval "erlmcp_examples:start_http_server()."
+
+run-http-sse: compile
+	@echo "$(BLUE)Starting HTTP + SSE MCP server on http://localhost:3000...$(NC)"
+	@erl -pa _build/default/lib/*/ebin -eval "erlmcp_examples:start_http_sse_server()."
+
+# ============================================================================
+# VALIDATION CLI & COMPLIANCE
+# ============================================================================
+
+validate-cli:
+	@echo "$(BLUE)Building validation CLI...$(NC)"
+	@rebar3 as validation escriptize
+	@echo "$(GREEN)✓ Validator built: ./_build/validation/bin/erlmcp_validate$(NC)"
+	@echo "$(YELLOW)Usage: ./_build/validation/bin/erlmcp_validate run --help$(NC)"
+
+compliance-report: validate-cli
+	@echo "$(BLUE)Generating MCP compliance report...$(NC)"
+	@./_build/validation/bin/erlmcp_validate run --all --output-file=reports/compliance.json
+	@echo "$(GREEN)✓ Report saved to: reports/compliance.json$(NC)"
 
 # ============================================================================
 # EXAMPLES

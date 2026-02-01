@@ -14,12 +14,32 @@ See [OTP 28.3.1 Migration Guide](#otp-2831-migration) below.
 
 erlmcp is a robust, production-grade implementation of the [MCP 2025-11-25 specification](https://modelcontextprotocol.io/) built with Erlang/OTP 28.3.1+. It provides:
 
-- **Full MCP Protocol Support**: JSON-RPC 2.0 with all MCP methods (tools, resources, prompts)
+- **MCP Protocol Implementation**: Implements MCP 2025-11-25 with automated compliance reporting (currently 95.7%—run `make compliance-report` to see exact gaps). JSON-RPC 2.0 with all MCP methods (tools, resources, prompts)
 - **Multiple Transports**: STDIO, TCP, HTTP, WebSocket, Server-Sent Events
 - **Production-Ready**: Supervision trees, circuit breakers, rate limiting, observability
-- **Comprehensive Validation**: 95%+ MCP spec compliance with automated testing
+- **Comprehensive Validation**: Automated spec compliance testing and reporting
 - **High Performance**: 2.69M+ ops/sec in-memory, 40-50K concurrent connections per node
 - **OTP 28+ Features**: Native JSON, priority messages, scalable process iteration
+
+## Project Scope
+
+**Core OSS MCP Implementation**:
+- **erlmcp_core**: Complete MCP protocol implementation (client, server, JSON-RPC, session management)
+- **erlmcp_transports**: Transport layer with STDIO (required), HTTP, and SSE (spec-compliant streamable transports)
+- **erlmcp_validation**: Automated compliance validation and reporting tools
+- **erlmcp_observability** (optional): Metrics, tracing, and monitoring integrations
+
+**Experimental/Optional Features**:
+- TCP and WebSocket transports (experimental, not required for MCP compliance)
+- Web dashboard and chaos engineering tools (development/testing aids)
+- Performance benchmarking suite (validation of performance claims)
+
+**Reference Materials** (not required for MCP compliance):
+- `docs/tcps/`: Toyota Production System quality framework documentation
+- `archive/`: Historical performance baselines, quality reports, implementation details
+- Marketplace documentation: Deployment guides for large-scale scenarios
+
+**What You Need for MCP**: Just the core apps (erlmcp_core + erlmcp_transports) and STDIO transport. Everything else enhances observability, testing, or provides experimental features.
 
 ## Quick Start
 
@@ -203,6 +223,28 @@ Transport implementations:
 - Server-Sent Events
 - Connection pooling
 
+#### Transport Maturity
+
+**Supported (MCP Spec Core)**:
+- **STDIO**: Fully supported, newline-delimited JSON-RPC (required for MCP compliance)
+- **HTTP**: Fully supported, streamable transport per MCP specification
+- **SSE (Server-Sent Events)**: Fully supported, spec-compliant streamable transport with event resumption
+
+**Experimental**:
+- **TCP**: Functional with length-prefixed framing, not part of core MCP spec
+- **WebSocket**: Functional with text frames, experimental status
+
+**Configuration**: Enable transports in `config/sys.config` or `config/sys.config.src`:
+```erlang
+{erlmcp_transports, [
+  {enabled_transports, [stdio, http, sse]},  % Default: stdio only
+  {http_port, 8080},
+  {sse_keepalive_interval, 30000}
+]}
+```
+
+See `docs/TRANSPORTS.md` for detailed transport configuration and behavior.
+
 ### erlmcp_observability
 Monitoring and observability:
 - Metrics collection and server
@@ -220,6 +262,26 @@ Compliance and validation:
 - Security validator (auth, input, secrets)
 - Performance validator (latency, throughput)
 - Compliance reporting
+
+## Code Map
+
+**Key Entry Points**:
+
+| Component | File Path | Purpose |
+|-----------|-----------|---------|
+| **Server** | `apps/erlmcp_core/src/erlmcp_server.erl` | MCP server gen_server - start here for server implementation |
+| **Client** | `apps/erlmcp_core/src/erlmcp_client.erl` | MCP client gen_server - start here for client implementation |
+| **HTTP Server** | `apps/erlmcp_transports/src/erlmcp_transport_http_server.erl` | HTTP transport server using cowboy |
+| **SSE Manager** | `apps/erlmcp_transports/src/erlmcp_transport_sse_manager.erl` | Server-Sent Events transport manager |
+| **Validator CLI** | `apps/erlmcp_validation/src/erlmcp_validate_cli.erl` | Command-line validation tool entry point |
+| **Spec Compliance** | `apps/erlmcp_validation/test/erlmcp_spec_compliance_SUITE.erl` | Automated MCP spec compliance test suite |
+
+**Navigation Tips**:
+- Server/client core logic: `apps/erlmcp_core/src/erlmcp_{server,client}.erl`
+- Transport implementations: `apps/erlmcp_transports/src/erlmcp_transport_*.erl`
+- Protocol handling: `apps/erlmcp_core/src/erlmcp_json_rpc.erl`
+- Registry/routing: `apps/erlmcp_core/src/erlmcp_registry.erl`
+- Session management: `apps/erlmcp_core/src/erlmcp_session*.erl`
 
 ## Architecture
 
@@ -304,6 +366,24 @@ erlmcp integrates TPS principles:
 - **Poka-Yoke** (ポカヨケ): Built-in validation at every layer
 - **Jidoka** (自働化): Quality tests stop production on failure
 - **Kaizen** (改善): Continuous improvement via chaos engineering
+
+## Known Pitfalls
+
+Common issues and their solutions:
+
+1. **SSE Priming Event Semantics**: The MCP spec requires a "priming event" (empty data with endpoint metadata) on SSE connection establishment. Clients must handle this before sending requests. See `docs/SSE_TRANSPORT.md` for event flow details.
+
+2. **Last-Event-ID Resumption Behavior**: SSE reconnection with `Last-Event-ID` header requires server-side event buffering. Default: 100 events in-memory (configurable). Lost events beyond buffer result in client re-sync. See `docs/SESSION_PERSISTENCE.md` for durable backends (DETS/Mnesia).
+
+3. **STDIO Transport stdout Purity**: STDIO transport requires pure stdout (JSON-RPC only, no debug prints). Use stderr for logging or configure `erlmcp_logging` to route to file/syslog. Violations cause JSON parse errors. See `docs/STDIO_TRANSPORT.md`.
+
+4. **Windows CRLF Line Endings**: STDIO transport on Windows may inject `\r\n` instead of `\n`, causing parse errors. Use binary mode or configure `eol: lf` in transport options. See `docs/WINDOWS_DEPLOYMENT.md` for platform-specific setup.
+
+5. **Session Persistence Backend Choice**: Default is ETS (in-memory, not durable). Production systems should use DETS (single-node durable) or Mnesia (distributed). Configure via `{session_backend, dets}` in `config/sys.config`. See `docs/SESSION_PERSISTENCE.md` for trade-offs.
+
+6. **Circuit Breaker Defaults**: Default circuit breaker threshold is 5 failures in 60s. High-latency backends may trip prematurely. Tune via `{circuit_breaker_threshold, 10}` and `{circuit_breaker_timeout, 120000}`. See `docs/RESILIENCE.md`.
+
+7. **gproc Registry on Multi-Node**: gproc registry is local by default. Distributed routing requires `erlmcp_registry_dist` (experimental). Use load balancer for multi-node instead. See `docs/CLUSTERING.md`.
 
 ## Contributing
 
