@@ -9,7 +9,7 @@
 # Behavior:
 #   1. Detect OTP version (erl -eval)
 #   2. Install OTP 28.3.1 if missing or version < 28
-#   3. Persist environment variables (CLAUDE_CODE_REMOTE, ERLMCP_PROFILE, etc.)
+#   3. Persist environment variables (CLAUDE_CODE_REMOTE, ERLMCP_PROFILE, ERLMCP_OTP_BIN, etc.)
 #   4. Pre-compile erlmcp_core (warm cache)
 #   5. Error recovery: if OTP install fails, clear cache and retry
 #
@@ -219,6 +219,14 @@ setup_environment() {
     mkdir -p "${ERLMCP_ROOT}/.erlmcp/receipts"
     mkdir -p "${ERLMCP_ROOT}/.erlmcp/transcripts"
 
+    # Detect OTP bin directory
+    local otp_bin=""
+    if command -v erl &> /dev/null; then
+        local erl_path
+        erl_path=$(which erl)
+        otp_bin="$(dirname "$erl_path")"
+    fi
+
     # Persist environment variables
     # Note: In real Claude Code Web, this would use CLAUDE_ENV_FILE
     # For testing, we'll export to a sourceable file
@@ -228,6 +236,7 @@ setup_environment() {
 export CLAUDE_CODE_REMOTE=true
 export ERLMCP_PROFILE=cloud
 export ERLMCP_CACHE="${ERLMCP_CACHE}"
+export ERLMCP_OTP_BIN="${otp_bin}"
 export TERM=dumb
 export REBAR_COLOR=none
 export ERL_AFLAGS="-kernel shell_history enabled"
@@ -245,6 +254,7 @@ ENVEOF
     log_info "  CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE}"
     log_info "  ERLMCP_PROFILE=${ERLMCP_PROFILE}"
     log_info "  ERLMCP_CACHE=${ERLMCP_CACHE}"
+    log_info "  ERLMCP_OTP_BIN=${ERLMCP_OTP_BIN}"
     log_info "  ERLMCP_BUILD_HASH=${ERLMCP_BUILD_HASH:-unknown}"
 }
 
