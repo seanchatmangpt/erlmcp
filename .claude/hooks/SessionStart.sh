@@ -29,7 +29,7 @@ readonly REQUIRED_OTP_VERSION="28.3.1"
 readonly OTP_PREBUILT_URL="https://github.com/seanchatmangpt/erlmcp/releases/download/erlang-28.3.1/erlang-28.3.1-linux-x86_64.tar.gz"
 readonly OTP_PREBUILT_SHA256="747483d5517eb7df674956d8752f06bcb4ab35f2be2206cbfb90611bc9fb6106"
 readonly OTP_GITHUB_SOURCE_URL="https://github.com/erlang/otp.git"
-readonly ERLMCP_ROOT="${ERLMCP_ROOT:-.}"
+readonly ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" && pwd)"
 readonly OTP_CACHE_DIR="${ERLMCP_ROOT}/.erlmcp/otp-${REQUIRED_OTP_VERSION}"
 readonly OTP_BIN="${OTP_CACHE_DIR}/bin/erl"
 readonly LOCK_FILE="${ERLMCP_ROOT}/.erlmcp/cache/sessionstart.lock"
@@ -56,6 +56,10 @@ log_success() {
     echo "[SUCCESS] $*" | tee -a "$LOG_FILE"
 }
 
+log_warn() {
+    echo "[WARN] $*" | tee -a "$LOG_FILE" >&2
+}
+
 log_phase() {
     local phase=$1
     shift
@@ -67,6 +71,7 @@ log_phase() {
 
 init_logging() {
     mkdir -p "$(dirname "$LOG_FILE")"
+    touch "$LOG_FILE"  # Ensure log file exists
     {
         echo "================================================================================"
         echo "[SessionStart] Timestamp: $(date -Iseconds)"
