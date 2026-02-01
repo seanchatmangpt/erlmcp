@@ -103,6 +103,12 @@ reports/bench/latest/
 .erlmcp/test.log
 .erlmcp/sessionstart.log
 .erlmcp/otp-manager.log
+.erlmcp/otp-*/
+.erlmcp/sessionstart.log
+
+# OTP and Rebar3 crash dumps
+rebar3.crashdump
+erl_crash.dump
 
 # Documentation structure (TRACKED - DO NOT IGNORE)
 # The following directories are TRACKED and contain important project documentation:
