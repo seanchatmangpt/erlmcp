@@ -116,7 +116,7 @@ download_prebuilt_otp() {
     local tarball="$OTP_CACHE_DIR/erlang-prebuilt.tar.gz"
 
     log_info "Downloading pre-built OTP (this may take ~30s)..."
-    if ! wget -q --show-progress -O "$tarball" "$OTP_PREBUILT_URL" 2>&1 | tee -a "$LOG_FILE"; then
+    if ! curl -fsSL -o "$tarball" "$OTP_PREBUILT_URL" 2>&1 | tee -a "$LOG_FILE"; then
         log_info "Pre-built download failed (will try source build)"
         rm -f "$tarball"
         return 1
@@ -137,20 +137,36 @@ download_prebuilt_otp() {
     log_success "SHA256 verified: $actual_sha256"
 
     log_info "Extracting OTP to cache directory..."
-    if ! tar xzf "$tarball" -C "$(dirname "$OTP_CACHE_DIR")"; then
+    local temp_extract_dir="${ERLMCP_ROOT}/.erlmcp/temp-otp-extract"
+    mkdir -p "$temp_extract_dir"
+
+    if ! tar xzf "$tarball" -C "$temp_extract_dir"; then
         log_error "Failed to extract pre-built OTP"
-        rm -f "$tarball"
+        rm -rf "$temp_extract_dir" "$tarball"
         return 1
     fi
 
-    # Move extracted directory to expected location if needed
-    local extracted_dir
-    extracted_dir="$(dirname "$OTP_CACHE_DIR")/otp-28.3.1"
-    if [[ -d "$extracted_dir" && ! -e "$OTP_CACHE_DIR" ]]; then
-        mv "$extracted_dir" "$OTP_CACHE_DIR"
+    # Handle tar structure: check if contents are in a subdirectory
+    local extracted_content
+    extracted_content=$(ls -d "$temp_extract_dir"/* 2>/dev/null | head -1)
+
+    if [[ -z "$extracted_content" ]]; then
+        log_error "No files extracted from tarball"
+        rm -rf "$temp_extract_dir" "$tarball"
+        return 1
     fi
 
-    rm -f "$tarball"
+    # Move to final location
+    rm -rf "$OTP_CACHE_DIR"
+    if [[ -d "$extracted_content/bin" && -d "$extracted_content/lib" ]]; then
+        # Tarball contains otp-28.3.1 directory with bin/lib subdirs
+        mv "$extracted_content" "$OTP_CACHE_DIR"
+    else
+        # Tarball structure has bin/lib at top level
+        mv "$temp_extract_dir" "$OTP_CACHE_DIR"
+    fi
+
+    rm -rf "$temp_extract_dir" "$tarball"
     log_success "Pre-built OTP installed successfully"
     return 0
 }
@@ -169,15 +185,16 @@ download_otp_source() {
     cd "$BUILD_TEMP_DIR"
 
     log_info "Downloading otp_src_${REQUIRED_OTP_VERSION}.tar.gz..."
-    if ! wget -q --show-progress "$OTP_RELEASE_URL" 2>&1 | tee -a "$LOG_FILE"; then
+    local tarball="otp_src_${REQUIRED_OTP_VERSION}.tar.gz"
+    if ! curl -fsSL -o "$tarball" "$OTP_RELEASE_URL" 2>&1 | tee -a "$LOG_FILE"; then
         log_error "Failed to download OTP source"
         return 1
     fi
 
-    log_success "Downloaded $(ls -lh otp_src_*.tar.gz | awk '{print $5}')"
+    log_success "Downloaded $(ls -lh "$tarball" | awk '{print $5}')"
 
     log_info "Extracting archive..."
-    if ! tar xzf otp_src_*.tar.gz; then
+    if ! tar xzf "$tarball"; then
         log_error "Failed to extract OTP source"
         return 1
     fi
