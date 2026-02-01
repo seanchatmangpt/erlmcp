@@ -1,0 +1,243 @@
+# erlmcp Interactive REPL Session Example
+# This is a recorded example session showing common CLI workflows
+
+$ erlmcp start
+
+======================================================================
+STARTING ERLMCP CLUSTER
+======================================================================
+🔨 Compiling... OK
+🚀 Starting Erlang shell... OK
+📡 Launching erlmcp application...
+
+Erlang/OTP 28 [erts-14.0]
+
+# ============================================================================
+# Example 1: Check system status
+# ============================================================================
+
+1> erlmcp_registry:list().
+[]
+
+# ============================================================================
+# Example 2: Start a server instance
+# ============================================================================
+
+2> {ok, ServerPid} = erlmcp_server:start_link(demo_server, #{
+2>   transport => stdio,
+2>   timeout => 5000
+2> }).
+{ok,<0.126.0>}
+
+# ============================================================================
+# Example 3: List registered servers
+# ============================================================================
+
+3> erlmcp_registry:list().
+[{demo_server, <0.126.0>}]
+
+# ============================================================================
+# Example 4: Get server info
+# ============================================================================
+
+4> erlang:process_info(<0.126.0>, [
+4>   registered_name,
+4>   status,
+4>   reductions,
+4>   memory
+4> ]).
+[{registered_name, demo_server},
+ {status, running},
+ {reductions, 1234},
+ {memory, 65536}]
+
+# ============================================================================
+# Example 5: Define and register a resource
+# ============================================================================
+
+5> Resource = #{
+5>   name => <<"greeting">>,
+5>   uri => <<"file:///greeting.txt">>,
+5>   description => <<"A simple greeting resource">>,
+5>   mimeType => <<"text/plain">>
+5> }.
+#{name => <<"greeting">>, uri => <<"file:///greeting.txt">>, ...}
+
+6> erlmcp_server:add_resource(ServerPid, Resource).
+ok
+
+# ============================================================================
+# Example 6: List resources on server
+# ============================================================================
+
+7> erlmcp_server:list_resources(ServerPid).
+[#{
+  name => <<"greeting">>,
+  uri => <<"file:///greeting.txt">>,
+  description => <<"A simple greeting resource">>,
+  mimeType => <<"text/plain">>
+}]
+
+# ============================================================================
+# Example 7: Create a client to communicate with server
+# ============================================================================
+
+8> {ok, ClientPid} = erlmcp_client:start_link(demo_client, #{
+8>   server_pid => ServerPid
+8> }).
+{ok,<0.127.0>}
+
+# ============================================================================
+# Example 8: Send a request from client to server
+# ============================================================================
+
+9> erlmcp_client:request(ClientPid, #{
+9>   method => <<"resources/list">>,
+9>   params => #{}
+9> }).
+{ok, {200, #{
+  resources => [
+    #{
+      name => <<"greeting">>,
+      uri => <<"file:///greeting.txt">>
+    }
+  ]
+}}}
+
+# ============================================================================
+# Example 9: Monitor process behavior
+# ============================================================================
+
+10> erlang:process_info(<0.126.0>, message_queue_len).
+{message_queue_len, 0}
+
+# ============================================================================
+# Example 10: Performance metrics
+# ============================================================================
+
+11> erlang:memory(processes).
+15234567
+
+# ============================================================================
+# Example 11: Memory growth analysis
+# ============================================================================
+
+12> StartMem = erlang:memory(processes).
+15234567
+
+13> % Simulate some work...
+
+14> EndMem = erlang:memory(processes).
+15345678
+
+15> Growth = EndMem - StartMem.
+111111
+
+# ============================================================================
+# Example 12: Check system process count
+# ============================================================================
+
+16> erlang:system_info(process_count).
+50
+
+# ============================================================================
+# Example 13: List all running processes
+# ============================================================================
+
+17> i().
+
+%PID            Name/Initial Call        Heap     Reds  Msgs
+%<0.0.0>        init                     46406    6842    0
+%<0.1.0>        erl_prim_loader          13639    6324    0
+%<0.2.0>        erts_code_purger          6597      48    0
+%<0.3.0>        erts_literal_area_a      11981      49    0
+...
+%<0.126.0>      demo_server             10240    1234    0
+%<0.127.0>      demo_client             10240    5678    0
+...
+
+# ============================================================================
+# Example 14: Get detailed process info
+# ============================================================================
+
+18> erlang:process_info(<0.126.0>).
+[{registered_name, demo_server},
+ {status, running},
+ {reductions, 1234},
+ {messages, 0},
+ {links, [<0.1.0>]},
+ {trap_exit, false},
+ {error_handler, error_handler},
+ {priority, normal},
+ {group_leader, <0.20.0>},
+ {total_heap_size, 40960},
+ {heap_size, 10240},
+ {stack_size, 20},
+ {garbage_collection, [...]},
+ {sequential_trace_token, false}]
+
+# ============================================================================
+# Example 15: Enable tracing
+# ============================================================================
+
+19> dbg:tracer().
+{ok, <0.200.0>}
+
+20> dbg:tpl(erlmcp_server, []),
+20> dbg:p(all, c).
+% (c = call tracing)
+
+# ============================================================================
+# Example 16: Trace a function call
+# ============================================================================
+
+21> erlmcp_server:list_resources(<0.126.0>).
+(<0.200.0>) <0.126.0> ! {trace, <0.200.0>, call, {erlmcp_server, list_resources, [<0.126.0>]}}
+[#{
+  name => <<"greeting">>,
+  uri => <<"file:///greeting.txt">>
+}]
+
+# ============================================================================
+# Example 17: Stop tracing
+# ============================================================================
+
+22> dbg:stop_clear().
+ok
+
+# ============================================================================
+# Example 18: Cleanup - stop client
+# ============================================================================
+
+23> erlmcp_client:stop(<0.127.0>).
+ok
+
+24> erlmcp_registry:list().
+[{demo_server, <0.126.0>}]
+
+# ============================================================================
+# Example 19: Cleanup - stop server
+# ============================================================================
+
+25> erlmcp_server:stop(<0.126.0>).
+ok
+
+26> erlmcp_registry:list().
+[]
+
+# ============================================================================
+# Example 20: Verify cleanup
+# ============================================================================
+
+27> erlang:system_info(process_count).
+42
+
+# ============================================================================
+# Example 21: Exit REPL
+# ============================================================================
+
+28> q().
+ok
+
+# Back to shell
+$

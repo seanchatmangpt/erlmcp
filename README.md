@@ -45,6 +45,8 @@ erlmcp is a robust, production-grade implementation of the [MCP 2025-11-25 speci
 
 **Prerequisites**: Erlang/OTP 28.3.1 or later
 
+### Setup & Development
+
 ```bash
 # Verify Erlang version
 erl -version  # Must be 28.3.1 or later
@@ -64,6 +66,30 @@ make check
 # Start Erlang shell
 make console
 ```
+
+### CLI Quick Examples
+
+```bash
+# One-time initialization
+erlmcp init
+
+# Check system readiness
+erlmcp doctor
+
+# Start interactive shell
+erlmcp start
+
+# Run performance test (100K ops)
+erlmcp test-100k
+
+# Full benchmark suite
+erlmcp benchmark
+
+# Get help anytime
+erlmcp help
+```
+
+See [CLI Reference](docs/CLI_REFERENCE.md) for complete command documentation.
 
 ## Documentation
 
@@ -85,6 +111,14 @@ For comprehensive navigation and finding specific topics:
 - [Development Setup](DEVELOPMENT.md) - Environment setup and workflow
 - [Contributing Guidelines](CONTRIBUTING.md) - Code standards and PR process
 - [System Architecture](CLAUDE.md) - Formal specification, OTP patterns, quality gates
+
+**CLI Documentation** (NEW):
+- [CLI Reference Guide](docs/CLI_REFERENCE.md) - All commands, options, exit codes
+- [Interactive Mode Guide](docs/CLI_INTERACTIVE_GUIDE.md) - REPL workflows and examples
+- [Shell Completions](docs/SHELL_COMPLETIONS_GUIDE.md) - Tab completion setup (bash/zsh/fish)
+- [Diagnostics & Profiling](docs/DIAGNOSTICS_GUIDE.md) - Profiling, tracing, monitoring
+- [Plugin Development](docs/PLUGIN_DEVELOPMENT_GUIDE.md) - Create custom plugins
+- [CLI Examples](examples/cli/) - validate-spec.sh, connect-server.sh, recorded sessions
 
 **Core Documentation**:
 - [Architecture](docs/architecture.md) - System design and supervision trees
