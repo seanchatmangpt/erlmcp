@@ -34,6 +34,10 @@
 -callback cleanup_expired(State :: term()) ->
     {ok, Count :: non_neg_integer(), NewState :: term()}.
 
+%% Optional callback for resource cleanup
+-callback shutdown(State :: term()) -> ok.
+-optional_callbacks([shutdown/1]).
+
 %% Types
 -type session_id() :: binary().
 -type session() :: #{
@@ -178,6 +182,13 @@ terminate(_Reason, State) ->
     case State#state.cleanup_timer of
         undefined -> ok;
         Timer -> erlang:cancel_timer(Timer)
+    end,
+    %% Call backend shutdown if available
+    case erlang:function_exported(State#state.backend, shutdown, 1) of
+        true ->
+            (State#state.backend):shutdown(State#state.backend_state);
+        false ->
+            ok
     end,
     ok.
 

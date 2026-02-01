@@ -217,36 +217,30 @@ http_post(Url, Headers, BodyMap, Timeout) ->
     case gun:open(Host, Port, #{transport => Transport, protocols => [http]}) of
         {ok, ConnPid} ->
             MonRef = monitor(process, ConnPid),
+            try
+                case gun:await_up(ConnPid, Timeout) of
+                    {up, _Protocol} ->
+                        StreamRef = gun:post(ConnPid, Path, Headers, Body),
 
-            case gun:await_up(ConnPid, Timeout) of
-                {up, _Protocol} ->
-                    StreamRef = gun:post(ConnPid, Path, Headers, Body),
-
-                    case gun:await(ConnPid, StreamRef, Timeout) of
-                        {response, nofin, 200, _RespHeaders} ->
-                            case gun:await_body(ConnPid, StreamRef, Timeout) of
-                                {ok, ResponseBody} ->
-                                    demonitor(MonRef, [flush]),
-                                    gun:close(ConnPid),
-                                    {ok, ResponseBody};
-                                {error, Reason} ->
-                                    demonitor(MonRef, [flush]),
-                                    gun:close(ConnPid),
-                                    {error, {body_read_failed, Reason}}
-                            end;
-                        {response, fin, Status, RespHeaders} ->
-                            demonitor(MonRef, [flush]),
-                            gun:close(ConnPid),
-                            {error, {http_error, Status, RespHeaders}};
-                        {error, Reason} ->
-                            demonitor(MonRef, [flush]),
-                            gun:close(ConnPid),
-                            {error, {request_failed, Reason}}
-                    end;
-                {error, Reason} ->
-                    demonitor(MonRef, [flush]),
-                    gun:close(ConnPid),
-                    {error, {connection_failed, Reason}}
+                        case gun:await(ConnPid, StreamRef, Timeout) of
+                            {response, nofin, 200, _RespHeaders} ->
+                                case gun:await_body(ConnPid, StreamRef, Timeout) of
+                                    {ok, ResponseBody} ->
+                                        {ok, ResponseBody};
+                                    {error, Reason} ->
+                                        {error, {body_read_failed, Reason}}
+                                end;
+                            {response, fin, Status, RespHeaders} ->
+                                {error, {http_error, Status, RespHeaders}};
+                            {error, Reason} ->
+                                {error, {request_failed, Reason}}
+                        end;
+                    {error, Reason} ->
+                        {error, {connection_failed, Reason}}
+                end
+            after
+                catch demonitor(MonRef, [flush]),
+                catch gun:close(ConnPid)
             end;
         {error, Reason} ->
             {error, {gun_open_failed, Reason}}

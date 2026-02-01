@@ -8,7 +8,8 @@
     fetch/2,
     delete/2,
     list/1,
-    cleanup_expired/1
+    cleanup_expired/1,
+    shutdown/1
 ]).
 
 %% Types
@@ -135,3 +136,14 @@ is_expired(#{timeout_ms := infinity}, _Now) ->
     false;
 is_expired(#{last_accessed := LastAccessed, timeout_ms := TimeoutMs}, Now) ->
     (Now - LastAccessed) > TimeoutMs.
+
+-spec shutdown(state()) -> ok.
+shutdown(State) ->
+    TableName = maps:get(table_name, State),
+    case dets:close(TableName) of
+        ok ->
+            ok;
+        {error, Reason} ->
+            logger:error("Failed to close DETS table ~p: ~p", [TableName, Reason]),
+            ok
+    end.

@@ -381,6 +381,9 @@ test_completion_cache_integration(Config) ->
         ets:insert(CallCount, {count, 0}),
 
         %% Handler that counts calls (to verify caching)
+        %% NOTE: This uses non-atomic increment for simplicity in this test.
+        %% Safe here because calls are sequential, not concurrent.
+        %% For concurrent scenarios, use ets:update_counter/3 instead.
         CountingHandler = fun(_Ref, _Arg, _Context) ->
             [{count, Count}] = ets:lookup(CallCount, count),
             ets:insert(CallCount, {count, Count + 1}),

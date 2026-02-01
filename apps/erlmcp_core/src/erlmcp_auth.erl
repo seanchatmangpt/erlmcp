@@ -67,7 +67,8 @@
     acls :: ets:tid(),               % {resource, action} -> [roles]
     revoked_tokens :: ets:tid(),      % token -> revoked_at
     oauth2_cache :: ets:tid(),        % token -> {token_info, expires_at}
-    rate_limiter_enabled :: boolean() % whether rate limiting is enabled
+    rate_limiter_enabled :: boolean(), % whether rate limiting is enabled
+    cleanup_timer :: reference() | undefined % cleanup timer reference
 }).
 
 -type state() :: #state{}.
@@ -199,7 +200,7 @@ init([Config]) ->
     % Check if rate limiter should be enabled
     RateLimiterEnabled = maps:get(rate_limiter_enabled, Config, true),
 
-    State = #state{
+    State0 = #state{
         sessions = ets:new(auth_sessions, [set, protected]),
         api_keys = ets:new(auth_api_keys, [set, protected]),
         jwt_keys = ets:new(auth_jwt_keys, [set, protected]),
@@ -211,20 +212,22 @@ init([Config]) ->
         acls = ets:new(auth_acls, [bag, protected]),  % bag for multiple roles per resource
         revoked_tokens = ets:new(auth_revoked_tokens, [set, protected]),
         oauth2_cache = ets:new(auth_oauth2_cache, [set, protected]),
-        rate_limiter_enabled = RateLimiterEnabled
+        rate_limiter_enabled = RateLimiterEnabled,
+        cleanup_timer = undefined
     },
 
     % Initialize default roles
-    init_default_roles(State),
+    init_default_roles(State0),
 
     % Load API keys from config
-    init_api_keys(State, Config),
+    init_api_keys(State0, Config),
 
     % Load JWT public keys
-    init_jwt_keys(State, Config),
+    init_jwt_keys(State0, Config),
 
     % Start cleanup timer
-    erlang:send_after(60000, self(), cleanup_expired),
+    TimerRef = erlang:send_after(60000, self(), cleanup_expired),
+    State = State0#state{cleanup_timer = TimerRef},
 
     logger:info("Auth server started with config: ~p", [maps:keys(Config)]),
     {ok, State}.
@@ -335,8 +338,8 @@ handle_info(cleanup_expired, State) ->
     cleanup_expired_sessions(State, Now),
     cleanup_revoked_tokens(State, Now),
     cleanup_oauth2_cache(State, Now),
-    erlang:send_after(60000, self(), cleanup_expired),
-    {noreply, State};
+    TimerRef = erlang:send_after(60000, self(), cleanup_expired),
+    {noreply, State#state{cleanup_timer = TimerRef}};
 
 handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
     % Handle gun connection process death during OAuth2 introspection
@@ -351,6 +354,12 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
+    %% Cancel cleanup timer
+    case State#state.cleanup_timer of
+        undefined -> ok;
+        Timer -> erlang:cancel_timer(Timer)
+    end,
+    %% Delete ETS tables
     ets:delete(State#state.sessions),
     ets:delete(State#state.api_keys),
     ets:delete(State#state.jwt_keys),
