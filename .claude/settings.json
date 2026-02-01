@@ -6,10 +6,10 @@
       ".env",
       ".env.local",
       ".env.*.local",
-      "secrets/**",
+      "Secrets/**",
       ".claude/secrets/**",
-      "scripts/deploy.sh",
-      "scripts/release.sh",
+      "Scripts/deploy.sh",
+      "Scripts/release.sh",
       ".git/config",
       "**/*.pem",
       "**/*.key",
@@ -19,35 +19,16 @@
       "**/*.erl",
       "**/*.hrl",
       "**/*.app.src",
-      "test/**",
-      "apps/*/test/**",
-      "docs/**/*.md",
-      "examples/**",
-      "scripts/quality-*.sh",
+      "Test/**",
+      "Apps/*/test/**",
+      "Docs/**/*.md",
+      "Examples/**",
+      "Scripts/quality-*.sh",
       ".claude/**"
     ]
   },
 
   "hooks": {
-    "$comment": [
-      "Lifecycle event hooks (runtime-enforced)",
-      "Event flow: SessionStart → PreToolUse* → PostToolUse* → Stop → SessionEnd",
-      "",
-      "Hook types:",
-      "  - command: Synchronous bash script (returns exit code + JSON)",
-      "  - agent: Spawn subagent (returns JSON decision)",
-      "  - prompt: Inline prompt (agent-based)",
-      "",
-      "Matcher syntax:",
-      "  - Tool name regex (e.g., 'Bash', 'Write|Edit')",
-      "  - Event context (e.g., 'startup|resume')",
-      "",
-      "Return formats:",
-      "  - PreToolUse: {\"permissionDecision\": \"allow\"|\"ask\"|\"deny\", \"reason\": \"...\", \"updatedInput\": {...}}",
-      "  - Stop: {\"ok\": true|false, \"reason\": \"...\"}",
-      "  - SessionEnd: exit code (0 = success)"
-    ],
-
     "SessionStart": [
       {
         "matcher": "startup|resume",
@@ -298,7 +279,7 @@
   },
 
   "metadata": {
-    "version": "3.0.0",
+    "version": "3.1.0",
     "project": "erlmcp",
     "description": "Erlang/OTP MCP SDK governance configuration",
     "architecture": "4-layer governance (Policy → Execution → Verification → Receipt)",
