@@ -2,6 +2,8 @@
 
 Erlang/OTP SDK for the Model Context Protocol (MCP) - Production-ready client and server implementation with comprehensive validation.
 
+> **Quick Start?** See **[docs/README_RUN_LOCAL.md](docs/README_RUN_LOCAL.md)** for all entry points: STDIO server, HTTP server, validator, examples, and Erlang shell.
+
 ## ⚠️ Version 3.0: OTP 28.3.1+ Required
 
 **BREAKING CHANGE**: erlmcp v3.0+ requires **Erlang/OTP 28.3.1 or later**. All backward compatibility with OTP 25-27 has been removed to enable exclusive use of native OTP 28+ features.
