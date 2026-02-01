@@ -51,6 +51,7 @@ make benchmark-quick               # regression < 0.1 | 💻 300s
 | 5 | Output ⊆ {.erl, .hrl} unless explicit_request — Code Only |
 | 6 | cloud(command) → idempotent(command) — Cloud Safety |
 | 7 | **NEVER REBASE EVER — Merge only (merge over rebase)** |
+| 8 | **ALWAYS use agents — Never appropriate to work without Task()** |
 
 ---
 
