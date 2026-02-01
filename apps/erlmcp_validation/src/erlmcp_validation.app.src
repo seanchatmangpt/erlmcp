@@ -1,33 +1,19 @@
 {application, erlmcp_validation,
- [{description, "Erlang MCP Validation - Compliance, Protocol, Transport, Security, Performance Validators"},
+ [{description, "MCP Validation and Compliance Framework"},
   {vsn, "2.1.0"},
   {registered, []},
-  {applications, [
-      kernel,
-      stdlib,
-      jsx,
-      jesse,
-      erlmcp_core,
-      erlmcp_transports
-  ]},
   {mod, {erlmcp_validation_app, []}},
-  {env, [
-      {validation_defaults, #{
-          max_message_size => 16777216,  % 16MB
-          max_string_length => 1048576,  % 1MB
-          timeout => 5000
-      }}
-  ]},
+  {applications,
+   [kernel,
+    stdlib,
+    erlmcp_core,
+    jsx,
+    jesse,
+    inets,
+    ssl
+   ]},
+  {env,[]},
   {modules, []},
   {licenses, ["Apache-2.0"]},
-  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
-  %% OTP Version Requirements
-  {notes, [
-      "Supports Erlang/OTP 25-28",
-      "OTP 28+ features: native JSON validation (faster schema checks)",
-      "OTP 27+ features: improved JSON parsing",
-      "Dependencies: jsx 3.1+, jesse 1.8+ (JSON Schema validation)",
-      "Minimum: OTP 25 (full compliance validation)",
-      "Recommended: OTP 28+ for fastest validation"
-  ]}
+  {links, [{"GitHub", "https://github.com/seanchatmangpt/erlmcp"}]}
  ]}.

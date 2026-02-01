@@ -2,60 +2,6 @@
     {erlmcp, [
         %% Logging configuration
         {log_level, info},
-
-        %% FM-08: Secret Redaction Configuration (Credential theft prevention)
-        %% Prevents sensitive credentials from appearing in logs
-        %% CVSS: 7.5 (High) - RPN: 270 (Critical)
-        {logging_redaction, #{
-            %% Enable/disable redaction (default: true)
-            %% Set to false ONLY in isolated development environments
-            enabled => true,
-
-            %% Redaction patterns (regex)
-            %% These patterns are applied to all log messages and data
-            patterns => [
-                % JWT Bearer tokens
-                {jwt_bearer, <<"Bearer\\s+[A-Za-z0-9_\\-\\.]+(?:\\.[A-Za-z0-9_\\-\\.]+)*">>},
-                % Base64 JWT pattern (xxx.yyy.zzz)
-                {jwt_base64, <<"[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+">>},
-                % Session IDs (UUID format)
-                {session_uuid, <<"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}">>},
-                % API keys (alphanumeric, 32+ chars)
-                {api_key_pattern, <<"[A-Za-z0-9_\\-]{32,}">>},
-                % AWS keys
-                {aws_access_key, <<"AKIA[0-9A-Z]{16}">>},
-                {aws_secret_key, <<"[A-Za-z0-9/+=]{40}">>},
-                % OAuth patterns
-                {oauth_token, <<"ya29\\.[0-9A-Za-z\\-_]+">>}
-            ],
-
-            %% Replacement text for redacted secrets
-            replacement => <<"***REDACTED***">>,
-
-            %% Secret keys to redact in maps/structured data
-            %% These keys will have their values completely replaced
-            secret_keys => [
-                <<"password">>, password,
-                <<"secret">>, secret,
-                <<"api_key">>, api_key,
-                <<"apikey">>, apikey,
-                <<"access_token">>, access_token,
-                <<"refresh_token">>, refresh_token,
-                <<"session_id">>, session_id,
-                <<"sessionId">>, sessionId,
-                <<"jwt">>, jwt,
-                <<"bearer">>, bearer,
-                <<"token">>, token,
-                <<"private_key">>, private_key,
-                <<"privateKey">>, privateKey,
-                <<"client_secret">>, client_secret,
-                <<"clientSecret">>, clientSecret,
-                <<"auth_token">>, auth_token,
-                <<"authToken">>, authToken,
-                <<"credential">>, credential,
-                <<"credentials">>, credentials
-            ]
-        }},
         
         %% Client defaults
         {client_defaults, #{

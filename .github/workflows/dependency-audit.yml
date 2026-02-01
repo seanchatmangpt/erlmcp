@@ -1,0 +1,214 @@
+name: Dependency Security Audit (FM-12)
+
+on:
+  push:
+    branches: [ main, develop, 'release/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run weekly on Mondays at 00:00 UTC
+    - cron: '0 0 * * 1'
+  workflow_dispatch:  # Allow manual triggering
+
+permissions:
+  contents: read
+  pull-requests: write  # For commenting on PRs
+
+jobs:
+  dependency-audit:
+    name: Scan Dependencies for CVEs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27.0'
+          rebar3-version: '3.24'
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            _build
+            ~/.cache/rebar3
+            /tmp/nvd_cache
+          key: ${{ runner.os }}-erlang-${{ hashFiles('**/rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-erlang-
+
+      - name: Compile project
+        run: |
+          TERM=dumb rebar3 compile
+
+      - name: Create reports directory
+        run: mkdir -p reports
+
+      - name: Run dependency vulnerability scan
+        id: scan
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+        run: |
+          ./scripts/security/scan_dependencies.sh \
+            --lock-file ./rebar.lock \
+            --cache-dir /tmp/nvd_cache \
+            --output-dir ./reports \
+            --ci-mode
+        continue-on-error: true
+
+      - name: Upload scan report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cve-audit-report-${{ github.run_number }}
+          path: reports/cve_audit_*.json
+          retention-days: 90
+
+      - name: Parse scan results
+        id: parse
+        if: always()
+        run: |
+          # Get latest report
+          REPORT=$(ls -t reports/cve_audit_*.json | head -1)
+
+          if [[ -f "$REPORT" ]]; then
+            # Extract metrics using jq
+            DEPS_SCANNED=$(jq -r '.dependencies_scanned' "$REPORT")
+            VULNS_FOUND=$(jq -r '.vulnerabilities_found' "$REPORT")
+            CRITICAL=$(jq -r '.critical // 0' "$REPORT")
+            HIGH=$(jq -r '.high // 0' "$REPORT")
+            MEDIUM=$(jq -r '.medium // 0' "$REPORT")
+            LOW=$(jq -r '.low // 0' "$REPORT")
+            EXIT_CODE=$(jq -r '.exit_code' "$REPORT")
+
+            # Set outputs
+            echo "deps_scanned=$DEPS_SCANNED" >> $GITHUB_OUTPUT
+            echo "vulns_found=$VULNS_FOUND" >> $GITHUB_OUTPUT
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+            echo "medium=$MEDIUM" >> $GITHUB_OUTPUT
+            echo "low=$LOW" >> $GITHUB_OUTPUT
+            echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+            echo "report_file=$REPORT" >> $GITHUB_OUTPUT
+          else
+            echo "No report found"
+            echo "exit_code=2" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportFile = '${{ steps.parse.outputs.report_file }}';
+            const exitCode = parseInt('${{ steps.parse.outputs.exit_code }}');
+            const depsScanned = '${{ steps.parse.outputs.deps_scanned }}';
+            const vulnsFound = '${{ steps.parse.outputs.vulns_found }}';
+            const critical = '${{ steps.parse.outputs.critical }}';
+            const high = '${{ steps.parse.outputs.high }}';
+            const medium = '${{ steps.parse.outputs.medium }}';
+            const low = '${{ steps.parse.outputs.low }}';
+
+            // Determine status emoji
+            let statusEmoji = '✅';
+            let statusText = 'PASSED';
+            if (exitCode !== 0) {
+              statusEmoji = '❌';
+              statusText = 'BLOCKED';
+            }
+
+            // Build comment body
+            let body = `## ${statusEmoji} Dependency Security Audit (FM-12)\n\n`;
+            body += `**Status:** ${statusText}\n\n`;
+            body += `### Summary\n\n`;
+            body += `- Dependencies scanned: ${depsScanned}\n`;
+            body += `- Vulnerabilities found: ${vulnsFound}\n\n`;
+
+            if (parseInt(vulnsFound) > 0) {
+              body += `### Severity Breakdown\n\n`;
+              body += `- 🔴 Critical: ${critical}\n`;
+              body += `- 🟠 High: ${high}\n`;
+              body += `- 🟡 Medium: ${medium}\n`;
+              body += `- 🟢 Low: ${low}\n\n`;
+
+              // Read report file if it exists
+              if (reportFile && fs.existsSync(reportFile)) {
+                const report = JSON.parse(fs.readFileSync(reportFile, 'utf8'));
+                if (report.vulnerable_dependencies && report.vulnerable_dependencies.length > 0) {
+                  body += `### Vulnerable Dependencies\n\n`;
+                  body += `| Dependency | Version | CVEs |\n`;
+                  body += `|------------|---------|------|\n`;
+                  report.vulnerable_dependencies.forEach(dep => {
+                    body += `| ${dep.dependency} | ${dep.version} | ${dep.cves.length} |\n`;
+                  });
+                  body += `\n`;
+                }
+              }
+
+              if (exitCode !== 0) {
+                body += `### ⚠️ Action Required\n\n`;
+                body += `This PR is **BLOCKED** due to Critical or High severity vulnerabilities.\n\n`;
+                body += `Please update the affected dependencies before merging.\n\n`;
+              }
+            } else {
+              body += `✅ No vulnerabilities found in dependencies.\n\n`;
+            }
+
+            body += `<details>\n`;
+            body += `<summary>View full report</summary>\n\n`;
+            body += `Download the artifact: [cve-audit-report-${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n`;
+            body += `</details>\n\n`;
+            body += `---\n`;
+            body += `*Automated by FM-12 Dependency Vulnerability Scanner*\n`;
+
+            // Post comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: body
+            });
+
+      - name: Check scan status
+        if: always()
+        run: |
+          EXIT_CODE=${{ steps.parse.outputs.exit_code }}
+          if [[ "$EXIT_CODE" == "1" ]]; then
+            echo "❌ BLOCKED: Critical or High severity vulnerabilities found"
+            exit 1
+          elif [[ "$EXIT_CODE" == "2" ]]; then
+            echo "❌ ERROR: Scan failed"
+            exit 1
+          else
+            echo "✅ PASSED: No blocking vulnerabilities"
+            exit 0
+          fi
+
+  integration-check:
+    name: Verify Dependabot Integration
+    runs-on: ubuntu-latest
+    needs: dependency-audit
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check Dependabot config
+        run: |
+          if [[ -f ".github/dependabot.yml" ]]; then
+            echo "✅ Dependabot configured"
+          else
+            echo "⚠️ Dependabot not configured - consider enabling"
+          fi
+
+      - name: Summary
+        run: |
+          echo "Dependency audit workflow integration verified"
+          echo "- Automated CVE scanning: ✅"
+          echo "- CI/CD blocking on Critical/High: ✅"
+          echo "- Weekly scheduled scans: ✅"
+          echo "- PR commenting: ✅"

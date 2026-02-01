@@ -25,6 +25,7 @@
     validate_api_key/1,
     validate_oauth2_token/1,
     validate_mtls/1,
+    verify_scope/2,
     check_permission/3,
     create_session/2,
     destroy_session/1,
@@ -67,6 +68,7 @@
     acls :: ets:tid(),               % {resource, action} -> [roles]
     revoked_tokens :: ets:tid(),      % token -> revoked_at
     oauth2_cache :: ets:tid(),        % token -> {token_info, expires_at}
+    jti_cache :: ets:tid(),           % jti -> {used_at, exp} (replay prevention)
     rate_limiter_enabled :: boolean() % whether rate limiting is enabled
 }).
 
@@ -126,6 +128,22 @@ validate_oauth2_token(Token) ->
 -spec validate_mtls(map()) -> {ok, user_id()} | {error, term()}.
 validate_mtls(CertInfo) ->
     gen_server:call(?MODULE, {validate_mtls, CertInfo}).
+
+%% @doc Verify JWT scope claim against required scopes.
+%% FM-04: Scope enforcement for authorization
+-spec verify_scope(map(), [binary()]) -> ok | {error, insufficient_scope}.
+verify_scope(Claims, RequiredScopes) ->
+    case maps:get(<<"scope">>, Claims, undefined) of
+        undefined ->
+            {error, insufficient_scope};
+        TokenScopes when is_list(TokenScopes) ->
+            case lists:all(fun(Required) -> lists:member(Required, TokenScopes) end, RequiredScopes) of
+                true -> ok;
+                false -> {error, insufficient_scope}
+            end;
+        _InvalidScopes ->
+            {error, insufficient_scope}
+    end.
 
 %% @doc Check if user has permission for resource action.
 -spec check_permission(session_id(), resource(), permission()) ->
@@ -211,6 +229,7 @@ init([Config]) ->
         acls = ets:new(auth_acls, [bag, protected]),  % bag for multiple roles per resource
         revoked_tokens = ets:new(auth_revoked_tokens, [set, protected]),
         oauth2_cache = ets:new(auth_oauth2_cache, [set, protected]),
+        jti_cache = ets:new(auth_jti_cache, [set, protected]),  % FM-04: JTI replay prevention
         rate_limiter_enabled = RateLimiterEnabled
     },
 
@@ -335,6 +354,7 @@ handle_info(cleanup_expired, State) ->
     cleanup_expired_sessions(State, Now),
     cleanup_revoked_tokens(State, Now),
     cleanup_oauth2_cache(State, Now),
+    cleanup_jti_cache(State, Now), % FM-04: Cleanup expired JTIs
     erlang:send_after(60000, self(), cleanup_expired),
     {noreply, State};
 
@@ -359,6 +379,7 @@ terminate(_Reason, State) ->
     ets:delete(State#state.acls),
     ets:delete(State#state.revoked_tokens),
     ets:delete(State#state.oauth2_cache),
+    ets:delete(State#state.jti_cache),
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
@@ -476,6 +497,32 @@ do_validate_jwt(Token, State) ->
             verify_jwt_signature(Token, State)
     end.
 
+%% @private Check JTI (JWT ID) for replay prevention (FM-04)
+check_jti_replay(Claims, State) ->
+    case maps:get(enable_jti_tracking, State#state.jwt_config, false) of
+        false ->
+            ok; % JTI tracking disabled
+        true ->
+            case maps:get(<<"jti">>, Claims, undefined) of
+                undefined ->
+                    ok; % JTI optional if tracking enabled
+                JTI ->
+                    Now = erlang:system_time(second),
+                    Exp = maps:get(<<"exp">>, Claims, Now + 3600),
+
+                    % Check if JTI already used
+                    case ets:lookup(State#state.jti_cache, JTI) of
+                        [{JTI, _UsedAt, _Exp}] ->
+                            logger:warning("JWT replay attack detected: jti=~p", [JTI]),
+                            {error, token_replay};
+                        [] ->
+                            % Store JTI with expiration
+                            ets:insert(State#state.jti_cache, {JTI, Now, Exp}),
+                            ok
+                    end
+            end
+    end.
+
 %% @private Verify JWT signature using jose library.
 verify_jwt_signature(Token, State) ->
     try
@@ -484,39 +531,44 @@ verify_jwt_signature(Token, State) ->
         ProtectedBin = jose_jws:peek_protected(Token),
         Protected = jsx:decode(ProtectedBin, [return_maps]),
 
-        % Extract key ID (kid) from protected header
-        KeyId = maps:get(<<"kid">>, Protected, undefined),
+        % FM-04: Algorithm whitelist enforcement
+        Algorithm = maps:get(<<"alg">>, Protected, undefined),
+        AllowedAlgorithms = maps:get(allowed_algorithms, State#state.jwt_config, [<<"RS256">>]),
 
-        % Determine which key to use
-        PublicKeyPem =
-            case KeyId of
-                undefined ->
-                    % No kid - try default key from configuration
-                    case maps:get(default_key, State#state.jwt_config, undefined) of
+        case lists:member(Algorithm, AllowedAlgorithms) of
+            false ->
+                logger:warning("JWT algorithm not allowed: ~p (whitelist: ~p)", [Algorithm, AllowedAlgorithms]),
+                {error, algorithm_not_allowed};
+            true ->
+                % Extract key ID (kid) from protected header
+                KeyId = maps:get(<<"kid">>, Protected, undefined),
+
+                % Determine which key to use
+                PublicKeyPem =
+                    case KeyId of
                         undefined ->
-                            logger:warning("JWT missing key ID (kid) and no default key configured"),
-                            undefined;
-                        DefaultKey ->
-                            logger:debug("Using default JWT key (no kid in token)"),
-                            DefaultKey
-                    end;
-                Kid ->
-                    % Lookup key by kid
-                    case ets:lookup(State#state.jwt_keys, Kid) of
-                        [{_, Key}] ->
-                            logger:debug("Found JWT key for kid: ~p", [Kid]),
-                            Key;
-                        [] ->
-                            logger:warning("JWT key ID not found: ~p", [Kid]),
-                            undefined
-                    end
-            end,
+                            logger:warning("JWT missing key ID (kid)"),
+                            {error, missing_key_id};
+                        Kid ->
+                            % Lookup key by kid
+                            case ets:lookup(State#state.jwt_keys, Kid) of
+                                [{_, Key}] ->
+                                    logger:debug("Found JWT key for kid: ~p", [Kid]),
+                                    Key;
+                                [] ->
+                                    logger:warning("JWT key ID not found: ~p", [Kid]),
+                                    undefined
+                            end
+                    end,
 
-        case PublicKeyPem of
-            undefined ->
-                {error, unknown_key_id};
-            _ ->
-                verify_jwt_with_key(Token, PublicKeyPem, State)
+                case PublicKeyPem of
+                    {error, Reason} ->
+                        {error, Reason};
+                    undefined ->
+                        {error, unknown_key_id};
+                    _ ->
+                        verify_jwt_with_key(Token, PublicKeyPem, State)
+                end
         end
     catch
         error:Reason ->
@@ -555,27 +607,37 @@ verify_jwt_with_key(Token, PublicKeyPem, State) ->
 validate_jwt_claims(Claims, State) ->
     Now = erlang:system_time(second),
 
+    % FM-04: Clock skew tolerance
+    ClockSkew = maps:get(clock_skew_seconds, State#state.jwt_config, 0),
+
     % Check expiration (exp) - CRITICAL for security
     case maps:get(<<"exp">>, Claims, undefined) of
         undefined ->
             logger:warning("JWT missing expiration claim (exp)"),
             {error, missing_expiration};
-        Exp when Exp =< Now ->
-            logger:warning("JWT expired: exp=~p, now=~p", [Exp, Now]),
+        Exp when Exp =< (Now - ClockSkew) ->
+            logger:warning("JWT expired: exp=~p, now=~p, skew=~p", [Exp, Now, ClockSkew]),
             {error, token_expired};
         _Exp ->
-            % Continue validation
-            validate_nbf_claim(Claims, Now, State)
+            % FM-04: Check JTI for replay prevention
+            case check_jti_replay(Claims, State) of
+                ok ->
+                    validate_nbf_claim(Claims, Now, State);
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% @private Validate not-before (nbf) claim
 validate_nbf_claim(Claims, Now, State) ->
+    ClockSkew = maps:get(clock_skew_seconds, State#state.jwt_config, 0),
+
     case maps:get(<<"nbf">>, Claims, undefined) of
         undefined ->
             % nbf is optional per JWT spec
             validate_issuer_claim(Claims, State);
-        Nbf when Nbf > Now ->
-            logger:warning("JWT not yet valid: nbf=~p, now=~p", [Nbf, Now]),
+        Nbf when Nbf > (Now + ClockSkew) ->
+            logger:warning("JWT not yet valid: nbf=~p, now=~p, skew=~p", [Nbf, Now, ClockSkew]),
             {error, token_not_yet_valid};
         _Nbf ->
             validate_issuer_claim(Claims, State)
@@ -1089,3 +1151,16 @@ cleanup_oauth2_cache(State, Now) ->
         end,
         Acc
     end, ok, State#state.oauth2_cache).
+
+%% @private Cleanup expired JTI cache entries (FM-04: Replay prevention)
+cleanup_jti_cache(State, Now) ->
+    ets:foldl(fun({JTI, _UsedAt, Exp}, Acc) ->
+        case Exp < Now of
+            true ->
+                ets:delete(State#state.jti_cache, JTI),
+                logger:debug("JTI expired and removed: ~p", [JTI]);
+            false ->
+                ok
+        end,
+        Acc
+    end, ok, State#state.jti_cache).

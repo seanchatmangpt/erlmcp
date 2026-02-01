@@ -34,6 +34,8 @@ init(TransportId, Config) ->
         Port = maps:get(port, Config, 8081),
         Path = maps:get(path, Config, "/mcp/sse"),
         MaxMessageSize = maps:get(max_message_size, Config, ?DEFAULT_MAX_MESSAGE_SIZE),
+        AllowedOrigins = maps:get(allowed_origins, Config,
+                                  erlmcp_origin_validator:get_default_allowed_origins()),
 
         erlmcp_tracing:set_attributes(SpanCtx, #{
             <<"transport_id">> => TransportId,
@@ -44,7 +46,7 @@ init(TransportId, Config) ->
 
         Dispatch = cowboy_router:compile([
             {'_', [
-                {Path, ?MODULE, [TransportId, Config]}
+                {Path, ?MODULE, [TransportId, Config#{allowed_origins => AllowedOrigins}]}
             ]}
         ]),
 
@@ -103,27 +105,41 @@ close(_) ->
 %% Cowboy HTTP Handler
 %%====================================================================
 
-init(_Type, Req, [TransportId]) ->
+init(_Type, Req, [TransportId, Config]) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.cowboy_init">>),
     erlmcp_tracing:set_attributes(SpanCtx, #{
         <<"transport_id">> => TransportId
     }),
     {ok, Req, #{
         transport_id => TransportId,
+        config => Config,
         span_ctx => SpanCtx
     }}.
 
-handle(Req, #{transport_id := TransportId} = State) ->
+handle(Req, #{transport_id := TransportId, config := Config} = State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle">>),
     try
         Method = cowboy_req:method(Req),
-        case Method of
-            <<"GET">> ->
-                handle_sse_stream(Req, TransportId, State);
-            <<"POST">> ->
-                handle_post_request(Req, TransportId, State);
-            _ ->
-                ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
+
+        %% FM-01 + FM-06: Validate Origin and Headers BEFORE processing
+        case validate_request_security(Req, Method, Config) of
+            ok ->
+                case Method of
+                    <<"GET">> ->
+                        handle_sse_stream(Req, TransportId, State);
+                    <<"POST">> ->
+                        handle_post_request(Req, TransportId, State);
+                    _ ->
+                        ReqReply = cowboy_req:reply(405, #{}, <<"Method not allowed">>, Req),
+                        {ok, ReqReply, State}
+                end;
+            {error, {StatusCode, Headers, Body}} ->
+                %% Security validation failed - reject immediately
+                erlmcp_tracing:set_attributes(SpanCtx, #{
+                    <<"validation_failed">> => true,
+                    <<"status_code">> => StatusCode
+                }),
+                ReqReply = cowboy_req:reply(StatusCode, Headers, Body, Req),
                 {ok, ReqReply, State}
         end
     catch
@@ -134,6 +150,76 @@ handle(Req, #{transport_id := TransportId} = State) ->
     after
         erlmcp_tracing:end_span(SpanCtx)
     end.
+
+%%====================================================================
+%% Security Validation (FM-01 + FM-06)
+%%====================================================================
+
+%% @private Validate Origin and Headers before processing
+-spec validate_request_security(cowboy_req:req(), binary(), map()) ->
+    ok | {error, {integer(), #{binary() => binary()}, binary()}}.
+validate_request_security(Req, Method, Config) ->
+    %% Step 1: FM-01 - Validate Origin header (DNS rebinding protection)
+    Origin = cowboy_req:header(<<"origin">>, Req, undefined),
+    AllowedOrigins = maps:get(allowed_origins, Config,
+                              erlmcp_origin_validator:get_default_allowed_origins()),
+
+    case erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins) of
+        {ok, _ValidOrigin} ->
+            %% Step 2: FM-06 - Validate HTTP headers (protocol downgrade protection)
+            validate_http_headers(Req, Method);
+        {error, forbidden} ->
+            %% Origin validation failed - return 403 Forbidden
+            ErrorBody = jsx:encode(#{
+                <<"jsonrpc">> => <<"2.0">>,
+                <<"error">> => #{
+                    <<"code">> => -32600,
+                    <<"message">> => <<"Origin validation failed">>,
+                    <<"data">> => #{
+                        <<"origin">> => case Origin of
+                            undefined -> <<"undefined">>;
+                            _ -> Origin
+                        end,
+                        <<"reason">> => <<"DNS rebinding protection - origin not in allowed list">>
+                    }
+                }
+            }),
+            {error, {403, #{<<"content-type">> => <<"application/json">>}, ErrorBody}}
+    end.
+
+%% @private Validate HTTP headers
+-spec validate_http_headers(cowboy_req:req(), binary()) ->
+    ok | {error, {integer(), #{binary() => binary()}, binary()}}.
+validate_http_headers(Req, MethodBin) ->
+    %% Convert Cowboy headers map to list format expected by validator
+    HeadersMap = cowboy_req:headers(Req),
+    HeadersList = maps:to_list(HeadersMap),
+
+    %% Convert method binary to atom
+    Method = case MethodBin of
+        <<"GET">> -> get;
+        <<"POST">> -> post;
+        <<"DELETE">> -> delete;
+        <<"PUT">> -> put;
+        <<"PATCH">> -> patch;
+        <<"HEAD">> -> head;
+        <<"OPTIONS">> -> options;
+        _ -> get
+    end,
+
+    case erlmcp_http_header_validator:validate_request_headers(HeadersList, Method) of
+        {ok, _ValidatedHeaders} ->
+            ok;
+        {error, {StatusCode, Message, Data}} ->
+            %% Format JSON-RPC error response
+            {ErrorStatusCode, ErrorHeaders, ErrorBody} =
+                erlmcp_http_header_validator:format_error_response(StatusCode, Message, Data),
+            {error, {ErrorStatusCode, maps:from_list(ErrorHeaders), ErrorBody}}
+    end.
+
+%%====================================================================
+%% Request Handlers
+%%====================================================================
 
 handle_sse_stream(Req, TransportId, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_sse.handle_stream">>),
@@ -222,7 +308,7 @@ handle_post_request(Req, TransportId, State) ->
             end
     end.
 
-sse_event_loop(Req, StreamState, State) ->
+ sse_event_loop(Req, StreamState, State) ->
     receive
         ping ->
             %% Send keep-alive comment

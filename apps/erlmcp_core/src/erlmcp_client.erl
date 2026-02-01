@@ -216,6 +216,20 @@ remove_sampling_handler(Client) ->
 init([TransportOpts, Options]) ->
     process_flag(trap_exit, true),
 
+    % FM-09: Per-process heap limits to prevent OOM cascade
+    % Get configured max heap size (default 100 MB)
+    ResourceLimits = application:get_env(erlmcp, client_resource_limits, #{}),
+    MaxHeapMB = maps:get(max_heap_size_mb, ResourceLimits, 100),
+    MaxHeapWords = MaxHeapMB * 1024 * 1024 div erlang:system_info(wordsize),
+
+    % Set max heap size with kill action (process dies gracefully when exceeded)
+    % Supervisor will restart it, isolating the failure to this connection
+    process_flag(max_heap_size, #{
+        size => MaxHeapWords,
+        kill => true,
+        error_logger => true
+    }),
+
     % Fast init - just set up basic state, no blocking operations
     State = #state{
         strict_mode = maps:get(strict_mode, Options, false),
@@ -223,7 +237,7 @@ init([TransportOpts, Options]) ->
         subscriptions = sets:new()
     },
 
-    logger:info("Starting MCP client (async initialization)"),
+    logger:info("Starting MCP client (async initialization, max heap ~p MB)", [MaxHeapMB]),
     % Schedule async connection - won't block supervisor
     {ok, State, {continue, {connect, TransportOpts, Options}}}.
 

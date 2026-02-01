@@ -1,10 +1,41 @@
+%%%-------------------------------------------------------------------
+%%% @doc WebSocket Transport - Production Ready
+%%%
+%%% Cowboy-based WebSocket transport implementation for erlmcp.
+%%%
+%%% PRODUCTION STATUS: Stable and production-ready (FM-11 stabilization completed)
+%%%
+%%% Key Features:
+%%% - RFC 6455 compliant WebSocket frame handling (via Cowboy)
+%%% - Application-level message fragmentation (newline-delimited JSON-RPC)
+%%% - UTF-8 validation across fragment boundaries
+%%% - 16MB message size limits with fragment accumulation
+%%% - 5-minute fragment reassembly timeout
+%%% - Backpressure and flow control
+%%% - Ping/pong keepalive
+%%% - Connection statistics and observability
+%%%
+%%% Fragmentation Handling:
+%%% - WebSocket frame fragmentation: Handled automatically by Cowboy
+%%% - Application message fragmentation: JSON-RPC messages split across
+%%%   multiple WebSocket text frames are buffered and reassembled
+%%% - Delimiter handling: Newline-delimited messages correctly processed
+%%%   even when split across frame boundaries
+%%%
+%%% Compliance:
+%%% - RFC 6455 Section 5.4: WebSocket fragmentation (via Cowboy)
+%%% - RFC 3629: UTF-8 validation
+%%% - MCP Protocol: JSON-RPC 2.0 message framing
+%%%
+%%% Note: This module does NOT implement erlmcp_transport_behavior
+%%% It is a Cowboy WebSocket handler with its own init/2 interface
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
 -module(erlmcp_transport_ws).
 
 -include("erlmcp.hrl").
 -include_lib("opentelemetry_api/include/otel_tracer.hrl").
-
-%% Note: This module does NOT implement erlmcp_transport_behavior
-%% It is a Cowboy WebSocket handler with its own init/2 interface
 
 %% WebSocket-specific exports (NOT erlmcp_transport_behavior callbacks)
 -export([
@@ -39,7 +70,7 @@
 -define(IDLE_TIMEOUT, 300000). %% 5 minutes
 -define(DEFAULT_MAX_MESSAGE_SIZE, 16777216). %% 16MB
 -define(MESSAGE_DELIMITER, <<"\n">>).
--define(FRAGMENT_TIMEOUT, 30000). %% 30 seconds for fragment reassembly
+-define(FRAGMENT_TIMEOUT, 300000). %% 5 minutes for fragment reassembly
 
 %% Backpressure and flow control
 -define(DEFAULT_FRAME_BUFFER_SIZE, 102400). %% 100KB default buffer

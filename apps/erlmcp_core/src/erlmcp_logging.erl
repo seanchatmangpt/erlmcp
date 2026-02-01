@@ -10,6 +10,7 @@
 %%% - Structured JSON log entries with timestamps
 %%% - Log filtering by level and component
 %%% - Automatic cleanup on client disconnect
+%%% - FM-08: Secret redaction to prevent credential leakage
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -143,7 +144,7 @@ get_stats() ->
 %% @private
 -spec init([]) -> {ok, #state{}}.
 init([]) ->
-    logger:info("Starting MCP logging server"),
+    logger:info("Starting MCP logging server with FM-08 secret redaction"),
     {ok, #state{}}.
 
 %% @private
@@ -281,17 +282,21 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Internal log implementation with level checking.
+%% @doc Internal log implementation with level checking and FM-08 redaction.
 -spec do_log(pid(), atom(), binary(), binary(), map() | undefined, tuple()) -> term().
 do_log(ClientPid, Level, Component, Message, Data, State) ->
     case should_log(Level, ClientPid, State) of
         true ->
+            % FM-08: Redact secrets BEFORE storing in log buffer
+            RedactedMessage = erlmcp_logging_redactor:redact_message(Message),
+            RedactedData = erlmcp_logging_redactor:redact_data(Data),
+
             Entry = #{
                 <<"timestamp">> => erlang:system_time(millisecond),
                 <<"level">> => atom_to_binary(Level, utf8),
                 <<"component">> => Component,
-                <<"message">> => Message,
-                <<"data">> => Data
+                <<"message">> => RedactedMessage,
+                <<"data">> => RedactedData
             },
             Buffers = State#state.client_buffers,
             ClientLogs = maps:get(ClientPid, Buffers, []),
