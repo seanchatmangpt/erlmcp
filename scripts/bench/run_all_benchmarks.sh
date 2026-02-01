@@ -31,6 +31,7 @@
 ###   BASELINE_DIR         - Path to baseline results for comparison
 ###   METROLOGY_STRICT     - Fail on any metrology warning (default: true)
 ###   REGRESSION_THRESHOLD - Max allowed regression % (default: 10)
+###   ERLMCP_PROFILE       - Profile to use (dev|test|staging|prod), default: staging
 ###
 ###===================================================================
 
@@ -40,6 +41,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$PROJECT_ROOT"
+
+# ==============================================================================
+# Profile Configuration
+# ==============================================================================
+
+# Use staging profile for benchmarks (production-like, with logging)
+# Can override with ERLMCP_PROFILE=prod for extreme production scenarios
+ERLMCP_PROFILE="${ERLMCP_PROFILE:-staging}"
+
+# Validate profile (with graceful fallback to staging)
+VALIDATE_SCRIPT="$PROJECT_ROOT/scripts/validate_profile.sh"
+
+if [ -f "$VALIDATE_SCRIPT" ]; then
+    if ! "$VALIDATE_SCRIPT" "$ERLMCP_PROFILE" 2>/dev/null; then
+        echo "WARNING: Invalid profile '$ERLMCP_PROFILE', falling back to 'staging'"
+        ERLMCP_PROFILE=staging
+    fi
+else
+    echo "WARNING: validate_profile.sh not found, using profile: $ERLMCP_PROFILE"
+fi
+
+export ERLMCP_PROFILE
 
 # Colors for output
 RED='\033[0;31m'
@@ -99,6 +122,7 @@ print_banner() {
     echo -e "${BLUE}========================================${NC}"
     echo ""
     echo -e "${CYAN}Mode:${NC}            $MODE"
+    echo -e "${CYAN}Profile:${NC}         $ERLMCP_PROFILE"
     echo -e "${CYAN}Timestamp:${NC}       $TIMESTAMP"
     echo -e "${CYAN}Results:${NC}         $RESULTS_DIR"
     echo -e "${CYAN}Metrology:${NC}       ${METROLOGY_STRICT}"

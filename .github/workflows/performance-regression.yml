@@ -104,6 +104,14 @@ jobs:
             exit 1
           fi
 
+      - name: Capture performance test failure
+        if: failure() && steps.perf_tests.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: benchmark
+          otp-version: '27'
+
+
       - name: Parse test results
         id: results
         run: |
@@ -270,6 +278,13 @@ jobs:
             bench/baselines/comparison_*.html
             bench/baselines/*.json
           retention-days: 30
+      - name: Capture baseline comparison failure
+        if: failure() && steps.analysis.outcome == 'failure'
+        uses: ./.github/actions/capture-failure
+        with:
+          failure-type: benchmark
+          otp-version: '27'
+
 
       - name: Fail on regression
         if: steps.analysis.outputs.has_regression == 'true'

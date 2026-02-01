@@ -1,0 +1,26 @@
+{
+  "threshold_file": ".github/performance-thresholds.json",
+  "baseline_file": "reports/bench/baselines/baseline_latest.json",
+  "output_dir": "reports/bench",
+  "workloads": {
+    "quick": [
+      "core_ops_1k",
+      "tcp_quick_1k"
+    ],
+    "full": [
+      "core_ops_100k",
+      "tcp_sustained_10k",
+      "stress_30s_100k_ops",
+      "integration_mcp_tool_sequence"
+    ]
+  },
+  "timeout_seconds": {
+    "quick": 120,
+    "full": 600
+  },
+  "regression_detection": {
+    "enabled": true,
+    "compare_to_baseline": true,
+    "fail_on_regression": true
+  }
+}

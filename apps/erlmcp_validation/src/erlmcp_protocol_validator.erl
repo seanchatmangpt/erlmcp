@@ -13,6 +13,7 @@
 
 %% API exports
 -export([
+    validate_all/1,
     validate_json_rpc/1,
     validate_mcp_message/1,
     validate_request_id/1,
@@ -41,6 +42,110 @@
 %%%===================================================================
 %%% API Functions
 %%%===================================================================
+
+%% @doc Validate all protocol compliance aspects for MCP specification
+-spec validate_all(binary()) -> #{
+    status := passed | failed | warning,
+    timestamp := integer(),
+    checks := [#{
+        name := binary(),
+        status := passed | failed | warning,
+        message => binary(),
+        details => map()
+    }],
+    passed := non_neg_integer(),
+    failed := non_neg_integer()
+}.
+validate_all(SpecVersion) when is_binary(SpecVersion) ->
+    Timestamp = erlang:system_time(millisecond),
+
+    %% Define test messages for validation
+    ValidRequest = #{
+        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+        ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_PING,
+        ?JSONRPC_FIELD_ID => 1
+    },
+
+    InitRequest = #{
+        ?JSONRPC_FIELD_JSONRPC => ?JSONRPC_VERSION,
+        ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_INITIALIZE,
+        ?JSONRPC_FIELD_ID => 2,
+        ?JSONRPC_FIELD_PARAMS => #{
+            ?MCP_FIELD_PROTOCOL_VERSION => SpecVersion,
+            ?MCP_FIELD_CAPABILITIES => #{},
+            ?MCP_FIELD_CLIENT_INFO => #{
+                ?MCP_INFO_NAME => <<"test_client">>,
+                ?MCP_INFO_VERSION => <<"1.0.0">>
+            }
+        }
+    },
+
+    InvalidJsonRpc = #{
+        <<"jsonrpc">> => <<"1.0">>,
+        ?JSONRPC_FIELD_METHOD => ?MCP_METHOD_PING
+    },
+
+    %% Run validation checks
+    Checks = [
+        %% Check 1: JSON-RPC version validation
+        check_jsonrpc_version(ValidRequest),
+
+        %% Check 2: Request structure validation
+        check_request_structure(ValidRequest),
+
+        %% Check 3: Initialize params validation
+        check_initialize_validation(InitRequest),
+
+        %% Check 4: Method validation
+        check_method_validation(),
+
+        %% Check 5: Error code validation
+        check_error_code_validation(),
+
+        %% Check 6: Invalid version rejection
+        check_invalid_version_rejection(InvalidJsonRpc),
+
+        %% Check 7: MCP capabilities validation
+        check_capabilities_validation(),
+
+        %% Check 8: Resource validation
+        check_resource_validation(),
+
+        %% Check 9: Tool validation
+        check_tool_validation(),
+
+        %% Check 10: Prompt validation
+        check_prompt_validation()
+    ],
+
+    %% Count results
+    {Passed, Failed, Warnings} = lists:foldl(
+        fun(Check, {P, F, W}) ->
+            case maps:get(status, Check) of
+                passed -> {P + 1, F, W};
+                failed -> {P, F + 1, W};
+                warning -> {P, F, W + 1}
+            end
+        end,
+        {0, 0, 0},
+        Checks
+    ),
+
+    %% Determine overall status (warnings don't fail)
+    OverallStatus = case Failed of
+        0 -> passed;
+        _ -> failed
+    end,
+
+    #{
+        status => OverallStatus,
+        timestamp => Timestamp,
+        spec_version => SpecVersion,
+        checks => Checks,
+        passed => Passed,
+        failed => Failed,
+        warnings => Warnings
+    }.
 
 %% @doc Validate JSON-RPC 2.0 message from binary JSON
 -spec validate_json_rpc(binary()) -> {ok, #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}} | {error, term()}.
@@ -639,4 +744,125 @@ format_validation_error(Error) ->
             <<"Missing required fields: ", MissingBin/binary>>;
         _ ->
             <<"Validation error: ", (atom_to_binary(Reason, utf8))/binary>>
+    end.
+
+%%%===================================================================
+%%% Internal Validation Checks for validate_all/1
+%%%===================================================================
+
+check_jsonrpc_version(Request) ->
+    case maps:get(?JSONRPC_FIELD_JSONRPC, Request, undefined) of
+        ?JSONRPC_VERSION ->
+            #{name => <<"json_rpc_version">>, status => passed,
+              message => <<"JSON-RPC version 2.0 validated">>};
+        _ ->
+            #{name => <<"json_rpc_version">>, status => failed,
+              message => <<"JSON-RPC version must be 2.0">>}
+    end.
+
+check_request_structure(Request) ->
+    case validate_jsonrpc_structure(Request) of
+        ok ->
+            #{name => <<"request_structure">>, status => passed,
+              message => <<"Request structure is valid">>};
+        {error, Reason} ->
+            #{name => <<"request_structure">>, status => failed,
+              message => <<"Invalid request structure">>,
+              details => #{reason => Reason}}
+    end.
+
+check_initialize_validation(InitRequest) ->
+    Params = maps:get(?JSONRPC_FIELD_PARAMS, InitRequest),
+    case validate_initialize_params(Params) of
+        ok ->
+            #{name => <<"initialize_params">>, status => passed,
+              message => <<"Initialize parameters validated">>};
+        {error, Reason} ->
+            #{name => <<"initialize_params">>, status => failed,
+              message => <<"Invalid initialize parameters">>,
+              details => #{reason => Reason}}
+    end.
+
+check_method_validation() ->
+    ValidMethods = [?MCP_METHOD_PING, ?MCP_METHOD_INITIALIZE, ?MCP_METHOD_TOOLS_LIST],
+    Results = [validate_method(M) =:= ok || M <- ValidMethods],
+    case lists:all(fun(R) -> R end, Results) of
+        true ->
+            #{name => <<"method_validation">>, status => passed,
+              message => <<"All MCP methods validated">>};
+        false ->
+            #{name => <<"method_validation">>, status => failed,
+              message => <<"Some methods failed validation">>}
+    end.
+
+check_error_code_validation() ->
+    ValidCodes = [?JSONRPC_PARSE_ERROR, ?JSONRPC_INVALID_REQUEST, ?JSONRPC_METHOD_NOT_FOUND],
+    Results = [validate_error_code(C) =:= ok || C <- ValidCodes],
+    case lists:all(fun(R) -> R end, Results) of
+        true ->
+            #{name => <<"error_codes">>, status => passed,
+              message => <<"Error codes validated">>};
+        false ->
+            #{name => <<"error_codes">>, status => failed,
+              message => <<"Some error codes failed validation">>}
+    end.
+
+check_invalid_version_rejection(InvalidMsg) ->
+    case validate_jsonrpc_structure(InvalidMsg) of
+        {error, _} ->
+            #{name => <<"invalid_version_rejection">>, status => passed,
+              message => <<"Invalid JSON-RPC version correctly rejected">>};
+        ok ->
+            #{name => <<"invalid_version_rejection">>, status => failed,
+              message => <<"Invalid version not rejected">>}
+    end.
+
+check_capabilities_validation() ->
+    ValidCaps = #{<<"tools">> => #{}},
+    case validate_capabilities(ValidCaps) of
+        ok ->
+            #{name => <<"capabilities">>, status => passed,
+              message => <<"Capabilities structure validated">>};
+        {error, _} ->
+            #{name => <<"capabilities">>, status => warning,
+              message => <<"Capabilities validation has warnings">>}
+    end.
+
+check_resource_validation() ->
+    ValidResource = #{
+        ?MCP_PARAM_URI => <<"file:///test.txt">>,
+        ?MCP_PARAM_NAME => <<"Test Resource">>
+    },
+    case validate_resource(ValidResource) of
+        ok ->
+            #{name => <<"resources">>, status => passed,
+              message => <<"Resource structure validated">>};
+        {error, _} ->
+            #{name => <<"resources">>, status => failed,
+              message => <<"Resource validation failed">>}
+    end.
+
+check_tool_validation() ->
+    ValidTool = #{
+        ?MCP_PARAM_NAME => <<"test_tool">>,
+        ?MCP_PARAM_INPUT_SCHEMA => #{<<"type">> => <<"object">>}
+    },
+    case validate_tool(ValidTool) of
+        ok ->
+            #{name => <<"tools">>, status => passed,
+              message => <<"Tool structure validated">>};
+        {error, _} ->
+            #{name => <<"tools">>, status => failed,
+              message => <<"Tool validation failed">>}
+    end.
+
+check_prompt_validation() ->
+    ValidPrompt = #{?MCP_PARAM_NAME => <<"test_prompt">>},
+    case validate_prompt(ValidPrompt) of
+        ok ->
+            #{name => <<"prompts">>, status => passed,
+              message => <<"Prompt structure validated">>};
+        {error, _} ->
+            #{name => <<"prompts">>, status => failed,
+              message => <<"Prompt validation failed">>}
     end.

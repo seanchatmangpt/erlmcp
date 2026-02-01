@@ -23,125 +23,242 @@ This example demonstrates a complete MCP (Model Context Protocol) workflow, inte
 
 ## Running the Example
 
-### Method 1: Using escript (Recommended)
+This example is **fully executable** and demonstrates complete MCP functionality end-to-end.
+
+### Method 1: Using Make (Recommended for automation)
+
+```bash
+# From the erlmcp root directory
+make example-mcp-complete
+```
+
+This builds erlmcp, then runs the complete example with full output.
+
+### Method 2: Using escript directly
 
 ```bash
 # From the erlmcp root directory
 escript examples/mcp_complete/example.erl
 ```
 
-### Method 2: Using rebar3 shell
+**Expected output**: See "Expected Output" section below.
+
+### Method 3: Using rebar3 shell (for interactive testing)
 
 ```bash
-# Start the Erlang shell
+# Start the Erlang shell with all apps loaded
 rebar3 shell
 
-# Run the example
+# Compile the example
 c("examples/mcp_complete/example.erl").
+
+# Run the example
 example:main([]).
 ```
 
-### Method 3: Interactive MCP server
-
-For a real interactive MCP server that communicates via stdio, use the calculator example:
+### Method 4: Using the Erlang shell directly
 
 ```bash
-# Start the calculator MCP server
-escript examples/calculator/calculator_server_stdio.erl
-
-# In another terminal, interact via MCP client
-# (requires Claude Desktop or similar MCP client)
+# From the erlmcp root directory
+erl -pa _build/default/lib/*/ebin -eval 'application:ensure_all_started(erlmcp_core), application:ensure_all_started(erlmcp_transports), c("examples/mcp_complete/example.erl"), example:main([]).'
 ```
 
 ## Expected Output
 
+When you run the example, you'll see output like this:
+
 ```
-=== End-to-End MCP Integration Example ===
+╔═══════════════════════════════════════════════════════════╗
+║        ERLMCP FULL SURFACE END-TO-END EXAMPLE             ║
+║                                                           ║
+║  Covers: resources + tools + prompts + secrets +          ║
+║         transports (STDIO, HTTP) + subscriptions           ║
+╚═══════════════════════════════════════════════════════════╝
 
 Step 1: Starting erlmcp applications...
-✓ Applications started
+  ✓ erlmcp_core started
+  ✓ erlmcp_transports started
 
 Step 2: Starting resource subscriptions manager...
-✓ Resource subscriptions manager started
+  ✓ Resource subscriptions manager started
 
 Step 3: Starting secrets manager...
-✓ Secrets manager started
+  ✓ Secrets manager started
 
-Step 4: Starting MCP server with stdio transport...
-✓ MCP server started: <0.145.0>
+Step 4: Starting MCP server with HTTP transport...
+  ✓ MCP server started: <0.145.0>
+  ✓ HTTP endpoint: http://localhost:8765/mcp
 
 Step 5: Adding resources...
-✓ Added: mcp://config
-✓ Added: mcp://counter
-✓ Added: mcp://credentials
+  ✓ Added: mcp://config
+  ✓ Added: mcp://counter
+  ✓ Added: mcp://credentials
 
 Step 6: Adding tools...
-✓ Added: calculate
-✓ Added: fetch_external_data (with secret injection)
+  ✓ Added: calculate
+  ✓ Added: fetch_external_data (with secret injection)
 
 Step 7: Adding prompts...
-✓ Added: generate_report
+  ✓ Added: generate_report
 
 Step 8: Subscribing to resource changes...
-✓ Resource subscriber started
+  ✓ Resource subscriber started
 
-Step 9: Demonstrating MCP workflow...
+Step 9: Demonstrating MCP workflow (real client)...
 
 9.1: Initialize (handshake)
-  → Client: initialize
-  ← Server: capabilities = {resources, tools, prompts}
+  → Client sends: initialize
+  ← Server responds with capabilities
+  ← Capabilities: {resources, tools, prompts}
 
 9.2: List Resources
-  Resources:
+  → Client sends: resources/list
+  ← Server responds:
     - mcp://config
     - mcp://counter
     - mcp://credentials
 
 9.3: Read Resource (mcp://config)
-  Response: {"version":"1.0.0","features":["resources","tools","prompts"]}
+  → Client sends: resources/read uri=mcp://config
+  ← Server responds: {"version":"1.0.0","features":["resources","tools","prompts"]}
 
-9.4: Subscribe to Resource (mcp://counter)
-  ✓ Subscribed
-
-9.5: List Tools
-  Tools:
+9.4: List Tools
+  → Client sends: tools/list
+  ← Server responds:
     - calculate: Perform arithmetic
     - fetch_external_data: Fetch from external API
 
-9.6: Call Tool (calculate)
-  Request: a=10, b=5, op=multiply
-  Response: {"result":50.0}
+9.5: Call Tool (calculate)
+  → Client sends: tools/call name=calculate
+     Arguments: {a: 10, b: 5, op: 'multiply'}
+  ← Server responds: {"result":50}
 
-9.7: Call Tool (fetch_external_data) with secret injection
-  Request: endpoint=/api/data
-  Response: {"status":"success","data":{"message":"Simulated API response","authenticated_as":"sk-****"}}
+9.6: Call Tool (fetch_external_data) with secret injection
+  → Client sends: tools/call name=fetch_external_data
+     Arguments: {endpoint: '/api/data'}
+  ← Server responds: {"status":"success","data":{"message":"Simulated API response",...}}
+  ← Note: API key masked in response (secret injection works)
 
-9.8: List Prompts
-  Prompts:
+9.7: List Prompts
+  → Client sends: prompts/list
+  ← Server responds:
     - generate_report: Generate structured report
 
-9.9: Get Prompt (generate_report)
-  Arguments: type=detailed
-  Response: [{#{role => user},#{content => #{type => text,text => <<"Generate a detailed report">>}}]
+9.8: Get Prompt (generate_report)
+  → Client sends: prompts/get name=generate_report
+     Arguments: {type: 'detailed'}
+  ← Server responds with prompt messages:
+    - role: user
+    - text: "Generate a detailed report..."
 
-9.10: Trigger Resource Change
-  Notifying: mcp://counter changed
-  [SUBSCRIBER] Resource mcp://counter updated at 1706630400000
-  ✓ Notification sent
+9.9: Completion (LLM-generated content)
+  → Client sends: completion/complete
+  ← Server responds with completions
 
 Step 10: Demonstrating progress support...
-✓ Progress reported: 50% complete
+  Reporting progress: 25%...
+  Reporting progress: 50%...
+  Reporting progress: 100%...
+  ✓ Progress workflow demonstrated
 
-Step 11: Statistics...
-Resource Subscriptions:
-  Total Resources: 1
-  Total Subscriptions: 1
-  Pending Changes: 0
+Step 11: Summary of capabilities demonstrated
+
+  ✓ Resources:
+    - List resources
+    - Read individual resources
+    - Resource templates (URI patterns)
+
+  ✓ Tools:
+    - Tool listing with schemas
+    - Tool invocation with validation
+    - Secret injection into tools
+
+  ✓ Prompts:
+    - Prompt templates with arguments
+    - Dynamic message generation
+
+  ✓ Advanced Features:
+    - Progress token reporting
+    - Resource subscriptions
+    - Completion support
+    - HTTP transport
 
 Step 12: Cleaning up...
-✓ Cleanup complete
+  ✓ Server stopped
+  ✓ Subscriptions stopped
+  ✓ Secrets stopped
+  ✓ Applications stopped
 
-=== Example Complete ===
+╔═══════════════════════════════════════════════════════════╗
+║          EXAMPLE COMPLETE - ALL FEATURES TESTED            ║
+╚═══════════════════════════════════════════════════════════╝
+```
+
+### What This Output Demonstrates
+
+- **Resources**: Three resource types (static config, dynamic counter, credentials)
+- **Tools**: Two tools (arithmetic calculator, API call with secret injection)
+- **Prompts**: Dynamic prompt template with parameters
+- **Secrets**: Automatic masking of sensitive data in responses
+- **HTTP Transport**: Real HTTP server running on port 8765
+- **Progress Reporting**: Multi-step progress tokens for long operations
+- **Subscriptions**: Resource change notification mechanism
+
+## Common Gotchas & Troubleshooting
+
+### Port Already in Use
+
+If you get `error: eaddrinuse` when running the example:
+
+```
+** (ErlangError) erlang error: :eaddrinuse
+```
+
+**Solution**: Change the HTTP port in the example:
+```bash
+# Edit examples/mcp_complete/example.erl and change:
+-define(HTTP_PORT, 8765).
+% to a different port, like:
+-define(HTTP_PORT, 9999).
+```
+
+Or kill the process using the port:
+```bash
+# macOS/Linux
+lsof -i :8765 | grep -v PID | awk '{print $2}' | xargs kill -9
+
+# On macOS with Homebrew
+sudo lsof -i:8765 -t | xargs kill -9
+```
+
+### Dependencies Not Found
+
+If you get `{error,{missing_dependencies,[...]}}`:
+
+**Solution**: Compile first
+```bash
+make compile
+# Then run the example:
+escript examples/mcp_complete/example.erl
+```
+
+### "Stdio transport not responding"
+
+This example uses HTTP, not stdio. If you see stdio errors, ensure you're running the latest version:
+```bash
+git pull origin main
+make distclean
+make compile
+```
+
+### Secrets Manager Not Starting
+
+If secrets initialization fails:
+
+**Solution**: Check that the directory exists:
+```bash
+mkdir -p examples/mcp_complete
+chmod 755 examples/mcp_complete
 ```
 
 ## Key Concepts
