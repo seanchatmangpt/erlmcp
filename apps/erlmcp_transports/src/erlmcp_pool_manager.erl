@@ -559,9 +559,9 @@ resize_pool(State, NewSize) ->
                 catch exit(Pid, shutdown)
             end, RemovedConns),
 
-            RemainingConns = lists:filter(fun(Conn) ->
-                not lists:member(Conn, RemovedConns)
-            end, State#state.connections),
+            RemovedSet = sets:from_list(RemovedConns, [{version, 2}]),
+            RemainingConns = [Conn || Conn <- State#state.connections,
+                                      not sets:is_element(Conn, RemovedSet)],
 
             {ok, State#state{
                 connections = RemainingConns,
@@ -574,6 +574,7 @@ resize_pool(State, NewSize) ->
 %% @doc Remove idle connections for pool shrinking
 remove_idle_connections(IdleList, AllConns, Count) ->
     ToRemovePids = lists:sublist(IdleList, Count),
-    RemovedConns = [Conn || Conn <- AllConns, lists:member(Conn#connection.pid, ToRemovePids)],
+    ToRemoveSet = sets:from_list(ToRemovePids, [{version, 2}]),
+    RemovedConns = [Conn || Conn <- AllConns, sets:is_element(Conn#connection.pid, ToRemoveSet)],
     RemainingIdle = IdleList -- ToRemovePids,
     {RemovedConns, RemainingIdle}.

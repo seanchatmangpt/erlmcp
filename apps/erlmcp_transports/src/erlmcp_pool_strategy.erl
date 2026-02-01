@@ -74,7 +74,9 @@ select_connection({?MODULE, #{type := round_robin} = State}, Connections, IdleLi
         [] -> {error, no_idle_connections};
         _ ->
             Index = maps:get(index, State, 0),
-            SelectedPid = lists:nth((Index rem length(IdleList)) + 1, IdleList),
+            IdleTuple = list_to_tuple(IdleList),
+            Size = tuple_size(IdleTuple),
+            SelectedPid = element((Index rem Size) + 1, IdleTuple),
             {ok, SelectedPid}
     end;
 
@@ -82,11 +84,11 @@ select_connection({?MODULE, #{type := least_loaded}}, Connections, IdleList) ->
     case IdleList of
         [] -> {error, no_idle_connections};
         _ ->
-            IdleConns = [C || C <- Connections, lists:member(C#connection.pid, IdleList)],
+            IdleSet = sets:from_list(IdleList, [{version, 2}]),
+            IdleConns = [C || C <- Connections, sets:is_element(C#connection.pid, IdleSet)],
             case IdleConns of
                 [] -> {error, no_idle_connections};
                 _ ->
-                    %% Select connection with lowest request count
                     LeastLoaded = lists:foldl(fun(Conn, Acc) ->
                         case Acc of
                             undefined -> Conn;
@@ -106,8 +108,9 @@ select_connection({?MODULE, #{type := random}}, _Connections, IdleList) ->
     case IdleList of
         [] -> {error, no_idle_connections};
         _ ->
-            RandomIndex = rand:uniform(length(IdleList)),
-            SelectedPid = lists:nth(RandomIndex, IdleList),
+            IdleTuple = list_to_tuple(IdleList),
+            Size = tuple_size(IdleTuple),
+            SelectedPid = element(rand:uniform(Size), IdleTuple),
             {ok, SelectedPid}
     end;
 
@@ -133,7 +136,9 @@ round_robin_select(State, _Connections, IdleList) ->
         [] -> {error, no_idle_connections, State};
         _ ->
             Index = maps:get(index, State, 0),
-            SelectedPid = lists:nth((Index rem length(IdleList)) + 1, IdleList),
+            IdleTuple = list_to_tuple(IdleList),
+            Size = tuple_size(IdleTuple),
+            SelectedPid = element((Index rem Size) + 1, IdleTuple),
             NewState = State#{index => Index + 1},
             {ok, SelectedPid, NewState}
     end.
@@ -152,7 +157,8 @@ least_loaded_select(State, Connections, IdleList) ->
     case IdleList of
         [] -> {error, no_idle_connections, State};
         _ ->
-            IdleConns = [C || C <- Connections, lists:member(C#connection.pid, IdleList)],
+            IdleSet = sets:from_list(IdleList, [{version, 2}]),
+            IdleConns = [C || C <- Connections, sets:is_element(C#connection.pid, IdleSet)],
             case IdleConns of
                 [] -> {error, no_idle_connections, State};
                 _ ->
@@ -185,8 +191,9 @@ random_select(State, _Connections, IdleList) ->
     case IdleList of
         [] -> {error, no_idle_connections, State};
         _ ->
-            RandomIndex = rand:uniform(length(IdleList)),
-            SelectedPid = lists:nth(RandomIndex, IdleList),
+            IdleTuple = list_to_tuple(IdleList),
+            Size = tuple_size(IdleTuple),
+            SelectedPid = element(rand:uniform(Size), IdleTuple),
             {ok, SelectedPid, State}
     end.
 
