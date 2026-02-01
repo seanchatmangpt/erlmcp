@@ -1,0 +1,9 @@
+{
+  "compile": true,
+  "eunit": true,
+  "ct": true,
+  "coverage": true,
+  "dialyzer": true,
+  "xref": true,
+  "benchmarks": true
+}
