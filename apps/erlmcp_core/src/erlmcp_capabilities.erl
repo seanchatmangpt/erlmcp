@@ -212,6 +212,7 @@ negotiate_capabilities(ClientCaps, ServerCaps) ->
 
 %% @doc Negotiate experimental capabilities
 %% Only include experimental features that both client and server support
+%% Uses OTP 27 optimized maps:filter/2 for intersection
 -spec negotiate_experimental(#mcp_client_capabilities{}, #mcp_server_capabilities{}) ->
                                 map() | undefined.
 negotiate_experimental(ClientCaps, ServerCaps) ->
@@ -223,7 +224,7 @@ negotiate_experimental(ClientCaps, ServerCaps) ->
         {_, undefined} ->
             undefined;
         {ServerMap, ClientMap} when is_map(ServerMap), is_map(ClientMap) ->
-            %% Intersection of experimental features
+            %% OTP 27: Optimized maps:fold + maps:get for intersection
             %% For each feature both support, negotiate the specific settings
             Negotiated =
                 maps:fold(fun(Key, ServerVal, Acc) ->

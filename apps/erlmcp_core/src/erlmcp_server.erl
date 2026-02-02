@@ -199,13 +199,16 @@ init([ServerId, Capabilities]) ->
     process_flag(trap_exit, true),
 
     % Fast init - just set up basic state, no blocking operations
-    State = #state{server_id = ServerId, capabilities = Capabilities},
+
+    %% OTP 28: Create priority alias for urgent control signals
+    PriorityAlias = try_create_priority_alias(),
+    State = #state{server_id = ServerId, capabilities = Capabilities, priority_alias = PriorityAlias},
 
     logger:info("Starting MCP server ~p (async initialization)", [ServerId]),
     % Schedule async initialization - won't block supervisor
     {ok, State, {continue, initialize}}.
 
--spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
+-spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()} | {reply, term(), state(), hibernate}.
 handle_call({add_resource, Uri, Handler}, _From, State) ->
     %% Gap #41: Validate URI format before registration
     case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
@@ -230,7 +233,7 @@ handle_call({add_resource, Uri, Handler}, _From, State) ->
               {?JSONRPC_INVALID_PARAMS,
                atom_to_binary(Reason, utf8),
                #{<<"error_type">> => atom_to_binary(Reason, utf8), <<"uri">> => Uri}}},
-             State}
+             State, hibernate}
     end;
 handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) ->
     %% Gap #41: Validate URI template format before registration
@@ -407,9 +410,10 @@ handle_call(unregister_all_handlers, {CallerPid, _Tag}, State) ->
                     State#state.notification_handlers),
     {reply, ok, State#state{notification_handlers = NewHandlers}};
 handle_call(_Request, _From, State) ->
-    {reply, {error, unknown_request}, State}.
+    %% OTP 28: Hibernate on unknown requests to reduce memory footprint
+    {reply, {error, unknown_request}, State, hibernate}.
 
--spec handle_cast(term(), state()) -> {noreply, state()}.
+-spec handle_cast(term(), state()) -> {noreply, state()} | {noreply, state(), hibernate}.
 handle_cast({report_progress, Token, Progress, Total}, State) ->
     Notification =
         #mcp_progress_notification{progress_token = #mcp_progress_token{token = Token},
@@ -427,9 +431,9 @@ handle_cast(notify_resources_changed, State) ->
     {noreply, State};
 handle_cast(notify_tools_changed, State) ->
     NewState = maybe_send_tools_list_changed(State),
-    {noreply, NewState};
+    {noreply, NewState, hibernate};
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {noreply, State, hibernate}.
 
 -spec handle_continue(term(), state()) -> {noreply, state()}.
 %% Async initialization - doesn't block supervisor
@@ -585,8 +589,19 @@ handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
                     {noreply, State#state{notification_handlers = NewHandlers}}
             end
     end;
+%% OTP 28: Priority message with sender context
+handle_info({priority, From, Message}, State) ->
+    logger:debug("Server ~p received priority message from ~p: ~p", [State#state.server_id, From, Message]),
+    NewState = handle_priority_message(Message, From, State),
+    {noreply, NewState};
+%% OTP 28: Urgent system message without sender context
+handle_info({urgent, Message}, State) ->
+    logger:warning("Server ~p received urgent message: ~p", [State#state.server_id, Message]),
+    NewState = handle_urgent_message(Message, State),
+    {noreply, NewState};
 handle_info(_Info, State) ->
-    {noreply, State}.
+    %% OTP 28: Hibernate on unknown info messages to reduce memory footprint
+    {noreply, State, hibernate}.
 
 %%====================================================================
 %% Internal functions - List Change Notifications (Gap #6)
@@ -3873,3 +3888,76 @@ format_completion_item(Item) ->
         _ ->
             BaseItem#{<<"label">> => Label}
     end.
+
+%%====================================================================
+%% Internal Functions - OTP 28 Priority Messages (EEP-76)
+%%====================================================================
+
+%% @doc Try to create OTP 28 priority alias (graceful degradation).
+%% @private
+-spec try_create_priority_alias() -> erlang:alias() | undefined.
+try_create_priority_alias() ->
+    try
+        erlmcp_priority:create_priority_alias()
+    catch
+        _:_ ->
+            %% OTP < 28: Priority queues not available, degrade gracefully
+            logger:info("Priority message queues not available (requires OTP 28+)"),
+            undefined
+    end.
+
+%% @doc Handle priority message with sender context.
+%% @private
+-spec handle_priority_message(term(), pid(), state()) -> state().
+handle_priority_message({ping, Ref}, From, State) ->
+    %% Health check - respond immediately
+    From ! {pong, Ref},
+    State;
+handle_priority_message({cancel_operation, RequestId}, _From, State) ->
+    %% Cancellation request - handle via cancellation module
+    case maps:take(RequestId, State#state.cancellable_requests) of
+        {CancelRef, NewCancellable} ->
+            erlmcp_cancellation:cancel(CancelRef),
+            logger:info("Server ~p: Cancelled operation ~p via priority signal",
+                       [State#state.server_id, RequestId]),
+            State#state{cancellable_requests = NewCancellable};
+        error ->
+            logger:debug("Server ~p: Operation ~p not found for priority cancellation",
+                        [State#state.server_id, RequestId]),
+            State
+    end;
+handle_priority_message({force_refresh, Resources}, _From, State) ->
+    %% Force resource refresh - urgent update
+    logger:info("Server ~p: Force refreshing resources via priority signal",
+               [State#state.server_id]),
+    %% Trigger resource change notification
+    notify_resources_changed(State),
+    State;
+handle_priority_message(_Message, _From, State) ->
+    %% Unknown priority message - log and ignore
+    State.
+
+%% @doc Handle urgent system message without sender context.
+%% @private
+-spec handle_urgent_message(term(), state()) -> state().
+handle_urgent_message(shutdown, State) ->
+    %% System shutdown - initiate graceful shutdown
+    logger:warning("Server ~p received urgent shutdown signal", [State#state.server_id]),
+    %% Stop will be handled by supervisor
+    State;
+handle_urgent_message({critical_error, Reason}, State) ->
+    %% Critical error - log and alert
+    logger:error("Server ~p critical error: ~p", [State#state.server_id, Reason]),
+    State;
+handle_urgent_message({emergency_gc}, State) ->
+    %% Emergency garbage collection - memory pressure
+    Before = erlang:memory(total),
+    _ = garbage_collect(),
+    After = erlang:memory(total),
+    Freed = Before - After,
+    logger:warning("Server ~p: Emergency GC freed ~p bytes (~.2f MB)",
+                  [State#state.server_id, Freed, Freed / (1024 * 1024)]),
+    State;
+handle_urgent_message(_Message, State) ->
+    %% Unknown urgent message - log and ignore
+    State.

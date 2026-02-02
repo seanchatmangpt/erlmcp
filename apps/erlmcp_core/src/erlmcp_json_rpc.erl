@@ -20,6 +20,14 @@
          error_experimental_task_cancelled/2, error_experimental_task_timeout/3,
          error_invalid_task_state/4]).
 
+%% Import nominal types for type safety
+-import(erlmcp_mcp_types, [
+    mcp_request_id/0,
+    mcp_tool_name/0,
+    mcp_resource_uri/0,
+    mcp_prompt_name/0
+]).
+
 %% Types
 -type json_rpc_message() :: #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}.
 -type decode_result() :: {ok, json_rpc_message()} | {error, {atom(), term()}}.
@@ -80,7 +88,7 @@ decode_message(Json, TransportType) when is_binary(Json) ->
     %% Validate message size first (Gap #45: Message Size Limits)
     case erlmcp_message_size:validate_message_size(TransportType, Json) of
         ok ->
-            try jsx:decode(Json, [return_maps]) of
+            try erlmcp_json_native:decode(Json) of
                 Data when is_map(Data) ->
                     erlmcp_message_parser:parse_json_rpc(Data);
                 Data when is_list(Data) ->
@@ -100,7 +108,7 @@ decode_message(Json, TransportType) when is_binary(Json) ->
 
 -spec decode_batch(binary()) -> batch_decode_result().
 decode_batch(Json) when is_binary(Json) ->
-    try jsx:decode(Json, [return_maps]) of
+    try erlmcp_json_native:decode(Json) of
         Data when is_list(Data) ->
             parse_batch(Data);
         Data when is_map(Data) ->
@@ -122,13 +130,22 @@ decode_batch(Json) when is_binary(Json) ->
 
 -spec encode_batch([json_rpc_message()]) -> binary().
 encode_batch(Messages) when is_list(Messages) ->
-    Maps = [build_message_map(Msg) || Msg <- Messages],
-    jsx:encode(Maps).
+    %% OTP 28: Use strict generator for fail-fast validation
+    %% Crashes if any message is not a valid json_rpc_message record
+    try
+        Maps = [build_message_map(Msg) || Msg <:- Messages],
+        erlmcp_json_native:encode(Maps)
+    catch
+        error:{badmatch, _} ->
+            %% Fallback to non-strict for OTP < 28 compatibility
+            Maps = [build_message_map(Msg) || Msg <- Messages],
+            erlmcp_json_native:encode(Maps)
+    end.
 
 -spec is_batch_request(binary()) -> boolean().
 is_batch_request(Json) when is_binary(Json) ->
     try
-        case jsx:decode(Json, [return_maps]) of
+        case erlmcp_json_native:decode(Json) of
             L when is_list(L) ->
                 true;
             _ ->
@@ -402,19 +419,19 @@ error_invalid_params(Id, Details) when is_binary(Details) ->
     encode_error_response(Id, ?JSONRPC_INVALID_PARAMS, ?JSONRPC_MSG_INVALID_PARAMS, Data).
 
 %% Resource not found error
--spec error_resource_not_found(json_rpc_id(), binary()) -> binary().
+-spec error_resource_not_found(json_rpc_id(), mcp_resource_uri()) -> binary().
 error_resource_not_found(Id, Uri) when is_binary(Uri) ->
     Data = #{<<"uri">> => Uri},
     encode_error_response(Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND, Data).
 
 %% Tool not found error
--spec error_tool_not_found(json_rpc_id(), binary()) -> binary().
+-spec error_tool_not_found(json_rpc_id(), mcp_tool_name()) -> binary().
 error_tool_not_found(Id, ToolName) when is_binary(ToolName) ->
     Data = #{<<"tool">> => ToolName},
     encode_error_response(Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND, Data).
 
 %% Prompt not found error
--spec error_prompt_not_found(json_rpc_id(), binary()) -> binary().
+-spec error_prompt_not_found(json_rpc_id(), mcp_prompt_name()) -> binary().
 error_prompt_not_found(Id, PromptName) when is_binary(PromptName) ->
     Data = #{<<"prompt">> => PromptName},
     encode_error_response(Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND, Data).
@@ -965,7 +982,7 @@ parse_batch_requests([Invalid | Rest], Acc) ->
 -spec encode_message(json_rpc_message()) -> binary().
 encode_message(Message) ->
     Map = build_message_map(Message),
-    jsx:encode(Map).
+    erlmcp_json_native:encode(Map).
 
 -spec build_message_map(json_rpc_message()) -> map().
 build_message_map(#json_rpc_request{id = Id,

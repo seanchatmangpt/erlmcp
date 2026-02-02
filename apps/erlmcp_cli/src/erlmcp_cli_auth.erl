@@ -13,13 +13,11 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, authenticate/2, authenticate/3,
-         refresh_token/1, validate_token/1, get_session_info/1,
-         logout/1, list_sessions/0, clear_expired/0,
-         enable_mtls/1, disable_mtls/0, set_jwt_provider/2]).
+-export([start_link/0, authenticate/2, authenticate/3, refresh_token/1, validate_token/1,
+         get_session_info/1, logout/1, list_sessions/0, clear_expired/0, enable_mtls/1,
+         disable_mtls/0, set_jwt_provider/2]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 -include("erlmcp_observability.hrl").
@@ -34,7 +32,6 @@
          session_timeout :: integer(),         % Session timeout
          security_level :: atom(),             % Security level
          metrics :: map()}).                    % Authentication metrics
-
 %% Session record
 -record(session,
         {id :: binary(),
@@ -58,7 +55,6 @@
           <<"mtls_ca_file">> => undefined,
           <<"mtls_cert_file">> => undefined,
           <<"mtls_key_file">> => undefined}).
-
 -define(SERVER, ?MODULE).
 
 %%====================================================================
@@ -133,47 +129,50 @@ set_jwt_provider(Provider, Config) ->
 -spec init(term()) -> {ok, #auth_state{}} | {stop, term()}.
 init(_Args) ->
     %% Create OTEL span for authentication manager initialization
-    SpanCtx = erlmcp_otel:with_span("cli.auth.init",
-                          #{<<"module">> => atom_to_binary(?MODULE, utf8)},
-                          fun() ->
-                             %% Load configuration
-                             Config = load_config(),
+    SpanCtx =
+        erlmcp_otel:with_span("cli.auth.init",
+                              #{<<"module">> => atom_to_binary(?MODULE, utf8)},
+                              fun() ->
+                                 %% Load configuration
+                                 Config = load_config(),
 
-                             %% Initialize state
-                             DefaultConfig = ?DEFAULT_CONFIG,
-                             MergedConfig = maps:merge(DefaultConfig, Config),
+                                 %% Initialize state
+                                 DefaultConfig = ?DEFAULT_CONFIG,
+                                 MergedConfig = maps:merge(DefaultConfig, Config),
 
-                             Sessions = #{},
-                             JwtTokens = #{},
-                             AuthProviders = load_auth_providers(MergedConfig),
+                                 Sessions = #{},
+                                 JwtTokens = #{},
+                                 AuthProviders = load_auth_providers(MergedConfig),
 
-                             State = #auth_state{
-                                sessions = Sessions,
-                                jwt_tokens = JwtTokens,
-                                mtls_config = MergedConfig,
-                                auth_providers = AuthProviders,
-                                token_cache_ttl = maps:get(<<"token_cache_ttl">>, MergedConfig),
-                                session_timeout = maps:get(<<"session_timeout">>, MergedConfig),
-                                security_level = maps:get(<<"security_level">>, MergedConfig),
-                                metrics = init_metrics()
-                             },
+                                 State =
+                                     #auth_state{sessions = Sessions,
+                                                 jwt_tokens = JwtTokens,
+                                                 mtls_config = MergedConfig,
+                                                 auth_providers = AuthProviders,
+                                                 token_cache_ttl =
+                                                     maps:get(<<"token_cache_ttl">>, MergedConfig),
+                                                 session_timeout =
+                                                     maps:get(<<"session_timeout">>, MergedConfig),
+                                                 security_level =
+                                                     maps:get(<<"security_level">>, MergedConfig),
+                                                 metrics = init_metrics()},
 
-                             %% Start cleanup timer
-                             erlang:send_after(300000, self(), cleanup_sessions),
+                                 %% Start cleanup timer
+                                 erlang:send_after(300000, self(), cleanup_sessions),
 
-                             %% Record initialization
-                             erlmcp_metrics:record("cli.auth.initialized", 1),
-                             {ok, State}
-                          end).
+                                 %% Record initialization
+                                 erlmcp_metrics:record("cli.auth.initialized", 1),
+                                 {ok, State}
+                              end).
 
 %% @doc Handle synchronous calls
--spec handle_call(term(), {pid(), term()}, #auth_state{}) ->
-                   {reply, term(), #auth_state{}}.
+-spec handle_call(term(), {pid(), term()}, #auth_state{}) -> {reply, term(), #auth_state{}}.
 handle_call({authenticate, Username, Password, Options}, _From, State) ->
     %% Create OTEL span for authentication
-    SpanCtx = erlmcp_otel:inject_span("cli.auth.authenticate",
-                                     #{<<"username">> => Username, <<"options">> => Options},
-                                     undefined),
+    SpanCtx =
+        erlmcp_otel:inject_span("cli.auth.authenticate",
+                                #{<<"username">> => Username, <<"options">> => Options},
+                                undefined),
 
     try
         %% Determine authentication method
@@ -205,7 +204,6 @@ handle_call({authenticate, Username, Password, Options}, _From, State) ->
             erlmcp_metrics:record("cli.auth.error", 1),
             {reply, {error, Reason}, State}
     end;
-
 handle_call({refresh_token, Token}, _From, State) ->
     %% Create OTEL span for token refresh
     SpanCtx = erlmcp_otel:inject_span("cli.auth.refresh_token", #{}, undefined),
@@ -235,7 +233,6 @@ handle_call({refresh_token, Token}, _From, State) ->
             erlmcp_otel:record_error(SpanCtx, {refresh_error, Error, Reason}),
             {reply, {error, Reason}, State}
     end;
-
 handle_call({validate_token, Token}, _From, State) ->
     try
         case validate_token_internal(Token, State) of
@@ -248,7 +245,6 @@ handle_call({validate_token, Token}, _From, State) ->
         Error:Reason ->
             {reply, {error, {validation_error, Error, Reason}}, State}
     end;
-
 handle_call({get_session_info, SessionId}, _From, State) ->
     try
         case maps:find(SessionId, State#auth_state.sessions) of
@@ -262,12 +258,10 @@ handle_call({get_session_info, SessionId}, _From, State) ->
         Error:Reason ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call({logout, SessionId}, _From, State) ->
     %% Create OTEL span for logout
-    SpanCtx = erlmcp_otel:inject_span("cli.auth.logout",
-                                     #{<<"session_id">> => SessionId},
-                                     undefined),
+    SpanCtx =
+        erlmcp_otel:inject_span("cli.auth.logout", #{<<"session_id">> => SessionId}, undefined),
 
     try
         case maps:find(SessionId, State#auth_state.sessions) of
@@ -292,11 +286,9 @@ handle_call({logout, SessionId}, _From, State) ->
             erlmcp_otel:record_error(SpanCtx, {logout_error, Error, Reason}),
             {reply, {error, Reason}, State}
     end;
-
 handle_call(list_sessions, _From, State) ->
     SessionList = lists:map(fun format_session_info/1, maps:values(State#auth_state.sessions)),
     {reply, {ok, SessionList}, State};
-
 handle_call({enable_mtls, Config}, _From, State) ->
     %% Create OTEL span for MTLS enablement
     SpanCtx = erlmcp_otel:inject_span("cli.auth.enable_mtls", #{}, undefined),
@@ -328,7 +320,6 @@ handle_call({enable_mtls, Config}, _From, State) ->
             erlmcp_otel:record_error(SpanCtx, {mtls_enable_error, Error, Reason}),
             {reply, {error, Reason}, State}
     end;
-
 handle_call(disable_mtls, _From, State) ->
     %% Create OTEL span for MTLS disablement
     SpanCtx = erlmcp_otel:inject_span("cli.auth.disable_mtls", #{}, undefined),
@@ -345,12 +336,12 @@ handle_call(disable_mtls, _From, State) ->
     erlmcp_metrics:record("cli.auth.mtls_disabled", 1),
 
     {reply, ok, NewState};
-
 handle_call({set_jwt_provider, Provider, Config}, _From, State) ->
     %% Create OTEL span for JWT provider setup
-    SpanCtx = erlmcp_otel:inject_span("cli.auth.set_jwt_provider",
-                                     #{<<"provider">> => Provider},
-                                     undefined),
+    SpanCtx =
+        erlmcp_otel:inject_span("cli.auth.set_jwt_provider",
+                                #{<<"provider">> => Provider},
+                                undefined),
 
     try
         case validate_jwt_provider(Provider, Config) of
@@ -371,7 +362,6 @@ handle_call({set_jwt_provider, Provider, Config}, _From, State) ->
             erlmcp_otel:record_error(SpanCtx, {jwt_provider_error, Error, Reason}),
             {reply, {error, Reason}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
@@ -385,22 +375,26 @@ handle_cast(clear_expired, State) ->
     CleanupThreshold = State#auth_state.session_timeout,
 
     %% Filter out expired sessions
-    ActiveSessions = maps:filter(fun(_SessionId, Session) ->
-                                     Now - Session#session.last_activity < CleanupThreshold
-                                 end, State#auth_state.sessions),
+    ActiveSessions =
+        maps:filter(fun(_SessionId, Session) ->
+                       Now - Session#session.last_activity < CleanupThreshold
+                    end,
+                    State#auth_state.sessions),
 
     RemovedCount = maps:size(State#auth_state.sessions) - maps:size(ActiveSessions),
 
     %% Invalidate tokens for removed sessions
-    lists:foreach(fun({_SessionId, Session}) ->
-                         invalidate_jwt_token(Session#session.token, State)
-                     end, maps:to_list(maps:to_list(State#auth_state.sessions) -- maps:to_list(ActiveSessions))),
+    lists:foreach(fun({_SessionId, Session}) -> invalidate_jwt_token(Session#session.token, State)
+                  end,
+                  maps:to_list(maps:to_list(State#auth_state.sessions)
+                               -- maps:to_list(ActiveSessions))),
 
-    erlmcp_otel:record_event(SpanCtx, <<"sessions.cleaned">>, #{<<"removed_count">> => RemovedCount}),
+    erlmcp_otel:record_event(SpanCtx,
+                             <<"sessions.cleaned">>,
+                             #{<<"removed_count">> => RemovedCount}),
     erlmcp_metrics:record("cli.auth.sessions_removed", RemovedCount),
 
     {noreply, State#auth_state{sessions = ActiveSessions}};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -413,7 +407,6 @@ handle_info(cleanup_sessions, State) ->
     %% Schedule next cleanup
     erlang:send_after(300000, self(), cleanup_sessions),
     {noreply, State};
-
 handle_info({session_timeout, SessionId}, State) ->
     %% Session timeout occurred
     case maps:find(SessionId, State#auth_state.sessions) of
@@ -430,7 +423,6 @@ handle_info({session_timeout, SessionId}, State) ->
         error ->
             {noreply, State}
     end;
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -442,14 +434,14 @@ terminate(_Reason, State) ->
                           #{<<"active_sessions">> => maps:size(State#auth_state.sessions)},
                           fun() ->
                              %% Clear all sessions
-                            lists:foreach(fun({_SessionId, Session}) ->
-                                             invalidate_jwt_token(Session#session.token, State)
-                                         end, maps:to_list(State#auth_state.sessions)),
+                             lists:foreach(fun({_SessionId, Session}) ->
+                                              invalidate_jwt_token(Session#session.token, State)
+                                           end,
+                                           maps:to_list(State#auth_state.sessions)),
 
                              %% Invalidate all cached tokens
-                            lists:foreach(fun({_Token, _Claims}) ->
-                                             ok
-                                         end, maps:to_list(State#auth_state.jwt_tokens)),
+                             lists:foreach(fun({_Token, _Claims}) -> ok end,
+                                           maps:to_list(State#auth_state.jwt_tokens)),
 
                              %% Record final metrics
                              erlmcp_metrics:record("cli.auth.terminated", 1),
@@ -482,26 +474,31 @@ load_config() ->
 -spec load_env_config() -> map().
 load_env_config() ->
     %% Environment variable mappings
-    EnvMappings = #{
-        <<"ERLMCP_AUTH_SECURITY_LEVEL">> => <<"security_level">>,
-        <<"ERLMCP_AUTH_SESSION_TIMEOUT">> => <<"session_timeout">>,
-        <<"ERLMCP_AUTH_TOKEN_CACHE_TTL">> => <<"token_cache_ttl">>,
-        <<"ERLMCP_AUTH_ENABLE_MTLS">> => <<"enable_mtls">>,
-        <<"ERLMCP_AUTH_JWT_PROVIDER">> => <<"jwt_provider">>
-    },
+    EnvMappings =
+        #{<<"ERLMCP_AUTH_SECURITY_LEVEL">> => <<"security_level">>,
+          <<"ERLMCP_AUTH_SESSION_TIMEOUT">> => <<"session_timeout">>,
+          <<"ERLMCP_AUTH_TOKEN_CACHE_TTL">> => <<"token_cache_ttl">>,
+          <<"ERLMCP_AUTH_ENABLE_MTLS">> => <<"enable_mtls">>,
+          <<"ERLMCP_AUTH_JWT_PROVIDER">> => <<"jwt_provider">>},
 
     lists:foldl(fun({EnvVar, ConfigKey}, Acc) ->
-                       case os:getenv(binary_to_list(EnvVar)) of
-                           false -> Acc;
-                           Value -> set_nested_config(ConfigKey, Value, Acc)
-                       end
-                   end, #{}, EnvMappings).
+                   case os:getenv(binary_to_list(EnvVar)) of
+                       false ->
+                           Acc;
+                       Value ->
+                           set_nested_config(ConfigKey, Value, Acc)
+                   end
+                end,
+                #{},
+                EnvMappings).
 
 %% @doc Load file configuration
 -spec load_file_config() -> map().
 load_file_config() ->
     try
-        ConfigFile = filename:join(os:getenv("HOME", "."), ".erlmcp_auth.json"),
+        ConfigFile =
+            filename:join(
+                os:getenv("HOME", "."), ".erlmcp_auth.json"),
         case file:read_file(ConfigFile) of
             {ok, Content} ->
                 jsx:decode(Content, [{labels, binary}, return_maps]);
@@ -523,12 +520,11 @@ load_auth_providers(Config) ->
     Providers = #{},
 
     %% Load internal provider
-    InternalConfig = #{
-        <<"type">> => internal,
-        <<"algorithm">> => maps:get(<<"jwt_algorithm">>, Config, RS256),
-        <<"secret">> => get_jwt_secret(),
-        <<"issuer">> => <<"erlmcp_cli">>
-    },
+    InternalConfig =
+        #{<<"type">> => internal,
+          <<"algorithm">> => maps:get(<<"jwt_algorithm">>, Config, RS256),
+          <<"secret">> => get_jwt_secret(),
+          <<"issuer">> => <<"erlmcp_cli">>},
     maps:put(<<"internal">>, InternalConfig, Providers).
 
 %% @doc Determine authentication method
@@ -549,14 +545,16 @@ determine_auth_method(State, Options) ->
     end.
 
 %% @doc Perform authentication
--spec perform_authentication(atom(), binary(), binary(), #auth_state{}) -> {ok, binary(), binary()} | {error, term()}.
+-spec perform_authentication(atom(), binary(), binary(), #auth_state{}) ->
+                                {ok, binary(), binary()} | {error, term()}.
 perform_authentication(mtls, Username, Password, State) ->
     perform_mtls_authentication(Username, Password, State);
 perform_authentication(jwt, Username, Password, State) ->
     perform_jwt_authentication(Username, Password, State).
 
 %% @doc Perform JWT authentication
--spec perform_jwt_authentication(binary(), binary(), #auth_state{}) -> {ok, binary(), binary()} | {error, term()}.
+-spec perform_jwt_authentication(binary(), binary(), #auth_state{}) ->
+                                    {ok, binary(), binary()} | {error, term()}.
 perform_jwt_authentication(Username, Password, State) ->
     try
         %% Get JWT provider
@@ -582,39 +580,16 @@ perform_jwt_authentication(Username, Password, State) ->
     end.
 
 %% @doc Perform MTLS authentication
--spec perform_mtls_authentication(binary(), binary(), #auth_state{}) -> {ok, binary(), binary()} | {error, term()}.
-perform_mtls_authentication(Username, Password, State) ->
-    try
+-spec perform_mtls_authentication(binary(), binary(), #auth_state{}) ->
+                                     {ok, binary(), binary()} | {error, term()}.
+perform_mtls_authentication( Username , Password , State ) -> try case State #auth_state .
+mtls_config of Config when is_map( Config ) -> case extract_mtls_certificates( Config ) of { ok , CertData } -> case validate_certificate_chain( CertData , Config ) of ok -> Authenticate via certificate and optional password case erlmcp_auth : validate_certificate( CertData , Username , Password ) of { ok , Claims } -> Token = generate_jwt_token( Claims , Config ) , { ok , SessionId = generate_session_id( ) , Token } ; { error , Reason } -> { error , Reason } end ; { error , Reason } -> { error , { certificate_validation_failed , Reason } } end ; { error , Reason } -> { error , { certificate_extraction_failed , Reason } } end ; _ -> { error , mtls_not_enabled } end catch Error : Reason -> { error , { mtls_error , Error , Reason } } end .
+
         %% Validate MTLS configuration
-        case State#auth_state.mtls_config of
-            Config when is_map(Config) ->
+
                 %% Extract certificates from the connection
-                case extract_mtls_certificates(Config) of
-                    {ok, CertData} ->
+
                         %% Validate certificate chain
-                        case validate_certificate_chain(CertData, Config) of
-                            ok ->
-                                Authenticate via certificate and optional password
-                                case erlmcp_auth:validate_certificate(CertData, Username, Password) of
-                                    {ok, Claims} ->
-                                        Token = generate_jwt_token(Claims, Config),
-                                        {ok, SessionId = generate_session_id(), Token};
-                                    {error, Reason} ->
-                                        {error, Reason}
-                                end;
-                            {error, Reason} ->
-                                {error, {certificate_validation_failed, Reason}}
-                        end;
-                    {error, Reason} ->
-                        {error, {certificate_extraction_failed, Reason}}
-                end;
-            _ ->
-                {error, mtls_not_enabled}
-        end
-    catch
-        Error:Reason ->
-            {error, {mtls_error, Error, Reason}}
-    end.
 
 %% @doc Validate token internally
 -spec validate_token_internal(binary(), #auth_state{}) -> {ok, map()} | {error, term()}.
@@ -653,48 +628,42 @@ validate_token_internal(Token, State) ->
 %% @doc Create session record
 -spec create_session(binary(), binary(), map(), #auth_state{}) -> #session{}.
 create_session(User, Token, Options, State) ->
-    #session{
-        id = generate_session_id(),
-        user = User,
-        token = Token,
-        mtls_cert = maps:get(<<"mtls_cert">>, Options, undefined),
-        created = erlang:system_time(millisecond),
-        last_activity = erlang:system_time(millisecond),
-        expires = erlang:system_time(millisecond) + State#auth_state.session_timeout,
-        permissions = maps:get(<<"permissions">>, Options, []),
-        metadata = maps:get(<<"metadata">>, Options, #{})
-    }.
+    #session{id = generate_session_id(),
+             user = User,
+             token = Token,
+             mtls_cert = maps:get(<<"mtls_cert">>, Options, undefined),
+             created = erlang:system_time(millisecond),
+             last_activity = erlang:system_time(millisecond),
+             expires = erlang:system_time(millisecond) + State#auth_state.session_timeout,
+             permissions = maps:get(<<"permissions">>, Options, []),
+             metadata = maps:get(<<"metadata">>, Options, #{})}.
 
 %% @doc Format session information
 -spec format_session_info(#session{}) -> map().
 format_session_info(Session) ->
-    #{
-        <<"id">> => Session#session.id,
-        <<"user">> => Session#session.user,
-        <<"created">> => Session#session.created,
-        <<"last_activity">> => Session#session.last_activity,
-        <<"expires">> => Session#session.expires,
-        <<"permissions">> => Session#session.permissions,
-        <<"metadata">> => Session#session.metadata
-    }.
+    #{<<"id">> => Session#session.id,
+      <<"user">> => Session#session.user,
+      <<"created">> => Session#session.created,
+      <<"last_activity">> => Session#session.last_activity,
+      <<"expires">> => Session#session.expires,
+      <<"permissions">> => Session#session.permissions,
+      <<"metadata">> => Session#session.metadata}.
 
 %% @doc Generate JWT token
 -spec generate_jwt_token(map(), map()) -> binary().
 generate_jwt_token(Claims, ProviderConfig) ->
     try
         %% Add standard claims
-        EnhancedClaims = Claims#{
-            <<"iat">> => erlang:system_time(second),
-            <<"exp">> => erlang:system_time(second) + 3600, % 1 hour expiration
-            <<"iss">> => maps:get(<<"issuer">>, ProviderConfig, <<"erlmcp_cli">>),
-            <<"aud">> => <<"erlmcp">>
-        },
+        EnhancedClaims =
+            Claims#{<<"iat">> => erlang:system_time(second),
+                    <<"exp">> => erlang:system_time(second) + 3600, % 1 hour expiration
+                    <<"iss">> => maps:get(<<"issuer">>, ProviderConfig, <<"erlmcp_cli">>),
+                    <<"aud">> => <<"erlmcp">>},
 
         %% Generate token (simplified for implementation)
-        Header = #{
-            <<"alg">> => atom_to_binary(maps:get(<<"algorithm">>, ProviderConfig, RS256)),
-            <<"typ">> => <<"JWT">>
-        },
+        Header =
+            #{<<"alg">> => atom_to_binary(maps:get(<<"algorithm">>, ProviderConfig, RS256)),
+              <<"typ">> => <<"JWT">>},
 
         Payload = jsx:encode(EnhancedClaims),
         HeaderEncoded = base64url_encode(jsx:encode(Header)),
@@ -711,7 +680,8 @@ generate_jwt_token(Claims, ProviderConfig) ->
 -spec base64url_encode(binary()) -> binary().
 base64url_encode(Data) ->
     Base64 = base64:encode(Data),
-    string:replace(string:replace(Base64, "+", "-"), "/", "_", {return, binary}).
+    string:replace(
+        string:replace(Base64, "+", "-"), "/", "_", {return, binary}).
 
 %% @doc Invalidate JWT token
 -spec invalidate_jwt_token(binary(), #auth_state{}) -> ok.
@@ -750,13 +720,18 @@ validate_jwt_token(Token, State) ->
 %% @doc Base64url decode function
 -spec base64url_decode(binary()) -> binary().
 base64url_encode(Data) ->
-    Padding = case byte_size(Data) rem 4 of
-        2 -> <<"==">>;
-        3 -> <<"=">>;
-        _ -> <<>>
-    end,
+    Padding =
+        case byte_size(Data) rem 4 of
+            2 ->
+                <<"==">>;
+            3 ->
+                <<"=">>;
+            _ ->
+                <<>>
+        end,
     Base64 = list_to_binary([Data, Padding]),
-    binary:replace(binary:replace(Base64, <<"-">>, <<"+">>), <<"_">>, <<"/">>),
+    binary:replace(
+        binary:replace(Base64, <<"-">>, <<"+">>), <<"_">>, <<"/">>),
     base64:decode(Base64).
 
 %% @doc Verify token signature (simplified)
@@ -806,11 +781,14 @@ set_nested_config(Key, Value, Config) ->
 -spec set_nested_config_parts([binary()], term(), map()) -> map().
 set_nested_config_parts([Part], Value, Map) ->
     maps:put(Part, Value, Map);
-set_nested_config_parts([Part|Rest], Value, Map) ->
-    SubMap = case maps:get(Part, Map, undefined) of
-                 undefined -> #{};
-                 Existing when is_map(Existing) -> Existing
-             end,
+set_nested_config_parts([Part | Rest], Value, Map) ->
+    SubMap =
+        case maps:get(Part, Map, undefined) of
+            undefined ->
+                #{};
+            Existing when is_map(Existing) ->
+                Existing
+        end,
     NewSubMap = set_nested_config_parts(Rest, Value, SubMap),
     maps:put(Part, NewSubMap, Map).
 
@@ -821,8 +799,10 @@ validate_mtls_config(Config) ->
     case maps:find(<<"mtls_cert_file">>, Config) of
         {ok, CertFile} ->
             case filelib:is_file(CertFile) of
-                true -> ok;
-                false -> {error, cert_file_not_found}
+                true ->
+                    ok;
+                false ->
+                    {error, cert_file_not_found}
             end;
         error ->
             {error, missing_cert_file}
@@ -843,16 +823,19 @@ load_mtls_certificates(Config) ->
         {ok, KeyData} = file:read_file(KeyFile),
 
         %% Load CA certificate if provided
-        CaData = case CaFile of
-            undefined -> undefined;
-            _ -> {ok, Data} = file:read_file(CaFile), Data
-        end,
+        CaData =
+            case CaFile of
+                undefined ->
+                    undefined;
+                _ ->
+                    {ok, Data} = file:read_file(CaFile),
+                    Data
+            end,
 
-        {ok, #{
-            <<"cert">> => CertData,
-            <<"key">> => KeyData,
-            <<"ca">> => CaData
-        }}
+        {ok,
+         #{<<"cert">> => CertData,
+           <<"key">> => KeyData,
+           <<"ca">> => CaData}}
     catch
         Error:Reason ->
             {error, {certificate_load_failed, Error, Reason}}
@@ -879,14 +862,18 @@ validate_jwt_provider(Provider, Config) ->
         <<"internal">> ->
             %% Internal provider validation
             case maps:get(<<"secret">>, Config, undefined) of
-                undefined -> {error, missing_secret};
-                _ -> ok
+                undefined ->
+                    {error, missing_secret};
+                _ ->
+                    ok
             end;
         _ ->
             %% External provider validation
             case maps:get(<<"url">>, Config, undefined) of
-                undefined -> {error, missing_provider_url};
-                _ -> ok
+                undefined ->
+                    {error, missing_provider_url};
+                _ ->
+                    ok
             end
     end.
 

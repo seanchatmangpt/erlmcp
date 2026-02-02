@@ -13,14 +13,11 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, handle_error/2, handle_error/3,
-         create_error/2, create_error/3, create_error/4,
-         get_error_code/1, get_error_message/1,
-         is_retryable/1, should_retry/2, retry_with_backoff/2,
-         log_error/2, record_error_metrics/2]).
+-export([start_link/0, handle_error/2, handle_error/3, create_error/2, create_error/3,
+         create_error/4, get_error_code/1, get_error_message/1, is_retryable/1, should_retry/2,
+         retry_with_backoff/2, log_error/2, record_error_metrics/2]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 -include("erlmcp_observability.hrl").
@@ -36,8 +33,7 @@
 
 %% MCP Error Codes (-32000 to -32099)
 -define(MCP_ERROR_CODES,
-        #{
-          %% -32000 to -32099: Internal errors
+        #{%% -32000 to -32099: Internal errors
           -32000 => {internal_error, "Internal error"},
           -32001 => {internal_error, "Parse error"},
           -32002 => {internal_error, "Invalid request"},
@@ -137,13 +133,10 @@
           -32096 => {internal_error, "File error"},
           -32097 => {internal_error, "File not found"},
           -32098 => {internal_error, "File permission denied"},
-          -32099 => {internal_error, "File system error"}
-        }).
-
+          -32099 => {internal_error, "File system error"}}).
 %% Error categories
 -define(ERROR_CATEGORIES,
-        #{
-          internal => {-32000, -32099},
+        #{internal => {-32000, -32099},
           network => {-32022, -32075},
           resource => {-32012, -32021},
           security => {-32008, -32050},
@@ -151,9 +144,7 @@
           operation => {-32017, -32025},
           service => {-32062, -32076},
           database => {-32077, -32088},
-          system => {-32088, -32099}
-        }).
-
+          system => {-32088, -32099}}).
 %% Default error thresholds
 -define(DEFAULT_THRESHOLDS,
         #{retry_max_attempts => 3,
@@ -162,7 +153,6 @@
           error_rate_limit => 1000,
           error_log_threshold => 10,
           error_alert_threshold => 100}).
-
 -define(SERVER, ?MODULE).
 
 %%====================================================================
@@ -193,21 +183,23 @@ create_error(Code, Data) ->
 -spec create_error(integer(), term(), map()) -> map().
 create_error(Code, Data, Metadata) ->
     #{<<"jsonrpc">> => <<"2.0">>,
-      <<"error">> => #{<<"code">> => Code,
-                      <<"message">> => get_error_message(Code),
-                      <<"data">> => #{<<"error">> => Data,
-                                    <<"metadata">> => Metadata}},
+      <<"error">> =>
+          #{<<"code">> => Code,
+            <<"message">> => get_error_message(Code),
+            <<"data">> => #{<<"error">> => Data, <<"metadata">> => Metadata}},
       <<"id">> => null}.
 
 %% @doc Create error response with cause
 -spec create_error(integer(), term(), map(), term()) -> map().
 create_error(Code, Data, Metadata, Cause) ->
     #{<<"jsonrpc">> => <<"2.0">>,
-      <<"error">> => #{<<"code">> => Code,
-                      <<"message">> => get_error_message(Code),
-                      <<"data">> => #{<<"error">> => Data,
-                                    <<"metadata">> => Metadata,
-                                    <<"cause">> => Cause}},
+      <<"error">> =>
+          #{<<"code">> => Code,
+            <<"message">> => get_error_message(Code),
+            <<"data">> =>
+                #{<<"error">> => Data,
+                  <<"metadata">> => Metadata,
+                  <<"cause">> => Cause}},
       <<"id">> => null}.
 
 %% @doc Get error code from error response
@@ -219,21 +211,30 @@ get_error_code(Response) ->
 -spec get_error_message(map()) -> binary().
 get_error_message(Response) ->
     case maps:get(<<"error">>, Response) of
-        undefined -> <<"Internal error">>;
-        Error -> maps:get(<<"message">>, Error, <<"Unknown error">>)
+        undefined ->
+            <<"Internal error">>;
+        Error ->
+            maps:get(<<"message">>, Error, <<"Unknown error">>)
     end.
 
 %% @doc Check if error is retryable
 -spec is_retryable(term()) -> boolean().
 is_retryable(Error) ->
     case Error of
-        {error, Reason} when Reason == timeout; Reason == connection_refused;
-                           Reason == network_error; Reason == service_unavailable ->
+        {error, Reason}
+            when Reason == timeout;
+                 Reason == connection_refused;
+                 Reason == network_error;
+                 Reason == service_unavailable ->
             true;
-        {error, {network, Reason}} -> true;
-        {error, {timeout, _}} -> true;
-        {error, {retryable, _}} -> true;
-        _ -> false
+        {error, {network, Reason}} ->
+            true;
+        {error, {timeout, _}} ->
+            true;
+        {error, {retryable, _}} ->
+            true;
+        _ ->
+            false
     end.
 
 %% @doc Check if error should be retried
@@ -285,14 +286,13 @@ init(_Args) ->
                              %% Initialize error handlers
                              Handlers = init_error_handlers(),
 
-                             State = #error_state{
-                                error_registry = ErrorRegistry,
-                                error_patterns = ErrorPatterns,
-                                recovery_strategies = RecoveryStrategies,
-                                metrics = Metrics,
-                                thresholds = Thresholds,
-                                handlers = Handlers
-                             },
+                             State =
+                                 #error_state{error_registry = ErrorRegistry,
+                                              error_patterns = ErrorPatterns,
+                                              recovery_strategies = RecoveryStrategies,
+                                              metrics = Metrics,
+                                              thresholds = Thresholds,
+                                              handlers = Handlers},
 
                              %% Start error cleanup timer
                              erlang:send_after(300000, self(), cleanup_errors), % 5 minutes
@@ -302,14 +302,11 @@ init(_Args) ->
                           end).
 
 %% @doc Handle synchronous calls
--spec handle_call(term(), {pid(), term()}, #error_state{}) ->
-                   {reply, term(), #error_state{}}.
+-spec handle_call(term(), {pid(), term()}, #error_state{}) -> {reply, term(), #error_state{}}.
 handle_call(get_error_registry, _From, State) ->
     {reply, State#error_state.error_registry, State};
-
 handle_call(get_error_metrics, _From, State) ->
     {reply, State#error_state.metrics, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
@@ -317,9 +314,10 @@ handle_call(_Request, _From, State) ->
 -spec handle_cast(term(), #error_state{}) -> {noreply, #error_state{}}.
 handle_cast({handle_error, Error, Context, Options}, State) ->
     %% Create OTEL span for error handling
-    SpanCtx = erlmcp_otel:inject_span("cli.error.handle",
-                                     #{<<"error_type">> => format_error_type(Error)},
-                                     undefined),
+    SpanCtx =
+        erlmcp_otel:inject_span("cli.error.handle",
+                                #{<<"error_type">> => format_error_type(Error)},
+                                undefined),
 
     try
         %% Log error
@@ -348,20 +346,18 @@ handle_cast({handle_error, Error, Context, Options}, State) ->
             lager:warning("Error handler failed: ~p:~p", [Error1, Reason1]),
             {noreply, State}
     end;
-
 handle_cast({log_error, Error, Context}, State) ->
     log_error_internal(Error, Context, State),
     {noreply, State};
-
 handle_cast({record_error_metrics, Error, Context}, State) ->
     record_error_metrics_internal(Error, Context, State),
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @doc Handle messages
--spec handle_info(term(), #error_state{}) -> {noreply, #error_state{}}}.
+-spec handle_info( term( ) , #error_state{ } ) -> { noreply , #error_state{ } } } .
+
 handle_info(cleanup_errors, State) ->
     %% Create OTEL span for error cleanup
     SpanCtx = erlmcp_otel:inject_span("cli.error.cleanup", #{}, undefined),
@@ -370,19 +366,19 @@ handle_info(cleanup_errors, State) ->
     Now = erlang:system_time(millisecond),
     CleanupThreshold = 86400000, % 24 hours
 
-    OldMetrics = maps:filter(fun(_Error, Timestamp) ->
-                                   Now - Timestamp > CleanupThreshold
-                               end, State#error_state.metrics),
+    OldMetrics =
+        maps:filter(fun(_Error, Timestamp) -> Now - Timestamp > CleanupThreshold end,
+                    State#error_state.metrics),
 
-    erlmcp_otel:record_event(SpanCtx, <<"errors.cleaned">>,
-                          #{<<"cleaned_count">> => maps:size(OldMetrics)}),
+    erlmcp_otel:record_event(SpanCtx,
+                             <<"errors.cleaned">>,
+                             #{<<"cleaned_count">> => maps:size(OldMetrics)}),
     erlmcp_metrics:record("cli.error.cleanup.executed", 1),
 
     %% Schedule next cleanup
     erlang:send_after(300000, self(), cleanup_errors),
 
     {noreply, State#error_state{metrics = OldMetrics}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -394,9 +390,8 @@ terminate(_Reason, State) ->
                           #{<<"error_count">> => maps:size(State#error_state.metrics)},
                           fun() ->
                              %% Notify error handlers of shutdown
-                             lists:foreach(fun(Handler) ->
-                                             Handler ! {error_handler_shutdown}
-                                         end, State#error_state.handlers),
+                             lists:foreach(fun(Handler) -> Handler ! {error_handler_shutdown} end,
+                                           State#error_state.handlers),
 
                              %% Record final metrics
                              erlmcp_metrics:record("cli.error.terminated", 1),
@@ -416,8 +411,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @doc Initialize error patterns
 -spec init_error_patterns() -> map().
 init_error_patterns() ->
-    #{
-      {network, timeout} => {-32049, retryable},
+    #{{network, timeout} => {-32049, retryable},
       {network, connection_refused} => {-32050, retryable},
       {network, connection_timeout} => {-32051, retryable},
       {network, connection_reset} => {-32052, retryable},
@@ -443,17 +437,14 @@ init_error_patterns() ->
       {resource, resource_already_exists} => {-32013, non_retryable},
       {resource, resource_busy} => {-32014, retryable},
       {resource, resource_conflict} => {-32015, non_retryable},
-      {resource, resource_limit_exceeded} => {-32016, non_retryable}
-    }.
+      {resource, resource_limit_exceeded} => {-32016, non_retryable}}.
 
 %% @doc Initialize recovery strategies
 -spec init_recovery_strategies() -> map().
 init_recovery_strategies() ->
-    #{
-      retryable => {retry, 1000},
+    #{retryable => {retry, 1000},
       non_retryable => {fallback, default_fallback},
-      unknown => {escalate, high}
-    }.
+      unknown => {escalate, high}}.
 
 %% @doc Initialize error handlers
 -spec init_error_handlers() -> list().
@@ -462,20 +453,30 @@ init_error_handlers() ->
     [].
 
 %% @doc Get recovery strategy
--spec get_recovery_strategy(term(), #error_state{}) -> {retry, integer()} | {fallback, term()} | {escalate, atom()} | {ignore, term()} | {log_only, term()} | unknown.
+-spec get_recovery_strategy(term(), #error_state{}) ->
+                               {retry, integer()} |
+                               {fallback, term()} |
+                               {escalate, atom()} |
+                               {ignore, term()} |
+                               {log_only, term()} |
+                               unknown.
 get_recovery_strategy(Error, State) ->
     try
         %% Match error pattern
         case match_error_pattern(Error, State) of
             {Code, Type} ->
                 case maps:get(Type, State#error_state.recovery_strategies, unknown) of
-                    unknown -> unknown;
-                    Strategy -> Strategy
+                    unknown ->
+                        unknown;
+                    Strategy ->
+                        Strategy
                 end;
-            unknown -> unknown
+            unknown ->
+                unknown
         end
     catch
-        _ -> unknown
+        _ ->
+            unknown
     end.
 
 %% @doc Match error pattern
@@ -489,20 +490,27 @@ match_error_pattern(Error, State) ->
             case maps:get({Category, Reason}, ErrorPatterns, unknown) of
                 unknown ->
                     case maps:get({Category, any}, ErrorPatterns, unknown) of
-                        unknown -> unknown;
-                        Pattern -> Pattern
+                        unknown ->
+                            unknown;
+                        Pattern ->
+                            Pattern
                     end;
-                Pattern -> Pattern
+                Pattern ->
+                    Pattern
             end;
         {error, Reason} ->
             case maps:get({any, Reason}, ErrorPatterns, unknown) of
-                unknown -> unknown;
-                Pattern -> Pattern
+                unknown ->
+                    unknown;
+                Pattern ->
+                    Pattern
             end;
         Reason ->
             case maps:get({any, Reason}, ErrorPatterns, unknown) of
-                unknown -> unknown;
-                Pattern -> Pattern
+                unknown ->
+                    unknown;
+                Pattern ->
+                    Pattern
             end
     end.
 
@@ -539,9 +547,8 @@ handle_escalate_error(Error, Context, Severity, State) ->
     send_escalation_alert(Error, Context, Severity),
 
     %% Notify handlers
-    lists:foreach(fun(Handler) ->
-                     Handler ! {error_escalated, Error, Context, Severity}
-                 end, State#error_state.handlers),
+    lists:foreach(fun(Handler) -> Handler ! {error_escalated, Error, Context, Severity} end,
+                  State#error_state.handlers),
 
     {noreply, State}.
 
@@ -596,19 +603,21 @@ execute_default_fallback(_Context) ->
 -spec send_escalation_alert(term(), term(), atom()) -> ok.
 send_escalation_alert(Error, Context, Severity) ->
     %% Send alert to monitoring system
-    Alert = #{<<"error">> => Error,
-              <<"context">> => Context,
-              <<"severity">> => Severity,
-              <<"timestamp">> => erlang:system_time(millisecond)},
+    Alert =
+        #{<<"error">> => Error,
+          <<"context">> => Context,
+          <<"severity">> => Severity,
+          <<"timestamp">> => erlang:system_time(millisecond)},
     erlmcp_observability:send_alert(Alert).
 
 %% @doc Log error internally
 -spec log_error_internal(term(), term(), #error_state{}) -> ok.
 log_error_internal(Error, Context, State) ->
     %% Log to error log
-    LogEntry = #{<<"error">> => Error,
-                <<"context">> => Context,
-                <<"timestamp">> => erlang:system_time(millisecond)},
+    LogEntry =
+        #{<<"error">> => Error,
+          <<"context">> => Context,
+          <<"timestamp">> => erlang:system_time(millisecond)},
 
     %% Log to file
     log_to_file(LogEntry),
@@ -632,9 +641,11 @@ record_error_metrics_internal(Error, Context, State) ->
 -spec check_error_rate_thresholds(#error_state{}, map()) -> ok.
 check_error_rate_thresholds(State, Metrics) ->
     %% Check if error rate exceeds threshold
-    RecentErrors = lists:filter(fun({_, Timestamp}) ->
-                                   erlang:system_time(millisecond) - Timestamp < 60000 % 1 minute
-                               end, maps:to_list(Metrics)),
+    RecentErrors =
+        lists:filter(fun({_, Timestamp}) ->
+                        erlang:system_time(millisecond) - Timestamp < 60000 % 1 minute
+                     end,
+                     maps:to_list(Metrics)),
 
     ErrorCount = length(RecentErrors),
     AlertThreshold = maps:get(error_alert_threshold, State#error_state.thresholds, 100),
@@ -648,38 +659,31 @@ check_error_rate_thresholds(State, Metrics) ->
 %% @doc Send error rate alert
 -spec send_error_rate_alert(integer(), integer()) -> ok.
 send_error_rate_alert(ErrorCount, AlertThreshold) ->
-    Alert = #{<<"type">> => <<"error_rate_alert">>,
-              <<"error_count">> => ErrorCount,
-              <<"threshold">> => AlertThreshold,
-              <<"timestamp">> => erlang:system_time(millisecond)},
+    Alert =
+        #{<<"type">> => <<"error_rate_alert">>,
+          <<"error_count">> => ErrorCount,
+          <<"threshold">> => AlertThreshold,
+          <<"timestamp">> => erlang:system_time(millisecond)},
     erlmcp_observability:send_alert(Alert).
 
 %% @doc Log to file
 -spec log_to_file(map()) -> ok.
-log_to_file(LogEntry) ->
-    try
-        LogFile = filename:join(os:getenv("HOME", "."), ".erlmcp_errors.log"),
-        LogLine = jsx:encode(LogEntry) <<"\n">>,
-        case file:open(LogFile, [append, binary]) of
-            {ok, File} ->
-                file:write(File, LogLine),
-                file:close(File);
-            {error, _} ->
-                ok
-        end
-    catch
-        _ -> ok
-    end.
+log_to_file( LogEntry ) -> try LogFile = filename : join( os : getenv( "HOME" , "." ) , ".erlmcp_errors.log" ) , LogLine = jsx : encode( LogEntry ) << "\n" >> , case file : open( LogFile , [ append , binary ] ) of { ok , File } -> file : write( File , LogLine ) , file : close( File ) ; { error , _ } -> ok end catch _ -> ok end .
 
 %% @doc Format error type
 -spec format_error_type(term()) -> binary().
 format_error_type(Error) ->
     case Error of
-        {error, {Category, _}} -> atom_to_binary(Category, utf8);
-        {error, Category} -> atom_to_binary(Category, utf8);
-        {Category, _} -> atom_to_binary(Category, utf8);
-        Category -> atom_to_binary(Category, utf8);
-        _ -> <<"unknown_error">>
+        {error, {Category, _}} ->
+            atom_to_binary(Category, utf8);
+        {error, Category} ->
+            atom_to_binary(Category, utf8);
+        {Category, _} ->
+            atom_to_binary(Category, utf8);
+        Category ->
+            atom_to_binary(Category, utf8);
+        _ ->
+            <<"unknown_error">>
     end.
 
 %% @doc Initialize metrics
@@ -698,11 +702,13 @@ init_metrics() ->
 -spec retry_with_backoff(fun(), integer(), integer(), integer()) -> {ok, term()} | {error, term()}.
 retry_with_backoff(Operation, Attempts, CurrentAttempt, Delay) ->
     case Operation() of
-        {ok, Result} -> {ok, Result};
+        {ok, Result} ->
+            {ok, Result};
         {error, Error} when Attempts > 0 ->
             case is_retryable(Error) of
                 true ->
-                    BackoffDelay = min(Delay * 2, maps:get(retry_max_delay, ?DEFAULT_THRESHOLDS, 30000)),
+                    BackoffDelay =
+                        min(Delay * 2, maps:get(retry_max_delay, ?DEFAULT_THRESHOLDS, 30000)),
                     timer:sleep(BackoffDelay),
                     retry_with_backoff(Operation, Attempts - 1, CurrentAttempt + 1, BackoffDelay);
                 false ->

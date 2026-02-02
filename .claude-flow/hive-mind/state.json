@@ -1,17 +1,57 @@
 {
   "initialized": true,
-  "topology": "hierarchical-mesh",
-  "workers": [],
+  "topology": "mesh",
+  "workers": [
+    "consensus-worker-1770010744635-e05f",
+    "consensus-worker-1770010744635-470s",
+    "consensus-worker-1770010744635-b1gg",
+    "consensus-worker-1770010744635-fghk",
+    "consensus-worker-1770010744635-vqlz"
+  ],
   "consensus": {
-    "pending": [],
-    "history": []
+    "pending": [
+      {
+        "proposalId": "proposal-1770010782744-gnodih",
+        "type": "feature-addition",
+        "value": "{\"action\": \"add-neural-compression\", \"priority\": \"low\", \"description\": \"Add neural model compression capabilities\", \"benefit\": \"Storage efficiency\", \"cost\": \"development time\"}",
+        "proposedBy": "system",
+        "proposedAt": "2026-02-02T05:39:42.744Z",
+        "votes": {
+          "queen-agent": true,
+          "consensus-worker-1770010744635-e05f": true
+        },
+        "status": "pending"
+      }
+    ],
+    "history": [
+      {
+        "proposalId": "proposal-1770010749557-l5nzhx",
+        "type": "workflow-optimization",
+        "result": "approved",
+        "votes": {
+          "for": 4,
+          "against": 1
+        },
+        "decidedAt": "2026-02-02T05:39:21.596Z"
+      },
+      {
+        "proposalId": "proposal-1770010766215-d8imxv",
+        "type": "memory-optimization",
+        "result": "rejected",
+        "votes": {
+          "for": 1,
+          "against": 4
+        },
+        "decidedAt": "2026-02-02T05:39:37.899Z"
+      }
+    ]
   },
   "sharedMemory": {},
-  "createdAt": "2026-02-01T20:44:52.816Z",
-  "updatedAt": "2026-02-01T20:44:52.816Z",
+  "createdAt": "2026-02-02T05:39:01.192Z",
+  "updatedAt": "2026-02-02T05:39:47.183Z",
   "queen": {
-    "agentId": "queen-1769978692816",
-    "electedAt": "2026-02-01T20:44:52.816Z",
+    "agentId": "queen-agent",
+    "electedAt": "2026-02-02T05:39:01.192Z",
     "term": 1
   }
 }

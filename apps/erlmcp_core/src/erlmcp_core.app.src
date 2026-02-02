@@ -119,7 +119,10 @@
     erlmcp_sse_event_store,
     erlmcp_subscription,
     erlmcp_tool,
-    erlmcp_uri_validator
+    erlmcp_uri_validator,
+    %% OTP 28 Process Introspection
+    erlmcp_inspector,
+    erlmcp_admin
 ]},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
