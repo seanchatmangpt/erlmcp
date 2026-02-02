@@ -90,7 +90,7 @@ export_snapshot() ->
                  processes => Processes},
 
     %% Encode as JSON
-    jsx:encode(Snapshot, [space]).
+    erlmcp_json_native:encode(Snapshot).
 
 %% @doc Format inspection result for human-readable display.
 %% Returns formatted iolist suitable for console output.

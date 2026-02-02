@@ -497,7 +497,7 @@ save_secrets_to_storage(Secrets) ->
 encrypt_secrets(Secrets) ->
     try
         %% Serialize secrets
-        Serialized = jsx:encode(Secrets),
+        Serialized = erlmcp_json_native:encode(Secrets),
 
         %% Encrypt using erlmcp_secrets
         case erlmcp_secrets:encrypt(Serialized) of

@@ -9,7 +9,7 @@ load_plan(Plan) ->
     PlanFile = atom_to_list(Plan) ++ ".json",
     case file:read_file(PlanFile) of
         {ok, Binary} ->
-            case jsx:decode(Binary, [return_maps]) of
+            case erlmcp_json_native:decode(Binary) of
                 PlanData when is_map(PlanData) ->
                     case jesse:validate_with_schema(SchemaPath, PlanData) of
                         {ok, Validated} ->

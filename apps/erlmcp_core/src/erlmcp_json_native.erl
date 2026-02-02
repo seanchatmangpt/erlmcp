@@ -4,6 +4,7 @@
 %% No backward compatibility - OTP 27+ required
 %% All decode operations return maps (not atoms) for object keys
 %% All encode operations return binaries (not iolists) for compatibility
+%% Full UTF-8 support for international text (Japanese, Arabic, emoji, etc.)
 %%
 %% This module provides a drop-in replacement for jsx with native JSON
 %% from OTP 27+ (EEP-68). Benefits:
@@ -11,6 +12,7 @@
 %% - RFC 8259 compliant
 %% - Faster than jsx for most operations
 %% - Built into stdlib (no external dependency)
+%% - Native UTF-8 encoding/decoding
 
 -export([encode/1, encode/2, decode/1, decode/2]).
 
@@ -30,11 +32,14 @@
 
 %% @doc Encode Erlang term to JSON binary
 %% Equivalent to jsx:encode/1 but returns binary instead of iolist
+%% Automatically preserves UTF-8 encoding for all binary strings
 %%
 %% Examples:
 %% ```
 %% > erlmcp_json_native:encode(#{<<"foo">> => <<"bar">>}).
 %% <<"{\"foo\":\"bar\"}">>
+%% > erlmcp_json_native:encode(#{<<"text">> => <<"こんにちは世界">>}).
+%% <<"{\"text\":\"こんにちは世界\"}">>
 %% '''
 -spec encode(json_term()) -> binary().
 encode(Term) ->
@@ -63,11 +68,14 @@ encode(Term, _Opts) ->
 
 %% @doc Decode JSON binary to Erlang term
 %% Always returns maps (not atoms) for object keys
+%% Automatically preserves UTF-8 encoding for all string values
 %%
 %% Examples:
 %% ```
 %% > erlmcp_json_native:decode(<<"{\"foo\":\"bar\"}">>).
 %% #{<<"foo">> => <<"bar">>}
+%% > erlmcp_json_native:decode(<<"{\"text\":\"مرحبا بالعالم\"}">>).
+%% #{<<"text">> => <<"مرحبا بالعالم">>}
 %% '''
 -spec decode(binary()) -> json_term().
 decode(Binary) when is_binary(Binary) ->

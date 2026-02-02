@@ -263,13 +263,13 @@ handle_cast({received_data, Data}, State) ->
     %% Process received data
     try
         %% Parse JSON-RPC request
-        JsonData = jsx:decode(Data, [{labels, binary}]),
+        JsonData = erlmcp_json_native:decode(Data),
 
         %% Forward to JSON-RPC handler
         case erlmcp_cli_json_rpc:handle_json_rpc(Data, #{}, State#stdio_state.session_id) of
             {ok, Response} ->
                 %% Send response back to stdout
-                io:format("~s~n", [jsx:encode(Response)]);
+                io:format("~s~n", [erlmcp_json_native:encode(Response)]);
             {error, Reason} ->
                 %% Log error
                 lager:warning("Failed to handle JSON-RPC: ~p", [Reason])

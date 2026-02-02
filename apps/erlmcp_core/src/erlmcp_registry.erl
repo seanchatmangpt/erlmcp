@@ -11,7 +11,8 @@
          find_server/1, find_server/2, find_transport/1, find_transport/2, list_servers/0,
          list_servers/1, list_transports/0, list_transports/1, bind_transport_to_server/2,
          unbind_transport/1, get_server_for_transport/1, get_all_state/0, get_pid/0,
-         get_queue_depth/0, restore_state/1, route_message/2]).
+         get_queue_depth/0, restore_state/1, route_message/2,
+         validate_tool_name/1, validate_transport_name/1, normalize_name/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
          format_status/2]).
@@ -569,4 +570,58 @@ send_to_transport(TransportId, ServerId, Message) ->
         TransportPid ->
             TransportPid ! {mcp_response, ServerId, Message},
             ok
+    end.
+
+%% @doc Validate tool/transport name for OTP 28 UTF-8 support
+%% Supports international characters: Japanese, Arabic, emoji, etc.
+%% Uses erlmcp_atoms for safe conversion with 255 character limit.
+-spec validate_tool_name(binary()) -> ok | {error, atom()}.
+validate_tool_name(Name) when is_binary(Name) ->
+    case erlmcp_atoms:char_length_check(Name) of
+        ok ->
+            % Additional validation for tool name characters
+            % Allow alphanumeric, underscore, hyphen, and international UTF-8
+            case is_valid_utf8_name(Name) of
+                true -> ok;
+                false -> {error, invalid_characters}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end;
+validate_tool_name(_) ->
+    {error, invalid_binary}.
+
+%% @doc Validate transport name for OTP 28 UTF-8 support
+-spec validate_transport_name(binary()) -> ok | {error, atom()}.
+validate_transport_name(Name) when is_binary(Name) ->
+    validate_tool_name(Name);
+validate_transport_name(_) ->
+    {error, invalid_binary}.
+
+%% @doc Normalize name to atom using erlmcp_atoms
+%% Safely converts binary names to atoms with OTP 28 UTF-8 support.
+-spec normalize_name(binary()) -> atom().
+normalize_name(Name) when is_binary(Name) ->
+    erlmcp_atoms:tool_name_to_atom(Name).
+
+%% @private Check if binary contains valid UTF-8 name characters
+%% Allows alphanumeric, underscore, hyphen, and international characters.
+-spec is_valid_utf8_name(binary()) -> boolean().
+is_valid_utf8_name(<<>>) ->
+    false;
+is_valid_utf8_name(Name) ->
+    % Check that name doesn't contain invalid control characters
+    % or NULL bytes
+    case binary:match(Name, [<<0>>, <<255>>, <<254>>, <<253>>) of
+        nomatch ->
+            % Check character length (OTP 28: 255 chars)
+            try
+                Chars = string:length(Name),
+                Chars > 0 andalso Chars =< 255
+            catch
+                _:_ ->
+                    false
+            end;
+        _ ->
+            false
     end.

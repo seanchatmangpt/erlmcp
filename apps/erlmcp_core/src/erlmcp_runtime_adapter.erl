@@ -350,7 +350,7 @@ apply_feature_optimizations() ->
         true ->
             application:set_env(erlmcp, json_library, native);
         false ->
-            application:set_env(erlmcp, json_library, jsx)
+            application:set_env(erlmcp, json_library, native)
     end,
 
     % Process optimization
