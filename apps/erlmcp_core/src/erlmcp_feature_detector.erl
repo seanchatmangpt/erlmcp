@@ -30,6 +30,8 @@
 %% Types
 -include("otp_compat.hrl").
 
+-type otp_version() :: {Major :: integer(), Minor :: integer(), Patch :: integer()}.
+
 -type feature() ::
     native_json |
     process_iterator |
@@ -97,15 +99,16 @@ warn_unsupported_features() ->
     end,
 
     % Specific feature warnings
-    case erlmcp_version_detector:otp_version() of
+    OtpVersion = erlmcp_version_detector:otp_version(),
+    case OtpVersion of
         {V, _, _} when V < 28 ->
             logger:warning("Process iterators not available. Process enumeration may use more memory.");
         _ ->
             ok
     end,
 
-    case erlmcp_version_detector:otp_version() of
-        {V, _, _} when V < 27 ->
+    case OtpVersion of
+        {V2, _, _} when V2 < 27 ->
             logger:warning("Native JSON not available. Using JSX fallback.");
         _ ->
             ok
@@ -132,7 +135,9 @@ get_optimal_settings() ->
 
 %% @private Detect features for specific version
 -spec detect_features_for_version(otp_version()) -> [feature_flag()].
-detect_features_for_version(Version) ->
+detect_features_for_version(_Version) ->
+    %% Note: Version parameter kept for future version-specific feature detection
+    %% Current implementation detects features at runtime regardless of version
     [
         {native_json, has_native_json()},
         {process_iterator, has_process_iterator()},

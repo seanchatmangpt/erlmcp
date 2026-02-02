@@ -446,7 +446,7 @@ encode_param(Key, Value) when is_binary(Key); is_atom(Key) ->
 
 %% @doc Encode single value
 encode_param(Value) when is_binary(Value) ->
-    <<"\"", Value/binary, "\">>;
+    <<"\"", Value/binary, "\"">>;
 encode_param(Value) when is_integer(Value) ->
     integer_to_binary(Value);
 encode_param(Value) when is_float(Value) ->
