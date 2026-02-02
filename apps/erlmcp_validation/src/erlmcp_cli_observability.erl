@@ -944,12 +944,12 @@ send_metrics_to_otel(Metrics) ->
 %% @private Format trace data for export
 -spec format_trace_data(validation_span()) -> iolist().
 format_trace_data(Span) ->
-    jsx:encode(Span, [{space, 1}, {indent, 2}]).
+    erlmcp_json_native:encode(Span, [{space, 1}, {indent, 2}]).
 
 %% @private Format metrics data for export
 -spec format_metrics_data(validation_span()) -> iolist().
 format_metrics_data(Span) ->
-    jsx:encode(Span, [{space, 1}, {indent, 2}]).
+    erlmcp_json_native:encode(Span, [{space, 1}, {indent, 2}]).
 
 %% @private Export to Jaeger
 -spec export_to_jaeger(term(), map()) -> ok.

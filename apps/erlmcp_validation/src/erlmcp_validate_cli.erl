@@ -62,7 +62,7 @@ run(all) ->
 run(protocol, Json) when is_map(Json) ->
     validate_protocol_message(Json);
 run(protocol, JsonBinary) when is_binary(JsonBinary) ->
-    try jsx:decode(JsonBinary, [return_maps]) of
+    try erlmcp_json_native:decode(JsonBinary) of
         JsonMap ->
             validate_protocol_message(JsonMap)
     catch
@@ -2058,7 +2058,7 @@ print_text_report(Report, Quiet) ->
 print_json_report(Report, Quiet) ->
     %% Convert atoms to strings for JSON encoding
     JsonReport = convert_report_to_json(Report),
-    JSON = jsx:encode(JsonReport, [{space, 1}, {indent, 2}]),
+    JSON = erlmcp_json_native:encode(JsonReport, [{space, 1}, {indent, 2}]),
     if not Quiet ->
            io:format("~s~n", [JSON]);
        true ->
@@ -2233,7 +2233,7 @@ print_validate_result(Result, Opts) ->
     Format = maps:get(format, Opts, "text"),
     case Format of
         "json" ->
-            JSON = jsx:encode(Result, [{space, 1}, {indent, 2}]),
+            JSON = erlmcp_json_native:encode(Result, [{space, 1}, {indent, 2}]),
             io:format("~s~n", [JSON]);
         "markdown" ->
             print_validate_result_markdown(Result);
@@ -2310,7 +2310,7 @@ print_spec_check_result(Result, Opts) ->
     Format = maps:get(format, Opts, "text"),
     case Format of
         "json" ->
-            JSON = jsx:encode(Result, [{space, 1}, {indent, 2}]),
+            JSON = erlmcp_json_native:encode(Result, [{space, 1}, {indent, 2}]),
             io:format("~s~n", [JSON]);
         "markdown" ->
             print_spec_check_result_markdown(Result);
@@ -2366,7 +2366,7 @@ print_transport_check_result(Result, Opts) ->
     Format = maps:get(format, Opts, "text"),
     case Format of
         "json" ->
-            JSON = jsx:encode(Result, [{space, 1}, {indent, 2}]),
+            JSON = erlmcp_json_native:encode(Result, [{space, 1}, {indent, 2}]),
             io:format("~s~n", [JSON]);
         "markdown" ->
             print_transport_check_result_markdown(Result);

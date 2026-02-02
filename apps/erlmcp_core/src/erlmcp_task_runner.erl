@@ -156,11 +156,10 @@ cancel_task(Pid, Reason) when is_pid(Pid), is_binary(Reason) ->
     ok.
 
 %% @doc Get current task status (for debugging).
+%% OTP 28: Modernized from catch to try/catch for better error handling
 -spec get_status(pid()) -> {ok, map()} | {error, term()}.
 get_status(Pid) when is_pid(Pid) ->
-    case catch sys:get_state(Pid) of
-        {'EXIT', Reason} ->
-            {error, Reason};
+    try sys:get_state(Pid) of
         State when is_map(State) ->
             {ok,
              #{task_id => maps:get(task_id, State),
@@ -168,6 +167,9 @@ get_status(Pid) when is_pid(Pid) ->
                elapsed_ms => erlang:system_time(millisecond) - maps:get(start_time, State)}};
         State ->
             {ok, State}
+    catch
+        _:Reason ->
+            {error, Reason}
     end.
 
 %%%===================================================================

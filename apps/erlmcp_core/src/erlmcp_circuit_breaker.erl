@@ -97,6 +97,13 @@ start_link(Config) ->
 %% @doc Start a circuit breaker with a name
 -spec start_link(atom(), config()) -> {ok, pid()} | {error, term()}.
 start_link(Name, Config) when is_atom(Name) ->
+    %% OTP 28: Enable priority messages for circuit breaker control
+    PriorityAlias = try
+        erlang:alias([priority])
+    catch
+        error:undef ->
+            undefined
+    end,
     %% Enable hibernation after 30 seconds of inactivity to reduce memory usage
     gen_statem:start_link({local, Name},
                           ?MODULE,

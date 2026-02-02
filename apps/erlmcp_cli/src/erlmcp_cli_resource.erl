@@ -631,7 +631,7 @@ load_file_resources() ->
                                      FilePath = filename:join(ResourcesDir, File),
                                      case file:read_file(FilePath) of
                                          {ok, Content} ->
-                                             Resource = jsx:decode(Content, [{labels, binary}, return_maps]),
+                                             Resource = erlmcp_json_native:decode(Content),
                                              maps:put(File, Resource, Acc);
                                          {error, _} -> Acc
                                      end;
@@ -651,7 +651,7 @@ load_env_resources() ->
         false -> Resources;
         JsonData ->
             try
-                jsx:decode(list_to_binary(JsonData), [{labels, binary}, return_maps])
+                erlmcp_json_native:decode(list_to_binary(JsonData))
             catch
                 _ -> Resources
             end

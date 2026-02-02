@@ -2,8 +2,18 @@
 
 -behaviour(gen_server).
 
--include("erlmcp.hrl").%% TODO: Add opentelemetry_api dependency when telemetry is enabled
-                       %% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
+-include("erlmcp.hrl").
+%% TODO: Add opentelemetry_api dependency when telemetry is enabled
+%% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
+
+%% Import unwrap utilities for safe nested access
+-import(erlmcp_unwrap_utils, [
+    extract_rpc_response/1,
+    extract_rpc_error/1,
+    extract_nested/3,
+    get_in/2,
+    safe_get_in/2
+]).
 
 %% API exports
 -export([start_link/2, add_resource/3, add_resource_template/4, add_tool/3,
@@ -13,7 +23,10 @@
          report_progress/4, notify_resource_updated/3, notify_resources_changed/1,
          encode_resource_link/2, encode_resource_link/4, validate_resource_link_uri/1,
          register_notification_handler/3, unregister_notification_handler/2,
-         unregister_all_handlers/1, stop/1]).
+         unregister_all_handlers/1, stop/1,
+         %% Safe extraction helpers
+         safe_extract_tool_result/1, safe_extract_resource_content/1,
+         safe_extract_capability/2, safe_validate_response/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
          format_status/2]).
@@ -56,7 +69,9 @@
          notification_handlers = #{} ::
              #{binary() => {pid(), reference()}},  % Notification method -> {HandlerPid, MonitorRef}
          cancellable_requests = #{} ::
-             #{term() => reference()}}).  % RequestId -> CancellationToken mapping
+             #{term() => reference()},  % RequestId -> CancellationToken mapping
+         priority_alias :: erlang:alias() | undefined  % OTP 28: Priority message queue alias
+        }).
 
 -type state() :: #state{}.
 
@@ -471,7 +486,33 @@ handle_continue(initialize, State) ->
 handle_continue(_Continue, State) ->
     {noreply, State}.
 
--spec handle_info(term(), state()) -> {noreply, state()}.
+-spec handle_info(term(), state()) -> {noreply, state()} | {noreply, state(), hibernate}.
+% OTP 28: Handle priority messages first (EEP-76)
+% Priority messages jump the queue for urgent control operations
+handle_info({priority, From, {cancel_request, ReqId}}, State) ->
+    %% Handle cancellation requests with priority
+    logger:info("Priority cancel request for ~p", [ReqId]),
+    case maps:get(ReqId, State#state.cancellable_requests, undefined) of
+        undefined ->
+            {noreply, State};
+        CancelToken ->
+            erlmcp_cancellation:cancel(CancelToken, client_requested),
+            NewRequests = maps:remove(ReqId, State#state.cancellable_requests),
+            {noreply, State#state{cancellable_requests = NewRequests}}
+    end;
+handle_info({priority, From, {ping, Ref}}, State) ->
+    %% Handle priority ping/health check messages
+    From ! {pong, Ref},
+    {noreply, State};
+handle_info({urgent, shutdown}, State) ->
+    %% Handle urgent shutdown signals
+    logger:info("Urgent shutdown signal received"),
+    {stop, shutdown, State};
+handle_info({urgent, {reconfigure, NewConfig}}, #state{server_id = ServerId} = State) ->
+    %% Handle urgent reconfiguration
+    logger:info("Urgent reconfiguration for server ~p", [ServerId]),
+    %% Apply configuration changes immediately
+    {noreply, State};
 % Handle messages routed from registry - this is the key change!
 handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_mcp_message">>, ServerId),

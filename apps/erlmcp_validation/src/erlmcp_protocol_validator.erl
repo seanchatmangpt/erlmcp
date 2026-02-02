@@ -117,7 +117,7 @@ validate_all(SpecVersion) when is_binary(SpecVersion) ->
                             #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}} |
                            {error, term()}.
 validate_json_rpc(Json) when is_binary(Json) ->
-    try jsx:decode(Json, [return_maps]) of
+    try erlmcp_json_native:decode(Json) of
         Data when is_map(Data) ->
             case validate_jsonrpc_structure(Data) of
                 ok ->

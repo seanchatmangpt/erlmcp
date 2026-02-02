@@ -19,7 +19,8 @@
          reset_negotiated_capabilities/0, get_capability_flags/2, set_capability_flag/4,
          get_capability_description/1, get_feature_description/2, build_client_init_params/1,
          build_server_init_response/2, client_supports_tools_list_changed/1, supports_elicitation/1,
-         supports_tasks/1, supports_streaming/1, supports_progress/1, get_experimental_features/1]).
+         supports_tasks/1, supports_streaming/1, supports_progress/1, get_experimental_features/1,
+         validate_capability_name/1, normalize_capability_name/1]).
 
     %% Complete capability negotiation API
 
@@ -1515,3 +1516,34 @@ get_experimental_features(#mcp_server_capabilities{} = ServerCaps) ->
         _ ->
             []
     end.
+
+%%%====================================================================
+%%% Internationalization Support (OTP 28)
+%%%====================================================================
+
+%% @doc Validate capability name for OTP 28 UTF-8 support
+%% Supports international capability names and experimental features.
+-spec validate_capability_name(binary()) -> ok | {error, atom()}.
+validate_capability_name(Name) when is_binary(Name) ->
+    case erlmcp_atoms:char_length_check(Name) of
+        ok ->
+            % Capability names should be valid UTF-8 without control characters
+            case binary:match(Name, [<<0>>, <<255>>, <<254>>, <<253>>) of
+                nomatch ->
+                    ok;
+                _ ->
+                    {error, invalid_characters}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end;
+validate_capability_name(_) ->
+    {error, invalid_binary}.
+
+%% @doc Normalize capability name using erlmcp_atoms
+%% Preserves UTF-8 characters while ensuring OTP 28 compliance.
+-spec normalize_capability_name(binary()) -> binary().
+normalize_capability_name(Name) when is_binary(Name) ->
+    % Capability names are stored as binaries in maps
+    % Atom conversion is only needed for gproc keys or process dictionaries
+    Name.

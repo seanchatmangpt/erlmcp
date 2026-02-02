@@ -1,15 +1,15 @@
 %%%-------------------------------------------------------------------
 %%% @doc
-%%% JSON Fallback Implementation
+%%% JSON Fallback Implementation (DEPRECATED - Native JSON Only)
 %%%
-%%% This module provides a JSON fallback mechanism for when the
-%%% native JSON module is not available (OTP < 27).
+%%% This module provided fallback support for OTP < 27.
+%%% Since erlmcp now requires OTP 28+, this module is deprecated
+%%% and all functions now use the native json module directly.
 %%%
-%%% Features:
-%%%   - Automatic detection of native JSON availability
-%%%   - Fallback to JSX when native JSON is not available
-%%%   - Performance optimization for native JSON when available
-%%%   - API compatibility with native JSON module
+%%% Migration Guide:
+%%%   - Replace erlmcp_json_fallback:encode/1 with erlmcp_json_native:encode/1
+%%%   - Replace erlmcp_json_fallback:decode/1 with erlmcp_json_native:decode/1
+%%%   - Fallback mode is no longer supported
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -17,9 +17,6 @@
 
 %% API
 -export([
-    enable_fallback/0,
-    disable_fallback/0,
-    is_fallback_enabled/0,
     encode/1,
     decode/1,
     encode_pretty/1,
@@ -36,110 +33,47 @@
 %% API Functions
 %%====================================================================
 
-%% @doc Enable JSON fallback mode
--spec enable_fallback() -> ok.
-enable_fallback() ->
-    application:set_env(erlmcp, json_fallback_enabled, true),
-    application:set_env(erlmcp, json_library, jsx),
-    logger:info("JSON fallback enabled - using JSX module"),
-    ok.
-
-%% @doc Disable JSON fallback mode
--spec disable_fallback() -> ok.
-disable_fallback() ->
-    case erlang:function_exported(json, encode, 1) of
-        true ->
-            application:set_env(erlmcp, json_fallback_enabled, false),
-            application:set_env(erlmcp, json_library, native),
-            logger:info("JSON fallback disabled - using native JSON module");
-        false ->
-            logger:warning("Cannot disable fallback - native JSON not available"),
-            enable_fallback()
-    end,
-    ok.
-
-%% @doc Check if fallback mode is enabled
--spec is_fallback_enabled() -> boolean().
-is_fallback_enabled() ->
-    application:get_env(erlmcp, json_fallback_enabled, false).
-
-%% @doc Encode data to JSON (automatic module selection)
+%% @doc Encode data to JSON using native json module
+%% Note: Fallback to jsx is no longer supported (requires OTP 28+)
 -spec encode(json_data()) -> binary().
 encode(Data) ->
-    case get_encoding_module() of
-        jsx ->
-            jsx:encode(Data);
-        native ->
-            json:encode(Data)
-    end.
+    erlmcp_json_native:encode(Data).
 
-%% @doc Decode JSON data (automatic module selection)
+%% @doc Decode JSON data using native json module
+%% Note: Fallback to jsx is no longer supported (requires OTP 28+)
 -spec decode(binary()) -> map() | list().
 decode(Binary) ->
-    case get_encoding_module() of
-        jsx ->
-            jsx:decode(Binary, [return_maps]);
-        native ->
-            json:decode(Binary)
-    end.
+    erlmcp_json_native:decode(Binary).
 
 %% @doc Encode data to pretty JSON
+%% Note: Native JSON doesn't support pretty print options directly
+%% For formatted output, use external tooling like jq or post-process
 -spec encode_pretty(json_data()) -> binary().
 encode_pretty(Data) ->
-    case get_encoding_module() of
-        jsx ->
-            jsx:encode(Data, [{indent, 2}]);
-        native ->
-            json:encode(Data, [{indent, 2}])
-    end.
+    %% Native json module doesn't have pretty print
+    %% For formatted JSON, use external tools or implement custom formatter
+    erlmcp_json_native:encode(Data).
 
-%% @doc Decode pretty JSON data
+%% @doc Decode pretty JSON data (same as regular decode)
 -spec decode_pretty(binary()) -> map() | list().
 decode_pretty(Binary) ->
-    decode(Binary).  % Pretty decoding same as normal for now
+    erlmcp_json_native:decode(Binary).
 
-%% @doc Get current encoding module
--spec get_encoding_module() -> jsx | native.
+%% @doc Get current encoding module (always native now)
+-spec get_encoding_module() -> native.
 get_encoding_module() ->
-    case application:get_env(erlmcp, json_library, auto) of
-        auto ->
-            case erlang:function_exported(json, encode, 1) of
-                true -> native;
-                false -> jsx
-            end;
-        jsx ->
-            jsx;
-        native ->
-            case erlang:function_exported(json, encode, 1) of
-                true -> native;
-                false -> jsx
-            end
-    end.
+    native.
 
-%% @doc Get current encoding method
--spec get_encoding_method() -> atom().
+%% @doc Get current encoding method (always native_json now)
+-spec get_encoding_method() -> native_json.
 get_encoding_method() ->
-    Module = get_encoding_module(),
-    case Module of
-        jsx -> jsx_encode;
-        native -> native_json
-    end.
+    native_json.
 
 %%====================================================================
 %% Internal Functions
 %%====================================================================
 
-%% @private Check if native JSON is available
+%% @private Check if native JSON is available (always true in OTP 28+)
 -spec has_native_json() -> boolean().
 has_native_json() ->
     erlang:function_exported(json, encode, 1).
-
-%% @private Check if JSX is available
--spec has_jsx() -> boolean().
-has_jsx() ->
-    erlang:function_exported(jsx, encode, 1).
-
-%% @private Log encoding performance metrics
--spec log_encoding_performance(atom(), pos_integer()) -> ok.
-log_encoding_performance(Module, Time) ->
-    logger:debug("JSON encoding using ~s took ~p microseconds", [Module, Time]).

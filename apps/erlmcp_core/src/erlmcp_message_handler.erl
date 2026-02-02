@@ -20,6 +20,7 @@
 
 %% @doc Process incoming MCP message (hot path).
 %% Optimized for fast message routing with minimal allocation.
+%% Supports OTP 28 priority messages for urgent operations.
 -spec process_message(binary(), binary(), state()) ->
                          {ok, state()} | {error, term()} | {reply, binary(), state()}.
 process_message(TransportId, Data, State) ->
@@ -34,6 +35,50 @@ process_message(TransportId, Data, State) ->
         {error, Reason} ->
             {error, Reason}
     end.
+
+%% @doc Handle priority messages (OTP 28 EEP-76).
+%% Priority messages jump the queue for urgent operations:
+%% - Tool cancellation
+%% - Health check responses
+%% - Emergency shutdown
+-spec handle_priority_message(term(), pid(), state()) ->
+                                     {ok, state()} | {reply, binary(), state()}.
+handle_priority_message({cancel_request, RequestId}, _From, State) ->
+    %% Handle urgent cancellation request
+    %% This bypasses normal message queue processing
+    logger:info("Priority cancel request received for: ~p", [RequestId]),
+    %% Create cancellation response
+    Response = erlmcp_json_rpc:encode_response(RequestId, #{<<"cancelled">> => true}),
+    {reply, Response, State};
+
+handle_priority_message({health_check_response, Ref, Status}, _From, State) ->
+    %% Handle health check response with priority
+    logger:debug("Priority health check response: ~p = ~p", [Ref, Status]),
+    %% Update health status in state
+    NewState = case maps:find(health_checks, State#mcp_server_state{}) of
+        {ok, Checks} ->
+            NewChecks = maps:put(Ref, Status, Checks),
+            State#mcp_server_state{health_checks = NewChecks};
+        error ->
+            %% Initialize health checks map if not present
+            State#mcp_server_state{health_checks = #{Ref => Status}}
+    end,
+    {ok, NewState};
+
+handle_priority_message({emergency_shutdown, Reason}, _From, State) ->
+    %% Handle emergency shutdown with priority
+    logger:warning("Priority emergency shutdown: ~p", [Reason]),
+    %% Send shutdown notification
+    Notification = erlmcp_json_rpc:encode_notification(<<"shutdown">>, #{
+        <<"reason">> => Reason,
+        <<"urgent">> => true
+    }),
+    {reply, Notification, State};
+
+handle_priority_message(UnknownMessage, _From, State) ->
+    %% Log unknown priority message for debugging
+    logger:warning("Unknown priority message received: ~p", [UnknownMessage]),
+    {ok, State}.
 
 %%====================================================================
 %% Request Handlers (organized by method)

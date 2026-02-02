@@ -62,7 +62,7 @@ format_refusal(Code, Details) when map_size(Details) =:= 0 ->
     format_refusal(Code);
 format_refusal(Code, Details) ->
     Base = format_refusal(Code),
-    DetailStr = iolist_to_binary([<<" | Details: ">>, jsx:encode(Details)]),
+    DetailStr = iolist_to_binary([<<" | Details: ">>, erlmcp_json_native:encode(Details)]),
     <<Base/binary, DetailStr/binary>>.
 
 %% @doc Check if code is a valid refusal code (1001-1089)
