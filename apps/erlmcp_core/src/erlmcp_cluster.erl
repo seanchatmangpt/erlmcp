@@ -62,7 +62,7 @@
          replication_factor = 2 :: replication_factor(),
          heartbeat_ref :: reference() | undefined,
          heartbeat_interval :: pos_integer(),
-         reconnect_attempts = #{node() => non_neg_integer()}}).
+         reconnect_attempts = #{} :: map()}).
 
 -type state() :: #state{}.
 

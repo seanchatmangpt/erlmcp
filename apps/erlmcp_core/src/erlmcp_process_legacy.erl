@@ -3,7 +3,7 @@
 %%% Process Enumeration Legacy Implementation
 %%%
 %%% This module provides legacy process enumeration methods for
-OTP versions that don't support process iterators (OTP < 28).
+%%% OTP versions that do not support process iterators (OTP < 28).
 %%%
 %%% Features:
 %%%   - Legacy process enumeration using erlang:processes()
@@ -228,7 +228,7 @@ monitor_process_count_changes() ->
     end.
 
 %% @private Log performance statistics
--spec log_performance_statistics(performance_metrics()) -> ok.
+-spec log_performance_metrics(performance_metrics()) -> ok.
 log_performance_metrics(Metrics) ->
     logger:info("Process Performance Metrics: ~p", [Metrics]).
 

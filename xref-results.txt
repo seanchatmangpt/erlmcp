@@ -1,0 +1,97 @@
+===> Verifying dependencies...
+===> App ranch is a checkout dependency and cannot be locked.
+===> App poolboy is a checkout dependency and cannot be locked.
+===> App jose is a checkout dependency and cannot be locked.
+===> App jesse is a checkout dependency and cannot be locked.
+===> App gun is a checkout dependency and cannot be locked.
+===> App gproc is a checkout dependency and cannot be locked.
+===> App cowboy is a checkout dependency and cannot be locked.
+===> App bbmustache is a checkout dependency and cannot be locked.
+===> App base64url is a checkout dependency and cannot be locked.
+===> Analyzing applications...
+===> Compiling jesse
+===> Compiling bbmustache
+===> Compiling ranch
+===> Compiling poolboy
+===> Compiling jose
+===> Compiling cowlib
+===> Compiling gun
+===> Compiling gproc
+===> Compiling cowboy
+===> Compiling base64url
+===> Compiling jsx
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/erlmcp_distribution_manager.erl failed
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+    \x{2502}
+ 96 \x{2502}          {ok, Info} -> Info#node_info.status =:= connected;
+    \x{2502}                            \x{2570}\x{2500}\x{2500} record node_info undefined
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 414 \x{2502}      #node_info{
+     \x{2502}      \x{2570}\x{2500}\x{2500} record node_info undefined
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 428 \x{2502}      #node_info{
+     \x{2502}      \x{2570}\x{2500}\x{2500} record node_info undefined
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 267 \x{2502}  code_change(_OldVsn, State = #state{otp_version = OTPVersion, features = Features}, _Extra) ->
+     \x{2502}                                                                           \x{2570}\x{2500}\x{2500} Warning: variable 'Features' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 410 \x{2502}      NodeVersion = get_remote_node_version(Node),
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'NodeVersion' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 411 \x{2502}      Capabilities = get_remote_node_capabilities(Node),
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'Capabilities' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 412 \x{2502}      Status = connected,
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'Status' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 423 \x{2502}  get_basic_node_info(Node) ->
+     \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'Node' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 424 \x{2502}      NodeVersion = {0, 0, 0},  % Unknown version
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'NodeVersion' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 425 \x{2502}      Capabilities = [basic],   % Basic capabilities
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'Capabilities' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 426 \x{2502}      Status = connected,
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'Status' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 596 \x{2502}  apply_distribution_optimization(Data, State) ->
+     \x{2502}                                        \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 734 \x{2502}  cleanup_distribution_process(Pid) ->
+     \x{2502}                               \x{2570}\x{2500}\x{2500} Warning: variable 'Pid' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 754 \x{2502}  get_remote_otp_version(Node) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function get_remote_otp_version/1 is unused
+
+

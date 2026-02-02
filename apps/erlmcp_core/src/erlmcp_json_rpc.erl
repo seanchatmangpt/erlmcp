@@ -135,17 +135,8 @@ decode_batch(Json) when is_binary(Json) ->
 
 -spec encode_batch([json_rpc_message()]) -> binary().
 encode_batch(Messages) when is_list(Messages) ->
-    %% OTP 28: Use strict generator for fail-fast validation
-    %% Crashes if any message is not a valid json_rpc_message record
-    try
-        Maps = [build_message_map(Msg) || Msg <:- Messages],
-        erlmcp_json_native:encode(Maps)
-    catch
-        error:{badmatch, _} ->
-            %% Fallback to non-strict for OTP < 28 compatibility
-            Maps = [build_message_map(Msg) || Msg <- Messages],
-            erlmcp_json_native:encode(Maps)
-    end.
+    Maps = [build_message_map(Msg) || Msg <- Messages],
+    erlmcp_json_native:encode(Maps).
 
 -spec is_batch_request(binary()) -> boolean().
 is_batch_request(Json) when is_binary(Json) ->

@@ -28,43 +28,43 @@ run() ->
 run(Opts) ->
     Iterations = maps:get(iterations, Opts, 100),
     Profile = maps:get(profile, Opts, false),
-    
+
     io:format("~n==============================================~n"),
     io:format("ERLMCP CLI STARTUP BENCHMARK~n"),
     io:format("Target: <100ms startup time~n"),
     io:format("Iterations: ~p~n", [Iterations]),
     io:format("==============================================~n~n"),
-    
+
     %% Baseline measurements
     FullStartupResults = measure_full_startup(Iterations),
     ModuleLoadingResults = measure_module_loading_multi(Iterations),
     AppLoadingResults = measure_app_loading_multi(Iterations),
-    
+
     %% Optional profiling
     ProfileData = if Profile -> profile_startup();
                      true -> #{}
                   end,
-    
+
     %% Build report
     Report = build_report(FullStartupResults, ModuleLoadingResults, AppLoadingResults, ProfileData),
-    
+
     %% Print results
     print_results(Report),
-    
+
     %% Write to file
     write_report(Report),
-    
+
     %% Check against target
     check_target(Report),
-    
+
     ok.
 
 %% Measure full startup time (from exec to ready)
 measure_full_startup(Iterations) ->
     io:format("Measuring full CLI startup (~p iterations)...~n", [Iterations]),
-    
+
     Times = [measure_startup() || _ <- lists:seq(1, Iterations)],
-    
+
     #{
         iterations => Iterations,
         times_ms => Times,
@@ -79,18 +79,18 @@ measure_full_startup(Iterations) ->
 %% Measure single startup
 measure_startup() ->
     StartTime = erlang:monotonic_time(millisecond),
-    
+
     %% Simulate CLI startup: load module, parse args, ensure apps
     code:purge(erlmcp_validate_cli),
     code:delete(erlmcp_validate_cli),
     {module, erlmcp_validate_cli} = code:ensure_loaded(erlmcp_validate_cli),
-    
+
     %% Simulate minimal app loading (crypto, ssl, inets)
     _ = application:start(crypto),
     _ = application:start(asn1),
     _ = application:start(public_key),
     _ = application:start(ssl),
-    
+
     EndTime = erlang:monotonic_time(millisecond),
     EndTime - StartTime.
 
@@ -104,23 +104,23 @@ measure_module_loading() ->
         erlmcp_security_validator,
         erlmcp_compliance_report
     ],
-    
+
     StartTime = erlang:monotonic_time(microsecond),
-    
+
     lists:foreach(fun(Mod) ->
         code:purge(Mod),
         code:delete(Mod),
         code:ensure_loaded(Mod)
     end, Modules),
-    
+
     EndTime = erlang:monotonic_time(microsecond),
     (EndTime - StartTime) / 1000.
 
 measure_module_loading_multi(Iterations) ->
     io:format("Measuring module loading (~p iterations)...~n", [Iterations]),
-    
+
     Times = [measure_module_loading() || _ <- lists:seq(1, Iterations)],
-    
+
     #{
         iterations => Iterations,
         times_ms => Times,
@@ -133,27 +133,27 @@ measure_module_loading_multi(Iterations) ->
 %% Measure app loading time
 measure_app_loading() ->
     Apps = [crypto, asn1, public_key, ssl, inets],
-    
+
     %% Stop apps first
     lists:foreach(fun(App) -> application:stop(App) end, Apps),
-    
+
     StartTime = erlang:monotonic_time(microsecond),
-    
+
     lists:foreach(fun(App) ->
         case application:start(App) of
             ok -> ok;
             {error, {already_started, App}} -> ok
         end
     end, Apps),
-    
+
     EndTime = erlang:monotonic_time(microsecond),
     (EndTime - StartTime) / 1000.
 
 measure_app_loading_multi(Iterations) ->
     io:format("Measuring app initialization (~p iterations)...~n", [Iterations]),
-    
+
     Times = [measure_app_loading() || _ <- lists:seq(1, Iterations)],
-    
+
     #{
         iterations => Iterations,
         times_ms => Times,
@@ -166,23 +166,23 @@ measure_app_loading_multi(Iterations) ->
 %% Profile startup with fprof
 profile_startup() ->
     io:format("Profiling startup with fprof...~n"),
-    
+
     %% Start profiling
     fprof:trace([start, {procs, [self()]}]),
-    
+
     %% Run startup
     measure_startup(),
-    
+
     %% Stop and analyze
     fprof:trace(stop),
     fprof:profile(),
-    
+
     %% Analyze to file
     ProfileFile = "/tmp/erlmcp_cli_startup_profile.txt",
     fprof:analyse([{dest, ProfileFile}, {totals, true}, {details, true}]),
-    
+
     io:format("Profile written to: ~s~n", [ProfileFile]),
-    
+
     #{profile_file => list_to_binary(ProfileFile)}.
 
 %% Build metrology report
@@ -209,7 +209,7 @@ determine_status(_) -> <<"failed">>.
 print_results(#{results := Results, target_ms := Target}) ->
     #{full_startup := FullStartup} = Results,
     MeanMs = maps:get(mean_ms, FullStartup),
-    
+
     io:format("~n==============================================~n"),
     io:format("RESULTS~n"),
     io:format("==============================================~n"),
@@ -221,7 +221,7 @@ print_results(#{results := Results, target_ms := Target}) ->
     io:format("  Min:    ~.2f ms~n", [maps:get(min_ms, FullStartup)]),
     io:format("  Max:    ~.2f ms~n", [maps:get(max_ms, FullStartup)]),
     io:format("~n"),
-    
+
     Status = if MeanMs < Target -> "PASS ✓";
                 MeanMs < Target * 1.5 -> "WARN ⚠";
                 true -> "FAIL ✗"
@@ -233,7 +233,7 @@ print_results(#{results := Results, target_ms := Target}) ->
 check_target(#{results := Results, target_ms := Target}) ->
     #{full_startup := FullStartup} = Results,
     MeanMs = maps:get(mean_ms, FullStartup),
-    
+
     if MeanMs < Target ->
             io:format("✓ Performance target met!~n~n");
        MeanMs < Target * 1.5 ->
@@ -246,14 +246,14 @@ check_target(#{results := Results, target_ms := Target}) ->
 write_report(Report) ->
     Timestamp = erlang:system_time(second),
     Filename = io_lib:format("bench/results/cli_startup_~p.json", [Timestamp]),
-    
+
     %% Ensure directory exists
     filelib:ensure_dir(Filename),
-    
+
     %% Write JSON
     JSON = jsx:encode(Report, [{space, 1}, {indent, 2}]),
     file:write_file(Filename, JSON),
-    
+
     io:format("Report written to: ~s~n", [Filename]).
 
 %% Utility functions
