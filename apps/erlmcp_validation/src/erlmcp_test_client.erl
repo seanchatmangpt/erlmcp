@@ -572,7 +572,7 @@ format_request(Request) when is_map(Request) ->
             _ ->
                 JsonRpc#{<<"params">> => Params}
         end,
-    jsx:encode(JsonRpcWithParams).
+    erlmcp_json_native:encode(JsonRpcWithParams).
 
 %% @doc Handle transport errors
 -spec handle_transport_errors({error, term()}) -> {error, term()}.
@@ -632,7 +632,7 @@ handle_call({send_request, RequestMap}, From, State) ->
         end,
 
     %% Send via transport
-    JsonData = jsx:encode(RequestWithParams),
+    JsonData = erlmcp_json_native:encode(RequestWithParams),
     case send_via_transport(State, JsonData) of
         ok ->
             NewState =
@@ -656,7 +656,7 @@ handle_call({send_notification, Notification}, _From, State) ->
                 Request#{<<"params">> => Params}
         end,
 
-    JsonData = jsx:encode(RequestWithParams),
+    JsonData = erlmcp_json_native:encode(RequestWithParams),
     case send_via_transport(State, JsonData) of
         ok ->
             {reply, ok, State};
@@ -709,7 +709,7 @@ handle_cast(_Msg, State) ->
 -spec handle_info(term(), state()) -> {noreply, state()} | {stop, term(), state()}.
 handle_info({transport_message, Data}, State) when is_binary(Data) ->
     %% Decode JSON response
-    try jsx:decode(Data, [return_maps]) of
+    try erlmcp_json_native:decode(Data) of
         JsonRpc when is_map(JsonRpc) ->
             Id = maps:get(<<"id">>, JsonRpc, undefined),
             case maps:is_key(<<"result">>, JsonRpc) of

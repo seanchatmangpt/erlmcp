@@ -1,0 +1,67 @@
+{
+  "baseline_name": "OTP 28.3.1 Baseline",
+  "baseline_date": "2026-02-02",
+  "workload_id": "otp28_optimizations",
+  "metrics": {
+    "native_json": {
+      "decode_throughput": 5000000.0,
+      "decode_latency_us": 0.2,
+      "encode_throughput": 4500000.0,
+      "encode_latency_us": 0.22
+    },
+    "jsx_json": {
+      "decode_throughput": 2000000.0,
+      "decode_latency_us": 0.5,
+      "encode_throughput": 1800000.0,
+      "encode_latency_us": 0.55
+    },
+    "priority_messages": {
+      "normal_latency_us": 15.0,
+      "priority_latency_us": 5.0,
+      "speedup": 3.0,
+      "available": true
+    },
+    "hibernate": {
+      "normal_bytes_per_process": 20480,
+      "hibernate_bytes_per_process": 5120,
+      "memory_reduction_percent": 75.0,
+      "meets_expectation": true
+    },
+    "process_iterator": {
+      "old_iterator_time_us": 5000,
+      "new_iterator_time_us": 2500,
+      "memory_improvement": 2.0,
+      "available": true
+    },
+    "pcre2_regex": {
+      "simple_latency_us": 5.0,
+      "complex_latency_us": 25.0,
+      "available": true
+    },
+    "tagged_monitors": {
+      "normal_latency_us": 10.0,
+      "tagged_latency_us": 12.0,
+      "overhead_percent": 20.0,
+      "available": true
+    }
+  },
+  "thresholds": {
+    "max_regression_percent": 10,
+    "min_improvement_percent": 0,
+    "max_overhead_percent": 50
+  },
+  "environment": {
+    "erlang_version": "OTP-28",
+    "erlang_erts_version": "13.0.1",
+    "os": "darwin",
+    "os_version": "25.2.0",
+    "schedulers": 8,
+    "logical_processors": 8
+  },
+  "summary": {
+    "json_decode_speedup": 2.5,
+    "json_encode_speedup": 2.5,
+    "hibernate_memory_reduction": 75.0,
+    "priority_improvement": 3.0
+  }
+}

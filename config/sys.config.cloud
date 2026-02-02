@@ -2,6 +2,30 @@
 %% Optimized for CI/CD, fast test execution, and comprehensive verification
 
 [
+    {erlmcp_core, [
+        %% Memory Guard Configuration (OTP 28+)
+        {memory_guard, [
+            {context, [
+                {max_heap_size, 100_000_000},     % 100MB heap (~400MB actual)
+                {max_bin_vheap_size, 50_000_000}  % 50MB binary heap
+            ]},
+            {tool, [
+                {max_heap_size, 50_000_000},      % 50MB heap
+                {max_bin_vheap_size, 25_000_000}  % 25MB binary heap
+            ]},
+            {transport, [
+                {max_heap_size, 30_000_000},      % 30MB heap
+                {max_bin_vheap_size, 15_000_000}  % 15MB binary heap
+            ]}
+        ]},
+
+        %% Memory Monitor Configuration
+        {memory_monitor, [
+            {check_interval, 5000},               % 5 seconds
+            {enable_otel, true}                   % Export metrics to OTEL
+        ]}
+    ]},
+
     {erlmcp, [
         %% Logging configuration - DEBUG for test verification
         {log_level, debug},

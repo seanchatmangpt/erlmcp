@@ -728,6 +728,8 @@ attempt_connection(#state{host = Host,
     case gen_tcp:connect(Host, Port, Options, ConnectTimeout) of
         {ok, Socket} ->
             logger:info("TCP connection established"),
+            %% Report TLS handshake if SSL options were used
+            report_tls_handshake(State, Options, success),
             %% Notify owner of successful connection
             State#state.owner ! {transport_connected, self()},
 
@@ -737,6 +739,8 @@ attempt_connection(#state{host = Host,
                         buffer = <<>>};
         {error, Reason} ->
             logger:error("TCP connection failed: ~p", [Reason]),
+            %% Report TLS handshake failure if SSL options were used
+            report_tls_handshake(State, Options, {failure, Reason}),
             schedule_reconnect(State)
     end.
 
@@ -985,6 +989,49 @@ try_modern_socket(Host, Port, Options) ->
 fallback_to_gen_tcp(Host, Port, Options) ->
     ConnectTimeout = proplists:get_value(timeout, Options, ?DEFAULT_CONNECT_TIMEOUT),
     gen_tcp:connect(Host, Port, Options, ConnectTimeout).
+
+%% @doc Report TLS handshake to health monitor
+-spec report_tls_handshake(#state{}, [gen_tcp:option()], success | {failure, term()}) -> ok.
+report_tls_handshake(_State, Options, Result) ->
+    %% Check if SSL options were used
+    case proplists:get_value(ssl, Options, false) of
+        true ->
+            %% Extract SSL-related options
+            SSLOpts = proplists:get_value(ssl_opts, Options, []),
+            case SSLOpts of
+                [] ->
+                    ok;  %% No actual SSL options
+                _ ->
+                    %% Build handshake info
+                    CertFile = proplists:get_value(certfile, SSLOpts, undefined),
+                    Info = #{
+                        cipher => proplists:get_value(cipher, SSLOpts, "TLS_AES_256_GCM_SHA384"),
+                        protocol => proplists:get_value(versions, SSLOpts, 'tlsv1.3'),
+                        cert_file => CertFile,
+                        timing => 0  %% Actual timing would be measured by caller
+                    },
+
+                    %% Report to health monitor
+                    case Result of
+                        success ->
+                            catch erlmcp_tls_health:report_handshake(tcp, success, Info);
+                        {failure, Reason} ->
+                            FailureReason = classify_tls_failure(Reason),
+                            catch erlmcp_tls_health:report_handshake_failure(tcp, FailureReason, Info)
+                    end,
+                    ok
+            end;
+        false ->
+            ok  %% Not a TLS connection
+    end.
+
+%% @doc Classify TLS failure reason
+-spec classify_tls_failure(term()) -> erlmcp_tls_health:failure_reason().
+classify_tls_failure(tls_alert) -> cipher_mismatch;
+classify_tls_failure(cert_expired) -> cert_expired;
+classify_tls_failure(cert_invalid) -> cert_invalid;
+classify_tls_failure(timeout) -> timeout;
+classify_tls_failure(_) -> unknown.
 
 %% @doc Record socket metrics if socket metrics server is available
 -spec maybe_record_socket_metrics(atom(), map()) -> ok.

@@ -12,7 +12,7 @@
       stdlib,
       crypto,
       public_key,
-      jsx,
+      % jsx,  % Removed - migrated to OTP 27+ native json module
       jesse,
       gproc,
       jose,

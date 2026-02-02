@@ -18,7 +18,7 @@
 %% It is a Cowboy WebSocket handler with its own init/2 interface
 
 %% WebSocket-specific exports (NOT erlmcp_transport_behavior callbacks)
--export([init/2, send/2, close/1]).
+-export([init/2, init/3, send/2, close/1]).
 %% WebSocket handler exports
 -export([init/3, websocket_handle/2, websocket_info/2]).  % Cowboy WebSocket handler callback
 %% Internal/test exports
@@ -464,14 +464,12 @@ process_single_message(Message, State) ->
 %% Parse and route message to registry
 -spec parse_and_route(binary(), #state{}) -> {ok, #state{}} | {error, atom()}.
 parse_and_route(Message, State) ->
-    case jsx:is_json(Message) of
-        true ->
-            case jsx:decode(Message, [return_maps]) of
-                {error, Reason} ->
-                    logger:warning("JSON parse error in WebSocket message: ~p, reason: ~p",
-                                   [Message, Reason]),
-                    {error, parse_error};
-                ParsedMessage ->
+    case erlmcp_json_native:decode(Message) of
+        {error, Reason} ->
+            logger:warning("JSON parse error in WebSocket message: ~p, reason: ~p",
+                           [Message, Reason]),
+            {error, parse_error};
+        ParsedMessage when is_map(ParsedMessage) ->
                     %% Route to registry
                     State#state.registry_pid
                     ! {transport_data, State#state.transport_id, ParsedMessage},

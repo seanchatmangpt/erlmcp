@@ -62,6 +62,18 @@ init([]) ->
     %% Additional supervisors for optional features
     AdditionalChildSpecs =
         %% ================================================================
+        %% MEMORY MONITOR: System-wide memory monitoring (OTP 28+)
+        %% Monitors memory usage and triggers GC/binary GC as needed
+        %% ================================================================
+        [#{id => erlmcp_memory_monitor,
+           start => {erlmcp_memory_monitor, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_memory_monitor]}],
+    %% Client and Plugin supervisors
+    ClientPluginChildSpecs =
+        %% ================================================================
         %% CLIENT SUPERVISOR: Dynamic client process management (TIER 2)
         %% Manages client connections using simple_one_for_one strategy
         %% ================================================================
@@ -89,13 +101,20 @@ init([]) ->
         %% Always include domain supervisors (critical infrastructure)
         %% Domain failures are isolated and don't cascade
         BaseChildSpecs ++
+        %% Always include memory monitor (OTP 28+ feature, graceful degradation)
+        AdditionalChildSpecs ++
         %% Include additional optional supervisors
         case application:get_env(erlmcp_core, enable_plugins, true) of
             true ->
-                AdditionalChildSpecs;
+                ClientPluginChildSpecs;
             false ->
                 %% Skip plugin supervisor when disabled to prevent zombie process
-                []
+                ClientPluginChildSpecs -- [#{id => erlmcp_plugin_sup,
+                                             start => {erlmcp_plugin_sup, start_link, []},
+                                             restart => permanent,
+                                             shutdown => infinity,
+                                             type => supervisor,
+                                             modules => [erlmcp_plugin_sup]}]
         end ++
         %% Conditionally include cluster supervisor
         case application:get_env(erlmcp_core, cluster_enabled, false) of
