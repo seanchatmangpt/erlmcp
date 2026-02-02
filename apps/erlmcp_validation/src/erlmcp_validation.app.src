@@ -5,7 +5,7 @@
   {applications, [
       kernel,
       stdlib,
-      jsx,
+      % jsx,  % Removed - migrated to OTP 27+ native json module
       jesse,
       erlmcp_core,
       erlmcp_transports

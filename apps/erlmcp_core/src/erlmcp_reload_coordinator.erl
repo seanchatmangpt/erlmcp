@@ -354,17 +354,18 @@ do_check_consistency(Module, State) ->
 do_cluster_rollback(Module, _State) ->
     logger:warning("Starting cluster rollback for ~p", [Module]),
 
-    %% Get previous version from rollback stack
-    case erlmcp_code_reload:rollback_module(Module) of
+    %% Use rollback manager for version rollback
+    case erlmcp_rollback_manager:rollback(Module, 1) of
         ok ->
             %% Propagate rollback to all nodes
             Nodes = nodes(),
             lists:foreach(fun(Node) ->
-                            rpc:cast(Node, erlmcp_code_reload, rollback_module, [Module])
+                            rpc:cast(Node, erlmcp_rollback_manager, rollback, [Module, 1])
                           end, Nodes),
             logger:info("Cluster rollback completed for ~p", [Module]),
             ok;
         {error, Reason} ->
+            logger:error("Cluster rollback failed for ~p: ~p", [Module, Reason]),
             {error, Reason}
     end.
 

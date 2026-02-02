@@ -139,6 +139,30 @@ handle_call({unregister_transport, TransportId}, _From, State) ->
     NewHistory = maps:remove(TransportId, State#state.metrics_history),
     ?LOG_INFO("Unregistered transport ~p from health monitoring", [TransportId]),
     {reply, ok, State#state{health_checks = NewHealthChecks, metrics_history = NewHistory}};
+handle_call(overall_health, _From, State) ->
+    % Aggregate health status from all transports
+    TransportHealthList = maps:to_list(State#state.health_checks),
+    OverallStatus = calculate_overall_health(TransportHealthList),
+    {reply, OverallStatus, State};
+handle_call({set_threshold, TransportId, MetricName, Value}, _From, State) ->
+    % Store threshold configuration (in a real implementation, this would be persisted)
+    % For now, we'll store it in the process dictionary
+    ThresholdsKey = {health_threshold, TransportId},
+    CurrentThresholds = case get(ThresholdsKey) of
+        undefined -> #{};
+        T -> T
+    end,
+    NewThresholds = maps:put(MetricName, Value, CurrentThresholds),
+    put(ThresholdsKey, NewThresholds),
+    ?LOG_INFO("Set health threshold for ~p: ~p = ~p", [TransportId, MetricName, Value]),
+    {reply, ok, State};
+handle_call({get_health_history, TransportId}, _From, State) ->
+    case maps:get(TransportId, State#state.metrics_history, undefined) of
+        undefined ->
+            {reply, {error, not_found}, State};
+        History ->
+            {reply, {ok, lists:reverse(History)}, State}
+    end;
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -540,3 +564,66 @@ initial_metrics() ->
       error_rate => 0.0,
       throughput => 0,
       last_error => undefined}.
+
+%% @doc Get overall health status across all transports
+-spec overall_health() -> map().
+overall_health() ->
+    gen_server:call(?MODULE, overall_health, 5000).
+
+%% @doc Set health check threshold for a specific metric
+-spec set_threshold(transport_id(), atom(), number()) -> ok | {error, term()}.
+set_threshold(TransportId, MetricName, Value) ->
+    gen_server:call(?MODULE, {set_threshold, TransportId, MetricName, Value}, 5000).
+
+%% @doc Get health check history for a transport
+-spec get_health_history(transport_id()) -> {ok, [health_metrics()]} | {error, term()}.
+get_health_history(TransportId) ->
+    gen_server:call(?MODULE, {get_health_history, TransportId}, 5000).
+
+%% @doc Calculate overall health status from all transports
+-spec calculate_overall_health([{transport_id(), transport_health()}]) -> map().
+calculate_overall_health(TransportHealthList) ->
+    TotalCount = length(TransportHealthList),
+    HealthyCount = lists:foldl(
+        fun({_Id, #{status := Status}}, Acc) ->
+            case Status of
+                healthy -> Acc + 1;
+                _ -> Acc
+            end
+        end,
+        0,
+        TransportHealthList
+    ),
+    DegradedCount = lists:foldl(
+        fun({_Id, #{status := Status}}, Acc) ->
+            case Status of
+                degraded -> Acc + 1;
+                _ -> Acc
+            end
+        end,
+        0,
+        TransportHealthList
+    ),
+    UnhealthyCount = TotalCount - HealthyCount - DegradedCount,
+
+    OverallStatus = case {HealthyCount, DegradedCount, UnhealthyCount} of
+        {_, _, 0} when HealthyCount + DegradedCount > 0 ->
+            if DegradedCount > 0 -> degraded; true -> healthy end;
+        {0, 0, 0} -> unknown;
+        _ -> unhealthy
+    end,
+
+    #{overall_status => OverallStatus,
+      total_transports => TotalCount,
+      healthy_count => HealthyCount,
+      degraded_count => DegradedCount,
+      unhealthy_count => UnhealthyCount,
+      timestamp => erlang:system_time(millisecond),
+      transports => maps:from_list(
+        lists:map(
+            fun({Id, #{status := Status} = Health}) ->
+                {Id, #{status => Status, last_check => maps:get(last_check, Health, 0)}}
+            end,
+            TransportHealthList
+        )
+    )}.

@@ -177,7 +177,7 @@ handle_post_request(Req, TransportId, State) ->
             {ok, Req3, State};
         false ->
             try
-                case jsx:decode(Body) of
+                case erlmcp_json_native:decode(Body) of
                     {error, Reason} ->
                         erlmcp_tracing:record_error_details(SpanCtx, parse_error, Body),
                         Req3 = cowboy_req:reply(400, #{}, <<"Invalid JSON">>, Req2),

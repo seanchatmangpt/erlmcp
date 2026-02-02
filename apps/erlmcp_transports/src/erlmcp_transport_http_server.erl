@@ -368,20 +368,42 @@ connect(#state{gun_pid = OldPid, gun_monitor = OldMon} = State) ->
             NewState = State#state{gun_pid = GunPid, gun_monitor = MonitorRef},
 
             %% Wait for connection
+            StartTime = erlang:monotonic_time(millisecond),
             case gun:await_up(GunPid, State#state.connect_timeout) of
-                {ok, _Protocol} ->
+                {ok, Protocol} ->
+                    HandshakeTime = erlang:monotonic_time(millisecond) - StartTime,
+                    %% Report successful TLS handshake for HTTPS
+                    case State#state.scheme of
+                        https -> report_tls_handshake(State, success, Protocol, HandshakeTime);
+                        http -> ok
+                    end,
                     {ok, NewState};
                 {error, timeout} ->
                     logger:error("Gun connection timeout"),
+                    %% Report TLS handshake failure for HTTPS
+                    case State#state.scheme of
+                        https -> report_tls_handshake(State, {failure, timeout}, undefined, 0);
+                        http -> ok
+                    end,
                     gun:close(GunPid),
                     {error, connect_timeout};
                 {error, Reason} ->
                     logger:error("Gun connection failed: ~p", [Reason]),
+                    %% Report TLS handshake failure for HTTPS
+                    case State#state.scheme of
+                        https -> report_tls_handshake(State, {failure, Reason}, undefined, 0);
+                        http -> ok
+                    end,
                     gun:close(GunPid),
                     {error, Reason}
             end;
         {error, Reason} ->
             logger:error("Failed to open gun connection: ~p", [Reason]),
+            %% Report TLS handshake failure for HTTPS
+            case State#state.scheme of
+                https -> report_tls_handshake(State, {failure, Reason}, undefined, 0);
+                http -> ok
+            end,
             {error, Reason}
     end.
 
@@ -466,6 +488,48 @@ get_otp_version() ->
         _:_ ->
             0
     end.
+
+%% @private Report TLS handshake to health monitor
+-spec report_tls_handshake(state(), success | {failure, term()}, atom() | undefined, non_neg_integer()) -> ok.
+report_tls_handshake(#state{ssl_options = SSLOpts}, Result, Protocol, Timing) ->
+    %% Extract certificate file if available
+    CertFile = proplists:get_value(certfile, SSLOpts, undefined),
+
+    %% Determine cipher suite from SSL options or use default
+    Cipher = proplists:get_value(ciphers, SSLOpts, "TLS_AES_256_GCM_SHA384"),
+    CipherSuite =
+        if
+            is_list(Cipher), length(Cipher) > 0 -> hd(Cipher);
+            is_list(Cipher) -> "TLS_AES_256_GCM_SHA384";
+            true -> "TLS_AES_256_GCM_SHA384"
+        end,
+
+    Info = #{
+        cipher => CipherSuite,
+        protocol => proplists:get_value(versions, SSLOpts, 'tlsv1.3'),
+        cert_file => CertFile,
+        timing => Timing,
+        protocol_negotiated => Protocol
+    },
+
+    %% Report to health monitor
+    case Result of
+        success ->
+            catch erlmcp_tls_health:report_handshake(http, success, Info);
+        {failure, Reason} ->
+            FailureReason = classify_http_tls_failure(Reason),
+            catch erlmcp_tls_health:report_handshake_failure(http, FailureReason, Info)
+    end,
+    ok.
+
+%% @private Classify HTTP TLS failure reason
+-spec classify_http_tls_failure(term()) -> erlmcp_tls_health:failure_reason().
+classify_http_tls_failure(timeout) -> timeout;
+classify_http_tls_failure({tls_alert, _}) -> cipher_mismatch;
+classify_http_tls_failure(cert_expired) -> cert_expired;
+classify_http_tls_failure(cert_invalid) -> cert_invalid;
+classify_http_tls_failure(closed) -> timeout;
+classify_http_tls_failure(_) -> unknown.
 
 %%====================================================================
 %% Internal functions - Request Handling

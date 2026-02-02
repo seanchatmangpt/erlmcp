@@ -154,7 +154,7 @@ generate(Version) ->
 -spec to_json(sbom()) -> {ok, binary()} | {error, term()}.
 to_json(SBOM) ->
     try
-        JSON = jsx:encode(convert_to_cyclonedx(SBOM)),
+        JSON = erlmcp_json_native:encode(convert_to_cyclonedx(SBOM)),
         {ok, JSON}
     catch
         Type:Error:Stack ->
@@ -166,7 +166,7 @@ to_json(SBOM) ->
 -spec to_spdx_json(sbom()) -> {ok, binary()} | {error, term()}.
 to_spdx_json(SBOM) ->
     try
-        JSON = jsx:encode(SBOM),
+        JSON = erlmcp_json_native:encode(SBOM),
         {ok, JSON}
     catch
         Type:Error:Stack ->

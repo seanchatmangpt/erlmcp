@@ -60,8 +60,15 @@ init([]) ->
           intensity => 5,
           period => 60},
 
-    % Start with empty child specs - transports are added dynamically
-    ChildSpecs = [],
+    % Start health monitor as permanent worker (critical for monitoring)
+    % Transports are added dynamically via start_child/3
+    ChildSpecs =
+        [#{id => erlmcp_transport_health,
+           start => {erlmcp_transport_health, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_transport_health]}],
 
     {ok, {SupFlags, ChildSpecs}}.
 

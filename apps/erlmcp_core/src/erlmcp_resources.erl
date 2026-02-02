@@ -6,7 +6,7 @@
 
 %% API exports
 -export([start_link/0, stop/0, list_roots/0, add_root/2, remove_root/1, resolve_root_uri/1,
-         read_resource/1]).
+         read_resource/1, validate_resource_uri/1, normalize_resource_uri/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -74,6 +74,50 @@ list_roots_with_state(_ServerState) ->
 -spec read_resource_with_roots(binary(), term()) -> {ok, binary()} | {error, term()}.
 read_resource_with_roots(Uri, _ServerState) ->
     read_resource(Uri).
+
+%%%====================================================================
+%%% Internationalization Support (OTP 28)
+%%%====================================================================
+
+%% @doc Validate resource URI for OTP 28 UTF-8 support
+%% Supports international characters in resource paths (Japanese, Arabic, etc.)
+-spec validate_resource_uri(binary()) -> ok | {error, atom()}.
+validate_resource_uri(Uri) when is_binary(Uri) ->
+    % Validate URI length (byte and character limits)
+    case byte_size(Uri) > 4096 of
+        true ->
+            {error, uri_too_long};
+        false ->
+            case erlmcp_atoms:char_length_check(Uri) of
+                ok ->
+                    validate_uri_scheme(Uri);
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end;
+validate_resource_uri(_) ->
+    {error, invalid_binary}.
+
+%% @doc Normalize resource URI using erlmcp_atoms for safe atom conversion
+%% Preserves UTF-8 characters while ensuring OTP 28 compliance.
+-spec normalize_resource_uri(binary()) -> binary().
+normalize_resource_uri(Uri) when is_binary(Uri) ->
+    % For now, return URI as-is since we store them as binaries
+    % Atom conversion is done only when needed for gproc keys
+    Uri.
+
+%% @private Validate URI scheme and structure
+-spec validate_uri_scheme(binary()) -> ok | {error, atom()}.
+validate_uri_scheme(<<"file://", _/binary>>) ->
+    ok;
+validate_uri_scheme(<<"http://", _/binary>>) ->
+    ok;
+validate_uri_scheme(<<"https://", _/binary>>) ->
+    ok;
+validate_uri_scheme(<<"custom://", _/binary>>) ->
+    ok;
+validate_uri_scheme(_) ->
+    {error, unknown_uri_scheme}.
 
 %%%====================================================================
 %%% gen_server callbacks

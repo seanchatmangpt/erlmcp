@@ -129,7 +129,7 @@ format_markdown(Report) when is_map(Report) ->
 %% @doc Format report as JSON
 -spec format_json(compliance_report()) -> binary().
 format_json(Report) when is_map(Report) ->
-    jsx:encode(Report).
+    erlmcp_json_native:encode(Report).
 
 %% @doc Format report as HTML
 -spec format_html(compliance_report()) -> binary().
@@ -312,7 +312,7 @@ store_evidence_bundle(BundlePath, EvidenceItems) when is_list(EvidenceItems) ->
                          FilePath = filename:join([EvidenceDir, Filename]),
 
                          %% Encode evidence as JSON
-                         JSON = jsx:encode(Evidence, [space]),
+                         JSON = erlmcp_json_native:encode(Evidence),
 
                          %% Write to file
                          ok = file:write_file(FilePath, JSON)
@@ -327,7 +327,7 @@ store_evidence_bundle(BundlePath, EvidenceItems) when is_list(EvidenceItems) ->
               evidence_types => lists:usort([maps:get(evidence_type, E) || E <- EvidenceItems])},
 
         ManifestPath = filename:join([BundlePath, "bundle_manifest.json"]),
-        ManifestJSON = jsx:encode(Manifest, [space]),
+        ManifestJSON = erlmcp_json_native:encode(Manifest),
         ok = file:write_file(ManifestPath, ManifestJSON),
 
         {ok, BundlePath}
@@ -409,7 +409,7 @@ create_evidence_bundle(BasePath) ->
               status => <<"initialized">>},
 
         ManifestPath = filename:join([BasePath, "bundle_manifest.json"]),
-        ManifestJSON = jsx:encode(EmptyManifest, [space]),
+        ManifestJSON = erlmcp_json_native:encode(EmptyManifest),
         ok = file:write_file(ManifestPath, ManifestJSON),
 
         {ok, BasePath}
@@ -432,7 +432,7 @@ link_receipt_chain(BundlePath, ReceiptChain) when is_map(ReceiptChain) ->
         ReceiptWithTimestamp = maps:put(<<"linked_at">>, iso8601_timestamp(), ReceiptChain),
 
         %% Encode as JSON
-        ReceiptJSON = jsx:encode(ReceiptWithTimestamp, [space]),
+        ReceiptJSON = erlmcp_json_native:encode(ReceiptWithTimestamp),
 
         %% Write to file
         ok = file:write_file(ReceiptPath, ReceiptJSON),
