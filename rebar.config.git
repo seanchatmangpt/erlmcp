@@ -1,0 +1,89 @@
+%% -*- erlang -*-
+%% vim: set ft=erlang ts=4 sw=4 et:
+%%
+%% Rebar3 configuration for erlmcp - GIT-BASED DEPENDENCIES FALLBACK
+%% Purpose: Use GitHub repositories when hex.pm is unreachable
+%% This config substitutes git-based dependencies for all packages
+
+{minimum_otp_vsn, "28"}.
+
+%% Dependencies from Git repositories (fallback when hex.pm unreachable)
+{deps,
+ [% JSON encoding/decoding
+  {jsx, {git, "https://github.com/talentdeficit/jsx.git", {tag, "v3.1.0"}}},
+  % JSON Schema validation
+  {jesse, {git, "https://github.com/for-GET/jesse.git", {tag, "1.8.1"}}},
+  % Process registry
+  {gproc, {git, "https://github.com/uwiger/gproc.git", {tag, "0.9.0"}}},
+  % HTTP client (gun for HTTP/2 and WebSocket)
+  {gun, {git, "https://github.com/ninenines/gun.git", {tag, "2.0.1"}}},
+  % TCP acceptor pool (ranch)
+  {ranch, {git, "https://github.com/ninenines/ranch.git", {tag, "2.1.0"}}},
+  % Connection pooling
+  {poolboy, {git, "https://github.com/devinus/poolboy.git", {tag, "1.5.2"}}},
+  % HTTP server (cowboy for HTTP/WebSocket/SSE)
+  {cowboy, {git, "https://github.com/ninenines/cowboy.git", {branch, "master"}}},
+  % Template engine
+  {bbmustache, {git, "https://github.com/soranoba/bbmustache.git", {tag, "v1.12.2"}}},
+  % JWT validation (CRITICAL - security dependency)
+  {jose, {git, "https://github.com/potatosalad/erlang-jose.git", {tag, "1.11.1"}}},
+  % OpenTelemetry (observability)
+  {opentelemetry_api, {git, "https://github.com/open-telemetry/opentelemetry-erlang.git", {branch, "main"}}},
+  {opentelemetry, {git, "https://github.com/open-telemetry/opentelemetry-erlang.git", {branch, "main"}}},
+  {opentelemetry_exporter, {git, "https://github.com/open-telemetry/opentelemetry-erlang.git", {branch, "main"}}}
+ ]}.
+
+%% Shell (for `rebar3 shell`)
+{shell,
+ [{apps, [erlmcp_core, erlmcp_transports, erlmcp_observability, erlmcp_validation]},
+  {config, "config/sys.config"},
+  {vm_args, "vm.args"}]}.
+
+%% Profiles for testing and building
+{profiles,
+ [{test,
+   [{deps,
+     [% Testing libraries
+      {proper, {git, "https://github.com/proper-testing/proper.git", {branch, "master"}}},
+      {meck, {git, "https://github.com/eproxus/meck.git", {tag, "0.9.2"}}}
+     ]}
+   ]},
+  {prod,
+   [{relx,
+     [{dev_mode, false},
+      {include_erts, true},
+      {include_src, false}
+     ]}
+   ]}
+ ]}.
+
+%% EUnit configuration
+{eunit_opts,
+ [verbose, {report, {eunit_surefire, [{dir, "_build/test"}]}}]}.
+
+%% Code coverage reporting
+{cover_enabled, true}.
+{cover_opts, [verbose]}.
+
+%% Dialyzer
+{dialyzer,
+ [{warnings, [all]},
+  {get_warnings, true}
+ ]}.
+
+%% Compiler options
+{erl_opts,
+ [
+  % Warnings and debug
+  warnings_as_errors,
+  warn_format,
+  warn_obsolete_guard,
+  warn_missing_spec,
+  warn_untyped_record,
+
+  % Performance and safety
+  {parse_transform, lager_transform},
+
+  % OTP 28 specific optimizations
+  {d, 'OTP_MAJOR_VERSION', '28'}
+ ]}.
