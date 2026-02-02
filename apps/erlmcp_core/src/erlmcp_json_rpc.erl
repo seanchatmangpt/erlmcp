@@ -2,6 +2,14 @@
 
 -include("erlmcp.hrl").
 
+%% Import unwrap utilities for safe nested access
+-import(erlmcp_unwrap_utils, [
+    extract_rpc_response/1,
+    extract_rpc_error/1,
+    extract_nested/3,
+    get_in/2
+]).
+
 %% API exports
 -export([encode_request/3, encode_response/2, encode_error_response/3, encode_error_response/4,
          encode_notification/2, decode_message/1, decode_message/2, decode_batch/1, encode_batch/1,
@@ -18,7 +26,11 @@
          error_invalid_elicitation_mode/2, error_elicitation_security_error/2,
          error_experimental_task_not_found/2, error_task_dependency_failed/3,
          error_experimental_task_cancelled/2, error_experimental_task_timeout/3,
-         error_invalid_task_state/4]).
+         error_invalid_task_state/4,
+         %% Safe extraction helpers
+         safe_extract_result/1, safe_extract_error/1, safe_extract_nested/3, safe_get_field/2,
+         %% UTF-8 support
+         validate_utf8/1, ensure_utf8_encoding/1]).
 
 %% Import nominal types for type safety
 -import(erlmcp_mcp_types, [
@@ -976,6 +988,59 @@ parse_batch_requests([Invalid | Rest], Acc) ->
     parse_batch_requests(Rest, [ErrorMsg | Acc]).
 
 %%====================================================================
+%% Safe Extraction Helper Functions
+%%====================================================================
+
+%% @doc Safely extract result from JSON-RPC response wrapper
+%% Returns {ok, Result} or {error, invalid_response}
+%%
+%% Example:
+%%   > Response = #{<<"result">> => #{<<"data">> => <<"value">>}, <<"id">> => 1}.
+%%   > erlmcp_json_rpc:safe_extract_result(Response).
+%%   {ok, #{<<"data">> => <<"value">>}}
+-spec safe_extract_result(map() | {ok, map()}) -> {ok, term()} | {error, invalid_response}.
+safe_extract_result(Response) ->
+    extract_rpc_response(Response).
+
+%% @doc Safely extract error from JSON-RPC response
+%% Returns {ok, ErrorMap} or {error, invalid_response}
+-spec safe_extract_error(map() | {ok, map()}) -> {ok, map()} | {error, invalid_response}.
+safe_extract_error(Response) ->
+    extract_rpc_error(Response).
+
+%% @doc Safely extract nested values from response structures
+%% Returns {ok, Value} or {ok, Default} if path not found
+%%
+%% Example:
+%%   > Response = #{<<"result">> => #{<<"tool">> => #{<<"name">> => <<"test">>}}}.
+%%   > erlmcp_json_rpc:safe_extract_nested(Response, [<<"result">>, <<"tool">>, <<"name">>], undefined).
+%%   {ok, <<"test">>}
+-spec safe_extract_nested(map() | {ok, map()}, [binary() | atom() | integer()], term()) ->
+    {ok, term()} | {error, term()}.
+safe_extract_nested({ok, Response}, Path, Default) when is_map(Response) ->
+    extract_nested(Response, Path, Default);
+safe_extract_nested(Response, Path, Default) when is_map(Response) ->
+    extract_nested(Response, Path, Default);
+safe_extract_nested(_, _, Default) ->
+    {ok, Default}.
+
+%% @doc Safely get field from map with fallback to undefined
+%% Returns Value or undefined if not found
+%%
+%% Example:
+%%   > Data = #{<<"key">> => <<"value">>}.
+%%   > erlmcp_json_rpc:safe_get_field(Data, <<"key">>).
+%%   <<"value">>
+-spec safe_get_field(map(), binary() | atom()) -> term() | undefined.
+safe_get_field(Map, Key) when is_map(Map) ->
+    case get_in(Map, [Key]) of
+        {ok, Value} -> Value;
+        {error, _} -> undefined
+    end;
+safe_get_field(_, _) ->
+    undefined.
+
+%%====================================================================
 %% Internal Functions
 %%====================================================================
 
@@ -1044,6 +1109,149 @@ build_error_object(Code, Message, Data) ->
     #{?JSONRPC_ERROR_FIELD_CODE => Code,
       ?JSONRPC_ERROR_FIELD_MESSAGE => Message,
       ?JSONRPC_ERROR_FIELD_DATA => #{<<"details">> => DataBin}}.
+
+%%====================================================================
+%% UTF-8 Support Functions
+%%====================================================================
+
+%% @doc Validate that a binary is valid UTF-8 encoded text
+%% Returns true if valid, false otherwise
+%% Uses binary:is_valid_utf8/1 available in OTP 26+
+-spec validate_utf8(binary()) -> boolean().
+validate_utf8(Binary) when is_binary(Binary) ->
+    %% OTP 26+ has native UTF-8 validation
+    try
+        binary:is_valid_utf8(Binary)
+    catch
+        error:undef ->
+            %% Fallback for OTP < 26: manual validation
+            validate_utf8_fallback(Binary)
+    end;
+validate_utf8(_) ->
+    false.
+
+%% @doc Fallback UTF-8 validation for OTP < 26
+%% Checks that the binary contains valid UTF-8 byte sequences
+-spec validate_utf8_fallback(binary()) -> boolean().
+validate_utf8_fallback(<<>>) ->
+    true;
+validate_utf8_fallback(<<C, Rest/binary>>) when C =< 127 ->
+    %% ASCII (0-127) - always valid
+    validate_utf8_fallback(Rest);
+validate_utf8_fallback(<<C1, C2, Rest/binary>>) when C1 >= 192, C1 =< 223, C2 >= 128, C2 =< 191 ->
+    %% 2-byte sequence
+    validate_utf8_fallback(Rest);
+validate_utf8_fallback(<<C1, C2, C3, Rest/binary>>) when C1 >= 224, C1 =< 239, C2 >= 128, C2 =< 191, C3 >= 128, C3 =< 191 ->
+    %% 3-byte sequence
+    validate_utf8_fallback(Rest);
+validate_utf8_fallback(<<C1, C2, C3, C4, Rest/binary>>) when C1 >= 240, C1 =< 247, C2 >= 128, C2 =< 191, C3 >= 128, C3 =< 191, C4 >= 128, C4 =< 191 ->
+    %% 4-byte sequence
+    validate_utf8_fallback(Rest);
+validate_utf8_fallback(_) ->
+    %% Invalid UTF-8 sequence
+    false.
+
+%% @doc Ensure that all binary strings in a term are UTF-8 encoded
+%% Validates all binaries in maps, lists, and tuples recursively
+%% Returns {ok, ValidatedTerm} or {error, {invalid_utf8, Path}}
+-spec ensure_utf8_encoding(term()) -> {ok, term()} | {error, {invalid_utf8, string()}}.
+ensure_utf8_encoding(Term) when is_binary(Term) ->
+    case validate_utf8(Term) of
+        true ->
+            {ok, Term};
+        false ->
+            {error, {invalid_utf8, "binary contains invalid UTF-8 sequences"}}
+    end;
+ensure_utf8_encoding(Map) when is_map(Map) ->
+    ensure_utf8_map(Map, #{}, []);
+ensure_utf8_encoding(List) when is_list(List) ->
+    ensure_utf8_list(List, [], 1);
+ensure_utf8_encoding(Tuple) when is_tuple(Tuple) ->
+    ensure_utf8_tuple(Tuple, 1, tuple_size(Tuple));
+ensure_utf8_encoding(Term) when is_integer(Term); is_float(Term); is_atom(Term); Term =:= null ->
+    %% These types are always valid
+    {ok, Term};
+ensure_utf8_encoding(_) ->
+    {error, {invalid_utf8, "unsupported type"}}.
+
+%% @doc Validate all values in a map
+-spec ensure_utf8_map(map(), map(), list()) -> {ok, map()} | {error, {invalid_utf8, string()}}.
+ensure_utf8_map(Map, _Acc, _Path) when map_size(Map) =:= 0 ->
+    {ok, Map};
+ensure_utf8_map(Map, Acc, Path) ->
+    maps:fold(fun(K, V, {ok, AccIn}) ->
+        PathK = [binary_to_list(K) | Path],
+        case ensure_utf8_encoding(K) of
+            {ok, _} ->
+                case ensure_utf8_encoding(V) of
+                    {ok, _} ->
+                        {ok, maps:put(K, V, AccIn)};
+                    {error, _} = Error ->
+                        Error
+                end;
+            {error, _} = Error ->
+                Error
+        end
+    end, {ok, #{}}, Map).
+
+%% @doc Validate all elements in a list
+-spec ensure_utf8_list(list(), list(), integer()) -> {ok, list()} | {error, {invalid_utf8, string()}}.
+ensure_utf8_list([], Acc, _Index) ->
+    {ok, lists:reverse(Acc)};
+ensure_utf8_list([H | T], Acc, Index) ->
+    Path = ["[" ++ integer_to_list(Index) ++ "]"],
+    case ensure_utf8_encoding(H) of
+        {ok, _} ->
+            ensure_utf8_list(T, [H | Acc], Index + 1);
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Validate all elements in a tuple
+-spec ensure_utf8_tuple(tuple(), integer(), integer()) -> {ok, tuple()} | {error, {invalid_utf8, string()}}.
+ensure_utf8_tuple(Tuple, Index, Size) when Index > Size ->
+    {ok, Tuple};
+ensure_utf8_tuple(Tuple, Index, Size) ->
+    Path = ["tuple[" ++ integer_to_list(Index) ++ "]"],
+    Element = element(Index, Tuple),
+    case ensure_utf8_encoding(Element) of
+        {ok, _} ->
+            ensure_utf8_tuple(Tuple, Index + 1, Size);
+        {error, _} = Error ->
+            Error
+    end.
+
+%%====================================================================
+%% Encoding Functions with UTF-8 Validation
+%%====================================================================
+
+%% @doc Encode request with UTF-8 validation
+%% Validates that all binary fields are valid UTF-8 before encoding
+-spec encode_request_utf8(json_rpc_id(), binary(), json_rpc_params()) ->
+    {ok, binary()} | {error, {invalid_utf8, string()}}.
+encode_request_utf8(Id, Method, Params) ->
+    case ensure_utf8_encoding(Method) of
+        {ok, _} ->
+            case ensure_utf8_encoding(Params) of
+                {ok, _} ->
+                    {ok, encode_request(Id, Method, Params)};
+                {error, _} = Error ->
+                    Error
+            end;
+        {error, _} = Error ->
+            Error
+    end.
+
+%% @doc Encode response with UTF-8 validation
+-spec encode_response_utf8(json_rpc_id(), term()) ->
+    {ok, binary()} | {error, {invalid_utf8, string()}}.
+encode_response_utf8(Id, Result) ->
+    case ensure_utf8_encoding(Result) of
+        {ok, _} ->
+            {ok, encode_response(Id, Result)};
+        {error, _} = Error ->
+            Error
+    end.
 
 %% Parsing functions moved to erlmcp_message_parser.erl for hot path optimization
 %% Import directly from erlmcp_message_parser module

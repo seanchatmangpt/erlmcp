@@ -59,6 +59,7 @@ hot_reload(Module, State) ->
 
 %% @doc Prepare module for reload (OTP 28 deterministic BEAM)
 %% Returns version hash for later commit
+%% Saves current version to rollback manager before reload
 -spec prepare_reload(module_name()) -> {ok, module_version()} | {error, term()}.
 prepare_reload(Module) ->
     gen_server:call(?MODULE, {prepare_reload, Module}, 5000).
@@ -238,10 +239,18 @@ do_prepare_reload(Module, _State) ->
 
     case do_get_module_md5(Module) of
         {ok, MD5} ->
-            %% Store in ETS for later commit
-            ets:insert(erlmcp_module_table, {{Module, prepared}, MD5}),
-            logger:info("Module ~p prepared with version: ~p", [Module, MD5]),
-            {ok, MD5};
+            %% Save current version to rollback manager before reload
+            case erlmcp_rollback_manager:save_version(Module, MD5) of
+                ok ->
+                    %% Store in ETS for later commit
+                    ets:insert(erlmcp_module_table, {{Module, prepared}, MD5}),
+                    logger:info("Module ~p prepared with version: ~p (saved to rollback)", [Module, MD5]),
+                    {ok, MD5};
+                {error, Reason} ->
+                    logger:error("Failed to save version to rollback manager for ~p: ~p",
+                                [Module, Reason]),
+                    {error, {rollback_save_failed, Reason}}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.

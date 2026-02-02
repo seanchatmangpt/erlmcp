@@ -148,7 +148,28 @@ init(_Opts) ->
            restart => permanent,
            shutdown => 5000,
            type => worker,
-           modules => [erlmcp_audit_log]}],
+           modules => [erlmcp_audit_log]},
+         %% Transport Health Monitor - Comprehensive transport health checks
+         #{id => erlmcp_transport_health,
+           start => {erlmcp_transport_health, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_transport_health]},
+         %% Transport Telemetry - OTEL metrics for transport health
+         #{id => erlmcp_transport_telemetry,
+           start => {erlmcp_transport_telemetry, init, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_transport_telemetry]},
+         %% Health Dashboard - Real-time health monitoring dashboard
+         #{id => erlmcp_health_dashboard,
+           start => {erlmcp_health_dashboard, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_health_dashboard]}],
 
     %% Note: Receipt chain (erlmcp_receipt_chain) is ETS-based with no process
     %% Note: OTEL (erlmcp_otel) is a library module with no supervision

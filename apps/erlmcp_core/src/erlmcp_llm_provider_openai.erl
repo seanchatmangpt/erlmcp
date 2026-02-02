@@ -159,7 +159,7 @@ do_create_message(Messages, Params, State) ->
     end.
 
 parse_openai_response(ResponseBody) ->
-    try erlmcp_json_native:decode(ResponseBody, [return_maps]) of
+    try erlmcp_json_native:decode(ResponseBody) of
         #{<<"choices">> := [#{<<"message">> := Message} | _], <<"usage">> := Usage} ->
             {ok,
              #{<<"role">> => maps_get(<<"role">>, Message, <<"assistant">>),

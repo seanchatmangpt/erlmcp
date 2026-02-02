@@ -144,7 +144,7 @@ split_messages(Messages) ->
                 Messages).
 
 parse_anthropic_response(ResponseBody) ->
-    try erlmcp_json_native:decode(ResponseBody, [return_maps]) of
+    try erlmcp_json_native:decode(ResponseBody) of
         #{<<"content">> := [#{<<"type">> := <<"text">>, <<"text">> := Text} | _],
           <<"model">> := Model,
           <<"usage">> := Usage} ->

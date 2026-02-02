@@ -101,7 +101,7 @@ send(Data, State) ->
                 case httpc:request(HttpRequest) of
                     {ok, {_, _, ResponseBody}} ->
                         %% Parse response
-                        JsonResponse = jsx:decode(ResponseBody, [{labels, binary}]),
+                        JsonResponse = erlmcp_json_native:decode(ResponseBody),
 
                         %% Update metrics
                         Metrics = update_metrics(State#http_state.metrics, sent, ok),
@@ -254,7 +254,7 @@ handle_call({send_data, Data}, _From, State) ->
                 case httpc:request(HttpRequest) of
                     {ok, {_, _, ResponseBody}} ->
                         %% Parse response
-                        JsonResponse = jsx:decode(ResponseBody, [{labels, binary}]),
+                        JsonResponse = erlmcp_json_native:decode(ResponseBody),
 
                         %% Forward to JSON-RPC handler if needed
                         case erlmcp_cli_json_rpc:handle_json_rpc(ResponseBody, #{}, State#http_state.session_id) of
@@ -355,7 +355,7 @@ handle_cast({received_data, Data}, State) ->
     %% Process received data
     try
         %% Parse JSON-RPC request
-        JsonData = jsx:decode(Data, [{labels, binary}]),
+        JsonData = erlmcp_json_native:decode(Data),
 
         %% Forward to JSON-RPC handler
         case erlmcp_cli_json_rpc:handle_json_rpc(Data, #{}, State#http_state.session_id) of

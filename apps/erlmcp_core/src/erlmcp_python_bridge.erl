@@ -167,7 +167,7 @@ handle_call(list_tools, _From, #bridge_state{tools = Tools} = State) ->
 %% @doc Handle load tool request
 handle_call({load_tool, ToolModule}, _From, State) ->
     %% Send import request to Python
-    Request = jsx:encode(#{
+    Request = erlmcp_json_native:encode(#{
         <<"jsonrpc">> => <<"2.0">>,
         <<"id">> => State#bridge_state.request_id,
         <<"method">> => <<"load_tool">>,
@@ -215,7 +215,7 @@ handle_info({request_timeout, RequestId, From}, State) ->
 %% @doc Handle port responses
 handle_info({port_response, Data}, State) ->
     %% Parse JSON-RPC response
-    try jsx:decode(Data, [return_maps]) of
+    try erlmcp_json_native:decode(Data) of
         #{<<"id">> := RequestId, <<"result">> := Result} ->
             %% Successful response
             case maps:take(RequestId, State#bridge_state.pending) of
@@ -289,7 +289,7 @@ find_python_script() ->
 %% @doc Format tool invocation as JSON-RPC request
 -spec format_tool_request(pos_integer(), tool_name(), tool_params()) -> binary().
 format_tool_request(RequestId, ToolName, Params) ->
-    jsx:encode(#{
+    erlmcp_json_native:encode(#{
         <<"jsonrpc">> => <<"2.0">>,
         <<"id">> => RequestId,
         <<"method">> => <<"call_tool">>,

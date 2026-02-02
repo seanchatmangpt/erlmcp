@@ -1131,7 +1131,7 @@ validate_close(Module, State) when is_atom(Module) ->
 -spec validate_message_format(transport_type(), binary()) -> ok | {error, invalid_format}.
 validate_message_format(_TransportType, Data) when is_binary(Data) ->
     try
-        case jsx:decode(Data, [return_maps]) of
+        case erlmcp_json_native:decode(Data) of
             Message when is_map(Message) ->
                 case maps:get(<<"jsonrpc">>, Message, undefined) of
                     <<"2.0">> ->
@@ -1266,7 +1266,7 @@ create_test_message() ->
         #{<<"jsonrpc">> => <<"2.0">>,
           <<"method">> => <<"ping">>,
           <<"id">> => 1},
-    jsx:encode(Message).
+    erlmcp_json_native:encode(Message).
 
 %% @private Check if callbacks are exported
 -spec check_callbacks_exported(module(), [{atom(), arity()}]) -> ok | {error, [term()]}.

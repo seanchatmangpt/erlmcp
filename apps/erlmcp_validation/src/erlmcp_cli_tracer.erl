@@ -342,7 +342,7 @@ trace_collector_loop(Events, MaxEvents) ->
 %% @private Format trace data
 -spec format_trace_data([trace_event()], atom()) -> iolist().
 format_trace_data(TraceEvents, json) ->
-    jsx:encode(normalize_for_json(TraceEvents), [{space, 1}, {indent, 2}]);
+    erlmcp_json_native:encode(normalize_for_json(TraceEvents), [{space, 1}, {indent, 2}]);
 format_trace_data(TraceEvents, text) ->
     [format_trace_event_text(Event) || Event <- TraceEvents].
 
